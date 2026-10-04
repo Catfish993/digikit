@@ -5171,3 +5171,32 @@ callback binding remains unresolved. Next experiment: model one actual SPI2
 DMA exchange and trace acceptance/ACK/END, rather than calling a guessed handler.
 Public references: SHARC+ PRM SHDBG_SECI_ID register description and ADSP-2156x
 HWR SEC and DMA chapters, available through `docs/sharc/SOURCES.md`.
+
+## Circular buffering for ordinary loads and stores (2026-10-05)
+
+**[C]** Corrects "ordinary post-modify accesses are always linear" (startup
+section above): `tools/sharc_core` now wraps every load/store post-modify.
+Rule (SHARC+ Core Programming Reference, printed pp.6-9..6-12 Table 6-2,
+pp.6-23..6-26): with MODE1.CBUFEN (bit 24) set and L<n> != 0 the access uses
+I, then I <- I+M-L if I+M >= B+L, I+L+M if I+M < B, else I+M. CBUFEN clear or
+L == 0: plain add (p.6-26). Pre-modify never updates I and never wraps
+(p.6-24 NOTE, Table 6-2). In byte space M and L scale by the access size
+(p.6-9). MODIFY wraps regardless of CBUFEN (p.6-8, unchanged). Full rule list
+and form-to-code map: `out/native/circbuf/RULES.md`. **[V]** (manual re-read
+against the code, form by form; no second agent)
+
+Changed: one helper `memory._post_modify_index` used by 3a, 3b, 3c, 3d, 4a, 4b,
+4d, 1a (DM and PM halves), 16a and 6a_mem. A bounded or unknown I with wrap
+active becomes a `circ_` symbol or Unknown, as for 19a. L or MODE1 unknown
+stays linear. Tests: `tests/test_sharc_circular_buffers.py` (100 cases: both
+ends, exact lap, L=0, CBUFEN off, pre-modify, M>L, nw/sw/byte/lw scaling,
+SIMD, second DAG, symbols); `tests/test_sharc_golden.py` hashes unchanged.
+
+**[V]** DN2 1.11 cold start, Python only (`tools/sharc_circ_census.py`, 5M
+instructions, spin at `0x1c1128`): 751 post-modifies ran with wrapping active
+(129 PCs, the I7/I6 stack buffer), 0 wrapped. **[O]** The delay-line code
+(`0xb8xxxx`-`0xb97xxx`) loads B/L from memory at ~100 sites and was not
+reached; wrap counts there need a running-state census. **[O]** Bit-reverse
+mode (BR0/BR8, p.6-27) and CB7I/CB15I sticky/interrupt on I7/I15 wrap
+(p.6-26, p.6-30) are not modelled; the second SIMD address is not wrapped
+(p.6-25). **[O]** |M| > L applies one correction (manual forbids it).

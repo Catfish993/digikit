@@ -30,6 +30,7 @@ from .memory import (
     _dm_write,
     _load_normal_ureg,
     _normal_word_stride,
+    _post_modify_index,
     _simd_ureg_mem_companion,
 )
 from .sequencer import (
@@ -253,7 +254,14 @@ def _type_3a_transfer(
                 target, insn, companion, False, "normal-word", old, mode
             )
     if post_modify:
-        target.uregs[16 + index] = modified
+        target.uregs[16 + index] = _post_modify_index(
+            target,
+            index,
+            iv,
+            scaled_mv,
+            scale,
+            "I%d + M%d * %d" % (index, modifier, scale),
+        )
     if compute is not None:
         _apply_compute_simd(target, insn, compute, compute_y)
 
@@ -909,7 +917,15 @@ def _type_4a_access(
     offset *= _access_modifier_scale("normal-word", state.assume_nw32, iv)
     space = "PM" if _field(f, "g") else "DM"
     if _field(f, "u"):
-        address, next_i = iv, _add(iv, Const(offset), "I%d + %d" % (index, offset))
+        address = iv
+        next_i = _post_modify_index(
+            state,
+            index,
+            iv,
+            Const(offset),
+            _access_modifier_scale("normal-word", state.assume_nw32, iv),
+            "I%d + %d" % (index, offset),
+        )
     else:
         address, next_i = _add(iv, Const(offset), "I%d + %d" % (index, offset)), iv
     code = _field(f, "dreg")
@@ -1063,8 +1079,13 @@ def _type_4b_access(
     if companion is not None:
         _companion_transfer(executed, insn, companion, store, access_width, old, mode)
     if post_modify:
-        executed.uregs[16 + index] = _add(
-            iv, Const(offset), "I%d + %d" % (index, offset)
+        executed.uregs[16 + index] = _post_modify_index(
+            executed,
+            index,
+            iv,
+            Const(offset),
+            _access_modifier_scale(access_width, executed.assume_nw32, iv),
+            "I%d + %d" % (index, offset),
         )
 
 
@@ -1288,8 +1309,13 @@ def _type_3b_access(
                 executed, insn, companion, False, access_width, old, addressing_mode
             )
     if post_modify:
-        executed.uregs[16 + index] = _add(
-            iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+        executed.uregs[16 + index] = _post_modify_index(
+            executed,
+            index,
+            iv,
+            scaled_mv,
+            scale,
+            "I%d + M%d * %d" % (index, modifier, scale),
         )
     return None
 
@@ -1396,8 +1422,13 @@ def _type_3c(
     companion = _type_nw_companion(
         old, index, _field(f, "dreg"), address, bool(_field(f, "d")), scale
     )
-    state.uregs[16 + index] = _add(
-        iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+    state.uregs[16 + index] = _post_modify_index(
+        state,
+        index,
+        iv,
+        scaled_mv,
+        scale,
+        "I%d + M%d * %d" % (index, modifier, scale),
     )
     code = _field(f, "dreg")
     if _field(f, "d"):
@@ -1473,8 +1504,13 @@ def _type_16a(
         sl=_field(f, "sl") if name == "16a" else 0,
         concrete_write=wrote,
     )
-    state.uregs[16 + index] = _add(
-        iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+    state.uregs[16 + index] = _post_modify_index(
+        state,
+        index,
+        iv,
+        scaled_mv,
+        scale,
+        "I%d + M%d * %d" % (index, modifier, scale),
     )
     return _advance(state, insn)
 
@@ -1907,8 +1943,13 @@ def _type_1a_access(
                     addressing_mode="post-modify",
                     access_width="normal-word",
                 )
-    state.uregs[16 + index] = _add(
-        iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+    state.uregs[16 + index] = _post_modify_index(
+        state,
+        index,
+        iv,
+        scaled_mv,
+        scale,
+        "I%d + M%d * %d" % (index, modifier, scale),
     )
 
 
@@ -2140,7 +2181,14 @@ def _type_4d(
         if companion is not None:
             _companion_transfer(state, insn, companion, False, access_width, old, mode)
     if post_modify:
-        state.uregs[16 + index] = _add(iv, Const(offset), "I%d + %d" % (index, offset))
+        state.uregs[16 + index] = _post_modify_index(
+            state,
+            index,
+            iv,
+            Const(offset),
+            _access_modifier_scale(access_width, state.assume_nw32, iv),
+            "I%d + %d" % (index, offset),
+        )
     return _advance(state, insn)
 
 
@@ -2228,8 +2276,13 @@ def _type_3d_access(
                 executed, insn, companion, False, access_width, old, mode
             )
     if post_modify:
-        executed.uregs[16 + index] = _add(
-            iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+        executed.uregs[16 + index] = _post_modify_index(
+            executed,
+            index,
+            iv,
+            scaled_mv,
+            scale,
+            "I%d + M%d * %d" % (index, modifier, scale),
         )
 
 

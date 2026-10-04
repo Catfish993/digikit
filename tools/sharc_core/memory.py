@@ -26,14 +26,19 @@ from .state import (
     _json_value,
     _render,
     _simd_active,
+    _ureg,
     _write_ureg,
 )
 from .values import (
+    CIRC_SYMBOL_PREFIX,
+    Affine,
     Const,
     Operand,
     Unknown,
     Value,
     _add,
+    _signed,
+    _stack_bounded_symbol,
 )
 
 
@@ -553,10 +558,76 @@ def _circular_wrap_const(index: int, base: int, length: int, delta: int) -> int 
     """
     if length <= 0 or abs(delta) > length:
         return None
+    return _circular_step(index, base, length, delta)
+
+
+# MODE1.CBUFEN: circular buffering enable for load/store post-modify
+# (SHARC+ Core Programming Reference, "Circular Buffering Mode", p.6-23;
+# bit 24, docs/findings/06 startup routine "MODE1 = set(MODE1, 0x1011800)").
+MODE1_CBUFEN = 1 << 24
+
+
+def _circular_step(index: int, base: int, length: int, delta: int) -> int:
+    """One DAG post-modify with wrap, exactly the manual's rule (Table 6-2,
+    pp.6-10..6-12 and "Wraparound Addressing", p.6-25): compare I+M with
+    B+L and with B and correct by one +-L. There is no multi-lap loop, so
+    a modifier larger than L (which the manual forbids, p.6-26) can still
+    leave the result outside the buffer."""
     candidate = (index + delta) & 0xFFFFFFFF
-    lower, upper = base, base + length
-    if candidate < lower:
-        candidate += length
-    elif candidate >= upper:
+    if candidate >= base + length:
         candidate -= length
-    return candidate
+    elif candidate < base:
+        candidate += length
+    return candidate & 0xFFFFFFFF
+
+
+def _post_modify_index(
+    state: State,
+    index: int,
+    iv: Operand,
+    delta: Operand,
+    scale: int,
+    expression: str,
+) -> Operand:
+    """New value of I<INDEX> after a load/store post-modify by DELTA.
+
+    DELTA is the modifier already scaled to address units (M * SCALE, or
+    an immediate * SCALE); SCALE also scales L ("Circular buffering
+    interprets the length in terms of the unit size too", p.6-9; Table 6-2
+    `scaled_len`). With MODE1.CBUFEN set and L<INDEX> != 0 the update
+    wraps around B/L; with CBUFEN clear ("The DAGs perform normal
+    post-modify load and store accesses, ignoring the B and L register
+    values", p.6-26) or L == 0 ("its circular buffer operation is
+    disabled", p.6-26) it is a plain add. Pre-modify never reaches this
+    function: it neither updates I nor wraps (p.6-24 NOTE, Table 6-2).
+
+    When L or MODE1 is not a known constant the update stays linear (the
+    tracer cannot tell which rule applies); when B, I or DELTA is not
+    constant but wrapping is certain to be active, the result is a bounded
+    circ_ symbol if the caller bounded I, else Unknown -- the same
+    convention as Type19a_scaled."""
+    plain = _add(iv, delta, expression)
+    length = _ureg(state.uregs, UREG_CODES["L%d" % index])
+    mode1 = _ureg(state.uregs, UREG_CODES["MODE1"])
+    if not isinstance(length, Const) or not isinstance(mode1, Const):
+        return plain
+    if length.value == 0 or not mode1.value & MODE1_CBUFEN:
+        return plain
+    scaled_length = length.value * scale
+    base = _ureg(state.uregs, UREG_CODES["B%d" % index])
+    if isinstance(iv, Const) and isinstance(base, Const) and isinstance(delta, Const):
+        return Const(
+            _circular_step(
+                iv.value, base.value, scaled_length, _signed(delta.value, 32)
+            )
+        )
+    bounded = _stack_bounded_symbol(iv)
+    if (
+        bounded is not None
+        and isinstance(delta, Const)
+        and abs(bounded[1]) < scaled_length
+        and abs(_signed(delta.value, 32)) < scaled_length
+    ):
+        fresh = "%s%d_%x" % (CIRC_SYMBOL_PREFIX, index, state.pc_sw)
+        return Affine(constant=0, terms=((fresh, 1),))
+    return Unknown("circular post-modify I%d" % index)

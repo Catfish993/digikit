@@ -26,6 +26,7 @@ from .memory import (
     _access_modifier_scale,
     _dm_write,
     _load_normal_ureg,
+    _post_modify_index,
 )
 from .sequencer import (
     _advance,
@@ -44,7 +45,6 @@ from .state import (
 )
 from .values import (
     Const,
-    _add,
     _multiply,
 )
 
@@ -145,8 +145,13 @@ def _type_6a_mem(
             addressing_mode="post-modify",
             access_width="normal-word",
         )
-    state.uregs[16 + index] = _add(
-        iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+    state.uregs[16 + index] = _post_modify_index(
+        state,
+        index,
+        iv,
+        scaled_mv,
+        scale,
+        "I%d + M%d * %d" % (index, modifier, scale),
     )
     _apply_compute(state, insn, result)
     return _advance(state, insn)
