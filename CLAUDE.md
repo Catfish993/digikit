@@ -99,6 +99,19 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
 
 ## Shell and tests
 
+- SHARC crates: `native/sharc-rt` (runtime), `native/sharc-gen` (the
+  generated core from `SHARC_GEN_DIR`) and `native/sharc` (`sharc-native`:
+  engine and fast tier). Editing the engine or `fast/` rebuilds in about 20 s;
+  editing `sharc-rt` rebuilds the generated core (about 4 min), so keep
+  iteration out of it.
+- Timed runs and heavy builds share the machine through
+  `tools/benchlock.py` (shared for builds, exclusive for benchmarks;
+  `status` shows holders). `tools/native_pgo.py` and
+  `tools/sharc_regionbench.py` take it themselves; wrap ad-hoc runs with
+  `uv run python tools/benchlock.py run --exclusive -- CMD`.
+- Iterate DSP speed with `tools/sharc_regionbench.py` (one region, about
+  50 s per variant); use `tools/native_pgo.py bench-bins` (coupled, about
+  6 min) and `train` (PGO, about 6 min) only at milestones.
 - Tests: `uv run python -m pytest tests -q`. It skips tests
   marked `slow` (long firmware integration runs); add `--slow` before a
   commit. While working, run only the test files for the code you changed.
