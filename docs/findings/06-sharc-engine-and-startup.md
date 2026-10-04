@@ -5182,8 +5182,10 @@ I, then I <- I+M-L if I+M >= B+L, I+L+M if I+M < B, else I+M. CBUFEN clear or
 L == 0: plain add (p.6-26). Pre-modify never updates I and never wraps
 (p.6-24 NOTE, Table 6-2). In byte space M and L scale by the access size
 (p.6-9). MODIFY wraps regardless of CBUFEN (p.6-8, unchanged). Full rule list
-and form-to-code map: `out/native/circbuf/RULES.md`. **[V]** (manual re-read
-against the code, form by form; no second agent)
+and form-to-code map: `out/native/circbuf/RULES.md`. **[V]** for the forms
+implemented (a second agent checked rules, pages and code, 2026-10-05). The
+manual is silent or self-inconsistent on (lw) scaling, PM scaling and
+|M| > L, so those stay **[D]**.
 
 Changed: one helper `memory._post_modify_index` used by 3a, 3b, 3c, 3d, 4a, 4b,
 4d, 1a (DM and PM halves), 16a and 6a_mem. A bounded or unknown I with wrap
@@ -5200,3 +5202,14 @@ reached; wrap counts there need a running-state census. **[O]** Bit-reverse
 mode (BR0/BR8, p.6-27) and CB7I/CB15I sticky/interrupt on I7/I15 wrap
 (p.6-26, p.6-30) are not modelled; the second SIMD address is not wrapped
 (p.6-25). **[O]** |M| > L applies one correction (manual forbids it).
+**[O]** Types 1b and 10a (`ELSE DM(Ia,Mb)`) post-modify per the manual but
+have no handler in the core; they stop as unsupported, so nothing runs
+linear silently. **[O]** Pre-existing: Type 7a conditional MODIFY with
+(sw)/(nw) scales M but not L (`forms_dag.py` ~106-110); Table 6-2 scales L
+too (pp.6-10..6-11), as 19a_scaled already does. Fix: pass
+`length.value * scale_now` and use it in the |M| > L test.
+**[C]** The DN2 coupled workload (1,139 frames) makes 5,766,932 circular
+post-modifies, all on I7 (the software stack, B/L `0x2d08c0/0x3e2`,
+`0x26f000/0x1fd`, `0x269170/0xc2`), and none wraps
+(`tools/sharc_circstats.py`). The L7 values read earlier as delay lines are
+stack buffers; the coupled hashes and PCM are unchanged by the fix.
