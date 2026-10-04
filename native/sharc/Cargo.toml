@@ -17,6 +17,10 @@ sharc-gen = { path = "../sharc-gen" }
 [dev-dependencies]
 sharc-fast-cl = { path = "../sharc-fast-cl" }
 
+# fast-prof: per-phase cost marks in the fast tier's glue (region_bench fast-bench).
+[features]
+fast-prof = []
+
 [lib]
 name = "sharc_native"
 crate-type = ["cdylib", "rlib"]

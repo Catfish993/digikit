@@ -5,7 +5,7 @@
 //!
 //! ```c
 //! void*    sharc_fast_compile(const uint32_t* words, size_t n, char* err, size_t cap);
-//! uint32_t sharc_fast_run(void* kernel, uint8_t* ctx);
+//! uint32_t sharc_fast_run2(void* kernel, uint8_t* ctx, uint8_t* st);
 //! void     sharc_fast_free(void* kernel);
 //! ```
 
@@ -21,7 +21,7 @@ unsafe extern "C" {
 }
 
 type CompileFn = unsafe extern "C" fn(*const u32, usize, *mut c_char, usize) -> *mut c_void;
-type RunFn = unsafe extern "C" fn(*mut c_void, *mut u8) -> u32;
+type RunFn = unsafe extern "C" fn(*mut c_void, *mut u8, *mut u8) -> u32;
 type FreeFn = unsafe extern "C" fn(*mut c_void);
 
 #[derive(Clone, Copy)]
@@ -45,8 +45,8 @@ impl Drop for PluginKernel {
 }
 
 impl CompiledKernel for PluginKernel {
-    unsafe fn run(&self, ctx: *mut u8) -> u32 {
-        unsafe { (self.run)(self.handle, ctx) }
+    unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32 {
+        unsafe { (self.run)(self.handle, ctx, st) }
     }
 }
 
@@ -75,7 +75,7 @@ impl PluginBackend {
             };
             Ok(PluginBackend {
                 compile: std::mem::transmute::<*mut c_void, CompileFn>(sym("sharc_fast_compile")?),
-                run: std::mem::transmute::<*mut c_void, RunFn>(sym("sharc_fast_run")?),
+                run: std::mem::transmute::<*mut c_void, RunFn>(sym("sharc_fast_run2")?),
                 free: std::mem::transmute::<*mut c_void, FreeFn>(sym("sharc_fast_free")?),
             })
         }

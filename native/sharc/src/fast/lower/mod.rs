@@ -163,6 +163,12 @@ pub struct RegInfo {
     pub first_read: bool,
     pub first_write: Option<u32>,
     pub written: bool,
+    /// The kernel writes the register's final value straight into the engine
+    /// state (`StSt32`): the register is known at entry (read first, or every
+    /// register of a CFG kernel), so only its value changes. The other written
+    /// registers go through the context and the caller stores them only when
+    /// an instruction that ran wrote them.
+    pub direct: bool,
     pub f_uses: u32,
     pub i_uses: u32,
     /// The last write in the body was an f32 value.
@@ -1040,6 +1046,28 @@ impl Lower {
         }
         let mut pre = std::mem::take(&mut self.pre);
         let mut post = Vec::new();
+        // The kernel variables some instruction assigns (a body `Set` or an
+        // exit fix-up). An extra variable nothing assigns keeps its initial
+        // value, so storing it back is skipped where the caller does not need
+        // the slot (everything but the instruction and loop counts): the
+        // caller knows from `Lowered::stored` which slots hold a value.
+        let mut assigned = vec![false; self.vars.len()];
+        for i in &self.body {
+            if let Inst::Set(v, _) = i {
+                assigned[v.0 as usize] = true;
+            }
+        }
+        for list in &self.exits {
+            for &(v, _) in list {
+                assigned[v.0 as usize] = true;
+            }
+        }
+        let always = |off: u32| {
+            off == CTX_ICNT
+                || (CTX_LOOP_REM_OUT..CTX_LOOP_REM_OUT + 4 * MAX_CFG_LOOPS).contains(&off)
+                || (CTX_TAKEN..CTX_TAKEN + 4 * MAX_CFG_JUMPS).contains(&off)
+        };
+        let mut stored = Vec::new();
         for e in std::mem::take(&mut self.extras) {
             let ty = self.vars[e.var.0 as usize];
             let v = self.new_val(ty, None);
@@ -1051,10 +1079,13 @@ impl Lower {
                 },
             ));
             pre.push(Inst::Set(e.var, v));
-            if let Some(off) = e.out {
+            if let Some(off) = e.out
+                && (always(off) || assigned[e.var.0 as usize])
+            {
                 let g = self.new_val(ty, None);
                 post.push(Inst::Def(g, Op::GetVar(e.var)));
                 post.push(Inst::StCtx32 { off, v: g });
+                stored.push(off);
             }
         }
         for c in 0..NALL {
@@ -1062,8 +1093,22 @@ impl Lower {
                 && let Some(var) = self.regs[c].var
             {
                 let vty = self.vars[var.0 as usize];
+                self.regs[c].direct = c < NREGS as usize && (cfg || self.regs[c].first_read);
                 let li = self.new_val(Ty::I32, None);
-                pre.push(Inst::Def(li, Op::Ctx32(ctx_reg_in(c as u32))));
+                // Registers come straight from the engine state; of the
+                // pseudo registers only the entry ASTATX bits are not zero.
+                match c as u32 {
+                    c if c < NREGS => pre.push(Inst::Def(li, Op::St32(st_reg_b(c)))),
+                    PSEUDO_FB0 => pre.push(Inst::Def(li, Op::St32(st_reg_b(118)))),
+                    PSEUDO_CACC => {
+                        let a = self.new_val(Ty::I32, None);
+                        pre.push(Inst::Def(a, Op::St32(st_reg_b(118))));
+                        let m = self.new_val(Ty::I32, None);
+                        pre.push(Inst::Def(m, Op::CI32(0xff00_0000)));
+                        pre.push(Inst::Def(li, Op::Bin(Bin::And, a, m)));
+                    }
+                    _ => pre.push(Inst::Def(li, Op::CI32(0))),
+                }
                 let lv = if vty == Ty::F32 {
                     let f = self.new_val(Ty::F32, None);
                     pre.push(Inst::Def(f, Op::Un(Un::BitsToF, li)));
@@ -1082,10 +1127,17 @@ impl Lower {
                     } else {
                         g
                     };
-                    post.push(Inst::StCtx32 {
-                        off: ctx_reg_out(c as u32),
-                        v: gi,
-                    });
+                    if self.regs[c].direct {
+                        post.push(Inst::StSt32 {
+                            off: st_reg_b(c as u32),
+                            v: gi,
+                        });
+                    } else {
+                        post.push(Inst::StCtx32 {
+                            off: ctx_reg_out(c as u32),
+                            v: gi,
+                        });
+                    }
                 }
             }
         }
@@ -1169,6 +1221,7 @@ impl Lower {
             cacc: self.has_compare,
             wins: self.wins,
             flags: self.flags,
+            stored,
             next,
         })
     }
@@ -1186,6 +1239,9 @@ pub struct Lowered {
     pub reqs: Vec<Req>,
     pub wins: Vec<WinSpec>,
     pub flags: Vec<FlagWriter>,
+    /// The context slots the kernel's `post` writes for the extra variables
+    /// (CFG kernels); the others are not touched.
+    pub stored: Vec<u32>,
     pub next: Plan,
 }
 

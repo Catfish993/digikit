@@ -56,7 +56,17 @@ pub struct Mem {
     watch: Vec<u8>,
     pub code_gen: u64,
     pub dec_gen: u64,
+    /// Changes whenever a host pointer into a page or the present/dirty
+    /// state of a byte could have been invalidated: a page is allocated or
+    /// dropped, `eff` is recomputed, bits are cleared (`reset`, `restore`).
+    /// Writes only ever set present/dirty bits and do not change it. The
+    /// start value differs between `Mem`s, so a value cached against one
+    /// never matches another. The fast tier keeps resolved windows by it.
+    pub layout_gen: u64,
 }
+
+/// Start values of `Mem::layout_gen`, 2^40 apart.
+static NEXT_LAYOUT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1 << 40);
 
 const WATCH_CODE: u8 = 1;
 const WATCH_DECODE: u8 = 2;
@@ -88,6 +98,7 @@ impl Mem {
             watch: vec![0; NPAGES],
             code_gen: 0,
             dec_gen: 0,
+            layout_gen: NEXT_LAYOUT_GEN.fetch_add(1 << 40, std::sync::atomic::Ordering::Relaxed),
         }
     }
 
@@ -180,6 +191,7 @@ impl Mem {
 
     /// The pages that may hold an MMR (no fast path there).
     pub fn set_mmr_pages(&mut self, mmr: Vec<bool>) {
+        self.layout_gen += 1;
         self.mmr = mmr;
         for idx in 0..NPAGES {
             self.refresh_one(idx);
@@ -292,6 +304,13 @@ impl Mem {
         Some(unsafe { (&mut *p).data.as_mut_ptr().add(off) })
     }
 
+    /// What `window` does for a write window whose pointer is already
+    /// resolved (valid while `layout_gen` is unchanged): the code-watch bump.
+    #[inline(always)]
+    pub fn note_window_write(&mut self, a: u32) {
+        self.note_write(a);
+    }
+
     /// Add loader-image bytes at byte address A (building the image).
     pub fn load(&mut self, a: u32, bytes: &[u8]) {
         self.code_gen += 1;
@@ -308,6 +327,7 @@ impl Mem {
 
     /// Discard every overlay byte: memory is the loader image again.
     pub fn reset(&mut self) {
+        self.layout_gen += 1;
         self.code_gen += 1;
         self.dec_gen += 1;
         for idx in 0..NPAGES {
@@ -462,6 +482,7 @@ impl Mem {
         self.note_write(a);
         let idx = (a >> PAGE_BITS) as usize;
         if self.pages[idx].is_none() {
+            self.layout_gen += 1;
             self.pages[idx] = Some(Page::empty());
             self.refresh(idx);
         }
@@ -562,6 +583,7 @@ impl Mem {
 
     /// Undo a write_byte.
     pub fn restore(&mut self, a: u32, byte: u8, flags: u8) {
+        self.layout_gen += 1;
         self.note_write(a);
         if let Some(p) = self.pages[(a >> PAGE_BITS) as usize].as_deref_mut() {
             let off = (a as usize) & (PAGE_SIZE - 1);
