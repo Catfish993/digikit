@@ -18,6 +18,7 @@ CLEAN = [
     "tools/native_emu.sh",
     "tools/native_pgo.py",
     "tools/native_target.py",
+    "tests/test_native_pgo.py",
     "tests/test_native_target.py",
     "tests/test_native_emu_launcher.py",
     "tools/sharc_mmr_reset.py",

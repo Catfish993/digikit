@@ -161,8 +161,27 @@ def cargo_command(args: list[str], pgo: object | None = None) -> list[str]:
     return [*command, "--", *args]
 
 
+def train_profile() -> str:
+    """Run `native_pgo.py train`; returns "" on success, else why it failed."""
+    try:
+        done = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "native_pgo.py"), "train"],
+            cwd=ROOT,
+            check=False,
+        )
+    except OSError as exc:
+        return f"could not start training: {exc}"
+    return f"training failed (exit {done.returncode})" if done.returncode else ""
+
+
 def pgo_plan(args: list[str]) -> object | None:
-    """Profile-use plan for the coupled build, or None (with a notice) for the ordinary build."""
+    """Profile-use plan for the coupled build, or None for the ordinary build.
+
+    A stale or missing profile is retrained here when the training inputs
+    exist (DIGI_EMU_PGO_TRAIN=0 skips that); DIGI_EMU_PGO=0 skips PGO. Any
+    failure falls back to the ordinary build with a WARNING line: launching is
+    never blocked.
+    """
     if "--coupled" not in args and "--auto-coupled" not in args:
         return None
     sys.path.insert(0, str(ROOT / "tools"))
@@ -172,10 +191,31 @@ def pgo_plan(args: list[str]) -> object | None:
         return None
     finally:
         sys.path.pop(0)
-    plan, notice = native_pgo.launch_plan(os.environ)
-    if notice:
-        print(notice, file=sys.stderr)
-    return plan
+    environ = os.environ
+    status, detail = native_pgo.pgo_state(environ)
+    if status == "off":
+        return None
+    if status in ("stale", "missing") and environ.get("DIGI_EMU_PGO_TRAIN") != "0":
+        blocker = native_pgo.training_blocker(environ)
+        if blocker:
+            detail = f"{detail}; cannot train: {blocker}"
+        else:
+            print(
+                f"native PGO: profile {status} ({detail}); training (~6 min, "
+                "DIGI_EMU_PGO_TRAIN=0 to skip)",
+                file=sys.stderr,
+                flush=True,
+            )
+            failure = train_profile()
+            if failure:
+                status, detail = "failed", failure
+            else:
+                status, detail = native_pgo.pgo_state(environ)
+    if status != "ok":
+        print(native_pgo.fallback_notice(status, detail), file=sys.stderr)
+        return None
+    print("native PGO: using profile " + pathlib.Path(detail).name, file=sys.stderr)
+    return native_pgo.plan_for(detail, environ)
 
 
 def main(args: list[str] | None = None) -> None:

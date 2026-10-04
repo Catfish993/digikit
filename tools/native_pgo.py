@@ -18,7 +18,9 @@ Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
 
 The training workload is the ignored test ``coupled_ready_exactness``. It
 needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
-The launcher (``tools/native_emu.sh``) imports :func:`launch_plan`.
+The launcher (``tools/native_emu.sh``) retrains a stale profile itself. The key
+covers the emulation crates only (not packages/), so a desktop-crate edit
+leaves the profile current.
 
 The toolchain must be the rustup 1.98.1 distribution: a Homebrew rustc has the
 same version string but different LLVM, and cannot read these profiles.
@@ -175,8 +177,22 @@ def tree_digest(
     return outer.hexdigest(), count
 
 
+DESKTOP_DIR = str(pathlib.PurePosixPath(MANIFEST_PATH).parent)
+
+
+def is_emulation_package(rel: str) -> bool:
+    """True for a crate that shapes hot code; the UI shell under packages/ does not.
+
+    The profile is keyed by the emulation code only. A slightly stale profile is
+    safe: LLVM ignores profile data for functions whose CFG hash changed, so a
+    desktop-crate edit costs nothing, while a profile treated as stale makes the
+    launcher fall back to a non-PGO build (about 30% slower DSP).
+    """
+    return pathlib.PurePosixPath(rel).parts[:1] != ("packages",)
+
+
 def local_package_dirs() -> list[str]:
-    """Repo-relative directories of the local crates in the coupled build graph."""
+    """Repo-relative directories of the emulation crates in the coupled build graph."""
     out = subprocess.run(
         [
             "rustup",
@@ -204,7 +220,7 @@ def local_package_dirs() -> list[str]:
             dirs.add(
                 str(pathlib.Path(package["manifest_path"]).parent.relative_to(ROOT))
             )
-    return sorted(dirs)
+    return sorted(d for d in dirs if is_emulation_package(d))
 
 
 def fast_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
@@ -232,6 +248,8 @@ def compute_components(
     outer = hashlib.sha256()
     files = 0
     for rel in packages:
+        if not is_emulation_package(rel):
+            continue
         digest, count = tree_digest(hasher, ROOT / rel, ROOT, {"gen"})
         outer.update(f"{rel}\0{digest}\n".encode())
         files += count
@@ -265,26 +283,40 @@ def read_manifest() -> dict[str, object] | None:
         return None
 
 
-def check(gen: pathlib.Path | None = None, fast: str = "") -> tuple[str, str]:
-    """Return (status, detail): status is ok, stale or missing."""
+def desktop_digest(hasher: FileHasher) -> str:
+    """Digest of the desktop crate: recorded for reporting, not part of the key."""
+    return tree_digest(hasher, ROOT / DESKTOP_DIR, ROOT, set())[0]
+
+
+def check_state(
+    gen: pathlib.Path | None = None, fast: str = ""
+) -> tuple[str, str, bool]:
+    """Return (status, detail, desktop_changed); status is ok, stale or missing."""
     manifest = read_manifest()
     if manifest is None:
-        return "missing", "no manifest"
+        return "missing", "no manifest", False
     profdata = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
     if not profdata.is_file():
-        return "missing", f"profile file {profdata} is gone"
+        return "missing", f"profile file {profdata} is gone", False
     if not toolchain_dir().is_dir():
-        return "stale", f"rustup toolchain {TOOLCHAIN} is not installed"
+        return "stale", f"rustup toolchain {TOOLCHAIN} is not installed", False
     hasher = FileHasher(state_dir() / "hash-cache.json")
     components, _ = compute_components(
         list(manifest["packages"]), gen or generated_dir(), hasher, fast
     )  # type: ignore[call-overload]
+    desktop = desktop_digest(hasher)
     hasher.save()
     old = manifest["components"]
     changed = [name for name, value in components.items() if old.get(name) != value]  # type: ignore[attr-defined]
     if changed:
-        return "stale", "changed: " + ", ".join(changed)
-    return "ok", str(profdata)
+        return "stale", "changed: " + ", ".join(changed), False
+    return "ok", str(profdata), manifest.get("desktop_sha256") != desktop
+
+
+def check(gen: pathlib.Path | None = None, fast: str = "") -> tuple[str, str]:
+    """Return (status, detail): status is ok, stale or missing."""
+    status, detail, _ = check_state(gen, fast)
+    return status, detail
 
 
 def profile_use_flags(profdata: str) -> str:
@@ -298,6 +330,57 @@ class LaunchPlan:
     env: dict[str, str]
 
 
+def pgo_state(
+    environ: dict[str, str] | os._Environ[str] | None = None,
+) -> tuple[str, str]:
+    """The launcher's view of the profile: (status, detail).
+
+    Status is off (opted out or unsupported host, stay silent), skipped
+    (RUSTFLAGS is set), or what :func:`check` returns: ok, stale, missing.
+    """
+    environ = os.environ if environ is None else environ
+    if environ.get("DIGI_EMU_PGO") == "0" or not supported_host():
+        return "off", ""
+    if environ.get("RUSTFLAGS") or environ.get("CARGO_ENCODED_RUSTFLAGS"):
+        return "skipped", "RUSTFLAGS is set"
+    return check(generated_dir(environ), environ.get("SHARC_FAST_REGIONS", ""))
+
+
+def plan_for(
+    profdata: str, environ: dict[str, str] | os._Environ[str] | None = None
+) -> LaunchPlan:
+    environ = os.environ if environ is None else environ
+    return LaunchPlan(
+        prefix=["rustup", "run", TOOLCHAIN],
+        cargo_args=[
+            "--target",
+            TRIPLE,
+            "--target-dir",
+            str(native_target().target_dir(generated_dir(environ), "pgo-use")),
+        ],
+        env={"RUSTFLAGS": profile_use_flags(profdata)},
+    )
+
+
+def fallback_notice(status: str, detail: str) -> str:
+    if status == "skipped":
+        return f"WARNING: native PGO: skipped ({detail}); building without PGO"
+    what = detail if status == "failed" else f"profile {status} ({detail})"
+    return (
+        f"WARNING: native PGO: {what}; building without PGO "
+        "(about 30% slower DSP). Run tools/native_pgo.py train"
+    )
+
+
+def training_blocker(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
+    """Why `train` cannot run here ("" when it can)."""
+    try:
+        require_inputs(generated_dir(environ))
+    except SystemExit as exc:
+        return str(exc)
+    return ""
+
+
 def launch_plan(
     environ: dict[str, str] | os._Environ[str] | None = None,
 ) -> tuple[LaunchPlan | None, str]:
@@ -306,27 +389,14 @@ def launch_plan(
     An empty notice means stay silent (opted out or unsupported host).
     """
     environ = os.environ if environ is None else environ
-    if environ.get("DIGI_EMU_PGO") == "0" or not supported_host():
+    status, detail = pgo_state(environ)
+    if status == "off":
         return None, ""
-    if environ.get("RUSTFLAGS") or environ.get("CARGO_ENCODED_RUSTFLAGS"):
-        return None, "native PGO: skipped (RUSTFLAGS is set)"
-    status, detail = check(
-        generated_dir(environ), environ.get("SHARC_FAST_REGIONS", "")
-    )
     if status != "ok":
-        suffix = f" ({detail})" if status == "stale" else ""
-        return None, f"native PGO: {status}{suffix}; run tools/native_pgo.py train"
-    plan = LaunchPlan(
-        prefix=["rustup", "run", TOOLCHAIN],
-        cargo_args=[
-            "--target",
-            TRIPLE,
-            "--target-dir",
-            str(native_target().target_dir(generated_dir(environ), "pgo-use")),
-        ],
-        env={"RUSTFLAGS": profile_use_flags(detail)},
-    )
-    return plan, "native PGO: using profile " + pathlib.Path(detail).name
+        return None, fallback_notice(status, detail)
+    return plan_for(detail, environ), "native PGO: using profile " + pathlib.Path(
+        detail
+    ).name
 
 
 # --- training and benchmarking -------------------------------------------------
@@ -506,6 +576,7 @@ def cmd_train(args: argparse.Namespace) -> None:
     hasher = FileHasher(state / "hash-cache.json")
     fast = fast_regions()
     components, nfiles = compute_components(packages, gen, hasher, fast)
+    desktop = desktop_digest(hasher)
     hasher.save()
     key = key_of(components)
     t = phase("key", t)
@@ -557,6 +628,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         "key": key,
         "components": components,
         "packages": packages,
+        "desktop_sha256": desktop,
         "generated_dir": str(gen),
         "fast_regions": fast,
         "file_count": nfiles,
@@ -587,8 +659,11 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 def cmd_check(_: argparse.Namespace) -> int:
     began = time.monotonic()
-    status, detail = check(None, fast_regions())
-    print(f"{status} {detail}" if status != "missing" else f"missing ({detail})")
+    status, detail, desktop = check_state(None, fast_regions())
+    if status == "ok" and desktop:
+        print("ok (desktop crate changed; profile reused)")
+    else:
+        print(f"{status} {detail}" if status != "missing" else f"missing ({detail})")
     print(f"check took {time.monotonic() - began:.3f} s", file=sys.stderr)
     return 0 if status == "ok" else 1
 

@@ -1,6 +1,8 @@
 """The launcher restores local DN2 audio by default, with CF-only escape hatches."""
 
 import runpy
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -115,6 +117,7 @@ def test_normal_launcher_arguments_get_audio_without_replacing_firmware(
     monkeypatch.setitem(globals_, "READY", ready)
     monkeypatch.setitem(globals_, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
+    monkeypatch.setenv("DIGI_EMU_PGO", "0")
     calls = []
     monkeypatch.setattr(
         "subprocess.run", lambda command, **_kwargs: calls.append(command)
@@ -230,3 +233,131 @@ def test_cargo_command_uses_the_gen_keyed_target_dir(monkeypatch, tmp_path):
     target = coupled[coupled.index("--target-dir") + 1]
     assert target.endswith("out/native/target/generic")
     assert coupled.index("--target-dir") < coupled.index("--")
+
+
+# --- PGO decisions --------------------------------------------------------------
+
+COUPLED = ["x.syx", "--coupled"]
+
+
+@pytest.fixture
+def pgo(monkeypatch):
+    """The real native_pgo module with its state, blocker and subprocess mocked."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import native_pgo
+    finally:
+        sys.path.pop(0)
+    for name in ("DIGI_EMU_PGO", "DIGI_EMU_PGO_TRAIN"):
+        monkeypatch.delenv(name, raising=False)
+    box = type("Box", (), {})()
+    box.states = [("stale", "changed: sources")]  # consumed one per pgo_state call
+    box.blocker = ""
+    box.train_exit = 0
+    box.commands = []
+
+    def pgo_state(_environ=None):
+        return box.states.pop(0) if len(box.states) > 1 else box.states[0]
+
+    def run(command, **_kwargs):
+        box.commands.append(command)
+        return subprocess.CompletedProcess(command, box.train_exit)
+
+    monkeypatch.setattr(native_pgo, "pgo_state", pgo_state)
+    monkeypatch.setattr(native_pgo, "training_blocker", lambda _env=None: box.blocker)
+    monkeypatch.setattr(
+        native_pgo, "plan_for", lambda detail, _env=None: ("plan", detail)
+    )
+    monkeypatch.setattr(subprocess, "run", run)
+    return box
+
+
+def trained(box):
+    return [c for c in box.commands if c[-1] == "train"]
+
+
+def test_stale_profile_trains_then_uses_the_new_one(pgo, capsys):
+    pgo.states = [("stale", "changed: sources"), ("ok", "/p/abc.profdata")]
+    plan = launcher()["pgo_plan"](COUPLED)
+    assert plan == ("plan", "/p/abc.profdata")
+    assert len(trained(pgo)) == 1
+    err = capsys.readouterr().err.splitlines()
+    assert err[0] == (
+        "native PGO: profile stale (changed: sources); training (~6 min, "
+        "DIGI_EMU_PGO_TRAIN=0 to skip)"
+    )
+    assert err[-1] == "native PGO: using profile abc.profdata"
+
+
+def test_missing_profile_trains_too(pgo, capsys):
+    pgo.states = [("missing", "no manifest"), ("ok", "/p/abc.profdata")]
+    assert launcher()["pgo_plan"](COUPLED) is not None
+    assert "profile missing (no manifest); training" in capsys.readouterr().err
+
+
+def test_current_profile_does_not_train(pgo):
+    pgo.states = [("ok", "/p/abc.profdata")]
+    assert launcher()["pgo_plan"](COUPLED) == ("plan", "/p/abc.profdata")
+    assert pgo.commands == []
+
+
+def test_train_opt_out_falls_back_with_a_warning(pgo, monkeypatch, capsys):
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "0")
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert pgo.commands == []
+    err = capsys.readouterr().err
+    assert err.startswith("WARNING: native PGO: profile stale (changed: sources)")
+
+
+def test_pgo_opt_out_is_silent(pgo, monkeypatch, capsys):
+    pgo.states = [("off", "")]
+    monkeypatch.setenv("DIGI_EMU_PGO", "0")
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert pgo.commands == []
+    assert capsys.readouterr().err == ""
+
+
+def test_training_failure_falls_back_without_blocking(pgo, capsys):
+    pgo.train_exit = 3
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert len(trained(pgo)) == 1
+    err = capsys.readouterr().err
+    assert "WARNING: native PGO: training failed (exit 3); building without PGO" in err
+
+
+def test_training_that_leaves_the_profile_stale_falls_back(pgo, capsys):
+    pgo.states = [("stale", "changed: sources"), ("stale", "changed: rustc")]
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert (
+        "WARNING: native PGO: profile stale (changed: rustc)" in capsys.readouterr().err
+    )
+
+
+def test_missing_training_inputs_fall_back_without_training(pgo, capsys):
+    pgo.blocker = "missing private input /x"
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert pgo.commands == []
+    err = capsys.readouterr().err
+    assert err.startswith("WARNING: native PGO:")
+    assert "cannot train: missing private input /x" in err
+
+
+def test_rustflags_skip_warns_and_never_trains(pgo, capsys):
+    pgo.states = [("skipped", "RUSTFLAGS is set")]
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert pgo.commands == []
+    assert capsys.readouterr().err.startswith("WARNING: native PGO: skipped")
+
+
+def test_cf_only_build_never_asks_about_pgo(pgo):
+    assert launcher()["pgo_plan"](["x.syx"]) is None
+    assert pgo.commands == []
+
+
+def test_train_command_failure_to_start_falls_back(pgo, monkeypatch, capsys):
+    def boom(*_a, **_k):
+        raise OSError("no python")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert "could not start training: no python" in capsys.readouterr().err
