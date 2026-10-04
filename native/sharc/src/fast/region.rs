@@ -11,6 +11,7 @@
 
 use super::cfg::{self, CfgMeta};
 use super::decode_view::Dec;
+use super::glue::{NwHull, RegChk, WinCache, nw_hulls, reduce_flags, reg_checks};
 use super::ir::*;
 use super::lower::{Env, Lower, Lowered, Plan, Refuse};
 use super::{FlagWriter, Req, WinSpec};
@@ -34,6 +35,8 @@ pub struct LoopSpec {
 pub struct RegMeta {
     pub code: u8,
     pub written: bool,
+    /// The kernel stores the final value into the engine state itself.
+    pub direct: bool,
     pub first_write: Option<u32>,
 }
 
@@ -58,12 +61,24 @@ pub struct Region {
     pub flag_groups: [bool; 3],
     /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
     pub cacc: bool,
-    /// Registers the kernel reads (their values go into the context) and
-    /// those it writes, with the instruction of the first write.
+    /// Registers the kernel reads (straight from the engine state) and the
+    /// ones it writes through the context, with the instruction of the first
+    /// write: the caller stores those a run wrote. (The kernel stores the
+    /// other written registers itself.)
     pub inputs: Vec<u8>,
     pub outputs: Vec<(u8, u32)>,
     pub wins: Vec<WinSpec>,
     pub flags: Vec<FlagWriter>,
+    /// `flags` without the writers a later one overwrites completely: what a
+    /// run to the end has to replay (`glue::reduce_flags`).
+    pub full_flags: Vec<FlagWriter>,
+    /// The `nw` requirements grouped by (base, stride): the hull of each
+    /// group is checked first (`glue::NwHull`).
+    pub nw_hull: Vec<NwHull>,
+    /// `known` and `eqs` as one flat list of masked compares (`glue::RegChk`).
+    pub chk: Vec<RegChk>,
+    /// The window the last run resolved in each slot (`glue::WinCache`).
+    pub wcache: Vec<std::cell::Cell<WinCache>>,
     pub kernel: Kernel,
     /// The code words the region was made from (re-checked when
     /// `Mem::dec_gen` moves).
@@ -189,6 +204,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         regs.push(RegMeta {
             code: c as u8,
             written: r.written,
+            direct: r.direct,
             first_write: r.first_write,
         });
     }
@@ -206,6 +222,10 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         }
     }
     let last_len_bytes = (decs.last().unwrap().1.len_sw * 2) as u8;
+    let full_flags = reduce_flags(&out.flags);
+    let nw_hull = nw_hulls(&reqs);
+    let wcache = vec![std::cell::Cell::new(WinCache::NONE); out.wins.len()];
+    let chk = reg_checks(&reqs);
     Ok(Region {
         entry_pc: pc,
         lp,
@@ -253,12 +273,16 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
-            .filter(|m| m.written && (m.code as u32) < NREGS)
+            .filter(|m| m.written && !m.direct && (m.code as u32) < NREGS)
             .map(|m| (m.code, m.first_write.unwrap_or(u32::MAX)))
             .collect(),
         regs,
         reqs,
         wins: out.wins,
+        full_flags,
+        nw_hull,
+        chk,
+        wcache,
         flags: out.flags,
         kernel: out.kernel,
         code_words,
@@ -343,6 +367,7 @@ fn assemble_cfg(
         regs.push(RegMeta {
             code: c as u8,
             written: r.written,
+            direct: r.direct,
             first_write: r.first_write,
         });
     }
@@ -414,6 +439,13 @@ fn assemble_cfg(
         n_entry,
         jumps,
         deepest_in_region: deepest,
+        events: out.stored.iter().any(|&o| {
+            o == CTX_LCNTR
+                || o == CTX_LCNTR + 4
+                || o == CTX_STK26
+                || o == CTX_DIDPC
+                || (CTX_SLOT_LAST..CTX_SLOT_LAST + 4 * MAX_SLOTS).contains(&o)
+        }),
         stops: st
             .nodes
             .values()
@@ -423,6 +455,9 @@ fn assemble_cfg(
             })
             .collect(),
     };
+    let nw_hull = nw_hulls(&reqs);
+    let wcache = vec![std::cell::Cell::new(WinCache::NONE); out.wins.len()];
+    let chk = reg_checks(&reqs);
     Ok(Region {
         entry_pc: pc,
         lp: None,
@@ -463,12 +498,16 @@ fn assemble_cfg(
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
-            .filter(|m| m.written && (m.code as u32) < NREGS)
+            .filter(|m| m.written && !m.direct && (m.code as u32) < NREGS)
             .map(|m| (m.code, 0))
             .collect(),
         regs,
         reqs,
         wins: out.wins,
+        full_flags: Vec::new(),
+        nw_hull,
+        chk,
+        wcache,
         flags: Vec::new(),
         kernel: out.kernel,
         code_words,

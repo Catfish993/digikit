@@ -434,6 +434,17 @@ fn bench(args: &[String]) {
 /// an engine with both would run). Same call plan, restore and trimming as
 /// `bench`. The fast region is built (and compiled) before timing starts;
 /// its compile time is reported.
+/// `fe.run` with the per-phase marks of bucket B (feature `fast-prof`).
+fn prof_run(fe: &mut sharc_native::fast::FastEngine, s: &mut St, pc: u32, _b: usize) -> u32 {
+    use sharc_native::fast::FastTier;
+    #[cfg(feature = "fast-prof")]
+    sharc_native::fast::glue::prof::outer_start(_b);
+    let c = fe.run(s, pc).unwrap_or(EXIT_TRAP);
+    #[cfg(feature = "fast-prof")]
+    sharc_native::fast::glue::prof::outer_end();
+    c
+}
+
 fn fast_bench(args: &[String]) {
     use sharc_native::fast::{FastEngine, FastTier};
     let image = std::fs::read(&args[0]).expect("image");
@@ -455,13 +466,31 @@ fn fast_bench(args: &[String]) {
             let light = Light::save(&e.s);
             let mut fe = FastEngine::new(Box::<sharc_fast_cl::ClBackend>::default(), &[pc]);
             // Build and check it runs from the captured state.
-            let built = call_region_with(&mut e, |s| fe.run(s, pc).unwrap_or(EXIT_TRAP));
+            let built = call_region_with(&mut e, |s| prof_run(&mut fe, s, pc, 0));
             assert!(
                 built.1 > 0,
                 "fast tier declined at the captured entry: {}",
                 fe.report()
             );
             let one_iter = fe.region(pc).map_or(1, |r| r.len() as u64);
+            if let Some(r) = fe.region(pc) {
+                eprintln!(
+                    "region {pc:X}: {} insns{} lp={} inputs={} outputs={} wins={} known={} eqs={} nw={} misc={} flags={} groups={:?} kernel_ops={}",
+                    r.len(),
+                    if r.cfg.is_some() { " (cfg)" } else { "" },
+                    r.lp.is_some(),
+                    r.inputs.len(),
+                    r.outputs.len(),
+                    r.wins.len(),
+                    r.known.len(),
+                    r.eqs.len(),
+                    r.nw.len(),
+                    r.misc.len(),
+                    r.flags.len(),
+                    r.flag_groups,
+                    r.kernel.inst_count()
+                );
+            }
             // The generated block the engine would run where the kernel stops.
             let tail = e.dispatch.get_entry(e.s.pc_sw);
             light.restore(&mut e.s);
@@ -471,6 +500,8 @@ fn fast_bench(args: &[String]) {
                 ("fast_loop", Vec::with_capacity(calls), 0),
                 ("fast_total", Vec::with_capacity(calls), 0),
                 ("fast_1iter", Vec::with_capacity(calls), 0),
+                // The harness alone: restore, timer, the closure that does nothing.
+                ("null", Vec::with_capacity(calls), 0),
             ];
             for i in 0..warm + calls {
                 for (which, (_, times, ksum)) in series.iter_mut().enumerate() {
@@ -480,21 +511,22 @@ fn fast_bench(args: &[String]) {
                         0 => call_region(&mut e, entry.f).1,
                         1 => {
                             std::hint::black_box(call_region_with(&mut e, |s| {
-                                fe.run(s, pc).unwrap_or(EXIT_TRAP)
+                                prof_run(&mut fe, s, pc, 1)
                             }))
                             .1
                         }
+                        4 => std::hint::black_box(call_region_with(&mut e, |_| 0)).1,
                         3 => {
                             // One iteration only: the fixed cost of a call.
                             std::hint::black_box(call_region_with(&mut e, |s| {
                                 s.limit = s.icount + one_iter;
-                                fe.run(s, pc).unwrap_or(EXIT_TRAP)
+                                prof_run(&mut fe, s, pc, 3)
                             }))
                             .1
                         }
                         _ => {
                             std::hint::black_box(call_region_with(&mut e, |s| {
-                                let c = fe.run(s, pc).unwrap_or(EXIT_TRAP);
+                                let c = prof_run(&mut fe, s, pc, 2);
                                 if let Some(t) = tail {
                                     (t.f)(s);
                                 }
@@ -509,6 +541,27 @@ fn fast_bench(args: &[String]) {
                         *ksum += k;
                     }
                 }
+            }
+            #[cfg(feature = "fast-prof")]
+            {
+                use sharc_native::fast::glue::prof;
+                let f = prof::freq() as f64;
+                for (b, name) in [(1, "fast_loop"), (3, "fast_1iter")] {
+                    let (ticks, n) = prof::take(b);
+                    // Mean ns per call by phase (warm-up calls included).
+                    let parts: Vec<String> = prof::PHASES
+                        .iter()
+                        .zip(&ticks)
+                        .map(|(p, t)| {
+                            format!("\"{p}\":{:.1}", *t as f64 / n.max(1) as f64 * 1e9 / f)
+                        })
+                        .collect();
+                    println!(
+                        "{{\"region\":\"{pc:X}\",\"mode\":\"prof_{name}\",\"rep\":{rep},\"calls\":{n},{}}}",
+                        parts.join(",")
+                    );
+                }
+                let _ = prof::take(2);
             }
             for (name, mut times, ksum) in series {
                 times.sort_unstable();

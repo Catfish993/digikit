@@ -102,6 +102,9 @@ pub enum Op {
     Ctx64(u32),
     /// A 32-bit context word read as an f32 (the kernel constant pool).
     CtxF32(u32),
+    /// A 32-bit word of the engine state at a byte offset from the state
+    /// pointer the kernel is called with (`st_reg_b`: the value of a register).
+    St32(u32),
     Un(Un, Val),
     Bin(Bin, Val, Val),
     /// `Select(c, a, b)`: a when c != 0, else b.
@@ -125,6 +128,11 @@ pub enum Inst {
         v: Val,
     },
     StCtx32 {
+        off: u32,
+        v: Val,
+    },
+    /// Store the raw 32 bits of an i32 or f32 value into the engine state.
+    StSt32 {
         off: u32,
         v: Val,
     },
@@ -250,6 +258,19 @@ pub const fn pseudo_flag(group: u32, part: u32) -> u32 {
 /// initialised from the entry ASTATX, written out for the glue.
 pub const PSEUDO_CACC: u32 = NREGS + 1 + 3 * NGROUPS;
 
+/// Where the kernel finds the engine state: it is called with a pointer to
+/// the `St` it runs on, and reads and writes register values at these byte
+/// offsets from it (`Op::St32`, `Inst::StSt32`). The offsets are constants of
+/// the build that lowers the region (`offset_of!`), carried in the kernel's
+/// operations, so a backend needs no knowledge of the engine's layout (a
+/// WebAssembly backend gets the same numbers: the state lives in its linear
+/// memory).
+pub const fn st_reg_b(code: u32) -> u32 {
+    (std::mem::offset_of!(crate::rt::St, r)
+        + std::mem::size_of::<crate::rt::V>() * code as usize
+        + std::mem::offset_of!(crate::rt::V, b)) as u32
+}
+
 pub const fn win_ptr(w: u32) -> u32 {
     CTX_WIN + WIN_STRIDE * w
 }
@@ -369,7 +390,7 @@ impl Kernel {
                             None => return err("undeclared value"),
                         };
                         let got = match op {
-                            Op::CI32(_) | Op::Ctx32(_) => Ty::I32,
+                            Op::CI32(_) | Op::Ctx32(_) | Op::St32(_) => Ty::I32,
                             Op::CF32(_) | Op::CtxF32(_) => Ty::F32,
                             Op::CI64(_) | Op::Ctx64(_) => Ty::I64,
                             Op::GetVar(v) => match self.vars.get(v.0 as usize) {
@@ -455,7 +476,7 @@ impl Kernel {
                             return err("store operand types");
                         }
                     }
-                    Inst::StCtx32 { v, .. } => {
+                    Inst::StCtx32 { v, .. } | Inst::StSt32 { v, .. } => {
                         // The raw 32 bits of an i32 or f32 value.
                         if !use_ok(v) || !matches!(ty(v), Some(Ty::I32 | Ty::F32)) {
                             return err("ctx store operand");
@@ -528,13 +549,16 @@ impl fmt::Display for Kernel {
     }
 }
 
-/// A compiled kernel: `run(ctx)` executes it on a context buffer laid out
-/// as above and returns 0 for normal completion, 1 for a guard exit.
+/// A compiled kernel: `run(ctx, st)` executes it on a context buffer laid
+/// out as above and the engine state `st`, and returns 0 for normal
+/// completion, 1 for a guard exit.
 pub trait CompiledKernel {
     /// # Safety
     /// `ctx` points to a buffer of at least `CTX_SIZE` bytes,
-    /// 8-byte aligned, whose window pointers cover every access.
-    unsafe fn run(&self, ctx: *mut u8) -> u32;
+    /// 8-byte aligned, whose window pointers cover every access; `st` points
+    /// to the `St` the region was built for, valid for reads and writes of
+    /// the offsets the kernel names (`st_reg_b`).
+    unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32;
 }
 
 /// A kernel compiler (the reference interpreter, Cranelift, later wasm).
@@ -651,6 +675,7 @@ impl Kernel {
                             Op::Bin(b, x, y) => w.extend([8, bin_code(b), x, y]),
                             Op::Select(c, a, b) => w.extend([9, c, a, b]),
                             Op::Load32 { base, off } => w.extend([10, base, off]),
+                            Op::St32(o) => w.extend([11, o]),
                         }
                     }
                     Inst::Set(v, x) => w.extend([1, v.0, x]),
@@ -662,6 +687,7 @@ impl Kernel {
                     Inst::Jump(l) => w.extend([7, l]),
                     Inst::BrIf { c, target } => w.extend([8, c, target]),
                     Inst::Leave { k, exit } => w.extend([9, k, exit]),
+                    Inst::StSt32 { off, v } => w.extend([10, off, v]),
                 }
             }
         }
@@ -725,6 +751,7 @@ impl Kernel {
                                 base: next()?,
                                 off: next()?,
                             },
+                            11 => Op::St32(next()?),
                             o => return Err(format!("bad op {o}")),
                         };
                         Inst::Def(d, op)
@@ -760,6 +787,10 @@ impl Kernel {
                         k: next()?,
                         exit: next()?,
                     },
+                    10 => Inst::StSt32 {
+                        off: next()?,
+                        v: next()?,
+                    },
                     t => return Err(format!("bad inst {t}")),
                 };
                 insts.push(inst);
@@ -791,6 +822,7 @@ mod tests {
                 Ty::F32,
                 Ty::F32,
                 Ty::I32,
+                Ty::I32,
             ],
             ..Kernel::default()
         };
@@ -798,6 +830,8 @@ mod tests {
             Inst::Def(1, Op::Ctx64(win_ptr(0))),
             Inst::Def(0, Op::CI32(0)),
             Inst::Set(Var(0), 0),
+            // A register straight from the engine state.
+            Inst::Def(7, Op::St32(st_reg_b(3))),
         ];
         k.body = vec![
             Inst::Def(2, Op::GetVar(Var(0))),
@@ -814,6 +848,10 @@ mod tests {
             Inst::StCtx32 {
                 off: CTX_FSRC,
                 v: 4,
+            },
+            Inst::StSt32 {
+                off: st_reg_b(4),
+                v: 7,
             },
         ];
         k.exits = vec![vec![(Var(0), 2)]];

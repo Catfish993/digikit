@@ -82,6 +82,7 @@ impl InterpKernel {
         vals: &mut [Slot],
         vars: &mut [Slot],
         ctx: *mut u8,
+        st: *mut u8,
     ) -> Option<u32> {
         let rd32 = |off: u32| unsafe { (ctx.add(off as usize) as *const u32).read_unaligned() };
         let rd64 = |off: u32| unsafe { (ctx.add(off as usize) as *const u64).read_unaligned() };
@@ -110,6 +111,9 @@ impl InterpKernel {
                         Op::Ctx32(o) => rd32(o) as u64,
                         Op::Ctx64(o) => rd64(o),
                         Op::CtxF32(o) => rd32(o) as u64,
+                        Op::St32(o) => unsafe {
+                            (st.add(o as usize) as *const u32).read_unaligned() as u64
+                        },
                         Op::Un(u, a) => {
                             let a = v(a);
                             match u {
@@ -183,6 +187,9 @@ impl InterpKernel {
                 Inst::StCtx32 { off, v } => unsafe {
                     (ctx.add(off as usize) as *mut u32).write_unaligned(vals[v as usize].0 as u32)
                 },
+                Inst::StSt32 { off, v } => unsafe {
+                    (st.add(off as usize) as *mut u32).write_unaligned(vals[v as usize].0 as u32)
+                },
                 Inst::Guard { ok, k, exit } => {
                     if vals[ok as usize].0 as u32 == 0 {
                         return Some(self.leave(exit, k, vals, vars, ctx));
@@ -200,23 +207,23 @@ impl InterpKernel {
 }
 
 impl CompiledKernel for InterpKernel {
-    unsafe fn run(&self, ctx: *mut u8) -> u32 {
+    unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32 {
         let k = &self.k;
         let mut vals = vec![Slot::default(); k.val_ty.len()];
         let mut vars = vec![Slot::default(); k.vars.len()];
         let iters = unsafe { (ctx.add(CTX_ITERS as usize) as *const u32).read_unaligned() };
         let mut code = 0;
         let mut done = iters;
-        self.exec(&k.pre, &mut vals, &mut vars, ctx);
+        self.exec(&k.pre, &mut vals, &mut vars, ctx, st);
         if k.cfg {
             // Runs once and leaves through a guard or a `Leave`.
             code = self
-                .exec(&k.body, &mut vals, &mut vars, ctx)
+                .exec(&k.body, &mut vals, &mut vars, ctx, st)
                 .expect("a cfg body ends in a terminator");
             done = 0;
         } else {
             'outer: for t in 0..iters {
-                if let Some(c) = self.exec(&k.body, &mut vals, &mut vars, ctx) {
+                if let Some(c) = self.exec(&k.body, &mut vals, &mut vars, ctx, st) {
                     code = c;
                     done = t;
                     break 'outer;
@@ -224,7 +231,7 @@ impl CompiledKernel for InterpKernel {
             }
         }
         unsafe { (ctx.add(CTX_DONE as usize) as *mut u32).write_unaligned(done) };
-        self.exec(&k.post, &mut vals, &mut vars, ctx);
+        self.exec(&k.post, &mut vals, &mut vars, ctx, st);
         code
     }
 }

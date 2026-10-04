@@ -235,11 +235,13 @@ struct Slot {
 
 pub struct FastEngine {
     backend: Box<dyn KernelBackend>,
-    /// Entry PCs and their regions, in step; `bloom` is a 64-bit filter of
-    /// the PCs so `wants` (asked at every block boundary) is one test.
+    /// Entry PCs (sorted) and their regions, in step; `filter` is a 4096-bit filter of
+    /// the PCs so `wants` (asked at every block boundary) is one test that
+    /// seldom needs the scan of `pcs` (a 64-bit filter let half of all PCs
+    /// through once there were 32 entries).
     pcs: Vec<u32>,
     slots: Vec<Slot>,
-    bloom: u64,
+    filter: [u64; 64],
     ctx: glue::Ctx,
     pub stats: FastStats,
     log: bool,
@@ -284,7 +286,11 @@ impl FastEngine {
         list.dedup();
         FastEngine {
             backend,
-            bloom: list.iter().fold(0, |b, &pc| b | Self::bit(pc)),
+            filter: list.iter().fold([0; 64], |mut f, &pc| {
+                let (w, m) = Self::bit(pc);
+                f[w] |= m;
+                f
+            }),
             slots: list.iter().map(|_| Slot::default()).collect(),
             pcs: list,
             ctx: glue::Ctx::default(),
@@ -302,16 +308,18 @@ impl FastEngine {
     }
 
     #[inline(always)]
-    fn bit(pc: u32) -> u64 {
-        1u64 << (pc.wrapping_mul(0x9e37_79b1) >> 26)
+    fn bit(pc: u32) -> (usize, u64) {
+        let h = (pc.wrapping_mul(0x9e37_79b1) >> 20) as usize;
+        (h >> 6, 1u64 << (h & 63))
     }
 
     #[inline(always)]
     fn index(&self, pc: u32) -> Option<usize> {
-        if self.bloom & Self::bit(pc) == 0 {
+        let (w, m) = Self::bit(pc);
+        if self.filter[w] & m == 0 {
             return None;
         }
-        self.pcs.iter().position(|&p| p == pc)
+        self.pcs.binary_search(&pc).ok()
     }
 
     pub fn backend_name(&self) -> &'static str {

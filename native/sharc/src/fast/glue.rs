@@ -11,19 +11,125 @@
 use super::cfg::{CfgMeta, LoopDef, Site};
 use super::ir::*;
 use super::region::{RegMeta, Region};
-use super::{Base, FlagKind, Req};
+use super::{Base, FlagKind, FlagWriter, Req};
 use crate::rt::*;
+
+// -- per-call cost profile (feature `fast-prof`) ---------------------------------
+
+/// Phase marks of a call (`region_bench fast-bench` prints them). Compiled out
+/// without the feature.
+#[cfg(feature = "fast-prof")]
+pub mod prof {
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+    pub const PHASES: [&str; 11] = [
+        "dispatch in",
+        "entry checks",
+        "reqs",
+        "windows",
+        "ctx copy-in",
+        "kernel call",
+        "copy-out",
+        "flag replay",
+        "exit bookkeeping",
+        "dispatch out",
+        "marks (overhead)",
+    ];
+    pub const NB: usize = 4;
+    static ACC: [[AtomicU64; 11]; NB] = [const { [const { AtomicU64::new(0) }; 11] }; NB];
+    static CALLS: [AtomicU64; NB] = [const { AtomicU64::new(0) }; NB];
+    static BUCKET: AtomicUsize = AtomicUsize::new(0);
+    static OUTER: AtomicU64 = AtomicU64::new(0);
+    static LAST: AtomicU64 = AtomicU64::new(0);
+
+    /// Counter ticks per second (24 MHz on Apple silicon).
+    pub fn freq() -> u64 {
+        let f: u64;
+        // SAFETY: reads a system register.
+        unsafe { std::arch::asm!("mrs {}, cntfrq_el0", out(reg) f) };
+        f
+    }
+    #[inline(always)]
+    pub fn now() -> u64 {
+        let v: u64;
+        // SAFETY: reads the virtual counter.
+        unsafe { std::arch::asm!("mrs {}, cntvct_el0", out(reg) v) };
+        v
+    }
+    /// The harness: a call into the tier starts / ends (bucket B).
+    pub fn outer_start(b: usize) {
+        BUCKET.store(b, Relaxed);
+        OUTER.store(now(), Relaxed);
+    }
+    pub fn outer_end() {
+        let t = now();
+        let b = BUCKET.load(Relaxed);
+        add(b, 9, t.wrapping_sub(LAST.load(Relaxed)));
+        CALLS[b].fetch_add(1, Relaxed);
+    }
+    fn add(b: usize, p: usize, d: u64) {
+        let a = &ACC[b][p];
+        a.store(a.load(Relaxed) + d, Relaxed);
+    }
+    /// First mark inside the tier: the time since `outer_start`.
+    pub fn start() -> u64 {
+        let t = now();
+        add(BUCKET.load(Relaxed), 0, t.wrapping_sub(OUTER.load(Relaxed)));
+        t
+    }
+    #[inline(always)]
+    pub fn mark(t: &mut u64, p: usize) {
+        let n = now();
+        let b = BUCKET.load(Relaxed);
+        add(b, p, n.wrapping_sub(*t));
+        *t = now();
+        add(b, 10, t.wrapping_sub(n));
+        LAST.store(*t, Relaxed);
+    }
+    /// Ticks per phase and calls, per bucket.
+    pub fn take(b: usize) -> (Vec<u64>, u64) {
+        let v = ACC[b].iter().map(|a| a.swap(0, Relaxed)).collect();
+        (v, CALLS[b].swap(0, Relaxed))
+    }
+}
+
+#[cfg(feature = "fast-prof")]
+macro_rules! pstart {
+    ($t:ident) => {
+        let mut $t = prof::start();
+    };
+}
+#[cfg(not(feature = "fast-prof"))]
+macro_rules! pstart {
+    ($t:ident) => {};
+}
+#[cfg(feature = "fast-prof")]
+macro_rules! pmark {
+    ($t:ident, $p:expr) => {
+        prof::mark(&mut $t, $p)
+    };
+}
+#[cfg(not(feature = "fast-prof"))]
+macro_rules! pmark {
+    ($t:ident, $p:expr) => {};
+}
 
 /// The kernel context buffer.
 pub struct Ctx {
     buf: Box<[u64]>,
+    /// `CTX_WIN_CHECK` as last written (the constant pool is written once).
+    win_check: bool,
 }
 
 impl Default for Ctx {
     fn default() -> Ctx {
-        Ctx {
+        let mut c = Ctx {
             buf: vec![0u64; CTX_SIZE as usize / 8].into_boxed_slice(),
+            win_check: false,
+        };
+        for (i, k) in CONST_POOL.iter().enumerate() {
+            c.set32(CTX_CONSTS + 4 * i as u32, *k);
         }
+        c
     }
 }
 
@@ -133,6 +239,44 @@ fn arith_bits(a: u32, b: u32, sub: bool) -> u32 {
         bits |= AZ;
     }
     bits
+}
+
+/// The ASTATX bits a flag writer defines or forgets.
+pub fn flag_mask(kind: FlagKind) -> u32 {
+    match kind {
+        FlagKind::Falu
+        | FlagKind::FaluOr
+        | FlagKind::IaddSubOr
+        | FlagKind::Iadd
+        | FlagKind::Isub
+        | FlagKind::Logical
+        | FlagKind::Fabs
+        | FlagKind::Compare { .. } => ALU_MASK,
+        FlagKind::Fmul | FlagKind::FmulForget => MULT_MASK,
+        FlagKind::Shift { .. }
+        | FlagKind::Fext { .. }
+        | FlagKind::Btst
+        | FlagKind::Leftz
+        | FlagKind::ShiftDyn => SV | SZ | SS,
+        FlagKind::Recips => AC | AS | AI | AN | AV | AZ,
+    }
+}
+
+/// The writers whose effect survives a replay of all of them in order: a
+/// writer whose bits are all defined (or forgotten) again by later ones is
+/// dropped (`define`/`forget` overwrite `b` and `m` on their whole mask).
+pub fn reduce_flags(all: &[FlagWriter]) -> Vec<FlagWriter> {
+    let mut covered = 0u32;
+    let mut keep = Vec::new();
+    for w in all.iter().rev() {
+        let m = flag_mask(w.kind);
+        if m & !covered != 0 {
+            keep.push(*w);
+        }
+        covered |= m;
+    }
+    keep.reverse();
+    keep
 }
 
 /// ASTATX after one flag writer, given its remembered sources.
@@ -281,15 +425,204 @@ fn advance_last(_s: &mut St, _len_bytes: u8) -> R<()> {
 /// 0x30000..0x32000) and the peripheral space (0x30000000..0x40000000), which
 /// the memory windows refuse anyway.
 const NW_PLAIN: [(i64, i64); 5] = [
+    (0xE_8000, 0x400_0000),
     (0, 0x3_0000),
     (0x3_2000, 0x9_0000),
-    (0xE_8000, 0x400_0000),
     (0x1800_0000, 0x3000_0000),
     (0x4000_0000, 1 << 32),
 ];
 
 fn nw_plain(l: i64, h: i64) -> bool {
     NW_PLAIN.iter().any(|&(lo, hi)| l >= lo && h < hi)
+}
+
+/// The `NwPlain` requirements of one (base, stride) group as the hull of their
+/// ranges: when the hull lies in one plain range, every member does.
+#[derive(Clone, Copy, Debug)]
+pub struct NwHull {
+    pub base: Base,
+    pub lo: i64,
+    pub hi: i64,
+    pub ts: i64,
+    pub nf: i64,
+}
+
+pub fn nw_hulls(reqs: &[Req]) -> Vec<NwHull> {
+    let mut out: Vec<NwHull> = Vec::new();
+    for q in reqs {
+        if let Req::NwPlain {
+            base,
+            lo,
+            hi,
+            ts,
+            nf,
+        } = *q
+        {
+            match out
+                .iter_mut()
+                .find(|h| h.base == base && h.ts == ts && h.nf == nf)
+            {
+                Some(h) => {
+                    h.lo = h.lo.min(lo);
+                    h.hi = h.hi.max(hi);
+                }
+                None => out.push(NwHull {
+                    base,
+                    lo,
+                    hi,
+                    ts,
+                    nf,
+                }),
+            }
+        }
+    }
+    out
+}
+
+/// A register requirement as one masked compare of the register's 8 bytes
+/// (`V { b, m }` read as one word): `word & mask == want`. Known, Eq, MODE1
+/// and ASTATX-known requirements are all of this kind.
+#[derive(Clone, Copy, Debug)]
+pub struct RegChk {
+    /// Byte offset of the register in the engine state.
+    pub off: u32,
+    pub mask: u64,
+    pub want: u64,
+}
+
+const _: () = {
+    assert!(cfg!(target_endian = "little"));
+    assert!(std::mem::size_of::<V>() == 8);
+};
+
+/// The word a register with value B and known-mask M reads as (the
+/// two 32-bit fields of `V` in memory order, little endian).
+const fn v_word(b: u32, m: u32) -> u64 {
+    if std::mem::offset_of!(crate::rt::V, b) == 0 {
+        (m as u64) << 32 | b as u64
+    } else {
+        (b as u64) << 32 | m as u64
+    }
+}
+
+/// The register requirements of REQS (`Known`, `Eq`, `Mode1`, `FlagsKnown`)
+/// as masked compares, without duplicates.
+pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
+    let all = u32::MAX;
+    let off = |c: usize| (std::mem::offset_of!(St, r) + std::mem::size_of::<V>() * c) as u32;
+    let mut out: Vec<RegChk> = Vec::new();
+    for q in reqs {
+        let chk = match *q {
+            Req::Known(c) => RegChk {
+                off: off(c as usize),
+                mask: v_word(0, all),
+                want: v_word(0, all),
+            },
+            Req::Eq(c, k) => RegChk {
+                off: off(c as usize),
+                mask: v_word(all, all),
+                want: v_word(k, all),
+            },
+            Req::Mode1 { mask, value } => RegChk {
+                off: off(MODE1),
+                mask: v_word(mask, all),
+                want: v_word(value, all),
+            },
+            Req::FlagsKnown(mask) => RegChk {
+                off: off(118),
+                mask: v_word(0, mask),
+                want: v_word(0, mask),
+            },
+            Req::NwPlain { .. } => continue,
+        };
+        if !out
+            .iter()
+            .any(|o| o.off == chk.off && o.mask == chk.mask && o.want == chk.want)
+        {
+            out.push(chk);
+        }
+    }
+    out
+}
+
+/// Do all of R's register requirements hold in S?
+#[inline]
+fn regs_ok(s: &St, chk: &[RegChk]) -> bool {
+    let mut bad = 0u64;
+    let base = std::ptr::from_ref(s).cast::<u8>();
+    for c in chk {
+        // SAFETY: `off` is the offset of a register of `St::r` (built by
+        // `reg_checks`); V is 8 bytes of two u32 fields.
+        let w = unsafe { base.add(c.off as usize).cast::<u64>().read_unaligned() };
+        bad |= w & c.mask ^ c.want;
+    }
+    bad == 0
+}
+
+/// A resolved memory window (`Mem::window`) kept between calls: the host
+/// pointer of `[lo, hi)` is good while `Mem::layout_gen` is the same (no page
+/// was allocated or dropped and no present/dirty bit was cleared; writes only
+/// set bits), so a call whose window is the same range skips the resolution.
+#[derive(Clone, Copy)]
+pub struct WinCache {
+    gen_: u64,
+    lo: u32,
+    hi: u64,
+    ptr: *mut u8,
+}
+
+impl WinCache {
+    pub const NONE: WinCache = WinCache {
+        gen_: 0,
+        lo: 0,
+        hi: 0,
+        ptr: std::ptr::null_mut(),
+    };
+}
+
+/// The host pointer of window SPEC over `[lo, hi)`, from the cache when the
+/// memory layout is unchanged since it was resolved, else from `Mem::window`
+/// (and cached).
+#[inline]
+fn window_ptr(
+    mem: &mut crate::mem::Mem,
+    cache: &std::cell::Cell<WinCache>,
+    spec: &super::WinSpec,
+    lo: u32,
+    hi: u64,
+) -> Option<*mut u8> {
+    let c = cache.get();
+    if c.gen_ == mem.layout_gen && c.lo == lo && c.hi == hi && !c.ptr.is_null() {
+        if spec.write {
+            mem.note_window_write(lo);
+        }
+        return Some(c.ptr);
+    }
+    let ptr = mem.window(lo, (hi - lo as u64) as u32, spec.read, spec.write)?;
+    cache.set(WinCache {
+        gen_: mem.layout_gen,
+        lo,
+        hi,
+        ptr,
+    });
+    Some(ptr)
+}
+
+/// Do all `nw` requirements of R hold for N iterations? The hulls are tried
+/// first; when one is not inside a single plain range, each requirement is
+/// evaluated on its own (the hull is only a sufficient test).
+#[inline]
+fn nw_ok(s: &St, r: &Region, n: i64) -> bool {
+    let hulls = r.nw_hull.iter().all(|h| {
+        let b = match h.base {
+            Base::None => 0,
+            Base::Reg(c) => s.r[c as usize].b as i64,
+        };
+        let d = h.ts * (n - 1);
+        let f = h.nf * n;
+        nw_plain(b + h.lo + d.min(0) + f, b + h.hi + d.max(0) + f)
+    });
+    hulls || r.nw.iter().all(|q| eval_req(s, q, n))
 }
 
 pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
@@ -329,6 +662,7 @@ pub fn run(
     kernel: &dyn CompiledKernel,
     ctx: &mut Ctx,
 ) -> Result<u32, Decline> {
+    pstart!(pt);
     if s.pending.is_some() || s.pc_sw != r.entry_pc as Int {
         return Err(Decline::Shape);
     }
@@ -403,27 +737,14 @@ pub fn run(
             (1, 1)
         }
     };
-    for &c in &r.known {
-        if s.r[c as usize].m != u32::MAX {
-            return Err(Decline::Req);
-        }
+    pmark!(pt, 1);
+    if !regs_ok(s, &r.chk) {
+        return Err(Decline::Req);
     }
-    for &(c, k) in &r.eqs {
-        let v = s.r[c as usize];
-        if v.m != u32::MAX || v.b != k {
-            return Err(Decline::Req);
-        }
+    if !nw_ok(s, r, iters) {
+        return Err(Decline::Req);
     }
-    for req in &r.nw {
-        if !eval_req(s, req, iters) {
-            return Err(Decline::Req);
-        }
-    }
-    for req in &r.misc {
-        if !eval_req(s, req, iters) {
-            return Err(Decline::Req);
-        }
-    }
+    pmark!(pt, 2);
     // Windows.
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
@@ -437,10 +758,7 @@ pub fn run(
         if lo < 0 || hi > (1i64 << 32) {
             return Err(Decline::Window);
         }
-        let Some(ptr) = s
-            .mem
-            .window(lo as u32, (hi - lo) as u32, spec.read, spec.write)
-        else {
+        let Some(ptr) = window_ptr(&mut s.mem, &r.wcache[w], spec, lo as u32, hi as u64) else {
             return Err(Decline::Window);
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
@@ -453,20 +771,19 @@ pub fn run(
             ctx.set64(win_ptr(w as u32), 0);
             note_window(ctx, w, 0, 0);
         }
-        ctx.set32(CTX_WIN_CHECK, 1);
-    } else {
-        ctx.set32(CTX_WIN_CHECK, 0);
     }
+    if check != ctx.win_check {
+        ctx.set32(CTX_WIN_CHECK, check as u32);
+        ctx.win_check = check;
+    }
+    pmark!(pt, 3);
     ctx.set32(CTX_ITERS, iters as u32);
-    for (i, c) in CONST_POOL.iter().enumerate() {
-        ctx.set32(CTX_CONSTS + 4 * i as u32, *c);
-    }
-    for &c in &r.inputs {
-        ctx.set32(ctx_reg_in(c as u32), input_of(s, c));
-    }
     // SAFETY: the windows were resolved for this call and cover every
-    // access of `iters` iterations (the lowering's range analysis).
-    let code = unsafe { kernel.run(ctx.ptr()) };
+    // access of `iters` iterations (the lowering's range analysis); the kernel
+    // was lowered for this engine state layout.
+    pmark!(pt, 4);
+    let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
+    pmark!(pt, 5);
     let done = ctx.get32(CTX_DONE) as u64;
     let kk = if code == 0 {
         k
@@ -492,9 +809,11 @@ pub fn run(
             };
         }
     }
+    pmark!(pt, 6);
     apply_flags(s, r, ctx, full, done, kk);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
+    pmark!(pt, 7);
     s.at_loaded_entry = false;
     if s.cfg.core_timer {
         s.timer_written = false;
@@ -516,6 +835,7 @@ pub fn run(
             return Ok(crate::EXIT_TRAP);
         }
         let ended = r.lp.is_none() || iters == rem;
+        pmark!(pt, 8);
         Ok(if ended {
             crate::EXIT_NEXT
         } else {
@@ -525,6 +845,7 @@ pub fn run(
         s.pc_sw = r.insns[kk as usize].pc as Int;
         s.icount += completed;
         s.steps += completed as Int;
+        pmark!(pt, 8);
         Ok(crate::EXIT_BUDGET)
     }
 }
@@ -539,17 +860,6 @@ fn collapse_loop_backs(s: &mut St, rem: i64, n: i64) {
     if s.cfg.stack_model {
         let d = s.loop_depth as usize - 1;
         s.loop_slots.a[d].1 = V::c(left as Int);
-    }
-}
-
-/// A kernel input: a register's value; the flag state starts as the entry
-/// ASTATX bits and "no writer yet" for each flag group.
-fn input_of(s: &St, c: u8) -> u32 {
-    match c as u32 {
-        PSEUDO_FB0 => s.r[118].b,
-        PSEUDO_CACC => s.r[118].b & CACC,
-        c if c >= NREGS => 0,
-        c => s.r[c as usize].b,
     }
 }
 
@@ -592,7 +902,7 @@ fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64
         *v = apply_flag(*v, w.kind, src);
     };
     if full {
-        for w in &r.flags {
+        for w in &r.full_flags {
             one(w, &mut v);
             any = true;
         }
@@ -858,6 +1168,7 @@ pub fn run_cfg(
     ctx: &mut Ctx,
 ) -> Result<u32, Decline> {
     let meta = r.cfg.as_ref().expect("a cfg region");
+    pstart!(pt);
     if s.pending.is_some() || s.pc_sw != r.entry_pc as Int {
         return Err(shape("pending transfer or pc"));
     }
@@ -884,6 +1195,7 @@ pub fn run_cfg(
     }
     // Stack model: slot k of the loop stack belongs to loops[k - slot_base]
     // (slots reserved by PUSH LOOP lie below the DO loops).
+    let cfg_stack = cfg.stack_model;
     let slot_base = if cfg.stack_model {
         let depth = s.loop_depth as usize;
         if depth < nloops
@@ -934,27 +1246,19 @@ pub fn run_cfg(
     {
         return Err(shape("loop or PC stack too deep"));
     }
-    for &c in &r.known {
-        if s.r[c as usize].m != u32::MAX {
-            return Err(Decline::Req);
-        }
-    }
-    for &(c, k) in &r.eqs {
-        let v = s.r[c as usize];
-        if v.m != u32::MAX || v.b != k {
-            return Err(Decline::Req);
-        }
+    pmark!(pt, 1);
+    if !regs_ok(s, &r.chk) {
+        return Err(Decline::Req);
     }
     let iters = rem_top.max(1);
-    for req in r.nw.iter().chain(&r.misc) {
-        if !eval_req(s, req, iters) {
-            return Err(Decline::Req);
-        }
+    if !nw_ok(s, r, iters) {
+        return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);
     if avail == 0 {
         return Err(Decline::Budget);
     }
+    pmark!(pt, 2);
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
         let b = match spec.base {
@@ -967,10 +1271,7 @@ pub fn run_cfg(
         if lo < 0 || hi > (1i64 << 32) {
             return Err(Decline::Window);
         }
-        let Some(ptr) = s
-            .mem
-            .window(lo as u32, (hi - lo) as u32, spec.read, spec.write)
-        else {
+        let Some(ptr) = window_ptr(&mut s.mem, &r.wcache[w], spec, lo as u32, hi as u64) else {
             return Err(Decline::Window);
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
@@ -983,20 +1284,19 @@ pub fn run_cfg(
             ctx.set64(win_ptr(w as u32), 0);
             note_window(ctx, w, 0, 0);
         }
-        ctx.set32(CTX_WIN_CHECK, 1);
-    } else {
-        ctx.set32(CTX_WIN_CHECK, 0);
     }
+    if check != ctx.win_check {
+        ctx.set32(CTX_WIN_CHECK, check as u32);
+        ctx.win_check = check;
+    }
+    pmark!(pt, 3);
     ctx.set32(CTX_BUDGET, avail.min(1 << 31) as u32);
-    for (i, c) in CONST_POOL.iter().enumerate() {
-        ctx.set32(CTX_CONSTS + 4 * i as u32, *c);
-    }
-    for &c in &r.inputs {
-        ctx.set32(ctx_reg_in(c as u32), input_of(s, c));
-    }
     // SAFETY: the windows were resolved for this call and cover every access
-    // (the lowering's range analysis).
-    let code = unsafe { kernel.run(ctx.ptr()) };
+    // (the lowering's range analysis); the kernel was lowered for this engine
+    // state layout.
+    pmark!(pt, 4);
+    let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
+    pmark!(pt, 5);
     debug_assert_eq!(code, 1, "a cfg kernel leaves through an exit");
     let site = &meta.sites[ctx.get32(CTX_EXIT_K) as usize];
     let completed = ctx.get32(CTX_ICNT) as u64 + site.off as u64;
@@ -1011,8 +1311,10 @@ pub fn run_cfg(
             m: u32::MAX,
         };
     }
+    pmark!(pt, 6);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
+    pmark!(pt, 7);
     s.pc_sw = site.pc as Int;
     s.icount += completed;
     s.steps += completed as Int;
@@ -1032,6 +1334,52 @@ pub fn run_cfg(
             return_sw: None,
         });
     }
+    // The common exit: no loop started, ended or was entered by the kernel, and
+    // the loops active are the entry loops: only their counts (and, in the stack
+    // model, the registers that mirror the top slot) change.
+    let (didpc, lset, stk26) = if meta.events {
+        (
+            ctx.get32(CTX_DIDPC),
+            ctx.get32(CTX_LCNTR + 4),
+            ctx.get32(CTX_STK26),
+        )
+    } else {
+        (0, 0, 0)
+    };
+    if site.active.len() == n && didpc == 0 && lset == 0 && stk26 == 0 {
+        let base = s.loops.n - n;
+        for i in 0..n {
+            let rem = ctx.get32(CTX_LOOP_REM_OUT + 4 * i as u32);
+            s.loops.a[base + i].remaining = rem as i64;
+            if cfg_stack {
+                s.loop_slots.a[slot_base + base + i].1 = V::c(rem as Int);
+            }
+        }
+        if !cfg_stack {
+            if n > 0 {
+                let rem = ctx.get32(CTX_LOOP_REM_OUT + 4 * (n - 1) as u32);
+                s.r[103] = V::c(rem as Int);
+            }
+        } else if s.loop_depth != 0 {
+            let slot = s.loop_slots.a[s.loop_depth as usize - 1];
+            s.r[102] = slot.0;
+            s.r[103] = slot.1;
+        } else {
+            s.r[102] = V::c(0xFFFF_FFFFu32 as Int);
+            s.r[103] = V::c(0xFFFF_FFFFu32 as Int);
+        }
+        pmark!(pt, 8);
+        return Ok(crate::EXIT_NEXT);
+    }
+    if !meta.events {
+        // The kernel stored none of the loop-event slots: they read as zero.
+        for off in [CTX_LCNTR, CTX_LCNTR + 4, CTX_STK26, CTX_DIDPC] {
+            ctx.set32(off, 0);
+        }
+        for d in 0..MAX_SLOTS {
+            ctx.set32(CTX_SLOT_LAST + 4 * d, 0);
+        }
+    }
     s.begin();
     let res = sites::apply(s, meta, site, ctx);
     match res {
@@ -1042,6 +1390,7 @@ pub fn run_cfg(
             return Ok(crate::EXIT_TRAP);
         }
     }
+    pmark!(pt, 8);
     Ok(crate::EXIT_NEXT)
 }
 

@@ -39,7 +39,7 @@ pub fn register() {
 
 struct ClKernel {
     module: Option<JITModule>,
-    f: unsafe extern "C" fn(*mut u8) -> u32,
+    f: unsafe extern "C" fn(*mut u8, *mut u8) -> u32,
 }
 
 impl Drop for ClKernel {
@@ -53,8 +53,8 @@ impl Drop for ClKernel {
 }
 
 impl CompiledKernel for ClKernel {
-    unsafe fn run(&self, ctx: *mut u8) -> u32 {
-        unsafe { (self.f)(ctx) }
+    unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32 {
+        unsafe { (self.f)(ctx, st) }
     }
 }
 
@@ -79,6 +79,7 @@ struct Emit<'a, 'b> {
     /// branches on the flags without materialising a 0/1 word.
     bools: Vec<Option<ir::Value>>,
     ctx: ir::Value,
+    st: ir::Value,
     post: ir::Block,
     fails: HashMap<(u32, u32), ir::Block>,
     /// The Cranelift block of each IR label, and whether the current block
@@ -184,6 +185,10 @@ impl Emit<'_, '_> {
                 Inst::StCtx32 { off, v } => {
                     let v = self.v(v);
                     self.b.ins().store(mem_flags(), v, self.ctx, off as i32);
+                }
+                Inst::StSt32 { off, v } => {
+                    let v = self.v(v);
+                    self.b.ins().store(mem_flags(), v, self.st, off as i32);
                 }
                 Inst::Guard { ok, k, exit } => {
                     let ok = self.truth(ok);
@@ -292,6 +297,10 @@ impl Emit<'_, '_> {
                 .b
                 .ins()
                 .load(types::F32, mem_flags(), self.ctx, off as i32),
+            Op::St32(off) => self
+                .b
+                .ins()
+                .load(types::I32, mem_flags(), self.st, off as i32),
             Op::Un(u, x) => {
                 let x = self.v(x);
                 match u {
@@ -361,6 +370,7 @@ fn build(
     b.append_block_params_for_function_params(entry);
     b.switch_to_block(entry);
     let ctx = b.block_params(entry)[0];
+    let st = b.block_params(entry)[1];
     let vars: Vec<Variable> = k.vars.iter().map(|t| b.declare_var(cl_ty(*t))).collect();
     let tvar = b.declare_var(types::I32);
     let post = b.create_block();
@@ -372,6 +382,7 @@ fn build(
         vals: vec![None; k.val_ty.len()],
         bools: vec![None; k.val_ty.len()],
         ctx,
+        st,
         post,
         fails: HashMap::new(),
         labels: Vec::new(),
@@ -452,6 +463,7 @@ impl KernelBackend for ClBackend {
         let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
         sig.returns.push(AbiParam::new(types::I32));
         let id = module
             .declare_function("kernel", Linkage::Local, &sig)
@@ -487,8 +499,9 @@ impl KernelBackend for ClBackend {
         module.finalize_definitions().map_err(|e| e.to_string())?;
         let p = module.get_finalized_function(id);
         // SAFETY: the function was compiled with this exact signature.
-        let f =
-            unsafe { std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8) -> u32>(p) };
+        let f = unsafe {
+            std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8, *mut u8) -> u32>(p)
+        };
         Ok(Box::new(ClKernel {
             module: Some(module),
             f,
@@ -526,11 +539,16 @@ pub unsafe extern "C" fn sharc_fast_compile(
 }
 
 /// # Safety
-/// `h` came from `sharc_fast_compile`; `ctx` is a context buffer.
+/// `h` came from `sharc_fast_compile`; `ctx` is a context buffer and `st` the
+/// engine state the kernel was lowered for.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn sharc_fast_run(h: *mut std::ffi::c_void, ctx: *mut u8) -> u32 {
+pub unsafe extern "C" fn sharc_fast_run2(
+    h: *mut std::ffi::c_void,
+    ctx: *mut u8,
+    st: *mut u8,
+) -> u32 {
     let k = unsafe { &*(h as *const Box<dyn CompiledKernel>) };
-    unsafe { k.run(ctx) }
+    unsafe { k.run(ctx, st) }
 }
 
 /// # Safety
