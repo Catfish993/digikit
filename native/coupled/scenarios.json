@@ -1,0 +1,161 @@
+{
+  "scenarios": [
+    {
+      "name": "idle",
+      "description": "Ready session, no input: 10 s of audio.",
+      "seconds": 10,
+      "events": []
+    },
+    {
+      "name": "trig1-hold",
+      "description": "QA prelude (NO, NO, encoder A), then Audition Trig 1 (button 25) pressed at +60M instructions and held to the end: 10 s of audio. One voice. Without the prelude the ready snapshot ignores Trig 1 and stays silent (see trig1-noqa-40m).",
+      "seconds": 10,
+      "qa_script": true,
+      "events": [
+        {
+          "at_instr": 60000000,
+          "button": 25,
+          "down": true
+        }
+      ]
+    },
+    {
+      "name": "kb-chord16",
+      "description": "QA prelude, keyboard mode on (button 18 tapped at +50M), then all 16 trig keys (25..40) pressed at +60M and held to the end: up to 16 chromatic voices, 10 s of audio. Best-effort heavy load: the DSP cost is dominated by a constant background, so the extra voices add only a little CPU, but the PCM RMS is well above trig1-hold.",
+      "seconds": 10,
+      "qa_script": true,
+      "events": [
+        {
+          "at_instr": 50000000,
+          "button": 18,
+          "down": true
+        },
+        {
+          "at_instr": 52000000,
+          "button": 18,
+          "down": false
+        },
+        {
+          "at_instr": 60000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 60001000,
+          "button": 26,
+          "down": true
+        },
+        {
+          "at_instr": 60002000,
+          "button": 27,
+          "down": true
+        },
+        {
+          "at_instr": 60003000,
+          "button": 28,
+          "down": true
+        },
+        {
+          "at_instr": 60004000,
+          "button": 29,
+          "down": true
+        },
+        {
+          "at_instr": 60005000,
+          "button": 30,
+          "down": true
+        },
+        {
+          "at_instr": 60006000,
+          "button": 31,
+          "down": true
+        },
+        {
+          "at_instr": 60007000,
+          "button": 32,
+          "down": true
+        },
+        {
+          "at_instr": 60008000,
+          "button": 33,
+          "down": true
+        },
+        {
+          "at_instr": 60009000,
+          "button": 34,
+          "down": true
+        },
+        {
+          "at_instr": 60010000,
+          "button": 35,
+          "down": true
+        },
+        {
+          "at_instr": 60011000,
+          "button": 36,
+          "down": true
+        },
+        {
+          "at_instr": 60012000,
+          "button": 37,
+          "down": true
+        },
+        {
+          "at_instr": 60013000,
+          "button": 38,
+          "down": true
+        },
+        {
+          "at_instr": 60014000,
+          "button": 39,
+          "down": true
+        },
+        {
+          "at_instr": 60015000,
+          "button": 40,
+          "down": true
+        }
+      ]
+    },
+    {
+      "name": "exactness-100m",
+      "description": "Validation, not a load: the coupled_ready_exactness workload (QA prelude, Trig 1 down at +60M, up at +100M, ended at +100M instructions, as NOTE_EVENTS=trig). PCM must hash to the value the test asserts.",
+      "instructions": 100000000,
+      "qa_script": true,
+      "expect_sha256": "38d2a3224d10e0b59cafa602ba1b8f8be31562efa07491b963ff4e127f3ff1f8",
+      "validation": true,
+      "events": [
+        {
+          "at_instr": 60000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 100000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "trig1-noqa-40m",
+      "description": "Validation, not a load: desktop_trig1_capture_without_qa_script (Trig 1 held from ready for 40M instructions, no prelude). Silent PCM; hash recorded in docs/findings/07-emulator.md.",
+      "instructions": 40000000,
+    "clip_last_chunk": true,
+      "expect_sha256": "a50586e86b2d0246bd05181dd1f877b1b2570f2c1eb74b7613c9b17dbd4eb75a",
+      "validation": true,
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 40000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    }
+  ]
+}

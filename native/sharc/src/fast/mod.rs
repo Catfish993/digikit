@@ -231,6 +231,10 @@ pub trait FastTier: Send {
     fn engine_report(&self, _total: u64, _interp: u64, _aot: u64) -> String {
         String::new()
     }
+    /// Cumulative counters (instructions run by the tier, builds, compile time).
+    fn fast_stats(&self) -> Option<FastStats> {
+        None
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -873,6 +877,10 @@ impl FastTier for FastEngine {
         if e.1 == a.threshold {
             self.arm(pc);
         }
+    }
+
+    fn fast_stats(&self) -> Option<FastStats> {
+        Some(self.stats.clone())
     }
 
     fn engine_report(&self, total: u64, interp: u64, blocks: u64) -> String {

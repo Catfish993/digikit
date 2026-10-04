@@ -287,6 +287,33 @@ struct BlockPlan {
     bank_pre: Option<Int>,
 }
 
+/// Cumulative instruction counts by execution tier (cheap to read: the
+/// engine keeps them anyway). `block_instructions` includes the fast tier's.
+#[derive(Clone, Debug, Default)]
+pub struct TierCounters {
+    pub icount: u64,
+    /// Instructions replayed analytically by the idle-loop skip.
+    pub idle_skipped: u64,
+    pub idle_skips: u64,
+    /// Instructions run one at a time by the interpreter.
+    pub interpreted: u64,
+    pub block_entries: u64,
+    pub block_instructions: u64,
+    pub block_traps: u64,
+    pub traps: u64,
+    /// Fast-tier counters (all zero without a fast tier).
+    pub fast_present: bool,
+    pub fast_insns: u64,
+    pub fast_runs: u64,
+    pub fast_calls: u64,
+    pub fast_built: u64,
+    pub fast_refused: u64,
+    pub fast_armed: u64,
+    pub fast_compile_ns: u64,
+    pub fast_build_ns: u64,
+    pub fast_declined: [u64; 5],
+}
+
 /// Idle-skip counters (diagnostic).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IdleStats {
@@ -542,6 +569,34 @@ impl Engine {
             hist: std::env::var_os("SHARC_FAST_HIST")
                 .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
         }
+    }
+
+    /// Instruction counts by tier since the engine was created.
+    pub fn tier_counters(&self) -> TierCounters {
+        let mut t = TierCounters {
+            icount: self.s.icount,
+            idle_skipped: self.idle_stats.instructions,
+            idle_skips: self.idle_stats.skips,
+            interpreted: self.stats.single_steps,
+            block_entries: self.stats.block_entries,
+            block_instructions: self.stats.block_instructions,
+            block_traps: self.stats.block_traps,
+            traps: self.stats.traps,
+            ..TierCounters::default()
+        };
+        if let Some(f) = self.fast.as_ref().and_then(|f| f.fast_stats()) {
+            t.fast_present = true;
+            t.fast_insns = f.insns;
+            t.fast_runs = f.runs;
+            t.fast_calls = f.calls;
+            t.fast_built = f.built;
+            t.fast_refused = f.refused;
+            t.fast_armed = f.armed;
+            t.fast_compile_ns = f.compile_ns;
+            t.fast_build_ns = f.build_ns;
+            t.fast_declined = f.declined;
+        }
+        t
     }
 
     /// Install (or remove) the fast tier.

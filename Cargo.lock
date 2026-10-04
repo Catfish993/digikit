@@ -854,15 +854,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "digi-coupled"
+version = "0.1.0"
+dependencies = [
+ "elektron-native-boot",
+ "emmc-card",
+ "serde_json",
+ "sha2",
+ "sharc-fast-cl",
+ "sharc-native",
+]
+
+[[package]]
 name = "digiemu-desktop"
 version = "0.1.0"
 dependencies = [
+ "digi-coupled",
  "elektron-native-boot",
  "emmc-card",
  "serde",
  "serde_json",
  "sha2",
- "sharc-fast-cl",
  "tauri",
  "tauri-build",
 ]

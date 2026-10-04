@@ -8,7 +8,7 @@ use std::{
 
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
-use desktop_runtime::{AudioOptions, DesktopRuntime};
+use desktop_runtime::{AudioOptions, DesktopRuntime, STEP_CHUNK};
 use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SMALL_CAPACITY_BLOCKS};
 use serde::Deserialize;
 use tauri::State;
@@ -259,7 +259,7 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
                 .as_mut()
                 .ok_or_else(|| "No firmware selected".into())
                 .and_then(|runtime| {
-                    let snapshot = runtime.step_chunk(budget.min(250_000));
+                    let snapshot = runtime.step_chunk(budget.min(STEP_CHUNK));
                     if let Some(error) = read_error
                         .as_ref()
                         .and_then(|error| error.lock().ok().and_then(|mut slot| slot.take()))
@@ -300,7 +300,8 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
                         if remaining == 0 {
                             break Ok(Snapshot { status, frame });
                         }
-                        let snapshot = runtime.step_chunk(remaining.min(250_000) as u32);
+                        let snapshot =
+                            runtime.step_chunk(remaining.min(u64::from(STEP_CHUNK)) as u32);
                         if let Some(error) = snapshot.status.error.clone() {
                             break Err(error);
                         }
@@ -655,6 +656,7 @@ fn parse_values(
             } else {
                 None
             },
+            link_timing: false,
         })
     } else {
         if image.is_some() || state.is_some() || snapshot.is_some() || buffer.is_some() {
@@ -825,6 +827,7 @@ mod cli_tests {
             playback: false,
             automatic: false,
             expected_syx: None,
+            link_timing: false,
         };
         let (sender, receiver) = mpsc::channel();
         let actor = thread::spawn(move || actor(receiver, Some(audio)));

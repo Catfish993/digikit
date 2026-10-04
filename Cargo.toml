@@ -9,6 +9,7 @@ members = [
     "native/card",
     "native/coldfire",
     "native/coldfire/cfabi",
+    "native/coupled",
     "native/device-profile",
     "native/host",
     "native/live",

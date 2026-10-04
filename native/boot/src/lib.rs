@@ -4,6 +4,7 @@
 mod abi;
 mod capture;
 mod common;
+mod cputime;
 #[cfg(feature = "play")]
 pub mod pcm_play;
 mod ram_clear;
@@ -14,6 +15,7 @@ mod softfloat;
 mod telemetry;
 
 pub use capture::Dspi2Capture;
+pub use cputime::thread_cpu_ns;
 pub use telemetry::DiagnosticReport;
 
 pub use runtime::{Emulator, Snapshot, Status};

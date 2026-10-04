@@ -71,6 +71,10 @@ pub trait DspEngine {
     fn icount(&self) -> u64 {
         0
     }
+    /// Instruction counts by execution tier, where the engine keeps them.
+    fn tier_counters(&self) -> Option<sharc_native::TierCounters> {
+        None
+    }
 }
 
 /// Per-frame record.
@@ -439,6 +443,25 @@ enum Msg {
         enqueued: Option<Instant>,
     },
     Export,
+    Report,
+}
+
+/// Most per-period records the worker keeps (about 22 minutes of audio).
+const PERIOD_RECORD_LIMIT: usize = 2_000_000;
+
+/// What the DSP worker reports about itself on request. Reading it is cheap
+/// and does not touch DSP state.
+#[derive(Clone, Debug, Default)]
+pub struct WorkerReport {
+    /// CPU time of the worker thread so far (CLOCK_THREAD_CPUTIME_ID).
+    pub cpu_ns: u64,
+    pub tiers: Option<sharc_native::TierCounters>,
+    /// Wall time of each frame the worker handled (SPI exchange + DSP period +
+    /// SPORT block), in nanoseconds, in order; only with link timing, at most
+    /// [`PERIOD_RECORD_LIMIT`] entries.
+    pub period_ns: Vec<u32>,
+    /// Frames the worker handled, including ones past the record limit.
+    pub periods: u64,
 }
 
 /// ColdFire-thread side of the threaded peer.
@@ -447,6 +470,8 @@ struct Link {
     reply_rx: mpsc::Receiver<Vec<u8>>,
     done_rx: mpsc::Receiver<Done>,
     export_rx: mpsc::Receiver<(Vec<u8>, u64)>,
+    report_rx: mpsc::Receiver<WorkerReport>,
+    frames_sent: u64,
     /// Frames sent whose [`Done`] has not been committed yet.
     outstanding: usize,
     timing: Option<ThreadedTimingProfile>,
@@ -556,6 +581,7 @@ impl ThreadedPeer {
         let (reply_tx, reply_rx) = mpsc::channel::<Vec<u8>>();
         let (done_tx, done_rx) = mpsc::channel::<Done>();
         let (export_tx, export_rx) = mpsc::channel::<(Vec<u8>, u64)>();
+        let (report_tx, report_rx) = mpsc::channel::<WorkerReport>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let worker = thread::Builder::new()
             .name("sharc-dsp".into())
@@ -572,6 +598,8 @@ impl ThreadedPeer {
                 };
                 let mut core = Core::new(engine, period);
                 core.idle = idle;
+                let mut period_ns: Vec<u32> = Vec::new();
+                let mut periods = 0u64;
                 while let Ok(msg) = rx.recv() {
                     match msg {
                         Msg::Frame {
@@ -587,9 +615,28 @@ impl ThreadedPeer {
                             if reply_tx.send(reply).is_err() {
                                 return;
                             }
-                            if done_tx.send(core.render(ex, timing.as_mut())).is_err() {
+                            let done = core.render(ex, timing.as_mut());
+                            if let Some(t) = &done.timing {
+                                periods += 1;
+                                if period_ns.len() < PERIOD_RECORD_LIMIT {
+                                    let busy = t
+                                        .spi_ns
+                                        .saturating_add(t.dsp_ns)
+                                        .saturating_add(t.sport_ns);
+                                    period_ns.push(busy.min(u32::MAX as u64) as u32);
+                                }
+                            }
+                            if done_tx.send(done).is_err() {
                                 return;
                             }
+                        }
+                        Msg::Report => {
+                            let _ = report_tx.send(WorkerReport {
+                                cpu_ns: crate::cputime::thread_cpu_ns(),
+                                tiers: core.engine.tier_counters(),
+                                period_ns: period_ns.clone(),
+                                periods,
+                            });
                         }
                         Msg::Export => {
                             let _ = export_tx.send((core.engine.export(), core.engine.icount()));
@@ -610,6 +657,8 @@ impl ThreadedPeer {
             reply_rx,
             done_rx,
             export_rx,
+            report_rx,
+            frames_sent: 0,
             outstanding: 0,
             timing: timing_enabled.then(ThreadedTimingProfile::default),
             shared: shared.clone(),
@@ -646,6 +695,7 @@ impl Peer for ThreadedPeer {
             return l.worker_died(tx_len);
         }
         l.outstanding += 1;
+        l.frames_sent += 1;
         if let Some(profile) = &mut l.timing {
             profile.frames_sent = profile.frames_sent.saturating_add(1);
         }
@@ -681,6 +731,23 @@ impl ThreadedHandle {
     /// [`Shared`]. Call before reading `Shared` for totals or a snapshot.
     pub fn sync(&self) {
         self.link.borrow_mut().commit_ready(true);
+    }
+
+    /// Frames handed to the DSP worker so far (one per DSPI2 exchange).
+    pub fn frames_sent(&self) -> u64 {
+        self.link.borrow().frames_sent
+    }
+
+    /// The worker's own report (thread CPU time, tier counters, per-period
+    /// wall times). Waits for the frames in flight, like `sync`; `None` if the
+    /// worker has stopped.
+    pub fn worker_report(&self) -> Option<WorkerReport> {
+        let mut l = self.link.borrow_mut();
+        l.commit_ready(true);
+        if !l.tx.as_ref().is_some_and(|c| c.send(Msg::Report).is_ok()) {
+            return None;
+        }
+        l.report_rx.recv().ok()
     }
 
     /// Cumulative opt-in timing, or `None` when the peer was started without it.
@@ -745,6 +812,9 @@ impl DspEngine for NativeDsp {
     fn icount(&self) -> u64 {
         self.0.s.icount
     }
+    fn tier_counters(&self) -> Option<sharc_native::TierCounters> {
+        Some(self.0.tier_counters())
+    }
 }
 
 /// A native engine that the host keeps a handle to, so it can export the
@@ -805,6 +875,9 @@ impl DspEngine for SharedDsp {
     }
     fn icount(&self) -> u64 {
         self.0.borrow().s.icount
+    }
+    fn tier_counters(&self) -> Option<sharc_native::TierCounters> {
+        Some(self.0.borrow().tier_counters())
     }
 }
 
