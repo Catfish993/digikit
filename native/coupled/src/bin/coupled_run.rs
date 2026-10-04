@@ -14,7 +14,7 @@
 //!   --dsp-image snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin \
 //!   --dsp-state snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp \
 //!   --cf-snapshot snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap \
-//!   [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--no-pcm-tap] \
+//!   [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--no-pcm-tap] [--no-link-timing] \
 //!   [--out report.json] [--list]
 //! ```
 //!
@@ -135,6 +135,7 @@ struct Args {
     names: Vec<String>,
     seconds: Option<f64>,
     pcm_tap: bool,
+    link_timing: bool,
     out: Option<PathBuf>,
     list: bool,
 }
@@ -149,6 +150,7 @@ fn parse_args() -> Result<Args, String> {
         names: Vec::new(),
         seconds: None,
         pcm_tap: true,
+        link_timing: true,
         out: None,
         list: false,
     };
@@ -166,6 +168,7 @@ fn parse_args() -> Result<Args, String> {
                 a.seconds = Some(value("--seconds")?.parse().map_err(|_| "bad --seconds")?)
             }
             "--no-pcm-tap" => a.pcm_tap = false,
+            "--no-link-timing" => a.link_timing = false,
             "--out" => a.out = Some(value("--out")?.into()),
             "--list" => a.list = true,
             other => return Err(format!("unknown option {other}")),
@@ -294,7 +297,7 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         playback: false,
         automatic: false,
         expected_syx: None,
-        link_timing: true,
+        link_timing: args.link_timing,
     };
     let mut rt = CoupledRuntime::new(syx, None, Some(&options))?;
     if args.pcm_tap {
@@ -494,6 +497,7 @@ fn real_main() -> Result<bool, String> {
             "DSP_IDLE_SKIP": std::env::var("DSP_IDLE_SKIP").ok(),
         },
         "pcm_tap": args.pcm_tap,
+        "link_timing": args.link_timing,
         "scenarios": results,
     });
     if let Some(out) = &args.out {

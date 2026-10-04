@@ -9,10 +9,11 @@
 use elektron_native_boot::{Emulator, Snapshot};
 use emmc_card::Card;
 use serde_json::Value;
+#[cfg(feature = "coupled-audio")]
+use std::time::Instant;
 use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
-    time::Instant,
 };
 
 /// Largest number of ColdFire instructions a host runs per `step_chunk`.
