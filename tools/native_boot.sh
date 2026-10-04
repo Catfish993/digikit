@@ -79,7 +79,7 @@ def main(argv: list[str]) -> int:
         "--release", "--locked", "--offline",
     ], cwd=ROOT, check=True)
     command = [
-        str(ROOT / "native/boot/target/release/elektron-native-boot"),
+        str(ROOT / "target/release/elektron-native-boot"),
         "--syx", str(syx), "--out", str(out), "--mode", "oracle-diagnostic",
         "--limit", limit, "--stop-at", stop_at, "--diagnostic-services",
     ]

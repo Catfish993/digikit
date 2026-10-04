@@ -110,7 +110,7 @@ STEP_NAMES = {
 
 def build_cfabi() -> Path:
     subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=CRATE, check=True)
-    return CRATE / "target" / "release" / LIBNAME
+    return ROOT / "target" / "release" / LIBNAME
 
 
 def load_cfabi(path: Path) -> ctypes.CDLL:

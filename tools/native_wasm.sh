@@ -8,6 +8,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -39,6 +40,17 @@ if args.sharc and args.cf_only:
 coupled = args.sharc or (bool(generated) and not args.cf_only)
 if coupled:
     os.environ.setdefault("SHARC_GEN_DIR", generated)
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import native_target  # noqa: E402
+
+# Shared target dir keyed by the generated core (see tools/native_target.py);
+# CARGO_TARGET_DIR still wins.
+target_dir = pathlib.Path(
+    os.environ.get("CARGO_TARGET_DIR")
+    or native_target.target_dir(generated if coupled else None)
+)
+if not target_dir.is_absolute():
+    target_dir = root / target_dir
 rustc = shutil.which("rustup")
 if rustc is not None:
     found = subprocess.run([rustc, "which", "rustc"], text=True, capture_output=True)
@@ -65,6 +77,8 @@ command = [
     "--lib",
     "--target",
     "wasm32-unknown-unknown",
+    "--target-dir",
+    str(target_dir),
 ]
 features = []
 if args.diagnostics:
@@ -79,9 +93,6 @@ except subprocess.CalledProcessError:
     raise SystemExit(
         "WASM build failed; install wasm32-unknown-unknown for the pinned Rust toolchain"
     ) from None
-target_dir = pathlib.Path(env.get("CARGO_TARGET_DIR", root / "native/boot/target"))
-if not target_dir.is_absolute():
-    target_dir = root / target_dir
 source = target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm"
 target = root / "packages/web/public" / "emulator-core.wasm"
 target.parent.mkdir(parents=True, exist_ok=True)

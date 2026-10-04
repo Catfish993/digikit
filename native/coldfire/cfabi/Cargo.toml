@@ -11,11 +11,3 @@ coldfire = { path = ".." }
 [lib]
 name = "cfabi"
 crate-type = ["cdylib"]
-
-[profile.release]
-opt-level = 3
-debug = false
-panic = "abort"
-
-[profile.dev]
-panic = "abort"

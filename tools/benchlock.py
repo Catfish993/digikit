@@ -2,7 +2,14 @@
 
 Heavy work (cargo builds, training runs) holds the lock shared: many at once.
 Timed runs hold it exclusive: they wait for all heavy work to end, and new
-heavy work waits until they finish. Each holder writes a sidecar
+heavy work waits until they finish -- including heavy work that arrives while
+an exclusive acquirer is still waiting (writer preference: a stream of shared
+holders cannot starve it). A second file, `<lock>.gate`, is held while an
+acquirer is getting the lock: shared takes it only for the moment of
+acquisition, exclusive keeps it for its whole wait. A shared hold exports
+BENCHLOCK_SHARED_HELD=1 to its children (and this process): a nested shared
+acquisition under it skips the gate, since queueing behind an exclusive waiter
+that is itself waiting for the outer hold would deadlock. Each holder writes a sidecar
 `<lock>.d/<pid>.<n>.json`; `status` lists live holders and removes stale ones.
 
     with benchlock.hold("exclusive", "pgo bench") as h: ...
@@ -25,10 +32,12 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import IO
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PATH = ROOT / "out" / ".benchlock"
 POLL_S = 0.05
+HELD_ENV = "BENCHLOCK_SHARED_HELD"
 _counter = itertools.count()
 
 
@@ -48,6 +57,10 @@ def disabled() -> bool:
 
 def _sidecar_dir(path: Path) -> Path:
     return path.with_name(path.name + ".d")
+
+
+def _gate_path(path: Path) -> Path:
+    return path.with_name(path.name + ".gate")
 
 
 def _alive(pid: int) -> bool:
@@ -116,11 +129,14 @@ def hold(
     flag = fcntl.LOCK_SH if mode == "shared" else fcntl.LOCK_EX
     start = time.monotonic()
     announced = False
-    with open(lpath, "a+") as handle:
+
+    def acquire(fd: IO[str], how: int) -> None:
+        """Take a flock, polling so the timeout and the notice work."""
+        nonlocal announced
         while True:
             try:
-                fcntl.flock(handle, flag | fcntl.LOCK_NB)
-                break
+                fcntl.flock(fd, how | fcntl.LOCK_NB)
+                return
             except BlockingIOError:
                 pass
             if not announced:
@@ -134,6 +150,18 @@ def hold(
             if timeout is not None and time.monotonic() - start >= timeout:
                 raise LockTimeout(f"benchlock: {mode} not acquired in {timeout}s")
             time.sleep(POLL_S)
+
+    nested = mode == "shared" and os.environ.get(HELD_ENV) == "1"
+    with open(lpath, "a+") as handle, open(_gate_path(lpath), "a+") as gate:
+        # Gate first: an exclusive waiter keeps it until it holds the lock, so
+        # new shared acquirers queue behind it instead of overtaking it.
+        if not nested:
+            acquire(gate, fcntl.LOCK_EX)
+        try:
+            acquire(handle, flag)
+        finally:
+            if not nested:
+                fcntl.flock(gate, fcntl.LOCK_UN)
         h.waited = time.monotonic() - start
         if announced:
             print(
@@ -146,9 +174,17 @@ def hold(
         side = sdir / f"{os.getpid()}.{next(_counter)}.json"
         info = {"pid": os.getpid(), "mode": mode, "label": label, "start": time.time()}
         side.write_text(json.dumps(info))
+        previous = os.environ.get(HELD_ENV)
+        if mode == "shared":
+            os.environ[HELD_ENV] = "1"
         try:
             yield h
         finally:
+            if mode == "shared":
+                if previous is None:
+                    os.environ.pop(HELD_ENV, None)
+                else:
+                    os.environ[HELD_ENV] = previous
             with contextlib.suppress(OSError):
                 side.unlink()
             fcntl.flock(handle, fcntl.LOCK_UN)

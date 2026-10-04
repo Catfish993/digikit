@@ -11,11 +11,3 @@ periph = { path = "../periph", default-features = false }
 [lib]
 name = "emmc_card"
 crate-type = ["rlib"]
-
-[profile.release]
-opt-level = 3
-debug = false
-panic = "abort"
-
-[profile.dev]
-panic = "abort"

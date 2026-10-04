@@ -16,8 +16,10 @@ function from that state (native/sharc/examples/region_bench.rs).
 Everything lives under out/native/regionbench/: work-<hash>/ (the transpile
 inference, keyed by the transpiler sources so a generator-only change does not
 re-run it), states/ (captured entry states, shared by all variants so A/B
-compares the same inputs), variants/NAME/ (gen/, target/, region_bench binary
-and its sha256, bench-*.jsonl). The firmware-derived files stay under out/.
+compares the same inputs), variants/NAME/ (gen/, region_bench binary and its
+sha256, bench-*.jsonl). The cargo target dir is shared, keyed by the variant's
+gen (out/native/target/<gen-key>, tools/native_target.py); a PGO build uses its
+own pgo-<hash> subdir. The firmware-derived files stay under out/.
 """
 
 from __future__ import annotations
@@ -61,13 +63,12 @@ RSGEN_BASE = [
     "--unknown-fallbacks",
     "0x1c253f",
 ]
-# The app's release profile (native/live/Cargo.toml), without LTO or PGO.
+# The app's release profile (root Cargo.toml), without LTO or PGO.
 PROFILE_ENV = {
     "CARGO_PROFILE_RELEASE_OPT_LEVEL": "3",
     "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "16",
     "CARGO_PROFILE_RELEASE_LTO": "false",
     "CARGO_PROFILE_RELEASE_DEBUG": "false",
-    "CARGO_PROFILE_RELEASE_PANIC": "abort",
     "CARGO_PROFILE_RELEASE_INCREMENTAL": "false",
 }
 
@@ -209,6 +210,16 @@ def benchlock(mode: str, label: str):
     return module.hold(mode, label)
 
 
+def native_target():
+    """tools/native_target.py: cargo target dirs keyed by generated core."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import native_target as module
+    finally:
+        sys.path.pop(0)
+    return module
+
+
 def cmd_build(args) -> str:
     vdir = variant_dir(args.variant)
     gen = os.path.join(vdir, "gen")
@@ -232,7 +243,8 @@ def cmd_build(args) -> str:
     src += [
         os.path.join(fast_cl, "Cargo.toml"),
         os.path.join(ROOT, "native", "sharc", "Cargo.toml"),
-        os.path.join(ROOT, "native", "sharc", "Cargo.lock"),
+        os.path.join(ROOT, "Cargo.toml"),
+        os.path.join(ROOT, "Cargo.lock"),
     ]
     gen_files = [
         os.path.join(gen, n)
@@ -266,16 +278,28 @@ def cmd_build(args) -> str:
         env["RUSTFLAGS"] = "-Cprofile-use=%s -Cllvm-args=-pgo-warn-missing-function" % (
             os.path.abspath(pgo)
         )
-    target = os.path.join(vdir, "target")
+    # RUSTFLAGS (PGO) builds take --target so the flags skip build scripts and
+    # get their own subdir; plain builds share the gen's key dir.
+    nt = native_target()
+    if pgo:
+        tag = hashlib.sha256(os.path.abspath(pgo).encode()).hexdigest()[:8]
+        target = str(nt.target_dir(gen, "pgo-" + tag))
+        target_args = ["--target", TRIPLE]
+        built_dir = os.path.join(target, TRIPLE, "release", "examples")
+    else:
+        target = str(nt.target_dir(gen))
+        target_args = []
+        built_dir = os.path.join(target, "release", "examples")
     with benchlock("shared", "regionbench build"):
         secs = run(
             ["rustup", "run", TOOLCHAIN, "cargo", "build", "--release", "--locked"]
-            + ["--example", "region_bench", "--target", TRIPLE]
+            + ["--example", "region_bench"]
+            + target_args
             + ["--manifest-path", os.path.join(ROOT, "native", "sharc", "Cargo.toml")]
             + ["--target-dir", target],
             env=env,
         )
-    built = os.path.join(target, TRIPLE, "release", "examples", "region_bench")
+    built = os.path.join(built_dir, "region_bench")
     with open(built, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
     subprocess.run(["cp", built, exe], check=True)

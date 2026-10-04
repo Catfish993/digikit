@@ -125,8 +125,23 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
     return args
 
 
+def target_dir_for(gen: pathlib.Path | None) -> str:
+    """The shared cargo target dir for a generated core (tools/native_target.py)."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import native_target
+    finally:
+        sys.path.pop(0)
+    # "" means no generated core, whatever SHARC_GEN_DIR says.
+    return str(native_target.target_dir(gen if gen is not None else ""))
+
+
 def cargo_command(args: list[str], pgo: object | None = None) -> list[str]:
-    """The cargo command line; pgo is a native_pgo.LaunchPlan for the PGO build."""
+    """The cargo command line; pgo is a native_pgo.LaunchPlan for the PGO build.
+
+    The target dir is keyed by the generated core, so every build of the same
+    core (this app, tests, examples) reuses one compiled copy of it.
+    """
     command = [
         "cargo",
         "run",
@@ -139,6 +154,10 @@ def cargo_command(args: list[str], pgo: object | None = None) -> list[str]:
         command.extend(["--features", "coupled-audio"])
         if pgo is not None:
             command = [*pgo.prefix, *command, *pgo.cargo_args]  # type: ignore[attr-defined]
+        else:
+            command.extend(["--target-dir", target_dir_for(generated_core())])
+    else:
+        command.extend(["--target-dir", target_dir_for(None)])
     return [*command, "--", *args]
 
 

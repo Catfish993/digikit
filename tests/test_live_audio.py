@@ -42,10 +42,10 @@ def _write_pcm16_wav(path, sample_rate=48000, frames=((16384, -16384), (0, 32767
 
 
 class TestLibraryDiscovery:
-    def test_default_library_path_is_under_native_live_target_release(self):
+    def test_default_library_path_is_under_workspace_target_release(self):
         assert LIBRARY_PATH.parent.name == "release"
         assert LIBRARY_PATH.parent.parent.name == "target"
-        assert LIBRARY_PATH.parent.parent.parent.name == "live"
+        assert (LIBRARY_PATH.parent.parent.parent / "Cargo.toml").is_file()
 
     def test_missing_library_raises_file_not_found(self):
         with pytest.raises(FileNotFoundError):

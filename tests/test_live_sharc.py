@@ -37,7 +37,7 @@ IMAGE = "dt2-1.16"
 CAPTURE = ROOT / "out/captures/drive3/dt2-1.16-drive3-trig1-emac.dt2cap"
 LP0 = ROOT / "out/captures/drive3/flexbus-drive3.raw"
 START = 74
-LIVE_PLAY = ROOT / "native/live/target/release/live_play"
+LIVE_PLAY = ROOT / "target/release/live_play"
 
 
 def _cached_pack_and_ref() -> tuple[Path, Path]:

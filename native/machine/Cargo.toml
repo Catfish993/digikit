@@ -20,11 +20,3 @@ serde_json = "1"
 [lib]
 name = "machine"
 crate-type = ["rlib"]
-
-[profile.release]
-opt-level = 3
-debug = false
-panic = "abort"
-
-[profile.dev]
-panic = "abort"

@@ -57,3 +57,4 @@ packages/desktop/src-tauri/gen/
 
 # Temporary local agent worktrees.
 .claude/worktrees/
+/target/

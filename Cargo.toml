@@ -1,0 +1,46 @@
+# One workspace for the native crates that build together, so they share a
+# Cargo.lock, one set of profiles (cargo reads profiles only from the root)
+# and, above all, one compiled copy of the ~80 MB generated core (sharc-gen)
+# per target dir. See native/README.md for the target-dir convention.
+[workspace]
+resolver = "3"
+members = [
+    "native/boot",
+    "native/card",
+    "native/coldfire",
+    "native/coldfire/cfabi",
+    "native/device-profile",
+    "native/host",
+    "native/live",
+    "native/loader",
+    "native/machine",
+    "native/periph",
+    "native/plusdrive",
+    "native/sharc",
+    "native/sharc-fast-cl",
+    "native/sharc-gen",
+    "native/sharc-rt",
+    "packages/desktop/src-tauri",
+]
+exclude = [
+    # wasmtime + wasm32-only runtime crates; own lock, built for a different
+    # target and nothing in the members depends on them.
+    "native/sharc-jit",
+    # Agent worktrees live inside the main tree; keep cargo from treating
+    # their (older, workspace-less) crates as members of this one.
+    ".claude",
+]
+
+# Timing and shipping profile. Matches what the desktop app has always been
+# built with (default codegen units, unwinding panics): changing it moves the
+# PGO baseline.
+[profile.release]
+opt-level = 3
+debug = false
+incremental = false
+
+# No cheaper profile for correctness-only runs: measured on sharc-gen, an
+# opt-level 1 override costs ~2.5x the CPU of release (wall 5.5 min vs 2.9 on
+# the same loaded machine), and opt-level 0 compiles in ~1.4 min but runs the
+# coupled_ready_exactness workload in 150 s instead of ~1.3 s (and needs
+# RUST_MIN_STACK to avoid a stack overflow). Use release.

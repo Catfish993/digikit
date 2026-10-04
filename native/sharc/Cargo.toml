@@ -29,17 +29,6 @@ crate-type = ["cdylib", "rlib"]
 name = "sharc-check"
 path = "src/bin/sharc_check.rs"
 
-[profile.release]
-opt-level = 3
-# Generated regions are large functions: more units, more parallel LLVM.
-codegen-units = 64
-debug = false
-panic = "abort"
-incremental = false
-
-[profile.dev]
-panic = "abort"
-
 [[bin]]
 name = "sharc-frames"
 path = "src/bin/sharc_frames.rs"

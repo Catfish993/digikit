@@ -327,6 +327,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 
 [[package]]
+name = "cfabi"
+version = "0.0.1"
+dependencies = [
+ "coldfire",
+]
+
+[[package]]
 name = "cfb"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -954,6 +961,20 @@ dependencies = [
 [[package]]
 name = "dt2-firmware-loader"
 version = "0.1.0"
+
+[[package]]
+name = "dt2-native-host"
+version = "0.0.1"
+dependencies = [
+ "coldfire",
+ "dt2-firmware-loader",
+ "emmc-card",
+ "live-audio",
+ "machine",
+ "periph",
+ "serde_json",
+ "sharc-native",
+]
 
 [[package]]
 name = "dtoa"
@@ -2624,6 +2645,11 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "periph"
 version = "0.0.1"
+dependencies = [
+ "flate2",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "phf"
@@ -3310,6 +3336,7 @@ dependencies = [
 name = "sharc-native"
 version = "0.0.1"
 dependencies = [
+ "sharc-fast-cl",
  "sharc-gen",
  "sharc-rt",
 ]

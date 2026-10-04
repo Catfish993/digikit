@@ -5,10 +5,13 @@ State lives under ``out/native/pgo/dn2/<host-triple>/`` (ignored by git):
 
     manifest.json          what the current profile was trained from
     profiles/<sha>.profdata  merged profile, content addressed
-    instrument-target/     cargo target dir of the instrumented test build
-    target/                cargo target dir of the profile-use app build
-    control-target/        plain release test build (benchmark control)
     bench-<time>/          copied binaries, logs, bench.tsv, summary.json
+
+Cargo target dirs come from tools/native_target.py, keyed by the generated
+core (``out/native/target/<gen-key>``): the benchmark control is the plain
+release build in the key dir itself (shared with the desktop app and the
+fast-tier examples, so the generated core is not recompiled), the profile
+builds differ by RUSTFLAGS and use ``pgo-instrument/`` and ``pgo-use/`` below it.
 
 Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
 ``bench-bins A B --pairs N`` (two prebuilt workload test binaries).
@@ -52,6 +55,16 @@ TRAIN_RUNS = 4
 FLAGS_TEMPLATE = "-Cprofile-use={profdata} -Cllvm-args=-pgo-warn-missing-function"
 SKIP_DIRS = {"target", ".git", "node_modules"}
 SKIP_FILES = {".DS_Store"}
+
+
+def native_target():
+    """tools/native_target.py: cargo target dirs keyed by generated core."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    try:
+        import native_target as module
+    finally:
+        sys.path.pop(0)
+    return module
 
 
 def benchlock(mode: str, label: str):
@@ -225,8 +238,12 @@ def compute_components(
     gen_digest, gen_count = (
         tree_digest(hasher, gen, gen, set()) if gen.is_dir() else ("absent", 0)
     )
+    workspace = hashlib.sha256()
+    for name in ("Cargo.toml", "Cargo.lock"):
+        workspace.update(hasher.digest(ROOT / name).encode())
     components = {
         "sources": outer.hexdigest(),
+        "workspace": workspace.hexdigest(),
         "generated": gen_digest,
         "rustc": hashlib.sha256(rustc_version().encode()).hexdigest(),
         "triple": TRIPLE,
@@ -301,7 +318,12 @@ def launch_plan(
         return None, f"native PGO: {status}{suffix}; run tools/native_pgo.py train"
     plan = LaunchPlan(
         prefix=["rustup", "run", TOOLCHAIN],
-        cargo_args=["--target", TRIPLE, "--target-dir", str(state_dir() / "target")],
+        cargo_args=[
+            "--target",
+            TRIPLE,
+            "--target-dir",
+            str(native_target().target_dir(generated_dir(environ), "pgo-use")),
+        ],
         env={"RUSTFLAGS": profile_use_flags(detail)},
     )
     return plan, "native PGO: using profile " + pathlib.Path(detail).name
@@ -354,8 +376,9 @@ def build_tests(
         MANIFEST_PATH,
         "--features",
         FEATURES,
-        "--target",
-        TRIPLE,
+        # RUSTFLAGS builds use --target so the flags skip build scripts; the
+        # plain build has none, and shares its key dir with the desktop app.
+        *(["--target", TRIPLE] if rustflags else []),
         "--target-dir",
         str(target_dir),
         "--message-format=json",
@@ -491,7 +514,7 @@ def cmd_train(args: argparse.Namespace) -> None:
     shutil.rmtree(raw, ignore_errors=True)
     raw.mkdir(parents=True)
     binary = build_tests(
-        state / "instrument-target",
+        native_target().target_dir(gen, "pgo-instrument"),
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -599,12 +622,15 @@ def cmd_bench(args: argparse.Namespace) -> None:
     out.mkdir(parents=True)
     t = time.monotonic()
     control_src = build_tests(
-        state / "control-target", None, gen, out / "control-build.log"
+        native_target().target_dir(gen), None, gen, out / "control-build.log"
     )
     print(f"control build {time.monotonic() - t:.1f} s", flush=True)
     t = time.monotonic()
     use_src = build_tests(
-        state / "target", profile_use_flags(detail), gen, out / "use-build.log"
+        native_target().target_dir(gen, "pgo-use"),
+        profile_use_flags(detail),
+        gen,
+        out / "use-build.log",
     )
     print(f"profile-use build {time.monotonic() - t:.1f} s", flush=True)
     binaries = {}
@@ -790,7 +816,11 @@ def cmd_run(args: argparse.Namespace) -> None:
 def cmd_build(args: argparse.Namespace) -> None:
     """Plain release coupled test binary for a generated core (SHARC_GEN_DIR)."""
     gen = pathlib.Path(args.gen).resolve()
-    target = pathlib.Path(args.target_dir).resolve()
+    target = (
+        pathlib.Path(args.target_dir).resolve()
+        if args.target_dir
+        else native_target().target_dir(gen)
+    )
     binary = build_tests(target, None, gen, target / "build.log")
     print(binary)
 
@@ -810,7 +840,9 @@ def main(argv: list[str] | None = None) -> int:
         "build", help="plain release workload test binary for a generated core"
     )
     build.add_argument("--gen", required=True, help="generated core directory")
-    build.add_argument("--target-dir", required=True)
+    build.add_argument(
+        "--target-dir", help="default: out/native/target/<gen-key> (native_target.py)"
+    )
     run = sub.add_parser("run", help="run the workload once (exclusive lock)")
     run.add_argument("binary")
     run.add_argument("--log", required=True)

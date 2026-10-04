@@ -74,7 +74,8 @@ def _default_library_path() -> Path:
         name = "live_audio.dll"
     else:
         raise RuntimeError("live_audio: unsupported platform %r" % system)
-    return _CRATE_DIR / "target" / "release" / name
+    # One cargo workspace: the default target dir is the repo root's.
+    return _ROOT / "target" / "release" / name
 
 
 class LiveAudioError(RuntimeError):

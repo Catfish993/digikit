@@ -18,13 +18,3 @@ crate-type = ["cdylib", "rlib"]
 [[bin]]
 name = "live_play"
 path = "src/bin/live_play.rs"
-
-[profile.release]
-opt-level = 3
-codegen-units = 16
-debug = false
-panic = "abort"
-incremental = false
-
-[profile.dev]
-panic = "abort"

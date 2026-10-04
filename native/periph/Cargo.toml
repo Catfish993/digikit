@@ -28,12 +28,3 @@ crate-type = ["rlib"]
 name = "mmio-replay"
 path = "src/bin/replay.rs"
 required-features = ["trace"]
-
-[profile.release]
-opt-level = 3
-debug = false
-
-[profile.dev]
-# Matches the other native/ crates' choice; replay runs are single-shot CLI
-# tools, not long-lived services, so an abort on panic is fine here too.
-panic = "unwind"

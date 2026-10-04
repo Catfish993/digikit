@@ -42,7 +42,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CRATE = ROOT / "native" / "coldfire"
-CFDIS = CRATE / "target" / "release" / "cfdis"
+# The native crates form one cargo workspace; its default target dir is ROOT/target.
+CFDIS = ROOT / "target" / "release" / "cfdis"
 LANG_DIR = ROOT / "tools" / "ghidra" / "ColdfireEMAC" / "data" / "languages"
 DEFAULT_IMAGES = ["dt2-1.16", "dn2-1.11"]
 

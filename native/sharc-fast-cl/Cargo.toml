@@ -18,8 +18,3 @@ cranelift-native = "0.136"
 [lib]
 name = "sharc_fast_cl"
 crate-type = ["rlib", "cdylib"]
-
-[profile.release]
-opt-level = 3
-debug = false
-incremental = false

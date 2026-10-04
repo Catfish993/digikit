@@ -217,3 +217,16 @@ def test_main_sets_fast_regions_for_the_coupled_run(monkeypatch, tmp_path):
     scope["main"](["x.syx", "--coupled", "--audio-profile-syx", str(syx)])
     assert __import__("os").environ["SHARC_FAST_REGIONS"] == "0x10,0x20"
     monkeypatch.delenv("SHARC_FAST_REGIONS")
+
+
+def test_cargo_command_uses_the_gen_keyed_target_dir(monkeypatch, tmp_path):
+    scope = launcher()
+    plain = scope["cargo_command"](["example.syx"])
+    assert plain[plain.index("--target-dir") + 1].endswith("out/native/target/nogen")
+    gen = tmp_path / "gen"
+    gen.mkdir()
+    monkeypatch.setenv("SHARC_GEN_DIR", str(gen))
+    coupled = scope["cargo_command"](["example.syx", "--coupled"])
+    target = coupled[coupled.index("--target-dir") + 1]
+    assert target.endswith("out/native/target/generic")
+    assert coupled.index("--target-dir") < coupled.index("--")

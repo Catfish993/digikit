@@ -34,6 +34,10 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
   fast-forwards to `work/sharc-emulator` and links `out/`, `sections/`,
   `snapshots/`, `.venv` and the generated language files from the main tree.
   Do not change dependencies there (the virtualenv is shared).
+- A worktree cannot reuse the main tree's compiled `sharc-gen` (different
+  package paths), so each worktree lane pays one ~4 min compile per gen.
+  Keep one target dir per worktree per gen (`tools/native_target.py` picks
+  it), build A/B variants one after another in it and copy the binaries out.
 
 ## Ghidra
 
