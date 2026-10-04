@@ -374,6 +374,28 @@ async fn emu_diagnostics(
     .map_err(|e| e.to_string())?
 }
 
+/// Writes an exported diagnostics report to `out/native/diagnostics/` under
+/// the working directory (the repository root under `mise run emu`); the
+/// webview cannot save `<a download>` links.
+#[tauri::command]
+fn emu_save_diagnostics(name: String, json: String) -> Result<String, String> {
+    let dir = std::env::current_dir()
+        .map_err(|e| e.to_string())?
+        .join("out/native/diagnostics");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .collect();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let path = dir.join(format!("{stamp}-{safe}"));
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 async fn emu_audio_status(
     host: State<'_, Host>,
@@ -542,6 +564,7 @@ fn main() {
         .manage(host)
         .invoke_handler(tauri::generate_handler![
             emu_diagnostics,
+            emu_save_diagnostics,
             emu_audio_status,
             emu_startup,
             emu_load,

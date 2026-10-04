@@ -57,8 +57,11 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
     try {
       const report = await runtime()?.diagnostics();
       if (!report) return;
-      const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
-      const link = document.createElement('a'); link.href = url; link.download = `digiemu-${report.device}-diagnostics.json`; link.click();
+      const name = `digiemu-${report.device}-diagnostics.json`, json = JSON.stringify(report, null, 2);
+      const save = runtime()?.saveDiagnostics;
+      if (save) { setStatus(`Diagnostics saved to ${await save(name, json)}`); return; }
+      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = name; link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) { setStatus(`Diagnostic export failed: ${String(error)}`); }
   };

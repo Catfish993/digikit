@@ -35,6 +35,8 @@ export interface EmulatorRuntime {
   /** Press a key, release it after `hold` guest instructions (emulation time, not wall time). */
   tap?(code: number, hold?: number): Promise<void>;
   diagnostics(): Promise<RuntimeDiagnostics>;
+  /** Native desktop only: save a report to disk; returns the path written. */
+  saveDiagnostics?(name: string, json: string): Promise<string>;
   load(bytes: Uint8Array, name: string): Promise<RuntimeSnapshot>; restart(): Promise<RuntimeSnapshot>;
   pause(): void; resume(): void; press(code: number): Promise<void>; release(code: number): Promise<void>;
   turn(encoder: number, detents: number): Promise<void>; stop(): Promise<void>; dispose(): void;
@@ -124,6 +126,7 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     if (!String(error).includes('No startup firmware selected')) onUpdate({ type: 'error', error: String(error) });
   }
   return {
+    saveDiagnostics: (name: string, json: string) => api.invoke<string>('emu_save_diagnostics', { name, json }),
     async diagnostics() { const session = activeSession; if (session === undefined) throw new Error('No firmware selected'); const report = await api.invoke<RuntimeDiagnostics>('emu_diagnostics', { sessionId: session }); if (disposed || activeSession !== session) throw new Error('Firmware session changed during diagnostic export'); return { ...report, host: metrics.report() }; },
     async nativeAudio() {
       const session = activeSession;
