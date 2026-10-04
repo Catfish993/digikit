@@ -12,7 +12,8 @@ its target dir from here:
 
     prod       out/native/dn2-audio/gen (what the desktop app and PGO use)
     nogen      no generated core (SHARC_GEN_DIR unset or missing)
-    generic    any other transpile-only gen (no image.rs)
+    generic    any other transpile-only gen (no image.rs), e.g. the browser
+               measurement's out/native/dn2-audio/gen-generic
     g-<hash>   any other gen with an image: hash of its resolved path
 
 In a git worktree (``.git`` is a file) the root is
