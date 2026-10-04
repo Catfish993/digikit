@@ -35,8 +35,7 @@ impl Lower {
         }
         self.mem_xfer(addr, x)?;
         if post {
-            self.require_linear(ic)?;
-            self.wr_i(ic, modified)?;
+            self.post_update(ic, iv, scaled, modified)?;
         }
         Ok(())
     }
@@ -65,6 +64,10 @@ impl Lower {
     pub fn require_linear(&mut self, ic: u32) -> LR<()> {
         if !(16..32).contains(&ic) {
             return refuse("require_linear: not an index register");
+        }
+        if !self.env.circ_off && self.env.dag_l[(ic - 16) as usize].is_some_and(|l| l != 0) {
+            // MODIFY wraps on B/L whatever MODE1.CBUFEN says; not lowered.
+            return refuse("MODIFY on an index register with L != 0");
         }
         let r = Req::Eq((ic + 32) as u8, 0);
         if !self.reqs.contains(&r) {

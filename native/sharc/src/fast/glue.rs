@@ -533,7 +533,7 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
                 mask: v_word(0, mask),
                 want: v_word(0, mask),
             },
-            Req::NwPlain { .. } => continue,
+            Req::NwPlain { .. } | Req::Within { .. } => continue,
         };
         if !out
             .iter()
@@ -543,6 +543,15 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
         }
     }
     out
+}
+
+/// Is every circular index register of R inside its buffer?
+#[inline]
+fn within_ok(s: &St, r: &Region) -> bool {
+    r.within.iter().all(|&(c, lo, hi)| {
+        let v = s.r[c as usize];
+        v.is_c() && (lo..=hi).contains(&v.b)
+    })
 }
 
 /// Do all of R's register requirements hold in S?
@@ -634,6 +643,10 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
             m.is_c() && m.b & mask == value
         }
         Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
+        Req::Within { c, lo, hi } => {
+            let v = s.r[c as usize];
+            v.is_c() && (lo..=hi).contains(&v.b)
+        }
         Req::NwPlain {
             base,
             lo,
@@ -738,7 +751,7 @@ pub fn run(
         }
     };
     pmark!(pt, 1);
-    if !regs_ok(s, &r.chk) {
+    if !regs_ok(s, &r.chk) || !within_ok(s, r) {
         return Err(Decline::Req);
     }
     if !nw_ok(s, r, iters) {
@@ -1247,7 +1260,7 @@ pub fn run_cfg(
         return Err(shape("loop or PC stack too deep"));
     }
     pmark!(pt, 1);
-    if !regs_ok(s, &r.chk) {
+    if !regs_ok(s, &r.chk) || !within_ok(s, r) {
         return Err(Decline::Req);
     }
     let iters = rem_top.max(1);
@@ -1337,14 +1350,21 @@ pub fn run_cfg(
     // The common exit: no loop started, ended or was entered by the kernel, and
     // the loops active are the entry loops: only their counts (and, in the stack
     // model, the registers that mirror the top slot) change.
-    let (didpc, lset, stk26) = if meta.events {
-        (
-            ctx.get32(CTX_DIDPC),
-            ctx.get32(CTX_LCNTR + 4),
-            ctx.get32(CTX_STK26),
-        )
+    // A slot the kernel does not store holds what an earlier call left there.
+    let didpc = if meta.st_didpc {
+        ctx.get32(CTX_DIDPC)
     } else {
-        (0, 0, 0)
+        0
+    };
+    let lset = if meta.st_lcntr {
+        ctx.get32(CTX_LCNTR + 4)
+    } else {
+        0
+    };
+    let stk26 = if meta.st_stk26 {
+        ctx.get32(CTX_STK26)
+    } else {
+        0
     };
     if site.active.len() == n && didpc == 0 && lset == 0 && stk26 == 0 {
         let base = s.loops.n - n;
@@ -1371,11 +1391,18 @@ pub fn run_cfg(
         pmark!(pt, 8);
         return Ok(crate::EXIT_NEXT);
     }
-    if !meta.events {
-        // The kernel stored none of the loop-event slots: they read as zero.
-        for off in [CTX_LCNTR, CTX_LCNTR + 4, CTX_STK26, CTX_DIDPC] {
-            ctx.set32(off, 0);
-        }
+    // The slots the kernel did not store read as zero.
+    if !meta.st_didpc {
+        ctx.set32(CTX_DIDPC, 0);
+    }
+    if !meta.st_lcntr {
+        ctx.set32(CTX_LCNTR, 0);
+        ctx.set32(CTX_LCNTR + 4, 0);
+    }
+    if !meta.st_stk26 {
+        ctx.set32(CTX_STK26, 0);
+    }
+    if !meta.st_slots {
         for d in 0..MAX_SLOTS {
             ctx.set32(CTX_SLOT_LAST + 4 * d, 0);
         }

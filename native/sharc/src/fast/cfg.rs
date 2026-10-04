@@ -716,8 +716,13 @@ pub struct CfgMeta {
     pub deepest_in_region: u32,
     /// Where the region ends (instructions that are not part of it) and why.
     pub stops: Vec<(u32, String)>,
-    /// The kernel can start or end a loop (it stores LCNTR, the DO flag, the
-    /// STKYX event or the PC-stack flag, or a stale-slot record): otherwise
-    /// those context slots hold nothing and read as zero.
-    pub events: bool,
+    /// Which loop-event context slots the kernel stores (a kernel that can
+    /// start or end a loop stores LCNTR, the DO flag, the STKYX event, or a
+    /// stale-slot record). The others hold what an earlier call of another
+    /// region left there and must be read as zero: the DO flag, LCNTR with its
+    /// set flag, the STKYX event, the stale-slot records.
+    pub st_didpc: bool,
+    pub st_lcntr: bool,
+    pub st_stk26: bool,
+    pub st_slots: bool,
 }

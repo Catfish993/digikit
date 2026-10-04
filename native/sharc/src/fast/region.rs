@@ -53,6 +53,8 @@ pub struct Region {
     pub known: Vec<u8>,
     pub eqs: Vec<(u8, u32)>,
     pub nw: Vec<Req>,
+    /// `Req::Within` requirements as (register, lo, hi).
+    pub within: Vec<(u8, u32, u32)>,
     /// MODE1 and ASTATX requirements.
     pub misc: Vec<Req>,
     /// The kernel tracks flags in pseudo registers (in `inputs`); the groups
@@ -105,6 +107,16 @@ pub fn decode_one(s: &St, pc: u32) -> Result<Dec, Refuse> {
     Dec::from_decoded(&d).ok_or_else(|| Refuse(format!("undecodable instruction at {pc:#x}")))
 }
 
+/// The `Within` requirements of REQS as (register, lo, hi).
+fn within_of(reqs: &[Req]) -> Vec<(u8, u32, u32)> {
+    reqs.iter()
+        .filter_map(|q| match *q {
+            Req::Within { c, lo, hi } => Some((c, lo, hi)),
+            _ => None,
+        })
+        .collect()
+}
+
 fn env_of(s: &St, flag_v: bool) -> Env {
     let mut regs = [None; NREGS as usize];
     for (c, slot) in regs.iter_mut().enumerate() {
@@ -112,8 +124,23 @@ fn env_of(s: &St, flag_v: bool) -> Env {
             *slot = Some(s.r[c].b);
         }
     }
+    // Length and base registers of the index registers (DAG1 I0-I7 / DAG2
+    // I8-I15 pair with L0-L15 = codes 48..64 and B0-B15 = codes 64..80).
+    let mut dag_l = [None; 16];
+    let mut dag_b = [None; 16];
+    for i in 0..16 {
+        if s.r[48 + i].is_c() {
+            dag_l[i] = Some(s.r[48 + i].b);
+        }
+        if s.r[64 + i].is_c() {
+            dag_b[i] = Some(s.r[64 + i].b);
+        }
+    }
     Env {
         regs,
+        dag_l,
+        dag_b,
+        circ_off: std::env::var_os("SHARC_FAST_NOCIRC").is_some(),
         assume_nw32: s.cfg.assume_nw32,
         mode1: s.r[MODE1].b,
         flag_v,
@@ -262,6 +289,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
             .filter(|q| matches!(q, Req::NwPlain { .. }))
             .copied()
             .collect(),
+        within: within_of(&reqs),
         misc: reqs
             .iter()
             .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))
@@ -439,13 +467,13 @@ fn assemble_cfg(
         n_entry,
         jumps,
         deepest_in_region: deepest,
-        events: out.stored.iter().any(|&o| {
-            o == CTX_LCNTR
-                || o == CTX_LCNTR + 4
-                || o == CTX_STK26
-                || o == CTX_DIDPC
-                || (CTX_SLOT_LAST..CTX_SLOT_LAST + 4 * MAX_SLOTS).contains(&o)
-        }),
+        st_didpc: out.stored.contains(&CTX_DIDPC),
+        st_lcntr: out.stored.contains(&CTX_LCNTR) || out.stored.contains(&(CTX_LCNTR + 4)),
+        st_stk26: out.stored.contains(&CTX_STK26),
+        st_slots: out
+            .stored
+            .iter()
+            .any(|o| (CTX_SLOT_LAST..CTX_SLOT_LAST + 4 * MAX_SLOTS).contains(o)),
         stops: st
             .nodes
             .values()
@@ -487,6 +515,7 @@ fn assemble_cfg(
             .filter(|q| matches!(q, Req::NwPlain { .. }))
             .copied()
             .collect(),
+        within: within_of(&reqs),
         misc: reqs
             .iter()
             .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))

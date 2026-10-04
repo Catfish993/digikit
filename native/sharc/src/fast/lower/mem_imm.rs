@@ -6,8 +6,10 @@
 //! Same address class as `mem_addr`: normal-word accesses through an index
 //! register are byte addresses scaled by 4 (`Req::NwPlain`), unconditional,
 //! normal-word width only (byte, short and long-word variants are refused).
-//! Every index register the kernel updates needs its length register L to be
-//! zero at entry (`require_linear`), so no circular wrap is ever missed.
+//! A post-modify of an index register wraps at the end of its circular buffer
+//! (`Lower::post_update`); the address-only MODIFY forms wrap on the source's
+//! B and L (`Lower::modify_update`: 19a_scaled, 7b) or need L to be zero at
+//! entry (`require_linear`: 7a, 19a, which the interpreter does not wrap).
 
 use super::mem_addr::Xfer;
 use super::*;
@@ -36,8 +38,7 @@ impl Lower {
         }
         self.mem_xfer(addr, x)?;
         if post {
-            self.require_linear(ic)?;
-            self.wr_i(ic, modified)?;
+            self.post_update(ic, iv, off, modified)?;
         }
         Ok(())
     }
@@ -153,6 +154,11 @@ impl Lower {
         let iv = self.rd_i(16 + src)?;
         let k = self.ci(delta as u32);
         let new = self.bin(Bin::Add, iv, k);
+        if d.form == "19a_scaled" {
+            // Wraps on the source's B and L, scaled like the access.
+            let scale = if d.field("w") == Some(1) { 4 } else { 2 };
+            return self.modify_update(16 + src, 16 + dst, iv, k, new, scale, false);
+        }
         self.require_linear(16 + src)?;
         self.require_linear(16 + dst)?;
         self.wr_i(16 + dst, new)
@@ -173,8 +179,6 @@ impl Lower {
         let iv = self.rd_i(16 + src)?;
         let mv = self.rd_i(32 + m)?;
         let new = self.bin(Bin::Add, iv, mv);
-        self.require_linear(16 + src)?;
-        self.require_linear(16 + dst)?;
-        self.wr_i(16 + dst, new)
+        self.modify_update(16 + src, 16 + dst, iv, mv, new, 1, true)
     }
 }

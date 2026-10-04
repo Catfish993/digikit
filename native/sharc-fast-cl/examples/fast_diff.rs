@@ -953,6 +953,53 @@ fn rand_int(r: &mut Rng) -> u32 {
 static KNOWN_FLAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Mostly ordinary float values (long kernel runs), a few special ones.
 static CALM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// `--circ`: the circular-buffer configuration of `randomise` (below).
+static CIRC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A circular-buffer setup for the 16 index registers: the length in words
+/// (the same for all, so that any pairing of an index and a modifier register
+/// can satisfy |M| <= L) and each register's base in the data window.
+#[derive(Clone, Copy, Debug)]
+struct CircSpec {
+    len: u32,
+    base: [u32; 16],
+}
+
+thread_local! {
+    static CIRC_SPEC: std::cell::Cell<Option<CircSpec>> = const { std::cell::Cell::new(None) };
+}
+
+/// A random buffer setup: L in 1..=max_len words, bases word aligned with
+/// the whole buffer inside the data window.
+fn circ_spec(r: &mut Rng, min_len: u32, max_len: u32) -> CircSpec {
+    let len = min_len + r.below(max_len - min_len + 1);
+    let mut base = [0u32; 16];
+    for b in base.iter_mut() {
+        // Room on both sides for an index outside its buffer plus a pre-modify
+        // offset of +-1 KB (15a): the guard bands are 64 bytes.
+        *b = DATA_LO + 0x440 + 4 * r.below(0x60);
+    }
+    CircSpec { len, base }
+}
+
+/// Modifier values for a circular setup: mostly small, often exactly +-L
+/// (a full lap) and 0.
+fn circ_ms(r: &mut Rng, len: u32) -> [u32; 16] {
+    let mut ms = [0u32; 16];
+    for m in ms.iter_mut() {
+        let l = len as i32;
+        let v = match r.below(8) {
+            0 => l,
+            1 => -l,
+            2 => 0,
+            3 => 1,
+            4 => -1,
+            _ => (r.below(2 * len + 1) as i32 - l).clamp(-l, l),
+        };
+        *m = v as u32;
+    }
+    ms
+}
 
 fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
     let calm = CALM.load(std::sync::atomic::Ordering::Relaxed);
@@ -978,9 +1025,29 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
         s.r[c] = V::c(ms[c - 32] as Int);
     }
     // Length registers: no circular buffer (a kernel that updates an index
-    // register requires it).
+    // register requires it), unless --circ sets one up.
     for c in 48..64 {
         s.r[c] = V::c(0);
+    }
+    if let Some(sp) = CIRC_SPEC.with(|c| c.get()) {
+        for i in 0..16 {
+            let top = sp.base[i] + 4 * sp.len;
+            s.r[48 + i] = V::c(sp.len as Int);
+            s.r[64 + i] = V::c(sp.base[i] as Int);
+            // The index: inside the buffer (aligned), at its edges, or
+            // (rarely) outside it, which a circular kernel must refuse.
+            let a = match r.below(16) {
+                0 => sp.base[i],
+                1 => top - 4,
+                2 => sp.base[i] + 4 * r.below(2.min(sp.len)),
+                3 => top - 4 * (1 + r.below(2.min(sp.len))),
+                4 => sp.base[i] + r.below(4 * sp.len),
+                5 => top + 4 * r.below(3),
+                6 => sp.base[i].wrapping_sub(4 * r.below(3)),
+                _ => sp.base[i] + 4 * r.below(sp.len),
+            };
+            s.r[16 + i] = V::c(a as Int);
+        }
     }
     // ASTATX: random value with a random known mask.
     let known = KNOWN_FLAGS.load(std::sync::atomic::Ordering::Relaxed);
@@ -1194,6 +1261,11 @@ fn forms(args: &[String]) {
     // --cond: conditional instructions (random condition codes, mostly
     // known flags) instead of unconditional ones.
     let cond_mode = args.iter().any(|a| a == "--cond");
+    // --circ: circular buffers on the index registers (L != 0, B set, the
+    // index inside or at the edges of its buffer, modifiers up to +-L),
+    // CBUFEN on or off at build time and flipped in some trials.
+    let circ_mode = args.iter().any(|a| a == "--circ");
+    CIRC.store(circ_mode, std::sync::atomic::Ordering::Relaxed);
     KNOWN_FLAGS.store(cond_mode, std::sync::atomic::Ordering::Relaxed);
     let mut be = backend(flag(args, "--backend").unwrap_or("cl"));
     let mut e = open(&image, &state, CLOCK_BASE);
@@ -1244,11 +1316,21 @@ fn forms(args: &[String]) {
             for m in ms.iter_mut() {
                 *m = (rng.below(9) as i32 - 4) as u32;
             }
+            // Circular setup of this instance (the same in its trials).
+            let spec = circ_mode.then(|| circ_spec(&mut rng, 1, 48));
+            if let Some(sp) = &spec {
+                ms = circ_ms(&mut rng, sp.len);
+            }
+            CIRC_SPEC.with(|c| c.set(spec));
             let s = &mut e.s;
             randomise(s, &mut rng, &ms);
             // MODE1 at build time: every region requires TRUNCATE (bit 15)
-            // clear.
-            let mode_build = 0x3900_1cf8u32;
+            // clear. With --circ CBUFEN (bit 24) is off in a quarter of the
+            // instances: L != 0 is then a plain add.
+            let mut mode_build = 0x3900_1cf8u32;
+            if circ_mode && rng.chance(4) {
+                mode_build &= !(1 << 24);
+            }
             s.r[114] = V::c(mode_build as Int);
             let nwords = match unit.form {
                 "2c" | "3c" => 1,
@@ -1292,15 +1374,28 @@ fn forms(args: &[String]) {
                 if trial % 50 == 24 {
                     // A circular buffer is set up on a random index register.
                     let k = rng.below(16) as usize;
-                    s.r[48 + k] = V::c(1 + rng.below(64) as Int);
+                    let old = s.r[48 + k].b;
+                    let mut nv = 1 + rng.below(64);
+                    if nv == old {
+                        nv += 1;
+                    }
+                    s.r[48 + k] = V::c(nv as Int);
                     lflip = Some(48 + k as u8);
                 }
-                // TRUNCATE flips now and then: the MODE1 requirement fails.
-                let mode_flip = trial % 37 == 36;
-                s.r[114] = V::c((mode_build ^ ((mode_flip as u32) << 15)) as Int);
                 // TRUNCATE flips now and then: a requirement on MODE1 fails.
+                // With --circ CBUFEN flips as well.
                 let mode_flip = trial % 37 == 36;
-                s.r[114] = V::c((mode_build ^ ((mode_flip as u32) << 15)) as Int);
+                let cb_flip = circ_mode && trial % 11 == 10;
+                s.r[114] = V::c(
+                    (mode_build ^ ((mode_flip as u32) << 15) ^ ((cb_flip as u32) << 24)) as Int,
+                );
+                let mut bflip = None;
+                if circ_mode && trial % 29 == 28 {
+                    // A baked base changes.
+                    let k = rng.below(16) as usize;
+                    s.r[64 + k] = V::c((s.r[64 + k].b + 4) as Int);
+                    bflip = Some(64 + k as u8);
+                }
                 let mut unknown = None;
                 if rng.chance(12) {
                     // A register becomes unknown.
@@ -1329,25 +1424,50 @@ fn forms(args: &[String]) {
                     .iter()
                     .any(|q| !sharc_native::fast::glue::eval_req(s, q, 1));
                 // Which requirements the injected change may break.
-                let expect_fail = region.reqs.iter().any(|q| {
+                let expects = |q: &sharc_native::fast::Req| {
                     use sharc_native::fast::{Base, Req};
                     match *q {
                         Req::FlagsKnown(mask) => s.r[118].m & mask != mask,
                         Req::Known(c) => Some(c) == unknown,
-                        Req::Eq(c, _) => Some(c) == unknown || Some(c) == flip || Some(c) == lflip,
-                        Req::Mode1 { .. } => mode_flip,
+                        Req::Eq(c, _) => {
+                            Some(c) == unknown
+                                || Some(c) == flip
+                                || Some(c) == lflip
+                                || Some(c) == bflip
+                        }
+                        Req::Mode1 { mask, value } => s.r[114].b & mask != value,
+                        Req::Within { c, lo, hi } => {
+                            Some(c) == unknown || !(lo..=hi).contains(&s.r[c as usize].b)
+                        }
                         Req::NwPlain {
                             base: Base::Reg(c), ..
                         } => Some(c) == unknown,
                         _ => false,
                     }
+                };
+                let expect_fail = region.reqs.iter().any(expects);
+                let req_dbg = (req_fail != expect_fail).then(|| {
+                    format!(
+                        "expected to fail {:?}, evaluated failing {:?}; unknown {unknown:?}",
+                        region
+                            .reqs
+                            .iter()
+                            .filter(|q| expects(q))
+                            .collect::<Vec<_>>(),
+                        region
+                            .reqs
+                            .iter()
+                            .filter(|q| !sharc_native::fast::glue::eval_req(s, q, 1))
+                            .collect::<Vec<_>>()
+                    )
                 });
                 let out = fast_run(s, &region, &*kernel, &mut ctx);
                 let fastsnap = Snap::take(s);
                 let mut bad = Vec::new();
                 if req_fail != expect_fail {
                     bad.push(format!(
-                        "requirements: failed {req_fail}, injected-change expectation {expect_fail}"
+                        "requirements: failed {req_fail}, injected-change expectation {expect_fail}; {}",
+                        req_dbg.unwrap_or_default()
                     ));
                 }
                 match out {
@@ -1434,7 +1554,9 @@ fn forms(args: &[String]) {
         if tally.built == 0 {
             println!("  NO instance lowered for {}", unit.name);
             // Conditional index updates (post-modify) have no address range.
-            if !cond_mode {
+            // MODIFY forms are refused when L != 0 (--circ).
+            let modify = matches!(unit.form, "7a" | "7b" | "19a" | "19a_scaled");
+            if !cond_mode && !(circ_mode && modify) {
                 total_mismatch += 1;
             }
         }
@@ -2428,6 +2550,10 @@ fn cfgprog(args: &[String]) {
     let dump = args.iter().any(|a| a == "--dump");
     // --stride: nonzero modifier registers, so address registers step.
     let stride = args.iter().any(|a| a == "--stride");
+    // --circ: circular buffers on the index registers of every case (see
+    // `forms`); the modifiers are +-L, 0, +-1 and small.
+    let circ_mode = args.iter().any(|a| a == "--circ");
+    CIRC.store(circ_mode, std::sync::atomic::Ordering::Relaxed);
     // --simple: a few instructions, then a DO loop with a straight body
     // (the loop shape), entered at every instruction.
     let simple = args.iter().any(|a| a == "--simple");
@@ -2563,6 +2689,11 @@ fn cfgprog(args: &[String]) {
             for m in ms_case.iter_mut() {
                 *m = (rng.below(6) as i32 - 2) as u32;
             }
+        }
+        if circ_mode {
+            let sp = circ_spec(&mut rng, 3, 40);
+            ms_case = circ_ms(&mut rng, sp.len);
+            CIRC_SPEC.with(|c| c.set(Some(sp)));
         }
         // Both engines from the random state STATE_SEED for N instructions.
         let pair = |ei: &mut Engine, ef: &mut Engine, st_seed: u64, mode1: u32, n: u32| {

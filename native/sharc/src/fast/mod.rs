@@ -176,6 +176,10 @@ pub enum Req {
     Mode1 { mask: u32, value: u32 },
     /// The ASTATX bits in `mask` are known (a condition reads them).
     FlagsKnown(u32),
+    /// The register is known and its value lies in `lo..=hi` (unsigned): an
+    /// index register inside its circular buffer, which is what bounds every
+    /// address the wrapped updates produce.
+    Within { c: u8, lo: u32, hi: u32 },
 }
 
 /// A memory window the region touches: the bytes
@@ -593,10 +597,11 @@ impl FastEngine {
                         r.verified_gen = s.mem.dec_gen;
                         if self.log {
                             eprintln!(
-                                "fast: {pc:#x} built: {} insns, {} windows, {} reqs, kernel {} ops",
+                                "fast: {pc:#x} built: {} insns, {} windows, {} reqs ({} circular), kernel {} ops",
                                 r.len(),
                                 r.wins.len(),
                                 r.reqs.len(),
+                                r.within.len(),
                                 r.kernel.inst_count()
                             );
                         }
@@ -611,23 +616,25 @@ impl FastEngine {
     }
 }
 
-/// The failing requirement is "this index register's length register L is
-/// zero" (linear addressing, `Lower::require_linear`): a state condition the
-/// region was made for, not a baked constant, so re-making the region from a
-/// circular-buffer state gives the same region again.
-fn req_is_linear_l(s: &St, r: &region::Region) -> bool {
+/// The failing requirement is only "this index register lies inside its
+/// circular buffer" (`Req::Within`): a property of the state, not a baked
+/// constant, so re-making the region from it gives the same region again.
+fn req_is_within(s: &St, r: &region::Region) -> bool {
     for &c in &r.known {
         if s.r[c as usize].m != u32::MAX {
             return false;
         }
     }
-    r.eqs
-        .iter()
-        .find(|&&(c, k)| {
-            let v = s.r[c as usize];
-            v.m != u32::MAX || v.b != k
-        })
-        .is_some_and(|&(c, k)| (48..56).contains(&c) && k == 0)
+    if r.eqs.iter().any(|&(c, k)| {
+        let v = s.r[c as usize];
+        v.m != u32::MAX || v.b != k
+    }) {
+        return false;
+    }
+    r.within.iter().any(|&(c, lo, hi)| {
+        let v = s.r[c as usize];
+        !(v.is_c() && (lo..=hi).contains(&v.b))
+    })
 }
 
 /// Which kind of requirement a `Decline::Req` was (diagnostics).
@@ -650,6 +657,12 @@ fn req_failure(s: &St, r: &region::Region) -> String {
     for q in &r.nw {
         if !glue::eval_req(s, q, 1) {
             return "nw-plain address".into();
+        }
+    }
+    for &(c, lo, hi) in &r.within {
+        let v = s.r[c as usize];
+        if !(v.is_c() && (lo..=hi).contains(&v.b)) {
+            return format!("within r{c} {lo:#x}..{hi:#x} -> {:#x}", v.b);
         }
     }
     "misc (mode1/flags)".into()
@@ -802,7 +815,7 @@ impl FastTier for FastEngine {
                         .entry(format!("decline req: {why}"))
                         .or_default() += 1;
                 }
-                if d == glue::Decline::Req && slot.rebuilds < 16 && !req_is_linear_l(s, region) {
+                if d == glue::Decline::Req && slot.rebuilds < 16 && !req_is_within(s, region) {
                     // A baked constant changed: re-make the region from
                     // this state, a bounded number of times.
                     slot.rebuilds += 1;

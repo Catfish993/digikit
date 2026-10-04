@@ -54,6 +54,9 @@ pub struct Abs {
 
 const LIM: i64 = 1 << 40;
 
+/// MODE1.CBUFEN (circular buffering of data loads and stores).
+pub const MODE1_CBUFEN: u32 = 1 << 24;
+
 impl Abs {
     pub fn konst(c: i64) -> Abs {
         Abs {
@@ -215,6 +218,13 @@ impl Default for Plan {
 pub struct Env {
     /// Fully known register values (UREG codes 0..47) at build time.
     pub regs: [Option<u32>; NREGS as usize],
+    /// L<n> and B<n> of the index registers I0-I15 when known (the
+    /// circular-buffer length and base, `circ_range`).
+    pub dag_l: [Option<u32>; 16],
+    pub dag_b: [Option<u32>; 16],
+    /// `SHARC_FAST_NOCIRC` set: circular post-modifies are not lowered (an
+    /// index register with L != 0 declines, as before the wrap was added).
+    pub circ_off: bool,
     pub assume_nw32: bool,
     /// MODE1 at build time (the region is made for these rounding and
     /// saturation bits, see `Req::Mode1`).
@@ -683,6 +693,16 @@ impl Lower {
 
     /// Entry-iteration range of register C's value.
     fn init_abs(&self, c: usize) -> Option<Abs> {
+        if let Some((b, top)) = self.circ_range(c) {
+            // A circular index stays inside its buffer whatever it steps by.
+            return Some(Abs {
+                base: Base::None,
+                lo: b as i64,
+                hi: top as i64 - 1,
+                ts: 0,
+                nf: 0,
+            });
+        }
         if !self.plan.written[c] {
             return Some(Abs {
                 base: Base::Reg(c as u8),
@@ -717,6 +737,187 @@ impl Lower {
                 ts: s,
                 nf: 0,
             }),
+        }
+    }
+
+    /// The circular buffer `[B, B + 4*L)` (byte space, normal words) of index
+    /// register C (UREG code 16..31) when the body writes C and the state the
+    /// region is made for has L != 0 and a known B. From pass 1 on (pass 0
+    /// finds which registers are written). The buffer must end below 2^32
+    /// (the manual's "memory map overflow" case is outside the rule). A
+    /// register with such a buffer is assumed to stay inside it: every write
+    /// of it in the body must be a wrapped update (`commit` refuses others),
+    /// and `Req::Within` makes it so at entry.
+    pub fn circ_range(&self, c: usize) -> Option<(u32, u32)> {
+        if self.env.circ_off || self.pass == 0 || !(16..32).contains(&c) || !self.plan.written[c] {
+            return None;
+        }
+        let n = c - 16;
+        let (len, base) = (self.env.dag_l[n]?, self.env.dag_b[n]?);
+        if len == 0 || len > (1 << 28) {
+            return None;
+        }
+        let top = base as u64 + 4 * len as u64;
+        (top <= u32::MAX as u64).then_some((base, top as u32))
+    }
+
+    /// `iv` advanced by the constant DELTA bytes inside the circular buffer
+    /// `[base, base + len)` (all in bytes), the interpreter's single
+    /// correction (`memory._circular_step`: `candidate >= B + L` -> `- L`,
+    /// else `< B` -> `+ L`, unsigned 32-bit). IV must lie in the buffer (a
+    /// `Req::Within` the caller adds), |DELTA| <= LEN, and the sum must not
+    /// wrap 32 bits (refused). The result's range is the buffer.
+    fn wrap_add(&mut self, iv: Val, delta: Val, d: i64, base: u32, len: i64) -> LR<Val> {
+        let top = base as i64 + len;
+        let new = if d == 0 {
+            iv
+        } else if d > 0 {
+            // iv <= top - 1, so the sum is below 2^32 when top - 1 + d is;
+            // it is >= B, so only the upper edge can be crossed.
+            if top - 1 + d > u32::MAX as i64 {
+                return refuse("circular sum overflows 32 bits");
+            }
+            let t = self.bin(Bin::Add, iv, delta);
+            let edge = self.ci(top as u32);
+            let over = self.bin(Bin::GeU, t, edge);
+            let l = self.ci(len as u32);
+            let back = self.bin(Bin::Sub, t, l);
+            self.select(over, back, t)
+        } else {
+            if (base as i64) + d < 0 {
+                return refuse("circular sum below zero");
+            }
+            let t = self.bin(Bin::Add, iv, delta);
+            let edge = self.ci(base);
+            let under = self.bin(Bin::LtU, t, edge);
+            let l = self.ci(len as u32);
+            let fwd = self.bin(Bin::Add, t, l);
+            self.select(under, fwd, t)
+        };
+        self.abs[new as usize] = Some(Abs {
+            base: Base::None,
+            lo: base as i64,
+            hi: top - 1,
+            ts: 0,
+            nf: 0,
+        });
+        Ok(new)
+    }
+
+    /// The baked circular parameters of index register N for an update by
+    /// DELTA (scaled bytes): `(B, buffer bytes)` after the checks every
+    /// circular lowering shares, with the requirements they imply (L and B
+    /// baked, the index inside the buffer).
+    fn circ_params(&mut self, src: u32, iv_len_scale: i64, delta: Val) -> LR<(u32, i64, i64)> {
+        let n = (src - 16) as usize;
+        let len = self.env.dag_l[n].unwrap_or(0);
+        let (Some(base), true) = (self.env.dag_b[n], len != 0) else {
+            return refuse("circular buffer unusable (B unknown)");
+        };
+        let lenb = len as i64 * iv_len_scale;
+        let top = base as i64 + lenb;
+        if len > (1 << 28) || top > u32::MAX as i64 {
+            return refuse("circular buffer beyond 2^32");
+        }
+        let Some(d) = self.konst_of(delta) else {
+            return refuse("circular modifier not constant");
+        };
+        if d.abs() > lenb {
+            return refuse("circular modifier larger than the buffer");
+        }
+        self.require_eq(48 + n as u32, len);
+        self.require_eq(64 + n as u32, base);
+        let w = Req::Within {
+            c: src as u8,
+            lo: base,
+            hi: (top - 1) as u32,
+        };
+        if !self.reqs.contains(&w) {
+            self.reqs.push(w);
+        }
+        Ok((base, lenb, d))
+    }
+
+    /// The post-modify update of index register IC (UREG code 16..31): IV
+    /// is its value, MODIFIED the plain sum IV + delta, DELTA the modifier
+    /// already scaled by 4 (normal word). The interpreter's rule
+    /// (`memory._post_modify_index`): with L == 0 the update is the sum; with
+    /// L != 0 it is the wrapped sum when MODE1.CBUFEN is set (and the sum when
+    /// it is clear, which is not lowered).
+    pub fn post_update(&mut self, ic: u32, iv: Val, delta: Val, modified: Val) -> LR<()> {
+        if self.env.circ_off {
+            self.require_linear(ic)?;
+            return self.wr_i(ic, modified);
+        }
+        let n = (ic - 16) as usize;
+        let Some(len) = self.env.dag_l[n] else {
+            return refuse("index length register unknown");
+        };
+        if len == 0 {
+            // No circular buffer: the plain sum whatever MODE1 says.
+            self.require_eq(48 + n as u32, 0);
+            return self.wr_i(ic, modified);
+        }
+        if self.env.mode1 & MODE1_CBUFEN == 0 {
+            return refuse("MODE1.CBUFEN clear with L != 0");
+        }
+        if self.pass == 0 {
+            // Pass 0 only finds which registers are written.
+            return self.wr_i(ic, modified);
+        }
+        let (base, lenb, d) = self.circ_params(ic, 4, delta)?;
+        self.mode1_mask |= MODE1_CBUFEN;
+        let new = self.wrap_add(iv, delta, d, base, lenb)?;
+        self.wr_i(ic, new)
+    }
+
+    /// `Id = MODIFY(Is, delta)` for the forms that wrap on the source's B and
+    /// L whatever MODE1.CBUFEN says (19a_scaled, 7b: `forms_dag.py`). IV is
+    /// the source's value, DELTA the modifier in bytes, PLAIN the sum, SCALE
+    /// the access size that scales L (4 normal word, 2 short word, 1 plain).
+    /// UNSIGNED: the interpreter compares the modifier's 32-bit register value
+    /// unsigned (7b), so a negative one is not a wrap but an unknown result
+    /// there; such a region is refused.
+    #[allow(clippy::too_many_arguments)]
+    pub fn modify_update(
+        &mut self,
+        src: u32,
+        dst: u32,
+        iv: Val,
+        delta: Val,
+        plain: Val,
+        scale: i64,
+        unsigned: bool,
+    ) -> LR<()> {
+        if self.env.circ_off {
+            self.require_linear(src)?;
+            self.require_linear(dst)?;
+            return self.wr_i(dst, plain);
+        }
+        let n = (src - 16) as usize;
+        let Some(len) = self.env.dag_l[n] else {
+            return refuse("index length register unknown");
+        };
+        if len == 0 {
+            self.require_eq(48 + n as u32, 0);
+            return self.wr_i(dst, plain);
+        }
+        if self.pass == 0 {
+            return self.wr_i(dst, plain);
+        }
+        let (base, lenb, d) = self.circ_params(src, scale, delta)?;
+        if unsigned && d < 0 {
+            return refuse("circular MODIFY by a negative M (the interpreter reads M unsigned)");
+        }
+        let new = self.wrap_add(iv, delta, d, base, lenb)?;
+        self.wr_i(dst, new)
+    }
+
+    /// A requirement that register CODE has exactly value K.
+    pub fn require_eq(&mut self, code: u32, k: u32) {
+        let r = Req::Eq(code as u8, k);
+        if !self.reqs.contains(&r) {
+            self.reqs.push(r);
         }
     }
 
@@ -945,6 +1146,23 @@ impl Lower {
                 }
                 None => v,
             };
+            if let Some((b, top)) = self.circ_range(c) {
+                // Every write of a circular index must keep it in its
+                // buffer (the range of the loop-carried value assumes it).
+                let inside = self.abs[v as usize].is_some_and(|a| {
+                    a.base == Base::None
+                        && a.ts == 0
+                        && a.nf == 0
+                        && a.lo >= b as i64
+                        && a.hi < top as i64
+                });
+                if !inside {
+                    return refuse(format!(
+                        "I{} is written outside a circular post-modify",
+                        c - 16
+                    ));
+                }
+            }
             if !self.regs[c].used {
                 self.regs[c].used = true;
                 self.regs[c].first_read = false;
