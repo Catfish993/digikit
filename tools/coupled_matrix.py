@@ -544,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
         args.repeats,
         args.seconds,
         not args.no_validate,
-        args.pgo,
+        str(pathlib.Path(args.pgo).resolve()) if args.pgo else None,
         args.syx,
         out_dir,
         args.timeout,
