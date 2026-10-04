@@ -6091,3 +6091,17 @@ runs at about 1.22x real time (0.924 s for 0.759 s of audio).
 **[O]** The generated-block-only run of entry `0x1c0ca9` differs from the
 interpreter in `at_loaded_entry`; the fast tier matches the interpreter there.
 Not investigated.
+
+### Circular buffers: regenerated core and fast-tier wrap (2026-10-05)
+
+**[V]** Regenerating the DN2 core with the circular-buffer rules (004ba01; recipe in `out/native/dn2-audio/gen/PROVENANCE.txt`) changes none of the pinned hashes: coupled ColdFire `fbace0f0...`, DSP export `05ac2ac2...`, PCM `38d2a322...` (72,896 samples) still hold. `tools/sharc_circstats.py` counts the workload's circular post-modifies in an instrumented copy of the gen: 5,766,932, all on I7 (the stack: B/L words `0x269170/0xc2`, `0x26f000/0x1fd`, `0x2d08c0/0x3e2`, modifier -1 word), and none reaches the end of its buffer. So the wrap is not exercised by this workload; the old "delay line" reading of L7=0x3e2/0x1fd was the stack.
+
+**[C]** "The tier requires L == 0 because the interpreter does not wrap" no longer holds. The tier now lowers the interpreter's rule exactly (`Lower::post_update`, `modify_update`): post-modify with MODE1.CBUFEN set and L != 0, and 19a_scaled / 7b MODIFY (they wrap on the source's B/L whatever CBUFEN says). One +-L step on the unsigned sum; L and B are baked (`Req::Eq`), the index must lie in `[B, B+L)` at entry (new `Req::Within`), so the window is the buffer, not base + stride*t. Refused: |M| > L, CBUFEN clear with L != 0, 7a and 19a (the interpreter does not wrap them), 7b with a negative M (the interpreter reads M unsigned and returns Unknown). `SHARC_FAST_NOCIRC=1` restores the old behaviour for A/B runs.
+
+**[V]** `fast_diff forms --circ` (random B, L, index inside/at the edges/outside, M up to +-L, CBUFEN flips): 694,000 states (plain 780,000; `--cond` 567,952 and 565,907) and `cfg --circ` 4 x 300 cases (plus the default configs), `region` on 24 captured stack-using entries in loop and CFG shape (164 cases each; six re-run on the final build): 0 mismatches. Mutants (no +L, no -L, `>=` -> `>` at B+L) fail 1088/710/158 of the xfer states.
+
+**[C]** CFG exits read loop-event context slots the kernel does not store (LCNTR, DO flag, STKYX event, stale-slot records) whenever any other of them is stored, so a value left by an earlier region could overwrite LCNTR. `fast_diff cfg --stride --shape cfg` failed on HEAD (case 234 of 300); fixed (`CfgMeta::st_*`), all configs pass.
+
+**[V]** Effect on the coupled workload (5 pairs, same binary, `SHARC_FAST_NOCIRC` vs default, plug-in backend): generic gen + `SHARC_FAST_AUTO=256,64` 20.96 -> 20.46 s (0.979, RTF 27.0); `64,16` 18.8 -> 17.5 s (0.928, tier 211.6M -> 220.5M instructions); prod gen + three launcher regions 1.00 (unchanged); prod gen + `256,64,1` 2.00 -> 1.68 s (0.84), mostly from ending the rebuild churn of regions whose Eq(L) failed (2609 -> 1198 builds). Coverage barely moves at 256,64 (194.85M -> 194.89M tier instructions): the 186M still-interpreted instructions are leaf functions of ~20 instructions called 500-700k times that `min_insns` 64 drops as unprofitable, not loops declined for L.
+
+**[O]** The tier bakes L and B; a task switch between stacks (L7 = 0x3e2/0x1fd/0xc2) makes the entry decline until a rebuild (16 per entry). BR0/BR8 and the CB7I/CB15I status are not modelled in either core.
