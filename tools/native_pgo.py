@@ -742,8 +742,8 @@ def cmd_bench_bins(args: argparse.Namespace) -> None:
         hashes[label] = sha256_file(dst)
         print(f"{label} binary sha256 {hashes[label]} ({src})")
     env = {
-        labels["a"]: {"SHARC_FAST_REGIONS": args.fast_a},
-        labels["b"]: {"SHARC_FAST_REGIONS": args.fast_b},
+        labels["a"]: {"SHARC_FAST_REGIONS": args.fast_a, **parse_env(args.env_a)},
+        labels["b"]: {"SHARC_FAST_REGIONS": args.fast_b, **parse_env(args.env_b)},
     }
     paired_bench(
         out,
@@ -754,10 +754,45 @@ def cmd_bench_bins(args: argparse.Namespace) -> None:
         {
             "binary_sha256": hashes,
             "sources": [args.a, args.b],
-            "fast_regions": {k: v["SHARC_FAST_REGIONS"] for k, v in env.items()},
+            "env": env,
         },
         env,
     )
+
+
+def parse_env(items: list[str]) -> dict[str, str]:
+    out = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep:
+            raise SystemExit(f"--env-*: expected KEY=VALUE, got {item!r}")
+        out[key] = value
+    return out
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    """Run the workload once under the exclusive lock; print the gates."""
+    gen = generated_dir()
+    require_inputs(gen)
+    binary = pathlib.Path(args.binary).resolve()
+    log = pathlib.Path(args.log).resolve()
+    log.parent.mkdir(parents=True, exist_ok=True)
+    deps = pathlib.Path(args.deps).resolve() if args.deps else binary.parent
+    extra = {"DYLD_LIBRARY_PATH": str(deps), **parse_env(args.env)}
+    with benchlock("exclusive", "pgo run"):
+        r = run_workload(binary, log, extra)
+    print(
+        f"elapsed_s={r.elapsed} worker_dsp_ns={r.dsp_ns} frames={r.frames} "
+        f"real={r.real} user={r.user} sys={r.sys}"
+    )
+
+
+def cmd_build(args: argparse.Namespace) -> None:
+    """Plain release coupled test binary for a generated core (SHARC_GEN_DIR)."""
+    gen = pathlib.Path(args.gen).resolve()
+    target = pathlib.Path(args.target_dir).resolve()
+    binary = build_tests(target, None, gen, target / "build.log")
+    print(binary)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -771,6 +806,16 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("plan", help="show what the launcher would do")
     bench = sub.add_parser("bench", help="paired control vs profile-use benchmark")
     bench.add_argument("--pairs", type=int, default=5)
+    build = sub.add_parser(
+        "build", help="plain release workload test binary for a generated core"
+    )
+    build.add_argument("--gen", required=True, help="generated core directory")
+    build.add_argument("--target-dir", required=True)
+    run = sub.add_parser("run", help="run the workload once (exclusive lock)")
+    run.add_argument("binary")
+    run.add_argument("--log", required=True)
+    run.add_argument("--deps", help="directory with the dylibs (default: the binary's)")
+    run.add_argument("--env", action="append", default=[], metavar="KEY=VALUE")
     bins = sub.add_parser(
         "bench-bins", help="paired benchmark of two prebuilt workload test binaries"
     )
@@ -785,11 +830,23 @@ def main(argv: list[str] | None = None) -> int:
     bins.add_argument(
         "--fast-b", default="", help="SHARC_FAST_REGIONS for the compared binary"
     )
+    for side in ("a", "b"):
+        bins.add_argument(
+            f"--env-{side}",
+            action="append",
+            default=[],
+            metavar="KEY=VALUE",
+            help=f"extra environment for the {side} binary (e.g. SHARC_FAST_AUTO=64,64)",
+        )
     args = parser.parse_args(argv)
-    if args.command == "train":
+    if args.command == "run":
+        cmd_run(args)
+    elif args.command == "train":
         cmd_train(args)
     elif args.command == "bench":
         cmd_bench(args)
+    elif args.command == "build":
+        cmd_build(args)
     elif args.command == "bench-bins":
         cmd_bench_bins(args)
     elif args.command == "check":

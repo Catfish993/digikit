@@ -52,7 +52,13 @@ pub trait CfgRefresh {
 
 impl CfgRefresh for rt::Cfg {
     fn refresh(&mut self) {
+        // With no generated image there are no blocks whose memory model
+        // must match; the fast tier reads plain RAM only, where the model
+        // makes no difference.
+        #[cfg(all(sharc_gen, sharc_image))]
         self.refresh_with(gen_explicit_memory_model());
+        #[cfg(not(all(sharc_gen, sharc_image)))]
+        self.refresh_with(self.explicit_memory_model);
     }
 }
 
@@ -238,6 +244,13 @@ pub struct Engine {
     /// Optional fast tier (src/fast): tried at its entry PCs before the
     /// generated block. None by default; behaviour is unchanged without it.
     pub fast: Option<Box<dyn fast::FastTier>>,
+    /// The fast tier selects its own regions (`FastTier::note`); kept in
+    /// step with `fast` by `set_fast`.
+    fast_auto: bool,
+    /// ... and also at generated-block dispatches.
+    fast_auto_dispatch: bool,
+    /// SHARC_FAST_HIST: interpreted instructions per PC (diagnostics).
+    hist: Option<Box<std::collections::HashMap<u32, u64>>>,
 }
 
 /// What the run-time model gate decided (diagnostic counters).
@@ -448,6 +461,44 @@ fn image_insn_at() -> fn(Int) -> Option<Insn> {
     }
 }
 
+impl Drop for Engine {
+    fn drop(&mut self) {
+        if let Some(f) = &self.fast
+            && f.auto()
+            && std::env::var_os("SHARC_FAST_LOG").is_some()
+        {
+            let line = f.engine_report(
+                self.s.icount,
+                self.stats.single_steps,
+                self.stats.block_instructions,
+            );
+            eprintln!("{line}");
+            if let Some(h) = &self.hist {
+                let mut v: Vec<_> = h.iter().map(|(a, b)| (*b, *a)).collect();
+                v.sort_unstable_by(|a, b| b.cmp(a));
+                let tot: u64 = v.iter().map(|x| x.0).sum();
+                eprintln!("hist: {} interpreted insns over {} PCs", tot, v.len());
+                for (n, pc) in v.iter().take(3000) {
+                    eprintln!("hist: {pc:#x} {n}");
+                }
+            }
+            let m = &self.model_stats;
+            eprintln!(
+                "fast engine: models gated {} unsafe {} irq_deferred {} timer_gated {} mmr_exits {} code_mismatch {}; idle skipped {}",
+                m.gated,
+                m.unsafe_block,
+                m.irq_deferred,
+                m.timer_gated,
+                m.mmr_exits,
+                m.code_mismatch,
+                self.s
+                    .icount
+                    .saturating_sub(self.stats.single_steps + self.stats.block_instructions)
+            );
+        }
+    }
+}
+
 impl Engine {
     pub fn new(mem: mem::Mem) -> Engine {
         let mut s = St::new(mem);
@@ -486,11 +537,17 @@ impl Engine {
             code_known: false,
             code_ok: false,
             fast: None,
+            fast_auto: false,
+            fast_auto_dispatch: false,
+            hist: std::env::var_os("SHARC_FAST_HIST")
+                .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
         }
     }
 
     /// Install (or remove) the fast tier.
     pub fn set_fast(&mut self, fast: Option<Box<dyn fast::FastTier>>) {
+        self.fast_auto = fast.as_ref().is_some_and(|f| f.auto());
+        self.fast_auto_dispatch = fast.as_ref().is_some_and(|f| f.auto_dispatch());
         self.fast = fast;
     }
 
@@ -505,7 +562,7 @@ impl Engine {
         e.s.set_mmr_windows();
         e.s.mem.reset();
         if let Some(f) = fast::from_env() {
-            e.fast = Some(Box::new(f));
+            e.set_fast(Some(Box::new(f)));
         }
         Ok(e)
     }
@@ -943,11 +1000,14 @@ impl Engine {
             && self.s.cfg.block_base_ok
             && !self.stop_software_interrupt
             && self.stop_pc.is_none()
-            && self.s.probe.is_none()
-            && self.s.loops_ok)
+            && self.s.probe.is_none())
         {
             return None;
         }
+        // Generated blocks assume every active loop ends at a PC the
+        // generator saw; the fast tier does not (it re-derives loops from
+        // the loaded code), so a loop it does not know only bars the blocks.
+        let loops_ok = self.s.loops_ok;
         if self.idle_head.is_some()
             && (self.idle_lo as Int..=self.idle_hi as Int).contains(&self.s.pc_sw)
         {
@@ -956,7 +1016,11 @@ impl Engine {
         // A PC the fast tier handles needs no generated block (firmware-free
         // mode): the same gates apply, the model-safety of its region being
         // established by the fast tier's own register whitelist.
-        let mut entry = self.dispatch.get_entry(self.s.pc_sw);
+        let mut entry = if loops_ok {
+            self.dispatch.get_entry(self.s.pc_sw)
+        } else {
+            None
+        };
         let fast_pc = self
             .fast
             .as_ref()
@@ -1188,6 +1252,14 @@ impl Engine {
                     self.s.chain = 0;
                     let before = self.s.icount;
                     let entry_pc = self.s.pc_sw as u32;
+                    if self.fast_auto_dispatch
+                        && entry.is_some()
+                        && let Some(f) = self.fast.as_mut()
+                    {
+                        // A generated block is dispatched here: a candidate
+                        // region start for run-time selection.
+                        f.note(entry_pc);
+                    }
                     self.last_interp_next = -1;
                     let t0 = if self.prof.is_some() { ticks() } else { 0 };
                     if plan.bank_pre.is_some() {
@@ -1326,9 +1398,20 @@ impl Engine {
                 }
             }
             let loops_before = self.s.loops.n;
+            let pc_before = self.s.pc_sw;
+            if let Some(h) = &mut self.hist {
+                *h.entry(pc_before as u32).or_default() += 1;
+            }
             if let Err(t) = exec_insn(&mut self.s, insn) {
                 self.trapped(t);
                 break;
+            }
+            if self.fast_auto && !(1..=3).contains(&(self.s.pc_sw - pc_before)) {
+                // A taken branch, call, return or loop-back landed here: a
+                // candidate region start for run-time selection.
+                if let Some(f) = self.fast.as_mut() {
+                    f.note(self.s.pc_sw as u32);
+                }
             }
             if self.s.loops.n != loops_before || !self.s.loops_ok {
                 // Block code assumes every loop ends at a PC the generator
