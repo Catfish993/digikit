@@ -362,6 +362,8 @@ enum Check {
     FPass(u32),
     FClip(u32, u32),
     FComp(u32, u32),
+    /// fmax / fmin: only a NaN operand declines.
+    FMinMax(u32, u32),
     Logb(u32),
     Scalb(u32, u32),
     Recips(u32),
@@ -391,6 +393,7 @@ fn compute_check(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> Check {
         (0, 0xa1) => Check::FPass(rx),
         (0, 0xe3) => Check::FClip(rx, ry),
         (0, 0x8a) => Check::FComp(rx, ry),
+        (0, 0xe1 | 0xe2) => Check::FMinMax(rx, ry),
         (0, 0xc1) => Check::Logb(rx),
         (0, 0xbd) => Check::Scalb(rx, ry),
         (0, 0xc4) => Check::Recips(rx),
@@ -427,6 +430,9 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("fabs", 0, 0xb0),
     ("fclip", 0, 0xe3),
     ("fcomp", 0, 0x8a),
+    ("abs", 0, 0x30),
+    ("fmin", 0, 0xe1),
+    ("fmax", 0, 0xe2),
     ("logb", 0, 0xc1),
     ("scalb", 0, 0xbd),
     ("recips", 0, 0xc4),
@@ -467,6 +473,10 @@ const SHIFT_OPS: &[(&str, u32)] = &[
     ("lshift-or", 0x08),
     ("fext", 0x10),
     ("fext-se", 0x12),
+    ("bset", 0x30),
+    ("bclr", 0x31),
+    ("btgl", 0x32),
+    ("btst", 0x33),
 ];
 
 fn units() -> Vec<Unit> {
@@ -1123,7 +1133,7 @@ fn expect_special(c: Check, s: &St) -> bool {
                 !r.is_finite()
             }
         }
-        Check::FComp(x, y) => f(x).is_nan() || f(y).is_nan(),
+        Check::FComp(x, y) | Check::FMinMax(x, y) => f(x).is_nan() || f(y).is_nan(),
         Check::Logb(x) => !(1..=254).contains(&((s.r[x as usize].b >> 23) & 0xff)),
         Check::Scalb(x, y) => {
             let sh = s.r[y as usize].b as i32 as i64;
@@ -1265,6 +1275,8 @@ fn forms(args: &[String]) {
     // index inside or at the edges of its buffer, modifiers up to +-L),
     // CBUFEN on or off at build time and flipped in some trials.
     let circ_mode = args.iter().any(|a| a == "--circ");
+    // --truncate: MODE1.TRUNCATE (bit 15) set at build time.
+    let truncate_mode = args.iter().any(|a| a == "--truncate");
     CIRC.store(circ_mode, std::sync::atomic::Ordering::Relaxed);
     KNOWN_FLAGS.store(cond_mode, std::sync::atomic::Ordering::Relaxed);
     let mut be = backend(flag(args, "--backend").unwrap_or("cl"));
@@ -1327,7 +1339,7 @@ fn forms(args: &[String]) {
             // MODE1 at build time: every region requires TRUNCATE (bit 15)
             // clear. With --circ CBUFEN (bit 24) is off in a quarter of the
             // instances: L != 0 is then a plain add.
-            let mut mode_build = 0x3900_1cf8u32;
+            let mut mode_build = 0x3900_1cf8u32 | ((truncate_mode as u32) << 15);
             if circ_mode && rng.chance(4) {
                 mode_build &= !(1 << 24);
             }
@@ -2746,8 +2758,9 @@ fn cfgprog(args: &[String]) {
                 let cap = if rng.chance(2) { 40 } else { 400 };
                 1 + rng.below(cap)
             };
-            let mode1 =
-                [0x3900_1cf8u32, 0x3901_1cf8, 0x3900_3cf8, 0x3901_3cf8][rng.below(4) as usize];
+            let mode1 = [0x3900_1cf8u32, 0x3901_1cf8, 0x3900_3cf8, 0x3901_3cf8]
+                [rng.below(4) as usize]
+                | ((args.iter().any(|a| a == "--truncate") as u32) << 15);
             let before = fe.borrow().stats.clone();
             let (msgs, _) = pair(&mut ei, &mut ef, st_seed, mode1, n as u32);
             let after = fe.borrow().stats.clone();

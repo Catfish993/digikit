@@ -34,10 +34,12 @@ fn merge(a: &[Option<Abs>], b: &[Option<Abs>]) -> Vec<Option<Abs>> {
 struct Joins {
     abs: HashMap<u32, Vec<Option<Abs>>>,
     fm: HashMap<u32, u32>,
+    /// The forgotten multiplier bits on some path (`Lower::fg_static`).
+    fg: HashMap<u32, u32>,
 }
 
 impl Joins {
-    fn edge(&mut self, pc: u32, abs: &[Option<Abs>], fm: u32) {
+    fn edge(&mut self, pc: u32, abs: &[Option<Abs>], fm: u32, fg: u32) {
         match self.abs.get(&pc) {
             Some(old) => {
                 let merged = merge(old, abs);
@@ -48,6 +50,7 @@ impl Joins {
             }
         }
         self.fm.entry(pc).and_modify(|x| *x &= fm).or_insert(fm);
+        self.fg.entry(pc).and_modify(|x| *x |= fg).or_insert(fg);
     }
 }
 
@@ -156,6 +159,14 @@ impl Lower {
             sites: Vec::new(),
         });
         self.cfg_shape = true;
+        // The address ranges that can run again: backward branches (target
+        // to the end of the branch with its slots) and DO loops.
+        self.cycles = st
+            .back_edges
+            .iter()
+            .map(|&(last, target)| (target, last))
+            .chain(st.loops.iter().map(|l| (l.start, l.end)))
+            .collect();
         self.var_abs = (0..NREGS as usize).map(|c| self.init_abs_pub(c)).collect();
         self.loop_stride_out = vec![[None; NREGS as usize]; st.loops.len()];
         self.loop_back_seen_out = vec![false; st.loops.len()];
@@ -211,8 +222,8 @@ impl Lower {
                 if open {
                     self.close_block(&v);
                     let cur = self.var_abs.clone();
-                    let fm = self.fm_static;
-                    joins.edge(pc, &cur, fm);
+                    let (fm, fg) = (self.fm_static, self.fg_static);
+                    joins.edge(pc, &cur, fm, fg);
                 } else {
                     // The previous block ended in a jump or an exit: nothing
                     // it computed is visible here.
@@ -222,6 +233,7 @@ impl Lower {
                     self.var_abs = a.clone();
                 }
                 self.fm_static = joins.fm.get(&pc).copied().unwrap_or(0);
+                self.fg_static = joins.fg.get(&pc).copied().unwrap_or(0);
                 // A register written on a cycle through a backward branch has
                 // no known range here.
                 for &(last, target) in &st.back_edges {
@@ -367,8 +379,8 @@ impl Lower {
                     self.stub(stubs, *target, active.clone())
                 } else {
                     let cur = self.var_abs.clone();
-                    let fm = self.fm_static;
-                    joins.edge(*target, &cur, fm);
+                    let (fm, fg) = (self.fm_static, self.fg_static);
+                    joins.edge(*target, &cur, fm, fg);
                     label_of[target]
                 };
                 match cv {
