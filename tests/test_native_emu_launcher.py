@@ -174,6 +174,56 @@ def test_known_dn2_1_11_hash_has_the_verified_regions():
     )
 
 
+def test_known_dn2_1_11_hash_has_the_cluster_roots():
+    table = launcher()["BLOCKTRANS_ROOTS"]
+    roots = table["2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"]
+    assert roots == (
+        "0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,"
+        "0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5"
+    )
+    assert len(roots.split(",")) == 12
+
+
+def _known_roots(tmp_path, scope, monkeypatch, content=b"dn2"):
+    syx = _known_syx(tmp_path, scope, monkeypatch, content)
+    table = scope["blocktrans_roots_for"].__globals__["BLOCKTRANS_ROOTS"]
+    monkeypatch.setitem(
+        table, __import__("hashlib").sha256(content).hexdigest(), "0x30,0x40"
+    )
+    return syx
+
+
+def test_blocktrans_roots_follow_the_firmware_hash(monkeypatch, tmp_path):
+    scope = launcher()
+    syx = _known_roots(tmp_path, scope, monkeypatch)
+    other = tmp_path / "other.syx"
+    other.write_bytes(b"other")
+    assert scope["blocktrans_roots_for"](syx) == "0x30,0x40"
+    assert scope["blocktrans_roots_for"](other) == ""
+    assert scope["blocktrans_roots_for"](tmp_path / "missing.syx") == ""
+
+
+def test_set_fast_regions_exports_the_cluster_roots(monkeypatch, tmp_path):
+    scope = launcher()
+    syx = _known_roots(tmp_path, scope, monkeypatch)
+    args = ["--audio-profile-syx", str(syx)]
+    environ: dict[str, str] = {}
+    scope["set_fast_regions"](args, environ)
+    assert environ["SHARC_BLOCKTRANS"] == "0x30,0x40"
+    user = {"SHARC_BLOCKTRANS": "0x99"}
+    scope["set_fast_regions"](args, user)
+    assert user["SHARC_BLOCKTRANS"] == "0x99"
+    assert user["SHARC_FAST_REGIONS"] == "0x10,0x20"
+    off = {"DIGI_EMU_FAST": "0"}
+    scope["set_fast_regions"](args, off)
+    assert "SHARC_BLOCKTRANS" not in off
+    other = tmp_path / "other.syx"
+    other.write_bytes(b"other")
+    unknown: dict[str, str] = {}
+    scope["set_fast_regions"](["--audio-profile-syx", str(other)], unknown)
+    assert unknown == {}
+
+
 def test_set_fast_regions_enables_known_firmware(monkeypatch, tmp_path):
     scope = launcher()
     syx = _known_syx(tmp_path, scope, monkeypatch)

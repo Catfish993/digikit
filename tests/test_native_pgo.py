@@ -90,6 +90,23 @@ def test_generated_core_and_fast_regions_are_stale(tree):
     )
 
 
+def test_blocktrans_roots_are_stale(tree):
+    assert native_pgo.check_state(tree / "gen", "", "0xb8276c")[1] == (
+        "changed: blocktrans"
+    )
+
+
+def test_blocktrans_roots_follow_env_then_launcher(monkeypatch):
+    assert native_pgo.blocktrans_roots({"SHARC_BLOCKTRANS": "0x1"}) == "0x1"
+    assert native_pgo.blocktrans_roots({"DIGI_EMU_FAST": "0"}) == ""
+    monkeypatch.setattr(
+        native_pgo.runpy,
+        "run_path",
+        lambda *a, **k: {"blocktrans_roots_for": lambda syx: "0x2"},
+    )
+    assert native_pgo.blocktrans_roots({}) == "0x2"
+
+
 def test_missing_profile_file_and_manifest(tree):
     (tree / "state" / "p.profdata").unlink()
     assert state(tree)[0] == "missing"
@@ -99,6 +116,7 @@ def test_missing_profile_file_and_manifest(tree):
 
 def test_cmd_check_reports_the_reuse(tree, monkeypatch, capsys):
     monkeypatch.setattr(native_pgo, "fast_regions", lambda: "")
+    monkeypatch.setattr(native_pgo, "blocktrans_roots", lambda: "")
     monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
     (tree / "packages/desktop/src-tauri/main.rs").write_text("ui 2")
     assert native_pgo.cmd_check(None) == 0
