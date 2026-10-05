@@ -177,6 +177,13 @@ pub enum Req {
     Mode1 { mask: u32, value: u32 },
     /// The ASTATX bits in `mask` are known (a condition reads them).
     FlagsKnown(u32),
+    /// ASTATX bits 31:24 (the CACC compare history) are not all known. The
+    /// kernel was made for that state: a compare then forgets the history
+    /// (`values._apply_flag_update` shifts it only when the whole old ASTATX
+    /// is a known constant, and no instruction of a region defines CACC bits
+    /// except a compare), so there is no history to track. The counterpart of
+    /// `FlagsKnown(u32::MAX)`, which the exact-shift kernel requires.
+    CaccUnknown,
     /// The register is known and its value lies in `lo..=hi` (unsigned): an
     /// index register inside its circular buffer, which is what bounds every
     /// address the wrapped updates produce.
@@ -346,6 +353,13 @@ struct Slot {
     region: Option<region::Region>,
     kernel: Option<Box<dyn CompiledKernel>>,
     refused: Option<String>,
+    /// Further variants of the region (most recently replaced first): the
+    /// same entry made for other values of the state the build baked in
+    /// (MODE1 bits, constants, the CACC history), tried in turn when `region`
+    /// declines on a requirement. At most `MAX_VARIANTS - 1`.
+    alts: Vec<(region::Region, Box<dyn CompiledKernel>)>,
+    /// Calls in a row that no variant accepted (reset by any run).
+    alt_fail: u32,
     rebuilds: u32,
     transient: u32,
     /// Selected by `Auto` (dropped again on refusal or low yield).
@@ -368,6 +382,14 @@ struct SlotCov {
 }
 
 const BLOOM_WORDS: usize = 1024;
+
+/// Variants of one entry (the current region and its alternatives), and the
+/// builds one entry may spend on new ones.
+const MAX_VARIANTS: usize = 4;
+const REBUILD_BUDGET: u32 = 16;
+/// After the build budget is spent, the alternatives are no longer tried
+/// once this many calls in a row were declined by every variant.
+const ALT_GIVE_UP: u32 = 64;
 
 /// Multiplicative hash for PC keys.
 #[derive(Default)]
@@ -763,6 +785,82 @@ fn req_failure(s: &St, r: &region::Region) -> String {
     "misc (mode1/flags)".into()
 }
 
+/// `SHARC_FAST_KEYS=1` (with `SHARC_FAST_COV`): print the entry state each
+/// declined call saw (diagnostic, to pick what a variant has to key on).
+fn keys_log() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_KEYS").is_some())
+}
+
+fn state_key(s: &mut St, r: &region::Region) -> String {
+    let m1 = s.r[crate::rt::MODE1];
+    let a = s.r[118];
+    let mut out = format!("mode1={:#x}/{:#x} astatx_known={:#x}", m1.b, m1.m, a.m);
+    for q in &r.misc {
+        out += &format!(" {q:?}");
+    }
+    for &c in &r.known {
+        let v = s.r[c as usize];
+        if v.m != u32::MAX {
+            out += &format!(" known-fail r{c}={:#x}/{:#x}", v.b, v.m);
+        }
+    }
+    for &(c, k) in &r.eqs {
+        let v = s.r[c as usize];
+        if v.m != u32::MAX || v.b != k {
+            out += &format!(" eq-fail r{c} want {k:#x} have {:#x}/{:#x}", v.b, v.m);
+        }
+    }
+    // Windows at one iteration: the span and whether it resolves for the
+    // read / write it asks (diagnostic; the probe is `Mem::window`).
+        for (w, spec) in r.wins.iter().enumerate() {
+        let b = match spec.base {
+            Base::None => 0,
+            Base::Reg(c) => s.r[c as usize].b as i64,
+        };
+        let (lo, hi) = (b + spec.lo + spec.nf, b + spec.hi + spec.nf);
+        let len = (hi - lo).max(0) as u32;
+        let rd = s.mem.window(lo as u32, len, true, false).is_some();
+        let wr = s.mem.window(lo as u32, len, false, true).is_some();
+        out += &format!(
+            " win{w} {lo:#x}..{hi:#x} spec r={} w={} dyn={:?} probe r={rd} w={wr}",
+            spec.read, spec.write, spec.dynamic_anchor
+        );
+    }
+    out
+}
+
+/// Are the code words R was made from still the ones in memory? (Cached
+/// after the check while `Mem::dec_gen` stays.)
+fn verify_code(s: &St, r: &mut region::Region) -> bool {
+    if s.mem.dec_gen == r.verified_gen {
+        return true;
+    }
+    let same = r
+        .code_words
+        .iter()
+        .all(|&(at, w)| s.mem.read_sw(at).unwrap_or(0) == w);
+    if same {
+        r.verified_gen = s.mem.dec_gen;
+    }
+    same
+}
+
+/// One try of a variant: `Err` leaves the state untouched.
+#[inline(always)]
+fn run_variant(
+    s: &mut St,
+    r: &region::Region,
+    k: &dyn CompiledKernel,
+    ctx: &mut glue::Ctx,
+) -> Result<u32, glue::Decline> {
+    if r.cfg.is_some() {
+        glue::run_cfg(s, r, k, ctx)
+    } else {
+        glue::run(s, r, k, ctx)
+    }
+}
+
 fn mode1_bits(s: &St) -> u32 {
     let m = s.r[crate::rt::MODE1];
     if m.is_c() { m.b as u32 } else { u32::MAX }
@@ -885,27 +983,46 @@ impl FastTier for FastEngine {
         }
         let slot = &mut self.slots[ix];
         let region = slot.region.as_mut()?;
-        if s.mem.dec_gen != region.verified_gen {
-            let same = region
-                .code_words
-                .iter()
-                .all(|&(at, w)| s.mem.read_sw(at).unwrap_or(0) == w);
-            if same {
-                region.verified_gen = s.mem.dec_gen;
-            } else {
-                slot.region = None;
-                slot.kernel = None;
-                return None;
-            }
+        if !verify_code(s, region) {
+            slot.region = None;
+            slot.kernel = None;
+            return None;
         }
         self.stats.calls += 1;
         let before = s.icount;
         let kernel = slot.kernel.as_deref()?;
-        let res = if region.cfg.is_some() {
-            glue::run_cfg(s, region, kernel, &mut self.ctx)
+        let mut res = run_variant(s, region, kernel, &mut self.ctx);
+        if res == Err(glue::Decline::Req)
+            && !slot.alts.is_empty()
+            && (slot.rebuilds < REBUILD_BUDGET || slot.alt_fail < ALT_GIVE_UP)
+        {
+            // The baked state differs: another variant may take this one.
+            let mut i = 0;
+            while i < slot.alts.len() {
+                let (ar, ak) = &mut slot.alts[i];
+                if !verify_code(s, ar) {
+                    slot.alts.remove(i);
+                    continue;
+                }
+                let r2 = run_variant(s, ar, &**ak, &mut self.ctx);
+                if r2 != Err(glue::Decline::Req) {
+                    // The variant that ran becomes the current one.
+                    if let (Some(cr), Some(ck)) = (slot.region.as_mut(), slot.kernel.as_mut()) {
+                        std::mem::swap(cr, ar);
+                        std::mem::swap(ck, ak);
+                    }
+                    res = r2;
+                    break;
+                }
+                i += 1;
+            }
+        }
+        if res.is_err() {
+            slot.alt_fail = slot.alt_fail.saturating_add(1);
         } else {
-            glue::run(s, region, kernel, &mut self.ctx)
-        };
+            slot.alt_fail = 0;
+        }
+        let region = slot.region.as_ref()?;
         if self.log {
             eprintln!(
                 "fast: run {pc:#x}: icount {before} -> {} (limit {}) {:?} pc {:#x} pending {:?}",
@@ -940,6 +1057,9 @@ impl FastTier for FastEngine {
                 }
                 Err(d) => {
                     slot.cov.declined[*d as usize] += 1;
+                    if keys_log() {
+                        eprintln!("key root={pc:#x} {d:?} {}", state_key(s, region));
+                    }
                     let why = match d {
                         glue::Decline::Req => format!("req: {}", req_failure(s, region)),
                         glue::Decline::Shape | glue::Decline::Window => glue::take_cov_why(),
@@ -986,21 +1106,36 @@ impl FastTier for FastEngine {
                         .entry(format!("decline req: {why}"))
                         .or_default() += 1;
                 }
-                if d == glue::Decline::Req && slot.rebuilds < 16 && !req_is_within(s, region) {
-                    // A baked constant changed: re-make the region from
-                    // this state, a bounded number of times.
+                if d == glue::Decline::Req
+                    && slot.rebuilds < REBUILD_BUDGET
+                    && !req_is_within(s, region)
+                {
+                    // No variant fits the state (a baked constant, MODE1 or
+                    // the CACC history differs): make another from this
+                    // state, a bounded number of times. The variants that
+                    // exist stay (most recent first, at most MAX_VARIANTS).
                     slot.rebuilds += 1;
                     let n = slot.rebuilds;
-                    slot.region = None;
-                    slot.kernel = None;
+                    let old = (slot.region.take(), slot.kernel.take());
                     if self.build(s, pc).is_some() {
-                        self.slots[ix].rebuilds = n;
+                        let slot = &mut self.slots[ix];
+                        slot.rebuilds = n;
+                        if let (Some(r), Some(k)) = old {
+                            slot.alts.insert(0, (r, k));
+                            slot.alts.truncate(MAX_VARIANTS - 1);
+                        }
                     } else if self.slots[ix].auto && self.slots[ix].refused.is_some() {
                         let (m1, g) = (mode1_bits(s), s.mem.dec_gen);
                         if let Some(a) = &mut self.auto {
                             a.tried.insert(pc, (m1, g, AUTO_TRIES));
                         }
                         drop_after = true;
+                    } else {
+                        // This state cannot be built: keep what runs.
+                        let slot = &mut self.slots[ix];
+                        slot.refused = None;
+                        slot.region = old.0;
+                        slot.kernel = old.1;
                     }
                 }
                 None

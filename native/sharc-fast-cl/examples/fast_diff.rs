@@ -950,6 +950,9 @@ fn rand_int(r: &mut Rng) -> u32 {
     }
 }
 
+/// `cfg --astat-mix`: half the runs start with the CACC history bits (or other
+/// ASTATX bits) unknown, so the unknown-CACC kernel variants are exercised.
+static ASTAT_MIX: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static KNOWN_FLAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Mostly ordinary float values (long kernel runs), a few special ones.
 static CALM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -1057,6 +1060,16 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
         u32::MAX
     } else {
         r.u32()
+    };
+    let m = if ASTAT_MIX.load(std::sync::atomic::Ordering::Relaxed) {
+        match r.below(6) {
+            0 | 1 => u32::MAX,
+            2 | 3 => 0x00ff_ffff,
+            4 => 0x00ff_fc3f,
+            _ => m,
+        }
+    } else {
+        m
     };
     s.r[118] = V { b: r.u32() & m, m };
     // Data window contents: floats and ints.
@@ -2579,6 +2592,10 @@ fn cfgprog(args: &[String]) {
     // (the loop shape), entered at every instruction.
     let simple = args.iter().any(|a| a == "--simple");
     KNOWN_FLAGS.store(true, std::sync::atomic::Ordering::Relaxed);
+    ASTAT_MIX.store(
+        args.iter().any(|a| a == "--astat-mix"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     CALM.store(true, std::sync::atomic::Ordering::Relaxed);
     // --check-windows: the reference interpreter asserts that every window
     // access lies inside its window (and is the backend unless one is named).
@@ -2592,6 +2609,7 @@ fn cfgprog(args: &[String]) {
     let mut tier_insns = 0u64;
     let mut runs_total = 0u64;
     let mut built = 0u64;
+    let (mut cacc_total, mut cacc_unknown_total) = (0u64, 0u64);
     let mut declined = [0u64; 5];
     let mut refusals: BTreeMap<String, u64> = BTreeMap::new();
     let t0 = std::time::Instant::now();
@@ -2800,6 +2818,12 @@ fn cfgprog(args: &[String]) {
             }
         }
         let fb = fe.borrow();
+        for pc in &entries {
+            if let Some(r) = fb.region(*pc) {
+                cacc_total += r.cacc as u64;
+                cacc_unknown_total += r.cacc_unknown as u64;
+            }
+        }
         built += fb.stats.built;
         for (i, d) in fb.stats.declined.iter().enumerate() {
             declined[i] += d;
@@ -2829,6 +2853,7 @@ fn cfgprog(args: &[String]) {
         built
     );
     println!("declined shape/req/window/budget/exit0 = {declined:?}");
+    println!("final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}");
     for (why, n) in &refusals {
         println!("{n:>5} x refused: {why}");
     }
