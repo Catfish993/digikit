@@ -564,12 +564,43 @@ pub trait CompiledKernel {
     /// to the `St` the region was built for, valid for reads and writes of
     /// the offsets the kernel names (`st_reg_b`).
     unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32;
+    /// Does the kernel check its `EntryChecks` first and return
+    /// `RUN_ENTRY_FAILED` (touching nothing) when they do not hold?
+    fn checks_entry(&self) -> bool {
+        false
+    }
+}
+
+/// `CompiledKernel::run`'s return value of a kernel that found its entry
+/// checks failing: no state was read for effect or written.
+pub const RUN_ENTRY_FAILED: u32 = 2;
+
+/// Conditions on the engine state a kernel can check itself before doing
+/// anything (lean entry contract, `fast::lean`): the registers' known-masks
+/// and masked 64-bit compares of register words.
+#[derive(Clone, Debug, Default)]
+pub struct EntryChecks {
+    /// Byte offsets (from `St`) of the 32-bit known-masks that must be all
+    /// ones.
+    pub known_m: Vec<u32>,
+    /// `(offset, mask, want)`: the 64 bits at `offset` satisfy
+    /// `word & mask == want`.
+    pub words: Vec<(u32, u64, u64)>,
 }
 
 /// A kernel compiler (the reference interpreter, Cranelift, later wasm).
 pub trait KernelBackend {
     fn name(&self) -> &'static str;
     fn compile(&mut self, k: &Kernel) -> Result<Box<dyn CompiledKernel>, String>;
+    /// As `compile`, with the kernel checking ENTRY first when the backend
+    /// supports it (`CompiledKernel::checks_entry`); else the plain kernel.
+    fn compile_checked(
+        &mut self,
+        k: &Kernel,
+        _entry: &EntryChecks,
+    ) -> Result<Box<dyn CompiledKernel>, String> {
+        self.compile(k)
+    }
 }
 
 // -- serialisation (the plug-in boundary) ----------------------------------------

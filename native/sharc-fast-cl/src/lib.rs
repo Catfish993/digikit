@@ -38,6 +38,7 @@ pub fn register() {
 }
 
 struct ClKernel {
+    entry_checked: bool,
     module: Option<JITModule>,
     f: unsafe extern "C" fn(*mut u8, *mut u8) -> u32,
 }
@@ -55,6 +56,9 @@ impl Drop for ClKernel {
 impl CompiledKernel for ClKernel {
     unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32 {
         unsafe { (self.f)(ctx, st) }
+    }
+    fn checks_entry(&self) -> bool {
+        self.entry_checked
     }
 }
 
@@ -361,6 +365,7 @@ impl Emit<'_, '_> {
 
 fn build(
     k: &Kernel,
+    entry_chk: &EntryChecks,
     func: &mut ir::Function,
     fctx: &mut FunctionBuilderContext,
     tc: cranelift_codegen::isa::TargetFrontendConfig,
@@ -371,6 +376,31 @@ fn build(
     b.switch_to_block(entry);
     let ctx = b.block_params(entry)[0];
     let st = b.block_params(entry)[1];
+    if !entry_chk.known_m.is_empty() || !entry_chk.words.is_empty() {
+        // Lean entry contract: every register condition, as straight-line
+        // code with constant offsets, before the kernel touches anything.
+        let mut known = b.ins().iconst(types::I32, -1);
+        for &off in &entry_chk.known_m {
+            let m = b.ins().load(types::I32, mem_flags(), st, off as i32);
+            known = b.ins().band(known, m);
+        }
+        let mut bad = b.ins().icmp_imm_s(IntCC::NotEqual, known, -1);
+        for &(off, mask, want) in &entry_chk.words {
+            let w = b.ins().load(types::I64, mem_flags(), st, off as i32);
+            let mk = b.ins().iconst(types::I64, mask as i64);
+            let wt = b.ins().iconst(types::I64, want as i64);
+            let x = b.ins().band(w, mk);
+            let d = b.ins().icmp(IntCC::NotEqual, x, wt);
+            bad = b.ins().bor(bad, d);
+        }
+        let fail = b.create_block();
+        let go = b.create_block();
+        b.ins().brif(bad, fail, &[], go, &[]);
+        b.switch_to_block(fail);
+        let two = b.ins().iconst(types::I32, RUN_ENTRY_FAILED as i64);
+        b.ins().return_(&[two]);
+        b.switch_to_block(go);
+    }
     let vars: Vec<Variable> = k.vars.iter().map(|t| b.declare_var(cl_ty(*t))).collect();
     let tvar = b.declare_var(types::I32);
     let post = b.create_block();
@@ -441,6 +471,24 @@ impl KernelBackend for ClBackend {
     }
 
     fn compile(&mut self, k: &Kernel) -> Result<Box<dyn CompiledKernel>, String> {
+        self.compile_entry(k, &EntryChecks::default())
+    }
+
+    fn compile_checked(
+        &mut self,
+        k: &Kernel,
+        entry: &EntryChecks,
+    ) -> Result<Box<dyn CompiledKernel>, String> {
+        self.compile_entry(k, entry)
+    }
+}
+
+impl ClBackend {
+    fn compile_entry(
+        &mut self,
+        k: &Kernel,
+        entry: &EntryChecks,
+    ) -> Result<Box<dyn CompiledKernel>, String> {
         k.validate()?;
         let mut flags = settings::builder();
         flags
@@ -472,7 +520,7 @@ impl KernelBackend for ClBackend {
         cctx.func.signature = sig;
         cctx.func.name = ir::UserFuncName::user(0, id.as_u32());
         let mut fctx = FunctionBuilderContext::new();
-        build(k, &mut cctx.func, &mut fctx, module.target_config());
+        build(k, entry, &mut cctx.func, &mut fctx, module.target_config());
         let dump = std::env::var_os("SHARC_FAST_CL_DISASM");
         cctx.set_disasm(dump.is_some());
         module
@@ -503,6 +551,7 @@ impl KernelBackend for ClBackend {
             std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8, *mut u8) -> u32>(p)
         };
         Ok(Box::new(ClKernel {
+            entry_checked: !entry.known_m.is_empty() || !entry.words.is_empty(),
             module: Some(module),
             f,
         }))

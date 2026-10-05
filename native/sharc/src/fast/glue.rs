@@ -424,7 +424,7 @@ fn advance_last(_s: &mut St, _len_bytes: u8) -> R<()> {
 /// in [0x90000, 0x18000000)), and clear of the core MMRs (normal-word
 /// 0x30000..0x32000) and the peripheral space (0x30000000..0x40000000), which
 /// the memory windows refuse anyway.
-const NW_PLAIN: [(i64, i64); 5] = [
+pub(super) const NW_PLAIN: [(i64, i64); 5] = [
     (0xE_8000, 0x400_0000),
     (0, 0x3_0000),
     (0x3_2000, 0x9_0000),
@@ -497,7 +497,7 @@ const _: () = {
 
 /// The word a register with value B and known-mask M reads as (the
 /// two 32-bit fields of `V` in memory order, little endian).
-const fn v_word(b: u32, m: u32) -> u64 {
+pub(super) const fn v_word(b: u32, m: u32) -> u64 {
     if std::mem::offset_of!(crate::rt::V, b) == 0 {
         (m as u64) << 32 | b as u64
     } else {
@@ -574,10 +574,10 @@ fn regs_ok(s: &St, chk: &[RegChk]) -> bool {
 /// set bits), so a call whose window is the same range skips the resolution.
 #[derive(Clone, Copy)]
 pub struct WinCache {
-    gen_: u64,
-    lo: u32,
-    hi: u64,
-    ptr: *mut u8,
+    pub(super) gen_: u64,
+    pub(super) lo: u32,
+    pub(super) hi: u64,
+    pub(super) ptr: *mut u8,
 }
 
 impl WinCache {
@@ -1362,11 +1362,22 @@ pub fn run_cfg(
         return Err(shape("loop or PC stack too deep"));
     }
     pmark!(pt, 1);
-    if !regs_ok(s, &r.chk) || !within_ok(s, r) {
-        return Err(Decline::Req);
-    }
     let iters = rem_top.max(1);
-    if !nw_ok(s, r, iters) {
+    let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
+    // The lean contract (`lean`) applies while no window check is asked for.
+    let lean = r.lean.as_ref().filter(|_| !check);
+    if let Some(l) = lean {
+        // A kernel that checks the register conditions itself leaves only
+        // the address bases (read below) to check here.
+        let regs = if kernel.checks_entry() {
+            l.bases_ok(s)
+        } else {
+            l.regs_ok(s)
+        };
+        if !regs || !within_ok(s, r) || !nw_ok(s, r, iters) {
+            return Err(Decline::Req);
+        }
+    } else if !regs_ok(s, &r.chk) || !within_ok(s, r) || !nw_ok(s, r, iters) {
         return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);
@@ -1374,8 +1385,29 @@ pub fn run_cfg(
         return Err(Decline::Budget);
     }
     pmark!(pt, 2);
-    let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
+        if let Some(l) = lean
+            && spec.dynamic_anchor.is_none()
+        {
+            let b = match spec.base {
+                Base::None => 0,
+                Base::Reg(c) => s.r[c as usize].b as i64,
+            };
+            let d = spec.ts * (iters - 1);
+            let f = spec.nf * iters;
+            let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
+            if lo < 0 || hi > (1i64 << 32) {
+                return Err(Decline::Window);
+            }
+            let Some(off) =
+                super::lean::lean_window(l, &mut s.mem, &l.wc[w], spec, lo as u32, hi as u64)
+            else {
+                return Err(Decline::Window);
+            };
+            ctx.set64(win_ptr(w as u32), off);
+            ctx.set32(CTX_WIN_DYN_LEN + 4 * w as u32, 0);
+            continue;
+        }
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
             return Err(Decline::Window);
         };
@@ -1410,6 +1442,10 @@ pub fn run_cfg(
     pmark!(pt, 4);
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
     pmark!(pt, 5);
+    if code == RUN_ENTRY_FAILED {
+        // The kernel's own entry checks failed before it did anything.
+        return Err(Decline::Req);
+    }
     debug_assert_eq!(code, 1, "a cfg kernel leaves through an exit");
     let site = &meta.sites[ctx.get32(CTX_EXIT_K) as usize];
     let completed = ctx.get32(CTX_ICNT) as u64 + site.off as u64;

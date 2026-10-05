@@ -91,6 +91,9 @@ pub struct Region {
     /// `Some` for a CFG region (see `cfg`): `lp` is None, the kernel counts
     /// its own instructions and loop iterations.
     pub cfg: Option<CfgMeta>,
+    /// The lean entry contract (`lean`), for CFG regions when
+    /// `SHARC_FAST_LEAN=1`.
+    pub lean: Option<super::lean::Lean>,
 }
 
 impl Region {
@@ -317,6 +320,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         verified_gen: s.mem.dec_gen,
         forms: decs.iter().map(|(_, d)| d.form).collect(),
         cfg: None,
+        lean: None,
     })
 }
 
@@ -486,6 +490,7 @@ fn assemble_cfg(
     let nw_hull = nw_hulls(&reqs);
     let wcache = vec![std::cell::Cell::new(WinCache::NONE); out.wins.len()];
     let chk = reg_checks(&reqs);
+    let (chk_l, reqs_l, wins_l) = (chk.clone(), reqs.clone(), out.wins.clone());
     Ok(Region {
         entry_pc: pc,
         lp: None,
@@ -544,5 +549,6 @@ fn assemble_cfg(
         insns,
         forms,
         cfg: Some(meta),
+        lean: super::lean::enabled().then(|| super::lean::Lean::new(&chk_l, &reqs_l, &wins_l)),
     })
 }

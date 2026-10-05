@@ -23,6 +23,7 @@ pub mod decode_view;
 pub mod glue;
 pub mod interp;
 pub mod ir;
+pub mod lean;
 pub mod lower;
 pub mod plugin;
 pub mod region;
@@ -583,7 +584,10 @@ impl FastEngine {
             }
             Ok(mut r) => {
                 let t1 = std::time::Instant::now();
-                let k = self.backend.compile(&r.kernel);
+                let k = match &r.lean {
+                    Some(l) => self.backend.compile_checked(&r.kernel, &l.entry),
+                    None => self.backend.compile(&r.kernel),
+                };
                 self.stats.compile_ns += t1.elapsed().as_nanos() as u64;
                 match k {
                     Err(e) => {
@@ -613,6 +617,11 @@ impl FastEngine {
                                 r.within.len(),
                                 r.kernel.inst_count()
                             );
+                            if let Some(c) = &r.cfg {
+                                for (at, why) in &c.stops {
+                                    eprintln!("fast: {pc:#x} region stops at {at:#x}: {why}");
+                                }
+                            }
                         }
                         self.stats.built += 1;
                         slot.region = Some(r);
@@ -714,6 +723,18 @@ impl Drop for FastEngine {
     fn drop(&mut self) {
         if self.log && (self.stats.calls > 0 || self.stats.armed > 0) {
             eprintln!("{}", self.report());
+        }
+        if std::env::var_os("SHARC_FAST_LEAN_STATS").is_some() {
+            for (pc, s) in self.pcs.iter().zip(&self.slots) {
+                if let Some(l) = s.region.as_ref().and_then(|r| r.lean.as_ref()) {
+                    eprintln!(
+                        "lean {pc:#x}: calls {} window hit/miss {}/{}",
+                        s.calls,
+                        l.win_hit.get(),
+                        l.win_miss.get(),
+                    );
+                }
+            }
         }
     }
 }
