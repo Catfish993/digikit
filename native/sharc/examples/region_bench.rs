@@ -1039,6 +1039,7 @@ fn fast_guard_check() {
         flag_v: false,
         approx_recips: false,
         guarded_dyn: false,
+        bank_model: false,
     };
     let mut lower = Lower::new(env, Plan::default(), 2);
     let static_addr = lower.ci(0x20_0000);

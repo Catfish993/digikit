@@ -533,7 +533,7 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
                 mask: v_word(0, mask),
                 want: v_word(0, mask),
             },
-            Req::NwPlain { .. } | Req::Within { .. } => continue,
+            Req::NwPlain { .. } | Req::Within { .. } | Req::BankSync => continue,
         };
         if !out
             .iter()
@@ -543,6 +543,13 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
         }
     }
     out
+}
+
+/// `Req::BankSync`: the applied bank selection is MODE1's.
+#[inline]
+pub fn bank_synced(s: &St) -> bool {
+    let m = s.r[MODE1];
+    m.is_c() && s.bank_active_mask == (m.b & 0x4f8) as Int
 }
 
 /// Is every circular index register of R inside its buffer?
@@ -754,6 +761,7 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
             m.is_c() && m.b & mask == value
         }
         Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
+        Req::BankSync => !s.cfg.bank_model || bank_synced(s),
         Req::Within { c, lo, hi } => {
             let v = s.r[c as usize];
             v.is_c() && (lo..=hi).contains(&v.b)
@@ -795,6 +803,9 @@ pub fn run(
         return Err(Decline::Shape);
     }
     if cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0) {
+        return Err(Decline::Shape);
+    }
+    if cfg.bank_model && r.bank_sync && !bank_synced(s) {
         return Err(Decline::Shape);
     }
     if cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0) {
@@ -1359,6 +1370,9 @@ pub fn run_cfg(
     }
     if cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0) {
         return Err(shape("bank change in flight"));
+    }
+    if cfg.bank_model && r.bank_sync && !bank_synced(s) {
+        return Err(shape("bank selection differs from MODE1"));
     }
     if cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0) {
         return Err(shape("PC stack change in flight"));

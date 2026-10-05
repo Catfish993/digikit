@@ -79,6 +79,15 @@ fn open(image: &[u8], state: &[u8], clock_base: u64) -> Engine {
     for (k, v) in options.drain(..) {
         assert_eq!(e.set_option(k, v), 0, "option {k}");
     }
+    if std::env::var_os("FD_BANK_OFF").is_some() {
+        // The production engine's config has no bank model; the test states
+        // were captured with it on.
+        e.s.cfg.bank_model = false;
+    }
+    if std::env::var_os("FD_CFG").is_some() {
+        let c = &e.s.cfg;
+        eprintln!("cfg: bank_model {} stack_model {}", c.bank_model, c.stack_model);
+    }
     e
 }
 
@@ -317,6 +326,10 @@ fn form_base(form: &str) -> (u64, u64) {
         "6b_shiftimm" => (0xffc187800000, 0x020000000000),
         "7a" => (0xff0000000000, 0x040000000000),
         "17a" => (0xff8000000000, 0x0f0000000000),
+        "17b" => (0xff8000000000, 0x0f8000000000),
+        "18a" => (0xff0000000000, 0x140000000000),
+        "21a" => (0xffffffffffff, 0),
+        "21c" => (0xffff00000000, 0x000100000000),
         "4a" => (0xf00000000000, 0x600000000000),
         "4b" => (0xf00000780000, 0x600000380000),
         "4d" => (0xf00000780000, 0x600000300000),
@@ -734,10 +747,85 @@ fn units() -> Vec<Unit> {
             (raw.0, Check::None)
         }),
     });
+    v.extend(units_sys());
     v.extend(units_mem());
     for u in &mut v {
         u.check = Check::None;
     }
+    v
+}
+
+/// System forms (`lower::sysops`): 17b, 21a, 21c, 18a on MODE1 and a move
+/// from MODE1.
+fn units_sys() -> Vec<Unit> {
+    let mut v: Vec<Unit> = Vec::new();
+    v.push(Unit {
+        form: "17b",
+        name: "17b".into(),
+        check: Check::None,
+        make: Box::new(|r| {
+            let (mask, base) = form_base("17b");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            // Mostly R, I and M; sometimes another register (refused).
+            let code = if r.chance(12) { r.below(128) } else { r.below(48) };
+            raw.set(38, 32, code as u64);
+            raw.set(15, 0, 0);
+            if r.chance(3) {
+                // Edge immediates: sign bit and its neighbours.
+                raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, 0xfff8][r.below(6) as usize]);
+            }
+            (raw.0, Check::None)
+        }),
+    });
+    for form in ["21a", "21c"] {
+        v.push(Unit {
+            form,
+            name: form.into(),
+            check: Check::None,
+            make: Box::new(move |_| (form_base(form).1, Check::None)),
+        });
+    }
+    // 18a: set / clear / toggle of a system register (MODE1 and others), bit
+    // test and xor test. The MODE1 of the trials is 0x3900_1cf8 (see `forms`).
+    v.push(Unit {
+        form: "18a",
+        name: "18a".into(),
+        check: Check::None,
+        make: Box::new(|r| {
+            let (mask, base) = form_base("18a");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            let bop = if r.chance(2) { r.below(3) } else { 4 + r.below(2) } as u64;
+            let sreg = if r.chance(4) { r.below(16) } else { 2 } as u64;
+            raw.set(39, 37, bop);
+            raw.set(35, 32, sreg);
+            raw.set(36, 36, 0);
+            let m1 = 0x3900_1cf8u32;
+            let data = match (bop, r.below(4)) {
+                // A change-free mask: clear bits that are clear, set bits that are set.
+                (0, 0..=2) => r.next() as u32 & m1,
+                (1, 0..=2) => r.next() as u32 & !m1,
+                _ => r.next() as u32,
+            };
+            raw.set(31, 0, data as u64);
+            (raw.0, Check::None)
+        }),
+    });
+    v.push(Unit {
+        form: "5b_move",
+        name: "5b_move from MODE1".into(),
+        check: Check::None,
+        make: Box::new(|r| {
+            let (mask, base) = form_base("5b_move");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            raw.set(37, 33, 0x1f);
+            let src = if r.chance(8) { r.below(128) } else { 114 };
+            raw.set(42, 38, (src >> 2) as u64);
+            raw.set(32, 32, ((src >> 1) & 1) as u64);
+            raw.set(31, 31, (src & 1) as u64);
+            raw.set(29, 23, r.below(48) as u64);
+            (raw.0, Check::None)
+        }),
+    });
     v
 }
 
@@ -1277,6 +1365,7 @@ fn forms(args: &[String]) {
         s.cfg.core_timer = false;
         s.bank_pending_mask = -1;
         s.bank_requested_mask = -1;
+        s.bank_active_mask = 0x4f8;
         s.pc_stack_pending = -1;
         s.pc_stack_requested = -1;
         s.r[114] = V::c(0x3900_1cf8);
@@ -1333,15 +1422,18 @@ fn forms(args: &[String]) {
             }
             s.r[114] = V::c(mode_build as Int);
             let nwords = match unit.form {
-                "2c" | "3c" => 1,
-                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" => 2,
+                "2c" | "3c" | "21c" => 1,
+                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" | "17b" => 2,
                 _ => 3,
             };
             write_code(s, raw, nwords);
             s.pc_sw = CODE_PC as Int;
             let region: Region = match build_straight(s, CODE_PC) {
                 Ok(r) => r,
-                Err(_) => {
+                Err(why) => {
+                    if std::env::var_os("FD_WHY").is_some() && tally.refused < 60 {
+                        eprintln!("refused {} {:012x}: {}", unit.name, raw, why.0);
+                    }
                     tally.refused += 1;
                     continue;
                 }
@@ -2268,10 +2360,49 @@ fn mem_imm_insn(r: &mut Rng) -> Vec<u16> {
     words_of(raw, n)
 }
 
+/// A random system form (`lower::sysops`): 17b to R0-R12 or an M register,
+/// a NOP (21a, 21c), a MODE1 set/clear that changes nothing or something,
+/// and a move from MODE1.
+fn sys_insn(r: &mut Rng) -> Vec<u16> {
+    match r.below(6) {
+        0 | 1 => {
+            let mut raw = Raw(form_base("17b").1);
+            let code = if r.chance(4) { 32 + r.below(16) } else { r.below(13) };
+            raw.set(38, 32, code as u64);
+            raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, r.below(65536)][r.below(6) as usize] as u64);
+            words_of(raw.0, 2)
+        }
+        2 => words_of(form_base("21a").1, 3),
+        3 => words_of(form_base("21c").1, 1),
+        4 => {
+            let mut raw = Raw(form_base("18a").1);
+            raw.set(39, 37, r.below(2) as u64);
+            raw.set(35, 32, 2);
+            // The MODE1 of the cfg runs has SIMD clear: a clear of it, or a
+            // random mask now and then.
+            let data = if r.chance(3) { r.next() as u32 } else { 0x20_0000 };
+            raw.set(31, 0, data as u64);
+            words_of(raw.0, 3)
+        }
+        _ => {
+            let mut raw = Raw(form_base("5b_move").1);
+            raw.set(37, 33, 0x1f);
+            raw.set(42, 38, (114u32 >> 2) as u64);
+            raw.set(32, 32, 1);
+            raw.set(31, 31, 0);
+            raw.set(29, 23, r.below(13) as u64);
+            words_of(raw.0, 2)
+        }
+    }
+}
+
 /// One random instruction (R0-R12 as destinations).
 fn gen_insn(r: &mut Rng, allow_cond: bool) -> Vec<u16> {
     if r.chance(10) {
         return mem_imm_insn(r);
+    }
+    if r.chance(14) && std::env::var_os("FD_NOSYS").is_none() {
+        return sys_insn(r);
     }
     let cond = pick_cond(r, allow_cond);
     let rn = r.below(13);
@@ -2547,6 +2678,7 @@ fn prep_engine(e: &mut Engine, stack_model: Option<bool>) {
     s.cfg.core_timer = false;
     s.bank_pending_mask = -1;
     s.bank_requested_mask = -1;
+    s.bank_active_mask = 0x4f8;
     s.pc_stack_pending = -1;
     s.pc_stack_requested = -1;
     s.r[114] = V::c(0x3900_1cf8);
