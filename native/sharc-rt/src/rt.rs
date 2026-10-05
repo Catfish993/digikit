@@ -793,6 +793,9 @@ pub struct St {
     pub trap: Option<Trap>,
     /// Blocks called directly by other blocks since the dispatcher's call.
     pub chain: u32,
+    /// Block code ends its call (as a budget exit) at the instruction that
+    /// leaves the DO loop stack empty (set by the engine's `block_plan`).
+    pub stop_at_loop_empty: bool,
     /// PCs at which a chained block call must stop and return to the
     /// dispatcher (open-addressed, `CHAIN_STOP_EMPTY` marks a free slot;
     /// length is a power of two). Filled by the engine with every PC the
@@ -930,6 +933,7 @@ impl St {
             limit: 0,
             trap: None,
             chain: 0,
+            stop_at_loop_empty: false,
             chain_stop: vec![CHAIN_STOP_EMPTY; 8].into_boxed_slice(),
             insn_at: no_insn,
             runtime_decode: false,

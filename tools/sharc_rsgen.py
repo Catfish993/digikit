@@ -500,6 +500,19 @@ def tr_logs(path: str) -> bool:
     return TR is None or TR.variant_logs.get(path, True)
 
 
+def _loop_empty_exit(pc: int, ind: str) -> list[str]:
+    """After an instruction at a DO loop end: when the engine asked for it
+    (a latched interrupt that only the loop stack defers) and the stack is
+    now empty, end the call here like a budget exit (state written back)."""
+    if pc not in LOOP_END_SET:
+        return []
+    return [
+        ind + "if s.stop_at_loop_empty && s.loops.n == 0 {",
+        ind + "    break 'r crate::EXIT_BUDGET;",
+        ind + "}",
+    ]
+
+
 def _after_step(i, n, pc, insn, m_after, body, by_start, succ, chain, ind):
     """Control flow after step I of N: the PC check against the straight line
     and the exit of the body's last step."""
@@ -593,6 +606,7 @@ def body_lines(
                 if tr_logs(path):
                     lines.append(ind + "s.un = 0;")
                 lines.append(ind + "ic += 1;")
+                lines.extend(_loop_empty_exit(pc, ind))
                 lines.extend(
                     _after_step(
                         i, n, pc, insn, m_after, body, by_start, succ, chain, ind
@@ -637,6 +651,7 @@ def body_lines(
             if tr_logs(path):
                 lines.append(ind + "s.un = 0;")
             lines.append(ind + "ic += 1;")
+            lines.extend(_loop_empty_exit(pc, ind))
             lines.extend(
                 _after_step(i, n, pc, insn, m_after, body, by_start, succ, chain, ind)
             )

@@ -302,6 +302,10 @@ struct BlockPlan {
     /// pending mask, which the block's first instruction would clear. Put
     /// back if the block completes no instruction.
     bank_pre: Option<Int>,
+    /// A latched interrupt is deferred only by the active DO loop stack:
+    /// block code must end the call at the instruction that empties it
+    /// (`St::stop_at_loop_empty`), and the fast tier does not run.
+    stop_loop_empty: bool,
 }
 
 /// Cumulative instruction counts by execution tier (cheap to read: the
@@ -1135,6 +1139,7 @@ impl Engine {
             models: false,
             timer_count: None,
             bank_pre: None,
+            stop_loop_empty: false,
         };
         if self.models_active() {
             if entry.is_some_and(|e| !e.model_safe) {
@@ -1163,33 +1168,31 @@ impl Engine {
                 self.model_stats.timer_gated += 1;
                 return None;
             }
-            let mut loop_bound = None;
             if self.software_interrupts || s.cfg.core_timer || s.cfg.peripheral_model {
                 match self.latent_interrupt() {
                     Some(false) => {}
                     // A latched, unmasked interrupt that only an active DO
                     // loop defers (the interpreter delivers none while the
-                    // loop stack is non-empty or a branch is pending): a
-                    // block may run while the outermost counted loop cannot
-                    // have popped. Its `remaining` iterations each execute
-                    // at least one instruction, so its pop is at least the
-                    // `remaining`-th instruction from here, after which the
-                    // interpreter delivers the interrupt.
-                    Some(true)
-                        if self.s.pending.is_none()
-                            && self.s.loops.n != 0
-                            && self.s.loops.a[0].remaining >= 2 =>
-                    {
-                        loop_bound = Some(self.s.icount + self.s.loops.a[0].remaining as u64);
+                    // loop stack is non-empty or a branch is pending).
+                    // Invariant: such a block may run, but its call must end
+                    // at the instruction boundary where the loop stack
+                    // becomes empty, which is where the interpreter would
+                    // deliver the interrupt. Generated code checks
+                    // `s.stop_at_loop_empty && s.loops.n == 0` after every
+                    // instruction at a loop end and exits as a budget exit
+                    // does (state written back); the fast tier is not run
+                    // under this plan (`stop_loop_empty`), and a call chain
+                    // is made of such blocks. Only a pop at a loop end can
+                    // empty the stack in a model-safe block (loop aborts,
+                    // PUSH/POP and LADDR/CURLCNTR writes are not).
+                    Some(true) if self.s.pending.is_none() && self.s.loops.n != 0 => {
+                        plan.stop_loop_empty = true;
                     }
                     _ => {
                         self.model_stats.irq_deferred += 1;
                         return None;
                     }
                 }
-            }
-            if let Some(b) = loop_bound {
-                plan.limit = plan.limit.min(b);
             }
             if self.s.cfg.core_timer {
                 let (mode, count) = (self.s.r[R_MODE2], self.s.r[R_TCOUNT]);
@@ -1441,6 +1444,7 @@ impl Engine {
             if let Some((entry, plan)) = self.block_plan(limit) {
                 'blk: {
                     self.s.limit = plan.limit;
+                    self.s.stop_at_loop_empty = plan.stop_loop_empty;
                     self.s.chain = 0;
                     let before = self.s.icount;
                     let entry_pc = self.s.pc_sw as u32;
@@ -1459,7 +1463,7 @@ impl Engine {
                     }
                     self.s.in_block = plan.models;
                     let mut code = None;
-                    if let Some(f) = self.fast.as_mut() {
+                    if let Some(f) = self.fast.as_mut().filter(|_| !plan.stop_loop_empty) {
                         #[cfg(feature = "region-profile")]
                         {
                             let profile_start =
