@@ -29,8 +29,14 @@
 pub mod canon;
 pub mod fast;
 pub mod frames;
+mod live_capture;
+mod region_profile;
 pub mod sha256;
 pub mod vectors;
+pub use region_profile::{RegionCost, RegionEntryProfile, RegionProfile};
+
+#[cfg(feature = "region-profile")]
+use std::time::Instant;
 
 // The runtime and the generated core live in their own crates (so that
 // editing this one does not recompile them); the old paths stay.
@@ -222,6 +228,9 @@ pub struct Engine {
     /// (counter ticks, instructions, entries), ticks of the generic
     /// counter (cntvct_el0 on aarch64).
     pub prof: Option<std::collections::HashMap<u32, (u64, u64, u64)>>,
+    /// Opt-in dispatch costs for coupled-run's per-entry region profile.
+    #[cfg(feature = "region-profile")]
+    region_profile: Option<RegionProfile>,
     /// Block-to-block transitions (entry pc, next pc) with their counts.
     pub trans: Option<std::collections::HashMap<(u32, u32), u64>>,
     /// The PC the last interpreted instruction left (to tell a run's start).
@@ -251,6 +260,9 @@ pub struct Engine {
     fast_auto_dispatch: bool,
     /// SHARC_FAST_HIST: interpreted instructions per PC (diagnostics).
     hist: Option<Box<std::collections::HashMap<u32, u64>>>,
+    /// Opt-in raw generated-block call snapshots.  It is configured wholly
+    /// through the environment and is absent in ordinary execution.
+    live_capture: Option<live_capture::LiveCapture>,
 }
 
 /// What the run-time model gate decided (diagnostic counters).
@@ -553,6 +565,8 @@ impl Engine {
             entries: None,
             trans: None,
             prof: None,
+            #[cfg(feature = "region-profile")]
+            region_profile: None,
             last_interp_next: -1,
             idle_head: None,
             idle_lo: 0,
@@ -568,6 +582,7 @@ impl Engine {
             fast_auto_dispatch: false,
             hist: std::env::var_os("SHARC_FAST_HIST")
                 .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
+            live_capture: live_capture::LiveCapture::from_env(),
         }
     }
 
@@ -597,6 +612,28 @@ impl Engine {
             t.fast_declined = f.declined;
         }
         t
+    }
+
+    /// Enable or clear the opt-in per-entry dispatch profile.
+    pub fn set_region_profile(&mut self, enabled: bool) {
+        #[cfg(feature = "region-profile")]
+        {
+            self.region_profile = enabled.then(RegionProfile::default);
+        }
+        #[cfg(not(feature = "region-profile"))]
+        let _ = enabled;
+    }
+
+    /// Cumulative per-entry dispatch costs, when profiling is enabled.
+    pub fn region_profile(&self) -> Option<RegionProfile> {
+        #[cfg(feature = "region-profile")]
+        {
+            self.region_profile.clone()
+        }
+        #[cfg(not(feature = "region-profile"))]
+        {
+            None
+        }
     }
 
     /// Install (or remove) the fast tier.
@@ -1323,17 +1360,98 @@ impl Engine {
                     self.s.in_block = plan.models;
                     let mut code = None;
                     if let Some(f) = self.fast.as_mut() {
-                        code = f.run(&mut self.s, entry_pc);
+                        #[cfg(feature = "region-profile")]
+                        {
+                            let profile_start =
+                                self.region_profile.as_ref().map(|_| Instant::now());
+                            code = f.run(&mut self.s, entry_pc);
+                            if let (Some(profile), Some(start)) =
+                                (&mut self.region_profile, profile_start)
+                            {
+                                profile.record(
+                                    entry_pc,
+                                    true,
+                                    self.s.icount - before,
+                                    start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                                );
+                            }
+                        }
+                        #[cfg(not(feature = "region-profile"))]
+                        {
+                            code = f.run(&mut self.s, entry_pc);
+                        }
                     }
                     if code.is_none()
                         && let Some(entry) = entry
                     {
-                        if self.fast.as_ref().is_some_and(|f| f.caps_chain()) {
-                            // End every chain at its first link: the fast tier
-                            // is only consulted from here.
-                            self.s.chain = CHAIN_MAX;
+                        #[cfg(feature = "region-profile")]
+                        {
+                            let profile_start =
+                                self.region_profile.as_ref().map(|_| Instant::now());
+                            if self.fast.as_ref().is_some_and(|f| f.caps_chain()) {
+                                // End every chain at its first link: the fast tier
+                                // is only consulted from here.
+                                self.s.chain = CHAIN_MAX;
+                            }
+                            let capture = self.live_capture.as_mut().and_then(|capture| {
+                                capture.before(
+                                    entry_pc,
+                                    &self.s,
+                                    self.instruction_clock,
+                                    self.instruction_clock_base,
+                                )
+                            });
+                            let block_code = (entry.f)(&mut self.s);
+                            code = Some(block_code);
+                            if let (Some(capture), Some(ticket)) = (&mut self.live_capture, capture)
+                            {
+                                capture.after(
+                                    ticket,
+                                    &self.s,
+                                    block_code,
+                                    self.instruction_clock,
+                                    self.instruction_clock_base,
+                                );
+                            }
+                            if let (Some(profile), Some(start)) =
+                                (&mut self.region_profile, profile_start)
+                            {
+                                profile.record(
+                                    entry_pc,
+                                    false,
+                                    self.s.icount - before,
+                                    start.elapsed().as_nanos().min(u64::MAX as u128) as u64,
+                                );
+                            }
                         }
-                        code = Some((entry.f)(&mut self.s));
+                        #[cfg(not(feature = "region-profile"))]
+                        {
+                            if self.fast.as_ref().is_some_and(|f| f.caps_chain()) {
+                                // End every chain at its first link: the fast tier
+                                // is only consulted from here.
+                                self.s.chain = CHAIN_MAX;
+                            }
+                            let capture = self.live_capture.as_mut().and_then(|capture| {
+                                capture.before(
+                                    entry_pc,
+                                    &self.s,
+                                    self.instruction_clock,
+                                    self.instruction_clock_base,
+                                )
+                            });
+                            let block_code = (entry.f)(&mut self.s);
+                            code = Some(block_code);
+                            if let (Some(capture), Some(ticket)) = (&mut self.live_capture, capture)
+                            {
+                                capture.after(
+                                    ticket,
+                                    &self.s,
+                                    block_code,
+                                    self.instruction_clock,
+                                    self.instruction_clock_base,
+                                );
+                            }
+                        }
                     }
                     self.s.in_block = false;
                     // Neither the fast tier nor a block (none for this PC):

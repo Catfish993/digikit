@@ -20,6 +20,8 @@ sharc-fast-cl = { path = "../sharc-fast-cl" }
 # fast-prof: per-phase cost marks in the fast tier's glue (region_bench fast-bench).
 [features]
 fast-prof = []
+# Per-entry dispatch timing for coupled-run diagnostic builds.
+region-profile = []
 
 [lib]
 name = "sharc_native"

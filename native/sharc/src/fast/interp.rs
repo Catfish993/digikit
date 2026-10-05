@@ -68,8 +68,14 @@ impl InterpKernel {
             if slot != base {
                 continue;
             }
-            let (lo, hi) = (rd32(CTX_WIN_EXT + 8 * w), rd32(CTX_WIN_EXT + 8 * w + 4));
-            if off >= lo && off as u64 + 4 <= hi as u64 {
+            let lo = rd32(CTX_WIN_EXT + 8 * w);
+            let dyn_len = rd32(CTX_WIN_DYN_LEN + 4 * w);
+            let hi = if dyn_len == 0 {
+                rd32(CTX_WIN_EXT + 8 * w + 4) as u64
+            } else {
+                lo as u64 + dyn_len as u64
+            };
+            if off >= lo && off as u64 + 4 <= hi {
                 return;
             }
         }

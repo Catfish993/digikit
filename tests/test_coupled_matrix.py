@@ -71,6 +71,18 @@ def test_plan_overrides_and_no_validation():
     assert {j.repeat for j in jobs} == {1, 2}
 
 
+def test_list_forwards_region_profile_to_the_plan(monkeypatch):
+    seen = {}
+
+    def capture_plan(*args):
+        seen["profile_regions"] = args[-1]
+        return []
+
+    monkeypatch.setattr(cm, "plan", capture_plan)
+    assert cm.main(["--profile-regions", "--list"]) == 0
+    assert seen["profile_regions"] is True
+
+
 def test_default_matrix_fits_the_budget():
     # Rough cost model from measurements: wall seconds per audio second.
     cost = {"prod": 2.1, "generic": 55.0, "generic-auto": 30.0}
@@ -106,6 +118,8 @@ def test_binary_and_build_command_follow_the_target_dir_convention():
     assert "--locked" in cmd and "--target" not in cmd
     assert cmd[cmd.index("--target-dir") + 1].endswith("target/prod")
     assert "--target" in cm.build_command(prod, "/p.profdata")
+    profile = cm.build_command(prod, None, profile_regions=True)
+    assert profile[profile.index("--features") + 1] == "coupled-audio,region-profile"
 
 
 def test_runner_command_passes_seconds_only_when_given():
@@ -116,6 +130,10 @@ def test_runner_command_passes_seconds_only_when_given():
     validation = cm.Job("prod", "exactness-100m", 0, None)
     assert "--seconds" not in cm.runner_command(
         Path("b"), validation, Path("s.syx"), Path("o.json")
+    )
+    profiled = cm.Job("prod", "idle", 1, 4.0, profile_regions=True)
+    assert "--profile-regions" in cm.runner_command(
+        Path("b"), profiled, Path("s.syx"), Path("o.json")
     )
 
 
@@ -170,7 +188,7 @@ def test_run_matrix_writes_report_and_summary(tmp_path, monkeypatch):
         Path("x.syx"),
         tmp_path / "20260101-000000",
         60.0,
-        builder=lambda c, pgo, syx: Path(f"/bin/{c.name}"),
+        builder=lambda c, pgo, syx, profile_regions: Path(f"/bin/{c.name}"),
         runner=fake_runner,
     )
     out = tmp_path / "20260101-000000"

@@ -75,6 +75,34 @@ pub trait DspEngine {
     fn tier_counters(&self) -> Option<sharc_native::TierCounters> {
         None
     }
+    /// Aggregate model-gate counters, copied into ordinary worker reports.
+    fn model_stats(&self) -> Option<sharc_native::ModelStats> {
+        None
+    }
+    /// Enable or clear opt-in per-entry dispatch profiling.
+    fn set_region_profile(&mut self, _enabled: bool) {}
+    /// Cumulative opt-in per-entry dispatch profile.
+    fn region_profile(&self) -> Option<sharc_native::RegionProfile> {
+        None
+    }
+    /// Enable the existing exact execution maps. The profile is frequency
+    /// data only; it adds no per-instruction timer reads.
+    fn set_execution_profile(&mut self, _enabled: bool) -> bool {
+        false
+    }
+    /// Exact execution maps, when enabled.
+    fn execution_profile(&self) -> Option<ExecutionProfile> {
+        None
+    }
+}
+
+/// Existing Engine option-26 maps, captured only by an explicit worker request.
+#[derive(Clone, Debug)]
+pub struct ExecutionProfile {
+    /// Kinds 0..4: coverage, interpreter entries, transitions, block exits,
+    /// and zero-progress entry bails. Each is tab/space-separated text from
+    /// `Engine::profile_text`, not a timing measurement.
+    pub maps: [String; 5],
 }
 
 /// Per-frame record.
@@ -444,6 +472,12 @@ enum Msg {
     },
     Export,
     Report,
+    RegionProfile(bool),
+    ExecutionProfile {
+        enabled: bool,
+        ack: mpsc::Sender<bool>,
+    },
+    ExecutionProfileReport,
 }
 
 /// Most per-period records the worker keeps (about 22 minutes of audio).
@@ -456,6 +490,11 @@ pub struct WorkerReport {
     /// CPU time of the worker thread so far (CLOCK_THREAD_CPUTIME_ID).
     pub cpu_ns: u64,
     pub tiers: Option<sharc_native::TierCounters>,
+    /// Aggregate model-gate counters. Unlike execution-map text, this is a
+    /// small Copy value and is available to ordinary boundary reports.
+    pub model_stats: Option<sharc_native::ModelStats>,
+    /// Per-entry dispatch costs, only after `set_region_profile(true)`.
+    pub region_profile: Option<sharc_native::RegionProfile>,
     /// Wall time of each frame the worker handled (SPI exchange + DSP period +
     /// SPORT block), in nanoseconds, in order; only with link timing, at most
     /// [`PERIOD_RECORD_LIMIT`] entries.
@@ -471,6 +510,7 @@ struct Link {
     done_rx: mpsc::Receiver<Done>,
     export_rx: mpsc::Receiver<(Vec<u8>, u64)>,
     report_rx: mpsc::Receiver<WorkerReport>,
+    execution_profile_rx: mpsc::Receiver<Option<ExecutionProfile>>,
     frames_sent: u64,
     /// Frames sent whose [`Done`] has not been committed yet.
     outstanding: usize,
@@ -582,6 +622,8 @@ impl ThreadedPeer {
         let (done_tx, done_rx) = mpsc::channel::<Done>();
         let (export_tx, export_rx) = mpsc::channel::<(Vec<u8>, u64)>();
         let (report_tx, report_rx) = mpsc::channel::<WorkerReport>();
+        let (execution_profile_tx, execution_profile_rx) =
+            mpsc::channel::<Option<ExecutionProfile>>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let worker = thread::Builder::new()
             .name("sharc-dsp".into())
@@ -634,12 +676,21 @@ impl ThreadedPeer {
                             let _ = report_tx.send(WorkerReport {
                                 cpu_ns: crate::cputime::thread_cpu_ns(),
                                 tiers: core.engine.tier_counters(),
+                                model_stats: core.engine.model_stats(),
+                                region_profile: core.engine.region_profile(),
                                 period_ns: period_ns.clone(),
                                 periods,
                             });
                         }
                         Msg::Export => {
                             let _ = export_tx.send((core.engine.export(), core.engine.icount()));
+                        }
+                        Msg::RegionProfile(enabled) => core.engine.set_region_profile(enabled),
+                        Msg::ExecutionProfile { enabled, ack } => {
+                            let _ = ack.send(core.engine.set_execution_profile(enabled));
+                        }
+                        Msg::ExecutionProfileReport => {
+                            let _ = execution_profile_tx.send(core.engine.execution_profile());
                         }
                     }
                 }
@@ -658,6 +709,7 @@ impl ThreadedPeer {
             done_rx,
             export_rx,
             report_rx,
+            execution_profile_rx,
             frames_sent: 0,
             outstanding: 0,
             timing: timing_enabled.then(ThreadedTimingProfile::default),
@@ -721,6 +773,26 @@ impl Peer for ThreadedPeer {
 }
 
 impl ThreadedHandle {
+    /// Enable or clear the worker's opt-in per-entry dispatch profile.
+    pub fn set_region_profile(&self, enabled: bool) -> bool {
+        self.link
+            .borrow()
+            .tx
+            .as_ref()
+            .is_some_and(|c| c.send(Msg::RegionProfile(enabled)).is_ok())
+    }
+    /// Enable the exact, non-timing execution maps and wait for worker order.
+    pub fn set_execution_profile(&self, enabled: bool) -> bool {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        let sent = self.link.borrow().tx.as_ref().is_some_and(|c| {
+            c.send(Msg::ExecutionProfile {
+                enabled,
+                ack: ack_tx,
+            })
+            .is_ok()
+        });
+        sent && ack_rx.recv().unwrap_or(false)
+    }
     /// Commit completed frames without waiting; streaming hosts use this between steps.
     /// Call `sync` instead before reading final totals or exporting state.
     pub fn poll(&self) {
@@ -748,6 +820,22 @@ impl ThreadedHandle {
             return None;
         }
         l.report_rx.recv().ok()
+    }
+
+    /// Fetch the exact maps after draining frames. This is intentionally a
+    /// separate request from the ordinary worker report so default reports
+    /// never clone profile text.
+    pub fn execution_profile(&self) -> Option<ExecutionProfile> {
+        let mut l = self.link.borrow_mut();
+        l.commit_ready(true);
+        if !l
+            .tx
+            .as_ref()
+            .is_some_and(|c| c.send(Msg::ExecutionProfileReport).is_ok())
+        {
+            return None;
+        }
+        l.execution_profile_rx.recv().ok().flatten()
     }
 
     /// Cumulative opt-in timing, or `None` when the peer was started without it.
@@ -815,6 +903,29 @@ impl DspEngine for NativeDsp {
     fn tier_counters(&self) -> Option<sharc_native::TierCounters> {
         Some(self.0.tier_counters())
     }
+    fn model_stats(&self) -> Option<sharc_native::ModelStats> {
+        Some(self.0.model_stats)
+    }
+    fn set_region_profile(&mut self, enabled: bool) {
+        self.0.set_region_profile(enabled);
+    }
+    fn region_profile(&self) -> Option<sharc_native::RegionProfile> {
+        self.0.region_profile()
+    }
+    fn set_execution_profile(&mut self, enabled: bool) -> bool {
+        self.0.set_option(26, enabled as i64) == 0
+    }
+    fn execution_profile(&self) -> Option<ExecutionProfile> {
+        Some(ExecutionProfile {
+            maps: [
+                self.0.profile_text(0)?,
+                self.0.profile_text(1)?,
+                self.0.profile_text(2)?,
+                self.0.profile_text(3)?,
+                self.0.profile_text(4)?,
+            ],
+        })
+    }
 }
 
 /// A native engine that the host keeps a handle to, so it can export the
@@ -878,6 +989,30 @@ impl DspEngine for SharedDsp {
     }
     fn tier_counters(&self) -> Option<sharc_native::TierCounters> {
         Some(self.0.borrow().tier_counters())
+    }
+    fn model_stats(&self) -> Option<sharc_native::ModelStats> {
+        Some(self.0.borrow().model_stats)
+    }
+    fn set_region_profile(&mut self, enabled: bool) {
+        self.0.borrow_mut().set_region_profile(enabled);
+    }
+    fn region_profile(&self) -> Option<sharc_native::RegionProfile> {
+        self.0.borrow().region_profile()
+    }
+    fn set_execution_profile(&mut self, enabled: bool) -> bool {
+        self.0.borrow_mut().set_option(26, enabled as i64) == 0
+    }
+    fn execution_profile(&self) -> Option<ExecutionProfile> {
+        let e = self.0.borrow();
+        Some(ExecutionProfile {
+            maps: [
+                e.profile_text(0)?,
+                e.profile_text(1)?,
+                e.profile_text(2)?,
+                e.profile_text(3)?,
+                e.profile_text(4)?,
+            ],
+        })
     }
 }
 

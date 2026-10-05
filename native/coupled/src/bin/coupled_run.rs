@@ -2,7 +2,7 @@
 //!
 //! It restores the same DN2 ready session as the launcher (`tools/native_emu.sh`
 //! `--auto-coupled`), steps the emulator in the app's [`STEP_CHUNK`]-instruction
-//! chunks as fast as it can with no audio device (the PCM is only measured), and
+//! chunks as fast as it can with optional native playback (the PCM is also measured), and
 //! plays a scenario of guest-clock-driven panel events. For each scenario it
 //! reports exact per-thread CPU time, the DSP and ColdFire instruction split, the
 //! per-period DSP wall histogram against the 0.667 ms deadline, link timing, and
@@ -14,7 +14,7 @@
 //!   --dsp-image snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin \
 //!   --dsp-state snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp \
 //!   --cf-snapshot snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap \
-//!   [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--no-pcm-tap] [--no-link-timing] \
+//!   [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--playback] [--audio-buffer S] [--no-pcm-tap] [--no-link-timing] [--profile-regions] [--profile-execution] \
 //!   [--out report.json] [--list]
 //! ```
 //!
@@ -27,10 +27,21 @@
 //! the shared QA sequence of `native/boot/examples/common` (NO, NO, encoder A).
 //! The default scenarios are `native/coupled/scenarios.json`.
 
-use digi_coupled::{AudioOptions, CoupledRuntime, STEP_CHUNK, TierCounters, WorkerReport, common};
+use digi_coupled::{
+    AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters, WorkerReport, common,
+};
+#[cfg(feature = "region-profile")]
+use digi_coupled::{RegionCost, RegionProfile};
 use elektron_native_boot::thread_cpu_ns;
 use serde_json::{Value, json};
-use std::{path::PathBuf, process::ExitCode, time::Instant};
+#[cfg(feature = "region-profile")]
+use std::collections::BTreeMap;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::ExitCode,
+    time::Instant,
+};
 
 /// DSPI2 frames per audio second (one 32-sample block each).
 const FRAMES_PER_SECOND: f64 = 1500.0;
@@ -134,8 +145,12 @@ struct Args {
     scenarios: Option<PathBuf>,
     names: Vec<String>,
     seconds: Option<f64>,
+    playback: bool,
+    audio_buffer: f64,
     pcm_tap: bool,
     link_timing: bool,
+    profile_regions: bool,
+    profile_execution: bool,
     out: Option<PathBuf>,
     list: bool,
 }
@@ -149,8 +164,12 @@ fn parse_args() -> Result<Args, String> {
         scenarios: None,
         names: Vec::new(),
         seconds: None,
+        playback: false,
+        audio_buffer: 0.0,
         pcm_tap: true,
         link_timing: true,
+        profile_regions: false,
+        profile_execution: false,
         out: None,
         list: false,
     };
@@ -167,8 +186,16 @@ fn parse_args() -> Result<Args, String> {
             "--seconds" => {
                 a.seconds = Some(value("--seconds")?.parse().map_err(|_| "bad --seconds")?)
             }
+            "--playback" => a.playback = true,
+            "--audio-buffer" => {
+                a.audio_buffer = value("--audio-buffer")?
+                    .parse()
+                    .map_err(|_| "bad --audio-buffer")?
+            }
             "--no-pcm-tap" => a.pcm_tap = false,
             "--no-link-timing" => a.link_timing = false,
+            "--profile-regions" => a.profile_regions = true,
+            "--profile-execution" => a.profile_execution = true,
             "--out" => a.out = Some(value("--out")?.into()),
             "--list" => a.list = true,
             other => return Err(format!("unknown option {other}")),
@@ -256,6 +283,240 @@ fn dsp_split(a: &TierCounters, b: &TierCounters) -> Value {
     })
 }
 
+const EXECUTION_PROFILE_MAPS: [(&str, &str); 5] = [
+    ("coverage", "pc MODE1 known count"),
+    (
+        "entries",
+        "pc count (interpreter sequence entries, not AOT dispatch attempts)",
+    ),
+    ("transitions", "from_pc to_pc count"),
+    (
+        "exits",
+        "block_pc exit_kind at_pc count; traps are exit rows",
+    ),
+    (
+        "entry_bails",
+        "pc MODE1 unknown_register_bitset pending count; non-trap zero-progress entry bails",
+    ),
+];
+
+/// Write the Engine's existing option-26 maps only after the timed end probe.
+/// Empty TSV maps remain valid evidence that this fresh scenario made no rows
+/// of a given kind.
+fn write_execution_profile(
+    out: &Path,
+    scenario: &str,
+    profile: &ExecutionProfile,
+    end: &WorkerReport,
+    start: &WorkerReport,
+) -> Result<Value, String> {
+    let stem = out
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| format!("--out path has no UTF-8 file stem: {}", out.display()))?;
+    let dir = out.with_file_name(format!("{stem}-execution-profile"));
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let scenario_name = scenario
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let mut maps = Vec::with_capacity(EXECUTION_PROFILE_MAPS.len());
+    for (kind, ((name, columns), text)) in
+        EXECUTION_PROFILE_MAPS.iter().zip(&profile.maps).enumerate()
+    {
+        let path = dir.join(format!("{scenario_name}.{name}.tsv"));
+        fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        maps.push(json!({
+            "kind": kind,
+            "name": name,
+            "columns": columns,
+            "rows": text.lines().count(),
+            "path": path,
+        }));
+    }
+    let model_stats = model_stats_delta(end, start)?;
+    Ok(json!({
+        "metadata": {
+            "source": "Engine.set_option(26) and Engine.profile_text(0..4)",
+            "measurement": "frequency counts and aggregate model-gate counters only; no CPU or benchmark attribution",
+            "start": "enabled by ordered worker acknowledgement after ready and before the start probe",
+            "end": "requested by a dedicated worker message after the end timing probe",
+            "maps_scope": "fresh Engine for this scenario; maps are cumulative from enable to the post-run request",
+            "model_stats_scope": "checked end-minus-start worker-boundary delta; excludes work before the start probe",
+            "empty_maps_valid": true,
+        },
+        "maps": maps,
+        "model_stats": model_stats,
+    }))
+}
+
+fn model_stats_delta(after: &WorkerReport, before: &WorkerReport) -> Result<Value, String> {
+    let after = after
+        .model_stats
+        .ok_or("execution profile requires DSP model stats at end")?;
+    let before = before
+        .model_stats
+        .ok_or("execution profile requires DSP model stats at start")?;
+    let delta = |name: &str, end: u64, start: u64| {
+        end.checked_sub(start)
+            .ok_or_else(|| format!("execution profile model counter moved backwards: {name}"))
+    };
+    Ok(json!({
+        "gated": delta("gated", after.gated, before.gated)?,
+        "unsafe_block": delta("unsafe_block", after.unsafe_block, before.unsafe_block)?,
+        "irq_deferred": delta("irq_deferred", after.irq_deferred, before.irq_deferred)?,
+        "timer_gated": delta("timer_gated", after.timer_gated, before.timer_gated)?,
+        "mmr_exits": delta("mmr_exits", after.mmr_exits, before.mmr_exits)?,
+        "code_mismatch": delta("code_mismatch", after.code_mismatch, before.code_mismatch)?,
+    }))
+}
+
+#[cfg(feature = "region-profile")]
+fn counter_delta(after: u64, before: u64, name: &str) -> Result<u64, String> {
+    after
+        .checked_sub(before)
+        .ok_or_else(|| format!("region profile counter moved backwards: {name}"))
+}
+
+#[cfg(feature = "region-profile")]
+fn cost_delta(after: RegionCost, before: RegionCost, name: &str) -> Result<RegionCost, String> {
+    Ok(RegionCost {
+        calls: counter_delta(after.calls, before.calls, &format!("{name}.calls"))?,
+        zero_progress_calls: counter_delta(
+            after.zero_progress_calls,
+            before.zero_progress_calls,
+            &format!("{name}.zero_progress_calls"),
+        )?,
+        instructions: counter_delta(
+            after.instructions,
+            before.instructions,
+            &format!("{name}.instructions"),
+        )?,
+        wall_ns: counter_delta(after.wall_ns, before.wall_ns, &format!("{name}.wall_ns"))?,
+    })
+}
+
+#[cfg(feature = "region-profile")]
+fn profile_costs(profile: &RegionProfile) -> BTreeMap<(u8, u32), RegionCost> {
+    let mut costs = BTreeMap::new();
+    for (pc, entry) in profile.entries() {
+        if entry.fast.calls != 0 {
+            costs.insert((0, pc), entry.fast);
+        }
+        if entry.aot.calls != 0 {
+            costs.insert((1, pc), entry.aot);
+        }
+    }
+    costs
+}
+
+#[cfg(feature = "region-profile")]
+fn region_profile_delta(after: &WorkerReport, before: &WorkerReport) -> Result<Value, String> {
+    let after_profile = after
+        .region_profile
+        .as_ref()
+        .ok_or("region profile was not enabled in the DSP worker")?;
+    let before_profile = before
+        .region_profile
+        .as_ref()
+        .ok_or("region profile was not enabled at scenario start")?;
+    let after_costs = profile_costs(after_profile);
+    let before_costs = profile_costs(before_profile);
+    let mut totals = [RegionCost::default(); 2];
+    let mut rows = Vec::new();
+    for (&(tier, pc), &after_cost) in &after_costs {
+        let before_cost = before_costs.get(&(tier, pc)).copied().unwrap_or_default();
+        let cost = cost_delta(after_cost, before_cost, &format!("{tier}:{pc:06x}"))?;
+        if cost.calls == 0 {
+            continue;
+        }
+        let total = &mut totals[tier as usize];
+        total.calls = total
+            .calls
+            .checked_add(cost.calls)
+            .ok_or("region profile calls overflow")?;
+        total.zero_progress_calls = total
+            .zero_progress_calls
+            .checked_add(cost.zero_progress_calls)
+            .ok_or("region profile zero-progress calls overflow")?;
+        total.instructions = total
+            .instructions
+            .checked_add(cost.instructions)
+            .ok_or("region profile instructions overflow")?;
+        total.wall_ns = total
+            .wall_ns
+            .checked_add(cost.wall_ns)
+            .ok_or("region profile wall time overflow")?;
+        rows.push((tier, pc, cost));
+    }
+    for key in before_costs.keys() {
+        if !after_costs.contains_key(key) {
+            return Err(format!(
+                "region profile entry disappeared: {}:{:06x}",
+                key.0, key.1
+            ));
+        }
+    }
+    rows.sort_unstable_by(|a, b| b.2.wall_ns.cmp(&a.2.wall_ns));
+    let (Some(after_tiers), Some(before_tiers)) = (&after.tiers, &before.tiers) else {
+        return Err("region profile requires DSP tier counters".into());
+    };
+    let blocks = counter_delta(
+        after_tiers.block_instructions,
+        before_tiers.block_instructions,
+        "block_instructions",
+    )?;
+    let fast = counter_delta(
+        after_tiers.fast_insns,
+        before_tiers.fast_insns,
+        "fast_insns",
+    )?;
+    let aot = blocks
+        .checked_sub(fast)
+        .ok_or("fast instruction delta exceeds block instruction delta")?;
+    if totals[0].instructions != fast || totals[1].instructions != aot {
+        return Err(format!(
+            "region profile instruction reconciliation failed: fast {} != {fast}, aot {} != {aot}",
+            totals[0].instructions, totals[1].instructions
+        ));
+    }
+    let cost_json = |cost: RegionCost| {
+        json!({
+            "calls": cost.calls,
+            "zero_progress_calls": cost.zero_progress_calls,
+            "retired_instructions": cost.instructions,
+            "wall_ns": cost.wall_ns,
+        })
+    };
+    Ok(json!({
+        "metadata": {
+            "clock": "std::time::Instant elapsed nanoseconds",
+            "method": "times each fast.run attempt and generated entry.f invocation; instruction counts are icount deltas",
+            "fast_wall_ns": "includes cold build, rebuild, and compiler work performed inside fast.run; do not treat it as steady-state execution time",
+            "chain_attribution": "an AOT invocation includes any generated chain calls and is attributed to its dispatch entry PC",
+            "unmeasured": "dispatcher, model and bank housekeeping, interpreter instructions, and idle visits are not attributed",
+            "overhead": "opt-in profiling adds timer reads and sparse-page counter updates at measured dispatches",
+        },
+        "tiers": { "fast": cost_json(totals[0]), "aot": cost_json(totals[1]) },
+        "rows": rows.into_iter().map(|(tier, pc, cost)| json!({
+            "tier": if tier == 0 { "fast" } else { "aot" },
+            "entry_pc": format!("{pc:06x}"),
+            "entry_pc_u32": pc,
+            "calls": cost.calls,
+            "zero_progress_calls": cost.zero_progress_calls,
+            "retired_instructions": cost.instructions,
+            "wall_ns": cost.wall_ns,
+        })).collect::<Vec<_>>(),
+        "reconciliation": { "fast_instructions": fast, "aot_instructions": aot, "ok": true },
+    }))
+}
+
 struct Probe {
     wall: Instant,
     cf_cpu_ns: u64,
@@ -293,8 +554,8 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         image: args.image.clone(),
         state: args.state.clone(),
         snapshot: args.snapshot.clone(),
-        buffer_seconds: 0.0,
-        playback: false,
+        buffer_seconds: args.audio_buffer,
+        playback: args.playback,
         automatic: false,
         expected_syx: None,
         link_timing: args.link_timing,
@@ -307,6 +568,13 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
     let initial = rt.snapshot().status;
     if !initial.ready {
         return Err("the restored snapshot is not at ready".into());
+    }
+    #[cfg(feature = "region-profile")]
+    if args.profile_regions && !rt.set_region_profile(true) {
+        return Err("DSP worker stopped while enabling region profile".into());
+    }
+    if args.profile_execution && !rt.set_execution_profile(true) {
+        return Err("DSP worker did not enable execution profile".into());
     }
     let mut script = sc.qa_script.then(common::Script::from_env);
     if let Some(script) = &mut script {
@@ -321,7 +589,16 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
     };
 
     let start = probe(&mut rt)?;
+    let initial_audio_health = rt.audio_report().unwrap_or(Value::Null);
+    let start_health = json!({
+        "elapsed_wall_seconds": 0.0,
+        "source_pcm_frames": initial_audio_health["source_pcm_frames"],
+        "health": initial_audio_health,
+    });
+    eprintln!("coupled-run sample phase started");
     let (mut next, mut icount, mut step_error) = (0usize, initial.icount, None);
+    let mut playback_observations = Vec::new();
+    let mut next_playback_observation = 0.1_f64;
     let mut events: Vec<&Event> = sc.events.iter().collect();
     events.sort_by_key(|e| match e.when {
         When::Instr(n) => (0, n),
@@ -354,6 +631,16 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         };
         let status = rt.step_chunk(budget).status;
         chunks += 1;
+        if args.playback && start.wall.elapsed().as_secs_f64() >= next_playback_observation {
+            let elapsed = start.wall.elapsed().as_secs_f64();
+            let health = rt.audio_report().unwrap_or(Value::Null);
+            playback_observations.push(json!({
+                "elapsed_wall_seconds": elapsed,
+                "source_pcm_frames": health["source_pcm_frames"],
+                "health": health,
+            }));
+            next_playback_observation = elapsed + 0.1;
+        }
         icount = status.icount;
         if let Some(error) = status.error {
             step_error = Some(error);
@@ -364,6 +651,24 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         }
     }
     let end = probe(&mut rt)?;
+    let execution_profile = if args.profile_execution {
+        let profile = rt
+            .execution_profile()
+            .ok_or("DSP worker did not return execution profile maps")?;
+        let out = args
+            .out
+            .as_deref()
+            .ok_or("--profile-execution requires --out")?;
+        Some(write_execution_profile(
+            out,
+            &sc.name,
+            &profile,
+            &end.worker,
+            &start.worker,
+        )?)
+    } else {
+        None
+    };
     let wall = end.wall.duration_since(start.wall).as_secs_f64();
     let cf_cpu = (end.cf_cpu_ns - start.cf_cpu_ns) as f64 / 1e9;
     let dsp_cpu = (end.worker.cpu_ns - start.worker.cpu_ns) as f64 / 1e9;
@@ -402,17 +707,36 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         (Some(_), None) => Some(false),
         _ => None,
     };
+    #[cfg(feature = "region-profile")]
+    let region_profile = if args.profile_regions {
+        region_profile_delta(&end.worker, &start.worker)?
+    } else {
+        Value::Null
+    };
+    #[cfg(not(feature = "region-profile"))]
+    let region_profile = Value::Null;
+    let playback_ok = !args.playback
+        || (health["sink_connected"].as_bool() == Some(true)
+            && health["sink"]["stream_started"].as_bool() == Some(true)
+            && health["sink"]["callback_max_frames"].as_u64().unwrap_or(0) > 0
+            && health["device_error"].is_null()
+            && health["sink"]["error"].is_null());
     let gates = json!({
         "missing_blocks": missing, "halted": halted, "step_error": step_error,
         "pcm_non_finite": tap.map_or(0, |t| t.non_finite),
         "pcm_hash_expected": sc.expect_sha256, "pcm_hash_match": hash_match,
         "ok": missing == 0 && halted.is_null() && step_error.is_none()
-            && tap.is_none_or(|t| t.non_finite == 0) && hash_match != Some(false),
+            && tap.is_none_or(|t| t.non_finite == 0) && hash_match != Some(false) && playback_ok,
+        "playback_health_ok": playback_ok,
     });
     Ok(json!({
         "name": sc.name, "description": sc.description,
         "audio_seconds": audio_s, "wall_seconds": wall, "real_time_factor": per(wall).recip(),
         "setup_wall_seconds": setup_s, "chunks": chunks,
+        "audio_config": { "playback": args.playback, "audio_buffer_seconds": args.audio_buffer },
+        "audio_health_start": start_health,
+        "audio_health_end": { "elapsed_wall_seconds": wall, "source_pcm_frames": health["source_pcm_frames"], "health": health },
+        "playback_observations": playback_observations,
         "guest_instructions": cf_total, "frames": end.frames - start.frames,
         "cpu": {
             "dsp_thread_s": dsp_cpu, "cf_thread_s": cf_cpu,
@@ -426,6 +750,8 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
             (Some(a), Some(b)) => dsp_split(a, b),
             _ => Value::Null,
         },
+        "region_profile": region_profile,
+        "execution_profile": execution_profile,
         "cf_instructions": {
             "total": cf_total, "interpreted": cf_interp, "idle_fast_forward": cf_idle,
             "ram_clear": cf_clear,
@@ -456,6 +782,15 @@ fn summary_line(r: &Value) -> String {
 
 fn real_main() -> Result<bool, String> {
     let args = parse_args()?;
+    if args.profile_regions && !cfg!(feature = "region-profile") {
+        return Err(
+            "--profile-regions needs a diagnostic rebuild with --features coupled-audio,region-profile"
+                .into(),
+        );
+    }
+    if args.profile_execution && args.out.is_none() {
+        return Err("--profile-execution requires --out".into());
+    }
     let text = match &args.scenarios {
         Some(path) => {
             std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
@@ -498,6 +833,8 @@ fn real_main() -> Result<bool, String> {
         },
         "pcm_tap": args.pcm_tap,
         "link_timing": args.link_timing,
+        "profile_regions": args.profile_regions,
+        "profile_execution": args.profile_execution,
         "scenarios": results,
     });
     if let Some(out) = &args.out {

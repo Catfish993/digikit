@@ -126,7 +126,9 @@ def binary_path(config: Config, pgo: str | None) -> pathlib.Path:
     return (base / TRIPLE if pgo else base) / "release" / "coupled-run"
 
 
-def build_command(config: Config, pgo: str | None) -> list[str]:
+def build_command(
+    config: Config, pgo: str | None, profile_regions: bool = False
+) -> list[str]:
     return [
         "rustup",
         "run",
@@ -138,7 +140,7 @@ def build_command(config: Config, pgo: str | None) -> list[str]:
         "-p",
         "digi-coupled",
         "--features",
-        "coupled-audio",
+        "coupled-audio,region-profile" if profile_regions else "coupled-audio",
         "--bin",
         "coupled-run",
         *(["--target", TRIPLE] if pgo else []),
@@ -147,14 +149,16 @@ def build_command(config: Config, pgo: str | None) -> list[str]:
     ]
 
 
-def build(config: Config, pgo: str | None, syx: pathlib.Path) -> pathlib.Path:
+def build(
+    config: Config, pgo: str | None, syx: pathlib.Path, profile_regions: bool = False
+) -> pathlib.Path:
     env = config_env(config, syx)
     if pgo:
         env["RUSTFLAGS"] = PGO_FLAGS.format(profdata=pgo)
     start = time.monotonic()
     with benchlock.hold("shared", f"coupled_matrix build {config.name}"):
         proc = subprocess.run(
-            build_command(config, pgo),
+            build_command(config, pgo, profile_regions),
             cwd=ROOT,
             env=env,
             capture_output=True,
@@ -175,6 +179,7 @@ class Job:
     scenario: str
     repeat: int
     seconds: float | None  # None: the scenario's own end (validation)
+    profile_regions: bool = False
 
 
 def plan(
@@ -183,6 +188,7 @@ def plan(
     repeats: int | None,
     seconds: float | None,
     validate: bool,
+    profile_regions: bool = False,
 ) -> list[Job]:
     """Jobs in run order: validation first, then repeats outermost so slow drift
     (thermal, other load) is spread over all configurations and scenarios."""
@@ -190,14 +196,14 @@ def plan(
     if validate:
         for c in configs:
             names = VALIDATION_ALL + (VALIDATION_PROD if c.name == "prod" else ())
-            jobs += [Job(c.name, n, 0, None) for n in names]
+            jobs += [Job(c.name, n, 0, None, profile_regions) for n in names]
     rounds = max((repeats or c.repeats) for c in configs) if configs else 0
     for r in range(1, rounds + 1):
         for c in configs:
             if r > (repeats or c.repeats):
                 continue
             for s in scenarios:
-                jobs.append(Job(c.name, s, r, seconds or c.seconds))
+                jobs.append(Job(c.name, s, r, seconds or c.seconds, profile_regions))
     return jobs
 
 
@@ -223,6 +229,8 @@ def runner_command(
     ]
     if job.seconds is not None:
         cmd += ["--seconds", f"{job.seconds:g}"]
+    if job.profile_regions:
+        cmd += ["--profile-regions"]
     return cmd
 
 
@@ -435,16 +443,17 @@ def run_matrix(
     syx: pathlib.Path,
     out_dir: pathlib.Path,
     timeout: float,
-    builder: Callable[[Config, str | None, pathlib.Path], pathlib.Path] = build,
+    builder: Callable[[Config, str | None, pathlib.Path, bool], pathlib.Path] = build,
     runner: Callable[..., dict] = execute,
+    profile_regions: bool = False,
 ) -> dict:
     """Build, run every job, write ``report.json`` and ``summary.md`` in out_dir."""
     started = time.monotonic()
     raw = out_dir / "raw"
     raw.mkdir(parents=True, exist_ok=True)
-    binaries = {c.name: builder(c, pgo, syx) for c in configs}
+    binaries = {c.name: builder(c, pgo, syx, profile_regions) for c in configs}
     envs = {c.name: config_env(c, syx) for c in configs}
-    jobs = plan(configs, scenarios, repeats, seconds, validate)
+    jobs = plan(configs, scenarios, repeats, seconds, validate, profile_regions)
     results: list[dict] = []
     for index, job in enumerate(jobs, 1):
         print(
@@ -471,6 +480,7 @@ def run_matrix(
             "host": host_description(),
             "rustc": rustc_version(),
             "pgo": pgo,
+            "profile_regions": profile_regions,
             "syx": str(syx),
             "total_seconds": time.monotonic() - started,
             "configs": {
@@ -518,6 +528,11 @@ def main(argv: list[str] | None = None) -> int:
         "--seconds", type=float, help="override every config's audio seconds"
     )
     ap.add_argument("--pgo", metavar="PROFDATA", help="build with this profile")
+    ap.add_argument(
+        "--profile-regions",
+        action="store_true",
+        help="pass --profile-regions to coupled-run (adds dispatch timing overhead)",
+    )
     ap.add_argument("--no-validate", action="store_true", help="skip the hash checks")
     ap.add_argument("--syx", type=pathlib.Path, default=DEFAULT_SYX)
     ap.add_argument("--out-dir", type=pathlib.Path)
@@ -529,7 +544,14 @@ def main(argv: list[str] | None = None) -> int:
 
     configs = [CONFIGS[n] for n in parse_list(args.configs, tuple(CONFIGS), "config")]
     scenarios = parse_list(args.scenarios, scenario_names(), "scenario")
-    jobs = plan(configs, scenarios, args.repeats, args.seconds, not args.no_validate)
+    jobs = plan(
+        configs,
+        scenarios,
+        args.repeats,
+        args.seconds,
+        not args.no_validate,
+        args.profile_regions,
+    )
     if args.list:
         for job in jobs:
             print(job)
@@ -548,6 +570,7 @@ def main(argv: list[str] | None = None) -> int:
         args.syx,
         out_dir,
         args.timeout,
+        profile_regions=args.profile_regions,
     )
     print((out_dir / "summary.md").read_text())
     print(f"wrote {out_dir}/report.json and summary.md")

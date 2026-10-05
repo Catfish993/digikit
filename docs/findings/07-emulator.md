@@ -6085,8 +6085,8 @@ regions of 3-5 instructions run at 0.4-0.56x because the fixed per-call cost
 resolution, flag replay) exceeds their work. On the coupled workload the three
 original regions give 0.883 wall over 7 pairs; enabling all 32 verified
 entries gives 1.38x (slower); single additions are within the ±2% noise. The
-launcher keeps the three regions. With PGO the desktop app's coupled workload
-runs at about 1.22x real time (0.924 s for 0.759 s of audio).
+launcher kept the three regions for that experiment. The reported PGO coupled
+workload took 0.924 s for 0.759 s of audio (about 0.82x real time).
 
 **[O]** The generated-block-only run of entry `0x1c0ca9` differs from the
 interpreter in `at_loaded_entry`; the fast tier matches the interpreter there.
@@ -6105,3 +6105,498 @@ Not investigated.
 **[V]** Effect on the coupled workload (5 pairs, same binary, `SHARC_FAST_NOCIRC` vs default, plug-in backend): generic gen + `SHARC_FAST_AUTO=256,64` 20.96 -> 20.46 s (0.979, RTF 27.0); `64,16` 18.8 -> 17.5 s (0.928, tier 211.6M -> 220.5M instructions); prod gen + three launcher regions 1.00 (unchanged); prod gen + `256,64,1` 2.00 -> 1.68 s (0.84), mostly from ending the rebuild churn of regions whose Eq(L) failed (2609 -> 1198 builds). Coverage barely moves at 256,64 (194.85M -> 194.89M tier instructions): the 186M still-interpreted instructions are leaf functions of ~20 instructions called 500-700k times that `min_insns` 64 drops as unprofitable, not loops declined for L.
 
 **[O]** The tier bakes L and B; a task switch between stacks (L7 = 0x3e2/0x1fd/0xc2) makes the entry decline until a rebuild (16 per entry). BR0/BR8 and the CB7I/CB15I status are not modelled in either core.
+
+### DN2 real-time baseline and per-entry ranking (2026-10-05)
+
+**[V]** An independent audit of the PGO `coupled-run` baseline in
+`out/native/runs/20261005-073811` found DSP CPU of 1.34766 seconds per audio
+second for idle and 1.37166 for `kb-chord16`; ColdFire was 0.61 and 0.62
+seconds respectively. Both two-repeat, 10-second scenarios missed every
+end-to-end 0.667 ms period deadline. The older no-PGO reports in
+`20261005-071422` were from different dirty revisions and high load, so they
+are not an isolated causal PGO comparison. The 1.78% idle/chord difference is
+within run noise and does not establish a constant-cost model.
+
+**[C]** The live session `1791143264` ran for 66.9278 s and produced 34.3633 s
+of audio with 5,698 underruns. Its overlapping link timers report 64.5609 s
+of worker DSP and 36.1027 s of host reply wait; the JS pump total was 0.997 s.
+Those overlapping timers support the DSP-bound diagnosis but are not additive
+wall-time accounting. In the 10-second System Trace, `sharc-dsp` was Running
+9.86146 s (98.615%). The ColdFire actor, thread `3457`, was Running 3.05090 s
+(30.509%) and Blocked 6.85727 s (68.573%). The previous 12%/27% actor figures
+are wrong. The claimed 64% Time Profiler comparison cannot be verified because
+its original evidence is unavailable; do not use it as a thread-share result.
+
+**[V]** Step 3a added an opt-in `region-profile` Cargo feature. The diagnostic
+runner and matrix select it with `--profile-regions`; normal builds omit the
+`Engine` profile state, timer reads and dispatch branches. The profile measures
+each `fast.run` attempt and generated AOT entry invocation by entry PC, with
+`icount` deltas, zero-progress calls and `Instant` wall durations. A generated
+chain is attributed to its dispatch entry. Interpreter, dispatcher, model,
+bank and idle work remain unmeasured. A separate profile module preserves the
+original `Engine::step` PGO symbol identity; that symbol has no missing-profile
+warning. Other symbols still warn; the reused manifest is stale. The generic
+and firmware-derived AOT generated cores were not changed.
+
+The normal feature-off final pair measured idle at 1.20210734 DSP CPU seconds
+per audio second, versus the old baseline binary's 1.20456678 (−0.20%, n=2).
+This is consistent with no measurable added normal-build slowdown, not proof of
+a causal PGO recovery. The diagnostic feature has a distinct crate identity: its
+profiling-disabled idle median was 1.35551365, while profiling on was 1.80608897
+(33.24% higher); `kb-chord16` with profiling on was 1.82000662. Compare those
+diagnostic modes only for instrumentation overhead. The paired idle/chord
+scenarios were three audio seconds and repeated twice; PCM, guest/frame counts
+and core tier instruction counts matched by mode. The validation PCM hashes were
+`38d2a322…` and `a50586e8…`. The standard and diagnostic cached builds took
+about 17 and 10 seconds, and the generated-cache fingerprints did not change.
+The PGO manifest is stale after native edits: the existing profile was passed
+explicitly and was not retrained.
+
+`out/native/runs/20261005-region-cost/ranked.json` ranks measured entry wall
+durations per audio second. Its leading rows are `B8276C` AOT (52.063 ms/s,
+27,000 calls/s), `1C5765` AOT (41.251 ms/s, 24,000 calls/s), `B80C54` AOT
+(34.495 ms/s, 27,000 calls/s), `1C399A` fast (27.260 ms/s, 48,000 calls/s),
+and `1C1884` AOT (26.474 ms/s, 22,500 calls/s). These wall durations rank
+leads; they are not exact CPU shares or steady-state speedups. In particular,
+fast rows include cold build/rebuild/compiler work inside `fast.run`, and
+failed fast attempts are counted separately. An independent audit confirmed
+these final values and the top-ten ranking.
+
+**[V]** The bounded whole-coupled candidate experiment added `1C5765` to the
+three normal fast regions, using the same `standard-v2` binary. In
+`candidate-paired.json`, balanced base/extra/extra/base pairs gave idle DSP
+medians of 1.217581 -> 1.164295 CPU seconds per audio second (4.376% less) and
+`kb-chord16` 1.229413 -> 1.174277 (4.485% less). Each mode has two
+three-second repeats; first/last base drift was about 2.7%, so the result is a
+promising provisional direction rather than a precise speed claim. PCM hashes,
+guest instructions and frames match, and pinned validation hashes pass. The
+fourth fast region built successfully (`fast_built=4`, `fast_refused=0`) and
+moved 87,552,000 idle instructions from AOT to fast for the same guest work.
+The fuller gate now passed, so the DN2 1.11 launcher default promotes this
+fourth region.
+
+**[V]** `candidate-full-exactness.log` records the bounded ignored desktop gate
+`desktop_runtime::coupled::tests::coupled_ready_exactness` using prebuilt
+instrumented training harness `digi…ccfa8bc…`: exit 0, with 3.69 s test time
+in the log and 3.77 s external process wall time recorded by the parent, with the
+current manifest-backed original core and fixture code. It asserts ColdFire
+digest `fbace0f0…`, DSP export `05ac2ac2…`, PCM `38d2a322…`, 72,896 samples and
+1,139 frames. This is a correctness gate, not a performance measurement; the
+instrumented binary does not quantify the launcher result. The normal dispatch
+path and fast lowering were unchanged by the profile counters. The promoted
+default has four regions; the historical `20261005-073811` baseline used three.
+
+### Step 3b fresh captured-state candidates (2026-10-05)
+
+**[V]** Step 3b completed bounded production-core measurements in
+`out/native/runs/20261005-step3b/`. A capture-only capped dispatch collected
+all thirteen ranked entry states without running fast kernels. Every proved
+fast row restored its complete capture, compared canonical export plus the
+specified control state/end PC/retired count, and timed three repetitions of
+16 calls after two warmups; reset/import and export proof were outside the
+timer. Raw steps and chain remain in reports because tiers differ there; both
+are excluded from cross-tier equality, and steps are checked within each mode.
+
+| entry | AOT ns/instr | fast total ns/instr | fast/AOT cost |
+| --- | ---: | ---: | ---: |
+| B8276C | 5.6082 | 12.7704 | 2.277x |
+| 1C5765 | 2.9128 | 4.5576 | 1.565x |
+| B80C54 | 7.1785 | 13.9108 | 1.938x |
+| 1C399A | 3.8800 | 3.5412 | 0.913x |
+| 1C1884 | 9.0132 | 14.7174 | 1.633x |
+| B823DB | 9.2346 | 15.0540 | 1.630x |
+| 1C364F | 3.1709 | 2.8775 | 0.907x |
+| 1C3862 | 3.3455 | 2.5499 | 0.762x |
+
+Five captured entries refused coverage: B8B526 declined before kernel build,
+1C253F built but failed entry requirements (`req`, not budget), 1C1FAB has an
+access-width loop shape, and 1CDBE1/1C0CB1 needed generated
+successors absent at their boundary. B8276C is a sound CFG-prefix fallback:
+its full loop reaches a 3a with unknown address range, while a loop-carried M4
+depends on a prior memory-loaded R0. These are coverage limits, not semantic
+mismatches. The measurements are planning evidence only; captured-state reset
+costs are about 15 ms and the historical ranked wall leads use a different
+earlier diagnostic baseline, so no global or browser speed claim is
+supported.
+
+**[V]** The firmware-independent concrete prototype cached decode and used
+`u32` ordinary registers plus generic exact flag/memory helpers. It covered
+3a/4a/3c/2a/5a_move/5b_move and scalar add/sub/mul, float/fixed pass and
+increment. The admitted `1C5765` loop (19 operations × 64 trips = 1,216
+instructions) passed 1,900 seeded random/corner trials in total (100 per
+decoded operation) and canonical/control gates on all timed samples. Its final
+same-run result
+was 14.5633 ns/instruction, versus generic 80.3183 (5.515x faster) and AOT
+2.9811 (4.885x slower). A static review justified final-only ordinary-register
+flushes because `_advance` touches only special registers/stacks under the
+admitted no-control/bank/pending conditions. It is not resume-capable after a
+refusal. Concrete probes refused unknown R0 at 1C253F, 15b at B8276C, and
+multifunction compute at B823DB/1C1884.
+The final example passed both an offline no-generated-core compilation check
+and a generated full-loop smoke gate. Immutable binaries and source snapshots
+retain the provenance of the three-repetition timings.
+
+**[C]** The launcher retains four defaults, including 1C5765 after the bounded
+same-binary ABBA coupled experiment and separate pinned validations. B8276C
+was rejected as a fifth default: its paired three-second experiment increased
+DSP CPU by 3.7172% idle and 4.7300% `kb-chord16`; PCM/counts matched. These
+short paired experiments do not constitute a full fifth-region promotion gate.
+The current hybrid remains the desktop choice; fast coverage and concrete
+fallback are not yet replacements for AOT.
+
+### Optional guarded dynamic-read window (2026-10-05)
+
+**[O]** A default-off fast-lowering experiment under
+`SHARC_FAST_GUARDED_READS=1` handles one otherwise unknown, read-only 3a
+address when its index is independently known/plain at entry. The host resolves
+an effective-address-alias span with the existing `Mem::window` API and the
+compiled kernel guards the wrapping final address before the load and pending
+commit. Dynamic read windows occupy slots distinct from static load/store
+windows. It is generic; it does not select firmware constants or specialised
+functions.
+
+**[D]** For captured B8276C, the opt-in extends the actual CFG prefix from
+20 instructions to 21; whole-loop lowering then declines a dynamic
+pre-modified store at B827A8. The dynamic modifier was introduced by an earlier
+move from R14, so dynamic stores remain deliberately unsupported. Nine direct
+compiled bounds and the mixed dynamic/static slot check passed. The full 26-op,
+832-retirement loop, failed-guard architectural-state tests, adversarial cache
+and reset cases, and focused CFG-host guard-exit tests were not established; the smoke timing
+rows are not performance evidence. The next attempt must inventory every body
+memory operation before broadening the design.
+
+### Whole-body interval opportunity (2026-10-05)
+
+**[C]** A source-only inventory of thirteen retained entry captures decoded all
+eleven active DO bodies and corrected the modifier-dependency explanation for
+`B8276C`. Independent decoding against the captured firmware bytes confirmed
+the 26-operation body and the two modifier copies. R0's load at instruction 18
+is overwritten at instruction 25 by `R0 = R1 & 3` before the next instruction
+13 copies it to M4. R14 is written at instruction 22 by `R14 = R10 & 3`, then
+copied to M3 at instruction 15 of the next trip. Entry R0/R14 are 1. Both
+modifiers are loop-carried but admit an inductive `0..3` bound with entry
+guards. The prior assertion that a broader dynamic-store/deoptimization design
+is required was not established.
+
+The lowering already tracks the AND result's range inside the iteration;
+`Plan`/`finish` preserve affine self-strides but not terminal intervals, and
+strict `init_abs` drops the written non-stride registers' ranges. A separate
+source review identified straight-loop terminal range summaries, guarded
+entry values, and final-pass terminal-subset validation as the smaller next
+experiment. No new lowering or speedup was tested.
+
+**[D]** The saved capture's actual first modifier values both equal 1 after
+the in-body copies; using raw captured M4/M3 predicts the wrong addresses.
+The bounded accesses require `[I2,I2+16)` and their merged static window
+`[I2,I2+48)`. Byte inspection found 48/48 present and overlay-dirty bytes,
+contiguous through the effective alias at `0x2824EBB0`. Runtime plain-address,
+range-proof and exactness gates remain necessary. Artifacts and hashes are
+under `out/native/runs/20261005-loop-inventory/`; no Rust build, emulation,
+benchmark or executable rerun occurred. The other candidates retain distinct
+control, width, knownness, harness or performance barriers; none was promoted.
+
+### Retained four-default runner attribution and playback (2026-10-05)
+
+**[V]** The copied production runner `699c7312…`, with the four retained
+regions and guarded reads off, built once in 27.344 s with the explicitly
+reused PGO profile; generated-core fingerprints did not change. `--list` and
+the `exactness-100m` and `trig1-noqa-40m` runtime gates passed. In the one
+10.0013-audio-second `trig1-hold` pair, headless and zero-buffer playback had
+identical PCM hash `500dee3d…7704d`, guest counts and source frames. Headless
+reported 1.5362 DSP CPU seconds/audio-second and 20.559 s wall; playback
+reported 1.4595 and 18.133 s. The per-run starting loads were 22.5366/26.0742, so this is not a
+scheduling-cause or throughput claim.
+
+**[V]** Playback on WH-1000XM6 used 44.1 kHz output for 48 kHz source PCM. Its
+stream started without errors, observed a maximum 512-frame callback and ended
+with 1,526 underruns. Playback period p99/max were 2.954/225.186 ms, compared
+with headless 2.577/8.425 ms. Playback-only snapshots from 1.020 to 17.599
+wall seconds observed underrun growth in all 158 intervals (1,428 total),
+queued device frames 0–441, and a maximum 128-frame producer/receiver gap.
+Those are asynchronous feeder observations that exclude in-flight channel
+messages and endpoint teardown; they do not measure played frames or silence
+length.
+
+**[D]** Authorised 10-second `/usr/bin/sample` captures include all thread
+states. Unique stack counts therefore are neither CPU percentages nor a closed
+partition: DSP roots were 7,938/7,959 idle/chord; generated code 4,295/4,445
+(AOT subset 4,086/4,225); `exec_insn` 1,218/1,185; and `Engine::step`
+1,103/1,006. Main-thread wait stacks 4,888/4,802 are not DSP CPU. The B827
+block leaf 251/246 is a small sampled lead, not a global-share estimate.
+A subsequent intrusive `SHARC_FAST_HIST` run counted interpreter-PC attempts;
+it cannot attribute Engine dispatch or bridge cost.
+
+
+### Retained-runner interpreter-PC diagnostic (2026-10-05) **[V] [D]**
+
+**[V]** The current `coupled_run.rs` and `lib.rs` hashes match the manifest for copied binary `699c7312…` and predate its 27.344 s build; no unbuilt-source divergence applies. One exclusive same-process, headless run used the four fixed regions, guarded reads off, `SHARC_FAST_HIST=1`, `SHARC_FAST_LOG=1`, and `SHARC_FAST_AUTO=4294967295,0,0`, for two audio seconds each of idle and `kb-chord16`. Both gates passed, PCM was finite, and each scenario retained four built, zero auto-armed, zero-refusal regions.
+
+**[D]** The Drop-time histogram counts pre-execution interpreter attempts, neither CPU time nor retired instructions. It found 4,068,630 attempts/825 PCs for idle and 4,043,749/840 PCs for chord16. The leading decoded PC was `0x1c06fe` (21c system/NOP: 156,000/126,116 attempts), followed by the `0x1c2554..0x1c2542` 15a/2a/4a/3a/4a sequence at 48,000/48,032 attempts each. Decode used the ready-state overlay plus its SHIM image, with retained capture overlays checked for conflicts. This makes those interpreter fallback PCs concrete targets for a next diagnosis. The `0x1c2500..0x1c2554` routine contributes about 26% of attempts in both cases, but that does not apportion `Engine::step` dispatch or bridge cost and is not a performance comparison. No no-hist two-second comparator existed.
+
+**[V]** Current ten-second headless baselines were 1.5149/1.5309 DSP CPU seconds per audio second and 73.99%/74.71% DSP-thread busy time for idle/chord16. The historical 1.16 figure is context, not a same-host regression claim. The runs show a DSP execution deficit plus roughly 25–26% elapsed wall outside DSP-thread CPU, without assigning that remainder to a cause.
+
+### Option-26 execution-frequency diagnosis (2026-10-05) **[V] [D]**
+
+**[V]** The cached production diagnostic build took 4.951 s, copied binary
+`2bad6e98…`, and left the generated-cache fingerprint unchanged. With execution
+profiling off, `--list`, `exactness-100m` and `trig1-noqa-40m` passed. A single
+intrusive process then enabled option 26 after ready, ran idle and `kb-chord16`
+for two audio seconds each, and passed all ordinary gates in 6.303 s. The raw
+maps, manifests, source/input hashes, parser and analysis are under
+`out/native/runs/20261005-dispatch-diagnosis/`. This run is a frequency
+diagnostic, not a throughput result.
+
+**[V]** Option-26 maps are cumulative from ordered enable through their
+post-run request; ModelStats are checked end-minus-start worker-boundary
+deltas. `1C2518` has 45,000/45,030 non-trap zero-progress bails in idle/chord.
+Its observed unknown mask includes R0/R1/R2/R15, which all intersect the
+parsed full-known entry guard, so that guard fails. `1C254E` has
+48,000/48,032 zero-progress bails with pending clear; R0 intersects its
+full-known guard. `1C253F` has 48,000/48,032 kind-1 exits at
+`TRAP_BLOCK_UNKNOWN`, with the same number of recorded transitions to
+`1C254E`.
+
+**[D]** The exact unknown operand/variant at `1C253F` and trap retirement are
+not measured. Its `1C2518 -> 1C253F` transition is only 3,000/3,002, while the
+five interpreted body PCs and successful exits are 48,000/48,032: 16 per
+period. That fits one interpreted warm-up iteration followed by AOT progress
+for each of 16 enclosing iterations; it does not prove a whole 30-trip loop or
+measure retired instructions per AOT call. Option-26 kind-1 entries are
+interpreter sequence entries, not AOT dispatch attempts.
+
+**[D]** The scenarios have 14.457M/14.827M block entries, with about 3%
+non-trap zero-progress bails. `ModelStats.gated` counts admitted model-on
+calls, not refusals. Source inspection found no independent model-driven chain
+initialization in the examined path: `CHAIN_MAX` is assigned when fast declines
+and a generated entry is called. Its relationship to observed call counts is
+unmeasured. `SHARC_FAST_CHAIN=0` is a possible no-build diagnostic control, but
+it can bypass retained fast-entry consultation and is not a clean same-four-fast
+comparison unless counters first verify reachability. The next diagnostic should
+attribute successful generated dispatch, model checks and chain-cap work before
+ranking an unknown-aware executor or a bounded-range implementation. None of
+these map counts is a CPU share or speedup claim.
+
+### No-build chain-cap control (2026-10-05) **[V]**
+
+**[V]** Copied binary `2bad6e98…` ran two controls without rebuilding:
+`SHARC_FAST_REGIONS=0` kept FastRuntime present, `SHARC_FAST_CHAIN=1` capped
+and `=0` uncapped, with every other `SHARC_FAST_*` setting cleared. The two
+pinned PCM gate processes passed in 3.606 s combined, and two idle/chord
+two-audio-second processes passed in 11.824 s. Each row verified FastRuntime
+present and zero fast calls, runs, instructions, builds, refusals and arms.
+PCM, ColdFire counts, total DSP counts, frames and audio seconds were exactly
+equal between controls. Manifests, raw streams, loads, hashes and the
+reproducible analysis are in `out/native/runs/20261005-chain-cap-control/`.
+
+**[V]** Removing the cap reduced outer block entries from 14.457M to 4.897M
+for idle and 14.827M to 4.819M for chord (66.13%/67.50%). The short-run
+uncapped/capped DSP-CPU/audio ratios were 0.983116/0.997470. The predeclared
+condition required both ratios to be at most 0.97 while entries fell, so the
+initial control was not promising and no confirmation/ABBA run occurred.
+
+This result includes dispatch, failed lookup and model housekeeping; it does
+not isolate one generated chain call. It deprioritizes chain-cap removal as an
+immediate optimization under this control, not all dispatch costs. Both arms
+retain necessary dispatch/model work, and one short ordered pair cannot bound a
+small effect. It is neither a production four-region ROI ranking nor an
+unknown-fallback versus generated-runtime ranking. Unknown
+fallback/generated-runtime work is the next narrow diagnostic target.
+
+### Source-only `1C253F` trap localization (2026-10-05) **[D]**
+
+**[D]** No build or workload ran. The option-26 `1C253F` self-transition with
+`TRAP_BLOCK_UNKNOWN` localizes the failing instruction to `1C253F`: Engine
+records post-call `pc_sw`; known and unknown `r_1C253F` error paths assign
+`rf.pc=1C253F`, final-flush it to `pc_sw`, and have no outgoing chain. The
+first operation is form 3a, passing R0, DM-loading through I0/internal UREG 16,
+post-modifying and synchronizing flags/loop state. The result does not establish
+zero progress: earlier loop iterations can already have completed.
+
+**[O]** The selected known/unknown variant, exact helper, load/write outcome
+and completed instruction count are not observed. Candidate paths include loop
+`rf_set`, known-variant missing DM load and index/result/flag `rf_set`; the
+unknown variant permits some. The next narrow observation must emit, per
+trapping call, variant, completed count, helper/error identity and load/write
+outcome. No optimizer mechanism or ROI follows. Source references and the
+retained generated excerpts are in `out/native/runs/20261005-trap-localization/`.
+
+### Live AOT-boundary observation for `1C253F` (2026-10-05) **[V] [O]**
+
+The default-off live capture records generated-AOT pre/post boundaries after a
+fast decline and dispatcher setup, before Engine post-processing. Its one
+17.570-second cached build left generated-core fingerprints unchanged; forms,
+CFG and retained-state region differential gates passed, followed by coupled
+exactness/trig gates. Idle and chord16 each produced four complete capture pairs
+with the same PCM/full-count results as the prior fixed-four run. Artifacts and
+snapshot/TSV digests for later integrity checks are under
+`out/native/runs/20261005-live-trap-capture/`; it is intrusive diagnostic I/O,
+not a performance result.
+
+**[V]** Calls 1/3 had the reviewed guard state and R0/R15 known, returned
+`TRAP_BLOCK_UNKNOWN` at `1C253F` with zero progress, and were followed five
+instructions later by an unknown R0/R15 entry. Calls 2/4 returned `EXIT_NEXT`,
+advanced 150 instructions to `1C254E`, and completed the remaining 30
+five-operation inner-loop trips. The observed loop has 31 total trips: the
+first is interpreted after its trap and 30 are AOT; it is not a 29-trip result.
+
+**[O]** The capture does not identify the selected helper, operand or load/write
+outcome, and the two early samples are identical, so it provides no frequency
+or state-coverage result. Older successful captures with R0/R15 unknown reflect
+their success-only selection and do not prove live-entry knownness. A narrow
+per-trap helper/load-result observation is the next evidence needed before an
+unknown fallback change.
+
+#### Configuration-qualified missing-load cause **[V] [O]**
+
+For the four trapping bounded records, the first generated 3a operation
+uses `_load_normal_ureg_rf` at I0=4 after known loop-slot setup and before any
+postmodifier, result, or flag work. The four successful unknown records instead
+use I0=8. The read-only analysis checks the SHIM base and each pre-call SHRD
+overlay at every actual address and alias: neither `[4,8)`/`[0x28000004,0x28000008)`
+nor `[8,12)`/`[0x28000008,0x2800000c)` is present. `block_base_ok=1` also establishes
+`assume_nw32=true` and this generated image's `explicit_memory_model=false`
+(the live options set 10=0 and 12=1), so the explicit-model zero-fill branch is
+inapplicable. The known wrapper therefore returns `TRAP_BLOCK_UNKNOWN` on the
+missing I0=4 DM load; the unknown wrapper permits its equally absent I0=8 load
+as `V::UNK`.
+
+This is a bounded source/state reconstruction, not a helper trace, a hardware
+claim, or a firmware-memory-bug claim. It does not establish wider state
+coverage, rollback effects, a routing change, or an ROI result. The next useful
+gate is a shadow differential test of an unknown-capable entry that retains
+masks, model behavior, and budget semantics.
+## Current CPU attribution, 2026-10-05
+
+The no-build retained-runner System Trace in
+`out/native/runs/20261005-system-trace-current/analysis.md` supersedes local
+trap implementation as the immediate priority. Ten audio seconds of chord16
+require 1.36297 DSP CPU seconds/audio-second, with DSP CPU occupying 99.715%
+of scenario wall; exact PCM and guest/DSP counts match the earlier reference.
+In a qualified six-second captured DSP execution slice, generated block leaves
+account for 54.51% of CPU samples, `exec_insn` 15.89%, and `Engine::step` 14.93%.
+Raw PCs validate every symbolized leaf; scheduler coverage independently checks.
+These are approximate symbol-origin shares, not pure dispatch or execution-tier
+shares. The rolling trace is not exactly joined to scenario boundaries and does
+not profile CF separately. Next map saved PCs into cached machine code and use
+cycle-based CPU Profiler if sampling bias affects the choice. No Rust build,
+emulator semantics changes, frozen-core edits or commits were needed.
+
+
+### Cycle-based attribution and register control, 2026-10-05 **[V] [O]**
+
+The retained-binary CPU Profiler corroborates the distributed generated-block
+priority: in a qualified trace-relative [2,6) DSP slice, generated block leaves
+carry 58.26% of cycle weight, engine 14.46%, interpreter entry 12.02%. Unlike
+the earlier trace it also exposes ColdFire CPU leaves on the main thread.
+Cycles are not elapsed-time/tier shares; the separate scenario reports DSP
+CPU/audio 1.26548 with 99.768% busy/wall. This is not an isolated speedup claim.
+CPU Counters was unconfigured and failed before target launch; no stall/IPC
+cause is established. See `out/native/runs/20261005-cpu-profiler-current/`.
+
+A controlled example comparison retains the owned handlers and transactions
+while replacing cached ordinary registers with architectural reads/journalled
+writes. Both owned variants pass 1,900 seeded instruction cases and full
+state/host/boundary checks on every timed call. On the same 1,216-instruction
+capture, mean ns/instruction is generic 76.1004, state-backed owned 14.5029,
+cached owned 13.6848, AOT 2.7697. Most of the 5x generic advantage survives
+canonical register access; caching changes cost by about 6%, and this comparison
+combines reads with journalling. It does not isolate all remaining handler and
+dispatch differences or prove global ROI. One guarded 1.64-second cached build,
+no frozen runtime/gen rebuild, no production routing change. Evidence and
+limitations: `out/native/runs/20261005-register-control/summary.md`.
+
+### Configured guided CPU Counters, 2026-10-05 **[V] [O]**
+
+One no-build retained-binary chord16 recording now has actual hardware-guided
+CPU Bottlenecks data. The legacy-schema wrapper check failed after successful
+recording; exporting the current Swift tables recovered the same trace, without
+an emulator rerun. All playback-health gates pass, fixed-four routing unchanged;
+no expected PCM hash was supplied. Scenario DSP CPU/audio 1.35732 is not a
+controlled speedup comparison.
+
+The disjoint [2,6) DSP interval audit gives sustainable micro-op bandwidth
+fractions: useful 65.7524%, processing 16.6211%, delivery 14.6496%, discarded
+2.9769%. These are not CPU-time/removable overhead fractions; useful includes
+emulator bookkeeping. No per-function stall attribution or ColdFire PMU claim.
+The recurring steady-window precise warnings favor a targeted Instruction
+Delivery Bottlenecks recording (624 rows / 547.562 ms union), whereas the first
+processing warning includes initialization and steady processing warnings cover
+only 3.419 ms. Warning coverage is not CPU time or a causal explanation.
+
+Evidence and next-mode tooling limitation:
+`out/native/runs/20261005-cpu-counters-current/analysis.md`.
+No Rust build, production change, frozen-core edit or commit.
+
+### Targeted delivery subcategories, 2026-10-05 **[V] [O]**
+
+The hashed workspace template and recorded TOC confirm instruction-delivery
+mode; UI save-sheet failure was bypassed by changing only named JSON selection,
+preserving numeric next-mode settings. The retained runner passes playback
+health gates again, no expected PCM hash supplied. In complete [2,6) DSP
+intervals, sustainable-bandwidth losses are instruction-cache latency 9.6094%,
+other 3.5935%, delivery bandwidth 1.3818%, instruction-TLB latency 0.1180%.
+Sixteen sentinel intervals are excluded, not zero-filled (0.01775% of observed
+cycles). These fractions are not CPU-time or speedup bounds.
+
+A no-build pointwise join matches 3,970 of 3,980 same-TID stack points to complete
+containing counter intervals. Leading AOT, Engine and exec_insn origins have
+similar conditional cache fractions; the join has not singled out an actionable
+function and does not attribute miss events to PCs. Stop additional broad
+profiling for this question; next isolate repeated generic form dispatch with
+the same handlers/transactions as a separate owned-core control. Keep frozen
+AOT/runtime/defaults. Reusable scripts and full limitations:
+`out/native/runs/20261005-cpu-delivery-current/analysis.md`.
+Counter phase: zero Rust builds, no production change or commits.
+
+### Pre-resolved same-handler dispatch is slower, 2026-10-05 **[V] [O]**
+
+The benchmark-only preselected function-pointer lane retains the same generic
+form handlers, field/compute routing, masks, transactions, timer and loop
+synchronization. It passes 1,900 seeded cases and every full-state/host/boundary
+check across 120 measured calls. Paired ns/instruction: generic 76.2747, resolved
+86.6300, owned architectural/journalled 15.1568, owned cached 13.4976, AOT 2.9340.
+Resolved costs 13.576% more, slower in each repetition. Reject that routing design
+on 1C5765; compiler/PGO/outlined-handler effects prevent treating it as a bound
+on all dispatch overhead. No production or end-to-end speedup.
+
+Successful cached example build 2.665 seconds, following an immediate missing-
+import correction; frozen runtime/gen rlib snapshots unchanged. One paired
+run 28.649 seconds; no recording, production defaults, frozen edits or commits.
+Next batch separate field/compute reparsing and per-instruction sequencing
+controls into one example build with the same semantic body/canonical state.
+Source repetition is a hypothesis to measure, not proof of retained machine
+instructions. Full evidence:
+`out/native/runs/20261005-form-dispatch-control/summary.md`.
+
+### Descriptor parsing outweighs sequencing in the owned control, 2026-10-05 **[V] [O]**
+
+Separate benchmark controls retain the owned semantic body, canonical/journalled
+register strategy and transactions. Paired ns/instruction on 1C5765:
+predecoded owned 17.3270, field/compute reparsing 46.4154, generic advance on
+every instruction 18.9446, generic 80.8978, AOT 3.0140. Reparsing costs 2.6788×
+baseline; full advance costs 1.0934×, both worse in each repetition. These are
+owned-path effects, not exact generic removable cost or additive overhead
+fractions. Owned still costs 5.7488× AOT; no end-to-end improvement follows.
+
+All 1,900 seeded cases compare six engines; AOT joins the other six lanes for
+captured/warm/timed boundary checks. All gates pass across 168 measured and 21
+warm calls. The loop exercises 3c/5a_move/3a/2a, excluding parser 4a/5b_move
+mappings. One cached build 3.280 seconds, frozen rlibs unchanged; paired run
+41.074 seconds. Source and result review completed. No new recording,
+production routing change, frozen-core edit or commit.
+
+The seeded cases disable core_timer. Captured timer coverage is active but
+non-expiring: known MODE2=0x21, TPERIOD=1,000,000 and TCOUNT=621,719. Generic
+per-instruction ticks and AOT/owned aggregate boundary accounting both reach
+620,503 after 1,216 retirements. The harness caps work below expiry; admitted
+ordinary operands cannot observe/write timer registers. Full-export checks
+support that interval, not expiry/reload/latch/interrupt, timer-write or timer
+trap/rollback behavior. The sequencer control does not isolate those effects.
+
+Keep predecoding and move toward broader retained hot-loop comparisons with
+AOT. B8276C is captured but needs complete semantics/guard inventory beyond
+its first 15b refusal; its body also has 15a, 6b_shiftimm and two multifunction
+4a computes. Complete those operations and prove memory/timer interval guards
+before comparison. Integration requires AOT-competitive performance followed
+by coupled CPU/audio/deadline/PCM gates.
+Full evidence: `out/native/runs/20261005-component-controls/summary.md`.

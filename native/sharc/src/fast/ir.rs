@@ -11,9 +11,10 @@
 //! (host addresses of the DM bytes the region touches, resolved and checked
 //! by the caller before the call), the entry register values and, at exit,
 //! the register values and flag sources. Memory goes through
-//! `Load32`/`Store32` on a window pointer plus a byte offset; the caller has
-//! proved that every access of every iteration lies inside its window, so the
-//! kernel does no per-access checks.
+//! `Load32`/`Store32` on a window pointer plus a byte offset. Static windows
+//! cover every iteration by the caller's range proof. Optional dynamic read
+//! windows instead require a bounds guard before each load; the caller has
+//! resolved a present, plain span and supplied its start and length.
 //!
 //! A `Guard` leaves the kernel when its condition is 0, recording the
 //! instruction index `k` in the context. Instructions are atomic: all guards
@@ -226,7 +227,11 @@ pub const CTX_SLOT_LAST: u32 = CTX_TAKEN + 4 * MAX_CFG_JUMPS;
 /// belongs to; `CTX_WIN_EXT + 8*w` holds window w's `[lo, hi)` (u32 each).
 pub const CTX_WIN_CHECK: u32 = (CTX_SLOT_LAST + 4 * MAX_SLOTS + 7) & !7;
 pub const CTX_WIN_EXT: u32 = CTX_WIN_CHECK + 8;
-pub const CTX_SIZE: u32 = (CTX_WIN_EXT + 8 * MAX_WIN + 7) & !7;
+/// Dynamic read windows store their byte length here.  Zero means the usual
+/// `[lo, hi)` extent; a non-zero length also represents a span ending at
+/// 2^32, which cannot be represented by a u32 exclusive high endpoint.
+pub const CTX_WIN_DYN_LEN: u32 = CTX_WIN_EXT + 8 * MAX_WIN;
+pub const CTX_SIZE: u32 = (CTX_WIN_DYN_LEN + 4 * MAX_WIN + 7) & !7;
 
 /// Context offsets of register-like kernel inputs/outputs: UREG codes below
 /// `NREGS` (R, I, M), then the pseudo registers (code `NREGS + i`).

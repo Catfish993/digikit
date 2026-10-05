@@ -22,9 +22,9 @@ pub const STEP_CHUNK: u32 = 250_000;
 #[cfg(feature = "coupled-audio")]
 pub use coupled::{PcmTap, gates};
 #[cfg(feature = "coupled-audio")]
-pub use elektron_native_boot::sharc_peer::WorkerReport;
+pub use elektron_native_boot::sharc_peer::{ExecutionProfile, WorkerReport};
 #[cfg(feature = "coupled-audio")]
-pub use sharc_native::TierCounters;
+pub use sharc_native::{RegionCost, RegionProfile, TierCounters};
 
 #[cfg(feature = "coupled-audio")]
 #[allow(dead_code, clippy::print_stdout)]
@@ -179,6 +179,24 @@ impl CoupledRuntime {
     /// times (waits for the frames in flight).
     pub fn worker_report(&self) -> Option<WorkerReport> {
         self.audio.as_ref()?.handle.worker_report()
+    }
+    /// Enable or clear opt-in per-entry dispatch profiling in the DSP worker.
+    pub fn set_region_profile(&self, enabled: bool) -> bool {
+        self.audio
+            .as_ref()
+            .is_some_and(|audio| audio.handle.set_region_profile(enabled))
+    }
+    /// Enable the Engine's existing execution-frequency maps. The call waits
+    /// for the worker acknowledgement so later probes are ordered after it.
+    pub fn set_execution_profile(&self, enabled: bool) -> bool {
+        self.audio
+            .as_ref()
+            .is_some_and(|audio| audio.handle.set_execution_profile(enabled))
+    }
+    /// Fetch execution maps only on an explicit post-run request. Ordinary
+    /// worker reports intentionally do not clone the TSV map strings.
+    pub fn execution_profile(&self) -> Option<ExecutionProfile> {
+        self.audio.as_ref()?.handle.execution_profile()
     }
     /// The native audio health report (includes link timing when enabled).
     pub fn audio_report(&self) -> Option<Value> {
@@ -524,6 +542,7 @@ mod coupled {
             let audio = self.samples as f64 / 2.0 / SOURCE_RATE as f64;
             let mut report = json!({
                 "schema_version": 1, "peer": "threaded", "sample_rate": SOURCE_RATE,
+                "output_device_sample_rate": self.player.as_ref().map(|player| player.device_rate),
                 "period_instructions": DEFAULT_PERIOD, "ssi_period_instructions": 96_000,
                 "frames": self.frames, "source_pcm_frames": self.samples / 2,
                 "source_audio_seconds": audio, "session_wall_seconds": wall,
@@ -533,6 +552,7 @@ mod coupled {
                 "halted": shared.halted, "flow_started": self.samples > 0,
                 "playback_requested": self.playback_requested, "sink_connected": connected,
                 "device_error": self.device_error, "output_device": output_device, "sink": sink,
+                "sink_stats_note": "async feeder snapshot; excludes PCM messages still in the channel",
             });
             if let Some(capture) = &self.pcm_capture {
                 report["pcm_capture_path"] = capture.path.clone().into();

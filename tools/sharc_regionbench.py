@@ -12,6 +12,7 @@ function from that state (native/sharc/examples/region_bench.rs).
     sharc_regionbench.py compare A B [--rounds 5]
     sharc_regionbench.py check [--variant base]
     sharc_regionbench.py fast-bench [--variant base] [--regions PC,..] [--reps 5]
+    sharc_regionbench.py fresh-fast [--regions PC,..] [--calls 256] [--warm 16] [--reps 5]
 
 Everything lives under out/native/regionbench/: work-<hash>/ (the transpile
 inference, keyed by the transpiler sources so a generator-only change does not
@@ -40,6 +41,7 @@ BENCH = os.path.join(ROOT, "out", "native", "regionbench")
 PROV = os.path.join(ROOT, "out", "native", "gen-provenance-20261003")
 INPUTS = os.path.join(PROV, "inputs")
 FULL_GEN = os.path.join(PROV, "gen-A")
+PROD_GEN = os.path.join(ROOT, "out", "native", "dn2-audio", "gen")
 IMAGE_NAME = "dn2-1.11"
 FIXTURE = os.path.join(ROOT, "snapshots", "dn2-audio-ready-2026-10-03")
 PACKED_IMAGE = os.path.join(FIXTURE, "digi-audio-dn2-image.bin")
@@ -222,7 +224,7 @@ def native_target():
 
 def cmd_build(args) -> str:
     vdir = variant_dir(args.variant)
-    gen = os.path.join(vdir, "gen")
+    gen = PROD_GEN if getattr(args, "prod_gen", False) else os.path.join(vdir, "gen")
     if not os.path.isdir(gen):
         sys.exit("no gen for variant %s: run gen first" % args.variant)
     src = tree_files(os.path.join(ROOT, "native", "sharc", "src"), (".rs",))
@@ -235,7 +237,7 @@ def cmd_build(args) -> str:
     src += tree_files(
         os.path.join(ROOT, "native", "sharc", "examples", "region_bench"), (".rs",)
     )
-    if os.path.isfile(SOL):
+    if os.path.isfile(SOL) and not getattr(args, "prod_gen", False):
         src.append(SOL)
     # The fast tier's Cranelift backend (a dev-dependency of the example).
     fast_cl = os.path.join(ROOT, "native", "sharc-fast-cl")
@@ -252,11 +254,15 @@ def cmd_build(args) -> str:
         if n != "rsgen-report.json" and not n.startswith("transpile-report")
     ]
     pgo = getattr(args, "pgo", None)
+    prod_gen = getattr(args, "prod_gen", False)
+    # Production reuses the app cache only with its explicit profile.  Mini
+    # variants retain the historical benchmark profile overrides.
+    profile_env = {} if prod_gen else PROFILE_ENV
     key = hashlib.sha256(
         (
             sha256_files(src + gen_files)
             + repr(pgo)
-            + repr(sorted(PROFILE_ENV.items()))
+            + repr(sorted(profile_env.items()))
         ).encode()
     ).hexdigest()
     exe = os.path.join(vdir, "region_bench")
@@ -271,8 +277,18 @@ def cmd_build(args) -> str:
             if json.load(fh).get("key") == key:
                 print("build %s: up to date" % args.variant)
                 return exe
-    env = dict(os.environ, SHARC_GEN_DIR=gen, **PROFILE_ENV)
-    if os.path.isfile(SOL):
+    env = dict(os.environ)
+    # These flags change compiler fingerprints and can make a cached prod
+    # target silently rebuild.  Every invocation owns its flag environment.
+    for key_name in ("CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS", "LLVM_PROFILE_FILE"):
+        env.pop(key_name, None)
+    if prod_gen:
+        for key_name in list(env):
+            if key_name.startswith("CARGO_PROFILE_RELEASE_"):
+                env.pop(key_name)
+        env.pop("SHARC_REGIONBENCH_SOL", None)
+    env.update(SHARC_GEN_DIR=gen, **profile_env)
+    if os.path.isfile(SOL) and not prod_gen:
         env["SHARC_REGIONBENCH_SOL"] = SOL
     if pgo:
         env["RUSTFLAGS"] = "-Cprofile-use=%s -Cllvm-args=-pgo-warn-missing-function" % (
@@ -282,8 +298,15 @@ def cmd_build(args) -> str:
     # get their own subdir; plain builds share the gen's key dir.
     nt = native_target()
     if pgo:
-        tag = hashlib.sha256(os.path.abspath(pgo).encode()).hexdigest()[:8]
-        target = str(nt.target_dir(gen, "pgo-" + tag))
+        # The production PGO build is intentionally the launcher's pgo-use
+        # directory: this is an example-only rebuild against its cached
+        # generated core, with the launcher's exact profile-use flags.  Mini
+        # variants retain isolated pgo-<hash> targets for A/B work.
+        if getattr(args, "prod_gen", False):
+            target = os.path.join(ROOT, "out", "native", "target", "prod", "pgo-use")
+        else:
+            tag = hashlib.sha256(os.path.abspath(pgo).encode()).hexdigest()[:8]
+            target = str(nt.target_dir(gen, "pgo-" + tag))
         target_args = ["--target", TRIPLE]
         built_dir = os.path.join(target, TRIPLE, "release", "examples")
     else:
@@ -307,7 +330,13 @@ def cmd_build(args) -> str:
         fh.write("%s  region_bench\n" % digest)
     with open(stamp, "w") as fh:
         json.dump(
-            {"key": key, "build_seconds": round(secs, 1), "pgo": pgo, "sha256": digest},
+            {
+                "key": key,
+                "build_seconds": round(secs, 1),
+                "pgo": pgo,
+                "profile_env": profile_env,
+                "sha256": digest,
+            },
             fh,
         )
     print("build %s: %.1fs sha256 %s" % (args.variant, secs, digest[:12]))
@@ -475,6 +504,126 @@ def cmd_fast_bench(args) -> None:
     print("rows -> %s" % path)
 
 
+def cmd_fresh_fast(args) -> None:
+    """Fresh full-production-gen fast/AOT comparison on captured entries.
+
+    The Rust mode emits a refusal row for every missing, unsupported, or
+    differential mismatch entry, then timing rows only for proved entries.
+    Reset/import happens outside every timed interval.
+    """
+    args.prod_gen = True
+    args.regions = ",".join(f"{int(pc, 16):X}" for pc in args.regions.split(","))
+    exe = cmd_build(args)
+    command = [
+        exe,
+        "fast-compare",
+        PACKED_IMAGE,
+        states_dir(),
+        args.regions,
+        "--calls",
+        str(args.calls),
+        "--warm",
+        str(args.warm),
+        "--reps",
+        str(args.reps),
+    ]
+    with benchlock("exclusive", "regionbench fresh-fast"):
+        completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    rows = [
+        json.loads(line)
+        for line in completed.stdout.splitlines()
+        if line.startswith("{")
+    ]
+    with open(exe, "rb") as fh:
+        binary_sha256 = hashlib.sha256(fh.read()).hexdigest()
+    gen_files = sorted(
+        os.path.join(PROD_GEN, name)
+        for name in os.listdir(PROD_GEN)
+        if os.path.isfile(os.path.join(PROD_GEN, name))
+    )
+    report = {
+        "kind": "fresh-fast-aot-captured-state",
+        "command": command,
+        "env": {
+            "SHARC_GEN_DIR": PROD_GEN,
+            "profile_env": {},
+            "RUSTFLAGS": (
+                "-Cprofile-use=%s -Cllvm-args=-pgo-warn-missing-function"
+                % os.path.abspath(args.pgo)
+                if args.pgo
+                else None
+            ),
+        },
+        "stderr": completed.stderr,
+        "returncode": completed.returncode,
+        "binary_sha256": binary_sha256,
+        "gen_sha256": sha256_files(gen_files),
+        "image_sha256": sha256_files([PACKED_IMAGE]),
+        "captured_states": {
+            pc: {
+                "state_sha256": sha256_files([state_path]),
+                "meta_sha256": sha256_files([meta_path]),
+            }
+            for pc in args.regions.split(",")
+            if os.path.isfile(
+                state_path := os.path.join(states_dir(), "r_%s.state" % pc.upper())
+            )
+            and os.path.isfile(
+                meta_path := os.path.join(states_dir(), "r_%s.meta" % pc.upper())
+            )
+        },
+        "source_sha256": sha256_files(
+            [
+                os.path.join(ROOT, "native", "sharc", "examples", "region_bench.rs"),
+                *tree_files(
+                    os.path.join(ROOT, "native", "sharc", "examples", "region_bench"),
+                    (".rs",),
+                ),
+                os.path.abspath(__file__),
+            ]
+        ),
+        "rows": rows,
+    }
+    requested = args.regions.split(",")
+    proved = {
+        str(row.get("region", "")).upper()
+        for row in rows
+        if row.get("status") == "proved"
+    }
+    measured = {
+        (str(row.get("region", "")).upper(), row.get("mode"), row.get("rep"))
+        for row in rows
+        if row.get("status") == "measured"
+    }
+    missing = []
+    for pc in requested:
+        if pc not in proved:
+            missing.append(f"{pc}:proved")
+        for mode in ("aot", "fast_total"):
+            for rep in range(args.reps):
+                if (pc, mode, rep) not in measured:
+                    missing.append(f"{pc}:{mode}:rep{rep}")
+    report["complete"] = (
+        completed.returncode == 0
+        and not missing
+        and not any(row.get("status") == "refused" for row in rows)
+    )
+    report["missing"] = missing
+    path = args.out or os.path.join(BENCH, "fresh-fast-%d.json" % int(time.time()))
+    with open(path, "w") as fh:
+        json.dump(report, fh, indent=2)
+        fh.write("\n")
+    proved = sum(r.get("status") == "proved" for r in rows)
+    measured = sum(r.get("status") == "measured" for r in rows)
+    refused = sum(r.get("status") == "refused" for r in rows)
+    print(
+        "fresh-fast: %d proved, %d measured rows, %d refusals, complete=%s -> %s"
+        % (proved, measured, refused, report["complete"], path)
+    )
+    if not report["complete"]:
+        raise SystemExit(1)
+
+
 def cmd_compare(args) -> None:
     exes = {}
     for v in (args.a, args.b):
@@ -577,6 +726,15 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_parser("fast-bench", help="fast tier next to the generated region")
     )
     f.add_argument("--reps", type=int, default=5)
+    x = common(
+        sub.add_parser(
+            "fresh-fast", help="full-production-gen, reset-per-call AOT/fast comparison"
+        )
+    )
+    x.set_defaults(variant="prod-fast", calls=16)
+    x.add_argument("--warm", type=int, default=2)
+    x.add_argument("--reps", type=int, default=3)
+    x.add_argument("--out", help="JSON report path (default: regionbench timestamp)")
     args = p.parse_args(argv)
     if args.cmd == "gen":
         cmd_gen(args, extra)
@@ -588,6 +746,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd_compare(args)
     elif args.cmd == "fast-bench":
         cmd_fast_bench(args)
+    elif args.cmd == "fresh-fast":
+        cmd_fresh_fast(args)
     else:
         cmd_check(args)
     return 0

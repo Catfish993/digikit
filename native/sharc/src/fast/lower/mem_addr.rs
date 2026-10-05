@@ -30,10 +30,42 @@ impl Lower {
         let modified = self.bin(Bin::Add, iv, scaled);
         let addr = if post { iv } else { modified };
         self.require_plain(iv, 4)?;
-        if !post {
+        if std::env::var_os("SHARC_FAST_GUARDED_READS").is_some()
+            && !post
+            && matches!(x, Xfer::Load(_))
+            && self.abs[addr as usize].is_none()
+            && matches!(
+                self.abs[iv as usize],
+                Some(Abs {
+                    base: Base::Reg(c),
+                    lo: 0,
+                    hi: 0,
+                    ts: 0,
+                    nf: 0,
+                }) if c == ic as u8
+            )
+        {
+            // The pre-modify load's actual address depends on its modifier,
+            // but I is an unchanged entry anchor.  Resolve one plain read
+            // span from I at entry and side-exit before this instruction if
+            // the wrapping u32 address falls outside it.
+            let Xfer::Load(code) = x else { unreachable!() };
+            let (p, o, w) = self.dynamic_read_window(addr, ic as u8)?;
+            let lo = self.emit(Ty::I32, Op::Ctx32(CTX_WIN_EXT + 8 * w));
+            let span = self.emit(Ty::I32, Op::Ctx32(CTX_WIN_DYN_LEN + 4 * w));
+            let word = self.ci(4);
+            let max = self.bin(Bin::Sub, span, word);
+            let rel = self.bin(Bin::Sub, addr, lo);
+            let inside = self.bin(Bin::LeU, rel, max);
+            self.guard(inside);
+            let v = self.emit(Ty::I32, Op::Load32 { base: p, off: o });
+            self.wr(code, v)?;
+        } else if !post {
             self.require_plain(addr, 4)?;
+            self.mem_xfer(addr, x)?;
+        } else {
+            self.mem_xfer(addr, x)?;
         }
-        self.mem_xfer(addr, x)?;
         if post {
             self.post_update(ic, iv, scaled, modified)?;
         }

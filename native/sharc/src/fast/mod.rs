@@ -194,6 +194,11 @@ pub struct WinSpec {
     pub nf: i64,
     pub read: bool,
     pub write: bool,
+    /// A read-only window whose span is resolved from this independently
+    /// known index register at entry.  The lowering guards each dynamic
+    /// address before its load; unlike the fields above, this is not a
+    /// statically proved access range.
+    pub dynamic_anchor: Option<u8>,
 }
 
 /// The engine's view of the fast tier (`Engine::fast`).

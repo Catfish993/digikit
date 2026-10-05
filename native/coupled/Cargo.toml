@@ -12,6 +12,8 @@ name = "digi_coupled"
 [features]
 # Local-only DN2 coupling: generated DSP code must never be distributed.
 coupled-audio = ["elektron-native-boot/sharc", "elektron-native-boot/play", "dep:sharc-fast-cl", "dep:sharc-native"]
+# Enable this with coupled-audio; it forwards only to the optional native core.
+region-profile = ["sharc-native?/region-profile"]
 
 [dependencies]
 elektron-native-boot = { path = "../boot" }

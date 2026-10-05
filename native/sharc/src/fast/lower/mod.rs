@@ -1022,7 +1022,11 @@ impl Lower {
             None => return refuse("address range unknown"),
         };
         let key = (abs.base, abs.ts, abs.nf);
-        let w = match self.wins.iter().position(|w| (w.base, w.ts, w.nf) == key) {
+        let w = match self
+            .wins
+            .iter()
+            .position(|w| w.dynamic_anchor.is_none() && (w.base, w.ts, w.nf) == key)
+        {
             Some(w) => w,
             None => {
                 if self.wins.len() as u32 >= MAX_WIN {
@@ -1036,6 +1040,7 @@ impl Lower {
                     nf: abs.nf,
                     read: false,
                     write: false,
+                    dynamic_anchor: None,
                 });
                 let w = self.wins.len() - 1;
                 let pv = self.new_val(Ty::I64, None);
@@ -1055,6 +1060,41 @@ impl Lower {
         // The window slot is biased by the window's start address, so the
         // address itself is the offset.
         Ok((self.win_vals[w], addr))
+    }
+
+    /// A read-only dynamic window anchored by an independently known index
+    /// register.  The host selects one present, normal-word-plain subspan at
+    /// entry; the caller must guard every actual address against that span
+    /// before issuing a load.  Stores intentionally have no dynamic path.
+    pub fn dynamic_read_window(&mut self, addr: Val, anchor: u8) -> LR<(Val, Val, u32)> {
+        let w = match self
+            .wins
+            .iter()
+            .position(|w| w.dynamic_anchor == Some(anchor))
+        {
+            Some(w) => w,
+            None => {
+                if self.wins.len() as u32 >= MAX_WIN {
+                    return refuse("too many windows");
+                }
+                self.wins.push(WinSpec {
+                    base: Base::None,
+                    lo: 0,
+                    hi: 0,
+                    ts: 0,
+                    nf: 0,
+                    read: true,
+                    write: false,
+                    dynamic_anchor: Some(anchor),
+                });
+                let w = self.wins.len() - 1;
+                let pv = self.new_val(Ty::I64, None);
+                self.pre.push(Inst::Def(pv, Op::Ctx64(win_ptr(w as u32))));
+                self.win_vals.push(pv);
+                w
+            }
+        };
+        Ok((self.win_vals[w], addr, w as u32))
     }
 
     /// Require a known-register-free fact: the byte range of address A is in
@@ -1486,4 +1526,35 @@ pub fn result_normal_or_zero(l: &mut Lower, r: Val) {
     let big = l.bin(Bin::FGe, abs, min);
     let z = l.bin(Bin::FEq, abs, zero);
     l.guard_any(big, z);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env() -> Env {
+        Env {
+            regs: [None; NREGS as usize],
+            dag_l: [None; 16],
+            dag_b: [None; 16],
+            circ_off: false,
+            assume_nw32: true,
+            mode1: 0,
+            flag_v: false,
+            approx_recips: false,
+        }
+    }
+
+    #[test]
+    fn dynamic_and_static_windows_do_not_share_a_slot() {
+        let mut l = Lower::new(env(), Plan::default(), 2);
+        let addr = l.ci(0x20_0000);
+        l.dynamic_read_window(addr, 18).unwrap();
+        l.window_access(addr, 4, false).unwrap();
+        l.window_access(addr, 4, true).unwrap();
+        assert_eq!(l.wins.len(), 2);
+        assert_eq!(l.wins[0].dynamic_anchor, Some(18));
+        assert_eq!(l.wins[1].dynamic_anchor, None);
+        assert!(l.wins[1].write);
+    }
 }

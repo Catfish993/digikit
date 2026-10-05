@@ -617,6 +617,75 @@ fn window_ptr(
     Some(ptr)
 }
 
+/// Resolve a read-only window from an independently known dynamic anchor.
+/// The fast memory page may be the short-word alias of the architectural
+/// page.  We try the largest aligned power-of-two span containing the anchor
+/// that is wholly normal-word plain and present; the kernel guards every
+/// actual load against the selected span.  A cached selected span is reused
+/// while the memory layout is unchanged, avoiding repeated failed wider
+/// probes on ordinary calls.
+fn dynamic_window_ptr(
+    s: &mut St,
+    cache: &std::cell::Cell<WinCache>,
+    spec: &super::WinSpec,
+    anchor: u8,
+) -> Option<(*mut u8, u32, u64)> {
+    let v = s.r[anchor as usize];
+    if !v.is_c() {
+        return None;
+    }
+    let a = v.b;
+    let cached = cache.get();
+    if cached.gen_ == s.mem.layout_gen
+        && !cached.ptr.is_null()
+        && a >= cached.lo
+        && (a as u64) < cached.hi
+    {
+        return Some((cached.ptr, cached.lo, cached.hi));
+    }
+    let mut len = crate::mem::PAGE_SIZE as u32;
+    loop {
+        let lo = a & !(len - 1);
+        let hi = lo as u64 + len as u64;
+        if nw_plain(lo as i64, hi as i64 - 1)
+            && let Some(ptr) = window_ptr(&mut s.mem, cache, spec, lo, hi)
+        {
+            return Some((ptr, lo, hi));
+        }
+        if len == 4 {
+            return None;
+        }
+        len /= 2;
+    }
+}
+
+/// Resolve either a statically proven window or a guarded read window.  A
+/// dynamic window has no whole-loop address proof: it is safe because every
+/// load carries its own unsigned bounds guard before the instruction commits.
+fn resolve_window(
+    s: &mut St,
+    cache: &std::cell::Cell<WinCache>,
+    spec: &super::WinSpec,
+    iters: i64,
+) -> Option<(*mut u8, u32, u64)> {
+    if let Some(anchor) = spec.dynamic_anchor {
+        return dynamic_window_ptr(s, cache, spec, anchor);
+    }
+    let b = match spec.base {
+        Base::None => 0,
+        Base::Reg(c) => s.r[c as usize].b as i64,
+    };
+    let d = spec.ts * (iters - 1);
+    let f = spec.nf * iters;
+    let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
+    if lo < 0 || hi > (1i64 << 32) {
+        return None;
+    }
+    let lo = lo as u32;
+    let hi = hi as u64;
+    window_ptr(&mut s.mem, cache, spec, lo, hi).map(|ptr| (ptr, lo, hi))
+}
+
 /// Do all `nw` requirements of R hold for N iterations? The hulls are tried
 /// first; when one is not inside a single plain range, each requirement is
 /// evaluated on its own (the hull is only a sufficient test).
@@ -761,23 +830,20 @@ pub fn run(
     // Windows.
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
-        let b = match spec.base {
-            Base::None => 0,
-            Base::Reg(c) => s.r[c as usize].b as i64,
-        };
-        let d = spec.ts * (iters - 1);
-        let f = spec.nf * iters;
-        let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
-        if lo < 0 || hi > (1i64 << 32) {
-            return Err(Decline::Window);
-        }
-        let Some(ptr) = window_ptr(&mut s.mem, &r.wcache[w], spec, lo as u32, hi as u64) else {
+        let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
             return Err(Decline::Window);
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
-        if check {
-            note_window(ctx, w, lo as u32, hi.min(u32::MAX as i64) as u32);
+        if check || spec.dynamic_anchor.is_some() {
+            note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }
+        ctx.set32(
+            CTX_WIN_DYN_LEN + 4 * w as u32,
+            spec.dynamic_anchor
+                .is_some()
+                .then_some((hi - lo as u64) as u32)
+                .unwrap_or(0),
+        );
     }
     if check {
         for w in r.wins.len()..MAX_WIN as usize {
@@ -791,9 +857,10 @@ pub fn run(
     }
     pmark!(pt, 3);
     ctx.set32(CTX_ITERS, iters as u32);
-    // SAFETY: the windows were resolved for this call and cover every
-    // access of `iters` iterations (the lowering's range analysis); the kernel
-    // was lowered for this engine state layout.
+    // SAFETY: static windows cover every access of `iters` iterations by the
+    // lowering's range analysis. Guarded read windows are resolved here and
+    // each dynamic address is checked before its load and instruction commit.
+    // The kernel was lowered for this engine state layout.
     pmark!(pt, 4);
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
     pmark!(pt, 5);
@@ -1156,6 +1223,41 @@ fn note_window(ctx: &mut Ctx, w: usize, lo: u32, hi: u32) {
     ctx.set32(CTX_WIN_EXT + 8 * w as u32 + 4, hi);
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mem::Mem;
+
+    #[test]
+    fn dynamic_window_uses_alias_subspan_and_invalidates_cache() {
+        let mut s = St::new(Mem::new());
+        s.r[18] = V::c(0x24_ebb0);
+        // Populate only the high 32 KiB of the short-word alias page.  The
+        // 64 KiB probe must fail, while the aligned 32 KiB probe succeeds.
+        for a in 0x2824_8000..0x2825_0000 {
+            s.mem.write_byte(a, 0);
+        }
+        let spec = super::super::WinSpec {
+            base: Base::None,
+            lo: 0,
+            hi: 0,
+            ts: 0,
+            nf: 0,
+            read: true,
+            write: false,
+            dynamic_anchor: Some(18),
+        };
+        let cache = std::cell::Cell::new(WinCache::NONE);
+        let (_, lo, hi) = dynamic_window_ptr(&mut s, &cache, &spec, 18).unwrap();
+        assert_eq!((lo, hi), (0x24_8000, 0x25_0000));
+        // A repeated entry call uses the selected span without retrying the
+        // failed page-wide probe; reset changes layout and removes it.
+        assert!(dynamic_window_ptr(&mut s, &cache, &spec, 18).is_some());
+        s.mem.reset();
+        assert!(dynamic_window_ptr(&mut s, &cache, &spec, 18).is_none());
+    }
+}
+
 static SHAPE_LOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// `SHARC_FAST_LOG`: say why a call was declined as the wrong shape.
@@ -1274,23 +1376,20 @@ pub fn run_cfg(
     pmark!(pt, 2);
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
-        let b = match spec.base {
-            Base::None => 0,
-            Base::Reg(c) => s.r[c as usize].b as i64,
-        };
-        let d = spec.ts * (iters - 1);
-        let f = spec.nf * iters;
-        let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
-        if lo < 0 || hi > (1i64 << 32) {
-            return Err(Decline::Window);
-        }
-        let Some(ptr) = window_ptr(&mut s.mem, &r.wcache[w], spec, lo as u32, hi as u64) else {
+        let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
             return Err(Decline::Window);
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
-        if check {
-            note_window(ctx, w, lo as u32, hi.min(u32::MAX as i64) as u32);
+        if check || spec.dynamic_anchor.is_some() {
+            note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }
+        ctx.set32(
+            CTX_WIN_DYN_LEN + 4 * w as u32,
+            spec.dynamic_anchor
+                .is_some()
+                .then_some((hi - lo as u64) as u32)
+                .unwrap_or(0),
+        );
     }
     if check {
         for w in r.wins.len()..MAX_WIN as usize {
@@ -1304,9 +1403,10 @@ pub fn run_cfg(
     }
     pmark!(pt, 3);
     ctx.set32(CTX_BUDGET, avail.min(1 << 31) as u32);
-    // SAFETY: the windows were resolved for this call and cover every access
-    // (the lowering's range analysis); the kernel was lowered for this engine
-    // state layout.
+    // SAFETY: static windows cover every access by the lowering's range
+    // analysis. Guarded read windows are resolved here and each dynamic
+    // address is checked before its load and instruction commit. The kernel
+    // was lowered for this engine state layout.
     pmark!(pt, 4);
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
     pmark!(pt, 5);
