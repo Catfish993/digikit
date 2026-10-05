@@ -1307,11 +1307,35 @@ pub fn set_shape_log(on: bool) {
     SHAPE_LOG.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+static COV_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+thread_local! {
+    static COV_WHY: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// `SHARC_FAST_COV`: remember why the last call was declined.
+pub fn set_cov(on: bool) {
+    COV_ON.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cold]
+fn cov_why(f: impl FnOnce() -> String) {
+    if COV_ON.load(std::sync::atomic::Ordering::Relaxed) {
+        COV_WHY.with(|w| *w.borrow_mut() = f());
+    }
+}
+
+/// The reason noted by the last declined call (`SHARC_FAST_COV` only).
+pub fn take_cov_why() -> String {
+    COV_WHY.with(|w| std::mem::take(&mut *w.borrow_mut()))
+}
+
 #[cold]
 fn shape(why: &str) -> Decline {
     if SHAPE_LOG.load(std::sync::atomic::Ordering::Relaxed) {
         eprintln!("fast: declined, shape: {why}");
     }
+    cov_why(|| format!("shape: {why}"));
     Decline::Shape
 }
 
@@ -1439,11 +1463,13 @@ pub fn run_cfg(
             let f = spec.nf * iters;
             let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
             if lo < 0 || hi > (1i64 << 32) {
+                cov_why(|| format!("window {w}: address range outside 32 bits"));
                 return Err(Decline::Window);
             }
             let Some(off) =
                 super::lean::lean_window(l, &mut s.mem, &l.wc[w], spec, lo as u32, hi as u64)
             else {
+                cov_why(|| format!("window {w}: lean window not plain RAM"));
                 return Err(Decline::Window);
             };
             ctx.set64(win_ptr(w as u32), off);
@@ -1451,6 +1477,11 @@ pub fn run_cfg(
             continue;
         }
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
+            cov_why(|| {
+                let dynamic = spec.dynamic_anchor.is_some();
+                let rw = if spec.write { "write" } else { "read" };
+                format!("window {w}: not plain/present RAM (dynamic={dynamic} {rw})")
+            });
             return Err(Decline::Window);
         };
         if let Some(a) = spec.dynamic_anchor

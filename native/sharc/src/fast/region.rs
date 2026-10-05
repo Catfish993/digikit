@@ -352,6 +352,10 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
                 if std::env::var_os("SHARC_FAST_LOG").is_some() {
                     eprintln!("fast: {pc:#x}: {at:#x} cannot be lowered here: {}", e.0);
                 }
+                if std::env::var_os("SHARC_FAST_COV").is_some() {
+                    let form = decode_one(s, at).map_or("undecodable", |d| d.form);
+                    eprintln!("cov deny root={pc:#x} at={at:#x} form={form} why={}", e.0);
+                }
                 deny.insert(at);
             }
             Err((e, _)) => return Err(e),

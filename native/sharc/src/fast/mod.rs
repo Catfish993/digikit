@@ -352,6 +352,19 @@ struct Slot {
     auto: bool,
     calls: u64,
     insns: u64,
+    cov: SlotCov,
+}
+
+/// Per-entry coverage counters (`SHARC_FAST_COV`).
+#[derive(Default)]
+struct SlotCov {
+    /// Declines by `glue::Decline` (shape, req, window, budget, exit0).
+    declined: [u64; 5],
+    /// Kernel exits by (exit pc, kind): count, insns retired by the kernel,
+    /// insns until the next fast-tier call (capped per exit).
+    exits: std::collections::BTreeMap<(u32, &'static str), [u64; 3]>,
+    /// Entry requirement failures by class.
+    decl_why: std::collections::BTreeMap<String, u64>,
 }
 
 const BLOOM_WORDS: usize = 1024;
@@ -394,6 +407,12 @@ pub struct FastEngine {
     /// CFG regions only, with the guarded dynamic windows of the cluster
     /// lowering (`Env::guarded_dyn`).
     clusters: Vec<u32>,
+    /// `SHARC_FAST_COV`: coverage report lines (`cov ...`, see
+    /// `tools/blocktrans_coverage.py`); off by default.
+    cov: bool,
+    /// The last kernel exit awaiting the gap to the next fast-tier call:
+    /// (slot, exit pc, exit kind, icount at exit).
+    cov_last: Option<(usize, u32, &'static str, u64)>,
 }
 
 // SAFETY: a FastEngine is owned by one Engine and used from one thread at a
@@ -451,6 +470,12 @@ impl FastEngine {
             force_cfg: std::env::var("SHARC_FAST_SHAPE").is_ok_and(|v| v == "cfg"),
             auto: None,
             clusters: Vec::new(),
+            cov: {
+                let on = std::env::var_os("SHARC_FAST_COV").is_some();
+                glue::set_cov(on);
+                on
+            },
+            cov_last: None,
         };
         fe.rebuild_bloom();
         fe
@@ -601,6 +626,9 @@ impl FastEngine {
                 if self.log {
                     eprintln!("fast: {pc:#x} refused: {}", e.0);
                 }
+                if self.cov {
+                    eprintln!("cov refused root={pc:#x} why={}", e.0);
+                }
                 self.stats.refused += 1;
                 *self.stats.reasons.entry(reason_class(&e.0)).or_default() += 1;
                 slot.refused = Some(e.0);
@@ -647,6 +675,9 @@ impl FastEngine {
                                 }
                             }
                         }
+                        if self.cov {
+                            cov_built(s, pc, &r);
+                        }
                         self.stats.built += 1;
                         slot.region = Some(r);
                         slot.kernel = Some(k);
@@ -654,6 +685,28 @@ impl FastEngine {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Cap on the gap (instructions) recorded after one kernel exit.
+const COV_GAP_CAP: u64 = 4096;
+
+/// `SHARC_FAST_COV`: what a built region covers and where it stops.
+fn cov_built(s: &St, pc: u32, r: &region::Region) {
+    let mut pcs: Vec<String> = r.insns.iter().map(|i| format!("{:#x}", i.pc)).collect();
+    pcs.sort();
+    eprintln!(
+        "cov built root={pc:#x} insns={} kernel_ops={} windows={} pcs={}",
+        r.len(),
+        r.kernel.inst_count(),
+        r.wins.len(),
+        pcs.join(",")
+    );
+    if let Some(c) = &r.cfg {
+        for (at, why) in &c.stops {
+            let form = region::decode_one(s, *at).map_or("undecodable", |d| d.form);
+            eprintln!("cov stop root={pc:#x} at={at:#x} form={form} why={why}");
         }
     }
 }
@@ -748,6 +801,32 @@ impl Drop for FastEngine {
         if self.log && (self.stats.calls > 0 || self.stats.armed > 0) {
             eprintln!("{}", self.report());
         }
+        if self.cov {
+            for (pc, s) in self.pcs.iter().zip(&self.slots) {
+                let exits: Vec<String> = s
+                    .cov
+                    .exits
+                    .iter()
+                    .map(|((at, k), e)| format!("{at:#x}:{k}:{}:{}:{}", e[0], e[1], e[2]))
+                    .collect();
+                let why: Vec<String> = s
+                    .cov
+                    .decl_why
+                    .iter()
+                    .map(|(w, n)| format!("{n}x {w}"))
+                    .collect();
+                eprintln!(
+                    "cov run root={pc:#x} built={} refused={} calls={} insns={} declined={:?} exits={} declwhy={}",
+                    s.region.is_some() as u8,
+                    s.refused.is_some() as u8,
+                    s.calls,
+                    s.insns,
+                    s.cov.declined,
+                    exits.join(";"),
+                    why.join(";")
+                );
+            }
+        }
         if std::env::var_os("SHARC_FAST_LEAN_STATS").is_some() {
             for (pc, s) in self.pcs.iter().zip(&self.slots) {
                 if let Some(l) = s.region.as_ref().and_then(|r| r.lean.as_ref()) {
@@ -771,6 +850,11 @@ impl FastTier for FastEngine {
 
     fn run(&mut self, s: &mut St, pc: u32) -> Option<u32> {
         let ix = self.index(pc)?;
+        if let Some((lix, at, kind, ic)) = self.cov_last.take()
+            && let Some(e) = self.slots[lix].cov.exits.get_mut(&(at, kind))
+        {
+            e[2] += (s.icount - ic).min(COV_GAP_CAP);
+        }
         if self.slots[ix].refused.is_some() {
             return None;
         }
@@ -834,6 +918,39 @@ impl FastTier for FastEngine {
         }
         slot.calls += 1;
         slot.insns += s.icount - before;
+        if self.cov {
+            match &res {
+                Ok(_) => {
+                    let x = s.pc_sw as u32;
+                    let at_stop = region
+                        .cfg
+                        .as_ref()
+                        .is_some_and(|c| c.stops.iter().any(|(p, _)| *p == x));
+                    let kind = if at_stop {
+                        "stop"
+                    } else if s.icount >= s.limit {
+                        "budget"
+                    } else {
+                        "exit"
+                    };
+                    let e = slot.cov.exits.entry((x, kind)).or_default();
+                    e[0] += 1;
+                    e[1] += s.icount - before;
+                    self.cov_last = Some((ix, x, kind, s.icount));
+                }
+                Err(d) => {
+                    slot.cov.declined[*d as usize] += 1;
+                    let why = match d {
+                        glue::Decline::Req => format!("req: {}", req_failure(s, region)),
+                        glue::Decline::Shape | glue::Decline::Window => glue::take_cov_why(),
+                        _ => String::new(),
+                    };
+                    if !why.is_empty() {
+                        *slot.cov.decl_why.entry(reason_class(&why)).or_default() += 1;
+                    }
+                }
+            }
+        }
         let mut drop_after = false;
         if slot.auto
             && slot.calls >= AUTO_WARMUP
