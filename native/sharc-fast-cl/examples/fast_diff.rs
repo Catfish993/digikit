@@ -1574,6 +1574,8 @@ fn forms(args: &[String]) {
                                 || Some(c) == bflip
                         }
                         Req::Mode1 { mask, value } => s.r[114].b & mask != value,
+                        // Built for unknown CACC history: declines when it is known.
+                        Req::CaccUnknown => s.r[118].m & 0xff00_0000 == 0xff00_0000,
                         Req::Within { c, lo, hi } => {
                             Some(c) == unknown || !(lo..=hi).contains(&s.r[c as usize].b)
                         }
@@ -2209,7 +2211,16 @@ fn region(args: &[String]) {
         if want_aot {
             // The fast tier in front of the generated blocks, as in a build.
             let (sd, rd, _, hd) = run(Mode::Both);
+            // `at_loaded_entry` is block-engine bookkeeping: where the budget
+            // ends a run it can differ between the interpreter and the
+            // generated blocks themselves. A difference the AOT run alone
+            // shows is not the fast tier's.
+            let (sc, _, _, _) = run(Mode::Aot);
+            let aot_only = diff_with(&sa, &sc, false);
             for m in diff_with(&sa, &sd, false) {
+                if m.starts_with("at_loaded_entry") && aot_only.contains(&m) {
+                    continue;
+                }
                 msgs.push(format!("fast+AOT: {m}"));
             }
             if ra != rd || ha != hd {
