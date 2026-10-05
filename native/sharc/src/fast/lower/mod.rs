@@ -15,6 +15,7 @@
 //! every access known, which is what lets the memory windows be checked
 //! once per call instead of once per access.
 
+pub mod callret;
 pub mod cond;
 pub mod fixed_alu;
 pub mod float_alu;
@@ -196,6 +197,14 @@ pub struct Plan {
     pub loop_back_seen: Vec<bool>,
     /// The flag-writer kinds of each group in the region (bit per id).
     pub flag_kinds: [u32; 3],
+    /// Index registers (bit per UREG code) the region writes with a plain
+    /// move (CJUMP, RFRAME), not as a circular update: their circular buffer
+    /// (`circ_range`) says nothing about the value.
+    pub plain: u64,
+    /// CFG kernels: the register ranges flowing into each call target that
+    /// lies before its caller (see `Structure::call_targets`), as the
+    /// previous pass saw them.
+    pub entry_abs: std::collections::HashMap<u32, Vec<Option<Abs>>>,
 }
 
 impl Default for Plan {
@@ -209,6 +218,8 @@ impl Default for Plan {
             loop_stride: Vec::new(),
             loop_back_seen: Vec::new(),
             flag_kinds: [0; 3],
+            plain: 0,
+            entry_abs: Default::default(),
         }
     }
 }
@@ -265,6 +276,14 @@ pub struct Lower {
     pub lw: [Option<cond::LastW>; 3],
     /// The writer kinds seen so far (bit per id), for the next pass.
     pub flag_kinds_out: [u32; 3],
+    /// `Plan::plain` as this pass found it.
+    pub plain_out: u64,
+    /// The instruction being lowered is followed in the kernel by nothing
+    /// that reads the registers it writes (RFRAME before the exit of a
+    /// return): its plain writes of index registers need no circular range.
+    pub tail_write: bool,
+    /// The ranges that flowed into the call targets in this pass.
+    pub entry_abs_out: std::collections::HashMap<u32, Vec<Option<Abs>>>,
     pub val_ty: Vec<Ty>,
     pub abs: Vec<Option<Abs>>,
     pub vars: Vec<Ty>,
@@ -362,6 +381,9 @@ impl Lower {
             pass,
             lw: [None; 3],
             flag_kinds_out: [0; 3],
+            plain_out: 0,
+            tail_write: false,
+            entry_abs_out: Default::default(),
             val_ty: Vec::new(),
             abs: Vec::new(),
             vars: Vec::new(),
@@ -580,6 +602,7 @@ impl Lower {
             off: x.nblock,
             active: x.active.clone(),
             pending: x.pending,
+            ret: 0,
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -590,12 +613,18 @@ impl Lower {
 
     /// A site with an explicit address (a branch to a pc, a stop).
     pub fn site_at(&mut self, pc: u32, off: u32, active: Vec<u16>) -> u32 {
+        self.site_ret(pc, off, active, 0)
+    }
+
+    /// `site_at` for the exit after a return instruction RET (`DYN_PC`).
+    pub fn site_ret(&mut self, pc: u32, off: u32, active: Vec<u16>, ret: u32) -> u32 {
         let x = self.cfgx.as_mut().expect("cfg lowering");
         let site = Site {
             pc,
             off,
             active,
             pending: None,
+            ret,
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -754,7 +783,12 @@ impl Lower {
     /// of it in the body must be a wrapped update (`commit` refuses others),
     /// and `Req::Within` makes it so at entry.
     pub fn circ_range(&self, c: usize) -> Option<(u32, u32)> {
-        if self.env.circ_off || self.pass == 0 || !(16..32).contains(&c) || !self.plan.written[c] {
+        if self.env.circ_off
+            || self.pass == 0
+            || !(16..32).contains(&c)
+            || !self.plan.written[c]
+            || (self.plan.plain >> c) & 1 != 0
+        {
             return None;
         }
         let n = c - 16;
@@ -850,6 +884,7 @@ impl Lower {
     /// L != 0 it is the wrapped sum when MODE1.CBUFEN is set (and the sum when
     /// it is clear, which is not lowered).
     pub fn post_update(&mut self, ic: u32, iv: Val, delta: Val, modified: Val) -> LR<()> {
+        self.no_plain_circ(ic)?;
         if self.env.circ_off {
             self.require_linear(ic)?;
             return self.wr_i(ic, modified);
@@ -894,6 +929,7 @@ impl Lower {
         scale: i64,
         unsigned: bool,
     ) -> LR<()> {
+        self.no_plain_circ(src)?;
         if self.env.circ_off {
             self.require_linear(src)?;
             self.require_linear(dst)?;
@@ -916,6 +952,20 @@ impl Lower {
         }
         let new = self.wrap_add(iv, delta, d, base, lenb)?;
         self.wr_i(dst, new)
+    }
+
+    /// A circular update through index register IC needs its entry value in
+    /// the buffer (`Req::Within`); a register the region also writes with a
+    /// plain move has no such value, so the update is not lowered when the
+    /// register has a circular buffer at all.
+    fn no_plain_circ(&self, ic: u32) -> LR<()> {
+        if ((self.plan.plain | self.plain_out) >> ic) & 1 != 0
+            && !self.env.circ_off
+            && self.env.dag_l[(ic - 16) as usize] != Some(0)
+        {
+            return refuse("circular update of an index register that is also written plainly");
+        }
+        Ok(())
     }
 
     /// A requirement that register CODE has exactly value K.
@@ -1141,7 +1191,19 @@ impl Lower {
                 Ok(())
             }
             None if !self.strict() => Ok(()),
-            None => refuse("address range unknown"),
+            None => {
+                if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
+                    eprintln!(
+                        "abs: require_plain pass {} idx {} var_abs I6 {:?} I7 {:?} cur {:?}",
+                        self.pass,
+                        self.idx,
+                        self.var_abs[22],
+                        self.var_abs[23],
+                        (self.cur[22], self.cur[23])
+                    );
+                }
+                refuse("address range unknown")
+            }
         }
     }
 
@@ -1211,7 +1273,7 @@ impl Lower {
                 }
                 None => v,
             };
-            if let Some((b, top)) = self.circ_range(c) {
+            if let Some((b, top)) = self.circ_range(c).filter(|_| !self.tail_write) {
                 // Every write of a circular index must keep it in its
                 // buffer (the range of the loop-carried value assumes it).
                 let inside = self.abs[v as usize].is_some_and(|a| {
@@ -1307,6 +1369,12 @@ impl Lower {
             "14a" => self.form_14a(d)?,
             "19a" | "19a_scaled" => self.form_19a(d)?,
             "7b" => self.form_7b(d)?,
+            // NOP / reserved (`forms_system._type_21a`: advance only).
+            "21a" | "21c" if self.env.guarded_dyn => {}
+            // The call and return sequence of the stack-model firmware, in
+            // cluster kernels only.
+            "16a" if self.env.guarded_dyn => self.form_16a(d)?,
+            "25c_rframe" if self.env.guarded_dyn => self.form_25c()?,
             other => return refuse(format!("form {other}")),
         }
         self.commit()
@@ -1469,6 +1537,8 @@ impl Lower {
             loop_stride: std::mem::take(&mut self.loop_stride_out),
             loop_back_seen: std::mem::take(&mut self.loop_back_seen_out),
             flag_kinds: self.flag_kinds_out,
+            plain: self.plain_out | self.plan.plain,
+            entry_abs: std::mem::take(&mut self.entry_abs_out),
             ..Plan::default()
         };
         for c in 0..NREGS as usize {

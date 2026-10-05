@@ -15,7 +15,7 @@
 //! clean block boundary.
 
 use super::*;
-use crate::fast::cfg::{LoopCount, LoopDef, Node, NodeKind, Structure};
+use crate::fast::cfg::{DYN_PC, LoopCount, LoopDef, Node, NodeKind, Structure};
 use std::collections::HashMap;
 
 fn merge(a: &[Option<Abs>], b: &[Option<Abs>]) -> Vec<Option<Abs>> {
@@ -204,6 +204,9 @@ impl Lower {
         self.body.push(Inst::Jump(label_of[&st.entry]));
         let mut open = false; // the previous node falls into the next
         let mut idx = 0u32;
+        // The state the kernel is entered with (nodes placed before the
+        // entry leave their own ranges behind).
+        let entry_abs = self.var_abs.clone();
         for (&pc, node) in &st.nodes {
             idx += 1;
             let active = st.ctx.get(&pc).cloned().unwrap_or_default();
@@ -220,15 +223,30 @@ impl Lower {
                 }
                 if let Some(a) = joins.abs.get(&pc) {
                     self.var_abs = a.clone();
+                } else if pc == st.entry {
+                    self.var_abs = entry_abs.clone();
                 }
                 self.fm_static = joins.fm.get(&pc).copied().unwrap_or(0);
                 // A register written on a cycle through a backward branch has
                 // no known range here.
+                let call_entry = st.call_targets.contains(&pc);
                 for &(last, target) in &st.back_edges {
-                    if target == pc {
+                    if target == pc && !call_entry {
                         let w = self.written_in(pc, last);
                         self.blank(w);
                     }
+                }
+                if call_entry {
+                    // Called code placed before its caller: the ranges the
+                    // calls bring, as the previous pass measured them
+                    // (unknown in the first passes, which are not strict).
+                    self.var_abs = self
+                        .plan
+                        .entry_abs
+                        .get(&pc)
+                        .cloned()
+                        .unwrap_or_else(|| vec![None; NREGS as usize]);
+                    self.fm_static = 0;
                 }
                 // A loop starts: registers its body steps get the range of
                 // all its iterations (see `loop_enter`).
@@ -270,6 +288,16 @@ impl Lower {
         }
         if open {
             return refuse("the region falls off its last instruction");
+        }
+        for &pc in &st.call_targets {
+            if let Some(a) = joins.abs.get(&pc) {
+                self.entry_abs_out.insert(pc, a.clone());
+            }
+            if self.pass >= 2 && self.plan.entry_abs.get(&pc) != self.entry_abs_out.get(&pc) {
+                // What the lowering assumed at the entry is not what flows
+                // into it.
+                return refuse(format!("call entry {pc:#x}: register ranges not stable"));
+            }
         }
         for (l, k) in stubs {
             self.body.push(Inst::Label(l));
@@ -333,6 +361,48 @@ impl Lower {
                 self.set_var(v.didpc, 1);
                 self.cfg_x().nblock += 1;
             }
+            NodeKind::Return { jump_idx } => {
+                self.begin_insn(idx);
+                // The target, I(8+pmi) + M(8+pmm) as 24 bits, from the
+                // registers before the instruction; the slots run, then the
+                // kernel leaves at the address.
+                let pmi = ((node.dec.get("pmi[2:2]").unwrap_or(0) << 2)
+                    | node.dec.get("pmi[1:0]").unwrap_or(0)) as u32;
+                let pmm = node.dec.field("pmm").unwrap_or(0) as u32;
+                let iv = self.rd_i(16 + 8 + pmi)?;
+                let mv = self.rd_i(32 + 8 + pmm)?;
+                let sum = self.bin(Bin::Add, iv, mv);
+                let mask = self.ci(0xff_ffff);
+                let t = self.bin(Bin::And, sum, mask);
+                self.body.push(Inst::StCtx32 {
+                    off: CTX_DYNPC,
+                    v: t,
+                });
+                self.set_var(v.taken[*jump_idx as usize], 1);
+                self.cfg_x().nblock += 1;
+                for (n, (spc, sdec)) in node.slots.iter().enumerate() {
+                    let left = 2 - n as u8;
+                    let sctx = st.ctx.get(spc).cloned().unwrap_or_default();
+                    self.set_ctx(*spc, sctx, Some((*jump_idx, left)));
+                    // RFRAME's plain writes of I6 and I7 are the last that
+                    // matter when only NOPs follow it before the exit.
+                    self.tail_write = sdec.form == "25c_rframe"
+                        && node.slots[n + 1..]
+                            .iter()
+                            .all(|(_, d)| matches!(d.form, "21a" | "21c"));
+                    let r = self.lower_insn(idx, sdec);
+                    self.tail_write = false;
+                    r?;
+                    self.note_written(st, *spc);
+                    self.cfg_x().nblock += 1;
+                }
+                self.set_ctx(pc, active.clone(), None);
+                self.close_block(v);
+                let k = self.site_ret(DYN_PC, 0, active.clone(), pc);
+                let exit = self.empty_exit();
+                self.body.push(Inst::Leave { k, exit });
+                *open = false;
+            }
             NodeKind::Jump {
                 target,
                 cond,
@@ -341,6 +411,11 @@ impl Lower {
                 exit_edge,
             } => {
                 self.begin_insn(idx);
+                if node.dec.form == "25a_direct" {
+                    // CJUMP: R2 = I6, I6 = I7 before the two slots run.
+                    self.cjump_frame()?;
+                    self.note_written(st, pc);
+                }
                 let cv = if *cond == 0x1f {
                     None
                 } else {
@@ -368,6 +443,12 @@ impl Lower {
                 } else {
                     let cur = self.var_abs.clone();
                     let fm = self.fm_static;
+                    if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
+                        eprintln!(
+                            "abs: pass {} edge {pc:#x} -> {target:#x}: I6 {:?} I7 {:?}",
+                            self.pass, cur[22], cur[23]
+                        );
+                    }
                     joins.edge(*target, &cur, fm);
                     label_of[target]
                 };
