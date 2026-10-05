@@ -6651,3 +6651,39 @@ the budget; at 500 M instructions per audio s it would need about 1.6 ns or
 less. The levers are the fast tier's fixed cost per call (gates, window
 resolution, writeback), AOT per-instruction transaction overhead, and the
 MRB and multiply-flag semantic gaps.
+
+### M300 regions, PGO retrain and the first translated cluster, 2026-10-05 **[D] [O]**
+
+All A/Bs below are 10 s, run under the exclusive lock and interleaved, and
+every arm has identical PCM, gates and interpreter count.
+
+- M300 fast regions (F4 plus 0xb823db, 0x1c1884, 0x1cdcef, 0x1c3030,
+  0xb85347 and 0x1c1da8, each at least 300 instructions per call): DSP CPU
+  ratio against F4 is 0.965 idle and 0.963 chord16. Adding regions of under
+  about 150 instructions per call gains nothing, because a fast-tier call
+  has a fixed cost of about 100 ns (`out/native/runs/20261005-fast-percall/`).
+  M300 is now the launcher default.
+- PGO retrained on M300 (profile `02eee750...`, through
+  `tools/native_pgo.py train`): the new-to-old ratio is 0.921 idle and
+  0.936 chord16, giving about 1.256 DSP CPU s per audio s
+  (`out/native/runs/20261005-chain-pgo/`).
+- Stopping chains only at fast-region entries would need a generator
+  change: links are compile-time calls in the generated tails, gated only by
+  `s.chain >= CHAIN_MAX`. Its ceiling is the 1.7% gain of the full uncap.
+- The lean entry path (`SHARC_FAST_LEAN`) cuts B8276C's fixed cost per call
+  from about 59 to 47 ns. B8276C as a plain region still loses in situ: it
+  stopped at 0xb827a5 ("address range unknown", pre-modify through
+  modifiers written in the loop), so each loop paid 32 calls.
+- `SHARC_BLOCKTRANS=0xb8276c` uses guarded dynamic windows: a span is
+  resolved at entry, and each access checks its address before committing.
+  This runs the whole 32-trip loop and the epilogue in one kernel. Region
+  bench: 0.46 vs 2.31 ns/insn for AOT. In situ (non-PGO, 7 pairs): -0.049
+  DSP CPU s per audio s, moving 22.8 M insn per audio s. `fast_diff region
+  B8276C --cluster` passes 1514 cases
+  (`out/native/runs/20261005-blocktrans-m1/`).
+
+Open: each cluster is worth about 2-3%, and the AOT tail is flat. Reaching
+1.0 needs general lowering coverage, a RETURN/CALL lowering, and
+kernel-to-kernel continuation. The 2a semantics fixes (PEy MRB, multiply
+flags) and the chain-stop generator change wait for one batched
+regeneration and PGO retrain.
