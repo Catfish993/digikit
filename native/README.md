@@ -74,7 +74,7 @@ old names (`desktop_runtime::coupled::tests::...`), with the same asserted hashe
 export SHARC_GEN_DIR=$PWD/out/native/dn2-audio/gen
 T=$(uv run python tools/native_target.py dir)
 cargo build --release --locked --target-dir "$T" -p digi-coupled --features coupled-audio --bin coupled-run
-SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f "$T"/release/coupled-run \
+SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8 "$T"/release/coupled-run \
   --syx Digitone_II_OS1.11.syx \
   --dsp-image snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin \
   --dsp-state snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp \
