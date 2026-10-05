@@ -244,6 +244,11 @@ pub struct Env {
     /// `cfg.bank_model`: a MODE1 write starts a delayed bank selection, which
     /// the kernel does not model (`sysops`).
     pub bank_model: bool,
+    /// ASTATX bits 31:24 are all known at build time. A compare's CACC
+    /// history is then shifted exactly (`Req::FlagsKnown(u32::MAX)`);
+    /// otherwise the kernel is made for unknown history bits
+    /// (`Req::CaccUnknown`), which the generic core's compare forgets.
+    pub cacc_known: bool,
 }
 
 /// Registers the lowering tracks: R, I, M and the pseudo registers (the
@@ -1479,6 +1484,9 @@ impl Lower {
                 match c as u32 {
                     c if c < NREGS => pre.push(Inst::Def(li, Op::St32(st_reg_b(c)))),
                     PSEUDO_FB0 => pre.push(Inst::Def(li, Op::St32(st_reg_b(118)))),
+                    // Not fully known ASTATX: the history is not tracked; bit 0
+                    // marks "no compare has run" (a compare clears it).
+                    PSEUDO_CACC if !self.env.cacc_known => pre.push(Inst::Def(li, Op::CI32(1))),
                     PSEUDO_CACC => {
                         let a = self.new_val(Ty::I32, None);
                         pre.push(Inst::Def(a, Op::St32(st_reg_b(118))));
@@ -1533,8 +1541,14 @@ impl Lower {
         if self.forget_mask & self.read_mask != 0 {
             return refuse("a condition reads a flag that a writer in the region forgets");
         }
+        let cacc_unknown = self.has_compare && !self.env.cacc_known;
         let mut reqs = std::mem::take(&mut self.reqs);
-        if self.has_compare {
+        if cacc_unknown {
+            // ASTATX is not fully known at entry, so the generic core's
+            // compare forgets CACC (bits 31:24) whatever the region does
+            // before: nothing to shift, no refusal for a forgetting writer.
+            reqs.push(Req::CaccUnknown);
+        } else if self.has_compare {
             // The CACC shift register is exact only while ASTATX is fully
             // known before each compare (`values._apply_flag_update`): known
             // at entry, and no writer in the region forgets bits.
@@ -1612,6 +1626,7 @@ impl Lower {
             flag_v,
             flag_groups,
             cacc: self.has_compare,
+            cacc_unknown,
             wins: self.wins,
             flags: self.flags,
             stored,
@@ -1627,6 +1642,8 @@ pub struct Lowered {
     pub flag_groups: [bool; 3],
     /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
     pub cacc: bool,
+    /// See `Region::cacc_unknown`.
+    pub cacc_unknown: bool,
     pub kernel: Kernel,
     pub regs: Vec<RegInfo>,
     pub reqs: Vec<Req>,
@@ -1679,6 +1696,7 @@ mod tests {
             approx_recips: false,
             guarded_dyn: false,
             bank_model: false,
+            cacc_known: true,
         }
     }
 

@@ -550,7 +550,8 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
                 mask: v_word(0, mask),
                 want: v_word(0, mask),
             },
-            Req::NwPlain { .. } | Req::Within { .. } | Req::BankSync => continue,
+            // CaccUnknown is checked on the engine state by `astat_ok`, not a masked compare.
+            Req::NwPlain { .. } | Req::Within { .. } | Req::BankSync | Req::CaccUnknown => continue,
         };
         if !out
             .iter()
@@ -576,6 +577,13 @@ fn within_ok(s: &St, r: &Region) -> bool {
         let v = s.r[c as usize];
         v.is_c() && (lo..=hi).contains(&v.b)
     })
+}
+
+/// `Req::CaccUnknown`: a kernel made for unknown CACC bits runs only while
+/// they are not all known (else the generic core would shift the history).
+#[inline(always)]
+fn cacc_ok(s: &St, r: &Region) -> bool {
+    !r.cacc_unknown || s.r[118].m & 0xff00_0000 != 0xff00_0000
 }
 
 /// Do all of R's register requirements hold in S?
@@ -779,6 +787,7 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
         }
         Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
         Req::BankSync => !s.cfg.bank_model || bank_synced(s),
+        Req::CaccUnknown => s.r[118].m & 0xff00_0000 != 0xff00_0000,
         Req::Within { c, lo, hi } => {
             let v = s.r[c as usize];
             v.is_c() && (lo..=hi).contains(&v.b)
@@ -890,7 +899,7 @@ pub fn run(
         }
     };
     pmark!(pt, 1);
-    if !regs_ok(s, &r.chk) || !within_ok(s, r) {
+    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) {
         return Err(Decline::Req);
     }
     if !nw_ok(s, r, iters) {
@@ -1081,6 +1090,20 @@ fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64
 /// the value is exact.
 fn apply_cacc(s: &mut St, r: &Region, ctx: &Ctx) {
     if !r.cacc {
+        return;
+    }
+    if r.cacc_unknown {
+        // The CACC bits were not all known at entry: the generic core's compare
+        // defines the ALU bits (`apply_flag`) and forgets CACC. The kernel's
+        // pseudo register starts as 1 and a compare clears that bit, so a
+        // clear bit says a compare ran before this exit.
+        if ctx.get32(ctx_reg_out(PSEUDO_CACC)) & 1 == 0 {
+            let v = s.r[118];
+            s.r[118] = V {
+                b: v.b & !CACC,
+                m: v.m & !CACC,
+            };
+        }
         return;
     }
     let h = ctx.get32(ctx_reg_out(PSEUDO_CACC)) & CACC;
@@ -1471,10 +1494,11 @@ pub fn run_cfg(
         } else {
             l.regs_ok(s)
         };
-        if !regs || !within_ok(s, r) || !nw_ok(s, r, iters) {
+        if !regs || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters) {
             return Err(Decline::Req);
         }
-    } else if !regs_ok(s, &r.chk) || !within_ok(s, r) || !nw_ok(s, r, iters) {
+    } else if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters)
+    {
         return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);

@@ -1040,6 +1040,7 @@ fn fast_guard_check() {
         approx_recips: false,
         guarded_dyn: false,
         bank_model: false,
+        cacc_known: true,
     };
     let mut lower = Lower::new(env, Plan::default(), 2);
     let static_addr = lower.ci(0x20_0000);

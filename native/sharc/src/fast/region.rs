@@ -65,6 +65,10 @@ pub struct Region {
     pub flag_groups: [bool; 3],
     /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
     pub cacc: bool,
+    /// The kernel was lowered for an ASTATX that is not fully known
+    /// (`Req::CaccUnknown`): `PSEUDO_CACC` starts as the sentinel 1 and the
+    /// compares' history is not tracked (`glue::apply_cacc`).
+    pub cacc_unknown: bool,
     /// Registers the kernel reads (straight from the engine state) and the
     /// ones it writes through the context, with the instruction of the first
     /// write: the caller stores those a run wrote. (The kernel stores the
@@ -152,6 +156,7 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         approx_recips: s.cfg.approx_recips,
         guarded_dyn: false,
         bank_model: s.cfg.bank_model,
+        cacc_known: s.r[118].m & 0xff00_0000 == 0xff00_0000,
     }
 }
 
@@ -300,12 +305,13 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))
+            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
             .copied()
             .collect(),
         flag_v: out.flag_v,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
+        cacc_unknown: out.cacc_unknown,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
@@ -543,12 +549,13 @@ fn assemble_cfg(
         bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))
+            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
             .copied()
             .collect(),
         flag_v: true,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
+        cacc_unknown: out.cacc_unknown,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
