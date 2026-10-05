@@ -57,6 +57,8 @@ pub struct Region {
     pub within: Vec<(u8, u32, u32)>,
     /// MODE1 and ASTATX requirements.
     pub misc: Vec<Req>,
+    /// `Req::BankSync` (checked by the glue's shape checks).
+    pub bank_sync: bool,
     /// The kernel tracks flags in pseudo registers (in `inputs`); the groups
     /// with writers write their last writer out (`glue::apply_groups`).
     pub flag_v: bool,
@@ -149,6 +151,7 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         flag_v,
         approx_recips: s.cfg.approx_recips,
         guarded_dyn: false,
+        bank_model: s.cfg.bank_model,
     }
 }
 
@@ -294,6 +297,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
             .copied()
             .collect(),
         within: within_of(&reqs),
+        bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
             .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))
@@ -536,6 +540,7 @@ fn assemble_cfg(
             .copied()
             .collect(),
         within: within_of(&reqs),
+        bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
             .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))

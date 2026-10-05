@@ -25,6 +25,7 @@ pub mod move_misc;
 pub mod mult;
 pub mod multifn;
 pub mod shift;
+pub mod sysops;
 
 use super::cfg::Site;
 use super::decode_view::Dec;
@@ -240,6 +241,9 @@ pub struct Env {
     /// register that is an unchanged entry anchor, is lowered with a dynamic
     /// guarded window (`Lower::dynamic_window`) instead of being refused.
     pub guarded_dyn: bool,
+    /// `cfg.bank_model`: a MODE1 write starts a delayed bank selection, which
+    /// the kernel does not model (`sysops`).
+    pub bank_model: bool,
 }
 
 /// Registers the lowering tracks: R, I, M and the pseudo registers (the
@@ -345,6 +349,13 @@ pub struct Lower {
     pub compare_pcs: Vec<u32>,
     pub cmp_after_forget: bool,
     pub cycles: Vec<(u32, u32)>,
+    /// `sysops`: the next instruction may be lowered as the second half of a
+    /// MODE1 write pair (set by `flow` for a straight-line successor), the
+    /// exit site the pair's second instruction reports (the state before the
+    /// write), and the one the write has armed for the next instruction.
+    pub bank_next_ok: bool,
+    pub bank_site: Option<(u32, u32)>,
+    pub bank_site_next: Option<(u32, u32)>,
 }
 
 /// A kernel variable that is not a register: loaded from the context in
@@ -429,6 +440,9 @@ impl Lower {
             compare_pcs: Vec::new(),
             cmp_after_forget: false,
             cycles: Vec::new(),
+            bank_next_ok: false,
+            bank_site: None,
+            bank_site_next: None,
         };
         l.var_abs = (0..NREGS as usize).map(|c| l.init_abs(c)).collect();
         l
@@ -603,9 +617,10 @@ impl Lower {
         let Some(x) = self.cfgx.as_mut() else {
             return self.idx;
         };
+        let (pc, off) = self.bank_site.unwrap_or((x.pc, x.nblock));
         let site = Site {
-            pc: x.pc,
-            off: x.nblock,
+            pc,
+            off,
             active: x.active.clone(),
             pending: x.pending,
         };
@@ -992,6 +1007,9 @@ impl Lower {
 
     /// The register's current value (before the instruction), as a typed Val.
     fn rd(&mut self, code: u32) -> LR<Val> {
+        if code >= NREGS {
+            return self.rd_sys(code);
+        }
         let c = self.check_code(code)?;
         if let Some(k) = self.baked(c) {
             if !self.reqs.contains(&Req::Eq(c as u8, k)) {
@@ -1017,12 +1035,14 @@ impl Lower {
     }
 
     pub fn rd_i(&mut self, code: u32) -> LR<Val> {
+        self.check_code(code)?;
         let v = self.rd(code)?;
         self.regs[code as usize].i_uses += 1;
         Ok(self.to_i(v))
     }
 
     pub fn rd_f(&mut self, code: u32) -> LR<Val> {
+        self.check_code(code)?;
         let v = self.rd(code)?;
         self.regs[code as usize].f_uses += 1;
         Ok(self.to_f(v))
@@ -1340,6 +1360,7 @@ impl Lower {
 
     /// Lower one decoded instruction.
     pub fn lower_insn(&mut self, idx: u32, d: &Dec) -> LR<()> {
+        self.bank_site = self.bank_site_next.take();
         self.lower_insn_inner(idx, d)
             .map_err(|e| Refuse(format!("insn {idx} ({}): {}", d.form, e.0)))
     }
@@ -1372,6 +1393,9 @@ impl Lower {
             "7a" => self.form_7a(d)?,
             "5a_move" | "5b_move" => self.form_5_move(d)?,
             "17a" => self.form_17a(d)?,
+            "17b" => self.form_17b(d)?,
+            "18a" => self.form_18a(d)?,
+            "21a" | "21c" => self.form_nop()?,
             "4a" => self.form_4a(d)?,
             "4b" | "4d" => self.form_4b_4d(d)?,
             "15a" => self.form_15a(d)?,
@@ -1654,6 +1678,7 @@ mod tests {
             flag_v: false,
             approx_recips: false,
             guarded_dyn: false,
+            bank_model: false,
         }
     }
 

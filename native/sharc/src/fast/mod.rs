@@ -193,6 +193,11 @@ pub enum Req {
     /// index register inside its circular buffer, which is what bounds every
     /// address the wrapped updates produce.
     Within { c: u8, lo: u32, hi: u32 },
+    /// With the bank model: the applied bank selection equals MODE1's
+    /// alternate-bank bits (`bank_active_mask == MODE1 & 0x4f8`), so that a
+    /// MODE1 write of the same value changes nothing after its two-
+    /// instruction delay (`lower::sysops`).
+    BankSync,
 }
 
 /// A memory window the region touches: the bytes

@@ -314,7 +314,20 @@ impl Lower {
                 *open = false;
             }
             NodeKind::Seq => {
+                // A MODE1 write (`sysops`) is lowered only before a plain
+                // successor in the same block that no other path enters.
+                let next = pc + node.dec.len_sw;
+                self.bank_next_ok = !st.slot_pcs.contains(&pc)
+                    && !st.loops.iter().any(|l| l.end == pc)
+                    && !st.leaders.contains(&next)
+                    && !st.cuts.contains_key(&next)
+                    && !st.slot_pcs.contains(&next)
+                    && st
+                        .nodes
+                        .get(&next)
+                        .is_some_and(|n| matches!(n.kind, NodeKind::Seq));
                 self.lower_insn(idx, &node.dec)?;
+                self.bank_next_ok = false;
                 self.note_written(st, pc);
                 self.cfg_x().nblock += 1;
                 if let Some((i, l)) = st.loops.iter().enumerate().find(|(_, l)| l.end == pc) {
