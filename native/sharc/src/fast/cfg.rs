@@ -850,5 +850,8 @@ pub struct CfgMeta {
     pub st_didpc: bool,
     pub st_lcntr: bool,
     pub st_stk26: bool,
-    pub st_slots: bool,
+    /// One bit per `CTX_SLOT_LAST` slot the kernel stores. A slot the kernel
+    /// does not store is stale (a deeper loop of another region wrote it) and
+    /// must be read as zero, whether or not another slot is stored.
+    pub st_slots: u32,
 }

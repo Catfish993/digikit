@@ -1688,8 +1688,8 @@ pub fn run_cfg(
     if !meta.st_stk26 {
         ctx.set32(CTX_STK26, 0);
     }
-    if !meta.st_slots {
-        for d in 0..MAX_SLOTS {
+    for d in 0..MAX_SLOTS {
+        if meta.st_slots >> d & 1 == 0 {
             ctx.set32(CTX_SLOT_LAST + 4 * d, 0);
         }
     }

@@ -502,10 +502,9 @@ fn assemble_cfg(
         st_didpc: out.stored.contains(&CTX_DIDPC),
         st_lcntr: out.stored.contains(&CTX_LCNTR) || out.stored.contains(&(CTX_LCNTR + 4)),
         st_stk26: out.stored.contains(&CTX_STK26),
-        st_slots: out
-            .stored
-            .iter()
-            .any(|o| (CTX_SLOT_LAST..CTX_SLOT_LAST + 4 * MAX_SLOTS).contains(o)),
+        st_slots: (0..MAX_SLOTS)
+            .filter(|d| out.stored.contains(&(CTX_SLOT_LAST + 4 * d)))
+            .fold(0, |m, d| m | 1 << d),
         stops: st
             .nodes
             .values()

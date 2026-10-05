@@ -1470,8 +1470,6 @@ impl Lower {
             "14a" => self.form_14a(d)?,
             "19a" | "19a_scaled" => self.form_19a(d)?,
             "7b" => self.form_7b(d)?,
-            // NOP / reserved (`forms_system._type_21a`: advance only).
-            "21a" | "21c" if self.env.guarded_dyn => {}
             // The call and return sequence of the stack-model firmware, in
             // cluster kernels only.
             "16a" if self.env.guarded_dyn => self.form_16a(d)?,
