@@ -81,6 +81,49 @@ impl Lower {
                 self.pend_flag(FlagKind::Fext { sv: pos + len > 32 }, vec![value]);
                 Ok(())
             }
+            0x30..=0x32 => {
+                // bset / bclr / btgl by DATA8: a position above 31 leaves the
+                // value as it is (`compute_shift`, opcodes 0x30-0x32); the
+                // flags are SS clear, SZ from the result and SV for that
+                // out-of-range position.
+                let src = self.rd_i(rx)?;
+                let value = if data8 > 31 {
+                    src
+                } else {
+                    let m = self.ci(1u32 << data8);
+                    match opcode {
+                        0x30 => self.bin(Bin::Or, src, m),
+                        0x31 => {
+                            let nm = self.un(Un::Not, m);
+                            self.bin(Bin::And, src, nm)
+                        }
+                        _ => self.bin(Bin::Xor, src, m),
+                    }
+                };
+                self.wr_i(rn, value)?;
+                self.pend_flag(FlagKind::Shift { sv: data8 > 31 }, vec![value]);
+                Ok(())
+            }
+            0x33 => {
+                // btst RX by DATA8: flags only (RN is not written). Packed as
+                // `FlagKind::Btst`: bit 0 = SZ, bit 1 = SV.
+                let packed = if data8 > 31 {
+                    self.ci(3)
+                } else {
+                    let x = self.rd_i(rx)?;
+                    let bit = if data8 == 0 {
+                        x
+                    } else {
+                        let k = self.ci(data8);
+                        self.bin(Bin::ShrU, x, k)
+                    };
+                    let one = self.ci(1);
+                    let b1 = self.bin(Bin::And, bit, one);
+                    self.bin(Bin::Xor, b1, one)
+                };
+                self.pend_flag(FlagKind::Btst, vec![packed]);
+                Ok(())
+            }
             other => refuse(format!("shiftimm opcode {other:#x}")),
         }
     }

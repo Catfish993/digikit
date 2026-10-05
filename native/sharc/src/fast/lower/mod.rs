@@ -334,6 +334,17 @@ pub struct Lower {
     /// A compare op was lowered: the CACC history is tracked in a pseudo
     /// register (`compare_flag`) and the entry ASTATX must be fully known.
     pub has_compare: bool,
+    /// CFG kernels with kernel flags: the multiplier flags a short multiply
+    /// forgot on some path to here (`MULT_MASK` or 0), the addresses of the
+    /// forgetting writers and of the compares, whether a compare was lowered
+    /// after a forget on some path, and the address ranges that can repeat
+    /// (backward branches and loops). `finish` refuses a compare that can
+    /// follow a forget (`compare_flag`).
+    pub fg_static: u32,
+    pub forget_pcs: Vec<u32>,
+    pub compare_pcs: Vec<u32>,
+    pub cmp_after_forget: bool,
+    pub cycles: Vec<(u32, u32)>,
 }
 
 /// A kernel variable that is not a register: loaded from the context in
@@ -413,6 +424,11 @@ impl Lower {
             extras: Vec::new(),
             cfgx: None,
             has_compare: false,
+            fg_static: 0,
+            forget_pcs: Vec::new(),
+            compare_pcs: Vec::new(),
+            cmp_after_forget: false,
+            cycles: Vec::new(),
         };
         l.var_abs = (0..NREGS as usize).map(|c| l.init_abs(c)).collect();
         l
@@ -1124,12 +1140,7 @@ impl Lower {
     /// subspan at entry; the caller guards every actual address against that
     /// span before the access, so an address outside it leaves the kernel
     /// before the instruction. One slot per anchor serves both directions.
-    pub fn dynamic_window(
-        &mut self,
-        addr: Val,
-        anchor: u8,
-        write: bool,
-    ) -> LR<(Val, Val, u32)> {
+    pub fn dynamic_window(&mut self, addr: Val, anchor: u8, write: bool) -> LR<(Val, Val, u32)> {
         let w = match self
             .wins
             .iter()
@@ -1506,19 +1517,33 @@ impl Lower {
             if self.flags.iter().any(|w| w.kind == FlagKind::FmulForget)
                 || self.flag_kinds_out[1] >> FlagKind::FmulForget.group_id().1 & 1 != 0
             {
-                return refuse("compare next to a flag-forgetting multiply");
+                // A compare ahead of every forget is exact: ASTATX is fully
+                // known when it runs (the entry requirement below), so the
+                // history shifts as the core's does, and a later forget
+                // leaves CACC alone. In a kernel with kernel flags the order
+                // is known along the paths (`fg_static`) and the cycles.
+                if !(self.cfg_shape && self.flag_v()) {
+                    return refuse("compare next to a flag-forgetting multiply");
+                }
+                let in_cycle = self.cycles.iter().any(|&(lo, hi)| {
+                    let inside = |p: &&u32| (lo..=hi).contains(*p);
+                    self.forget_pcs.iter().any(|p| inside(&p))
+                        && self.compare_pcs.iter().any(|p| inside(&p))
+                });
+                if self.cmp_after_forget || in_cycle {
+                    return refuse("compare after a flag-forgetting multiply");
+                }
             }
             reqs.push(Req::FlagsKnown(u32::MAX));
         }
         if self.need_flags_known != 0 {
             reqs.push(Req::FlagsKnown(self.need_flags_known));
         }
-        // Float rounding: TRUNCATE (bit 15) must stay clear; ALUSAT (bit 13)
-        // is part of the requirement when a condition reads it.
+        // Float rounding: TRUNCATE (bit 15) is part of every requirement (the
+        // core models it only in `fix`, `falu_fix`; every other float op
+        // rounds to nearest in either mode); ALUSAT (bit 13) is part of the
+        // requirement when a condition reads it.
         let mode1_mask = self.mode1_mask | (1 << 15);
-        if self.env.mode1 & (1 << 15) != 0 {
-            return refuse("MODE1.TRUNCATE set");
-        }
         reqs.push(Req::Mode1 {
             mask: mode1_mask,
             value: self.env.mode1 & mode1_mask,

@@ -48,6 +48,19 @@ impl Lower {
         self.ialu_logical(rn, r)
     }
 
+    /// RN = abs RX (`compute_alu.alu_abs`): the value is `0 - RX` for a
+    /// negative RX (so INT_MIN stays INT_MIN) and RX otherwise; the flags
+    /// are those of that adder with AS = the input's sign (`FlagKind::Iabs`).
+    pub fn ialu_abs(&mut self, rn: u32, a: Val) -> LR<()> {
+        let z = self.ci(0);
+        let neg = self.bin(Bin::LtS, a, z);
+        let negated = self.bin(Bin::Sub, z, a);
+        let r = self.select(neg, negated, a);
+        self.wr_i(rn, r)?;
+        self.pend_flag(FlagKind::Iabs, vec![a]);
+        Ok(())
+    }
+
     /// comp / compu: flags only (no result register).
     pub fn ialu_compare(&mut self, a: Val, b: Val, signed: bool) -> LR<()> {
         let eq = self.bin(Bin::Eq, a, b);
@@ -77,6 +90,12 @@ impl Lower {
         let hist = self.bin(Bin::Or, kept, bit);
         self.wr_any(PSEUDO_CACC, hist);
         self.has_compare = true;
+        if let Some(x) = &self.cfgx {
+            self.compare_pcs.push(x.pc);
+        }
+        if self.fg_static != 0 {
+            self.cmp_after_forget = true;
+        }
         self.pend_flag(FlagKind::Compare { float }, vec![value]);
         Ok(())
     }
