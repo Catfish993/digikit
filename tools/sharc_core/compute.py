@@ -194,6 +194,24 @@ _MULT_MOS_OPERATIONS = frozenset(
 )
 
 
+# The float multiplier's MUS/MVS/MIS latch (Table 3-9) also applies to the
+# multiplier half of a multifunction compute, which "handle[s] flags in the
+# same way as the single function computations" (PRM p.3-21).
+_MULT_FLOAT_STICKY_OPERATIONS = frozenset(
+    {
+        "float-multiply",
+        "float-mulalu-add",
+        "float-mulalu-subtract",
+        "float-mulalu-convert",
+        "float-mulalu-average",
+        "float-mulalu-abs",
+        "float-mulmin",
+        "float-mulmax",
+        "float-mul-dual-add-subtract",
+    }
+)
+
+
 def _sticky_set(old: Value, bit: int, trigger: bool | None) -> Value:
     """A sticky bit only ever moves 0->1 (PRM p.28-82: "sticky bits do not
     clear themselves after the condition is no longer true"); an
@@ -213,7 +231,7 @@ def _apply_mult_sticky(
     extra threading through the (Dest, Value, operation, astatx_update)
     ``ComputeResult`` contract every compute handler returns is needed."""
     code = UREG_CODES[stky_name]
-    if operation == "float-multiply":
+    if operation in _MULT_FLOAT_STICKY_OPERATIONS:
         value = _ureg_raw(state.uregs, code)
         value = _sticky_set(value, _MUS_BIT, _astatx_known_bit(astatx, MU_BIT))
         value = _sticky_set(value, _MVS_BIT, _astatx_known_bit(astatx, MV_BIT))
@@ -443,8 +461,8 @@ def _compute_pey(
     "swapping also occurs with the PEY unit based registers (REGF_MS0F,
     REGF_MS2F, and REGF_MS0B, REGF_MS2B)"). _compute always names its MR
     data-move/multiply-accumulate destination "MRF" regardless of PE (see
-    its own docstring); disguise state.special["MSF"] as "MRF" on the way
-    in so that accumulator read is correct, and _apply_compute_pey below
+    its own docstring); disguise state.special["MSF"]/["MSB"] as "MRF"/"MRB"
+    on the way in so that accumulator read is correct, and _apply_compute_pey below
     undoes the disguise on the way out.
     """
     pey_special = _pey_special(special)
@@ -475,15 +493,18 @@ def _apply_compute_pey(
         # A string RN never pairs with a tuple VALUE, matching
         # _apply_compute's own invariant (see its comment there).
         assert not isinstance(value, tuple), "string RN with tuple value"
+        # _compute names its accumulator destination MRF or MRB regardless
+        # of PE; PEy's are MSF and MSB.
+        dest = "MSB" if rn == "MRB" else "MSF"
         _event(
             state,
             insn,
             "compute-pey",
             operation=operation,
-            result_register="MSF",
+            result_register=dest,
             value=value,
         )
-        state.special["MSF"] = value
+        state.special[dest] = value
         return
     if isinstance(rn, tuple):
         assert isinstance(value, tuple), "tuple RN without tuple value"

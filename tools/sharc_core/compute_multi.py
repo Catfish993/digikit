@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import NamedTuple
 
+from .compute_mult import MULTIPLY_SSI_RN, _astatx_mult_float, mult_fixed
 from .flags import (
     MULT_FLAGS_FORGET,
     FlagUpdate,
@@ -25,6 +26,7 @@ from .flags import (
     _compare_flags_float,
     _flags_then,
     _float_alu_updates,
+    _mult_flags,
     _or_updates,
 )
 from .floats import (
@@ -39,6 +41,7 @@ from .floats import (
     _float_max,
     _float_min,
     _float_unary,
+    _isnan,
 )
 from .values import (
     Const,
@@ -46,7 +49,6 @@ from .values import (
     Value,
     _add,
     _bitwise,
-    _multiply,
     _not,
     _op_and,
     _op_or,
@@ -55,6 +57,25 @@ from .values import (
 )
 
 ShortHandler = Callable[[int, int, Value, Value], tuple]
+
+
+def _float_multiply_parts(
+    left: Value, right: Value, label: str
+) -> tuple[Value, FlagUpdate]:
+    """A float multiply's result and its MN/MV/MU/MI (PRM Table 3-9, pdf
+    p.76: all four data-dependent): MN, MV and MU come from the result via
+    ``_astatx_mult_float``, MI is a NaN result (NaN input, or infinity *
+    zero). An unknown operand forgets all four. A NaN result keeps MI set
+    and leaves MN/MV/MU unknown: its sign is not pinned down here."""
+    a, b = _float32(left), _float32(right)
+    if a is None or b is None:
+        return Unknown(label), MULT_FLAGS_FORGET
+    raw = a * b
+    bits, overflowed = _float32_bits(raw)
+    value = Const(bits)
+    if _isnan(raw):
+        return value, _mult_flags(None, None, None, True)
+    return value, _astatx_mult_float(value, overflowed, False)
 
 
 # ---------------------------------------------------------------------------
@@ -99,9 +120,13 @@ def short_decrement(rn, rx, left, right) -> tuple:
     return rn, value, "decrement", _astatx_alu_arith(right, Const(1), True)
 
 
+# PRM Table 18-22 (pdf p.421): 0111 is "RN = RN * RX (ssi)", the signed
+# integer multiply into a register -- exactly the "RN = RX * RY (SSI)" row
+# of the full multiplier table, so run that handler: its result is the low
+# 32 bits of the 80-bit product and its flags are Table 3-7's MN/MV/MU/MI
+# (pdf p.75), not forgotten.
 def short_multiply(rn, rx, left, right) -> tuple:
-    value = _multiply(left, right, "R%d * R%d" % (rn, rx))
-    return rn, value, "multiply", MULT_FLAGS_FORGET
+    return mult_fixed(MULTIPLY_SSI_RN, rn, rn, rx, left, right, None)
 
 
 def _short_logical_impl(rn, rx, left, right, name: str, operation) -> tuple:
@@ -176,13 +201,8 @@ def short_float_compare(rn, rx, left, right) -> tuple:
 
 
 def short_float_multiply(rn, rx, left, right) -> tuple:
-    a, b = _float32(left), _float32(right)
-    if a is None or b is None:
-        value: Value = Unknown("F%d * F%d" % (rn, rx))
-    else:
-        bits, _overflowed = _float32_bits(a * b)
-        value = Const(bits)
-    return rn, value, "float-multiply", MULT_FLAGS_FORGET
+    value, flags = _float_multiply_parts(left, right, "F%d * F%d" % (rn, rx))
+    return rn, value, "float-multiply", flags
 
 
 SHORT_OPS: dict[int, ShortHandler] = {
@@ -232,23 +252,19 @@ class MultifnOperands(NamedTuple):
 MultifnHandler = Callable[[int, MultifnOperands], tuple]
 
 
-def _multifn_fm_value(op: MultifnOperands) -> Value:
+def _multifn_fm(op: MultifnOperands) -> tuple[Value, FlagUpdate]:
     """The multiplier half shared by every MUL/ALU multifunction category:
     ordinary IEEE NaN propagation (not the ALU's NaN-input all-1s quirk),
     computed directly rather than through ``_float_binary`` -- same as the
     plain float multiply."""
-    fm_a, fm_b = _float32(op.fxm), _float32(op.fym)
-    if fm_a is None or fm_b is None:
-        return Unknown("F%d * F%d" % (op.rxm_reg, op.rym_reg))
-    fm_bits, _fm_overflowed = _float32_bits(fm_a * fm_b)
-    return Const(fm_bits)
+    return _float_multiply_parts(op.fxm, op.fym, "F%d * F%d" % (op.rxm_reg, op.rym_reg))
 
 
 def _multifn_result(
     op: MultifnOperands, fa_value: Value, fa_updates: FlagUpdate, operation: str
 ) -> tuple:
-    fm_value = _multifn_fm_value(op)
-    update = _flags_then(fa_updates, MULT_FLAGS_FORGET)
+    fm_value, fm_flags = _multifn_fm(op)
+    update = _flags_then(fa_updates, fm_flags)
     return (op.rm, op.ra), (fm_value, fa_value), operation, update
 
 
@@ -258,8 +274,8 @@ def _multifn_result(
 # rule for each half (PRM p.3-21/3-22: multifunction "handle[s]
 # flags in the same way as the single function computations" except
 # for dual add/subtract), so the ALU half reuses
-# ``_float_alu_updates`` and the multiplier half stays forgotten via
-# ``MULT_FLAGS_FORGET`` exactly as the plain float multiply below.
+# ``_float_alu_updates`` and the multiplier half takes the plain float
+# multiply's MN/MV/MU/MI (Table 3-9) from ``_float_multiply_parts``.
 def multifn_add_subtract(category: int, op: MultifnOperands) -> tuple:
     subtract = category == 0x19
     fa_op = _f_sub if subtract else _f_add
@@ -345,7 +361,10 @@ def multifn_minmax(category: int, op: MultifnOperands) -> tuple:
         op,
         fa_value,
         _float_alu_updates(fa_value, av=False, ai=fa_invalid),
-        "float-mul" + name,
+        # Literal names, not "float-mul" + name: the transpiler maps only
+        # literal strings to symbols (a concatenation becomes SYM_DYN, which
+        # the sticky-flag tables would not match).
+        "float-mulmin" if minimum else "float-mulmax",
     )
 
 
@@ -380,7 +399,7 @@ MULTIFN_MUL_ALU_OPS: dict[int, MultifnHandler] = {
 # single dict entry.
 def multifn_dual_mul_add_subtract(category: int, op: MultifnOperands) -> tuple:
     rs = category & 0xF
-    fm_value = _multifn_fm_value(op)
+    fm_value, fm_flags = _multifn_fm(op)
     add_value, add_overflow, add_invalid = _float_binary(
         op.fxa, op.fya, "F%d + F%d" % (op.rxa_reg, op.rya_reg), _f_add
     )
@@ -395,5 +414,5 @@ def multifn_dual_mul_add_subtract(category: int, op: MultifnOperands) -> tuple:
         (op.rm, op.ra, rs),
         (fm_value, add_value, sub_value),
         "float-mul-dual-add-subtract",
-        _flags_then(updates, MULT_FLAGS_FORGET),
+        _flags_then(updates, fm_flags),
     )

@@ -174,7 +174,9 @@ class TraceTest(unittest.TestCase):
         )
         self.assertEqual(state.uregs[8], T.Const(0xE0000000))
         self.assertEqual(state.pending.slots, 2)
-        self.assertEqual(state.call_stack, [0x200])  # not popped until the delay slots run
+        self.assertEqual(
+            state.call_stack, [0x200]
+        )  # not popped until the delay slots run
         state = self.run_one(state, insn("21c", {}, length=2))
         state = self.run_one(state, insn("21c", {}, length=2))
         self.assertEqual((state.pc_sw, state.call_stack), (0x200, []))
@@ -432,7 +434,9 @@ class TraceTest(unittest.TestCase):
 
         def bit_test(bop, mask, source_value):
             return self.run_one(
-                T.State(0x10, {mode1: T.Const(0), stkyx: source_value, astatx: T.Const(0)}),
+                T.State(
+                    0x10, {mode1: T.Const(0), stkyx: source_value, astatx: T.Const(0)}
+                ),
                 insn(
                     "18a",
                     {
@@ -753,31 +757,60 @@ class TraceTest(unittest.TestCase):
                 },
                 assume_nw32=True,
             ),
-            insn("7a", {"g": 1, "cond[4:0]": 0x17, "is[2:2]": 1,
-                        "is[1:0]": 0, "m[2:0]": 1, "idis[2:0]": 0,
-                        "compute[22:16]": 0, "compute[15:0]": 0}, 6),
+            insn(
+                "7a",
+                {
+                    "g": 1,
+                    "cond[4:0]": 0x17,
+                    "is[2:2]": 1,
+                    "is[1:0]": 0,
+                    "m[2:0]": 1,
+                    "idis[2:0]": 0,
+                    "compute[22:16]": 0,
+                    "compute[15:0]": 0,
+                },
+                6,
+            ),
         )
         self.assertEqual(state.uregs[T.UREG_CODES["I12"]], T.Const(0x100))
         self.assertEqual(state.trace[0]["action"], "i-modify-skipped")
         self.assertEqual((state.pc_sw, state.steps), (0x13, 1))
 
     def test_type7a_not_sv_uncertain_outcomes_taint_destination_and_store(self):
-        fields = {"g": 1, "cond[4:0]": 0x17, "is[2:2]": 1,
-                  "is[1:0]": 0, "m[2:0]": 1, "idis[2:0]": 0,
-                  "compute[22:16]": 0, "compute[15:0]": 0}
+        fields = {
+            "g": 1,
+            "cond[4:0]": 0x17,
+            "is[2:2]": 1,
+            "is[1:0]": 0,
+            "m[2:0]": 1,
+            "idis[2:0]": 0,
+            "compute[22:16]": 0,
+            "compute[15:0]": 0,
+        }
         base = {
             T.UREG_CODES["I12"]: T.Const(0x100),
             T.UREG_CODES["M9"]: T.Const(1),
             T.UREG_CODES["L12"]: T.Const(0),
         }
         for label, registers in (
-            ("PEx false SIMD", {**base, T.UREG_CODES["ASTATX"]: T.Const(1 << T.SV_BIT),
-                                 T.UREG_CODES["MODE1"]: T.Const(1 << 21)}),
-            ("PEx false unknown MODE1", {**base, T.UREG_CODES["ASTATX"]: T.Const(1 << T.SV_BIT)}),
+            (
+                "PEx false SIMD",
+                {
+                    **base,
+                    T.UREG_CODES["ASTATX"]: T.Const(1 << T.SV_BIT),
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+                },
+            ),
+            (
+                "PEx false unknown MODE1",
+                {**base, T.UREG_CODES["ASTATX"]: T.Const(1 << T.SV_BIT)},
+            ),
             ("unknown ASTATX", {**base, T.UREG_CODES["MODE1"]: T.Const(0)}),
         ):
             with self.subTest(label=label):
-                state = self.run_one(T.State(0x10, registers, assume_nw32=True), insn("7a", fields, 6))
+                state = self.run_one(
+                    T.State(0x10, registers, assume_nw32=True), insn("7a", fields, 6)
+                )
                 self.assertEqual(
                     state.uregs[T.UREG_CODES["I12"]],
                     T.Unknown("conditional Type7a modify outcome"),
@@ -787,23 +820,54 @@ class TraceTest(unittest.TestCase):
                 # A downstream DM store through the conditional I12 is not definite.
                 address = T._json_value(state.uregs[T.UREG_CODES["I12"]])
                 W = import_module("sharcwriters")
-                classification, _ = W.classify_store_address(address, 4, 0x100, None, None)
+                classification, _ = W.classify_store_address(
+                    address, 4, 0x100, None, None
+                )
                 self.assertEqual(classification, "UNRESOLVED")
 
     def test_type7a_not_sv_fails_closed_for_circular_or_compute_forms(self):
-        fields = {"g": 1, "cond[4:0]": 0x17, "is[2:2]": 1,
-                  "is[1:0]": 0, "m[2:0]": 1, "idis[2:0]": 0,
-                  "compute[22:16]": 0, "compute[15:0]": 0}
-        base = {T.UREG_CODES["I12"]: T.Const(0x100), T.UREG_CODES["M9"]: T.Const(1),
-                T.UREG_CODES["ASTATX"]: T.Const(0), T.UREG_CODES["MODE1"]: T.Const(0)}
+        fields = {
+            "g": 1,
+            "cond[4:0]": 0x17,
+            "is[2:2]": 1,
+            "is[1:0]": 0,
+            "m[2:0]": 1,
+            "idis[2:0]": 0,
+            "compute[22:16]": 0,
+            "compute[15:0]": 0,
+        }
+        base = {
+            T.UREG_CODES["I12"]: T.Const(0x100),
+            T.UREG_CODES["M9"]: T.Const(1),
+            T.UREG_CODES["ASTATX"]: T.Const(0),
+            T.UREG_CODES["MODE1"]: T.Const(0),
+        }
         for label, registers, altered, reason in (
-            ("nonzero L", {**base, T.UREG_CODES["L12"]: T.Const(1)}, {}, "unsupported Type7a circular modify"),
+            (
+                "nonzero L",
+                {**base, T.UREG_CODES["L12"]: T.Const(1)},
+                {},
+                "unsupported Type7a circular modify",
+            ),
             ("missing L", base, {}, "unsupported Type7a circular modify"),
-            ("nonzero compute", {**base, T.UREG_CODES["L12"]: T.Const(0)}, {"compute[15:0]": 1}, "unsupported Type7a conditional compute"),
-            ("other condition", {**base, T.UREG_CODES["L12"]: T.Const(0)}, {"cond[4:0]": 0x07}, "unsupported Type7a predicate"),
+            (
+                "nonzero compute",
+                {**base, T.UREG_CODES["L12"]: T.Const(0)},
+                {"compute[15:0]": 1},
+                "unsupported Type7a conditional compute",
+            ),
+            (
+                "other condition",
+                {**base, T.UREG_CODES["L12"]: T.Const(0)},
+                {"cond[4:0]": 0x07},
+                "unsupported Type7a predicate",
+            ),
         ):
             with self.subTest(label=label):
-                state = self.run_one(T.State(0x10, registers, assume_nw32=True), insn("7a", {**fields, **altered}, 6))
+                state = self.run_one(
+                    T.State(0x10, registers, assume_nw32=True),
+                    insn("7a", {**fields, **altered}, 6),
+                )
                 self.assertEqual(state.stopped, reason)
 
     def test_type14a_direct_load_and_store(self):
@@ -992,7 +1056,12 @@ class TraceTest(unittest.TestCase):
             pc_load_state,
             insn(
                 "14a",
-                {**fields, "addr[15:0]": 0x500, "d": 0, "ureg[6:0]": T.UREG_CODES["PC"]},
+                {
+                    **fields,
+                    "addr[15:0]": 0x500,
+                    "d": 0,
+                    "ureg[6:0]": T.UREG_CODES["PC"],
+                },
                 6,
             ),
         )
@@ -1065,17 +1134,33 @@ class TraceTest(unittest.TestCase):
         compute_bearing = T.decode_at(bytes.fromhex("bf0480c00100"), 0, 0)
         self.assertEqual(
             (b2w.raw, b2w.type_name, b2w.fields),
-            (0x04BFC0800000, "7d", {
-                "g": 0, "is[2:2]": 1, "is[1:0]": 3, "breg": 0,
-                "toby": 0, "idis[2:0]": 0,
-            }),
+            (
+                0x04BFC0800000,
+                "7d",
+                {
+                    "g": 0,
+                    "is[2:2]": 1,
+                    "is[1:0]": 3,
+                    "breg": 0,
+                    "toby": 0,
+                    "idis[2:0]": 0,
+                },
+            ),
         )
         self.assertEqual(
             (w2b.raw, w2b.type_name, w2b.fields),
-            (0x04FE5D800000, "7d", {
-                "g": 1, "is[2:2]": 0, "is[1:0]": 1, "breg": 1,
-                "toby": 1, "idis[2:0]": 5,
-            }),
+            (
+                0x04FE5D800000,
+                "7d",
+                {
+                    "g": 1,
+                    "is[2:2]": 0,
+                    "is[1:0]": 1,
+                    "breg": 1,
+                    "toby": 1,
+                    "idis[2:0]": 5,
+                },
+            ),
         )
         # PIN_FIELDS admits only pure ACONV here; PRM optional-compute Type7d
         # rows must not silently execute through this bounded handler.
@@ -1089,10 +1174,9 @@ class TraceTest(unittest.TestCase):
             b2w,
         )
         self.assertEqual(
-            exact.uregs[T.UREG_CODES["I7"]], T.Affine(8, (("byte_base", 1),)))
-        symbolic = self.run_one(
-            T.State(1, {T.UREG_CODES["I7"]: T.symbol("B7e")}), b2w
+            exact.uregs[T.UREG_CODES["I7"]], T.Affine(8, (("byte_base", 1),))
         )
+        symbolic = self.run_one(T.State(1, {T.UREG_CODES["I7"]: T.symbol("B7e")}), b2w)
         self.assertEqual(
             symbolic.uregs[T.UREG_CODES["I7"]],
             T.symbol("aconv_b2w_23_1_0_B7e_1"),
@@ -1104,15 +1188,20 @@ class TraceTest(unittest.TestCase):
             w2b,
         )
         self.assertEqual(
-            banked.uregs[T.UREG_CODES["B12"]], T.Affine(12, (("word_base", 4),)))
+            banked.uregs[T.UREG_CODES["B12"]], T.Affine(12, (("word_base", 4),))
+        )
         self.assertEqual(banked.trace[0]["direction"], "w2b")
 
     def test_type7d_firmware_instance_stops_without_a_concrete_source(self):
         # Unknown remains a hard stop: neither address-map conversion nor its
         # ILAD outcome is modeled by the bounded tracer.
         fields = {
-            "g": 0, "is[2:2]": 1, "is[1:0]": 3, "breg": 0,
-            "toby": 0, "idis[2:0]": 0,
+            "g": 0,
+            "is[2:2]": 1,
+            "is[1:0]": 3,
+            "breg": 0,
+            "toby": 0,
+            "idis[2:0]": 0,
         }
         stopped = self.run_one(T.State(1), insn("7d", fields, 6))
         self.assertEqual(stopped.stopped, "Type7d B2W(I7) source is not concrete")
@@ -2103,9 +2192,7 @@ class TraceTest(unittest.TestCase):
             call_stack=[0x13, 0x99],
             loops=[T.Loop(0x13, 0x20, 2, 1)],
         )
-        advanced = self.run_one(
-            state, insn("9a_abs", self._type9a_abs_fields(a=1), 6)
-        )
+        advanced = self.run_one(state, insn("9a_abs", self._type9a_abs_fields(a=1), 6))
         self.assertEqual(advanced.pc_sw, 0x2004)
         self.assertEqual(advanced.loops, [])
         self.assertEqual(advanced.call_stack, [0x13])
@@ -3335,9 +3422,7 @@ class TraceTest(unittest.TestCase):
             },
             6,
         )
-        state = T.State(
-            10, call_stack=[0x13, 0x99], loops=[T.Loop(0x13, 0x20, 2, 1)]
-        )
+        state = T.State(10, call_stack=[0x13, 0x99], loops=[T.Loop(0x13, 0x20, 2, 1)])
         advanced = self.run_one(state, branch)
         self.assertEqual(advanced.pc_sw, 17)
         self.assertEqual(advanced.loops, [])
@@ -3540,8 +3625,12 @@ class TraceTest(unittest.TestCase):
         # equals I7's own entry value (see the "different sites" test
         # below for why that would be unsound).
         fields = {
-            "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-            "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+            "w": 1,
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 7,
+            "data[31:16]": 0xFFFF,
+            "data[15:0]": 0xFFFE,
         }
         i7 = T.UREG_CODES["I7"]
         l7 = T.UREG_CODES["L7"]
@@ -3567,20 +3656,30 @@ class TraceTest(unittest.TestCase):
         # provably-different stack frames. Distinct PCs must mint distinct
         # symbol names.
         fields = {
-            "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-            "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+            "w": 1,
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 7,
+            "data[31:16]": 0xFFFF,
+            "data[15:0]": 0xFFFE,
         }
         i7 = T.UREG_CODES["I7"]
         l7 = T.UREG_CODES["L7"]
         seed = {i7: T.symbol("I7e"), l7: T.Const(0x1FD)}
-        at_a = self.run_one(T.State(0x10, dict(seed)), insn("19a_scaled", fields, length=6))
-        at_b = self.run_one(T.State(0x20, dict(seed)), insn("19a_scaled", fields, length=6))
+        at_a = self.run_one(
+            T.State(0x10, dict(seed)), insn("19a_scaled", fields, length=6)
+        )
+        at_b = self.run_one(
+            T.State(0x20, dict(seed)), insn("19a_scaled", fields, length=6)
+        )
         self.assertNotEqual(at_a.uregs[i7], at_b.uregs[i7])
         # Re-running the SAME site is deterministic (same name each time),
         # which is what lets a store reached along two predicate-fork paths
         # from the same PC still compare equal -- only different sites
         # differ.
-        again_a = self.run_one(T.State(0x10, dict(seed)), insn("19a_scaled", fields, length=6))
+        again_a = self.run_one(
+            T.State(0x10, dict(seed)), insn("19a_scaled", fields, length=6)
+        )
         self.assertEqual(at_a.uregs[i7], again_a.uregs[i7])
 
     def test_scaled_type19_circular_modify_chains_through_a_prior_circ_symbol(self):
@@ -3588,8 +3687,12 @@ class TraceTest(unittest.TestCase):
         # CIRC_SYMBOL_PREFIX symbol, not a raw entry seed) also qualifies:
         # the second MODIFY still yields a fresh symbol, not Unknown.
         fields = {
-            "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-            "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+            "w": 1,
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 7,
+            "data[31:16]": 0xFFFF,
+            "data[15:0]": 0xFFFE,
         }
         i7 = T.UREG_CODES["I7"]
         l7 = T.UREG_CODES["L7"]
@@ -3601,14 +3704,20 @@ class TraceTest(unittest.TestCase):
         self.assertIsInstance(state.uregs[i7], T.Affine)
         self.assertTrue(state.trace[-1]["circular"])
 
-    def test_scaled_type19_circular_modify_of_symbol_with_small_offset_still_bounded(self):
+    def test_scaled_type19_circular_modify_of_symbol_with_small_offset_still_bounded(
+        self,
+    ):
         # PRM p.6-23's single +-byte_length correction still recovers a
         # value within one buffer length of a symbol's own bound when the
         # input carries a small existing offset (e.g. after a push/pop),
         # not just when it is perfectly bare.
         fields = {
-            "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-            "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+            "w": 1,
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 7,
+            "data[31:16]": 0xFFFF,
+            "data[15:0]": 0xFFFE,
         }
         i7 = T.UREG_CODES["I7"]
         l7 = T.UREG_CODES["L7"]
@@ -3625,8 +3734,12 @@ class TraceTest(unittest.TestCase):
         # no longer provably "within one buffer length" of the symbol's
         # own bound, so the conservative Unknown fallback still applies.
         fields = {
-            "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-            "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+            "w": 1,
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 7,
+            "data[31:16]": 0xFFFF,
+            "data[15:0]": 0xFFFE,
         }
         i7 = T.UREG_CODES["I7"]
         l7 = T.UREG_CODES["L7"]
@@ -3642,8 +3755,12 @@ class TraceTest(unittest.TestCase):
         # circ_ naming convention (e.g. a loop-count or unrelated symbol
         # that happens to reach this register) is not assumed bounded.
         fields = {
-            "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-            "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+            "w": 1,
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 7,
+            "data[31:16]": 0xFFFF,
+            "data[15:0]": 0xFFFE,
         }
         i7 = T.UREG_CODES["I7"]
         l7 = T.UREG_CODES["L7"]
@@ -3658,8 +3775,12 @@ class TraceTest(unittest.TestCase):
         # bound the accepted input offset against, so this falls back to
         # Unknown even for a bare, recognised symbol.
         fields = {
-            "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-            "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+            "w": 1,
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 7,
+            "data[31:16]": 0xFFFF,
+            "data[15:0]": 0xFFFE,
         }
         i7 = T.UREG_CODES["I7"]
         state = self.run_one(
@@ -4253,9 +4374,7 @@ class DmCanonicalizationTest(unittest.TestCase):
         for width in (1, 2, 4):
             with self.subTest(width=width):
                 self.assertEqual(
-                    T._canonical_dm_address(
-                        state, self.ADDR, width, for_write=True
-                    ),
+                    T._canonical_dm_address(state, self.ADDR, width, for_write=True),
                     self.ADDR,
                 )
 
@@ -4281,9 +4400,7 @@ class DmCanonicalizationTest(unittest.TestCase):
         memory = loader_memory()
         state = T.State(1, concrete=memory)
         alias = L.SW_ALIAS_BASE + self.ADDR
-        self.assertEqual(
-            T.dm_write_range(state, self.ADDR, 4), (alias, alias + 4)
-        )
+        self.assertEqual(T.dm_write_range(state, self.ADDR, 4), (alias, alias + 4))
 
     def test_dm_write_range_keeps_an_already_mapped_direct_address(self):
         memory = loader_memory(loader_block(1, 0x310CA300, 4, payload=b"\0" * 4))
@@ -4302,7 +4419,9 @@ class DmCanonicalizationTest(unittest.TestCase):
         # from dm_write_range's (already canonical) range.
         sr = import_module("sharc_run")
         memory = loader_memory()
-        runner = sr.Runner(memory, 0x10, watchpoints=[sr.Watchpoint(self.ADDR, self.ADDR + 4)])
+        runner = sr.Runner(
+            memory, 0x10, watchpoints=[sr.Watchpoint(self.ADDR, self.ADDR + 4)]
+        )
         with self.assertRaises(sr._WatchpointStop):
             T._dm_write(runner.state, self.ADDR, 4, T.Const(0x11223344))
         start, end = T.dm_write_range(runner.state, self.ADDR, 4)
@@ -4426,24 +4545,16 @@ class PokeDmTest(unittest.TestCase):
 
     def test_cli_poke_dm_and_poke_dm_file_round_trip(self):
         with tempfile.NamedTemporaryFile("wb", delete=False) as stream:
-            stream.write(
-                loader_block(1, L.sw_to_byte(0x10), 2, payload=b"\x01\x00")
-            )
+            stream.write(loader_block(1, L.sw_to_byte(0x10), 2, payload=b"\x01\x00"))
             stream.write(loader_block(1 << L.BFLAGS["FINAL"], 0, 0))
             program_path = stream.name
-        poke_file = tempfile.NamedTemporaryFile(
-            "w", suffix=".json", delete=False
-        )
+        poke_file = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
         try:
             json.dump({"0x300000": 291, "0x310ca300": [1, 2, 3]}, poke_file)
             poke_file.close()
-            missing_concrete = self._run_cli(
-                program_path, "--poke-dm", "0x300000=1"
-            )
+            missing_concrete = self._run_cli(program_path, "--poke-dm", "0x300000=1")
             self.assertEqual(missing_concrete.returncode, 2)
-            self.assertIn(
-                "requires --concrete-memory", missing_concrete.stderr
-            )
+            self.assertIn("requires --concrete-memory", missing_concrete.stderr)
             landed = self._run_cli(
                 program_path,
                 "--concrete-memory",
@@ -4494,9 +4605,7 @@ class ApproxRecipsCliTest(unittest.TestCase):
                 "0",
                 "--json",
             ]
-            without_flag = subprocess.run(
-                base_command, capture_output=True, text=True
-            )
+            without_flag = subprocess.run(base_command, capture_output=True, text=True)
             with_flag = subprocess.run(
                 base_command + ["--approx-recips"], capture_output=True, text=True
             )
@@ -4507,9 +4616,7 @@ class ApproxRecipsCliTest(unittest.TestCase):
             # --approx-recips is usage-gated (state.approx_recips_used), not
             # request-gated: neither run executes recips, so neither JSON
             # carries the assumption, even the one that passed the flag.
-            self.assertNotIn(
-                "approximate RECIPS seed", without_state["assumptions"]
-            )
+            self.assertNotIn("approximate RECIPS seed", without_state["assumptions"])
             self.assertNotIn("approximate RECIPS seed", with_state["assumptions"])
             self.assertNotIn("Traceback", with_flag.stderr)
         finally:
@@ -5955,7 +6062,9 @@ class FloatComputeTest(unittest.TestCase):
         self.assertEqual(rn, (1, 2))
         self.assertEqual(value, (T.Const(f32(6.0)), T.Const(f32(6.0))))
         self.assertEqual(T._astatx_known_bit(astatx, T.AF_BIT), True)
-        self.assertIsNone(T._astatx_known_bit(astatx, T.MN_BIT))
+        # 2.0 * 3.0 = 6.0: PRM Table 3-9 flags are known, all clear.
+        for bit in (T.MN_BIT, T.MV_BIT, T.MU_BIT, T.MI_BIT):
+            self.assertEqual(T._astatx_known_bit(astatx, bit), False)
 
     def test_mulalu_subtract_variant(self):
         fields = mulalu_fields(0x19, rm=1, ra=2, rxm=0, rym=0, rxa=0, rya=0)
@@ -6024,7 +6133,43 @@ class FloatComputeTest(unittest.TestCase):
         )
         self.assertEqual(op, "float-multiply")
         self.assertEqual(value, T.Const(f32(3.0)))
+        for bit in (T.MN_BIT, T.MV_BIT, T.MU_BIT, T.MI_BIT):
+            self.assertEqual(T._astatx_known_bit(astatx, bit), False)
+
+    def test_short_float_multiply_flags_negative_and_unknown(self):
+        _, _, _, astatx = self.short_astatx_after(
+            short_compute(0xF, 0, 1),
+            {0: T.Const(f32(-1.5)), 1: T.Const(f32(2.0))},
+            T.Const(0),
+        )
+        self.assertEqual(T._astatx_known_bit(astatx, T.MN_BIT), True)
+        _, _, _, astatx = self.short_astatx_after(
+            short_compute(0xF, 0, 1),
+            {0: T.Unknown("x"), 1: T.Const(f32(2.0))},
+            T.Const(0),
+        )
         self.assertIsNone(T._astatx_known_bit(astatx, T.MN_BIT))
+
+    def test_short_fixed_multiply_flags(self):
+        # PRM Table 18-22 0111 = "RN = RN * RX (ssi)"; Table 3-7 flags.
+        def run(a, b):
+            return self.short_astatx_after(
+                short_compute(0x7, 0, 1),
+                {0: T.Const(a), 1: T.Const(b)},
+                T.Const(0),
+            )
+
+        rn, value, op, astatx = run(3, 0xFFFFFFFE)  # 3 * -2
+        self.assertEqual(op, "multiply")
+        self.assertEqual(value, T.Const(0xFFFFFFFA))
+        self.assertEqual(T._astatx_known_bit(astatx, T.MN_BIT), True)
+        self.assertEqual(T._astatx_known_bit(astatx, T.MV_BIT), False)
+        self.assertEqual(T._astatx_known_bit(astatx, T.MU_BIT), False)
+        self.assertEqual(T._astatx_known_bit(astatx, T.MI_BIT), False)
+        _, value, _, astatx = run(0x7FFFFFFF, 0x7FFFFFFF)  # needs > 32 bits
+        self.assertEqual(value, T.Const(1))
+        self.assertEqual(T._astatx_known_bit(astatx, T.MV_BIT), True)
+        self.assertEqual(T._astatx_known_bit(astatx, T.MN_BIT), False)
 
     def test_short_compute_opcode_space_is_fully_enumerated(self):
         # All 16 ShortCompute opcodes (PRM Table 18-2) are now implemented;
@@ -6069,9 +6214,7 @@ class FloatComputeTest(unittest.TestCase):
         executed = T._execute(state, self.recips_record())[0]
         self.assertTrue(executed.approx_recips_used)
         approx_events = [
-            event
-            for event in executed.trace
-            if event["action"] == "approximate-recips"
+            event for event in executed.trace if event["action"] == "approximate-recips"
         ]
         self.assertEqual(len(approx_events), 1)
         self.assertEqual(approx_events[0]["value"], f32(0.25))
@@ -6304,9 +6447,7 @@ class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):
         "section_7_BLOB.bin",
     )
     # CLAUDE.md / the handover's own record of this exact loader-final blob.
-    BLOB_SHA256 = (
-        "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2"
-    )
+    BLOB_SHA256 = "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2"
 
     # Synthetic addresses for the caller-side frame/struct/table, matching
     # the wavetable6 scratch fixture's layout.py: word offsets from I4 are
@@ -6349,7 +6490,8 @@ class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):
         return pokes
 
     @unittest.skipUnless(
-        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
+        os.path.exists(BLOB),
+        "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
     )
     def test_type4a_store_and_type15a_load_agree_on_the_persisted_local(self):
         with open(self.BLOB, "rb") as fh:
@@ -6479,7 +6621,9 @@ class TypeCacheCompareRealBlobTest(unittest.TestCase):
         }
         with open(self.BLOB, "rb") as fh:
             mem = L.LoadedMemory.from_stream(fh.read())
-        state = T.State(0x1C33BC, dict(uregs), concrete=mem, overlay=overlay, assume_nw32=True)
+        state = T.State(
+            0x1C33BC, dict(uregs), concrete=mem, overlay=overlay, assume_nw32=True
+        )
         active = {T._dedupe_key(state): state}
         done = []
         steps = 0
@@ -6499,13 +6643,15 @@ class TypeCacheCompareRealBlobTest(unittest.TestCase):
         return T._dm_read(done[0], i5_out + 49 * 4, 4)
 
     @unittest.skipUnless(
-        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
+        os.path.exists(BLOB),
+        "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
     )
     def test_matching_cached_and_live_type_does_not_write(self):
         self.assertIsNone(self.run_type_cache_compare(cached=6, live=6, m14=0xAAAA))
 
     @unittest.skipUnless(
-        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
+        os.path.exists(BLOB),
+        "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
     )
     def test_mismatched_type_writes_the_second_store_register(self):
         result = self.run_type_cache_compare(cached=6, live=7, m14=0xAAAA)

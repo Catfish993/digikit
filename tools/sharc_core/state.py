@@ -426,10 +426,16 @@ def _pey_view(values: Mapping[int, Value]) -> dict[int, Value]:
 
 
 def _pey_special(special: Mapping[str, Operand | MR] | None) -> dict[str, Operand | MR]:
-    """PEy's special registers for _compute: its multiplier accumulator
-    MSF read under PEx's name MRF (see compute._compute_pey)."""
+    """PEy's special registers for _compute: its multiplier accumulators
+    MSF and MSB read under PEx's names MRF and MRB (see
+    compute._compute_pey; SHARC+ PRM p.101: REGF_MS0F/MS2F and
+    REGF_MS0B/MS2B are the PEy unit's foreground and background
+    accumulators)."""
     specials = special if special is not None else NO_SPECIAL
-    return {"MRF": specials.get("MSF", Unknown("uninitialized MSF"))}
+    return {
+        "MRF": specials.get("MSF", Unknown("uninitialized MSF")),
+        "MRB": specials.get("MSB", Unknown("uninitialized MSB")),
+    }
 
 
 def _ureg_raw(values: Mapping[int, Value], code: int) -> Value:

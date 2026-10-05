@@ -856,5 +856,7 @@ MULT_OPS, MULT_FIXED_OPS = _build_mult_ops()
 # the exact same _mac_handler this module uses for every other MOD1
 # combination -- both a real 80-bit accumulate now, not the previous
 # 32-bit-truncating placeholder.
+# "RN = RN * RX (ssi)": the short-compute multiply (compute_multi.py).
+MULTIPLY_SSI_RN = _mult_handler(True, True, False, False, "rn")
 MULTIPLY_ACCUMULATE_MRF = _mac_handler(True, True, False, False, "mrf", False, "mrf")
 MULTIPLY_ADD_MRF = _mac_handler(True, True, False, False, "rn", False, "mrf")

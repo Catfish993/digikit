@@ -465,6 +465,38 @@ class SimdPeyTest(unittest.TestCase):
         self.assertNotIn("MRF", state.special)
         self.assertEqual(state.special["MSF"].signed(), 1 << 61)
 
+    def test_pey_reads_msb_for_mrb_data_move(self):
+        # PRM p.101: PEy's background accumulator is REGF_MSB; PEy's
+        # "R = MR0B" reads it, not PEx's MRB.
+        field = 0x400000 | (4 << 12) | (3 << 8)  # direction 0, MR0B, rn 3
+        fields = {"compute[22:16]": field >> 16, "compute[15:0]": field & 0xFFFF}
+        rn, value, _, _ = compute_pey(
+            fields,
+            {},
+            special={"MSB": T._mr_from_signed(0x1234), "MRB": T._mr_from_signed(9)},
+        )
+        self.assertEqual((rn, value), (3, T.Const(0x1234)))
+
+    def test_apply_compute_pey_writes_msb_for_mrb_destination(self):
+        opcode, spec = next(
+            (k, v)
+            for k, v in compute_mult.MULT_FIXED_OPS.items()
+            if v.op_name == "multiply-mrb"
+            and v.fractional
+            and v.signed_x
+            and v.signed_y
+            and not v.round_
+        )
+        state = T.State(1, {})
+        state.uregs[81] = T.Const(0x40000000)
+        state.uregs[82] = T.Const(0x40000000)
+        result = compute_pey(full_compute(1, opcode, 0, 1, 2), state.uregs, {})
+        self.assertEqual(result[0], "MRB")
+        T._apply_compute_pey(state, insn("2a", {}), result)
+        self.assertNotIn("MSF", state.special)
+        self.assertNotIn("MRB", state.special)
+        self.assertEqual(state.special["MSB"].signed(), 1 << 61)
+
     def test_pey_saturate(self):
         rn, value, op, _ = compute_pey(
             full_compute(1, 0x09, 3, 0, 0),

@@ -867,6 +867,8 @@ class Translator:
         # Variants too small to call: the statement they amount to.
         self.variant_inline: dict[str, str] = {}
         self.variant_logs: dict[str, bool] = {}
+        # Whether a variant can return Err (see _can_trap).
+        self.variant_traps: dict[str, bool] = {}
         # Register facts known after a variant returns (a MODE1 it set).
         self.variant_facts_out: dict[str, dict] = {}
         # Whether a variant (with its callees) reads data memory.
@@ -1137,6 +1139,7 @@ class Translator:
         )
         self.variant_pure[path] = pure
         # Whether it (or a callee) records anything in the undo log.
+        self.variant_traps[path] = _can_trap(body, self.variant_traps)
         self.variant_logs[path] = bool(_LOGS_RE.search(body)) or any(
             self.variant_logs.get(m, True) for m in _VARIANT_CALL_RE.findall(body)
         )
@@ -4894,6 +4897,29 @@ _EFFECT_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:s|rf)(?![A-Za-z0-9_])|\?|Err\(|bnd::|stk_"
 )
 _VARIANT_CALL_RE = re.compile(r"crate::generated::image::spec_\d+::\w+")
+_VARIANT_CALL_OPEN_RE = re.compile(r"crate::generated::image::spec_\d+::\w+\(")
+
+
+def _can_trap(body: str, traps: dict[str, bool]) -> bool:
+    """Whether a variant's code can return Err.  Only ``Err(`` and ``?`` do
+    (an early ``return Err``/``?`` is the sole way out with a Trap).  A ``?``
+    that directly follows a call of another variant counts only when that
+    variant can trap (it is in TRAPS, filled callee-first); an unknown callee
+    counts as trapping.  Any other ``?`` (runtime helpers) counts."""
+    if "Err(" in body:
+        return True
+    q = body.count("?")
+    for m in _VARIANT_CALL_OPEN_RE.finditer(body):
+        depth, i = 1, m.end()
+        while i < len(body) and depth:
+            c = body[i]
+            depth += (c == "(") - (c == ")")
+            i += 1
+        if i < len(body) and body[i] == "?" and not traps.get(m.group()[:-1], True):
+            q -= 1
+    return q > 0
+
+
 # Runtime calls that write the undo log (rt.rs St::log).
 _LOGS_RE = re.compile(r"stk_(?:push|pop|set)_|s_set_special|bnd::_dm_write\(")
 _USES_S = re.compile(r"(?<![A-Za-z0-9_:.])s(?![A-Za-z0-9_])")

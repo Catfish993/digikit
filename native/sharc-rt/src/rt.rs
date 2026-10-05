@@ -1451,10 +1451,12 @@ pub fn sv_get(s: &St, view: SpecView, key: Sym) -> Option<Spec> {
         }
         // {"MRF": specials.get("MSF", Unknown)}
         SpecView::PEY_CUR => {
-            if key != S_MRF {
-                return None;
-            }
-            let i = St::special_slot(S_MSF).unwrap();
+            let src = match key {
+                S_MRF => S_MSF,
+                S_MRB => S_MSB,
+                _ => return None,
+            };
+            let i = St::special_slot(src).unwrap();
             Some(if s.special_present[i] {
                 s.special[i]
             } else {
@@ -1462,7 +1464,7 @@ pub fn sv_get(s: &St, view: SpecView, key: Sym) -> Option<Spec> {
             })
         }
         SpecView::PEY_EMPTY => {
-            if key == S_MRF {
+            if key == S_MRF || key == S_MRB {
                 Some(Spec::V(V::UNK))
             } else {
                 None

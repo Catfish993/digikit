@@ -489,12 +489,34 @@ def route(
     )
 
 
+SPLIT_BUDGET = True  # --no-split-budget: one copy of each body, checked per step
 TR = None  # the translator of the current generation (tr_logs)
 
 
 def tr_logs(path: str) -> bool:
     """Whether the instruction's code writes the undo log."""
     return TR is None or TR.variant_logs.get(path, True)
+
+
+def _after_step(i, n, pc, insn, m_after, body, by_start, succ, chain, ind):
+    """Control flow after step I of N: the PC check against the straight line
+    and the exit of the body's last step."""
+    lines: list[str] = []
+    last = i + 1 == n
+    if not last:
+        nxt = pc + insn.length_bytes // 2
+        lines.append(ind + "if rf.pc != %#x {" % nxt)
+        lines.extend(route(body, m_after, by_start, succ, ind + "    ", chain))
+        lines.append(ind + "}")
+    elif body.stopped is None:
+        lines.extend(route(body, m_after, by_start, succ, ind, chain))
+    else:
+        spc, sinsn, exc = body.stopped
+        lines.append(
+            ind + "// %#x %s: not specialized (%s)" % (spc, sinsn.type_name, exc)
+        )
+        lines.append(ind + "break 'r crate::EXIT_NEXT;")
+    return lines
 
 
 def body_lines(
@@ -548,64 +570,88 @@ def body_lines(
             "                break 'r crate::EXIT_BUDGET;",
             "            }",
         ]
-    for i, (pc, insn, path, (_r, o, w), no_pending, m_after) in enumerate(body.steps):
-        lines.append(ind + "// %#x %s" % (pc, insn.type_name))
-        if MODEL_SAFE_ONLY:
-            lines.append(ind + "if short && s.icount + ic >= s.limit {")
-            lines.append(ind + "    break 'r crate::EXIT_BUDGET;")
-            lines.append(ind + "}")
-        for c in sorted(o):
-            lines.append(ind + "rf.o[%d] = rf.r[%d];" % (c, c))
-        for c in sorted(w):
-            lines.append(ind + "let sv%d = rf.r[%d];" % (c, c))
-        # What a trap restores besides registers (the undo log holds the
-        # rest): the PC is this instruction's, the pending transfer is
-        # known to be none unless a delay slot.
-        if not no_pending:
-            lines.append(ind + "let pd0 = rf.pending;")
-        loopy = pc in LOOP_END_SET or (insn.type_name or "") in LOOP_FORMS
-        if loopy:
-            # The physical loop stack's depth is not in the undo log.
-            lines.append(ind + "let ld%d = s.loop_depth;" % i)
-        banky = MODE1 in w
-        if banky:
-            # Nor is a MODE1 write's bank request.
-            lines.append(ind + "let bk%d = s.bank_requested_mask;" % i)
-        if TR is not None and path in TR.variant_inline:
-            # The instruction only moves the PC.
-            lines.append(ind + TR.variant_inline[path])
-            lines.append(ind + "if false {")
-            lines.append(ind + "    let t = Trap(0);")
-        else:
-            lines.append(ind + "if let Err(t) = %s(s, &mut rf) {" % path)
-        for c in sorted(w):
-            lines.append(ind + "    rf.r[%d] = sv%d;" % (c, c))
-        if loopy:
-            lines.append(ind + "    s.loop_depth = ld%d;" % i)
-        if banky:
-            lines.append(ind + "    s.bank_requested_mask = bk%d;" % i)
-        lines.append(ind + "    rf.pc = %#x;" % pc)
-        lines.append(ind + "    rf.pending = %s;" % ("None" if no_pending else "pd0"))
-        lines.append(ind + "    s.trap = Some(t);")
-        lines.append(ind + "    break 'r crate::EXIT_TRAP;")
-        lines.append(ind + "}")
-        if tr_logs(path):
-            lines.append(ind + "s.un = 0;")
-        lines.append(ind + "ic += 1;")
-        last = i + 1 == n
-        if not last:
-            nxt = pc + insn.length_bytes // 2
-            lines.append(ind + "if rf.pc != %#x {" % nxt)
-            lines.extend(route(body, m_after, by_start, succ, ind + "    ", chain))
-            lines.append(ind + "}")
-        elif body.stopped is None:
-            lines.extend(route(body, m_after, by_start, succ, ind, chain))
-        else:
-            spc, sinsn, exc = body.stopped
+
+    def emit(checked: bool) -> list[str]:
+        lines: list[str] = []
+        for i, (pc, insn, path, (_r, o, w), no_pending, m_after) in enumerate(
+            body.steps
+        ):
+            lines.append(ind + "// %#x %s" % (pc, insn.type_name))
+            if MODEL_SAFE_ONLY and checked:
+                lines.append(ind + "if short && s.icount + ic >= s.limit {")
+                lines.append(ind + "    break 'r crate::EXIT_BUDGET;")
+                lines.append(ind + "}")
+            for c in sorted(o):
+                lines.append(ind + "rf.o[%d] = rf.r[%d];" % (c, c))
+            # A step whose code cannot return Err has no trap path: no undo copies,
+            # no restore (the transpiler proves it per variant, _can_trap).
+            traps = TR is None or TR.variant_traps.get(path, True)
+            if not traps:
+                lines.append(ind + "let _ = %s(s, &mut rf);" % path)
+                if tr_logs(path):
+                    lines.append(ind + "s.un = 0;")
+                lines.append(ind + "ic += 1;")
+                lines.extend(
+                    _after_step(
+                        i, n, pc, insn, m_after, body, by_start, succ, chain, ind
+                    )
+                )
+                continue
+            for c in sorted(w):
+                lines.append(ind + "let sv%d = rf.r[%d];" % (c, c))
+            # What a trap restores besides registers (the undo log holds the
+            # rest): the PC is this instruction's, the pending transfer is
+            # known to be none unless a delay slot.
+            if not no_pending:
+                lines.append(ind + "let pd0 = rf.pending;")
+            loopy = pc in LOOP_END_SET or (insn.type_name or "") in LOOP_FORMS
+            if loopy:
+                # The physical loop stack's depth is not in the undo log.
+                lines.append(ind + "let ld%d = s.loop_depth;" % i)
+            banky = MODE1 in w
+            if banky:
+                # Nor is a MODE1 write's bank request.
+                lines.append(ind + "let bk%d = s.bank_requested_mask;" % i)
+            if TR is not None and path in TR.variant_inline:
+                # The instruction only moves the PC.
+                lines.append(ind + TR.variant_inline[path])
+                lines.append(ind + "if false {")
+                lines.append(ind + "    let t = Trap(0);")
+            else:
+                lines.append(ind + "if let Err(t) = %s(s, &mut rf) {" % path)
+            for c in sorted(w):
+                lines.append(ind + "    rf.r[%d] = sv%d;" % (c, c))
+            if loopy:
+                lines.append(ind + "    s.loop_depth = ld%d;" % i)
+            if banky:
+                lines.append(ind + "    s.bank_requested_mask = bk%d;" % i)
+            lines.append(ind + "    rf.pc = %#x;" % pc)
             lines.append(
-                ind + "// %#x %s: not specialized (%s)" % (spc, sinsn.type_name, exc)
+                ind + "    rf.pending = %s;" % ("None" if no_pending else "pd0")
             )
-            lines.append(ind + "break 'r crate::EXIT_NEXT;")
+            lines.append(ind + "    s.trap = Some(t);")
+            lines.append(ind + "    break 'r crate::EXIT_TRAP;")
+            lines.append(ind + "}")
+            if tr_logs(path):
+                lines.append(ind + "s.un = 0;")
+            lines.append(ind + "ic += 1;")
+            lines.extend(
+                _after_step(i, n, pc, insn, m_after, body, by_start, succ, chain, ind)
+            )
+        return lines
+
+    if MODEL_SAFE_ONLY and SPLIT_BUDGET:
+        # Two copies of the steps: when the body fits under the limit (the
+        # usual case) the copy without per-step budget checks runs; a body
+        # that would cross the limit runs the checked copy, which stops
+        # before the exact instruction as before.
+        lines.append("            if short {")
+        lines.extend(emit(True))
+        lines.append("            } else {")
+        lines.extend(emit(False))
+        lines.append("            }")
+    else:
+        lines.extend(emit(True))
     lines.append("            }")
     lines.append("        }")
     return lines
