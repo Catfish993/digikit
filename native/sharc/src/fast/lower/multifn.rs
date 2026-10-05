@@ -12,10 +12,9 @@
 //!
 //! Flags: the ALU half sets them as the single-function float op does
 //! (`Falu`; the dual forms OR the add's and the subtract's AZ and AN); the
-//! multiplier half forgets MN MV MU MI (`FmulForget`) and its sticky bits do
-//! not change. No flag depends on the product, and a denormal product is
-//! exact in the interpreter's binary64, so only a NaN or infinity product
-//! exits. The ALU results must be finite, as for the single-function float
+//! multiplier half sets MN from the product's sign and clears MV MU MI (`Fmul`;
+//! the core computes them exactly since 2a), so a product that is not finite
+//! normal or zero exits and the sticky bits do not change. The ALU results must be finite, as for the single-function float
 //! ops.
 //!
 //! Other MUL/ALU categories (convert, average, abs, min, max) are refused.
@@ -43,12 +42,12 @@ impl Lower {
                     Bin::FSub
                 };
                 let a = self.bin(b, xa, ya);
-                result_finite(self, m);
+                result_normal_or_zero(self, m);
                 result_finite(self, a);
                 self.wr_f(rm, m)?;
                 self.wr_f(ra, a)?;
                 self.pend_flag(FlagKind::Falu, vec![a]);
-                self.pend_flag_also(FlagKind::FmulForget, Vec::new());
+                self.pend_flag_also(FlagKind::Fmul, vec![m]);
                 Ok(())
             }
             0x30..=0x3f => {
@@ -58,14 +57,14 @@ impl Lower {
                 let m = self.bin(Bin::FMul, xm, ym);
                 let sum = self.bin(Bin::FAdd, xa, ya);
                 let dif = self.bin(Bin::FSub, xa, ya);
-                result_finite(self, m);
+                result_normal_or_zero(self, m);
                 result_finite(self, sum);
                 result_finite(self, dif);
                 self.wr_f(rm, m)?;
                 self.wr_f(ra, sum)?;
                 self.wr_f(rs, dif)?;
                 self.pend_flag(FlagKind::FaluOr, vec![sum, dif]);
-                self.pend_flag_also(FlagKind::FmulForget, Vec::new());
+                self.pend_flag_also(FlagKind::Fmul, vec![m]);
                 Ok(())
             }
             _ => refuse(format!("multifunction category {category:#x}")),

@@ -1472,9 +1472,11 @@ impl Engine {
                         {
                             let profile_start =
                                 self.region_profile.as_ref().map(|_| Instant::now());
-                            if self.fast.as_ref().is_some_and(|f| f.caps_chain()) {
-                                // End every chain at its first link: the fast tier
-                                // is only consulted from here.
+                            if let Some(f) = self.fast.as_mut()
+                                && !f.sync_chain_stops(&mut self.s)
+                            {
+                                // The tier needs every dispatch: end the chain at
+                                // its first link.
                                 self.s.chain = CHAIN_MAX;
                             }
                             let capture = self.live_capture.as_mut().and_then(|capture| {
@@ -1510,9 +1512,11 @@ impl Engine {
                         }
                         #[cfg(not(feature = "region-profile"))]
                         {
-                            if self.fast.as_ref().is_some_and(|f| f.caps_chain()) {
-                                // End every chain at its first link: the fast tier
-                                // is only consulted from here.
+                            if let Some(f) = self.fast.as_mut()
+                                && !f.sync_chain_stops(&mut self.s)
+                            {
+                                // The tier needs every dispatch: end the chain at
+                                // its first link.
                                 self.s.chain = CHAIN_MAX;
                             }
                             let capture = self.live_capture.as_mut().and_then(|capture| {

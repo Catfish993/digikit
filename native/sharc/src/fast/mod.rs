@@ -247,6 +247,13 @@ pub trait FastTier: Send {
     fn caps_chain(&self) -> bool {
         false
     }
+    /// Bring `s.chain_stop` up to date with every PC the tier wants control
+    /// at, so generated chains end only there. Returns false when the tier
+    /// needs every dispatch (the engine then caps the chain at its first
+    /// link); the default needs nothing.
+    fn sync_chain_stops(&mut self, _s: &mut St) -> bool {
+        true
+    }
     /// A one-paragraph summary for logs.
     fn report(&self) -> String {
         String::new()
@@ -447,6 +454,9 @@ pub struct FastEngine {
     pub stats: FastStats,
     log: bool,
     cap_chain: bool,
+    /// Entry PCs not yet added to the engine's chain stop set
+    /// (`FastTier::sync_chain_stops`); filled at setup and by `arm`.
+    stops_new: Vec<u32>,
     force_cfg: bool,
     auto: Option<Auto>,
     /// Block-translator cluster roots (`SHARC_BLOCKTRANS`), sorted: built as
@@ -513,6 +523,7 @@ impl FastEngine {
             // SHARC_FAST_CHAIN=0 keeps chaining (entries reached by a chain
             // are then missed).
             cap_chain: std::env::var("SHARC_FAST_CHAIN").map_or(true, |v| v != "0"),
+            stops_new: Vec::new(),
             force_cfg: std::env::var("SHARC_FAST_SHAPE").is_ok_and(|v| v == "cfg"),
             auto: None,
             clusters: Vec::new(),
@@ -523,6 +534,7 @@ impl FastEngine {
             },
             cov_last: None,
         };
+        fe.stops_new = fe.pcs.clone();
         fe.rebuild_bloom();
         fe
     }
@@ -534,6 +546,7 @@ impl FastEngine {
             if self.index(pc).is_none() {
                 self.lookup.insert(pc, self.pcs.len());
                 self.pcs.push(pc);
+                self.stops_new.push(pc);
                 self.slots.push(Slot::default());
                 let (w, m) = Self::bit(pc);
                 self.bloom[w] |= m;
@@ -909,6 +922,7 @@ impl FastEngine {
         }
         self.lookup.insert(pc, self.pcs.len());
         self.pcs.push(pc);
+        self.stops_new.push(pc);
         self.slots.push(Slot {
             auto: true,
             ..Slot::default()
@@ -1211,6 +1225,22 @@ impl FastTier for FastEngine {
 
     fn caps_chain(&self) -> bool {
         self.cap_chain
+    }
+
+    fn sync_chain_stops(&mut self, s: &mut St) -> bool {
+        if !self.cap_chain {
+            return true;
+        }
+        // Auto selection counts every dispatched entry (`note`): chains
+        // would hide candidates, so those engines still end each chain at
+        // its first link.
+        if self.auto_dispatch() {
+            return false;
+        }
+        for pc in self.stops_new.drain(..) {
+            s.chain_stop_add(pc);
+        }
+        true
     }
 
     fn auto(&self) -> bool {

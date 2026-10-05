@@ -489,7 +489,9 @@ def route(
     )
 
 
-SPLIT_BUDGET = True  # --no-split-budget: one copy of each body, checked per step
+# --split-budget: two copies of each body (one without per-step budget checks);
+# about 2% faster, about twice the generated source and compile time. Off by default.
+SPLIT_BUDGET = False
 TR = None  # the translator of the current generation (tr_logs)
 
 
@@ -766,8 +768,9 @@ def region_text(
         "    }",
     ]
     if chain:
-        # A block of another region follows: call it directly (a tail call;
-        # the chain length is bounded in case it is not one).
+        # A block of another region follows: call it directly (a tail call)
+        # unless its PC is in the engine's run-time stop set; the chain length
+        # is bounded in case it is not one.
         lines += [
             "    if exit >= crate::EXIT_CHAIN {",
             "        if s.chain >= crate::CHAIN_MAX {",
@@ -777,7 +780,12 @@ def region_text(
             "        return match exit - crate::EXIT_CHAIN {",
         ]
         for pc, k in sorted(chain.items(), key=lambda kv: kv[1]):
-            lines.append("            %d => @@B_%X@@(s)," % (k, pc))
+            # The engine's stop set holds every PC the fast tier wants control
+            # at: a link into one ends the chain (the PC is already written back).
+            lines.append(
+                "            %d => if s.chain_stops_at(%#x) { crate::EXIT_NEXT } else { @@B_%X@@(s) },"
+                % (k, pc, pc)
+            )
         lines += [
             "            _ => crate::EXIT_NEXT,",
             "        };",
@@ -1457,6 +1465,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--no-chain", action="store_true", help=argparse.SUPPRESS)
     p.add_argument(
+        "--split-budget",
+        action="store_true",
+        help="two copies of each block body, one without per-step budget checks "
+        "(about 2%% faster, about twice the source and compile time)",
+    )
+    p.add_argument(
         "--exclude",
         type=decode_range,
         action="append",
@@ -1543,7 +1557,8 @@ def main(argv: list[str] | None = None) -> int:
     for lo, hi in args.exclude:
         starts = [st for st in starts if not lo <= st < hi]
     starts = sorted(set(starts))
-    global CHAINING, MODEL_SAFE_ONLY, GEN_EXPLICIT_MEMORY_MODEL
+    global CHAINING, MODEL_SAFE_ONLY, GEN_EXPLICIT_MEMORY_MODEL, SPLIT_BUDGET
+    SPLIT_BUDGET = args.split_budget
     GEN_EXPLICIT_MEMORY_MODEL = bool(args.explicit_memory_model)
     CHAINING = args.chain and not args.no_chain
     MODEL_SAFE_ONLY = args.model_safe

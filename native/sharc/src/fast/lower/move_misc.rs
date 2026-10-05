@@ -198,7 +198,7 @@ impl Lower {
                 let r = self.bin(op, a, b);
                 self.ialu_logical(rn, r)
             }
-            0xf => self.fmul(rn, rn, rx, true),
+            0xf => self.fmul(rn, rn, rx, false),
             _ => refuse(format!("short compute {opcode:#x}")),
         }
     }

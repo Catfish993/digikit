@@ -1048,3 +1048,17 @@ fn bank_codes_are_the_selected_register_groups() {
     );
     assert!(bank_codes(0).is_empty());
 }
+
+#[test]
+fn chain_stop_set_holds_what_was_added() {
+    let mut s = St::new(Mem::new());
+    assert!(!s.chain_stops_at(0xb8276c));
+    let pcs: Vec<u32> = (0..500).map(|i| 0x1c0000 + i * 7).collect();
+    for &pc in &pcs {
+        s.chain_stop_add(pc);
+        s.chain_stop_add(pc);
+    }
+    assert!(pcs.iter().all(|&pc| s.chain_stops_at(pc)));
+    assert!(!s.chain_stops_at(0x1c0001));
+    assert!(!s.chain_stops_at(0xb8276c));
+}

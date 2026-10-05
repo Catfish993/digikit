@@ -3,8 +3,7 @@
 //! The full form `FN = FX * FY` sets MN from the result's sign and clears
 //! MV, MU, MI for results in the fast domain (finite normal or zero); the
 //! sticky MUS, MVS, MIS then stay as they are. The short form
-//! `FN = FX * FY` (2a_short, 2c) leaves MN MV MU MI unknown
-//! (`MULT_FLAGS_FORGET`).
+//! `FN = FX * FY` (2a_short, 2c) now sets them like the full form (2a).
 
 use super::*;
 use crate::fast::FlagKind;
@@ -41,13 +40,9 @@ impl Lower {
         Ok(())
     }
 
-    /// Short `RN = RN * RX`: the low word, the multiplier flags forgotten.
+    /// Short `RN = RN * RX` (ssi): the same signed multiply as the full
+    /// form, with its exact MN MV MU MI (the core runs `MULTIPLY_SSI_RN`).
     pub fn mul_short(&mut self, rn: u32, rx: u32) -> LR<()> {
-        let a = self.rd_i(rn)?;
-        let b = self.rd_i(rx)?;
-        let r = self.bin(Bin::Mul, a, b);
-        self.wr_i(rn, r)?;
-        self.pend_flag_none(FlagKind::FmulForget);
-        Ok(())
+        self.mul_ssi(rn, rn, rx)
     }
 }

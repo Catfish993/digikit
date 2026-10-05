@@ -793,6 +793,11 @@ pub struct St {
     pub trap: Option<Trap>,
     /// Blocks called directly by other blocks since the dispatcher's call.
     pub chain: u32,
+    /// PCs at which a chained block call must stop and return to the
+    /// dispatcher (open-addressed, `CHAIN_STOP_EMPTY` marks a free slot;
+    /// length is a power of two). Filled by the engine with every PC the
+    /// fast tier wants control at.
+    pub chain_stop: Box<[u32]>,
     /// Decoded instruction at a PC (the generated image table).
     pub insn_at: fn(Int) -> Option<Insn>,
     /// Runtime decoder configuration. Its cache is engine-owned and drops
@@ -831,7 +836,58 @@ fn no_read_sw(_mem: &Mem, _pc_sw: u32) -> Option<u16> {
     None
 }
 
+/// Free slot of `St::chain_stop`.
+pub const CHAIN_STOP_EMPTY: u32 = u32::MAX;
+
 impl St {
+    #[inline(always)]
+    fn chain_stop_slot(pc: u32, mask: usize) -> usize {
+        (pc.wrapping_mul(0x9e37_79b1) >> 12) as usize & mask
+    }
+
+    /// Does a chained call into the block at PC end the chain here?
+    #[inline(always)]
+    pub fn chain_stops_at(&self, pc: u32) -> bool {
+        let t = &self.chain_stop;
+        let mask = t.len() - 1;
+        let mut i = Self::chain_stop_slot(pc, mask);
+        loop {
+            let v = t[i];
+            if v == pc {
+                return true;
+            }
+            if v == CHAIN_STOP_EMPTY {
+                return false;
+            }
+            i = (i + 1) & mask;
+        }
+    }
+
+    /// Add PC to the stop set (grows it to keep the load under one half).
+    pub fn chain_stop_add(&mut self, pc: u32) {
+        if pc == CHAIN_STOP_EMPTY || self.chain_stops_at(pc) {
+            return;
+        }
+        let used = self.chain_stop.iter().filter(|&&v| v != CHAIN_STOP_EMPTY).count();
+        if (used + 1) * 2 > self.chain_stop.len() {
+            let grown = vec![CHAIN_STOP_EMPTY; self.chain_stop.len() * 2].into_boxed_slice();
+            let old = std::mem::replace(&mut self.chain_stop, grown);
+            for v in old.iter().copied().filter(|&v| v != CHAIN_STOP_EMPTY) {
+                self.chain_stop_insert(v);
+            }
+        }
+        self.chain_stop_insert(pc);
+    }
+
+    fn chain_stop_insert(&mut self, pc: u32) {
+        let mask = self.chain_stop.len() - 1;
+        let mut i = Self::chain_stop_slot(pc, mask);
+        while self.chain_stop[i] != CHAIN_STOP_EMPTY {
+            i = (i + 1) & mask;
+        }
+        self.chain_stop[i] = pc;
+    }
+
     pub fn new(mem: Mem) -> Box<St> {
         Box::new(St {
             r: [V::UNK; NUREG],
@@ -874,6 +930,7 @@ impl St {
             limit: 0,
             trap: None,
             chain: 0,
+            chain_stop: vec![CHAIN_STOP_EMPTY; 8].into_boxed_slice(),
             insn_at: no_insn,
             runtime_decode: false,
             read_sw: no_read_sw,
