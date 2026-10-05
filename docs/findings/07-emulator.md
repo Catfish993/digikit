@@ -6600,3 +6600,54 @@ its first 15b refusal; its body also has 15a, 6b_shiftimm and two multifunction
 before comparison. Integration requires AOT-competitive performance followed
 by coupled CPU/audio/deadline/PCM gates.
 Full evidence: `out/native/runs/20261005-component-controls/summary.md`.
+
+### Where the DN2 real-time deficit sits, 2026-10-05 **[D] [O]**
+
+Coupled DN2 playback with the four production fast regions uses 1.27-1.28 DSP
+CPU s per audio s, 10 s idle, exclusive lock
+(`out/native/runs/20261005-fast-vs-aot/`). The model retires 1.0e9 DSP
+instructions per audio s. The idle skip covers about half of them, so about
+500 M busy instructions per audio s run through real tiers, at about 2.5 ns
+each. No single block dominates: the hottest generated block is about 4% of
+cycles.
+
+- Fast tier against AOT, same binary: with no fast regions the DSP uses 1.50
+  CPU s per audio s; F4 uses 1.28. F4 moves 208.9 M instructions per audio s
+  from AOT to the fast tier and saves 1.07 ns per instruction moved.
+- Cached region bench (`out/native/regionbench/variants/fast/fastbench-1791083178.jsonl`,
+  older sources): AOT costs 1.78-1.86 ns per instruction on 1C364F, 1C3862
+  and 1C399A. The Cranelift loop costs 0.30-0.50 ns. A single-iteration fast
+  call costs 125-167 ns, so the fixed cost per call is about 100 ns or more.
+- Adding 12 or 28 more clean auto-built regions moves a further 50 M
+  instructions per audio s to the fast tier with no CPU change. Those regions
+  are short, and the per-call cost cancels the gain. 38 of 80 candidate
+  regions raise interpreter work, because a decline at a PC with no AOT entry
+  single-steps the interpreter. Auto mode raises interpreted instructions 17x
+  for the same reason.
+- Generated AOT blocks pay per-instruction transaction work: undo saves,
+  `rf.o` copies, a Result-checked `_execute` call, budget checks and a PC match
+  (for example `r_B8276C`).
+- Interpreter: 3.5 M instructions per audio s in 10 s runs, 2.0 M in the first
+  2 s. A same-binary A/B (`SHARC_CONCRETISE_ON_BAIL`, which zeroes unknown
+  register bits on a zero-progress entry bail, plus a state with the low
+  alias DM[4..0x100) zero-filled) removed 21% of them. DSP CPU fell 2-3%
+  (paired B/A 0.968 idle, 0.977 chord16) and PCM stayed bit-identical. That
+  puts the cost at about 55 ns per interpreted instruction, so all interpreter
+  work is worth about 0.19 CPU s per audio s
+  (`out/native/runs/20261005-concretise-on-bail/`).
+- The interpreter work is caused by unknown-bit taint failing generated entry
+  guards, observed with the Python oracle from the ready state. S0..S5 come
+  from PEy MRB reads: `_pey_special` maps only MRF, so the MRB words are always
+  unknown. ASTATX comes from multiply forms that always forget MN/MV/MU/MI,
+  even with known inputs. R0/R1/R2/R15 come from 1C253F loads at unmapped
+  DM 4, 8, 0xc and so on. MODE1STK is unknown whenever the status stack is
+  empty. The hottest cases are the task context save/restore at
+  0xb8a947..0xb8aed9 (37% of interpreted instructions) and the 0x1c2518 loop
+  (26%). Zero-filling absent L1/L2 bytes or making the imported specials known
+  changed nothing (`out/native/runs/20261005-concrete-ram/`).
+
+Open: an owned interpretive executor (14-17 ns per instruction) cannot meet
+the budget; at 500 M instructions per audio s it would need about 1.6 ns or
+less. The levers are the fast tier's fixed cost per call (gates, window
+resolution, writeback), AOT per-instruction transaction overhead, and the
+MRB and multiply-flag semantic gaps.

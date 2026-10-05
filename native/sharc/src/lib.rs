@@ -260,6 +260,11 @@ pub struct Engine {
     fast_auto_dispatch: bool,
     /// SHARC_FAST_HIST: interpreted instructions per PC (diagnostics).
     hist: Option<Box<std::collections::HashMap<u32, u64>>>,
+    /// SHARC_CONCRETISE_ON_BAIL (diagnostic): a block entry that bails with
+    /// no progress gets its unknown register bits set to zero, then retries.
+    concretise_on_bail: bool,
+    /// Bails concretised under `concretise_on_bail`.
+    concretised: u64,
     /// Opt-in raw generated-block call snapshots.  It is configured wholly
     /// through the environment and is absent in ordinary execution.
     live_capture: Option<live_capture::LiveCapture>,
@@ -521,6 +526,9 @@ impl Drop for Engine {
                     eprintln!("hist: {pc:#x} {n}");
                 }
             }
+            if self.concretise_on_bail {
+                eprintln!("concretise: {} bails concretised", self.concretised);
+            }
             let m = &self.model_stats;
             eprintln!(
                 "fast engine: models gated {} unsafe {} irq_deferred {} timer_gated {} mmr_exits {} code_mismatch {}; idle skipped {}",
@@ -582,6 +590,8 @@ impl Engine {
             fast_auto_dispatch: false,
             hist: std::env::var_os("SHARC_FAST_HIST")
                 .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
+            concretise_on_bail: std::env::var_os("SHARC_CONCRETISE_ON_BAIL").is_some(),
+            concretised: 0,
             live_capture: live_capture::LiveCapture::from_env(),
         }
     }
@@ -1540,6 +1550,22 @@ impl Engine {
                             }
                             if self.s.icount > before {
                                 continue 'steploop;
+                            }
+                            if self.concretise_on_bail {
+                                // PCSTK (100) and MODE1STK (125) mirror the
+                                // stacks; they stay as the stack model left them.
+                                let mut changed = false;
+                                for (c, v) in self.s.r.iter_mut().enumerate() {
+                                    if c != 100 && c != 125 && v.m != u32::MAX {
+                                        v.b &= v.m;
+                                        v.m = u32::MAX;
+                                        changed = true;
+                                    }
+                                }
+                                if changed {
+                                    self.concretised += 1;
+                                    continue 'steploop;
+                                }
                             }
                         }
                     }
