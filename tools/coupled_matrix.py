@@ -45,7 +45,7 @@ import native_target  # noqa: E402
 
 TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
-PGO_FLAGS = "-Cprofile-use={profdata} -Cllvm-args=-pgo-warn-missing-function"
+PGO_FLAGS = "-Cprofile-use={profdata}"
 READY = ROOT / "snapshots" / "dn2-audio-ready-2026-10-03"
 SCENARIO_FILE = ROOT / "native" / "coupled" / "scenarios.json"
 RUNS_DIR = ROOT / "out" / "native" / "runs"

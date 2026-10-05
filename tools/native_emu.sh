@@ -147,8 +147,9 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
             str(paths["CF snapshot"]),
         ]
     )
+    # One second of prefill: below real time the DSP underruns at once with no buffer; pass --audio-buffer 0 for lowest latency.
     if "--audio-buffer" not in args:
-        args.extend(["--audio-buffer", "0"])
+        args.extend(["--audio-buffer", "1"])
     return args
 
 

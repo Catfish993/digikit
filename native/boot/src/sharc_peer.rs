@@ -628,6 +628,20 @@ impl ThreadedPeer {
         let worker = thread::Builder::new()
             .name("sharc-dsp".into())
             .spawn(move || {
+                // Keep the DSP worker on performance cores (QOS_CLASS_USER_INTERACTIVE
+                // in <sys/qos.h>); the default QoS lets macOS schedule it on
+                // efficiency cores under load.
+                #[cfg(target_os = "macos")]
+                {
+                    unsafe extern "C" {
+                        fn pthread_set_qos_class_self_np(
+                            qos_class: u32,
+                            relative_priority: i32,
+                        ) -> i32;
+                    }
+                    // SAFETY: affects only the calling thread's scheduling class.
+                    let _ = unsafe { pthread_set_qos_class_self_np(0x21, 0) };
+                }
                 let engine = match make() {
                     Ok(e) => {
                         let _ = ready_tx.send(Ok(()));

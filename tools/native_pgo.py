@@ -54,7 +54,7 @@ FEATURES = "coupled-audio"
 TEST_NAME = "desktop_runtime::coupled::tests::coupled_ready_exactness"
 EXPECTED_FRAMES = 1139
 TRAIN_RUNS = 4
-FLAGS_TEMPLATE = "-Cprofile-use={profdata} -Cllvm-args=-pgo-warn-missing-function"
+FLAGS_TEMPLATE = "-Cprofile-use={profdata}"
 SKIP_DIRS = {"target", ".git", "node_modules"}
 SKIP_FILES = {".DS_Store"}
 
