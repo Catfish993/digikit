@@ -1978,6 +1978,13 @@ fn region(args: &[String]) {
     let check_windows = args.iter().any(|a| a == "--check-windows");
     // `--cluster`: PC is a block-translator cluster root (`SHARC_BLOCKTRANS`).
     let cluster = args.iter().any(|a| a == "--cluster");
+    // `--roots HEX,HEX`: more entries armed with the root, so a kernel that
+    // exits at one of them continues into it (`Engine::fast_continue`).
+    let extra_roots: Vec<u32> = flag(args, "--roots").map_or(Vec::new(), |l| {
+        l.split(',')
+            .map(|x| u32::from_str_radix(x.trim_start_matches("0x"), 16).expect("root"))
+            .collect()
+    });
     sharc_native::fast::glue::set_window_check(check_windows);
     let backend_name = flag(args, "--backend")
         .unwrap_or(if check_windows { "interp" } else { "cl" })
@@ -2083,9 +2090,11 @@ fn region(args: &[String]) {
                 if mode == Mode::Fast {
                     e.dispatch = Dispatch::default();
                 }
-                let mut fast = FastEngine::new(backend(&backend_name), &[pc]);
+                let mut pcs = vec![pc];
+                pcs.extend(extra_roots.iter().copied());
+                let mut fast = FastEngine::new(backend(&backend_name), &pcs);
                 if cluster {
-                    fast = fast.with_clusters(&[pc]);
+                    fast = fast.with_clusters(&pcs);
                 }
                 let fe = Rc::new(RefCell::new(fast));
                 e.set_fast(Some(Box::new(Shared(fe.clone()))));

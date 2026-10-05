@@ -8,7 +8,7 @@
 //! loops back after a budget-limited run of iterations) behaves exactly as
 //! the interpreter's.
 
-use super::cfg::{CfgMeta, LoopDef, Site};
+use super::cfg::{CfgMeta, DYN_PC, LoopDef, Site};
 use super::ir::*;
 use super::region::{RegMeta, Region};
 use super::{Base, FlagKind, FlagWriter, Req};
@@ -118,6 +118,9 @@ pub struct Ctx {
     buf: Box<[u64]>,
     /// `CTX_WIN_CHECK` as last written (the constant pool is written once).
     win_check: bool,
+    /// The address of the return instruction the last cluster kernel run left
+    /// through (0: it left elsewhere); read by the coverage report.
+    pub ret_at: u32,
 }
 
 impl Default for Ctx {
@@ -125,6 +128,7 @@ impl Default for Ctx {
         let mut c = Ctx {
             buf: vec![0u64; CTX_SIZE as usize / 8].into_boxed_slice(),
             win_check: false,
+            ret_at: 0,
         };
         for (i, k) in CONST_POOL.iter().enumerate() {
             c.set32(CTX_CONSTS + 4 * i as u32, *k);
@@ -1600,7 +1604,13 @@ pub fn run_cfg(
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
     pmark!(pt, 7);
-    s.pc_sw = site.pc as Int;
+    ctx.ret_at = site.ret;
+    s.pc_sw = if site.pc == DYN_PC {
+        // The target of the return the kernel ran (24 bits).
+        ctx.get32(CTX_DYNPC) as Int
+    } else {
+        site.pc as Int
+    };
     s.icount += completed;
     s.steps += completed as Int;
     // What `exec_insn` does at the start of every instruction.
@@ -1611,8 +1621,12 @@ pub fn run_cfg(
     if let Some((j, slots)) = site.pending
         && ctx.get32(CTX_TAKEN + 4 * j as u32) != 0
     {
+        let target = match meta.jumps[j as usize].0 {
+            DYN_PC => ctx.get32(CTX_DYNPC),
+            t => t,
+        };
         s.pending = Some(Pending {
-            target: Some(meta.jumps[j as usize].0 as Int),
+            target: Some(target as Int),
             call: false,
             slots: slots as Int,
             return_from_call: false,

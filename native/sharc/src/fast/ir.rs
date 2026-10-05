@@ -246,7 +246,11 @@ pub const CTX_WIN_EXT: u32 = CTX_WIN_CHECK + 8;
 /// `[lo, hi)` extent; a non-zero length also represents a span ending at
 /// 2^32, which cannot be represented by a u32 exclusive high endpoint.
 pub const CTX_WIN_DYN_LEN: u32 = CTX_WIN_EXT + 8 * MAX_WIN;
-pub const CTX_SIZE: u32 = (CTX_WIN_DYN_LEN + 4 * MAX_WIN + 7) & !7;
+/// The run-time target of an indirect delayed jump a cluster kernel ran (the
+/// compiler's return): the exit address of a `cfg::DYN_PC` site and the
+/// target of a pending jump of a dynamic delay slot exit.
+pub const CTX_DYNPC: u32 = CTX_WIN_DYN_LEN + 4 * MAX_WIN;
+pub const CTX_SIZE: u32 = (CTX_DYNPC + 4 + 7) & !7;
 
 /// Context offsets of register-like kernel inputs/outputs: UREG codes below
 /// `NREGS` (R, I, M), then the pseudo registers (code `NREGS + i`).

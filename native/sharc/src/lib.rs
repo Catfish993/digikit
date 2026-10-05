@@ -1219,6 +1219,83 @@ impl Engine {
         }
     }
 
+    /// The stop range (`step_until_in`) holds the current PC at an instruction
+    /// count where it stops (every count, or an aligned one).
+    fn at_stop_range(&self) -> bool {
+        let Some((lo, hi)) = self.stop_range else {
+            return false;
+        };
+        (lo as Int..hi as Int).contains(&self.s.pc_sw)
+            && self.stop_align.is_none_or(|(chunk, base)| {
+                let d = self.s.icount - base;
+                d > 0 && d % chunk as u64 == 0
+            })
+    }
+
+    /// A fast-tier kernel just exited normally at the PC of another fast-tier
+    /// region: run that one without going back to the dispatch loop, while
+    /// every gate `step` would apply between the two still holds. Between
+    /// kernels nothing can change them: a kernel retires lowered instructions
+    /// only (R/I/M registers, flags, plain RAM through checked windows), so
+    /// MODE1, IRPTL, IMASK, IMASKP, the models' state, the stack and bank
+    /// requests are as the first kernel's entry checks found them; the budget
+    /// (`limit`, with the core timer's bound folded in by `block_plan`) is an
+    /// absolute instruction count that each kernel checks against `s.limit`.
+    /// The checks that cannot be assumed are repeated here: the stop and idle
+    /// settings, the latent interrupt, the code check. A region that declines
+    /// leaves the state untouched and is dispatched normally.
+    fn fast_continue(&mut self, limit: u64, mut code: Option<u32>) -> Option<u32> {
+        // `SHARC_FAST_NOCONT=1`: every kernel exit returns to the dispatch loop.
+        static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *OFF.get_or_init(|| std::env::var_os("SHARC_FAST_NOCONT").is_some())
+            || self.one_dispatch
+            || self.stop_pc.is_some()
+            || self.stop_software_interrupt
+            || self.s.probe.is_some()
+        {
+            return code;
+        }
+        while code == Some(EXIT_NEXT) && self.s.icount < limit && self.s.pending.is_none() {
+            let pc = self.s.pc_sw;
+            if self.at_stop_range() {
+                break;
+            }
+            if self.idle_head.is_some() && (self.idle_lo as Int..=self.idle_hi as Int).contains(&pc)
+            {
+                break;
+            }
+            if self.fast.as_ref().is_none_or(|f| !f.wants(pc as u32)) {
+                break;
+            }
+            if self.models_active() {
+                let s = &self.s;
+                if (s.cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0))
+                    || (s.cfg.stack_model
+                        && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0))
+                {
+                    break;
+                }
+                if (self.software_interrupts || s.cfg.core_timer || s.cfg.peripheral_model)
+                    && self.latent_interrupt() != Some(false)
+                {
+                    break;
+                }
+                if !self.blocks_code_ok() {
+                    break;
+                }
+            }
+            let Some(next) = self
+                .fast
+                .as_mut()
+                .and_then(|f| f.run_chained(&mut self.s, pc as u32))
+            else {
+                break;
+            };
+            code = Some(next);
+        }
+        code
+    }
+
     fn trapped(&mut self, t: Trap) {
         self.stats.traps += 1;
         self.last_trap = Some(t);
@@ -1240,13 +1317,7 @@ impl Engine {
         self.idle_snap = None;
         self.s.probe = None;
         'steploop: while self.s.icount < limit {
-            if let Some((lo, hi)) = self.stop_range
-                && (lo as Int..hi as Int).contains(&self.s.pc_sw)
-                && self.stop_align.is_none_or(|(chunk, base)| {
-                    let d = self.s.icount - base;
-                    d > 0 && d % chunk as u64 == 0
-                })
-            {
+            if self.at_stop_range() {
                 break;
             }
             if self.stop_pc.is_some_and(|pc| self.s.pc_sw == pc as Int) {
@@ -1390,6 +1461,9 @@ impl Engine {
                         {
                             code = f.run(&mut self.s, entry_pc);
                         }
+                    }
+                    if code == Some(EXIT_NEXT) && plan.bank_pre.is_none() {
+                        code = self.fast_continue(plan.limit, code);
                     }
                     if code.is_none()
                         && let Some(entry) = entry

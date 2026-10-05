@@ -233,6 +233,13 @@ pub trait FastTier: Send {
     /// Run the region at PC if it applies. `Some(exit code)` only when at
     /// least one instruction completed; `None` leaves the state untouched.
     fn run(&mut self, s: &mut St, pc: u32) -> Option<u32>;
+    /// `run` for a kernel entered straight from another kernel's exit
+    /// (`Engine::step`'s continuation): only an already built region that
+    /// takes the state, with no builds, rebuilds or decline accounting (the
+    /// engine's own dispatch does those if this returns `None`).
+    fn run_chained(&mut self, _s: &mut St, _pc: u32) -> Option<u32> {
+        None
+    }
     /// Generated blocks call each other directly (`EXIT_CHAIN`), which would
     /// carry execution into an entry PC without passing `Engine::step`: when
     /// true the engine ends each chain at the first link, so every block
@@ -957,15 +964,24 @@ impl Drop for FastEngine {
     }
 }
 
-impl FastTier for FastEngine {
-    #[inline(always)]
-    fn wants(&self, pc: u32) -> bool {
-        self.index(pc).is_some()
-    }
-
-    fn run(&mut self, s: &mut St, pc: u32) -> Option<u32> {
+impl FastEngine {
+    fn run_inner(&mut self, s: &mut St, pc: u32, chained: bool) -> Option<u32> {
         let ix = self.index(pc)?;
-        if let Some((lix, at, kind, ic)) = self.cov_last.take()
+        if chained {
+            // Only a built, current region of the CFG shape; nothing is
+            // counted unless the kernel runs.
+            let slot = &self.slots[ix];
+            let region = slot.region.as_ref()?;
+            if slot.refused.is_some()
+                || slot.kernel.is_none()
+                || region.cfg.is_none()
+                || s.mem.dec_gen != region.verified_gen
+            {
+                return None;
+            }
+        }
+        let cov_prev = self.cov_last.take();
+        if let Some((lix, at, kind, ic)) = cov_prev
             && let Some(e) = self.slots[lix].cov.exits.get_mut(&(at, kind))
         {
             e[2] += (s.icount - ic).min(COV_GAP_CAP);
@@ -1039,6 +1055,11 @@ impl FastTier for FastEngine {
         } else {
             slot.alt_fail = 0;
         }
+        if chained && res.is_err() {
+            self.stats.calls -= 1;
+            self.cov_last = cov_prev;
+            return None;
+        }
         let region = slot.region.as_ref()?;
         if self.log {
             eprintln!(
@@ -1055,11 +1076,20 @@ impl FastTier for FastEngine {
         if self.cov {
             match &res {
                 Ok(_) => {
-                    let x = s.pc_sw as u32;
-                    let at_stop = region
-                        .cfg
-                        .as_ref()
-                        .is_some_and(|c| c.stops.iter().any(|(p, _)| *p == x));
+                    // A kernel that ran a return leaves at its run-time
+                    // target; the report names the return instruction, as
+                    // for a region that stopped at it.
+                    let ret = if region.cfg.is_some() {
+                        self.ctx.ret_at
+                    } else {
+                        0
+                    };
+                    let x = if ret != 0 { ret } else { s.pc_sw as u32 };
+                    let at_stop = ret != 0
+                        || region
+                            .cfg
+                            .as_ref()
+                            .is_some_and(|c| c.stops.iter().any(|(p, _)| *p == x));
                     let kind = if at_stop {
                         "stop"
                     } else if s.icount >= s.limit {
@@ -1162,6 +1192,21 @@ impl FastTier for FastEngine {
             self.drop_slot(pc);
         }
         ret
+    }
+}
+
+impl FastTier for FastEngine {
+    #[inline(always)]
+    fn wants(&self, pc: u32) -> bool {
+        self.index(pc).is_some()
+    }
+
+    fn run(&mut self, s: &mut St, pc: u32) -> Option<u32> {
+        self.run_inner(s, pc, false)
+    }
+
+    fn run_chained(&mut self, s: &mut St, pc: u32) -> Option<u32> {
+        self.run_inner(s, pc, true)
     }
 
     fn caps_chain(&self) -> bool {

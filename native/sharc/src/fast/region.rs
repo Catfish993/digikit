@@ -475,6 +475,9 @@ fn assemble_cfg(
         {
             jumps[jump_idx as usize] = (target, n.pc);
         }
+        if let cfg::NodeKind::Return { jump_idx } = n.kind {
+            jumps[jump_idx as usize] = (cfg::DYN_PC, n.pc);
+        }
     }
     let n_entry = st.loops.iter().take_while(|l| l.entry()).count();
     // The deepest nesting of in-region loops (for the stack-depth checks).
