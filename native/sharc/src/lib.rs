@@ -507,6 +507,15 @@ fn image_insn_at() -> fn(Int) -> Option<Insn> {
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        if let Some(h) = &self.hist {
+            let mut v: Vec<_> = h.iter().map(|(a, b)| (*b, *a)).collect();
+            v.sort_unstable_by(|a, b| b.cmp(a));
+            let tot: u64 = v.iter().map(|x| x.0).sum();
+            eprintln!("hist: {} interpreted insns over {} PCs", tot, v.len());
+            for (n, pc) in v.iter().take(3000) {
+                eprintln!("hist: {pc:#x} {n}");
+            }
+        }
         if let Some(f) = &self.fast
             && f.auto()
             && std::env::var_os("SHARC_FAST_LOG").is_some()
@@ -517,15 +526,6 @@ impl Drop for Engine {
                 self.stats.block_instructions,
             );
             eprintln!("{line}");
-            if let Some(h) = &self.hist {
-                let mut v: Vec<_> = h.iter().map(|(a, b)| (*b, *a)).collect();
-                v.sort_unstable_by(|a, b| b.cmp(a));
-                let tot: u64 = v.iter().map(|x| x.0).sum();
-                eprintln!("hist: {} interpreted insns over {} PCs", tot, v.len());
-                for (n, pc) in v.iter().take(3000) {
-                    eprintln!("hist: {pc:#x} {n}");
-                }
-            }
             if self.concretise_on_bail {
                 eprintln!("concretise: {} bails concretised", self.concretised);
             }
@@ -1163,14 +1163,33 @@ impl Engine {
                 self.model_stats.timer_gated += 1;
                 return None;
             }
+            let mut loop_bound = None;
             if self.software_interrupts || s.cfg.core_timer || s.cfg.peripheral_model {
                 match self.latent_interrupt() {
                     Some(false) => {}
+                    // A latched, unmasked interrupt that only an active DO
+                    // loop defers (the interpreter delivers none while the
+                    // loop stack is non-empty or a branch is pending): a
+                    // block may run while the outermost counted loop cannot
+                    // have popped. Its `remaining` iterations each execute
+                    // at least one instruction, so its pop is at least the
+                    // `remaining`-th instruction from here, after which the
+                    // interpreter delivers the interrupt.
+                    Some(true)
+                        if self.s.pending.is_none()
+                            && self.s.loops.n != 0
+                            && self.s.loops.a[0].remaining >= 2 =>
+                    {
+                        loop_bound = Some(self.s.icount + self.s.loops.a[0].remaining as u64);
+                    }
                     _ => {
                         self.model_stats.irq_deferred += 1;
                         return None;
                     }
                 }
+            }
+            if let Some(b) = loop_bound {
+                plan.limit = plan.limit.min(b);
             }
             if self.s.cfg.core_timer {
                 let (mode, count) = (self.s.r[R_MODE2], self.s.r[R_TCOUNT]);
@@ -1182,7 +1201,7 @@ impl Engine {
                         self.model_stats.timer_gated += 1;
                         return None;
                     }
-                    plan.limit = limit.min(self.s.icount + count.b as u64 - 1);
+                    plan.limit = plan.limit.min(self.s.icount + count.b as u64 - 1);
                     plan.timer_count = Some(count.b);
                 }
             }

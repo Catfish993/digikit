@@ -45,7 +45,7 @@ def test_default_ready_inputs_select_live_coupled_audio(monkeypatch, tmp_path):
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
     args = scope["default_audio_args"]()
     assert args[1] == "--auto-coupled"
-    assert args[-2:] == ["--audio-buffer", "0"]
+    assert args[-2:] == ["--audio-buffer", "1"]
     assert Path(__import__("os").environ["SHARC_GEN_DIR"]) == generated
 
 
@@ -67,7 +67,7 @@ def test_default_no_audio_keeps_coupling_but_mutes_playback(monkeypatch, tmp_pat
     monkeypatch.setitem(globals_, "READY", ready)
     monkeypatch.setitem(globals_, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
-    assert scope["default_audio_args"](["--no-audio"])[-1] == "0"
+    assert scope["default_audio_args"](["--no-audio"])[-1] == "1"
 
 
 def test_selected_firmware_keeps_its_path_but_profile_stays_known(

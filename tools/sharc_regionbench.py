@@ -291,7 +291,7 @@ def cmd_build(args) -> str:
     if os.path.isfile(SOL) and not prod_gen:
         env["SHARC_REGIONBENCH_SOL"] = SOL
     if pgo:
-        env["RUSTFLAGS"] = "-Cprofile-use=%s -Cllvm-args=-pgo-warn-missing-function" % (
+        env["RUSTFLAGS"] = "-Cprofile-use=%s" % (
             os.path.abspath(pgo)
         )
     # RUSTFLAGS (PGO) builds take --target so the flags skip build scripts and
@@ -548,7 +548,7 @@ def cmd_fresh_fast(args) -> None:
             "SHARC_GEN_DIR": PROD_GEN,
             "profile_env": {},
             "RUSTFLAGS": (
-                "-Cprofile-use=%s -Cllvm-args=-pgo-warn-missing-function"
+                "-Cprofile-use=%s"
                 % os.path.abspath(args.pgo)
                 if args.pgo
                 else None
