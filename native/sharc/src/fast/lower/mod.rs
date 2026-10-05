@@ -235,6 +235,11 @@ pub struct Env {
     pub flag_v: bool,
     /// `cfg.approx_recips`: the recips seed is a numeric value (else unknown).
     pub approx_recips: bool,
+    /// Block-translator clusters (`SHARC_BLOCKTRANS`): a pre-modify load or
+    /// store whose modifier register has no known range, through an index
+    /// register that is an unchanged entry anchor, is lowered with a dynamic
+    /// guarded window (`Lower::dynamic_window`) instead of being refused.
+    pub guarded_dyn: bool,
 }
 
 /// Registers the lowering tracks: R, I, M and the pseudo registers (the
@@ -1065,14 +1070,34 @@ impl Lower {
     /// A read-only dynamic window anchored by an independently known index
     /// register.  The host selects one present, normal-word-plain subspan at
     /// entry; the caller must guard every actual address against that span
-    /// before issuing a load.  Stores intentionally have no dynamic path.
+    /// before issuing a load.
     pub fn dynamic_read_window(&mut self, addr: Val, anchor: u8) -> LR<(Val, Val, u32)> {
+        self.dynamic_window(addr, anchor, false)
+    }
+
+    /// A dynamic window anchored by an independently known index register,
+    /// for loads and (WRITE) stores. The host selects one present (and, with
+    /// a store in the kernel, wholly overlay-written) normal-word-plain
+    /// subspan at entry; the caller guards every actual address against that
+    /// span before the access, so an address outside it leaves the kernel
+    /// before the instruction. One slot per anchor serves both directions.
+    pub fn dynamic_window(
+        &mut self,
+        addr: Val,
+        anchor: u8,
+        write: bool,
+    ) -> LR<(Val, Val, u32)> {
         let w = match self
             .wins
             .iter()
             .position(|w| w.dynamic_anchor == Some(anchor))
         {
-            Some(w) => w,
+            Some(w) => {
+                if write {
+                    self.wins[w].write = true;
+                }
+                w
+            }
             None => {
                 if self.wins.len() as u32 >= MAX_WIN {
                     return refuse("too many windows");
@@ -1084,7 +1109,7 @@ impl Lower {
                     ts: 0,
                     nf: 0,
                     read: true,
-                    write: false,
+                    write,
                     dynamic_anchor: Some(anchor),
                 });
                 let w = self.wins.len() - 1;
@@ -1542,6 +1567,7 @@ mod tests {
             mode1: 0,
             flag_v: false,
             approx_recips: false,
+            guarded_dyn: false,
         }
     }
 
@@ -1556,5 +1582,20 @@ mod tests {
         assert_eq!(l.wins[0].dynamic_anchor, Some(18));
         assert_eq!(l.wins[1].dynamic_anchor, None);
         assert!(l.wins[1].write);
+    }
+
+    #[test]
+    fn dynamic_window_serves_loads_and_stores_in_one_slot() {
+        let mut l = Lower::new(env(), Plan::default(), 2);
+        let addr = l.ci(0x20_0000);
+        l.dynamic_window(addr, 18, false).unwrap();
+        assert!(!l.wins[0].write);
+        l.dynamic_window(addr, 18, true).unwrap();
+        l.dynamic_read_window(addr, 18).unwrap();
+        assert_eq!(l.wins.len(), 1);
+        assert!(l.wins[0].read && l.wins[0].write);
+        // Another anchor gets its own slot.
+        l.dynamic_window(addr, 19, true).unwrap();
+        assert_eq!(l.wins.len(), 2);
     }
 }

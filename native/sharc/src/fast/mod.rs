@@ -390,6 +390,10 @@ pub struct FastEngine {
     cap_chain: bool,
     force_cfg: bool,
     auto: Option<Auto>,
+    /// Block-translator cluster roots (`SHARC_BLOCKTRANS`), sorted: built as
+    /// CFG regions only, with the guarded dynamic windows of the cluster
+    /// lowering (`Env::guarded_dyn`).
+    clusters: Vec<u32>,
 }
 
 // SAFETY: a FastEngine is owned by one Engine and used from one thread at a
@@ -446,9 +450,28 @@ impl FastEngine {
             cap_chain: std::env::var("SHARC_FAST_CHAIN").map_or(true, |v| v != "0"),
             force_cfg: std::env::var("SHARC_FAST_SHAPE").is_ok_and(|v| v == "cfg"),
             auto: None,
+            clusters: Vec::new(),
         };
         fe.rebuild_bloom();
         fe
+    }
+
+    /// Make the entries ROOTS block-translator clusters (adding them as
+    /// entries): CFG regions with the cluster lowering (`Env::guarded_dyn`).
+    pub fn with_clusters(mut self, roots: &[u32]) -> FastEngine {
+        for &pc in roots {
+            if self.index(pc).is_none() {
+                self.lookup.insert(pc, self.pcs.len());
+                self.pcs.push(pc);
+                self.slots.push(Slot::default());
+                let (w, m) = Self::bit(pc);
+                self.bloom[w] |= m;
+            }
+        }
+        self.clusters = roots.to_vec();
+        self.clusters.sort_unstable();
+        self.clusters.dedup();
+        self
     }
 
     /// Also pick regions at run time (see `Auto`).
@@ -536,7 +559,8 @@ impl FastEngine {
         // The remaining iterations of the active DO loop that starts here,
         // else (or when that is refused) the CFG shape from this pc.
         // SHARC_FAST_SHAPE=cfg skips the loop shape (tests, comparisons).
-        let loop_try = if self.force_cfg {
+        let cluster = self.clusters.binary_search(&pc).is_ok();
+        let loop_try = if self.force_cfg || cluster {
             None
         } else {
             Some(region::build_loop(s, pc))
@@ -553,7 +577,7 @@ impl FastEngine {
                     Some(Err(e)) => Some(e),
                     _ => None,
                 };
-                match region::build_cfg(s, pc) {
+                match region::build_cfg_opts(s, pc, cluster) {
                     Ok(r) => Ok(r),
                     Err(e) => Err(match loop_err {
                         Some(l) => {
@@ -950,6 +974,16 @@ impl FastTier for FastEngine {
     }
 }
 
+/// `SHARC_BLOCKTRANS=0xb8276c,...` (hex cluster roots).
+pub fn blocktrans_roots() -> Vec<u32> {
+    std::env::var("SHARC_BLOCKTRANS")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|x| !x.trim().is_empty())
+        .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
+        .collect()
+}
+
 /// `SHARC_FAST_REGIONS=0x1c399a,...` (hex entry PCs) as a fast tier.
 /// `SHARC_FAST_AUTO=threshold,min_insns[,blocks]` adds run-time selection.
 pub fn from_env() -> Option<FastEngine> {
@@ -960,10 +994,11 @@ pub fn from_env() -> Option<FastEngine> {
         .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
         .collect();
     let auto = auto_config();
-    if pcs.is_empty() && auto.is_none() {
+    let roots = blocktrans_roots();
+    if pcs.is_empty() && auto.is_none() && roots.is_empty() {
         return None;
     }
-    let f = FastEngine::new(default_backend(), &pcs);
+    let f = FastEngine::new(default_backend(), &pcs).with_clusters(&roots);
     Some(match auto {
         Some((t, m, b)) => f.with_auto(t, m, b),
         None => f,

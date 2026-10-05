@@ -617,7 +617,23 @@ fn window_ptr(
     Some(ptr)
 }
 
-/// Resolve a read-only window from an independently known dynamic anchor.
+/// Bytes after the anchor a cached span must still hold to be reused by a
+/// window with a store, and the (bytes before, bytes from the anchor) spans
+/// tried for it, larger first (see `dynamic_window_ptr`).
+const DYN_ROOM: u64 = 16;
+const DYN_LADDER: [(u32, u32); 8] = [
+    (256, 1024),
+    (64, 256),
+    (16, 64),
+    (0, 64),
+    (0, 32),
+    (0, 16),
+    (0, 8),
+    (0, 4),
+];
+
+/// Resolve a guarded window (`Lower::dynamic_window`: loads, or loads and
+/// stores) from an independently known dynamic anchor.
 /// The fast memory page may be the short-word alias of the architectural
 /// page.  We try the largest aligned power-of-two span containing the anchor
 /// that is wholly normal-word plain and present; the kernel guards every
@@ -636,12 +652,38 @@ fn dynamic_window_ptr(
     }
     let a = v.b;
     let cached = cache.get();
+    // A window with a store anchors on the index register's own words (the
+    // modifiers reach forward from it), see below: a cached span is reused
+    // only with that room after the anchor.
+    let room = if spec.write { DYN_ROOM } else { 1 };
     if cached.gen_ == s.mem.layout_gen
         && !cached.ptr.is_null()
         && a >= cached.lo
-        && (a as u64) < cached.hi
+        && (a as u64) + room <= cached.hi
     {
+        if spec.write {
+            // As `window_ptr` on a hit: the write counts for the code watch.
+            s.mem.note_window_write(cached.lo);
+        }
         return Some((cached.ptr, cached.lo, cached.hi));
+    }
+    if spec.write {
+        // A store needs every byte of its span overlay-written (dirty), which
+        // the bytes around an aligned power-of-two span rarely are: try spans
+        // that reach forward from the anchor (and a little back), larger
+        // first, inside the anchor's page.
+        let page_lo = a & !(crate::mem::PAGE_SIZE as u32 - 1);
+        let page_hi = page_lo as u64 + crate::mem::PAGE_SIZE as u64;
+        for (back, fwd) in DYN_LADDER {
+            let lo = a.saturating_sub(back).max(page_lo);
+            let hi = (a as u64 + fwd as u64).min(page_hi);
+            if hi < a as u64 + 4 || !nw_plain(lo as i64, hi as i64 - 1) {
+                continue;
+            }
+            if let Some(ptr) = window_ptr(&mut s.mem, cache, spec, lo, hi) {
+                return Some((ptr, lo, hi));
+            }
+        }
     }
     let mut len = crate::mem::PAGE_SIZE as u32;
     loop {
@@ -1411,6 +1453,14 @@ pub fn run_cfg(
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
             return Err(Decline::Window);
         };
+        if let Some(a) = spec.dynamic_anchor
+            && SHAPE_LOG.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            eprintln!(
+                "fast: dynamic window {w}: anchor r{a} = {:#x}: {lo:#x}..{hi:#x}",
+                s.r[a as usize].b
+            );
+        }
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);

@@ -539,6 +539,10 @@ fn fast_bench(args: &[String]) {
                 .unwrap_or_else(|| panic!("no block at {pc:X}"));
             let light = Light::save(&e.s);
             let mut fe = FastEngine::new(Box::<sharc_fast_cl::ClBackend>::default(), &[pc]);
+            if sharc_native::fast::blocktrans_roots().contains(&pc) {
+                // SHARC_BLOCKTRANS names PC: a block-translator cluster root.
+                fe = fe.with_clusters(&[pc]);
+            }
             // Build and check it runs from the captured state.
             let built = call_region_with(&mut e, |s| prof_run(&mut fe, s, pc, 0));
             assert!(
@@ -1034,6 +1038,7 @@ fn fast_guard_check() {
         mode1: 0,
         flag_v: false,
         approx_recips: false,
+        guarded_dyn: false,
     };
     let mut lower = Lower::new(env, Plan::default(), 2);
     let static_addr = lower.ci(0x20_0000);

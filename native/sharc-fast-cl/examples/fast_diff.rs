@@ -1641,7 +1641,16 @@ fn rand_word(r: &mut Rng) -> u32 {
 fn inject(e: &mut Engine, seed: u64, what: &mut String) {
     let mut r = Rng(seed | 1);
     for _ in 0..1 + r.below(3) {
-        match r.below(4) {
+        match r.below(5) {
+            4 => {
+                // A small integer in a data register: the modifier a loop
+                // body loads from it reaches the words around its own
+                // window (guarded dynamic windows, aliasing static ones).
+                let c = [0usize, 1, 2, 14, 15][r.below(5) as usize];
+                let v = r.below(24);
+                e.s.r[c] = V::c(v as Int);
+                what.push_str(&format!(" r{c}={v}"));
+            }
             3 => {
                 // Flip flag bits, so conditions and branches go the other
                 // way (the known mask stays as it is).
@@ -1664,7 +1673,13 @@ fn inject(e: &mut Engine, seed: u64, what: &mut String) {
                 let ic = [17usize, 18, 19, 20, 21, 22, 28][r.below(7) as usize];
                 let base = e.s.r[ic].b;
                 let a = base.wrapping_add(4 * r.below(80));
-                let v = rand_word(&mut r);
+                // Half of them small integers: a modifier register loaded
+                // from this word reaches the words around its own window.
+                let v = if r.chance(2) {
+                    r.below(24)
+                } else {
+                    rand_word(&mut r)
+                };
                 let ca = e.s.mem.canonical_of(a);
                 for b in 0..4 {
                     e.s.mem.write_byte(ca + b, (v >> (8 * b)) as u8);
@@ -1823,6 +1838,8 @@ fn region(args: &[String]) {
     let dir = &args[1];
     let pc = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("pc");
     let check_windows = args.iter().any(|a| a == "--check-windows");
+    // `--cluster`: PC is a block-translator cluster root (`SHARC_BLOCKTRANS`).
+    let cluster = args.iter().any(|a| a == "--cluster");
     sharc_native::fast::glue::set_window_check(check_windows);
     let backend_name = flag(args, "--backend")
         .unwrap_or(if check_windows { "interp" } else { "cl" })
@@ -1928,7 +1945,11 @@ fn region(args: &[String]) {
                 if mode == Mode::Fast {
                     e.dispatch = Dispatch::default();
                 }
-                let fe = Rc::new(RefCell::new(FastEngine::new(backend(&backend_name), &[pc])));
+                let mut fast = FastEngine::new(backend(&backend_name), &[pc]);
+                if cluster {
+                    fast = fast.with_clusters(&[pc]);
+                }
+                let fe = Rc::new(RefCell::new(fast));
                 e.set_fast(Some(Box::new(Shared(fe.clone()))));
                 (e, Some(fe))
             }
