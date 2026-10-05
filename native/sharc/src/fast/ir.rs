@@ -115,6 +115,13 @@ pub enum Op {
         base: Val,
         off: Val,
     },
+    /// Zero-extending 8-bit (`bytes` 1) or 16-bit (`bytes` 2) load at
+    /// `base + zext(off)` (little endian, any alignment).
+    LoadN {
+        base: Val,
+        off: Val,
+        bytes: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -127,6 +134,14 @@ pub enum Inst {
         base: Val,
         off: Val,
         v: Val,
+    },
+    /// Store of the low 8 (`bytes` 1) or 16 (`bytes` 2) bits of `v` at
+    /// `base + zext(off)` (little endian, any alignment).
+    StoreN {
+        base: Val,
+        off: Val,
+        v: Val,
+        bytes: u8,
     },
     StCtx32 {
         off: u32,
@@ -231,7 +246,11 @@ pub const CTX_WIN_EXT: u32 = CTX_WIN_CHECK + 8;
 /// `[lo, hi)` extent; a non-zero length also represents a span ending at
 /// 2^32, which cannot be represented by a u32 exclusive high endpoint.
 pub const CTX_WIN_DYN_LEN: u32 = CTX_WIN_EXT + 8 * MAX_WIN;
-pub const CTX_SIZE: u32 = (CTX_WIN_DYN_LEN + 4 * MAX_WIN + 7) & !7;
+/// The run-time target of an indirect delayed jump a cluster kernel ran (the
+/// compiler's return): the exit address of a `cfg::DYN_PC` site and the
+/// target of a pending jump of a dynamic delay slot exit.
+pub const CTX_DYNPC: u32 = CTX_WIN_DYN_LEN + 4 * MAX_WIN;
+pub const CTX_SIZE: u32 = (CTX_DYNPC + 4 + 7) & !7;
 
 /// Context offsets of register-like kernel inputs/outputs: UREG codes below
 /// `NREGS` (R, I, M), then the pseudo registers (code `NREGS + i`).
@@ -454,6 +473,18 @@ impl Kernel {
                                 }
                                 Ty::I32
                             }
+                            Op::LoadN { base, off, bytes } => {
+                                if !use_ok(base) || !use_ok(off) {
+                                    return err("operand not defined");
+                                }
+                                if ty(base) != Some(Ty::I64)
+                                    || ty(off) != Some(Ty::I32)
+                                    || !matches!(bytes, 1 | 2)
+                                {
+                                    return err("load operand types");
+                                }
+                                Ty::I32
+                            }
                         };
                         if got != want {
                             return err("result type");
@@ -477,6 +508,18 @@ impl Kernel {
                         if ty(base) != Some(Ty::I64)
                             || ty(off) != Some(Ty::I32)
                             || ty(v) != Some(Ty::I32)
+                        {
+                            return err("store operand types");
+                        }
+                    }
+                    Inst::StoreN { base, off, v, bytes } => {
+                        if !use_ok(base) || !use_ok(off) || !use_ok(v) {
+                            return err("operand not defined");
+                        }
+                        if ty(base) != Some(Ty::I64)
+                            || ty(off) != Some(Ty::I32)
+                            || ty(v) != Some(Ty::I32)
+                            || !matches!(bytes, 1 | 2)
                         {
                             return err("store operand types");
                         }
@@ -564,12 +607,43 @@ pub trait CompiledKernel {
     /// to the `St` the region was built for, valid for reads and writes of
     /// the offsets the kernel names (`st_reg_b`).
     unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32;
+    /// Does the kernel check its `EntryChecks` first and return
+    /// `RUN_ENTRY_FAILED` (touching nothing) when they do not hold?
+    fn checks_entry(&self) -> bool {
+        false
+    }
+}
+
+/// `CompiledKernel::run`'s return value of a kernel that found its entry
+/// checks failing: no state was read for effect or written.
+pub const RUN_ENTRY_FAILED: u32 = 2;
+
+/// Conditions on the engine state a kernel can check itself before doing
+/// anything (lean entry contract, `fast::lean`): the registers' known-masks
+/// and masked 64-bit compares of register words.
+#[derive(Clone, Debug, Default)]
+pub struct EntryChecks {
+    /// Byte offsets (from `St`) of the 32-bit known-masks that must be all
+    /// ones.
+    pub known_m: Vec<u32>,
+    /// `(offset, mask, want)`: the 64 bits at `offset` satisfy
+    /// `word & mask == want`.
+    pub words: Vec<(u32, u64, u64)>,
 }
 
 /// A kernel compiler (the reference interpreter, Cranelift, later wasm).
 pub trait KernelBackend {
     fn name(&self) -> &'static str;
     fn compile(&mut self, k: &Kernel) -> Result<Box<dyn CompiledKernel>, String>;
+    /// As `compile`, with the kernel checking ENTRY first when the backend
+    /// supports it (`CompiledKernel::checks_entry`); else the plain kernel.
+    fn compile_checked(
+        &mut self,
+        k: &Kernel,
+        _entry: &EntryChecks,
+    ) -> Result<Box<dyn CompiledKernel>, String> {
+        self.compile(k)
+    }
 }
 
 // -- serialisation (the plug-in boundary) ----------------------------------------
@@ -680,11 +754,17 @@ impl Kernel {
                             Op::Bin(b, x, y) => w.extend([8, bin_code(b), x, y]),
                             Op::Select(c, a, b) => w.extend([9, c, a, b]),
                             Op::Load32 { base, off } => w.extend([10, base, off]),
+                            Op::LoadN { base, off, bytes } => {
+                                w.extend([12, base, off, bytes as u32])
+                            }
                             Op::St32(o) => w.extend([11, o]),
                         }
                     }
                     Inst::Set(v, x) => w.extend([1, v.0, x]),
                     Inst::Store32 { base, off, v } => w.extend([2, base, off, v]),
+                    Inst::StoreN { base, off, v, bytes } => {
+                        w.extend([11, base, off, v, bytes as u32])
+                    }
                     Inst::StCtx32 { off, v } => w.extend([3, off, v]),
                     Inst::Guard { ok, k, exit } => w.extend([4, ok, k, exit]),
                     Inst::GuardAny { a, b, k, exit } => w.extend([5, a, b, k, exit]),
@@ -757,6 +837,11 @@ impl Kernel {
                                 off: next()?,
                             },
                             11 => Op::St32(next()?),
+                            12 => Op::LoadN {
+                                base: next()?,
+                                off: next()?,
+                                bytes: next()? as u8,
+                            },
                             o => return Err(format!("bad op {o}")),
                         };
                         Inst::Def(d, op)
@@ -795,6 +880,12 @@ impl Kernel {
                     10 => Inst::StSt32 {
                         off: next()?,
                         v: next()?,
+                    },
+                    11 => Inst::StoreN {
+                        base: next()?,
+                        off: next()?,
+                        v: next()?,
+                        bytes: next()? as u8,
                     },
                     t => return Err(format!("bad inst {t}")),
                 };

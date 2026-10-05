@@ -38,6 +38,9 @@ impl Lower {
         let dst = d.field("dstureg").ok_or(Refuse("move dst".into()))? as u32;
         let v = self.rd_bits(src)?;
         self.wr(dst, v)?;
+        if src < 48 && dst < 48 {
+            self.moves.push((dst as u8, src as u8));
+        }
         if d.form == "5a_move" {
             let field = d.compute().ok_or(Refuse("5a compute".into()))?;
             self.compute_full(field)?;
@@ -125,6 +128,12 @@ impl Lower {
             }
             (0, 0xa1) => self.falu_pass(rn, rx),
             (0, 0xb0) => self.falu_abs(rn, rx),
+            (0, 0x30) => {
+                let a = self.rd_i(rx)?;
+                self.ialu_abs(rn, a)
+            }
+            (0, 0xe1) => self.falu_minmax(rn, rx, ry, false),
+            (0, 0xe2) => self.falu_minmax(rn, rx, ry, true),
             (0, 0xe3) => self.falu_clip(rn, rx, ry),
             (0, 0x8a) => self.falu_compare(rx, ry),
             (0, 0xc1) => self.falu_logb(rn, rx),

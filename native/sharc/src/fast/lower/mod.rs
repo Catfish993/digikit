@@ -15,6 +15,7 @@
 //! every access known, which is what lets the memory windows be checked
 //! once per call instead of once per access.
 
+pub mod callret;
 pub mod cond;
 pub mod fixed_alu;
 pub mod float_alu;
@@ -25,6 +26,7 @@ pub mod move_misc;
 pub mod mult;
 pub mod multifn;
 pub mod shift;
+pub mod sysops;
 
 use super::cfg::Site;
 use super::decode_view::Dec;
@@ -196,6 +198,14 @@ pub struct Plan {
     pub loop_back_seen: Vec<bool>,
     /// The flag-writer kinds of each group in the region (bit per id).
     pub flag_kinds: [u32; 3],
+    /// Index registers (bit per UREG code) the region writes with a plain
+    /// move (CJUMP, RFRAME), not as a circular update: their circular buffer
+    /// (`circ_range`) says nothing about the value.
+    pub plain: u64,
+    /// CFG kernels: the register ranges flowing into each call target that
+    /// lies before its caller (see `Structure::call_targets`), as the
+    /// previous pass saw them.
+    pub entry_abs: std::collections::HashMap<u32, Vec<Option<Abs>>>,
 }
 
 impl Default for Plan {
@@ -209,6 +219,8 @@ impl Default for Plan {
             loop_stride: Vec::new(),
             loop_back_seen: Vec::new(),
             flag_kinds: [0; 3],
+            plain: 0,
+            entry_abs: Default::default(),
         }
     }
 }
@@ -235,6 +247,19 @@ pub struct Env {
     pub flag_v: bool,
     /// `cfg.approx_recips`: the recips seed is a numeric value (else unknown).
     pub approx_recips: bool,
+    /// Block-translator clusters (`SHARC_BLOCKTRANS`): a pre-modify load or
+    /// store whose modifier register has no known range, through an index
+    /// register that is an unchanged entry anchor, is lowered with a dynamic
+    /// guarded window (`Lower::dynamic_window`) instead of being refused.
+    pub guarded_dyn: bool,
+    /// `cfg.bank_model`: a MODE1 write starts a delayed bank selection, which
+    /// the kernel does not model (`sysops`).
+    pub bank_model: bool,
+    /// ASTATX bits 31:24 are all known at build time. A compare's CACC
+    /// history is then shifted exactly (`Req::FlagsKnown(u32::MAX)`);
+    /// otherwise the kernel is made for unknown history bits
+    /// (`Req::CaccUnknown`), which the generic core's compare forgets.
+    pub cacc_known: bool,
 }
 
 /// Registers the lowering tracks: R, I, M and the pseudo registers (the
@@ -245,7 +270,7 @@ pub const NALL: usize = (NREGS + NPSEUDO) as usize;
 #[derive(Default)]
 struct Pending {
     writes: Vec<(u8, Val)>,
-    stores: Vec<(Val, Val, Val)>,
+    stores: Vec<(Val, Val, Val, u8)>,
     flag: Option<(FlagKind, Vec<Val>)>,
     /// A second flag writer of the same instruction (multifunction: the
     /// ALU and the multiplier both write flags).
@@ -260,6 +285,14 @@ pub struct Lower {
     pub lw: [Option<cond::LastW>; 3],
     /// The writer kinds seen so far (bit per id), for the next pass.
     pub flag_kinds_out: [u32; 3],
+    /// `Plan::plain` as this pass found it.
+    pub plain_out: u64,
+    /// The instruction being lowered is followed in the kernel by nothing
+    /// that reads the registers it writes (RFRAME before the exit of a
+    /// return): its plain writes of index registers need no circular range.
+    pub tail_write: bool,
+    /// The ranges that flowed into the call targets in this pass.
+    pub entry_abs_out: std::collections::HashMap<u32, Vec<Option<Abs>>>,
     pub val_ty: Vec<Ty>,
     pub abs: Vec<Option<Abs>>,
     pub vars: Vec<Ty>,
@@ -271,6 +304,15 @@ pub struct Lower {
     cur: Vec<Option<Val>>,
     /// Registers written so far in this iteration.
     written_iter: Vec<bool>,
+    /// The register whose entry value a register's value is that value moved
+    /// and post-modified (None once something else was written to it): the
+    /// anchor to resolve a guarded window from. A hint for choosing the
+    /// anchor, never a proof (every guarded access is checked).
+    pub hint: Vec<Option<u8>>,
+    /// Index registers the current instruction post-modifies by themselves.
+    self_update: Vec<u8>,
+    /// Register moves (destination, source) of the current instruction.
+    pub moves: Vec<(u8, u8)>,
     pub reqs: Vec<Req>,
     pub wins: Vec<WinSpec>,
     win_vals: Vec<Val>,
@@ -320,6 +362,24 @@ pub struct Lower {
     /// A compare op was lowered: the CACC history is tracked in a pseudo
     /// register (`compare_flag`) and the entry ASTATX must be fully known.
     pub has_compare: bool,
+    /// CFG kernels with kernel flags: the multiplier flags a short multiply
+    /// forgot on some path to here (`MULT_MASK` or 0), the addresses of the
+    /// forgetting writers and of the compares, whether a compare was lowered
+    /// after a forget on some path, and the address ranges that can repeat
+    /// (backward branches and loops). `finish` refuses a compare that can
+    /// follow a forget (`compare_flag`).
+    pub fg_static: u32,
+    pub forget_pcs: Vec<u32>,
+    pub compare_pcs: Vec<u32>,
+    pub cmp_after_forget: bool,
+    pub cycles: Vec<(u32, u32)>,
+    /// `sysops`: the next instruction may be lowered as the second half of a
+    /// MODE1 write pair (set by `flow` for a straight-line successor), the
+    /// exit site the pair's second instruction reports (the state before the
+    /// write), and the one the write has armed for the next instruction.
+    pub bank_next_ok: bool,
+    pub bank_site: Option<(u32, u32)>,
+    pub bank_site_next: Option<(u32, u32)>,
 }
 
 /// A kernel variable that is not a register: loaded from the context in
@@ -357,6 +417,9 @@ impl Lower {
             pass,
             lw: [None; 3],
             flag_kinds_out: [0; 3],
+            plain_out: 0,
+            tail_write: false,
+            entry_abs_out: Default::default(),
             val_ty: Vec::new(),
             abs: Vec::new(),
             vars: Vec::new(),
@@ -365,6 +428,9 @@ impl Lower {
             regs: vec![RegInfo::default(); NALL],
             cur: vec![None; NALL],
             written_iter: vec![false; NALL],
+            hint: (0..NALL).map(|c| (c < NREGS as usize).then_some(c as u8)).collect(),
+            self_update: Vec::new(),
+            moves: Vec::new(),
             reqs: Vec::new(),
             wins: Vec::new(),
             win_vals: Vec::new(),
@@ -396,6 +462,14 @@ impl Lower {
             extras: Vec::new(),
             cfgx: None,
             has_compare: false,
+            fg_static: 0,
+            forget_pcs: Vec::new(),
+            compare_pcs: Vec::new(),
+            cmp_after_forget: false,
+            cycles: Vec::new(),
+            bank_next_ok: false,
+            bank_site: None,
+            bank_site_next: None,
         };
         l.var_abs = (0..NREGS as usize).map(|c| l.init_abs(c)).collect();
         l
@@ -570,11 +644,13 @@ impl Lower {
         let Some(x) = self.cfgx.as_mut() else {
             return self.idx;
         };
+        let (pc, off) = self.bank_site.unwrap_or((x.pc, x.nblock));
         let site = Site {
-            pc: x.pc,
-            off: x.nblock,
+            pc,
+            off,
             active: x.active.clone(),
             pending: x.pending,
+            ret: 0,
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -585,12 +661,18 @@ impl Lower {
 
     /// A site with an explicit address (a branch to a pc, a stop).
     pub fn site_at(&mut self, pc: u32, off: u32, active: Vec<u16>) -> u32 {
+        self.site_ret(pc, off, active, 0)
+    }
+
+    /// `site_at` for the exit after a return instruction RET (`DYN_PC`).
+    pub fn site_ret(&mut self, pc: u32, off: u32, active: Vec<u16>, ret: u32) -> u32 {
         let x = self.cfgx.as_mut().expect("cfg lowering");
         let site = Site {
             pc,
             off,
             active,
             pending: None,
+            ret,
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -749,7 +831,12 @@ impl Lower {
     /// of it in the body must be a wrapped update (`commit` refuses others),
     /// and `Req::Within` makes it so at entry.
     pub fn circ_range(&self, c: usize) -> Option<(u32, u32)> {
-        if self.env.circ_off || self.pass == 0 || !(16..32).contains(&c) || !self.plan.written[c] {
+        if self.env.circ_off
+            || self.pass == 0
+            || !(16..32).contains(&c)
+            || !self.plan.written[c]
+            || (self.plan.plain >> c) & 1 != 0
+        {
             return None;
         }
         let n = c - 16;
@@ -845,6 +932,22 @@ impl Lower {
     /// L != 0 it is the wrapped sum when MODE1.CBUFEN is set (and the sum when
     /// it is clear, which is not lowered).
     pub fn post_update(&mut self, ic: u32, iv: Val, delta: Val, modified: Val) -> LR<()> {
+        self.post_update_scaled(ic, iv, delta, modified, 4)
+    }
+
+    /// `post_update` for an access of SCALE bytes per modifier unit (4 normal
+    /// word, 2 short word, 1 byte): the interpreter scales L by the same
+    /// factor (`_post_modify_index`'s `scaled_length`).
+    pub fn post_update_scaled(
+        &mut self,
+        ic: u32,
+        iv: Val,
+        delta: Val,
+        modified: Val,
+        scale: i64,
+    ) -> LR<()> {
+        self.self_update.push(ic as u8);
+        self.no_plain_circ(ic)?;
         if self.env.circ_off {
             self.require_linear(ic)?;
             return self.wr_i(ic, modified);
@@ -865,7 +968,7 @@ impl Lower {
             // Pass 0 only finds which registers are written.
             return self.wr_i(ic, modified);
         }
-        let (base, lenb, d) = self.circ_params(ic, 4, delta)?;
+        let (base, lenb, d) = self.circ_params(ic, scale, delta)?;
         self.mode1_mask |= MODE1_CBUFEN;
         let new = self.wrap_add(iv, delta, d, base, lenb)?;
         self.wr_i(ic, new)
@@ -889,6 +992,8 @@ impl Lower {
         scale: i64,
         unsigned: bool,
     ) -> LR<()> {
+        self.note_modify(src, dst);
+        self.no_plain_circ(src)?;
         if self.env.circ_off {
             self.require_linear(src)?;
             self.require_linear(dst)?;
@@ -913,6 +1018,30 @@ impl Lower {
         self.wr_i(dst, new)
     }
 
+    /// `dst = modify(src, ..)`: the anchor hint follows the index value
+    /// (`hint`): kept for an update in place, copied for another destination.
+    pub fn note_modify(&mut self, src: u32, dst: u32) {
+        if src == dst {
+            self.self_update.push(dst as u8);
+        } else {
+            self.moves.push((dst as u8, src as u8));
+        }
+    }
+
+    /// A circular update through index register IC needs its entry value in
+    /// the buffer (`Req::Within`); a register the region also writes with a
+    /// plain move has no such value, so the update is not lowered when the
+    /// register has a circular buffer at all.
+    fn no_plain_circ(&self, ic: u32) -> LR<()> {
+        if ((self.plan.plain | self.plain_out) >> ic) & 1 != 0
+            && !self.env.circ_off
+            && self.env.dag_l[(ic - 16) as usize] != Some(0)
+        {
+            return refuse("circular update of an index register that is also written plainly");
+        }
+        Ok(())
+    }
+
     /// A requirement that register CODE has exactly value K.
     pub fn require_eq(&mut self, code: u32, k: u32) {
         let r = Req::Eq(code as u8, k);
@@ -933,6 +1062,9 @@ impl Lower {
 
     /// The register's current value (before the instruction), as a typed Val.
     fn rd(&mut self, code: u32) -> LR<Val> {
+        if code >= NREGS {
+            return self.rd_sys(code);
+        }
         let c = self.check_code(code)?;
         if let Some(k) = self.baked(c) {
             if !self.reqs.contains(&Req::Eq(c as u8, k)) {
@@ -958,12 +1090,14 @@ impl Lower {
     }
 
     pub fn rd_i(&mut self, code: u32) -> LR<Val> {
+        self.check_code(code)?;
         let v = self.rd(code)?;
         self.regs[code as usize].i_uses += 1;
         Ok(self.to_i(v))
     }
 
     pub fn rd_f(&mut self, code: u32) -> LR<Val> {
+        self.check_code(code)?;
         let v = self.rd(code)?;
         self.regs[code as usize].f_uses += 1;
         Ok(self.to_f(v))
@@ -995,7 +1129,12 @@ impl Lower {
     }
 
     pub fn pend_store(&mut self, base: Val, off: Val, v: Val) {
-        self.pending.stores.push((base, off, v));
+        self.pending.stores.push((base, off, v, 4));
+    }
+
+    /// A store of the low BYTES (1, 2 or 4) bytes of V.
+    pub fn pend_store_n(&mut self, base: Val, off: Val, v: Val, bytes: u8) {
+        self.pending.stores.push((base, off, v, bytes));
     }
 
     pub fn pend_flag(&mut self, kind: FlagKind, srcs: Vec<Val>) {
@@ -1065,14 +1204,29 @@ impl Lower {
     /// A read-only dynamic window anchored by an independently known index
     /// register.  The host selects one present, normal-word-plain subspan at
     /// entry; the caller must guard every actual address against that span
-    /// before issuing a load.  Stores intentionally have no dynamic path.
+    /// before issuing a load.
     pub fn dynamic_read_window(&mut self, addr: Val, anchor: u8) -> LR<(Val, Val, u32)> {
+        self.dynamic_window(addr, anchor, false)
+    }
+
+    /// A dynamic window anchored by an independently known index register,
+    /// for loads and (WRITE) stores. The host selects one present (and, with
+    /// a store in the kernel, wholly overlay-written) normal-word-plain
+    /// subspan at entry; the caller guards every actual address against that
+    /// span before the access, so an address outside it leaves the kernel
+    /// before the instruction. One slot per anchor serves both directions.
+    pub fn dynamic_window(&mut self, addr: Val, anchor: u8, write: bool) -> LR<(Val, Val, u32)> {
         let w = match self
             .wins
             .iter()
             .position(|w| w.dynamic_anchor == Some(anchor))
         {
-            Some(w) => w,
+            Some(w) => {
+                if write {
+                    self.wins[w].write = true;
+                }
+                w
+            }
             None => {
                 if self.wins.len() as u32 >= MAX_WIN {
                     return refuse("too many windows");
@@ -1084,7 +1238,7 @@ impl Lower {
                     ts: 0,
                     nf: 0,
                     read: true,
-                    write: false,
+                    write,
                     dynamic_anchor: Some(anchor),
                 });
                 let w = self.wins.len() - 1;
@@ -1116,7 +1270,19 @@ impl Lower {
                 Ok(())
             }
             None if !self.strict() => Ok(()),
-            None => refuse("address range unknown"),
+            None => {
+                if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
+                    eprintln!(
+                        "abs: require_plain pass {} idx {} var_abs I6 {:?} I7 {:?} cur {:?}",
+                        self.pass,
+                        self.idx,
+                        self.var_abs[22],
+                        self.var_abs[23],
+                        (self.cur[22], self.cur[23])
+                    );
+                }
+                refuse("address range unknown")
+            }
         }
     }
 
@@ -1125,6 +1291,8 @@ impl Lower {
     pub fn begin_insn(&mut self, idx: u32) {
         self.idx = idx;
         self.exit_id = None;
+        self.self_update.clear();
+        self.moves.clear();
         self.pending = Pending::default();
         self.cond = None;
         self.ncond = None;
@@ -1161,8 +1329,17 @@ impl Lower {
                 }
                 None => None,
             };
-            for (b, o, v) in stores {
-                self.body.push(Inst::Store32 { base: b, off: o, v });
+            for (b, o, v, n) in stores {
+                self.body.push(if n == 4 {
+                    Inst::Store32 { base: b, off: o, v }
+                } else {
+                    Inst::StoreN {
+                        base: b,
+                        off: o,
+                        v,
+                        bytes: n,
+                    }
+                });
             }
             if let Some(l) = skip {
                 self.body.push(Inst::Label(l));
@@ -1186,7 +1363,7 @@ impl Lower {
                 }
                 None => v,
             };
-            if let Some((b, top)) = self.circ_range(c) {
+            if let Some((b, top)) = self.circ_range(c).filter(|_| !self.tail_write) {
                 // Every write of a circular index must keep it in its
                 // buffer (the range of the loop-carried value assumes it).
                 let inside = self.abs[v as usize].is_some_and(|a| {
@@ -1211,6 +1388,13 @@ impl Lower {
             self.regs[c].first_write.get_or_insert(self.idx);
             self.regs[c].last_float = self.ty(v) == Ty::F32;
             self.written_iter[c] = true;
+            if !self.self_update.contains(&(c as u8)) {
+                self.hint[c] = self
+                    .moves
+                    .iter()
+                    .find(|m| m.0 == c as u8)
+                    .and_then(|m| self.hint[m.1 as usize]);
+            }
             if c < 64 {
                 self.written_mask |= 1 << c;
             }
@@ -1243,6 +1427,7 @@ impl Lower {
 
     /// Lower one decoded instruction.
     pub fn lower_insn(&mut self, idx: u32, d: &Dec) -> LR<()> {
+        self.bank_site = self.bank_site_next.take();
         self.lower_insn_inner(idx, d)
             .map_err(|e| Refuse(format!("insn {idx} ({}): {}", d.form, e.0)))
     }
@@ -1275,6 +1460,9 @@ impl Lower {
             "7a" => self.form_7a(d)?,
             "5a_move" | "5b_move" => self.form_5_move(d)?,
             "17a" => self.form_17a(d)?,
+            "17b" => self.form_17b(d)?,
+            "18a" => self.form_18a(d)?,
+            "21a" | "21c" => self.form_nop()?,
             "4a" => self.form_4a(d)?,
             "4b" | "4d" => self.form_4b_4d(d)?,
             "15a" => self.form_15a(d)?,
@@ -1282,6 +1470,10 @@ impl Lower {
             "14a" => self.form_14a(d)?,
             "19a" | "19a_scaled" => self.form_19a(d)?,
             "7b" => self.form_7b(d)?,
+            // The call and return sequence of the stack-model firmware, in
+            // cluster kernels only.
+            "16a" if self.env.guarded_dyn => self.form_16a(d)?,
+            "25c_rframe" if self.env.guarded_dyn => self.form_25c()?,
             other => return refuse(format!("form {other}")),
         }
         self.commit()
@@ -1358,6 +1550,9 @@ impl Lower {
                 match c as u32 {
                     c if c < NREGS => pre.push(Inst::Def(li, Op::St32(st_reg_b(c)))),
                     PSEUDO_FB0 => pre.push(Inst::Def(li, Op::St32(st_reg_b(118)))),
+                    // Not fully known ASTATX: the history is not tracked; bit 0
+                    // marks "no compare has run" (a compare clears it).
+                    PSEUDO_CACC if !self.env.cacc_known => pre.push(Inst::Def(li, Op::CI32(1))),
                     PSEUDO_CACC => {
                         let a = self.new_val(Ty::I32, None);
                         pre.push(Inst::Def(a, Op::St32(st_reg_b(118))));
@@ -1412,27 +1607,47 @@ impl Lower {
         if self.forget_mask & self.read_mask != 0 {
             return refuse("a condition reads a flag that a writer in the region forgets");
         }
+        let cacc_unknown = self.has_compare && !self.env.cacc_known;
         let mut reqs = std::mem::take(&mut self.reqs);
-        if self.has_compare {
+        if cacc_unknown {
+            // ASTATX is not fully known at entry, so the generic core's
+            // compare forgets CACC (bits 31:24) whatever the region does
+            // before: nothing to shift, no refusal for a forgetting writer.
+            reqs.push(Req::CaccUnknown);
+        } else if self.has_compare {
             // The CACC shift register is exact only while ASTATX is fully
             // known before each compare (`values._apply_flag_update`): known
             // at entry, and no writer in the region forgets bits.
             if self.flags.iter().any(|w| w.kind == FlagKind::FmulForget)
                 || self.flag_kinds_out[1] >> FlagKind::FmulForget.group_id().1 & 1 != 0
             {
-                return refuse("compare next to a flag-forgetting multiply");
+                // A compare ahead of every forget is exact: ASTATX is fully
+                // known when it runs (the entry requirement below), so the
+                // history shifts as the core's does, and a later forget
+                // leaves CACC alone. In a kernel with kernel flags the order
+                // is known along the paths (`fg_static`) and the cycles.
+                if !(self.cfg_shape && self.flag_v()) {
+                    return refuse("compare next to a flag-forgetting multiply");
+                }
+                let in_cycle = self.cycles.iter().any(|&(lo, hi)| {
+                    let inside = |p: &&u32| (lo..=hi).contains(*p);
+                    self.forget_pcs.iter().any(|p| inside(&p))
+                        && self.compare_pcs.iter().any(|p| inside(&p))
+                });
+                if self.cmp_after_forget || in_cycle {
+                    return refuse("compare after a flag-forgetting multiply");
+                }
             }
             reqs.push(Req::FlagsKnown(u32::MAX));
         }
         if self.need_flags_known != 0 {
             reqs.push(Req::FlagsKnown(self.need_flags_known));
         }
-        // Float rounding: TRUNCATE (bit 15) must stay clear; ALUSAT (bit 13)
-        // is part of the requirement when a condition reads it.
+        // Float rounding: TRUNCATE (bit 15) is part of every requirement (the
+        // core models it only in `fix`, `falu_fix`; every other float op
+        // rounds to nearest in either mode); ALUSAT (bit 13) is part of the
+        // requirement when a condition reads it.
         let mode1_mask = self.mode1_mask | (1 << 15);
-        if self.env.mode1 & (1 << 15) != 0 {
-            return refuse("MODE1.TRUNCATE set");
-        }
         reqs.push(Req::Mode1 {
             mask: mode1_mask,
             value: self.env.mode1 & mode1_mask,
@@ -1444,6 +1659,8 @@ impl Lower {
             loop_stride: std::mem::take(&mut self.loop_stride_out),
             loop_back_seen: std::mem::take(&mut self.loop_back_seen_out),
             flag_kinds: self.flag_kinds_out,
+            plain: self.plain_out | self.plan.plain,
+            entry_abs: std::mem::take(&mut self.entry_abs_out),
             ..Plan::default()
         };
         for c in 0..NREGS as usize {
@@ -1477,6 +1694,7 @@ impl Lower {
             flag_v,
             flag_groups,
             cacc: self.has_compare,
+            cacc_unknown,
             wins: self.wins,
             flags: self.flags,
             stored,
@@ -1492,6 +1710,8 @@ pub struct Lowered {
     pub flag_groups: [bool; 3],
     /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
     pub cacc: bool,
+    /// See `Region::cacc_unknown`.
+    pub cacc_unknown: bool,
     pub kernel: Kernel,
     pub regs: Vec<RegInfo>,
     pub reqs: Vec<Req>,
@@ -1542,6 +1762,9 @@ mod tests {
             mode1: 0,
             flag_v: false,
             approx_recips: false,
+            guarded_dyn: false,
+            bank_model: false,
+            cacc_known: true,
         }
     }
 
@@ -1556,5 +1779,20 @@ mod tests {
         assert_eq!(l.wins[0].dynamic_anchor, Some(18));
         assert_eq!(l.wins[1].dynamic_anchor, None);
         assert!(l.wins[1].write);
+    }
+
+    #[test]
+    fn dynamic_window_serves_loads_and_stores_in_one_slot() {
+        let mut l = Lower::new(env(), Plan::default(), 2);
+        let addr = l.ci(0x20_0000);
+        l.dynamic_window(addr, 18, false).unwrap();
+        assert!(!l.wins[0].write);
+        l.dynamic_window(addr, 18, true).unwrap();
+        l.dynamic_read_window(addr, 18).unwrap();
+        assert_eq!(l.wins.len(), 1);
+        assert!(l.wins[0].read && l.wins[0].write);
+        // Another anchor gets its own slot.
+        l.dynamic_window(addr, 19, true).unwrap();
+        assert_eq!(l.wins.len(), 2);
     }
 }

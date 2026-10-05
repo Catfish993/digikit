@@ -101,6 +101,39 @@ impl Lower {
         self.float_result(rn, r)
     }
 
+    /// RN = fmax / fmin (FX, FY) (`floats._float_max` / `_float_min`): FX
+    /// when it is strictly larger (smaller) than FY, else FY; both zero
+    /// (either sign) gives +0 for max and -0 for min. The operands are bit
+    /// patterns the core compares as binary64, which orders every f32 value
+    /// (denormals and infinities included) as the f32 compare does; the
+    /// result is one of the operands or the signed zero, so it needs no
+    /// finite check. A NaN operand (all-ones result, AI) exits.
+    pub fn falu_minmax(&mut self, rn: u32, rx: u32, ry: u32, max: bool) -> LR<()> {
+        let a = self.rd_f(rx)?;
+        let b = self.rd_f(ry)?;
+        self.guard_not_nan(a);
+        self.guard_not_nan(b);
+        let pick_a = if max {
+            self.bin(Bin::FLt, b, a)
+        } else {
+            self.bin(Bin::FLt, a, b)
+        };
+        let abits = self.to_i(a);
+        let bbits = self.to_i(b);
+        let both = self.bin(Bin::Or, abits, bbits);
+        let m = self.ci(0x7fff_ffff);
+        let mag = self.bin(Bin::And, both, m);
+        let z = self.ci(0);
+        let both_zero = self.bin(Bin::Eq, mag, z);
+        let picked = self.select(pick_a, abits, bbits);
+        let zero = self.ci(if max { 0 } else { 0x8000_0000 });
+        let rbits = self.select(both_zero, zero, picked);
+        let r = self.to_f(rbits);
+        self.wr_f(rn, r)?;
+        self.pend_flag(FlagKind::Falu, vec![r]);
+        Ok(())
+    }
+
     /// comp(FX, FY): flags only; a NaN operand exits.
     pub fn falu_compare(&mut self, rx: u32, ry: u32) -> LR<()> {
         let a = self.rd_f(rx)?;
@@ -229,16 +262,12 @@ impl Lower {
 
     /// RN = fix / trunc FX [by RY]. FX must be zero or normal and the scaled
     /// value below 2^31 in magnitude. `trunc` rounds toward zero; `fix`
-    /// rounds to nearest (every region requires MODE1.TRUNCATE clear).
+    /// rounds to nearest, or toward zero when MODE1.TRUNCATE is set.
     pub fn falu_fix(&mut self, rn: u32, rx: u32, by: Option<u32>, trunc: bool) -> LR<()> {
-        let truncate = if trunc {
-            true
-        } else {
-            // Every region requires MODE1.TRUNCATE (bit 15) clear at entry
-            // (`finish`), so `fix` rounds to nearest.
-            self.mode1_mask |= 1 << 15;
-            false
-        };
+        // `fix` follows MODE1.TRUNCATE (`floats._float_to_fixed`): the bit is
+        // a translation-time constant (`Env::mode1`) that every region
+        // requires at entry (`finish`).
+        let truncate = trunc || self.env.mode1 & (1 << 15) != 0;
         let x = self.rd_f(rx)?;
         let xb = self.to_i(x);
         let sh = match by {
@@ -290,10 +319,6 @@ impl Lower {
         if !self.env.approx_recips {
             return refuse("recips without approx_recips");
         }
-        if self.flag_v() {
-            // Recips leaves AF as it was: not a whole-group writer.
-            return refuse("recips in a region with kernel flags");
-        }
         let x = self.rd_f(rx)?;
         let xb = self.to_i(x);
         let e = self.exp_field(xb);
@@ -309,7 +334,16 @@ impl Lower {
         let seed = self.bin(Bin::And, qb, keep);
         let r = self.to_f(seed);
         self.wr_f(rn, r)?;
-        self.pend_flag(FlagKind::Recips, vec![xb]);
+        if self.flag_v() {
+            // Recips leaves AF as it was, so it is not a whole-group writer:
+            // the kernel records the AF it found (known at entry or from the
+            // writers before, `af_mask`) with the input, and the writer
+            // defines all the ALU bits (`FlagKind::RecipsAf`).
+            let af = self.af_mask();
+            self.pend_flag(FlagKind::RecipsAf, vec![xb, af]);
+        } else {
+            self.pend_flag(FlagKind::Recips, vec![xb]);
+        }
         Ok(())
     }
 }

@@ -23,6 +23,7 @@ pub mod decode_view;
 pub mod glue;
 pub mod interp;
 pub mod ir;
+pub mod lean;
 pub mod lower;
 pub mod plugin;
 pub mod region;
@@ -88,10 +89,18 @@ pub enum FlagKind {
     /// input); AF unchanged. It defines only part of the ALU group, so a
     /// kernel that tracks flags lazily (one last writer per group) refuses it.
     Recips,
+    /// Fixed abs (source: the input): AC AV AN AZ of `0 - x` for a negative
+    /// input and of `0 + x` otherwise, AS = the input's sign, AI AF cleared.
+    Iabs,
+    /// recips in a kernel that tracks flags lazily (sources: the input and
+    /// the AF bit, as the AF mask or 0, that the instruction found): the
+    /// bits of `Recips`, with AF written back as it was, so that the group's
+    /// last writer alone defines every ALU bit.
+    RecipsAf,
 }
 
 /// The largest writer id within a flag group (`FlagKind::group_id`).
-pub const MAX_FLAG_ID: u32 = 10;
+pub const MAX_FLAG_ID: u32 = 12;
 
 impl FlagKind {
     /// The flag group the writer belongs to and its id there (1..=4), as the
@@ -108,6 +117,8 @@ impl FlagKind {
             FlagKind::Compare { float: false } => (0, 8),
             FlagKind::Compare { float: true } => (0, 9),
             FlagKind::Recips => (0, 10),
+            FlagKind::Iabs => (0, 11),
+            FlagKind::RecipsAf => (0, 12),
             FlagKind::Fmul => (1, 1),
             FlagKind::FmulForget => (1, 2),
             FlagKind::Shift { sv: false } => (2, 1),
@@ -132,6 +143,8 @@ impl FlagKind {
             (0, 8) => FlagKind::Compare { float: false },
             (0, 9) => FlagKind::Compare { float: true },
             (0, 10) => FlagKind::Recips,
+            (0, 11) => FlagKind::Iabs,
+            (0, 12) => FlagKind::RecipsAf,
             (1, 1) => FlagKind::Fmul,
             (1, 2) => FlagKind::FmulForget,
             (2, 1) => FlagKind::Shift { sv: false },
@@ -176,10 +189,22 @@ pub enum Req {
     Mode1 { mask: u32, value: u32 },
     /// The ASTATX bits in `mask` are known (a condition reads them).
     FlagsKnown(u32),
+    /// ASTATX bits 31:24 (the CACC compare history) are not all known. The
+    /// kernel was made for that state: a compare then forgets the history
+    /// (`values._apply_flag_update` shifts it only when the whole old ASTATX
+    /// is a known constant, and no instruction of a region defines CACC bits
+    /// except a compare), so there is no history to track. The counterpart of
+    /// `FlagsKnown(u32::MAX)`, which the exact-shift kernel requires.
+    CaccUnknown,
     /// The register is known and its value lies in `lo..=hi` (unsigned): an
     /// index register inside its circular buffer, which is what bounds every
     /// address the wrapped updates produce.
     Within { c: u8, lo: u32, hi: u32 },
+    /// With the bank model: the applied bank selection equals MODE1's
+    /// alternate-bank bits (`bank_active_mask == MODE1 & 0x4f8`), so that a
+    /// MODE1 write of the same value changes nothing after its two-
+    /// instruction delay (`lower::sysops`).
+    BankSync,
 }
 
 /// A memory window the region touches: the bytes
@@ -208,6 +233,13 @@ pub trait FastTier: Send {
     /// Run the region at PC if it applies. `Some(exit code)` only when at
     /// least one instruction completed; `None` leaves the state untouched.
     fn run(&mut self, s: &mut St, pc: u32) -> Option<u32>;
+    /// `run` for a kernel entered straight from another kernel's exit
+    /// (`Engine::step`'s continuation): only an already built region that
+    /// takes the state, with no builds, rebuilds or decline accounting (the
+    /// engine's own dispatch does those if this returns `None`).
+    fn run_chained(&mut self, _s: &mut St, _pc: u32) -> Option<u32> {
+        None
+    }
     /// Generated blocks call each other directly (`EXIT_CHAIN`), which would
     /// carry execution into an entry PC without passing `Engine::step`: when
     /// true the engine ends each chain at the first link, so every block
@@ -345,15 +377,43 @@ struct Slot {
     region: Option<region::Region>,
     kernel: Option<Box<dyn CompiledKernel>>,
     refused: Option<String>,
+    /// Further variants of the region (most recently replaced first): the
+    /// same entry made for other values of the state the build baked in
+    /// (MODE1 bits, constants, the CACC history), tried in turn when `region`
+    /// declines on a requirement. At most `MAX_VARIANTS - 1`.
+    alts: Vec<(region::Region, Box<dyn CompiledKernel>)>,
+    /// Calls in a row that no variant accepted (reset by any run).
+    alt_fail: u32,
     rebuilds: u32,
     transient: u32,
     /// Selected by `Auto` (dropped again on refusal or low yield).
     auto: bool,
     calls: u64,
     insns: u64,
+    cov: SlotCov,
+}
+
+/// Per-entry coverage counters (`SHARC_FAST_COV`).
+#[derive(Default)]
+struct SlotCov {
+    /// Declines by `glue::Decline` (shape, req, window, budget, exit0).
+    declined: [u64; 5],
+    /// Kernel exits by (exit pc, kind): count, insns retired by the kernel,
+    /// insns until the next fast-tier call (capped per exit).
+    exits: std::collections::BTreeMap<(u32, &'static str), [u64; 3]>,
+    /// Entry requirement failures by class.
+    decl_why: std::collections::BTreeMap<String, u64>,
 }
 
 const BLOOM_WORDS: usize = 1024;
+
+/// Variants of one entry (the current region and its alternatives), and the
+/// builds one entry may spend on new ones.
+const MAX_VARIANTS: usize = 4;
+const REBUILD_BUDGET: u32 = 16;
+/// After the build budget is spent, the alternatives are no longer tried
+/// once this many calls in a row were declined by every variant.
+const ALT_GIVE_UP: u32 = 64;
 
 /// Multiplicative hash for PC keys.
 #[derive(Default)]
@@ -389,6 +449,16 @@ pub struct FastEngine {
     cap_chain: bool,
     force_cfg: bool,
     auto: Option<Auto>,
+    /// Block-translator cluster roots (`SHARC_BLOCKTRANS`), sorted: built as
+    /// CFG regions only, with the guarded dynamic windows of the cluster
+    /// lowering (`Env::guarded_dyn`).
+    clusters: Vec<u32>,
+    /// `SHARC_FAST_COV`: coverage report lines (`cov ...`, see
+    /// `tools/blocktrans_coverage.py`); off by default.
+    cov: bool,
+    /// The last kernel exit awaiting the gap to the next fast-tier call:
+    /// (slot, exit pc, exit kind, icount at exit).
+    cov_last: Option<(usize, u32, &'static str, u64)>,
 }
 
 // SAFETY: a FastEngine is owned by one Engine and used from one thread at a
@@ -445,9 +515,34 @@ impl FastEngine {
             cap_chain: std::env::var("SHARC_FAST_CHAIN").map_or(true, |v| v != "0"),
             force_cfg: std::env::var("SHARC_FAST_SHAPE").is_ok_and(|v| v == "cfg"),
             auto: None,
+            clusters: Vec::new(),
+            cov: {
+                let on = std::env::var_os("SHARC_FAST_COV").is_some();
+                glue::set_cov(on);
+                on
+            },
+            cov_last: None,
         };
         fe.rebuild_bloom();
         fe
+    }
+
+    /// Make the entries ROOTS block-translator clusters (adding them as
+    /// entries): CFG regions with the cluster lowering (`Env::guarded_dyn`).
+    pub fn with_clusters(mut self, roots: &[u32]) -> FastEngine {
+        for &pc in roots {
+            if self.index(pc).is_none() {
+                self.lookup.insert(pc, self.pcs.len());
+                self.pcs.push(pc);
+                self.slots.push(Slot::default());
+                let (w, m) = Self::bit(pc);
+                self.bloom[w] |= m;
+            }
+        }
+        self.clusters = roots.to_vec();
+        self.clusters.sort_unstable();
+        self.clusters.dedup();
+        self
     }
 
     /// Also pick regions at run time (see `Auto`).
@@ -535,7 +630,8 @@ impl FastEngine {
         // The remaining iterations of the active DO loop that starts here,
         // else (or when that is refused) the CFG shape from this pc.
         // SHARC_FAST_SHAPE=cfg skips the loop shape (tests, comparisons).
-        let loop_try = if self.force_cfg {
+        let cluster = self.clusters.binary_search(&pc).is_ok();
+        let loop_try = if self.force_cfg || cluster {
             None
         } else {
             Some(region::build_loop(s, pc))
@@ -552,7 +648,7 @@ impl FastEngine {
                     Some(Err(e)) => Some(e),
                     _ => None,
                 };
-                match region::build_cfg(s, pc) {
+                match region::build_cfg_opts(s, pc, cluster) {
                     Ok(r) => Ok(r),
                     Err(e) => Err(match loop_err {
                         Some(l) => {
@@ -576,6 +672,9 @@ impl FastEngine {
                 if self.log {
                     eprintln!("fast: {pc:#x} refused: {}", e.0);
                 }
+                if self.cov {
+                    eprintln!("cov refused root={pc:#x} why={}", e.0);
+                }
                 self.stats.refused += 1;
                 *self.stats.reasons.entry(reason_class(&e.0)).or_default() += 1;
                 slot.refused = Some(e.0);
@@ -583,7 +682,10 @@ impl FastEngine {
             }
             Ok(mut r) => {
                 let t1 = std::time::Instant::now();
-                let k = self.backend.compile(&r.kernel);
+                let k = match &r.lean {
+                    Some(l) => self.backend.compile_checked(&r.kernel, &l.entry),
+                    None => self.backend.compile(&r.kernel),
+                };
                 self.stats.compile_ns += t1.elapsed().as_nanos() as u64;
                 match k {
                     Err(e) => {
@@ -613,6 +715,14 @@ impl FastEngine {
                                 r.within.len(),
                                 r.kernel.inst_count()
                             );
+                            if let Some(c) = &r.cfg {
+                                for (at, why) in &c.stops {
+                                    eprintln!("fast: {pc:#x} region stops at {at:#x}: {why}");
+                                }
+                            }
+                        }
+                        if self.cov {
+                            cov_built(s, pc, &r);
                         }
                         self.stats.built += 1;
                         slot.region = Some(r);
@@ -621,6 +731,28 @@ impl FastEngine {
                     }
                 }
             }
+        }
+    }
+}
+
+/// Cap on the gap (instructions) recorded after one kernel exit.
+const COV_GAP_CAP: u64 = 4096;
+
+/// `SHARC_FAST_COV`: what a built region covers and where it stops.
+fn cov_built(s: &St, pc: u32, r: &region::Region) {
+    let mut pcs: Vec<String> = r.insns.iter().map(|i| format!("{:#x}", i.pc)).collect();
+    pcs.sort();
+    eprintln!(
+        "cov built root={pc:#x} insns={} kernel_ops={} windows={} pcs={}",
+        r.len(),
+        r.kernel.inst_count(),
+        r.wins.len(),
+        pcs.join(",")
+    );
+    if let Some(c) = &r.cfg {
+        for (at, why) in &c.stops {
+            let form = region::decode_one(s, *at).map_or("undecodable", |d| d.form);
+            eprintln!("cov stop root={pc:#x} at={at:#x} form={form} why={why}");
         }
     }
 }
@@ -677,6 +809,82 @@ fn req_failure(s: &St, r: &region::Region) -> String {
     "misc (mode1/flags)".into()
 }
 
+/// `SHARC_FAST_KEYS=1` (with `SHARC_FAST_COV`): print the entry state each
+/// declined call saw (diagnostic, to pick what a variant has to key on).
+fn keys_log() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_KEYS").is_some())
+}
+
+fn state_key(s: &mut St, r: &region::Region) -> String {
+    let m1 = s.r[crate::rt::MODE1];
+    let a = s.r[118];
+    let mut out = format!("mode1={:#x}/{:#x} astatx_known={:#x}", m1.b, m1.m, a.m);
+    for q in &r.misc {
+        out += &format!(" {q:?}");
+    }
+    for &c in &r.known {
+        let v = s.r[c as usize];
+        if v.m != u32::MAX {
+            out += &format!(" known-fail r{c}={:#x}/{:#x}", v.b, v.m);
+        }
+    }
+    for &(c, k) in &r.eqs {
+        let v = s.r[c as usize];
+        if v.m != u32::MAX || v.b != k {
+            out += &format!(" eq-fail r{c} want {k:#x} have {:#x}/{:#x}", v.b, v.m);
+        }
+    }
+    // Windows at one iteration: the span and whether it resolves for the
+    // read / write it asks (diagnostic; the probe is `Mem::window`).
+        for (w, spec) in r.wins.iter().enumerate() {
+        let b = match spec.base {
+            Base::None => 0,
+            Base::Reg(c) => s.r[c as usize].b as i64,
+        };
+        let (lo, hi) = (b + spec.lo + spec.nf, b + spec.hi + spec.nf);
+        let len = (hi - lo).max(0) as u32;
+        let rd = s.mem.window(lo as u32, len, true, false).is_some();
+        let wr = s.mem.window(lo as u32, len, false, true).is_some();
+        out += &format!(
+            " win{w} {lo:#x}..{hi:#x} spec r={} w={} dyn={:?} probe r={rd} w={wr}",
+            spec.read, spec.write, spec.dynamic_anchor
+        );
+    }
+    out
+}
+
+/// Are the code words R was made from still the ones in memory? (Cached
+/// after the check while `Mem::dec_gen` stays.)
+fn verify_code(s: &St, r: &mut region::Region) -> bool {
+    if s.mem.dec_gen == r.verified_gen {
+        return true;
+    }
+    let same = r
+        .code_words
+        .iter()
+        .all(|&(at, w)| s.mem.read_sw(at).unwrap_or(0) == w);
+    if same {
+        r.verified_gen = s.mem.dec_gen;
+    }
+    same
+}
+
+/// One try of a variant: `Err` leaves the state untouched.
+#[inline(always)]
+fn run_variant(
+    s: &mut St,
+    r: &region::Region,
+    k: &dyn CompiledKernel,
+    ctx: &mut glue::Ctx,
+) -> Result<u32, glue::Decline> {
+    if r.cfg.is_some() {
+        glue::run_cfg(s, r, k, ctx)
+    } else {
+        glue::run(s, r, k, ctx)
+    }
+}
+
 fn mode1_bits(s: &St) -> u32 {
     let m = s.r[crate::rt::MODE1];
     if m.is_c() { m.b as u32 } else { u32::MAX }
@@ -715,17 +923,69 @@ impl Drop for FastEngine {
         if self.log && (self.stats.calls > 0 || self.stats.armed > 0) {
             eprintln!("{}", self.report());
         }
+        if self.cov {
+            for (pc, s) in self.pcs.iter().zip(&self.slots) {
+                let exits: Vec<String> = s
+                    .cov
+                    .exits
+                    .iter()
+                    .map(|((at, k), e)| format!("{at:#x}:{k}:{}:{}:{}", e[0], e[1], e[2]))
+                    .collect();
+                let why: Vec<String> = s
+                    .cov
+                    .decl_why
+                    .iter()
+                    .map(|(w, n)| format!("{n}x {w}"))
+                    .collect();
+                eprintln!(
+                    "cov run root={pc:#x} built={} refused={} calls={} insns={} declined={:?} exits={} declwhy={}",
+                    s.region.is_some() as u8,
+                    s.refused.is_some() as u8,
+                    s.calls,
+                    s.insns,
+                    s.cov.declined,
+                    exits.join(";"),
+                    why.join(";")
+                );
+            }
+        }
+        if std::env::var_os("SHARC_FAST_LEAN_STATS").is_some() {
+            for (pc, s) in self.pcs.iter().zip(&self.slots) {
+                if let Some(l) = s.region.as_ref().and_then(|r| r.lean.as_ref()) {
+                    eprintln!(
+                        "lean {pc:#x}: calls {} window hit/miss {}/{}",
+                        s.calls,
+                        l.win_hit.get(),
+                        l.win_miss.get(),
+                    );
+                }
+            }
+        }
     }
 }
 
-impl FastTier for FastEngine {
-    #[inline(always)]
-    fn wants(&self, pc: u32) -> bool {
-        self.index(pc).is_some()
-    }
-
-    fn run(&mut self, s: &mut St, pc: u32) -> Option<u32> {
+impl FastEngine {
+    fn run_inner(&mut self, s: &mut St, pc: u32, chained: bool) -> Option<u32> {
         let ix = self.index(pc)?;
+        if chained {
+            // Only a built, current region of the CFG shape; nothing is
+            // counted unless the kernel runs.
+            let slot = &self.slots[ix];
+            let region = slot.region.as_ref()?;
+            if slot.refused.is_some()
+                || slot.kernel.is_none()
+                || region.cfg.is_none()
+                || s.mem.dec_gen != region.verified_gen
+            {
+                return None;
+            }
+        }
+        let cov_prev = self.cov_last.take();
+        if let Some((lix, at, kind, ic)) = cov_prev
+            && let Some(e) = self.slots[lix].cov.exits.get_mut(&(at, kind))
+        {
+            e[2] += (s.icount - ic).min(COV_GAP_CAP);
+        }
         if self.slots[ix].refused.is_some() {
             return None;
         }
@@ -756,27 +1016,51 @@ impl FastTier for FastEngine {
         }
         let slot = &mut self.slots[ix];
         let region = slot.region.as_mut()?;
-        if s.mem.dec_gen != region.verified_gen {
-            let same = region
-                .code_words
-                .iter()
-                .all(|&(at, w)| s.mem.read_sw(at).unwrap_or(0) == w);
-            if same {
-                region.verified_gen = s.mem.dec_gen;
-            } else {
-                slot.region = None;
-                slot.kernel = None;
-                return None;
-            }
+        if !verify_code(s, region) {
+            slot.region = None;
+            slot.kernel = None;
+            return None;
         }
         self.stats.calls += 1;
         let before = s.icount;
         let kernel = slot.kernel.as_deref()?;
-        let res = if region.cfg.is_some() {
-            glue::run_cfg(s, region, kernel, &mut self.ctx)
+        let mut res = run_variant(s, region, kernel, &mut self.ctx);
+        if res == Err(glue::Decline::Req)
+            && !slot.alts.is_empty()
+            && (slot.rebuilds < REBUILD_BUDGET || slot.alt_fail < ALT_GIVE_UP)
+        {
+            // The baked state differs: another variant may take this one.
+            let mut i = 0;
+            while i < slot.alts.len() {
+                let (ar, ak) = &mut slot.alts[i];
+                if !verify_code(s, ar) {
+                    slot.alts.remove(i);
+                    continue;
+                }
+                let r2 = run_variant(s, ar, &**ak, &mut self.ctx);
+                if r2 != Err(glue::Decline::Req) {
+                    // The variant that ran becomes the current one.
+                    if let (Some(cr), Some(ck)) = (slot.region.as_mut(), slot.kernel.as_mut()) {
+                        std::mem::swap(cr, ar);
+                        std::mem::swap(ck, ak);
+                    }
+                    res = r2;
+                    break;
+                }
+                i += 1;
+            }
+        }
+        if res.is_err() {
+            slot.alt_fail = slot.alt_fail.saturating_add(1);
         } else {
-            glue::run(s, region, kernel, &mut self.ctx)
-        };
+            slot.alt_fail = 0;
+        }
+        if chained && res.is_err() {
+            self.stats.calls -= 1;
+            self.cov_last = cov_prev;
+            return None;
+        }
+        let region = slot.region.as_ref()?;
         if self.log {
             eprintln!(
                 "fast: run {pc:#x}: icount {before} -> {} (limit {}) {:?} pc {:#x} pending {:?}",
@@ -789,6 +1073,51 @@ impl FastTier for FastEngine {
         }
         slot.calls += 1;
         slot.insns += s.icount - before;
+        if self.cov {
+            match &res {
+                Ok(_) => {
+                    // A kernel that ran a return leaves at its run-time
+                    // target; the report names the return instruction, as
+                    // for a region that stopped at it.
+                    let ret = if region.cfg.is_some() {
+                        self.ctx.ret_at
+                    } else {
+                        0
+                    };
+                    let x = if ret != 0 { ret } else { s.pc_sw as u32 };
+                    let at_stop = ret != 0
+                        || region
+                            .cfg
+                            .as_ref()
+                            .is_some_and(|c| c.stops.iter().any(|(p, _)| *p == x));
+                    let kind = if at_stop {
+                        "stop"
+                    } else if s.icount >= s.limit {
+                        "budget"
+                    } else {
+                        "exit"
+                    };
+                    let e = slot.cov.exits.entry((x, kind)).or_default();
+                    e[0] += 1;
+                    e[1] += s.icount - before;
+                    self.cov_last = Some((ix, x, kind, s.icount));
+                }
+                Err(d) => {
+                    slot.cov.declined[*d as usize] += 1;
+                    if keys_log() {
+                        eprintln!("key root={pc:#x} {d:?} {}", state_key(s, region));
+                    }
+                    let why = match d {
+                        glue::Decline::Req => format!("req: {}", req_failure(s, region)),
+                        glue::Decline::Shape | glue::Decline::Window => glue::take_cov_why(),
+                        _ => String::new(),
+                    };
+                    if !why.is_empty() {
+                        *slot.cov.decl_why.entry(reason_class(&why)).or_default() += 1;
+                    }
+                }
+            }
+        }
         let mut drop_after = false;
         if slot.auto
             && slot.calls >= AUTO_WARMUP
@@ -824,21 +1153,36 @@ impl FastTier for FastEngine {
                         .entry(format!("decline req: {why}"))
                         .or_default() += 1;
                 }
-                if d == glue::Decline::Req && slot.rebuilds < 16 && !req_is_within(s, region) {
-                    // A baked constant changed: re-make the region from
-                    // this state, a bounded number of times.
+                if d == glue::Decline::Req
+                    && slot.rebuilds < REBUILD_BUDGET
+                    && !req_is_within(s, region)
+                {
+                    // No variant fits the state (a baked constant, MODE1 or
+                    // the CACC history differs): make another from this
+                    // state, a bounded number of times. The variants that
+                    // exist stay (most recent first, at most MAX_VARIANTS).
                     slot.rebuilds += 1;
                     let n = slot.rebuilds;
-                    slot.region = None;
-                    slot.kernel = None;
+                    let old = (slot.region.take(), slot.kernel.take());
                     if self.build(s, pc).is_some() {
-                        self.slots[ix].rebuilds = n;
+                        let slot = &mut self.slots[ix];
+                        slot.rebuilds = n;
+                        if let (Some(r), Some(k)) = old {
+                            slot.alts.insert(0, (r, k));
+                            slot.alts.truncate(MAX_VARIANTS - 1);
+                        }
                     } else if self.slots[ix].auto && self.slots[ix].refused.is_some() {
                         let (m1, g) = (mode1_bits(s), s.mem.dec_gen);
                         if let Some(a) = &mut self.auto {
                             a.tried.insert(pc, (m1, g, AUTO_TRIES));
                         }
                         drop_after = true;
+                    } else {
+                        // This state cannot be built: keep what runs.
+                        let slot = &mut self.slots[ix];
+                        slot.refused = None;
+                        slot.region = old.0;
+                        slot.kernel = old.1;
                     }
                 }
                 None
@@ -848,6 +1192,21 @@ impl FastTier for FastEngine {
             self.drop_slot(pc);
         }
         ret
+    }
+}
+
+impl FastTier for FastEngine {
+    #[inline(always)]
+    fn wants(&self, pc: u32) -> bool {
+        self.index(pc).is_some()
+    }
+
+    fn run(&mut self, s: &mut St, pc: u32) -> Option<u32> {
+        self.run_inner(s, pc, false)
+    }
+
+    fn run_chained(&mut self, s: &mut St, pc: u32) -> Option<u32> {
+        self.run_inner(s, pc, true)
     }
 
     fn caps_chain(&self) -> bool {
@@ -929,6 +1288,16 @@ impl FastTier for FastEngine {
     }
 }
 
+/// `SHARC_BLOCKTRANS=0xb8276c,...` (hex cluster roots).
+pub fn blocktrans_roots() -> Vec<u32> {
+    std::env::var("SHARC_BLOCKTRANS")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|x| !x.trim().is_empty())
+        .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
+        .collect()
+}
+
 /// `SHARC_FAST_REGIONS=0x1c399a,...` (hex entry PCs) as a fast tier.
 /// `SHARC_FAST_AUTO=threshold,min_insns[,blocks]` adds run-time selection.
 pub fn from_env() -> Option<FastEngine> {
@@ -939,10 +1308,11 @@ pub fn from_env() -> Option<FastEngine> {
         .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
         .collect();
     let auto = auto_config();
-    if pcs.is_empty() && auto.is_none() {
+    let roots = blocktrans_roots();
+    if pcs.is_empty() && auto.is_none() && roots.is_empty() {
         return None;
     }
-    let f = FastEngine::new(default_backend(), &pcs);
+    let f = FastEngine::new(default_backend(), &pcs).with_clusters(&roots);
     Some(match auto {
         Some((t, m, b)) => f.with_auto(t, m, b),
         None => f,

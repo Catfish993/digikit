@@ -74,13 +74,22 @@ old names (`desktop_runtime::coupled::tests::...`), with the same asserted hashe
 export SHARC_GEN_DIR=$PWD/out/native/dn2-audio/gen
 T=$(uv run python tools/native_target.py dir)
 cargo build --release --locked --target-dir "$T" -p digi-coupled --features coupled-audio --bin coupled-run
-SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f "$T"/release/coupled-run \
+SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8 "$T"/release/coupled-run \
   --syx Digitone_II_OS1.11.syx \
   --dsp-image snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin \
   --dsp-state snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp \
   --cf-snapshot snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap \
   --scenario idle --scenario trig1-hold --out out/native/runs/x/report.json
 ```
+
+The launcher also exports `SHARC_BLOCKTRANS` for DN2 OS 1.11: 12 block-translator
+cluster roots (`0xb8276c,0x1c369b,...`, `BLOCKTRANS_ROOTS` in `tools/native_emu.sh`,
+keyed by the .syx SHA-256 like `FAST_REGIONS`). Measured A/B on DSP CPU per audio
+second without PGO: 0.958 idle, 0.963 chord16, PCM identical. A user-set
+`SHARC_BLOCKTRANS` wins, `DIGI_EMU_FAST=0` turns it off with the fast regions, and
+other firmware gets neither. The PGO key (`tools/native_pgo.py`) includes the roots.
+Without the launcher, add `SHARC_BLOCKTRANS=0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5`
+to the command above.
 
 `--list` shows the scenarios, `--seconds S` overrides the length, `--no-pcm-tap`
 skips the PCM hash and statistics and `--no-link-timing` the per-period and link

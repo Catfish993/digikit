@@ -28,6 +28,9 @@ use super::lower::{Env, Lower, Plan, Refuse};
 use crate::rt::{Int, St};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+/// `Site::pc` of an exit whose address the kernel stored in `CTX_DYNPC`.
+pub const DYN_PC: u32 = u32::MAX;
+
 /// Where the interpreter resumes after the kernel leaves, and what it
 /// has to be told: instructions retired in the current block before the exit
 /// (the kernel's counter holds the count at the start of the block), the
@@ -39,6 +42,9 @@ pub struct Site {
     pub off: u32,
     pub active: Vec<u16>,
     pub pending: Option<(u16, u8)>,
+    /// A `DYN_PC` site: the address of the return instruction that made it
+    /// (0 otherwise), for coverage reports.
+    pub ret: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +88,11 @@ pub enum NodeKind {
         jump_idx: u16,
         exit_edge: bool,
     },
+    /// A delayed unconditional indirect JUMP (Mi, Ij) with two delay slots:
+    /// the compiler's return (stack model only, cluster kernels only). The
+    /// kernel runs it and its slots and leaves at the target address, which
+    /// is only known at run time (`Site::pc == DYN_PC`).
+    Return { jump_idx: u16 },
     Stop(String),
 }
 
@@ -129,6 +140,11 @@ pub struct Structure {
     /// Backward branches inside the kernel: (address of the last instruction
     /// of the branch with its slots, target).
     pub back_edges: Vec<(u32, u32)>,
+    /// Entries of called code that lies before its caller in address order
+    /// and is no part of a cycle: its register ranges at the entry are the
+    /// caller's (carried to the next lowering pass, `Plan::entry_abs`),
+    /// not the unknown ranges of a loop-carried register.
+    pub call_targets: BTreeSet<u32>,
 }
 
 pub const MAX_NODES: usize = 400;
@@ -156,6 +172,7 @@ enum Cls {
         cond: u32,
         delayed: bool,
     },
+    Return,
     Stop(String),
 }
 
@@ -166,8 +183,32 @@ fn cond_supported(c: u32) -> bool {
     )
 }
 
-fn classify(env: &Env, pc: u32, d: &Dec) -> Cls {
+fn classify(env: &Env, stack_model: bool, pc: u32, d: &Dec) -> Cls {
+    // The compiler's call and return sequence, in cluster kernels of the
+    // stack model (where CJUMP pushes no PC stack entry, see
+    // `lower::callret`; without the stack model it is a call and stays a stop).
+    let seq = env.guarded_dyn && stack_model;
     match d.form {
+        "25a_direct" if seq => match (d.get("addr[23:16]"), d.get("addr[15:0]")) {
+            (Some(h), Some(l)) => Cls::Jump {
+                target: ((h << 16) | l) as u32,
+                cond: 0x1f,
+                delayed: true,
+            },
+            _ => Cls::Stop("call target".into()),
+        },
+        "9b_abs" if seq => {
+            if d.field("b") == Some(0)
+                && d.field("a") == Some(0)
+                && d.field("ci") == Some(0)
+                && d.field("j") == Some(1)
+                && d.field("cond") == Some(0x1f)
+            {
+                Cls::Return
+            } else {
+                Cls::Stop("indirect jump shape".into())
+            }
+        }
         "8a_abs" | "8a_rel" => {
             if d.field("b") != Some(0) {
                 return Cls::Stop("call".into());
@@ -268,8 +309,40 @@ pub fn build_structure(
             kind: NodeKind::Seq,
             slots: Vec::new(),
         };
-        match classify(env, pc, &dec) {
+        match classify(env, s.cfg.stack_model, pc, &dec) {
             Cls::Stop(why) => node.kind = NodeKind::Stop(why),
+            Cls::Return => {
+                let mut next = pc + len;
+                let mut ok = true;
+                for _ in 0..2 {
+                    match decode(next) {
+                        Ok(sd)
+                            if !matches!(
+                                sd.form,
+                                "8a_abs" | "8a_rel" | "12a_imm" | "12a_ureg"
+                            ) && lowerable(env, &sd).is_ok() =>
+                        {
+                            let l = sd.len_sw;
+                            node.slots.push((next, sd));
+                            next += l;
+                        }
+                        _ => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if ok {
+                    node.kind = NodeKind::Return { jump_idx };
+                    jump_idx += 1;
+                    for (p, _) in &node.slots {
+                        slot_pcs.insert(*p);
+                    }
+                } else {
+                    node.slots.clear();
+                    node.kind = NodeKind::Stop("delay slot".into());
+                }
+            }
             Cls::Seq => work.push(pc + len),
             Cls::Do => {
                 node.kind = NodeKind::Do(0);
@@ -438,6 +511,20 @@ pub fn build_structure(
     // Branch edges: inside the kernel only within one context.
     let pcs: Vec<u32> = nodes.keys().copied().collect();
     for pc in &pcs {
+        if matches!(nodes[pc].kind, NodeKind::Return { .. }) {
+            if loops.iter().any(|l| l.end == *pc) {
+                return refuse("a branch at a loop end".into());
+            }
+            if nodes[pc]
+                .slots
+                .iter()
+                .any(|(p, _)| loops.iter().any(|l| l.end == *p))
+            {
+                return refuse("a delay slot at a loop end".into());
+            }
+        }
+    }
+    for pc in &pcs {
         let (target, cond) = match nodes[pc].kind {
             NodeKind::Jump { target, cond, .. } => (target, cond),
             _ => continue,
@@ -493,6 +580,25 @@ pub fn build_structure(
             back_edges.push((n.next() - 1, target));
         }
     }
+    // Calls that do not close a cycle: the target does not reach the call.
+    let mut call_targets: BTreeSet<u32> = BTreeSet::new();
+    let mut cyclic: BTreeSet<u32> = loops.iter().map(|l| l.start).collect();
+    for n in nodes.values() {
+        if let NodeKind::Jump {
+            target, exit_edge, ..
+        } = n.kind
+            && !exit_edge
+            && target <= n.pc
+        {
+            let is_call = n.dec.form == "25a_direct";
+            if is_call && !reaches(target, n.pc, &nodes, &loops) {
+                call_targets.insert(target);
+            } else {
+                cyclic.insert(target);
+            }
+        }
+    }
+    call_targets.retain(|t| !cyclic.contains(t));
     let mut cuts: BTreeSet<u32> = BTreeSet::new();
     cuts.insert(entry);
     for l in &loops {
@@ -530,7 +636,27 @@ pub fn build_structure(
         slot_pcs,
         entry_chain: chain,
         back_edges,
+        call_targets,
     })
+}
+
+/// Whether the node at FROM reaches the node at TO through the kernel's
+/// own edges.
+fn reaches(from: u32, to: u32, nodes: &BTreeMap<u32, Node>, loops: &[LoopDef]) -> bool {
+    let mut seen: BTreeSet<u32> = BTreeSet::new();
+    let mut work = vec![from];
+    while let Some(pc) = work.pop() {
+        if pc == to {
+            return true;
+        }
+        if !seen.insert(pc) {
+            continue;
+        }
+        if let Some(n) = nodes.get(&pc) {
+            work.extend(successors(n, nodes, loops));
+        }
+    }
+    false
 }
 
 /// The loops of the region: the entry loops, then one per DO node, checked
@@ -650,7 +776,7 @@ fn reladdr23(d: &Dec) -> Result<i64, Refuse> {
 pub fn successors(n: &Node, nodes: &BTreeMap<u32, Node>, loops: &[LoopDef]) -> Vec<u32> {
     let mut v = Vec::new();
     match &n.kind {
-        NodeKind::Stop(_) => {}
+        NodeKind::Stop(_) | NodeKind::Return { .. } => {}
         NodeKind::Seq | NodeKind::Do(_) => {
             if let Some(l) = loops.iter().find(|l| l.end == n.pc)
                 && nodes.contains_key(&l.start)
@@ -724,5 +850,8 @@ pub struct CfgMeta {
     pub st_didpc: bool,
     pub st_lcntr: bool,
     pub st_stk26: bool,
-    pub st_slots: bool,
+    /// One bit per `CTX_SLOT_LAST` slot the kernel stores. A slot the kernel
+    /// does not store is stale (a deeper loop of another region wrote it) and
+    /// must be read as zero, whether or not another slot is stored.
+    pub st_slots: u32,
 }

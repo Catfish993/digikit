@@ -79,6 +79,15 @@ fn open(image: &[u8], state: &[u8], clock_base: u64) -> Engine {
     for (k, v) in options.drain(..) {
         assert_eq!(e.set_option(k, v), 0, "option {k}");
     }
+    if std::env::var_os("FD_BANK_OFF").is_some() {
+        // The production engine's config has no bank model; the test states
+        // were captured with it on.
+        e.s.cfg.bank_model = false;
+    }
+    if std::env::var_os("FD_CFG").is_some() {
+        let c = &e.s.cfg;
+        eprintln!("cfg: bank_model {} stack_model {}", c.bank_model, c.stack_model);
+    }
     e
 }
 
@@ -317,6 +326,10 @@ fn form_base(form: &str) -> (u64, u64) {
         "6b_shiftimm" => (0xffc187800000, 0x020000000000),
         "7a" => (0xff0000000000, 0x040000000000),
         "17a" => (0xff8000000000, 0x0f0000000000),
+        "17b" => (0xff8000000000, 0x0f8000000000),
+        "18a" => (0xff0000000000, 0x140000000000),
+        "21a" => (0xffffffffffff, 0),
+        "21c" => (0xffff00000000, 0x000100000000),
         "4a" => (0xf00000000000, 0x600000000000),
         "4b" => (0xf00000780000, 0x600000380000),
         "4d" => (0xf00000780000, 0x600000300000),
@@ -362,6 +375,8 @@ enum Check {
     FPass(u32),
     FClip(u32, u32),
     FComp(u32, u32),
+    /// fmax / fmin: only a NaN operand declines.
+    FMinMax(u32, u32),
     Logb(u32),
     Scalb(u32, u32),
     Recips(u32),
@@ -391,6 +406,7 @@ fn compute_check(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> Check {
         (0, 0xa1) => Check::FPass(rx),
         (0, 0xe3) => Check::FClip(rx, ry),
         (0, 0x8a) => Check::FComp(rx, ry),
+        (0, 0xe1 | 0xe2) => Check::FMinMax(rx, ry),
         (0, 0xc1) => Check::Logb(rx),
         (0, 0xbd) => Check::Scalb(rx, ry),
         (0, 0xc4) => Check::Recips(rx),
@@ -427,6 +443,9 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("fabs", 0, 0xb0),
     ("fclip", 0, 0xe3),
     ("fcomp", 0, 0x8a),
+    ("abs", 0, 0x30),
+    ("fmin", 0, 0xe1),
+    ("fmax", 0, 0xe2),
     ("logb", 0, 0xc1),
     ("scalb", 0, 0xbd),
     ("recips", 0, 0xc4),
@@ -467,6 +486,10 @@ const SHIFT_OPS: &[(&str, u32)] = &[
     ("lshift-or", 0x08),
     ("fext", 0x10),
     ("fext-se", 0x12),
+    ("bset", 0x30),
+    ("bclr", 0x31),
+    ("btgl", 0x32),
+    ("btst", 0x33),
 ];
 
 fn units() -> Vec<Unit> {
@@ -691,8 +714,12 @@ fn units() -> Vec<Unit> {
                         if hform == "3a" {
                             raw.set(22, 0, 0);
                         } else {
-                            raw.set(17, 17, 1);
-                            raw.set(16, 16, 1);
+                            // (l, x, w): normal word, byte, short word, and
+                            // the sign-extended loads (no signed store).
+                            let (l, x, w) = access_width(r, false, store);
+                            raw.set(30, 30, l);
+                            raw.set(16, 16, x);
+                            raw.set(17, 17, w);
                         }
                     }
                     _ => {
@@ -734,10 +761,102 @@ fn units() -> Vec<Unit> {
             (raw.0, Check::None)
         }),
     });
+    v.extend(units_sys());
     v.extend(units_mem());
     for u in &mut v {
         u.check = Check::None;
     }
+    v
+}
+
+/// A random access width row `(l, x, w)` of Type 3b / 4d (`form4b` false) or
+/// Type 4b: half the rows are the normal word, the rest byte, short word and
+/// (loads only) their sign-extended forms.
+fn access_width(r: &mut Rng, form4b: bool, store: bool) -> (u64, u64, u64) {
+    let nw = if form4b { (1, 1, 1) } else { (0, 1, 1) };
+    let rows = [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0)];
+    if r.chance(3) {
+        return nw;
+    }
+    loop {
+        let k = rows[r.below(4) as usize];
+        if !(store && k.1 == 1 && k.2 == 0) {
+            return k;
+        }
+    }
+}
+
+/// System forms (`lower::sysops`): 17b, 21a, 21c, 18a on MODE1 and a move
+/// from MODE1.
+fn units_sys() -> Vec<Unit> {
+    let mut v: Vec<Unit> = Vec::new();
+    v.push(Unit {
+        form: "17b",
+        name: "17b".into(),
+        check: Check::None,
+        make: Box::new(|r| {
+            let (mask, base) = form_base("17b");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            // Mostly R, I and M; sometimes another register (refused).
+            let code = if r.chance(12) { r.below(128) } else { r.below(48) };
+            raw.set(38, 32, code as u64);
+            raw.set(15, 0, 0);
+            if r.chance(3) {
+                // Edge immediates: sign bit and its neighbours.
+                raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, 0xfff8][r.below(6) as usize]);
+            }
+            (raw.0, Check::None)
+        }),
+    });
+    for form in ["21a", "21c"] {
+        v.push(Unit {
+            form,
+            name: form.into(),
+            check: Check::None,
+            make: Box::new(move |_| (form_base(form).1, Check::None)),
+        });
+    }
+    // 18a: set / clear / toggle of a system register (MODE1 and others), bit
+    // test and xor test. The MODE1 of the trials is 0x3900_1cf8 (see `forms`).
+    v.push(Unit {
+        form: "18a",
+        name: "18a".into(),
+        check: Check::None,
+        make: Box::new(|r| {
+            let (mask, base) = form_base("18a");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            let bop = if r.chance(2) { r.below(3) } else { 4 + r.below(2) } as u64;
+            let sreg = if r.chance(4) { r.below(16) } else { 2 } as u64;
+            raw.set(39, 37, bop);
+            raw.set(35, 32, sreg);
+            raw.set(36, 36, 0);
+            let m1 = 0x3900_1cf8u32;
+            let data = match (bop, r.below(4)) {
+                // A change-free mask: clear bits that are clear, set bits that are set.
+                (0, 0..=2) => r.next() as u32 & m1,
+                (1, 0..=2) => r.next() as u32 & !m1,
+                _ => r.next() as u32,
+            };
+            raw.set(31, 0, data as u64);
+            (raw.0, Check::None)
+        }),
+    });
+    v.push(Unit {
+        form: "5b_move",
+        name: "5b_move from MODE1".into(),
+        check: Check::None,
+        make: Box::new(|r| {
+            let (mask, base) = form_base("5b_move");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            raw.set(37, 33, 0x1f);
+            let src = if r.chance(8) { r.below(128) } else { 114 };
+            raw.set(42, 38, (src >> 2) as u64);
+            raw.set(32, 32, ((src >> 1) & 1) as u64);
+            raw.set(31, 31, (src & 1) as u64);
+            raw.set(29, 23, r.below(48) as u64);
+            (raw.0, Check::None)
+        }),
+    });
     v
 }
 
@@ -787,11 +906,11 @@ fn units_mem() -> Vec<Unit> {
                 raw.set(26, 23, r.below(16) as u64);
                 match hform {
                     "4a" => raw.set(22, 0, 0),
-                    "4b" => {
-                        raw.set(18, 16, 0b111);
-                    }
                     _ => {
-                        raw.set(18, 16, 0b011);
+                        let (l, x, w) = access_width(r, hform == "4b", kind.starts_with("store"));
+                        raw.set(18, 18, l);
+                        raw.set(17, 17, w);
+                        raw.set(16, 16, x);
                     }
                 }
                 (raw.0, Check::None)
@@ -950,6 +1069,9 @@ fn rand_int(r: &mut Rng) -> u32 {
     }
 }
 
+/// `cfg --astat-mix`: half the runs start with the CACC history bits (or other
+/// ASTATX bits) unknown, so the unknown-CACC kernel variants are exercised.
+static ASTAT_MIX: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static KNOWN_FLAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Mostly ordinary float values (long kernel runs), a few special ones.
 static CALM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -1058,6 +1180,16 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
     } else {
         r.u32()
     };
+    let m = if ASTAT_MIX.load(std::sync::atomic::Ordering::Relaxed) {
+        match r.below(6) {
+            0 | 1 => u32::MAX,
+            2 | 3 => 0x00ff_ffff,
+            4 => 0x00ff_fc3f,
+            _ => m,
+        }
+    } else {
+        m
+    };
     s.r[118] = V { b: r.u32() & m, m };
     // Data window contents: floats and ints.
     for k in 0..DATA_LEN / 4 {
@@ -1123,7 +1255,7 @@ fn expect_special(c: Check, s: &St) -> bool {
                 !r.is_finite()
             }
         }
-        Check::FComp(x, y) => f(x).is_nan() || f(y).is_nan(),
+        Check::FComp(x, y) | Check::FMinMax(x, y) => f(x).is_nan() || f(y).is_nan(),
         Check::Logb(x) => !(1..=254).contains(&((s.r[x as usize].b >> 23) & 0xff)),
         Check::Scalb(x, y) => {
             let sh = s.r[y as usize].b as i32 as i64;
@@ -1265,6 +1397,8 @@ fn forms(args: &[String]) {
     // index inside or at the edges of its buffer, modifiers up to +-L),
     // CBUFEN on or off at build time and flipped in some trials.
     let circ_mode = args.iter().any(|a| a == "--circ");
+    // --truncate: MODE1.TRUNCATE (bit 15) set at build time.
+    let truncate_mode = args.iter().any(|a| a == "--truncate");
     CIRC.store(circ_mode, std::sync::atomic::Ordering::Relaxed);
     KNOWN_FLAGS.store(cond_mode, std::sync::atomic::Ordering::Relaxed);
     let mut be = backend(flag(args, "--backend").unwrap_or("cl"));
@@ -1277,6 +1411,7 @@ fn forms(args: &[String]) {
         s.cfg.core_timer = false;
         s.bank_pending_mask = -1;
         s.bank_requested_mask = -1;
+        s.bank_active_mask = 0x4f8;
         s.pc_stack_pending = -1;
         s.pc_stack_requested = -1;
         s.r[114] = V::c(0x3900_1cf8);
@@ -1327,21 +1462,24 @@ fn forms(args: &[String]) {
             // MODE1 at build time: every region requires TRUNCATE (bit 15)
             // clear. With --circ CBUFEN (bit 24) is off in a quarter of the
             // instances: L != 0 is then a plain add.
-            let mut mode_build = 0x3900_1cf8u32;
+            let mut mode_build = 0x3900_1cf8u32 | ((truncate_mode as u32) << 15);
             if circ_mode && rng.chance(4) {
                 mode_build &= !(1 << 24);
             }
             s.r[114] = V::c(mode_build as Int);
             let nwords = match unit.form {
-                "2c" | "3c" => 1,
-                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" => 2,
+                "2c" | "3c" | "21c" => 1,
+                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" | "17b" => 2,
                 _ => 3,
             };
             write_code(s, raw, nwords);
             s.pc_sw = CODE_PC as Int;
             let region: Region = match build_straight(s, CODE_PC) {
                 Ok(r) => r,
-                Err(_) => {
+                Err(why) => {
+                    if std::env::var_os("FD_WHY").is_some() && tally.refused < 60 {
+                        eprintln!("refused {} {:012x}: {}", unit.name, raw, why.0);
+                    }
                     tally.refused += 1;
                     continue;
                 }
@@ -1436,6 +1574,8 @@ fn forms(args: &[String]) {
                                 || Some(c) == bflip
                         }
                         Req::Mode1 { mask, value } => s.r[114].b & mask != value,
+                        // Built for unknown CACC history: declines when it is known.
+                        Req::CaccUnknown => s.r[118].m & 0xff00_0000 == 0xff00_0000,
                         Req::Within { c, lo, hi } => {
                             Some(c) == unknown || !(lo..=hi).contains(&s.r[c as usize].b)
                         }
@@ -1641,7 +1781,16 @@ fn rand_word(r: &mut Rng) -> u32 {
 fn inject(e: &mut Engine, seed: u64, what: &mut String) {
     let mut r = Rng(seed | 1);
     for _ in 0..1 + r.below(3) {
-        match r.below(4) {
+        match r.below(5) {
+            4 => {
+                // A small integer in a data register: the modifier a loop
+                // body loads from it reaches the words around its own
+                // window (guarded dynamic windows, aliasing static ones).
+                let c = [0usize, 1, 2, 14, 15][r.below(5) as usize];
+                let v = r.below(24);
+                e.s.r[c] = V::c(v as Int);
+                what.push_str(&format!(" r{c}={v}"));
+            }
             3 => {
                 // Flip flag bits, so conditions and branches go the other
                 // way (the known mask stays as it is).
@@ -1664,7 +1813,13 @@ fn inject(e: &mut Engine, seed: u64, what: &mut String) {
                 let ic = [17usize, 18, 19, 20, 21, 22, 28][r.below(7) as usize];
                 let base = e.s.r[ic].b;
                 let a = base.wrapping_add(4 * r.below(80));
-                let v = rand_word(&mut r);
+                // Half of them small integers: a modifier register loaded
+                // from this word reaches the words around its own window.
+                let v = if r.chance(2) {
+                    r.below(24)
+                } else {
+                    rand_word(&mut r)
+                };
                 let ca = e.s.mem.canonical_of(a);
                 for b in 0..4 {
                     e.s.mem.write_byte(ca + b, (v >> (8 * b)) as u8);
@@ -1823,6 +1978,15 @@ fn region(args: &[String]) {
     let dir = &args[1];
     let pc = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("pc");
     let check_windows = args.iter().any(|a| a == "--check-windows");
+    // `--cluster`: PC is a block-translator cluster root (`SHARC_BLOCKTRANS`).
+    let cluster = args.iter().any(|a| a == "--cluster");
+    // `--roots HEX,HEX`: more entries armed with the root, so a kernel that
+    // exits at one of them continues into it (`Engine::fast_continue`).
+    let extra_roots: Vec<u32> = flag(args, "--roots").map_or(Vec::new(), |l| {
+        l.split(',')
+            .map(|x| u32::from_str_radix(x.trim_start_matches("0x"), 16).expect("root"))
+            .collect()
+    });
     sharc_native::fast::glue::set_window_check(check_windows);
     let backend_name = flag(args, "--backend")
         .unwrap_or(if check_windows { "interp" } else { "cl" })
@@ -1928,7 +2092,13 @@ fn region(args: &[String]) {
                 if mode == Mode::Fast {
                     e.dispatch = Dispatch::default();
                 }
-                let fe = Rc::new(RefCell::new(FastEngine::new(backend(&backend_name), &[pc])));
+                let mut pcs = vec![pc];
+                pcs.extend(extra_roots.iter().copied());
+                let mut fast = FastEngine::new(backend(&backend_name), &pcs);
+                if cluster {
+                    fast = fast.with_clusters(&pcs);
+                }
+                let fe = Rc::new(RefCell::new(fast));
                 e.set_fast(Some(Box::new(Shared(fe.clone()))));
                 (e, Some(fe))
             }
@@ -2041,7 +2211,16 @@ fn region(args: &[String]) {
         if want_aot {
             // The fast tier in front of the generated blocks, as in a build.
             let (sd, rd, _, hd) = run(Mode::Both);
+            // `at_loaded_entry` is block-engine bookkeeping: where the budget
+            // ends a run it can differ between the interpreter and the
+            // generated blocks themselves. A difference the AOT run alone
+            // shows is not the fast tier's.
+            let (sc, _, _, _) = run(Mode::Aot);
+            let aot_only = diff_with(&sa, &sc, false);
             for m in diff_with(&sa, &sd, false) {
+                if m.starts_with("at_loaded_entry") && aot_only.contains(&m) {
+                    continue;
+                }
                 msgs.push(format!("fast+AOT: {m}"));
             }
             if ra != rd || ha != hd {
@@ -2247,10 +2426,49 @@ fn mem_imm_insn(r: &mut Rng) -> Vec<u16> {
     words_of(raw, n)
 }
 
+/// A random system form (`lower::sysops`): 17b to R0-R12 or an M register,
+/// a NOP (21a, 21c), a MODE1 set/clear that changes nothing or something,
+/// and a move from MODE1.
+fn sys_insn(r: &mut Rng) -> Vec<u16> {
+    match r.below(6) {
+        0 | 1 => {
+            let mut raw = Raw(form_base("17b").1);
+            let code = if r.chance(4) { 32 + r.below(16) } else { r.below(13) };
+            raw.set(38, 32, code as u64);
+            raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, r.below(65536)][r.below(6) as usize] as u64);
+            words_of(raw.0, 2)
+        }
+        2 => words_of(form_base("21a").1, 3),
+        3 => words_of(form_base("21c").1, 1),
+        4 => {
+            let mut raw = Raw(form_base("18a").1);
+            raw.set(39, 37, r.below(2) as u64);
+            raw.set(35, 32, 2);
+            // The MODE1 of the cfg runs has SIMD clear: a clear of it, or a
+            // random mask now and then.
+            let data = if r.chance(3) { r.next() as u32 } else { 0x20_0000 };
+            raw.set(31, 0, data as u64);
+            words_of(raw.0, 3)
+        }
+        _ => {
+            let mut raw = Raw(form_base("5b_move").1);
+            raw.set(37, 33, 0x1f);
+            raw.set(42, 38, (114u32 >> 2) as u64);
+            raw.set(32, 32, 1);
+            raw.set(31, 31, 0);
+            raw.set(29, 23, r.below(13) as u64);
+            words_of(raw.0, 2)
+        }
+    }
+}
+
 /// One random instruction (R0-R12 as destinations).
 fn gen_insn(r: &mut Rng, allow_cond: bool) -> Vec<u16> {
     if r.chance(10) {
         return mem_imm_insn(r);
+    }
+    if r.chance(14) && std::env::var_os("FD_NOSYS").is_none() {
+        return sys_insn(r);
     }
     let cond = pick_cond(r, allow_cond);
     let rn = r.below(13);
@@ -2526,6 +2744,7 @@ fn prep_engine(e: &mut Engine, stack_model: Option<bool>) {
     s.cfg.core_timer = false;
     s.bank_pending_mask = -1;
     s.bank_requested_mask = -1;
+    s.bank_active_mask = 0x4f8;
     s.pc_stack_pending = -1;
     s.pc_stack_requested = -1;
     s.r[114] = V::c(0x3900_1cf8);
@@ -2558,6 +2777,10 @@ fn cfgprog(args: &[String]) {
     // (the loop shape), entered at every instruction.
     let simple = args.iter().any(|a| a == "--simple");
     KNOWN_FLAGS.store(true, std::sync::atomic::Ordering::Relaxed);
+    ASTAT_MIX.store(
+        args.iter().any(|a| a == "--astat-mix"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     CALM.store(true, std::sync::atomic::Ordering::Relaxed);
     // --check-windows: the reference interpreter asserts that every window
     // access lies inside its window (and is the backend unless one is named).
@@ -2571,6 +2794,7 @@ fn cfgprog(args: &[String]) {
     let mut tier_insns = 0u64;
     let mut runs_total = 0u64;
     let mut built = 0u64;
+    let (mut cacc_total, mut cacc_unknown_total) = (0u64, 0u64);
     let mut declined = [0u64; 5];
     let mut refusals: BTreeMap<String, u64> = BTreeMap::new();
     let t0 = std::time::Instant::now();
@@ -2725,8 +2949,9 @@ fn cfgprog(args: &[String]) {
                 let cap = if rng.chance(2) { 40 } else { 400 };
                 1 + rng.below(cap)
             };
-            let mode1 =
-                [0x3900_1cf8u32, 0x3901_1cf8, 0x3900_3cf8, 0x3901_3cf8][rng.below(4) as usize];
+            let mode1 = [0x3900_1cf8u32, 0x3901_1cf8, 0x3900_3cf8, 0x3901_3cf8]
+                [rng.below(4) as usize]
+                | ((args.iter().any(|a| a == "--truncate") as u32) << 15);
             let before = fe.borrow().stats.clone();
             let (msgs, _) = pair(&mut ei, &mut ef, st_seed, mode1, n as u32);
             let after = fe.borrow().stats.clone();
@@ -2779,6 +3004,12 @@ fn cfgprog(args: &[String]) {
             }
         }
         let fb = fe.borrow();
+        for pc in &entries {
+            if let Some(r) = fb.region(*pc) {
+                cacc_total += r.cacc as u64;
+                cacc_unknown_total += r.cacc_unknown as u64;
+            }
+        }
         built += fb.stats.built;
         for (i, d) in fb.stats.declined.iter().enumerate() {
             declined[i] += d;
@@ -2808,6 +3039,7 @@ fn cfgprog(args: &[String]) {
         built
     );
     println!("declined shape/req/window/budget/exit0 = {declined:?}");
+    println!("final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}");
     for (why, n) in &refusals {
         println!("{n:>5} x refused: {why}");
     }

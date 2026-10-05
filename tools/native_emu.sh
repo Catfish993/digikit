@@ -26,18 +26,38 @@ DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
 FAST_REGIONS = {
     # Digitone II OS 1.11
     "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0": (
-        "0x1c399a,0x1c3862,0x1c364f,0x1c5765"
+        "0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8"
     ),
 }
 
 
-def fast_regions_for(syx: pathlib.Path) -> str:
-    """The verified fast regions for this firmware file, or "" if unknown."""
+# Block-translator cluster roots (SHARC_BLOCKTRANS) verified exact, same key.
+# Measured A/B 0.958 idle, 0.963 chord16 (DSP CPU per audio s, non-PGO).
+BLOCKTRANS_ROOTS = {
+    # Digitone II OS 1.11
+    "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0": (
+        "0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,"
+        "0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5"
+    ),
+}
+
+
+def _lookup(table: dict[str, str], syx: pathlib.Path) -> str:
     try:
         digest = hashlib.sha256(syx.read_bytes()).hexdigest()
     except OSError:
         return ""
-    return FAST_REGIONS.get(digest, "")
+    return table.get(digest, "")
+
+
+def fast_regions_for(syx: pathlib.Path) -> str:
+    """The verified fast regions for this firmware file, or "" if unknown."""
+    return _lookup(FAST_REGIONS, syx)
+
+
+def blocktrans_roots_for(syx: pathlib.Path) -> str:
+    """The verified block-translator cluster roots for this firmware, or ""."""
+    return _lookup(BLOCKTRANS_ROOTS, syx)
 
 
 def set_fast_regions(
@@ -45,18 +65,25 @@ def set_fast_regions(
 ) -> None:
     """Enable the fast tier for a coupled run unless the user chose otherwise.
 
-    SHARC_FAST_REGIONS set by the user wins; DIGI_EMU_FAST=0 leaves it off.
+    SHARC_FAST_REGIONS (and SHARC_BLOCKTRANS) set by the user win;
+    DIGI_EMU_FAST=0 leaves both off.
     """
-    if "SHARC_FAST_REGIONS" in environ or environ.get("DIGI_EMU_FAST") == "0":
+    if environ.get("DIGI_EMU_FAST") == "0":
         return
     syx = (
         pathlib.Path(args[args.index("--audio-profile-syx") + 1])
         if "--audio-profile-syx" in args
         else pathlib.Path(environ.get("DIGI_EMU_SYX", ROOT / "Digitone_II_OS1.11.syx"))
     )
-    regions = fast_regions_for(syx)
-    if regions:
-        environ["SHARC_FAST_REGIONS"] = regions
+    if "SHARC_FAST_REGIONS" not in environ:
+        regions = fast_regions_for(syx)
+        if regions:
+            environ["SHARC_FAST_REGIONS"] = regions
+    # Cluster roots follow the same rules; a user-set SHARC_BLOCKTRANS wins.
+    if "SHARC_BLOCKTRANS" not in environ:
+        roots = blocktrans_roots_for(syx)
+        if roots:
+            environ["SHARC_BLOCKTRANS"] = roots
 
 
 def generated_core() -> pathlib.Path:

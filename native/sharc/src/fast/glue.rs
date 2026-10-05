@@ -8,7 +8,7 @@
 //! loops back after a budget-limited run of iterations) behaves exactly as
 //! the interpreter's.
 
-use super::cfg::{CfgMeta, LoopDef, Site};
+use super::cfg::{CfgMeta, DYN_PC, LoopDef, Site};
 use super::ir::*;
 use super::region::{RegMeta, Region};
 use super::{Base, FlagKind, FlagWriter, Req};
@@ -118,6 +118,9 @@ pub struct Ctx {
     buf: Box<[u64]>,
     /// `CTX_WIN_CHECK` as last written (the constant pool is written once).
     win_check: bool,
+    /// The address of the return instruction the last cluster kernel run left
+    /// through (0: it left elsewhere); read by the coverage report.
+    pub ret_at: u32,
 }
 
 impl Default for Ctx {
@@ -125,6 +128,7 @@ impl Default for Ctx {
         let mut c = Ctx {
             buf: vec![0u64; CTX_SIZE as usize / 8].into_boxed_slice(),
             win_check: false,
+            ret_at: 0,
         };
         for (i, k) in CONST_POOL.iter().enumerate() {
             c.set32(CTX_CONSTS + 4 * i as u32, *k);
@@ -251,6 +255,8 @@ pub fn flag_mask(kind: FlagKind) -> u32 {
         | FlagKind::Isub
         | FlagKind::Logical
         | FlagKind::Fabs
+        | FlagKind::Iabs
+        | FlagKind::RecipsAf
         | FlagKind::Compare { .. } => ALU_MASK,
         FlagKind::Fmul | FlagKind::FmulForget => MULT_MASK,
         FlagKind::Shift { .. }
@@ -390,6 +396,21 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
             let bits = if src[0] >> 31 != 0 { AN } else { 0 };
             define(v, AC | AS | AI | AN | AV | AZ, bits)
         }
+        FlagKind::RecipsAf => {
+            let mut bits = src[1] & AF;
+            if src[0] >> 31 != 0 {
+                bits |= AN;
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::Iabs => {
+            let neg = src[0] >> 31 != 0;
+            let mut bits = arith_bits(0, src[0], neg);
+            if neg {
+                bits |= AS;
+            }
+            define(v, ALU_MASK, bits)
+        }
     }
 }
 
@@ -424,7 +445,7 @@ fn advance_last(_s: &mut St, _len_bytes: u8) -> R<()> {
 /// in [0x90000, 0x18000000)), and clear of the core MMRs (normal-word
 /// 0x30000..0x32000) and the peripheral space (0x30000000..0x40000000), which
 /// the memory windows refuse anyway.
-const NW_PLAIN: [(i64, i64); 5] = [
+pub(super) const NW_PLAIN: [(i64, i64); 5] = [
     (0xE_8000, 0x400_0000),
     (0, 0x3_0000),
     (0x3_2000, 0x9_0000),
@@ -497,7 +518,7 @@ const _: () = {
 
 /// The word a register with value B and known-mask M reads as (the
 /// two 32-bit fields of `V` in memory order, little endian).
-const fn v_word(b: u32, m: u32) -> u64 {
+pub(super) const fn v_word(b: u32, m: u32) -> u64 {
     if std::mem::offset_of!(crate::rt::V, b) == 0 {
         (m as u64) << 32 | b as u64
     } else {
@@ -533,7 +554,8 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
                 mask: v_word(0, mask),
                 want: v_word(0, mask),
             },
-            Req::NwPlain { .. } | Req::Within { .. } => continue,
+            // CaccUnknown is checked on the engine state by `astat_ok`, not a masked compare.
+            Req::NwPlain { .. } | Req::Within { .. } | Req::BankSync | Req::CaccUnknown => continue,
         };
         if !out
             .iter()
@@ -545,6 +567,13 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
     out
 }
 
+/// `Req::BankSync`: the applied bank selection is MODE1's.
+#[inline]
+pub fn bank_synced(s: &St) -> bool {
+    let m = s.r[MODE1];
+    m.is_c() && s.bank_active_mask == (m.b & 0x4f8) as Int
+}
+
 /// Is every circular index register of R inside its buffer?
 #[inline]
 fn within_ok(s: &St, r: &Region) -> bool {
@@ -552,6 +581,13 @@ fn within_ok(s: &St, r: &Region) -> bool {
         let v = s.r[c as usize];
         v.is_c() && (lo..=hi).contains(&v.b)
     })
+}
+
+/// `Req::CaccUnknown`: a kernel made for unknown CACC bits runs only while
+/// they are not all known (else the generic core would shift the history).
+#[inline(always)]
+fn cacc_ok(s: &St, r: &Region) -> bool {
+    !r.cacc_unknown || s.r[118].m & 0xff00_0000 != 0xff00_0000
 }
 
 /// Do all of R's register requirements hold in S?
@@ -574,10 +610,10 @@ fn regs_ok(s: &St, chk: &[RegChk]) -> bool {
 /// set bits), so a call whose window is the same range skips the resolution.
 #[derive(Clone, Copy)]
 pub struct WinCache {
-    gen_: u64,
-    lo: u32,
-    hi: u64,
-    ptr: *mut u8,
+    pub(super) gen_: u64,
+    pub(super) lo: u32,
+    pub(super) hi: u64,
+    pub(super) ptr: *mut u8,
 }
 
 impl WinCache {
@@ -617,7 +653,23 @@ fn window_ptr(
     Some(ptr)
 }
 
-/// Resolve a read-only window from an independently known dynamic anchor.
+/// Bytes after the anchor a cached span must still hold to be reused by a
+/// window with a store, and the (bytes before, bytes from the anchor) spans
+/// tried for it, larger first (see `dynamic_window_ptr`).
+const DYN_ROOM: u64 = 16;
+const DYN_LADDER: [(u32, u32); 8] = [
+    (256, 1024),
+    (64, 256),
+    (16, 64),
+    (0, 64),
+    (0, 32),
+    (0, 16),
+    (0, 8),
+    (0, 4),
+];
+
+/// Resolve a guarded window (`Lower::dynamic_window`: loads, or loads and
+/// stores) from an independently known dynamic anchor.
 /// The fast memory page may be the short-word alias of the architectural
 /// page.  We try the largest aligned power-of-two span containing the anchor
 /// that is wholly normal-word plain and present; the kernel guards every
@@ -636,12 +688,38 @@ fn dynamic_window_ptr(
     }
     let a = v.b;
     let cached = cache.get();
+    // A window with a store anchors on the index register's own words (the
+    // modifiers reach forward from it), see below: a cached span is reused
+    // only with that room after the anchor.
+    let room = if spec.write { DYN_ROOM } else { 1 };
     if cached.gen_ == s.mem.layout_gen
         && !cached.ptr.is_null()
         && a >= cached.lo
-        && (a as u64) < cached.hi
+        && (a as u64) + room <= cached.hi
     {
+        if spec.write {
+            // As `window_ptr` on a hit: the write counts for the code watch.
+            s.mem.note_window_write(cached.lo);
+        }
         return Some((cached.ptr, cached.lo, cached.hi));
+    }
+    if spec.write {
+        // A store needs every byte of its span overlay-written (dirty), which
+        // the bytes around an aligned power-of-two span rarely are: try spans
+        // that reach forward from the anchor (and a little back), larger
+        // first, inside the anchor's page.
+        let page_lo = a & !(crate::mem::PAGE_SIZE as u32 - 1);
+        let page_hi = page_lo as u64 + crate::mem::PAGE_SIZE as u64;
+        for (back, fwd) in DYN_LADDER {
+            let lo = a.saturating_sub(back).max(page_lo);
+            let hi = (a as u64 + fwd as u64).min(page_hi);
+            if hi < a as u64 + 4 || !nw_plain(lo as i64, hi as i64 - 1) {
+                continue;
+            }
+            if let Some(ptr) = window_ptr(&mut s.mem, cache, spec, lo, hi) {
+                return Some((ptr, lo, hi));
+            }
+        }
     }
     let mut len = crate::mem::PAGE_SIZE as u32;
     loop {
@@ -712,6 +790,8 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
             m.is_c() && m.b & mask == value
         }
         Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
+        Req::BankSync => !s.cfg.bank_model || bank_synced(s),
+        Req::CaccUnknown => s.r[118].m & 0xff00_0000 != 0xff00_0000,
         Req::Within { c, lo, hi } => {
             let v = s.r[c as usize];
             v.is_c() && (lo..=hi).contains(&v.b)
@@ -753,6 +833,9 @@ pub fn run(
         return Err(Decline::Shape);
     }
     if cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0) {
+        return Err(Decline::Shape);
+    }
+    if cfg.bank_model && r.bank_sync && !bank_synced(s) {
         return Err(Decline::Shape);
     }
     if cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0) {
@@ -820,7 +903,7 @@ pub fn run(
         }
     };
     pmark!(pt, 1);
-    if !regs_ok(s, &r.chk) || !within_ok(s, r) {
+    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) {
         return Err(Decline::Req);
     }
     if !nw_ok(s, r, iters) {
@@ -1011,6 +1094,20 @@ fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64
 /// the value is exact.
 fn apply_cacc(s: &mut St, r: &Region, ctx: &Ctx) {
     if !r.cacc {
+        return;
+    }
+    if r.cacc_unknown {
+        // The CACC bits were not all known at entry: the generic core's compare
+        // defines the ALU bits (`apply_flag`) and forgets CACC. The kernel's
+        // pseudo register starts as 1 and a compare clears that bit, so a
+        // clear bit says a compare ran before this exit.
+        if ctx.get32(ctx_reg_out(PSEUDO_CACC)) & 1 == 0 {
+            let v = s.r[118];
+            s.r[118] = V {
+                b: v.b & !CACC,
+                m: v.m & !CACC,
+            };
+        }
         return;
     }
     let h = ctx.get32(ctx_reg_out(PSEUDO_CACC)) & CACC;
@@ -1265,11 +1362,35 @@ pub fn set_shape_log(on: bool) {
     SHAPE_LOG.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+static COV_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+thread_local! {
+    static COV_WHY: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// `SHARC_FAST_COV`: remember why the last call was declined.
+pub fn set_cov(on: bool) {
+    COV_ON.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cold]
+fn cov_why(f: impl FnOnce() -> String) {
+    if COV_ON.load(std::sync::atomic::Ordering::Relaxed) {
+        COV_WHY.with(|w| *w.borrow_mut() = f());
+    }
+}
+
+/// The reason noted by the last declined call (`SHARC_FAST_COV` only).
+pub fn take_cov_why() -> String {
+    COV_WHY.with(|w| std::mem::take(&mut *w.borrow_mut()))
+}
+
 #[cold]
 fn shape(why: &str) -> Decline {
     if SHAPE_LOG.load(std::sync::atomic::Ordering::Relaxed) {
         eprintln!("fast: declined, shape: {why}");
     }
+    cov_why(|| format!("shape: {why}"));
     Decline::Shape
 }
 
@@ -1293,6 +1414,9 @@ pub fn run_cfg(
     }
     if cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0) {
         return Err(shape("bank change in flight"));
+    }
+    if cfg.bank_model && r.bank_sync && !bank_synced(s) {
+        return Err(shape("bank selection differs from MODE1"));
     }
     if cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0) {
         return Err(shape("PC stack change in flight"));
@@ -1362,11 +1486,23 @@ pub fn run_cfg(
         return Err(shape("loop or PC stack too deep"));
     }
     pmark!(pt, 1);
-    if !regs_ok(s, &r.chk) || !within_ok(s, r) {
-        return Err(Decline::Req);
-    }
     let iters = rem_top.max(1);
-    if !nw_ok(s, r, iters) {
+    let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
+    // The lean contract (`lean`) applies while no window check is asked for.
+    let lean = r.lean.as_ref().filter(|_| !check);
+    if let Some(l) = lean {
+        // A kernel that checks the register conditions itself leaves only
+        // the address bases (read below) to check here.
+        let regs = if kernel.checks_entry() {
+            l.bases_ok(s)
+        } else {
+            l.regs_ok(s)
+        };
+        if !regs || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters) {
+            return Err(Decline::Req);
+        }
+    } else if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters)
+    {
         return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);
@@ -1374,11 +1510,47 @@ pub fn run_cfg(
         return Err(Decline::Budget);
     }
     pmark!(pt, 2);
-    let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
+        if let Some(l) = lean
+            && spec.dynamic_anchor.is_none()
+        {
+            let b = match spec.base {
+                Base::None => 0,
+                Base::Reg(c) => s.r[c as usize].b as i64,
+            };
+            let d = spec.ts * (iters - 1);
+            let f = spec.nf * iters;
+            let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
+            if lo < 0 || hi > (1i64 << 32) {
+                cov_why(|| format!("window {w}: address range outside 32 bits"));
+                return Err(Decline::Window);
+            }
+            let Some(off) =
+                super::lean::lean_window(l, &mut s.mem, &l.wc[w], spec, lo as u32, hi as u64)
+            else {
+                cov_why(|| format!("window {w}: lean window not plain RAM"));
+                return Err(Decline::Window);
+            };
+            ctx.set64(win_ptr(w as u32), off);
+            ctx.set32(CTX_WIN_DYN_LEN + 4 * w as u32, 0);
+            continue;
+        }
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
+            cov_why(|| {
+                let dynamic = spec.dynamic_anchor.is_some();
+                let rw = if spec.write { "write" } else { "read" };
+                format!("window {w}: not plain/present RAM (dynamic={dynamic} {rw})")
+            });
             return Err(Decline::Window);
         };
+        if let Some(a) = spec.dynamic_anchor
+            && SHAPE_LOG.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            eprintln!(
+                "fast: dynamic window {w}: anchor r{a} = {:#x}: {lo:#x}..{hi:#x}",
+                s.r[a as usize].b
+            );
+        }
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
@@ -1410,6 +1582,10 @@ pub fn run_cfg(
     pmark!(pt, 4);
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
     pmark!(pt, 5);
+    if code == RUN_ENTRY_FAILED {
+        // The kernel's own entry checks failed before it did anything.
+        return Err(Decline::Req);
+    }
     debug_assert_eq!(code, 1, "a cfg kernel leaves through an exit");
     let site = &meta.sites[ctx.get32(CTX_EXIT_K) as usize];
     let completed = ctx.get32(CTX_ICNT) as u64 + site.off as u64;
@@ -1428,7 +1604,13 @@ pub fn run_cfg(
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
     pmark!(pt, 7);
-    s.pc_sw = site.pc as Int;
+    ctx.ret_at = site.ret;
+    s.pc_sw = if site.pc == DYN_PC {
+        // The target of the return the kernel ran (24 bits).
+        ctx.get32(CTX_DYNPC) as Int
+    } else {
+        site.pc as Int
+    };
     s.icount += completed;
     s.steps += completed as Int;
     // What `exec_insn` does at the start of every instruction.
@@ -1439,8 +1621,12 @@ pub fn run_cfg(
     if let Some((j, slots)) = site.pending
         && ctx.get32(CTX_TAKEN + 4 * j as u32) != 0
     {
+        let target = match meta.jumps[j as usize].0 {
+            DYN_PC => ctx.get32(CTX_DYNPC),
+            t => t,
+        };
         s.pending = Some(Pending {
-            target: Some(meta.jumps[j as usize].0 as Int),
+            target: Some(target as Int),
             call: false,
             slots: slots as Int,
             return_from_call: false,
@@ -1502,8 +1688,8 @@ pub fn run_cfg(
     if !meta.st_stk26 {
         ctx.set32(CTX_STK26, 0);
     }
-    if !meta.st_slots {
-        for d in 0..MAX_SLOTS {
+    for d in 0..MAX_SLOTS {
+        if meta.st_slots >> d & 1 == 0 {
             ctx.set32(CTX_SLOT_LAST + 4 * d, 0);
         }
     }

@@ -57,12 +57,18 @@ pub struct Region {
     pub within: Vec<(u8, u32, u32)>,
     /// MODE1 and ASTATX requirements.
     pub misc: Vec<Req>,
+    /// `Req::BankSync` (checked by the glue's shape checks).
+    pub bank_sync: bool,
     /// The kernel tracks flags in pseudo registers (in `inputs`); the groups
     /// with writers write their last writer out (`glue::apply_groups`).
     pub flag_v: bool,
     pub flag_groups: [bool; 3],
     /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
     pub cacc: bool,
+    /// The kernel was lowered for an ASTATX that is not fully known
+    /// (`Req::CaccUnknown`): `PSEUDO_CACC` starts as the sentinel 1 and the
+    /// compares' history is not tracked (`glue::apply_cacc`).
+    pub cacc_unknown: bool,
     /// Registers the kernel reads (straight from the engine state) and the
     /// ones it writes through the context, with the instruction of the first
     /// write: the caller stores those a run wrote. (The kernel stores the
@@ -91,6 +97,9 @@ pub struct Region {
     /// `Some` for a CFG region (see `cfg`): `lp` is None, the kernel counts
     /// its own instructions and loop iterations.
     pub cfg: Option<CfgMeta>,
+    /// The lean entry contract (`lean`), for CFG regions when
+    /// `SHARC_FAST_LEAN=1`.
+    pub lean: Option<super::lean::Lean>,
 }
 
 impl Region {
@@ -145,6 +154,9 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         mode1: s.r[MODE1].b,
         flag_v,
         approx_recips: s.cfg.approx_recips,
+        guarded_dyn: false,
+        bank_model: s.cfg.bank_model,
+        cacc_known: s.r[118].m & 0xff00_0000 == 0xff00_0000,
     }
 }
 
@@ -290,14 +302,16 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
             .copied()
             .collect(),
         within: within_of(&reqs),
+        bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))
+            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
             .copied()
             .collect(),
         flag_v: out.flag_v,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
+        cacc_unknown: out.cacc_unknown,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
@@ -317,26 +331,41 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         verified_gen: s.mem.dec_gen,
         forms: decs.iter().map(|(_, d)| d.form).collect(),
         cfg: None,
+        lean: None,
     })
 }
 
 /// A CFG region entered at PC: the code reachable from there, as far as the
 /// lowering goes (see `cfg`).
 pub fn build_cfg(s: &St, pc: u32) -> Result<Region, Refuse> {
+    build_cfg_opts(s, pc, false)
+}
+
+/// `build_cfg` for a block-translator cluster root (`SHARC_BLOCKTRANS`):
+/// `cluster` lowers dynamic-modifier pre-modify transfers with guarded
+/// windows (`Env::guarded_dyn`).
+pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> {
     if !cfg!(sharc_gen) {
         return Err(Refuse("no generated core (SHARC_GEN_DIR)".into()));
     }
     if !s.r[MODE1].is_c() {
         return Err(Refuse("MODE1 unknown".into()));
     }
-    let env = env_of(s, true);
+    let mut env = env_of(s, true);
+    env.guarded_dyn = cluster;
     // An instruction that cannot be lowered where it stands (an address that
     // has no range, too many windows) becomes the end of the region.
     let mut deny = std::collections::BTreeSet::new();
     for _ in 0..80 {
         match build_cfg_with(s, pc, &env, &deny) {
             Err((e, Some(at))) if at != pc && !deny.contains(&at) => {
-                let _ = e;
+                if std::env::var_os("SHARC_FAST_LOG").is_some() {
+                    eprintln!("fast: {pc:#x}: {at:#x} cannot be lowered here: {}", e.0);
+                }
+                if std::env::var_os("SHARC_FAST_COV").is_some() {
+                    let form = decode_one(s, at).map_or("undecodable", |d| d.form);
+                    eprintln!("cov deny root={pc:#x} at={at:#x} form={form} why={}", e.0);
+                }
                 deny.insert(at);
             }
             Err((e, _)) => return Err(e),
@@ -446,6 +475,9 @@ fn assemble_cfg(
         {
             jumps[jump_idx as usize] = (target, n.pc);
         }
+        if let cfg::NodeKind::Return { jump_idx } = n.kind {
+            jumps[jump_idx as usize] = (cfg::DYN_PC, n.pc);
+        }
     }
     let n_entry = st.loops.iter().take_while(|l| l.entry()).count();
     // The deepest nesting of in-region loops (for the stack-depth checks).
@@ -470,10 +502,9 @@ fn assemble_cfg(
         st_didpc: out.stored.contains(&CTX_DIDPC),
         st_lcntr: out.stored.contains(&CTX_LCNTR) || out.stored.contains(&(CTX_LCNTR + 4)),
         st_stk26: out.stored.contains(&CTX_STK26),
-        st_slots: out
-            .stored
-            .iter()
-            .any(|o| (CTX_SLOT_LAST..CTX_SLOT_LAST + 4 * MAX_SLOTS).contains(o)),
+        st_slots: (0..MAX_SLOTS)
+            .filter(|d| out.stored.contains(&(CTX_SLOT_LAST + 4 * d)))
+            .fold(0, |m, d| m | 1 << d),
         stops: st
             .nodes
             .values()
@@ -486,6 +517,7 @@ fn assemble_cfg(
     let nw_hull = nw_hulls(&reqs);
     let wcache = vec![std::cell::Cell::new(WinCache::NONE); out.wins.len()];
     let chk = reg_checks(&reqs);
+    let (chk_l, reqs_l, wins_l) = (chk.clone(), reqs.clone(), out.wins.clone());
     Ok(Region {
         entry_pc: pc,
         lp: None,
@@ -516,14 +548,16 @@ fn assemble_cfg(
             .copied()
             .collect(),
         within: within_of(&reqs),
+        bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_)))
+            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
             .copied()
             .collect(),
         flag_v: true,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
+        cacc_unknown: out.cacc_unknown,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
@@ -544,5 +578,6 @@ fn assemble_cfg(
         insns,
         forms,
         cfg: Some(meta),
+        lean: super::lean::enabled().then(|| super::lean::Lean::new(&chk_l, &reqs_l, &wins_l)),
     })
 }

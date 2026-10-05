@@ -242,8 +242,30 @@ def fast_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> st
     return str(launcher["fast_regions_for"](pathlib.Path(syx)))
 
 
+def blocktrans_roots(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
+    """The SHARC_BLOCKTRANS cluster roots a coupled run uses ("" when none).
+
+    Same precedence as :func:`fast_regions`: explicit env, DIGI_EMU_FAST=0,
+    then the launcher's per-firmware table.
+    """
+    environ = os.environ if environ is None else environ
+    if "SHARC_BLOCKTRANS" in environ:
+        return environ["SHARC_BLOCKTRANS"]
+    if environ.get("DIGI_EMU_FAST") == "0":
+        return ""
+    launcher = runpy.run_path(
+        str(ROOT / "tools" / "native_emu.sh"), run_name="launcher"
+    )
+    syx = environ.get("DIGI_COUPLED_SYX", str(ROOT / "Digitone_II_OS1.11.syx"))
+    return str(launcher["blocktrans_roots_for"](pathlib.Path(syx)))
+
+
 def compute_components(
-    packages: list[str], gen: pathlib.Path, hasher: FileHasher, fast: str = ""
+    packages: list[str],
+    gen: pathlib.Path,
+    hasher: FileHasher,
+    fast: str = "",
+    blocktrans: str = "",
 ) -> tuple[dict[str, str], int]:
     outer = hashlib.sha256()
     files = 0
@@ -268,6 +290,7 @@ def compute_components(
         "features": FEATURES,
         "flags_template": FLAGS_TEMPLATE,
         "fast_regions": fast,
+        "blocktrans": blocktrans,
     }
     return components, files + gen_count
 
@@ -289,7 +312,7 @@ def desktop_digest(hasher: FileHasher) -> str:
 
 
 def check_state(
-    gen: pathlib.Path | None = None, fast: str = ""
+    gen: pathlib.Path | None = None, fast: str = "", blocktrans: str = ""
 ) -> tuple[str, str, bool]:
     """Return (status, detail, desktop_changed); status is ok, stale or missing."""
     manifest = read_manifest()
@@ -302,7 +325,7 @@ def check_state(
         return "stale", f"rustup toolchain {TOOLCHAIN} is not installed", False
     hasher = FileHasher(state_dir() / "hash-cache.json")
     components, _ = compute_components(
-        list(manifest["packages"]), gen or generated_dir(), hasher, fast
+        list(manifest["packages"]), gen or generated_dir(), hasher, fast, blocktrans
     )  # type: ignore[call-overload]
     desktop = desktop_digest(hasher)
     hasher.save()
@@ -313,9 +336,11 @@ def check_state(
     return "ok", str(profdata), manifest.get("desktop_sha256") != desktop
 
 
-def check(gen: pathlib.Path | None = None, fast: str = "") -> tuple[str, str]:
+def check(
+    gen: pathlib.Path | None = None, fast: str = "", blocktrans: str = ""
+) -> tuple[str, str]:
     """Return (status, detail): status is ok, stale or missing."""
-    status, detail, _ = check_state(gen, fast)
+    status, detail, _ = check_state(gen, fast, blocktrans)
     return status, detail
 
 
@@ -343,7 +368,11 @@ def pgo_state(
         return "off", ""
     if environ.get("RUSTFLAGS") or environ.get("CARGO_ENCODED_RUSTFLAGS"):
         return "skipped", "RUSTFLAGS is set"
-    return check(generated_dir(environ), environ.get("SHARC_FAST_REGIONS", ""))
+    return check(
+        generated_dir(environ),
+        environ.get("SHARC_FAST_REGIONS", ""),
+        environ.get("SHARC_BLOCKTRANS", ""),
+    )
 
 
 def plan_for(
@@ -575,7 +604,8 @@ def cmd_train(args: argparse.Namespace) -> None:
     packages = local_package_dirs()
     hasher = FileHasher(state / "hash-cache.json")
     fast = fast_regions()
-    components, nfiles = compute_components(packages, gen, hasher, fast)
+    blocktrans = blocktrans_roots()
+    components, nfiles = compute_components(packages, gen, hasher, fast, blocktrans)
     desktop = desktop_digest(hasher)
     hasher.save()
     key = key_of(components)
@@ -601,6 +631,7 @@ def cmd_train(args: argparse.Namespace) -> None:
                 {
                     "LLVM_PROFILE_FILE": str(raw / f"train-{number}-%m.profraw"),
                     "SHARC_FAST_REGIONS": fast,
+                    "SHARC_BLOCKTRANS": blocktrans,
                 },
             )
         gates.append(result.line)
@@ -631,6 +662,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         "desktop_sha256": desktop,
         "generated_dir": str(gen),
         "fast_regions": fast,
+        "blocktrans": blocktrans,
         "file_count": nfiles,
         "rustc_vV": rustc_version(),
         "sysroot": str(toolchain_dir()),
@@ -659,7 +691,7 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 def cmd_check(_: argparse.Namespace) -> int:
     began = time.monotonic()
-    status, detail, desktop = check_state(None, fast_regions())
+    status, detail, desktop = check_state(None, fast_regions(), blocktrans_roots())
     if status == "ok" and desktop:
         print("ok (desktop crate changed; profile reused)")
     else:
@@ -669,7 +701,13 @@ def cmd_check(_: argparse.Namespace) -> int:
 
 
 def cmd_plan(_: argparse.Namespace) -> int:
-    plan, notice = launch_plan({**os.environ, "SHARC_FAST_REGIONS": fast_regions()})
+    plan, notice = launch_plan(
+        {
+            **os.environ,
+            "SHARC_FAST_REGIONS": fast_regions(),
+            "SHARC_BLOCKTRANS": blocktrans_roots(),
+        }
+    )
     print(notice or "native PGO: not used")
     if plan:
         print(
@@ -689,7 +727,8 @@ def cmd_bench(args: argparse.Namespace) -> None:
     gen = generated_dir()
     require_inputs(gen)
     fast = fast_regions()
-    status, detail = check(gen, fast)
+    blocktrans = blocktrans_roots()
+    status, detail = check(gen, fast, blocktrans)
     if status != "ok":
         raise SystemExit(f"profile is not current: {status} {detail}; run train first")
     state = state_dir()
@@ -722,8 +761,13 @@ def cmd_bench(args: argparse.Namespace) -> None:
         "control",
         "use",
         args.pairs,
-        {"binary_sha256": hashes, "profdata": detail, "fast_regions": fast},
-        {"SHARC_FAST_REGIONS": fast},
+        {
+            "binary_sha256": hashes,
+            "profdata": detail,
+            "fast_regions": fast,
+            "blocktrans": blocktrans,
+        },
+        {"SHARC_FAST_REGIONS": fast, "SHARC_BLOCKTRANS": blocktrans},
     )
 
 
