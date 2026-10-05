@@ -38,6 +38,9 @@ impl Lower {
         let dst = d.field("dstureg").ok_or(Refuse("move dst".into()))? as u32;
         let v = self.rd_bits(src)?;
         self.wr(dst, v)?;
+        if src < 48 && dst < 48 {
+            self.moves.push((dst as u8, src as u8));
+        }
         if d.form == "5a_move" {
             let field = d.compute().ok_or(Refuse("5a compute".into()))?;
             self.compute_full(field)?;

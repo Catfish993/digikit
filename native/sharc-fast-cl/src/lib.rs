@@ -186,6 +186,16 @@ impl Emit<'_, '_> {
                     let a = self.b.ins().iadd(base, o);
                     self.b.ins().store(mem_flags(), v, a, 0);
                 }
+                Inst::StoreN { base, off, v, bytes } => {
+                    let (base, off, v) = (self.v(base), self.v(off), self.v(v));
+                    let o = self.b.ins().uextend(types::I64, off);
+                    let a = self.b.ins().iadd(base, o);
+                    if bytes == 1 {
+                        self.b.ins().istore8(mem_flags(), v, a, 0);
+                    } else {
+                        self.b.ins().istore16(mem_flags(), v, a, 0);
+                    }
+                }
                 Inst::StCtx32 { off, v } => {
                     let v = self.v(v);
                     self.b.ins().store(mem_flags(), v, self.ctx, off as i32);
@@ -352,6 +362,16 @@ impl Emit<'_, '_> {
             Op::Select(c, a, b) => {
                 let (c, a, b) = (self.v(c), self.v(a), self.v(b));
                 self.b.ins().select(c, a, b)
+            }
+            Op::LoadN { base, off, bytes } => {
+                let (base, off) = (self.v(base), self.v(off));
+                let o = self.b.ins().uextend(types::I64, off);
+                let a = self.b.ins().iadd(base, o);
+                if bytes == 1 {
+                    self.b.ins().uload8(types::I32, mem_flags(), a, 0)
+                } else {
+                    self.b.ins().uload16(types::I32, mem_flags(), a, 0)
+                }
             }
             Op::Load32 { base, off } => {
                 let (base, off) = (self.v(base), self.v(off));

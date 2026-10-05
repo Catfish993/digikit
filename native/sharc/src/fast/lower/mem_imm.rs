@@ -11,7 +11,7 @@
 //! B and L (`Lower::modify_update`: 19a_scaled, 7b) or need L to be zero at
 //! entry (`require_linear`: 7a, 19a, which the interpreter does not wrap).
 
-use super::mem_addr::Xfer;
+use super::mem_addr::{Width, Xfer};
 use super::*;
 
 /// Sign-extend the low BITS bits of V.
@@ -24,21 +24,25 @@ impl Lower {
     /// A normal-word transfer at `Ic + words*4` (pre-modify, no update) or
     /// at `Ic` followed by `Ic += words*4` (post-modify).
     pub fn dm_imm(&mut self, ic: u32, words: i64, post: bool, x: Xfer) -> LR<()> {
+        self.dm_imm_w(ic, words, post, x, Width::NW)
+    }
+
+    /// As `dm_imm` for a transfer of width W: UNITS of the access size.
+    pub fn dm_imm_w(&mut self, ic: u32, units: i64, post: bool, x: Xfer, w: Width) -> LR<()> {
         if !self.env.assume_nw32 {
             return refuse("assume_nw32 off");
         }
+        if matches!(x, Xfer::Store(_)) && w.signed {
+            return refuse("sign-extended store");
+        }
         let iv = self.rd_i(ic)?;
         // The 32-bit displacement wraps like the interpreter's sum.
-        let off = self.ci((words.wrapping_mul(4)) as u32);
+        let off = self.ci(units.wrapping_mul(w.scale() as i64) as u32);
         let modified = self.bin(Bin::Add, iv, off);
         let addr = if post { iv } else { modified };
-        self.require_plain(iv, 4)?;
-        if !post {
-            self.require_plain(addr, 4)?;
-        }
-        self.mem_xfer(addr, x)?;
+        self.xfer_at(ic, iv, addr, post, x, w)?;
         if post {
-            self.post_update(ic, iv, off, modified)?;
+            self.post_update_scaled(ic, iv, off, modified, w.scale() as i64)?;
         }
         Ok(())
     }
@@ -71,29 +75,22 @@ impl Lower {
         self.compute_full(d.compute().ok_or(Refuse("4a compute".into()))?)
     }
 
-    /// 4b (the 4-byte form) and 4d (the 6-byte form with the full width
-    /// table): normal-word width only. No compute.
+    /// 4b (the 4-byte form) and 4d (the 6-byte form), normal word, short
+    /// word and byte widths (`Width::from_fields`: the 4b and 3b/4d tables
+    /// differ in the normal-word row). No compute.
     pub fn form_4b_4d(&mut self, d: &Dec) -> LR<()> {
         if d.field("cond") != Some(0x1f) {
             return refuse("conditional 4b/4d");
         }
-        // 4b: (l, x, w) = (1, 1, 1) is the plain normal word; 4d, with the
-        // 3b table: (0, 1, 1).
-        let width = (d.field("l"), d.field("x"), d.field("w"));
-        let want = if d.form == "4b" {
-            (Some(1), Some(1), Some(1))
-        } else {
-            (Some(0), Some(1), Some(1))
-        };
-        if width != want {
+        let Some(w) = Width::from_fields(d.form == "4b", d) else {
             return refuse("4b/4d access width");
-        }
+        };
         let bank = if d.field("g") == Some(1) { 8 } else { 0 };
         let i = d.field("i").ok_or(Refuse("4b i".into()))? as u32 + bank;
         let dreg = d.field("dreg").ok_or(Refuse("4b dreg".into()))? as u32;
         let post = d.field("u") == Some(1);
         let off = Self::imm6(d)?;
-        self.dm_imm(16 + i, off, post, Self::xfer_dir(d, dreg))
+        self.dm_imm_w(16 + i, off, post, Self::xfer_dir(d, dreg), w)
     }
 
     /// 15b: `Ureg = DM(imm7, Ia)` / `DM(imm7, Ia) = Ureg`, no update.
@@ -161,6 +158,7 @@ impl Lower {
         }
         self.require_linear(16 + src)?;
         self.require_linear(16 + dst)?;
+        self.note_modify(16 + src, 16 + dst);
         self.wr_i(16 + dst, new)
     }
 

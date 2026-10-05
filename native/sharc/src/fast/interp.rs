@@ -58,7 +58,7 @@ impl InterpKernel {
 
     /// Test mode (`CTX_WIN_CHECK`): the access of 4 bytes at OFF through the
     /// window pointer BASE must lie inside that window.
-    fn check_window(&self, ctx: *mut u8, base: u64, off: u32) {
+    fn check_window(&self, ctx: *mut u8, base: u64, off: u32, bytes: u32) {
         let rd32 = |o: u32| unsafe { (ctx.add(o as usize) as *const u32).read_unaligned() };
         if rd32(CTX_WIN_CHECK) == 0 {
             return;
@@ -75,7 +75,7 @@ impl InterpKernel {
             } else {
                 lo as u64 + dyn_len as u64
             };
-            if off >= lo && off as u64 + 4 <= hi {
+            if off >= lo && off as u64 + bytes as u64 <= hi {
                 return;
             }
         }
@@ -175,8 +175,17 @@ impl InterpKernel {
                                 v(b)
                             }
                         }
+                        Op::LoadN { base, off, bytes } => {
+                            self.check_window(ctx, v(base), v(off) as u32, bytes as u32);
+                            let p = (v(base) as usize).wrapping_add(v(off) as u32 as usize);
+                            if bytes == 1 {
+                                unsafe { (p as *const u8).read() as u64 }
+                            } else {
+                                unsafe { (p as *const u16).read_unaligned() as u64 }
+                            }
+                        }
                         Op::Load32 { base, off } => {
-                            self.check_window(ctx, v(base), v(off) as u32);
+                            self.check_window(ctx, v(base), v(off) as u32, 4);
                             let p = (v(base) as usize).wrapping_add(v(off) as u32 as usize);
                             unsafe { (p as *const u32).read_unaligned() as u64 }
                         }
@@ -185,10 +194,28 @@ impl InterpKernel {
                 }
                 Inst::Set(x, a) => vars[x.0 as usize] = vals[a as usize],
                 Inst::Store32 { base, off, v } => {
-                    self.check_window(ctx, vals[base as usize].0, vals[off as usize].0 as u32);
+                    self.check_window(ctx, vals[base as usize].0, vals[off as usize].0 as u32, 4);
                     let p = (vals[base as usize].0 as usize)
                         .wrapping_add(vals[off as usize].0 as u32 as usize);
                     unsafe { (p as *mut u32).write_unaligned(vals[v as usize].0 as u32) }
+                }
+                Inst::StoreN { base, off, v, bytes } => {
+                    self.check_window(
+                        ctx,
+                        vals[base as usize].0,
+                        vals[off as usize].0 as u32,
+                        bytes as u32,
+                    );
+                    let p = (vals[base as usize].0 as usize)
+                        .wrapping_add(vals[off as usize].0 as u32 as usize);
+                    let x = vals[v as usize].0 as u32;
+                    unsafe {
+                        if bytes == 1 {
+                            (p as *mut u8).write(x as u8)
+                        } else {
+                            (p as *mut u16).write_unaligned(x as u16)
+                        }
+                    }
                 }
                 Inst::StCtx32 { off, v } => unsafe {
                     (ctx.add(off as usize) as *mut u32).write_unaligned(vals[v as usize].0 as u32)

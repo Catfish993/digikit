@@ -691,8 +691,12 @@ fn units() -> Vec<Unit> {
                         if hform == "3a" {
                             raw.set(22, 0, 0);
                         } else {
-                            raw.set(17, 17, 1);
-                            raw.set(16, 16, 1);
+                            // (l, x, w): normal word, byte, short word, and
+                            // the sign-extended loads (no signed store).
+                            let (l, x, w) = access_width(r, false, store);
+                            raw.set(30, 30, l);
+                            raw.set(16, 16, x);
+                            raw.set(17, 17, w);
                         }
                     }
                     _ => {
@@ -741,6 +745,23 @@ fn units() -> Vec<Unit> {
     v
 }
 
+/// A random access width row `(l, x, w)` of Type 3b / 4d (`form4b` false) or
+/// Type 4b: half the rows are the normal word, the rest byte, short word and
+/// (loads only) their sign-extended forms.
+fn access_width(r: &mut Rng, form4b: bool, store: bool) -> (u64, u64, u64) {
+    let nw = if form4b { (1, 1, 1) } else { (0, 1, 1) };
+    let rows = [(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0)];
+    if r.chance(3) {
+        return nw;
+    }
+    loop {
+        let k = rows[r.below(4) as usize];
+        if !(store && k.1 == 1 && k.2 == 0) {
+            return k;
+        }
+    }
+}
+
 /// Immediate-offset transfers and immediate modifies (`lower::mem_imm`).
 fn units_mem() -> Vec<Unit> {
     let mut v: Vec<Unit> = Vec::new();
@@ -787,11 +808,11 @@ fn units_mem() -> Vec<Unit> {
                 raw.set(26, 23, r.below(16) as u64);
                 match hform {
                     "4a" => raw.set(22, 0, 0),
-                    "4b" => {
-                        raw.set(18, 16, 0b111);
-                    }
                     _ => {
-                        raw.set(18, 16, 0b011);
+                        let (l, x, w) = access_width(r, hform == "4b", kind.starts_with("store"));
+                        raw.set(18, 18, l);
+                        raw.set(17, 17, w);
+                        raw.set(16, 16, x);
                     }
                 }
                 (raw.0, Check::None)

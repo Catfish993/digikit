@@ -250,7 +250,7 @@ pub const NALL: usize = (NREGS + NPSEUDO) as usize;
 #[derive(Default)]
 struct Pending {
     writes: Vec<(u8, Val)>,
-    stores: Vec<(Val, Val, Val)>,
+    stores: Vec<(Val, Val, Val, u8)>,
     flag: Option<(FlagKind, Vec<Val>)>,
     /// A second flag writer of the same instruction (multifunction: the
     /// ALU and the multiplier both write flags).
@@ -276,6 +276,15 @@ pub struct Lower {
     cur: Vec<Option<Val>>,
     /// Registers written so far in this iteration.
     written_iter: Vec<bool>,
+    /// The register whose entry value a register's value is that value moved
+    /// and post-modified (None once something else was written to it): the
+    /// anchor to resolve a guarded window from. A hint for choosing the
+    /// anchor, never a proof (every guarded access is checked).
+    pub hint: Vec<Option<u8>>,
+    /// Index registers the current instruction post-modifies by themselves.
+    self_update: Vec<u8>,
+    /// Register moves (destination, source) of the current instruction.
+    pub moves: Vec<(u8, u8)>,
     pub reqs: Vec<Req>,
     pub wins: Vec<WinSpec>,
     win_vals: Vec<Val>,
@@ -370,6 +379,9 @@ impl Lower {
             regs: vec![RegInfo::default(); NALL],
             cur: vec![None; NALL],
             written_iter: vec![false; NALL],
+            hint: (0..NALL).map(|c| (c < NREGS as usize).then_some(c as u8)).collect(),
+            self_update: Vec::new(),
+            moves: Vec::new(),
             reqs: Vec::new(),
             wins: Vec::new(),
             win_vals: Vec::new(),
@@ -850,6 +862,21 @@ impl Lower {
     /// L != 0 it is the wrapped sum when MODE1.CBUFEN is set (and the sum when
     /// it is clear, which is not lowered).
     pub fn post_update(&mut self, ic: u32, iv: Val, delta: Val, modified: Val) -> LR<()> {
+        self.post_update_scaled(ic, iv, delta, modified, 4)
+    }
+
+    /// `post_update` for an access of SCALE bytes per modifier unit (4 normal
+    /// word, 2 short word, 1 byte): the interpreter scales L by the same
+    /// factor (`_post_modify_index`'s `scaled_length`).
+    pub fn post_update_scaled(
+        &mut self,
+        ic: u32,
+        iv: Val,
+        delta: Val,
+        modified: Val,
+        scale: i64,
+    ) -> LR<()> {
+        self.self_update.push(ic as u8);
         if self.env.circ_off {
             self.require_linear(ic)?;
             return self.wr_i(ic, modified);
@@ -870,7 +897,7 @@ impl Lower {
             // Pass 0 only finds which registers are written.
             return self.wr_i(ic, modified);
         }
-        let (base, lenb, d) = self.circ_params(ic, 4, delta)?;
+        let (base, lenb, d) = self.circ_params(ic, scale, delta)?;
         self.mode1_mask |= MODE1_CBUFEN;
         let new = self.wrap_add(iv, delta, d, base, lenb)?;
         self.wr_i(ic, new)
@@ -894,6 +921,7 @@ impl Lower {
         scale: i64,
         unsigned: bool,
     ) -> LR<()> {
+        self.note_modify(src, dst);
         if self.env.circ_off {
             self.require_linear(src)?;
             self.require_linear(dst)?;
@@ -916,6 +944,16 @@ impl Lower {
         }
         let new = self.wrap_add(iv, delta, d, base, lenb)?;
         self.wr_i(dst, new)
+    }
+
+    /// `dst = modify(src, ..)`: the anchor hint follows the index value
+    /// (`hint`): kept for an update in place, copied for another destination.
+    pub fn note_modify(&mut self, src: u32, dst: u32) {
+        if src == dst {
+            self.self_update.push(dst as u8);
+        } else {
+            self.moves.push((dst as u8, src as u8));
+        }
     }
 
     /// A requirement that register CODE has exactly value K.
@@ -1000,7 +1038,12 @@ impl Lower {
     }
 
     pub fn pend_store(&mut self, base: Val, off: Val, v: Val) {
-        self.pending.stores.push((base, off, v));
+        self.pending.stores.push((base, off, v, 4));
+    }
+
+    /// A store of the low BYTES (1, 2 or 4) bytes of V.
+    pub fn pend_store_n(&mut self, base: Val, off: Val, v: Val, bytes: u8) {
+        self.pending.stores.push((base, off, v, bytes));
     }
 
     pub fn pend_flag(&mut self, kind: FlagKind, srcs: Vec<Val>) {
@@ -1150,6 +1193,8 @@ impl Lower {
     pub fn begin_insn(&mut self, idx: u32) {
         self.idx = idx;
         self.exit_id = None;
+        self.self_update.clear();
+        self.moves.clear();
         self.pending = Pending::default();
         self.cond = None;
         self.ncond = None;
@@ -1186,8 +1231,17 @@ impl Lower {
                 }
                 None => None,
             };
-            for (b, o, v) in stores {
-                self.body.push(Inst::Store32 { base: b, off: o, v });
+            for (b, o, v, n) in stores {
+                self.body.push(if n == 4 {
+                    Inst::Store32 { base: b, off: o, v }
+                } else {
+                    Inst::StoreN {
+                        base: b,
+                        off: o,
+                        v,
+                        bytes: n,
+                    }
+                });
             }
             if let Some(l) = skip {
                 self.body.push(Inst::Label(l));
@@ -1236,6 +1290,13 @@ impl Lower {
             self.regs[c].first_write.get_or_insert(self.idx);
             self.regs[c].last_float = self.ty(v) == Ty::F32;
             self.written_iter[c] = true;
+            if !self.self_update.contains(&(c as u8)) {
+                self.hint[c] = self
+                    .moves
+                    .iter()
+                    .find(|m| m.0 == c as u8)
+                    .and_then(|m| self.hint[m.1 as usize]);
+            }
             if c < 64 {
                 self.written_mask |= 1 << c;
             }
