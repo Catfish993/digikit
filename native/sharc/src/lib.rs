@@ -123,6 +123,17 @@ pub struct Dispatch {
     pub count: usize,
 }
 
+/// `SHARC_AOT_DENY=0xb80509,...` (hex entry PCs): generated blocks to leave
+/// out, for bisecting a tier fault (see tools/coupled.py bisect).
+fn aot_deny_from_env() -> Vec<u32> {
+    std::env::var("SHARC_AOT_DENY")
+        .unwrap_or_default()
+        .split(',')
+        .filter(|x| !x.trim().is_empty())
+        .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
+        .collect()
+}
+
 impl Default for Dispatch {
     fn default() -> Self {
         Self::new(&[], &[])
@@ -150,6 +161,20 @@ impl Dispatch {
             pages,
             count: blocks.len(),
         }
+    }
+
+    /// Drop the entries at `pcs`, so those PCs run in the interpreter (or the
+    /// fast tier). Only block entries are affected: a block that continues
+    /// into a denied PC without going through dispatch still runs it.
+    pub fn without(mut self, pcs: &[u32]) -> Dispatch {
+        for &pc in pcs {
+            if let Some(Some(page)) = self.pages.get_mut((pc >> 12) as usize)
+                && page[(pc & 0xFFF) as usize].take().is_some()
+            {
+                self.count -= 1;
+            }
+        }
+        self
     }
 
     #[inline(always)]
@@ -559,7 +584,8 @@ impl Engine {
             s,
             halt: None,
             last_trap: None,
-            use_blocks: true,
+            // SHARC_AOT=0 runs without generated blocks (option 1 can still change it).
+            use_blocks: std::env::var("SHARC_AOT").as_deref() != Ok("0"),
             instruction_clock: false,
             instruction_clock_base: 0,
             stop_software_interrupt: false,
@@ -568,7 +594,8 @@ impl Engine {
             stop_align: None,
             software_interrupts: false,
             export_ranges: false,
-            dispatch: Dispatch::new(image_blocks(), image_model_safe()),
+            dispatch: Dispatch::new(image_blocks(), image_model_safe())
+                .without(&aot_deny_from_env()),
             stats: Stats::default(),
             cov: None,
             one_dispatch: false,

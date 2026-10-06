@@ -141,7 +141,7 @@
       "name": "trig1-noqa-40m",
       "description": "Validation, not a load: desktop_trig1_capture_without_qa_script (Trig 1 held from ready for 40M instructions, no prelude). Silent PCM; hash recorded in docs/findings/07-emulator.md.",
       "instructions": 40000000,
-    "clip_last_chunk": true,
+      "clip_last_chunk": true,
       "expect_sha256": "a50586e86b2d0246bd05181dd1f877b1b2570f2c1eb74b7613c9b17dbd4eb75a",
       "validation": true,
       "events": [
@@ -152,6 +152,84 @@
         },
         {
           "at_instr": 40000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "trig1-taps",
+      "description": "Three Trig 1 taps (0.3 s hold each, the desktop Audition default) without the QA script; 10 s. A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
+      "seconds": 10.5,
+      "exact_events": true,
+      "expect_sha256": "e50f29088de880315ea3f2197c832f63a698aa7fcab5c93ae3a2a93ac47d0071",
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 60000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 100000000,
+          "button": 25,
+          "down": false
+        },
+        {
+          "at_instr": 210000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 250000000,
+          "button": 25,
+          "down": false
+        },
+        {
+          "at_instr": 360000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 400000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "trig1-tap-release",
+      "description": "One Trig 1 tap, then 8 s of release and idle (the desktop 'sine then noise' case). A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
+      "seconds": 8.5,
+      "exact_events": true,
+      "expect_sha256": "77cbc3761f97b0cf3a1c5cdad55d304ce99e428b6bafccd59409d613f071f6d8",
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 60000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 100000000,
           "button": 25,
           "down": false
         }

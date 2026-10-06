@@ -17,9 +17,18 @@ export interface NativeAudioStatus {
   source_audio_seconds: number; session_wall_seconds: number;
   output_device?: string;
   device_error: string | null;
+  audio_seconds_per_session_wall_second?: number;
+  audio_mode?: string;
+  halted?: string | null;
+  dsp_tiers?: {
+    worker_cpu_s: number; audio_s?: number; dsp_cpu_per_audio_s?: number | null;
+    instructions: number; interpreter: number; fast_tier: number; aot_block: number;
+  } | null;
   sink?: {
     stream_started: boolean; source_received_frames: number; queued_device_frames: number;
     underrun_events: number; error: string | null;
+    rebuffering?: boolean; played_device_frames?: number; silent_device_frames?: number;
+    stretch_rate?: number; recovery?: string; sink_capture?: string | null; events_total?: number;
   } | null;
 }
 /** Dev-only inputs of the coupled core: user-supplied, never bundled. */

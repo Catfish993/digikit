@@ -8,7 +8,7 @@ use std::{
 
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
-use desktop_runtime::{AudioOptions, DesktopRuntime, STEP_CHUNK};
+use desktop_runtime::{AudioMode, AudioOptions, DesktopRuntime, STEP_CHUNK};
 use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SMALL_CAPACITY_BLOCKS};
 use serde::Deserialize;
 use tauri::State;
@@ -135,9 +135,62 @@ struct StartupArgs {
     card_image: Option<PathBuf>,
     #[serde(skip)]
     audio: Option<AudioOptions>,
+    #[serde(skip)]
+    #[cfg_attr(not(feature = "coupled-audio"), allow(dead_code))]
+    scenario: Option<String>,
+    #[serde(skip)]
+    #[cfg_attr(not(feature = "coupled-audio"), allow(dead_code))]
+    report: Option<PathBuf>,
 }
 
-fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
+#[cfg(feature = "coupled-audio")]
+struct ScenarioSetup {
+    scenario: digi_coupled::scenario::Scenario,
+    report: Option<PathBuf>,
+}
+#[cfg(not(feature = "coupled-audio"))]
+type ScenarioSetup = std::convert::Infallible;
+
+#[cfg(feature = "coupled-audio")]
+struct ScenarioRun {
+    scenario: digi_coupled::scenario::Scenario,
+    next: usize,
+    started: Option<std::time::Instant>,
+    report: Option<PathBuf>,
+}
+
+#[cfg(feature = "coupled-audio")]
+fn load_scenario(spec: &str) -> Result<digi_coupled::scenario::Scenario, String> {
+    use digi_coupled::scenario;
+    if std::path::Path::new(spec).is_file() {
+        let text = std::fs::read_to_string(spec).map_err(|e| format!("scenario file: {e}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("scenario file: {e}"))?;
+        let found = scenario::find_scenario(&value)
+            .ok_or("scenario file has no scenario (need \"scenarios\" or a scenario object)")?;
+        scenario::parse_scenario(found)
+    } else {
+        scenario::parse_scenarios(scenario::DEFAULT_SCENARIOS)?
+            .into_iter()
+            .find(|candidate| candidate.name == spec)
+            .ok_or_else(|| format!("unknown scenario: {spec}"))
+    }
+}
+
+fn actor(
+    receiver: mpsc::Receiver<Command>,
+    audio: Option<AudioOptions>,
+    scenario: Option<ScenarioSetup>,
+) {
+    #[cfg(feature = "coupled-audio")]
+    let mut scenario_run = scenario.map(|setup| ScenarioRun {
+        scenario: setup.scenario,
+        next: 0,
+        started: None,
+        report: setup.report,
+    });
+    #[cfg(not(feature = "coupled-audio"))]
+    let _ = scenario;
     let mut runtime: Option<DesktopRuntime> = None;
     let mut session = 0u64;
     let mut cached: Option<(Vec<u8>, Option<PathBuf>)> = None;
@@ -259,6 +312,59 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
                 .as_mut()
                 .ok_or_else(|| "No firmware selected".into())
                 .and_then(|runtime| {
+                    #[cfg(feature = "coupled-audio")]
+                    let mut budget = budget;
+                    #[cfg(feature = "coupled-audio")]
+                    if let Some(run) = scenario_run.as_mut() {
+                        use digi_coupled::scenario::{self, When};
+                        let started = *run.started.get_or_insert_with(std::time::Instant::now);
+                        let elapsed = runtime.elapsed_instructions();
+                        while let Some(event) = run.scenario.events.get(run.next).copied() {
+                            let due = match event.when {
+                                When::Instr(n) => elapsed >= n,
+                                When::Frames(n) => runtime.frames_sent() >= n,
+                            };
+                            if !due {
+                                break;
+                            }
+                            scenario::fire(runtime, event.action)?;
+                            run.next += 1;
+                        }
+                        let done = run.scenario.instructions.is_some_and(|n| elapsed >= n)
+                            || run.scenario.seconds.is_some_and(|s| {
+                                runtime.frames_sent() as f64 >= s * scenario::FRAMES_PER_SECOND
+                            });
+                        if done {
+                            let report = serde_json::json!({
+                                "scenario": run.scenario.name,
+                                "wall_seconds": started.elapsed().as_secs_f64(),
+                                "elapsed_instructions": elapsed,
+                                "audio": runtime.audio_status().unwrap_or(serde_json::Value::Null),
+                                "diagnostics": runtime.diagnostics(),
+                            });
+                            let text =
+                                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+                            match &run.report {
+                                Some(path) => {
+                                    if let Some(parent) = path.parent() {
+                                        std::fs::create_dir_all(parent)
+                                            .map_err(|e| format!("report: {e}"))?;
+                                    }
+                                    std::fs::write(path, text)
+                                        .map_err(|e| format!("report: {e}"))?;
+                                }
+                                None => println!("{text}"),
+                            }
+                            std::process::exit(0);
+                        }
+                        if run.scenario.exact_events
+                            && let Some(event) = run.scenario.events.get(run.next)
+                            && let When::Instr(n) = event.when
+                            && n > elapsed
+                        {
+                            budget = budget.min(u32::try_from(n - elapsed).unwrap_or(u32::MAX));
+                        }
+                    }
                     let snapshot = runtime.step_chunk(budget.min(STEP_CHUNK));
                     if let Some(error) = read_error
                         .as_ref()
@@ -529,7 +635,10 @@ async fn emu_stop(host: State<'_, Host>, session_id: u64) -> Result<(), String> 
 }
 fn main() {
     #[cfg(feature = "coupled-audio")]
-    if std::env::args_os().nth(1).is_some_and(|a| a == "--pgo-train") {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|a| a == "--pgo-train")
+    {
         match desktop_runtime::pgo_training_workload() {
             Ok(()) => {
                 println!("pgo_train=ok");
@@ -547,7 +656,23 @@ fn main() {
     });
     let (sender, receiver) = mpsc::channel();
     let audio = startup.audio.clone();
-    thread::spawn(move || actor(receiver, audio));
+    #[cfg(feature = "coupled-audio")]
+    let scenario = startup
+        .scenario
+        .as_deref()
+        .map(load_scenario)
+        .transpose()
+        .unwrap_or_else(|error| {
+            eprintln!("{error}");
+            std::process::exit(2)
+        })
+        .map(|scenario| ScenarioSetup {
+            scenario,
+            report: startup.report.clone(),
+        });
+    #[cfg(not(feature = "coupled-audio"))]
+    let scenario: Option<ScenarioSetup> = None;
+    thread::spawn(move || actor(receiver, audio, scenario));
     if let Some(path) = startup.syx {
         let bytes = std::fs::read(&path).unwrap_or_else(|error| {
             eprintln!("firmware input: {error}");
@@ -606,6 +731,9 @@ fn parse_values(
     let mut automatic = false;
     let mut buffer = None;
     let mut no_audio = false;
+    let mut audio_mode = None;
+    let mut scenario = None;
+    let mut report = None;
     while let Some(value) = values.next() {
         let mut path = |label: &str| -> Result<PathBuf, String> {
             values
@@ -641,13 +769,29 @@ fn parse_values(
                 return Err("--audio-buffer must be finite and between 0 and 10 seconds".into());
             }
             buffer = Some(seconds);
+        } else if value == "--audio-mode" {
+            let mode = values.next().ok_or("--audio-mode requires a mode")?;
+            audio_mode = Some(AudioMode::parse(
+                mode.to_str().ok_or("invalid --audio-mode")?,
+            )?);
+        } else if value == "--scenario" {
+            let spec = values.next().ok_or("--scenario requires a name or file")?;
+            scenario = Some(
+                spec.into_string()
+                    .map_err(|_| "invalid --scenario".to_string())?,
+            );
+        } else if value == "--report" {
+            report = Some(path("--report")?);
         } else if value.to_string_lossy().starts_with("--") {
             return Err(format!("unknown option: {}", value.to_string_lossy()));
         } else if syx.is_none() {
             syx = Some(value.into());
         } else {
-            return Err("usage: digiemu [SYX] [--card-image FILE] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--audio-buffer SECONDS] [--no-audio]]".into());
+            return Err("usage: digiemu [SYX] [--card-image FILE] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]]".into());
         }
+    }
+    if !cfg!(feature = "coupled-audio") && (scenario.is_some() || report.is_some()) {
+        return Err("--scenario needs a coupled-audio build".into());
     }
     let audio = if coupled {
         if syx.is_none() {
@@ -670,9 +814,17 @@ fn parse_values(
                 None
             },
             link_timing: false,
+            audio_mode: audio_mode.unwrap_or_default(),
         })
     } else {
-        if image.is_some() || state.is_some() || snapshot.is_some() || buffer.is_some() {
+        if image.is_some()
+            || state.is_some()
+            || snapshot.is_some()
+            || buffer.is_some()
+            || audio_mode.is_some()
+            || scenario.is_some()
+            || report.is_some()
+        {
             return Err("audio options require --coupled".into());
         }
         None
@@ -681,6 +833,8 @@ fn parse_values(
         syx,
         card_image,
         audio,
+        scenario,
+        report,
     })
 }
 #[cfg(test)]
@@ -731,6 +885,31 @@ mod cli_tests {
     }
 
     #[test]
+    fn audio_mode_parses_and_requires_coupled() {
+        let base = [
+            "x",
+            "--auto-coupled",
+            "--dsp-image",
+            "image",
+            "--dsp-state",
+            "state",
+            "--cf-snapshot",
+            "snapshot",
+        ];
+        let with = |mode: &'static str| {
+            let mut args = base.to_vec();
+            args.extend(["--audio-mode", mode]);
+            parse(&args)
+        };
+        assert_eq!(
+            with("stretch").unwrap().audio.unwrap().audio_mode,
+            AudioMode::Stretch
+        );
+        assert!(with("loud").is_err());
+        assert!(parse(&["x", "--audio-mode", "gap"]).is_err());
+    }
+
+    #[test]
     fn tap_holds_for_the_requested_guest_instructions_across_chunks() {
         let syx = std::env::var_os("DIGI_COUPLED_SYX")
             .map(PathBuf::from)
@@ -739,7 +918,7 @@ mod cli_tests {
             return;
         };
         let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || actor(receiver, None));
+        thread::spawn(move || actor(receiver, None, None));
         let (load_reply, load_response) = mpsc::channel();
         sender
             .send(Command::Load {
@@ -766,7 +945,7 @@ mod cli_tests {
     #[test]
     fn audio_status_validates_session_and_reports_no_coupled_audio_as_null() {
         let (sender, receiver) = mpsc::channel();
-        let actor = thread::spawn(move || actor(receiver, None));
+        let actor = thread::spawn(move || actor(receiver, None, None));
         let (missing_reply, missing_response) = mpsc::channel();
         sender
             .send(Command::AudioStatus {
@@ -815,7 +994,10 @@ mod cli_tests {
                 reply: status_reply,
             })
             .unwrap();
-        assert_eq!(status_response.recv().unwrap().unwrap(), serde_json::Value::Null);
+        assert_eq!(
+            status_response.recv().unwrap().unwrap(),
+            serde_json::Value::Null
+        );
         drop(sender);
         actor.join().unwrap();
     }
@@ -841,9 +1023,10 @@ mod cli_tests {
             automatic: false,
             expected_syx: None,
             link_timing: false,
+            audio_mode: AudioMode::default(),
         };
         let (sender, receiver) = mpsc::channel();
-        let actor = thread::spawn(move || actor(receiver, Some(audio)));
+        let actor = thread::spawn(move || actor(receiver, Some(audio), None));
         let (load_reply, load_response) = mpsc::channel();
         sender
             .send(Command::Load {
@@ -854,16 +1037,27 @@ mod cli_tests {
             })
             .unwrap();
         let loaded = load_response.recv().unwrap().unwrap();
-        let frame = loaded.frame.clone().expect("load should observe restored LCD");
+        let frame = loaded
+            .frame
+            .clone()
+            .expect("load should observe restored LCD");
         assert!(frame.iter().any(|byte| *byte != 0));
         let revision = loaded.status.frame_revision;
         let (startup_reply, startup_response) = mpsc::channel();
-        sender.send(Command::Startup { reply: startup_reply }).unwrap();
+        sender
+            .send(Command::Startup {
+                reply: startup_reply,
+            })
+            .unwrap();
         let startup = startup_response.recv().unwrap().unwrap();
         assert_eq!(startup.frame, Some(frame));
         assert_eq!(startup.status.frame_revision, revision);
         let (second_reply, second_response) = mpsc::channel();
-        sender.send(Command::Startup { reply: second_reply }).unwrap();
+        sender
+            .send(Command::Startup {
+                reply: second_reply,
+            })
+            .unwrap();
         assert!(second_response.recv().unwrap().unwrap().frame.is_none());
         drop(sender);
         actor.join().unwrap();

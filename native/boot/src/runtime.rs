@@ -483,9 +483,10 @@ impl Emulator {
 
     pub fn snapshot(&mut self) -> Snapshot {
         let status = self.status();
-        let frame = (self.replay_restored_frame || self.emitted_revision != Some(self.frame_revision))
-            .then(|| self.current_frame.clone())
-            .flatten();
+        let frame = (self.replay_restored_frame
+            || self.emitted_revision != Some(self.frame_revision))
+        .then(|| self.current_frame.clone())
+        .flatten();
         if frame.is_some() {
             self.emitted_revision = Some(self.frame_revision);
             self.replay_restored_frame = false;
@@ -538,6 +539,12 @@ impl Emulator {
     #[cfg(feature = "diagnostic-events")]
     fn event(&mut self, kind: EventKind, value: u64) {
         self.telemetry.event(kind, value, self.position());
+    }
+
+    /// ColdFire instructions executed so far (the clock scenarios and
+    /// recorded inputs are timed in).
+    pub fn icount(&self) -> u64 {
+        self.cpu.icount
     }
 
     pub fn button(&mut self, code: u8, down: bool) -> Result<(), String> {
@@ -1314,14 +1321,14 @@ impl Emulator {
     }
 
     fn refresh_frame(&mut self) {
-        if let Some(frame) = self.frames.latest_for(self.mainloop_tcb) {
-            if self.main_frame_latched || frame.lit_bytes > 0 {
-                self.main_frame_latched = true;
-                if self.current_frame.as_ref() != Some(&frame.raw) {
-                    self.publish_frame("main", frame.raw.clone());
-                }
-                return;
+        if let Some(frame) = self.frames.latest_for(self.mainloop_tcb)
+            && (self.main_frame_latched || frame.lit_bytes > 0)
+        {
+            self.main_frame_latched = true;
+            if self.current_frame.as_ref() != Some(&frame.raw) {
+                self.publish_frame("main", frame.raw.clone());
             }
+            return;
         }
         if !self.main_frame_latched
             && let Some(raw) = &self.intro_frames.latest

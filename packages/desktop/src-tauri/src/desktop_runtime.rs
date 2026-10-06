@@ -2,7 +2,7 @@
 //! the headless `coupled-run`). Configured local DN2 ready assets attach coupled
 //! audio on normal startup. The fixture gates stay here, as thin tests, so their
 //! names and asserted hashes keep their place for the tooling that runs them.
-pub use digi_coupled::{AudioOptions, CoupledRuntime as DesktopRuntime, STEP_CHUNK};
+pub use digi_coupled::{AudioMode, AudioOptions, CoupledRuntime as DesktopRuntime, STEP_CHUNK};
 
 /// The PGO training workload: the `coupled_ready_exactness` gate, runnable from
 /// the app binary (`--pgo-train`) so the profile is trained on the same crate

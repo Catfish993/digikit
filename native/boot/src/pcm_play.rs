@@ -41,6 +41,129 @@ pub enum Mode {
     Buffer(f64),
 }
 
+/// What playback does when the emulator falls behind real time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Recovery {
+    /// Missing frames play as silence (a tone full of gaps sounds like noise).
+    Gap,
+    /// Stop with a short fade, wait until this many seconds are queued, resume.
+    Rebuffer(f64),
+    /// Slow playback to the rate audio arrives (the pitch drops with it),
+    /// aiming at about this many seconds queued; rebuffers if the ring still
+    /// runs dry.
+    Stretch(f64),
+}
+
+impl Default for Recovery {
+    fn default() -> Self {
+        Recovery::Rebuffer(0.5)
+    }
+}
+
+impl Recovery {
+    pub fn name(self) -> &'static str {
+        match self {
+            Recovery::Gap => "gap",
+            Recovery::Rebuffer(_) => "rebuffer",
+            Recovery::Stretch(_) => "stretch",
+        }
+    }
+}
+
+/// Slowest playback rate relative to real time when stretching.
+const STRETCH_MIN: f64 = 0.80;
+/// Fastest playback rate relative to real time when stretching.
+const STRETCH_MAX: f64 = 1.02;
+/// Fraction of the gap to the wanted rate closed per pump (about 250 ms at 5 ms pumps).
+const STRETCH_GAIN: f64 = 0.02;
+
+/// Most sink events kept in [`PlaybackStats::events`].
+const SINK_EVENT_LIMIT: usize = 10_000;
+
+/// A change in the output's state, timed from the stream start.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct SinkEvent {
+    pub at_s: f64,
+    /// "underrun" (the ring ran dry) or "resume" (a rebuffer refilled).
+    pub kind: &'static str,
+    pub queued_device_frames: u64,
+    pub feeder_pending_source_frames: u64,
+}
+
+/// `DIGI_EMU_SINK_WAV=path`: write what the output device actually played
+/// (after resampling, gaps and fades) as a float WAV at the device rate.
+struct SinkCapture {
+    ring: Arc<SpscRing>,
+    path: std::path::PathBuf,
+    writer: Option<crate::wav::WavWriter>,
+    error: Option<String>,
+    scratch: Vec<StereoSample>,
+    interleaved: Vec<f32>,
+}
+
+impl SinkCapture {
+    fn from_env() -> Option<Self> {
+        let path = std::env::var_os("DIGI_EMU_SINK_WAV")?;
+        Some(Self {
+            ring: Arc::new(SpscRing::with_capacity(1 << 17)),
+            path: path.into(),
+            writer: None,
+            error: None,
+            scratch: vec![StereoSample::default(); 4096],
+            interleaved: Vec::with_capacity(8192),
+        })
+    }
+
+    /// Move whatever the callback played since the last call into the file.
+    fn drain(&mut self, device_rate: u32) {
+        if self.error.is_some() {
+            return;
+        }
+        if self.writer.is_none() {
+            match crate::wav::WavWriter::create(&self.path, device_rate, 2) {
+                Ok(w) => self.writer = Some(w),
+                Err(e) => {
+                    self.error = Some(format!("error: {}: {e}", self.path.display()));
+                    return;
+                }
+            }
+        }
+        loop {
+            let n = self.ring.pop_into(&mut self.scratch);
+            if n == 0 {
+                break;
+            }
+            self.interleaved.clear();
+            for s in &self.scratch[..n] {
+                self.interleaved.push(s.l);
+                self.interleaved.push(s.r);
+            }
+            if let Some(w) = &mut self.writer
+                && let Err(e) = w.write(&self.interleaved)
+            {
+                self.error = Some(format!("error: {}: {e}", self.path.display()));
+                self.writer = None;
+                return;
+            }
+        }
+    }
+
+    fn describe(&self) -> String {
+        self.error
+            .clone()
+            .unwrap_or_else(|| self.path.display().to_string())
+    }
+}
+
+/// Playback options beyond [`Mode`], for [`PcmPlayer::spawn_with_config`].
+#[derive(Default)]
+pub struct FeedConfig {
+    pub recovery: Recovery,
+    /// Counters of the output callback, when the opener shares them.
+    pub counters: Option<Arc<audio::SinkCounters>>,
+    capture: Option<SinkCapture>,
+}
+
 /// Queue + linear resampler between the producer and the ring. Pure logic
 /// (no threads, no device) so it can be tested headless.
 pub struct Feeder {
@@ -53,6 +176,9 @@ pub struct Feeder {
     /// Samples (at the source rate) queued before playback may start.
     start_at: usize,
     started: bool,
+    base_step: f64,
+    rate: f64,
+    stretch_target: Option<usize>,
 }
 
 impl Feeder {
@@ -68,7 +194,22 @@ impl Feeder {
             step: SOURCE_RATE as f64 / device_rate as f64,
             start_at,
             started: false,
+            base_step: SOURCE_RATE as f64 / device_rate as f64,
+            rate: 1.0,
+            stretch_target: None,
         }
+    }
+
+    /// Adapt the resampling rate to keep about `target_frames` device frames
+    /// queued (see [`Recovery::Stretch`]).
+    pub fn with_stretch(mut self, target_frames: usize) -> Self {
+        self.stretch_target = Some(target_frames.max(1));
+        self
+    }
+
+    /// Playback rate relative to real time (1.0 unless stretching).
+    pub fn rate(&self) -> f64 {
+        self.rate
     }
 
     /// Queue interleaved L/R f32 samples.
@@ -98,6 +239,12 @@ impl Feeder {
     /// Move as much as fits into the ring; never blocks. Returns the number
     /// of device-rate samples pushed. Does nothing before `may_start`.
     pub fn pump(&mut self, done: bool) -> usize {
+        if let Some(target) = self.stretch_target {
+            let fill = self.ring.len() as f64 / target as f64;
+            let want = fill.clamp(STRETCH_MIN, STRETCH_MAX);
+            self.rate += (want - self.rate) * STRETCH_GAIN;
+            self.step = self.base_step * self.rate;
+        }
         if !self.may_start(done) {
             return 0;
         }
@@ -168,6 +315,18 @@ pub struct CpalOpener {
     underruns: Arc<AtomicU64>,
     callback_max_frames: Arc<AtomicU64>,
     stream_errors: audio::StreamErrors,
+    sink: audio::SinkOptions,
+    rebuffer_seconds: Option<f64>,
+}
+
+impl CpalOpener {
+    fn with_sink(sink: audio::SinkOptions, rebuffer_seconds: Option<f64>) -> Self {
+        CpalOpener {
+            sink,
+            rebuffer_seconds,
+            ..CpalOpener::default()
+        }
+    }
 }
 
 impl Opener for CpalOpener {
@@ -179,12 +338,19 @@ impl Opener for CpalOpener {
     }
     fn start(&mut self, ring: Arc<SpscRing>, wake: thread::Thread) -> Result<Opened, String> {
         let p = self.pending.take().ok_or("device not probed")?;
-        let opened = p.start_with_errors(
+        let mut sink = self.sink.clone();
+        if let Some(seconds) = self.rebuffer_seconds {
+            sink.underrun = audio::Underrun::Rebuffer {
+                resume_frames: (seconds * f64::from(p.sample_rate)).round() as usize,
+            };
+        }
+        let opened = p.start_with_options(
             ring,
             self.underruns.clone(),
             self.callback_max_frames.clone(),
             wake,
             self.stream_errors.clone(),
+            sink,
         )?;
         Ok((
             opened.sample_rate,
@@ -217,6 +383,14 @@ pub struct PlaybackStats {
     pub underrun_events: u64,
     pub callback_max_frames: u64,
     pub error: Option<String>,
+    pub recovery: &'static str,
+    pub played_device_frames: u64,
+    pub silent_device_frames: u64,
+    pub rebuffering: bool,
+    pub stretch_rate: f64,
+    pub events: Vec<SinkEvent>,
+    /// The capture path, or "error: ..." if the capture failed.
+    pub sink_capture: Option<String>,
 }
 
 pub struct PcmPlayer {
@@ -235,9 +409,53 @@ impl PcmPlayer {
         Self::spawn_with(CpalOpener::default, mode)
     }
 
+    /// Like [`Self::spawn`], with an underrun policy, shared callback
+    /// counters and the optional `DIGI_EMU_SINK_WAV` capture.
+    pub fn spawn_with_recovery(mode: Mode, recovery: Recovery) -> Result<Self, String> {
+        let counters = Arc::new(audio::SinkCounters::default());
+        let capture = SinkCapture::from_env();
+        let sink = audio::SinkOptions {
+            underrun: audio::Underrun::Gap,
+            counters: Arc::clone(&counters),
+            monitor: capture.as_ref().map(|c| Arc::clone(&c.ring)),
+        };
+        let rebuffer = match recovery {
+            Recovery::Gap => None,
+            Recovery::Rebuffer(seconds) => Some(seconds),
+            // Stretching keeps the ring near its target; a short refill
+            // only catches what the rate control missed.
+            Recovery::Stretch(_) => Some(0.05),
+        };
+        Self::spawn_with_config(
+            move || CpalOpener::with_sink(sink, rebuffer),
+            mode,
+            FeedConfig {
+                recovery,
+                counters: Some(counters),
+                capture,
+            },
+        )
+    }
+
     /// `make` builds the opener on the feeder thread (device handles need
     /// not be `Send`).
     pub fn spawn_with<O, F>(make: F, mode: Mode) -> Result<Self, String>
+    where
+        O: Opener,
+        F: FnOnce() -> O + Send + 'static,
+    {
+        Self::spawn_with_config(
+            make,
+            mode,
+            FeedConfig {
+                recovery: Recovery::Gap,
+                ..FeedConfig::default()
+            },
+        )
+    }
+
+    /// [`Self::spawn_with`] plus playback options.
+    pub fn spawn_with_config<O, F>(make: F, mode: Mode, config: FeedConfig) -> Result<Self, String>
     where
         O: Opener,
         F: FnOnce() -> O + Send + 'static,
@@ -250,7 +468,9 @@ impl PcmPlayer {
         let worker_stats = stats.clone();
         let worker = thread::Builder::new()
             .name("pcm-feeder".into())
-            .spawn(move || feeder_thread(make(), mode, rx, info_tx, worker_stop, worker_stats))
+            .spawn(move || {
+                feeder_thread(make(), mode, rx, info_tx, worker_stop, worker_stats, config)
+            })
             .map_err(|e| format!("spawn feeder: {e}"))?;
         match info_rx.recv() {
             Ok(Ok((device_rate, device))) => Ok(PcmPlayer {
@@ -319,6 +539,7 @@ fn feeder_thread<O: Opener>(
     info_tx: mpsc::Sender<Result<(u32, String), String>>,
     stop: Arc<AtomicBool>,
     stats: Arc<Mutex<PlaybackStats>>,
+    mut config: FeedConfig,
 ) {
     let (mut rate, _name) = match opener.probe() {
         Ok(i) => {
@@ -332,7 +553,20 @@ fn feeder_thread<O: Opener>(
     };
     // One second of device-rate audio (rounded up to a power of two).
     let mut ring = Arc::new(SpscRing::with_capacity(rate as usize));
-    let mut feeder = Feeder::new(ring.clone(), rate, mode);
+    let new_feeder = |ring: &Arc<SpscRing>, rate: u32, recovery: Recovery| {
+        let feeder = Feeder::new(ring.clone(), rate, mode);
+        match recovery {
+            Recovery::Stretch(seconds) => {
+                feeder.with_stretch((seconds * f64::from(rate)).round() as usize)
+            }
+            _ => feeder,
+        }
+    };
+    let mut feeder = new_feeder(&ring, rate, config.recovery);
+    let mut stream_started_at: Option<std::time::Instant> = None;
+    let mut last_underruns = 0u64;
+    let mut last_waiting = false;
+    let mut events: Vec<SinkEvent> = Vec::new();
     let mut stream: Option<Opened> = None;
     let mut done = false;
     let mut received = 0u64;
@@ -362,7 +596,10 @@ fn feeder_thread<O: Opener>(
         }
         if stream.is_none() && feeder.may_start(done) {
             match opener.start(ring.clone(), thread::current()) {
-                Ok(s) => stream = Some(s),
+                Ok(s) => {
+                    stream = Some(s);
+                    stream_started_at.get_or_insert_with(std::time::Instant::now);
+                }
                 Err(e) => {
                     stats.lock().expect("playback stats mutex").error = Some(e.clone());
                     eprintln!("pcm_play: cannot start output: {e}");
@@ -371,6 +608,11 @@ fn feeder_thread<O: Opener>(
             }
         }
         feeder.pump(done);
+        if stream_started_at.is_some()
+            && let Some(capture) = &mut config.capture
+        {
+            capture.drain(rate);
+        }
         if let Some(error) = opener.error() {
             // CoreAudio reports a default-output change (and a removed
             // device) as a stream error: reopen on the current default
@@ -388,7 +630,7 @@ fn feeder_thread<O: Opener>(
                     if new_rate != rate {
                         rate = new_rate;
                         ring = Arc::new(SpscRing::with_capacity(rate as usize));
-                        feeder = Feeder::new(ring.clone(), rate, mode);
+                        feeder = new_feeder(&ring, rate, config.recovery);
                     }
                     continue;
                 }
@@ -404,14 +646,48 @@ fn feeder_thread<O: Opener>(
             }
         }
         let (underrun_events, callback_max_frames) = opener.counters();
+        let feeder_pending_source_frames = feeder.queued().saturating_sub(1) as u64;
+        let queued_device_frames = ring.len() as u64;
+        let (mut played_device_frames, mut silent_device_frames, mut rebuffering) = (0, 0, false);
+        if let Some(c) = &config.counters {
+            played_device_frames = c.played_frames.load(Ordering::Relaxed);
+            silent_device_frames = c.silent_frames.load(Ordering::Relaxed);
+            rebuffering = c.waiting.load(Ordering::Relaxed);
+        }
+        let at_s = stream_started_at.map_or(0.0, |t| t.elapsed().as_secs_f64());
+        if underrun_events > last_underruns && events.len() < SINK_EVENT_LIMIT {
+            events.push(SinkEvent {
+                at_s,
+                kind: "underrun",
+                queued_device_frames,
+                feeder_pending_source_frames,
+            });
+        }
+        if last_waiting && !rebuffering && events.len() < SINK_EVENT_LIMIT {
+            events.push(SinkEvent {
+                at_s,
+                kind: "resume",
+                queued_device_frames,
+                feeder_pending_source_frames,
+            });
+        }
+        last_underruns = underrun_events;
+        last_waiting = rebuffering;
         *stats.lock().expect("playback stats mutex") = PlaybackStats {
             stream_started: stream.is_some(),
             source_received_frames: received,
-            feeder_pending_source_frames: feeder.queued().saturating_sub(1) as u64,
-            queued_device_frames: ring.len() as u64,
+            feeder_pending_source_frames,
+            queued_device_frames,
             underrun_events,
             callback_max_frames,
             error: None,
+            recovery: config.recovery.name(),
+            played_device_frames,
+            silent_device_frames,
+            rebuffering,
+            stretch_rate: feeder.rate(),
+            events: events.clone(),
+            sink_capture: config.capture.as_ref().map(SinkCapture::describe),
         };
         if done && feeder.drained() {
             break;
@@ -441,6 +717,11 @@ fn feeder_thread<O: Opener>(
             return;
         }
         thread::sleep(Duration::from_millis(10));
+    }
+    if stream_started_at.is_some()
+        && let Some(capture) = &mut config.capture
+    {
+        capture.drain(rate);
     }
     drop(stream);
 }
@@ -503,6 +784,31 @@ mod tests {
         let got = drain(&ring);
         assert_eq!(got[3].l, 6.0);
         assert!(f.drained() || f.queued() <= 2);
+    }
+
+    #[test]
+    fn stretch_slows_down_when_the_ring_stays_low() {
+        let ring = Arc::new(SpscRing::with_capacity(4096));
+        let mut feeder = Feeder::new(Arc::clone(&ring), SOURCE_RATE, Mode::Live).with_stretch(2048);
+        feeder.accept(&vec![0.0f32; 2 * 200_000]);
+        let mut sink = vec![StereoSample::default(); 4096];
+        for _ in 0..20 {
+            feeder.pump(false);
+            while ring.pop_into(&mut sink) > 0 {}
+        }
+        assert!(feeder.rate() < 0.95, "rate {}", feeder.rate());
+        assert!(feeder.rate() >= STRETCH_MIN);
+    }
+
+    #[test]
+    fn stretch_never_runs_faster_than_its_cap() {
+        let ring = Arc::new(SpscRing::with_capacity(4096));
+        let mut feeder = Feeder::new(Arc::clone(&ring), SOURCE_RATE, Mode::Live).with_stretch(2048);
+        feeder.accept(&vec![0.0f32; 2 * 200_000]);
+        for _ in 0..200 {
+            feeder.pump(false);
+        }
+        assert!(feeder.rate() > 1.0 && feeder.rate() <= STRETCH_MAX + 1e-12);
     }
 
     struct FakeOpener {

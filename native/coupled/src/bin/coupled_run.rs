@@ -15,20 +15,33 @@
 //!   --dsp-state snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp \
 //!   --cf-snapshot snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap \
 //!   [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--playback] [--audio-buffer S] [--no-pcm-tap] [--no-link-timing] [--profile-regions] [--profile-execution] \
-//!   [--out report.json] [--list]
+//!   [--out report.json] [--list] \
+//!   [--replay FILE.json] [--wav PATH] [--audio-mode rebuffer|stretch|gap]
 //! ```
+//!
+//! `--replay FILE` runs only the scenario in FILE (a scenario object, or a desktop
+//! diagnostics export carrying a `recorded_scenario`); it ignores `--scenario` and
+//! the scenarios file. `--wav PATH` writes the emulator's own PCM to PATH (a float
+//! WAV for `.wav`, else raw f32le); with several scenarios `-<name>` goes before the
+//! extension. `--audio-mode` is the underrun recovery of `--playback`.
 //!
 //! Scenario file: `{"scenarios": [{"name", "description", "seconds" | "instructions",
 //! "qa_script", "clip_last_chunk", "expect_sha256", "events": [...]}]}`. An event is `{"at_s" | "at_instr", "button",
 //! "down"}` or `{"at_s" | "at_instr", "turn": encoder, "detents": n}`. Times count from
 //! the restored ready point: `at_instr` in ColdFire instructions, `at_s` in audio
 //! seconds (DSPI2 frames sent / 1500). Events fire at chunk boundaries, before the
-//! chunk that follows, so a run is a function of its inputs. `qa_script` also plays
+//! chunk that follows, so a run is a function of its inputs; with `exact_events` the
+//! chunk is shortened so an `at_instr` event fires at exactly that count. `qa_script` also plays
 //! the shared QA sequence of `native/boot/examples/common` (NO, NO, encoder A).
 //! The default scenarios are `native/coupled/scenarios.json`.
 
 use digi_coupled::{
-    AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters, WorkerReport, common,
+    AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,
+    WorkerReport, common,
+    scenario::{
+        DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When, find_scenario, fire,
+        parse_scenario, parse_scenarios,
+    },
 };
 #[cfg(feature = "region-profile")]
 use digi_coupled::{RegionCost, RegionProfile};
@@ -43,99 +56,8 @@ use std::{
     time::Instant,
 };
 
-/// DSPI2 frames per audio second (one 32-sample block each).
-const FRAMES_PER_SECOND: f64 = 1500.0;
 /// The DSP period as wall time: a period slower than this cannot keep up in real time.
 const DEADLINE_NS: u64 = 666_667;
-const DEFAULT_SCENARIOS: &str = include_str!("../../scenarios.json");
-
-#[derive(Clone, Copy, Debug)]
-enum When {
-    Instr(u64),
-    Frames(u64),
-}
-
-#[derive(Clone, Copy, Debug)]
-enum Action {
-    Button { code: u8, down: bool },
-    Turn { encoder: u8, detents: i32 },
-}
-
-#[derive(Debug)]
-struct Event {
-    when: When,
-    action: Action,
-}
-
-#[derive(Debug)]
-struct Scenario {
-    name: String,
-    description: String,
-    /// End after this many audio seconds, or this many ColdFire instructions.
-    seconds: Option<f64>,
-    instructions: Option<u64>,
-    qa_script: bool,
-    /// With `instructions`: shorten the last chunk so the run ends exactly there
-    /// (the desktop Trig 1 test does); otherwise chunks are always full, as in the app.
-    clip_last_chunk: bool,
-    /// SHA-256 the run's whole PCM must have (a recorded reference).
-    expect_sha256: Option<String>,
-    events: Vec<Event>,
-}
-
-fn parse_scenarios(text: &str) -> Result<Vec<Scenario>, String> {
-    let root: Value = serde_json::from_str(text).map_err(|e| format!("scenario file: {e}"))?;
-    let list = root["scenarios"]
-        .as_array()
-        .ok_or("scenario file needs a \"scenarios\" array")?;
-    list.iter().map(parse_scenario).collect()
-}
-
-fn parse_scenario(v: &Value) -> Result<Scenario, String> {
-    let name = v["name"]
-        .as_str()
-        .ok_or("scenario without a name")?
-        .to_string();
-    let err = |m: &str| format!("scenario {name}: {m}");
-    let seconds = v["seconds"].as_f64();
-    let instructions = v["instructions"].as_u64();
-    if seconds.is_none() == instructions.is_none() {
-        return Err(err("give exactly one of \"seconds\" and \"instructions\""));
-    }
-    let mut events = Vec::new();
-    for e in v["events"].as_array().map_or(&[][..], Vec::as_slice) {
-        let when = match (e["at_s"].as_f64(), e["at_instr"].as_u64()) {
-            (Some(s), None) if s >= 0.0 => When::Frames((s * FRAMES_PER_SECOND).round() as u64),
-            (None, Some(n)) => When::Instr(n),
-            _ => return Err(err("an event needs one of at_s (>= 0) and at_instr")),
-        };
-        let action = if let Some(code) = e["button"].as_u64() {
-            Action::Button {
-                code: u8::try_from(code).map_err(|_| err("button code over 255"))?,
-                down: e["down"].as_bool().unwrap_or(true),
-            }
-        } else if let Some(enc) = e["turn"].as_u64() {
-            Action::Turn {
-                encoder: u8::try_from(enc).map_err(|_| err("encoder over 255"))?,
-                detents: i32::try_from(e["detents"].as_i64().unwrap_or(1))
-                    .map_err(|_| err("detents out of range"))?,
-            }
-        } else {
-            return Err(err("an event needs \"button\" or \"turn\""));
-        };
-        events.push(Event { when, action });
-    }
-    Ok(Scenario {
-        description: v["description"].as_str().unwrap_or("").to_string(),
-        name,
-        seconds,
-        instructions,
-        qa_script: v["qa_script"].as_bool().unwrap_or(false),
-        clip_last_chunk: v["clip_last_chunk"].as_bool().unwrap_or(false),
-        expect_sha256: v["expect_sha256"].as_str().map(str::to_string),
-        events,
-    })
-}
 
 struct Args {
     syx: PathBuf,
@@ -153,6 +75,9 @@ struct Args {
     profile_execution: bool,
     out: Option<PathBuf>,
     list: bool,
+    replay: Option<PathBuf>,
+    wav: Option<PathBuf>,
+    audio_mode: AudioMode,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -172,6 +97,9 @@ fn parse_args() -> Result<Args, String> {
         profile_execution: false,
         out: None,
         list: false,
+        replay: None,
+        wav: None,
+        audio_mode: AudioMode::default(),
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -198,6 +126,9 @@ fn parse_args() -> Result<Args, String> {
             "--profile-execution" => a.profile_execution = true,
             "--out" => a.out = Some(value("--out")?.into()),
             "--list" => a.list = true,
+            "--replay" => a.replay = Some(value("--replay")?.into()),
+            "--wav" => a.wav = Some(value("--wav")?.into()),
+            "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
             other => return Err(format!("unknown option {other}")),
         }
     }
@@ -541,14 +472,22 @@ fn probe(rt: &mut CoupledRuntime) -> Result<Probe, String> {
     })
 }
 
-fn fire(rt: &mut CoupledRuntime, action: Action) -> Result<(), String> {
-    match action {
-        Action::Button { code, down } => rt.button(code, down),
-        Action::Turn { encoder, detents } => rt.turn(encoder, detents),
-    }
+/// `base` with `-<name>` before its extension.
+fn wav_path_for(base: &Path, name: &str) -> PathBuf {
+    let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
+    let file = match base.extension().and_then(|e| e.to_str()) {
+        Some(ext) => format!("{stem}-{name}.{ext}"),
+        None => format!("{stem}-{name}"),
+    };
+    base.with_file_name(file)
 }
 
-fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String> {
+fn run_scenario(
+    args: &Args,
+    syx: &[u8],
+    sc: &Scenario,
+    wav: Option<&Path>,
+) -> Result<Value, String> {
     let setup = Instant::now();
     let options = AudioOptions {
         image: args.image.clone(),
@@ -559,8 +498,12 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         automatic: false,
         expected_syx: None,
         link_timing: args.link_timing,
+        audio_mode: args.audio_mode,
     };
     let mut rt = CoupledRuntime::new(syx, None, Some(&options))?;
+    if let Some(path) = wav {
+        rt.capture_pcm(path)?;
+    }
     if args.pcm_tap {
         rt.observe_pcm(false);
     }
@@ -625,10 +568,17 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         if done {
             break;
         }
-        let budget = match until_instr {
+        let mut budget = match until_instr {
             Some(n) if sc.clip_last_chunk => (n - elapsed).min(u64::from(STEP_CHUNK)) as u32,
             _ => STEP_CHUNK,
         };
+        if sc.exact_events
+            && let Some(e) = events.get(next)
+            && let When::Instr(n) = e.when
+            && n > elapsed
+        {
+            budget = budget.min((n - elapsed).min(u64::from(u32::MAX)) as u32);
+        }
         let status = rt.step_chunk(budget).status;
         chunks += 1;
         if args.playback && start.wall.elapsed().as_secs_f64() >= next_playback_observation {
@@ -733,7 +683,7 @@ fn run_scenario(args: &Args, syx: &[u8], sc: &Scenario) -> Result<Value, String>
         "name": sc.name, "description": sc.description,
         "audio_seconds": audio_s, "wall_seconds": wall, "real_time_factor": per(wall).recip(),
         "setup_wall_seconds": setup_s, "chunks": chunks,
-        "audio_config": { "playback": args.playback, "audio_buffer_seconds": args.audio_buffer },
+        "audio_config": { "playback": args.playback, "audio_buffer_seconds": args.audio_buffer, "audio_mode": args.audio_mode.name() },
         "audio_health_start": start_health,
         "audio_health_end": { "elapsed_wall_seconds": wall, "source_pcm_frames": health["source_pcm_frames"], "health": health },
         "playback_observations": playback_observations,
@@ -791,33 +741,52 @@ fn real_main() -> Result<bool, String> {
     if args.profile_execution && args.out.is_none() {
         return Err("--profile-execution requires --out".into());
     }
-    let text = match &args.scenarios {
-        Some(path) => {
-            std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
-        }
-        None => DEFAULT_SCENARIOS.to_string(),
+    let all = if let Some(path) = &args.replay {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let root: Value =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        let found =
+            find_scenario(&root).ok_or_else(|| format!("{}: no scenario found", path.display()))?;
+        vec![parse_scenario(found)?]
+    } else {
+        let text = match &args.scenarios {
+            Some(path) => {
+                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
+            }
+            None => DEFAULT_SCENARIOS.to_string(),
+        };
+        parse_scenarios(&text)?
     };
-    let all = parse_scenarios(&text)?;
     if args.list {
         for s in &all {
             println!("{:<14} {}", s.name, s.description);
         }
         return Ok(true);
     }
-    for n in &args.names {
-        if !all.iter().any(|s| &s.name == n) {
-            return Err(format!("no scenario named {n}"));
+    if args.replay.is_none() {
+        for n in &args.names {
+            if !all.iter().any(|s| &s.name == n) {
+                return Err(format!("no scenario named {n}"));
+            }
         }
     }
     let chosen: Vec<&Scenario> = all
         .iter()
-        .filter(|s| args.names.is_empty() || args.names.contains(&s.name))
+        .filter(|s| args.replay.is_some() || args.names.is_empty() || args.names.contains(&s.name))
         .collect();
     let syx = std::fs::read(&args.syx).map_err(|e| format!("{}: {e}", args.syx.display()))?;
     let mut results = Vec::new();
+    let several = chosen.len() > 1;
     for sc in chosen {
         eprintln!("scenario {} ...", sc.name);
-        let r = run_scenario(&args, &syx, sc)?;
+        let wav = args.wav.as_deref().map(|base| {
+            if several {
+                wav_path_for(base, &sc.name)
+            } else {
+                base.to_path_buf()
+            }
+        });
+        let r = run_scenario(&args, &syx, sc, wav.as_deref())?;
         println!("{}", summary_line(&r));
         results.push(r);
     }
@@ -831,6 +800,7 @@ fn real_main() -> Result<bool, String> {
             "SHARC_GEN_DIR": std::env::var("SHARC_GEN_DIR").ok(),
             "DSP_IDLE_SKIP": std::env::var("DSP_IDLE_SKIP").ok(),
         },
+        "audio_mode": args.audio_mode.name(),
         "pcm_tap": args.pcm_tap,
         "link_timing": args.link_timing,
         "profile_regions": args.profile_regions,
@@ -867,6 +837,7 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use digi_coupled::scenario::Action;
 
     #[test]
     fn default_scenarios_parse_and_have_the_documented_names() {

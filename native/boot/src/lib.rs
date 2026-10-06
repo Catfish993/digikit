@@ -13,6 +13,7 @@ mod runtime;
 pub mod sharc_peer;
 mod softfloat;
 mod telemetry;
+pub mod wav;
 
 pub use capture::Dspi2Capture;
 pub use cputime::thread_cpu_ns;

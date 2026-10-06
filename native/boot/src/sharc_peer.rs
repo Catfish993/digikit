@@ -13,7 +13,14 @@
 //! The engine is generic over [`DspEngine`] so the plumbing is testable
 //! without firmware.
 
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc, thread, time::Instant};
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    rc::Rc,
+    sync::{Arc, Mutex, mpsc},
+    thread,
+    time::Instant,
+};
 
 use periph::dspi::Peer;
 
@@ -483,6 +490,9 @@ enum Msg {
 /// Most per-period records the worker keeps (about 22 minutes of audio).
 const PERIOD_RECORD_LIMIT: usize = 2_000_000;
 
+/// Frames between the counters the worker publishes (0.1 s of audio).
+const LIVE_REPORT_FRAMES: u64 = 150;
+
 /// What the DSP worker reports about itself on request. Reading it is cheap
 /// and does not touch DSP state.
 #[derive(Clone, Debug, Default)]
@@ -515,6 +525,7 @@ struct Link {
     /// Frames sent whose [`Done`] has not been committed yet.
     outstanding: usize,
     timing: Option<ThreadedTimingProfile>,
+    live: Arc<Mutex<Option<WorkerReport>>>,
     shared: Rc<RefCell<Shared>>,
     worker: Option<thread::JoinHandle<()>>,
 }
@@ -625,6 +636,8 @@ impl ThreadedPeer {
         let (execution_profile_tx, execution_profile_rx) =
             mpsc::channel::<Option<ExecutionProfile>>();
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let live = Arc::new(Mutex::new(None::<WorkerReport>));
+        let live_worker = Arc::clone(&live);
         let worker = thread::Builder::new()
             .name("sharc-dsp".into())
             .spawn(move || {
@@ -656,6 +669,7 @@ impl ThreadedPeer {
                 core.idle = idle;
                 let mut period_ns: Vec<u32> = Vec::new();
                 let mut periods = 0u64;
+                let mut frames_done = 0u64;
                 while let Ok(msg) = rx.recv() {
                     match msg {
                         Msg::Frame {
@@ -684,6 +698,19 @@ impl ThreadedPeer {
                             }
                             if done_tx.send(done).is_err() {
                                 return;
+                            }
+                            frames_done += 1;
+                            if frames_done % LIVE_REPORT_FRAMES == 0 {
+                                let report = WorkerReport {
+                                    cpu_ns: crate::cputime::thread_cpu_ns(),
+                                    tiers: core.engine.tier_counters(),
+                                    model_stats: core.engine.model_stats(),
+                                    periods: frames_done,
+                                    ..WorkerReport::default()
+                                };
+                                if let Ok(mut slot) = live_worker.lock() {
+                                    *slot = Some(report);
+                                }
                             }
                         }
                         Msg::Report => {
@@ -727,6 +754,7 @@ impl ThreadedPeer {
             frames_sent: 0,
             outstanding: 0,
             timing: timing_enabled.then(ThreadedTimingProfile::default),
+            live,
             shared: shared.clone(),
             worker: Some(worker),
         }));
@@ -834,6 +862,15 @@ impl ThreadedHandle {
             return None;
         }
         l.report_rx.recv().ok()
+    }
+
+    /// The worker's counters as of its last publication (every
+    /// [`LIVE_REPORT_FRAMES`] frames; `periods` counts frames handled, and
+    /// `period_ns` and `region_profile` are empty). Unlike
+    /// [`Self::worker_report`] this never waits for the pipeline, so polling
+    /// it does not disturb the timing it reports.
+    pub fn live_report(&self) -> Option<WorkerReport> {
+        self.link.borrow().live.lock().ok()?.clone()
     }
 
     /// Fetch the exact maps after draining frames. This is intentionally a

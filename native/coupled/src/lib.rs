@@ -8,7 +8,7 @@
 //! the runner as fast as it can, so both execute exactly the same loop.
 use elektron_native_boot::{Emulator, Snapshot};
 use emmc_card::Card;
-use serde_json::Value;
+use serde_json::{Value, json};
 #[cfg(feature = "coupled-audio")]
 use std::time::Instant;
 use std::{
@@ -18,6 +18,12 @@ use std::{
 
 /// Largest number of ColdFire instructions a host runs per `step_chunk`.
 pub const STEP_CHUNK: u32 = 250_000;
+pub mod scenario;
+/// Most inputs kept for replay.
+const INPUT_LOG_LIMIT: usize = 100_000;
+/// Sink events kept in the periodic UI status report.
+#[cfg(feature = "coupled-audio")]
+const SINK_EVENTS_STATUS_TAIL: usize = 200;
 
 #[cfg(feature = "coupled-audio")]
 pub use coupled::{PcmTap, gates};
@@ -30,6 +36,39 @@ pub use sharc_native::{RegionCost, RegionProfile, TierCounters};
 #[allow(dead_code, clippy::print_stdout)]
 #[path = "../../boot/examples/common/mod.rs"]
 pub mod common;
+
+/// What live playback does when the emulator falls behind real time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AudioMode {
+    /// Stop with a short fade and resume once the buffer has refilled.
+    #[default]
+    Rebuffer,
+    /// Slow playback to the rate audio arrives (lower pitch, no gaps).
+    Stretch,
+    /// Play missing frames as silence (the old behaviour; sounds like noise).
+    Gap,
+}
+
+impl AudioMode {
+    pub fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            "rebuffer" => Ok(Self::Rebuffer),
+            "stretch" => Ok(Self::Stretch),
+            "gap" => Ok(Self::Gap),
+            other => Err(format!(
+                "unknown audio mode {other:?} (rebuffer, stretch or gap)"
+            )),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Rebuffer => "rebuffer",
+            Self::Stretch => "stretch",
+            Self::Gap => "gap",
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct AudioOptions {
@@ -45,12 +84,16 @@ pub struct AudioOptions {
     /// Record per-period DSP wall times and the link stage totals (also on
     /// with `DN2_PROFILE_LINK=1`). A few timer reads per 0.667 ms period.
     pub link_timing: bool,
+    /// What live playback does when the emulator falls behind real time.
+    pub audio_mode: AudioMode,
 }
 
 pub struct CoupledRuntime {
     emulator: Emulator,
     #[cfg(feature = "coupled-audio")]
     audio: Option<coupled::AudioSession>,
+    inputs: Vec<Value>,
+    input_base: u64,
 }
 fn matches_automatic_profile(options: &AudioOptions, syx: &[u8]) -> bool {
     !options.automatic
@@ -82,8 +125,11 @@ impl CoupledRuntime {
             emulator: Emulator::new(syx, card)?,
             #[cfg(feature = "coupled-audio")]
             audio: None,
+            inputs: Vec::new(),
+            input_base: 0,
         };
         runtime.attach(options)?;
+        runtime.input_base = runtime.emulator.icount();
         Ok(runtime)
     }
     fn attach(&mut self, options: Option<&AudioOptions>) -> Result<(), String> {
@@ -93,6 +139,7 @@ impl CoupledRuntime {
         #[cfg(feature = "coupled-audio")]
         {
             self.audio = Some(coupled::AudioSession::new(&mut self.emulator, options)?);
+            self.input_base = self.emulator.icount();
             Ok(())
         }
         #[cfg(not(feature = "coupled-audio"))]
@@ -132,6 +179,7 @@ impl CoupledRuntime {
         }
         let mut report =
             serde_json::to_value(self.emulator.diagnostics()).expect("diagnostic serialization");
+        report["recorded_scenario"] = self.recorded_scenario();
         #[cfg(feature = "coupled-audio")]
         if let Some(audio) = &self.audio {
             let health = audio.report();
@@ -150,9 +198,61 @@ impl CoupledRuntime {
         #[cfg(feature = "coupled-audio")]
         if let Some(audio) = &mut self.audio {
             audio.poll();
-            return Some(audio.report());
+            let mut report = audio.report();
+            // The 1 s UI poll carries only the recent sink events; the full
+            // list stays in `diagnostics()` and `audio_report()`.
+            if let Some(events) = report["sink"]["events"].as_array() {
+                let total = events.len();
+                let tail = events[total.saturating_sub(SINK_EVENTS_STATUS_TAIL)..].to_vec();
+                report["sink"]["events"] = Value::Array(tail);
+                report["sink"]["events_total"] = total.into();
+            }
+            return Some(report);
         }
         None
+    }
+    /// Press or release a panel button, recording it for replay.
+    pub fn button(&mut self, code: u8, down: bool) -> Result<(), String> {
+        self.emulator.button(code, down)?;
+        self.record_input(json!({"button": code, "down": down}));
+        Ok(())
+    }
+
+    /// Turn an encoder, recording it for replay.
+    pub fn turn(&mut self, encoder: u8, detents: i32) -> Result<(), String> {
+        self.emulator.turn(encoder, detents)?;
+        self.record_input(json!({"turn": encoder, "detents": detents}));
+        Ok(())
+    }
+
+    /// ColdFire instructions since this runtime was ready (the clock
+    /// scenario events use).
+    pub fn elapsed_instructions(&self) -> u64 {
+        self.emulator.icount().saturating_sub(self.input_base)
+    }
+
+    fn record_input(&mut self, mut event: Value) {
+        if self.inputs.len() >= INPUT_LOG_LIMIT {
+            return;
+        }
+        event["at_instr"] = self.elapsed_instructions().into();
+        #[cfg(feature = "coupled-audio")]
+        if let Some(audio) = &self.audio {
+            event["dsp_frame"] = audio.handle.frames_sent().into();
+        }
+        self.inputs.push(event);
+    }
+
+    /// The inputs so far as a scenario for `coupled-run --replay`. Events fire
+    /// at their exact instruction counts, so the replay renders the same PCM.
+    pub fn recorded_scenario(&self) -> Value {
+        json!({
+            "name": "recorded",
+            "description": "Inputs recorded from an interactive session",
+            "instructions": self.elapsed_instructions().max(1),
+            "exact_events": true,
+            "events": self.inputs,
+        })
     }
 }
 
@@ -202,17 +302,26 @@ impl CoupledRuntime {
     pub fn audio_report(&self) -> Option<Value> {
         self.audio.as_ref().map(coupled::AudioSession::report)
     }
+    /// Capture the emulator's own PCM (before the output buffer) to `path`:
+    /// a float WAV when it ends in .wav, else raw f32le. No length limit.
+    pub fn capture_pcm(&mut self, path: &std::path::Path) -> Result<(), String> {
+        self.audio
+            .as_mut()
+            .ok_or("no native audio session")?
+            .capture_pcm(path)
+    }
 }
 
 #[cfg(feature = "coupled-audio")]
 mod coupled {
     use super::*;
     use elektron_native_boot::{
-        pcm_play::{Mode, PcmPlayer, SOURCE_RATE},
+        pcm_play::{Mode, PcmPlayer, Recovery, SOURCE_RATE},
         sharc_peer::{
             DEFAULT_PERIOD, DN2_IDLE_RANGE, NativeDsp, Shared, ThreadedHandle, ThreadedPeer,
             ThreadedTimingProfile, open_dn2_engine,
         },
+        wav::WavWriter,
     };
     use serde_json::json;
     use std::{
@@ -223,6 +332,7 @@ mod coupled {
         time::Instant,
     };
 
+    #[cfg(test)]
     const PCM_CAPTURE_LIMIT: u64 = SOURCE_RATE as u64 * 2 * 10;
 
     /// Running statistics of the PCM the DSP produced, for headless hosts.
@@ -317,52 +427,94 @@ mod coupled {
         }
     }
 
+    enum CaptureOut {
+        Raw(File),
+        Wav(WavWriter),
+    }
+
     struct PcmCapture {
-        file: Option<File>,
+        out: Option<CaptureOut>,
         path: String,
         count: u64,
+        /// Most interleaved samples written.
+        limit: u64,
         error: Option<String>,
     }
 
     impl PcmCapture {
         fn from_env() -> Option<Self> {
             let path = std::env::var_os("DIGI_EMU_PCM_F32LE")?;
-            let path = PathBuf::from(path);
-            let name = path.display().to_string();
-            match File::create(&path) {
-                Ok(file) => Some(Self {
-                    file: Some(file),
-                    path: name,
-                    count: 0,
-                    error: None,
-                }),
-                Err(error) => Some(Self {
-                    file: None,
-                    path: name,
-                    count: 0,
-                    error: Some(format!("PCM capture open: {error}")),
-                }),
+            // Unset means unlimited.
+            let limit = std::env::var("DIGI_EMU_PCM_SECONDS")
+                .ok()
+                .and_then(|text| text.parse::<f64>().ok())
+                .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+                .map_or(u64::MAX, |seconds| {
+                    (seconds * SOURCE_RATE as f64 * 2.0) as u64
+                });
+            Some(Self::open(&PathBuf::from(path), limit))
+        }
+
+        /// A `.wav` path gets a float WAV, anything else raw f32le. A failed
+        /// open is recorded in `error` and nothing is written.
+        fn open(path: &std::path::Path, limit: u64) -> Self {
+            let wav = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"));
+            let opened = if wav {
+                WavWriter::create(path, SOURCE_RATE, 2).map(CaptureOut::Wav)
+            } else {
+                File::create(path).map(CaptureOut::Raw)
+            };
+            let (out, error) = match opened {
+                Ok(out) => (Some(out), None),
+                Err(error) => (None, Some(format!("PCM capture open: {error}"))),
+            };
+            Self {
+                out,
+                path: path.display().to_string(),
+                count: 0,
+                limit,
+                error,
             }
         }
 
         fn write(&mut self, pcm: &[f32]) {
-            let Some(file) = &mut self.file else {
+            let Some(out) = &mut self.out else {
                 return;
             };
-            match write_pcm_f32le(file, &mut self.count, pcm) {
-                Ok(()) => {}
-                Err(error) => {
-                    self.file = None;
-                    self.error = Some(format!("PCM capture write: {error}"));
+            let result = match out {
+                CaptureOut::Raw(file) => write_pcm_f32le(file, &mut self.count, pcm, self.limit),
+                CaptureOut::Wav(wav) => {
+                    let samples = pcm
+                        .len()
+                        .min(self.limit.saturating_sub(self.count) as usize);
+                    if samples == 0 {
+                        Ok(())
+                    } else {
+                        let result = wav.write(&pcm[..samples]);
+                        if result.is_ok() {
+                            self.count += samples as u64;
+                        }
+                        result
+                    }
                 }
+            };
+            if let Err(error) = result {
+                self.out = None;
+                self.error = Some(format!("PCM capture write: {error}"));
             }
         }
     }
 
-    fn write_pcm_f32le(writer: &mut impl Write, count: &mut u64, pcm: &[f32]) -> io::Result<()> {
-        let samples = pcm
-            .len()
-            .min(PCM_CAPTURE_LIMIT.saturating_sub(*count) as usize);
+    fn write_pcm_f32le(
+        writer: &mut impl Write,
+        count: &mut u64,
+        pcm: &[f32],
+        limit: u64,
+    ) -> io::Result<()> {
+        let samples = pcm.len().min(limit.saturating_sub(*count) as usize);
         if samples == 0 {
             return Ok(());
         }
@@ -403,13 +555,15 @@ mod coupled {
         pub(super) audio_sync_wall_ns: u64,
         pcm_capture: Option<PcmCapture>,
         pub(super) pcm_tap: Option<PcmTap>,
-        tiers_cache: std::cell::RefCell<Option<(Instant, Value)>>,
+        /// When the tier counters were last printed (every 10 s, link timing only).
+        tiers_printed: std::cell::Cell<Option<Instant>>,
+        audio_mode: crate::AudioMode,
     }
     impl AudioSession {
         fn new_with_player(
             emulator: &mut Emulator,
             options: &AudioOptions,
-            player: impl FnOnce(Mode) -> Result<PcmPlayer, String>,
+            player: impl FnOnce(Mode, Recovery) -> Result<PcmPlayer, String>,
         ) -> Result<Self, String> {
             let profile = emulator.diagnostics();
             if (profile.device.as_str(), profile.version.as_str()) != ("dn2", "1.11") {
@@ -446,8 +600,15 @@ mod coupled {
             } else {
                 Mode::Buffer(options.buffer_seconds)
             };
+            // The refill threshold must fit the ~1 s output ring.
+            let refill = options.buffer_seconds.clamp(0.2, 0.9);
+            let recovery = match options.audio_mode {
+                crate::AudioMode::Rebuffer => Recovery::Rebuffer(refill),
+                crate::AudioMode::Stretch => Recovery::Stretch(refill),
+                crate::AudioMode::Gap => Recovery::Gap,
+            };
             let (player, device_error) = if options.playback {
-                match player(mode) {
+                match player(mode, recovery) {
                     Ok(p) => (Some(p), None),
                     Err(e) => (None, Some(e)),
                 }
@@ -473,11 +634,21 @@ mod coupled {
                 audio_sync_wall_ns: 0,
                 pcm_capture,
                 pcm_tap: None,
-                tiers_cache: std::cell::RefCell::new(None),
+                tiers_printed: std::cell::Cell::new(None),
+                audio_mode: options.audio_mode,
             })
         }
         pub(super) fn new(emulator: &mut Emulator, options: &AudioOptions) -> Result<Self, String> {
-            Self::new_with_player(emulator, options, PcmPlayer::spawn)
+            Self::new_with_player(emulator, options, PcmPlayer::spawn_with_recovery)
+        }
+        /// Replace the PCM capture with one for `path` (no length limit).
+        pub(super) fn capture_pcm(&mut self, path: &std::path::Path) -> Result<(), String> {
+            let capture = PcmCapture::open(path, u64::MAX);
+            if let Some(error) = capture.error {
+                return Err(format!("{}: {error}", path.display()));
+            }
+            self.pcm_capture = Some(capture);
+            Ok(())
         }
         pub(super) fn link_timing_enabled(&self) -> bool {
             self.link_timing
@@ -536,43 +707,50 @@ mod coupled {
             }
         }
         pub(super) fn report(&self) -> Value {
-            // Before `shared` is borrowed: the worker report commits frames into it.
-            let dsp_tiers = if self.link_timing {
-                // Diagnostic: DSP tier counters, refreshed at most every 10 s
-                // (the worker report drains the pipeline), printed to stderr.
-                let mut cache = self.tiers_cache.borrow_mut();
-                if cache
-                    .as_ref()
-                    .is_none_or(|(at, _)| at.elapsed().as_secs_f64() >= 10.0)
-                {
-                    let tiers = self.handle.worker_report().and_then(|w| {
-                        w.tiers.map(|t| {
-                            json!({
-                                "worker_cpu_s": w.cpu_ns as f64 / 1e9,
-                                "instructions": t.icount, "idle_skip": t.idle_skipped,
-                                "idle_skips": t.idle_skips, "interpreter": t.interpreted,
-                                "block_instructions": t.block_instructions,
-                                "fast_tier": t.fast_insns,
-                                "aot_block": t.block_instructions.saturating_sub(t.fast_insns),
-                                "block_entries": t.block_entries, "block_traps": t.block_traps,
-                                "traps": t.traps, "fast_present": t.fast_present,
-                                "fast_runs": t.fast_runs, "fast_calls": t.fast_calls,
-                                "fast_built": t.fast_built, "fast_refused": t.fast_refused,
-                                "fast_armed": t.fast_armed,
-                            })
+            // The live report does not drain the pipeline, so it is cheap on every report.
+            let dsp_tiers = self
+                .handle
+                .live_report()
+                .and_then(|w| {
+                    w.tiers.as_ref().map(|t| {
+                        let worker_cpu_s = w.cpu_ns as f64 / 1e9;
+                        let audio_s = w.periods as f64 / 1500.0;
+                        json!({
+                            "worker_cpu_s": worker_cpu_s,
+                            "audio_s": audio_s,
+                            "dsp_cpu_per_audio_s": if audio_s > 0.0 {
+                                Value::from(worker_cpu_s / audio_s)
+                            } else {
+                                Value::Null
+                            },
+                            "instructions": t.icount, "idle_skip": t.idle_skipped,
+                            "idle_skips": t.idle_skips, "interpreter": t.interpreted,
+                            "block_instructions": t.block_instructions,
+                            "fast_tier": t.fast_insns,
+                            "aot_block": t.block_instructions.saturating_sub(t.fast_insns),
+                            "block_entries": t.block_entries, "block_traps": t.block_traps,
+                            "traps": t.traps, "fast_present": t.fast_present,
+                            "fast_runs": t.fast_runs, "fast_calls": t.fast_calls,
+                            "fast_built": t.fast_built, "fast_refused": t.fast_refused,
+                            "fast_armed": t.fast_armed,
                         })
-                    });
-                    let value = tiers.unwrap_or(Value::Null);
-                    let mut line = json!({"dsp_tiers": value.clone()});
-                    line["source_audio_seconds"] = (self.samples as f64 / 2.0 / SOURCE_RATE as f64).into();
-                    line["session_wall_seconds"] = self.started.elapsed().as_secs_f64().into();
-                    eprintln!("native_audio_report={line}");
-                    *cache = Some((Instant::now(), value));
-                }
-                cache.as_ref().map_or(Value::Null, |(_, v)| v.clone())
-            } else {
-                Value::Null
-            };
+                    })
+                })
+                .unwrap_or(Value::Null);
+            // Diagnostic: print the DSP tier counters to stderr every 10 s.
+            if self.link_timing
+                && self
+                    .tiers_printed
+                    .get()
+                    .is_none_or(|at| at.elapsed().as_secs_f64() >= 10.0)
+            {
+                let mut line = json!({"dsp_tiers": dsp_tiers.clone()});
+                line["source_audio_seconds"] =
+                    (self.samples as f64 / 2.0 / SOURCE_RATE as f64).into();
+                line["session_wall_seconds"] = self.started.elapsed().as_secs_f64().into();
+                eprintln!("native_audio_report={line}");
+                self.tiers_printed.set(Some(Instant::now()));
+            }
             let shared = self.shared.borrow();
             let sink = self.player.as_ref().map(PcmPlayer::stats);
             let output_device = self.player.as_ref().map(|player| player.device.clone());
@@ -592,6 +770,8 @@ mod coupled {
                 "playback_requested": self.playback_requested, "sink_connected": connected,
                 "device_error": self.device_error, "output_device": output_device, "sink": sink,
                 "sink_stats_note": "async feeder snapshot; excludes PCM messages still in the channel",
+                "audio_mode": self.audio_mode.name(),
+                "dsp_tiers": dsp_tiers,
             });
             if let Some(capture) = &self.pcm_capture {
                 report["pcm_capture_path"] = capture.path.clone().into();
@@ -599,7 +779,6 @@ mod coupled {
                 report["pcm_capture_error"] = capture.error.clone().into();
             }
             if self.link_timing {
-                report["dsp_tiers"] = dsp_tiers;
                 let timing = self.handle.timing_profile().expect("enabled link timing");
                 report["link_timing"] = link_timing_json(
                     timing,
@@ -685,7 +864,7 @@ mod coupled {
         fn pcm_capture_writer_uses_little_endian_and_respects_the_limit() {
             let mut bytes = Vec::new();
             let mut count = 0;
-            write_pcm_f32le(&mut bytes, &mut count, &[-1.0, 0.0, 0.5]).unwrap();
+            write_pcm_f32le(&mut bytes, &mut count, &[-1.0, 0.0, 0.5], PCM_CAPTURE_LIMIT).unwrap();
             assert_eq!(count, 3);
             assert_eq!(
                 bytes,
@@ -699,7 +878,7 @@ mod coupled {
 
             let mut bounded = Vec::new();
             let mut count = PCM_CAPTURE_LIMIT - 1;
-            write_pcm_f32le(&mut bounded, &mut count, &[0.25, 0.75]).unwrap();
+            write_pcm_f32le(&mut bounded, &mut count, &[0.25, 0.75], PCM_CAPTURE_LIMIT).unwrap();
             assert_eq!(count, PCM_CAPTURE_LIMIT);
             assert_eq!(bounded, 0.25f32.to_le_bytes());
         }
@@ -715,7 +894,9 @@ mod coupled {
                 }
             }
             let mut count = 0;
-            assert!(write_pcm_f32le(&mut FailingWriter, &mut count, &[0.5]).is_err());
+            assert!(
+                write_pcm_f32le(&mut FailingWriter, &mut count, &[0.5], PCM_CAPTURE_LIMIT).is_err()
+            );
             assert_eq!(count, 0);
         }
     }
@@ -746,6 +927,7 @@ mod coupled {
                 automatic: false,
                 expected_syx: None,
                 link_timing: false,
+                audio_mode: crate::AudioMode::default(),
             }
         }
         pub fn syx() -> Vec<u8> {
@@ -989,7 +1171,7 @@ mod coupled {
             let mut emulator = Emulator::new(&syx(), None).unwrap();
             let mut opts = options();
             opts.playback = true;
-            let mut audio = AudioSession::new_with_player(&mut emulator, &opts, |_| {
+            let mut audio = AudioSession::new_with_player(&mut emulator, &opts, |_, _| {
                 Err("fake missing device".into())
             })
             .unwrap();
@@ -1068,6 +1250,7 @@ mod profile_tests {
             automatic: true,
             expected_syx: Some(profile),
             link_timing: false,
+            audio_mode: AudioMode::default(),
         }
     }
 

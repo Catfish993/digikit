@@ -25,6 +25,8 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   const [browserAudioSetup, setBrowserAudioSetup] = createSignal(false);
   const [browserAudioReset, setBrowserAudioReset] = createSignal(0);
   const [nativeAudio, setNativeAudio] = createSignal<NativeAudioStatus>();
+  const [recentRate, setRecentRate] = createSignal<number>();
+  let lastAudio: { produced: number; wall: number } | undefined;
   const runtime = () => activeRuntime ?? props.runtime;
   let activeRuntime: EmulatorRuntime | undefined;
   let runtimeReady: Promise<EmulatorRuntime | undefined> | undefined;
@@ -44,7 +46,28 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   onMount(() => window.addEventListener('blur', releaseAll));
   let disposed = false;
   const refreshNativeAudio = async () => {
-    try { setNativeAudio(await activeRuntime?.nativeAudio?.()); } catch { /* a replaced session has no status to show */ }
+    try {
+      const status = await activeRuntime?.nativeAudio?.();
+      setNativeAudio(status);
+      const produced = status?.source_audio_seconds, wall = status?.session_wall_seconds;
+      if (produced === undefined || wall === undefined) { lastAudio = undefined; return; }
+      if (lastAudio && produced < lastAudio.produced) lastAudio = undefined;
+      if (lastAudio && wall > lastAudio.wall) setRecentRate((produced - lastAudio.produced) / (wall - lastAudio.wall));
+      lastAudio = { produced, wall };
+    } catch { /* a replaced session has no status to show */ }
+  };
+  const audioLine = (audio: NativeAudioStatus) => {
+    const sink = audio.sink;
+    const parts = [`Audio output active${audio.output_device ? ` on ${audio.output_device}` : ''}`];
+    const rate = recentRate();
+    if (rate !== undefined) parts.push(`${rate.toFixed(2)}× real time`);
+    parts.push(`underruns ${sink?.underrun_events ?? 0}`);
+    if (sink?.rebuffering) parts.push('refilling');
+    if (audio.audio_mode === 'stretch' && sink?.stretch_rate !== undefined) parts.push(`speed ${sink.stretch_rate.toFixed(3)}`);
+    const cost = audio.dsp_tiers?.dsp_cpu_per_audio_s;
+    if (typeof cost === 'number') parts.push(`DSP ${cost.toFixed(2)} CPU s per audio s`);
+    parts.push(`produced ${audio.source_audio_seconds.toFixed(2)} s`);
+    return parts.join(' · ');
   };
   onMount(() => { runtimeReady = Promise.resolve(props.runtime ?? nativeRuntime(update)).then((runtime) => { const selected = runtime ?? browserRuntime(update); if (disposed) { selected.dispose(); return undefined; } activeRuntime = selected; setBrowserAudioSetup(!runtime); void refreshNativeAudio(); audioTimer = window.setInterval(() => { void refreshNativeAudio(); }, 1000); return selected; }); });
   onCleanup(() => { disposed = true; window.removeEventListener('blur', releaseAll); if (clearSuppression) window.clearTimeout(clearSuppression); if (audioTimer) window.clearInterval(audioTimer); releaseAll(); void activeRuntime?.stop().catch((error) => update({ type: 'error', error: String(error) })); activeRuntime?.dispose(); });
@@ -69,7 +92,7 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   return <main style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}>
     <header class="toolbar"><label class="file">Choose firmware<input type="file" accept=".syx,application/octet-stream" onChange={(e) => choose(e.currentTarget.files?.[0])} /></label><select aria-label="Device" value={device()} onChange={(e) => { releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); firmwareFile = undefined; const input = document.querySelector<HTMLInputElement>('.file input'); if (input) input.value = ''; setReportAvailable(false); setDevice(e.currentTarget.value as 'dt2' | 'dn2'); setPaused(true); setLoaded(false); setStatus('Choose a firmware image to start.'); }}><option value="dt2">Digitakt II</option><option value="dn2">Digitone II</option></select><button disabled={!loaded()} onClick={() => { if (paused()) { runtime()?.resume(); setPaused(false); } else { runtime()?.pause(); setPaused(true); } }}>{paused() ? 'Resume' : 'Pause'}</button><button disabled={!loaded()} onClick={() => void restart()}>Restart</button><button disabled={!reportAvailable()} onClick={() => void exportDiagnostics()}>Export diagnostics</button><output>{status()}</output></header>
     <Show when={browserAudioSetup()}><CoupledAudio reset={browserAudioReset()} runtime={() => runtimeReady ?? Promise.resolve(undefined)} onStarted={(snapshot) => { releaseAll(); clearCanvas(); update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true); }} onError={(error) => setStatus(error)} /></Show>
-    <Show when={nativeAudio()}>{(audio) => <div class="coupled" style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '0.5rem', 'align-items': 'center', padding: '0.4rem 0' }}><output>{audio().setup_needed ? 'Audio setup is unavailable for this firmware.' : !audio().playback_requested ? 'Audio output muted.' : audio().device_error ?? audio().sink?.error ?? (audio().sink_connected ? (audio().sink?.stream_started ? `Audio output active${audio().output_device ? ` on ${audio().output_device}` : ''} · underruns ${audio().sink?.underrun_events ?? 0} · produced ${audio().source_audio_seconds.toFixed(2)} s` : 'Audio output ready; buffering.') : 'Audio output is unavailable.')}</output><button disabled={!loaded() || audio().setup_needed || !audio().flow_started} onClick={() => void runtime()?.tap?.(25).catch((error) => update({ type: 'error', error: String(error) }))}>Audition Trig 1</button></div>}</Show>
+    <Show when={nativeAudio()}>{(audio) => <div class="coupled" style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '0.5rem', 'align-items': 'center', padding: '0.4rem 0' }}><output>{audio().setup_needed ? 'Audio setup is unavailable for this firmware.' : !audio().playback_requested ? 'Audio output muted.' : audio().device_error ?? audio().sink?.error ?? (audio().sink_connected ? (audio().sink?.stream_started ? audioLine(audio()) : 'Audio output ready; buffering.') : 'Audio output is unavailable.')}</output><button disabled={!loaded() || audio().setup_needed || !audio().flow_started} onClick={() => void runtime()?.tap?.(25).catch((error) => update({ type: 'error', error: String(error) }))}>Audition Trig 1</button></div>}</Show>
     <section class="panel-wrap" aria-label={`${panel().name} front panel`}><div class="panel-surface"><svg class="panel" viewBox="0 0 215 176" onPointerMove={(e) => { const drag = pointers.get(e.pointerId); if (!drag?.encoder) return; const detents = Math.trunc((drag.y - e.clientY) / 8); if (Math.abs(e.clientY - drag.y) > 3) drag.moved = true; if (detents) { runtime()?.turn(drag.encoder, detents); drag.y -= detents * 8; } }} onPointerUp={(e) => releasePointer(e.pointerId)} onPointerCancel={(e) => releasePointer(e.pointerId)} onLostPointerCapture={(e) => releasePointer(e.pointerId)}>
       <defs><linearGradient id="chassis" x2="0" y2="1"><stop stop-color="#34363a"/><stop offset=".5" stop-color="#2c2e31"/><stop offset="1" stop-color="#242528"/></linearGradient><radialGradient id="knob"><stop stop-color="#44464b"/><stop offset=".68" stop-color="#2a2c2f"/><stop offset=".72" stop-color="#111214"/></radialGradient></defs>
       <rect class="chassis" x="1" y="1" width="213" height="174" rx="3"/><For each={panel().screws}>{(s) => <g class="screw"><circle cx={s.x} cy={s.y} r="2"/><path d={`M${s.x-1.1} ${s.y}h2.2`}/></g>}</For>

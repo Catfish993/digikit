@@ -34,6 +34,7 @@ impl Default for RegionProfile {
 }
 
 impl RegionProfile {
+    #[cfg_attr(not(feature = "region-profile"), allow(dead_code))]
     pub(crate) fn record(&mut self, pc: u32, fast: bool, instructions: u64, wall_ns: u64) {
         let pc = (pc & 0x00ff_ffff) as usize;
         let page = &mut self.pages[pc >> 8];
