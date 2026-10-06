@@ -117,6 +117,11 @@ def _type_17a(
     value = _wide(f, "data") if name == "17a" else _signed(_field(f, "data[15:0]"), 16)
     code = _field(f, "ureg")
     _write_ureg(state, code, Const(value))
+    # SHARC+ programming reference, Type 17 (SIMD: parallel X/Y writes to
+    # the Cureg).
+    cureg = _cureg_code(code)
+    if cureg is not None and _simd_active(state) is True:
+        _write_ureg(state, cureg, Const(value))
     _event(state, insn, "ureg-write", ureg=UREG_NAMES[code], value=value & 0xFFFFFFFF)
     return _advance(state, insn)
 

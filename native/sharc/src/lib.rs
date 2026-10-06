@@ -33,6 +33,7 @@ mod live_capture;
 mod region_profile;
 pub mod sha256;
 pub mod vectors;
+mod pc_dump;
 mod write_watch;
 pub use region_profile::{RegionCost, RegionEntryProfile, RegionProfile};
 
@@ -296,6 +297,8 @@ pub struct Engine {
     live_capture: Option<live_capture::LiveCapture>,
     /// SHARC_WWATCH / SHARC_WWATCH_OUT (diagnostic): see `write_watch`.
     wwatch: Option<Box<write_watch::WriteWatch>>,
+    /// SHARC_PCDUMP / SHARC_PCDUMP_OUT (diagnostic): see `pc_dump`.
+    pcdump: Option<Box<pc_dump::PcDump>>,
 }
 
 /// What the run-time model gate decided (diagnostic counters).
@@ -648,6 +651,7 @@ impl Engine {
             concretised: 0,
             live_capture: live_capture::LiveCapture::from_env(),
             wwatch: write_watch::WriteWatch::from_env(),
+            pcdump: pc_dump::PcDump::from_env(),
         }
     }
 
@@ -1795,6 +1799,9 @@ impl Engine {
             }
             if self.wwatch.is_some() {
                 self.ww_begin(pc_before as u64, 'i');
+            }
+            if let Some(d) = &mut self.pcdump {
+                d.hit(&self.s, pc_before as u64, self.s.icount);
             }
             if let Err(t) = exec_insn(&mut self.s, insn) {
                 self.trapped(t);

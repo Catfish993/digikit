@@ -110,7 +110,7 @@ inputs. `qa_script` also plays the shared QA sequence of
 | `idle` | 10 s of audio with no input. |
 | `trig1-hold` | QA prelude, then Audition Trig 1 (button 25) pressed at +60M and held to the end. One voice. |
 | `kb-chord16` | QA prelude, keyboard mode on (button 18 tapped at +50M), then all 16 trig keys (25..40) pressed at +60M and held: a chromatic chord of several voices. |
-| `exactness-100m` | Validation: the `coupled_ready_exactness` workload (QA, Trig 1 down at +60M, up at +100M, 100M instructions). Its PCM hash must be `38d2a322...3ff1f8`. |
+| `exactness-100m` | Validation: the `coupled_ready_exactness` workload (QA, Trig 1 down at +60M, up at +100M, 100M instructions). Its PCM hash must be `3b600f6d...7f267` (was `38d2a322...3ff1f8` before the Type 17 SIMD fix). |
 | `trig1-noqa-40m` | Validation: `desktop_trig1_capture_without_qa_script` (Trig 1 from ready, 40M instructions, silent). Hash `a50586e8...b75a`. |
 
 The QA prelude matters: from the ready snapshot, Trig 1 pressed with no prelude

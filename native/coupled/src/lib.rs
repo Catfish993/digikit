@@ -1023,9 +1023,10 @@ mod coupled {
                     after.audio_sync_wall_ns.saturating_sub(sync),
                 );
             }
+            // Updated 2026-10-06 for the Type 17 SIMD Cureg fix (docs/findings/16); the CF digest covers the DSPI RX buffer filled with DSP replies.
             assert_eq!(
                 runtime.emulator.state_digest().unwrap(),
-                "fbace0f0cf9fbbb6f5551e5834e8d74b2dfd6c84e81503693924b0aff1a2cb2c"
+                "bc82b1996d755d680477e31edb504485cd35574736f70f7a9e39e966c7570507"
             );
             let audio = runtime.audio.as_ref().unwrap();
             let pcm: Vec<u8> = captured(audio)
@@ -1038,14 +1039,14 @@ mod coupled {
             assert_eq!(captured(audio).len(), 72_896);
             assert_eq!(
                 format!("{:x}", Sha256::digest(&pcm)),
-                "38d2a3224d10e0b59cafa602ba1b8f8be31562efa07491b963ff4e127f3ff1f8"
+                "3b600f6de8fc20f3e444bf1fb2a9fd56f47c0985855755b69b6df4e29dd7f267"
             );
             if let Some(path) = std::env::var_os("DIGI_COUPLED_DSP_EXPORT") {
                 std::fs::write(path, audio.handle.export().0).unwrap();
             }
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "27152f097fedf4a669be9386a4c7b6eafda2992ebe1ca2db179992896749f0ee"
+                "06980a01f22363a1ca0d14d6dfb107eaeb2c1ade96df5a0da1a24fe6c84dd4fb"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());

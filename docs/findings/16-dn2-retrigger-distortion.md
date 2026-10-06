@@ -103,13 +103,106 @@ default tiers):
   (bad press = one frame before the cell switches on). Meaning unknown.
   **[O]**
 
+## Task 2: root cause (register dump)
+
+Instrument: `SHARC_PCDUMP=pc,..` `SHARC_PCDUMP_ICOUNT=lo:hi` `SHARC_PCDUMP_LIMIT=n`
+`SHARC_PCDUMP_OUT=csv` (87 columns, rows align; built without recompiling
+sharc-gen, no edits needed). Interpreter-only.
+
+- At FUN_1c54c7 entry R4 = 0x2414e0 (record), R8 = I1 = 0x2556ec (group 2;
+  0x2554b8 for group 1). **[V]**
+- At 0x1c550a (after `R0 = DM(I1+36)` at 0x1c5508): F0 = +inf (0x7f800000) in
+  clean, 0 in bad. DM(I1+36) = 0x25577c. Velocity = clamp(inf) = 127; bad
+  gives 0, so limit (via F4 = inf in clean) is 0 too. **[V]**
+- SHARC_WWATCH 0x255710:7,0x255750:6,0x255774:6: words 0x255714/24/74/7c/84
+  toggle +inf <-> 0 every ~2.0M instr (3 frames on, 3 off), identical in both
+  runs and independent of the press; writer PCs 0x1c2a21/0x1c2a29/0x1c2aa9/
+  0x1c2aae/0x1c2ab1. The bad press hits the 0 phase, the clean one the inf
+  phase. This is the 6-frame beat. **[V]**
+- Those writes are the PEy (SIMD companion) stores of the block 0x1c2a93..
+  0x1c2ab3 (MODE1 PEYEN bit 0x200000 set): `F2 = float_by(F2, F12)` etc. R12
+  = 0xfffffff1 (-15, correct) but the PEy scale S12 holds a stale float
+  (0xbdacebc5 negative in the 0 phase, 0x3dc1250a positive in the inf phase;
+  a bus-sine-like sample), so FLOAT BY S12 underflows to 0 or overflows to
+  +inf. Dump: `SHARC_PCDUMP=0x1c2aa2,.. ICOUNT=824004300:824004500` (0 phase)
+  and `826004300:826004500` (inf phase). **[V]**
+- Cause: `R12 = 0xfff1` at 0x1c2a1d (Type 17b, executed with PEYEN set at
+  0x1c2a11..0x1c2a2e). In SIMD mode Type 17 also writes the complementary
+  register (S12) with the same data (SHARC+ Core Programming Reference,
+  Type 17b, ch.15, extraction page 398: "provides parallel writes for the X
+  and Y processing elements. The Y element uses the complementary Cureg").
+  `tools/sharc_core/forms_move.py::_type_17a` (name 17a and 17b) writes only
+  the explicit ureg: no companion write. [C] The 0x1c29f2 remark was wrong: it precedes the PEYEN set at 0x1c2a11. The Python core and every tier
+  generated or differentially tested against it share the omission. **[V]**
+  for 17b at 0x1c2a1d; **[O]** whether other 17a/17b sites run under SIMD.
+- Fix location: `_type_17a` in tools/sharc_core/forms_move.py: when
+  `_simd_active(state)` and the ureg has a complementary Cureg
+  (`_cureg_code`), also write the Y element's register (S0..S15 for R0..R15)
+  with the same value; then regenerate sharc-gen and update the golden hashes
+  (expect the DN2 retrigger result to change). Fast tier lowering of 17b
+  (`native/sharc-fast-cl` lower::sysops) must get the same companion write.
+  **[O]** not applied here.
+
+## Fix and verification (Task 3)
+
+Corrections from the independent check **[C]**: the load is Type 17b
+(opcode 0x0f8cfff1) at 0x1c2a1d, between MODE1 set 0x200000 (0x1c2a11) and
+clear (0x1c2a2e) (PEYEN from code order); the manual (Type 17a/17b SIMD text,
+extraction pp.396-398) gives the parallel X/Y write, but is silent on data16
+sign extension (inferred from the firmware use, -15); the fast tier declines
+regions entered with MODE1 bits 21-23, so it never ran 17a/b under PEYEN.
+
+Fix: `tools/sharc_core/forms_move.py::_type_17a` also writes the Cureg under
+`_simd_active`; test `test_type17_immediate_load_writes_cureg_only_under_peyen`
+in tests/test_sharc_stack_registers.py. **[V]** A static scan found 57 Type 17
+R/S loads inside PEYEN spans in DN2 1.11 and 19 in DT2 1.16 (e.g. DN2
+0x1c1b5d, 0x1c209a, 0x1c248c, 0x1c2593, 0x1c4693): all were wrong before.
+
+Regeneration (backup `out/native/dn2-audio/gen.pre-type17`, never commit):
+`uv run python tools/sharc_transpile.py --strict --out out/native/dn2-audio/gen
+--work out/native/transpile-work-genbatch` (5 s) then `uv run python
+tools/sharc_rsgen.py dn2-1.11 --coverage $I/cov6.txt --entries $I/ent9.txt
+--transitions $I/trans9.txt --model-safe --explicit-memory-model 0 --chain
+--exclude 0xb88a49:0xb88abc --unknown-fallbacks 0x1c253f --work
+out/native/transpile-work-genbatch --out out/native/dn2-audio/gen`, with
+`I=out/native/gen-provenance-20261003/inputs` (94 s). Same 1751 blocks and
+block starts; 773 regions (was 772), 259668 variants (was 258585).
+PROVENANCE.txt kept (not updated). `uv run python tools/coupled.py build`
+(3 m 25 s) and `tools/native_wasm.sh` (a Python script; 3 m 57 s).
+
+Results after the fix **[V]**:
+
+- Fine scan f00..f24 at six DSP periods (150 runs, an22): 0 bad; tone 94.3-95.2%.
+- Wide scan P=1202..~1342 (140 runs, an24): no 'B'.
+- Scenario hashes: trig1-taps, trig1-tap-release and exactness-100m changed
+  (expect_sha256 updated in native/coupled/scenarios.json, because the DSP
+  output changed on purpose); trig1-noqa-40m unchanged (a50586e8..). New:
+  trig1-taps 1ca0ae84.., tap-release aa1dbd9e.., exactness-100m 3b600f6d... All
+  taps in the three changed scenarios are clean (tone 94.7-95.1%).
+- tests/test_sharc_golden.py: all six hashes unchanged (they use DT2 1.16 and
+  coverage/run paths that do not hit this case): no `--update`.
+- `pytest -k "sharc and not slow"`: 45 failed (all the stale native dylib
+  tests, same count as before), 1703 passed: no new failures.
+- Node wasm parity trig1-tap-release: aa1dbd9e.. MATCH with native.
+- Reproduce scans: `taps/sweep.sh P` (fine, per period) + `an22.py`;
+  `taps/wide.sh P...` + `an24.py` (scratchpad scripts, not in the repo).
+
+Pinned values in `coupled_ready_exactness` (native/coupled/src/lib.rs),
+updated for the fix **[V]** (gate passes; run as tools/native_pgo.py does,
+manifest packages/desktop/src-tauri, absolute DIGI_COUPLED_FIXTURES):
+CF digest `fbace0f0..` -> `bc82b1996d75..0507` (the DSPI RX buffer at CF
+0x800053a4 is filled with DSP replies; replies differ in 1650 of 1652 frames
+of f06 before/after, TX identical, CF instruction counts identical), PCM
+`38d2a322..` -> `3b600f6d..7f267`, DSP export `27152f09..` ->
+`06980a01f22363a1ca0d14d6dfb107eaeb2c1ade96df5a0da1a24fe6c84dd4fb`; 72,896
+samples unchanged.
+
 ## Open
 
-- **[O]** Which memory the `I1` block is and why DM(I1+36)/DM(I1+10) (and
-  the limit inputs) are ~0 in bad at the init call, and the link to the
-  falling bus sine at 0x257ee8. Not yet shown to be an emulator
-  semantics error: no instruction with wrong operands identified.
-- **[O]** Next instrument: dump registers and the `I1` block at the init
+- **[O]** DT2 1.16 core regeneration and other DN2 PEYEN sites were not
+  re-audited for audible effect; fast-tier 17b under PEYEN is declined by
+  construction.
+- (done, see Task 2) Next instrument was: dump registers and the `I1` block at the init
   call. `SHARC_LIVE_AOT_CAPTURE_PC=0x1c54c7` already writes the canonical
   state at a block entry, but only for the first <=16 calls; add
   `SHARC_LIVE_AOT_CAPTURE_SKIP_ICOUNT` (start capturing at icount N, e.g.

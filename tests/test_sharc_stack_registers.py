@@ -156,3 +156,31 @@ def test_px_transfer_to_dreg_uses_upper_word_not_stale_combined_value():
         4,
     )
     assert state.uregs[12] == st.Const(0x55667788)
+
+
+def test_type17_immediate_load_writes_cureg_only_under_peyen():
+    mode1 = st.UREG_CODES["MODE1"]
+    r12, s12, i0 = 12, 92, 16
+    sentinel = st.Const(0x1234)
+
+    state = fresh()
+    state.uregs[mode1] = st.Const(1 << 21)
+    state.uregs[s12] = sentinel
+    state = execute(state, "17b", {"ureg[6:0]": r12, "data[15:0]": 0xFFF1}, 4)
+    assert state.uregs[r12] == st.Const(-15)
+    assert state.uregs[s12] == state.uregs[r12]
+
+    state = fresh()
+    state.uregs[mode1] = st.Const(0)
+    state.uregs[s12] = sentinel
+    state = execute(state, "17b", {"ureg[6:0]": r12, "data[15:0]": 0xFFF1}, 4)
+    assert state.uregs[r12] == st.Const(-15)
+    assert state.uregs[s12] == sentinel
+
+    state = fresh()
+    state.uregs[mode1] = st.Const(1 << 21)
+    before = dict(state.uregs)
+    state = execute(state, "17b", {"ureg[6:0]": i0, "data[15:0]": 0x10}, 4)
+    assert state.uregs[i0] == st.Const(0x10)
+    changed = {c for c in before if before[c] != state.uregs[c]}
+    assert changed <= {i0}

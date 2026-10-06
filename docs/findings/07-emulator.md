@@ -6757,3 +6757,4 @@ regeneration and PGO retrain.
 - Process note: rebuilding into `out/native/target/prod/pgo-use` with a
   different PGO profile forced a 7 min rebuild of the generated core at the
   next launch. Experiments must use their own target dirs.
+- **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and native/coupled/scenarios.json.

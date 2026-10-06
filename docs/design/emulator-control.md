@@ -274,7 +274,7 @@ with Emu.spawn("--auto-coupled", "--audio-buffer", "1") as emu:
   version gating, `step` exactness, record-then-replay to the same state
   digest, errors, quit.
 - `slow`: coupled run from the private fixtures; `trig1-tap-release` through
-  the socket gives PCM `77cbc376…f6d8`, the same as `coupled-run`.
+  the socket gives PCM `aa1dbd9e40e534434987894098cd89c5c8857b8b7b27c54f2391db8b899561ce`, the same as `coupled-run`.
 - No GUI tests; the desktop app shares the controller.
 
 ## Phases

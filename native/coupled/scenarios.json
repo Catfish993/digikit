@@ -122,7 +122,7 @@
       "description": "Validation, not a load: the coupled_ready_exactness workload (QA prelude, Trig 1 down at +60M, up at +100M, ended at +100M instructions, as NOTE_EVENTS=trig). PCM must hash to the value the test asserts.",
       "instructions": 100000000,
       "qa_script": true,
-      "expect_sha256": "38d2a3224d10e0b59cafa602ba1b8f8be31562efa07491b963ff4e127f3ff1f8",
+      "expect_sha256": "3b600f6de8fc20f3e444bf1fb2a9fd56f47c0985855755b69b6df4e29dd7f267",
       "validation": true,
       "events": [
         {
@@ -162,7 +162,7 @@
       "description": "Three Trig 1 taps (0.3 s hold each, the desktop Audition default) without the QA script; 10 s. A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
       "seconds": 10.5,
       "exact_events": true,
-      "expect_sha256": "e50f29088de880315ea3f2197c832f63a698aa7fcab5c93ae3a2a93ac47d0071",
+      "expect_sha256": "1ca0ae84a2374b1308ba89c61a2a5109e3a5c49c4f79eafba042d6e71c55f91a",
       "events": [
         {
           "at_instr": 0,
@@ -211,7 +211,7 @@
       "description": "One Trig 1 tap, then 8 s of release and idle (the desktop 'sine then noise' case). A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
       "seconds": 8.5,
       "exact_events": true,
-      "expect_sha256": "77cbc3761f97b0cf3a1c5cdad55d304ce99e428b6bafccd59409d613f071f6d8",
+      "expect_sha256": "aa1dbd9e40e534434987894098cd89c5c8857b8b7b27c54f2391db8b899561ce",
       "events": [
         {
           "at_instr": 0,
