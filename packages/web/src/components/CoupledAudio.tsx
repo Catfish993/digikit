@@ -9,13 +9,14 @@ import type { EmulatorRuntime, RuntimeSnapshot } from '../runtime';
  * boot, the ColdFire snapshot taken at ready. Needs a core built with
  * `tools/native_wasm.sh --sharc`.
  */
-export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRuntime | undefined>; reset: number; onStarted: (snapshot: RuntimeSnapshot) => void; onError: (error: string) => void }) {
+export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRuntime | undefined>; reset: number; firmware?: () => { name: string; bytes: Uint8Array } | undefined; onStarted: (snapshot: RuntimeSnapshot) => void; onError: (error: string) => void }) {
   const files: Record<'syx' | 'image' | 'dsp' | 'snapshot', File | undefined> = { syx: undefined, image: undefined, dsp: undefined, snapshot: undefined };
   const [buffer, setBuffer] = createSignal(0);
   const [report, setReport] = createSignal('');
   const [active, setActive] = createSignal(false);
   const [available, setAvailable] = createSignal(false);
   let sink: PcmSink | undefined;
+  let firmwareNote = '';
   let timer: number | undefined;
   let runtime: EmulatorRuntime | undefined;
   const read = async (file: File) => new Uint8Array(await file.arrayBuffer());
@@ -23,7 +24,7 @@ export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRun
     try {
       const stats = await runtime?.coupledStats?.();
       const a = sink?.stats;
-      if (stats && a) setReport(`DSP frames ${stats.frames} · produced ${stats.pcm_produced_seconds.toFixed(2)} s · ${stats.pcm_seconds_per_wall_second.toFixed(2)} audio s/wall s · queued ${a.queuedSeconds.toFixed(2)} s (peak ${a.highWaterSeconds.toFixed(2)}) · ${a.playing ? 'playing' : 'buffering'} · underruns ${a.underruns} (${a.underrunSeconds.toFixed(2)} s)${stats.halted ? ` · DSP HALTED: ${stats.halted}` : ''}`);
+      if (stats && a) setReport(`${firmwareNote} · DSP frames ${stats.frames} · produced ${stats.pcm_produced_seconds.toFixed(2)} s · ${stats.pcm_seconds_per_wall_second.toFixed(2)} audio s/wall s · queued ${a.queuedSeconds.toFixed(2)} s (peak ${a.highWaterSeconds.toFixed(2)}) · ${a.playing ? 'playing' : 'buffering'} · underruns ${a.underruns} (${a.underrunSeconds.toFixed(2)} s)${stats.halted ? ` · DSP HALTED: ${stats.halted}` : ''}`);
     } catch { /* session replaced */ }
   };
   const exportHealth = async () => {
@@ -36,14 +37,19 @@ export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRun
     } catch (error) { props.onError(String(error)); }
   };
   const start = async () => {
-    setActive(false); window.clearInterval(timer); sink?.close(); sink = undefined;
+    // Create and resume the AudioContext before any await, inside the click gesture.
+    const fresh = new PcmSink(); const resumed = fresh.resume();
+    void resumed.catch(() => {});
+    setActive(false); window.clearInterval(timer); sink?.close(); sink = fresh;
     try {
-      if (!files.syx || !files.image || !files.dsp) { props.onError('Choose the firmware, DSP image and DSP state first.'); return; }
+      const top = files.syx ? undefined : props.firmware?.();
+      if ((!files.syx && !top) || !files.image || !files.dsp) { sink.close(); sink = undefined; props.onError('Choose the firmware (top or here), the DSP image and the DSP state first.'); return; }
+      firmwareNote = files.syx ? `firmware: ${files.syx.name}` : `firmware: ${top!.name} (from Choose firmware)`;
       runtime = await props.runtime();
-      if (!runtime?.loadCoupled || !await runtime.coupledAvailable?.()) { setAvailable(false); setReport('Audio setup needs a browser core built with SHARC support.'); return; }
-      setReport('Loading…');
-      sink = new PcmSink(); const port = await sink.open(buffer());
-      const [syx, image, dsp] = await Promise.all([read(files.syx), read(files.image), read(files.dsp)]);
+      if (!runtime?.loadCoupled || !await runtime.coupledAvailable?.()) { sink.close(); sink = undefined; setAvailable(false); setReport('Audio setup needs a browser core built with SHARC support.'); return; }
+      setReport(`Loading… ${firmwareNote}`);
+      await resumed; const port = await sink.open(buffer());
+      const [syx, image, dsp] = await Promise.all([files.syx ? read(files.syx) : Promise.resolve(top!.bytes.slice()), read(files.image), read(files.dsp)]);
       const snapshot = files.snapshot ? await read(files.snapshot) : undefined;
       props.onStarted(await runtime.loadCoupled({ syx, image, dsp, snapshot }, port));
       setActive(true); timer = window.setInterval(() => { void poll(); }, 500);
@@ -68,6 +74,7 @@ export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRun
     <label>Buffer s <input type="number" min="0" step="0.5" value={buffer()} style={{ width: '4rem' }} onInput={(e) => { const v = Number(e.currentTarget.value); setBuffer(v); sink?.setBuffer(v); }} /></label>
     <button onClick={() => void start()}>Start emulator audio</button>
     <button disabled={!active()} onClick={() => void runtime?.tap?.(25).catch((e) => props.onError(String(e)))}>Trig 1</button>
+    <small>From the ready snapshot, press NO once before Trig 1.</small>
     <button disabled={!active()} onClick={() => void exportHealth()}>Export audio health</button>
     <output>{report()}</output>
     </Show>

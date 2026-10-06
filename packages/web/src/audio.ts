@@ -4,11 +4,15 @@ export interface AudioStats { queuedSeconds: number; playing: boolean; underruns
 export class PcmSink {
   readonly context: AudioContext;
   private node?: AudioWorkletNode;
+  private resumed?: Promise<void>;
   /** Latest worklet report. */
   stats: AudioStats = { queuedSeconds: 0, playing: false, underruns: 0, playedSeconds: 0, receivedSeconds: 0, highWaterSeconds: 0, silenceSeconds: 0, underrunSeconds: 0, portAttached: false, receivedPcm: false, renderedPcm: false };
 
   /** Construct from a user gesture. 48 kHz is the DSP rate; the browser resamples to the device. */
   constructor() { this.context = new AudioContext({ sampleRate: 48_000, latencyHint: 'playback' }); }
+
+  /** Call synchronously from the click handler so the user gesture still counts. */
+  resume(): Promise<void> { this.resumed = this.context.resume(); return this.resumed; }
 
   /** Loads the worklet and returns the port the emulator worker posts PCM to. */
   async open(startSeconds: number): Promise<MessagePort> {
@@ -19,7 +23,7 @@ export class PcmSink {
     this.setBuffer(startSeconds);
     const channel = new MessageChannel();
     this.node.port.postMessage({ port: channel.port2 }, [channel.port2]);
-    await this.context.resume();
+    await this.resumed;
     return channel.port1;
   }
 

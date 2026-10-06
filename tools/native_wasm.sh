@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Build the portable native runtime for the browser without changing toolchains."""
+"""Build the portable native runtime for the browser without changing toolchains.
+
+Writes two files to packages/web/public:
+  emulator-core.wasm        CF-only core (small), used for the normal boot.
+  emulator-core-sharc.wasm  coupled ColdFire + SHARC+ core (large), fetched only
+                            by the audio panel; built when a generated core is
+                            available and --cf-only is not given.
+"""
 
 from __future__ import annotations
 
@@ -25,13 +32,13 @@ parser.add_argument(
 parser.add_argument(
     "--cf-only",
     action="store_true",
-    help="build the CF-only browser core even when SHARC_GEN_DIR is configured",
+    help="build only the CF-only browser core, even when a generated core is available",
 )
 parser.add_argument(
     "--sharc",
     action="store_true",
-    help="also write the coupled SHARC+ browser core to the legacy emulator-core-sharc.wasm "
-    "path (needs SHARC_GEN_DIR); the normal core uses SHARC when configured",
+    help="fail unless the coupled SHARC+ core (emulator-core-sharc.wasm) can be built "
+    "(needs SHARC_GEN_DIR or the default generated core)",
 )
 args = parser.parse_args()
 configured_generated = os.environ.get("SHARC_GEN_DIR")
@@ -42,20 +49,19 @@ if generated and not pathlib.Path(generated).is_dir():
     generated = None
 if args.sharc and args.cf_only:
     raise SystemExit("--sharc and --cf-only cannot be used together")
-coupled = args.sharc or (bool(generated) and not args.cf_only)
-if coupled:
-    os.environ.setdefault("SHARC_GEN_DIR", generated)
+coupled = bool(generated) and not args.cf_only
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import native_target  # noqa: E402
 
-# Shared target dir keyed by the generated core (see tools/native_target.py);
-# CARGO_TARGET_DIR still wins.
-target_dir = pathlib.Path(
-    os.environ.get("CARGO_TARGET_DIR")
-    or native_target.target_dir(generated if coupled else None)
-)
-if not target_dir.is_absolute():
-    target_dir = root / target_dir
+
+def resolve_target_dir(gen: str | None) -> pathlib.Path:
+    # Shared target dir keyed by the generated core (see tools/native_target.py).
+    # CARGO_TARGET_DIR still wins for both builds; with it set the two builds
+    # share one dir, which works but rebuilds the crate each time.
+    path = pathlib.Path(os.environ.get("CARGO_TARGET_DIR") or native_target.target_dir(gen))
+    return path if path.is_absolute() else root / path
+
+
 rustc = digi_env.toolchain_rustc()
 if not rustc:
     rustc = shutil.which("rustc")
@@ -68,46 +74,56 @@ if not rustc:
 if rustc is None:
     raise SystemExit("rustc is required; install the pinned mise Rust toolchain first")
 sysroot = subprocess.check_output([rustc, "--print", "sysroot"], text=True).strip()
-env = os.environ | {
+base_env = os.environ | {
     "PATH": f"{pathlib.Path(rustc).parent}:{os.environ['PATH']}",
     "DYLD_FALLBACK_LIBRARY_PATH": f"{sysroot}/lib",
     "RUSTC": rustc,
     "RUSTDOC": str(pathlib.Path(rustc).with_name("rustdoc")),
 }
-command = [
-    "cargo",
-    "build",
-    "--manifest-path",
-    "native/boot/Cargo.toml",
-    "--locked",
-    "--offline",
-    "--release",
-    "--lib",
-    "--target",
-    "wasm32-unknown-unknown",
-    "--target-dir",
-    str(target_dir),
-]
+public = root / "packages/web/public"
+public.mkdir(parents=True, exist_ok=True)
+
+
+def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], dest: pathlib.Path) -> None:
+    command = [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "native/boot/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--release",
+        "--lib",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--target-dir",
+        str(target_dir),
+    ]
+    if features:
+        command.extend(["--features", ",".join(features)])
+    try:
+        subprocess.run(command, cwd=root, env=env, check=True)
+    except subprocess.CalledProcessError:
+        raise SystemExit(
+            "WASM build failed; install wasm32-unknown-unknown for the pinned Rust toolchain"
+        ) from None
+    shutil.copyfile(target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm", dest)
+
+
 # The browser core has no fast tier: SHARC_FAST_REGIONS is read from the
 # environment, which wasm32-unknown-unknown does not have, and the fast tier's
 # Cranelift backend emits host machine code.
-features = []
-if args.diagnostics:
-    features += ["diagnostic-profile", "diagnostic-events"]
+diagnostics = ["diagnostic-profile", "diagnostic-events"] if args.diagnostics else []
+plain_env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
+build(diagnostics, resolve_target_dir(None), plain_env, public / "emulator-core.wasm")
+sharc_wasm = public / "emulator-core-sharc.wasm"
 if coupled:
-    features.append("sharc")
-if features:
-    command.extend(["--features", ",".join(features)])
-try:
-    subprocess.run(command, cwd=root, env=env, check=True)
-except subprocess.CalledProcessError:
-    raise SystemExit(
-        "WASM build failed; install wasm32-unknown-unknown for the pinned Rust toolchain"
-    ) from None
-source = target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm"
-target = root / "packages/web/public" / "emulator-core.wasm"
-target.parent.mkdir(parents=True, exist_ok=True)
-shutil.copyfile(source, target)
-# Keep the explicit legacy artifact for callers that still request --sharc.
-if args.sharc:
-    shutil.copyfile(source, target.with_name("emulator-core-sharc.wasm"))
+    build(
+        [*diagnostics, "sharc"],
+        resolve_target_dir(generated),
+        base_env | {"SHARC_GEN_DIR": generated},
+        sharc_wasm,
+    )
+else:
+    sharc_wasm.unlink(missing_ok=True)
+    print("coupled SHARC+ core skipped (--cf-only or no generated core); removed any stale emulator-core-sharc.wasm")

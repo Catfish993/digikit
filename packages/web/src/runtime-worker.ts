@@ -8,6 +8,7 @@ let wasm: Abi | undefined;
 let plain: Abi | undefined;
 let corePromise: Promise<Abi> | undefined;
 let sharcPromise: Promise<Abi> | undefined;
+let capablePromise: Promise<boolean> | undefined;
 let generation = 0;
 let runEpoch = 0;
 let running = false;
@@ -61,13 +62,16 @@ function core() {
   corePromise ??= WebAssembly.instantiateStreaming(fetch('/emulator-core.wasm'), {}).then(({ instance }) => { plain = instance.exports as unknown as Abi; wasm ??= plain; return plain; });
   return corePromise;
 }
-/** The ordinary core includes the local SHARC engine when it was built with
- * SHARC_GEN_DIR. The legacy separate file remains a fallback for old builds. */
-async function sharcCore() {
-  const ordinary = await core();
-  if (typeof ordinary.digi_load_coupled === 'function') return ordinary;
+/** The coupled core is a separate, large file, fetched only when the audio
+ * panel loads a coupled session. */
+function sharcCore() {
   sharcPromise ??= WebAssembly.instantiateStreaming(fetch('/emulator-core-sharc.wasm'), {}).then(({ instance }) => instance.exports as unknown as Abi);
   return sharcPromise;
+}
+/** Cheap availability probe: does not download the large file. */
+function coupledCapable() {
+  capablePromise ??= fetch('/emulator-core-sharc.wasm', { method: 'HEAD' }).then((response) => response.ok, () => false);
+  return capablePromise;
 }
 function publish(snapshot: unknown, token: number) { postMessage({ type: 'snapshot', generation: token, snapshot }); }
 function step() {
@@ -92,20 +96,16 @@ async function pump(token: number, epoch: number) {
 function reject(data: { id?: string }, error: string) { if (data.id) postMessage({ reply: data.id, error }); }
 type Message = { type: string; id?: string; generation: number; bytes?: ArrayBuffer; image?: ArrayBuffer; dsp?: ArrayBuffer; snapshot?: ArrayBuffer; port?: MessagePort; hold?: number; code?: number; down?: boolean; encoder?: number; detents?: number };
 async function handle(data: Message) {
-  await core();
   if (data.type === 'audio-port') { audioPort = data.port; return; }
   if (data.type === 'coupled-capable') {
-    try {
-      const candidate = await sharcCore();
-      if (data.id) postMessage({ reply: data.id, value: typeof candidate.digi_load_coupled === 'function' });
-    } catch {
-      if (data.id) postMessage({ reply: data.id, value: false });
-    }
+    const value = await coupledCapable();
+    if (data.id) postMessage({ reply: data.id, value });
     return;
   }
   if (data.type === 'load') {
     if (data.generation < generation) return reject(data, 'stale emulator session');
-    generation = data.generation; running = false; runEpoch += 1; stopCore(); wasm = plain;
+    generation = data.generation; running = false; runEpoch += 1; stopCore();
+    wasm = await core();
     if (!data.bytes) return reject(data, 'firmware bytes are missing');
     const bytes = new Uint8Array(data.bytes);
     const pointer = wasm!.digi_alloc(bytes.length) as number;
