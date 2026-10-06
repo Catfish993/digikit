@@ -291,9 +291,7 @@ def cmd_build(args) -> str:
     if os.path.isfile(SOL) and not prod_gen:
         env["SHARC_REGIONBENCH_SOL"] = SOL
     if pgo:
-        env["RUSTFLAGS"] = "-Cprofile-use=%s" % (
-            os.path.abspath(pgo)
-        )
+        env["RUSTFLAGS"] = "-Cprofile-use=%s" % (os.path.abspath(pgo))
     # RUSTFLAGS (PGO) builds take --target so the flags skip build scripts and
     # get their own subdir; plain builds share the gen's key dir.
     nt = native_target()
@@ -548,10 +546,7 @@ def cmd_fresh_fast(args) -> None:
             "SHARC_GEN_DIR": PROD_GEN,
             "profile_env": {},
             "RUSTFLAGS": (
-                "-Cprofile-use=%s"
-                % os.path.abspath(args.pgo)
-                if args.pgo
-                else None
+                "-Cprofile-use=%s" % os.path.abspath(args.pgo) if args.pgo else None
             ),
         },
         "stderr": completed.stderr,

@@ -113,6 +113,15 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
   `status` shows holders). `tools/native_pgo.py` and
   `tools/sharc_regionbench.py` take it themselves; wrap ad-hoc runs with
   `uv run python tools/benchlock.py run --exclusive -- CMD`.
+- Build and run through mise: `mise run emu` (build once, run the binary),
+  `mise run emu:build` (the same build, no launch), `mise run web` (browser),
+  `mise run scenario NAME` / `replay FILE` / `bisect NAME` (headless coupled
+  runs via `tools/coupled.py`), `mise run test:quick`. Paths, the toolchain
+  and the fast-region tables live in `tools/digi_env.py` and
+  `tools/fast_regions.json`.
+- `out/native/target/prod/pgo-use` belongs to the launcher: agents and
+  experiments never build into it. Retrain PGO (`mise run pgo`) only at
+  milestones; the launcher uses a stale profile with a warning.
 - Iterate DSP speed with `tools/sharc_regionbench.py` (one region, about
   50 s per variant); use `tools/native_pgo.py bench-bins` (coupled, about
   6 min) and `train` (PGO, about 6 min) only at milestones.

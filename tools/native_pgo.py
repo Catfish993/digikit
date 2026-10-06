@@ -20,9 +20,11 @@ The training workload is the ``coupled_ready_exactness`` gate, run from the
 instrumented desktop APP binary with ``--pgo-train`` (not the test binary:
 cargo gives the test target's dependencies other crate hashes than the app's,
 so a profile trained on it never matched the app). It needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
-The launcher (``tools/native_emu.sh``) retrains a stale profile itself. The key
-covers the emulation crates only (not packages/), so a desktop-crate edit
-leaves the profile current.
+The launcher (``tools/native_emu.sh``) does not retrain: it warns about a stale
+profile and uses it anyway. Retrain with ``mise run pgo`` or by launching with
+DIGI_EMU_PGO_TRAIN=1. The key covers the emulation crates only (not packages/),
+so a desktop-crate edit leaves the profile current; the fast-region lists are
+read at run time and are not part of the key.
 
 The toolchain must be the rustup 1.98.1 distribution: a Homebrew rustc has the
 same version string but different LLVM, and cannot read these profiles.
@@ -40,7 +42,6 @@ import os
 import pathlib
 import platform
 import re
-import runpy
 import shutil
 import statistics
 import subprocess
@@ -48,11 +49,16 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+try:
+    import digi_env  # noqa: E402
+finally:
+    sys.path.pop(0)
 MANIFEST_PATH = "packages/desktop/src-tauri/Cargo.toml"
-DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
-READY = ROOT / "snapshots" / "dn2-audio-ready-2026-10-03"
-TOOLCHAIN = "1.98.1"
-TRIPLE = "aarch64-apple-darwin"
+DEFAULT_GENERATED = digi_env.DEFAULT_GENERATED
+READY = digi_env.READY
+TOOLCHAIN = digi_env.TOOLCHAIN
+TRIPLE = digi_env.TRIPLE
 FEATURES = "coupled-audio"
 TEST_NAME = "desktop_runtime::coupled::tests::coupled_ready_exactness"
 WORKLOAD = "desktop-bin"
@@ -105,9 +111,7 @@ def llvm_profdata() -> pathlib.Path:
 def generated_dir(
     environ: dict[str, str] | os._Environ[str] | None = None,
 ) -> pathlib.Path:
-    environ = os.environ if environ is None else environ
-    configured = environ.get("SHARC_GEN_DIR")
-    return pathlib.Path(configured) if configured else DEFAULT_GENERATED
+    return digi_env.generated_dir(environ)
 
 
 def rustc_version() -> str:
@@ -231,37 +235,29 @@ def fast_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> st
     """The fast-tier region list a coupled run uses ("" when off).
 
     An explicit SHARC_FAST_REGIONS wins, DIGI_EMU_FAST=0 turns the tier off,
-    otherwise the launcher's per-firmware table is read for DIGI_COUPLED_SYX
-    (the launcher sets SHARC_FAST_REGIONS before it asks for a launch plan).
+    otherwise the per-firmware table (tools/fast_regions.json) is read for the
+    firmware (DIGI_EMU_SYX, then DIGI_COUPLED_SYX).
     """
     environ = os.environ if environ is None else environ
     if "SHARC_FAST_REGIONS" in environ:
         return environ["SHARC_FAST_REGIONS"]
     if environ.get("DIGI_EMU_FAST") == "0":
         return ""
-    launcher = runpy.run_path(
-        str(ROOT / "tools" / "native_emu.sh"), run_name="launcher"
-    )
-    syx = environ.get("DIGI_COUPLED_SYX", str(ROOT / "Digitone_II_OS1.11.syx"))
-    return str(launcher["fast_regions_for"](pathlib.Path(syx)))
+    return digi_env.fast_regions_for(digi_env.firmware(environ))
 
 
 def blocktrans_roots(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
     """The SHARC_BLOCKTRANS cluster roots a coupled run uses ("" when none).
 
     Same precedence as :func:`fast_regions`: explicit env, DIGI_EMU_FAST=0,
-    then the launcher's per-firmware table.
+    then the per-firmware table.
     """
     environ = os.environ if environ is None else environ
     if "SHARC_BLOCKTRANS" in environ:
         return environ["SHARC_BLOCKTRANS"]
     if environ.get("DIGI_EMU_FAST") == "0":
         return ""
-    launcher = runpy.run_path(
-        str(ROOT / "tools" / "native_emu.sh"), run_name="launcher"
-    )
-    syx = environ.get("DIGI_COUPLED_SYX", str(ROOT / "Digitone_II_OS1.11.syx"))
-    return str(launcher["blocktrans_roots_for"](pathlib.Path(syx)))
+    return digi_env.blocktrans_roots_for(digi_env.firmware(environ))
 
 
 def compute_components(
@@ -271,6 +267,12 @@ def compute_components(
     fast: str = "",
     blocktrans: str = "",
 ) -> tuple[dict[str, str], int]:
+    """The profile key components.
+
+    ``fast`` and ``blocktrans`` are kept for signature compatibility only: the
+    fast-region lists are read at run time and do not change the binary, so
+    they no longer enter the key.
+    """
     outer = hashlib.sha256()
     files = 0
     for rel in packages:
@@ -294,8 +296,6 @@ def compute_components(
         "features": FEATURES,
         "workload": WORKLOAD,
         "flags_template": FLAGS_TEMPLATE,
-        "fast_regions": fast,
-        "blocktrans": blocktrans,
     }
     return components, files + gen_count
 
@@ -309,6 +309,15 @@ def read_manifest() -> dict[str, object] | None:
         return json.loads((state_dir() / "manifest.json").read_text())
     except (OSError, ValueError):
         return None
+
+
+def current_profile() -> str | None:
+    """The manifest's profile file if it still exists (even when stale)."""
+    manifest = read_manifest()
+    if not manifest:
+        return None
+    path = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    return str(path) if path.is_file() else None
 
 
 def desktop_digest(hasher: FileHasher) -> str:
@@ -400,9 +409,22 @@ def fallback_notice(status: str, detail: str) -> str:
     if status == "skipped":
         return f"WARNING: native PGO: skipped ({detail}); building without PGO"
     what = detail if status == "failed" else f"profile {status} ({detail})"
+    hint = (
+        "(mise run pgo to train)"
+        if status == "missing"
+        else ("Run tools/native_pgo.py train")
+    )
     return (
         f"WARNING: native PGO: {what}; building without PGO "
-        "(about 30% slower DSP). Run tools/native_pgo.py train"
+        f"(about 30% slower DSP). {hint}"
+    )
+
+
+def stale_notice(detail: str) -> str:
+    return (
+        f"WARNING: native PGO: profile stale ({detail}); using it anyway "
+        "(unchanged functions keep their profile). Retrain at a milestone: "
+        "mise run pgo"
     )
 
 
@@ -420,12 +442,18 @@ def launch_plan(
 ) -> tuple[LaunchPlan | None, str]:
     """Decide whether the launcher can use the PGO build; returns (plan, notice).
 
-    An empty notice means stay silent (opted out or unsupported host).
+    A stale profile is used anyway (with a warning notice) when its file still
+    exists; a missing or unusable one gives (None, fallback notice). An empty
+    notice means stay silent (opted out or unsupported host).
     """
     environ = os.environ if environ is None else environ
     status, detail = pgo_state(environ)
     if status == "off":
         return None, ""
+    if status == "stale":
+        profile = current_profile()
+        if profile:
+            return plan_for(profile, environ), stale_notice(detail)
     if status != "ok":
         return None, fallback_notice(status, detail)
     return plan_for(detail, environ), "native PGO: using profile " + pathlib.Path(
@@ -522,13 +550,13 @@ def toolchain_rustc() -> str:
     profile trained with one compiler never matches a build made with the
     other, and PGO silently does nothing.
     """
-    done = subprocess.run(
-        ["rustup", "which", "--toolchain", TOOLCHAIN, "rustc"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return done.stdout.strip()
+    rustc = digi_env.toolchain_rustc()
+    if not rustc:
+        raise SystemExit(
+            f"rustup toolchain {TOOLCHAIN} not found (rustup toolchain install "
+            f"{TOOLCHAIN})"
+        )
+    return rustc
 
 
 def base_env(gen: pathlib.Path) -> dict[str, str]:
@@ -547,9 +575,7 @@ def run_env(deps_dir: pathlib.Path) -> dict[str, str]:
         "DYLD_LIBRARY_PATH": str(deps_dir),
         "NOTE_EVENTS": "trig",
         "DIGI_COUPLED_FIXTURES": os.environ.get("DIGI_COUPLED_FIXTURES", str(READY)),
-        "DIGI_COUPLED_SYX": os.environ.get(
-            "DIGI_COUPLED_SYX", str(ROOT / "Digitone_II_OS1.11.syx")
-        ),
+        "DIGI_COUPLED_SYX": str(digi_env.firmware()),
         "DN2_PROFILE_LINK": "1",
     }
 
@@ -803,8 +829,18 @@ def cmd_train(args: argparse.Namespace) -> None:
 def cmd_check(_: argparse.Namespace) -> int:
     began = time.monotonic()
     status, detail, desktop = check_state(None, fast_regions(), blocktrans_roots())
+    manifest = read_manifest() or {}
+    fast_changed = status == "ok" and (
+        manifest.get("fast_regions", "") != fast_regions()
+        or manifest.get("blocktrans", "") != blocktrans_roots()
+    )
     if status == "ok" and desktop:
         print("ok (desktop crate changed; profile reused)")
+    elif fast_changed:
+        print(
+            "ok (fast regions changed since training; the profile still applies, "
+            "retrain at a milestone)"
+        )
     else:
         print(f"{status} {detail}" if status != "missing" else f"missing ({detail})")
     print(f"check took {time.monotonic() - began:.3f} s", file=sys.stderr)

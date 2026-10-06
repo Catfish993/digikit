@@ -1,5 +1,6 @@
 """The PGO profile key covers the emulation crates, not the desktop UI crate."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
+import digi_env  # noqa: E402
 import native_pgo  # noqa: E402
 
 sys.path.pop(0)
@@ -82,29 +84,41 @@ def test_emulation_crate_change_is_stale(tree):
     assert (status, detail) == ("stale", "changed: sources")
 
 
-def test_generated_core_and_fast_regions_are_stale(tree):
+def test_generated_core_change_is_stale_but_fast_regions_are_not(tree):
+    assert native_pgo.check_state(tree / "gen", "0x1")[0] == "ok"
     (tree / "gen/core.rs").write_text("new core")
     assert state(tree)[1] == "changed: generated"
-    assert native_pgo.check_state(tree / "gen", "0x1")[1] == (
-        "changed: generated, fast_regions"
-    )
+    assert native_pgo.check_state(tree / "gen", "0x1")[1] == "changed: generated"
 
 
-def test_blocktrans_roots_are_stale(tree):
-    assert native_pgo.check_state(tree / "gen", "", "0xb8276c")[1] == (
-        "changed: blocktrans"
-    )
+def test_blocktrans_roots_do_not_make_the_profile_stale(tree):
+    assert native_pgo.check_state(tree / "gen", "", "0xb8276c")[0] == "ok"
 
 
-def test_blocktrans_roots_follow_env_then_launcher(monkeypatch):
+def test_blocktrans_roots_follow_env_then_table(monkeypatch, tmp_path):
+    syx = tmp_path / "fw.syx"
+    syx.write_bytes(b"dn2")
+    table = tmp_path / "fast.json"
+    digest = hashlib.sha256(b"dn2").hexdigest()
+    table.write_text(json.dumps({digest: {"blocktrans": "0x2"}}))
+    monkeypatch.setattr(digi_env, "FAST_TABLE", table)
+    monkeypatch.setenv("DIGI_COUPLED_SYX", str(syx))
+    monkeypatch.delenv("DIGI_EMU_SYX", raising=False)
+    digi_env._syx_digest.cache_clear()
     assert native_pgo.blocktrans_roots({"SHARC_BLOCKTRANS": "0x1"}) == "0x1"
     assert native_pgo.blocktrans_roots({"DIGI_EMU_FAST": "0"}) == ""
-    monkeypatch.setattr(
-        native_pgo.runpy,
-        "run_path",
-        lambda *a, **k: {"blocktrans_roots_for": lambda syx: "0x2"},
-    )
-    assert native_pgo.blocktrans_roots({}) == "0x2"
+    assert native_pgo.blocktrans_roots({"DIGI_COUPLED_SYX": str(syx)}) == "0x2"
+    assert native_pgo.blocktrans_roots() == "0x2"
+
+
+def test_current_profile_returns_the_file_even_when_stale(tree):
+    (tree / "native/sharc/lib.rs").write_text("a changed")
+    assert state(tree)[0] == "stale"
+    assert native_pgo.current_profile() == str(tree / "state" / "p.profdata")
+    (tree / "state" / "p.profdata").unlink()
+    assert native_pgo.current_profile() is None
+    (tree / "state" / "manifest.json").unlink()
+    assert native_pgo.current_profile() is None
 
 
 def test_missing_profile_file_and_manifest(tree):
@@ -143,6 +157,18 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
         lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(metadata), ""),
     )
     assert native_pgo.local_package_dirs() == ["native/coldfire/cfabi", "native/sharc"]
+
+
+def test_launch_plan_uses_a_stale_profile_with_a_warning(tree, monkeypatch):
+    monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
+    monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
+    monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
+    (tree / "native/sharc/lib.rs").write_text("a changed")
+    plan, notice = native_pgo.launch_plan({})
+    assert plan is not None
+    assert plan.env["RUSTC"] == "/fake/rustc"
+    assert "profile stale" in notice
+    assert "mise run pgo" in notice
 
 
 def test_fallback_notice_is_prefixed_with_warning():

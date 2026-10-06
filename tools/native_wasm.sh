@@ -11,6 +11,11 @@ import subprocess
 import sys
 
 root = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+try:
+    import digi_env  # noqa: E402
+finally:
+    sys.path.pop(0)
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
     "--diagnostics",
@@ -30,7 +35,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 configured_generated = os.environ.get("SHARC_GEN_DIR")
-generated = configured_generated or str(root / "out" / "native" / "dn2-audio" / "gen")
+generated = configured_generated or str(digi_env.DEFAULT_GENERATED)
 if generated and not pathlib.Path(generated).is_dir():
     if configured_generated or args.sharc:
         raise SystemExit("SHARC_GEN_DIR must name a local generated DN2 core directory")
@@ -51,12 +56,15 @@ target_dir = pathlib.Path(
 )
 if not target_dir.is_absolute():
     target_dir = root / target_dir
-rustc = shutil.which("rustup")
-if rustc is not None:
-    found = subprocess.run([rustc, "which", "rustc"], text=True, capture_output=True)
-    rustc = found.stdout.strip() if found.returncode == 0 else None
-if rustc is None:
+rustc = digi_env.toolchain_rustc()
+if not rustc:
     rustc = shutil.which("rustc")
+    if rustc is not None:
+        print(
+            f"WARNING: pinned rustup toolchain {digi_env.TOOLCHAIN} not found; "
+            "using the rustc on PATH",
+            file=sys.stderr,
+        )
 if rustc is None:
     raise SystemExit("rustc is required; install the pinned mise Rust toolchain first")
 sysroot = subprocess.check_output([rustc, "--print", "sysroot"], text=True).strip()
@@ -80,6 +88,9 @@ command = [
     "--target-dir",
     str(target_dir),
 ]
+# The browser core has no fast tier: SHARC_FAST_REGIONS is read from the
+# environment, which wasm32-unknown-unknown does not have, and the fast tier's
+# Cranelift backend emits host machine code.
 features = []
 if args.diagnostics:
     features += ["diagnostic-profile", "diagnostic-events"]

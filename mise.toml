@@ -1,4 +1,8 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
+
+[settings]
+activate_aggressive = true
+
 [tools]
 rust = "1.98.1"
 pnpm = "12.8.2"
@@ -13,4 +17,43 @@ description = "Build or inspect a standalone +Drive image"
 
 [tasks.emu]
 run = "tools/native_emu.sh"
-description = "Build the shared panel UI and run the desktop emulator (DN2 audio when local inputs are ready)"
+description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready)"
+
+[tasks."emu:build"]
+run = "tools/native_emu.sh --build-only"
+description = "Build the desktop emulator exactly as `mise run emu` does, without launching it"
+
+[tasks.web]
+run = "pnpm dev"
+description = "Build the browser core (WASM) and serve the web panel (astro dev)"
+
+[tasks.wasm]
+run = "tools/native_wasm.sh"
+description = "Build only the browser emulator core (WASM)"
+
+[tasks."wasm:parity"]
+run = "node tools/wasm_parity.mjs --scenario"
+description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run wasm:parity trig1-tap-release"
+
+[tasks.pgo]
+run = "uv run python tools/native_pgo.py train"
+description = "Retrain the desktop PGO profile (~6 min); do it at milestones, not per edit"
+
+[tasks.scenario]
+run = "uv run python tools/coupled.py scenario"
+description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"
+
+[tasks.replay]
+run = "uv run python tools/coupled.py replay"
+description = "Replay inputs recorded by the desktop app (Export diagnostics file) headless"
+
+[tasks.bisect]
+run = "uv run python tools/coupled.py bisect"
+description = "Find the DSP tier (fast region, cluster root, AOT) that changes a scenario's PCM"
+
+[tasks."test:quick"]
+run = [
+  "uv run python -m pytest -q tests/test_native_emu_launcher.py tests/test_native_pgo.py tests/test_native_target.py tests/test_coupled_tool.py",
+  "uv run python tools/coupled.py test-quick",
+]
+description = "Fast checks for the tooling, the audio sink and the coupled runtime"

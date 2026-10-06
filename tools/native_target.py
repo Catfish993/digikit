@@ -38,8 +38,14 @@ import argparse
 import hashlib
 import os
 import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+try:
+    import digi_env  # noqa: E402
+finally:
+    sys.path.pop(0)
 # A worktree's .git is a file; its target dirs must not collide with the main tree's.
 IS_WORKTREE = (ROOT / ".git").is_file()
 TARGET_ROOT = (
@@ -47,7 +53,7 @@ TARGET_ROOT = (
     if IS_WORKTREE
     else ROOT / "out" / "native" / "target"
 )
-PROD_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen"
+PROD_GEN = digi_env.DEFAULT_GENERATED
 
 
 def gen_key(gen: str | os.PathLike[str] | None) -> str:

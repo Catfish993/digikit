@@ -1,45 +1,49 @@
 #!/usr/bin/env python3
-"""Build the shared panel and run the native desktop emulator.
+"""Build the shared panel and the desktop emulator once, then run the binary.
 
 With local DN2 ready inputs and a generated core, the bare launcher restores
 the audible DN2 session. The private inputs stay out of the repository: every
 path is overridable, and unavailable inputs leave the ordinary CF diagnostic
 emulator available.
+
+The panel is rebuilt only when its sources changed (DIGI_EMU_PANEL=1 forces
+it). The app is built once with cargo build and the binary is run directly;
+--build-only stops after the build and prints the binary path. A stale PGO
+profile is used with a warning; `mise run pgo` retrains it (or launch once
+with DIGI_EMU_PGO_TRAIN=1).
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import pathlib
 import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-READY = ROOT / "snapshots" / "dn2-audio-ready-2026-10-03"
-DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+try:
+    import digi_env  # noqa: E402
+finally:
+    sys.path.pop(0)
 
-
-# Fast-tier regions (DSP entry PCs, comma separated hex) verified exact for a
-# firmware, keyed by the SHA-256 of the DN2 .syx whose DSP they belong to.
-# Addresses only; they are not firmware content.
-FAST_REGIONS = {
-    # Digitone II OS 1.11
-    "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0": (
-        "0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509"
-    ),
-}
-
-
-# Block-translator cluster roots (SHARC_BLOCKTRANS) verified exact, same key.
-# Measured A/B 0.958 idle, 0.963 chord16 (DSP CPU per audio s, non-PGO).
+# Fast-tier regions (SHARC_FAST_REGIONS) and block-translator cluster roots
+# (SHARC_BLOCKTRANS), keyed by the SHA-256 of the DN2 .syx. The data lives in
+# tools/fast_regions.json.
+FAST_REGIONS = {k: v.get("fast_regions", "") for k, v in digi_env.fast_table().items()}
 BLOCKTRANS_ROOTS = {
-    # Digitone II OS 1.11
-    "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0": (
-        "0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,"
-        "0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5"
-    ),
+    k: v.get("blocktrans", "") for k, v in digi_env.fast_table().items()
 }
+PANEL_STAMP = ROOT / "out" / "native" / "panel-stamp.json"
+PANEL_INPUTS = (
+    "packages/web/src",
+    "packages/web/public",
+    "packages/web/package.json",
+    "packages/web/astro.config.mjs",
+    "pnpm-lock.yaml",
+)
 
 
 def _lookup(table: dict[str, str], syx: pathlib.Path) -> str:
@@ -73,7 +77,7 @@ def set_fast_regions(
     syx = (
         pathlib.Path(args[args.index("--audio-profile-syx") + 1])
         if "--audio-profile-syx" in args
-        else pathlib.Path(environ.get("DIGI_EMU_SYX", ROOT / "Digitone_II_OS1.11.syx"))
+        else digi_env.firmware(environ)
     )
     if "SHARC_FAST_REGIONS" not in environ:
         regions = fast_regions_for(syx)
@@ -87,27 +91,13 @@ def set_fast_regions(
 
 
 def generated_core() -> pathlib.Path:
-    configured = os.environ.get("SHARC_GEN_DIR")
-    return pathlib.Path(configured) if configured else DEFAULT_GENERATED
+    return digi_env.generated_dir()
 
 
 def default_audio_args(args: list[str] | None = None) -> list[str]:
     """Add local ready audio inputs to a normal launcher command line."""
     args = [] if args is None else list(args)
-    paths = {
-        "firmware": pathlib.Path(
-            os.environ.get("DIGI_EMU_SYX", ROOT / "Digitone_II_OS1.11.syx")
-        ),
-        "DSP image": pathlib.Path(
-            os.environ.get("DIGI_EMU_DSP_IMAGE", READY / "digi-audio-dn2-image.bin")
-        ),
-        "DSP state": pathlib.Path(
-            os.environ.get("DIGI_EMU_DSP_STATE", READY / "digi-audio-m5.snap.dsp")
-        ),
-        "CF snapshot": pathlib.Path(
-            os.environ.get("DIGI_EMU_CF_SNAPSHOT", READY / "digi-audio-m5.snap")
-        ),
-    }
+    paths = digi_env.ready_inputs()
     missing = [label for label, path in paths.items() if not path.is_file()]
     generated = generated_core()
     if not generated.is_dir():
@@ -205,10 +195,12 @@ def train_profile() -> str:
 def pgo_plan(args: list[str]) -> object | None:
     """Profile-use plan for the coupled build, or None for the ordinary build.
 
-    A stale or missing profile is retrained here when the training inputs
-    exist (DIGI_EMU_PGO_TRAIN=0 skips that); DIGI_EMU_PGO=0 skips PGO. Any
-    failure falls back to the ordinary build with a WARNING line: launching is
-    never blocked.
+    The launcher never trains on its own. A stale profile is used anyway with a
+    WARNING (unchanged functions keep their profile); a missing one falls back
+    to the ordinary build. DIGI_EMU_PGO_TRAIN=1 trains a stale or missing
+    profile here when the training inputs exist (`mise run pgo` is the usual
+    way); DIGI_EMU_PGO=0 skips PGO. Any failure falls back to the ordinary
+    build with a WARNING line: launching is never blocked.
     """
     if "--coupled" not in args and "--auto-coupled" not in args:
         return None
@@ -223,22 +215,31 @@ def pgo_plan(args: list[str]) -> object | None:
     status, detail = native_pgo.pgo_state(environ)
     if status == "off":
         return None
-    if status in ("stale", "missing") and environ.get("DIGI_EMU_PGO_TRAIN") != "0":
-        blocker = native_pgo.training_blocker(environ)
-        if blocker:
-            detail = f"{detail}; cannot train: {blocker}"
-        else:
-            print(
-                f"native PGO: profile {status} ({detail}); training (~6 min, "
-                "DIGI_EMU_PGO_TRAIN=0 to skip)",
-                file=sys.stderr,
-                flush=True,
-            )
-            failure = train_profile()
-            if failure:
-                status, detail = "failed", failure
+    if status in ("stale", "missing"):
+        if environ.get("DIGI_EMU_PGO_TRAIN") == "1":
+            blocker = native_pgo.training_blocker(environ)
+            if blocker:
+                detail = f"{detail}; cannot train: {blocker}"
             else:
-                status, detail = native_pgo.pgo_state(environ)
+                print(
+                    f"native PGO: profile {status} ({detail}); training (~6 min, "
+                    "DIGI_EMU_PGO_TRAIN=1)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                failure = train_profile()
+                if failure:
+                    status, detail = "failed", failure
+                else:
+                    status, detail = native_pgo.pgo_state(environ)
+        elif status == "stale":
+            profile = native_pgo.current_profile()
+            if profile:
+                print(native_pgo.stale_notice(detail), file=sys.stderr)
+                return native_pgo.plan_for(profile, environ)
+        else:
+            print(native_pgo.fallback_notice(status, detail), file=sys.stderr)
+            return None
     if status != "ok":
         print(native_pgo.fallback_notice(status, detail), file=sys.stderr)
         return None
@@ -263,11 +264,12 @@ def build_command(command: list[str]) -> list[str]:
 def verify_pgo(command: list[str], env: dict[str, str]) -> None:
     """Build, then warn loudly if the profile's crate hashes miss the binary.
 
-    Never blocks the launch: any failure here is ignored and cargo run goes on.
+    A failed build stops the launch; a failed check only warns.
     """
+    built = subprocess.run(build_command(command), cwd=ROOT, env=env)
+    if built is not None and built.returncode:
+        raise SystemExit(built.returncode)
     try:
-        if subprocess.run(build_command(command), cwd=ROOT, env=env).returncode:
-            return
         done = subprocess.run(
             [sys.executable, str(ROOT / "tools" / "native_pgo.py"), "verify"],
             cwd=ROOT,
@@ -279,10 +281,58 @@ def verify_pgo(command: list[str], env: dict[str, str]) -> None:
         print(PGO_MISMATCH_WARNING, file=sys.stderr, flush=True)
 
 
+def app_binary(command: list[str], plan: object | None) -> pathlib.Path:
+    """The digiemu-desktop binary the build command produces."""
+    target = pathlib.Path(command[command.index("--target-dir") + 1])
+    if plan is not None:
+        return target / digi_env.TRIPLE / "release" / "digiemu-desktop"
+    return target / "release" / "digiemu-desktop"
+
+
+def panel_digest() -> str:
+    """Digest of the panel's sources (the browser WASM core is left out)."""
+    outer = hashlib.sha256()
+    for rel in PANEL_INPUTS:
+        top = ROOT / rel
+        if top.is_file():
+            files = [top]
+        else:
+            files = sorted(p for p in top.rglob("*") if p.is_file())
+        for path in files:
+            if path.name.startswith("emulator-core") and path.suffix == ".wasm":
+                continue
+            outer.update(f"{path.relative_to(ROOT)}\0".encode())
+            outer.update(hashlib.sha256(path.read_bytes()).digest())
+    return outer.hexdigest()
+
+
+def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
+    """`astro build` the shared panel unless its sources match the last build.
+
+    DIGI_EMU_PANEL=1 forces the build.
+    """
+    digest = panel_digest()
+    dist = ROOT / "packages" / "web" / "dist"
+    try:
+        same = json.loads(PANEL_STAMP.read_text()).get("digest") == digest
+    except (OSError, ValueError):
+        same = False
+    if same and dist.is_dir() and environ.get("DIGI_EMU_PANEL") != "1":
+        return
+    subprocess.run(
+        ["pnpm", "--filter", "@digi/web", "exec", "astro", "build"],
+        cwd=ROOT,
+        check=True,
+    )
+    PANEL_STAMP.parent.mkdir(parents=True, exist_ok=True)
+    PANEL_STAMP.write_text(json.dumps({"digest": digest}) + "\n")
+
+
 def main(args: list[str] | None = None) -> None:
     args = sys.argv[1:] if args is None else args
     force_cf = "--cf-only" in args
-    args = [arg for arg in args if arg != "--cf-only"]
+    build_only = "--build-only" in args
+    args = [arg for arg in args if arg not in ("--cf-only", "--build-only")]
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:
@@ -297,17 +347,21 @@ def main(args: list[str] | None = None) -> None:
         set_fast_regions(args, os.environ)
     # The native shell serves the built panel; it does not load browser WASM.
     # Avoid rebuilding the browser core (and its local DSP code) for a desktop run.
-    subprocess.run(
-        ["pnpm", "--filter", "@digi/web", "exec", "astro", "build"],
-        cwd=ROOT,
-        check=True,
-    )
+    build_panel(os.environ)
     plan = pgo_plan(args)
-    env = {**os.environ, **plan.env} if plan is not None else None  # type: ignore[attr-defined]
+    env = digi_env.rust_env({**os.environ, **(plan.env if plan is not None else {})})  # type: ignore[attr-defined]
     command = cargo_command(args, plan)
     if plan is not None:
-        verify_pgo(command, env)  # type: ignore[arg-type]
-    subprocess.run(command, cwd=ROOT, check=True, env=env)
+        verify_pgo(command, env)
+    else:
+        done = subprocess.run(build_command(command), cwd=ROOT, env=env)
+        if done is not None and done.returncode:
+            raise SystemExit(done.returncode)
+    binary = app_binary(command, plan)
+    if build_only:
+        print(binary)
+        return
+    subprocess.run([str(binary), *args], cwd=ROOT, check=True, env=env)
 
 
 if __name__ == "__main__":

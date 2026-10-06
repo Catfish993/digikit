@@ -8,6 +8,16 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+import digi_env  # noqa: E402
+
+sys.path.pop(0)
+
+
+@pytest.fixture(autouse=True)
+def pinned_rustc(monkeypatch):
+    """Never ask rustup for the toolchain from these tests."""
+    monkeypatch.setattr(digi_env, "toolchain_rustc", lambda: "/fake/bin/rustc")
 
 
 def launcher():
@@ -27,7 +37,6 @@ def test_default_command_preserves_locked_cf_only_build():
 
 def test_default_ready_inputs_select_live_coupled_audio(monkeypatch, tmp_path):
     scope = launcher()
-    globals_ = scope["default_audio_args"].__globals__
     ready = tmp_path / "snapshots" / "dn2-audio-ready-2026-10-03"
     ready.mkdir(parents=True)
     for name in [
@@ -39,9 +48,9 @@ def test_default_ready_inputs_select_live_coupled_audio(monkeypatch, tmp_path):
         (tmp_path / name if name.endswith(".syx") else ready / name).touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setitem(globals_, "ROOT", tmp_path)
-    monkeypatch.setitem(globals_, "READY", ready)
-    monkeypatch.setitem(globals_, "DEFAULT_GENERATED", generated)
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "READY", ready)
+    monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
     args = scope["default_audio_args"]()
     assert args[1] == "--auto-coupled"
@@ -51,7 +60,6 @@ def test_default_ready_inputs_select_live_coupled_audio(monkeypatch, tmp_path):
 
 def test_default_no_audio_keeps_coupling_but_mutes_playback(monkeypatch, tmp_path):
     scope = launcher()
-    globals_ = scope["default_audio_args"].__globals__
     ready = tmp_path / "ready"
     ready.mkdir()
     for name in [
@@ -63,9 +71,9 @@ def test_default_no_audio_keeps_coupling_but_mutes_playback(monkeypatch, tmp_pat
     (tmp_path / "Digitone_II_OS1.11.syx").touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setitem(globals_, "ROOT", tmp_path)
-    monkeypatch.setitem(globals_, "READY", ready)
-    monkeypatch.setitem(globals_, "DEFAULT_GENERATED", generated)
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "READY", ready)
+    monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
     assert scope["default_audio_args"](["--no-audio"])[-1] == "1"
 
@@ -74,7 +82,6 @@ def test_selected_firmware_keeps_its_path_but_profile_stays_known(
     monkeypatch, tmp_path
 ):
     scope = launcher()
-    globals_ = scope["default_audio_args"].__globals__
     ready = tmp_path / "ready"
     ready.mkdir()
     for name in [
@@ -87,9 +94,9 @@ def test_selected_firmware_keeps_its_path_but_profile_stays_known(
     profile.touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setitem(globals_, "ROOT", tmp_path)
-    monkeypatch.setitem(globals_, "READY", ready)
-    monkeypatch.setitem(globals_, "DEFAULT_GENERATED", generated)
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "READY", ready)
+    monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
     args = scope["default_audio_args"](["another.syx", "--card-image", "card.img"])
     assert args[:3] == ["another.syx", "--card-image", "card.img"]
@@ -100,7 +107,6 @@ def test_normal_launcher_arguments_get_audio_without_replacing_firmware(
     monkeypatch, tmp_path
 ):
     scope = launcher()
-    globals_ = scope["default_audio_args"].__globals__
     ready = tmp_path / "ready"
     ready.mkdir()
     for name in [
@@ -113,18 +119,18 @@ def test_normal_launcher_arguments_get_audio_without_replacing_firmware(
     profile.touch()
     generated = tmp_path / "generated"
     generated.mkdir()
-    monkeypatch.setitem(globals_, "ROOT", tmp_path)
-    monkeypatch.setitem(globals_, "READY", ready)
-    monkeypatch.setitem(globals_, "DEFAULT_GENERATED", generated)
+    monkeypatch.setattr(digi_env, "DEFAULT_SYX", tmp_path / "Digitone_II_OS1.11.syx")
+    monkeypatch.setattr(digi_env, "READY", ready)
+    monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", generated)
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
     monkeypatch.setenv("DIGI_EMU_PGO", "0")
+    monkeypatch.setitem(scope["main"].__globals__, "build_panel", lambda environ: None)
     calls = []
     monkeypatch.setattr(
         "subprocess.run", lambda command, **_kwargs: calls.append(command)
     )
     scope["main"](["selected.syx", "--card-image", "card.img"])
-    command = calls[-1]
-    forwarded = command[command.index("--") + 1 :]
+    forwarded = calls[-1][1:]
     assert forwarded[:3] == ["selected.syx", "--card-image", "card.img"]
     assert "--auto-coupled" in forwarded
     assert forwarded[forwarded.index("--audio-profile-syx") + 1] == str(profile)
@@ -265,11 +271,43 @@ def test_main_sets_fast_regions_for_the_coupled_run(monkeypatch, tmp_path):
     monkeypatch.setenv("DIGI_EMU_PGO", "0")
     monkeypatch.delenv("SHARC_FAST_REGIONS", raising=False)
     monkeypatch.delenv("DIGI_EMU_FAST", raising=False)
+    monkeypatch.setitem(scope["main"].__globals__, "build_panel", lambda environ: None)
     calls = []
     monkeypatch.setattr("subprocess.run", lambda command, **kw: calls.append(command))
     scope["main"](["x.syx", "--coupled", "--audio-profile-syx", str(syx)])
     assert __import__("os").environ["SHARC_FAST_REGIONS"] == "0x10,0x20"
     monkeypatch.delenv("SHARC_FAST_REGIONS")
+
+
+def _build_run_setup(monkeypatch):
+    scope = launcher()
+    monkeypatch.setenv("DIGI_EMU_PGO", "0")
+    monkeypatch.setitem(scope["main"].__globals__, "build_panel", lambda environ: None)
+    calls = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("subprocess.run", run)
+    return scope, calls
+
+
+def test_build_only_prints_the_binary_and_does_not_launch(monkeypatch, capsys):
+    scope, calls = _build_run_setup(monkeypatch)
+    scope["main"](["x.syx", "--cf-only", "--build-only"])
+    assert len(calls) == 1
+    assert calls[0][:2] == ["cargo", "build"]
+    assert capsys.readouterr().out.strip().endswith("release/digiemu-desktop")
+
+
+def test_main_runs_the_built_binary_not_cargo_run(monkeypatch):
+    scope, calls = _build_run_setup(monkeypatch)
+    scope["main"](["x.syx", "--cf-only"])
+    assert len(calls) == 2
+    assert calls[1][0].endswith("digiemu-desktop")
+    assert not any(c[:2] == ["cargo", "run"] for c in calls)
+    assert calls[1][1:] == ["x.syx"]
 
 
 def test_cargo_command_uses_the_gen_keyed_target_dir(monkeypatch, tmp_path):
@@ -318,6 +356,7 @@ def pgo(monkeypatch):
     monkeypatch.setattr(
         native_pgo, "plan_for", lambda detail, _env=None: ("plan", detail)
     )
+    monkeypatch.setattr(native_pgo, "current_profile", lambda: None)
     monkeypatch.setattr(subprocess, "run", run)
     return box
 
@@ -326,7 +365,8 @@ def trained(box):
     return [c for c in box.commands if c[-1] == "train"]
 
 
-def test_stale_profile_trains_then_uses_the_new_one(pgo, capsys):
+def test_stale_profile_trains_then_uses_the_new_one(pgo, monkeypatch, capsys):
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "1")
     pgo.states = [("stale", "changed: sources"), ("ok", "/p/abc.profdata")]
     plan = launcher()["pgo_plan"](COUPLED)
     assert plan == ("plan", "/p/abc.profdata")
@@ -334,12 +374,13 @@ def test_stale_profile_trains_then_uses_the_new_one(pgo, capsys):
     err = capsys.readouterr().err.splitlines()
     assert err[0] == (
         "native PGO: profile stale (changed: sources); training (~6 min, "
-        "DIGI_EMU_PGO_TRAIN=0 to skip)"
+        "DIGI_EMU_PGO_TRAIN=1)"
     )
     assert err[-1] == "native PGO: using profile abc.profdata"
 
 
-def test_missing_profile_trains_too(pgo, capsys):
+def test_missing_profile_trains_with_the_opt_in(pgo, monkeypatch, capsys):
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "1")
     pgo.states = [("missing", "no manifest"), ("ok", "/p/abc.profdata")]
     assert launcher()["pgo_plan"](COUPLED) is not None
     assert "profile missing (no manifest); training" in capsys.readouterr().err
@@ -351,12 +392,24 @@ def test_current_profile_does_not_train(pgo):
     assert pgo.commands == []
 
 
-def test_train_opt_out_falls_back_with_a_warning(pgo, monkeypatch, capsys):
-    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "0")
-    assert launcher()["pgo_plan"](COUPLED) is None
-    assert pgo.commands == []
+def test_stale_profile_is_used_with_a_warning_without_training(
+    pgo, monkeypatch, capsys
+):
+    monkeypatch.setattr(
+        sys.modules["native_pgo"], "current_profile", lambda: "old.profdata"
+    )
+    assert launcher()["pgo_plan"](COUPLED) == ("plan", "old.profdata")
+    assert trained(pgo) == []
     err = capsys.readouterr().err
-    assert err.startswith("WARNING: native PGO: profile stale (changed: sources)")
+    assert "profile stale" in err
+    assert "mise run pgo" in err
+
+
+def test_missing_profile_does_not_train_by_default(pgo, capsys):
+    pgo.states = [("missing", "no manifest")]
+    assert launcher()["pgo_plan"](COUPLED) is None
+    assert trained(pgo) == []
+    assert "mise run pgo" in capsys.readouterr().err
 
 
 def test_pgo_opt_out_is_silent(pgo, monkeypatch, capsys):
@@ -367,7 +420,8 @@ def test_pgo_opt_out_is_silent(pgo, monkeypatch, capsys):
     assert capsys.readouterr().err == ""
 
 
-def test_training_failure_falls_back_without_blocking(pgo, capsys):
+def test_training_failure_falls_back_without_blocking(pgo, monkeypatch, capsys):
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "1")
     pgo.train_exit = 3
     assert launcher()["pgo_plan"](COUPLED) is None
     assert len(trained(pgo)) == 1
@@ -375,7 +429,8 @@ def test_training_failure_falls_back_without_blocking(pgo, capsys):
     assert "WARNING: native PGO: training failed (exit 3); building without PGO" in err
 
 
-def test_training_that_leaves_the_profile_stale_falls_back(pgo, capsys):
+def test_training_that_leaves_the_profile_stale_falls_back(pgo, monkeypatch, capsys):
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "1")
     pgo.states = [("stale", "changed: sources"), ("stale", "changed: rustc")]
     assert launcher()["pgo_plan"](COUPLED) is None
     assert (
@@ -383,7 +438,8 @@ def test_training_that_leaves_the_profile_stale_falls_back(pgo, capsys):
     )
 
 
-def test_missing_training_inputs_fall_back_without_training(pgo, capsys):
+def test_missing_training_inputs_fall_back_without_training(pgo, monkeypatch, capsys):
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "1")
     pgo.blocker = "missing private input /x"
     assert launcher()["pgo_plan"](COUPLED) is None
     assert pgo.commands == []
@@ -405,6 +461,8 @@ def test_cf_only_build_never_asks_about_pgo(pgo):
 
 
 def test_train_command_failure_to_start_falls_back(pgo, monkeypatch, capsys):
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "1")
+
     def boom(*_a, **_k):
         raise OSError("no python")
 
@@ -450,6 +508,8 @@ def test_pgo_build_failure_skips_the_check(monkeypatch, capsys):
         return subprocess.CompletedProcess(command, 101)
 
     monkeypatch.setattr(subprocess, "run", run)
-    launcher()["verify_pgo"](["cargo", "run", "--", "x"], {})
+    with pytest.raises(SystemExit) as exc:
+        launcher()["verify_pgo"](["cargo", "run", "--", "x"], {})
+    assert exc.value.code == 101
     assert len(calls) == 1
     assert capsys.readouterr().err == ""
