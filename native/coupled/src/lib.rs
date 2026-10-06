@@ -589,7 +589,7 @@ mod coupled {
             sharc_fast_cl::register();
             let (peer, handle, shared) = ThreadedPeer::spawn_with_timing(
                 move || open_dn2_engine(&image, &state, clock).map(NativeDsp),
-                DEFAULT_PERIOD,
+                elektron_native_boot::sharc_peer::period_from_env(),
                 DN2_IDLE_RANGE,
                 link_timing,
             )?;

@@ -19,7 +19,7 @@ use std::{
     fs::File,
     io::{BufWriter, Write},
     rc::Rc,
-    sync::{Arc, Mutex, mpsc},
+    sync::{mpsc, Arc, Mutex},
     thread,
     time::Instant,
 };
@@ -32,6 +32,16 @@ pub const DN2_IDLE_RANGE: (u32, u32) = (0xb8_8a49, 0xb8_8abb);
 pub const DN2_IDLE_HEAD: u32 = 0xb8_8aab;
 /// 1 GHz DSP clock / 1.5 kHz frame rate.
 pub const DEFAULT_PERIOD: u32 = 666_667;
+/// DSP instructions per DSPI2 frame: `DIGI_DSP_PERIOD` (an experiment
+/// switch for the DSP clock assumption; 666,667 = 1 GHz at 1.5 kHz), else
+/// [`DEFAULT_PERIOD`].
+pub fn period_from_env() -> u32 {
+    std::env::var("DIGI_DSP_PERIOD")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|&p| p >= 1000)
+        .unwrap_or(DEFAULT_PERIOD)
+}
 const CHUNK: u32 = 1024;
 /// Words in one SPORT4A block: 32 stereo samples, L even / R odd.
 pub const BLOCK_WORDS: usize = 64;
@@ -182,7 +192,7 @@ impl Diag {
                 Ok(addrs) => match File::create(&path).and_then(|f| {
                     let mut w = BufWriter::new(f);
                     let cols: Vec<String> = addrs.iter().map(|a| format!("0x{a:x}")).collect();
-                    writeln!(w, "frame,{}", cols.join(","))?;
+                    writeln!(w, "frame,pc,busy,pc_at_rx,{}", cols.join(","))?;
                     Ok(w)
                 }) {
                     Ok(out) => {
@@ -228,9 +238,9 @@ impl Diag {
     }
 
     /// Append one CSV row of the watched words (call after the render).
-    fn watch_frame<E: DspEngine>(&mut self, engine: &E) {
+    fn watch_frame<E: DspEngine>(&mut self, engine: &E, busy: u32, pc_at_rx: u32) {
         let Some(wt) = &mut self.watch else { return };
-        let mut row = format!("{}", wt.index);
+        let mut row = format!("{},0x{:x},{},0x{:x}", wt.index, engine.pc(), busy, pc_at_rx);
         wt.index += 1;
         for &a in &wt.addrs {
             row.push(',');
@@ -348,6 +358,16 @@ struct Core<E: DspEngine> {
     idle: (u32, u32),
     /// Mirror of `Shared::halted` (only the core ever sets it).
     halted: Option<String>,
+    /// Experiment only (`DIGI_DSP_RX_PHASE`, DSP instructions, < period): run
+    /// the DSP this long into the period before the SPI frame is delivered.
+    /// 0 keeps the lock-step behaviour (exchange at period start) bit-for-bit.
+    rx_phase: u32,
+    /// Instructions run before the exchange this frame (0 when `rx_phase` is 0).
+    pre_ran: u32,
+    pre_busy: u32,
+    pre_idle: bool,
+    /// Engine PC right before the SPI exchange.
+    pc_at_rx: u32,
 }
 
 /// What the exchange half of a frame leaves for the render half.
@@ -373,11 +393,25 @@ impl<E: DspEngine> Core<E> {
             period,
             idle: DN2_IDLE_RANGE,
             halted: None,
+            rx_phase: std::env::var("DIGI_DSP_RX_PHASE")
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .map_or(0, |v| v.min(period.saturating_sub(1))),
+            pre_ran: 0,
+            pre_busy: 0,
+            pre_idle: false,
+            pc_at_rx: 0,
         }
     }
 
     /// Run the DSP for one period; returns (executed, busy, reached_idle).
     fn run_period(&mut self) -> (u32, u32, bool) {
+        self.run_for(self.period)
+    }
+
+    /// Run the DSP for `limit` instructions; returns (executed, busy,
+    /// reached_idle).
+    fn run_for(&mut self, limit: u32) -> (u32, u32, bool) {
         let mut done = 0u32;
         let mut busy = None;
         let in_idle = |pc: u32, idle: (u32, u32)| (idle.0..idle.1).contains(&pc);
@@ -389,17 +423,17 @@ impl<E: DspEngine> Core<E> {
         // cutting the generated blocks at the ones before). Engines without
         // these stops are stepped in chunks below.
         let base = self.engine.icount();
-        if let Some(ran) = self.engine.step_until_in(self.period, self.idle) {
+        if let Some(ran) = self.engine.step_until_in(limit, self.idle) {
             done = ran;
             if !in_idle(self.engine.pc(), self.idle) {
                 // The period ended (or the engine stopped) first.
                 return (done, done, false);
             }
-            if (done > 0 && done % CHUNK == 0) || done == self.period {
+            if (done > 0 && done % CHUNK == 0) || done == limit {
                 busy = Some(done);
             } else if let Some(more) =
                 self.engine
-                    .step_until_in_aligned(self.period - done, self.idle, CHUNK, base)
+                    .step_until_in_aligned(limit - done, self.idle, CHUNK, base)
             {
                 // Stopped at a chunk end or the period end in the range
                 // (busy, as in the chunk loop, even if the engine stopped
@@ -410,13 +444,13 @@ impl<E: DspEngine> Core<E> {
                 }
             }
         }
-        while done < self.period {
+        while done < limit {
             // Once idle is reached the chunking only costs time (the idle
             // skip is per step call); results do not depend on step sizes.
             let n = if busy.is_some() {
-                self.period - done
+                limit - done
             } else {
-                ((done / CHUNK + 1) * CHUNK).min(self.period) - done
+                ((done / CHUNK + 1) * CHUNK).min(limit) - done
             };
             let ran = self.engine.step(n);
             done += ran;
@@ -452,6 +486,20 @@ impl<E: DspEngine> Core<E> {
                 },
             );
         }
+        self.pre_ran = 0;
+        self.pre_busy = 0;
+        self.pre_idle = false;
+        if self.rx_phase > 0 && self.halted.is_none() {
+            let (ran, busy, idle) = self.run_for(self.rx_phase);
+            self.pre_ran = ran;
+            self.pre_busy = busy;
+            self.pre_idle = idle;
+            if let Some(h) = self.engine.halt_reason() {
+                eprintln!("sharc_peer: DSP halted before frame: {h}");
+                self.halted = Some(h);
+            }
+        }
+        self.pc_at_rx = self.engine.pc();
         let spi_start = timing.as_ref().map(|_| Instant::now());
         let exchange = self.engine.spi2_exchange(tx);
         if let (Some(timing), Some(start)) = (timing, spi_start) {
@@ -497,13 +545,28 @@ impl<E: DspEngine> Core<E> {
         let mut halted = self.halted.clone();
         if halted.is_none() {
             let dsp_start = timing.as_ref().map(|_| Instant::now());
-            let (executed, busy, idle) = self.run_period();
+            let (executed, busy, idle) = if self.pre_ran == 0 {
+                self.run_period()
+            } else {
+                self.run_for(self.period - self.pre_ran)
+            };
             if let (Some(timing), Some(start)) = (timing.as_deref_mut(), dsp_start) {
                 timing.dsp_ns = timing.dsp_ns.saturating_add(elapsed_ns(start));
             }
-            stat.executed = executed;
-            stat.busy = busy;
-            stat.reached_idle = idle;
+            if self.pre_ran == 0 {
+                stat.executed = executed;
+                stat.busy = busy;
+                stat.reached_idle = idle;
+            } else {
+                stat.executed = self.pre_ran + executed;
+                stat.busy = if self.pre_idle {
+                    self.pre_busy
+                } else {
+                    self.pre_busy + busy
+                };
+                stat.reached_idle = self.pre_idle || idle;
+            }
+            self.pre_ran = 0;
             halted = self.engine.halt_reason();
             if halted.is_some() {
                 eprintln!(
@@ -612,7 +675,8 @@ impl<E: DspEngine> SharcPeer<E> {
         let (reply, ex) = self.core.exchange(tx, attached, None);
         self.diag.log_frame(attached, tx, &reply);
         let done = self.core.render(ex, None);
-        self.diag.watch_frame(&self.core.engine);
+        self.diag
+            .watch_frame(&self.core.engine, done.stat.busy, self.core.pc_at_rx);
         commit(&mut self.shared.borrow_mut(), done);
         reply
     }
@@ -848,7 +912,7 @@ impl ThreadedPeer {
                                 return;
                             }
                             let done = core.render(ex, timing.as_mut());
-                            diag.watch_frame(&core.engine);
+                            diag.watch_frame(&core.engine, done.stat.busy, core.pc_at_rx);
                             if let Some(t) = &done.timing {
                                 periods += 1;
                                 if period_ns.len() < PERIOD_RECORD_LIMIT {
@@ -1248,7 +1312,7 @@ impl DspEngine for SharedDsp {
 ///    read as known zero instead of unknown. This is a modelling choice for
 ///    memory the snapshot does not hold; the owner decided it reads zero.
 fn concretise_import(e: &mut sharc_native::Engine) {
-    use sharc_native::rt::{MR, MR_MASK, Spec, V};
+    use sharc_native::rt::{Spec, MR, MR_MASK, V};
     for i in 0..e.s.special.len() {
         let present = e.s.special_present[i];
         let new = match e.s.special[i] {
@@ -1773,7 +1837,7 @@ mod aligned_stop_tests {
         }
         assert!(new.engine.halt_reason().is_none() && old.engine.halt_reason().is_none());
         new.engine.0.export_ranges = true;
-        old.engine.0.0.export_ranges = true;
+        old.engine.0 .0.export_ranges = true;
         let (a, b) = (new.engine.export(), old.engine.export());
         assert!(a == b, "final state differs");
         eprintln!(
