@@ -14,7 +14,7 @@ built with its own manifest's profile: cargo reads profiles only from the root.
 
 ## Profiles
 
-- `release`: timing and shipping profile (opt-level 3, 16 codegen units,
+- `release`: timing and shipping profile (opt-level 3, cargo's default codegen units,
   unwinding panics: what the desktop app has always used; PGO is trained on it).
 
 There is no cheaper profile for correctness-only runs. Measured on `sharc-gen`
@@ -168,3 +168,12 @@ configuration; all configurations must produce the same hash. `--pgo PROFDATA`
 builds every configuration with that profile (`pgo-use` subdir, `--target`).
 Each run records the 1-minute load average; the summary flags runs that started
 under load, because benchlock only excludes work that also takes it.
+
+### Browser core tiers
+
+The browser core (wasm32) runs AOT blocks and the interpreter only, with no fast
+tier. `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables,
+which wasm32-unknown-unknown does not have, and the fast tier's Cranelift backend
+emits host code. `node tools/wasm_parity.mjs --scenario NAME` (or
+`mise run wasm:parity NAME`) checks that the browser PCM is byte-identical to
+the native `expect_sha256`.

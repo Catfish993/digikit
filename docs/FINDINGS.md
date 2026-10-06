@@ -42,4 +42,6 @@ ColdFire audio wire: [host-event replay and release displacement](findings/07-em
 
 DSP block path: [wider model-safe blocks and cheaper boundaries](findings/07-emulator.md#dsp-block-path-wider-model-safe-blocks-and-cheaper-boundaries-2026-10-03) (**[D]**; exact on the 5-way replay and the coupled run; replay busy window 2.5x (202-206M instr/s), coupled DN2 run 5.8 s -> 2.3 s, still 3x slower than real time).
 
+Desktop noise and WASM parity: [desktop noise is output starvation; tap scenarios; WASM parity](findings/07-emulator.md#2026-10-06-desktop-noise-is-output-starvation-tap-scenarios-wasm-parity) (**[V] [O]**; headless tap renders are a clean 262 Hz tone, the browser core matches native PCM byte for byte, the fast-region ceiling is about 6 % of DSP CPU).
+
 DSP follow-up: [unknown-value loop fallback](findings/07-emulator.md#unknown-value-dsp-loop-fallback-measured-cpu-saving-2026-10-03) (**[O]**; seven paired replays preserve PCM/state/instruction gates and save 21.6% measured DSP CPU; exact native coupled audio remains about 2.4x too slow).

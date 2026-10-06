@@ -6525,6 +6525,44 @@ only 3.419 ms. Warning coverage is not CPU time or a causal explanation.
 
 Evidence and next-mode tooling limitation:
 `out/native/runs/20261005-cpu-counters-current/analysis.md`.
+
+## 2026-10-06: desktop noise is output starvation; tap scenarios; WASM parity
+
+- **[V]** Headless `coupled-run` renders of `trig1-tap-release` (NO tap, then one
+  40M-instruction Trig 1 tap, 8.5 s) are a clean 262 Hz sine with a smooth
+  exponential release, then digital silence from about 2.4 s.
+  - The spectral peak is 260-262 Hz per 0.5 s window, with 99.99 % of power
+    within 20 Hz of it.
+  - The zero-crossing rate is a steady 52-53 per 100 ms.
+  - No non-finite samples, no jumps.
+  - PCM sha256
+    `77cbc3761f97b0cf3a1c5cdad55d304ce99e428b6bafccd59409d613f071f6d8`,
+    identical over three runs.
+  - So the noise heard live in the desktop app is not in the emulated audio. The
+    output callback zero-fills each missing frame when the DSP runs below real
+    time, and a tone full of gaps sounds like noise.
+- **[V]** From the `dn2-audio-ready-2026-10-03` snapshot without the QA script,
+  Trig 1 alone stays silent at any press time and hold. One NO tap (button 12,
+  down at 0, up at 1M instructions) first is enough; an encoder turn alone is
+  not. Same rms as the full QA prelude. This extends the earlier silent
+  `trig1-noqa-40m` note.
+- **[V]** `trig1-taps` (NO + three Trig 1 taps, 10.5 s) sha256
+  `e50f29088de880315ea3f2197c832f63a698aa7fcab5c93ae3a2a93ac47d0071`.
+- **[V]** The coupled WASM core (no fast tier) renders `trig1-tap-release` and
+  `exactness-100m` byte-identical to native with the fast tier on
+  (`38d2a322…1f8`). The fast tier is therefore exact over those 8.5 s of attack,
+  release and idle. Node wasm ran 5-9x slower than real time.
+- **[V]** Non-PGO headless cost is about 1.48-1.49 DSP CPU s per audio s
+  (trig1-taps, 0.67 real time).
+  - All remaining interpreted work is about 1.8M instructions per audio s,
+    roughly 6 % of DSP CPU. So adding fast regions has a small ceiling.
+  - Eight candidate entries (0xb8ab98, 0xb8a9a2, 0xb88a49, 0xb88a99, 0x1cdcf2,
+    0xb8050f, 0xb85356, 0xb8276f) never ran in the fast tier.
+    - The first four are never offered to the fast tier.
+    - The other four are built but every call declines at exit 0, because they
+      are entered mid-loop.
+- **[O]** Why `fast.run` is never reached at 0xb8a9xx/0xb8abxx, and why mid-loop
+  entries decline with zero progress.
 No Rust build, production change, frozen-core edit or commit.
 
 ### Targeted delivery subcategories, 2026-10-05 **[V] [O]**
