@@ -26,7 +26,7 @@ DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
 FAST_REGIONS = {
     # Digitone II OS 1.11
     "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0": (
-        "0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8"
+        "0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509"
     ),
 }
 
