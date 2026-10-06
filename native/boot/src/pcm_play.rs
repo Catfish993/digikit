@@ -31,6 +31,9 @@ use live_audio::{SpscRing, StereoSample, audio};
 /// Source rate of the SHARC SPORT audio.
 pub const SOURCE_RATE: u32 = 48_000;
 
+/// Stream errors survived by reopening the default output before the error latches.
+const MAX_REOPENS: u32 = 16;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode {
     Live,
@@ -150,6 +153,12 @@ pub trait Opener {
     fn error(&self) -> Option<String> {
         None
     }
+    /// After a stream error: clear the error and probe the current default
+    /// device again (its rate and name), ready for [`Opener::start`].
+    /// `None`: no recovery, so the error stays latched.
+    fn reopen(&mut self) -> Option<Result<(u32, String), String>> {
+        None
+    }
 }
 
 /// The default cpal output device through `live_audio::audio`.
@@ -191,6 +200,10 @@ impl Opener for CpalOpener {
     }
     fn error(&self) -> Option<String> {
         self.stream_errors.error()
+    }
+    fn reopen(&mut self) -> Option<Result<(u32, String), String>> {
+        self.stream_errors = audio::StreamErrors::default();
+        Some(self.probe())
     }
 }
 
@@ -307,7 +320,7 @@ fn feeder_thread<O: Opener>(
     stop: Arc<AtomicBool>,
     stats: Arc<Mutex<PlaybackStats>>,
 ) {
-    let (rate, _name) = match opener.probe() {
+    let (mut rate, _name) = match opener.probe() {
         Ok(i) => {
             let _ = info_tx.send(Ok(i.clone()));
             i
@@ -318,11 +331,12 @@ fn feeder_thread<O: Opener>(
         }
     };
     // One second of device-rate audio (rounded up to a power of two).
-    let ring = Arc::new(SpscRing::with_capacity(rate as usize));
+    let mut ring = Arc::new(SpscRing::with_capacity(rate as usize));
     let mut feeder = Feeder::new(ring.clone(), rate, mode);
     let mut stream: Option<Opened> = None;
     let mut done = false;
     let mut received = 0u64;
+    let mut reopens = 0u32;
     loop {
         if stop.load(Ordering::Acquire) {
             return;
@@ -358,8 +372,36 @@ fn feeder_thread<O: Opener>(
         }
         feeder.pump(done);
         if let Some(error) = opener.error() {
-            stats.lock().expect("playback stats mutex").error = Some(error);
-            return;
+            // CoreAudio reports a default-output change (and a removed
+            // device) as a stream error: reopen on the current default
+            // device instead of staying silent for the rest of the session.
+            drop(stream.take());
+            reopens += 1;
+            let reopened = if reopens <= MAX_REOPENS {
+                opener.reopen()
+            } else {
+                None
+            };
+            match reopened {
+                Some(Ok((new_rate, name))) => {
+                    eprintln!("pcm_play: {error}; reopening on {name} at {new_rate} Hz");
+                    if new_rate != rate {
+                        rate = new_rate;
+                        ring = Arc::new(SpscRing::with_capacity(rate as usize));
+                        feeder = Feeder::new(ring.clone(), rate, mode);
+                    }
+                    continue;
+                }
+                Some(Err(e)) => {
+                    stats.lock().expect("playback stats mutex").error =
+                        Some(format!("{error}; reopen failed: {e}"));
+                    return;
+                }
+                None => {
+                    stats.lock().expect("playback stats mutex").error = Some(error);
+                    return;
+                }
+            }
         }
         let (underrun_events, callback_max_frames) = opener.counters();
         *stats.lock().expect("playback stats mutex") = PlaybackStats {
@@ -657,5 +699,52 @@ mod tests {
         let start = std::time::Instant::now();
         player.finish(); // Fake stream never drains its ring; error must terminate it.
         assert!(start.elapsed() < Duration::from_secs(1));
+    }
+    struct ReopenAfterError {
+        errors: audio::StreamErrors,
+        starts: Arc<AtomicU64>,
+    }
+    impl Opener for ReopenAfterError {
+        fn probe(&mut self) -> Result<(u32, String), String> {
+            Ok((48_000, "fake".into()))
+        }
+        fn start(&mut self, _: Arc<SpscRing>, _: thread::Thread) -> Result<Opened, String> {
+            self.starts.fetch_add(1, Ordering::AcqRel);
+            Ok((48_000, "fake".into(), Box::new(())))
+        }
+        fn error(&self) -> Option<String> {
+            self.errors.error()
+        }
+        fn reopen(&mut self) -> Option<Result<(u32, String), String>> {
+            self.errors = audio::StreamErrors::default();
+            Some(self.probe())
+        }
+    }
+    #[test]
+    fn stream_error_reopens_the_default_output() {
+        let errors = audio::StreamErrors::default();
+        let starts = Arc::new(AtomicU64::new(0));
+        let player = PcmPlayer::spawn_with(
+            {
+                let (errors, starts) = (errors.clone(), starts.clone());
+                move || ReopenAfterError { errors, starts }
+            },
+            Mode::Live,
+        )
+        .unwrap();
+        player.push(&ramp(100_000));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while starts.load(Ordering::Acquire) < 1 && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        errors.record(); // The CPAL error callback's signal.
+        player.push(&ramp(100_000));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while starts.load(Ordering::Acquire) < 2 && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(starts.load(Ordering::Acquire), 2);
+        assert!(player.stats().error.is_none());
+        drop(player);
     }
 }
