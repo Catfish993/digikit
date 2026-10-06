@@ -39,8 +39,6 @@ exclude = [
 opt-level = 3
 debug = false
 incremental = false
-# Thin LTO lets generated AOT blocks inline sharc-rt helpers across crates: about 2% less DSP CPU on the desktop PGO gate (out/native/runs/20261006-buildexp/), for about 20% longer use builds.
-lto = "thin"
 
 # No cheaper profile for correctness-only runs: measured on sharc-gen, an
 # opt-level 1 override costs ~2.5x the CPU of release (wall 5.5 min vs 2.9 on
