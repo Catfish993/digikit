@@ -16,6 +16,8 @@
 use std::{
     cell::RefCell,
     collections::BTreeMap,
+    fs::File,
+    io::{BufWriter, Write},
     rc::Rc,
     sync::{Arc, Mutex, mpsc},
     thread,
@@ -100,6 +102,159 @@ pub trait DspEngine {
     /// Exact execution maps, when enabled.
     fn execution_profile(&self) -> Option<ExecutionProfile> {
         None
+    }
+    /// One 32-bit word of DSP data memory at `addr`, a byte address as the
+    /// findings write them (e.g. 0x25f180; consecutive words are 4 apart).
+    /// None: unknown or unmodeled, or not supported by the engine.
+    fn peek_word(&self, _addr: u32) -> Option<u32> {
+        None
+    }
+}
+
+/// Opt-in diagnostics of the DSP worker (and the synchronous peer):
+/// `DIGI_DSPI_LOG=path` appends every DSPI frame to a binary log, and
+/// `DIGI_DSP_WATCH=addr[:n],...` with `DIGI_DSP_WATCH_OUT=path.csv` writes
+/// watched DSP words after every frame's render.
+///
+/// Log format: magic `DSPILOG1`, then per frame `u64 BE index`, `u8
+/// attached`, `u32 BE tx length`, tx bytes, `u32 BE reply length`, reply bytes.
+struct Diag {
+    log: Option<BufWriter<File>>,
+    log_index: u64,
+    watch: Option<Watch>,
+}
+
+struct Watch {
+    out: BufWriter<File>,
+    addrs: Vec<u32>,
+    index: u64,
+}
+
+/// Parse `addr[:n],...` (hex, `0x` optional, `n` decimal words, default 1,
+/// max 256) into the byte address of every watched word. Addresses are the
+/// byte addresses `Engine::peek` takes (it reads with `normal_word` false, so
+/// no word-to-byte conversion happens); consecutive words are 4 apart.
+fn parse_watch(spec: &str) -> Result<Vec<u32>, String> {
+    let mut addrs = Vec::new();
+    for item in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let (a, n) = match item.split_once(':') {
+            Some((a, n)) => (
+                a,
+                n.parse::<u32>()
+                    .map_err(|_| format!("bad count in {item:?}"))?,
+            ),
+            None => (item, 1),
+        };
+        if !(1..=256).contains(&n) {
+            return Err(format!("count {n} out of range 1..=256 in {item:?}"));
+        }
+        let a = a
+            .strip_prefix("0x")
+            .or_else(|| a.strip_prefix("0X"))
+            .unwrap_or(a);
+        let base = u32::from_str_radix(a, 16).map_err(|_| format!("bad address in {item:?}"))?;
+        addrs.extend((0..n).map(|k| base.wrapping_add(4 * k)));
+    }
+    if addrs.is_empty() {
+        return Err("no addresses".into());
+    }
+    Ok(addrs)
+}
+
+impl Diag {
+    fn from_env() -> Self {
+        let mut log = None;
+        if let Ok(path) = std::env::var("DIGI_DSPI_LOG") {
+            match File::create(&path).and_then(|f| {
+                let mut w = BufWriter::new(f);
+                w.write_all(b"DSPILOG1")?;
+                Ok(w)
+            }) {
+                Ok(w) => log = Some(w),
+                Err(e) => eprintln!("sharc_peer: DIGI_DSPI_LOG {path}: {e}"),
+            }
+        }
+        let spec = std::env::var("DIGI_DSP_WATCH").ok();
+        let out = std::env::var("DIGI_DSP_WATCH_OUT").ok();
+        let mut watch = None;
+        match (spec, out) {
+            (Some(spec), Some(path)) => match parse_watch(&spec) {
+                Ok(addrs) => match File::create(&path).and_then(|f| {
+                    let mut w = BufWriter::new(f);
+                    let cols: Vec<String> = addrs.iter().map(|a| format!("0x{a:x}")).collect();
+                    writeln!(w, "frame,{}", cols.join(","))?;
+                    Ok(w)
+                }) {
+                    Ok(out) => {
+                        watch = Some(Watch {
+                            out,
+                            addrs,
+                            index: 0,
+                        })
+                    }
+                    Err(e) => eprintln!("sharc_peer: DIGI_DSP_WATCH_OUT {path}: {e}"),
+                },
+                Err(e) => eprintln!("sharc_peer: DIGI_DSP_WATCH: {e}"),
+            },
+            (None, None) => {}
+            _ => eprintln!(
+                "sharc_peer: DIGI_DSP_WATCH and DIGI_DSP_WATCH_OUT must both be set; watch disabled"
+            ),
+        }
+        Self {
+            log,
+            log_index: 0,
+            watch,
+        }
+    }
+
+    /// Append one DSPI frame record (call after the exchange).
+    fn log_frame(&mut self, attached: bool, tx: &[u8], reply: &[u8]) {
+        let index = self.log_index;
+        self.log_index += 1;
+        let Some(w) = &mut self.log else { return };
+        let res = (|| {
+            w.write_all(&index.to_be_bytes())?;
+            w.write_all(&[attached as u8])?;
+            w.write_all(&(tx.len() as u32).to_be_bytes())?;
+            w.write_all(tx)?;
+            w.write_all(&(reply.len() as u32).to_be_bytes())?;
+            w.write_all(reply)
+        })();
+        if let Err(e) = res {
+            eprintln!("sharc_peer: DIGI_DSPI_LOG write failed, log disabled: {e}");
+            self.log = None;
+        }
+    }
+
+    /// Append one CSV row of the watched words (call after the render).
+    fn watch_frame<E: DspEngine>(&mut self, engine: &E) {
+        let Some(wt) = &mut self.watch else { return };
+        let mut row = format!("{}", wt.index);
+        wt.index += 1;
+        for &a in &wt.addrs {
+            row.push(',');
+            match engine.peek_word(a) {
+                Some(v) => row.push_str(&format!("0x{v:08x}|{:e}", f32::from_bits(v))),
+                None => row.push('?'),
+            }
+        }
+        row.push('\n');
+        if let Err(e) = wt.out.write_all(row.as_bytes()) {
+            eprintln!("sharc_peer: DIGI_DSP_WATCH_OUT write failed, watch disabled: {e}");
+            self.watch = None;
+        }
+    }
+}
+
+impl Drop for Diag {
+    fn drop(&mut self) {
+        if let Some(w) = &mut self.log {
+            let _ = w.flush();
+        }
+        if let Some(wt) = &mut self.watch {
+            let _ = wt.out.flush();
+        }
     }
 }
 
@@ -431,6 +586,7 @@ fn commit(sh: &mut Shared, d: Done) {
 pub struct SharcPeer<E: DspEngine> {
     core: Core<E>,
     shared: Rc<RefCell<Shared>>,
+    diag: Diag,
 }
 
 impl<E: DspEngine> SharcPeer<E> {
@@ -442,6 +598,7 @@ impl<E: DspEngine> SharcPeer<E> {
         let peer = Self {
             core: Core::new(engine, period),
             shared: shared.clone(),
+            diag: Diag::from_env(),
         };
         (peer, shared)
     }
@@ -453,7 +610,9 @@ impl<E: DspEngine> SharcPeer<E> {
     fn frame(&mut self, tx: &[u8]) -> Vec<u8> {
         let attached = self.shared.borrow().attached;
         let (reply, ex) = self.core.exchange(tx, attached, None);
+        self.diag.log_frame(attached, tx, &reply);
         let done = self.core.render(ex, None);
+        self.diag.watch_frame(&self.core.engine);
         commit(&mut self.shared.borrow_mut(), done);
         reply
     }
@@ -667,6 +826,8 @@ impl ThreadedPeer {
                 };
                 let mut core = Core::new(engine, period);
                 core.idle = idle;
+                // Flushed when the worker ends (Drop), including early returns.
+                let mut diag = Diag::from_env();
                 let mut period_ns: Vec<u32> = Vec::new();
                 let mut periods = 0u64;
                 let mut frames_done = 0u64;
@@ -682,10 +843,12 @@ impl ThreadedPeer {
                                 ..WorkerTiming::default()
                             });
                             let (reply, ex) = core.exchange(&tx, attached, timing.as_mut());
+                            diag.log_frame(attached, &tx, &reply);
                             if reply_tx.send(reply).is_err() {
                                 return;
                             }
                             let done = core.render(ex, timing.as_mut());
+                            diag.watch_frame(&core.engine);
                             if let Some(t) = &done.timing {
                                 periods += 1;
                                 if period_ns.len() < PERIOD_RECORD_LIMIT {
@@ -966,6 +1129,9 @@ impl DspEngine for NativeDsp {
     fn set_execution_profile(&mut self, enabled: bool) -> bool {
         self.0.set_option(26, enabled as i64) == 0
     }
+    fn peek_word(&self, addr: u32) -> Option<u32> {
+        self.0.peek(addr as u64, 4).ok().flatten()
+    }
     fn execution_profile(&self) -> Option<ExecutionProfile> {
         Some(ExecutionProfile {
             maps: [
@@ -1052,6 +1218,9 @@ impl DspEngine for SharedDsp {
     }
     fn set_execution_profile(&mut self, enabled: bool) -> bool {
         self.0.borrow_mut().set_option(26, enabled as i64) == 0
+    }
+    fn peek_word(&self, addr: u32) -> Option<u32> {
+        self.0.borrow().peek(addr as u64, 4).ok().flatten()
     }
     fn execution_profile(&self) -> Option<ExecutionProfile> {
         let e = self.0.borrow();

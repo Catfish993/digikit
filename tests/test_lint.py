@@ -14,6 +14,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
     "tools/benchlock.py",
+    "tools/dspi_log.py",
+    "tests/test_dspi_log.py",
     "tools/blocktrans_coverage.py",
     "tests/test_blocktrans_coverage.py",
     "tests/test_benchlock.py",
