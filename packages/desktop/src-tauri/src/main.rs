@@ -528,6 +528,19 @@ async fn emu_stop(host: State<'_, Host>, session_id: u64) -> Result<(), String> 
     }
 }
 fn main() {
+    #[cfg(feature = "coupled-audio")]
+    if std::env::args_os().nth(1).is_some_and(|a| a == "--pgo-train") {
+        match desktop_runtime::pgo_training_workload() {
+            Ok(()) => {
+                println!("pgo_train=ok");
+                std::process::exit(0)
+            }
+            Err(error) => {
+                println!("pgo_train=failed: {error}");
+                std::process::exit(1)
+            }
+        }
+    }
     let startup = parse_args().unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2)

@@ -16,8 +16,10 @@ builds differ by RUSTFLAGS and use ``pgo-instrument/`` and ``pgo-use/`` below it
 Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
 ``bench-bins A B --pairs N`` (two prebuilt workload test binaries).
 
-The training workload is the ignored test ``coupled_ready_exactness``. It
-needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
+The training workload is the ``coupled_ready_exactness`` gate, run from the
+instrumented desktop APP binary with ``--pgo-train`` (not the test binary:
+cargo gives the test target's dependencies other crate hashes than the app's,
+so a profile trained on it never matched the app). It needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
 The launcher (``tools/native_emu.sh``) retrains a stale profile itself. The key
 covers the emulation crates only (not packages/), so a desktop-crate edit
 leaves the profile current.
@@ -52,6 +54,7 @@ TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
 FEATURES = "coupled-audio"
 TEST_NAME = "desktop_runtime::coupled::tests::coupled_ready_exactness"
+WORKLOAD = "desktop-bin"
 EXPECTED_FRAMES = 1139
 TRAIN_RUNS = 4
 FLAGS_TEMPLATE = "-Cprofile-use={profdata}"
@@ -288,6 +291,7 @@ def compute_components(
         "rustc": hashlib.sha256(rustc_version().encode()).hexdigest(),
         "triple": TRIPLE,
         "features": FEATURES,
+        "workload": WORKLOAD,
         "flags_template": FLAGS_TEMPLATE,
         "fast_regions": fast,
         "blocktrans": blocktrans,
@@ -458,7 +462,9 @@ def build_tests(
     rustflags: str | None,
     gen: pathlib.Path,
     log: pathlib.Path,
+    app: bool = False,
 ) -> pathlib.Path:
+    """Build the workload test binary, or with app=True the desktop app binary."""
     env = base_env(gen)
     if rustflags:
         env["RUSTFLAGS"] = rustflags
@@ -467,9 +473,8 @@ def build_tests(
         "run",
         TOOLCHAIN,
         "cargo",
-        "test",
+        *(["build", "--bin", "digiemu-desktop"] if app else ["test", "--no-run"]),
         "--release",
-        "--no-run",
         "--locked",
         "--manifest-path",
         MANIFEST_PATH,
@@ -499,12 +504,15 @@ def build_tests(
         if (
             message.get("reason") == "compiler-artifact"
             and message.get("executable")
-            and message.get("profile", {}).get("test")
+            and bool(message.get("profile", {}).get("test")) != app
+            and (not app or "bin" in message.get("target", {}).get("kind", []))
             and "digiemu-desktop" in message.get("package_id", "")
         ):
             found.append(pathlib.Path(message["executable"]))
     if len(found) != 1:
-        raise SystemExit(f"expected one digiemu-desktop test binary, found {found}")
+        raise SystemExit(
+            f"expected one digiemu-desktop {'app' if app else 'test'} binary, found {found}"
+        )
     return found[0]
 
 
@@ -520,7 +528,10 @@ class Result:
 
 
 def run_workload(
-    binary: pathlib.Path, log: pathlib.Path, extra_env: dict[str, str] | None = None
+    binary: pathlib.Path,
+    log: pathlib.Path,
+    extra_env: dict[str, str] | None = None,
+    app: bool = False,
 ) -> Result:
     """Run the workload under /usr/bin/time and enforce the gates."""
     env_pairs = {**run_env(binary.parent), **(extra_env or {})}
@@ -530,10 +541,11 @@ def run_workload(
         "env",
         *(f"{k}={v}" for k, v in env_pairs.items()),
         str(binary),
-        TEST_NAME,
-        "--ignored",
-        "--nocapture",
-        "--test-threads=1",
+        *(
+            ["--pgo-train"]
+            if app
+            else [TEST_NAME, "--ignored", "--nocapture", "--test-threads=1"]
+        ),
     ]
     proc = subprocess.run(
         command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
@@ -619,6 +631,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
+        app=True,
     )
     t = phase("instrumented-build", t)
 
@@ -633,6 +646,7 @@ def cmd_train(args: argparse.Namespace) -> None:
                     "SHARC_FAST_REGIONS": fast,
                     "SHARC_BLOCKTRANS": blocktrans,
                 },
+                app=True,
             )
         gates.append(result.line)
         print(
@@ -677,7 +691,7 @@ def cmd_train(args: argparse.Namespace) -> None:
             "build_rustflags": f"-Cprofile-generate={raw}",
             "runs": args.runs,
             "merge": merge[:4] + ["<raw>..."],
-            "test": TEST_NAME,
+            "workload": f"{WORKLOAD} --pgo-train",
         },
         "gate_lines": gates,
         "phase_seconds": timings,

@@ -403,6 +403,7 @@ mod coupled {
         pub(super) audio_sync_wall_ns: u64,
         pcm_capture: Option<PcmCapture>,
         pub(super) pcm_tap: Option<PcmTap>,
+        tiers_cache: std::cell::RefCell<Option<(Instant, Value)>>,
     }
     impl AudioSession {
         fn new_with_player(
@@ -472,6 +473,7 @@ mod coupled {
                 audio_sync_wall_ns: 0,
                 pcm_capture,
                 pcm_tap: None,
+                tiers_cache: std::cell::RefCell::new(None),
             })
         }
         pub(super) fn new(emulator: &mut Emulator, options: &AudioOptions) -> Result<Self, String> {
@@ -534,6 +536,43 @@ mod coupled {
             }
         }
         pub(super) fn report(&self) -> Value {
+            // Before `shared` is borrowed: the worker report commits frames into it.
+            let dsp_tiers = if self.link_timing {
+                // Diagnostic: DSP tier counters, refreshed at most every 10 s
+                // (the worker report drains the pipeline), printed to stderr.
+                let mut cache = self.tiers_cache.borrow_mut();
+                if cache
+                    .as_ref()
+                    .is_none_or(|(at, _)| at.elapsed().as_secs_f64() >= 10.0)
+                {
+                    let tiers = self.handle.worker_report().and_then(|w| {
+                        w.tiers.map(|t| {
+                            json!({
+                                "worker_cpu_s": w.cpu_ns as f64 / 1e9,
+                                "instructions": t.icount, "idle_skip": t.idle_skipped,
+                                "idle_skips": t.idle_skips, "interpreter": t.interpreted,
+                                "block_instructions": t.block_instructions,
+                                "fast_tier": t.fast_insns,
+                                "aot_block": t.block_instructions.saturating_sub(t.fast_insns),
+                                "block_entries": t.block_entries, "block_traps": t.block_traps,
+                                "traps": t.traps, "fast_present": t.fast_present,
+                                "fast_runs": t.fast_runs, "fast_calls": t.fast_calls,
+                                "fast_built": t.fast_built, "fast_refused": t.fast_refused,
+                                "fast_armed": t.fast_armed,
+                            })
+                        })
+                    });
+                    let value = tiers.unwrap_or(Value::Null);
+                    let mut line = json!({"dsp_tiers": value.clone()});
+                    line["source_audio_seconds"] = (self.samples as f64 / 2.0 / SOURCE_RATE as f64).into();
+                    line["session_wall_seconds"] = self.started.elapsed().as_secs_f64().into();
+                    eprintln!("native_audio_report={line}");
+                    *cache = Some((Instant::now(), value));
+                }
+                cache.as_ref().map_or(Value::Null, |(_, v)| v.clone())
+            } else {
+                Value::Null
+            };
             let shared = self.shared.borrow();
             let sink = self.player.as_ref().map(PcmPlayer::stats);
             let output_device = self.player.as_ref().map(|player| player.device.clone());
@@ -560,6 +599,7 @@ mod coupled {
                 report["pcm_capture_error"] = capture.error.clone().into();
             }
             if self.link_timing {
+                report["dsp_tiers"] = dsp_tiers;
                 let timing = self.handle.timing_profile().expect("enabled link timing");
                 report["link_timing"] = link_timing_json(
                     timing,
