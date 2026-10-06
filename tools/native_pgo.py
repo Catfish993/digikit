@@ -392,7 +392,7 @@ def plan_for(
             "--target-dir",
             str(native_target().target_dir(generated_dir(environ), "pgo-use")),
         ],
-        env={"RUSTFLAGS": profile_use_flags(profdata)},
+        env={"RUSTFLAGS": profile_use_flags(profdata), "RUSTC": toolchain_rustc()},
     )
 
 
@@ -514,6 +514,23 @@ def verify_binary(binary: pathlib.Path, profdata: str | os.PathLike[str]) -> lis
 # --- training and benchmarking -------------------------------------------------
 
 
+def toolchain_rustc() -> str:
+    """The rustup toolchain's rustc, for RUSTC in every build.
+
+    Cargo otherwise takes `rustc` from PATH. A Homebrew rustc of the same
+    version (`1.98.1 (...) (Homebrew)`) mangles every crate differently, so a
+    profile trained with one compiler never matches a build made with the
+    other, and PGO silently does nothing.
+    """
+    done = subprocess.run(
+        ["rustup", "which", "--toolchain", TOOLCHAIN, "rustc"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return done.stdout.strip()
+
+
 def base_env(gen: pathlib.Path) -> dict[str, str]:
     env = {
         k: v
@@ -521,6 +538,7 @@ def base_env(gen: pathlib.Path) -> dict[str, str]:
         if k not in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS")
     }
     env["SHARC_GEN_DIR"] = str(gen)
+    env["RUSTC"] = toolchain_rustc()
     return env
 
 
