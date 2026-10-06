@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Headless parity check of the coupled (ColdFire + SHARC+) browser core.
 //
-// Loads packages/web/public/emulator-core.wasm, restores the DN2 ready session,
+// Loads packages/web/.local/emulator-core-sharc.wasm, restores the DN2 ready session,
 // plays a scenario from native/coupled/scenarios.json exactly as `coupled-run`
 // does, and prints the SHA-256 of the PCM (f32le bytes of every value produced
 // since the ready point, the same bytes PcmTap hashes). With a scenario that has
@@ -11,7 +11,7 @@
 //   node tools/wasm_parity.mjs --scenario exactness-100m --out wasm.f32
 //
 // Options (defaults match tools/digi_env.py; DIGI_EMU_* variables are honoured):
-//   --core PATH        packages/web/public/emulator-core.wasm
+//   --core PATH        packages/web/.local/emulator-core-sharc.wasm
 //   --syx PATH         Digitone_II_OS1.11.syx            (DIGI_EMU_SYX)
 //   --dsp-image PATH   snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin (DIGI_EMU_DSP_IMAGE)
 //   --dsp-state PATH   snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp   (DIGI_EMU_DSP_STATE)
@@ -41,7 +41,7 @@ const root = path.resolve(args.repo ?? (fs.existsSync(path.join(here, '..', 'nat
 const env = process.env;
 const ready = path.join(root, 'snapshots/dn2-audio-ready-2026-10-03');
 const paths = {
-  core: args.core ?? path.join(root, 'packages/web/public/emulator-core.wasm'),
+  core: args.core ?? path.join(root, 'packages/web/.local/emulator-core-sharc.wasm'),
   syx: args.syx ?? env.DIGI_EMU_SYX ?? env.DIGI_COUPLED_SYX ?? path.join(root, 'Digitone_II_OS1.11.syx'),
   image: args['dsp-image'] ?? env.DIGI_EMU_DSP_IMAGE ?? path.join(ready, 'digi-audio-dn2-image.bin'),
   dsp: args['dsp-state'] ?? env.DIGI_EMU_DSP_STATE ?? path.join(ready, 'digi-audio-m5.snap.dsp'),

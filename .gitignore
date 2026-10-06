@@ -53,6 +53,7 @@ packages/web/public/emulator-core.wasm
 packages/web/public/emulator-core*.wasm
 # Contains DSP code generated from firmware: never commit.
 packages/web/public/emulator-core-sharc.wasm
+packages/web/.local/
 packages/desktop/src-tauri/target/
 packages/desktop/src-tauri/gen/
 

@@ -1,10 +1,19 @@
 /** Browser PCM sink for the coupled core: AudioContext + AudioWorklet. */
 export interface AudioStats { queuedSeconds: number; playing: boolean; underruns: number; playedSeconds: number; receivedSeconds: number; highWaterSeconds: number; silenceSeconds: number; underrunSeconds: number; portAttached: boolean; receivedPcm: boolean; renderedPcm: boolean }
 
+/** Unlock a suspended context on the next real gesture (file-input change events may not count). */
+export function resumeOnNextGesture(sink: PcmSink): void {
+  if (sink.context.state === 'running') return;
+  const events = ['pointerdown', 'keydown'] as const;
+  const fire = () => { for (const e of events) window.removeEventListener(e, fire); void sink.resume().catch(() => {}); };
+  for (const e of events) window.addEventListener(e, fire);
+}
+
 export class PcmSink {
   readonly context: AudioContext;
   private node?: AudioWorkletNode;
   private resumed?: Promise<void>;
+  private closed = false;
   /** Latest worklet report. */
   stats: AudioStats = { queuedSeconds: 0, playing: false, underruns: 0, playedSeconds: 0, receivedSeconds: 0, highWaterSeconds: 0, silenceSeconds: 0, underrunSeconds: 0, portAttached: false, receivedPcm: false, renderedPcm: false };
 
@@ -23,7 +32,6 @@ export class PcmSink {
     this.setBuffer(startSeconds);
     const channel = new MessageChannel();
     this.node.port.postMessage({ port: channel.port2 }, [channel.port2]);
-    await this.resumed;
     return channel.port1;
   }
 
@@ -31,5 +39,10 @@ export class PcmSink {
   setBuffer(seconds: number) { this.node?.port.postMessage({ type: 'config', startSeconds: seconds }); }
   /** Worklet observations plus host connection state; not proof of audibility. */
   report() { return { ...this.stats, contextState: this.context.state, sampleRate: this.context.sampleRate, nodeConnected: Boolean(this.node) }; }
-  close() { this.node?.disconnect(); this.node = undefined; void this.context.close(); }
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    this.node?.disconnect(); this.node = undefined;
+    this.context.close().catch(() => {});
+  }
 }

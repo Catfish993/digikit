@@ -1,4 +1,85 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import solid from '@astrojs/solid-js';
 
-export default defineConfig({ integrations: [solid()] });
+// Dev-only (`apply: 'serve'`): these files are firmware-derived and are never part of a build.
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const localDir = path.join(repoRoot, 'snapshots', 'dn2-audio-ready-2026-10-03');
+const localFiles = {
+  'dsp-image': process.env.DIGI_EMU_DSP_IMAGE || path.join(localDir, 'digi-audio-dn2-image.bin'),
+  'dsp-state': process.env.DIGI_EMU_DSP_STATE || path.join(localDir, 'digi-audio-m5.snap.dsp'),
+  'cf-snapshot': process.env.DIGI_EMU_CF_SNAPSHOT || path.join(localDir, 'digi-audio-m5.snap'),
+};
+const coupledCore = fileURLToPath(new URL('./.local/emulator-core-sharc.wasm', import.meta.url));
+const loopback = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+// Answers GET (body) and HEAD (headers only) for one file; false when the file is missing.
+function sendFile(req, res, file, contentType) {
+  let stat;
+  try { stat = fs.statSync(file); } catch { return false; }
+  if (!stat.isFile()) return false;
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Length', String(stat.size));
+  if (req.method === 'HEAD') { res.end(); return true; }
+  fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
+  return true;
+}
+
+const localInputs = {
+  name: 'digi-local-inputs',
+  apply: 'serve',
+  configureServer(server) {
+    server.middlewares.use('/__digi-local', (req, res) => {
+      if (!loopback.has(req.socket.remoteAddress ?? '')) { res.statusCode = 403; res.end(); return; }
+      if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; res.end(); return; }
+      const key = (req.url ?? '').split('?')[0].replace(/^\/+/, '');
+      res.setHeader('Cache-Control', 'no-store');
+      if (key === 'manifest') {
+        const body = JSON.stringify({
+          dspImage: fs.existsSync(localFiles['dsp-image']),
+          dspState: fs.existsSync(localFiles['dsp-state']),
+          cfSnapshot: fs.existsSync(localFiles['cf-snapshot']),
+          firmwareSha256: '2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0',
+        });
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Length', String(Buffer.byteLength(body)));
+        res.end(req.method === 'HEAD' ? undefined : body);
+        return;
+      }
+      const file = Object.hasOwn(localFiles, key) ? localFiles[key] : undefined;
+      if (!file || !sendFile(req, res, file, 'application/octet-stream')) { res.statusCode = 404; res.end(); }
+    });
+    // The coupled core is firmware-derived: served from packages/web/.local, never from public/.
+    server.middlewares.use((req, res, next) => {
+      if ((req.url ?? '').split('?')[0] !== '/emulator-core-sharc.wasm') { next(); return; }
+      if (!loopback.has(req.socket.remoteAddress ?? '')) { res.statusCode = 403; res.end(); return; }
+      if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; res.end(); return; }
+      if (!sendFile(req, res, coupledCore, 'application/wasm')) { res.statusCode = 404; res.end(); }
+    });
+  },
+};
+
+// Fails the build if a firmware-derived file reached the output.
+const buildGuard = {
+  name: 'digi-build-guard',
+  hooks: {
+    'astro:build:done': ({ dir }) => {
+      const walk = (current) => {
+        for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+          const full = path.join(current, entry.name);
+          if (entry.isDirectory()) { walk(full); continue; }
+          if (!entry.isFile()) continue;
+          const bad = /^emulator-core-sharc.*\.wasm$/.test(entry.name)
+            || (entry.name !== 'emulator-core.wasm' && fs.statSync(full).size > 5 * 1024 * 1024);
+          if (bad) throw new Error(`firmware-derived file in build output: ${full}`);
+        }
+      };
+      walk(fileURLToPath(dir));
+    },
+  },
+};
+
+export default defineConfig({ integrations: [solid(), buildGuard], vite: { plugins: [localInputs] } });

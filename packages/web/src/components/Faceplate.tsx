@@ -1,7 +1,9 @@
 import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { panels } from '../data/faceplates';
 import { browserRuntime, drawFrame, nativeRuntime, type EmulatorRuntime, type NativeAudioStatus, type RuntimeUpdate } from '../runtime';
-import CoupledAudio from './CoupledAudio';
+import { PcmSink, resumeOnNextGesture } from '../audio';
+import { fetchLocalInputs, localManifest, sha256Hex } from '../local-inputs';
+import CoupledAudio, { startCoupled } from './CoupledAudio';
 import './faceplate.css';
 
 const iconPaths: Record<string, string> = {
@@ -25,6 +27,7 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   const [browserAudioSetup, setBrowserAudioSetup] = createSignal(false);
   const [browserAudioReset, setBrowserAudioReset] = createSignal(0);
   const [chosenFirmware, setChosenFirmware] = createSignal<{ name: string; bytes: Uint8Array }>();
+  const [adopted, setAdopted] = createSignal<{ sink: PcmSink; note: string }>();
   const [nativeAudio, setNativeAudio] = createSignal<NativeAudioStatus>();
   const [recentRate, setRecentRate] = createSignal<number>();
   let lastAudio: { produced: number; wall: number } | undefined;
@@ -74,8 +77,35 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   onCleanup(() => { disposed = true; window.removeEventListener('blur', releaseAll); if (clearSuppression) window.clearTimeout(clearSuppression); if (audioTimer) window.clearInterval(audioTimer); releaseAll(); void activeRuntime?.stop().catch((error) => update({ type: 'error', error: String(error) })); activeRuntime?.dispose(); });
   const choose = async (file?: File) => {
     if (!file) return;
+    // Dev-only coupled path (Digitone II): create and resume the AudioContext before any await.
+    const coupledSink = device() === 'dn2' ? new PcmSink() : undefined; void coupledSink?.resume().catch(() => {}); if (coupledSink) resumeOnNextGesture(coupledSink);
+    let kept = false;
     releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); setReportAvailable(false); setLoaded(false); firmwareFile = file; setStatus(`Loading ${file.name}…`);
-    try { const bytes = new Uint8Array(await file.arrayBuffer()); if (firmwareFile !== file) return; setChosenFirmware({ name: file.name, bytes: bytes.slice() }); const selected = await runtimeReady; if (firmwareFile !== file || !selected) return; const snapshot = await selected.load(bytes, file.name); if (firmwareFile !== file) return; update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true); } catch (error) { if (firmwareFile === file) { setPaused(true); setLoaded(false); setStatus(String(error)); } }
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer()); if (firmwareFile !== file) return; setChosenFirmware({ name: file.name, bytes: bytes.slice() }); const selected = await runtimeReady; if (firmwareFile !== file || !selected) return;
+      let coupledError = '';
+      if (coupledSink) {
+        try {
+          const manifest = await localManifest();
+          if (manifest?.dspImage && manifest.dspState && await sha256Hex(bytes) === manifest.firmwareSha256) {
+            const inputs = await fetchLocalInputs();
+            if (inputs) {
+              const snapshot = await startCoupled({ runtime: selected, firmware: { name: file.name, bytes }, image: inputs.image, dsp: inputs.state, snapshot: inputs.snapshot, sink: coupledSink });
+              if (firmwareFile !== file) return;
+              kept = true;
+              setAdopted({ sink: coupledSink, note: `firmware: ${file.name} (local dev inputs)` });
+              update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true);
+              setStatus('Digitone II with audio (local dev inputs) — press NO, then Trig 1');
+              return;
+            }
+          }
+        } catch (error) { coupledError = String(error); }
+        if (firmwareFile !== file) return;
+      }
+      const snapshot = await selected.load(bytes, file.name); if (firmwareFile !== file) return; update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true);
+      if (coupledError) setStatus(`Local audio start failed (${coupledError}); booted without audio.`);
+    } catch (error) { if (firmwareFile === file) { setPaused(true); setLoaded(false); setStatus(String(error)); } }
+    finally { if (!kept) coupledSink?.close(); }
   };
   const exportDiagnostics = async () => {
     try {
@@ -92,7 +122,7 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   const restart = async () => { try { const snapshot = await runtime()?.restart(); if (snapshot) update({ type: 'snapshot', snapshot }); setPaused(false); } catch (error) { setPaused(true); setLoaded(false); setStatus(String(error)); } };
   return <main style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}>
     <header class="toolbar"><label class="file">Choose firmware<input type="file" accept=".syx,application/octet-stream" onChange={(e) => choose(e.currentTarget.files?.[0])} /></label><select aria-label="Device" value={device()} onChange={(e) => { releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); firmwareFile = undefined; const input = document.querySelector<HTMLInputElement>('.file input'); if (input) input.value = ''; setReportAvailable(false); setDevice(e.currentTarget.value as 'dt2' | 'dn2'); setPaused(true); setLoaded(false); setStatus('Choose a firmware image to start.'); }}><option value="dt2">Digitakt II</option><option value="dn2">Digitone II</option></select><button disabled={!loaded()} onClick={() => { if (paused()) { runtime()?.resume(); setPaused(false); } else { runtime()?.pause(); setPaused(true); } }}>{paused() ? 'Resume' : 'Pause'}</button><button disabled={!loaded()} onClick={() => void restart()}>Restart</button><button disabled={!reportAvailable()} onClick={() => void exportDiagnostics()}>Export diagnostics</button><output>{status()}</output></header>
-    <Show when={browserAudioSetup()}><CoupledAudio reset={browserAudioReset()} firmware={chosenFirmware}runtime={() => runtimeReady ?? Promise.resolve(undefined)} onStarted={(snapshot) => { releaseAll(); clearCanvas(); update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true); }} onError={(error) => setStatus(error)} /></Show>
+    <Show when={browserAudioSetup()}><CoupledAudio reset={browserAudioReset()} firmware={chosenFirmware} adopted={adopted} runtime={() => runtimeReady ?? Promise.resolve(undefined)} onStarted={(snapshot) => { releaseAll(); clearCanvas(); update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true); }} onError={(error) => setStatus(error)} /></Show>
     <Show when={nativeAudio()}>{(audio) => <div class="coupled" style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '0.5rem', 'align-items': 'center', padding: '0.4rem 0' }}><output>{audio().setup_needed ? 'Audio setup is unavailable for this firmware.' : !audio().playback_requested ? 'Audio output muted.' : audio().device_error ?? audio().sink?.error ?? (audio().sink_connected ? (audio().sink?.stream_started ? audioLine(audio()) : 'Audio output ready; buffering.') : 'Audio output is unavailable.')}</output><button disabled={!loaded() || audio().setup_needed || !audio().flow_started} onClick={() => void runtime()?.tap?.(25).catch((error) => update({ type: 'error', error: String(error) }))}>Audition Trig 1</button></div>}</Show>
     <section class="panel-wrap" aria-label={`${panel().name} front panel`}><div class="panel-surface"><svg class="panel" viewBox="0 0 215 176" onPointerMove={(e) => { const drag = pointers.get(e.pointerId); if (!drag?.encoder) return; const detents = Math.trunc((drag.y - e.clientY) / 8); if (Math.abs(e.clientY - drag.y) > 3) drag.moved = true; if (detents) { runtime()?.turn(drag.encoder, detents); drag.y -= detents * 8; } }} onPointerUp={(e) => releasePointer(e.pointerId)} onPointerCancel={(e) => releasePointer(e.pointerId)} onLostPointerCapture={(e) => releasePointer(e.pointerId)}>
       <defs><linearGradient id="chassis" x2="0" y2="1"><stop stop-color="#34363a"/><stop offset=".5" stop-color="#2c2e31"/><stop offset="1" stop-color="#242528"/></linearGradient><radialGradient id="knob"><stop stop-color="#44464b"/><stop offset=".68" stop-color="#2a2c2f"/><stop offset=".72" stop-color="#111214"/></radialGradient></defs>

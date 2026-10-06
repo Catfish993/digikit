@@ -177,3 +177,9 @@ which wasm32-unknown-unknown does not have, and the fast tier's Cranelift backen
 emits host code. `node tools/wasm_parity.mjs --scenario NAME` (or
 `mise run wasm:parity NAME`) checks that the browser PCM is byte-identical to
 the native `expect_sha256`.
+
+The coupled core (`emulator-core-sharc.wasm`) contains firmware-derived DSP code.
+`tools/native_wasm.sh` writes it to `packages/web/.local/`, which is gitignored
+and served only by the dev server. It is never in `dist/`: a build guard fails
+the build if it appears in the output. The CF-only core stays in
+`packages/web/public/`.

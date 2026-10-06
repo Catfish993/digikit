@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Build the portable native runtime for the browser without changing toolchains.
 
-Writes two files to packages/web/public:
-  emulator-core.wasm        CF-only core (small), used for the normal boot.
-  emulator-core-sharc.wasm  coupled ColdFire + SHARC+ core (large), fetched only
-                            by the audio panel; built when a generated core is
-                            available and --cf-only is not given.
+Writes two files:
+  packages/web/public/emulator-core.wasm
+      CF-only core (small), used for the normal boot.
+  packages/web/.local/emulator-core-sharc.wasm
+      coupled ColdFire + SHARC+ core (large, firmware-derived, gitignored). The
+      dev server serves it; it must never be in public/ or dist/. Built when a
+      generated core is available and --cf-only is not given. A stale copy in
+      packages/web/public is deleted on every run.
 """
 
 from __future__ import annotations
@@ -82,6 +85,12 @@ base_env = os.environ | {
 }
 public = root / "packages/web/public"
 public.mkdir(parents=True, exist_ok=True)
+local_dir = root / "packages/web/.local"
+local_dir.mkdir(parents=True, exist_ok=True)
+stale = public / "emulator-core-sharc.wasm"
+if stale.exists():
+    stale.unlink()
+    print(f"removed stale {stale} (the coupled core now lives in packages/web/.local)")
 
 
 def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], dest: pathlib.Path) -> None:
@@ -116,7 +125,7 @@ def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], de
 diagnostics = ["diagnostic-profile", "diagnostic-events"] if args.diagnostics else []
 plain_env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
 build(diagnostics, resolve_target_dir(None), plain_env, public / "emulator-core.wasm")
-sharc_wasm = public / "emulator-core-sharc.wasm"
+sharc_wasm = local_dir / "emulator-core-sharc.wasm"
 if coupled:
     build(
         [*diagnostics, "sharc"],
