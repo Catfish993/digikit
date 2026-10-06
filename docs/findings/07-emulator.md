@@ -6687,3 +6687,35 @@ Open: each cluster is worth about 2-3%, and the AOT tail is flat. Reaching
 kernel-to-kernel continuation. The 2a semantics fixes (PEy MRB, multiply
 flags) and the chain-stop generator change wait for one batched
 regeneration and PGO retrain.
+
+### Deferred interrupts, chain stops and the 2a core fixes, 2026-10-06 **[D] [O]**
+
+- Pre-sink PCM for Audition Trig 1 is a clean 263 Hz tone (see the GUI
+  capture above). The noise heard live is starved output: below real time
+  the callback substitutes silence. The launcher now prefills
+  `--audio-buffer 1` and runs the DSP worker at user-interactive QoS.
+- After the first ~2 s, FUN_1c2712's DO loop at 0x1c293a ran entirely in the
+  interpreter (about 1.8 M insns/s). TMZHI was latched and unmasked, and
+  `latent_interrupt` refused every block. The generated core
+  (`_interrupt_candidate`) delivers nothing while the loop stack is
+  non-empty or a branch is pending. Blocks now run while only the loop
+  stack defers the interrupt. `St::stop_at_loop_empty` makes generated
+  blocks end the call at the outermost loop pop, where the interpreter
+  delivers it.
+- Generated chain links now stop only at PCs the fast tier wants
+  (`St::chain_stop`), instead of at every first link whenever a fast tier
+  exists. Block entries fell from about 74 M to 32 M per 10 s.
+- 2a core fixes: PEy MRB writes now go to MSB (before, they went to MSF),
+  and multiply forms produce exact MN/MV/MU/MI. The fast tier was updated
+  to match. The coupled exactness DSP-export hash changed: only MSF, MSB,
+  the S0..S5 copies saved from them, and three context-save words differ.
+  PCM and the CF digest are unchanged.
+- Production after regeneration and a PGO retrain (profile `361640f3...`):
+  1.046 idle and 1.058 kb-chord16 DSP CPU s per audio s, against
+  1.198/1.204 for this morning's build. Paired ratios are 0.873 and 0.877,
+  PCM is identical, and interpreted instructions fell from 34.8 M to 18.4 M
+  per 10 s (`out/native/runs/20261006-final-pgo/`). Still slightly below
+  real time.
+- Process note: rebuilding into `out/native/target/prod/pgo-use` with a
+  different PGO profile forced a 7 min rebuild of the generated core at the
+  next launch. Experiments must use their own target dirs.
