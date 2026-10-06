@@ -16,6 +16,8 @@ CLEAN = [
     "tools/benchlock.py",
     "tools/dspi_log.py",
     "tests/test_dspi_log.py",
+    "tools/dsp_frames.py",
+    "tests/test_dsp_frames.py",
     "tools/blocktrans_coverage.py",
     "tests/test_blocktrans_coverage.py",
     "tests/test_benchlock.py",

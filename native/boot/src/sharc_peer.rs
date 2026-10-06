@@ -132,6 +132,15 @@ struct Diag {
     log: Option<BufWriter<File>>,
     log_index: u64,
     watch: Option<Watch>,
+    model: Option<ModelLog>,
+}
+
+/// `DIGI_DSP_MODEL_LOG=path.csv`: one row per frame of counter deltas.
+struct ModelLog {
+    out: BufWriter<File>,
+    index: u64,
+    prev_tiers: sharc_native::TierCounters,
+    prev_model: sharc_native::ModelStats,
 }
 
 struct Watch {
@@ -211,10 +220,91 @@ impl Diag {
                 "sharc_peer: DIGI_DSP_WATCH and DIGI_DSP_WATCH_OUT must both be set; watch disabled"
             ),
         }
+        let mut model = None;
+        if let Ok(path) = std::env::var("DIGI_DSP_MODEL_LOG") {
+            match File::create(&path).and_then(|f| {
+                let mut w = BufWriter::new(f);
+                writeln!(
+                    w,
+                    "frame,executed,busy,reached_idle,interpreted,block_instructions,fast_insns,traps,block_traps,idle_skips,gated,unsafe_block,irq_deferred,timer_gated,mmr_exits,code_mismatch,irq_taken,irq_vectors"
+                )?;
+                Ok(w)
+            }) {
+                Ok(out) => {
+                    model = Some(ModelLog {
+                        out,
+                        index: 0,
+                        prev_tiers: Default::default(),
+                        prev_model: Default::default(),
+                    })
+                }
+                Err(e) => eprintln!("sharc_peer: DIGI_DSP_MODEL_LOG {path}: {e}"),
+            }
+        }
         Self {
             log,
             log_index: 0,
             watch,
+            model,
+        }
+    }
+
+    /// Append one CSV row of counter deltas since the previous frame (call
+    /// after the render). Engines without counters give empty cells.
+    fn model_frame<E: DspEngine>(&mut self, engine: &E, stat: &FrameStat) {
+        let Some(ml) = &mut self.model else { return };
+        let mut row = format!(
+            "{},{},{},{}",
+            ml.index, stat.executed, stat.busy, stat.reached_idle as u8
+        );
+        ml.index += 1;
+        match engine.tier_counters() {
+            Some(t) => {
+                let p = &ml.prev_tiers;
+                for d in [
+                    t.interpreted.wrapping_sub(p.interpreted),
+                    t.block_instructions.wrapping_sub(p.block_instructions),
+                    t.fast_insns.wrapping_sub(p.fast_insns),
+                    t.traps.wrapping_sub(p.traps),
+                    t.block_traps.wrapping_sub(p.block_traps),
+                    t.idle_skips.wrapping_sub(p.idle_skips),
+                ] {
+                    row.push_str(&format!(",{d}"));
+                }
+                ml.prev_tiers = t;
+            }
+            None => row.push_str(",,,,,,"),
+        }
+        match engine.model_stats() {
+            Some(m) => {
+                let p = &ml.prev_model;
+                for d in [
+                    m.gated.wrapping_sub(p.gated),
+                    m.unsafe_block.wrapping_sub(p.unsafe_block),
+                    m.irq_deferred.wrapping_sub(p.irq_deferred),
+                    m.timer_gated.wrapping_sub(p.timer_gated),
+                    m.mmr_exits.wrapping_sub(p.mmr_exits),
+                    m.code_mismatch.wrapping_sub(p.code_mismatch),
+                    m.irq_taken.wrapping_sub(p.irq_taken),
+                ] {
+                    row.push_str(&format!(",{d}"));
+                }
+                let vectors: Vec<String> = (0..64)
+                    .filter_map(|v| {
+                        let d = m.irq_by_vector[v].wrapping_sub(p.irq_by_vector[v]);
+                        (d != 0).then(|| format!("{v}:{d}"))
+                    })
+                    .collect();
+                row.push(',');
+                row.push_str(&vectors.join(";"));
+                ml.prev_model = m;
+            }
+            None => row.push_str(",,,,,,,,"),
+        }
+        row.push('\n');
+        if let Err(e) = ml.out.write_all(row.as_bytes()) {
+            eprintln!("sharc_peer: DIGI_DSP_MODEL_LOG write failed, log disabled: {e}");
+            self.model = None;
         }
     }
 
@@ -264,6 +354,9 @@ impl Drop for Diag {
         }
         if let Some(wt) = &mut self.watch {
             let _ = wt.out.flush();
+        }
+        if let Some(ml) = &mut self.model {
+            let _ = ml.out.flush();
         }
     }
 }
@@ -677,6 +770,7 @@ impl<E: DspEngine> SharcPeer<E> {
         let done = self.core.render(ex, None);
         self.diag
             .watch_frame(&self.core.engine, done.stat.busy, self.core.pc_at_rx);
+        self.diag.model_frame(&self.core.engine, &done.stat);
         commit(&mut self.shared.borrow_mut(), done);
         reply
     }
@@ -913,6 +1007,7 @@ impl ThreadedPeer {
                             }
                             let done = core.render(ex, timing.as_mut());
                             diag.watch_frame(&core.engine, done.stat.busy, core.pc_at_rx);
+                            diag.model_frame(&core.engine, &done.stat);
                             if let Some(t) = &done.timing {
                                 periods += 1;
                                 if period_ns.len() < PERIOD_RECORD_LIMIT {

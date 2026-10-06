@@ -22,7 +22,7 @@ export async function startCoupled(opts: { runtime: EmulatorRuntime; firmware: {
  */
 export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRuntime | undefined>; reset: number; firmware?: () => { name: string; bytes: Uint8Array } | undefined; adopted?: () => { sink: PcmSink; note: string } | undefined; onStarted: (snapshot: RuntimeSnapshot) => void; onError: (error: string) => void }) {
   const files: Record<'syx' | 'image' | 'dsp' | 'snapshot', File | undefined> = { syx: undefined, image: undefined, dsp: undefined, snapshot: undefined };
-  const [buffer, setBuffer] = createSignal(0);
+  const [buffer, setBuffer] = createSignal(2);
   const [report, setReport] = createSignal('');
   const [active, setActive] = createSignal(false);
   const [available, setAvailable] = createSignal(false);
@@ -102,6 +102,7 @@ export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRun
     <small>From the ready snapshot, press NO once before Trig 1.</small>
     <button disabled={!active()} onClick={() => void exportHealth()}>Export audio health</button>
     <output>{report()}</output>
+    <small style={{ width: '100%' }}>The browser core runs well below real time: audio plays in bursts. Buffer s sets how much is queued before each burst.</small>
     </Show>
   </div>;
 }

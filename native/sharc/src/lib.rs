@@ -33,6 +33,7 @@ mod live_capture;
 mod region_profile;
 pub mod sha256;
 pub mod vectors;
+mod write_watch;
 pub use region_profile::{RegionCost, RegionEntryProfile, RegionProfile};
 
 #[cfg(feature = "region-profile")]
@@ -293,10 +294,12 @@ pub struct Engine {
     /// Opt-in raw generated-block call snapshots.  It is configured wholly
     /// through the environment and is absent in ordinary execution.
     live_capture: Option<live_capture::LiveCapture>,
+    /// SHARC_WWATCH / SHARC_WWATCH_OUT (diagnostic): see `write_watch`.
+    wwatch: Option<Box<write_watch::WriteWatch>>,
 }
 
 /// What the run-time model gate decided (diagnostic counters).
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct ModelStats {
     /// Block calls made with a model on.
     pub gated: u64,
@@ -313,6 +316,26 @@ pub struct ModelStats {
     /// Attempts refused because the loaded code differs from the code the
     /// blocks were generated from.
     pub code_mismatch: u64,
+    /// Interrupts the engine actually entered (`_enter_interrupt` succeeded).
+    pub irq_taken: u64,
+    /// `irq_taken` by source, indexed by the IRPTL/IMASK bit number
+    /// (`mask.trailing_zeros()`; the entry takes one source bit at a time).
+    pub irq_by_vector: [u64; 64],
+}
+
+impl Default for ModelStats {
+    fn default() -> Self {
+        ModelStats {
+            gated: 0,
+            unsafe_block: 0,
+            irq_deferred: 0,
+            timer_gated: 0,
+            mmr_exits: 0,
+            code_mismatch: 0,
+            irq_taken: 0,
+            irq_by_vector: [0; 64],
+        }
+    }
 }
 
 /// What a block call needs besides its function: the instruction limit that
@@ -624,6 +647,7 @@ impl Engine {
             concretise_on_bail: std::env::var_os("SHARC_CONCRETISE_ON_BAIL").is_some(),
             concretised: 0,
             live_capture: live_capture::LiveCapture::from_env(),
+            wwatch: write_watch::WriteWatch::from_env(),
         }
     }
 
@@ -1355,6 +1379,30 @@ impl Engine {
         ));
     }
 
+    /// Close the pending write-watch unit (see `write_watch`): flush any
+    /// earlier one, then start a new one at PC with the given unit letter.
+    fn ww_begin(&mut self, pc: u64, unit: char) {
+        self.ww_flush();
+        if let Some(w) = &mut self.wwatch {
+            w.pending = Some((pc, unit));
+        }
+    }
+
+    /// Re-read the watched words for the pending unit and log changes.
+    fn ww_flush(&mut self) {
+        if let Some(mut w) = self.wwatch.take() {
+            if w.pending.is_some() {
+                let now: Vec<Option<u32>> = w
+                    .addrs()
+                    .iter()
+                    .map(|&a| self.peek(a, 4).ok().flatten())
+                    .collect();
+                w.record(self.s.icount, &now);
+            }
+            self.wwatch = Some(w);
+        }
+    }
+
     /// Run up to N instructions. Returns how many completed; fewer means a
     /// trap (see `halt`).
     pub fn step(&mut self, n: u32) -> u32 {
@@ -1366,6 +1414,7 @@ impl Engine {
         self.idle_snap = None;
         self.s.probe = None;
         'steploop: while self.s.icount < limit {
+            self.ww_flush();
             if self.at_stop_range() {
                 break;
             }
@@ -1420,6 +1469,9 @@ impl Engine {
                             self.s.bank_complete();
                             self.s.bank_complete();
                             self.s.commit_host();
+                            self.model_stats.irq_taken += 1;
+                            self.model_stats.irq_by_vector[(mask.trailing_zeros() & 63) as usize] +=
+                                1;
                         } else {
                             self.s.rollback();
                         }
@@ -1449,7 +1501,11 @@ impl Engine {
                     _ => limit,
                 };
                 let before_skip = self.s.icount;
+                if self.wwatch.is_some() {
+                    self.ww_begin(self.s.pc_sw as u64, 's');
+                }
                 self.idle_visit(head, skip_limit);
+                self.ww_flush();
                 if self.s.icount >= limit {
                     break;
                 }
@@ -1484,6 +1540,9 @@ impl Engine {
                         f.note(entry_pc);
                     }
                     self.last_interp_next = -1;
+                    if self.wwatch.is_some() {
+                        self.ww_begin(entry_pc as u64, 'b');
+                    }
                     let t0 = if self.prof.is_some() { ticks() } else { 0 };
                     if plan.bank_pre.is_some() {
                         self.s.bank_pending_mask = -1;
@@ -1511,6 +1570,11 @@ impl Engine {
                         {
                             code = f.run(&mut self.s, entry_pc);
                         }
+                    }
+                    if code.is_some()
+                        && let Some(w) = &mut self.wwatch
+                    {
+                        w.pending = Some((entry_pc as u64, 'f'));
                     }
                     if code == Some(EXIT_NEXT) && plan.bank_pre.is_none() {
                         code = self.fast_continue(plan.limit, code);
@@ -1729,6 +1793,9 @@ impl Engine {
             if let Some(h) = &mut self.hist {
                 *h.entry(pc_before as u32).or_default() += 1;
             }
+            if self.wwatch.is_some() {
+                self.ww_begin(pc_before as u64, 'i');
+            }
             if let Err(t) = exec_insn(&mut self.s, insn) {
                 self.trapped(t);
                 break;
@@ -1751,6 +1818,7 @@ impl Engine {
                 break;
             }
         }
+        self.ww_flush();
         self.idle_snap = None;
         self.s.probe = None;
         (self.s.icount - start) as u32

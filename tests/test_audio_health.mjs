@@ -154,32 +154,54 @@ test('native audio health has no session before startup firmware exists', async 
   assert.equal(await runtime.nativeAudio(), undefined);
 });
 
-test('buffer threshold and stereo output are unchanged; initial silence is not underrun', () => {
+test('buffer threshold has a 0.25 s minimum; stereo output is faded in; initial silence is not underrun', () => {
   const { p, send, render } = processor();
   send({ type: 'config', startSeconds: 4 / 48000 });
   send(new Float32Array([1, 2, 3, 4]));
   assert.deepEqual(render(2), [[0, 0], [0, 0]]);
   assert.equal(p.silence, 2); assert.equal(p.underrunFrames, 0);
   send(new Float32Array([5, 6, 7, 8]));
-  assert.deepEqual(render(4), [[1, 3, 5, 7], [2, 4, 6, 8]]);
-  assert.equal(p.highWater, 4); assert.equal(p.played, 4);
+  assert.deepEqual(render(4), [[0, 0, 0, 0], [0, 0, 0, 0]]);
+  send(new Float32Array(2 * 12000));
+  const [l, r] = render(4);
+  const want = [[1, 3, 5, 7], [2, 4, 6, 8]];
+  [l, r].forEach((ch, c) => ch.forEach((v, k) => assert.ok(Math.abs(v - want[c][k] * k / 128) < 1e-5)));
+  assert.equal(p.highWater, 12004); assert.equal(p.played, 4);
 });
 
 test('underrun duration includes the partial quantum and subsequent rebuffering', () => {
   const { p, send, render, reports } = processor();
   send({ type: 'config', startSeconds: 0 });
   const port = {}; send({ port });
-  port.onmessage({ data: new Float32Array([1, 2, 3, 4]) });
-  assert.deepEqual(render(4), [[1, 3, 0, 0], [2, 4, 0, 0]]);
-  render(4);
-  assert.equal(p.underruns, 1); assert.equal(p.underrunFrames, 6);
+  port.onmessage({ data: new Float32Array(2 * 12000).fill(1) });
+  for (let q = 0; q < 93; q += 1) render(128);
+  render(128);
+  assert.equal(p.underruns, 1); assert.equal(p.fades, 1); assert.equal(p.underrunFrames, 32);
+  render(128);
+  assert.equal(p.underrunFrames, 160);
   p.sinceReport = 12000; render(4);
   const report = reports.at(-1);
-  assert.equal(report.underrunSeconds, 10 / 48000);
-  assert.equal(report.highWaterSeconds, 2 / 48000);
+  assert.equal(report.underrunSeconds, 164 / 48000);
+  assert.equal(report.fades, 1);
+  assert.equal(report.highWaterSeconds, 12000 / 48000);
   assert.equal(report.portAttached, true);
   assert.equal(report.receivedPcm, true); assert.equal(report.renderedPcm, true);
   send({ type: 'flush' }); assert.equal(p.queued, 0); assert.equal(p.playing, false);
+});
+
+test('a burst fades in from zero and fades out before the silence', () => {
+  const { p, send, render } = processor();
+  send({ type: 'config', startSeconds: 0 });
+  send(new Float32Array(2 * 14400).fill(1));
+  const out = [];
+  for (let q = 0; q < 200 && p.underruns === 0; q += 1) out.push(...render(128)[0]);
+  assert.equal(p.underruns, 1);
+  assert.equal(out[0], 0);
+  assert.ok(out.some((v) => v === 1));
+  let last = out.length - 1;
+  while (out[last] === 0) last -= 1;
+  assert.equal(last, 14400 - 1);
+  for (let k = last - 63; k < last; k += 1) assert.ok(out[k] > out[k + 1]);
 });
 
 test('missing SHARC exports report unavailable capability before any coupled load', async () => {
