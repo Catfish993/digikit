@@ -1030,6 +1030,37 @@ impl DspEngine for SharedDsp {
     }
 }
 
+/// Remove two sources of unknown ("taint") state from a freshly imported DN2
+/// state so that code reading them stays on the fast tiers. Both are
+/// modelling choices; `SHARC_IMPORT_RAW=1` skips them.
+///
+/// 1. Special registers (MRF, MRB, MSF, MSB, BFFWRP, BFF_HI, BFF_LO) that are
+///    only partly known in the snapshot become fully known: known bits are
+///    kept, unknown bits are 0. The structural MODE1STK, PCSTK and the stack
+///    mirrors are not touched.
+/// 2. Unmapped low-alias space: the absent bytes of [0x28000004, 0x28000100)
+///    read as known zero instead of unknown. This is a modelling choice for
+///    memory the snapshot does not hold; the owner decided it reads zero.
+fn concretise_import(e: &mut sharc_native::Engine) {
+    use sharc_native::rt::{MR, MR_MASK, Spec, V};
+    for i in 0..e.s.special.len() {
+        let present = e.s.special_present[i];
+        let new = match e.s.special[i] {
+            Spec::V(v) if present && v.is_c() => continue,
+            Spec::V(v) => Spec::V(V::c(v.b as _)),
+            Spec::M(m) if m.known() => continue,
+            Spec::M(m) => Spec::M(MR::new(MR_MASK, m.bits)),
+        };
+        e.s.special[i] = new;
+        e.s.special_present[i] = true;
+    }
+    for a in 0x2800_0004u64..0x2800_0100 {
+        if matches!(e.peek(a, 1), Ok(None)) {
+            e.poke(a, &[0], 1);
+        }
+    }
+}
+
 /// Build the DN2 continuation engine from a packed image blob
 /// (`tools/sharc_pack_image.py`) and a canonical state blob, with the option
 /// set the audio runs use. `clock_base` seeds the diagnostic instruction
@@ -1069,6 +1100,11 @@ pub fn open_dn2_engine(
         if e.set_option(k, v) != 0 {
             return Err(format!("set_option {k} rejected"));
         }
+    }
+    // After the options: the explicit memory model (10) decides whether an
+    // absent byte reads as unknown.
+    if std::env::var("SHARC_IMPORT_RAW").as_deref() != Ok("1") {
+        concretise_import(&mut e);
     }
     Ok(e)
 }

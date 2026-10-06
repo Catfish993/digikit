@@ -823,7 +823,7 @@ mod coupled {
             }
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "ee0a7ae1e75d593253ba4b382910a098677f803a69c979f7e7da0d9e53f5f244"
+                "27152f097fedf4a669be9386a4c7b6eafda2992ebe1ca2db179992896749f0ee"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());
