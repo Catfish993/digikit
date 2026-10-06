@@ -246,6 +246,39 @@ def pgo_plan(args: list[str]) -> object | None:
     return native_pgo.plan_for(detail, environ)
 
 
+PGO_MISMATCH_WARNING = (
+    "WARNING: PGO profile does not match this binary (crate hashes differ); "
+    "live DSP will run ~35% slower. Run tools/native_pgo.py train."
+)
+
+
+def build_command(command: list[str]) -> list[str]:
+    """The `cargo run` command as a `cargo build` of the same binary."""
+    cut = command.index("--")
+    head = command[:cut]
+    head[head.index("cargo") + 1] = "build"
+    return head
+
+
+def verify_pgo(command: list[str], env: dict[str, str]) -> None:
+    """Build, then warn loudly if the profile's crate hashes miss the binary.
+
+    Never blocks the launch: any failure here is ignored and cargo run goes on.
+    """
+    try:
+        if subprocess.run(build_command(command), cwd=ROOT, env=env).returncode:
+            return
+        done = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "native_pgo.py"), "verify"],
+            cwd=ROOT,
+            check=False,
+        )
+    except (OSError, ValueError):
+        return
+    if done.returncode == 1:
+        print(PGO_MISMATCH_WARNING, file=sys.stderr, flush=True)
+
+
 def main(args: list[str] | None = None) -> None:
     args = sys.argv[1:] if args is None else args
     force_cf = "--cf-only" in args
@@ -271,7 +304,10 @@ def main(args: list[str] | None = None) -> None:
     )
     plan = pgo_plan(args)
     env = {**os.environ, **plan.env} if plan is not None else None  # type: ignore[attr-defined]
-    subprocess.run(cargo_command(args, plan), cwd=ROOT, check=True, env=env)
+    command = cargo_command(args, plan)
+    if plan is not None:
+        verify_pgo(command, env)  # type: ignore[arg-type]
+    subprocess.run(command, cwd=ROOT, check=True, env=env)
 
 
 if __name__ == "__main__":

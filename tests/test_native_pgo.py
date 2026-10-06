@@ -153,3 +153,64 @@ def test_fallback_notice_is_prefixed_with_warning():
         ("failed", "training failed (exit 1)"),
     ):
         assert native_pgo.fallback_notice(status, detail).startswith("WARNING: ")
+
+
+# --- crate-hash guard -------------------------------------------------------------
+
+PROFILE_TEXT = """Counters:
+  _RNvNtCsAAA111_12sharc_native6engine3run:
+  _RNvCsBBB222_9sharc_gen4core:
+  _RNvCsCCC333_8sharc_rt3mem:
+  elektron_native_boot.1234-cgu.03;_RNvCsDDD444_20elektron_native_boot4boot:
+  _RNvNtCsOTHER_4core3ptr9drop_glue:
+  _RNvCsEEE555_12sharc_native3dup:
+"""
+
+
+def test_crates_in_maps_crates_to_disambiguators():
+    assert native_pgo.crates_in(PROFILE_TEXT) == {
+        "sharc_native": {"AAA111", "EEE555"},
+        "sharc_gen": {"BBB222"},
+        "sharc_rt": {"CCC333"},
+        "elektron_native_boot": {"DDD444"},
+    }
+
+
+def test_profile_crates_parses_and_caches(tmp_path, monkeypatch):
+    profdata = tmp_path / "p.profdata"
+    profdata.write_text("x")
+    runs = []
+
+    def fake_run(command, **_kwargs):
+        runs.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=PROFILE_TEXT)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    first = native_pgo.profile_crates(profdata)
+    assert first["sharc_gen"] == {"BBB222"}
+    assert (tmp_path / "p.profdata.crates.json").is_file()
+    assert native_pgo.profile_crates(profdata) == first
+    assert len(runs) == 1
+
+
+def test_binary_crates_reads_nm_output(monkeypatch):
+    nm = "0000 T _RNvCsZZZ999_12sharc_native3run\n0001 t _RNvCsZZZ999_8sharc_rt3x\n"
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **_kw: subprocess.CompletedProcess(command, 0, stdout=nm),
+    )
+    assert native_pgo.binary_crates("bin") == {
+        "sharc_native": {"ZZZ999"},
+        "sharc_rt": {"ZZZ999"},
+    }
+
+
+def test_crate_mismatches_reports_only_disjoint_crates():
+    profile = native_pgo.crates_in(PROFILE_TEXT)
+    same = {k: set(v) for k, v in profile.items()}
+    assert native_pgo.crate_mismatches(profile, same) == []
+    other = {**same, "sharc_gen": {"NEW"}}
+    assert native_pgo.crate_mismatches(profile, other) == [
+        "MISMATCH crate sharc_gen: profile ['BBB222'] binary ['NEW']"
+    ]

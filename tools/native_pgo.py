@@ -31,6 +31,7 @@ same version string but different LLVM, and cannot read these profiles.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import datetime
 import hashlib
@@ -432,6 +433,84 @@ def launch_plan(
     ).name
 
 
+# --- crate-hash guard ------------------------------------------------------------
+
+# PGO matches functions by mangled name, and a v0 name embeds the crate
+# disambiguator (`Cs<hash>_<len><name>`). A profile trained from a build whose
+# crate hashes differ from the app's silently applies to nothing.
+GUARDED_CRATES = ("sharc_native", "sharc_gen", "sharc_rt", "elektron_native_boot")
+CRATE_NAME_RE = re.compile(
+    r"C[sc]([0-9A-Za-z]+)_("
+    + "|".join(f"{len(name)}{name}" for name in GUARDED_CRATES)
+    + r")"
+)
+
+
+def crates_in(text: str) -> dict[str, set[str]]:
+    """Crate name -> disambiguators seen in v0-mangled names in `text`."""
+    found: dict[str, set[str]] = {}
+    for match in CRATE_NAME_RE.finditer(text):
+        name = match.group(2).lstrip("0123456789")
+        found.setdefault(name, set()).add(match.group(1))
+    return found
+
+
+def profile_crates(profdata: str | os.PathLike[str]) -> dict[str, set[str]]:
+    """Guarded crate disambiguators in a profile (cached as <profdata>.crates.json)."""
+    profdata = pathlib.Path(profdata)
+    cache = profdata.with_name(profdata.name + ".crates.json")
+    try:
+        if cache.stat().st_mtime >= profdata.stat().st_mtime:
+            return {k: set(v) for k, v in json.loads(cache.read_text()).items()}
+    except (OSError, ValueError):
+        pass
+    shown = subprocess.run(
+        [str(llvm_profdata()), "show", "--all-functions", str(profdata)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    found = crates_in(shown)
+    with contextlib.suppress(OSError):
+        cache.write_text(json.dumps({k: sorted(v) for k, v in found.items()}))
+    return found
+
+
+def binary_crates(path: str | os.PathLike[str]) -> dict[str, set[str]]:
+    """Guarded crate disambiguators in a binary's symbols (via nm)."""
+    shown = subprocess.run(
+        ["nm", str(path)], check=True, capture_output=True, text=True
+    ).stdout
+    return crates_in(shown)
+
+
+def crate_mismatches(
+    profile: dict[str, set[str]], binary: dict[str, set[str]]
+) -> list[str]:
+    """One "MISMATCH crate X: ..." line per crate whose hashes do not overlap."""
+    lines = []
+    for name in GUARDED_CRATES:
+        want, have = profile.get(name, set()), binary.get(name, set())
+        if want and have and not want & have:
+            lines.append(
+                f"MISMATCH crate {name}: profile {sorted(want)} binary {sorted(have)}"
+            )
+    return lines
+
+
+def pgo_binary(
+    environ: dict[str, str] | os._Environ[str] | None = None,
+) -> pathlib.Path:
+    """The app binary the launcher's PGO build produces."""
+    target = native_target().target_dir(generated_dir(environ), "pgo-use")
+    return pathlib.Path(target) / TRIPLE / "release" / "digiemu-desktop"
+
+
+def verify_binary(binary: pathlib.Path, profdata: str | os.PathLike[str]) -> list[str]:
+    """Mismatch lines for `binary` against `profdata` (empty when they match)."""
+    return crate_mismatches(profile_crates(profdata), binary_crates(binary))
+
+
 # --- training and benchmarking -------------------------------------------------
 
 
@@ -714,6 +793,21 @@ def cmd_check(_: argparse.Namespace) -> int:
     return 0 if status == "ok" else 1
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    manifest = read_manifest()
+    profdata = pathlib.Path(str(manifest["profdata"]["path"])) if manifest else None  # type: ignore[index]
+    if profdata is None or not profdata.is_file():
+        print("no trained profile to verify against")
+        return 1
+    binary = pathlib.Path(args.binary) if args.binary else pgo_binary()
+    if not binary.is_file():
+        print(f"no binary at {binary}")
+        return 1
+    lines = verify_binary(binary, profdata)
+    print("\n".join(lines) if lines else "ok")
+    return 1 if lines else 0
+
+
 def cmd_plan(_: argparse.Namespace) -> int:
     plan, notice = launch_plan(
         {
@@ -966,6 +1060,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     train.add_argument("--runs", type=int, default=TRAIN_RUNS)
     sub.add_parser("check", help="print ok/stale/missing for the current profile")
+    verify = sub.add_parser(
+        "verify", help="check the profile's crate hashes against the app binary"
+    )
+    verify.add_argument("--binary", help="default: the launcher's pgo-use app binary")
     sub.add_parser("plan", help="show what the launcher would do")
     bench = sub.add_parser("bench", help="paired control vs profile-use benchmark")
     bench.add_argument("--pairs", type=int, default=5)
@@ -1016,6 +1114,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd_bench_bins(args)
     elif args.command == "check":
         return cmd_check(args)
+    elif args.command == "verify":
+        return cmd_verify(args)
     else:
         return cmd_plan(args)
     return 0

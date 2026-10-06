@@ -411,3 +411,45 @@ def test_train_command_failure_to_start_falls_back(pgo, monkeypatch, capsys):
     monkeypatch.setattr(subprocess, "run", boom)
     assert launcher()["pgo_plan"](COUPLED) is None
     assert "could not start training: no python" in capsys.readouterr().err
+
+
+def test_build_command_is_the_run_command_without_program_arguments():
+    command = ["rustup", "run", "1", "cargo", "run", "--release", "--", "x.syx"]
+    assert launcher()["build_command"](command) == [
+        "rustup",
+        "run",
+        "1",
+        "cargo",
+        "build",
+        "--release",
+    ]
+
+
+@pytest.mark.parametrize("verify_exit, warns", [(0, False), (1, True), (2, False)])
+def test_pgo_mismatch_warns_but_never_blocks(monkeypatch, capsys, verify_exit, warns):
+    scope = launcher()
+    calls = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        code = verify_exit if command[-1] == "verify" else 0
+        return subprocess.CompletedProcess(command, code)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    scope["verify_pgo"](["cargo", "run", "--", "x"], {})
+    err = capsys.readouterr().err
+    assert ("PGO profile does not match this binary" in err) is warns
+    assert calls[0] == ["cargo", "build"]
+
+
+def test_pgo_build_failure_skips_the_check(monkeypatch, capsys):
+    calls = []
+
+    def run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 101)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    launcher()["verify_pgo"](["cargo", "run", "--", "x"], {})
+    assert len(calls) == 1
+    assert capsys.readouterr().err == ""
