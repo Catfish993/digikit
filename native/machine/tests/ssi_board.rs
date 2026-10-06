@@ -1,5 +1,5 @@
 use coldfire::Bus;
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity};
 use machine::{Board, CompletionPolicy, SemaphoreAddresses, Time, TimerPolicy};
 use periph::{edma, ssi};
 
@@ -7,7 +7,7 @@ const RAM: u32 = 0x8000_0000;
 
 fn board() -> Board {
     Board::new(
-        Card::new(DEFAULT_CAPACITY_BLOCKS).unwrap(),
+        Card::new(CardIdentity::Mlc4G).unwrap(),
         SemaphoreAddresses::default(),
         CompletionPolicy::Oracle,
     )

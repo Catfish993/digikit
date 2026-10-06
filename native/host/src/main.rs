@@ -15,7 +15,7 @@ use std::{
 };
 
 use coldfire::{Bus, Cpu, InterruptPolicy};
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead};
+use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use live_audio::{LivePlayer, StereoSample, sharc_lib::live_source};
 use machine::{Board, CompletionPolicy, Machine, SemaphoreAddresses, Time, TimerPolicy};
 use periph::dspi::Peer;
@@ -325,7 +325,7 @@ fn main() {
     let card_bytes = fs::metadata(&a.card).unwrap().len();
     let card_hash = digest_file(&a.card);
     let card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::from_env().expect("DIGI_CARD_IDENTITY"),
         Some(Box::new(Image(
             Mutex::new(File::open(&a.card).unwrap()),
             card_bytes,

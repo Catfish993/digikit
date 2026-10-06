@@ -21,7 +21,12 @@ import sys
 import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-READY = ROOT / "snapshots" / "dn2-audio-ready-2026-10-03"
+# The DN2 ready-inputs directory: ready_dir in tools/ready_inputs.json (shared
+# with the JS tools), overridden by DIGI_EMU_READY_DIR.
+READY = ROOT / (
+    os.environ.get("DIGI_EMU_READY_DIR")
+    or json.loads((ROOT / "tools" / "ready_inputs.json").read_text())["ready_dir"]
+)
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
 DEFAULT_SYX = ROOT / "Digitone_II_OS1.11.syx"
 FAST_TABLE = ROOT / "tools" / "fast_regions.json"

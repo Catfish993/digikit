@@ -11,9 +11,9 @@
 //!
 //! ```text
 //! coupled-run --syx Digitone_II_OS1.11.syx \
-//!   --dsp-image snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin \
-//!   --dsp-state snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp \
-//!   --cf-snapshot snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap \
+//!   --dsp-image snapshots/dn2-audio-ready-2026-10-06/digi-audio-dn2-image.bin \
+//!   --dsp-state snapshots/dn2-audio-ready-2026-10-06/digi-audio-m5.snap.dsp \
+//!   --cf-snapshot snapshots/dn2-audio-ready-2026-10-06/digi-audio-m5.snap \
 //!   [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--playback] [--audio-buffer S] [--no-pcm-tap] [--no-link-timing] [--profile-regions] [--profile-execution] \
 //!   [--out report.json] [--list] \
 //!   [--replay FILE.json] [--wav PATH] [--audio-mode rebuffer|stretch|gap]

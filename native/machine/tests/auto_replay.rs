@@ -13,7 +13,7 @@ use std::{
 };
 
 use coldfire::{Bus, Cpu, InterruptPolicy};
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead};
+use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use machine::{Board, CompletionPolicy, Machine, SemaphoreAddresses, Time, TimerPolicy};
 use periph::dspi::Peer;
 use serde_json::{Value, json};
@@ -97,7 +97,7 @@ fn replay_oracle_host_events() {
     let card_file = File::open(input("DT2_AUTO_CARD_IMAGE")).unwrap();
     let card_bytes = card_file.metadata().unwrap().len();
     let card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(Image(Mutex::new(card_file), card_bytes))),
     )
     .unwrap();
@@ -289,7 +289,7 @@ fn diagnose_first_autonomous_force_clock_drift() {
     let card_file = File::open(input("DT2_AUTO_CARD_IMAGE")).unwrap();
     let card_bytes = card_file.metadata().unwrap().len();
     let card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(Image(Mutex::new(card_file), card_bytes))),
     )
     .unwrap();

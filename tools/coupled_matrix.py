@@ -43,10 +43,15 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import benchlock  # noqa: E402
 import native_target  # noqa: E402
 
+try:
+    import digi_env  # noqa: E402
+finally:
+    sys.path.pop(0)
+
 TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
 PGO_FLAGS = "-Cprofile-use={profdata}"
-READY = ROOT / "snapshots" / "dn2-audio-ready-2026-10-03"
+READY = digi_env.READY
 SCENARIO_FILE = ROOT / "native" / "coupled" / "scenarios.json"
 RUNS_DIR = ROOT / "out" / "native" / "runs"
 PROD_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen"

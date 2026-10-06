@@ -341,18 +341,19 @@ class CardCapacityCoversImageTest(unittest.TestCase):
                 % pd.DEFAULT_CAPACITY_BLOCKS,
             )
 
-            card = esdhc.Card.from_file(out_path)
-            self.assertEqual(card.blocks, pd.DEFAULT_CAPACITY_BLOCKS)
+            # The identity defines the capacity; the 0x760000-sector image is
+            # shorter than the default pSLC card and must fit inside it.
+            card = esdhc.Card.from_file(out_path, identity="slc32g")
+            self.assertEqual(card.blocks, esdhc.IDENTITIES["slc32g"]["blocks"])
             self.assertIn(
                 card.blocks,
                 esdhc._CAPACITY_PARAMS,
                 "this capacity isn't one of the eMMC-identity whitelist's "
-                "two literal constants -- FUN_4012dbe0 would reject it",
+                "literal constants -- FUN_4012dbe0 would reject it",
             )
 
             # Confirm this Card's ext_csd/csd fields actually make
-            # DAT_44e3fea0 equal the image's real size, not just that
-            # capacity_blocks looks right in isolation.
+            # DAT_44e3fea0 equal the reported capacity.
             dat_44e3fea0 = _dat_44e3fea0(card)
             self.assertEqual(dat_44e3fea0, card.blocks)
             self.assertGreaterEqual(

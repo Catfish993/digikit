@@ -128,14 +128,13 @@ DRV_STATUS = 0x44E26F1C
 EXTCSD_BUF = 0x4FE49100
 DMA_CHAN = 59
 
-# Offsets INTO EXT_CSD that this firmware reads. `SLC_OK` is the one that
-# matters: 0x4fe49198 is EXTCSD_BUF + 0x98, so the "MMC NOT IN SLC MODE" flag
-# of section 1 is simply EXT_CSD byte 152, and build(slc=True) has been poking
-# into this buffer all along.
-#
-# Byte 152 is inside GP_SIZE_MULT in the JEDEC map, which is not an obvious
-# home for an SLC flag, so treat the JEDEC identity as UNCONFIRMED and the
-# offset as the fact. What is certain is 0x401204a4 reads it and wants 1.
+# Offsets INTO EXT_CSD that this firmware reads. The firmware's copy is in
+# guest-native layout: the JEDEC index XOR 3 (32-bit word byte swap), and this
+# model writes bytes in that guest-native layout. `SLC_OK` (guest 0x98, i.e.
+# 0x4fe49198 = EXTCSD_BUF + 0x98) is JEDEC byte 155,
+# PARTITION_SETTING_COMPLETED. Guest 0x9c..0x9e is MAX_ENH_SIZE_MULT (packed
+# big-endian), 0xde HC_WP_GRP_SIZE, 0xe3 HC_ERASE_GRP_SIZE, and 0xd4..0xd7
+# SEC_COUNT as a big-endian u32.
 #
 # **[C], DT2 1.16 only, re disassembly of `FUN_4012dbe0`'s eMMC-identity
 # whitelist check**: `0x401204a4` in the *current* 1.16 image does not read
@@ -156,18 +155,14 @@ DMA_CHAN = 59
 # `_CAPACITY_PARAMS` (below) must be changed together -- see there for which
 # constant this model targets and why.
 SLC_OK = 0x98
-# PARTITIONS_ATTRIBUTE was modeled as a single byte (=1); `FUN_4012dbe0`'s
-# eMMC-identity whitelist (docs/findings/14) actually reads a 3-byte
+# `FUN_4012dbe0`'s eMMC-identity whitelist (docs/findings/14) reads a 3-byte
 # big-endian field starting here (`FUN_4012db90` packs bytes 0x9C:0x9D:0x9E
-# as one 24-bit value) and compares it, plus the two single bytes below,
-# against the matched whitelist row's own fields -- for the row this model
-# targets (manufacturer 0x11, product name "004GE0"), those are
-# `0x1D8`/`0x01`/`0x08`. Confirmed safe to change (doesn't hang a real boot,
-# unlike `SEC_COUNT`'s packing below): bisected the same way.
-PARTITIONS_ATTRIBUTE = 0x9C          # 156; also read at 0x4fe4919c-9e
-IDENTITY_FIELD_3 = 0xDE              # single byte; that row wants 0x01
-IDENTITY_FIELD_4 = 0xE3              # single byte; that row wants 0x08
-SEC_COUNT = 0xD4                     # 212..215, little-endian, in 512B sectors
+# as one 24-bit value, MAX_ENH_SIZE_MULT) and compares it, plus the two
+# single bytes below, against the matched whitelist row's own fields.
+PARTITIONS_ATTRIBUTE = 0x9C          # MAX_ENH_SIZE_MULT, 3 bytes big-endian
+IDENTITY_FIELD_3 = 0xDE              # HC_WP_GRP_SIZE
+IDENTITY_FIELD_4 = 0xE3              # HC_ERASE_GRP_SIZE
+SEC_COUNT = 0xD4                     # 212..215, big-endian, in 512B sectors
 ERASE_GROUP_DEF = 0xAF               # 175
 BUS_WIDTH = 0xB7                     # 183
 HS_TIMING = 0xB9                     # 185
@@ -251,61 +246,87 @@ CSD_RSP2 = ((_CSD_READ_BL_LEN & 0xF) << 8) | ((_CSD_C_SIZE >> 10) & 3)
 # traced), so this remains **[O]** if a future run ever hangs spinning on
 # `PRSSTAT` bit 0x18 right after an eSDHC command -- the fix then is to
 # model that SWITCH/PRSSTAT sequence in `Esdhc`, not to change `SLC_OK` back.
-_CAPACITY_PARAMS = {
-    0x00760000: {"sec_count": 0x00760000, "slc_ok": 0},  # this model's default
-    0x003B0000: {"sec_count": 0, "slc_ok": 1},  # the previous default
+# Card identities (parity with native/card `CardIdentity`). The identity, not
+# the backing image length, defines CID, EXT_CSD and the reported capacity.
+# The whitelist table is identical in DT2 1.16 and DN2 1.11; the rows used:
+#   (0x11, "004GE0", enh 0x1d8, wp 1,    erase 8, mlc 0x760000,  slc 0x3b0000)
+#   (0x70, "TX2932", enh 0x4db, wp 0x10, erase 1, mlc 0x3a4a000, slc 0x2e1a000)
+# `slc32g` is the 32 GB part configured in pSLC mode (flag 1, capacity = the
+# row's +0x1c constant), so the "MMC NOT IN SLC MODE" dialog does not appear;
+# its capacity also covers the +Drive layout (superblock 0x5D8000, content from
+# 0x5EE180). `mlc4g` and `small` are the legacy identities; snapshots captured
+# before the pSLC identity need DIGI_CARD_IDENTITY=mlc4g.
+IDENTITY_ENV = "DIGI_CARD_IDENTITY"
+DEFAULT_IDENTITY = "slc32g"
+IDENTITIES = {
+    "slc32g": {
+        "cid": [0x00000000, 0x33320000, 0x54583239, 0x00700000],  # mfr 0x70 "TX2932"
+        "blocks": 0x02E1A000,
+        "slc_ok": 1,
+        "enh_size": (0x00, 0x04, 0xDB),
+        "wp_group": 0x10,
+        "erase_group": 0x01,
+        "sec_count": 0x02E1A000,
+    },
+    "mlc4g": {
+        "cid": [0x00000000, 0x45300000, 0x30303447, 0x00110000],  # mfr 0x11 "004GE0"
+        "blocks": 0x00760000,
+        "slc_ok": 0,
+        "enh_size": (0x00, 0x01, 0xD8),
+        "wp_group": 0x01,
+        "erase_group": 0x08,
+        "sec_count": 0x00760000,
+    },
+    "small": {
+        "cid": [0x00000000, 0x45300000, 0x30303447, 0x00110000],
+        "blocks": 0x003B0000,
+        "slc_ok": 1,
+        "enh_size": (0x00, 0x01, 0xD8),
+        "wp_group": 0x01,
+        "erase_group": 0x08,
+        "sec_count": 0,  # CSD-1.0 fallback evaluates to 0x3B0000
+    },
 }
-_DEFAULT_CAPACITY_SECTORS = 0x00760000
+# Kept for callers that look identities up by capacity.
+_CAPACITY_PARAMS = {p["blocks"]: p for p in IDENTITIES.values()}
+_DEFAULT_CAPACITY_SECTORS = IDENTITIES[DEFAULT_IDENTITY]["blocks"]
 
 
-def ext_csd(sectors=_DEFAULT_CAPACITY_SECTORS, slc=True):
-    """-> 512 bytes of EXT_CSD.
+def identity_from_env(environ=None):
+    """-> the identity name selected by DIGI_CARD_IDENTITY (default slc32g)."""
+    name = (os.environ if environ is None else environ).get(IDENTITY_ENV)
+    if not name:
+        return DEFAULT_IDENTITY
+    if name not in IDENTITIES:
+        raise ValueError(
+            "%s=%r is not one of %s" % (IDENTITY_ENV, name, ", ".join(IDENTITIES))
+        )
+    return name
+
+
+def ext_csd(identity=DEFAULT_IDENTITY):
+    """-> 512 bytes of guest-native EXT_CSD for `identity` (a name in
+    `IDENTITIES`).
 
     Deliberately sparse: only the fields this firmware has been observed to
     read are set, so anything else showing up as a dependency will announce
     itself as a spin or a rejected card rather than hiding behind a plausible
-    value.
-
-    `sectors` must be one of `_CAPACITY_PARAMS`'s two keys -- the eMMC-
-    identity whitelist (`FUN_4012dbe0`, see `docs/findings/14`) only accepts
-    a capacity exactly equal to one of the matched row's two literal
-    constants, so anything else is a caller error, not a value to silently
-    round or ignore.
-
-    `SEC_COUNT` and `SLC_OK` are both set from `sectors`, via
-    `_CAPACITY_PARAMS` -- see its comment for why `SEC_COUNT` (not the CSD-1.0
-    fallback) is the only way to reach the larger constant, and why `SLC_OK`
-    has to move in lock-step with it.
-
-    Nothing in this codebase enforces that this reported capacity match the
-    +Drive card image's real size beyond the whitelist check itself:
-    `Card.blocks`/`data_for` use the backing file's own length, never this
-    field. `Card.from_file()` derives `capacity_blocks` from the file size,
-    so a `tools/plusdrive.py` image built with a non-default
-    `--capacity-blocks` other than these two values will fail the whitelist
-    with a clear `ValueError` here rather than booting into a silently
-    truncated card.
+    value. `SEC_COUNT` 0 selects the CSD-1.0 fallback (see `_CSD_C_SIZE`).
     """
-    del slc  # SLC_OK is derived from `sectors` now; see the docstring
-    if sectors not in _CAPACITY_PARAMS:
+    if identity not in IDENTITIES:
         raise ValueError(
-            "capacity %#x isn't one of the eMMC-identity whitelist's two "
-            "capacity constants (0x760000, 0x3B0000 sectors) -- "
-            "FUN_4012dbe0 will reject anything else; see "
-            "emu.esdhc._CAPACITY_PARAMS" % sectors
+            "unknown card identity %r; one of %s" % (identity, ", ".join(IDENTITIES))
         )
-    params = _CAPACITY_PARAMS[sectors]
+    params = IDENTITIES[identity]
     b = bytearray(512)
     b[SLC_OK] = params["slc_ok"]
     b[SEC_COUNT:SEC_COUNT + 4] = struct.pack('>I', params["sec_count"])
     b[ERASE_GROUP_DEF] = 1
     b[BUS_WIDTH] = 1
     b[HS_TIMING] = 1
-    b[PARTITIONS_ATTRIBUTE] = 0x00
-    b[PARTITIONS_ATTRIBUTE + 1] = 0x01
-    b[PARTITIONS_ATTRIBUTE + 2] = 0xD8
-    b[IDENTITY_FIELD_3] = 0x01
-    b[IDENTITY_FIELD_4] = 0x08
+    b[PARTITIONS_ATTRIBUTE:PARTITIONS_ATTRIBUTE + 3] = bytes(params["enh_size"])
+    b[IDENTITY_FIELD_3] = params["wp_group"]
+    b[IDENTITY_FIELD_4] = params["erase_group"]
     return bytes(b)
 
 
@@ -317,12 +338,17 @@ class Card:
     know this is an eMMC and not a card).
     """
 
-    def __init__(self, image=None, capacity_blocks=_DEFAULT_CAPACITY_SECTORS,
-                 slc=True):
+    def __init__(self, image=None, identity=None):
+        # `identity` names an entry of IDENTITIES; None reads DIGI_CARD_IDENTITY
+        # (default slc32g). The image may be shorter than the capacity: reads
+        # past its end return zeros and writes go to the overlay.
+        if identity is None:
+            identity = identity_from_env()
+        self.identity = identity
         self.image = image
-        self.blocks = capacity_blocks
+        self.blocks = IDENTITIES[identity]["blocks"]
         self._image_file = None  # keeps the fd/mmap alive; see from_file()
-        self.ext_csd = ext_csd(capacity_blocks, slc)
+        self.ext_csd = ext_csd(identity)
         self.rca = 0
         self.selected = False
         # OCR: bit31 power-up done, bit30 sector addressing, voltage window.
@@ -343,7 +369,7 @@ class Card:
         # manufacturer ID but never an exact name match, which is what left
         # `FUN_4015a450` (the +Drive mount) uncalled on every card-image
         # boot before this -- see docs/findings/14-plus-drive-format.md.
-        self.cid = [0x00000000, 0x45300000, 0x30303447, 0x00110000]
+        self.cid = list(IDENTITIES[identity]["cid"])
         # CSD, same [RSP0, RSP1, RSP2, RSP3] order and origin as CID (a
         # second CMD9/SEND_CSD copy of CMDRSP1/RSP2 into _DAT_44e3fe84/fe88,
         # a few instructions after the CID copy -- disassembly again, not
@@ -358,22 +384,27 @@ class Card:
         self.csd = [0x00000000, CSD_RSP1, CSD_RSP2, 0x00000000]
 
     @classmethod
-    def from_file(cls, path, slc=True):
+    def from_file(cls, path, identity=None):
         """A card backed by a real +Drive image file (tools/plusdrive.py),
         read via mmap so the file's own size (not its content) never has to
-        be loaded into RAM. capacity_blocks is derived from the file's size,
-        so an image built with `tools/plusdrive.py`'s default
-        `--capacity-blocks` (0x00760000) reports the capacity the
-        eMMC-identity whitelist actually demands (`ext_csd`/`_csd_rsp`); any
-        other size raises `ValueError` unless it happens to be the
-        whitelist's other constant (0x003B0000). The file is opened
+        be loaded into RAM. The identity defines the capacity; the file may
+        be any length up to it (a default +Drive image is 0x760000 sectors),
+        and reads past its end return zeros. The file is opened
         read-only here; all writes during emulation go to the in-RAM overlay
         (see checkpoint_state), and this file itself is never modified.
         """
         f = open(path, "rb")
         size = os.fstat(f.fileno()).st_size
+        card_identity = identity if identity is not None else identity_from_env()
+        if size > IDENTITIES[card_identity]["blocks"] * 512:
+            f.close()
+            raise ValueError(
+                "card image %s has %#x sectors, more than the %s identity's %#x"
+                % (path, size // 512, card_identity,
+                   IDENTITIES[card_identity]["blocks"])
+            )
         image = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-        card = cls(image=image, capacity_blocks=size // 512, slc=slc)
+        card = cls(image=image, identity=card_identity)
         card._image_file = f
         return card
 
@@ -518,7 +549,15 @@ class Esdhc:
         if state.get('type') != 'Esdhc' or state.get('version') != 1:
             raise RuntimeError('unsupported Esdhc checkpoint state')
         if state.get('card_blocks') != self.card.blocks:
-            raise RuntimeError('Esdhc card capacity mismatch')
+            names = {p['blocks']: n for n, p in IDENTITIES.items()}
+            raise RuntimeError(
+                'Esdhc card capacity mismatch: snapshot used %#x sectors (%s), '
+                'running card is %#x sectors (%s); set %s=%s to match the '
+                'snapshot' % (
+                    state.get('card_blocks') or 0,
+                    names.get(state.get('card_blocks'), 'unknown identity'),
+                    self.card.blocks, self.card.identity, IDENTITY_ENV,
+                    names.get(state.get('card_blocks'), 'mlc4g')))
         overlay = state.get('card_overlay')
         if not isinstance(overlay, dict) or any(
             type(offset) is not int

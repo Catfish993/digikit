@@ -1024,9 +1024,10 @@ mod coupled {
                 );
             }
             // Updated 2026-10-06 for the Type 17 SIMD Cureg fix (docs/findings/16); the CF digest covers the DSPI RX buffer filled with DSP replies.
+            // Updated again 2026-10-06 for the dn2-audio-ready-2026-10-06 snapshot (pSLC 32 GB card, no SLC dialog; docs/findings/14): the CF state changed, the PCM and the DSP export did not.
             assert_eq!(
                 runtime.emulator.state_digest().unwrap(),
-                "bc82b1996d755d680477e31edb504485cd35574736f70f7a9e39e966c7570507"
+                "ab27c5c9ed6e3dddf5780325e1ff518c967c6f13e63d71dda5f02cbdc48bdb23"
             );
             let audio = runtime.audio.as_ref().unwrap();
             let pcm: Vec<u8> = captured(audio)
@@ -1044,9 +1045,10 @@ mod coupled {
             if let Some(path) = std::env::var_os("DIGI_COUPLED_DSP_EXPORT") {
                 std::fs::write(path, audio.handle.export().0).unwrap();
             }
+            // Same snapshot: the export differs from the 2026-10-03 one in 433 of 6,702,604 bytes (06980a01..); that snapshot predates the Type 17 fix.
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "06980a01f22363a1ca0d14d6dfb107eaeb2c1ade96df5a0da1a24fe6c84dd4fb"
+                "c24a304090641d4cb391ad93f96e29eb94773e505bf879111069be30d3f300ff"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());

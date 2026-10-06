@@ -1,5 +1,5 @@
 use coldfire::{Bus, Cpu, Stop, cpu::RunState};
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead};
+use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use machine::{Board, CompletionEvent, CompletionPolicy, Machine, SemaphoreAddresses};
 use periph::{edma, esdhc};
 
@@ -28,7 +28,7 @@ impl RandomAccessRead for SyntheticMedia {
 }
 
 fn setup(policy: CompletionPolicy) -> Machine {
-    let card = Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(SyntheticMedia))).unwrap();
+    let card = Card::with_backing(CardIdentity::Mlc4G, Some(Box::new(SyntheticMedia))).unwrap();
     let mut board = Board::new(card, SemaphoreAddresses::default(), policy);
     board.map_ram_page(BASE).unwrap();
     let tcd = edma::TCD_BASE + 59 * 0x20;

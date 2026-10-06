@@ -1,5 +1,5 @@
 use emmc_card::{
-    Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead,
+    Card, CardIdentity, RandomAccessRead,
     dma::{StorageDmaError, service_dma59},
 };
 use periph::{
@@ -41,7 +41,7 @@ fn configure(regs: &mut RegFile, count: u16, nbytes: u32, addr: u32) {
 fn backed_cmd18_and_overlay_cmd25_commit_guest_card_and_tcd() {
     let base: Vec<_> = (0..1024).map(|n| (n % 251) as u8).collect();
     let card =
-        Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(Bytes(base.clone())))).unwrap();
+        Card::with_backing(CardIdentity::Mlc4G, Some(Box::new(Bytes(base.clone())))).unwrap();
     let mut controller = Esdhc::new(card);
     let mut regs = RegFile::new();
     configure(&mut regs, 1, 512, 0x8000_0000);
@@ -158,7 +158,7 @@ fn cmd8_ext_csd_and_zero_citer_follow_oracle() {
         &mut scratch,
     )
     .unwrap();
-    assert_eq!(guest[0xd4..0xd8], [0x00, 0x76, 0, 0]);
+    assert_eq!(guest[0xd4..0xd8], [0x02, 0xe1, 0xa0, 0x00]);
 
     configure(&mut regs, 0, 512, 0x8000_0000);
     let before = *regs.raw();

@@ -1099,3 +1099,109 @@ Open **[O]**: the 16-byte trailer; COKi header bytes 0x10-0x110; whether UI
 or save code dislikes 297 identical references; one content page per
 directory and one extent per file (fine for a few hundred files; larger
 inputs raise).
+
+## The pSLC card identity: no "MMC NOT IN SLC MODE" dialog (2026-10-06)
+
+**Identity model.** `native/card` (`CardIdentity`) and `emu/esdhc.py`
+(`IDENTITIES`) now model three firmware-whitelisted eMMCs; the identity, not
+the backing image length, sets CID, EXT_CSD and capacity. `DIGI_CARD_IDENTITY`
+selects it (`slc32g` default, `mlc4g`, `small`).
+
+| identity | CID manufacturer / name | EXT_CSD 0x98 | capacity (sectors) |
+|---|---|---|---|
+| `slc32g` (default) | 0x70 "TX2932" | 1 | 0x2e1a000 |
+| `mlc4g` (the old default) | 0x11 "004GE0" | 0 | 0x760000 |
+| `small` | 0x11 "004GE0" | 1 | CSD fallback, 0x3b0000 |
+
+- EXT_CSD is written in the guest-native layout, JEDEC index XOR 3: guest
+  0x98 = PARTITION_SETTING_COMPLETED, 0x9c..0x9e = MAX_ENH_SIZE_MULT, 0xde =
+  HC_WP_GRP_SIZE, 0xe3 = HC_ERASE_GRP_SIZE, 0xd4..0xd7 = SEC_COUNT (a plain
+  big-endian word for `slc32g` and `mlc4g`; 0 for `small`, which selects the
+  CSD fallback). **[D]** from `emu/esdhc.py`; the whitelist rows below were
+  taken from the coder's notes, not re-read from the image here.
+- The whitelist (same table in DT2 1.16 and DN2 1.11, `0x402b4a24`) rows used:
+  `(0x11, "004GE0", enh 0x1d8, wp 1, erase 8, mlc 0x760000, slc 0x3b0000)` and
+  `(0x70, "TX2932", enh 0x4db, wp 0x10, erase 1, mlc 0x3a4a000, slc
+  0x2e1a000)`. **[D]**
+- Why TX2932: the dialog ("MMC NOT IN SLC MODE", selected by
+  `FUN_400337ba` when `FUN_4012da80()` is not 1) needs byte 0x98 = 1, and the
+  check then compares capacity with the row's SLC constant. The 004GE0 SLC
+  capacity (0x3b0000) is below the +Drive layout (content from 0x5ee180), so
+  a 004GE0 card could not be both SLC and hold +Drive. The TX2932 row in pSLC
+  mode (0x2e1a000) does. **[D]** for the reasoning.
+- The 1.16 identity check accepts the default card: `DT2_SYX=Digitakt_II_OS1.16.syx
+  uv run python -m pytest tests/test_esdhc_identity.py` passed. **[V]**
+- `native/card`, `native/machine`, `native/boot` (default and `diagnostics`),
+  `native/host`, `packages/desktop/src-tauri` (`cargo check` with and without
+  `coupled-audio`) and the Python tests build and pass. Two mechanical fixes:
+  `native/card/tests/dma.rs` now expects SEC_COUNT bytes `02 e1 a0 00` for the
+  default card, and one `mut` was dropped in `native/card/tests/card.rs`. **[V]**
+
+**Cold boot with the new default (native, ColdFire only).** **[V]**
+
+- DN2 1.11, `--card-image` a +Drive image (`tools/plusdrive.py build samples`),
+  `mise run boot`-style bounds: ready at 847,327,131 instructions, 106 s;
+  completed main frame at 842,799,246 (sha256 `c7f7475b..`): LIGHTHOUSE main
+  screen, no dialog. With `mlc4g` the same boot shows "MMC NOT IN SLC MODE".
+- DT2 1.16, same image: ready at 914,826,692, 118 s; `fs_verification`
+  success, completed frame sha256 `e6ee4f93..` (as in the 2026-10-01 seeded
+  run). The first window is "FILE SYSTEM OK / PRESS Y/N TO CLOSE" as before;
+  one NO press closes it and the main screen follows with no second dialog.
+  With `mlc4g`, the first NO press shows "MMC NOT IN SLC MODE" (finding 03) and
+  a second closes it.
+- DN2 1.11, built-in empty +Drive card (`Emulator::new(syx, None)`, as
+  `dspi2_capture` and `sharc_live` use): ready at 847,486,444; no dialog at
+  ready+30M; NO presses change nothing. With `mlc4g` the dialog is present at
+  ready+30M and the first NO closes it.
+- No hang. The boot tool with no `--card-image` (blank card) does not reach
+  ready within 1,000,000,000 instructions on DN2 1.11 (pc `0x401344b0`, main
+  loop never started), with the new default, with `mlc4g`, and with a build of
+  `HEAD` without the card change, so it is not caused by the identity. **[O]**
+  Use a card image or the built-in empty card.
+
+**New DN2 ready snapshot** `snapshots/dn2-audio-ready-2026-10-06/` (never
+commit). Same files as the 2026-10-03 directory; the image is a copy, the
+fresh DSP start state stays `snapshots/dn2-audio-ready-2026-10-03/digi-audio-loop2-fresh.bin`
+(it cannot be rebuilt, keep it). **[V]**
+
+    CF_SNAPSHOT=snapshots/dn2-audio-ready-2026-10-06/digi-audio-m5.snap CF_DIGEST=1 \
+      out/native/target/prod/release/examples/sharc_live Digitone_II_OS1.11.syx \
+      snapshots/dn2-audio-ready-2026-10-03/digi-audio-loop2-fresh.bin \
+      snapshots/dn2-audio-ready-2026-10-06/digi-audio-dn2-image.bin out.wav 1000000
+
+(example built with `SHARC_GEN_DIR=out/native/dn2-audio/gen cargo build --release
+-p elektron-native-boot --features sharc --example sharc_live` into the prod
+target dir). Wall time 5.5 s (6.9 s with the build lock): ready at
+851,236,444 (was 851,236,347), DSP attached from the first frame, card
+`slc32g`. A restore needs the same card: `coupled-run` refuses a snapshot whose
+card capacity differs from the running card and names `DIGI_CARD_IDENTITY`. The
+2026-10-03 snapshot needs `DIGI_CARD_IDENTITY=mlc4g`.
+
+Checks with the new snapshot (`tools/digi_env.py` `READY` now points at it):
+
+- `trig1-tap-release` without the NO prelude (Trig 1 down 60M, up 100M, 8.5 s):
+  rms 0.1245, PCM sha256 `aa1dbd9e..`, the same hash as the standard scenario
+  (with NO prelude) on the old snapshot. Control: the old snapshot with
+  `mlc4g` and no prelude is silent (rms 0, `355ef6d0..`). **[V]**
+- Standard scenarios, new snapshot: `exactness-100m` (1139 frames),
+  `trig1-taps` and `trig1-tap-release` keep their `expect_sha256`;
+  `trig1-noqa-40m` now sounds (rms 0.60) and its hash changed
+  `a50586e8..` -> `680639a5..` (updated in `scenarios.json`). `idle`,
+  `trig1-hold` and `kb-chord16` carry no pinned hash and ran clean. **[V]**
+- Fine retrigger scan of finding 16 (f00..f24 at six DSP periods, 150 runs, the
+  `taps/sweep.sh` + `an22.py` scratch scripts pointed at the new snapshot):
+  0 bad, tone 94.3-95.2%. **[V]**
+- `coupled_ready_exactness` (run as `tools/native_pgo.py` runs it, absolute
+  `DIGI_COUPLED_FIXTURES`): 72,896 samples and PCM `3b600f6d..` unchanged. Two
+  pins moved: CF digest `bc82b199..` -> `ab27c5c9ed6e..db23` (the card and
+  DSPI RX state differ), DSP export `06980a01..` -> `c24a3040..00ff`. The old
+  snapshot with `mlc4g` still reproduces `bc82b199..` and `06980a01..`, and
+  the two DSP exports differ in 433 of 6,702,604 bytes. **[V]** for the
+  numbers; that the 2026-10-03 snapshot predates the Type 17 fix, and that this
+  explains the 433 bytes, is **[O]** (not traced).
+- `mise run pgo` (263 s, 1139 frames in every training run), `mise run
+  emu:build` and `tools/native_pgo.py verify` pass. **[V]**
+- `desktop_trig1_capture_without_qa_script` with
+  `DIGI_DESKTOP_TRIG1_REQUIRE_NONZERO=1` passes (it was silent before). **[V]**
+- Finding 16, "Reproduce", says the ready snapshot has the SLC dialog open and
+  a tap must not come first. That holds only for the 2026-10-03 snapshot **[C]**.

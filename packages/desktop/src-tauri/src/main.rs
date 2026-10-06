@@ -9,7 +9,7 @@ use std::{
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
 use desktop_runtime::{AudioMode, AudioOptions, DesktopRuntime, STEP_CHUNK};
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SMALL_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use serde::Deserialize;
 use tauri::State;
 
@@ -44,9 +44,14 @@ fn card(path: PathBuf) -> Result<(Card, Arc<Mutex<Option<String>>>), String> {
     if !metadata.is_file() || metadata.len() % 512 != 0 {
         return Err("card image must be a regular 512-byte aligned file".into());
     }
+    let identity = CardIdentity::from_env()?;
     let blocks = u32::try_from(metadata.len() / 512).map_err(|_| "card image is too large")?;
-    if blocks != DEFAULT_CAPACITY_BLOCKS && blocks != SMALL_CAPACITY_BLOCKS {
-        return Err("card image capacity is not a supported identity".into());
+    if blocks > identity.blocks() {
+        return Err(format!(
+            "card image has {blocks:#x} sectors, more than the {} identity's {:#x}",
+            identity.name(),
+            identity.blocks()
+        ));
     }
     let error = Arc::new(Mutex::new(None));
     let backing = FileBacking {
@@ -55,7 +60,7 @@ fn card(path: PathBuf) -> Result<(Card, Arc<Mutex<Option<String>>>), String> {
         error: error.clone(),
     };
     Ok((
-        Card::with_backing(blocks, Some(Box::new(backing))).map_err(|e| format!("card: {e:?}"))?,
+        Card::with_backing(identity, Some(Box::new(backing))).map_err(|e| format!("card: {e:?}"))?,
         error,
     ))
 }

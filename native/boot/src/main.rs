@@ -20,9 +20,7 @@ use std::{
 use coldfire::{Bus, Cpu, InterruptPolicy, decode_at};
 use dt2_firmware_loader::{decode_syx, parse};
 use elektron_native_boot::Dspi2Capture;
-use emmc_card::{
-    Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SECTOR_SIZE, SMALL_CAPACITY_BLOCKS,
-};
+use emmc_card::{Card, CardIdentity, RandomAccessRead, SECTOR_SIZE};
 use machine::{Board, CompletionEvent, CompletionPolicy, SemaphoreAddresses, Time, TimerPolicy};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -176,13 +174,13 @@ struct CardImage {
     error: Arc<Mutex<Option<String>>>,
 }
 
-fn open_card_image(path: &Path) -> Result<CardImage, String> {
+fn open_card_image(path: &Path, identity: CardIdentity) -> Result<CardImage, String> {
     let metadata = fs::metadata(path).map_err(|e| format!("card image metadata: {e}"))?;
     if !metadata.file_type().is_file() {
         return Err("--card-image must be a regular readable file".into());
     }
     let len = metadata.len();
-    let blocks = card_blocks(len)?;
+    let blocks = card_blocks(len, identity)?;
     let mut file = fs::File::open(path).map_err(|e| format!("open card image: {e}"))?;
     let mut hash = Sha256::new();
     let mut read_total = 0u64;
@@ -218,17 +216,22 @@ fn open_card_image(path: &Path) -> Result<CardImage, String> {
     })
 }
 
-fn card_blocks(len: u64) -> Result<u32, String> {
+/// Sectors in a card image: any nonzero multiple of 512 that fits the identity.
+/// Reads past the image end return zeros, so the image may be shorter than the
+/// identity's capacity.
+fn card_blocks(len: u64, identity: CardIdentity) -> Result<u32, String> {
     if len == 0 || len % SECTOR_SIZE as u64 != 0 {
         return Err("--card-image length must be a nonzero multiple of 512".into());
     }
     let blocks = u32::try_from(len / SECTOR_SIZE as u64)
         .map_err(|_| "--card-image capacity exceeds u32 sectors")?;
-    if matches!(blocks, DEFAULT_CAPACITY_BLOCKS | SMALL_CAPACITY_BLOCKS) {
+    if blocks <= identity.blocks() {
         Ok(blocks)
     } else {
         Err(format!(
-            "--card-image has unsupported capacity {blocks:#x} sectors"
+            "--card-image has {blocks:#x} sectors, more than the {} identity's {:#x}",
+            identity.name(),
+            identity.blocks()
         ))
     }
 }
@@ -409,11 +412,16 @@ fn run() -> Result<(), String> {
     {
         return Err("UART handler prefix verification failed".into());
     }
-    let card_image = cli.card_image.as_deref().map(open_card_image).transpose()?;
+    let card_identity = CardIdentity::from_env()?;
+    let card_image = cli
+        .card_image
+        .as_deref()
+        .map(|path| open_card_image(path, card_identity))
+        .transpose()?;
     let (card, card_provenance, card_error) = if let Some(image) = card_image {
         let error = Arc::clone(&image.error);
         let card = Card::with_backing(
-            image.blocks,
+            card_identity,
             Some(Box::new(Image {
                 file: Mutex::new(image.file),
                 len: image.len,
@@ -423,11 +431,15 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("card image identity: {error:?}"))?;
         (
             card,
-            json!({"blank_card":false,"sha256":image.sha256,"length":image.len,"capacity_blocks":image.blocks}),
+            json!({"blank_card":false,"sha256":image.sha256,"length":image.len,"capacity_blocks":image.blocks,"card_identity":card_identity.name()}),
             Some(Arc::clone(&image.error)),
         )
     } else {
-        (Card::default(), json!({"blank_card":true}), None)
+        (
+            Card::new(card_identity).map_err(|error| format!("card identity: {error:?}"))?,
+            json!({"blank_card":true}),
+            None,
+        )
     };
     if !cli.out.exists() {
         fs::create_dir_all(&cli.out).map_err(|e| format!("create output directory: {e}"))?;
@@ -1257,17 +1269,24 @@ mod tests {
     }
 
     #[test]
-    fn card_image_capacity_requires_exact_supported_sector_count() {
+    fn card_image_length_must_be_sector_aligned_and_fit_the_identity() {
+        use emmc_card::DEFAULT_CAPACITY_BLOCKS;
+        let image = |blocks: u32| u64::from(blocks) * SECTOR_SIZE as u64;
         assert_eq!(
-            card_blocks(u64::from(DEFAULT_CAPACITY_BLOCKS) * SECTOR_SIZE as u64),
+            card_blocks(image(DEFAULT_CAPACITY_BLOCKS), CardIdentity::Slc32G),
             Ok(DEFAULT_CAPACITY_BLOCKS)
         );
         assert_eq!(
-            card_blocks(u64::from(SMALL_CAPACITY_BLOCKS) * SECTOR_SIZE as u64),
-            Ok(SMALL_CAPACITY_BLOCKS)
+            card_blocks(image(DEFAULT_CAPACITY_BLOCKS), CardIdentity::Mlc4G),
+            Ok(DEFAULT_CAPACITY_BLOCKS)
         );
-        assert!(card_blocks(513).is_err());
-        assert!(card_blocks(SECTOR_SIZE as u64).is_err());
+        assert_eq!(
+            card_blocks(SECTOR_SIZE as u64, CardIdentity::Small),
+            Ok(1)
+        );
+        assert!(card_blocks(image(DEFAULT_CAPACITY_BLOCKS), CardIdentity::Small).is_err());
+        assert!(card_blocks(513, CardIdentity::Slc32G).is_err());
+        assert!(card_blocks(0, CardIdentity::Slc32G).is_err());
     }
 
     #[test]
@@ -1280,7 +1299,7 @@ mod tests {
             len: SECTOR_SIZE as u64,
             error,
         };
-        let mut card = Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(image))).unwrap();
+        let mut card = Card::with_backing(CardIdentity::Mlc4G, Some(Box::new(image))).unwrap();
         let mut read = [0u8; SECTOR_SIZE];
         card.read_into(0, &mut read).unwrap();
         assert_eq!(read, [0x5a; SECTOR_SIZE]);

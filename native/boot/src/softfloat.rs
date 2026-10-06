@@ -219,7 +219,7 @@ fn binary32(op: Op, a: u32, b: u32) -> Option<u32> {
 mod tests {
     use super::*;
     use crate::common::PAGE;
-    use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS};
+    use emmc_card::{Card, CardIdentity};
     use machine::{CompletionPolicy, SemaphoreAddresses};
 
     const PAGE_U32: u32 = PAGE as u32;
@@ -235,7 +235,7 @@ mod tests {
             main[at..at + sig.len() / 2].copy_from_slice(&hex(sig));
         }
         let mut board = Board::new(
-            Card::new(DEFAULT_CAPACITY_BLOCKS).unwrap(),
+            Card::new(CardIdentity::Mlc4G).unwrap(),
             SemaphoreAddresses::default(),
             CompletionPolicy::Oracle,
         );

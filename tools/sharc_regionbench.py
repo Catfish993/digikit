@@ -37,15 +37,24 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import digi_env  # noqa: E402
+finally:
+    sys.path.pop(0)
+
 BENCH = os.path.join(ROOT, "out", "native", "regionbench")
 PROV = os.path.join(ROOT, "out", "native", "gen-provenance-20261003")
 INPUTS = os.path.join(PROV, "inputs")
 FULL_GEN = os.path.join(PROV, "gen-A")
 PROD_GEN = os.path.join(ROOT, "out", "native", "dn2-audio", "gen")
 IMAGE_NAME = "dn2-1.11"
-FIXTURE = os.path.join(ROOT, "snapshots", "dn2-audio-ready-2026-10-03")
+FIXTURE = str(digi_env.READY)
 PACKED_IMAGE = os.path.join(FIXTURE, "digi-audio-dn2-image.bin")
-STATE = os.path.join(FIXTURE, "digi-audio-loop2-fresh.bin")
+# The fresh DSP start state is only in the 2026-10-03 directory (docs/findings/14).
+STATE = os.path.join(
+    ROOT, "snapshots", "dn2-audio-ready-2026-10-03", "digi-audio-loop2-fresh.bin"
+)
 # Copied from /private/tmp/dn2-audio-restart-20261003/dsp-profile/ (DSPI2 TX
 # frames of the note capture).
 FRAMES = os.path.join(BENCH, "digi-audio-note.frames")

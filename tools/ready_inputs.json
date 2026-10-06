@@ -1,0 +1,4 @@
+{
+  "_comment": "Private DN2 audio inputs (firmware-derived, never committed). The 2026-10-06 snapshot uses the SLC-configured TX2932 card identity (docs/findings/14); 2026-10-03 needs DIGI_CARD_IDENTITY=mlc4g. Files: digi-audio-dn2-image.bin, digi-audio-m5.snap, digi-audio-m5.snap.dsp.",
+  "ready_dir": "snapshots/dn2-audio-ready-2026-10-06"
+}

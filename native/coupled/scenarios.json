@@ -139,10 +139,10 @@
     },
     {
       "name": "trig1-noqa-40m",
-      "description": "Validation, not a load: desktop_trig1_capture_without_qa_script (Trig 1 held from ready for 40M instructions, no prelude). Silent PCM; hash recorded in docs/findings/07-emulator.md.",
+      "description": "Validation, not a load: desktop_trig1_capture_without_qa_script (Trig 1 held from ready for 40M instructions, no prelude). With the 2026-10-06 ready snapshot (pSLC card, no SLC dialog) it sounds (rms 0.60). The 2026-10-03 snapshot (4G MLC card, DIGI_CARD_IDENTITY=mlc4g) stayed silent behind the SLC dialog, hash a50586e86b2d0246bd05181dd1f877b1b2570f2c1eb74b7613c9b17dbd4eb75a.",
       "instructions": 40000000,
       "clip_last_chunk": true,
-      "expect_sha256": "a50586e86b2d0246bd05181dd1f877b1b2570f2c1eb74b7613c9b17dbd4eb75a",
+      "expect_sha256": "680639a59b5bd07eb624fdb5238157f77b7dc0b0dd50d3561bdd0c59d8a97eb1",
       "validation": true,
       "events": [
         {

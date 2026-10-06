@@ -9,7 +9,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::Mutex;
 
 use coldfire::Bus;
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SMALL_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use machine::board::{Board, CompletionPolicy, SemaphoreAddresses};
 use periph::{edma, esdhc, trace};
 
@@ -49,9 +49,14 @@ fn armed_read_command(addr: u32, size: u8, value: u32, armed: bool) -> Option<u8
         .then_some(command)
 }
 
-fn gate(trace_path: &str, card_path: Option<&str>, capacity: u32, until_first_write: bool) {
+fn gate(
+    trace_path: &str,
+    card_path: Option<&str>,
+    identity: CardIdentity,
+    until_first_write: bool,
+) {
     let card = Card::with_backing(
-        capacity,
+        identity,
         card_path.map(|p| Box::new(LocalImage::open(p)) as Box<dyn RandomAccessRead>),
     )
     .unwrap();
@@ -164,9 +169,9 @@ fn gate(trace_path: &str, card_path: Option<&str>, capacity: u32, until_first_wr
     }
 }
 
-fn cmd25_gate(trace_path: &str, card_path: Option<&str>, capacity: u32, full: bool) {
+fn cmd25_gate(trace_path: &str, card_path: Option<&str>, identity: CardIdentity, full: bool) {
     let card = Card::with_backing(
-        capacity,
+        identity,
         card_path.map(|p| Box::new(LocalImage::open(p)) as Box<dyn RandomAccessRead>),
     )
     .unwrap();
@@ -369,13 +374,13 @@ fn first_late_cmd18_payloads_match_oracle_on_both_products() {
     gate(
         &std::env::var("DT2_LATE_TRACE").expect("set DT2_LATE_TRACE"),
         Some(&std::env::var("DT2_CARD_IMAGE").expect("set DT2_CARD_IMAGE")),
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         false,
     );
     gate(
         &std::env::var("DN2_LATE_TRACE").expect("set DN2_LATE_TRACE"),
         None,
-        SMALL_CAPACITY_BLOCKS,
+        CardIdentity::Small,
         false,
     );
 }
@@ -386,13 +391,13 @@ fn all_late_cmd18_payloads_before_first_write_match_oracle() {
     gate(
         &std::env::var("DT2_LATE_TRACE").expect("set DT2_LATE_TRACE"),
         Some(&std::env::var("DT2_CARD_IMAGE").expect("set DT2_CARD_IMAGE")),
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         true,
     );
     gate(
         &std::env::var("DN2_LATE_TRACE").expect("set DN2_LATE_TRACE"),
         None,
-        SMALL_CAPACITY_BLOCKS,
+        CardIdentity::Small,
         true,
     );
 }
@@ -403,13 +408,13 @@ fn first_late_cmd25_overlay_and_tcd_match_oracle_on_both_products() {
     cmd25_gate(
         &std::env::var("DT2_LATE_TRACE").expect("set DT2_LATE_TRACE"),
         Some(&std::env::var("DT2_CARD_IMAGE").expect("set DT2_CARD_IMAGE")),
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         false,
     );
     cmd25_gate(
         &std::env::var("DN2_LATE_TRACE").expect("set DN2_LATE_TRACE"),
         None,
-        SMALL_CAPACITY_BLOCKS,
+        CardIdentity::Small,
         false,
     );
 }
@@ -420,13 +425,13 @@ fn complete_bounded_late_card_dma_payloads_match_oracle() {
     cmd25_gate(
         &std::env::var("DT2_LATE_TRACE").expect("set DT2_LATE_TRACE"),
         Some(&std::env::var("DT2_CARD_IMAGE").expect("set DT2_CARD_IMAGE")),
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         true,
     );
     cmd25_gate(
         &std::env::var("DN2_LATE_TRACE").expect("set DN2_LATE_TRACE"),
         None,
-        SMALL_CAPACITY_BLOCKS,
+        CardIdentity::Small,
         true,
     );
 }

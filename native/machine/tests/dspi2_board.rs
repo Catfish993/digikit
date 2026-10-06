@@ -4,7 +4,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use coldfire::Bus;
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity};
 use machine::{Board, BoardWriteError, CompletionPolicy, SemaphoreAddresses};
 use periph::{
     dspi::{self, Peer},
@@ -26,7 +26,7 @@ impl Peer for RecordingPeer {
 
 fn board() -> Board {
     Board::new(
-        Card::new(DEFAULT_CAPACITY_BLOCKS).unwrap(),
+        Card::new(CardIdentity::Mlc4G).unwrap(),
         SemaphoreAddresses::default(),
         CompletionPolicy::Oracle,
     )

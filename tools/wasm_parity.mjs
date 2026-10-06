@@ -13,9 +13,10 @@
 // Options (defaults match tools/digi_env.py; DIGI_EMU_* variables are honoured):
 //   --core PATH        packages/web/.local/emulator-core-sharc.wasm
 //   --syx PATH         Digitone_II_OS1.11.syx            (DIGI_EMU_SYX)
-//   --dsp-image PATH   snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin (DIGI_EMU_DSP_IMAGE)
-//   --dsp-state PATH   snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp   (DIGI_EMU_DSP_STATE)
-//   --cf-snapshot PATH snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap       (DIGI_EMU_CF_SNAPSHOT)
+//   (READY = ready_dir of tools/ready_inputs.json, or DIGI_EMU_READY_DIR)
+//   --dsp-image PATH   READY/digi-audio-dn2-image.bin (DIGI_EMU_DSP_IMAGE)
+//   --dsp-state PATH   READY/digi-audio-m5.snap.dsp   (DIGI_EMU_DSP_STATE)
+//   --cf-snapshot PATH READY/digi-audio-m5.snap       (DIGI_EMU_CF_SNAPSHOT)
 //   --scenarios PATH   native/coupled/scenarios.json
 //   --scenario NAME    scenario to play (required)
 //   --seconds S        override the scenario length in audio seconds (like coupled-run)
@@ -39,7 +40,7 @@ for (let i = 2; i < process.argv.length; i++) {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(args.repo ?? (fs.existsSync(path.join(here, '..', 'native')) ? path.join(here, '..') : process.cwd()));
 const env = process.env;
-const ready = path.join(root, 'snapshots/dn2-audio-ready-2026-10-03');
+const ready = path.resolve(root, env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/ready_inputs.json'), 'utf8')).ready_dir);
 const paths = {
   core: args.core ?? path.join(root, 'packages/web/.local/emulator-core-sharc.wasm'),
   syx: args.syx ?? env.DIGI_EMU_SYX ?? env.DIGI_COUPLED_SYX ?? path.join(root, 'Digitone_II_OS1.11.syx'),

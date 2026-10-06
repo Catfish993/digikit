@@ -1664,7 +1664,7 @@ impl Bus for Board {
 mod tests {
     use super::*;
     use coldfire::Bus;
-    use emmc_card::{DEFAULT_CAPACITY_BLOCKS, SMALL_CAPACITY_BLOCKS};
+    use emmc_card::CardIdentity;
     const RAM: u32 = 0x4000_0000;
     const NEXT: u32 = RAM + PAGE_SIZE as u32;
     const DS: u32 = RAM + 0x100;
@@ -1776,7 +1776,7 @@ mod tests {
 
     fn board(policy: CompletionPolicy) -> Board {
         let mut b = Board::new(
-            Card::new(DEFAULT_CAPACITY_BLOCKS).unwrap(),
+            Card::new(CardIdentity::Mlc4G).unwrap(),
             SemaphoreAddresses {
                 dma_sem: Some(DS),
                 data_sem: Some(AS),
@@ -1970,7 +1970,7 @@ mod tests {
             vec![1, 2, 3, 4]
         );
         let mut b = Board::new(
-            Card::new(SMALL_CAPACITY_BLOCKS).unwrap(),
+            Card::new(CardIdentity::Small).unwrap(),
             SemaphoreAddresses::default(),
             CompletionPolicy::Oracle,
         );

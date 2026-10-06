@@ -1,5 +1,5 @@
 use coldfire::Bus;
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity};
 use machine::{Board, CompletionPolicy, SemaphoreAddresses, Time, TimeError, TimerPolicy};
 use periph::{
     intc::{BASES as INTC_BASES, VECTOR_BASE},
@@ -8,7 +8,7 @@ use periph::{
 
 fn board() -> Board {
     Board::new(
-        Card::new(DEFAULT_CAPACITY_BLOCKS).unwrap(),
+        Card::new(CardIdentity::Mlc4G).unwrap(),
         SemaphoreAddresses::default(),
         CompletionPolicy::Oracle,
     )

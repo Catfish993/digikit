@@ -1,5 +1,5 @@
 use coldfire::Bus;
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity};
 use machine::{Board, BoardWriteError, CompletionPolicy, SemaphoreAddresses};
 use periph::edma;
 
@@ -8,7 +8,7 @@ const TX35: usize = 35;
 
 fn board() -> Board {
     Board::new(
-        Card::new(DEFAULT_CAPACITY_BLOCKS).unwrap(),
+        Card::new(CardIdentity::Mlc4G).unwrap(),
         SemaphoreAddresses::default(),
         CompletionPolicy::Oracle,
     )

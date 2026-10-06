@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use coldfire::{Bus, Cpu, InterruptPolicy};
 use dt2_firmware_loader::{decode_syx, parse};
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity};
 use machine::{Board, CompletionEvent, CompletionPolicy, Time, TimerPolicy};
 use plusdrive_format::build_sample_image;
 use serde::Serialize;
@@ -296,7 +296,7 @@ impl Emulator {
                 let image = build_sample_image(Vec::new())
                     .map_err(|e| format!("build empty +Drive image: {e:?}"))?
                     .image;
-                Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(image)))
+                Card::with_backing(CardIdentity::from_env()?, Some(Box::new(image)))
                     .map_err(|e| format!("empty +Drive card identity: {e:?}"))?
             }
         };

@@ -212,7 +212,7 @@ ATTR_DIR = 0x01
 ATTR_FILE = 0x00
 DEFAULT_OFFSET01 = 0x02
 
-DEFAULT_CAPACITY_BLOCKS = 0x00760000  # matches emu/esdhc.py's Card default
+DEFAULT_CAPACITY_BLOCKS = 0x00760000  # image layout size; a card may report more
 
 # Native sample file (FUN_40153994 writes it, FUN_40154540 reads it):
 #   0x00       0

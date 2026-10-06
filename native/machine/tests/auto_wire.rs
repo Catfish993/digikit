@@ -13,7 +13,7 @@ use std::{
 };
 
 use coldfire::{Bus, Cpu, InterruptPolicy};
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead};
+use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use machine::board::GuestAccessKind;
 use machine::{Board, CompletionPolicy, Machine, SemaphoreAddresses, Time, TimerPolicy};
 use periph::dspi::Peer;
@@ -99,7 +99,7 @@ fn auto_ready_native_wire_prefix() {
     let file = File::open(card_path).unwrap();
     let bytes = file.metadata().unwrap().len();
     let card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(Image(Mutex::new(file), bytes))),
     )
     .unwrap();

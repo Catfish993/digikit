@@ -1,5 +1,5 @@
 use coldfire::Cpu;
-use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, SMALL_CAPACITY_BLOCKS};
+use emmc_card::{Card, CardIdentity, DEFAULT_CAPACITY_BLOCKS, SMALL_CAPACITY_BLOCKS};
 use machine::{
     Board, CompletionPolicy, Machine, MachineState, SemaphoreAddresses, StateApplyError, Time,
     TimerPolicy,
@@ -50,7 +50,7 @@ fn machine() -> Machine {
     let mut machine = Machine::new(
         Cpu::new(),
         Board::new(
-            Card::default(),
+            Card::new(CardIdentity::Mlc4G).unwrap(),
             SemaphoreAddresses::default(),
             CompletionPolicy::Oracle,
         ),
@@ -156,7 +156,7 @@ fn python_host_state_requires_oracle_board_and_timer_policies() {
     let mut device = Machine::new(
         Cpu::new(),
         Board::new(
-            Card::default(),
+            Card::new(CardIdentity::Mlc4G).unwrap(),
             SemaphoreAddresses::default(),
             CompletionPolicy::Device,
         ),
@@ -240,7 +240,7 @@ fn locally_verified_dt2_and_dn2_pre_mmio_states_import() {
         let mut machine = Machine::new(
             Cpu::new(),
             Board::new(
-                Card::default(),
+                Card::new(CardIdentity::Mlc4G).unwrap(),
                 SemaphoreAddresses::default(),
                 CompletionPolicy::Oracle,
             ),

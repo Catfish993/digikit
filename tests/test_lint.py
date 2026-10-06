@@ -70,6 +70,7 @@ CLEAN = [
     "tests/test_dspi2.py",
     "tests/test_dt2_reach_running.py",
     "tests/test_dt2gui.py",
+    "tests/test_esdhc_card_identity.py",
     "tests/test_esdhc_identity.py",
     "tests/test_factory_table.py",
     "tests/test_lint.py",

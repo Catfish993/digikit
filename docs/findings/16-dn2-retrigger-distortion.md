@@ -231,8 +231,10 @@ samples unchanged.
 ## Reproduce
 
 - Scenarios in `native/coupled/scenarios.json`: `trig1-taps`,
-  `trig1-tap-release`. Do not tap first: the ready snapshot has the SLC dialog
-  open.
+  `trig1-tap-release`. With the 2026-10-06 snapshot (the default) no NO press
+  is needed before Trig 1; the NO prelude in older scenarios is harmless on the
+  main screen. The 2026-10-03 snapshot has the SLC dialog open, so it needs the
+  NO press first and `DIGI_CARD_IDENTITY=mlc4g`.
 - Press-frame scan template: no tap at 0-1M; Trig 1 down at 60M, up at 100M;
   second Trig 1 down at 110M +/- k x 100k, up 40M later; about 1 s of run. Run
   it with `uv run python tools/coupled.py scenario ...`, or with coupled-run

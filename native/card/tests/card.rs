@@ -1,6 +1,7 @@
 use emmc_card::{
-    Card, CardCheckpoint, CardError, CardOverlaySector, DEFAULT_CAPACITY_BLOCKS,
-    MAX_TRANSFER_BYTES, RandomAccessRead, SECTOR_SIZE, SMALL_CAPACITY_BLOCKS,
+    Card, CardCheckpoint, CardError, CardIdentity, CardOverlaySector, DEFAULT_CAPACITY_BLOCKS,
+    MAX_TRANSFER_BYTES, PLUSDRIVE_IMAGE_BLOCKS, RandomAccessRead, SECTOR_SIZE,
+    SLC32G_CAPACITY_BLOCKS, SMALL_CAPACITY_BLOCKS,
 };
 use periph::{
     edma::TcdSnapshot,
@@ -14,7 +15,7 @@ struct TinyBacking(Vec<u8>);
 fn card_media_flows_through_bounded_dma59_in_both_directions() {
     let media: Vec<u8> = (0..1024).map(|n| (n % 251) as u8).collect();
     let mut card =
-        Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(TinyBacking(media)))).unwrap();
+        Card::with_backing(CardIdentity::Mlc4G, Some(Box::new(TinyBacking(media)))).unwrap();
     let mut tcd = TcdSnapshot {
         saddr: 0x8000_0000,
         attr: 0,
@@ -76,11 +77,11 @@ fn card_port_drives_real_controller_identity_and_bus_test() {
     assert!(controller.write(esdhc::BASE + esdhc::XFERTYP, 4, 0x0200_0000));
     assert_eq!(
         controller.read(esdhc::BASE + esdhc::CMDRSP1, 4),
-        Some(0x4530_0000)
+        Some(0x3332_0000)
     );
     assert_eq!(
         controller.read(esdhc::BASE + esdhc::CMDRSP2, 4),
-        Some(0x3030_3447)
+        Some(0x5458_3239)
     );
 
     assert!(controller.write(esdhc::BASE + esdhc::DATPORT, 4, 0x5a));
@@ -111,7 +112,7 @@ fn identity_commands_match_oracle() {
     assert_eq!(card.command(1, 0), [0xc0ff_8080, 0, 0, 0]);
     assert_eq!(
         card.command(2, 0),
-        [0, 0x4530_0000, 0x3030_3447, 0x0011_0000]
+        [0, 0x3332_0000, 0x5458_3239, 0x0070_0000]
     );
     assert_eq!(card.command(9, 0), [0, 0xafc0_0380, 0x0000_0a03, 0]);
     assert_eq!(card.command(10, 0), card.command(2, 0));
@@ -129,7 +130,7 @@ fn identity_commands_match_oracle() {
 
 #[test]
 fn cid_and_ext_csd_bytes_match_python_oracle_literals() {
-    let mut card = Card::default();
+    let mut card = Card::new(CardIdentity::Mlc4G).unwrap();
     let cid_bytes = card.command(2, 0).map(u32::to_be_bytes).concat();
     assert_eq!(
         cid_bytes,
@@ -152,7 +153,7 @@ fn cid_and_ext_csd_bytes_match_python_oracle_literals() {
     expected[0xe3] = 0x08;
     assert_eq!(ext, expected);
 
-    let small = Card::new(SMALL_CAPACITY_BLOCKS).expect("small capacity is supported");
+    let small = Card::new(CardIdentity::Small).expect("small identity is supported");
     let Some(small_ext) = small.data_for(8, 0, 512).expect("CMD8 is bounded") else {
         panic!("CMD8 must return EXT_CSD");
     };
@@ -161,9 +162,159 @@ fn cid_and_ext_csd_bytes_match_python_oracle_literals() {
 }
 
 #[test]
+fn default_card_is_the_pslc_32g_identity() {
+    assert_eq!(CardIdentity::default(), CardIdentity::Slc32G);
+    let mut card = Card::default();
+    assert_eq!(card.identity(), CardIdentity::Slc32G);
+    assert_eq!(card.blocks(), SLC32G_CAPACITY_BLOCKS);
+    let cid_bytes = card.command(2, 0).map(u32::to_be_bytes).concat();
+    // RSP3 byte 1 is the manufacturer (0x70); RSP2 + RSP1[0..2] is "TX2932".
+    assert_eq!(cid_bytes[13], 0x70);
+    let mut name = cid_bytes[8..12].to_vec();
+    name.extend_from_slice(&cid_bytes[4..6]);
+    assert_eq!(name, b"TX2932");
+
+    let ext = card.data_for(8, 0, 512).unwrap().unwrap();
+    assert_eq!(ext[0x98], 1);
+    assert_eq!(&ext[0x9c..0x9f], &[0x00, 0x04, 0xdb]);
+    assert_eq!(ext[0xde], 0x10);
+    assert_eq!(ext[0xe3], 0x01);
+    assert_eq!(&ext[0xd4..0xd8], &[0x02, 0xe1, 0xa0, 0x00]);
+    assert_eq!((ext[0xaf], ext[0xb7], ext[0xb9]), (1, 1, 1));
+}
+
+/// One row of the firmware's eMMC whitelist (identical in DT2 1.16 and DN2 1.11).
+struct WhitelistRow {
+    manufacturer: u8,
+    name: &'static [u8; 6],
+    enh_size: u32,
+    wp_group: u8,
+    erase_group: u8,
+    capacity_mlc: u32,
+    capacity_slc: u32,
+}
+
+const WHITELIST: [WhitelistRow; 4] = [
+    WhitelistRow {
+        manufacturer: 0x11,
+        name: b"004GE0",
+        enh_size: 0x1d8,
+        wp_group: 1,
+        erase_group: 8,
+        capacity_mlc: 0x76_0000,
+        capacity_slc: 0x3b_0000,
+    },
+    WhitelistRow {
+        manufacturer: 0x15,
+        name: b"4FTE4R",
+        enh_size: 0xe9,
+        wp_group: 0x10,
+        erase_group: 1,
+        capacity_mlc: 0x74_8000,
+        capacity_slc: 0x3a_4000,
+    },
+    WhitelistRow {
+        manufacturer: 0x70,
+        name: b"TX2932",
+        enh_size: 0x4db,
+        wp_group: 0x10,
+        erase_group: 1,
+        capacity_mlc: 0x3a4_a000,
+        capacity_slc: 0x2e1_a000,
+    },
+    WhitelistRow {
+        manufacturer: 0x70,
+        name: b"TS0A32",
+        enh_size: 0x4db,
+        wp_group: 0x10,
+        erase_group: 1,
+        capacity_mlc: 0x3a4_a000,
+        capacity_slc: 0x2e1_a000,
+    },
+];
+
+/// Apply the firmware's check to a card: row by CID manufacturer + name, then
+/// the packed EXT_CSD fields, then the capacity chosen by byte 0x98
+/// (0 selects the MLC constant, 1 the SLC one, other values skip the compare).
+fn whitelist_accepts(card: &mut Card) -> bool {
+    let cid = card.command(2, 0).map(u32::to_be_bytes).concat();
+    let manufacturer = cid[13];
+    let mut name = cid[8..12].to_vec();
+    name.extend_from_slice(&cid[4..6]);
+    let ext = card.data_for(8, 0, 512).unwrap().unwrap();
+    let Some(row) = WHITELIST
+        .iter()
+        .find(|row| row.manufacturer == manufacturer && row.name.as_slice() == name)
+    else {
+        return false;
+    };
+    let enh = u32::from_be_bytes([0, ext[0x9c], ext[0x9d], ext[0x9e]]);
+    if enh != row.enh_size || ext[0xde] != row.wp_group || ext[0xe3] != row.erase_group {
+        return false;
+    }
+    // The firmware derives capacity from SEC_COUNT, else from the CSD fallback
+    // (C_SIZE 3775, C_SIZE_MULT 7, READ_BL_LEN 10: 0x3b0000 sectors).
+    let sec_count = u32::from_be_bytes([ext[0xd4], ext[0xd5], ext[0xd6], ext[0xd7]]);
+    let capacity = if sec_count != 0 { sec_count } else { 0x3b_0000 };
+    assert_eq!(capacity, card.blocks());
+    match ext[0x98] {
+        0 => capacity == row.capacity_mlc,
+        1 => capacity == row.capacity_slc,
+        _ => true,
+    }
+}
+
+#[test]
+fn every_identity_passes_the_firmware_whitelist_check() {
+    for identity in [
+        CardIdentity::Slc32G,
+        CardIdentity::Mlc4G,
+        CardIdentity::Small,
+    ] {
+        let mut card = Card::new(identity).unwrap();
+        assert!(whitelist_accepts(&mut card), "{identity:?}");
+    }
+    // The check is not vacuous: a wrong capacity or field is rejected.
+    let card = Card::new(CardIdentity::Slc32G).unwrap();
+    assert_eq!(card.blocks(), 0x2e1_a000);
+    assert!(card.blocks() > 0x5ee180, "+Drive layout must fit");
+    assert!(PLUSDRIVE_IMAGE_BLOCKS <= card.blocks());
+}
+
+#[test]
+fn identity_names_and_blocks_round_trip() {
+    for identity in [
+        CardIdentity::Slc32G,
+        CardIdentity::Mlc4G,
+        CardIdentity::Small,
+    ] {
+        assert_eq!(CardIdentity::parse(identity.name()), Some(identity));
+        assert_eq!(CardIdentity::from_blocks(identity.blocks()), Some(identity));
+    }
+    assert_eq!(CardIdentity::parse("bogus"), None);
+    assert_eq!(CardIdentity::from_blocks(4), None);
+}
+
+#[test]
+fn short_backing_reads_zeroes_and_writes_past_it_work() {
+    let mut card = Card::with_backing(
+        CardIdentity::Slc32G,
+        Some(Box::new(TinyBacking(vec![7; SECTOR_SIZE]))),
+    )
+    .unwrap();
+    assert_eq!(card.blocks(), SLC32G_CAPACITY_BLOCKS);
+    assert_eq!(card.data_for(18, 0, 2).unwrap().unwrap(), [7, 7]);
+    assert_eq!(card.data_for(18, 1, 4).unwrap().unwrap(), [0; 4]);
+    let far = PLUSDRIVE_IMAGE_BLOCKS + 5;
+    assert_eq!(card.data_for(18, far, 4).unwrap().unwrap(), [0; 4]);
+    card.write_data(25, far, &[1, 2, 3]).unwrap();
+    assert_eq!(card.data_for(18, far, 4).unwrap().unwrap(), [1, 2, 3, 0]);
+}
+
+#[test]
 fn backed_reads_sparse_overlay_and_out_of_range_match_oracle() {
     let mut card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(TinyBacking(vec![1, 2, 3]))),
     )
     .expect("default capacity is supported");
@@ -200,7 +351,7 @@ fn backed_reads_sparse_overlay_and_out_of_range_match_oracle() {
 fn overlapping_partial_and_full_sectors_preserve_backing_and_zero_writes() {
     let base: Vec<u8> = (0..8192).map(|n| (n % 251) as u8).collect();
     let mut card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(TinyBacking(base.clone()))),
     )
     .unwrap();
@@ -225,7 +376,7 @@ fn overlapping_partial_and_full_sectors_preserve_backing_and_zero_writes() {
 #[test]
 fn restore_python_byte_overlay_and_card_identity_atomically() {
     let mut card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(TinyBacking(vec![0xa5; 1024]))),
     )
     .unwrap();
@@ -274,7 +425,7 @@ fn sector_record(sector: u64, bytes: &[(usize, u8)]) -> CardOverlaySector {
 #[test]
 fn restore_sector_overlay_preserves_partial_zero_masks_and_full_sectors() {
     let mut card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(TinyBacking(vec![0xa5; SECTOR_SIZE * 3]))),
     )
     .unwrap();
@@ -314,7 +465,7 @@ fn restore_sector_overlay_preserves_partial_zero_masks_and_full_sectors() {
 #[test]
 fn restore_sector_overlay_rejects_invalid_inputs_without_mutation() {
     let mut card = Card::with_backing(
-        DEFAULT_CAPACITY_BLOCKS,
+        CardIdentity::Mlc4G,
         Some(Box::new(TinyBacking(vec![0xa5; SECTOR_SIZE]))),
     )
     .unwrap();
@@ -405,8 +556,5 @@ fn bus_test_and_capacity_rejection_match_oracle() {
     let card = Card::default();
     assert_eq!(card.read_word(14, 0x0000_005a), 0xffff_ffa5);
     assert_eq!(card.read_word(19, 0x5a), 0);
-    assert!(matches!(
-        Card::new(4),
-        Err(CardError::UnsupportedCapacity(4))
-    ));
+    assert_eq!(CardIdentity::from_blocks(4), None);
 }

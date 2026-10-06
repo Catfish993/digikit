@@ -18,10 +18,17 @@ pub const SECTOR_SIZE: usize = 512;
 ///
 /// Use [`Card::read_into`] repeatedly with a reusable buffer for larger media.
 pub const MAX_TRANSFER_BYTES: usize = 1024 * 1024;
-/// Default capacity accepted by the observed firmware identity check.
-pub const DEFAULT_CAPACITY_BLOCKS: u32 = 0x0076_0000;
-/// The other capacity accepted by that identity check.
+/// Sectors of the +Drive image layout (`tools/plusdrive.py`, `native/plusdrive`).
+/// This is the capacity of the legacy [`CardIdentity::Mlc4G`] card.
+pub const PLUSDRIVE_IMAGE_BLOCKS: u32 = 0x0076_0000;
+/// Legacy alias of [`PLUSDRIVE_IMAGE_BLOCKS`]; no longer the default identity.
+pub const DEFAULT_CAPACITY_BLOCKS: u32 = PLUSDRIVE_IMAGE_BLOCKS;
+/// Capacity of [`CardIdentity::Small`], the legacy SLC-flagged 4 GB identity.
 pub const SMALL_CAPACITY_BLOCKS: u32 = 0x003b_0000;
+/// Capacity of [`CardIdentity::Slc32G`] (the 32 GB part in pSLC mode).
+pub const SLC32G_CAPACITY_BLOCKS: u32 = 0x02e1_a000;
+/// Environment variable that selects the identity of a default-built card.
+pub const IDENTITY_ENV: &str = "DIGI_CARD_IDENTITY";
 
 const OCR: u32 = 0xc0ff_8080;
 const R1_TRANSFER_READY: u32 = 0x0000_0900;
@@ -46,10 +53,114 @@ pub trait RandomAccessRead {
     fn read_at(&self, offset: u64, destination: &mut [u8]) -> usize;
 }
 
+/// Which firmware-whitelisted eMMC the card pretends to be. The identity, not
+/// the length of any backing image, defines CID, EXT_CSD and reported capacity.
+///
+/// EXT_CSD bytes are written in the guest-native layout (JEDEC index XOR 3):
+/// guest 0x98 is PARTITION_SETTING_COMPLETED, 0x9c..0x9e MAX_ENH_SIZE_MULT,
+/// 0xde HC_WP_GRP_SIZE, 0xe3 HC_ERASE_GRP_SIZE, 0xd4..0xd7 SEC_COUNT.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CardIdentity {
+    /// Manufacturer 0x70 "TX2932" configured in pSLC (enhanced) mode, so the
+    /// firmware's "MMC NOT IN SLC MODE" check passes. Holds the +Drive layout.
+    #[default]
+    Slc32G,
+    /// Legacy identity: manufacturer 0x11 "004GE0" in MLC mode, 0x760000 sectors.
+    Mlc4G,
+    /// Legacy identity: "004GE0" flagged SLC, capacity from the CSD (0x3b0000).
+    Small,
+}
+
+impl CardIdentity {
+    /// Name used by [`IDENTITY_ENV`].
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Slc32G => "slc32g",
+            Self::Mlc4G => "mlc4g",
+            Self::Small => "small",
+        }
+    }
+
+    /// Parse an [`IDENTITY_ENV`] value.
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "slc32g" => Some(Self::Slc32G),
+            "mlc4g" => Some(Self::Mlc4G),
+            "small" => Some(Self::Small),
+            _ => None,
+        }
+    }
+
+    /// The identity named by [`IDENTITY_ENV`], or the default when unset.
+    pub fn from_env() -> Result<Self, String> {
+        match std::env::var(IDENTITY_ENV) {
+            Ok(value) => Self::parse(&value).ok_or_else(|| {
+                format!("{IDENTITY_ENV}={value:?} is not one of slc32g, mlc4g, small")
+            }),
+            Err(std::env::VarError::NotPresent) => Ok(Self::default()),
+            Err(error) => Err(format!("{IDENTITY_ENV}: {error}")),
+        }
+    }
+
+    /// The identity that reports exactly `blocks` sectors.
+    pub const fn from_blocks(blocks: u32) -> Option<Self> {
+        match blocks {
+            SLC32G_CAPACITY_BLOCKS => Some(Self::Slc32G),
+            PLUSDRIVE_IMAGE_BLOCKS => Some(Self::Mlc4G),
+            SMALL_CAPACITY_BLOCKS => Some(Self::Small),
+            _ => None,
+        }
+    }
+
+    /// Reported capacity in 512-byte sectors.
+    pub const fn blocks(self) -> u32 {
+        match self {
+            Self::Slc32G => SLC32G_CAPACITY_BLOCKS,
+            Self::Mlc4G => PLUSDRIVE_IMAGE_BLOCKS,
+            Self::Small => SMALL_CAPACITY_BLOCKS,
+        }
+    }
+
+    /// CID as [RSP0, RSP1, RSP2, RSP3]: RSP3 bits 16..23 = manufacturer,
+    /// RSP2 = product name chars 0..3, RSP1 high half = chars 4..5.
+    pub const fn cid(self) -> [u32; 4] {
+        match self {
+            Self::Slc32G => [0, 0x3332_0000, 0x5458_3239, 0x0070_0000],
+            Self::Mlc4G | Self::Small => [0, 0x4530_0000, 0x3030_3447, 0x0011_0000],
+        }
+    }
+
+    /// (PARTITION_SETTING_COMPLETED, MAX_ENH_SIZE_MULT, HC_WP_GRP_SIZE,
+    /// HC_ERASE_GRP_SIZE, SEC_COUNT). SEC_COUNT 0 selects the CSD fallback.
+    const fn ext_csd_fields(self) -> (u8, [u8; 3], u8, u8, u32) {
+        match self {
+            Self::Slc32G => (1, [0, 0x04, 0xdb], 0x10, 0x01, SLC32G_CAPACITY_BLOCKS),
+            Self::Mlc4G => (0, [0, 0x01, 0xd8], 0x01, 0x08, PLUSDRIVE_IMAGE_BLOCKS),
+            Self::Small => (1, [0, 0x01, 0xd8], 0x01, 0x08, 0),
+        }
+    }
+
+    /// The 512-byte guest-native EXT_CSD.
+    pub fn ext_csd(self) -> [u8; SECTOR_SIZE] {
+        let (setting_completed, enh_size, wp_group, erase_group, sec_count) =
+            self.ext_csd_fields();
+        let mut bytes = [0; SECTOR_SIZE];
+        bytes[0x98] = setting_completed;
+        bytes[0xd4..0xd8].copy_from_slice(&sec_count.to_be_bytes());
+        bytes[0xaf] = 1;
+        bytes[0xb7] = 1;
+        bytes[0xb9] = 1;
+        bytes[0x9c..0x9f].copy_from_slice(&enh_size);
+        bytes[0xde] = wp_group;
+        bytes[0xe3] = erase_group;
+        bytes
+    }
+}
+
 /// Why a card operation was rejected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CardError {
-    /// Only the two firmware-whitelisted capacity values are synthetic IDs.
+    /// No [`CardIdentity`] reports this capacity.
     UnsupportedCapacity(u32),
     /// A caller requested a transfer larger than [`MAX_TRANSFER_BYTES`].
     TransferTooLarge { requested: usize, maximum: usize },
@@ -146,6 +257,7 @@ impl OverlaySector {
 /// Minimal eMMC card identity, selection state, base reader, and write overlay.
 pub struct Card {
     backing: Option<Box<dyn RandomAccessRead>>,
+    identity: CardIdentity,
     blocks: u32,
     ext_csd: [u8; SECTOR_SIZE],
     rca: u16,
@@ -157,40 +269,50 @@ pub struct Card {
 }
 
 impl Default for Card {
+    /// A card with the default identity, [`CardIdentity::Slc32G`]. Hosts that
+    /// honour [`IDENTITY_ENV`] build the card from [`CardIdentity::from_env`].
     fn default() -> Self {
-        match Self::new(DEFAULT_CAPACITY_BLOCKS) {
+        match Self::new(CardIdentity::default()) {
             Ok(card) => card,
-            Err(_) => unreachable!("default capacity is supported"),
+            Err(_) => unreachable!("every identity is supported"),
         }
     }
 }
 
 impl Card {
-    /// Make a card with zero-filled base media and the supplied reported capacity.
-    pub fn new(capacity_blocks: u32) -> Result<Self, CardError> {
-        Self::with_backing(capacity_blocks, None)
+    /// Make a card with zero-filled base media and the given identity.
+    pub fn new(identity: CardIdentity) -> Result<Self, CardError> {
+        Self::with_backing(identity, None)
     }
 
     /// Make a card whose immutable base media comes from `backing`.
     ///
-    /// The backing length is independent of the reported identity capacity,
-    /// matching the oracle: short reads are padded with zeroes and no image is
-    /// copied into the card.
+    /// The identity defines the reported capacity. The backing length is
+    /// independent of it, matching the oracle: reads past the end of the
+    /// backing are zero-padded, writes go to the sparse overlay (so they work
+    /// anywhere on the card) and no image is copied into the card. The
+    /// `Result` is kept for source compatibility; this is currently infallible.
     pub fn with_backing(
-        capacity_blocks: u32,
+        identity: CardIdentity,
         backing: Option<Box<dyn RandomAccessRead>>,
     ) -> Result<Self, CardError> {
         Ok(Self {
             backing,
-            blocks: capacity_blocks,
-            ext_csd: make_ext_csd(capacity_blocks)?,
+            identity,
+            blocks: identity.blocks(),
+            ext_csd: identity.ext_csd(),
             rca: 0,
             selected: false,
             overlay: BTreeMap::new(),
             overlay_bytes: 0,
-            cid: [0, 0x4530_0000, 0x3030_3447, 0x0011_0000],
+            cid: identity.cid(),
             csd: [0, CSD_RSP1, CSD_RSP2, 0],
         })
+    }
+
+    /// The identity this card was built with.
+    pub const fn identity(&self) -> CardIdentity {
+        self.identity
     }
 
     /// Reported capacity in 512-byte sectors.
@@ -227,8 +349,9 @@ impl Card {
     }
 
     pub fn snap_load(&mut self, r: &mut periph::snap::Reader) -> periph::snap::Result<()> {
-        if r.u32()? != self.blocks {
-            return Err("snapshot card capacity differs".into());
+        let saved = r.u32()?;
+        if saved != self.blocks {
+            return Err(capacity_mismatch_message(self.blocks, saved));
         }
         self.rca = r.u16()?;
         self.selected = r.bool()?;
@@ -488,6 +611,22 @@ impl CardPort for Card {
     }
 }
 
+/// Explain a saved-state capacity that does not match the running card.
+/// Snapshots captured before the pSLC identity used the 0x760000 card.
+pub fn capacity_mismatch_message(expected: u32, actual: u32) -> String {
+    let describe = |blocks: u32| match CardIdentity::from_blocks(blocks) {
+        Some(identity) => format!("{blocks:#x} sectors ({})", identity.name()),
+        None => format!("{blocks:#x} sectors (unknown identity)"),
+    };
+    format!(
+        "snapshot card capacity differs: snapshot used {}, running card is {}; \
+         set {IDENTITY_ENV}={} to match the snapshot",
+        describe(actual),
+        describe(expected),
+        CardIdentity::from_blocks(actual).map_or("mlc4g", CardIdentity::name),
+    )
+}
+
 fn check_transfer_length(length: usize) -> Result<(), CardError> {
     if length > MAX_TRANSFER_BYTES {
         return Err(CardError::TransferTooLarge {
@@ -513,22 +652,4 @@ mod overlay_tests {
         card.read_into(0, &mut out).unwrap();
         assert_eq!(out, payload);
     }
-}
-
-fn make_ext_csd(sectors: u32) -> Result<[u8; SECTOR_SIZE], CardError> {
-    let (sec_count, slc_ok) = match sectors {
-        DEFAULT_CAPACITY_BLOCKS => (DEFAULT_CAPACITY_BLOCKS, 0),
-        SMALL_CAPACITY_BLOCKS => (0, 1),
-        other => return Err(CardError::UnsupportedCapacity(other)),
-    };
-    let mut bytes = [0; SECTOR_SIZE];
-    bytes[0x98] = slc_ok;
-    bytes[0xd4..0xd8].copy_from_slice(&sec_count.to_be_bytes());
-    bytes[0xaf] = 1;
-    bytes[0xb7] = 1;
-    bytes[0xb9] = 1;
-    bytes[0x9c..0x9f].copy_from_slice(&[0, 1, 0xd8]);
-    bytes[0xde] = 1;
-    bytes[0xe3] = 8;
-    Ok(bytes)
 }

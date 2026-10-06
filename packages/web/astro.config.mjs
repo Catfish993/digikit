@@ -6,7 +6,9 @@ import solid from '@astrojs/solid-js';
 
 // Dev-only (`apply: 'serve'`): these files are firmware-derived and are never part of a build.
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-const localDir = path.join(repoRoot, 'snapshots', 'dn2-audio-ready-2026-10-03');
+const readyDir = process.env.DIGI_EMU_READY_DIR
+  || JSON.parse(fs.readFileSync(path.join(repoRoot, 'tools', 'ready_inputs.json'), 'utf8')).ready_dir;
+const localDir = path.resolve(repoRoot, readyDir);
 const localFiles = {
   'dsp-image': process.env.DIGI_EMU_DSP_IMAGE || path.join(localDir, 'digi-audio-dn2-image.bin'),
   'dsp-state': process.env.DIGI_EMU_DSP_STATE || path.join(localDir, 'digi-audio-m5.snap.dsp'),
