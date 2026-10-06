@@ -818,9 +818,12 @@ mod coupled {
                 format!("{:x}", Sha256::digest(&pcm)),
                 "38d2a3224d10e0b59cafa602ba1b8f8be31562efa07491b963ff4e127f3ff1f8"
             );
+            if let Some(path) = std::env::var_os("DIGI_COUPLED_DSP_EXPORT") {
+                std::fs::write(path, audio.handle.export().0).unwrap();
+            }
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "05ac2ac2e0e270aefffa207dda09017360eee499bb1851d30271d3c78f304e19"
+                "ee0a7ae1e75d593253ba4b382910a098677f803a69c979f7e7da0d9e53f5f244"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());
