@@ -20,14 +20,12 @@ members = [
     "native/plusdrive",
     "native/sharc",
     "native/sharc-fast-cl",
+    "native/sharc-fast-wasm",
     "native/sharc-gen",
     "native/sharc-rt",
     "packages/desktop/src-tauri",
 ]
 exclude = [
-    # wasmtime + wasm32-only runtime crates; own lock, built for a different
-    # target and nothing in the members depends on them.
-    "native/sharc-jit",
     # Agent worktrees live inside the main tree; keep cargo from treating
     # their (older, workspace-less) crates as members of this one.
     ".claude",

@@ -10,7 +10,7 @@ The cheap, single-cycle version of tools/sharc_dn2_aot.py:
   2. `tools/sharc_rsgen.py` on that profile (core and block code; the model-safe
      DN2 flags),
   3. the gen directory is entered in out/native/gen-index.json under the
-     SHA-256 of the packed DSP image, which is how tools/native_emu.sh and
+     SHA-256 of the packed DSP image, which is how tools/native_emu.py and
      tools/coupled.py pick the core to build the player against
      (`digi_env.generated_dir(image=...)`). The first player build against it
      compiles `sharc-gen` (about 5 min) into its own target dir

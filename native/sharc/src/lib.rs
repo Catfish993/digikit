@@ -27,6 +27,7 @@
 //! caller then lets the Python core execute it (tools/sharc_transpile_run.py).
 
 pub mod canon;
+mod diag;
 pub mod fast;
 pub mod frames;
 mod live_capture;
@@ -309,6 +310,9 @@ pub struct Engine {
     wwatch: Option<Box<write_watch::WriteWatch>>,
     /// SHARC_PCDUMP / SHARC_PCDUMP_OUT (diagnostic): see `pc_dump`.
     pcdump: Option<Box<pc_dump::PcDump>>,
+    /// Any of `cov`, `hist`, `wwatch`, `pcdump` is set: the interpreter loop
+    /// tests this one flag per instruction and nothing else when it is off.
+    diag_on: bool,
 }
 
 /// What the run-time model gate decided (diagnostic counters).
@@ -620,7 +624,7 @@ impl Engine {
         let mut s = St::new(mem);
         s.insn_at = image_insn_at();
         s.loop_ends = image_loop_ends();
-        Engine {
+        let mut engine = Engine {
             s,
             halt: None,
             last_trap: None,
@@ -667,7 +671,18 @@ impl Engine {
             live_capture: live_capture::LiveCapture::from_env(),
             wwatch: write_watch::WriteWatch::from_env(),
             pcdump: pc_dump::PcDump::from_env(),
-        }
+            diag_on: false,
+        };
+        engine.refresh_diag();
+        engine
+    }
+
+    /// Recompute `diag_on` after any of the per-instruction diagnostics changed.
+    fn refresh_diag(&mut self) {
+        self.diag_on = self.cov.is_some()
+            || self.hist.is_some()
+            || self.wwatch.is_some()
+            || self.pcdump.is_some();
     }
 
     /// Instruction counts by tier since the engine was created.
@@ -1014,6 +1029,7 @@ impl Engine {
                     self.exits = None;
                     self.entry_bails = None;
                 }
+                self.refresh_diag();
             }
             7 => self.stop_software_interrupt = value != 0,
             9 => self.software_interrupts = value != 0,
@@ -1481,6 +1497,30 @@ impl Engine {
         ));
     }
 
+    /// The per-instruction diagnostics, off the hot path (`diag_on`).
+    #[cold]
+    #[inline(never)]
+    fn diag_step(&mut self, pc_before: Int) {
+        if let Some(cov) = &mut self.cov {
+            let m = self.s.r[MODE1];
+            *cov.entry((self.s.pc_sw as u32, m.b, m.is_c())).or_default() += 1;
+            if let Some(en) = &mut self.entries
+                && self.s.pc_sw != self.last_interp_next
+            {
+                *en.entry(self.s.pc_sw as u32).or_default() += 1;
+            }
+        }
+        if let Some(h) = &mut self.hist {
+            *h.entry(pc_before as u32).or_default() += 1;
+        }
+        if self.wwatch.is_some() {
+            self.ww_begin(pc_before as u64, 'i');
+        }
+        if let Some(d) = &mut self.pcdump {
+            d.hit(&self.s, pc_before as u64, self.s.icount);
+        }
+    }
+
     /// Close the pending write-watch unit (see `write_watch`): flush any
     /// earlier one, then start a new one at PC with the given unit letter.
     fn ww_begin(&mut self, pc: u64, unit: char) {
@@ -1881,25 +1921,10 @@ impl Engine {
                 break;
             };
             self.stats.single_steps += 1;
-            if let Some(cov) = &mut self.cov {
-                let m = self.s.r[MODE1];
-                *cov.entry((self.s.pc_sw as u32, m.b, m.is_c())).or_default() += 1;
-                if let Some(en) = &mut self.entries
-                    && self.s.pc_sw != self.last_interp_next
-                {
-                    *en.entry(self.s.pc_sw as u32).or_default() += 1;
-                }
-            }
             let loops_before = self.s.loops.n;
             let pc_before = self.s.pc_sw;
-            if let Some(h) = &mut self.hist {
-                *h.entry(pc_before as u32).or_default() += 1;
-            }
-            if self.wwatch.is_some() {
-                self.ww_begin(pc_before as u64, 'i');
-            }
-            if let Some(d) = &mut self.pcdump {
-                d.hit(&self.s, pc_before as u64, self.s.icount);
+            if self.diag_on {
+                self.diag_step(pc_before);
             }
             if let Err(t) = exec_insn(&mut self.s, insn) {
                 self.trapped(t);

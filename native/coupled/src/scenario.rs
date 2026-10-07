@@ -1,9 +1,9 @@
-//! Scripted inputs for coupled runs (scenarios.json), shared by coupled-run and the desktop app's --scenario mode.
+//! Scripted inputs for coupled runs (scenarios/dn2.json), shared by coupled-run and the desktop app's --scenario mode.
 use serde_json::Value;
 
 /// DSPI2 frames per audio second (one 32-sample block each).
 pub const FRAMES_PER_SECOND: f64 = 1500.0;
-pub const DEFAULT_SCENARIOS: &str = include_str!("../scenarios.json");
+pub const DEFAULT_SCENARIOS: &str = include_str!("../../../scenarios/dn2.json");
 
 #[derive(Clone, Copy, Debug)]
 pub enum When {

@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter @digi/web dev",
     "build": "pnpm --filter @digi/web build",
-    "check": "pnpm --filter @digi/web check"
+    "check": "pnpm --filter @digi/web check",
+    "lint": "pnpm --filter @digi/web lint",
+    "test": "pnpm --filter @digi/web test:audio"
   }
 }

@@ -77,7 +77,7 @@ SHARC_FAST_REGIONS= coupled-run --syx Digitone_II_OS1.11.syx \
   --dsp-image snapshots/dn2-audio-ready-2026-10-06/digi-audio-dn2-image.bin \
   --dsp-state snapshots/dn2-audio-ready-2026-10-06/digi-audio-m5.snap.dsp \
   --cf-snapshot snapshots/dn2-audio-ready-2026-10-06/digi-audio-m5.snap \
-  --scenarios native/coupled/scenarios.json --scenario trig1-tap-release \
+  --scenarios scenarios/dn2.json --scenario trig1-tap-release \
   --seconds 3 --wav OUT.wav --dsp-patch PATCH
 uv run python tools/dsp_patch.py show IMAGE.bin PATCH --syx Digitone_II_OS1.11.syx
 ```
@@ -277,7 +277,7 @@ applied (scratchpad lane0.patch).
   55dc699e..e4e0, DSP export 4dc48019..e389b (`coupled_ready_exactness` passes
   via the new `digi-coupled` ignored test `gate_tests::coupled_ready_exactness`;
   needs NOTE_EVENTS=trig).
-- Updated: native/coupled/scenarios.json, native/coupled/src/lib.rs (gate pins
+- Updated: scenarios/dn2.json, native/coupled/src/lib.rs (gate pins
   and comment), native/README.md, docs/design/emulator-control.md, findings 14
   and 16 ([C] notes), coupled_run.rs doc paths. Left: tools/sharc_regionbench.py
   (speed bench from the old fresh state, no PCM pin),
@@ -285,4 +285,4 @@ applied (scratchpad lane0.patch).
   (DT2 1.16, state-independent). tools/coupled.py `--wav` fails when the run dir
   does not exist (pre-existing). Preexisting failures not from this work:
   test_native_emu_launcher target-dir test (worktree target path) and
-  tests/test_lint.py format (tools/native_emu.sh:331).
+  tests/test_lint.py format (tools/native_emu.py:331).

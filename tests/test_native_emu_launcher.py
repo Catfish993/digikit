@@ -21,7 +21,7 @@ def pinned_rustc(monkeypatch):
 
 
 def launcher():
-    return runpy.run_path(str(ROOT / "tools/native_emu.sh"), run_name="launcher_test")
+    return runpy.run_path(str(ROOT / "tools/native_emu.py"), run_name="launcher_test")
 
 
 def test_default_command_preserves_locked_cf_only_build():

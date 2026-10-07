@@ -36,10 +36,10 @@ Open: the DT2 render of the card sample is not a clean tone (details below).
 - `tools/ready.py` (`mise run ready -- dn2|dt2 [--card-image IMG]`, replaces
   ready_dn2.py), `tools/digi_env.py` (`device_for_syx`, `firmware_for`,
   `ready_inputs(device=)`, `ready_dirs` in `tools/ready_inputs.json`),
-  `tools/native_emu.sh` (per-device inputs; a DT2 card builds its ready state
+  `tools/native_emu.py` (per-device inputs; a DT2 card builds its ready state
   once, `ready_for`), `tools/dt2_sample_check.py`,
   `tools/sharc_frame_diff.py` (native vs Python reference over one frame).
-- `native/coupled/scenarios-dt2.json`: `dt2-sample-trig` (+ `-noqa`, silent
+- `scenarios/dt2.json`: `dt2-sample-trig` (+ `-noqa`, silent
   like DN2 without the NO prelude).
 
 ## DT2 start (step 1)
@@ -121,7 +121,7 @@ DSP_PROFILE), `tools/sharc_rsgen.py dt2-1.16` with the DN2 model-safe flags
 `out/native/gen-index.json` under the SHA-256 of the packed DSP image
 (`digi_env.register_gen` / `gen_for_image`). `digi_env.generated_dir(image=)`
 resolves SHARC_GEN_DIR, then the registry, then the DN2 default;
-`tools/native_emu.sh` passes the `--dsp-image` of the launch, so a DT2 launch
+`tools/native_emu.py` passes the `--dsp-image` of the launch, so a DT2 launch
 builds the player against the DT2 core in its own target dir
 (`out/native/target*/g-<hash>`; never prod/pgo-use). The first build compiled
 `sharc-gen` in 2 min 9 s. Tests: `tests/test_gen_index.py`.

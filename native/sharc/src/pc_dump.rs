@@ -32,7 +32,7 @@ pub struct PcDump {
 impl PcDump {
     pub fn from_env() -> Option<Box<PcDump>> {
         let spec = std::env::var("SHARC_PCDUMP").ok()?;
-        let path = std::env::var_os("SHARC_PCDUMP_OUT")?;
+        let path = crate::diag::out_path("SHARC_PCDUMP_OUT", "pcdump.csv")?;
         let mut pcs = Vec::new();
         for item in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
             let Ok(a) = u64::from_str_radix(item.trim_start_matches("0x"), 16) else {

@@ -2,7 +2,7 @@
 // Headless parity check of the coupled (ColdFire + SHARC+) browser core.
 //
 // Loads packages/web/.local/emulator-core-sharc.wasm, restores the DN2 ready session,
-// plays a scenario from native/coupled/scenarios.json exactly as `coupled-run`
+// plays a scenario from scenarios/dn2.json exactly as `coupled-run`
 // does, and prints the SHA-256 of the PCM (f32le bytes of every value produced
 // since the ready point, the same bytes PcmTap hashes). With a scenario that has
 // expect_sha256 the exit code is 1 on a mismatch.
@@ -17,7 +17,7 @@
 //   --dsp-image PATH   READY/digi-audio-dn2-image.bin (DIGI_EMU_DSP_IMAGE)
 //   --dsp-state PATH   READY/digi-audio-m5.snap.dsp   (DIGI_EMU_DSP_STATE)
 //   --cf-snapshot PATH READY/digi-audio-m5.snap       (DIGI_EMU_CF_SNAPSHOT)
-//   --scenarios PATH   native/coupled/scenarios.json
+//   --scenarios PATH   scenarios/dn2.json
 //   --scenario NAME    scenario to play (required)
 //   --seconds S        override the scenario length in audio seconds (like coupled-run)
 //   --out PATH         write the raw f32le PCM (compare with coupled-run --wav x.f32)
@@ -47,7 +47,7 @@ const paths = {
   image: args['dsp-image'] ?? env.DIGI_EMU_DSP_IMAGE ?? path.join(ready, 'digi-audio-dn2-image.bin'),
   dsp: args['dsp-state'] ?? env.DIGI_EMU_DSP_STATE ?? path.join(ready, 'digi-audio-m5.snap.dsp'),
   snap: args['cf-snapshot'] ?? env.DIGI_EMU_CF_SNAPSHOT ?? path.join(ready, 'digi-audio-m5.snap'),
-  scenarios: args.scenarios ?? path.join(root, 'native/coupled/scenarios.json'),
+  scenarios: args.scenarios ?? path.join(root, 'scenarios/dn2.json'),
 };
 if (!args.scenario) throw new Error('--scenario NAME is required');
 const scenario = JSON.parse(fs.readFileSync(paths.scenarios, 'utf8')).scenarios.find((s) => s.name === args.scenario);

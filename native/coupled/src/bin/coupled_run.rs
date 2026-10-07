@@ -1,6 +1,6 @@
 //! `coupled-run`: the desktop app's coupled run loop without Tauri or a webview.
 //!
-//! It restores the same DN2 ready session as the launcher (`tools/native_emu.sh`
+//! It restores the same DN2 ready session as the launcher (`tools/native_emu.py`
 //! `--auto-coupled`), steps the emulator in the app's [`STEP_CHUNK`]-instruction
 //! chunks as fast as it can with optional native playback (the PCM is also measured), and
 //! plays a scenario of guest-clock-driven panel events. For each scenario it
@@ -33,7 +33,7 @@
 //! chunk that follows, so a run is a function of its inputs; with `exact_events` the
 //! chunk is shortened so an `at_instr` event fires at exactly that count. `qa_script` also plays
 //! the shared QA sequence of `native/boot/examples/common` (NO, NO, encoder A).
-//! The default scenarios are `native/coupled/scenarios.json`.
+//! The default scenarios are `scenarios/dn2.json`.
 
 use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,

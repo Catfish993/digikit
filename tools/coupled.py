@@ -8,6 +8,7 @@ The binary is built into the prod generated-core target dir
 
     uv run python tools/coupled.py build
     uv run python tools/coupled.py scenario NAME [NAME ...] [--wav] [--out JSON] [-- EXTRA...]
+    uv run python tools/coupled.py scenario --all [--device dn2|dt2]
     uv run python tools/coupled.py replay FILE [--wav] [--out JSON]
     uv run python tools/coupled.py bisect NAME [--seconds S]
     uv run python tools/coupled.py test-quick
@@ -24,7 +25,6 @@ failure, 1 error); ``bisect`` returns 0 when the default matches the reference.
 from __future__ import annotations
 
 import argparse
-import datetime
 import hashlib
 import json
 import math
@@ -46,7 +46,7 @@ TOOLCHAIN = digi_env.TOOLCHAIN
 FEATURES = os.environ.get("DIGI_COUPLED_FEATURES", "coupled-audio")
 BINARY_NAME = "coupled-run"
 BISECT_DIR = ROOT / "out" / "native" / "bisect"
-RUNS_DIR = ROOT / "out" / "native" / "runs"
+RUNS_DIR = digi_env.RUNS_ROOT
 
 
 def benchlock(mode: str, label: str):
@@ -157,8 +157,8 @@ def generated() -> pathlib.Path:
     return gen
 
 
-def inputs() -> dict[str, pathlib.Path]:
-    found = digi_env.ready_inputs()
+def inputs(device: str = "dn2") -> dict[str, pathlib.Path]:
+    found = digi_env.ready_inputs(device=device)
     missing = [f"{k}: {v}" for k, v in found.items() if not pathlib.Path(v).exists()]
     if missing:
         raise SystemExit("coupled: missing inputs:\n  " + "\n  ".join(missing))
@@ -211,9 +211,16 @@ def run_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-def timestamp_dir() -> pathlib.Path:
-    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-    return RUNS_DIR / stamp
+def run_kind(selection: list[str]) -> str:
+    """The out/runs/<kind> name of a run: its scenario names, or the replay file."""
+    names = [
+        b for a, b in zip(selection, selection[1:], strict=False) if a == "--scenario"
+    ]
+    if names:
+        return "+".join(names)
+    if not selection:
+        return "all"
+    return "replay-" + pathlib.Path(selection[-1]).stem
 
 
 def read_report(path: pathlib.Path) -> dict:
@@ -236,16 +243,34 @@ def summarize(report_path: pathlib.Path) -> None:
 
 
 def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
-    out = pathlib.Path(args.out) if args.out else timestamp_dir() / "report.json"
+    """Run into out/runs/<kind>/<stamp>/ (report.json, audio.wav, logs/); --out
+    names the report instead and the rest goes next to it."""
+    out = (
+        pathlib.Path(args.out)
+        if args.out
+        else digi_env.run_dir(run_kind(selection)) / "report.json"
+    )
+    diag = digi_env.parse_diag(args.diag or "")
+    wav = args.wav or any(n == "pcm" for n, _ in diag)
     extra = [*selection, "--out", str(out)]
-    if args.wav:
-        extra += ["--wav", str(out.parent / "pcm.wav")]
+    if wav:
+        extra += ["--wav", str(out.parent / "audio.wav")]
     if getattr(args, "seconds", None) is not None:
         extra += ["--seconds", str(args.seconds)]
     extra += args.extra
-    argv = run_args(binary, inputs(), extra)
-    done = subprocess.run(argv, cwd=ROOT, env=run_env(), check=False)
+    device = getattr(args, "device", "dn2")
+    if device != "dn2":
+        extra = ["--scenarios", str(ROOT / "scenarios" / f"{device}.json"), *extra]
+    argv = run_args(binary, inputs(device), extra)
+    env = run_env(digi_env.diag_env(diag, out.parent))
+    if digi_env.diag_stderr(diag):
+        with (out.parent / "logs" / "stderr.log").open("wb") as err:
+            done = subprocess.run(argv, cwd=ROOT, env=env, stderr=err, check=False)
+    else:
+        done = subprocess.run(argv, cwd=ROOT, env=env, check=False)
     summarize(out)
+    if diag:
+        print(f"diagnostics: {out.parent / 'logs'}")
     return done.returncode
 
 
@@ -255,13 +280,26 @@ def cmd_build(args) -> int:
     return 0
 
 
+def want_dump(args) -> None:
+    """`--diag dump` needs the fast-dump build feature."""
+    global FEATURES
+    if any(n == "dump" for n, _ in digi_env.parse_diag(args.diag or "")):
+        FEATURES += ",fast-dump"
+
+
 def cmd_scenario(args) -> int:
+    want_dump(args)
     binary = ensure_binary(args.no_build)
+    if not args.names and not args.all:
+        raise SystemExit("coupled: give scenario names or --all")
+    # No --scenario means every scenario of the file; coupled-run exits 2 on
+    # any expect_sha256 mismatch or failed gate.
     selection = [x for name in args.names for x in ("--scenario", name)]
     return run_and_report(binary, selection, args)
 
 
 def cmd_replay(args) -> int:
+    want_dump(args)
     binary = ensure_binary(args.no_build)
     return run_and_report(binary, ["--replay", args.file], args)
 
@@ -402,12 +440,26 @@ def parser() -> argparse.ArgumentParser:
 
     def run_flags(p: argparse.ArgumentParser) -> None:
         p.add_argument("--no-build", action="store_true", help="skip the cargo build")
-        p.add_argument("--wav", action="store_true", help="write pcm.wav next to --out")
-        p.add_argument("--out", help="report JSON (default out/native/runs/<time>/)")
+        p.add_argument(
+            "--wav", action="store_true", help="write audio.wav next to the report"
+        )
+        p.add_argument(
+            "--out",
+            help="report JSON (default out/runs/<scenario>/<stamp>/report.json)",
+        )
+        p.add_argument(
+            "--diag",
+            metavar="LIST",
+            help="diagnostics into <run>/logs/: "
+            + ",".join(digi_env.DIAG)
+            + " (docs/INSTRUMENTATION.md)",
+        )
 
     add("build", cmd_build, "build coupled-run")
     p = add("scenario", cmd_scenario, "run named scenarios")
-    p.add_argument("names", nargs="+", metavar="NAME")
+    p.add_argument("names", nargs="*", metavar="NAME")
+    p.add_argument("--all", action="store_true", help="run every scenario of the file")
+    p.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
     p.add_argument("--seconds", type=float)
     run_flags(p)
     p = add("replay", cmd_replay, "replay a scenario or diagnostics export")

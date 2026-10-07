@@ -25,7 +25,7 @@ pub struct WriteWatch {
 impl WriteWatch {
     pub fn from_env() -> Option<Box<WriteWatch>> {
         let spec = std::env::var("SHARC_WWATCH").ok()?;
-        let path = std::env::var_os("SHARC_WWATCH_OUT")?;
+        let path = crate::diag::out_path("SHARC_WWATCH_OUT", "wwatch.csv")?;
         let mut addrs = Vec::new();
         for item in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
             let (a, n) = item.split_once(':').unwrap_or((item, "1"));

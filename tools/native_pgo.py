@@ -20,7 +20,7 @@ The training workload is the ``coupled_ready_exactness`` gate, run from the
 instrumented desktop APP binary with ``--pgo-train`` (not the test binary:
 cargo gives the test target's dependencies other crate hashes than the app's,
 so a profile trained on it never matched the app). It needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
-The launcher (``tools/native_emu.sh``) does not retrain: it warns about a stale
+The launcher (``tools/native_emu.py``) does not retrain: it warns about a stale
 profile and uses it anyway. Retrain with ``mise run pgo`` or by launching with
 DIGI_EMU_PGO_TRAIN=1. The key covers the emulation crates only (not packages/),
 so a desktop-crate edit leaves the profile current; the fast-region lists are

@@ -2,13 +2,12 @@
 
 One cargo workspace (root `Cargo.toml`, one `Cargo.lock`, profiles defined at
 the root) holds the crates that build together: `sharc-rt`, `sharc-gen`,
-`sharc`, `sharc-fast-cl`, `boot` and its path dependencies (`coldfire`,
+`sharc`, `sharc-fast-cl`, `sharc-fast-wasm`, `boot` and its path dependencies (`coldfire`,
 `coldfire/cfabi`, `periph`, `card`, `machine`, `loader`, `plusdrive`,
 `device-profile`), `live`, `host`, `coupled` (the run loop shared by the app and the
 headless runner) and `packages/desktop/src-tauri`.
 
-Left out: `sharc-jit` (wasmtime and wasm32-only runtime crates, its own
-lockfile, nothing in the workspace depends on it) and `.claude/` (agent
+Left out: `.claude/` (agent
 worktrees live inside the tree and must not become members). A crate is never
 built with its own manifest's profile: cargo reads profiles only from the root.
 
@@ -83,7 +82,7 @@ SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdce
 ```
 
 The launcher also exports `SHARC_BLOCKTRANS` for DN2 OS 1.11: 12 block-translator
-cluster roots (`0xb8276c,0x1c369b,...`, `BLOCKTRANS_ROOTS` in `tools/native_emu.sh`,
+cluster roots (`0xb8276c,0x1c369b,...`, `BLOCKTRANS_ROOTS` in `tools/native_emu.py`,
 keyed by the .syx SHA-256 like `FAST_REGIONS`). Measured A/B on DSP CPU per audio
 second without PGO: 0.958 idle, 0.963 chord16, PCM identical. A user-set
 `SHARC_BLOCKTRANS` wins, `DIGI_EMU_FAST=0` turns it off with the fast regions, and
@@ -96,7 +95,7 @@ skips the PCM hash and statistics and `--no-link-timing` the per-period and link
 timers (to A/B their cost). Exit code 2 means a gate
 failed (missing blocks, halt, step error, non-finite PCM, wrong expected hash).
 
-### Scenarios (`native/coupled/scenarios.json`)
+### Scenarios (`scenarios/dn2.json`)
 
 A scenario is a length (`seconds` of audio, or `instructions` of ColdFire) and a
 list of panel events. Times count from the restored ready point: `at_instr` in
@@ -179,7 +178,7 @@ emits host code. `node tools/wasm_parity.mjs --scenario NAME` (or
 the native `expect_sha256`.
 
 The coupled core (`emulator-core-sharc.wasm`) contains firmware-derived DSP code.
-`tools/native_wasm.sh` writes it to `packages/web/.local/`, which is gitignored
+`tools/native_wasm.py` writes it to `packages/web/.local/`, which is gitignored
 and served only by the dev server. It is never in `dist/`: a build guard fails
 the build if it appears in the output. The CF-only core stays in
 `packages/web/public/`.

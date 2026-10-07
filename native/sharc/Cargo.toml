@@ -22,6 +22,9 @@ sharc-fast-cl = { path = "../sharc-fast-cl" }
 fast-prof = []
 # Per-entry dispatch timing for coupled-run diagnostic builds.
 region-profile = []
+# SHARC_FAST_DUMP: capture the fast tier's kernels and real calls (the wasm gate).
+# Without it the capture hooks compile to nothing.
+fast-dump = []
 
 [lib]
 name = "sharc_native"

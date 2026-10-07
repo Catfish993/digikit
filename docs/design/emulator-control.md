@@ -313,7 +313,7 @@ with Emu.spawn("--auto-coupled", "--audio-buffer", "1") as emu:
 
 ## mise tasks
 
-- `emu:serve`: `tools/native_emu.sh --daemon` (builds `digi-emud` with the same
+- `emu:serve`: `tools/native_emu.py --daemon` (builds `digi-emud` with the same
   target dir, PGO and fast-env rules as `emu`).
 - `emu:ctl`: `uv run python tools/digi_client.py` CLI (`status`, `tap 25`,
   `load FILE`, `capture pcm out.wav --seconds 10`, `events`).

@@ -77,7 +77,7 @@ mise appends the extra arguments to the task's command.
   `sharc_native_profile` (added 551bc45). The rebuild is the `REGENERATE_HINT`
   command in `tools/sharc_transpile_run.py` (regenerates gen-final, about 4 min).
 - The browser runs its own stepping loop (`native/boot/src/abi.rs` plus
-  `packages/web/src/runtime-worker.ts`). The desktop and headless use
+  `packages/web/src/runtime/runtime-worker.ts`). The desktop and headless use
   `digi-coupled`. Sharing it needs a feature split of `digi-coupled`: no threads
   or cpal on wasm.
 - The coupled `?audio=1` browser page has still not been run in a real browser.

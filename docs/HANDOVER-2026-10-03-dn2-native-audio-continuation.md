@@ -301,12 +301,12 @@ docs/findings/07-emulator.md
 packages/desktop/src-tauri/Cargo.lock
 packages/web/package.json
 packages/web/public/pcm-worklet.js
-packages/web/src/audio.ts
+packages/web/src/runtime/audio.ts
 packages/web/src/components/CoupledAudio.tsx
-packages/web/src/runtime-metrics.ts
-packages/web/src/runtime-worker.ts
-packages/web/src/runtime.ts
-tests/test_audio_health.mjs
+packages/web/src/runtime/runtime-metrics.ts
+packages/web/src/runtime/runtime-worker.ts
+packages/web/src/runtime/runtime.ts
+packages/web/tests/audio-health.test.mjs
 ```
 
 The lock repair added boot's local `periph` dependency reference and changed
@@ -351,7 +351,7 @@ packages/desktop/src-tauri/Cargo.lock
 native/boot/src/sharc_peer.rs
 native/boot/src/pcm_play.rs
 native/live/src/audio.rs
-tools/native_emu.sh
+tools/native_emu.py
 tests/test_native_emu_launcher.py                  (new)
 tests/test_lint.py
 ```
@@ -360,7 +360,7 @@ tests/test_lint.py
 
 - Desktop `coupled-audio` Cargo feature enables boot `sharc` + `play`.
   Ordinary startup remains CF-only.
-- `tools/native_emu.sh` selects that feature only for explicit `--coupled` and
+- `tools/native_emu.py` selects that feature only for explicit `--coupled` and
   checks for a local `SHARC_GEN_DIR` before building. No AOT regeneration.
 - CLI coupled startup requires a startup SYX and `--dsp-image FILE`,
   `--dsp-state FILE`, `--cf-snapshot FILE`. Optional `--audio-buffer SECONDS`
@@ -678,7 +678,7 @@ instructions. Don't substitute them and claim equivalence.
 
 For fresh WASM, build native/boot directly with
 `--release --offline --locked --lib --target wasm32-unknown-unknown --features
-sharc` and SHARC_GEN_DIR, external target. `tools/native_wasm.sh --sharc` uses
+sharc` and SHARC_GEN_DIR, external target. `tools/native_wasm.py --sharc` uses
 that build but copies to the web public path; avoid that copy while profiling.
 Worker normally fetches fixed `/emulator-core-sharc.wasm`; a scratch server can
 serve the new artifact at that URL, or parent can specify a minimal ABI harness

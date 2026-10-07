@@ -58,16 +58,14 @@ sys.path.insert(0, str(HERE))
 try:
     import benchlock
     import coupled
+    import digi_env
 finally:
     sys.path.pop(0)
 
 OUT_DIR = ROOT / "out" / "native" / "fastcov"
 DB_DIR = ROOT / "out" / "sharcdb"
-DIAG_ENV = {
-    "SHARC_FAST_LOG": "summary",
-    "SHARC_FAST_COV": "1",
-    "SHARC_FAST_HIST": "1",
-}
+# The `fastcov` diagnostic of tools/digi_env.py (stderr only, no files).
+DIAG_ENV = digi_env.DIAG["fastcov"][2]("", pathlib.Path())
 NO_LOCK = False
 NO_FAST = {"SHARC_FAST_REGIONS": "", "SHARC_BLOCKTRANS": ""}
 
@@ -410,7 +408,9 @@ def main() -> int:
         action="store_true",
         help="timed runs share the lock (coverage runs)",
     )
-    ap.add_argument("--out", default=None, help="output directory")
+    ap.add_argument(
+        "--out", default=None, help="output directory (default out/runs/fastcov/<stamp>/)"
+    )
     args = ap.parse_args()
     global NO_LOCK
     NO_LOCK = args.no_lock
@@ -418,7 +418,7 @@ def main() -> int:
     configs = [parse_config(c) for c in (args.config or ["default", "fast-auto"])]
     binary = coupled.ensure_binary(args.no_build)
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-    out = pathlib.Path(args.out) if args.out else OUT_DIR / stamp
+    out = pathlib.Path(args.out) if args.out else digi_env.run_dir("fastcov", stamp)
     out.mkdir(parents=True, exist_ok=True)
     funcs = Functions(args.image)
     syx = os.environ.get("DIGI_EMU_SYX", "default")

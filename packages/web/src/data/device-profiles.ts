@@ -48,6 +48,9 @@ function profile(source: string, expected: DeviceId): DeviceProfile {
 
 export const deviceProfiles = { dt2: profile(dt2Source, 'dt2'), dn2: profile(dn2Source, 'dn2') } as const;
 
+/** The DN2 firmware the private ready inputs (dev server, `/__digi-local/`) were captured from. */
+export const localReadyFirmwareSha256 = deviceProfiles.dn2.firmware.find((firmware) => firmware.version === '1.11')?.sha256 ?? '';
+
 const allHashes = new Set<string>();
 for (const device of Object.values(deviceProfiles)) for (const firmware of device.firmware) {
   if (allHashes.has(firmware.sha256)) throw new Error(`duplicate firmware SHA-256 ${firmware.sha256}`);

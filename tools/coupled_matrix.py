@@ -52,7 +52,7 @@ TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
 PGO_FLAGS = "-Cprofile-use={profdata}"
 READY = digi_env.READY
-SCENARIO_FILE = ROOT / "native" / "coupled" / "scenarios.json"
+SCENARIO_FILE = ROOT / "scenarios" / "dn2.json"
 RUNS_DIR = ROOT / "out" / "native" / "runs"
 PROD_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen"
 GENERIC_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen-generic"
@@ -100,7 +100,7 @@ def launcher_fast_regions(syx: pathlib.Path) -> str:
     import runpy
 
     launcher = runpy.run_path(
-        str(ROOT / "tools" / "native_emu.sh"), run_name="launcher"
+        str(ROOT / "tools" / "native_emu.py"), run_name="launcher"
     )
     return str(launcher["fast_regions_for"](syx))
 

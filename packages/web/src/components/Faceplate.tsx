@@ -1,8 +1,9 @@
 import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { panels } from '../data/faceplates';
-import { browserRuntime, drawFrame, nativeRuntime, type EmulatorRuntime, type NativeAudioStatus, type RuntimeUpdate } from '../runtime';
-import { PcmSink, resumeOnNextGesture } from '../audio';
-import { fetchLocalInputs, localManifest, sha256Hex } from '../local-inputs';
+import { localReadyFirmwareSha256 } from '../data/device-profiles';
+import { browserRuntime, drawFrame, nativeRuntime, type EmulatorRuntime, type NativeAudioStatus, type RuntimeUpdate } from '../runtime/runtime';
+import { PcmSink, resumeOnNextGesture } from '../runtime/audio';
+import { fetchLocalInputs, localManifest, sha256Hex } from '../runtime/local-inputs';
 import CoupledAudio, { startCoupled } from './CoupledAudio';
 import './faceplate.css';
 
@@ -44,7 +45,7 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   const panel = () => panels[device()];
   const clearCanvas = () => { if (canvas) canvas.getContext('2d')?.clearRect(0, 0, 128, 64); };
   const update = (event: RuntimeUpdate) => { if (event.type === 'error') { setPaused(true); setLoaded(false); setStatus(event.error); return; } const snapshot = event.snapshot; setReportAvailable(true); if (snapshot.frame && canvas) drawFrame(canvas, snapshot.frame); const s = snapshot.status; if (s.error) { setPaused(true); setLoaded(false); } else if (!loaded()) { setLoaded(true); setPaused(false); } if (s.device === 'dt2' || s.device === 'dn2') setDevice(s.device); const display = s.frame_revision === 0 ? 'Booting — waiting for display' : s.frame_source === 'intro' ? 'Booting — startup display' : s.phase; setStatus(`${s.device} ${s.version} — ${display}, ${s.icount.toLocaleString()} instructions${s.error ? `: ${s.error}` : ''}`); };
-  const emit = (code: number, down: boolean) => { const count = owners.get(code) ?? 0; const nextCount = down ? count + 1 : Math.max(0, count - 1); if (nextCount) owners.set(code, nextCount); else owners.delete(code); if ((down && count === 0) || (!down && count === 1)) { setPressed((old) => { const next = new Set(old); down ? next.add(code) : next.delete(code); return next; }); const result = down ? runtime()?.press(code) : runtime()?.release(code); void result?.catch((error) => update({ type: 'error', error: String(error) })); } };
+  const emit = (code: number, down: boolean) => { const count = owners.get(code) ?? 0; const nextCount = down ? count + 1 : Math.max(0, count - 1); if (nextCount) owners.set(code, nextCount); else owners.delete(code); if ((down && count === 0) || (!down && count === 1)) { setPressed((old) => { const next = new Set(old); if (down) next.add(code); else next.delete(code); return next; }); const result = down ? runtime()?.press(code) : runtime()?.release(code); void result?.catch((error) => update({ type: 'error', error: String(error) })); } };
   // Knob drags listen on window, not on the SVG with pointer capture: WebKit (the Tauri webview, Safari)
   // can retarget or drop captured pointer events and fire lostpointercapture early, which ended the drag
   // before the first detent. Deltas come from clientY differences (movementY is not reliable in WebKit).
@@ -93,7 +94,7 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
       if (coupledSink) {
         try {
           const manifest = await localManifest();
-          if (manifest?.dspImage && manifest.dspState && await sha256Hex(bytes) === manifest.firmwareSha256) {
+          if (manifest?.dspImage && manifest.dspState && await sha256Hex(bytes) === localReadyFirmwareSha256) {
             const inputs = await fetchLocalInputs();
             if (inputs) {
               const snapshot = await startCoupled({ runtime: selected, firmware: { name: file.name, bytes }, image: inputs.image, dsp: inputs.state, snapshot: inputs.snapshot, sink: coupledSink });

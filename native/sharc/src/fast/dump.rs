@@ -11,8 +11,9 @@
 //!  * `totals.tsv`: `entry_pc calls insns` per region at exit.
 //!
 //! Capture is limited to `PER_KERNEL` calls of at least `MIN_INSNS`
-//! instructions per kernel. Off (and free of cost beyond one atomic load)
-//! unless the variable is set.
+//! instructions per kernel. Compiled in only with the `fast-dump` cargo
+//! feature (without it every hook is a constant false); with the feature, off
+//! unless `SHARC_FAST_DUMP` is set (default `$DIGI_DIAG_DIR/fastdump`).
 
 use super::ir::*;
 use std::cell::RefCell;
@@ -27,7 +28,7 @@ const MIN_INSNS: u64 = 48;
 fn dir() -> Option<&'static std::path::PathBuf> {
     static D: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
     D.get_or_init(|| {
-        let p = std::path::PathBuf::from(std::env::var_os("SHARC_FAST_DUMP")?);
+        let p = std::path::PathBuf::from(crate::diag::out_path("SHARC_FAST_DUMP", "fastdump")?);
         std::fs::create_dir_all(&p).ok()?;
         Some(p)
     })
@@ -39,12 +40,20 @@ static ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(fa
 /// Reads `SHARC_FAST_DUMP` once (FastEngine::new calls it); `enabled` is then
 /// one relaxed load, inlined into the glue's call path.
 pub fn init() {
+    if !cfg!(feature = "fast-dump") {
+        if std::env::var_os("SHARC_FAST_DUMP").is_some() {
+            eprintln!("SHARC_FAST_DUMP ignored: build with the fast-dump feature");
+        }
+        return;
+    }
     ON.store(dir().is_some(), std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Constant false without the `fast-dump` feature, so every hook below
+/// compiles away and the call path pays nothing.
 #[inline(always)]
 pub fn enabled() -> bool {
-    ON.load(std::sync::atomic::Ordering::Relaxed)
+    cfg!(feature = "fast-dump") && ON.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 struct Win {

@@ -5,7 +5,7 @@ in the main tree root: /Users/em/src/digi/digitakt2/Digitakt_II_OS1.16.syx.
 
 ## Task 1: `--samples DIR` in the launcher
 
-- `tools/native_emu.sh` (the `mise run emu` entry): `--samples DIR` builds
+- `tools/native_emu.py` (the `mise run emu` entry): `--samples DIR` builds
   `native/plusdrive` (`cargo build --release --bin plusdrive`, shared nogen target dir),
   then `plusdrive build DIR -o img --syx SYX`, cached in
   `out/plusdrive/native/<key12>/dt2.img`. Key = sha256(firmware, plusdrive binary, each
@@ -18,7 +18,7 @@ in the main tree root: /Users/em/src/digi/digitakt2/Digitakt_II_OS1.16.syx.
   ready_at=914986053, main_ui=true, fs_verified=Some(true); both names found in guest state
   (ascii 3 and 6 hits). Same run with card `none`: 0 hits. Screenshot of the booted card
   project shows project "WAXSAFETY" (seeded), SRC sample slot "A 7".
-- Launcher build checked: `tools/native_emu.sh --cf-only --build-only --samples DIR SYX`.
+- Launcher build checked: `tools/native_emu.py --cf-only --build-only --samples DIR SYX`.
 - Not done: a screenshot of the +Drive list itself (needs navigating to the samples pool).
 
 ## Task 2: encoders

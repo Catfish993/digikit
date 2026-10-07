@@ -12,7 +12,7 @@ headroom. DSP is the critical path.
 
 Uncommitted, verified:
 - `tools/native_pgo.py` (`train`, `check`, `plan`, `bench`, `bench-bins`) and
-  the PGO path in `tools/native_emu.sh`. The current profile matches the tree:
+  the PGO path in `tools/native_emu.py`. The current profile matches the tree:
   `out/native/pgo/dn2/aarch64-apple-darwin/profiles/a8c0e85c….profdata`.
   The next coupled `mise run emu` builds the app with it (first build about
   4 minutes).

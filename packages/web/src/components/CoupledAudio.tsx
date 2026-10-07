@@ -1,7 +1,7 @@
 import { Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
-import { PcmSink, resumeOnNextGesture } from '../audio';
-import { fetchLocalInputs, localManifest } from '../local-inputs';
-import type { EmulatorRuntime, RuntimeSnapshot } from '../runtime';
+import { PcmSink, resumeOnNextGesture } from '../runtime/audio';
+import { fetchLocalInputs, localManifest } from '../runtime/local-inputs';
+import type { EmulatorRuntime, RuntimeSnapshot } from '../runtime/runtime';
 
 /** Load logic shared by the panel's Start button and Faceplate's local-inputs path. The caller creates and resumes `sink` in its gesture and awaits that before calling; throws on failure and leaves closing `sink` to the caller. */
 export async function startCoupled(opts: { runtime: EmulatorRuntime; firmware: { name: string; bytes: Uint8Array }; image: Uint8Array; dsp: Uint8Array; snapshot?: Uint8Array; sink: PcmSink; bufferSeconds?: number; onStarted?: (snapshot: RuntimeSnapshot) => void }): Promise<RuntimeSnapshot> {
@@ -18,7 +18,7 @@ export async function startCoupled(opts: { runtime: EmulatorRuntime; firmware: {
  * user-supplied and stays in the page: firmware (.syx), the packed DSP
  * image, the DSP state (`.dsp` beside a coupled snapshot) and, to skip the
  * boot, the ColdFire snapshot taken at ready. Needs a core built with
- * `tools/native_wasm.sh --sharc`.
+ * `tools/native_wasm.py --sharc`.
  */
 export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRuntime | undefined>; reset: number; firmware?: () => { name: string; bytes: Uint8Array } | undefined; adopted?: () => { sink: PcmSink; note: string } | undefined; onStarted: (snapshot: RuntimeSnapshot) => void; onError: (error: string) => void }) {
   const files: Record<'syx' | 'image' | 'dsp' | 'snapshot', File | undefined> = { syx: undefined, image: undefined, dsp: undefined, snapshot: undefined };
@@ -81,7 +81,7 @@ export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRun
   });
   onMount(() => { void localManifest().then((m) => setLocalFound(Boolean(m?.dspImage && m.dspState))); });
   createEffect(() => {
-    props.reset;
+    void props.reset;
     setActive(false);
     window.clearInterval(timer);
     sink?.close();

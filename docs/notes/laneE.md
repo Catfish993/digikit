@@ -25,7 +25,7 @@ what is built.
 - `native/coupled/src/lib.rs`: `new_patched`, `inject_dsp_patch`, `restore_state`,
   `rebase_clock`, `sync_audio`, `has_audio`.
 - `tools/digi_client.py` (client + CLI), `tools/dsp_patch.py syx` (patched .syx
-  writer on `dt2/build.py`), `tools/native_emu.sh --daemon`, `mise run emu:serve`
+  writer on `dt2/build.py`), `tools/native_emu.py --daemon`, `mise run emu:serve`
   and `emu:ctl`, `tests/test_digi_client.py`, launcher tests.
 
 ## Choices

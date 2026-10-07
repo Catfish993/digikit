@@ -24,8 +24,8 @@ Configurations are those of tools/fastcov.py (`default`, `static-blocks`,
 `static-blocks+follow`, `fast-auto:256,64`, ...) and `hybrid-top:N`: the default
 config (AOT on) plus fast regions armed only at the static block starts of the
 top N functions of the cost ranking (a fast-only diagnostic run, cached). The firmware comes from
-DIGI_EMU_SYX like fastcov. Each run writes out/native/perf/<stamp>/report.md
-and report.json.
+DIGI_EMU_SYX like fastcov. Each run writes out/runs/perf/<stamp>/ (latest symlink) with report.md
+and perf.json.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 try:
     import coupled
+    import digi_env
     import fastcov
 finally:
     sys.path.pop(0)
@@ -343,7 +344,7 @@ def use_dt2(args) -> None:
         "DSP state": ready / "digi-audio-m5.snap.dsp",
         "CF snapshot": ready / "digi-audio-m5.snap",
     }
-    extra = ["--scenarios", str(ROOT / "native/coupled/scenarios-dt2.json")]
+    extra = ["--scenarios", str(ROOT / "scenarios/dt2.json")]
     if args.card_image:
         extra += ["--card-image", args.card_image]
     coupled.inputs = lambda: inputs
@@ -422,7 +423,12 @@ def main() -> int:
         )
     binary = coupled.ensure_binary(args.no_build)
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
-    out = pathlib.Path(args.out) if args.out else OUT / stamp
+    # out/runs/perf/<stamp>/: report.md and perf.json here, the runs' own
+    # reports and stderr in logs/.
+    report_dir = (
+        pathlib.Path(args.out) if args.out else digi_env.run_dir("perf", stamp)
+    )
+    out = report_dir / "logs"
     out.mkdir(parents=True, exist_ok=True)
     if args.calibrate:
         calibrate(binary, args.scenario, args.seconds, out, args.timeout, args.image)
@@ -479,10 +485,10 @@ def main() -> int:
         md.append(report_config(label, t, ranking, costs, args.top))
         results.append({"config": label, "env": env, "run": t, "ranking": ranking[:50]})
     text = "\n".join(md)
-    (out / "report.md").write_text(text)
-    (out / "report.json").write_text(json.dumps(results, indent=1))
+    (report_dir / "report.md").write_text(text)
+    (report_dir / "perf.json").write_text(json.dumps(results, indent=1))
     print(text)
-    print(f"report: {out / 'report.md'}")
+    print(f"report: {report_dir / 'report.md'}")
     return 0
 
 

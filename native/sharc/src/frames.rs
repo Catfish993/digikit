@@ -4,9 +4,8 @@
 //! the start state, and each frame's DMA data). Every frame does what
 //! `NativeFrames.frame` does: the DMA transfer poke, the DMA completion
 //! call, then the block handler call, each run until the call returns.
-//! `sharc-frames` (native) and the WebAssembly frame runner
-//! (`native/sharc-jit/wasm-frames`) share this module, so both time the
-//! same work.
+//! `sharc-frames` (native) and the WebAssembly frame runners share
+//! this module, so both time the same work.
 
 use crate::rt::{Int, V};
 use crate::sha256::Sha256;

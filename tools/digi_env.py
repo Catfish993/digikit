@@ -3,8 +3,8 @@
 
 One place for the pinned Rust toolchain (read from mise.toml), the default
 paths of the private inputs, the firmware file, and the per-firmware fast-tier
-tables (tools/fast_regions.json). tools/native_emu.sh, native_pgo.py,
-native_target.py, native_wasm.sh and coupled.py import it.
+tables (tools/fast_regions.json). tools/native_emu.py, native_pgo.py,
+native_target.py, native_wasm.py and coupled.py import it.
 
     uv run python tools/digi_env.py        # print the resolved settings
 """
@@ -19,6 +19,7 @@ import pathlib
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 # The DN2 ready-inputs directory: ready_dir in tools/ready_inputs.json (shared
@@ -227,6 +228,154 @@ def rust_env(environ: Environ | None = None) -> dict[str, str]:
             file=sys.stderr,
         )
     return env
+
+
+# Run output and diagnostics
+
+
+RUNS_ROOT = ROOT / "out" / "runs"
+
+
+def run_dir(kind: str, stamp: str | None = None) -> pathlib.Path:
+    """A new out/runs/<kind>/<UTC stamp>/ (created); kind/latest points at it.
+
+    The run layout of every run tool: report.json, perf.json, audio.wav and
+    logs/ (diagnostics, see `diag_env`) inside it.
+    """
+    import datetime
+
+    kind = "".join(c if c.isalnum() or c in "._+-" else "_" for c in kind)[:80]
+    stamp = stamp or datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
+    base = RUNS_ROOT / kind
+    path = base / stamp
+    n = 1
+    while path.exists():
+        n += 1
+        path = base / f"{stamp}-{n}"
+    path.mkdir(parents=True)
+    link = base / f".latest-{os.getpid()}"
+    link.unlink(missing_ok=True)
+    link.symlink_to(path.name)
+    link.replace(base / "latest")
+    return path
+
+
+def _w(**pairs: str) -> Callable[[str, pathlib.Path], dict[str, str]]:
+    """Env builder: each value is a file name under logs/ (or "" for the arg)."""
+
+    def build(arg: str, logs: pathlib.Path) -> dict[str, str]:
+        return {k: (str(logs / v) if v else arg) for k, v in pairs.items()}
+
+    return build
+
+
+# name -> (takes an argument, output goes to stderr, env builder, what it records).
+# `--diag LIST` of the run tools; the builder gets the argument and logs/.
+DIAG: dict[
+    str, tuple[bool, bool, Callable[[str, pathlib.Path], dict[str, str]], str]
+] = {
+    "dspi": (False, False, _w(DIGI_DSPI_LOG="dspi.bin"), "DSPI traffic log"),
+    "dspwatch": (
+        True,
+        False,
+        _w(DIGI_DSP_WATCH="", DIGI_DSP_WATCH_OUT="dspwatch.csv"),
+        "DSP words ADDR[,ADDR] sampled per frame",
+    ),
+    "model": (
+        False,
+        False,
+        _w(DIGI_DSP_MODEL_LOG="model.csv"),
+        "per-frame DSP tier counters",
+    ),
+    "wwatch": (
+        True,
+        False,
+        _w(SHARC_WWATCH="", SHARC_WWATCH_OUT="wwatch.csv"),
+        "writes to DSP words ADDR[:N],..: icount, PC, unit",
+    ),
+    "pcdump": (
+        True,
+        False,
+        _w(SHARC_PCDUMP="", SHARC_PCDUMP_OUT="pcdump.csv"),
+        "registers at the listed PCs (SHARC_PCDUMP_ICOUNT/LIMIT/MEM tune it)",
+    ),
+    "fastcov": (
+        False,
+        True,
+        lambda a, logs: {
+            "SHARC_FAST_LOG": "summary",
+            "SHARC_FAST_COV": "1",
+            "SHARC_FAST_HIST": "1",
+        },
+        "fast-tier coverage, refusals, exits and the interpreter histogram",
+    ),
+    "fastlog": (
+        False,
+        True,
+        lambda a, logs: {"SHARC_FAST_LOG": "summary"},
+        "fast-tier summary",
+    ),
+    "hist": (
+        False,
+        True,
+        lambda a, logs: {"SHARC_FAST_HIST": "1"},
+        "interpreted instructions per PC",
+    ),
+    "dump": (
+        False,
+        False,
+        _w(SHARC_FAST_DUMP="fastdump"),
+        "fast-tier kernels and calls (build feature fast-dump; coupled.py adds it)",
+    ),
+    "pcm": (
+        False,
+        False,
+        lambda a, logs: {},
+        "audio.wav next to the report (coupled.py --wav)",
+    ),
+}
+
+
+def parse_diag(text: str) -> list[tuple[str, str]]:
+    """`dspi,wwatch=1a0:4,2b0,hist` -> [(name, arg)]; a token that is not a
+    name continues the previous argument (specs contain commas)."""
+    items: list[list[str]] = []
+    for token in (t.strip() for t in text.split(",")):
+        if not token:
+            continue
+        head, _, arg = token.partition("=")
+        if head in DIAG:
+            items.append([head, arg])
+        elif items and DIAG[items[-1][0]][0]:
+            items[-1][1] += "," + token
+        else:
+            raise SystemExit(
+                f"--diag: unknown name {token!r} (known: {', '.join(DIAG)})"
+            )
+    for name, arg in items:
+        if DIAG[name][0] and not arg:
+            raise SystemExit(f"--diag: {name} needs a value ({name}=SPEC)")
+    return [(n, a) for n, a in items]
+
+
+def diag_env(names: str | list[tuple[str, str]], run: pathlib.Path) -> dict[str, str]:
+    """The environment for `--diag` names: each diagnostic's variables, writing
+    under RUN/logs/, plus DIGI_DIAG_DIR (the native default for unset *_OUT)."""
+    items = parse_diag(names) if isinstance(names, str) else names
+    if not items:
+        return {}
+    logs = pathlib.Path(run) / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    env = {"DIGI_DIAG_DIR": str(logs)}
+    for name, arg in items:
+        env.update(DIAG[name][2](arg, logs))
+    return env
+
+
+def diag_stderr(names: str | list[tuple[str, str]]) -> bool:
+    """True when a named diagnostic prints to stderr (keep it as logs/stderr.log)."""
+    items = parse_diag(names) if isinstance(names, str) else names
+    return any(DIAG[n][1] for n, _ in items)
 
 
 def main() -> int:

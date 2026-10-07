@@ -1,4 +1,6 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
+# Groups: setup, emu*, web*, scenario*, test*, lint*, perf*, gen:*, dev:*, check.
+# Old task names stay as aliases.
 
 [settings]
 activate_aggressive = true
@@ -7,73 +9,97 @@ activate_aggressive = true
 rust = "1.98.1"
 pnpm = "12.8.2"
 
-[tasks.boot]
-run = "tools/native_boot.sh"
-description = "Run the bounded native Oracle boot diagnostic"
+# --- setup ---
 
-[tasks.plusdrive]
-run = "tools/native_plusdrive.sh"
-description = "Build or inspect a standalone +Drive image"
+[tasks.setup]
+run = [
+  "uv sync",
+  "pnpm install --frozen-lockfile",
+  "uv run python -m emu.unicorn_compat || tools/install-patched-unicorn.sh",
+]
+description = "Install the Python and web dependencies; build the patched Unicorn when the installed one lacks the patches"
+
+# --- desktop emulator ---
 
 [tasks.emu]
-run = "tools/native_emu.sh"
+run = "tools/native_emu.py"
 description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready)"
 
+[tasks."emu:build"]
+run = "tools/native_emu.py --build-only"
+description = "Build the desktop emulator exactly as `mise run emu` does, without launching it"
+
 [tasks."emu:serve"]
-run = "tools/native_emu.sh --daemon"
+run = "tools/native_emu.py --daemon"
 description = "Run the emulator without a window, paused, serving the control socket (out/native/run/current.json); drive it with tools/digi_client.py. --free runs it live."
 
 [tasks."emu:ctl"]
 run = "uv run python tools/digi_client.py"
 description = "Control a running emulator: mise run emu:ctl status | inject PATCHED.syx | step N | tap CODE | frame out.png | call METHOD k=v | events"
 
-[tasks."emu:build"]
-run = "tools/native_emu.sh --build-only"
-description = "Build the desktop emulator exactly as `mise run emu` does, without launching it"
+[tasks."emu:ready"]
+alias = "ready"
+run = "uv run python tools/ready.py"
+description = "Build a device's ready snapshot from the .syx alone: mise run emu:ready -- dn2|dt2 [--card-image IMG] (cold DSP start; about 2 min)"
+
+# --- web panel ---
 
 [tasks.web]
 run = "pnpm dev"
 description = "Build the browser core (WASM) and serve the web panel (astro dev)"
 
-[tasks.wasm]
-run = "tools/native_wasm.sh"
+[tasks."web:build"]
+run = "pnpm build"
+description = "Build the browser core (WASM) and the static web panel (astro build, with the firmware guard)"
+
+[tasks."web:check"]
+run = "pnpm check"
+description = "Type-check the web panel (astro check)"
+
+[tasks."web:lint"]
+run = "pnpm lint"
+description = "Lint the web panel (oxlint with eslint-plugin-solid)"
+
+[tasks."web:test"]
+run = "pnpm test"
+description = "Run the web panel's audio-health tests (node --test)"
+
+[tasks."web:wasm"]
+alias = "wasm"
+run = "tools/native_wasm.py"
 description = "Build only the browser emulator core (WASM)"
 
-[tasks."wasm:parity"]
+[tasks."web:parity"]
+alias = "wasm:parity"
 run = "node tools/wasm_parity.mjs --scenario"
-description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run wasm:parity trig1-tap-release"
+description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run web:parity trig1-tap-release"
 
-[tasks.pgo]
-run = "uv run python tools/native_pgo.py train"
-description = "Retrain the desktop PGO profile (~6 min); do it at milestones, not per edit"
+# --- scenarios (scenarios/README.md) ---
+
+[tasks."scenario:build"]
+run = "uv run python tools/coupled.py build"
+description = "Build the headless coupled runner (coupled-run)"
+
+[tasks.scenarios]
+depends = ["scenario:build"]
+run = "uv run python tools/coupled.py scenario --all --no-build"
+description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python tools/coupled.py scenario --all --device dt2"
 
 [tasks.scenario]
 run = "uv run python tools/coupled.py scenario"
 description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"
 
-[tasks.fastcov]
-run = "uv run python tools/fastcov.py"
-description = "DSP CPU, tier split and fast-tier refusals/exits per tier config: mise run fastcov -- --config default --config fast-auto"
-
-[tasks.perf]
-run = "uv run python tools/perf.py"
-description = "Standard DSP performance report (coverage, CPU per audio s, PCM, calls, per-function cost ranking): mise run perf -- [--config NAME] [--seconds S] [--timed] [--calibrate]"
-
-[tasks.core]
-run = "uv run python tools/sharc_transpile.py --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
-description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
-
-[tasks.regen]
-run = "uv run python tools/sharc_lowergen_regen.py"
-description = "Regenerate the shared core, native/sharc/src/fast/lower/gen_forms.rs, the fuzz vectors and the test programs from tools/sharc_core: mise run regen [-- --add FORM,...]"
-
-[tasks.replay]
+[tasks."scenario:replay"]
+alias = "replay"
 run = "uv run python tools/coupled.py replay"
 description = "Replay inputs recorded by the desktop app (Export diagnostics file) headless"
 
-[tasks.bisect]
+[tasks."scenario:bisect"]
+alias = "bisect"
 run = "uv run python tools/coupled.py bisect"
 description = "Find the DSP tier (fast region, cluster root, AOT) that changes a scenario's PCM"
+
+# --- tests ---
 
 [tasks."test:quick"]
 run = [
@@ -82,10 +108,85 @@ run = [
 ]
 description = "Fast checks for the tooling, the audio sink and the coupled runtime"
 
-[tasks.ready]
-run = "uv run python tools/ready.py"
-description = "Build a device's ready snapshot from the .syx alone: mise run ready -- dn2|dt2 [--card-image IMG] (cold DSP start; about 2 min)"
+[tasks.test]
+run = [
+  "uv run python -m pytest -q tests",
+  "uv run python tools/rust_ws.py test",
+  "pnpm test",
+  "uv run python tools/coupled.py scenario --all",
+]
+description = "Everything except the slow gates: pytest, cargo test --workspace, web tests, every DN2 scenario pin"
 
-[tasks."aot-gen"]
+[tasks."test:slow"]
+run = [
+  "uv run python -m pytest -q tests --slow",
+  "uv run python tools/rust_ws.py gates",
+]
+description = "Slow pytest runs and the ignored Rust gates that have private fixtures (coupled_ready_exactness)"
+
+# --- lint ---
+
+[tasks."lint:py"]
+run = "uv run python -m pytest -q tests/test_lint.py"
+description = "ruff check and ruff format --check on the CLEAN list of tests/test_lint.py"
+
+[tasks."lint:web"]
+run = "pnpm lint"
+description = "Lint the web panel (oxlint with eslint-plugin-solid)"
+
+[tasks."lint:rust"]
+run = "uv run python tools/rust_ws.py fmt"
+description = "cargo fmt --check on the crates that are already clean (CLEAN_CRATES in tools/rust_ws.py)"
+
+[tasks.lint]
+depends = ["lint:py", "lint:web", "lint:rust"]
+description = "All linters"
+
+[tasks.check]
+depends = ["lint", "test:quick"]
+description = "The pre-merge gate: lint + test:quick"
+
+# --- performance ---
+
+[tasks.perf]
+run = "uv run python tools/perf.py"
+description = "Standard DSP performance report (coverage, CPU per audio s, PCM, calls, per-function cost ranking): mise run perf -- [--config NAME] [--seconds S] [--timed] [--calibrate]"
+
+[tasks."perf:cov"]
+alias = "fastcov"
+run = "uv run python tools/fastcov.py"
+description = "DSP CPU, tier split and fast-tier refusals/exits per tier config: mise run perf:cov -- --config default --config fast-auto"
+
+[tasks."perf:pgo"]
+alias = "pgo"
+run = "uv run python tools/native_pgo.py train"
+description = "Retrain the desktop PGO profile (~6 min); do it at milestones, not per edit"
+
+[tasks."perf:aot"]
+alias = "aot-gen"
 run = "uv run python tools/aot_gen.py"
-description = "Generate a firmware block library (AOT core) and register it by DSP image: mise run aot-gen -- dt2 --card-image IMG"
+description = "Generate a firmware block library (AOT core) and register it by DSP image: mise run perf:aot -- dt2 --card-image IMG"
+
+# --- generated SHARC core ---
+
+[tasks."gen:core"]
+alias = "core"
+run = "uv run python tools/sharc_transpile.py --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
+description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
+
+[tasks."gen:regen"]
+alias = "regen"
+run = "uv run python tools/sharc_lowergen_regen.py"
+description = "Regenerate the shared core, native/sharc/src/fast/lower/gen_forms.rs, the fuzz vectors and the test programs from tools/sharc_core: mise run gen:regen [-- --add FORM,...]"
+
+# --- developer tools ---
+
+[tasks."dev:boot"]
+alias = "boot"
+run = "tools/native_boot.py"
+description = "Run the bounded native Oracle boot diagnostic"
+
+[tasks."dev:plusdrive"]
+alias = "plusdrive"
+run = "tools/native_plusdrive.py"
+description = "Build or inspect a standalone +Drive image"

@@ -5,10 +5,8 @@ edition = "2024"
 publish = false
 description = "WebAssembly backend for the SHARC fast tier's kernel IR (native/sharc/src/fast/ir.rs), plus the V8 gate tools"
 
-# A root of its own (like native/sharc-jit): not a member of the repository
-# workspace, own Cargo.lock and target dir. Build with SHARC_GEN_DIR pointing
-# at a transpile output (mise run core) so sharc-native links.
-[workspace]
+# Member of the repository workspace. Build with SHARC_GEN_DIR pointing at a
+# transpile output (mise run gen:core) so sharc-native links.
 
 [dependencies]
 sharc-native = { path = "../sharc" }
@@ -30,6 +28,3 @@ path = "src/bin/wasmgen.rs"
 name = "clbench"
 path = "src/bin/clbench.rs"
 required-features = ["native-bench"]
-
-[profile.release]
-opt-level = 3

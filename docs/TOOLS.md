@@ -3,7 +3,8 @@
 This repository includes small, purpose-built tools for extracting firmware,
 querying Ghidra, measuring the emulator, and analysing the SHARC+ program.
 This page is the index: use each tool's `--help` and module docstring for its
-full command line.
+full command line. Run output and diagnostics (`out/runs/`, `--diag`) are in
+[INSTRUMENTATION.md](INSTRUMENTATION.md).
 
 ## Generated-file rule
 

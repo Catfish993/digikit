@@ -14,7 +14,7 @@ SHARC insns per audio s, another 498M idle-skipped, free).
   (`tools/perf.py` on `tools/fastcov.py`). Per config: a clean run (DSP CPU per audio
   s, PCM sha, tier split, region calls) and a diagnostic run (SHARC_FAST_HIST and
   SHARC_FAST_COV: interpreted insns, calls and kernel insns per function) that ranks
-  functions by estimated cost. Report: `out/native/perf/<stamp>/report.md` and `.json`.
+  functions by estimated cost. Report: `out/runs/perf/<stamp>/report.md` and `perf.json` (see docs/INSTRUMENTATION.md).
 - Configs: `default` (AOT blocks + verified regions: the shipped desktop build),
   `static-blocks|static-insns[+follow][+gen][+aot]` (fast regions armed at every block
   start or instruction, AOT off unless `+aot`), `fast-auto:256,64`, `env:K=V;...`,

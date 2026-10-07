@@ -122,7 +122,7 @@ repeats in `out/native/runs/20261005-073811`.
   examples `fast_diff`, `fast_blockers` and `region_bench` deps.
 - `native/coupled` (`digi-coupled`, feature `coupled-audio`): **the shared
   coupled run loop** (`CoupledRuntime`, `STEP_CHUNK=250_000`, DSP peer, PCM,
-  link timing), the `coupled-run` headless runner, `scenarios.json`, and the
+  link timing), the `coupled-run` headless runner, `scenarios/dn2.json`, and the
   ignored gates in `digi_coupled::gates`. The desktop crate wraps those gates
   under the same test paths (`desktop_runtime::coupled::tests::*`).
 - `packages/desktop/src-tauri`: thin Tauri shell over `digi-coupled`.
@@ -167,7 +167,7 @@ repeats in `out/native/runs/20261005-073811`.
   excluded), the gen dir contents, `rustc -vV`, triple, features, fast-region
   list, and the root `Cargo.toml`/`Cargo.lock`. A change to the desktop crate
   alone gives `ok (desktop crate changed; profile reused)`.
-- **Launcher** (`tools/native_emu.sh`, a Python script, run by `mise run emu`):
+- **Launcher** (`tools/native_emu.py`, a Python script, run by `mise run emu`):
   - coupled path: if the profile is stale it **retrains automatically**
     (about 6 min, prints a line first);
   - `DIGI_EMU_PGO_TRAIN=0` skips training and falls back;
@@ -209,7 +209,7 @@ The matrix now uses four default fast regions. The saved
 `candidate_measure.py` pin the historical three-region control explicitly and
 use retained binaries to replay the reported experiments without builds.
 
-- **Scenarios** (`native/coupled/scenarios.json`, guest-clock events):
+- **Scenarios** (`scenarios/dn2.json`, guest-clock events):
   - `idle`;
   - `trig1-hold`: a QA prelude (NO, NO, encoder A), then Trig 1 held;
   - `kb-chord16`: the QA prelude, keyboard mode (button 18), all 16 trig keys
@@ -627,7 +627,7 @@ passed its bounded coupled gate; the fifth-region decision remains negative.
 - The repo-root `Cargo.toml` excludes `.claude` (agent worktrees).
 - The workspace refactor repointed some tools outside its assigned files to
   the new target dirs. Check them: `live_audio.py`, `cf_lockstep.py`,
-  `cfisa/oracle.py`, `native_boot.sh`, `native_plusdrive.sh`,
+  `cfisa/oracle.py`, `native_boot.py`, `native_plusdrive.py`,
   `tests/test_live_sharc.py`, `tests/test_live_audio.py`.
 - **Em can delete these:**
   - old per-crate `native/*/target` dirs;

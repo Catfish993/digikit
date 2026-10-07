@@ -3882,7 +3882,7 @@ To enable PC/event diagnostics for a native diagnostic build, use
 `--features diagnostic-profile,diagnostic-events` on `native/boot/Cargo.toml`.
 For the desktop, use `pnpm --filter @digi/desktop dev --features diagnostics`;
 the desktop feature forwards PC/event features without detailed bus tracing.
-For a browser diagnostic asset, run `tools/native_wasm.sh --diagnostics`, then
+For a browser diagnostic asset, run `tools/native_wasm.py --diagnostics`, then
 reload the page. Running it without the flag restores the default build.
 The WASM build script now copies from the actual `CARGO_TARGET_DIR` when set,
 resolving the previous stale external-target copy trap. All Cargo work still
@@ -5946,7 +5946,7 @@ builds an instrumented `cargo test` binary of `digiemu-desktop`
 runs `coupled_ready_exactness` four times and merges the profile into
 `out/native/pgo/dn2/<triple>/profiles/<sha256>.profdata`. The manifest key
 covers every local crate in the build graph, the generated cache, `rustc -vV`,
-the target and features; `check` takes about 0.02 s. `tools/native_emu.sh`
+the target and features; `check` takes about 0.02 s. `tools/native_emu.py`
 uses the profile on the coupled path when the key matches, through
 `rustup run 1.98.1 cargo run ... --target aarch64-apple-darwin --target-dir
 out/native/pgo/dn2/<triple>/target` with `-Cprofile-use`; otherwise it prints
@@ -6757,4 +6757,4 @@ regeneration and PGO retrain.
 - Process note: rebuilding into `out/native/target/prod/pgo-use` with a
   different PGO profile forced a 7 min rebuild of the generated core at the
   next launch. Experiments must use their own target dirs.
-- **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and native/coupled/scenarios.json.
+- **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and scenarios/dn2.json.

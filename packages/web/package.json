@@ -4,20 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "../../tools/native_wasm.sh",
+    "predev": "../../tools/native_wasm.py",
     "dev": "astro dev",
-    "prebuild": "../../tools/native_wasm.sh",
+    "prebuild": "../../tools/native_wasm.py",
     "build": "astro build",
     "check": "astro check",
-    "test:audio": "node --test ../../tests/test_audio_health.mjs"
+    "test:audio": "node --test \"tests/*.test.mjs\"",
+    "lint": "oxlint"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.12.1",
-    "@astrojs/check": "0.9.10",
     "@astrojs/solid-js": "7.0.2",
+    "@tauri-apps/api": "2.12.1",
     "astro": "7.3.5",
     "smol-toml": "1.9.0",
-    "solid-js": "1.9.15",
-    "typescript": "^5.9.3"
+    "solid-js": "1.9.15"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "eslint-plugin-solid": "0.18.1",
+    "oxlint": "1.87.0",
+    "typescript": "5.9.3"
   }
 }

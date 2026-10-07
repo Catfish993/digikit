@@ -16,6 +16,8 @@ coupled-audio = ["elektron-native-boot/sharc", "elektron-native-boot/play", "dep
 region-profile = ["sharc-native?/region-profile"]
 # Per-phase ticks of the fast tier's region call, printed at exit (SHARC_FAST_LOG).
 fast-prof = ["sharc-native?/fast-prof"]
+# SHARC_FAST_DUMP kernel and call capture (--diag dump); the hooks are absent otherwise.
+fast-dump = ["sharc-native?/fast-dump"]
 
 [dependencies]
 device-profile = { path = "../device-profile" }

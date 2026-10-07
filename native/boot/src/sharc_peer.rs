@@ -216,6 +216,17 @@ fn parse_watch(spec: &str) -> Result<Vec<u32>, String> {
     Ok(addrs)
 }
 
+/// `DIGI_DSP_WATCH_OUT`, else `$DIGI_DIAG_DIR/dspwatch.csv` (tools/digi_env.py
+/// `diag_env` sets the directory; the variables that switch a log on carry
+/// their own path).
+fn watch_out() -> Option<String> {
+    std::env::var("DIGI_DSP_WATCH_OUT").ok().or_else(|| {
+        let dir = std::env::var_os("DIGI_DIAG_DIR").filter(|d| !d.is_empty())?;
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(std::path::Path::new(&dir).join("dspwatch.csv").to_string_lossy().into_owned())
+    })
+}
+
 impl Diag {
     fn from_env() -> Self {
         let mut log = None;
@@ -230,7 +241,7 @@ impl Diag {
             }
         }
         let spec = std::env::var("DIGI_DSP_WATCH").ok();
-        let out = std::env::var("DIGI_DSP_WATCH_OUT").ok();
+        let out = spec.as_ref().and_then(|_| watch_out());
         let mut watch = None;
         match (spec, out) {
             (Some(spec), Some(path)) => match parse_watch(&spec) {

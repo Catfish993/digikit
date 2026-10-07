@@ -1459,6 +1459,12 @@ mod tests {
     }
 }
 
+/// `SHARC_FAST_DEBUG_REQ` is set (read once: the decline path is hot).
+fn debug_req() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_DEBUG_REQ").is_some())
+}
+
 fn dbg_win() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("SHARC_FAST_DEBUG_WIN").is_ok_and(|v| v == "1"))
@@ -1651,7 +1657,7 @@ pub fn run_cfg(
         }
     } else if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters)
     {
-        if std::env::var_os("SHARC_FAST_DEBUG_REQ").is_some() {
+        if debug_req() {
             req_why(s, r, iters);
         }
         return Err(Decline::Req);

@@ -44,7 +44,6 @@ const localInputs = {
           dspImage: fs.existsSync(localFiles['dsp-image']),
           dspState: fs.existsSync(localFiles['dsp-state']),
           cfSnapshot: fs.existsSync(localFiles['cf-snapshot']),
-          firmwareSha256: '2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0',
         });
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Length', String(Buffer.byteLength(body)));

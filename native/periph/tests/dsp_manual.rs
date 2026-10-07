@@ -38,7 +38,7 @@ fn a_write_resets_the_poll_count() {
     let mut fifo = Fifo::new(5);
     fifo.read_status(STATUS);
     fifo.read_status(STATUS);
-    assert!(fifo.write(STATUS));
+    assert!(fifo.write(STATUS, 2, 0));
     assert_eq!(fifo.polls, 0);
     assert_eq!(fifo.words, 1);
 }
@@ -46,7 +46,7 @@ fn a_write_resets_the_poll_count() {
 #[test]
 fn latch_write_counts_a_burst_only() {
     let mut fifo = Fifo::new(0);
-    assert!(fifo.write(LATCH));
+    assert!(fifo.write(LATCH, 2, 0));
     assert_eq!(fifo.bursts, 1);
     assert_eq!(fifo.words, 0);
 }
@@ -55,6 +55,6 @@ fn latch_write_counts_a_burst_only() {
 fn addresses_outside_status_and_latch_are_not_owned() {
     let mut fifo = Fifo::new(0);
     assert_eq!(fifo.read_status(periph::dsp::BASE), None);
-    assert!(!fifo.write(periph::dsp::BASE + 4));
+    assert!(!fifo.write(periph::dsp::BASE + 4, 2, 0));
     assert!(!Fifo::owns(periph::dsp::BASE + 4));
 }
