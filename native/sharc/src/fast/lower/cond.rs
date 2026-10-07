@@ -39,6 +39,7 @@ pub const COND_FORMS: &[&str] = &[
     "2a",
     "3a",
     "3b",
+    "3d",
     "5a_move",
     "5b_move",
     "6a_mem",

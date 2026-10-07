@@ -737,6 +737,16 @@ fn dynamic_window_ptr(
     }
 }
 
+/// A guarded dynamic window that could not be resolved (the anchor is not
+/// plain, present or written memory): an empty span, so every access
+/// through it fails its guard and leaves before the instruction. The kernel
+/// still runs up to there, instead of the whole call being declined.
+fn empty_dyn_window(ctx: &mut Ctx, w: usize) {
+    ctx.set64(win_ptr(w as u32), 0);
+    note_window(ctx, w, 0, 0);
+    ctx.set32(CTX_WIN_DYN_LEN + 4 * w as u32, 0);
+}
+
 /// Resolve either a statically proven window or a guarded read window.  A
 /// dynamic window has no whole-loop address proof: it is safe because every
 /// load carries its own unsigned bounds guard before the instruction commits.
@@ -914,6 +924,10 @@ pub fn run(
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
+            if spec.dynamic_anchor.is_some() {
+                empty_dyn_window(ctx, w);
+                continue;
+            }
             return Err(Decline::Window);
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
@@ -1299,6 +1313,13 @@ mod sites {
             _ => None,
         };
         set_bit26(s, ev, entry_stkyx);
+        if ctx.get32(CTX_STK26) == 1 && entry_stkyx.m & BIT26 == 0 && s.r[STKYX].m & BIT26 != 0 {
+            // A DO alone (no loop end after it) clears bit 26 where it was
+            // known, and leaves it unknown where it was not (the generic
+            // core's `_push` keeps the known mask).
+            let cur = s.r[STKYX];
+            s.r[STKYX] = V { b: cur.b, m: cur.m & !BIT26 };
+        }
         if s.loops.n != loops_before || did {
             s.check_loops();
         }
@@ -1536,6 +1557,10 @@ pub fn run_cfg(
             continue;
         }
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
+            if spec.dynamic_anchor.is_some() {
+                empty_dyn_window(ctx, w);
+                continue;
+            }
             cov_why(|| {
                 let dynamic = spec.dynamic_anchor.is_some();
                 let rw = if spec.write { "write" } else { "read" };

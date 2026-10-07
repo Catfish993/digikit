@@ -1457,6 +1457,7 @@ impl Lower {
             "3a" => self.form_3a(d)?,
             "3b" => self.form_3b(d)?,
             "3c" => self.form_3c(d)?,
+            "3d" => self.form_3d(d)?,
             "7a" => self.form_7a(d)?,
             "5a_move" | "5b_move" => self.form_5_move(d)?,
             "17a" => self.form_17a(d)?,
@@ -1472,8 +1473,8 @@ impl Lower {
             "7b" => self.form_7b(d)?,
             // The call and return sequence of the stack-model firmware, in
             // cluster kernels only.
-            "16a" if self.env.guarded_dyn => self.form_16a(d)?,
-            "25c_rframe" if self.env.guarded_dyn => self.form_25c()?,
+            "16a" => self.form_16a(d)?,
+            "25c_rframe" => self.form_25c()?,
             other => return refuse(format!("form {other}")),
         }
         self.commit()

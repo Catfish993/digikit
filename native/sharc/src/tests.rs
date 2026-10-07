@@ -1173,3 +1173,615 @@ fn fast_tier_runs_where_blocks_are_barred_by_the_code_check() {
     assert!(st.insns > 0);
     assert_eq!(e.stats.block_instructions, st.insns);
 }
+
+/// `M4 = R2; DM(M4, I1) = R12; R0 = DM(M4, I1); JUMP -8`, in the short-word
+/// alias (each instruction word little endian, in the order of the raw
+/// encoding). M4 is written by the loop, so the address has no static range:
+/// the fast tier makes a guarded dynamic window anchored on I1.
+#[cfg(sharc_gen)]
+fn dyn_window_engine(fast: bool, i1: u32, r2: u32, dirty: &[(u32, u32)]) -> crate::Engine {
+    let mut mem = Mem::new();
+    let code: [u16; 17] = [
+        0x703f, 0x123f, // M4 = R2
+        0x433e, 0x8600, 0x0000, // DM(M4, I1) = R12
+        0x433e, 0x0000, 0x0000, // R0 = DM(M4, I1)
+        0x073e, 0x04ff, 0xfff8, // JUMP -8
+        0x0000, 0x0000, 0x0000, // the two instructions the jump skips (NOP)
+        0x0000, 0x0000, 0x0000,
+    ];
+    let mut at = SPIN_ALIAS;
+    for w in code {
+        mem.load(at, &w.to_le_bytes());
+        at += 2;
+    }
+    mem.reset();
+    for &(lo, len) in dirty {
+        for a in lo..lo + len {
+            mem.write_byte(a, (a as u8) ^ 0x5a);
+        }
+    }
+    let mut e = crate::Engine::new(mem);
+    assert_eq!(e.set_option(4, 1), 0);
+    e.s.r[114] = V::c(0); // MODE1
+    e.s.r[122] = V::c(0); // IRPTL
+    e.s.r[123] = V::c(0); // IMASK
+    e.s.r[124] = V::c(0); // IMASKP
+    e.s.r[17] = V::c(i1.into());
+    e.s.r[2] = V::c(r2.into());
+    e.s.r[12] = V::c(0xdead_beef);
+    if fast {
+        e.set_fast(Some(Box::new(crate::fast::FastEngine::new(
+            Box::new(crate::fast::interp::InterpBackend),
+            &[0],
+        ))));
+    }
+    e
+}
+
+/// A transfer through a guarded dynamic window matches the interpreter: an
+/// address inside the span, an address that fails the guard (the kernel
+/// leaves before the instruction), and a store window that cannot be made
+/// (memory not written yet: the kernel still runs, and leaves at the store).
+#[cfg(sharc_gen)]
+#[test]
+fn guarded_dynamic_window_transfers_match_the_interpreter() {
+    const BASE: u32 = 0x10_0000;
+    let cases: [(u32, &[(u32, u32)], &str); 5] = [
+        (4, &[(BASE, 4096)], "inside the span"),
+        (
+            0x4000,
+            &[(BASE, 4096), (BASE + 0x10000, 4096)],
+            "guard fails",
+        ),
+        (0xffff_fff0, &[(BASE - 64, 4096)], "negative modifier"),
+        (4, &[], "store window not resolvable"),
+        (0, &[(BASE, 4096)], "zero modifier"),
+    ];
+    for (r2, dirty, why) in cases {
+        let mut plain = dyn_window_engine(false, BASE, r2, dirty);
+        let mut fast = dyn_window_engine(true, BASE, r2, dirty);
+        for _ in 0..4 {
+            assert_eq!(plain.step(97), 97, "{why}: {:?}", plain.halt);
+            assert_eq!(fast.step(97), 97, "{why}: {:?}", fast.halt);
+            same_state(&plain, &fast, why);
+        }
+        for a in BASE - 128..BASE + 0x10100 {
+            assert_eq!(
+                plain.s.mem.byte(a),
+                fast.s.mem.byte(a),
+                "{why}: byte {a:#x}"
+            );
+        }
+        let st = fast.fast.as_ref().unwrap().fast_stats().unwrap();
+        assert!(st.built >= 1 && st.insns > 0, "{why}: {st:?}");
+    }
+}
+
+// -- calls and returns in fast regions (stack model) --------------------------
+
+/// Short-word instruction builders for the call and return sequence tests.
+/// A parcel is stored little-endian; PC N is the byte `SPIN_ALIAS + 2 N`.
+#[cfg(sharc_gen)]
+mod callret_code {
+    pub const INC: u16 = 0xc500; // Rd = inc(Rs): | d << 4 | s
+    pub const ADD01: u16 = 0xc001; // R0 = add(R0, R1)
+    pub const ADD02: u16 = 0xc002; // R0 = add(R0, R2)
+    pub const NOP16: u16 = 0x0001;
+    /// RETURN (JUMP (M14, I12) (DB)) and its twin through I13 + M13.
+    pub const RET: [u16; 2] = [0x083f, 0x343f];
+    pub const RET13: [u16; 2] = [0x083f, 0x6c3f];
+
+    pub fn inc(d: u16, s: u16) -> u16 {
+        INC | d << 4 | s
+    }
+    /// CJUMP target (delayed, two slots follow).
+    pub fn cjump(t: u32) -> [u16; 3] {
+        [0x1804, (t >> 16 & 0xff) as u16, t as u16]
+    }
+    /// JUMP target (not delayed), relative.
+    pub fn jump(pc: u32, t: u32) -> [u16; 3] {
+        let off = t.wrapping_sub(pc) & 0xff_ffff;
+        [0x073e, (off >> 16) as u16, off as u16]
+    }
+    /// DO (to the instruction at `end`) UNTIL LCE, trip count in R(r).
+    pub fn do_loop(pc: u32, r: u16, end: u32) -> [u16; 3] {
+        [0x0d00 | r, 0, (end - pc) as u16]
+    }
+    pub fn put(code: &mut [u8], pc: u32, parcels: &[u16]) {
+        for (k, p) in parcels.iter().enumerate() {
+            let at = 2 * (pc as usize + k);
+            code[at] = *p as u8;
+            code[at + 1] = (*p >> 8) as u8;
+        }
+    }
+}
+
+/// The test program: three callers (A: nested calls; B: a call inside a DO
+/// loop; C: a callee that runs its own DO loop before it returns) over three
+/// functions F1 (calls F2), F2 and F3.
+#[cfg(sharc_gen)]
+fn callret_program() -> Vec<u8> {
+    use callret_code::*;
+    let mut c = vec![0u8; 0x400];
+    // A at 0: R1++, CALL F1 (slots R0++, NOP), R0 += R1, JUMP A.
+    put(&mut c, 0, &[inc(1, 1)]);
+    put(&mut c, 1, &cjump(0x20));
+    put(&mut c, 4, &[inc(0, 0), NOP16, ADD01]);
+    put(&mut c, 7, &jump(7, 0));
+    // F1 at 0x20: R3++, CALL F2 (slots R2++, NOP), R0 += R2, RETURN (slots R0++, NOP).
+    put(&mut c, 0x20, &[inc(3, 3)]);
+    put(&mut c, 0x21, &cjump(0x40));
+    put(&mut c, 0x24, &[inc(2, 2), NOP16, ADD02]);
+    put(&mut c, 0x27, &RET);
+    put(&mut c, 0x29, &[inc(0, 0), NOP16]);
+    // F2 at 0x40: R1++, RETURN through I13 + M13 (slots R0++, NOP).
+    put(&mut c, 0x40, &[inc(1, 1)]);
+    put(&mut c, 0x41, &RET13);
+    put(&mut c, 0x43, &[inc(0, 0), NOP16]);
+    // B at 0x60: DO (R15 times) { R1++; CALL F1 (slots R0++, NOP); R0 += R1 }; JUMP B.
+    put(&mut c, 0x60, &do_loop(0x60, 15, 0x69));
+    put(&mut c, 0x63, &[inc(1, 1)]);
+    put(&mut c, 0x64, &cjump(0x20));
+    put(&mut c, 0x67, &[inc(0, 0), NOP16, ADD01]);
+    put(&mut c, 0x6a, &jump(0x6a, 0x60));
+    // F3 at 0x80: DO (R14 times) { R1++; R0++ }; RETURN (slots R0++, NOP).
+    put(&mut c, 0x80, &do_loop(0x80, 14, 0x84));
+    put(&mut c, 0x83, &[inc(1, 1), inc(0, 0)]);
+    put(&mut c, 0x85, &RET);
+    put(&mut c, 0x87, &[inc(0, 0), NOP16]);
+    // C at 0xa0: R1++, CALL F3 (slots R0++, NOP), R0 += R1, JUMP C.
+    put(&mut c, 0xa0, &[inc(1, 1)]);
+    put(&mut c, 0xa1, &cjump(0x80));
+    put(&mut c, 0xa4, &[inc(0, 0), NOP16, ADD01]);
+    put(&mut c, 0xa7, &jump(0xa7, 0xa0));
+    c
+}
+
+#[cfg(sharc_gen)]
+fn callret_engine(fast: bool, start: u32, ret: u32, entries: &[u32]) -> crate::Engine {
+    let mut mem = Mem::new();
+    mem.load(SPIN_ALIAS, &callret_program());
+    mem.reset();
+    let mut e = crate::Engine::new(mem);
+    assert_eq!(e.set_option(4, 1), 0);
+    e.s.cfg.stack_model = true;
+    e.s.r[114] = V::c(0); // MODE1
+    e.s.r[122] = V::c(0); // IRPTL
+    e.s.r[123] = V::c(0); // IMASK
+    e.s.r[124] = V::c(0); // IMASKP
+    e.s.pc_sw = start as Int;
+    // Data and address registers known (the kernels require it).
+    for (c, v) in e.s.r.iter_mut().enumerate().take(48) {
+        *v = V::c(if c < 16 { c as Int * 3 + 1 } else { 0 });
+    }
+    // The return addresses (I12 + M14 for F1 and F3, I13 + M13 for F2).
+    e.s.r[28] = V::c(ret as Int);
+    e.s.r[46] = V::c(0);
+    e.s.r[29] = V::c(0x26);
+    e.s.r[45] = V::c(0);
+    e.s.r[15] = V::c(3);
+    e.s.r[14] = V::c(2);
+    if fast {
+        let mut fe =
+            crate::fast::FastEngine::new(Box::new(crate::fast::interp::InterpBackend), entries);
+        fe.force_cfg(true);
+        e.set_fast(Some(Box::new(fe)));
+    }
+    e
+}
+
+#[cfg(sharc_gen)]
+fn callret_same(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
+    same_state(plain, fast, why);
+    assert_eq!(
+        crate::canon::export_state(&plain.s, false),
+        crate::canon::export_state(&fast.s, false),
+        "{why}"
+    );
+}
+
+/// Calls, nested calls and delayed returns (alone, with a loop active at
+/// the call, and with a loop of the callee before the return) leave exactly
+/// the state the interpreter leaves, at every step size, and the regions do
+/// not end at the call or the return.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_calls_and_returns_match_the_interpreter() {
+    // (name, start, return address of F1/F3, entries)
+    let cases: [(&str, u32, u32, &[u32]); 5] = [
+        ("nested", 0, 6, &[0, 0x20, 0x40]),
+        ("caller only", 0, 6, &[0]),
+        ("call in a loop", 0x60, 0x69, &[0x60, 0x63, 0x20, 0x40]),
+        ("loop active at the return", 0x60, 0x69, &[0x63]),
+        ("callee loop", 0xa0, 0xa6, &[0xa0, 0x80]),
+    ];
+    for (name, start, ret, entries) in cases {
+        // The share of instructions the regions must run (loop cases enter
+        // and leave through the interpreter more often).
+        let min_pct = if name.contains("loop") { 0 } else { 60 };
+        for chunk in [1u32, 3, 7, 50, 400] {
+            let mut plain = callret_engine(false, start, ret, entries);
+            let mut fast = callret_engine(true, start, ret, entries);
+            for k in 0..(1200 / chunk).max(2) {
+                for e in [&mut plain, &mut fast] {
+                    assert_eq!(e.step(chunk), chunk, "{name}: {:?}", e.halt);
+                }
+                callret_same(&plain, &fast, &format!("{name}, chunk {chunk}, step {k}"));
+            }
+            if chunk == 400 {
+                let st = fast.fast.as_ref().unwrap().fast_stats().unwrap();
+                assert!(st.runs > 0 && st.insns > 0, "{name}: {st:?}");
+                // No region ends at a call or a return: the fast tier runs
+                // nearly everything.
+                assert!(
+                    st.insns * 100 >= fast.s.icount * min_pct,
+                    "{name}: {} of {} insns in regions",
+                    st.insns,
+                    fast.s.icount
+                );
+            }
+        }
+    }
+}
+
+// -- fast tier: hardware loops and Type 3d against the interpreter -----------------
+
+/// A raw 48-bit instruction as the three short words the code alias holds
+/// (each little-endian, high word first).
+#[cfg(sharc_gen)]
+fn lp_bytes(code: &[u64]) -> Vec<u8> {
+    let mut v = Vec::new();
+    for raw in code {
+        for w in [(raw >> 32) as u16, (raw >> 16) as u16, *raw as u16] {
+            v.extend_from_slice(&w.to_le_bytes());
+        }
+    }
+    v
+}
+
+#[cfg(sharc_gen)]
+fn lp_2a(cond: u64, opcode: u64, rn: u64, rx: u64, ry: u64) -> u64 {
+    let compute = (opcode << 12) | (rn << 8) | (rx << 4) | ry;
+    0x0100_0000_0000 | (cond << 33) | compute
+}
+
+/// `Rn = Rx + Ry`.
+#[cfg(sharc_gen)]
+fn lp_add(rn: u64, rx: u64, ry: u64) -> u64 {
+    lp_2a(0x1f, 0x01, rn, rx, ry)
+}
+
+/// `Rn = Rx - Ry`.
+#[cfg(sharc_gen)]
+fn lp_sub(rn: u64, rx: u64, ry: u64) -> u64 {
+    lp_2a(0x1f, 0x02, rn, rx, ry)
+}
+
+/// `ureg = value` (Type 17a).
+#[cfg(sharc_gen)]
+fn lp_imm(ureg: u64, value: u32) -> u64 {
+    0x0f00_0000_0000 | (ureg << 32) | value as u64
+}
+
+/// `JUMP (cond)` by REL short words from the jump.
+#[cfg(sharc_gen)]
+fn lp_jump(cond: u64, rel: i32) -> u64 {
+    0x0700_0000_0000 | (cond << 33) | (rel as u32 & 0xff_ffff) as u64
+}
+
+/// `LCNTR = count, DO (pc + REL) UNTIL LCE`.
+#[cfg(sharc_gen)]
+fn lp_do(count: u32, rel: i32) -> u64 {
+    0x0c00_0000_0000
+        | (((count >> 8) as u64 & 0xff) << 32)
+        | ((count as u64 & 0xff) << 24)
+        | (rel as u32 & 0x7f_ffff) as u64
+}
+
+/// `LCNTR = ureg, DO (pc + REL) UNTIL LCE`.
+#[cfg(sharc_gen)]
+fn lp_do_reg(ureg: u64, rel: i32) -> u64 {
+    0x0d00_0000_0000 | (ureg << 32) | (rel as u32 & 0x7f_ffff) as u64
+}
+
+/// Type 3d: `ureg <-> DM(Ii, Mm)` of the byte or short access (l, x), in
+/// the ACCESS group (w = 0) without the exclusive monitor (ex = 0).
+#[cfg(sharc_gen)]
+fn lp_3d(cond: u64, store: bool, post: bool, i: u64, m: u64, ureg: u64, l: u64, x: u64) -> u64 {
+    0x4000_0030_0000
+        | ((post as u64) << 44)
+        | (i << 41)
+        | (m << 38)
+        | (cond << 33)
+        | ((store as u64) << 31)
+        | (l << 30)
+        | (ureg << 23)
+        | (x << 16)
+}
+
+#[cfg(sharc_gen)]
+const LP_DATA: u32 = 0x25_f000;
+#[cfg(sharc_gen)]
+const LP_DATA_WORDS: u32 = 0x100;
+
+/// An engine over CODE (instruction `k` at short word `3 * k`), with the
+/// fast tier's CFG shape armed at ENTRIES (short-word addresses) when FAST.
+#[cfg(sharc_gen)]
+fn lp_engine(
+    code: &[u64],
+    entries: &[u32],
+    fast: bool,
+    setup: &dyn Fn(&mut crate::Engine),
+) -> crate::Engine {
+    let mut mem = Mem::new();
+    mem.load(SPIN_ALIAS, &lp_bytes(code));
+    mem.reset();
+    let mut e = crate::Engine::new(mem);
+    assert_eq!(e.set_option(4, 1), 0);
+    e.s.r[114] = V::c(0); // MODE1
+    e.s.r[122] = V::c(0); // IRPTL
+    e.s.r[123] = V::c(0); // IMASK
+    e.s.r[124] = V::c(0); // IMASKP
+    // R, I, M, B and L known (linear buffers), the flags and the stack status too.
+    for code in (0..80).chain(118..122) {
+        e.s.r[code] = V::c(0);
+    }
+    for k in 0..LP_DATA_WORDS {
+        let a = e.s.mem.canonical_of(LP_DATA + 4 * k);
+        for b in 0..4u32 {
+            let v = (k as u8).wrapping_mul(37).wrapping_add(b as u8 * 11 + 3);
+            e.s.mem.write_byte(a + b, v);
+        }
+    }
+    setup(&mut e);
+    if fast {
+        let mut fe =
+            crate::fast::FastEngine::new(Box::new(crate::fast::interp::InterpBackend), entries);
+        fe.force_cfg(true);
+        e.set_fast(Some(Box::new(fe)));
+    }
+    e
+}
+
+/// What the interpreter and the fast tier must agree on after every step.
+#[cfg(sharc_gen)]
+fn lp_same(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
+    let (p, f) = (&plain.s, &fast.s);
+    assert_eq!(p.icount, f.icount, "icount {why}");
+    assert_eq!(p.pc_sw, f.pc_sw, "pc {why}");
+    assert_eq!(p.steps, f.steps, "steps {why}");
+    for code in 0..crate::rt::NUREG {
+        assert_eq!(p.r[code], f.r[code], "r{code} {why}");
+    }
+    assert_eq!(p.loops.items(), f.loops.items(), "loop stack {why}");
+    assert_eq!(p.loop_depth, f.loop_depth, "loop depth {why}");
+    assert_eq!(p.loop_slots.items(), f.loop_slots.items(), "loop slots {why}");
+    assert_eq!(p.pc_stack.items(), f.pc_stack.items(), "pc stack {why}");
+    assert_eq!(p.call_stack.items(), f.call_stack.items(), "call stack {why}");
+    assert_eq!(p.pending, f.pending, "pending {why}");
+    for k in 0..LP_DATA_WORDS * 4 {
+        let a = p.mem.canonical_of(LP_DATA + k);
+        assert_eq!(p.mem.byte(a), f.mem.byte(a), "data byte {k:#x} {why}");
+    }
+}
+
+/// Run CODE on the interpreter and on the fast tier in chunks of each size
+/// below, comparing after every chunk. Returns the instructions the fast
+/// tier ran (the most over the chunk sizes), asserting it ran kernels.
+#[cfg(sharc_gen)]
+fn lp_check(
+    name: &str,
+    code: &[u64],
+    entries: &[u32],
+    total: u32,
+    setup: &dyn Fn(&mut crate::Engine),
+) -> u64 {
+    let mut ran = 0;
+    for chunk in [1u32, 2, 3, 5, 7, 11, 64, 1000] {
+        let mut plain = lp_engine(code, entries, false, setup);
+        let mut fast = lp_engine(code, entries, true, setup);
+        let mut done = 0u32;
+        while done < total {
+            let n = chunk.min(total - done);
+            assert_eq!(plain.step(n), n, "{name}: {:?}", plain.halt);
+            assert_eq!(fast.step(n), n, "{name}: {:?}", fast.halt);
+            done += n;
+            lp_same(&plain, &fast, &format!("{name}: chunk {chunk}, after {done}"));
+        }
+        let st = fast.fast.as_ref().unwrap().fast_stats().unwrap();
+        ran = ran.max(st.insns);
+    }
+    assert!(ran > 0, "{name}: the fast tier never ran");
+    ran
+}
+
+#[cfg(sharc_gen)]
+fn lp_regs(e: &mut crate::Engine, set: &[(usize, u32)]) {
+    for &(r, v) in set {
+        e.s.r[r] = V::c(v as Int);
+    }
+}
+
+/// Short-word address of instruction K of a program of 48-bit instructions.
+#[cfg(sharc_gen)]
+fn lp_pc(k: u32) -> u32 {
+    3 * k
+}
+
+/// Short words from instruction FROM to instruction TO.
+#[cfg(sharc_gen)]
+fn lp_rel(from: i32, to: i32) -> i32 {
+    3 * (to - from)
+}
+
+/// DO loops nested two deep, started in the region (entry at the top), and
+/// entered mid-body (the first instruction of the outer body, inside the
+/// inner loop where both are active at entry, at each loop's last
+/// instruction).
+#[cfg(sharc_gen)]
+#[test]
+fn fast_nested_loops_match_the_interpreter() {
+    let code = [
+        lp_imm(0, 0),                 // 0: R0 = 0
+        lp_imm(1, 0),                 // 1: R1 = 0
+        lp_do(5, lp_rel(2, 7)),       // 2: DO (outer end 7) 5 times
+        lp_add(1, 1, 2),              // 3: R1 += R2
+        lp_do(3, lp_rel(4, 6)),       // 4: DO (inner end 6) 3 times
+        lp_add(0, 0, 1),              // 5: R0 += R1
+        lp_add(3, 3, 2),              // 6: R3 += R2   (inner end)
+        lp_add(4, 4, 2),              // 7: R4 += R2   (outer end)
+        lp_jump(0x1f, 0),             // 8: spin
+    ];
+    let set = |e: &mut crate::Engine| lp_regs(e, &[(2, 1)]);
+    for entries in [0, 3, 5, 6, 7].map(|k| vec![lp_pc(k)]) {
+        lp_check(&format!("nested {entries:?}"), &code, &entries, 160, &set);
+    }
+    // Every instruction an entry: regions of all shapes at once.
+    let all: Vec<u32> = (0..9).map(lp_pc).collect();
+    lp_check("nested all", &code, &all, 160, &set);
+}
+
+/// A loop of one iteration, and loops whose count is a register, started in
+/// the region and entered mid-body.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_single_iteration_and_register_count_loops_match() {
+    let code = [
+        lp_imm(5, 1),                 // 0: R5 = 1
+        lp_do(1, lp_rel(1, 3)),       // 1: DO (end 3) once
+        lp_add(0, 0, 2),              // 2
+        lp_add(1, 1, 2),              // 3: end
+        lp_do_reg(5, lp_rel(4, 6)),   // 4: DO (end 6) R5 times
+        lp_add(2, 2, 6),              // 5: R2 += R6
+        lp_add(3, 3, 2),              // 6: end
+        lp_do_reg(7, lp_rel(7, 9)),   // 7: DO (end 9) R7 times
+        lp_add(4, 4, 2),              // 8
+        lp_add(5, 5, 2),              // 9: end
+        lp_jump(0x1f, 0),             // 10: spin
+    ];
+    for count in [1u32, 2, 4] {
+        let set = move |e: &mut crate::Engine| lp_regs(e, &[(2, 1), (6, 3), (7, count)]);
+        for entries in [0, 2, 3, 5, 8, 9].map(|k| vec![lp_pc(k)]) {
+            lp_check(&format!("single {count} {entries:?}"), &code, &entries, 80, &set);
+        }
+    }
+}
+
+/// A loop active at entry whose range does not hold the entry: the region
+/// starts in an out-of-line block that jumps back to the loop's last
+/// instruction (as the compiler's cold paths do). The loop pops in the
+/// kernel, which leaves there.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_outer_active_loop_end_reached_from_outside_matches() {
+    for count in [1u32, 2, 4] {
+        let code = [
+            lp_imm(2, 1),                  // 0: R2 = 1
+            lp_do(count, lp_rel(1, 4)),    // 1: DO (end 4)
+            lp_add(0, 0, 2),               // 2
+            lp_jump(0x1f, lp_rel(3, 8)),   // 3: JUMP 8 (out of line)
+            lp_add(1, 1, 2),               // 4: loop end
+            lp_jump(0x1f, lp_rel(5, 10)),  // 5: after the loop: JUMP 10
+            0,                             // 6
+            0,                             // 7
+            lp_add(3, 3, 2),               // 8: out of line
+            lp_jump(0x1f, lp_rel(9, 4)),   // 9: JUMP 4 (the loop's end)
+            lp_jump(0x1f, 0),              // 10: spin
+        ];
+        let set = |e: &mut crate::Engine| lp_regs(e, &[(2, 1)]);
+        for entries in [8, 9, 4, 0].map(|k| vec![lp_pc(k)]) {
+            lp_check(&format!("dormant {count} {entries:?}"), &code, &entries, 90, &set);
+        }
+    }
+}
+
+/// An instruction the kernel cannot run (a write to a B register) inside a
+/// loop started in the region, skipped on most iterations: the kernel leaves
+/// there with the loop active and the interpreter finishes the iteration.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_stop_inside_a_loop_body_matches() {
+    let code = [
+        lp_imm(2, 1),                  // 0
+        lp_do(6, lp_rel(1, 7)),        // 1: DO (end 7) 6 times
+        lp_add(0, 0, 2),               // 2
+        lp_sub(5, 5, 2),               // 3: R5 -= 1 (AZ)
+        lp_2a(0x10, 0x01, 8, 8, 2),    // 4: IF NE R8 = R8 + R2 (keeps the flags)
+        lp_imm(48, 0x25_f010),         // 5: B0 = ..., not lowered
+        lp_add(1, 1, 2),               // 6
+        lp_add(3, 3, 2),               // 7: end
+        lp_jump(0x1f, 0),              // 8: spin
+    ];
+    let set = |e: &mut crate::Engine| lp_regs(e, &[(2, 1), (5, 3)]);
+    for entries in [0, 2, 3, 6, 7].map(|k| vec![lp_pc(k)]) {
+        lp_check(&format!("stop-in-body {entries:?}"), &code, &entries, 60, &set);
+    }
+}
+
+/// Type 3d (byte and short accesses): loads and stores, post and pre
+/// modify, a negative modifier, the sign-extended loads, a condition that
+/// skips and executes, in straight code and in a loop.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_type_3d_matches_the_interpreter() {
+    let at = |k: u32| LP_DATA + k;
+    let setup = move |e: &mut crate::Engine| {
+        lp_regs(
+            e,
+            &[
+                (2, 1),
+                (6, 0x1234_5678),
+                (16, at(0x40)),  // I0
+                (17, at(0x100)), // I1
+                (18, at(0x1f0)), // I2
+                (32, 1),         // M0
+                (33, 2),         // M1
+                (34, 0xffff_fffe), // M2 = -2
+                (35, 0),         // M3
+            ],
+        )
+    };
+    // (l, x): byte, signed byte, short, signed short.
+    for (l, x) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+        let store_ok = x == 0;
+        let mut code = vec![
+            lp_3d(0x1f, false, true, 0, 0, 4, l, x),  // R4 = DM(I0, M0) post
+            lp_3d(0x1f, false, false, 0, 1, 5, l, x), // R5 = DM(I0, M1) pre
+            lp_3d(0x1f, false, true, 2, 2, 7, l, x),  // R7 = DM(I2, M2) post
+            lp_3d(0x1f, false, false, 0, 3, 8, l, x), // R8 = DM(I0, M3) pre
+            lp_add(9, 4, 5),                          // sets flags
+            lp_3d(0x00, false, true, 0, 0, 10, l, x), // IF EQ R10 = DM(I0, M0)
+            lp_3d(0x10, false, true, 0, 0, 11, l, x), // IF NE R11 = DM(I0, M0)
+        ];
+        if store_ok {
+            code.extend([
+                lp_3d(0x1f, true, true, 1, 0, 6, l, x),  // DM(I1, M0) = R6 post
+                lp_3d(0x1f, true, false, 1, 1, 9, l, x), // DM(I1, M1) = R9 pre
+                lp_3d(0x10, true, true, 1, 1, 6, l, x),  // IF NE DM(I1, M1) = R6
+                lp_3d(0x00, true, true, 1, 1, 6, l, x),  // IF EQ DM(I1, M1) = R6
+            ]);
+        }
+        code.push(lp_jump(0x1f, 0)); // spin
+        let n = code.len() as u32;
+        // Straight, from each instruction.
+        let entries: Vec<u32> = (0..n).map(lp_pc).collect();
+        let ran = lp_check(&format!("3d straight l{l} x{x}"), &code, &entries, n - 1, &setup);
+        // Every 3d (and the compare between them) ran in the fast tier.
+        assert_eq!(ran, u64::from(n - 1), "3d straight l{l} x{x}");
+
+        // The same body in a loop of 6, with the pointers stepping.
+        let body = &code[..code.len() - 1];
+        // The DO is instruction 2, the body 3.., its last instruction the end.
+        let mut prog = vec![
+            lp_imm(0, 0),
+            lp_imm(1, 0),
+            lp_do(6, lp_rel(2, 2 + body.len() as i32)),
+        ];
+        prog.extend_from_slice(body);
+        prog.push(lp_jump(0x1f, 0));
+        let m = prog.len() as u32;
+        let entries: Vec<u32> = (0..m).map(lp_pc).collect();
+        lp_check(&format!("3d loop l{l} x{x}"), &prog, &entries, 120, &setup);
+        lp_check(&format!("3d loop from 0 l{l} x{x}"), &prog, &[0], 120, &setup);
+    }
+}

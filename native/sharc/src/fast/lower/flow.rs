@@ -287,13 +287,9 @@ impl Lower {
             if let Err(e) = self.lower_node(
                 st, node, idx, &v, &label_of, &mut stubs, &mut joins, &mut open,
             ) {
-                // A node inside a loop started in the region takes the DO of
-                // the outermost such loop with it.
-                let at = st
-                    .ctx
-                    .get(&pc)
-                    .and_then(|chain| chain.iter().find(|&&i| !st.loops[i as usize].entry()))
-                    .map_or(pc, |&i| st.loops[i as usize].do_pc);
+                // The node alone becomes the end of the region (inside a
+                // loop the kernel leaves there with the loop active).
+                let at = pc;
                 self.fail_pc = Some(at);
                 return Err(Refuse(format!("{pc:#x}: {}", e.0)));
             }
@@ -360,6 +356,9 @@ impl Lower {
                 self.cfg_x().nblock += 1;
                 if let Some((i, l)) = st.loops.iter().enumerate().find(|(_, l)| l.end == pc) {
                     self.loop_back(st, i, l, v, label_of, stubs, &active)?;
+                    if l.dormant {
+                        *open = false;
+                    }
                 }
             }
             NodeKind::Do(li) => {
@@ -644,6 +643,19 @@ impl Lower {
             self.set_var(v.stk26, 2);
         }
         self.var_abs = exit_abs;
+        if l.dormant {
+            // The loop that was active at entry ended: the kernel leaves at
+            // the next instruction with the loop popped.
+            let next = st.nodes[&l.end].next();
+            let rest: Vec<u16> = active
+                .iter()
+                .copied()
+                .filter(|&a| a as usize != i)
+                .collect();
+            let k = self.site_at(next, 0, rest);
+            let exit = self.empty_exit();
+            self.body.push(Inst::Leave { k, exit });
+        }
         Ok(())
     }
 }

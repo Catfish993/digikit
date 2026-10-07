@@ -772,6 +772,28 @@ impl FastEngine {
                                 }
                             }
                         }
+                        // A guarded dynamic-window access leaves before its
+                        // instruction when the address is outside the span:
+                        // the instruction after it is an entry too.
+                        if self.follow && r.wins.iter().any(|w| w.dynamic_anchor.is_some()) {
+                            for i in &r.insns {
+                                if let Ok(d) = region::decode_one(s, i.pc)
+                                    && matches!(
+                                        d.form,
+                                        "3a" | "3b"
+                                            | "3c"
+                                            | "4a"
+                                            | "4b"
+                                            | "4d"
+                                            | "6a_mem"
+                                            | "15a"
+                                            | "15b"
+                                    )
+                                {
+                                    self.follow_queue.push(i.pc + d.len_sw);
+                                }
+                            }
+                        }
                         self.stats.built += 1;
                         slot.region = Some(r);
                         slot.kernel = Some(k);

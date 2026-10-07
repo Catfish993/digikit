@@ -62,6 +62,13 @@ impl Width {
     }
 }
 
+/// Guarded dynamic windows for transfers whose address has no static range,
+/// in every region (not only clusters). On unless `SHARC_FAST_NOGUARD` is set.
+fn guarded_xfers() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_NOGUARD").is_none())
+}
+
 impl Lower {
     /// A normal-word transfer through index register IC with modifier MC.
     pub fn dm_transfer(&mut self, ic: u32, mc: u32, post: bool, x: Xfer) -> LR<()> {
@@ -102,9 +109,7 @@ impl Lower {
         x: Xfer,
         w: Width,
     ) -> LR<()> {
-        let guarded = self.env.guarded_dyn
-            || (std::env::var_os("SHARC_FAST_GUARDED_READS").is_some()
-                && matches!(x, Xfer::Load(_)));
+        let guarded = self.env.guarded_dyn || guarded_xfers();
         // The address has no static range. The window is anchored on the
         // register whose entry value IV is a known offset from, else (IV has
         // no range) on the register whose entry value it was moved and
@@ -163,6 +168,10 @@ impl Lower {
         let max = self.bin(Bin::Sub, span, width);
         let rel = self.bin(Bin::Sub, addr, lo);
         let inside = self.bin(Bin::LeU, rel, max);
+        // An empty span (a window that could not be resolved) never admits
+        // an access: SPAN - WIDTH would wrap.
+        let roomy = self.bin(Bin::LeU, width, span);
+        let inside = self.bin(Bin::And, inside, roomy);
         self.guard(inside);
         if let Some(e) = extra {
             let rel = self.bin(Bin::Sub, e, lo);
@@ -310,6 +319,32 @@ impl Lower {
         self.dm_transfer_w(16 + i, 32 + m, post, x, w)
     }
 
+    /// 3d: the 48-bit re-encoding of 3b with byte and short accesses (no
+    /// compute). Only the ACCESS group (w = 0) without the exclusive monitor
+    /// (ex = 0) is lowered, as `forms_move._type_3d` runs it.
+    pub fn form_3d(&mut self, d: &Dec) -> LR<()> {
+        if d.field("w") != Some(0) {
+            return refuse("3d WACCESS");
+        }
+        if d.field("ex") != Some(0) {
+            return refuse("3d exclusive access");
+        }
+        let Some(w) = Width::from_fields(false, d) else {
+            return refuse("3d access width");
+        };
+        let bank = if d.field("g") == Some(1) { 8 } else { 0 };
+        let i = d.field("i").ok_or(Refuse("3d i".into()))? as u32 + bank;
+        let m = d.field("m").ok_or(Refuse("3d m".into()))? as u32 + bank;
+        let post = d.field("u") == Some(1);
+        let ureg = d.field("ureg").ok_or(Refuse("3d ureg".into()))? as u32;
+        let x = if d.field("d") == Some(1) {
+            Xfer::Store(ureg)
+        } else {
+            Xfer::Load(ureg)
+        };
+        self.dm_transfer_w(16 + i, 32 + m, post, x, w)
+    }
+
     pub fn form_3c(&mut self, d: &Dec) -> LR<()> {
         let i = d.field("dmi").ok_or(Refuse("3c dmi".into()))? as u32;
         let m = d.field("dmm").ok_or(Refuse("3c dmm".into()))? as u32;
@@ -365,7 +400,7 @@ impl Lower {
             if !self.env.assume_nw32 {
                 return refuse("assume_nw32 off");
             }
-            if self.env.guarded_dyn && self.abs[iv as usize].is_none() {
+            if (self.env.guarded_dyn || guarded_xfers()) && self.abs[iv as usize].is_none() {
                 // No range for IV: check it per execution instead of at
                 // entry (a failing guard leaves before the instruction).
                 self.guard_plain(iv);

@@ -67,6 +67,11 @@ pub struct LoopDef {
     pub empties: bool,
     /// Loops below it on the engine's loop stack when it runs.
     pub depth: u32,
+    /// An entry loop that does not contain the entry: it sits on the engine's
+    /// loop stack (below the loops that do contain the entry) and the region
+    /// reaches its end address. It is active at every node until its
+    /// loop-back falls through, where the kernel leaves.
+    pub dormant: bool,
 }
 
 impl LoopDef {
@@ -187,7 +192,7 @@ fn classify(env: &Env, stack_model: bool, pc: u32, d: &Dec) -> Cls {
     // The compiler's call and return sequence, in cluster kernels of the
     // stack model (where CJUMP pushes no PC stack entry, see
     // `lower::callret`; without the stack model it is a call and stays a stop).
-    let seq = env.guarded_dyn && stack_model;
+    let seq = stack_model;
     match d.form {
         "25a_direct" if seq => match (d.get("addr[23:16]"), d.get("addr[15:0]")) {
             (Some(h), Some(l)) => Cls::Jump {
@@ -441,15 +446,25 @@ pub fn build_structure(
         }
         chain.push(i);
     }
-    let irrelevant_deeper = stack.len() - chain.len();
-    // The stack entries below the chain must not end inside the region.
-    for l in &stack[..irrelevant_deeper] {
-        if nodes.contains_key(&(l.end_sw as u32)) || slot_pcs.contains(&(l.end_sw as u32)) {
-            return refuse("the end of an outer active loop lies in the region".into());
+    let mut irrelevant_deeper = stack.len() - chain.len();
+    // The loop just below the chain does not contain the entry. It matters
+    // only when its end lies in the region (then it is modelled, active at
+    // every node); otherwise it never ends there, and it blocks every loop
+    // below it (only the top loop's end is tested).
+    let mut dormant: Option<usize> = None;
+    if irrelevant_deeper > 0 {
+        let l = stack[irrelevant_deeper - 1];
+        let end = l.end_sw as u32;
+        if nodes.contains_key(&end) || slot_pcs.contains(&end) {
+            if l.start_sw < 0 || l.start_sw > l.end_sw {
+                return refuse("the end of an outer active loop lies in the region".into());
+            }
+            dormant = Some(irrelevant_deeper - 1);
+            irrelevant_deeper -= 1;
         }
     }
     // Entry loops outer to inner.
-    for &i in chain.iter().rev() {
+    for &i in dormant.iter().chain(chain.iter().rev()) {
         let l = stack[i];
         loops.push(LoopDef {
             start: l.start_sw as u32,
@@ -459,6 +474,7 @@ pub fn build_structure(
             do_pc: 0,
             empties: false,
             depth: 0,
+            dormant: dormant == Some(i),
         });
     }
     let n_entry = loops.len();
@@ -483,21 +499,43 @@ pub fn build_structure(
     // Context of every node: the loops whose range holds it.
     let mut ctx: HashMap<u32, Vec<u16>> = HashMap::new();
     let mut order: Vec<usize> = (0..loops.len()).collect();
-    order.sort_by_key(|&i| (loops[i].start, std::cmp::Reverse(loops[i].end)));
+    // The dormant loop is the outermost, at every node.
+    order.sort_by_key(|&i| (!loops[i].dormant, loops[i].start, std::cmp::Reverse(loops[i].end)));
     for pc in nodes.keys().copied().chain(slot_pcs.iter().copied()) {
         let v: Vec<u16> = order
             .iter()
-            .filter(|&&i| loops[i].start <= pc && pc <= loops[i].end)
+            .filter(|&&i| loops[i].dormant || (loops[i].start <= pc && pc <= loops[i].end))
             .map(|&i| i as u16)
             .collect();
         ctx.insert(pc, v);
     }
+    // At the dormant loop's end no other loop may hold the address (the
+    // engine tests the top loop's end only).
+    for d in loops.iter().filter(|l| l.dormant) {
+        let others = ctx.get(&d.end).map_or(0, |v| {
+            v.iter()
+                .filter(|&&i| !loops[i as usize].dormant && {
+                    let o = &loops[i as usize];
+                    o.start <= d.end && d.end <= o.end
+                })
+                .count()
+        });
+        if others > 0 {
+            return refuse("the end of an outer active loop lies in the region".into());
+        }
+    }
     // `empties`.
     for i in 0..loops.len() {
+        // Loops below it on the engine's stack: the dormant loop is below
+        // every other loop of the region.
         let ancestors = loops
             .iter()
             .enumerate()
-            .filter(|&(j, o)| j != i && o.start <= loops[i].start && loops[i].end <= o.end)
+            .filter(|&(j, o)| {
+                j != i
+                    && (o.dormant
+                        || (o.start <= loops[i].start && loops[i].end <= o.end))
+            })
             .count();
         loops[i].empties = irrelevant_deeper == 0 && ancestors == 0;
         loops[i].depth = (irrelevant_deeper + ancestors) as u32;
@@ -694,6 +732,7 @@ fn derive_loops(
             do_pc: pc,
             empties: false,
             depth: 0,
+            dormant: false,
         });
     }
     if loops.len() > super::ir::MAX_CFG_LOOPS as usize {
@@ -707,7 +746,9 @@ fn derive_loops(
             let disjoint = a.end < b.start || b.end < a.start;
             let a_in_b = b.start <= a.start && a.end <= b.end;
             let b_in_a = a.start <= b.start && b.end <= a.end;
-            if !(disjoint || a_in_b || b_in_a) || a.end == b.end {
+            // A loop started later is above the dormant one on the engine's
+            // stack, so it cannot hold the dormant loop's range.
+            if !(disjoint || a_in_b || b_in_a) || a.end == b.end || (a.dormant && a_in_b) {
                 return Err((
                     format!("loop at {:#x} overlaps another loop", b.start),
                     Some(b.do_pc),
@@ -715,27 +756,21 @@ fn derive_loops(
             }
         }
     }
-    // Bodies decoded contiguously, ending in a plain instruction.
+    // Bodies: the end is a plain instruction or not decoded (the loop-back
+    // is then left to the interpreter: the kernel leaves at an instruction
+    // it cannot run inside the loop, the glue rebuilds the loop). No decoded
+    // instruction of the body may run across the end.
     for l in &loops[n_entry..] {
         let bad = |why: String| Err((format!("loop at {:#x}: {why}", l.start), Some(l.do_pc)));
-        let Some(en) = nodes.get(&l.end) else {
-            return bad("end not decoded".into());
-        };
-        if !matches!(en.kind, NodeKind::Seq) {
+        if let Some(en) = nodes.get(&l.end)
+            && !matches!(en.kind, NodeKind::Seq | NodeKind::Stop(_))
+        {
             return bad("end is not a plain instruction".into());
         }
-        let mut p = l.start;
-        while p < l.end {
-            let Some(n) = nodes.get(&p) else {
-                return bad("body not decoded".into());
-            };
-            if let NodeKind::Stop(why) = &n.kind {
-                return bad(format!("{why} inside"));
+        for n in nodes.range(l.start..=l.end).map(|(_, n)| n) {
+            if n.pc != l.end && n.next() > l.end + 1 && !matches!(n.kind, NodeKind::Stop(_)) {
+                return bad("end inside an instruction".into());
             }
-            p = n.next();
-        }
-        if p != l.end {
-            return bad("end inside an instruction".into());
         }
     }
     // An entry loop's end must be a plain instruction or a stop.
@@ -778,12 +813,16 @@ pub fn successors(n: &Node, nodes: &BTreeMap<u32, Node>, loops: &[LoopDef]) -> V
     match &n.kind {
         NodeKind::Stop(_) | NodeKind::Return { .. } => {}
         NodeKind::Seq | NodeKind::Do(_) => {
-            if let Some(l) = loops.iter().find(|l| l.end == n.pc)
+            let ending = loops.iter().find(|l| l.end == n.pc);
+            if let Some(l) = ending
                 && nodes.contains_key(&l.start)
             {
                 v.push(l.start);
             }
-            v.push(n.next());
+            // The kernel leaves where the dormant loop falls through.
+            if !ending.is_some_and(|l| l.dormant) {
+                v.push(n.next());
+            }
         }
         NodeKind::Jump {
             target,
