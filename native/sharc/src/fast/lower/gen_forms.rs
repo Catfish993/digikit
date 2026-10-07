@@ -8,7 +8,7 @@
 use super::*;
 
 
-pub const GENERATED: &[&str] = &["2a", "2a_short", "2b", "2c", "3a", "3b", "3c", "3d", "4a", "4b", "4d", "5a_move", "5b_move", "6a_mem", "6b_shiftimm", "14a", "15a", "15b", "17a", "17b", "18a", "19a", "21a", "21c"];
+pub const GENERATED: &[&str] = &["2a", "2a_short", "2b", "2c", "3a", "3b", "3c", "3d", "4a", "4b", "4d", "5a_move", "5b_move", "6a_mem", "6b_shiftimm", "7a", "7b", "14a", "15a", "15b", "17a", "17b", "18a", "19a", "19a_scaled", "21a", "21c", "22c"];
 
 pub fn dispatch(l: &mut Lower, d: &Dec) -> LR<bool> {
     match d.form {
@@ -27,6 +27,8 @@ pub fn dispatch(l: &mut Lower, d: &Dec) -> LR<bool> {
         "5b_move" => l.g_5b_move(d).map(|_| true),
         "6a_mem" => l.g_6a_mem(d).map(|_| true),
         "6b_shiftimm" => l.g_6b_shiftimm(d).map(|_| true),
+        "7a" => l.g_7a(d).map(|_| true),
+        "7b" => l.g_7b(d).map(|_| true),
         "14a" => l.g_14a(d).map(|_| true),
         "15a" => l.g_15a(d).map(|_| true),
         "15b" => l.g_15b(d).map(|_| true),
@@ -34,8 +36,10 @@ pub fn dispatch(l: &mut Lower, d: &Dec) -> LR<bool> {
         "17b" => l.g_17b(d).map(|_| true),
         "18a" => l.g_18a(d).map(|_| true),
         "19a" => l.g_19a(d).map(|_| true),
+        "19a_scaled" => l.g_19a_scaled(d).map(|_| true),
         "21a" => l.g_21a(d).map(|_| true),
         "21c" => l.g_21c(d).map(|_| true),
+        "22c" => l.g_22c(d).map(|_| true),
         _ => Ok(false),
     }
 }
@@ -10463,6 +10467,1410 @@ impl Lower {
         }
         Ok(())
     }
+    pub fn g_7a(&mut self, d: &Dec) -> LR<()> {
+        if !self.env.assume_nw32 {
+            return refuse("assume_nw32 off");
+        }
+        let f0 = d.get("compute[15:0]").ok_or(Refuse("missing field compute[15:0]".into()))? as i128;
+        let f1 = d.get("compute[22:16]").ok_or(Refuse("missing field compute[22:16]".into()))? as i128;
+        let f2 = d.get("cond[4:0]").ok_or(Refuse("missing field cond[4:0]".into()))? as i128;
+        let f3 = d.get("g").ok_or(Refuse("missing field g".into()))? as i128;
+        let f4 = d.get("idis[2:0]").ok_or(Refuse("missing field idis[2:0]".into()))? as i128;
+        let f5 = d.get("is[1:0]").ok_or(Refuse("missing field is[1:0]".into()))? as i128;
+        let f6 = d.get("is[2:2]").ok_or(Refuse("missing field is[2:2]".into()))? as i128;
+        let f7 = d.get("l").ok_or(Refuse("missing field l".into()))? as i128;
+        let f8 = d.get("m[2:0]").ok_or(Refuse("missing field m[2:0]".into()))? as i128;
+        let f9 = d.get("w").ok_or(Refuse("missing field w".into()))? as i128;
+        let mut v0: Val = 0;
+        let mut v2: Val = 0;
+        let mut v3: Val = 0;
+        let mut v4: Val = 0;
+        let mut v5: Val = 0;
+        let mut v6: Val = 0;
+        let mut v7: Val = 0;
+        let mut v8: Val = 0;
+        let mut v9: Val = 0;
+        let mut v10: Val = 0;
+        let mut v11: Val = 0;
+        let mut v12: Val = 0;
+        let mut v13: Val = 0;
+        let mut v14: Val = 0;
+        let mut v15: Val = 0;
+        let mut v16: Val = 0;
+        let mut v17: Val = 0;
+        let mut v18: Val = 0;
+        let mut v19: Val = 0;
+        let mut v20: Val = 0;
+        let mut v21: Val = 0;
+        let mut v22: Val = 0;
+        let mut v23: Val = 0;
+        let mut v24: Val = 0;
+        let mut v25: Val = 0;
+        let mut v26: Val = 0;
+        let mut v27: Val = 0;
+        let mut v28: Val = 0;
+        let mut v29: Val = 0;
+        let mut v30: Val = 0;
+        let mut v31: Val = 0;
+        let mut v32: Val = 0;
+        let mut v33: Val = 0;
+        let mut v34: Val = 0;
+        let mut v35: Val = 0;
+        let mut v36: Val = 0;
+        let mut v37: Val = 0;
+        let mut v38: Val = 0;
+        let mut v39: Val = 0;
+        let mut v40: Val = 0;
+        let mut v41: Val = 0;
+        let mut v42: Val = 0;
+        let mut v43: Val = 0;
+        let mut v44: Val = 0;
+        let mut v45: Val = 0;
+        let mut v46: Val = 0;
+        let mut v47: Val = 0;
+        let mut v48: Val = 0;
+        let mut v49: Val = 0;
+        let mut v50: Val = 0;
+        let mut v51: Val = 0;
+        let mut v52: Val = 0;
+        let mut v53: Val = 0;
+        let mut v54: Val = 0;
+        let mut v55: Val = 0;
+        let mut v56: Val = 0;
+        let mut v57: Val = 0;
+        let mut v58: Val = 0;
+        let mut v59: Val = 0;
+        let mut v60: Val = 0;
+        let mut v61: Val = 0;
+        let mut v62: Val = 0;
+        let mut v63: Val = 0;
+        let mut v64: Val = 0;
+        let mut v65: Val = 0;
+        let mut v66: Val = 0;
+        let mut v67: Val = 0;
+        if (f2 == 31i128) {
+            if (f3 != 0i128) {
+                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                if (f7 != 0i128) {
+                    v3 = self.ci(2i128 as u32);
+                    v4 = self.g_bin(Bin::Mul, v2, v3);
+                    v5 = self.g_bin(Bin::Add, v0, v4);
+                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                } else {
+                    if (f9 != 0i128) {
+                        self.g_plainmod(v0)?;
+                        v6 = self.ci(4i128 as u32);
+                        v7 = self.g_bin(Bin::Mul, v2, v6);
+                        v8 = self.g_bin(Bin::Add, v0, v7);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                    } else {
+                        v9 = self.ci(1i128 as u32);
+                        v10 = self.g_bin(Bin::Mul, v2, v9);
+                        v11 = self.g_bin(Bin::Add, v0, v10);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                    }
+                }
+            } else {
+                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                if (f7 != 0i128) {
+                    v3 = self.ci(2i128 as u32);
+                    v14 = self.g_bin(Bin::Mul, v13, v3);
+                    v15 = self.g_bin(Bin::Add, v12, v14);
+                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                } else {
+                    if (f9 != 0i128) {
+                        self.g_plainmod(v12)?;
+                        v6 = self.ci(4i128 as u32);
+                        v16 = self.g_bin(Bin::Mul, v13, v6);
+                        v17 = self.g_bin(Bin::Add, v12, v16);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                    } else {
+                        v9 = self.ci(1i128 as u32);
+                        v18 = self.g_bin(Bin::Mul, v13, v9);
+                        v19 = self.g_bin(Bin::Add, v12, v18);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                    }
+                }
+            }
+            if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                self.g_apply(d, "compute", false, false)?;
+                if ((self.m1(0x200000) as i128) != 0i128) {
+                    self.g_apply(d, "compute", true, false)?;
+                }
+            }
+        } else {
+            if (f2 == 23i128) {
+                if (f3 != 0i128) {
+                    if (f7 != 0i128) {
+                        if (f1 != 0i128) {
+                            return refuse("unsupported Type7a conditional compute");
+                        } else {
+                            if (f0 != 0i128) {
+                                return refuse("unsupported Type7a conditional compute");
+                            } else {
+                                match (f5, f6) {
+                                    (0i128, 0i128) => {
+                                        if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v20 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v20)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    (0i128, 1i128) => {
+                                        if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v21 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v21)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    (1i128, 0i128) => {
+                                        if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v22 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v22)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    (1i128, 1i128) => {
+                                        if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v23 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v23)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    (2i128, 0i128) => {
+                                        if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v24 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v24)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    (2i128, 1i128) => {
+                                        if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v25 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v25)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    (3i128, 0i128) => {
+                                        if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v26 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v26)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    (3i128, 1i128) => {
+                                        if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v27 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v27)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                                            v5 = self.g_bin(Bin::Add, v0, v4);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                        }
+                                    }
+                                    _ => unreachable!(),
+                                }
+                                if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                                    self.g_apply(d, "compute", false, false)?;
+                                    if ((self.m1(0x200000) as i128) != 0i128) {
+                                        self.g_apply(d, "compute", true, false)?;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        if (f9 != 0i128) {
+                            if (f1 != 0i128) {
+                                return refuse("unsupported Type7a conditional compute");
+                            } else {
+                                if (f0 != 0i128) {
+                                    return refuse("unsupported Type7a conditional compute");
+                                } else {
+                                    match (f5, f6) {
+                                        (0i128, 0i128) => {
+                                            if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v28 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        (0i128, 1i128) => {
+                                            if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v29 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v29)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        (1i128, 0i128) => {
+                                            if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v30 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v30)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        (1i128, 1i128) => {
+                                            if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v31 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v31)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        (2i128, 0i128) => {
+                                            if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v32 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v32)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        (2i128, 1i128) => {
+                                            if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v33 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v33)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        (3i128, 0i128) => {
+                                            if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v34 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v34)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        (3i128, 1i128) => {
+                                            if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v35 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v35)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                self.g_plainmod(v0)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v7 = self.g_bin(Bin::Mul, v2, v6);
+                                                v8 = self.g_bin(Bin::Add, v0, v7);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                            }
+                                        }
+                                        _ => unreachable!(),
+                                    }
+                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                                        self.g_apply(d, "compute", false, false)?;
+                                        if ((self.m1(0x200000) as i128) != 0i128) {
+                                            self.g_apply(d, "compute", true, false)?;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            if (f1 != 0i128) {
+                                return refuse("unsupported Type7a conditional compute");
+                            } else {
+                                if (f0 != 0i128) {
+                                    return refuse("unsupported Type7a conditional compute");
+                                } else {
+                                    match (f5, f6) {
+                                        (0i128, 0i128) => {
+                                            if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v36 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v36)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        (0i128, 1i128) => {
+                                            if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v37 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v37)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        (1i128, 0i128) => {
+                                            if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v38 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v38)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        (1i128, 1i128) => {
+                                            if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v39 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v39)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        (2i128, 0i128) => {
+                                            if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v40 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v40)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        (2i128, 1i128) => {
+                                            if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v41 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v41)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        (3i128, 0i128) => {
+                                            if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v42 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v42)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        (3i128, 1i128) => {
+                                            if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v43 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v43)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v10 = self.g_bin(Bin::Mul, v2, v9);
+                                                v11 = self.g_bin(Bin::Add, v0, v10);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                            }
+                                        }
+                                        _ => unreachable!(),
+                                    }
+                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                                        self.g_apply(d, "compute", false, false)?;
+                                        if ((self.m1(0x200000) as i128) != 0i128) {
+                                            self.g_apply(d, "compute", true, false)?;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if (f7 != 0i128) {
+                        if (f1 != 0i128) {
+                            return refuse("unsupported Type7a conditional compute");
+                        } else {
+                            if (f0 != 0i128) {
+                                return refuse("unsupported Type7a conditional compute");
+                            } else {
+                                match (f5, f6) {
+                                    (0i128, 0i128) => {
+                                        if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v44 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v44)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    (0i128, 1i128) => {
+                                        if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v45 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v45)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    (1i128, 0i128) => {
+                                        if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v46 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v46)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    (1i128, 1i128) => {
+                                        if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v47 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v47)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    (2i128, 0i128) => {
+                                        if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v48 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v48)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    (2i128, 1i128) => {
+                                        if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v49 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v49)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    (3i128, 0i128) => {
+                                        if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v50 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    (3i128, 1i128) => {
+                                        if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v51 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
+                                            self.g_cond(f2 as u32, false)?;
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v51)?;
+                                        } else {
+                                            self.g_cond(f2 as u32, false)?;
+                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                            v3 = self.ci(2i128 as u32);
+                                            v14 = self.g_bin(Bin::Mul, v13, v3);
+                                            v15 = self.g_bin(Bin::Add, v12, v14);
+                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
+                                        }
+                                    }
+                                    _ => unreachable!(),
+                                }
+                                if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                                    self.g_apply(d, "compute", false, false)?;
+                                    if ((self.m1(0x200000) as i128) != 0i128) {
+                                        self.g_apply(d, "compute", true, false)?;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        if (f9 != 0i128) {
+                            if (f1 != 0i128) {
+                                return refuse("unsupported Type7a conditional compute");
+                            } else {
+                                if (f0 != 0i128) {
+                                    return refuse("unsupported Type7a conditional compute");
+                                } else {
+                                    match (f5, f6) {
+                                        (0i128, 0i128) => {
+                                            if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v52 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v52)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        (0i128, 1i128) => {
+                                            if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v53 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v53)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        (1i128, 0i128) => {
+                                            if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v54 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v54)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        (1i128, 1i128) => {
+                                            if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v55 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v55)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        (2i128, 0i128) => {
+                                            if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v56 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v56)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        (2i128, 1i128) => {
+                                            if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v57 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v57)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        (3i128, 0i128) => {
+                                            if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v58 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v58)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        (3i128, 1i128) => {
+                                            if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v59 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v59)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                self.g_plainmod(v12)?;
+                                                v6 = self.ci(4i128 as u32);
+                                                v16 = self.g_bin(Bin::Mul, v13, v6);
+                                                v17 = self.g_bin(Bin::Add, v12, v16);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                                            }
+                                        }
+                                        _ => unreachable!(),
+                                    }
+                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                                        self.g_apply(d, "compute", false, false)?;
+                                        if ((self.m1(0x200000) as i128) != 0i128) {
+                                            self.g_apply(d, "compute", true, false)?;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            if (f1 != 0i128) {
+                                return refuse("unsupported Type7a conditional compute");
+                            } else {
+                                if (f0 != 0i128) {
+                                    return refuse("unsupported Type7a conditional compute");
+                                } else {
+                                    match (f5, f6) {
+                                        (0i128, 0i128) => {
+                                            if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v60 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        (0i128, 1i128) => {
+                                            if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v61 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v61)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        (1i128, 0i128) => {
+                                            if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v62 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v62)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        (1i128, 1i128) => {
+                                            if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v63 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v63)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        (2i128, 0i128) => {
+                                            if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v64 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v64)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        (2i128, 1i128) => {
+                                            if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v65 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v65)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        (3i128, 0i128) => {
+                                            if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v66 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v66)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        (3i128, 1i128) => {
+                                            if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v67 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
+                                                self.g_cond(f2 as u32, false)?;
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v67)?;
+                                            } else {
+                                                self.g_cond(f2 as u32, false)?;
+                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                                                v9 = self.ci(1i128 as u32);
+                                                v18 = self.g_bin(Bin::Mul, v13, v9);
+                                                v19 = self.g_bin(Bin::Add, v12, v18);
+                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                                            }
+                                        }
+                                        _ => unreachable!(),
+                                    }
+                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                                        self.g_apply(d, "compute", false, false)?;
+                                        if ((self.m1(0x200000) as i128) != 0i128) {
+                                            self.g_apply(d, "compute", true, false)?;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                return refuse("unsupported Type7a predicate");
+            }
+        }
+        Ok(())
+    }
+    pub fn g_7b(&mut self, d: &Dec) -> LR<()> {
+        if !self.env.assume_nw32 {
+            return refuse("assume_nw32 off");
+        }
+        let f0 = d.get("cond[4:0]").ok_or(Refuse("missing field cond[4:0]".into()))? as i128;
+        let f1 = d.get("g").ok_or(Refuse("missing field g".into()))? as i128;
+        let f2 = d.get("idis[2:0]").ok_or(Refuse("missing field idis[2:0]".into()))? as i128;
+        let f3 = d.get("is[1:0]").ok_or(Refuse("missing field is[1:0]".into()))? as i128;
+        let f4 = d.get("is[2:2]").ok_or(Refuse("missing field is[2:2]".into()))? as i128;
+        let f5 = d.get("m[2:0]").ok_or(Refuse("missing field m[2:0]".into()))? as i128;
+        let mut v0: Val = 0;
+        let mut v2: Val = 0;
+        let mut v3: Val = 0;
+        let mut v4: Val = 0;
+        let mut v5: Val = 0;
+        let mut v6: Val = 0;
+        let mut v7: Val = 0;
+        let mut v8: Val = 0;
+        let mut v9: Val = 0;
+        let mut v10: Val = 0;
+        let mut v11: Val = 0;
+        let mut v12: Val = 0;
+        let mut v13: Val = 0;
+        let mut v14: Val = 0;
+        let mut v15: Val = 0;
+        let mut v16: Val = 0;
+        let mut v17: Val = 0;
+        let mut v18: Val = 0;
+        let mut v19: Val = 0;
+        let mut v20: Val = 0;
+        let mut v21: Val = 0;
+        let mut v22: Val = 0;
+        let mut v23: Val = 0;
+        let mut v24: Val = 0;
+        let mut v25: Val = 0;
+        if (f0 == 31i128) {
+        } else {
+            self.g_cond(f0 as u32, false)?;
+        }
+        if (f1 != 0i128) {
+            v0 = self.g_rd((16i128 + ((((f4) << (2i128 as u32)) | f3) + 8i128)) as u32)?;
+            v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+            v3 = self.ci(1i128 as u32);
+            v4 = self.g_bin(Bin::Mul, v2, v3);
+            match (f3, f4) {
+                (0i128, 0i128) => {
+                    if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                        v5 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v5)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                (0i128, 1i128) => {
+                    if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                        v7 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v7)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                (1i128, 0i128) => {
+                    if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                        v8 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v8)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                (1i128, 1i128) => {
+                    if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                        v9 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v9)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                (2i128, 0i128) => {
+                    if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                        v10 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v10)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                (2i128, 1i128) => {
+                    if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                        v11 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v11)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                (3i128, 0i128) => {
+                    if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                        v12 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v12)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                (3i128, 1i128) => {
+                    if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                        v13 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v13)?;
+                    } else {
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 8i128)) as u32, v6)?;
+                    }
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            v14 = self.g_rd((16i128 + ((((f4) << (2i128 as u32)) | f3) + 0i128)) as u32)?;
+            v15 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+            v3 = self.ci(1i128 as u32);
+            v16 = self.g_bin(Bin::Mul, v15, v3);
+            match (f3, f4) {
+                (0i128, 0i128) => {
+                    if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                        v17 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v17)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                (0i128, 1i128) => {
+                    if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                        v19 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v19)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                (1i128, 0i128) => {
+                    if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                        v20 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v20)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                (1i128, 1i128) => {
+                    if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                        v21 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v21)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                (2i128, 0i128) => {
+                    if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                        v22 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v22)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                (2i128, 1i128) => {
+                    if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                        v23 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v23)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                (3i128, 0i128) => {
+                    if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                        v24 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v24)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                (3i128, 1i128) => {
+                    if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                        v25 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v14, v16, b, n, true)? };
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v25)?;
+                    } else {
+                        v18 = self.g_bin(Bin::Add, v14, v16);
+                        self.g_wr((16i128 + (((((f4) << (2i128 as u32)) | f3) ^ f2) + 0i128)) as u32, v18)?;
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+        Ok(())
+    }
     pub fn g_14a(&mut self, d: &Dec) -> LR<()> {
         if !self.env.assume_nw32 {
             return refuse("assume_nw32 off");
@@ -12650,6 +14058,1937 @@ impl Lower {
         }
         Ok(())
     }
+    pub fn g_19a_scaled(&mut self, d: &Dec) -> LR<()> {
+        if !self.env.assume_nw32 {
+            return refuse("assume_nw32 off");
+        }
+        let f0 = d.get("data[15:0]").ok_or(Refuse("missing field data[15:0]".into()))? as i128;
+        let f1 = d.get("data[31:16]").ok_or(Refuse("missing field data[31:16]".into()))? as i128;
+        let f2 = d.get("g").ok_or(Refuse("missing field g".into()))? as i128;
+        let f3 = d.get("idis[2:0]").ok_or(Refuse("missing field idis[2:0]".into()))? as i128;
+        let f4 = d.get("is[2:0]").ok_or(Refuse("missing field is[2:0]".into()))? as i128;
+        let f5 = d.get("w").ok_or(Refuse("missing field w".into()))? as i128;
+        let mut v0: Val = 0;
+        let mut v2: Val = 0;
+        let mut v3: Val = 0;
+        let mut v4: Val = 0;
+        let mut v5: Val = 0;
+        let mut v7: Val = 0;
+        let mut v8: Val = 0;
+        let mut v9: Val = 0;
+        let mut v10: Val = 0;
+        let mut v11: Val = 0;
+        let mut v12: Val = 0;
+        let mut v13: Val = 0;
+        let mut v14: Val = 0;
+        let mut v15: Val = 0;
+        let mut v16: Val = 0;
+        let mut v17: Val = 0;
+        let mut v19: Val = 0;
+        let mut v20: Val = 0;
+        let mut v21: Val = 0;
+        let mut v22: Val = 0;
+        let mut v23: Val = 0;
+        let mut v24: Val = 0;
+        let mut v25: Val = 0;
+        let mut v26: Val = 0;
+        let mut v27: Val = 0;
+        let mut v28: Val = 0;
+        let mut v29: Val = 0;
+        let mut v31: Val = 0;
+        let mut v32: Val = 0;
+        let mut v33: Val = 0;
+        let mut v34: Val = 0;
+        let mut v35: Val = 0;
+        let mut v36: Val = 0;
+        let mut v37: Val = 0;
+        let mut v38: Val = 0;
+        let mut v39: Val = 0;
+        let mut v40: Val = 0;
+        let mut v41: Val = 0;
+        let mut v43: Val = 0;
+        let mut v44: Val = 0;
+        let mut v45: Val = 0;
+        let mut v46: Val = 0;
+        let mut v47: Val = 0;
+        let mut v48: Val = 0;
+        let mut v49: Val = 0;
+        let mut v50: Val = 0;
+        let mut v51: Val = 0;
+        let mut v52: Val = 0;
+        let mut v54: Val = 0;
+        let mut v55: Val = 0;
+        let mut v56: Val = 0;
+        let mut v57: Val = 0;
+        let mut v58: Val = 0;
+        let mut v59: Val = 0;
+        let mut v60: Val = 0;
+        let mut v61: Val = 0;
+        let mut v62: Val = 0;
+        let mut v64: Val = 0;
+        let mut v65: Val = 0;
+        let mut v66: Val = 0;
+        let mut v67: Val = 0;
+        let mut v68: Val = 0;
+        let mut v69: Val = 0;
+        let mut v70: Val = 0;
+        let mut v71: Val = 0;
+        let mut v72: Val = 0;
+        let mut v74: Val = 0;
+        let mut v75: Val = 0;
+        let mut v76: Val = 0;
+        let mut v77: Val = 0;
+        let mut v78: Val = 0;
+        let mut v79: Val = 0;
+        let mut v80: Val = 0;
+        let mut v81: Val = 0;
+        let mut v82: Val = 0;
+        let mut v84: Val = 0;
+        let mut v85: Val = 0;
+        let mut v86: Val = 0;
+        let mut v87: Val = 0;
+        let mut v88: Val = 0;
+        let mut v89: Val = 0;
+        let mut v90: Val = 0;
+        if (f2 != 0i128) {
+            if (((((f1) << (16i128 as u32)) | f0) & 2147483648i128) != 0i128) {
+                if (f5 != 0i128) {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(56)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v5 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v5)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v5 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v5)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(57)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v7 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v7)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v7 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v7)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(58)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v8 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v8)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v8 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v8)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(59)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v9 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v9)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v9 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v9)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(60)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v10 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v10)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v10 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v10)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(61)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v11 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v11)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v11 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v11)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(62)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v12 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v12)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v12 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v12)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(63)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v3 = self.g_bin(Bin::Add, v0, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v3)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v13 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v13)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v13 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v13)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(56)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v17 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v17)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v17 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(57)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v19 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v19)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v19 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v19)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(58)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v20 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v20)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v20 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v20)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(59)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v21 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v21)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v21 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v21)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(60)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v22 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v22)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v22 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v22)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(61)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v23 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v23)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v23 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v23)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(62)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v24 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v24)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v24 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v24)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(63)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v15 = self.g_bin(Bin::Add, v0, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v15)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v25 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v25)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v25 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v25)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            } else {
+                if (f5 != 0i128) {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(56)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v29 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v29)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v29 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v29)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(57)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v31 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v31)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v31 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v31)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(58)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v32 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v32)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v32 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v32)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(59)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v33 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v33)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v33 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v33)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(60)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v34 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v34)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v34 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v34)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(61)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v35 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v35)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v35 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v35)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(62)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v36 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v36)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v36 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v36)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(63)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v27 = self.g_bin(Bin::Add, v0, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v27)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v37 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v37)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v37 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v0, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v37)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(56)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v41 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v41)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v41 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(56)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v41)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(57)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v43 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v43)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v43 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(57)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v43)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(58)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v44 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v44)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v44 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(58)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v44)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(59)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v45 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v45)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v45 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(59)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v45)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(60)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v46 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v46)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v46 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(60)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v46)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(61)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v47 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v47)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v47 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(61)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v47)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(62)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v48 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v48)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v48 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(62)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v48)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(63)? as i128) & 4294967295i128) == 0i128) {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v39 = self.g_bin(Bin::Add, v0, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v39)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v49 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v49)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v49 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(63)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v0, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 8i128)) as u32, v49)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        } else {
+            if (((((f1) << (16i128 as u32)) | f0) & 2147483648i128) != 0i128) {
+                if (f5 != 0i128) {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(48)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v52 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v52)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v52 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v52)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(49)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v54 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v54)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v54 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v54)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(50)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v55 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v55)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v55 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v55)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(51)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v56 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v56)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v56 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v56)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(52)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v57 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v57)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v57 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v57)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(53)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v58 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v58)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v58 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v58)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(54)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v59 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v59)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v59 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v59)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(55)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v2 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) & 4294967295i128) as u32);
+                                v51 = self.g_bin(Bin::Add, v50, v2);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v51)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v60 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v60)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v4 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 4i128) as u32);
+                                        v60 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v4, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(48)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v62 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v62)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v62 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v62)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(49)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v64 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v64)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v64 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v64)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(50)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v65 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v65)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v65 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v65)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(51)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v66 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v66)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v66 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v66)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(52)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v67 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v67)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v67 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v67)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(53)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v68 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v68)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v68 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v68)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(54)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v69 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v69)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v69 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v69)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(55)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v14 = self.ci(((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) & 4294967295i128) as u32);
+                                v61 = self.g_bin(Bin::Add, v50, v14);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v61)?;
+                            } else {
+                                if ((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) < (0i128 - (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v70 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v70)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) < (((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v16 = self.ci((((((f1) << (16i128 as u32)) | f0) - 4294967296i128) * 2i128) as u32);
+                                        v70 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v16, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v70)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            } else {
+                if (f5 != 0i128) {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(48)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v72 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v72)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v72 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v72)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(49)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v74 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v74)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v74 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v74)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(50)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v75 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v75)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v75 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v75)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(51)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v76 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v76)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v76 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v76)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(52)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v77 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v77)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v77 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v77)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(53)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v78 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v78)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v78 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v78)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(54)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v79 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v79)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v79 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v79)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(55)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v26 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                                v71 = self.g_bin(Bin::Add, v50, v26);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v71)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 4i128) < 0i128) {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 4i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v80 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v80)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) < ((((f1) << (16i128 as u32)) | f0) * 4i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v28 = self.ci(((((f1) << (16i128 as u32)) | f0) * 4i128) as u32);
+                                        v80 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 4i128) as i64; self.g_circ(v50, v28, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v80)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                } else {
+                    match (f4,) {
+                        (0i128,) => {
+                            if (((self.sv_lb(48)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v82 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v82)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v82 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(48)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v82)?;
+                                    }
+                                }
+                            }
+                        }
+                        (1i128,) => {
+                            if (((self.sv_lb(49)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v84 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v84)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v84 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(49)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v84)?;
+                                    }
+                                }
+                            }
+                        }
+                        (2i128,) => {
+                            if (((self.sv_lb(50)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v85 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v85)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v85 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(50)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v85)?;
+                                    }
+                                }
+                            }
+                        }
+                        (3i128,) => {
+                            if (((self.sv_lb(51)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v86 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v86)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v86 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(51)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v86)?;
+                                    }
+                                }
+                            }
+                        }
+                        (4i128,) => {
+                            if (((self.sv_lb(52)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v87 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v87)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v87 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(52)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v87)?;
+                                    }
+                                }
+                            }
+                        }
+                        (5i128,) => {
+                            if (((self.sv_lb(53)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v88 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v88)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v88 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(53)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v88)?;
+                                    }
+                                }
+                            }
+                        }
+                        (6i128,) => {
+                            if (((self.sv_lb(54)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v89 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v89)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v89 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(54)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v89)?;
+                                    }
+                                }
+                            }
+                        }
+                        (7i128,) => {
+                            if (((self.sv_lb(55)? as i128) & 4294967295i128) == 0i128) {
+                                v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                v38 = self.ci((((((f1) << (16i128 as u32)) | f0) * 2i128) & 4294967295i128) as u32);
+                                v81 = self.g_bin(Bin::Add, v50, v38);
+                                self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v81)?;
+                            } else {
+                                if (((((f1) << (16i128 as u32)) | f0) * 2i128) < 0i128) {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) < (0i128 - ((((f1) << (16i128 as u32)) | f0) * 2i128))) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v90 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v90)?;
+                                    }
+                                } else {
+                                    if ((((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) < ((((f1) << (16i128 as u32)) | f0) * 2i128)) {
+                                        return refuse("write of a non-constant value: Unknown(reason='circular modifier is not smaller than L0')");
+                                    } else {
+                                        v50 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v40 = self.ci(((((f1) << (16i128 as u32)) | f0) * 2i128) as u32);
+                                        v90 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = (((self.sv_lb(55)? as i128) & 4294967295i128) * 2i128) as i64; self.g_circ(v50, v40, b, n, false)? };
+                                        self.g_wr((16i128 + ((f4 ^ f3) + 0i128)) as u32, v90)?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn g_21a(&mut self, d: &Dec) -> LR<()> {
         if !self.env.assume_nw32 {
             return refuse("assume_nw32 off");
@@ -12657,6 +15996,12 @@ impl Lower {
         Ok(())
     }
     pub fn g_21c(&mut self, d: &Dec) -> LR<()> {
+        if !self.env.assume_nw32 {
+            return refuse("assume_nw32 off");
+        }
+        Ok(())
+    }
+    pub fn g_22c(&mut self, d: &Dec) -> LR<()> {
         if !self.env.assume_nw32 {
             return refuse("assume_nw32 off");
         }

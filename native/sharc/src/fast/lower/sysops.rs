@@ -18,6 +18,14 @@ use super::*;
 
 /// UREG code of MODE1.
 pub const MODE1_CODE: u32 = 114;
+
+/// System registers the core reads and writes as plain register-file words
+/// (`_write_ureg` and `_ureg` have no case for them under any model): PX1,
+/// PX2, USTAT1, USTAT2, MMASK, MODE2, USTAT3, USTAT4. The kernel holds them
+/// like any other register (lane F4).
+pub fn plain_sys(code: u32) -> bool {
+    matches!(code, 108 | 109 | 112 | 113 | 115 | 116 | 126 | 127)
+}
 const USTAT1_CODE: u32 = 112;
 
 impl Lower {

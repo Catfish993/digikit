@@ -94,3 +94,39 @@ Profile: feature `cf-profile` (boot `src/cfprof.rs`, RPC `cf.profile`; CPU per p
 - wasm costs 3.4x native on DT2; ready from cold takes 9 s (DT2) / 7.9 s (DN2) in wasm.
 - Next if CF CPU matters: the DN2 audio-block loops (fuse FUN_400db12a, the 0x8001 fill loop of
   FUN_400cf7be, the word memcpy), not idle.
+
+## CF cost on the coupled DN2 path (2026-10-07, on 16e23a0)
+
+Option B does not exist here: the ColdFire core is our own interpreter (`native/coldfire`), not
+Unicorn. Option A was already half done: the three named routines are fused loops
+(`native/coldfire/src/fused.rs`), not 95 % of the cost any more.
+
+Profile (feature `cf-profile`, fused table added): DN2 trig1-taps, 10.5 s. CF CPU 8.2 s:
+fused loops 2.2 s (MacA 0x400db160 1.22 s at 6.0 ns/insn, MacB 0x400db1f4 0.52 s, word-copy
+0x401344a6 0.27 s, interleave 0x400cf918 0.18 s), the remaining 5.1 s is 393M unfused instructions at
+13 ns each in many functions (FUN_40137726 12 % of instructions, vector_191_handler 6 %, ...).
+
+Changes (exact; `native/coldfire/tests/fused.rs` compares fused against stepping over random
+registers, MACSR modes 0x00-0xc0, accumulators, masks and memory holes, whole `Cpu` equality):
+- MacA and MacB iterations written out (`mac_a_body`, `mac_b_body`): the interpreter's own `mac_op`,
+  `acc_to_reg`, flag helpers, no decode or operand handling; MacA 6.0 -> 2.4 ns/insn, MacB 8.7 -> 5.7.
+- Copy16/Clear16 check one 16-byte range instead of four longs.
+- `fused_clean` (no observed PC inside a loop body) is precomputed in `rebuild_watch`.
+
+Exactness: all four pinned DN2 scenarios through `coupled-run` match their pins before and after
+(exactness-100m `b3f5230f`, trig1-noqa-40m `2861ce03`, trig1-taps `d60ad339`, trig1-tap-release
+`88347621`); DN2 CF digest and PCM (emud, trig1-taps 4 s) and DT2 boot with card + 5 s + a Trig tap
+(`c4d19bbd..`) are identical; CF-only restored-snapshot digest identical (`4c3889c9..`).
+The `coupled_ready_exactness` lib gate fails the same way on HEAD (CF digest `75b6a52d..` vs pin
+`55dc699e..`, fixture/env mismatch in my runs), so it is not evidence either way.
+
+CF CPU per emulated s (coupled-run `cf_thread_per_audio_s`, native): trig1-taps 0.617 -> 0.521,
+trig1-tap-release 0.630 -> 0.523, exactness-100m 0.965 -> 0.909 (short, startup bound).
+CF-only audio path restored from the DN2 ready snapshot (`examples/cf_snap_bench.rs`, wasm export
+`digi_load_snapshot`; no DSP, so the wasm number excludes the DSP): native 0.577 -> 0.499, wasm (Node)
+0.873 -> 0.722 CPU s per emulated s. wasm target 0.8: met on this workload by 10 %; the coupled
+wasm core itself was not built (needs the generated core compiled for wasm).
+
+Floor: 393M instructions through the generic interpreter, about 60 % of what is left. Next lever is
+interpreter speed (decode-cache copy of the 40-byte `Insn`, per-instruction bus bookkeeping in
+`run_fast`), not more leaf routines: FUN_40137726 alone is 100 instructions per call, branchy.

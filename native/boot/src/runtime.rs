@@ -140,6 +140,9 @@ pub struct Emulator {
     /// Heads of the loops `Cpu::run_fused` runs, with their code bytes
     /// (watched: `run_fast` stops there and tries a fused batch).
     fused_loops: Vec<(u32, Loop, Vec<u8>)>,
+    /// Per fused loop: no observed PC inside its body (set by `rebuild_watch`,
+    /// the only place `observed_pcs` changes).
+    fused_clean: Vec<bool>,
     /// The watched PCs other than fused-loop heads, sorted.
     observed_pcs: Vec<u32>,
     /// Host-requested PC hit counters (`probe_pcs`), for headless diagnosis.
@@ -456,6 +459,7 @@ impl Emulator {
             softfloat,
             ram_clear,
             fused_loops,
+            fused_clean: Vec::new(),
             observed_pcs: Vec::new(),
             probe_hits: BTreeMap::new(),
             irq1_pending: false,
@@ -954,6 +958,15 @@ impl Emulator {
         let mut observed = pcs.clone();
         observed.sort_unstable();
         observed.dedup();
+        self.fused_clean = self
+            .fused_loops
+            .iter()
+            .map(|(head, lp, _)| {
+                lp.offsets()[1..]
+                    .iter()
+                    .all(|&o| observed.binary_search(&(head + o)).is_err())
+            })
+            .collect();
         self.observed_pcs = observed;
         pcs.extend(self.fused_loops.iter().map(|(head, _, _)| *head));
         for pc in pcs {
@@ -1120,19 +1133,17 @@ impl Emulator {
     /// as the batch's last instruction set it. Returns the instructions run
     /// (0: step normally).
     fn run_fused_loop(&mut self, pc: u32, budget: u32, limit: u64, calls: u64) -> u32 {
-        let Some(&(head, lp, ref code)) = self.fused_loops.iter().find(|(head, _, _)| *head == pc)
-        else {
+        let Some(index) = self.fused_loops.iter().position(|(head, _, _)| *head == pc) else {
             return 0;
         };
+        let (head, lp, ref code) = self.fused_loops[index];
         let offsets = lp.offsets();
         // The code is still what was recognised, every instruction is
         // decoded already (stepping would only hit the decode cache), and
         // no other observer watches a PC inside the body.
         if !self.bus.board.ram_matches(head, code)
             || offsets.iter().any(|&o| !self.cpu.decoded_at(head + o))
-            || offsets[1..]
-                .iter()
-                .any(|&o| self.observed_pcs.binary_search(&(head + o)).is_ok())
+            || !self.fused_clean[index]
         {
             return 0;
         }
@@ -1146,7 +1157,15 @@ impl Emulator {
         if max == 0 {
             return 0;
         }
+        #[cfg(feature = "cf-profile")]
+        let tf = crate::cputime::thread_cpu_ns();
         let iterations = self.cpu.run_fused(&mut self.bus, lp, max);
+        #[cfg(feature = "cf-profile")]
+        self.prof.fused_add(
+            head,
+            u64::from(iterations) * u64::from(per),
+            crate::cputime::thread_cpu_ns() - tf,
+        );
         if iterations == 0 {
             return 0;
         }

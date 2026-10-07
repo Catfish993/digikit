@@ -15,7 +15,7 @@
 //! clean block boundary.
 
 use super::*;
-use crate::fast::cfg::{DYN_PC, LoopCount, LoopDef, Node, NodeKind, Structure};
+use crate::fast::cfg::{DYN_PC, LoopCount, LoopDef, Node, NodeKind, Structure, Tail};
 use std::collections::HashMap;
 
 fn merge(a: &[Option<Abs>], b: &[Option<Abs>]) -> Vec<Option<Abs>> {
@@ -156,6 +156,22 @@ impl Lower {
     /// loop-back to an address the kernel does not hold).
     fn stub(&mut self, stubs: &mut Vec<(u32, u32)>, pc: u32, active: Vec<u16>) -> u32 {
         let k = self.site_at(pc, 0, active);
+        let l = self.new_label();
+        stubs.push((l, k));
+        l
+    }
+
+    /// The stub of a taken call or return at PC: it leaves at the target
+    /// (`DYN_PC` for a return) and the glue does the stack bookkeeping.
+    fn stub_tail(
+        &mut self,
+        stubs: &mut Vec<(u32, u32)>,
+        pc: u32,
+        target: u32,
+        active: Vec<u16>,
+        tail: Tail,
+    ) -> u32 {
+        let k = self.site_tail(target, 0, active, pc, tail);
         let l = self.new_label();
         stubs.push((l, k));
         l
@@ -402,7 +418,7 @@ impl Lower {
                 self.set_var(v.didpc, 1);
                 self.cfg_x().nblock += 1;
             }
-            NodeKind::Return { jump_idx } => {
+            NodeKind::Return { jump_idx, comp } => {
                 self.begin_insn(idx);
                 // The target, I(8+pmi) + M(8+pmm) as 24 bits, from the
                 // registers before the instruction; the slots run, then the
@@ -419,18 +435,30 @@ impl Lower {
                     off: CTX_DYNPC,
                     v: t,
                 });
-                self.set_var(v.taken[*jump_idx as usize], 1);
+                if let Some(c) = comp {
+                    // The target above is from the registers before the
+                    // compute (`_type_9a_abs` reads them first).
+                    if self.mode1_cur & (1 << 21) != 0 {
+                        return refuse("compute of a transfer in SIMD mode");
+                    }
+                    self.lower_insn(idx, c)?;
+                    self.note_written(st, pc);
+                }
+                if *jump_idx != crate::fast::cfg::NO_JUMP {
+                    self.set_var(v.taken[*jump_idx as usize], 1);
+                }
                 self.cfg_x().nblock += 1;
                 for (n, (spc, sdec)) in node.slots.iter().enumerate() {
                     let left = 2 - n as u8;
                     let sctx = st.ctx.get(spc).cloned().unwrap_or_default();
                     self.set_ctx(*spc, sctx, Some((*jump_idx, left)));
-                    // RFRAME's plain writes of I6 and I7 are the last that
-                    // matter when only NOPs follow it before the exit.
-                    self.tail_write = sdec.form == "25c_rframe"
-                        && node.slots[n + 1..]
-                            .iter()
-                            .all(|(_, d)| matches!(d.form, "21a" | "21c"));
+                    // The writes (RFRAME's I6 and I7, or the same pair of
+                    // moves) of the last instruction that does anything
+                    // before the exit are the last that matter: nothing
+                    // reads them in the kernel.
+                    self.tail_write = node.slots[n + 1..]
+                        .iter()
+                        .all(|(_, d)| matches!(d.form, "21a" | "21c" | "22c"));
                     let r = self.lower_insn(idx, sdec);
                     self.tail_write = false;
                     r?;
@@ -450,6 +478,8 @@ impl Lower {
                 delayed,
                 jump_idx,
                 exit_edge,
+                tail,
+                comp,
             } => {
                 self.begin_insn(idx);
                 if node.dec.form == "25a_direct" {
@@ -457,11 +487,21 @@ impl Lower {
                     self.cjump_frame()?;
                     self.note_written(st, pc);
                 }
+                // The condition is read before the compute's flag effects
+                // (`_predicate` runs first in the core).
                 let cv = if *cond == 0x1f {
                     None
                 } else {
                     Some(self.cond_value(*cond)?)
                 };
+                if let Some(c) = comp {
+                    // The core runs the SISD compute whatever MODE1 says.
+                    if self.mode1_cur & (1 << 21) != 0 {
+                        return refuse("compute of a transfer in SIMD mode");
+                    }
+                    self.lower_insn(idx, c)?;
+                    self.note_written(st, pc);
+                }
                 if *delayed {
                     let one = self.ci(1);
                     self.body
@@ -479,7 +519,9 @@ impl Lower {
                 }
                 self.set_ctx(pc, active.clone(), None);
                 self.close_block(v);
-                let dest = if *exit_edge {
+                let dest = if *tail != Tail::None {
+                    self.stub_tail(stubs, pc, *target, active.clone(), *tail)
+                } else if *exit_edge {
                     self.stub(stubs, *target, active.clone())
                 } else {
                     let cur = self.var_abs.clone();

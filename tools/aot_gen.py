@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 try:
     import digi_env
     import ready
+    import sharc_dn2_aot
 finally:
     sys.path.pop(0)
 
@@ -43,6 +44,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("device", choices=["dt2"], help="devices without a registered core")
     p.add_argument("--card-image", type=pathlib.Path, required=True)
     p.add_argument("--extra", default="110000000", help="CF instructions after ready")
+    p.add_argument(
+        "--cycles",
+        type=int,
+        default=2,
+        help="profile cycles: 0 is interpreter-only, each later one replays with the "
+        "previous cycle's blocks on (that run records the block transitions)",
+    )
     a = p.parse_args(argv)
     cfg = ready.DEVICES[a.device]
     syx = digi_env.firmware_for(a.device)
@@ -63,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     examples = ready.build_examples()
     prof = out / "prof"
+    profiles = [prof]
     run = out / "run"
     run.mkdir(exist_ok=True)
     for name in ("snap", "snap.dsp"):  # sharc_live restores in place: work on copies
@@ -87,13 +96,42 @@ def main(argv: list[str] | None = None) -> int:
         cwd=ROOT, env=env, check=True, stdout=subprocess.DEVNULL,
     )  # fmt: skip
     gen = out / "gen"
-    subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "sharc_rsgen.py"), cfg["image"],
-         "--coverage", str(prof), "--entries", f"{prof}.entries",
-         "--transitions", f"{prof}.trans", *MODEL_FLAGS,
-         "--work", str(out / "work"), "--out", str(gen)],
-        cwd=ROOT, check=True,
-    )  # fmt: skip
+
+    def rsgen(base: pathlib.Path) -> None:
+        subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "sharc_rsgen.py"), cfg["image"],
+             "--coverage", str(base), "--entries", f"{base}.entries",
+             "--transitions", f"{base}.trans", *MODEL_FLAGS,
+             "--work", str(out / "work"), "--out", str(gen)],
+            cwd=ROOT, check=True,
+        )  # fmt: skip
+
+    rsgen(prof)
+    for cycle in range(1, a.cycles):
+        # Replay with the blocks built so far; only that run sees the block
+        # transitions. rsgen then gets every cycle's profile, merged.
+        examples = ready.build_examples(gen)
+        this = out / f"prof-c{cycle}"
+        for name in ("snap", "snap.dsp"):
+            (run / f"w.{name}").write_bytes(
+                (ready_dir / f"digi-audio-m5.{name}").read_bytes()
+            )
+        subprocess.run(
+            [str(examples / "sharc_live"), str(syx), str(ready_dir.parent.parent / "cold-idle.dsp"),
+             str(image), str(run / "w.wav"), a.extra],
+            cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
+            env={**env, "SHARC_AOT": "1", "DSP_PROFILE": str(this)},
+        )  # fmt: skip
+        profiles.append(this)
+        merged = out / f"prof-merged-c{cycle}"
+        for suffix in sharc_dn2_aot.PROFILE_KINDS:
+            merged.with_name(merged.name + suffix).write_text(
+                sharc_dn2_aot.merge_kind(
+                    [pathlib.Path(str(c) + suffix).read_text() for c in profiles],
+                    suffix,
+                )
+            )
+        rsgen(merged)
     digi_env.register_gen(image, gen)
     print(f"gen {gen} registered for {digi_env.GEN_INDEX}")
     return 0

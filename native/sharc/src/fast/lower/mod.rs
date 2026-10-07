@@ -313,6 +313,9 @@ pub struct Lower {
     pub flag_kinds_out: [u32; NGROUPS as usize],
     /// `Plan::plain` as this pass found it.
     pub plain_out: u64,
+    /// A circular index register was found written outside its buffer in a
+    /// pass that should have emitted the kernel: lower again with it plain.
+    pub retry: bool,
     /// The instruction being lowered is followed in the kernel by nothing
     /// that reads the registers it writes (RFRAME before the exit of a
     /// return): its plain writes of index registers need no circular range.
@@ -452,6 +455,7 @@ impl Lower {
             lw: [None; 3],
             flag_kinds_out: [0; NGROUPS as usize],
             plain_out: 0,
+            retry: false,
             tail_write: false,
             entry_abs_out: Default::default(),
             val_ty: Vec::new(),
@@ -690,6 +694,7 @@ impl Lower {
             active: x.active.clone(),
             pending: x.pending,
             ret: 0,
+            tail: Default::default(),
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -705,6 +710,18 @@ impl Lower {
 
     /// `site_at` for the exit after a return instruction RET (`DYN_PC`).
     pub fn site_ret(&mut self, pc: u32, off: u32, active: Vec<u16>, ret: u32) -> u32 {
+        self.site_tail(pc, off, active, ret, Default::default())
+    }
+
+    /// `site_ret` for the exit that completes a call or return (`Tail`).
+    pub fn site_tail(
+        &mut self,
+        pc: u32,
+        off: u32,
+        active: Vec<u16>,
+        ret: u32,
+        tail: crate::fast::cfg::Tail,
+    ) -> u32 {
         let x = self.cfgx.as_mut().expect("cfg lowering");
         let site = Site {
             pc,
@@ -712,6 +729,7 @@ impl Lower {
             active,
             pending: None,
             ret,
+            tail,
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -785,7 +803,7 @@ impl Lower {
     // -- registers ---------------------------------------------------------
 
     fn check_code(&self, code: u32) -> LR<usize> {
-        if code < 96 {
+        if code < 96 || sysops::plain_sys(code) {
             Ok(code as usize)
         } else {
             refuse(format!("register code {code} outside R/I/M/L/B/S"))
@@ -888,6 +906,9 @@ impl Lower {
             return None;
         }
         let n = c - 16;
+        if self.lb_stale(n) {
+            return None;
+        }
         let (len, base) = (self.env.dag_l[n]?, self.env.dag_b[n]?);
         if len == 0 || len > (1 << 28) {
             return None;
@@ -902,7 +923,7 @@ impl Lower {
     /// else `< B` -> `+ L`, unsigned 32-bit). IV must lie in the buffer (a
     /// `Req::Within` the caller adds), |DELTA| <= LEN, and the sum must not
     /// wrap 32 bits (refused). The result's range is the buffer.
-    fn wrap_add(&mut self, iv: Val, delta: Val, d: i64, base: u32, len: i64) -> LR<Val> {
+    pub fn wrap_add(&mut self, iv: Val, delta: Val, d: i64, base: u32, len: i64) -> LR<Val> {
         let top = base as i64 + len;
         let new = if d == 0 {
             iv
@@ -1009,12 +1030,14 @@ impl Lower {
         scale: i64,
     ) -> LR<Val> {
         self.self_update.push(ic as u8);
-        self.no_plain_circ(ic)?;
         if self.env.circ_off {
             self.require_linear(ic)?;
             return Ok(modified);
         }
         let n = (ic - 16) as usize;
+        if self.lb_stale(n) {
+            return refuse("L/B of the index register written in the region");
+        }
         let Some(len) = self.env.dag_l[n] else {
             return refuse("index length register unknown");
         };
@@ -1030,8 +1053,12 @@ impl Lower {
             // Pass 0 only finds which registers are written.
             return Ok(modified);
         }
-        let (base, lenb, d) = self.circ_params(ic, scale, delta)?;
         self.mode1_mask |= MODE1_CBUFEN;
+        if (self.plan.plain | self.plain_out) >> ic & 1 != 0 {
+            // The register is also written plainly: no in-buffer entry value.
+            return self.wrap_general(ic, iv, delta, scale);
+        }
+        let (base, lenb, d) = self.circ_params(ic, scale, delta)?;
         self.wrap_add(iv, delta, d, base, lenb)
     }
 
@@ -1061,6 +1088,9 @@ impl Lower {
             return self.wr_i(dst, plain);
         }
         let n = (src - 16) as usize;
+        if self.lb_stale(n) {
+            return refuse("L/B of the index register written in the region");
+        }
         let Some(len) = self.env.dag_l[n] else {
             return refuse("index length register unknown");
         };
@@ -1123,7 +1153,7 @@ impl Lower {
 
     /// The register's current value (before the instruction), as a typed Val.
     fn rd(&mut self, code: u32) -> LR<Val> {
-        if code >= 96 {
+        if code >= 96 && !sysops::plain_sys(code) {
             return self.rd_sys(code);
         }
         let c = self.check_code(code)?;
@@ -1177,10 +1207,9 @@ impl Lower {
     pub fn wr(&mut self, code: u32, v: Val) -> LR<()> {
         let code = self.pe_code(code);
         let c = self.check_code(code)?;
-        if (48..80).contains(&code) {
-            // L and B are baked into the circular-buffer lowering.
-            return refuse(format!("write of L/B (code {code})"));
-        }
+        // A write of L or B is an ordinary register write; the circular
+        // lowering bakes their entry values, so a region that writes them
+        // does not lower circular updates of that index (`lb_stale`).
         self.pending.writes.push((c as u8, v));
         Ok(())
     }
@@ -1456,10 +1485,12 @@ impl Lower {
                         && a.hi < top as i64
                 });
                 if !inside {
-                    return refuse(format!(
-                        "I{} is written outside a circular post-modify",
-                        c - 16
-                    ));
+                    // The next pass lowers the register's circular updates
+                    // without the in-buffer assumption (`wrap_general`). A
+                    // pass that was meant to emit the kernel is repeated
+                    // (`Lowered::retry`).
+                    self.plain_out |= 1 << c;
+                    self.retry |= self.pass >= 2;
                 }
             }
             if !self.regs[c].used {
@@ -1511,8 +1542,14 @@ impl Lower {
     /// Lower one decoded instruction.
     pub fn lower_insn(&mut self, idx: u32, d: &Dec) -> LR<()> {
         self.bank_site = self.bank_site_next.take();
-        self.lower_insn_inner(idx, d)
-            .map_err(|e| Refuse(format!("insn {idx} ({}): {}", d.form, e.0)))
+        let r = self
+            .lower_insn_inner(idx, d)
+            .map_err(|e| Refuse(format!("insn {idx} ({}): {}", d.form, e.0)));
+        // The adjusted exit site belongs to this instruction only: the guards
+        // that follow it (a budget check at the next cut point, a branch)
+        // report their own position.
+        self.bank_site = None;
+        r
     }
 
     fn lower_insn_inner(&mut self, idx: u32, d: &Dec) -> LR<()> {
@@ -1535,7 +1572,7 @@ impl Lower {
         if gen_enabled(d.form) && self.gen_lower(d)? {
             return self.commit();
         }
-        if self.mode1_cur & (1 << 21) != 0 && !matches!(d.form, "21a" | "21c") {
+        if self.mode1_cur & (1 << 21) != 0 && !matches!(d.form, "21a" | "21c" | "22c" | "25c_rframe") {
             // The hand-written forms are made for SISD.
             return refuse(format!("{} in SIMD mode (no generated lowering)", d.form));
         }
@@ -1553,7 +1590,7 @@ impl Lower {
             "17a" => self.form_17a(d)?,
             "17b" => self.form_17b(d)?,
             "18a" => self.form_18a(d)?,
-            "21a" | "21c" => self.form_nop()?,
+            "21a" | "21c" | "22c" => self.form_nop()?,
             "4a" => self.form_4a(d)?,
             "4b" | "4d" => self.form_4b_4d(d)?,
             "15a" => self.form_15a(d)?,
@@ -1790,6 +1827,7 @@ impl Lower {
             flags: self.flags,
             stored,
             next,
+            retry: self.retry,
         })
     }
 }
@@ -1812,6 +1850,8 @@ pub struct Lowered {
     /// (CFG kernels); the others are not touched.
     pub stored: Vec<u32>,
     pub next: Plan,
+    /// See `Lower::retry`.
+    pub retry: bool,
 }
 
 /// The f32 result must be finite (not a NaN or an infinity): those make the

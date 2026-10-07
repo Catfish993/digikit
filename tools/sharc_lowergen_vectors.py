@@ -55,6 +55,10 @@ def pick(rng: random.Random, label: str, width: int, form: str) -> int:
             base = 4 * rng.randint(0, 0x20)  # an offset from Ia
         if rng.random() < 0.8:
             return (base >> 16) if label.endswith("[31:16]") else (base & 0xFFFF)
+    if stem in ("ureg", "dstureg", "dreg") and width == 7 and rng.random() < 0.25:
+        # The system registers the lowering holds as plain words
+        # (native/sharc/src/fast/lower/sysops.rs `plain_sys`).
+        return rng.choice([108, 109, 112, 113, 115, 116, 126, 127])
     if form == "18a":
         if stem == "sreg" and rng.random() < 0.8:
             return 2  # MODE1
@@ -93,6 +97,10 @@ def encode(f: dict, rng: random.Random, name: str) -> tuple[int, int]:
             c = rng.randint(0, (1 << 23) - 1)
         vals["compute[22:16]"] = c >> 16
         vals["compute[15:0]"] = c & 0xFFFF
+    if name in ("19a", "19a_scaled") and "data[31:16]" in vals:
+        # A small signed immediate: a large one is a refused circular modifier.
+        d = rng.randint(-8, 8) & 0xFFFFFFFF
+        vals["data[31:16]"], vals["data[15:0]"] = d >> 16, d & 0xFFFF
     for label, v in vals.items():
         x = labels[label]
         word |= v << x["lo"]

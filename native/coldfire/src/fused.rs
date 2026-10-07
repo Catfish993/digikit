@@ -5,9 +5,9 @@
 //! the same register, flag and instruction-count results as stepping its
 //! instructions one at a time. The caller decides when that is allowed (no
 //! event may fall inside the batch); this module only checks what the loop
-//! itself touches. The first three are written out; the EMAC loops run
-//! their decoded instructions through the interpreter's own handlers and
-//! only skip the per-instruction fetch and dispatch bookkeeping.
+//! itself touches. Every loop is written out; the EMAC loops call the
+//! interpreter's own MAC arithmetic (`mac_op`, `acc_to_reg`) and flag helpers,
+//! so only fetch, decode and operand handling are skipped.
 
 use std::sync::OnceLock;
 
@@ -241,10 +241,9 @@ impl Cpu {
         if n != v {
             return false;
         }
-        if (0..4u32).any(|k| {
-            let (s, d) = (a0.wrapping_add(4 * k), a1.wrapping_add(4 * k));
-            !bus.plain_ram(s, 4) || !bus.plain_ram(d, 4) || self.decode_cached(d, 4)
-        }) {
+        // The four longs of each side are one 16-byte range (plain RAM is
+        // checked by its first and last page, so this is the same test).
+        if !bus.plain_ram(a0, 16) || !bus.plain_ram(a1, 16) || self.decode_cached(a1, 16) {
             return false;
         }
         // movem.l (a0),{d2-d5}
@@ -273,10 +272,7 @@ impl Cpu {
         if n != v {
             return false;
         }
-        if (0..4u32).any(|k| {
-            let d = a0.wrapping_add(4 * k);
-            !bus.plain_ram(d, 4) || self.decode_cached(d, 4)
-        }) {
+        if !bus.plain_ram(a0, 16) || self.decode_cached(a0, 16) {
             return false;
         }
         // clr.l (a0)+ four times
@@ -298,25 +294,6 @@ impl Cpu {
         } else {
             addr
         }
-    }
-
-    /// Run `insns[..n]` (at `head + offsets`) through the interpreter's
-    /// handlers, as `step` would after the decode (none traps: no
-    /// privileged or FPU form), then the closing `bgt.b head`, which the
-    /// caller checked is taken.
-    #[inline]
-    fn run_decoded(&mut self, bus: &mut impl Bus, head: u32, insns: &[Insn], offsets: &[u32]) {
-        let last = insns.len() - 1;
-        for (insn, &o) in insns[..last].iter().zip(offsets) {
-            let pc = head.wrapping_add(o);
-            self.pc = pc.wrapping_add(insn.len as u32);
-            if self.execute(bus, insn, pc).is_err() {
-                unreachable!("checked fused instruction faulted");
-            }
-        }
-        let taken = self.cond(14);
-        debug_assert!(taken);
-        self.pc = head;
     }
 
     /// One `Loop::MacA` iteration, or false (nothing changed).
@@ -341,8 +318,80 @@ impl Cpu {
         {
             return false;
         }
-        self.run_decoded(bus, head, insns, &MAC_A_OFFSETS);
+        self.mac_a_body(bus, head, insns);
         true
+    }
+
+    /// One `Loop::MacA` iteration, written out. Same operations in the same
+    /// order as the decoded handlers (`x_mac_load`, `x_movclr`, ...), minus
+    /// the decode, operand and flag work whose results the closing `subq.l`
+    /// overwrites (it sets X, C and the lazy N/Z/V; nothing in the body reads
+    /// a flag). The MAC arithmetic itself is the interpreter's `mac_op`.
+    #[inline(always)]
+    fn mac_a_body(&mut self, bus: &mut impl Bus, head: u32, insns: &[Insn]) {
+        let (sf0, sf1, sf3, sf4) = (
+            insns[0].mac_scale(),
+            insns[1].mac_scale(),
+            insns[3].mac_scale(),
+            insns[4].mac_scale(),
+        );
+        // mac.w d6.u,d0.u,(a1),d4,acc0
+        let (ry, rx) = (self.d[6] >> 16, self.d[0] >> 16);
+        let addr = self.mac_load_addr(&insns[0], self.a[1]);
+        self.d[4] = bus.read32(addr).expect("checked plain memory");
+        self.mac_op(ry, rx, true, sf0, 0, false);
+        // mac.l d5,d4,acc0
+        self.mac_op(self.d[5], self.d[4], false, sf1, 0, false);
+        // move.l d1,(a2)+
+        let a2 = self.a[2];
+        self.a[2] = a2.wrapping_add(4);
+        bus.write32(a2, self.d[1]).expect("checked plain memory");
+        // mac.w d6.u,d0.l,(4,a1),d0,acc1
+        let (ry, rx) = (self.d[6] >> 16, self.d[0] & 0xffff);
+        let addr = self.mac_load_addr(&insns[3], self.a[1].wrapping_add(4));
+        self.d[0] = bus.read32(addr).expect("checked plain memory");
+        self.mac_op(ry, rx, true, sf3, 1, false);
+        // mac.l d5,d0,(a0)+,d0,acc1
+        let (ry, rx) = (self.d[5], self.d[0]);
+        let a0 = self.a[0];
+        self.a[0] = a0.wrapping_add(4);
+        let addr = self.mac_load_addr(&insns[4], a0);
+        self.d[0] = bus.read32(addr).expect("checked plain memory");
+        self.mac_op(ry, rx, false, sf4, 1, false);
+        // movclr.l acc0,d1; move.l d1,(a1)+
+        self.d[1] = self.movclr(0);
+        let a1 = self.a[1];
+        self.a[1] = a1.wrapping_add(4);
+        bus.write32(a1, self.d[1]).expect("checked plain memory");
+        // movclr.l acc1,d4; move.l d4,(a1)+
+        self.d[4] = self.movclr(1);
+        let a1 = self.a[1];
+        self.a[1] = a1.wrapping_add(4);
+        bus.write32(a1, self.d[4]).expect("checked plain memory");
+        // add.l d2,d4; swap d4; add.l d2,d1; move.w d4,d1
+        let d4 = self.d[4].wrapping_add(self.d[2]);
+        self.d[4] = d4.rotate_left(16);
+        self.d[1] = self.d[1].wrapping_add(self.d[2]);
+        self.d[1] = (self.d[1] & 0xffff_0000) | (self.d[4] & 0xffff);
+        // subq.l #2,d3; bgt.b head
+        let d3 = self.d[3];
+        let r = d3.wrapping_sub(2);
+        self.d[3] = r;
+        self.flags_sub(2, d3, r, Size::L, false);
+        let taken = self.cond(14);
+        debug_assert!(taken);
+        self.pc = head;
+    }
+
+    /// MOVCLR of accumulator `a`: the value a register move sees, then the
+    /// accumulator, its extension and its overflow flag are cleared.
+    #[inline(always)]
+    fn movclr(&mut self, a: usize) -> u32 {
+        let v = self.acc_to_reg(a);
+        self.emac.acc[a] = 0;
+        self.set_ext16(a, 0);
+        self.set_pav(a, false);
+        v
     }
 
     /// One `Loop::MacB` iteration, or false (nothing changed).
@@ -361,8 +410,75 @@ impl Cpu {
         if !bus.plain_ram(load, 4) || !bus.plain_ram(word, 2) || self.decode_cached(word, 2) {
             return false;
         }
-        self.run_decoded(bus, head, insns, &MAC_B_OFFSETS);
+        self.mac_b_body(bus, head, insns, word);
         true
+    }
+
+    /// One `Loop::MacB` iteration, written out like `mac_a_body`. The two
+    /// SATS read the V flag the SUB and ADD before them set, so those flags
+    /// go through the interpreter's own flag helpers; the rest are dead
+    /// (the closing `subq.l` overwrites them).
+    #[inline(always)]
+    fn mac_b_body(&mut self, bus: &mut impl Bus, head: u32, insns: &[Insn], word: u32) {
+        // mvs.w d2,d3
+        self.d[3] = self.d[2] as u16 as i16 as i32 as u32;
+        // msac.w d1.l,d2.u,(a1)+,d2,acc0
+        let (ry, rx) = (self.d[1] & 0xffff, self.d[2] >> 16);
+        let a1 = self.a[1];
+        self.a[1] = a1.wrapping_add(4);
+        let addr = self.mac_load_addr(&insns[1], a1);
+        self.d[2] = bus.read32(addr).expect("checked plain memory");
+        self.mac_op(ry, rx, true, insns[1].mac_scale(), 0, true);
+        // mvz.w (0,a0,d3.l*2),d4; swap d4; subi.l #0x40000000,d4
+        let mut d4 = (bus.read16(word).expect("checked plain memory") as u32).rotate_left(16);
+        let r = d4.wrapping_sub(0x4000_0000);
+        d4 = r;
+        // movclr.l acc0,d5; sub.l d5,d4
+        let d5 = self.movclr(0);
+        self.d[5] = d5;
+        let r = d4.wrapping_sub(d5);
+        self.flags_sub(d5, d4, r, Size::L, false);
+        d4 = r;
+        // sats d4
+        d4 = self.sats_value(d4);
+        // add.l d4,d4
+        let r = d4.wrapping_add(d4);
+        self.flags_add(d4, d4, r, Size::L);
+        d4 = r;
+        // sats d4
+        d4 = self.sats_value(d4);
+        // asr.l #1,d4; addi.l #0x40000000,d4; swap d4
+        d4 = (((d4 as i32) >> 1) as u32)
+            .wrapping_add(0x4000_0000)
+            .rotate_left(16);
+        self.d[4] = d4;
+        // move.w d4,(0,a0,d3.l*2)
+        bus.write16(word, d4 as u16).expect("checked plain memory");
+        // subq.l #1,d0; bgt.b head
+        let d0 = self.d[0];
+        let r = d0.wrapping_sub(1);
+        self.d[0] = r;
+        self.flags_sub(1, d0, r, Size::L, false);
+        let taken = self.cond(14);
+        debug_assert!(taken);
+        self.pc = head;
+    }
+
+    /// SATS: saturate `d` if CCR[V] is set, then N/Z from the result.
+    #[inline(always)]
+    fn sats_value(&mut self, d: u32) -> u32 {
+        self.resolve_nzv();
+        let d = if self.sr & crate::cpu::sr::V != 0 {
+            if d & 0x8000_0000 == 0 {
+                0x8000_0000
+            } else {
+                0x7fff_ffff
+            }
+        } else {
+            d
+        };
+        self.set_nz(d, Size::L);
+        d
     }
 
     /// `sub.l d1,d0; bge.b head` (taken: the caller checked N == V).

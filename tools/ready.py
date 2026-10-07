@@ -64,8 +64,8 @@ DEVICES = {
 }
 
 
-def build_examples() -> pathlib.Path:
-    gen = digi_env.generated_dir()
+def build_examples(gen: pathlib.Path | None = None) -> pathlib.Path:
+    gen = gen or digi_env.generated_dir()
     target = native_target.target_dir(gen)
     env = {**digi_env.rust_env(), "SHARC_GEN_DIR": str(gen)}
     for example in ("dsp_cold", "sharc_live"):

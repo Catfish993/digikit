@@ -31,6 +31,26 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 /// `Site::pc` of an exit whose address the kernel stored in `CTX_DYNPC`.
 pub const DYN_PC: u32 = u32::MAX;
 
+/// `NodeKind::Return::jump_idx` of an indirect jump without delay slots.
+pub const NO_JUMP: u16 = u16::MAX;
+
+/// What a taken call or return leaves to the engine at the exit (see
+/// `glue::sites::apply_tail`): the kernel runs the transfer and its delay
+/// slots, the glue does the stack bookkeeping the interpreter does at the
+/// branch.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tail {
+    #[default]
+    None,
+    /// A CALL (stack model, followed): pushes the return address (the
+    /// instruction after the call and its slots) on the PC stack and on the
+    /// followed-call stack, and lands on the target.
+    Call(u32),
+    /// An RTS (stack model): pops the PC stack, whose top (read at entry,
+    /// `CTX_DYNPC`) is the target.
+    Rts,
+}
+
 /// Where the interpreter resumes after the kernel leaves, and what it
 /// has to be told: instructions retired in the current block before the exit
 /// (the kernel's counter holds the count at the start of the block), the
@@ -45,6 +65,8 @@ pub struct Site {
     /// A `DYN_PC` site: the address of the return instruction that made it
     /// (0 otherwise), for coverage reports.
     pub ret: u32,
+    /// The call or return this exit completes.
+    pub tail: Tail,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,12 +114,21 @@ pub enum NodeKind {
         delayed: bool,
         jump_idx: u16,
         exit_edge: bool,
+        /// A call or return: the taken edge always leaves the kernel.
+        tail: Tail,
+        /// The compute of a `9a_rel`/`11a`, as the conditional `2a` it runs as.
+        comp: Option<Dec>,
     },
     /// A delayed unconditional indirect JUMP (Mi, Ij) with two delay slots:
     /// the compiler's return (stack model only, cluster kernels only). The
     /// kernel runs it and its slots and leaves at the target address, which
     /// is only known at run time (`Site::pc == DYN_PC`).
-    Return { jump_idx: u16 },
+    Return {
+        jump_idx: u16,
+        /// The compute of a `9a_abs`.
+        comp: Option<Dec>,
+    },
+    // (`jump_idx` is `NO_JUMP` for a return that is not delayed.)
     Stop(String),
 }
 
@@ -176,8 +207,13 @@ enum Cls {
         target: u32,
         cond: u32,
         delayed: bool,
+        tail: Tail,
+        comp: Option<Dec>,
     },
-    Return,
+    Return {
+        delayed: bool,
+        comp: Option<Dec>,
+    },
     Stop(String),
 }
 
@@ -188,34 +224,80 @@ fn cond_supported(c: u32) -> bool {
     )
 }
 
-fn classify(env: &Env, stack_model: bool, pc: u32, d: &Dec) -> Cls {
+/// Why the instruction at PC cannot be a delay slot of the kernel.
+fn slot_why(env: &Env, decode: &dyn Fn(u32) -> Result<Dec, Refuse>, pc: u32) -> String {
+    match decode(pc) {
+        Err(e) => e.0,
+        Ok(d) => match lowerable(env, &d) {
+            Err(e) => e,
+            Ok(()) => format!("{} in a delay slot", d.form),
+        },
+    }
+}
+
+/// The condition code that is true exactly when COND is false.
+fn complement(cond: u32) -> u32 {
+    cond ^ 0x10
+}
+
+/// The compute of a transfer with a compute field: it runs when the
+/// condition holds (`e` = 0) or, with ELSE, when it does not.
+fn flow_compute(d: &Dec, cond: u32) -> Option<Dec> {
+    if d.field("e") == Some(1) {
+        // ELSE with no condition: the compute never runs.
+        (cond != 0x1f).then(|| d.compute_part(complement(cond))).flatten()
+    } else {
+        d.compute_part(cond)
+    }
+}
+
+fn classify(
+    env: &Env,
+    s: &St,
+    pc: u32,
+    d: &Dec,
+    decode: &dyn Fn(u32) -> Result<Dec, Refuse>,
+) -> Cls {
+    let stack_model = s.cfg.stack_model;
     // The compiler's call and return sequence, in cluster kernels of the
     // stack model (where CJUMP pushes no PC stack entry, see
     // `lower::callret`; without the stack model it is a call and stays a stop).
     let seq = stack_model;
+    // A call the kernel can end in: the engine follows it (the generic
+    // core's `_advance`), and the bookkeeping at the exit is `Tail::Call`.
+    let call_ok = stack_model && s.cfg.follow_loaded_calls && s.cfg.max_call_depth > 0;
     match d.form {
         "25a_direct" if seq => match (d.get("addr[23:16]"), d.get("addr[15:0]")) {
             (Some(h), Some(l)) => Cls::Jump {
                 target: ((h << 16) | l) as u32,
                 cond: 0x1f,
                 delayed: true,
+                tail: Tail::None,
+                comp: None,
             },
             _ => Cls::Stop("call target".into()),
         },
-        "9b_abs" if seq => {
+        "9b_abs" | "9a_abs" if seq => {
             if d.field("b") == Some(0)
                 && d.field("a") == Some(0)
                 && d.field("ci") == Some(0)
-                && d.field("j") == Some(1)
                 && d.field("cond") == Some(0x1f)
             {
-                Cls::Return
+                Cls::Return {
+                    delayed: d.field("j") == Some(1),
+                    comp: if d.form == "9a_abs" {
+                        flow_compute(d, 0x1f)
+                    } else {
+                        None
+                    },
+                }
             } else {
                 Cls::Stop("indirect jump shape".into())
             }
         }
-        "8a_abs" | "8a_rel" => {
-            if d.field("b") != Some(0) {
+        "8a_abs" | "8a_rel" | "9a_rel" => {
+            let call = d.field("b") == Some(1);
+            if call && !call_ok {
                 return Cls::Stop("call".into());
             }
             if d.field("a") != Some(0) || d.field("ci") != Some(0) {
@@ -228,27 +310,70 @@ fn classify(env: &Env, stack_model: bool, pc: u32, d: &Dec) -> Cls {
             if !cond_supported(cond) {
                 return Cls::Stop(format!("jump condition {cond:#x}"));
             }
-            let target = if d.form == "8a_abs" {
-                let hi = d.get("addr[23:16]");
-                let lo = d.get("addr[15:0]");
-                match (hi, lo) {
+            let target = match d.form {
+                "8a_abs" => match (d.get("addr[23:16]"), d.get("addr[15:0]")) {
                     (Some(h), Some(l)) => ((h << 16) | l) as u32,
                     _ => return Cls::Stop("jump target".into()),
-                }
-            } else {
-                let hi = d.get("reladdr[23:16]");
-                let lo = d.get("reladdr[15:0]");
-                match (hi, lo) {
+                },
+                "8a_rel" => match (d.get("reladdr[23:16]"), d.get("reladdr[15:0]")) {
                     (Some(h), Some(l)) => {
                         ((pc as i64 + signed((h << 16) | l, 24)) & 0xff_ffff) as u32
                     }
                     _ => return Cls::Stop("jump target".into()),
+                },
+                _ => match (d.get("reladdr[5:5]"), d.get("reladdr[4:0]")) {
+                    (Some(h), Some(l)) => {
+                        ((pc as i64 + signed((h << 5) | l, 6)) & 0xff_ffff) as u32
+                    }
+                    _ => return Cls::Stop("jump target".into()),
+                },
+            };
+            let comp = if d.form == "9a_rel" {
+                flow_compute(d, cond)
+            } else {
+                None
+            };
+            let tail = if call {
+                // The target must be code (`follow_loaded_calls` decodes it).
+                if decode(target).is_err() {
+                    return Cls::Stop("call".into());
                 }
+                Tail::Call(0)
+            } else {
+                Tail::None
             };
             Cls::Jump {
                 target,
                 cond,
                 delayed: d.field("j") == Some(1),
+                tail,
+                comp,
+            }
+        }
+        "11a" | "11c" => {
+            // RTS (the stack model's `_take_return`); RTI and loop re-entry
+            // stay with the interpreter.
+            if !stack_model || d.field("x") != Some(0) || d.field("lr") != Some(0) {
+                return Cls::Stop(format!("form {}", d.form));
+            }
+            let Some(cond) = d.field("cond") else {
+                return Cls::Stop("return without a condition".into());
+            };
+            let cond = cond as u32;
+            if !cond_supported(cond) {
+                return Cls::Stop(format!("return condition {cond:#x}"));
+            }
+            let comp = if d.form == "11a" {
+                flow_compute(d, cond)
+            } else {
+                None
+            };
+            Cls::Jump {
+                target: DYN_PC,
+                cond,
+                delayed: d.field("j") == Some(1),
+                tail: Tail::Rts,
+                comp,
             }
         }
         "12a_imm" => {
@@ -314,12 +439,13 @@ pub fn build_structure(
             kind: NodeKind::Seq,
             slots: Vec::new(),
         };
-        match classify(env, s.cfg.stack_model, pc, &dec) {
+        match classify(env, s, pc, &dec, decode) {
             Cls::Stop(why) => node.kind = NodeKind::Stop(why),
-            Cls::Return => {
+            Cls::Return { delayed, comp } => {
                 let mut next = pc + len;
                 let mut ok = true;
-                for _ in 0..2 {
+                let mut why = String::new();
+                for _ in 0..if delayed { 2 } else { 0 } {
                     match decode(next) {
                         Ok(sd)
                             if !matches!(
@@ -333,19 +459,25 @@ pub fn build_structure(
                         }
                         _ => {
                             ok = false;
+                            why = slot_why(env, decode, next);
                             break;
                         }
                     }
                 }
                 if ok {
-                    node.kind = NodeKind::Return { jump_idx };
-                    jump_idx += 1;
+                    node.kind = NodeKind::Return {
+                        jump_idx: if delayed { jump_idx } else { NO_JUMP },
+                        comp,
+                    };
+                    if delayed {
+                        jump_idx += 1;
+                    }
                     for (p, _) in &node.slots {
                         slot_pcs.insert(*p);
                     }
                 } else {
                     node.slots.clear();
-                    node.kind = NodeKind::Stop("delay slot".into());
+                    node.kind = NodeKind::Stop(format!("delay slot ({why})"));
                 }
             }
             Cls::Seq => work.push(pc + len),
@@ -357,8 +489,11 @@ pub fn build_structure(
                 target,
                 cond,
                 delayed,
+                tail,
+                comp,
             } => {
                 let mut ok = true;
+                let mut why = String::new();
                 let mut next = pc + len;
                 if delayed {
                     for _ in 0..2 {
@@ -375,16 +510,29 @@ pub fn build_structure(
                             }
                             _ => {
                                 ok = false;
+                                why = slot_why(env, decode, next);
                                 break;
                             }
                         }
                     }
                 }
+                if ok && delayed && tail != Tail::None && jump_idx as u32 >= super::ir::MAX_CFG_JUMPS
+                {
+                    // A call or return ends the region here instead of
+                    // refusing the whole region (as a plain jump does).
+                    ok = false;
+                    why = "too many delayed branches".into();
+                }
                 if !ok {
                     node.slots.clear();
-                    node.kind = NodeKind::Stop("delay slot".into());
+                    node.kind = NodeKind::Stop(format!("delay slot ({why})"));
                 } else {
-                    let near = (target as i64 - entry as i64).abs() < REACH;
+                    let near = tail == Tail::None && (target as i64 - entry as i64).abs() < REACH;
+                    // A call returns to the instruction after its slots.
+                    let tail = match tail {
+                        Tail::Call(_) => Tail::Call(next),
+                        t => t,
+                    };
                     node.kind = NodeKind::Jump {
                         target,
                         cond,
@@ -397,6 +545,8 @@ pub fn build_structure(
                         },
                         // Fixed up below once the loops are known.
                         exit_edge: !near,
+                        tail,
+                        comp,
                     };
                     for (p, _) in &node.slots {
                         slot_pcs.insert(*p);
@@ -509,6 +659,20 @@ pub fn build_structure(
             .collect();
         ctx.insert(pc, v);
     }
+    // A return pops the PC stack, whose top is the return address only when
+    // no loop is active (`CTX_DYNPC` is read from it at entry).
+    for pc in nodes.keys().copied().collect::<Vec<_>>() {
+        let n = &nodes[&pc];
+        if matches!(n.kind, NodeKind::Jump { tail: Tail::Rts, .. })
+            && ctx.get(&pc).is_some_and(|v| !v.is_empty())
+        {
+            let n = nodes.get_mut(&pc).unwrap();
+            for (p, _) in n.slots.drain(..) {
+                slot_pcs.remove(&p);
+            }
+            n.kind = NodeKind::Stop("return inside a loop".into());
+        }
+    }
     // At the dormant loop's end no other loop may hold the address (the
     // engine tests the top loop's end only).
     for d in loops.iter().filter(|l| l.dormant) {
@@ -563,8 +727,10 @@ pub fn build_structure(
         }
     }
     for pc in &pcs {
-        let (target, cond) = match nodes[pc].kind {
-            NodeKind::Jump { target, cond, .. } => (target, cond),
+        let (target, cond, tail) = match nodes[pc].kind {
+            NodeKind::Jump {
+                target, cond, tail, ..
+            } => (target, cond, tail),
             _ => continue,
         };
         let _ = cond;
@@ -578,10 +744,11 @@ pub fn build_structure(
         if n_slots_at_end {
             return refuse("a delay slot at a loop end".into());
         }
-        if slot_pcs.contains(&target) {
+        if tail == Tail::None && slot_pcs.contains(&target) {
             return refuse("a branch into a delay slot".into());
         }
-        let inside = nodes.contains_key(&target)
+        let inside = tail == Tail::None
+            && nodes.contains_key(&target)
             && ctx.get(&target) == ctx.get(pc)
             && !matches!(nodes[&target].kind, NodeKind::Stop(_));
         if let NodeKind::Jump { exit_edge, .. } = &mut nodes.get_mut(pc).unwrap().kind {
@@ -877,6 +1044,13 @@ pub struct CfgMeta {
     pub n_entry: usize,
     /// Delayed branches: (target, jump address).
     pub jumps: Vec<(u32, u32)>,
+    /// What each delayed branch of `jumps` is (a call, a return, a jump).
+    pub jump_tail: Vec<Tail>,
+    /// The region has a return exit: the glue reads the return address from
+    /// the PC stack at entry (`CTX_DYNPC`), and declines when it cannot.
+    pub has_rts: bool,
+    /// The region has a call exit: the glue checks that the stacks have room.
+    pub has_call: bool,
     /// The deepest nesting of loops started inside the region.
     pub deepest_in_region: u32,
     /// Where the region ends (instructions that are not part of it) and why.

@@ -84,11 +84,53 @@ fn engine_cfg(parcels: &[u16], mode1: u32, seed: u64, fast: bool, cfg: u8) -> cr
         // M: small, both signs.
         e.s.r[32 + c] = V::c((rng.below(13) as i32 - 6) as u32 as Int);
     }
+    // The system registers the core treats as plain words (`sysops::plain_sys`).
+    for code in [108, 109, 112, 113, 115, 126, 127] {
+        e.s.r[code] = V::c(rng.next() as Int);
+    }
+    e.s.r[116] = V::c(0); // MODE2: no timer
     if fast {
         let mut fe =
             crate::fast::FastEngine::new(Box::new(crate::fast::interp::InterpBackend), &[0]);
         fe.force_cfg(true);
         e.set_fast(Some(Box::new(fe)));
+    }
+    e
+}
+
+/// MODE1.CBUFEN (circular buffering of post-modifies).
+const CBUFEN: u32 = 1 << 24;
+
+/// Circular-buffer variant of a fuzz state: most index registers get B and L
+/// (words of 4 bytes, 4..15 units, so a buffer is 4..60 bytes at scale 1 and
+/// more at scale 2 and 4), the index inside the buffer (often exactly at an
+/// edge), and MODE1.CBUFEN set. With M in -6..6 the modifier is 0..24 bytes
+/// at scale 4: inside, exactly at, and larger than a 4-unit buffer.
+fn make_circular(e: &mut crate::Engine, seed: u64) {
+    let mut rng = Rng(seed ^ 0xc1c1_c1c1_5a5a);
+    let mode1 = e.s.r[114].b as u32;
+    e.s.r[114] = V::c((mode1 | CBUFEN) as Int);
+    for c in 0..16 {
+        if rng.below(4) == 0 {
+            continue;
+        }
+        let len = 4 + rng.below(12);
+        let base = DATA + 0x100 + 4 * rng.below(0x10);
+        let index = match rng.below(4) {
+            0 => base,
+            1 => base + len - 4,
+            _ => base + 4 * rng.below(len / 4),
+        };
+        e.s.r[48 + c] = V::c(len as Int);
+        e.s.r[64 + c] = V::c(base as Int);
+        e.s.r[16 + c] = V::c(index as Int);
+    }
+}
+
+fn engine_circ(parcels: &[u16], mode1: u32, seed: u64, fast: bool, cfg: u8, circ: bool) -> crate::Engine {
+    let mut e = engine_cfg(parcels, mode1, seed, fast, cfg);
+    if circ {
+        make_circular(&mut e, seed);
     }
     e
 }
@@ -125,11 +167,13 @@ fn run_all(label: &str) -> BTreeMap<&'static str, (u32, u32)> {
         let n = *parcels as usize;
         let code = &words[..n];
         for (mode1, cfg) in [(0, 0), (PEYEN, 0), (0, 1), (PEYEN, 1)] {
-            for k in 0..2u64 {
+            for k in 0..4u64 {
+                // Seeds 2 and 3 run with circular buffers set up.
+                let circ = k >= 2;
                 let seed = 0x9e37_79b9_7f4a_7c15u64 ^ ((vi as u64) << 8) ^ k;
                 let why = format!("{label} {form} {code:04x?} mode1 {mode1:#x} cfg {cfg} seed {k}");
-                let mut plain = engine_cfg(code, mode1, seed, false, cfg);
-                let mut fast = engine_cfg(code, mode1, seed, true, cfg);
+                let mut plain = engine_circ(code, mode1, seed, false, cfg, circ);
+                let mut fast = engine_circ(code, mode1, seed, true, cfg, circ);
                 // Overlapping encodings: the decoder's pick is the form.
                 match crate::fast::region::decode_one(&plain.s, 0) {
                     Ok(dec) if dec.form == *form => {}
@@ -189,6 +233,7 @@ fn program_engine(
     entries: &[u32],
     fast: bool,
     cfg: u8,
+    circ: bool,
 ) -> crate::Engine {
     let mut e = engine_cfg(parcels, 0, seed, false, cfg);
     // The spin that `engine` placed follows the program already.
@@ -213,6 +258,13 @@ fn program_engine(
     e.s.r[16 + 12] = V::c((DATA + 0x40) as Int); // I12
     e.s.r[16 + 13] = V::c((DATA + 0x180) as Int); // I13
     e.s.r[32 + 5] = V::c(2); // M5
+    if circ {
+        // I2 in a 16-unit (64-byte) buffer; I12 is below it, I13 above it.
+        e.s.r[114] = V::c((e.s.r[114].b | CBUFEN) as Int);
+        e.s.r[48 + 2] = V::c(16);
+        e.s.r[64 + 2] = V::c((DATA + 0xc0) as Int);
+        e.s.r[16 + 2] = V::c((DATA + 0xc0 + 8) as Int);
+    }
     if fast {
         let mut fe =
             crate::fast::FastEngine::new(Box::new(crate::fast::interp::InterpBackend), entries);
@@ -233,8 +285,9 @@ fn gen_programs_match_the_interpreter() {
             let entries = [0u32];
             let mut best = 0u64;
             for chunk in [1u32, 2, 3, 5, 7, 11, 64, 1000] {
-                let mut plain = program_engine(parcels, floats, seed, &entries, false, cfg);
-                let mut fast = program_engine(parcels, floats, seed, &entries, true, cfg);
+                let circ = name.starts_with("circ");
+                let mut plain = program_engine(parcels, floats, seed, &entries, false, cfg, circ);
+                let mut fast = program_engine(parcels, floats, seed, &entries, true, cfg, circ);
                 let total = 400u32;
                 let mut done = 0;
                 while done < total {
@@ -250,6 +303,69 @@ fn gen_programs_match_the_interpreter() {
             }
             eprintln!("{name} floats {floats} cfg {cfg}: fast tier ran {best} instructions");
             assert!(best > 0, "{name}: the fast tier never ran");
+        }
+    }
+    GEN_FORCE.store(0, Ordering::Relaxed);
+}
+
+// -- control flow (lane F3) ----------------------------------------------------
+
+use crate::tests_gen_programs::CONTROL;
+
+fn same_stacks(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
+    let (p, f) = (&plain.s, &fast.s);
+    assert_eq!(p.pc_stack.items(), f.pc_stack.items(), "pc stack {why}");
+    assert_eq!(p.call_stack.items(), f.call_stack.items(), "call stack {why}");
+    assert_eq!(p.at_loaded_entry, f.at_loaded_entry, "at_loaded_entry {why}");
+    assert_eq!(p.steps, f.steps, "steps {why}");
+}
+
+/// Calls, returns and transfers with a compute: the whole state agrees after
+/// every chunk of steps, whatever the chunk size cuts (delay slots included).
+#[test]
+fn gen_control_programs_match_the_interpreter() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    for force in [1u8, 2] {
+        GEN_FORCE.store(force, Ordering::Relaxed);
+        for (name, parcels, entries, cfgs) in CONTROL {
+            if std::env::var("GEN_CTL").is_ok_and(|o| !name.contains(&o)) {
+                continue;
+            }
+            for cfg in [0u8, 1] {
+                if *cfgs == 2 && cfg == 0 {
+                    continue;
+                }
+                let mut best = 0u64;
+                for chunk in [1u32, 2, 3, 4, 5, 7, 11, 64] {
+                    let build = |fast: bool| {
+                        let mut e = program_engine(parcels, false, 0x4321, entries, fast, cfg, false);
+                        if *name == "ctl_return_slots" {
+                            // I6 a circular index register, M14 = 0.
+                            e.s.r[48 + 6] = V::c(0x40);
+                            e.s.r[64 + 6] = V::c(DATA as Int + 0x100);
+                            e.s.r[16 + 6] = V::c(DATA as Int + 0x110);
+                        }
+                        e
+                    };
+                    let (mut plain, mut fast) = (build(false), build(true));
+                    let total = 120u32;
+                    let mut done = 0;
+                    while done < total {
+                        let n = chunk.min(total - done);
+                        let why = format!("{name} gen {force} cfg {cfg} chunk {chunk} after {done}");
+                        assert_eq!(plain.step(n), n, "{why}: {:?}", plain.halt);
+                        assert_eq!(fast.step(n), n, "{why}: {:?}", fast.halt);
+                        done += n;
+                        same(&plain, &fast, &why);
+                        same_stacks(&plain, &fast, &why);
+                    }
+                    best = best.max(fast.fast.as_ref().unwrap().fast_stats().unwrap().insns);
+                }
+                eprintln!("{name} gen {force} cfg {cfg}: fast tier ran {best} instructions");
+                // (The hand-written lowering has no MODE1 change, so SIMD programs
+                // never reach the fast tier with it.)
+                assert!(best > 0 || (force == 1 && name.contains("simd")), "{name}: the fast tier never ran");
+            }
         }
     }
     GEN_FORCE.store(0, Ordering::Relaxed);

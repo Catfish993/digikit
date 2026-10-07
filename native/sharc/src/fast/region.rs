@@ -204,6 +204,10 @@ pub fn build_straight(s: &St, pc: u32) -> Result<Region, Refuse> {
     build(s, pc, None, vec![(pc, d)])
 }
 
+/// Lowering passes: two to learn, one to emit, more when emitting found a
+/// circular index written outside its buffer (`Lowered::retry`).
+const MAX_PASSES: u8 = 5;
+
 fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result<Region, Refuse> {
     if !cfg!(sharc_gen) {
         return Err(Refuse("no generated core (SHARC_GEN_DIR)".into()));
@@ -218,16 +222,23 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
     let env = env_of(s, flag_v);
     let mut plan = Plan::default();
     let mut last = None;
-    for pass in 0..3u8 {
+    for pass in 0..MAX_PASSES {
         let mut l = Lower::new(env.clone(), plan.clone(), pass);
         for (i, (_, d)) in decs.iter().enumerate() {
             l.lower_insn(i as u32, d)?;
         }
         let out = l.finish()?;
         plan = out.next.clone();
+        let again = pass >= 2 && out.retry;
         last = Some(out);
+        if pass >= 2 && !again {
+            break;
+        }
     }
     let out = last.unwrap();
+    if out.retry {
+        return Err(Refuse("a circular index is written outside its buffer".into()));
+    }
     out.kernel
         .validate()
         .map_err(|e| Refuse(format!("kernel invalid: {e}")))?;
@@ -385,7 +396,7 @@ fn build_cfg_with(
         cfg::build_structure(s, env, pc, &|at| decode_one(s, at), deny).map_err(|e| (e, None))?;
     let mut plan = Plan::default();
     let mut last = None;
-    for pass in 0..3u8 {
+    for pass in 0..MAX_PASSES {
         let mut l = Lower::new(env.clone(), plan.clone(), pass);
         if let Err(e) = l.lower_cfg(&st) {
             return Err((e, l.fail_pc));
@@ -393,9 +404,19 @@ fn build_cfg_with(
         let sites = l.cfgx.as_ref().map(|x| x.sites.clone()).unwrap_or_default();
         let out = l.finish().map_err(|e| (e, None))?;
         plan = out.next.clone();
+        let again = pass >= 2 && out.retry;
         last = Some((out, sites));
+        if pass >= 2 && !again {
+            break;
+        }
     }
     let (out, sites) = last.unwrap();
+    if out.retry {
+        return Err((
+            Refuse("a circular index is written outside its buffer".into()),
+            None,
+        ));
+    }
     assemble_cfg(s, pc, &st, out, sites).map_err(|e| (e, None))
 }
 
@@ -465,17 +486,36 @@ fn assemble_cfg(
         }
     }
     let mut jumps = vec![(0u32, 0u32); st.n_jumps as usize];
+    let mut jump_tail = vec![cfg::Tail::None; st.n_jumps as usize];
+    let (mut has_rts, mut has_call) = (false, false);
     for n in st.nodes.values() {
+        if let cfg::NodeKind::Jump { target, tail, .. } = n.kind {
+            has_rts |= tail == cfg::Tail::Rts;
+            if matches!(tail, cfg::Tail::Call(_)) {
+                has_call = true;
+                // The call lands on code the engine decodes at the exit:
+                // a change of its words ends this region too.
+                if let Ok(d) = decode_one(s, target) {
+                    for k in 0..d.len_sw {
+                        code_words.push((target + k, s.mem.read_sw(target + k).unwrap_or(0)));
+                    }
+                }
+            }
+        }
         if let cfg::NodeKind::Jump {
             target,
             delayed: true,
             jump_idx,
+            tail,
             ..
         } = n.kind
         {
             jumps[jump_idx as usize] = (target, n.pc);
+            jump_tail[jump_idx as usize] = tail;
         }
-        if let cfg::NodeKind::Return { jump_idx } = n.kind {
+        if let cfg::NodeKind::Return { jump_idx, .. } = n.kind
+            && jump_idx != cfg::NO_JUMP
+        {
             jumps[jump_idx as usize] = (cfg::DYN_PC, n.pc);
         }
     }
@@ -498,6 +538,9 @@ fn assemble_cfg(
         loops: st.loops.clone(),
         n_entry,
         jumps,
+        jump_tail,
+        has_rts,
+        has_call,
         deepest_in_region: deepest,
         st_didpc: out.stored.contains(&CTX_DIDPC),
         st_lcntr: out.stored.contains(&CTX_LCNTR) || out.stored.contains(&(CTX_LCNTR + 4)),

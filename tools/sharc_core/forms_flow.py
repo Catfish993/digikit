@@ -12,8 +12,8 @@ from collections.abc import Mapping
 from sharc_disasm import Instruction
 
 from .compute import (
-    _apply_compute,
-    _compute,
+    _apply_compute_simd,
+    _compute_simd,
 )
 from .encoding import (
     UREG_CODES,
@@ -93,7 +93,8 @@ def _flow_apply_compute(
     """The parallel compute of a Type 11a/9a transfer on EXECUTED; returns
     a stop reason, or None."""
     try:
-        compute = _compute(
+        compute, compute_y = _compute_simd(
+            executed,
             f,
             False,
             _snapshot_uregs(executed.uregs),
@@ -103,7 +104,7 @@ def _flow_apply_compute(
     except ValueError as error:
         return str(error)
     if compute is not None:
-        _apply_compute(executed, insn, compute)
+        _apply_compute_simd(executed, insn, compute, compute_y)
     return None
 
 

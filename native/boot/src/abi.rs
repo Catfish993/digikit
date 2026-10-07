@@ -62,6 +62,42 @@ pub unsafe extern "C" fn digi_load(ptr: *const u8, len: usize) -> i32 {
     unsafe { load_with_policy(ptr, len, ExecutionPolicy::Reference) }
 }
 
+/// Loads firmware and restores a `DT2SNP01` ColdFire snapshot (taken at ready
+/// with the SSI diagnostic lane on, as the coupled ready snapshots are), with
+/// no DSP attached. For measuring the ColdFire cost of the audio path alone.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn digi_load_snapshot(
+    syx: *const u8,
+    syx_len: usize,
+    snap: *const u8,
+    snap_len: usize,
+) -> i32 {
+    if syx.is_null() || syx_len == 0 || syx_len > ALLOCATION_LIMIT || snap.is_null() || snap_len == 0
+    {
+        return failure("invalid input");
+    }
+    let (syx, snap) = unsafe {
+        (
+            slice::from_raw_parts(syx, syx_len),
+            slice::from_raw_parts(snap, snap_len),
+        )
+    };
+    let loaded = Emulator::new(syx, None).and_then(|mut emulator| {
+        emulator.enable_ssi_diagnostic(96_000)?;
+        emulator.load_state(snap)?;
+        Ok(emulator)
+    });
+    match loaded {
+        Ok(mut emulator) => {
+            let snapshot = emulator.snapshot();
+            EMULATOR.with(|slot| *slot.borrow_mut() = Some(emulator));
+            result(serde_json::json!({"snapshot": snapshot}));
+            0
+        }
+        Err(error) => failure(error),
+    }
+}
+
 /// Loads the opt-in SoftfloatAbiV1 prototype; callers must not assume exact
 /// callee scratch-register, stack-scratch, CCR, or timing equivalence.
 #[unsafe(no_mangle)]

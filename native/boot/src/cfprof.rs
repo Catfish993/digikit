@@ -22,6 +22,8 @@ pub struct CfProf {
     /// error, tick limit, exception/state, mmio, ipl.
     pub exits: [u64; 10],
     pub exit_pcs: HashMap<u32, u64>,
+    /// Fused loop head -> (calls, instructions, host ns).
+    pub fused: HashMap<u32, (u64, u64, u64)>,
 }
 
 impl CfProf {
@@ -38,6 +40,12 @@ impl CfProf {
         if reason == 2 || reason == 7 {
             *self.exit_pcs.entry(pc).or_default() += 1;
         }
+    }
+    pub fn fused_add(&mut self, head: u32, insns: u64, ns: u64) {
+        let e = self.fused.entry(head).or_default();
+        e.0 += 1;
+        e.1 += insns;
+        e.2 += ns;
     }
     pub fn sample_idle(&mut self, pc: u32, weight: u64) {
         *self.idle_samples.entry(pc).or_default() += weight;
@@ -59,7 +67,12 @@ impl CfProf {
                        "calls": self.calls[i]})
             })
             .collect();
-        json!({"exits": self.exits, "exit_pcs": top(&self.exit_pcs), "paths": paths, "pc_samples": top(&self.samples),
+        let fused: Vec<Value> = self
+            .fused
+            .iter()
+            .map(|(h, (c, i, n))| json!([format!("{h:#x}"), c, i, n]))
+            .collect();
+        json!({"fused": fused, "exits": self.exits, "exit_pcs": top(&self.exit_pcs), "paths": paths, "pc_samples": top(&self.samples),
                "idle_pc": top(&self.idle_samples)})
     }
 }

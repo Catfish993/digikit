@@ -8,7 +8,7 @@
 //! loops back after a budget-limited run of iterations) behaves exactly as
 //! the interpreter's.
 
-use super::cfg::{CfgMeta, DYN_PC, LoopDef, Site};
+use super::cfg::{CfgMeta, DYN_PC, LoopDef, Site, Tail};
 use super::ir::*;
 use super::region::{RegMeta, Region};
 use super::{Base, FlagKind, FlagWriter, Req};
@@ -1250,6 +1250,44 @@ mod sites {
         state::_push_pc_stack(s, l.start as Int)
     }
 
+    /// The bookkeeping of a taken call or return at the exit (the generic
+    /// core's `_transfer`, `_advance`, `_take_return`).
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum Fx {
+        None,
+        /// Inside the delay slots of a call: the return address is pushed.
+        CallPush(u32),
+        /// The call is over: pushed, followed, at its target.
+        CallDone(u32),
+        /// An RTS: the PC stack entry (the target) is popped.
+        Rts,
+    }
+
+    pub fn apply_fx(s: &mut St, fx: Fx) -> R<()> {
+        match fx {
+            Fx::None => {}
+            Fx::CallPush(ret) | Fx::CallDone(ret) => {
+                state::_push_pc_stack(s, 0x0100_0000 | ret as Int)?;
+                if matches!(fx, Fx::CallDone(_)) {
+                    s.call_stack.push_raw(ret as Int)?;
+                    s.at_loaded_entry = true;
+                }
+            }
+            Fx::Rts => {
+                let target = match s.pc_stack.items().last() {
+                    Some(&t) => t & 0xff_ffff,
+                    None => return Err(TRAP_INDEX),
+                };
+                sequencer::_pop_pc_stack(s)?;
+                match s.call_stack.items().last() {
+                    Some(&c) if c & 0xff_ffff == target => s.call_stack.n -= 1,
+                    _ => s.call_stack.clear(),
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Rebuild the loop stack, PC stack and the registers that mirror them as
     /// the interpreter has them at EXIT.
     pub fn apply(s: &mut St, meta: &CfgMeta, site: &Site, ctx: &Ctx) -> R<()> {
@@ -1525,6 +1563,28 @@ pub fn run_cfg(
     {
         return Err(shape("loop or PC stack too deep"));
     }
+    if meta.has_rts {
+        // A return takes its target from the PC stack (`_take_return`): the
+        // top entry. No loop of the region ends before the return (an entry
+        // loop would pop its own entry first: `cfg` stops a return inside a
+        // loop, and the region models no entry loop).
+        let top = pc_stack_items(s).last().copied();
+        match top {
+            Some(t) if n == 0 && t != 0xFFFF_FFFF => {
+                ctx.set32(CTX_DYNPC, (t & 0xff_ffff) as u32);
+            }
+            _ => {
+                if COV_ON.load(std::sync::atomic::Ordering::Relaxed) {
+                    cov_why(|| format!("shape: return without a PC stack entry (loops {nloops} depth {} top {top:x?})", s.loop_depth));
+                }
+                return Err(Decline::Shape);
+            }
+        }
+    }
+    if meta.has_call && (s.call_stack.len() as Int >= s.cfg.max_call_depth || s.call_stack.len() + 2 >= MAX_CALLS)
+    {
+        return Err(shape("call stack too deep"));
+    }
     pmark!(pt, 1);
     let iters = rem_top.max(1);
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
@@ -1667,6 +1727,13 @@ pub fn run_cfg(
     if s.cfg.core_timer {
         s.timer_written = false;
     }
+    // The call or return this exit completes (or, inside its delay slots,
+    // has begun): the glue does what the interpreter does at the branch.
+    let mut fx = match site.tail {
+        Tail::None => sites::Fx::None,
+        Tail::Call(ret) => sites::Fx::CallDone(ret),
+        Tail::Rts => sites::Fx::Rts,
+    };
     if let Some((j, slots)) = site.pending
         && ctx.get32(CTX_TAKEN + 4 * j as u32) != 0
     {
@@ -1674,13 +1741,22 @@ pub fn run_cfg(
             DYN_PC => ctx.get32(CTX_DYNPC),
             t => t,
         };
+        let tail = meta.jump_tail[j as usize];
         s.pending = Some(Pending {
             target: Some(target as Int),
-            call: false,
+            call: matches!(tail, Tail::Call(_)),
             slots: slots as Int,
-            return_from_call: false,
-            return_sw: None,
+            return_from_call: tail == Tail::Rts,
+            return_sw: match tail {
+                Tail::Call(ret) => Some(ret as Int),
+                _ => None,
+            },
         });
+        fx = match tail {
+            Tail::None => sites::Fx::None,
+            Tail::Call(ret) => sites::Fx::CallPush(ret),
+            Tail::Rts => sites::Fx::Rts,
+        };
     }
     // The common exit: no loop started, ended or was entered by the kernel, and
     // the loops active are the entry loops: only their counts (and, in the stack
@@ -1701,7 +1777,7 @@ pub fn run_cfg(
     } else {
         0
     };
-    if site.active.len() == n && didpc == 0 && lset == 0 && stk26 == 0 {
+    if site.active.len() == n && didpc == 0 && lset == 0 && stk26 == 0 && fx == sites::Fx::None {
         let base = s.loops.n - n;
         for i in 0..n {
             let rem = ctx.get32(CTX_LOOP_REM_OUT + 4 * i as u32);
@@ -1743,7 +1819,7 @@ pub fn run_cfg(
         }
     }
     s.begin();
-    let res = sites::apply(s, meta, site, ctx);
+    let res = sites::apply(s, meta, site, ctx).and_then(|()| sites::apply_fx(s, fx));
     match res {
         Ok(()) => s.commit_host(),
         Err(t) => {

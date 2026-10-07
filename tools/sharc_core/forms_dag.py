@@ -12,8 +12,8 @@ from collections.abc import Mapping
 from sharc_disasm import Instruction
 
 from .compute import (
-    _apply_compute,
-    _compute,
+    _apply_compute_simd,
+    _compute_simd,
 )
 from .encoding import (
     UREG_CODES,
@@ -154,8 +154,11 @@ def _type_7a(
                 else "unscaled normal-word",
             )
             return _advance(state, insn)
+    # SHARC+ PRM, SIMD mode: the compute of a Type 7a executes in both
+    # processing elements (the index modify is shared).
     try:
-        compute = _compute(
+        compute, compute_y = _compute_simd(
+            state,
             f,
             False,
             _snapshot_uregs(state.uregs),
@@ -201,7 +204,7 @@ def _type_7a(
             ),
         )
     if compute is not None:
-        _apply_compute(state, insn, compute)
+        _apply_compute_simd(state, insn, compute, compute_y)
     return _advance(state, insn)
 
 

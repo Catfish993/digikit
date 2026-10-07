@@ -1081,7 +1081,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn set_ext16(&mut self, n: usize, v: u16) {
+    pub(crate) fn set_ext16(&mut self, n: usize, v: u16) {
         let w = if n < 2 {
             &mut self.emac.accext01
         } else {
@@ -1105,7 +1105,7 @@ impl Cpu {
     }
 
     #[inline]
-    fn set_pav(&mut self, n: usize, v: bool) {
+    pub(crate) fn set_pav(&mut self, n: usize, v: bool) {
         if v {
             self.emac.macsr |= Self::pav_bit(n);
         } else {
@@ -1196,7 +1196,7 @@ impl Cpu {
     /// fractional, OMC=0); the unsigned-integer path and the two
     /// saturating (OMC=1) paths are transcribed from the same pseudocode
     /// but are not exercised by either image, so are unverified by lockstep.
-    fn mac_op(&mut self, ry: u32, rx: u32, word: bool, sf: u8, acc: usize, sub: bool) {
+    pub(crate) fn mac_op(&mut self, ry: u32, rx: u32, word: bool, sf: u8, acc: usize, sub: bool) {
         let macsr = self.emac.macsr;
         let omc = macsr & 0x80 != 0;
         let su = macsr & 0x40 != 0;
@@ -1400,7 +1400,7 @@ impl Cpu {
     /// 0x20 (OMC=0, R/T=0), so only those two branches are lockstep-checked
     /// so far; the rest is transcribed from the same pseudocode.
     #[inline]
-    fn acc_to_reg(&self, acc: usize) -> u32 {
+    pub(crate) fn acc_to_reg(&self, acc: usize) -> u32 {
         let v = self.acc48(acc);
         let macsr = self.emac.macsr;
         let omc = macsr & 0x80 != 0;

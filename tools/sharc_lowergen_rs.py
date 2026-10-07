@@ -72,6 +72,10 @@ def rs_e(e: tuple, fv: dict) -> str:
     if k == "f":
         return fv[e[1]]
     if k == "v":
+        if e[1][0] in "LB" and e[1][1:].isdigit():
+            return "(self.sv_lb(%d)? as i128)" % (
+                (48 if e[1][0] == "L" else 64) + int(e[1][1:])
+            )
         return {"mode1": "(self.m1(u32::MAX) as i128)"}[e[1]]
     if k == "~":
         return "(!%s)" % rs_e(e[1], fv)
@@ -196,6 +200,26 @@ def leaf_items(lf: Leaf, ids: Ids) -> list:
             items.append(
                 ("def", vid, "postmod", eff[2], ident[eff[3]], ident[eff[4]], eff[5])
             )
+        elif kind == "circ":
+            ordinal += 1
+            vid = ids.of(
+                ("circ", ident[eff[2]], eff[3], eff[4], ident[eff[5]], eff[6], ordinal)
+            )
+            ident[eff[1]] = vid
+            items.append(
+                (
+                    "def",
+                    vid,
+                    "circ",
+                    ident[eff[2]],
+                    eff[3],
+                    eff[4],
+                    ident[eff[5]],
+                    eff[6],
+                )
+            )
+        elif kind == "plainmod":
+            items.append(("plainmod", ident[eff[2]]))
         elif kind == "wr":
             v = ident[eff[3]]
             d = defs.get(v)
@@ -213,7 +237,7 @@ def leaf_items(lf: Leaf, ids: Ids) -> list:
     return dce_items(items)
 
 
-SIDE = ("wr", "store", "cond", "apply")
+SIDE = ("wr", "store", "cond", "apply", "plainmod")
 
 
 def operands(it) -> list:
@@ -227,11 +251,15 @@ def operands(it) -> list:
             return [it[3]]
         if k == "postmod":
             return [it[4], it[5]]
+        if k == "circ":
+            return [it[3], it[6]]
         return []
     if it[0] == "wr":
         return [it[2]]
     if it[0] == "store":
         return [it[1], it[2]]
+    if it[0] == "plainmod":
+        return [it[1]]
     return []
 
 
@@ -241,7 +269,9 @@ def dce_items(items: list) -> list:
     keep = [False] * len(items)
     for i in range(len(items) - 1, -1, -1):
         it = items[i]
-        impure = it[0] in SIDE or (it[0] == "def" and it[2] in ("load", "postmod"))
+        impure = it[0] in SIDE or (
+            it[0] == "def" and it[2] in ("load", "postmod", "circ")
+        )
         if impure or (it[0] == "def" and it[1] in used):
             keep[i] = True
             used.update(operands(it))
@@ -371,6 +401,9 @@ def fields_of_prog(prog: list, out: set) -> None:
             elif it[2] == "postmod":
                 ex(it[3])
                 ex(it[6])
+            elif it[2] == "circ":
+                ex(it[4])
+                ex(it[5])
         elif k == "wr":
             ex(it[1])
         elif k == "store":
@@ -442,8 +475,23 @@ class Emitter:
                         % (rs_e(it[3], fv), it[4], it[5], rs_e(it[6], fv)),
                         ind,
                     )
+                elif op == "circ":
+                    self.let(
+                        vid,
+                        "{ let b = %s as u32; let n = %s as i64; self.g_circ(v%d, v%d, b, n, %s)? }"
+                        % (
+                            rs_e(it[4], fv),
+                            rs_e(it[5], fv),
+                            it[3],
+                            it[6],
+                            "true" if it[7] else "false",
+                        ),
+                        ind,
+                    )
                 else:
                     raise NotImplementedError(op)
+            elif k == "plainmod":
+                self.w(ind, "self.g_plainmod(v%d)?;" % it[1])
             elif k == "wr":
                 self.w(ind, "self.g_wr(%s as u32, v%d)?;" % (rs_e(it[1], fv), it[2]))
             elif k == "store":

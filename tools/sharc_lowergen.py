@@ -159,6 +159,9 @@ class S:
     def __neg__(self):
         return S(("-", ("c", 0), self.e))
 
+    def __abs__(self):
+        return -self if self < 0 else self
+
     # comparison -> predicate
     def _cmp(self, op, o):
         if isinstance(o, D):
@@ -586,7 +589,7 @@ class Ctx:
     def concretize(self, s: S) -> int:
         caller = sys._getframe(2)
         line = _source_line(caller)
-        if "%" in line and ('"' in line or "'" in line):
+        if "%" in line and ('"' in line or "'" in line) and "UREG_CODES[" not in line:
             return 0  # observability text (descriptions); never structural
         return self.pin(s.e)
 
@@ -670,6 +673,9 @@ class TraceRegs:
     def read(self, code, view):
         if isinstance(code, int) and code == MODE1:
             return Const(S(("v", "mode1")))
+        if isinstance(code, int) and 48 <= code < 80:
+            # L and B are baked into the lowering (`Lower::sv_lb`).
+            return Const(S(("v", "%s%d" % ("L" if code < 64 else "B", code & 15))))
         c = code.e if isinstance(code, S) else ("c", code)
         d = CTX.emit(("rd", c, view))
         return Const(d)
@@ -771,6 +777,47 @@ def i_post_modify_index(state, index, iv, delta, scale, expression):
         )
     )
     return Const(r)
+
+
+class CircD(D):
+    """The result of a circular MODIFY wrap. The handlers only compare it for
+    an event's text (19a_scaled's `wrapped`), which the trace drops."""
+
+    __slots__ = ()
+
+    def __ne__(self, o):  # type: ignore[override]
+        return True
+
+
+def i_circular_wrap_const(index, base, length, delta):
+    """`memory._circular_wrap_const`: the wrapped sum, or a refusal when the
+    modifier is larger than the buffer (the handler's None). Recorded as one
+    effect: the lowering knows B, L and (for a constant modifier) the delta."""
+    unsigned = isinstance(delta, D)
+    node = CTX.emit(
+        (
+            "circ",
+            CTX.val(index),
+            _s(base).e,
+            _s(length).e,
+            CTX.val(delta),
+            unsigned,
+        )
+    )
+    return CircD(node.n)
+
+
+def i_modify_scale(option, assume_nw32, address=None):
+    """`memory._modify_scale` (Type7a/7b MODIFY): a normal-word scaling in byte
+    space is valid only for a plain RAM address, which no memory access
+    checks here (unlike a load or store): a `plainmod` effect."""
+    if option is None:
+        return 1
+    r = i_access_modifier_scale(option, assume_nw32, address)
+    if address is not None and option in ("normal-word", "long-word"):
+        a = address.value if isinstance(address, Const) else address
+        CTX.emit(("plainmod", CTX.val(a)))
+    return r
 
 
 def i_advance(state, insn):
@@ -999,6 +1046,8 @@ PATCHES = {
     "_dm_write": i_dm_write,
     "_access_modifier_scale": i_access_modifier_scale,
     "_post_modify_index": i_post_modify_index,
+    "_circular_wrap_const": i_circular_wrap_const,
+    "_modify_scale": i_modify_scale,
     "_advance": i_advance,
     "_event": i_event,
     "_stop": i_stop,

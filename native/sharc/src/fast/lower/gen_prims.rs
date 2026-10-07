@@ -35,6 +35,8 @@ pub enum TagKind {
     Add,
     /// The post-modify update of the register.
     Post,
+    /// The wrapped MODIFY result of the register (`g_circ`).
+    Mod,
 }
 
 impl Lower {
@@ -122,11 +124,12 @@ impl Lower {
                     TagKind::Rd if t.src as u32 != code => {
                         self.moves.push((code as u8, t.src));
                     }
-                    TagKind::Add if (16..32).contains(&code) && (16..32).contains(&(t.src as u32)) => {
-                        // `Ia = MODIFY(Ib, ...)` as the interpreter does it: a
-                        // plain sum, so neither index register may be circular.
-                        self.require_linear(t.src as u32)?;
-                        self.require_linear(code)?;
+                    TagKind::Add | TagKind::Mod
+                        if (16..32).contains(&code) && (16..32).contains(&(t.src as u32)) =>
+                    {
+                        // `Ia = MODIFY(Ib, ...)`: a plain sum (`Add`; a circular
+                        // destination is then written outside its buffer, see
+                        // `commit`) or a wrapped one (`Mod`, `g_circ`).
                         self.note_modify(t.src as u32, code);
                     }
                     _ => {}
@@ -143,10 +146,10 @@ impl Lower {
     /// The kernel then runs on with MODE1 changed (`mode1_cur`, static) and
     /// writes the register like any other (the region's exit state).
     fn g_wr_mode1(&mut self, v: Val) -> LR<()> {
-        let Some(k) = self.konst_of(v) else {
-            return refuse("MODE1 written with a run-time value");
+        let k = match self.konst_of(v) {
+            Some(k) => k as u32,
+            None => self.entry_value_of(v, "MODE1 written with a run-time value")?,
         };
-        let k = k as u32;
         if self.env.bank_model && (k ^ self.mode1_cur) & BANK_BITS != 0 {
             // A write that changes the bank selection starts a delayed one.
             return refuse("MODE1 write changes the register bank selection");
@@ -258,5 +261,176 @@ impl Lower {
     /// there is one. `Ok(false)`: the form is not generated.
     pub fn gen_lower(&mut self, d: &Dec) -> LR<bool> {
         gen_forms::dispatch(self, d)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Circular MODIFY and the baked L and B registers (lane F4)
+// ---------------------------------------------------------------------------
+
+impl Lower {
+    /// Whether the region writes L or B of index register N (0..15): the
+    /// entry values the circular lowering bakes are then not the values it
+    /// would use (known from pass 1 on).
+    pub fn lb_stale(&self, n: usize) -> bool {
+        self.pass >= 1 && (self.plan.written[48 + n] || self.plan.written[64 + n])
+    }
+
+    /// The value of length register CODE (48..63) or base register CODE
+    /// (64..79) the region is made for, with the requirement that the
+    /// register has it at entry. A static symbol of the generated forms (the
+    /// handlers test L and B of the source index register).
+    pub fn sv_lb(&mut self, code: u32) -> LR<u32> {
+        let n = (code & 15) as usize;
+        if self.lb_stale(n) {
+            return refuse("L/B of the index register written in the region");
+        }
+        let v = if code < 64 {
+            self.env.dag_l[n]
+        } else {
+            self.env.dag_b[n]
+        };
+        let Some(v) = v else {
+            return refuse("L/B of the index register unknown");
+        };
+        self.require_eq(code, v);
+        Ok(v)
+    }
+
+    /// Type7a (nw) MODIFY scales the modifier by 4 in byte space, which is
+    /// valid for a plain RAM address only: the check a normal-word access does
+    /// through its window (the form has no access).
+    pub fn g_plainmod(&mut self, iv: Val) -> LR<()> {
+        if (self.env.guarded_dyn || super::mem_addr::guarded_xfers())
+            && self.abs[iv as usize].is_none()
+        {
+            self.guard_plain(iv);
+            Ok(())
+        } else {
+            self.require_plain(iv, 4)
+        }
+    }
+
+    /// `iv + delta` corrected once by the buffer length, whatever IV is
+    /// (`memory._circular_step`): `>= top` subtracts it, else `< base` adds
+    /// it. No range is known for the result.
+    pub fn wrap_unchecked(&mut self, iv: Val, delta: Val, base: u32, lenb: i64) -> Val {
+        let top = (base as i64 + lenb) as u32;
+        let t = self.bin(Bin::Add, iv, delta);
+        let edge = self.ci(top);
+        let over = self.bin(Bin::GeU, t, edge);
+        let l = self.ci(lenb as u32);
+        let back = self.bin(Bin::Sub, t, l);
+        let low = self.ci(base);
+        let under = self.bin(Bin::LtU, t, low);
+        let fwd = self.bin(Bin::Add, t, l);
+        let inner = self.select(under, fwd, t);
+        self.select(over, back, inner)
+    }
+
+    /// The wrapped update of index register IC by DELTA (bytes, any run-time
+    /// value) for an access of SCALE bytes per unit, for a register the
+    /// region also writes with values not known to lie in its buffer:
+    /// B and L are baked, the entry value is not constrained.
+    pub fn wrap_general(&mut self, ic: u32, iv: Val, delta: Val, scale: i64) -> LR<Val> {
+        let n = (ic - 16) as usize;
+        let len = self.env.dag_l[n].unwrap_or(0);
+        let (Some(base), true) = (self.env.dag_b[n], len != 0) else {
+            return refuse("circular buffer unusable (B unknown)");
+        };
+        let lenb = len as i64 * scale;
+        if len > (1 << 28) || base as i64 + lenb > u32::MAX as i64 {
+            return refuse("circular buffer beyond 2^32");
+        }
+        self.require_eq(48 + n as u32, len);
+        self.require_eq(64 + n as u32, base);
+        Ok(self.wrap_unchecked(iv, delta, base, lenb))
+    }
+
+    /// `memory._circular_wrap_const` for `Ia = MODIFY(Ib, ..)` with L of Ib
+    /// not zero: BASE and LENB (buffer bytes) are the baked B and L scaled by
+    /// the access size, DELTA the modifier in bytes (UNSIGNED: a register's
+    /// 32-bit value, which the core compares unsigned; else a signed
+    /// immediate). The core stops when |DELTA| > LENB, so a modifier the
+    /// lowering cannot see (or one that large) is refused. The value is
+    /// tagged as a MODIFY result of Ib (`TagKind::Mod`).
+    pub fn g_circ(&mut self, iv: Val, delta: Val, base: u32, lenb: i64, unsigned: bool) -> LR<Val> {
+        let Some(src) = self
+            .tag_of(iv)
+            .filter(|t| t.kind == TagKind::Rd && (16..32).contains(&(t.src as u32)))
+            .map(|t| t.src as u32)
+        else {
+            return refuse("circular MODIFY of a value that is not an index register");
+        };
+        let tag = |l: &mut Lower, v: Val| {
+            l.set_tag(
+                v,
+                Tag {
+                    src: src as u8,
+                    iv,
+                    kind: TagKind::Mod,
+                },
+            );
+            v
+        };
+        if self.pass == 0 {
+            // Pass 0 only finds which registers are written.
+            let v = self.bin(Bin::Add, iv, delta);
+            return Ok(tag(self, v));
+        }
+        if lenb <= 0 {
+            return refuse("circular MODIFY with L <= 0");
+        }
+        if base as i64 + lenb > u32::MAX as i64 || lenb > (1 << 30) {
+            return refuse("circular buffer beyond 2^32");
+        }
+        let Some(d) = self.konst_of(delta) else {
+            return refuse("circular modifier not constant");
+        };
+        if unsigned && d < 0 {
+            return refuse("circular MODIFY by a negative M (the core reads M unsigned)");
+        }
+        if d.abs() > lenb {
+            return refuse("circular modifier larger than the buffer");
+        }
+        let v = if (self.plan.plain | self.plain_out) >> src & 1 != 0 {
+            self.wrap_unchecked(iv, delta, base, lenb)
+        } else {
+            // The entry value lies in the buffer (a requirement), so the
+            // sum crosses at most one edge and the result has the buffer's
+            // range.
+            let w = Req::Within {
+                c: src as u8,
+                lo: base,
+                hi: (base as i64 + lenb - 1) as u32,
+            };
+            if !self.reqs.contains(&w) {
+                self.reqs.push(w);
+            }
+            self.wrap_add(iv, delta, d, base, lenb)?
+        };
+        Ok(tag(self, v))
+    }
+
+    /// The value V, read from a register the region never writes, as the
+    /// constant it has when the region is made for (a requirement that the
+    /// register still has it at entry). For a write the lowering needs to know
+    /// statically (MODE1) of a value the code took from a register.
+    pub fn entry_value_of(&mut self, v: Val, why: &str) -> LR<u32> {
+        let Some(t) = self
+            .tag_of(v)
+            .filter(|t| t.kind == TagKind::Rd && t.iv == v)
+        else {
+            return refuse(why);
+        };
+        let c = t.src as usize;
+        if self.pass >= 1 && self.plan.written[c] {
+            return refuse(why);
+        }
+        let Some(k) = self.env.regs[c] else {
+            return refuse(why);
+        };
+        self.require_eq(c as u32, k);
+        Ok(k)
     }
 }

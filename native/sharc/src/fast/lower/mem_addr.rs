@@ -68,7 +68,7 @@ impl Width {
 
 /// Guarded dynamic windows for transfers whose address has no static range,
 /// in every region (not only clusters). On unless `SHARC_FAST_NOGUARD` is set.
-fn guarded_xfers() -> bool {
+pub(super) fn guarded_xfers() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("SHARC_FAST_NOGUARD").is_none())
 }

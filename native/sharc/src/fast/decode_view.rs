@@ -45,6 +45,23 @@ impl Dec {
         d
     }
 
+    /// The compute half of a transfer with a compute (`9a_rel`, `11a`), as
+    /// the `2a` instruction `IF COND compute` it executes as
+    /// (`forms_flow._flow_apply_compute` runs the same `_compute`). None when
+    /// the instruction has no compute.
+    pub fn compute_part(&self, cond: u32) -> Option<Dec> {
+        let c = self.compute().filter(|&c| c != 0)?;
+        Some(Dec {
+            form: "2a",
+            len_sw: 3,
+            fields: vec![
+                ("cond[4:0]", cond as i64),
+                ("compute[22:16]", (c >> 16) as i64),
+                ("compute[15:0]", (c & 0xffff) as i64),
+            ],
+        })
+    }
+
     pub fn get(&self, key: &str) -> Option<i64> {
         self.fields.iter().find(|f| f.0 == key).map(|f| f.1)
     }

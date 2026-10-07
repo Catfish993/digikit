@@ -160,3 +160,32 @@ earlier in the call 0xb822c0, argument R4/R8/R12) for the L and R iterations.
 No sharc_core change was made, so no regeneration or golden run was needed
 for (2); `tests/test_sharc_golden.py` and the DN2 scenarios are unaffected
 (DN2 hashes re-run after the LP0 change in round 1).
+
+## Round 3: the left-channel burst, and DT2 speed
+
+**Root cause [V]**: SIMD (MODE1.PEYEN) executes a compute in both PEx (R) and
+PEy (S). `forms_dag._type_7a` (compute + index modify) and the compute half of
+the Type 9a/11a transfers in `forms_flow._flow_apply_compute` ran PEx only, so
+the PEy lane kept stale S registers and the R/S asymmetry fed the reverb send
+(L scale 5.96e-6 vs R 0). Both now use `_compute_simd`/`_apply_compute_simd`
+(as loads, stores and Type 17 already did). Fix is in tools/sharc_core only.
+
+Proof: interpreter run of `dt2-sample-trig` (1.6 s): before, L peak 0.66,
+tone share 0.53, L != R; after, L == R bit-exact, peak 0.385, share 0.9986
+at the same frequency. Regenerated AOT core PCM hash == interpreter hash
+(c1b2d644..). `tests/test_sharc_golden.py`: 6 pass, no hash changes (those six
+outputs do not run SIMD Type 7a). DN2 core regenerated with the same rsgen
+flags and rebuilt: `coupled_ready_exactness` passes; `exactness-100m`
+b3f5230f.., `trig1-noqa-40m` 2861ce03.. unchanged; `trig1-tap-release`
+88347621.., `trig1-taps` d60ad339.. ok.
+
+**Speed**: `tools/aot_gen.py dt2 --cycles N` (default 2): cycle 0 is the
+interpreter profile (no transitions), each later cycle replays with the blocks
+built so far and records the block transitions; rsgen gets the merged profiles.
+dsp_cpu per audio second on `dt2-sample-trig`: interpreter 37.7, one cycle
+3.07, two cycles 1.83, three cycles 1.76 (same PCM hash). Fast regions: the
+hot DT2 loops (0x1c0874, 0x1c14e7, 0x1c20d1 ...) are SIMD-mode code and the
+fast tier has no generated lowering for it ("3a/19a/4a in SIMD mode"); the
+few loops that build stop at MODE1 writes and made the run slower (4.7), so
+no DT2 entry was added to tools/fast_regions.json. Retry when the fast tier
+lowers SIMD forms.
