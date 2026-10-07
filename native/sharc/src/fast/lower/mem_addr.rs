@@ -73,6 +73,16 @@ pub(super) fn guarded_xfers() -> bool {
     *ON.get_or_init(|| std::env::var_os("SHARC_FAST_NOGUARD").is_none())
 }
 
+/// Flat guarded accesses (`flat_access`) for transfers with no static range
+/// and no anchor register (a pointer loaded from memory): the kernel reads
+/// the engine's page table itself and guards every access. Off unless
+/// `SHARC_FAST_FLAT` is set: PCM-exact, but the kernels are large (compile
+/// time) and the DN2 hot loops still stop elsewhere (docs/notes/laneB.md).
+pub(super) fn flat_xfers() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_FLAT").is_some())
+}
+
 impl Lower {
     /// A normal-word transfer through index register IC with modifier MC.
     pub fn dm_transfer(&mut self, ic: u32, mc: u32, post: bool, x: Xfer) -> LR<()> {
@@ -129,6 +139,24 @@ impl Lower {
         let dynamic =
             guarded && self.strict() && self.abs[addr as usize].is_none() && anchor.is_some();
         let iv_ranged = self.abs[iv as usize].is_some();
+        // No range and no anchor: access the engine's memory through its page
+        // table, guarding every access (`flat_access`).
+        if !dynamic
+            && flat_xfers()
+            && self.strict()
+            && !iv_ranged
+            && self.abs[addr as usize].is_none()
+        {
+            if w.is_nw() {
+                self.guard_plain(iv);
+                if !post {
+                    self.guard_plain(addr);
+                }
+            }
+            let write = matches!(x, Xfer::Store(_) | Xfer::StoreV(_));
+            let (p, o) = self.flat_access(addr, w.bytes, write)?;
+            return self.emit_access(p, o, x, w);
+        }
         if w.is_nw() && (iv_ranged || !dynamic) {
             // The modifier is scaled by 4 only when IV is outside the
             // normal-word mapped ranges.
@@ -183,6 +211,67 @@ impl Lower {
             self.guard(inside);
         }
         self.emit_access(p, o, x, w)
+    }
+
+    /// The page and offset of a guarded access of BYTES (1, 2 or 4) bytes at
+    /// byte address ADDR, through the engine memory's page table
+    /// (`Mem::fast_read` / `fast_write` inline): the access leaves the kernel
+    /// (before the instruction) unless the page exists, every byte is present
+    /// (loads) or already an overlay byte (stores, which also need the page
+    /// not code-watched) and the access stays inside one 32-bit word of the
+    /// bitmaps. No address range is needed.
+    pub fn flat_access(&mut self, addr: Val, bytes: u8, write: bool) -> LR<(Val, Val)> {
+        use crate::mem::{PAGE_BITS, PAGE_DIRTY_OFF, PAGE_PRESENT_OFF};
+        let ptr64 = std::mem::size_of::<usize>() == 8;
+        let eff = self.emit(Ty::I64, Op::Ctx64(CTX_FLAT_EFF));
+        let bits = self.ci(PAGE_BITS);
+        let idx = self.bin(Bin::ShrU, addr, bits);
+        let psh = self.ci(if ptr64 { 3 } else { 2 });
+        let eoff = self.bin(Bin::Shl, idx, psh);
+        let lo = self.emit(Ty::I32, Op::Load32 { base: eff, off: eoff });
+        let page = if ptr64 {
+            let four = self.ci(4);
+            let hoff = self.bin(Bin::Add, eoff, four);
+            let hi = self.emit(Ty::I32, Op::Load32 { base: eff, off: hoff });
+            let any = self.bin(Bin::Or, lo, hi);
+            let zero = self.ci(0);
+            let nz = self.bin(Bin::Ne, any, zero);
+            self.guard(nz);
+            self.emit(Ty::I64, Op::Load64 { base: eff, off: eoff })
+        } else {
+            let zero = self.ci(0);
+            let nz = self.bin(Bin::Ne, lo, zero);
+            self.guard(nz);
+            self.emit(Ty::I64, Op::Un(Un::Zext, lo))
+        };
+        let mask16 = self.ci((1 << PAGE_BITS) - 1);
+        let o16 = self.bin(Bin::And, addr, mask16);
+        // Inside one 32-bit word of the bitmaps.
+        let c31 = self.ci(31);
+        let bit = self.bin(Bin::And, o16, c31);
+        let room = self.ci(32 - bytes as u32);
+        let fits = self.bin(Bin::LeU, bit, room);
+        self.guard(fits);
+        let c5 = self.ci(5);
+        let word = self.bin(Bin::ShrU, o16, c5);
+        let c2 = self.ci(2);
+        let word4 = self.bin(Bin::Shl, word, c2);
+        let map = self.ci(if write { PAGE_DIRTY_OFF } else { PAGE_PRESENT_OFF });
+        let moff = self.bin(Bin::Add, word4, map);
+        let bm = self.emit(Ty::I32, Op::Load32 { base: page, off: moff });
+        let ones = self.ci((1u32 << bytes) - 1);
+        let mask = self.bin(Bin::Shl, ones, bit);
+        let have = self.bin(Bin::And, bm, mask);
+        let ok = self.bin(Bin::Eq, have, mask);
+        self.guard(ok);
+        if write {
+            let watch = self.emit(Ty::I64, Op::Ctx64(CTX_FLAT_WATCH));
+            let w = self.emit(Ty::I32, Op::LoadN { base: watch, off: idx, bytes: 1 });
+            let zero = self.ci(0);
+            let quiet = self.bin(Bin::Eq, w, zero);
+            self.guard(quiet);
+        }
+        Ok((page, o16))
     }
 
     /// The load or store of W at window pointer P plus byte offset O.

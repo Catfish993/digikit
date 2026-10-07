@@ -248,6 +248,13 @@ impl Emit<'_> {
                 self.addr(base, off);
                 self.i(I::I32Load(ma(0, 0)));
             }
+            Op::Load64 { base, off } => {
+                // A pointer table entry of the core's memory: 8 bytes in a
+                // 64-bit host's layout, which is what the kernel was lowered
+                // for (lowering emits Load32 + Zext on wasm32).
+                self.addr(base, off);
+                self.i(I::I64Load(ma(0, 0)));
+            }
             Op::LoadN { base, off, bytes } => {
                 self.addr(base, off);
                 if bytes == 1 {

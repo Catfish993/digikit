@@ -958,6 +958,7 @@ pub fn run(
     }
     pmark!(pt, 3);
     ctx.set32(CTX_ITERS, iters as u32);
+    set_flat(ctx, s);
     // SAFETY: static windows cover every access of `iters` iterations by the
     // lowering's range analysis. Guarded read windows are resolved here and
     // each dynamic address is checked before its load and instruction commit.
@@ -1392,6 +1393,14 @@ pub fn set_window_check(on: bool) {
 }
 
 /// Record window W's extent for the check (and clear the unused ones).
+/// The engine memory's page table and code-watch bytes, for flat accesses.
+#[inline(always)]
+fn set_flat(ctx: &mut Ctx, s: &St) {
+    let (eff, watch) = s.mem.flat_tables();
+    ctx.set64(CTX_FLAT_EFF, eff as u64);
+    ctx.set64(CTX_FLAT_WATCH, watch as u64);
+}
+
 fn note_window(ctx: &mut Ctx, w: usize, lo: u32, hi: u32) {
     ctx.set32(CTX_WIN_EXT + 8 * w as u32, lo);
     ctx.set32(CTX_WIN_EXT + 8 * w as u32 + 4, hi);
@@ -1682,6 +1691,7 @@ pub fn run_cfg(
     }
     pmark!(pt, 3);
     ctx.set32(CTX_BUDGET, avail.min(1 << 31) as u32);
+    set_flat(ctx, s);
     // SAFETY: static windows cover every access by the lowering's range
     // analysis. Guarded read windows are resolved here and each dynamic
     // address is checked before its load and instruction commit. The kernel

@@ -379,6 +379,12 @@ impl Emit<'_, '_> {
                 let a = self.b.ins().iadd(base, o);
                 self.b.ins().load(types::I32, mem_flags(), a, 0)
             }
+            Op::Load64 { base, off } => {
+                let (base, off) = (self.v(base), self.v(off));
+                let o = self.b.ins().uextend(types::I64, off);
+                let a = self.b.ins().iadd(base, o);
+                self.b.ins().load(types::I64, mem_flags(), a, 0)
+            }
         }
     }
 }

@@ -1261,12 +1261,24 @@ impl Lower {
 
     // -- memory windows ----------------------------------------------------
 
+    /// The access at ADDR through the engine's page table when no window can
+    /// serve it (`mem_addr::flat_access`), else the refusal WHY.
+    fn flat_window(&mut self, addr: Val, bytes: i64, write: bool, why: &str) -> LR<(Val, Val)> {
+        if !mem_addr::flat_xfers() {
+            return refuse(why);
+        }
+        if bytes == 4 {
+            self.guard_plain(addr);
+        }
+        self.flat_access(addr, bytes as u8, write)
+    }
+
     /// Byte address in range `a` is a window access of `bytes` bytes.
     pub fn window_access(&mut self, addr: Val, bytes: i64, write: bool) -> LR<(Val, Val)> {
         let abs = match self.abs[addr as usize] {
             Some(a) => a,
             None if !self.strict() => Abs::konst(0),
-            None => return refuse("address range unknown"),
+            None => return self.flat_window(addr, bytes, write, "address range unknown"),
         };
         let key = (abs.base, abs.ts, abs.nf);
         let w = match self
@@ -1277,7 +1289,7 @@ impl Lower {
             Some(w) => w,
             None => {
                 if self.wins.len() as u32 >= MAX_WIN {
-                    return refuse("too many windows");
+                    return self.flat_window(addr, bytes, write, "too many windows");
                 }
                 self.wins.push(WinSpec {
                     base: abs.base,
@@ -1378,6 +1390,11 @@ impl Lower {
                 Ok(())
             }
             None if !self.strict() => Ok(()),
+            // No range to require: guard each access instead (flat accesses).
+            None if mem_addr::flat_xfers() => {
+                self.guard_plain(addr);
+                Ok(())
+            }
             None => {
                 if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
                     eprintln!(

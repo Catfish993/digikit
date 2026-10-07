@@ -385,6 +385,11 @@ fn reason_class(r: &str) -> String {
 
 #[derive(Default)]
 struct Slot {
+    /// After a window decline the next `win_skip` calls are not tried (the
+    /// interpreter runs them): 1, 3, 7, ... up to 2^`WIN_BACKOFF_MAX` - 1,
+    /// reset by a run. A declined call costs a window resolution for nothing.
+    win_skip: u32,
+    win_back: u8,
     region: Option<region::Region>,
     kernel: Option<Box<dyn CompiledKernel>>,
     refused: Option<String>,
@@ -422,6 +427,7 @@ const BLOOM_WORDS: usize = 1024;
 /// builds one entry may spend on new ones.
 const MAX_VARIANTS: usize = 4;
 const REBUILD_BUDGET: u32 = 16;
+const WIN_BACKOFF_MAX: u8 = 8;
 /// After the build budget is spent, the alternatives are no longer tried
 /// once this many calls in a row were declined by every variant.
 const ALT_GIVE_UP: u32 = 64;
@@ -465,6 +471,8 @@ pub struct FastEngine {
     /// the stop instruction. Never dropped as unprofitable.
     follow: bool,
     follow_queue: Vec<u32>,
+    /// `SHARC_FAST_NOBACKOFF` turns the window-decline back-off off.
+    win_backoff: bool,
     cap_chain: bool,
     /// Entry PCs not yet added to the engine's chain stop set
     /// (`FastTier::sync_chain_stops`); filled at setup and by `arm`.
@@ -538,6 +546,7 @@ impl FastEngine {
             summary: std::env::var_os("SHARC_FAST_LOG").is_some(),
             follow: std::env::var("SHARC_FAST_FOLLOW").is_ok_and(|v| v == "1"),
             follow_queue: Vec::new(),
+            win_backoff: std::env::var_os("SHARC_FAST_NOBACKOFF").is_none(),
             // SHARC_FAST_CHAIN=0 keeps chaining (entries reached by a chain
             // are then missed).
             cap_chain: std::env::var("SHARC_FAST_CHAIN").map_or(true, |v| v != "0"),
@@ -1116,6 +1125,10 @@ impl FastEngine {
             }
         }
         let slot = &mut self.slots[ix];
+        if slot.win_skip > 0 && self.win_backoff {
+            slot.win_skip -= 1;
+            return None;
+        }
         let region = slot.region.as_mut()?;
         if !verify_code(s, region) {
             slot.region = None;
@@ -1155,6 +1168,14 @@ impl FastEngine {
             slot.alt_fail = slot.alt_fail.saturating_add(1);
         } else {
             slot.alt_fail = 0;
+        }
+        match res {
+            Err(glue::Decline::Window) => {
+                slot.win_back = (slot.win_back + 1).min(WIN_BACKOFF_MAX);
+                slot.win_skip = (1u32 << slot.win_back) - 1;
+            }
+            Ok(_) => slot.win_back = 0,
+            _ => {}
         }
         if chained && res.is_err() {
             self.stats.calls -= 1;

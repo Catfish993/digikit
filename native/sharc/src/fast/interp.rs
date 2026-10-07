@@ -79,6 +79,25 @@ impl InterpKernel {
                 return;
             }
         }
+        // A flat access (Lower::flat_access): the base is a page of the engine's
+        // memory, found in the page table the context points to.
+        let eff = unsafe { (ctx.add(CTX_FLAT_EFF as usize) as *const u64).read_unaligned() };
+        if eff != 0 {
+            let n = 1usize << 16;
+            let table = eff as usize;
+            for i in 0..n {
+                let e = unsafe {
+                    if std::mem::size_of::<usize>() == 8 {
+                        ((table + 8 * i) as *const u64).read_unaligned()
+                    } else {
+                        ((table + 4 * i) as *const u32).read_unaligned() as u64
+                    }
+                };
+                if e == base {
+                    return;
+                }
+            }
+        }
         panic!("window access at {off:#x} outside every window with this base");
     }
 
@@ -183,6 +202,10 @@ impl InterpKernel {
                             } else {
                                 unsafe { (p as *const u16).read_unaligned() as u64 }
                             }
+                        }
+                        Op::Load64 { base, off } => {
+                            let p = (v(base) as usize).wrapping_add(v(off) as u32 as usize);
+                            unsafe { (p as *const u64).read_unaligned() }
                         }
                         Op::Load32 { base, off } => {
                             self.check_window(ctx, v(base), v(off) as u32, 4);

@@ -55,9 +55,17 @@ description = "Run headless coupled scenarios: mise run scenario trig1-taps [--w
 run = "uv run python tools/fastcov.py"
 description = "DSP CPU, tier split and fast-tier refusals/exits per tier config: mise run fastcov -- --config default --config fast-auto"
 
+[tasks.perf]
+run = "uv run python tools/perf.py"
+description = "Standard DSP performance report (coverage, CPU per audio s, PCM, calls, per-function cost ranking): mise run perf -- [--config NAME] [--seconds S] [--timed] [--calibrate]"
+
 [tasks.core]
 run = "uv run python tools/sharc_transpile.py --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
 description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
+
+[tasks.regen]
+run = "uv run python tools/sharc_lowergen_regen.py"
+description = "Regenerate the shared core, native/sharc/src/fast/lower/gen_forms.rs, the fuzz vectors and the test programs from tools/sharc_core: mise run regen [-- --add FORM,...]"
 
 [tasks.replay]
 run = "uv run python tools/coupled.py replay"

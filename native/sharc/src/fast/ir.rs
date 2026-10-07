@@ -122,6 +122,12 @@ pub enum Op {
         off: Val,
         bytes: u8,
     },
+    /// 64-bit load at `base + zext(off)` (little endian, any alignment): a
+    /// pointer of the page table in flat memory accesses.
+    Load64 {
+        base: Val,
+        off: Val,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -249,7 +255,12 @@ pub const CTX_WIN_DYN_LEN: u32 = CTX_WIN_EXT + 8 * MAX_WIN;
 /// compiler's return): the exit address of a `cfg::DYN_PC` site and the
 /// target of a pending jump of a dynamic delay slot exit.
 pub const CTX_DYNPC: u32 = CTX_WIN_DYN_LEN + 4 * MAX_WIN;
-pub const CTX_SIZE: u32 = (CTX_DYNPC + 4 + 7) & !7;
+/// Flat memory access (guarded loads and stores at any plain address, see
+/// `lower::mem_addr::flat_access`): the host addresses (u64) of the per-page
+/// pointer table and of the per-page code-watch bytes of the engine's memory.
+pub const CTX_FLAT_EFF: u32 = (CTX_DYNPC + 4 + 7) & !7;
+pub const CTX_FLAT_WATCH: u32 = CTX_FLAT_EFF + 8;
+pub const CTX_SIZE: u32 = (CTX_FLAT_WATCH + 8 + 7) & !7;
 
 /// Context offsets of register-like kernel inputs/outputs: UREG codes below
 /// `NREGS` (R, I, M), then the pseudo registers (code `NREGS + i`).
@@ -473,6 +484,15 @@ impl Kernel {
                                     return err("load operand types");
                                 }
                                 Ty::I32
+                            }
+                            Op::Load64 { base, off } => {
+                                if !use_ok(base) || !use_ok(off) {
+                                    return err("operand not defined");
+                                }
+                                if ty(base) != Some(Ty::I64) || ty(off) != Some(Ty::I32) {
+                                    return err("load operand types");
+                                }
+                                Ty::I64
                             }
                             Op::LoadN { base, off, bytes } => {
                                 if !use_ok(base) || !use_ok(off) {
@@ -759,6 +779,7 @@ impl Kernel {
                                 w.extend([12, base, off, bytes as u32])
                             }
                             Op::St32(o) => w.extend([11, o]),
+                            Op::Load64 { base, off } => w.extend([13, base, off]),
                         }
                     }
                     Inst::Set(v, x) => w.extend([1, v.0, x]),
@@ -842,6 +863,10 @@ impl Kernel {
                                 base: next()?,
                                 off: next()?,
                                 bytes: next()? as u8,
+                            },
+                            13 => Op::Load64 {
+                                base: next()?,
+                                off: next()?,
                             },
                             o => return Err(format!("bad op {o}")),
                         };

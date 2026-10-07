@@ -104,6 +104,16 @@ def write_entries(what: str, image: str) -> str:
 
 def parse_config(spec: str) -> tuple[str, dict[str, str]]:
     """(label, env overrides) for a --config value."""
+    if "+env:" in spec:
+        # `<config>+env:KEY=VALUE`: one more environment variable (repeatable).
+        head, tail = spec.rsplit("+env:", 1)
+        _, env = parse_config(head)
+        key, _, value = tail.partition("=")
+        return spec, {**env, key: value}
+    if spec.endswith("+gen"):
+        # The generated lowering of tools/sharc_lowergen (lane F) for every form it has.
+        _, env = parse_config(spec.removesuffix("+gen"))
+        return spec, {**env, "SHARC_FAST_GEN": "all"}
     if spec.endswith("+follow"):
         # Also make the instruction after each stop instruction an entry.
         _, env = parse_config(spec.removesuffix("+follow"))

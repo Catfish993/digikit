@@ -10,16 +10,21 @@
 //! dirty bit per byte (in the overlay). The loader image is kept apart so
 //! a state import can return memory to it.
 
-const PAGE_BITS: u32 = 16;
+pub const PAGE_BITS: u32 = 16;
 pub const PAGE_SIZE: usize = 1 << PAGE_BITS;
 const NPAGES: usize = 1 << (32 - PAGE_BITS);
 const WORDS: usize = PAGE_SIZE / 64;
 
+#[repr(C)]
 pub struct Page {
     pub data: [u8; PAGE_SIZE],
     pub present: [u64; WORDS],
     pub dirty: [u64; WORDS],
 }
+
+/// Byte offsets of a page's present and dirty bitmaps (`Mem::flat_tables`).
+pub const PAGE_PRESENT_OFF: u32 = std::mem::offset_of!(Page, present) as u32;
+pub const PAGE_DIRTY_OFF: u32 = std::mem::offset_of!(Page, dirty) as u32;
 
 impl Page {
     fn empty() -> Box<Page> {
@@ -117,6 +122,14 @@ impl Mem {
         for w in self.watch.iter_mut() {
             *w &= !WATCH_CODE;
         }
+    }
+
+    /// Addresses of the per-page pointer table (`eff`: the page a plain-RAM
+    /// access at a page finds its bytes in, null for none or an MMR page) and
+    /// of the per-page code-watch bytes: what a kernel's flat memory access
+    /// reads (`fast_read` / `fast_write` inline). Stable for this `Mem`.
+    pub fn flat_tables(&self) -> (usize, usize) {
+        (self.eff.as_ptr() as usize, self.watch.as_ptr() as usize)
     }
 
     /// Mark page IDX (and its short-word alias page, through which a fast
