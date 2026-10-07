@@ -60,3 +60,37 @@ what is built.
   `digi-emud`, the desktop socket was not exercised through the GUI (same controller
   and server as the daemon; compiled and unit-tested only), the "chunk timing with no
   client" A/B was not run (the UI step path adds a mode/job check per chunk).
+
+## CF idle measurement and DSP-port poll fast path (2026-10-07)
+
+Profile: feature `cf-profile` (boot `src/cfprof.rs`, RPC `cf.profile`; CPU per path from
+`thread_cpu_ns`, PC histogram, `run_fast` exit reasons). `status` now carries
+`controller_cpu_ns`. Numbers below are native, one machine, other lanes running.
+
+| workload | CF instr skipped by the idle skip | CF CPU in it | CPU s / emulated s |
+|---|---|---|---|
+| DN2 trig1-taps, 10.5 s (coupled, fast regions) | 38.1 % | 1.3 % | 0.72-0.80 |
+| DT2 main screen with card, 10 s after boot | 95.3 % | 1.3 % | 0.09-0.10 |
+
+- Idle shape 1: BRA-to-self (`60 fe`) idle task (DN2 0x400cf0e2, DT2 0x400cccd8). Already
+  skipped analytically in `advance_idle`, bounded by the next timer/SSI deadline and by the
+  model's forced yield every 20,000 passes (vector 32). It costs about 1 % of CF CPU; nothing
+  left to win. The yield pass runs the firmware main loop (about 880 instr, 70k per 10 s on DT2),
+  which is real work, not skippable.
+- DN2's CPU is real work, not idle: 62 % of instructions, 95 % of CF CPU, in the SSI audio
+  block path (vector_191_handler: FUN_400db12a EMAC unpack loop 25 %, FUN_400cf7be buffer fill
+  18 %, memcpy FUN_40134490 10 %).
+- Idle shape 2: polling a status register. DT2 polls the FlexBus coprocessor port STATUS
+  (0x8C000002) about 9 times per word it writes to 0x8C00000A (37k words/s). Each access bumped
+  `mmio_epoch`, so `run_fast` returned 3.86M times in 10 s (16 instr per call).
+- Prototype (exact): `Board` no longer bumps `mmio_epoch` for the DSP port slot
+  (`periph::dsp::Fifo` keeps a poll counter and an echo register only). `run_fast` exits drop
+  3.86M -> 0.14M per 10 s. CF digest after DT2 boot + 5 s + a Trig tap, and DN2 trig1-taps PCM
+  SHA-256 and CF digest, are identical before and after (`c4d19bbd..`, `0aa5b3f7..`,
+  `4d42ee6c..`).
+- CPU s per emulated s, before -> after: native DT2 0.099 -> 0.088, native DN2 0.750 -> 0.744;
+  wasm (CF-only core, Node) DT2 0.339 -> 0.279, DN2 CF-only 0.181 -> 0.178. The profile build
+  exaggerates the old per-call cost (1.62 -> 0.80 with timers on).
+- wasm costs 3.4x native on DT2; ready from cold takes 9 s (DT2) / 7.9 s (DN2) in wasm.
+- Next if CF CPU matters: the DN2 audio-block loops (fuse FUN_400db12a, the 0x8001 fill loop of
+  FUN_400cf7be, the word memcpy), not idle.
