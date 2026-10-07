@@ -104,6 +104,12 @@ def write_entries(what: str, image: str) -> str:
 
 def parse_config(spec: str) -> tuple[str, dict[str, str]]:
     """(label, env overrides) for a --config value."""
+    if spec.endswith("+aot"):
+        # The generated AOT blocks stay on (the prod generated core): the
+        # configuration's fast regions take their entries, AOT runs elsewhere.
+        _, env = parse_config(spec.removesuffix("+aot"))
+        env = {k: v for k, v in env.items() if k != "SHARC_AOT"}
+        return spec, env
     if "+env:" in spec:
         # `<config>+env:KEY=VALUE`: one more environment variable (repeatable).
         head, tail = spec.rsplit("+env:", 1)

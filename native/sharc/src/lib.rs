@@ -1456,6 +1456,18 @@ impl Engine {
     }
 
     fn trapped(&mut self, t: Trap) {
+        if std::env::var_os("SHARC_TRAP_REGS").is_some() {
+            let unknown: Vec<String> = (0..NUREG)
+                .filter(|&c| self.s.r[c].m != u32::MAX)
+                .map(|c| format!("r{c}={:#x}/{:#x}", self.s.r[c].b, self.s.r[c].m))
+                .collect();
+            eprintln!(
+                "trap at {:#x}: icount {}, registers not fully known: {}",
+                self.s.pc_sw,
+                self.s.icount,
+                unknown.join(" ")
+            );
+        }
         self.stats.traps += 1;
         self.last_trap = Some(t);
         self.halt = Some(format!(

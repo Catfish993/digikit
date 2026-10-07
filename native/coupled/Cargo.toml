@@ -14,6 +14,8 @@ name = "digi_coupled"
 coupled-audio = ["elektron-native-boot/sharc", "elektron-native-boot/play", "dep:sharc-fast-cl", "dep:sharc-native"]
 # Enable this with coupled-audio; it forwards only to the optional native core.
 region-profile = ["sharc-native?/region-profile"]
+# Per-phase ticks of the fast tier's region call, printed at exit (SHARC_FAST_LOG).
+fast-prof = ["sharc-native?/fast-prof"]
 
 [dependencies]
 device-profile = { path = "../device-profile" }

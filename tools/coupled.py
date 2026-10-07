@@ -43,7 +43,7 @@ finally:
     sys.path.pop(0)
 
 TOOLCHAIN = digi_env.TOOLCHAIN
-FEATURES = "coupled-audio"
+FEATURES = os.environ.get("DIGI_COUPLED_FEATURES", "coupled-audio")
 BINARY_NAME = "coupled-run"
 BISECT_DIR = ROOT / "out" / "native" / "bisect"
 RUNS_DIR = ROOT / "out" / "native" / "runs"

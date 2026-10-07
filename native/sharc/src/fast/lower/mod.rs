@@ -264,8 +264,8 @@ pub struct Env {
     pub cacc_known: bool,
 }
 
-/// `SHARC_FAST_GEN=all` or a comma list of forms: lower those forms with the
-/// generated emitters (`gen_forms`) instead of the hand-written ones.
+/// `SHARC_FAST_GEN`: `0` lowers with the hand-written forms only, a comma list
+/// of forms picks which use the generated emitters (`gen_forms`); the default is all.
 pub static GEN_FORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 fn gen_enabled(form: &str) -> bool {
@@ -276,7 +276,12 @@ fn gen_enabled(form: &str) -> bool {
     }
     static SET: std::sync::OnceLock<Option<Vec<String>>> = std::sync::OnceLock::new();
     let set = SET.get_or_init(|| {
-        let v = std::env::var("SHARC_FAST_GEN").ok()?;
+        // On by default (PCM-identical, fuzzed): SHARC_FAST_GEN=0 turns it off,
+        // a comma list of forms selects some.
+        let v = std::env::var("SHARC_FAST_GEN").unwrap_or_else(|_| "all".into());
+        if v == "0" || v == "none" {
+            return None;
+        }
         Some(v.split(',').map(str::to_string).collect())
     });
     match set {
@@ -1491,16 +1496,22 @@ impl Lower {
                 }
                 None => v,
             };
-            if let Some((b, top)) = self.circ_range(c).filter(|_| !self.tail_write) {
+            if let Some((b, top)) = self.circ_range(c) {
                 // Every write of a circular index must keep it in its
                 // buffer (the range of the loop-carried value assumes it).
-                let inside = self.abs[v as usize].is_some_and(|a| {
-                    a.base == Base::None
-                        && a.ts == 0
-                        && a.nf == 0
-                        && a.lo >= b as i64
-                        && a.hi < top as i64
-                });
+                // A write nothing in the kernel reads (`tail_write`: the
+                // frame registers of a return's delay slots) still counts:
+                // the earlier reads of the register were lowered under the
+                // in-buffer assumption, and no `Req::Within` backs it unless
+                // a wrapped update of the register asks for one.
+                let inside = !self.tail_write
+                    && self.abs[v as usize].is_some_and(|a| {
+                        a.base == Base::None
+                            && a.ts == 0
+                            && a.nf == 0
+                            && a.lo >= b as i64
+                            && a.hi < top as i64
+                    });
                 if !inside {
                     // The next pass lowers the register's circular updates
                     // without the in-buffer assumption (`wrap_general`). A

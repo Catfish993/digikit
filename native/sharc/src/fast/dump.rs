@@ -34,8 +34,17 @@ fn dir() -> Option<&'static std::path::PathBuf> {
     .as_ref()
 }
 
+static ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Reads `SHARC_FAST_DUMP` once (FastEngine::new calls it); `enabled` is then
+/// one relaxed load, inlined into the glue's call path.
+pub fn init() {
+    ON.store(dir().is_some(), std::sync::atomic::Ordering::Relaxed);
+}
+
+#[inline(always)]
 pub fn enabled() -> bool {
-    dir().is_some()
+    ON.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 struct Win {
@@ -66,12 +75,14 @@ thread_local! {
     static WRITTEN: RefCell<HashSet<u64>> = RefCell::new(HashSet::new());
 }
 
+#[inline(always)]
 pub fn begin() {
     if enabled() {
         WINS.with(|w| w.borrow_mut().clear());
     }
 }
 
+#[inline(always)]
 pub fn win(w: u32, ptr: *const u8, lo: u32, hi: u64) {
     if enabled() {
         let len = hi.saturating_sub(lo as u64).min(1 << 20) as u32;
@@ -103,7 +114,16 @@ fn fnv(words: &[u32]) -> u64 {
 }
 
 /// Called just before a kernel runs, after the windows are in the context.
+#[inline(always)]
 pub fn before(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
+    if !enabled() {
+        return None;
+    }
+    before_slow(k, ctx, st)
+}
+
+#[inline(never)]
+fn before_slow(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
     let d = dir()?;
     let key = k as *const Kernel as usize;
     let kid = SEEN.with(|s| {
@@ -120,6 +140,7 @@ pub fn before(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
                 if w.borrow_mut().insert(e.0) {
                     let bytes: Vec<u8> = words.iter().flat_map(|x| x.to_le_bytes()).collect();
                     let _ = std::fs::write(d.join(format!("kernel-{:016x}.bin", e.0)), bytes);
+                    let _ = std::fs::write(d.join(format!("kernel-{:016x}.txt", e.0)), format!("{k}"));
                 }
             });
         }
@@ -158,6 +179,7 @@ pub fn before(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
 }
 
 /// Called just after the kernel ran.
+#[inline(always)]
 pub fn after(cap: Option<Capture>, code: u32, ctx: *const u8, st: *const u8) {
     let Some(mut c) = cap else { return };
     // SAFETY: as in `before`.
@@ -174,12 +196,20 @@ pub fn after(cap: Option<Capture>, code: u32, ctx: *const u8, st: *const u8) {
 }
 
 /// Called by the engine once the call's instruction count is known.
+#[inline(always)]
 pub fn finish(entry_pc: u32, insns: u64) {
+    if enabled() {
+        finish_slow(entry_pc, insns);
+    }
+}
+
+#[inline(never)]
+fn finish_slow(entry_pc: u32, insns: u64) {
     let Some(d) = dir() else { return };
     let Some(c) = PENDING.with(|p| p.borrow_mut().take()) else {
         return;
     };
-    if insns < MIN_INSNS {
+    if insns < MIN_INSNS && std::env::var_os("SHARC_FAST_DUMP_ALL").is_none() {
         return;
     }
     let n = SEEN.with(|s| {

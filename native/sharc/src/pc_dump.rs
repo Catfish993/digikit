@@ -19,6 +19,9 @@
 use std::io::Write;
 
 pub struct PcDump {
+    /// `SHARC_PCDUMP_MEM=addr:words`: that many 32-bit words from the byte
+    /// address (hex) are appended to every row.
+    mem: Option<(u32, u32)>,
     out: std::io::BufWriter<std::fs::File>,
     pcs: Vec<u64>,
     lo: u64,
@@ -80,7 +83,12 @@ impl PcDump {
             h += &format!(",s{i}");
         }
         let _ = writeln!(out, "{h}");
+        let mem = std::env::var("SHARC_PCDUMP_MEM").ok().and_then(|v| {
+            let (a, n) = v.split_once(':')?;
+            Some((u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()?, n.parse().ok()?))
+        });
         Some(Box::new(PcDump {
+            mem,
             out,
             pcs,
             lo,
@@ -106,6 +114,11 @@ impl PcDump {
         }
         for c in (16..48).chain([118, 119, 120, 114, 116]).chain(80..96) {
             row += &format!(",{:#x}", b(c));
+        }
+        if let Some((a, n)) = self.mem {
+            for k in 0..n {
+                row += &format!(",{:#x}", s.mem.read_le(a + 4 * k, 4));
+            }
         }
         let _ = writeln!(self.out, "{row}");
     }

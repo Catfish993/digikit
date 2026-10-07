@@ -138,6 +138,16 @@ impl Default for Ctx {
 }
 
 impl Ctx {
+    /// Debug (`SHARC_FAST_CTXCLEAR`): forget everything an earlier call left in
+    /// the buffer (what a kernel does not store reads as zero).
+    pub fn clear(&mut self) {
+        self.buf.fill(0);
+        for (i, k) in CONST_POOL.iter().enumerate() {
+            self.set32(CTX_CONSTS + 4 * i as u32, *k);
+        }
+        self.win_check = false;
+    }
+
     #[inline(always)]
     pub fn ptr(&mut self) -> *mut u8 {
         self.buf.as_mut_ptr() as *mut u8
@@ -935,6 +945,14 @@ pub fn run(
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
         super::dump::win(w as u32, ptr, lo, hi);
+        if dbg_win() {
+            let seen = unsafe { (ptr as *const u32).read_unaligned() };
+            let canon = s.mem.canonical_of(lo);
+            eprintln!(
+                "win {:#x} w{w} lo {:#x} hi {:#x} base {:?} anchor {:?} -> host {:p} first word {:#x}, memory says {:#x} (canonical {:#x})",
+                r.entry_pc, lo, hi, spec.base, spec.dynamic_anchor, ptr, seen, s.mem.read_le(canon, 4), canon
+            );
+        }
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }
@@ -1441,6 +1459,16 @@ mod tests {
     }
 }
 
+fn dbg_win() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SHARC_FAST_DEBUG_WIN").is_ok_and(|v| v == "1"))
+}
+
+fn ctx_clear() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SHARC_FAST_CTXCLEAR").is_ok_and(|v| v == "1"))
+}
+
 static SHAPE_LOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// `SHARC_FAST_LOG`: say why a call was declined as the wrong shape.
@@ -1595,6 +1623,17 @@ pub fn run_cfg(
         return Err(shape("call stack too deep"));
     }
     pmark!(pt, 1);
+    if ctx_clear() {
+        ctx.clear();
+        // The return target and loop counters set above are rewritten below.
+        if meta.has_rts {
+            let top = pc_stack_items(s).last().copied().unwrap_or(0);
+            ctx.set32(CTX_DYNPC, (top & 0xff_ffff) as u32);
+        }
+        for i in 0..n {
+            ctx.set32(CTX_LOOP_REM_IN + 4 * i as u32, s.loops.a[nloops - n + i].remaining as u32);
+        }
+    }
     let iters = rem_top.max(1);
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     // The lean contract (`lean`) applies while no window check is asked for.
@@ -1642,6 +1681,15 @@ pub fn run_cfg(
                 return Err(Decline::Window);
             };
             ctx.set64(win_ptr(w as u32), off);
+            if dbg_win() {
+                let host = off.wrapping_add(lo as u64) as *const u8;
+                let seen = unsafe { (host as *const u32).read_unaligned() };
+                let canon = s.mem.canonical_of(lo as u32);
+                eprintln!(
+                    "win {:#x} w{w} lo {:#x} hi {:#x} base {:?} -> host {:p} first word {:#x}, memory says {:#x} (canonical {:#x})",
+                    r.entry_pc, lo, hi, spec.base, host, seen, s.mem.read_le(canon, 4), canon
+                );
+            }
             super::dump::win(w as u32, off.wrapping_add(lo as u64) as *const u8, lo as u32, hi as u64);
             ctx.set32(CTX_WIN_DYN_LEN + 4 * w as u32, 0);
             continue;
@@ -1668,6 +1716,14 @@ pub fn run_cfg(
         }
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
         super::dump::win(w as u32, ptr, lo, hi);
+        if dbg_win() {
+            let seen = unsafe { (ptr as *const u32).read_unaligned() };
+            let canon = s.mem.canonical_of(lo);
+            eprintln!(
+                "win {:#x} w{w} lo {:#x} hi {:#x} base {:?} anchor {:?} -> host {:p} first word {:#x}, memory says {:#x} (canonical {:#x})",
+                r.entry_pc, lo, hi, spec.base, spec.dynamic_anchor, ptr, seen, s.mem.read_le(canon, 4), canon
+            );
+        }
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }

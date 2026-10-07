@@ -471,6 +471,10 @@ pub struct FastEngine {
     /// the stop instruction. Never dropped as unprofitable.
     follow: bool,
     follow_queue: Vec<u32>,
+    /// `SHARC_FAST_ONLY=pc,pc,..|@file`: only these PCs may become entries
+    /// at run time (`arm`, `add_entry`); `tools/fast_ddmin.py` shrinks a set
+    /// of regions that reproduces a divergence with it.
+    only: Option<std::collections::HashSet<u32>>,
     /// `SHARC_FAST_NOBACKOFF` turns the window-decline back-off off.
     win_backoff: bool,
     cap_chain: bool,
@@ -523,6 +527,7 @@ pub fn default_backend() -> Box<dyn KernelBackend> {
 
 impl FastEngine {
     pub fn new(backend: Box<dyn KernelBackend>, pcs: &[u32]) -> FastEngine {
+        dump::init();
         let mut list: Vec<u32> = pcs.to_vec();
         list.sort_unstable();
         list.dedup();
@@ -547,6 +552,15 @@ impl FastEngine {
             follow: std::env::var("SHARC_FAST_FOLLOW").is_ok_and(|v| v == "1"),
             follow_queue: Vec::new(),
             win_backoff: std::env::var_os("SHARC_FAST_NOBACKOFF").is_none(),
+            only: std::env::var("SHARC_FAST_ONLY").ok().map(|v| {
+                let text = match v.strip_prefix('@') {
+                    Some(path) => std::fs::read_to_string(path).unwrap_or_default(),
+                    None => v,
+                };
+                text.split(|c: char| c == ',' || c.is_whitespace())
+                    .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
+                    .collect()
+            }),
             // SHARC_FAST_CHAIN=0 keeps chaining (entries reached by a chain
             // are then missed).
             cap_chain: std::env::var("SHARC_FAST_CHAIN").map_or(true, |v| v != "0"),
@@ -976,8 +990,11 @@ fn mode1_bits(s: &St) -> u32 {
 impl FastEngine {
     /// Make PC an entry (kept for good: not auto-selected, so never dropped).
     fn add_entry(&mut self, pc: u32) {
-        if self.index(pc).is_some() {
+        if self.index(pc).is_some() || self.only.as_ref().is_some_and(|o| !o.contains(&pc)) {
             return;
+        }
+        if self.log {
+            eprintln!("fast: {pc:#x} followed");
         }
         self.lookup.insert(pc, self.pcs.len());
         self.pcs.push(pc);
@@ -989,7 +1006,7 @@ impl FastEngine {
 
     /// A counter reached the threshold: make the PC an entry.
     fn arm(&mut self, pc: u32) {
-        if self.index(pc).is_some() {
+        if self.index(pc).is_some() || self.only.as_ref().is_some_and(|o| !o.contains(&pc)) {
             return;
         }
         if self
@@ -1017,6 +1034,17 @@ impl FastEngine {
 
 impl Drop for FastEngine {
     fn drop(&mut self) {
+        #[cfg(feature = "fast-prof")]
+        if self.summary {
+            let (ticks, _) = glue::prof::take(0);
+            let f = glue::prof::freq() as f64;
+            let calls = self.stats.calls.max(1) as f64;
+            let mut line = format!("fast-prof: {} calls;", self.stats.calls);
+            for (n, t) in glue::prof::PHASES.iter().zip(&ticks) {
+                line += &format!(" {n} {:.1} ns;", *t as f64 / f * 1e9 / calls);
+            }
+            eprintln!("{line}");
+        }
         if dump::enabled() {
             let rows: Vec<(u32, u64, u64)> = self
                 .pcs

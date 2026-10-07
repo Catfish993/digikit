@@ -140,7 +140,7 @@ def timed_run(binary, scenario, seconds, env, label, out, timed, timeout):
     sc = fastcov.scenario_report(report, scenario)
     if sc is None:
         raise SystemExit(f"perf: run of {label} failed (exit {code}), see {errfile}")
-    return counts(sc)
+    return {**counts(sc), "report": str(report)}
 
 
 def diag_run(binary, scenario, seconds, env, label, out, timeout):
@@ -183,6 +183,33 @@ def rank(diag, funcs, costs: dict[str, float], audio: float):
     return out
 
 
+def cumulative(rows, key) -> str:
+    """Share of the total of KEY in the top 10 / 20 / 50 rows (sorted by KEY)."""
+    vals = sorted((r[key] for r in rows), reverse=True)
+    total = sum(vals) or 1
+    return (
+        ", ".join(f"top {n}: {100 * sum(vals[:n]) / total:.1f}%" for n in (10, 20, 50))
+        + f" (of {len(vals)} functions)"
+    )
+
+
+def region_rank(sc: dict, funcs) -> list[dict]:
+    """Wall time per function from a `--profile-regions` run (fast and AOT tiers)."""
+    rows: dict[int, dict] = collections.defaultdict(
+        lambda: {"name": "", "fast_ns": 0, "aot_ns": 0, "insns": 0, "calls": 0}
+    )
+    for r in (sc.get("region_profile") or {}).get("rows", []):
+        entry, name = funcs.of(r["entry_pc_u32"])
+        e = rows[entry]
+        e["name"] = name
+        e["fast_ns" if r["tier"] == "fast" else "aot_ns"] += r["wall_ns"]
+        e["insns"] += r["retired_instructions"]
+        e["calls"] += r["calls"]
+    out = [{"entry": k, **v, "ns": v["fast_ns"] + v["aot_ns"]} for k, v in rows.items()]
+    out.sort(key=lambda r: -r["ns"])
+    return out
+
+
 def report_config(label, t, ranking, costs, top) -> str:
     audio = t["audio"]
     ex = max(t["executed"], 1)
@@ -195,6 +222,8 @@ def report_config(label, t, ranking, costs, top) -> str:
         f"interpreter {100 * t['interp'] / ex:.2f}%; idle skipped {t['idle'] / audio / 1e6:.0f}M)",
         f"- region calls (engine round trips) per audio s: {t['call'] / audio / 1e6:.2f}M "
         f"({t['kernel'] / max(t['call'], 1):.1f} kernel insns per call)",
+        f"- call path (residual): {max(t['cpu_ns'] - t['interp'] * costs['interp'] - t['kernel'] * costs['kernel'] - t['aot'] * costs['aot'], 0) / max(t['call'], 1):.0f} ns per region call "
+        f"(CPU minus interpreted, kernel and AOT time, over all calls)",
         f"- model: {t['cpu_ns'] / 1e9 / audio:.3f} measured vs "
         f"{(t['interp'] * costs['interp'] + t['call'] * costs['call'] + t['kernel'] * costs['kernel'] + t['aot'] * costs['aot'] + t['audio'] * costs['audio']) / 1e9 / audio:.3f} "
         f"estimated CPU s per audio s (ns/insn interp {costs['interp']:.0f}, "
@@ -204,6 +233,17 @@ def report_config(label, t, ranking, costs, top) -> str:
         "|---|---:|---:|---:|---:|---:|",
     ]
     total = sum(r["ms_per_audio_s"] for r in ranking) or 1.0
+    if ranking:
+        lines.insert(
+            -2,
+            "- cumulative share of executed insns (interpreted + kernel): "
+            + cumulative([{**r, "x": r["interp"] + r["kernel"]} for r in ranking], "x"),
+        )
+        lines.insert(
+            -2,
+            "- cumulative share of the estimated cost: "
+            + cumulative(ranking, "ms_per_audio_s"),
+        )
     for r in ranking[:top]:
         lines.append(
             f"| {r['entry']:#x} {r['name']} | {r['interp'] / audio / 1e6:.2f}M | {r['calls'] / audio / 1e6:.3f}M "
@@ -237,6 +277,32 @@ def calibrate(binary, scenario, seconds, out, timeout, image) -> None:
     print("estimate / measured per run:", [round(x, 2) for x in resid])
 
 
+def use_dt2(args) -> None:
+    """Point the coupled-run arguments at the DT2 inputs (a card's ready state)."""
+    import digi_env
+
+    syx = digi_env.firmware_for("dt2")
+    base = digi_env.READY_DIRS["dt2"]
+    ready = pathlib.Path(args.ready) if args.ready else base
+    inputs = {
+        "firmware": syx,
+        "DSP image": base / "digi-audio-dn2-image.bin",
+        "DSP state": ready / "digi-audio-m5.snap.dsp",
+        "CF snapshot": ready / "digi-audio-m5.snap",
+    }
+    extra = ["--scenarios", str(ROOT / "native/coupled/scenarios-dt2.json")]
+    if args.card_image:
+        extra += ["--card-image", args.card_image]
+    coupled.inputs = lambda: inputs
+    original = coupled.run_args
+    coupled.run_args = lambda binary, ins, ex: original(binary, ins, [*extra, *ex])
+    if args.scenario == "trig1-taps":
+        args.scenario = "dt2-sample-trig"
+    if args.image == "dn2-1.11":
+        args.image = "dt2-1.16"
+    fastcov.STATIC_IMAGE = args.image
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--scenario", default="trig1-taps")
@@ -254,6 +320,21 @@ def main() -> int:
     ap.add_argument("--gen", choices=["shared", "prod"], default="shared")
     ap.add_argument(
         "--refresh-core", action="store_true", help="regenerate the shared core first"
+    )
+    ap.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    ap.add_argument(
+        "--card-image",
+        default=None,
+        help="DT2 card image (see tools/dt2_sample_check.py)",
+    )
+    ap.add_argument(
+        "--ready", default=None, help="DT2 ready dir holding the .snap and .snap.dsp"
+    )
+    ap.add_argument(
+        "--regions",
+        action="store_true",
+        help="per-function wall time of the fast and AOT tiers (needs a build with "
+        "DIGI_COUPLED_FEATURES=coupled-audio,region-profile)",
     )
     ap.add_argument("--no-build", action="store_true")
     ap.add_argument("--timeout", type=float, default=2400)
@@ -273,6 +354,13 @@ def main() -> int:
                 cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
             )  # fmt: skip
         os.environ["SHARC_GEN_DIR"] = str(core)
+    if args.device == "dt2":
+        use_dt2(args)
+    if args.regions:
+        wrapped = coupled.run_args
+        coupled.run_args = lambda binary, ins, ex: wrapped(
+            binary, ins, [*ex, "--profile-regions"]
+        )
     binary = coupled.ensure_binary(args.no_build)
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
     out = pathlib.Path(args.out) if args.out else OUT / stamp
@@ -303,6 +391,21 @@ def main() -> int:
             args.timeout,
         )
         ranking = []
+        if args.regions:
+            sc = fastcov.scenario_report(pathlib.Path(t["report"]), args.scenario)
+            rr = region_rank(sc, funcs)
+            tot = sum(r["ns"] for r in rr) or 1
+            md.append(f"### region profile (fast + AOT wall time) for {label}\n")
+            md.append("cumulative share of that time: " + cumulative(rr, "ns") + "\n")
+            md.append(
+                "| function | fast ms/audio s | AOT ms/audio s | insns/s | calls/s | share |\n|---|---:|---:|---:|---:|---:|"
+            )
+            for r in rr[: args.top]:
+                md.append(
+                    f"| {r['entry']:#x} {r['name']} | {r['fast_ns'] / 1e6 / t['audio']:.0f} | {r['aot_ns'] / 1e6 / t['audio']:.0f} "
+                    f"| {r['insns'] / t['audio'] / 1e6:.1f}M | {r['calls'] / t['audio'] / 1e6:.3f}M | {100 * r['ns'] / tot:.1f}% |"
+                )
+            md.append("")
         if not args.no_diag:
             diag = diag_run(
                 binary, args.scenario, args.seconds, env, label, out, args.timeout
