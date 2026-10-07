@@ -21,7 +21,9 @@ least squares (out/native/perf/calibration.json). Runs are unlocked unless
     mise run perf -- --config static-blocks+follow --seconds 1.5
 
 Configurations are those of tools/fastcov.py (`default`, `static-blocks`,
-`static-blocks+follow`, `fast-auto:256,64`, ...). The firmware comes from
+`static-blocks+follow`, `fast-auto:256,64`, ...) and `hybrid-top:N`: the default
+config (AOT on) plus fast regions armed only at the static block starts of the
+top N functions of the cost ranking (a fast-only diagnostic run, cached). The firmware comes from
 DIGI_EMU_SYX like fastcov. Each run writes out/native/perf/<stamp>/report.md
 and report.json.
 """
@@ -252,6 +254,57 @@ def report_config(label, t, ranking, costs, top) -> str:
     return "\n".join(lines) + "\n"
 
 
+def hybrid_entries(funcs, entries: list[int], image: str) -> list[int]:
+    """Every static basic-block start (and the entry) inside the given functions."""
+    db = funcs.db
+    if db is None:
+        raise SystemExit(f"perf: hybrid-top needs out/sharcdb/{image}.sqlite")
+    pcs: set[int] = set()
+    for entry in entries:
+        row = db.execute(
+            "SELECT end_sw FROM functions WHERE image=? AND entry_sw=?", (image, entry)
+        ).fetchone()
+        end = row[0] if row else entry + 1
+        pcs.add(entry)
+        for (pc,) in db.execute(
+            "SELECT start_sw FROM bblocks WHERE image=? AND start_sw>=? AND start_sw<?",
+            (image, entry, end),
+        ):
+            pcs.add(pc)
+    return sorted(pcs)
+
+
+def top_functions(binary, scenario, seconds, out, timeout, image, funcs, costs, n):
+    """Entries of the N costliest functions: from a fast-only diagnostic run.
+
+    The ranking (static-insns+follow, generated lowering, AOT off) is cached in
+    out/native/perf/ranking-<image>-<seconds>.json and reused by later runs.
+    """
+    cache = OUT / f"ranking-{image}-{seconds}.json"
+    if cache.is_file():
+        ranking = json.loads(cache.read_text())
+    else:
+        _, env = fastcov.parse_config("static-insns+follow")
+        diag = diag_run(binary, scenario, seconds, env, "ranking", out, timeout)
+        ranking = rank(diag, funcs, costs, max(seconds, 1e-9))
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(ranking))
+    return [r["entry"] for r in ranking[:n]]
+
+
+def hybrid_config(spec, binary, scenario, seconds, out, timeout, image, funcs, costs):
+    """`hybrid-top:N`: the default config (AOT on) plus fast regions armed only at
+    the static block starts of the top N functions by the cost ranking, with the
+    generated lowering and helpers (the defaults) on."""
+    n = int(spec.partition(":")[2])
+    top = top_functions(binary, scenario, seconds, out, timeout, image, funcs, costs, n)
+    pcs = hybrid_entries(funcs, top, image)
+    path = out / f"hybrid-top{n}-entries.txt"
+    path.write_text(",".join(f"{pc:#x}" for pc in pcs))
+    print(f"  {spec}: {len(top)} functions, {len(pcs)} entries")
+    return spec, {"SHARC_FAST_REGIONS": f"@{path}"}
+
+
 def calibrate(binary, scenario, seconds, out, timeout, image) -> None:
     samples = []
     for spec in CALIBRATION_CONFIGS:
@@ -315,6 +368,12 @@ def main() -> int:
     ap.add_argument(
         "--no-diag", action="store_true", help="skip the per-function ranking run"
     )
+    ap.add_argument(
+        "--rank-seconds",
+        type=float,
+        default=3.0,
+        help="length of the run that ranks functions for hybrid-top:N",
+    )
     ap.add_argument("--top", type=int, default=15)
     ap.add_argument("--image", default="dn2-1.11")
     ap.add_argument("--gen", choices=["shared", "prod"], default="shared")
@@ -371,8 +430,14 @@ def main() -> int:
     costs = load_costs()
     funcs = fastcov.Functions(args.image)
     configs = [
-        fastcov.parse_config(c) for c in (args.config or ["static-blocks+follow"])
-    ]
+        hybrid_config(
+            c, binary, args.scenario, args.rank_seconds, out, args.timeout,
+            args.image, funcs, costs,
+        )
+        if c.startswith("hybrid-top:")
+        else fastcov.parse_config(c)
+        for c in (args.config or ["static-blocks+follow"])
+    ]  # fmt: skip
     md = [
         f"# DSP performance, {args.scenario}, {args.seconds} s, {'timed (locked)' if args.timed else 'unlocked'}",
         f"firmware {os.environ.get('DIGI_EMU_SYX', 'default')}, {stamp}",
