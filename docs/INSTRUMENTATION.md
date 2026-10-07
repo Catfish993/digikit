@@ -97,4 +97,3 @@ Read at start-up; defaults are what `tools/digi_env.py` and the shipped
 | `DIGI_DSP_PERIOD`, `DIGI_DSP_RX_PHASE` | DSP scheduling in the coupled run |
 | `DIGI_EMU_FAST=0` | tools/digi_env.py: no fast regions |
 | `SHARC_FAST_FLAT`, `SHARC_FAST_LEAN`, `SHARC_FAST_SHAPE=cfg`, `SHARC_FAST_CHAIN=0` | opt-in or legacy variants **[O]** likely obsolete: flat access gave no coverage gain (findings 18); check before use |
-| `SHARC_JIT_*` | `native/sharc-jit`, a separate experiment, not used by coupled-run **[O]** |

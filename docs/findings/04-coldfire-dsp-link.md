@@ -235,7 +235,7 @@ Ghidra or disassembly output and it was not re-checked.
     `FUN_4014653c`, `FUN_401465a4`) carries sample pages and slot headers
     (address, length, loop point). Only `FUN_400cf4a8`, `FUN_400cf534` and
     the boot routine `FUN_400cf67c` access `0x8C000000`-`0x8C00000F`. This
-    agrees with `docs/REMAINING.md` B.6.
+    agrees with `docs/archive/REMAINING.md` B.6.
     > **Corrected 2026-09-28 [C][V].** Right in substance, with 1.15C
     > addresses. On 1.16: `FUN_400cd638` (was `0x400cfd40`), `FUN_40153734`
     > (was `0x40146148`), `FUN_400ccda0`/`FUN_400cce2c` (were

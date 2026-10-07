@@ -9,7 +9,7 @@
 //! mismatches such as the known vector-207 timer discrepancy. Without that
 //! flag the normal full-trace verdict remains unchanged.
 //!
-//! Method (see `docs/plan-native-emulator.md` P4, and `machine.rs`'s module
+//! Method (see `docs/plans/native-emulator.md` P4, and `machine.rs`'s module
 //! docs for the interface this drives):
 //!
 //! * The window's `MARK "setup"` record gives the exact PIT/DTIM channel

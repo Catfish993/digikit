@@ -41,10 +41,10 @@ mise run scenario:replay FILE           # a desktop "Export diagnostics" file
 mise run scenario:bisect NAME           # which DSP tier changes the PCM
 ```
 
-The runs need the private ready inputs (`mise run ready -- dn2|dt2`). Pins are
+The runs need the private ready inputs (`mise run emu:ready -- dn2|dt2`). Pins are
 only valid for the firmware and ready snapshot they were recorded with.
 
 ## Output
 
-`out/native/runs/<UTC time>/report.json` (or `--out`), plus `pcm.wav` with
+`out/runs/<scenario>/<UTC stamp>/report.json` (or `--out`), plus `audio.wav` with
 `--wav`. The report lists, per scenario, the PCM hash, RMS windows and gates.

@@ -4,7 +4,7 @@ Reverse engineering of the Elektron Digitakt II firmware: a ColdFire MCF5441x
 main CPU and a SHARC+ DSP. Targets are Digitakt II OS 1.16 and Digitone II
 OS 1.11; the device runs 1.16. Setup is in README.md, results
 in docs/findings/ (one file per topic, indexed from docs/FINDINGS.md), and
-current state and next steps in the newest `HANDOVER-*.md` in the repo root.
+current state and next steps in the newest `HANDOVER-*.md` in `docs/handovers/`.
 
 ## Rules
 

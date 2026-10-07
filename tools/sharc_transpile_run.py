@@ -50,7 +50,7 @@ import sharc_trace as st  # noqa: E402
 from sharcldr import LoadedMemory  # noqa: E402
 
 # The optimised build (native-opt): regenerate it after any sharc_core change,
-# or it runs the old semantics (see docs/plan-native-emulator.md).
+# or it runs the old semantics (see docs/plans/native-emulator.md).
 DEFAULT_LIB = os.environ.get(
     "SHARC_NATIVE_LIB",
     os.path.join(

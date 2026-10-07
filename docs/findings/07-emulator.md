@@ -725,7 +725,7 @@ Marks: **[V]** verified in this session, **[C]** corrects an earlier claim,
 ### The scheduler never worked, and one line explains it **[V][C]**
 
 Every run before this one scheduled exactly **one task**. The stated ceiling in
-`docs/NEXT.md` -- "1 new task per ~250M instructions, and the gaps are
+`docs/archive/NEXT.md` -- "1 new task per ~250M instructions, and the gaps are
 widening" -- was not a property of the firmware. It was this bug.
 
 `harness.raise_vector` pushed the *current* PC into the exception frame. The
@@ -6758,3 +6758,63 @@ regeneration and PGO retrain.
   different PGO profile forced a 7 min rebuild of the generated core at the
   next launch. Experiments must use their own target dirs.
 - **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and scenarios/dn2.json.
+
+## Folded from the lane notebooks and early handovers (2026-10-08)
+
+Sources: the lane notebooks (`docs/notes/`, removed) and `docs/archive/HANDOVER.md`.
+Nothing here was re-checked by a second agent, so the lane results are **[D]**.
+
+### ColdFire CPU cost and the DSP-port poll fast path **[D]**
+
+- `cf-profile` (boot `src/cfprof.rs`, RPC `cf.profile`) gives CPU per path and a PC
+  histogram. DT2 main screen with a card: 95.3% of instructions are skipped by the idle
+  skip, which costs 1.3% of CF CPU (0.09-0.10 CPU s per emulated s). DN2 `trig1-taps`:
+  38.1% skipped, CF CPU 0.72-0.80 s per audio s; the rest is real work, 62% of
+  instructions in the SSI audio block path (`vector_191_handler`).
+- DT2 polls the FlexBus port STATUS (0x8C000002) about 9 times per word it writes to
+  0x8C00000A. Each access bumped `mmio_epoch`, so `run_fast` returned 3.86M times in 10 s.
+  Not bumping it for that port (`periph::dsp::Fifo` keeps a poll counter and an echo
+  register) drops this to 0.14M. Digests and PCM are unchanged. DT2 0.099 -> 0.088 and
+  DN2 0.750 -> 0.744 CPU s per emulated s; wasm (CF-only, Node) DT2 0.339 -> 0.279.
+- The ColdFire core is our own interpreter (`native/coldfire`). Fused loops
+  (`native/coldfire/src/fused.rs`: MacA 0x400db160, MacB 0x400db1f4, word copy
+  0x401344a6, interleave 0x400cf918) took 2.2 of 8.2 CF CPU s on `trig1-taps`; the other
+  5.1 s is 393M unfused instructions at 13 ns. Writing out the MacA and MacB bodies took
+  MacA from 6.0 to 2.4 ns/insn. `native/coldfire/tests/fused.rs` compares fused against
+  stepping. CF CPU per audio s on `trig1-taps`: 0.617 -> 0.521. **[O]** The next lever is
+  interpreter speed (a decode-cache copy of the 40-byte `Insn`, per-instruction bus
+  bookkeeping in `run_fast`), not more leaf routines.
+
+### Browser host skeleton (parked on branch `wip/browser-host`) **[D]**
+
+- Coupled DN2 in Node/V8: one wasm instance without the fast tier takes 140 s wall per
+  audio s (97% DSP interpreter); with the fast tier 42 s. Two instances over a
+  SharedArrayBuffer: DSP worker 38.9 s, ColdFire worker 1.29 s per audio s, PCM identical.
+  The ready-state cache (IndexedDB, gzip) stores 77.5 MB as 3.2 MB (save 259 ms, restore
+  86 ms). The CF-only wasm core costs 3.4x native on DT2; ready from cold takes 9 s (DT2)
+  and 7.9 s (DN2).
+- A fast-tier halt at 0xb88ea8 with early arming (`--fast T,0,1`) was a circular tail-write
+  bug in the lowering (finding 18); it is fixed.
+
+### Early storage and eSDHC notes (1.15C addresses) **[D]**
+
+From the first handover (DT2 1.15C; the addresses were not re-checked on 1.16):
+
+- The SD/MMC controller is the eSDHC at 0xFC0CC000 (the NAND controller at 0xFC0FC000 is
+  never referenced). The card is an eMMC. Its interrupt is vector 222 (INTC2 source 30,
+  ICR 5); vector 223 is an unconfigured shared stub.
+- Driver: the command primitive 0x4011fe10 blocks in `sem_pend` on 0x44e26f38, which the
+  firmware never posts (the ISR does on hardware). CMD18 and CMD25 are at 0x401208fe and
+  0x40120ae4, card init is 0x4011fed6 (called from 0x400cf218). Data moves through eDMA
+  (`SADDR = DATPORT`), not the eSDHC DMA.
+- Card init runs only if the gate at 0x4011fe60 returns 0. The gate is a GPIO continuity
+  check: `PPDSDR_C` bit 3 must follow `PPDSDR_D` bit 4 for ten rounds, and success is the
+  loop running out. `SYSCTL` self-clearing bits (INITA, RSTA, RSTC, RSTD) must clear on
+  read, because a Unicorn write hook runs before the store lands. EXT_CSD lands at
+  0x4fe49100; the SLC flag at 0x4fe49198 is EXT_CSD byte 152 (offset established, JEDEC
+  field identity not).
+- Method traps that cost time: an A/B is valid only if both sides execute the same work;
+  register reads inside a mid-function code hook lag, so hook function entries and trust
+  visited addresses; `uc.mem_write` does not fire write hooks; call `emu_stop()` only from
+  a hook that advanced PC; a resumed run needs the same hook set; a branch that contradicts
+  the memory it tested is our bug, not the firmware's.

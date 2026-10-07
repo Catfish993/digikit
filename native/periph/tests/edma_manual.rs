@@ -61,7 +61,7 @@ fn signed_sign_extends() {
     assert_eq!(edma::signed(1, 32), 1);
 }
 
-/// Programs TCD35 exactly as `docs/plan-native-emulator.md`'s cited layout
+/// Programs TCD35 exactly as `docs/plans/native-emulator.md`'s cited layout
 /// for the console UART8 TX ring (`emu/edma.py`'s module docstring):
 /// `SADDR=ring`, `ATTR=0x6000` (SMOD 12), `NBYTES=1`, `DADDR=UDR8`, `DOFF=0`.
 fn program_uart8_tx(regs: &mut RegFile, chan: usize, ring: u32, citer: u16) {

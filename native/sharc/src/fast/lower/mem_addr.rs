@@ -77,7 +77,7 @@ pub(super) fn guarded_xfers() -> bool {
 /// and no anchor register (a pointer loaded from memory): the kernel reads
 /// the engine's page table itself and guards every access. Off unless
 /// `SHARC_FAST_FLAT` is set: PCM-exact, but the kernels are large (compile
-/// time) and the DN2 hot loops still stop elsewhere (docs/notes/laneB.md).
+/// time) and the DN2 hot loops still stop elsewhere (docs/findings/18-dsp-performance.md).
 pub(super) fn flat_xfers() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("SHARC_FAST_FLAT").is_some())

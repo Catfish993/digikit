@@ -255,9 +255,30 @@ samples unchanged.
 DSP start state (`digi-audio-loop2-fresh.bin`) had the DC-blocker coefficient
 DM `0x24f378` (c22 of the record at `0x24f320`, read by `0xb809f2`) corrupted:
 the pre-ed02999 SIMD Type 17 bug left the S2 lane at -0.0 instead of -a/16.
-The reference is now `mise run ready-dn2` (tools/ready_dn2.py: CF cold boot
+The reference is now `mise run emu:ready -- dn2` (tools/ready.py: CF cold boot
 plus a DSP cold-start state from the .syx alone). New pins: exactness-100m
 `b3f5230f..`, trig1-taps `d60ad339..`, trig1-tap-release `88347621..`,
 trig1-noqa-40m `2861ce03..`, CF digest `55dc699e..`, DSP export `4dc48019..`
 (`scenarios/dn2.json`, `coupled_ready_exactness`). The retrigger
 scans of this finding were made on the old state and are not repeated **[O]**.
+
+### Why the old and the cold start state differ **[D]**
+
+Folded from a lane notebook. The DSP start state can be built from the `.syx` alone:
+`tools/sharc_cold_state.py` writes a cold state, `native/boot/examples/dsp_cold.rs` runs it
+without ColdFire to the idle range (about 563.75M instructions, 61 s), and `tools/ready.py`
+attaches it to the ColdFire cold boot.
+
+- The packed image from `tools/sharc_pack_image.py` equals the snapshot image byte for byte.
+- The only state difference that changes the audio is DM 0x24f378 (c22 of a first-order DC
+  blocker, read by 0xb809f2): cold 0xbd7fd522 (-a/16, a = 1/(1+2*pi*5/48000) = 0.99935),
+  old state 0x80000000 (-0.0). The init at 0xb80b4b computes -a with two divisions through
+  `recips` (0x1c06ba), and a SIMD multiply by 0.0625 stores the pair, so the S2 lane gets
+  -a/16. The old state predates the engine's complementary-register handling for SIMD
+  loads (ed02999), so its DC blocker passed DC. The cold value is the mathematically right
+  one. The cold-state tap has peak 0.0562 against 0.6930 and is a clean 261.5 Hz sine.
+- DT2 1.16 has the same reader (0x1cc204), but the 5 Hz init is DN2-specific.
+- Approximate `recips` and `rsqrts` seeds (the seed ROM is in no public manual) do not
+  change the quotient beyond 1 ulp. With them off, the engine stops at 0x1c0743 (unknown
+  SIMD predicate): a modelling stop, not a firmware path.
+- **[O]** The absolute DN2 level on hardware is not confirmed; no hardware capture exists.

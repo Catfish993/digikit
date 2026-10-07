@@ -1,9 +1,9 @@
 # 18. DSP performance: measurement, cost model, state at freeze
 
 Branch `work/sharc-emulator` at 911b1fc (performance work frozen for cleanup and
-merge). Sources: lane notebooks `docs/notes/laneB.md` (fast tier, perf tool, call
-path, helpers, chaining) and `docs/notes/laneF.md` (generated lowering, AOT
-profile, class (e)). Marks as in CLAUDE.md: **[V]** measured here at 911b1fc,
+merge). Sources: the lane notebooks for the fast tier, perf tool, call path,
+helpers, chaining, generated lowering, AOT profile and class (e); they are folded
+into this file and removed. Marks as in CLAUDE.md: **[V]** measured here at 911b1fc,
 **[D]** measured earlier on a lane base commit (cited), **[O]** open or predicted.
 Scenario for every number: DN2 1.11, `trig1-taps` (10.5 audio s; 502M executed
 SHARC insns per audio s, another 498M idle-skipped, free).
@@ -149,3 +149,62 @@ Browser (no AOT possible without firmware; fast tier only):
    Confidence medium, effort moderate.
 3. Chaining (3 above) in the wasm backend: imported calls are 2.7 ns, so kernel to
    kernel jumps in one module look cheaper than native; confidence low-medium.
+
+## Generated lowering: design and how to add a family **[D]**
+
+Folded from the lane F notebooks (not re-checked by a second agent).
+
+Design. `tools/sharc_lowergen.py` runs the real `tools/sharc_core/forms` handlers over a
+tracing state: decoded fields and lowering context (MODE1, `assume_nw32`) are static
+symbols, a test on one forks the trace, register contents and memory words are dynamic
+nodes, and a data-dependent branch refuses. `tools/sharc_lowergen_rs.py` value-numbers the
+leaf programs and folds the decision tree into `native/sharc/src/fast/lower/gen_forms.rs`
+(one method per form over the primitives of `gen_prims.rs`, hand-written once). Never edit
+`gen_forms.rs` by hand. Control transfers (calls, returns, loops, delayed branches) stay in
+`cfg.rs`/`flow.rs` because the tracer never runs `_advance`. Flags stay lazy and are
+replayed at exit. MODE1 is static per program point. Compute bodies still come from the
+hand-written `compute_full`/`compute_short`/`shiftimm`. 27 forms are generated.
+
+Add a family:
+- Trace and print a form: `uv run python tools/sharc_lowergen_survey.py FORM...` (no args:
+  all forms). One leaf: `tools/sharc_lowergen_leaf.py FORM field=value ...`.
+- A new intrinsic is an `i_*` function plus a `PATCHES` entry in `tools/sharc_lowergen.py`,
+  a case in `tools/sharc_lowergen_rs.py`, and a `g_*` primitive in `gen_prims.rs`.
+- Regenerate with `mise run gen:regen -- --add FORM,...`. Add the form to
+  `tools/sharc_lowergen_vectors.py` (steer the random fields into the accepted region) and,
+  for sequences, to `tools/sharc_lowergen_programs.py`.
+- Check: `cargo test --lib gen_` in `native/sharc` (with `SHARC_GEN_DIR` set; about 75 s),
+  `tests/test_sharc_lowergen.py` (fails when `gen_forms.rs` is stale), and
+  `tools/sharc_lowergen_bisect.sh` for PCM and coverage with a form subset.
+
+Results **[D]** (DN2 1.11, `trig1-taps`, 1.5 s, `static-insns+follow`, PCM
+`3bf3ba3026953c22` throughout): hand forms 89.5% fast; generated forms 92.5%; control forms
+(calls, returns, indirect jumps, IDLE) 93.0% with interpreted instructions -7%; MODIFY with
+circular wrap (7a, 7b, 19a_scaled), MODE1 from a register and L/B writes 93.0% with
+52.9M interpreted instructions (7.0%). What is left interpreted: compute bodies (about
+21%), 20a PUSH/POP and conditional or call forms of 9a/9b (small), window-analysis refusals
+(14%), system registers with machine state (ASTATX, PCSTK, LCNTR, IRPTL; they sit in the cold
+context-save function `FUN_1c02a4`), and 7d (ACONV, depends on the address map).
+
+Semantics worth knowing **[D]**: `_type_7a` wraps only on the cond 0x17 path, so an
+unconditional MODIFY is a plain sum; 7b and 19a_scaled wrap when L != 0 whatever
+MODE1.CBUFEN says. A post-modify is exactly `candidate >= B+L ? -L : candidate < B ? +L`
+in unsigned 32 bits and needs no `|delta| <= L`. A return's last slot (`I7 = I6; I6 =
+DM(I6 + 0)`) is a tail write.
+
+Bug found with `tools/fast_ddmin.py` **[D]**: the halt at 0xb88ea8 (`fork`). `fast_ddmin`
+(with the `SHARC_FAST_ONLY` entry allow-list) shrank 2153 armed entries to three regions
+(0xb85a02, 0xb85a19, 0xb85a1f). The epilogue loads `DM(I6-3)`, `DM(I6-2)` and `DM(I6)` read
+through an absolute window, because I6 had been given its circular buffer's range without a
+`Req::Within`: the only write of I6 was the RFRAME `I6 = DM(I6)` in a RETURN delay slot, and
+`commit` skipped the in-buffer check for tail writes. A tail write of a circular register is
+never "inside", so the register is now marked plain. Debug variables from the same lane:
+`SHARC_TRAP_REGS`, `SHARC_PCDUMP_MEM`, `SHARC_FAST_DEBUG_REQ=0xPC`, `SHARC_FAST_DEBUG_WIN`,
+`SHARC_FAST_DUMP_ALL`.
+
+AOT cost profile **[D]** (default config, 1.41 DSP CPU per audio s, sampled with
+`xctrace`): AOT is 70% of the DSP thread, Cranelift kernels 24%. Inside AOT, V/Option/Result
+plumbing is 27%, memory access 14%, uncategorised moves 11%; real arithmetic is under 10%.
+This is the basis of the mask-free emission estimate above.
+
+DT2 AOT and the DT2 render are in finding 15.

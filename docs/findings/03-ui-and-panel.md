@@ -197,7 +197,7 @@ five machine patches; instruction counts start at 0 there.
 - Why the main loop cannot keep up: each popped item costs about 171k
   instructions on average, against a DTIM3 period of about 156k. Not yet
   known whether this is real UI work made too expensive by the 4.68M
-  instructions-per-second timer rate (`docs/HANDOVER.md`, lines 31-58,
+  instructions-per-second timer rate (`docs/archive/HANDOVER.md`, lines 31-58,
   puts the real rate about 50 times higher), or an emulator artifact such
   as a busy wait or a slow peripheral model. **[O]**
 - `--ips` above 4.68M, applied from `boot400M.snap`, stalls boot: still on
@@ -354,7 +354,7 @@ charges instructions to RTOS tasks at each context switch.
 - The firmware has no CPU-speed calibration or counted delay loop that
   was found: its timed waits use DTIM1 or the PITs. No MCF5441x BogoMIPS
   boot log was found online. The real instruction rate is estimated at
-  200-264M instructions per second, from docs/HANDOVER.md lines 31-58 and
+  200-264M instructions per second, from docs/archive/HANDOVER.md lines 31-58 and
   separately from the Dhrystone figure; `INSTR_PER_SEC` is 4.68M. **[D]**
 
 ## The rate rises automatically after the intro; where wall time goes **[V][O]**
@@ -471,3 +471,16 @@ path, because two modal windows sat on top of the view stack.
   NO@1000000 --press NO@2000000` does this with real panel input (button
   names from `panelin.control_names`).
 
+
+## Encoder rotation in the native boot harness (2026-10-07) **[D]**
+
+Panel encoder rotation reaches the 1.16 firmware through the UART8 ring (header
+`0x30|(enc-1)`, then a signed byte), as in `emu/panelin.py`. While the boot modal "FILE
+SYSTEM OK / PRESS Y/N TO CLOSE" is up, rotation does nothing; after NO, rotation changes the
+OLED on the FLTR, AMP, FX and MOD pages. The display lags a page change: the first turn
+afterwards can show 0 changed pixels until the page animation ends. Dead-looking encoders
+in the desktop app were therefore the modal, or (before the DSPI1 fix in finding 14) the
+SRC-page hang. `native/boot/examples/turn_probe.rs` boots, taps buttons, turns encoders and
+reports OLED pixel changes (`CARD=img`; `b:CODE` tap, `d:ENC:DET:COUNT:GAP` drag,
+`c:HOLD:TAP` chord, `w:M` wait). The web faceplate knob drag was checked in Chromium only;
+WebKit was not tested **[O]**.

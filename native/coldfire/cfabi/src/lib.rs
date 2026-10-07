@@ -3,7 +3,7 @@
 //! one-shot read-override table. Peripheral (MMIO) reads are not modelled
 //! here; the harness replays the value Unicorn's own read of that address
 //! returned (`cf_set_override`), consumed by the next read at that exact
-//! address, so only the CPU core is under test (see docs/plan-native-emulator.md
+//! address, so only the CPU core is under test (see docs/plans/native-emulator.md
 //! P3 stage 2, "Peripheral accesses").
 //!
 //! A separate crate (not a module of `coldfire` itself) so the pure,

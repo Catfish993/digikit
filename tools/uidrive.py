@@ -10,7 +10,7 @@ are libstdc++ COW string reps ("PLACEHOLDER" / "PLHD"), reached by
 redirecting `FUN_400caf48`. What is NOT yet shown is that the running UI ever
 reads any of it: `FUN_4005e022` (`MachineListView`) does not fire on an idle
 post-intro run, and screen-based identification is documented as unreliable
-on this build (see `docs/HANDOVER-2026-09-13.md`).
+on this build (see `docs/handovers/HANDOVER-2026-09-13.md`).
 
 This tool reuses `tools/machinepatch.py`'s `patch_b()` verbatim (imported,
 not duplicated) to install the patch on a resumed snapshot, then installs

@@ -1,6 +1,6 @@
 # P5 design: native/machine (ColdFire + periph + SHARC + live audio)
 
-Base: `5396f9a`. Sources read: `docs/plan-native-emulator.md`, `native/coldfire/src/{lib,cpu}.rs`
+Base: `5396f9a`. Sources read: `docs/plans/native-emulator.md`, `native/coldfire/src/{lib,cpu}.rs`
 (Bus trait, `Cpu::step`), `native/periph/src/{lib,machine,dspi,ssi,spilink,dsp}.rs` (signatures),
 `scratchpad/p4a-periph-timers.md`, `p4b-periph-dma.md`, `native/sharc/src/frames.rs`,
 `native/live/src/{lib,sharc_source,producer,repeater,source}.rs` (signatures),

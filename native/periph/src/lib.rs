@@ -1,5 +1,5 @@
 //! MCF5441x timer and interrupt-controller peripherals (plan
-//! `docs/plan-native-emulator.md`, P4 "timers + INTC" lane).
+//! `docs/plans/native-emulator.md`, P4 "timers + INTC" lane).
 //!
 //! Pure: no I/O, no threads, std only in the default build, so the models
 //! (everything except the `trace` feature) build for wasm32. `machine::Timers`

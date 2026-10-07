@@ -1,14 +1,56 @@
 # Native crates
 
-One cargo workspace (root `Cargo.toml`, one `Cargo.lock`, profiles defined at
-the root) holds the crates that build together: `sharc-rt`, `sharc-gen`,
-`sharc`, `sharc-fast-cl`, `sharc-fast-wasm`, `boot` and its path dependencies (`coldfire`,
-`coldfire/cfabi`, `periph`, `card`, `machine`, `loader`, `plusdrive`,
-`device-profile`), `live`, `host`, `coupled` (the run loop shared by the app and the
-headless runner) and `packages/desktop/src-tauri`.
+The Rust side of the emulator: a ColdFire core, board and peripheral models, the
+SHARC+ DSP engine, the coupled run loop, and the desktop and browser hosts.
 
-Left out: `.claude/` (agent
-worktrees live inside the tree and must not become members). A crate is never
+## Build and run
+
+Use mise (`mise tasks` lists every task). Cargo needs the generated SHARC+ core;
+the tools set `SHARC_GEN_DIR` and the target dir for you (see "Target dirs").
+
+```
+mise run emu:build         # build the desktop emulator
+mise run emu               # build and run it (DN2 audio when the ready inputs exist)
+mise run scenario:build    # build the headless runner coupled-run
+mise run scenarios         # run every DN2 scenario against its pinned PCM hash
+mise run test:quick        # fast checks; mise run test runs cargo test --workspace too
+uv run python tools/rust_ws.py check    # cargo check --workspace --all-targets
+mise run web:wasm          # browser cores
+```
+
+The ready inputs come from `mise run emu:ready -- dn2|dt2` (see the top README).
+
+## Crate map
+
+One cargo workspace (root `Cargo.toml`, one `Cargo.lock`, profiles defined at the
+root). The directory name is not always the package name; use the package name with
+`cargo -p`.
+
+| directory | package | role |
+|---|---|---|
+| `native/coldfire` | `coldfire` | ColdFire V4e core (ISA_C, EMAC); decoder generated from `tools/cfisa/coldfire.json`. Pure, builds for wasm32. |
+| `native/coldfire/cfabi` | `cfabi` | C ABI over `coldfire::Cpu` for `tools/cf_lockstep.py` (lockstep against Unicorn). Desktop only. |
+| `native/periph` | `periph` | MCF5441x timer, interrupt controller, eDMA, DSPI and SSI models. |
+| `native/card` | `emmc-card` | Minimal eMMC card identity and media model (sparse write overlay). |
+| `native/machine` | `machine` | The board seam: guest RAM, MMIO, eMMC DMA, timers. |
+| `native/loader` | `dt2-firmware-loader` | Decoder for the `.syx` container (ELE3 sections, no I/O). |
+| `native/device-profile` | `device-profile` | Hash-bound device and firmware identities, embedded from `devices/*.toml`. |
+| `native/plusdrive` | `plusdrive-format` | +Drive image format encoders; the `plusdrive` CLI. |
+| `native/boot` | `elektron-native-boot` | Bounded cold boot, the ColdFire runtime, the DSP peer (`sharc_peer`), DSP patches, and the examples (`card_boot`, `dsp_cold`, `sharc_live`, `turn_probe`). Also the wasm ABI. |
+| `native/sharc-rt` | `sharc-rt` | Runtime under the generated core: state, memory, decoder, instruction table. |
+| `native/sharc-gen` | `sharc-gen` | The generated SHARC+ core (from `SHARC_GEN_DIR`), compiled apart from the engine. |
+| `native/sharc` | `sharc-native` | The DSP engine: interpreter, AOT block dispatch and the fast tier (`src/fast/`). |
+| `native/sharc-fast-cl` | `sharc-fast-cl` | Cranelift backend for the fast-tier kernel IR. |
+| `native/sharc-fast-wasm` | `sharc-fast-wasm` | WebAssembly backend for the same IR, plus the V8 gate tools. |
+| `native/live` | `live-audio` | Live audio output: SPSC ring, frame repeater, cpal callback. |
+| `native/coupled` | `digi-coupled` | The coupled ColdFire + SHARC+ run loop shared by the app and `coupled-run`; the fixture gates. |
+| `native/control` | `digi-control` | Controller and control protocol (JSON-RPC over NDJSON); the `digi-emud` daemon. Design: `docs/design/emulator-control.md`. |
+| `native/host` | `dt2-native-host` | Offline ColdFire to DSPI2 to SHARC host from the first native lane. Unused: nothing depends on it. |
+| `packages/desktop/src-tauri` | `digiemu-desktop` | The desktop app (Tauri), a thin shell over `digi-control` and `digi-coupled`. |
+
+Left out of the workspace: `.claude/` (agent worktrees live inside the tree and must
+not become members). A crate is never built with its own manifest's profile: cargo
+reads profiles only from the root.
 built with its own manifest's profile: cargo reads profiles only from the root.
 
 ## Profiles
@@ -78,7 +120,7 @@ SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdce
   --dsp-image snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
   --dsp-state snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
   --cf-snapshot snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
-  --scenario idle --scenario trig1-hold --out out/native/runs/x/report.json
+  --scenario idle --scenario trig1-hold --out out/runs/x/report.json
 ```
 
 The launcher also exports `SHARC_BLOCKTRANS` for DN2 OS 1.11: 12 block-translator
@@ -174,7 +216,7 @@ The browser core (wasm32) runs AOT blocks and the interpreter only, with no fast
 tier. `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables,
 which wasm32-unknown-unknown does not have, and the fast tier's Cranelift backend
 emits host code. `node tools/wasm_parity.mjs --scenario NAME` (or
-`mise run wasm:parity NAME`) checks that the browser PCM is byte-identical to
+`mise run web:parity NAME`) checks that the browser PCM is byte-identical to
 the native `expect_sha256`.
 
 The coupled core (`emulator-core-sharc.wasm`) contains firmware-derived DSP code.

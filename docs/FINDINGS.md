@@ -13,7 +13,8 @@ the topic closest to what you're doing, or grep across all of them with
 
 Evidence classes used below:
 **[V]** verified by running it here · **[D]** documented by prior research, not
-re-checked · **[O]** open / nobody has established this.
+re-checked · **[O]** open / nobody has established this · **[C]** corrects an
+earlier claim.
 
 ## Contents
 
@@ -38,6 +39,25 @@ re-checked · **[O]** open / nobody has established this.
 | [`17-emulator-control.md`](findings/17-emulator-control.md) | The emulator control protocol (`native/control`, `tools/digi_client.py`) and firmware injection: hot DSP injection of a patched .syx into the running emulator (0.13 s, master -6 dB patch halves the PCM, the original restores the reference PCM), patched-MAIN cold boot (4.4 s) with a snapshot cache (0.13 s), exact `step`/`at_instr` (**[D]**; `coupled_ready_exactness` pin stale in the merged tree **[O]**) |
 | [`18-dsp-performance.md`](findings/18-dsp-performance.md) | DSP performance at the 911b1fc freeze: how to measure (`mise run perf`, configs incl. `hybrid-top:N`, `--timed`, `--calibrate`), the cost model (interpreted insn ~105 ns, region call 130-266 ns, kernel 0.5 ns, AOT 4.4 ns, helper ~11 ns), measured state (**[V]** default 1.58 DSP CPU per audio s, hybrid-top 3.8-4.6, fast-only 7.04, PCM d60ad3390038a84b), what worked and failed, ranked next levers for desktop and browser. |
 | [`functions/README.md`](findings/functions/README.md) | Per-function SHARC notes, including Phase B wrapper and conditional-resampling-path entries |
+
+## Other documents that hold results
+
+| document | holds |
+| --- | --- |
+| [`PATCHING.md`](PATCHING.md) | How MAIN OS patches work, the rules, and what was verified in the emulator |
+| [`DIGITONE.md`](DIGITONE.md) | Digitone II 1.10E bring-up in the emulator (older text) |
+| [`CONTRACTS.md`](CONTRACTS.md), [`contracts/`](contracts/) | The early-init and MCF5441x reference contracts (hand-authored evidence, JSON) |
+| [`MIDI-SYSEX-RPC.md`](MIDI-SYSEX-RPC.md) | The live MIDI SysEx / MidiRpc protocol of MAIN OS 1.16 |
+| [`SHARC-ADDRESS-MAP.md`](SHARC-ADDRESS-MAP.md) | SHARC execution addresses and which parts of the blob are code (DN2 1.11) |
+| [`sharc/`](sharc/) | `SOURCES.md` (public SHARC+ sources), `SPEC-FINDINGS.md` (instruction set), `structure-1.16.md` (DT2 1.16 DSP structure) |
+| [`design/`](design/) | Design notes: `emulator-control.md` (control protocol), `p5-machine.md` |
+| [`plans/native-emulator.md`](plans/native-emulator.md) | The native emulator plan (design history) |
+| [`refs/`](refs/) | Notes on public references (MCF5441x, Linux and QEMU sources, DSPI2/eDMA) |
+| [`INSTRUMENTATION.md`](INSTRUMENTATION.md) | Where run output goes and the diagnostic and tuning switches |
+| [`TOOLS.md`](TOOLS.md) | Index of the tools |
+| [`UNICORN.md`](UNICORN.md) | The patched Unicorn requirement |
+| [`handovers/`](handovers/) | Dated handovers: state and next steps at the time, not results |
+| [`archive/`](archive/) | Superseded cold-start documents and plans, kept for history |
 
 Native checkpoint follow-up: [bounded MSTATE import, 1k DT2/DN2 smoke gate and CPU-state differential](findings/07-emulator.md#native-portable-state-and-bounded-checkpoint-smoke-2026-09-30), [ordered guest RAM writes and the timer-component handoff](findings/07-emulator.md#bounded-guest-writes-and-timer-component-handoff-2026-09-30), [local first-MMIO checkpoint-chain recipe](findings/07-emulator.md#local-checkpoint-chain-at-the-first-mmio-window), and [dormant native host-state import](findings/07-emulator.md#native-import-of-the-local-pre-mmio-host-state) (**[D]**, first six MMIO events and sampled pre-IRQ CPU/RAM effects matched locally, not post-IRQ or full parity).
 

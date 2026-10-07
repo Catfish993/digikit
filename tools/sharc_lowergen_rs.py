@@ -2,7 +2,7 @@
 -> `impl Lower` methods that lower one decoded instruction of a form.
 
 The output holds no firmware: it is a function of tools/sharc_core and of the
-fixed intrinsic set. See docs/notes/laneF.md.
+fixed intrinsic set. See docs/findings/18-dsp-performance.md.
 
 Pipeline per form:
 

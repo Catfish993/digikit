@@ -327,7 +327,7 @@ def resume(path, extra_instrs, hook=None, chunk=500_000):
     Resuming has to happen onto an ALREADY-hooked Machine: restoring onto a
     bare one drops the flash HLE, the completion-semaphore patch and the
     scheduler tick, and the run then diverges while still looking plausible
-    (docs/NEXT.md trap 4). longrun.build does the hooking, so go through it
+    (docs/archive/NEXT.md trap 4). longrun.build does the hooking, so go through it
     rather than snapshot.restore().
     """
     from unicorn import UC_HOOK_CODE

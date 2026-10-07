@@ -1207,5 +1207,30 @@ Checks with the new snapshot (`tools/digi_env.py` `READY` now points at it):
   a tap must not come first. That holds only for the 2026-10-03 snapshot **[C]**.
 
 **[C]** 2026-10-07: the `snapshots/dn2-audio-ready-2026-10-06` DSP state is
-superseded by a cold-start rebuild (`mise run ready-dn2`); the hashes pinned in
+superseded by a cold-start rebuild (`mise run emu:ready -- dn2`); the hashes pinned in
 this section moved (see finding 16, "Reference state rebuilt from cold start").
+
+## `--samples` launcher and the seeded-project hang (2026-10-07) **[D]**
+
+Folded from a lane notebook; measured on DT2 1.16, not re-checked by a second agent.
+
+- `mise run emu -- --cf-only --samples DIR SYX` (`tools/native_emu.py`) builds
+  `native/plusdrive`, runs `plusdrive build DIR -o img --syx SYX` and passes the image as
+  `--card-image`. The image is cached in `out/plusdrive/native/<key12>/dt2.img`; the key is
+  the SHA-256 of the firmware, the plusdrive binary and each sample name and bytes. Project
+  seeding is DT2-only. `native/boot/examples/card_boot.rs` boots a card headless
+  (`ready_at=914986053`, `main_ui=true`, `fs_verified=Some(true)`, both sample names found
+  in guest state).
+- A card built with `--no-project` lists "Factory" and the samples in ASSIGN SAMPLE
+  (FUNC+YES on the SRC page).
+- **[C]** An earlier note blamed the seeded project for a UI hang on the SRC page. The
+  cause was the model: it did not complete the DSPI1 command/response link. `FUN_400124a0`
+  arms eDMA channel 14 (RX from DSPI1 POPR 0xfc03c03a). Its completion (INTC0 source 22,
+  vector 86, handler 0x400ccd74) runs a callback; the peer then raises IRQ1 (EPORT, INTC0
+  source 1, vector 65, handler 0x400ccd1c), and `FUN_40012500` reads 0x300 bytes back and
+  gives semaphore 0x40965b84. Without both, the first `load_sample` never finished and held
+  mutex 0x450d1b10, so the UI task blocked. Fix: `native/machine/src/board.rs` retires the
+  channel-14 major loop and zero-fills the destination; `native/boot/src/runtime.rs`
+  (`service_dspi1`) delivers vector 86, then vector 65. With it the seeded card calls
+  `load_sample` 297 times and the SRC and FLTR pages draw. **[O]** The peer's identity;
+  zero responses are enough.

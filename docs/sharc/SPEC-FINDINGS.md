@@ -126,7 +126,7 @@ main program's load region (DT2 0x28382670, DN2 0x283825c4). Load regions seen:
 L1 blocks at 0x2824xxxx / 0x282Cxxxx / 0x2838xxxx, L2 at 0x20000000, DDR at
 0x80000000 (mostly a zero fill).
 
-See also docs/REMAINING.md §B.4 for the same boot stream in Digitakt II
+See also docs/archive/REMAINING.md §B.4 for the same boot stream in Digitakt II
 1.15C and Digitone II 1.10E.
 
 ---

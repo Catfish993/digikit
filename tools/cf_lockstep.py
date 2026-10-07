@@ -15,7 +15,7 @@ window when no snapshot is at hand (also exercises more of the forms in one
 run, since a snapshot window mostly repeats a live loop's hot path).
 
 Peripheral (MMIO) reads: this only compares the CPU, not the machine's
-peripherals (docs/plan-native-emulator.md P3 stage 2), so every memory read
+peripherals (docs/plans/native-emulator.md P3 stage 2), so every memory read
 Unicorn performs while executing the instruction is captured with a
 UC_HOOK_MEM_READ hook (reading the backing bytes back out, since this
 Unicorn build rejects UC_HOOK_MEM_READ_AFTER) and replayed into the Rust

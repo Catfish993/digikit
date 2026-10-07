@@ -55,3 +55,19 @@ controller (`pcm.tap`). Patch: `tools/dsp_patches/dn2-1.11-master-half.patch`
   delivery in `runtime.rs`), which changes ColdFire state the gate hashes; the
   controller move touches no machine code and the scenario above still matches
   its pin. Not bisected against a tree without lane 0's change. **[O]**
+
+## DSP patch files and the patch overlay **[D]**
+
+`coupled-run --dsp-patch FILE` (also the desktop launcher and `firmware.load`) overlays
+word-level edits on the imported DSP state after the snapshot import, because a `.snap.dsp`
+carries its own copy of code and data. Format (`native/boot/src/dsp_patch.rs`,
+`tools/dsp_patch.py check|show|apply|syx`): `BASE <sha256 of the unpatched .syx>`, then
+`PM <pc> <hex> [was <hex>]` (a 16, 32 or 48-bit instruction at a short-word PC), `SW`,
+`DM <addr> <hex32> [was ..]` and `BYTES <addr> <hex>`. `was` is checked against live memory.
+A wrong BASE is refused. A no-op patch gives the identical PCM hash; `R2 = 0x1f -> 0x1e` at
+sw 0x1c9d51 (the master Q31 scale) halves rms and peak exactly. A changed code word bars only
+the AOT regions with an entry in a changed range (finding 18), and the fast tier verifies its
+code words, so a patch no longer needs `SHARC_FAST_REGIONS` unset. Patch files hold firmware
+words: keep them under `out/` and never commit them.
+
+The ColdFire `step N` is exact for 1, 7, 250000 and 600000 instructions.

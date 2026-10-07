@@ -1,7 +1,9 @@
 # Plan: a firmware-agnostic native emulator (desktop and browser)
 
 Status 2026-09-30, current HEAD `39f8f20`; the original plan base was
-`95d92de` on `work/sharc-emulator`.
+`95d92de` on `work/sharc-emulator`. Update 2026-10-08: this is design history.
+The crate map is in `native/README.md`. `native/sharc-jit`, named below, no
+longer exists: the fast tier and the generated blocks replaced it.
 
 ## Goal
 

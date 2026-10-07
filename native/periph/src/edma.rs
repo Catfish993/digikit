@@ -246,7 +246,7 @@ impl<'a> TcdView<'a> {
 /// `native/machine`, with a real memory bus) calls [`TxChannel::run`]
 /// directly with the source bytes it read itself; a trace replay instead
 /// takes them from the trace's own merged `HRD` record for this exact call
-/// (`emu.edma.TxChannel.run read` -- `docs/plan-native-emulator.md` P4,
+/// (`emu.edma.TxChannel.run read` -- `docs/plans/native-emulator.md` P4,
 /// "host memory-write records HWR" mentions this class of record; the read
 /// counterpart is `HRD`, recorded "only for peripheral modules... the DMA
 /// source data a model replayed in isolation needs as input",

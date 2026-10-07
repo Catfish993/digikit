@@ -14,7 +14,7 @@
 //! recovered facts, but is not wired into `bin/replay.rs`'s active
 //! dispatch -- there is no recorded trace to check a coalescing-free port
 //! of it against, and wiring it in unexercised would be exactly the
-//! unverified-speculation risk `docs/plan-native-emulator.md` warns against
+//! unverified-speculation risk `docs/plans/native-emulator.md` warns against
 //! (see this crate's `machine.rs` module docs, "SSI0" note).
 //!
 //! Register addresses (RM Chapter 35, cited in full in `emu/ssi.py`'s own

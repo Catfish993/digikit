@@ -1,4 +1,4 @@
-# Digitakt II. How this panel was mapped: docs/HANDOVER-2026-09-13.md.
+# Digitakt II. How this panel was mapped: docs/handovers/HANDOVER-2026-09-13.md.
 #
 # This file deliberately contains NO control names and NO guest addresses.
 # Names come from the firmware's own factory-test tables, resolved at run time

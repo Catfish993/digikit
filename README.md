@@ -1,23 +1,28 @@
-# Digitakt II firmware research
+# Digitakt II / Digitone II firmware research
 
-This repository contains two things:
+This repository holds an emulator and analysis tools for the Elektron Digitakt II
+and Digitone II. The control CPU is a Freescale ColdFire MCF54415 (user interface,
+sequencer, files, MIDI). The audio CPU is an Analog Devices ADSP-21569 SHARC+ whose
+program is an ADI boot stream in section 7 of the firmware.
 
-- An emulator for the control processor (ColdFire) of the Elektron Digitakt II
-  and Digitone II. It boots the real OS and shows its screen.
-- Static analysis tools for the audio processor (SHARC+ DSP). They decode the
-  DSP program, store it in a database, and trace code.
+- A native emulator (Rust) runs the real firmware: ColdFire and SHARC+ together, with
+  the front panel, the display and audio. It runs on the desktop and, in part, in the
+  browser.
+- A Python ColdFire emulator (Unicorn) was the oracle for the native one.
+- Analysis tools (DSP and ColdFire databases, Ghidra tooling, tracers) and a container
+  tool that rebuilds and patches a `.syx` file.
 
-The goal is to understand the firmware well enough to add new machines and
-sounds to both devices.
+The goal is to understand the firmware well enough to add new machines and sounds, and
+to test DSP changes without hardware.
 
-**No Elektron firmware is in this repository.** The firmware is copyright
-Elektron. You supply your own `.syx` file. `.gitignore` keeps the firmware,
-the extracted sections, the snapshots and the databases (`out/`) out of git.
+**No Elektron firmware is in this repository.** The firmware is copyright Elektron. You
+supply your own `.syx` file. `.gitignore` keeps the firmware, the extracted sections,
+the snapshots and the databases (`out/`) out of git.
 
 ## Firmware
 
-Use Digitakt II OS 1.16 and Digitone II OS 1.11. The older builds are kept
-because much of the early analysis used them.
+Use Digitakt II OS 1.16 and Digitone II OS 1.11. The older builds are kept because much
+of the early analysis used them.
 
 | device | version | file | sha256 |
 | --- | --- | --- | --- |
@@ -26,255 +31,171 @@ because much of the early analysis used them.
 | Digitakt II | 1.15C | `Digitakt_II_OS1.15C.syx` | `62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c` |
 | Digitone II | 1.10E | `Digitone_II_OS1.10E.syx` | `9881ee5ca4624be2b833e5eb94e294f2f8425371e6729781baccd1c256cac504` |
 
-Keep each firmware's extracted sections in its own directory:
-`out/sections/dt2-1.16`, `out/sections/dn2-1.11`, and so on. The SHARC tools
-find images by these names. A sections directory records the SHA-256 of its
-`.syx` in `.source-sha256`, and the tools refuse to mix firmwares.
+Put the files in the repository root; the tools look there first. `DIGI_EMU_SYX`
+(Digitone II) and `DIGI_EMU_SYX_DT2` (Digitakt II) override the paths.
 
 ## Setup
 
-You need [uv](https://docs.astral.sh/uv/) (Python 3.12).
+You need [mise](https://mise.jdx.dev/) (it installs the pinned Rust and pnpm) and
+[uv](https://docs.astral.sh/uv/) (Python 3.12).
 
 ```sh
-uv sync
-tools/install-patched-unicorn.sh   # the emulator needs a patched Unicorn
+mise install
+mise run setup      # uv sync, pnpm install, and the patched Unicorn if needed
 ```
 
-Run `tools/install-patched-unicorn.sh` again after `uv sync` if the emulator
-reports stock Unicorn. See [docs/UNICORN.md](docs/UNICORN.md).
+The Python emulator needs a patched Unicorn ([docs/UNICORN.md](docs/UNICORN.md)).
+`mise tasks` lists every task.
 
-## Run the firmware in the emulator
-
-One command extracts the firmware, builds boot snapshots on the first run (a
-few minutes), and opens the live screen:
+## Extract the firmware
 
 ```sh
-uv run python -m emu.run Digitakt_II_OS1.16.syx
-uv run python -m emu.run Digitone_II_OS1.11.syx
-```
-
-No flags are necessary. Useful options:
-
-| option | effect |
-| --- | --- |
-| `--check` | Check the files and settings, then stop. |
-| `--exact` | Exact instruction counting (5-7x slower). Use it to compare runs. |
-| `--scale N` | Screen zoom. |
-| `--weakptr` | Work around a boot stall in `weak_ptr::lock`. Use only if the boot stops. |
-
-### Step by step
-
-Use these commands when a tool needs explicit paths:
-
-```sh
-# 1. Extract the sections (about 1 second).
+uv run python -m emu.extract Digitone_II_OS1.11.syx -o out/sections/dn2-1.11
 uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16
-
-# 2. Build the boot snapshots (about 6 minutes).
-DT2_SECTIONS=out/sections/dt2-1.16 DT2_SNAPSHOTS=out/snapshots/dt2-1.16 \
-  uv run python -m emu.checkpoint make \
-  60000000,120000000,200000000,280000000,400000000 \
-  out/snapshots/dt2-1.16/boot Digitakt_II_OS1.16.syx
-
-# 3. Check that the boot reached the real main screen.
-uv run python tools/emucheck.py --device dt2 --syx Digitakt_II_OS1.16.syx \
-  --sections out/sections/dt2-1.16 \
-  --snapshot out/snapshots/dt2-1.16/boot400M.snap --instrs 600000000
-
-# 4. Open the live screen from a snapshot.
-DT2_SECTIONS=out/sections/dt2-1.16 \
-  uv run python -m emu.gui out/snapshots/dt2-1.16/boot400M.snap \
-  --syx Digitakt_II_OS1.16.syx
 ```
 
-For Digitone II, use `--device dn2`, `Digitone_II_OS1.11.syx` and
-`dn2-1.11` in the paths.
+Keep each firmware in its own directory (`out/sections/dt2-1.16`, ...): the analysis
+tools find images by these names. A sections directory records the SHA-256 of its
+`.syx` in `.source-sha256`, and the tools refuse to mix firmwares. Compare it with
+`shasum -a 256 <the .syx>` before you trust a run.
 
-The tools find files from an argument first, then from these variables:
-`DT2_SYX` (the `.syx`), `DT2_SECTIONS`, `DT2_SNAPSHOTS`, `DT2_MAIN_IMG`
-(the decompressed MAIN OS).
+## Ready states
 
-### Run with your own samples on the +Drive (Digitakt II 1.16)
-
-One command builds a +Drive image from a folder of `.wav` files, boots to
-it, loads the samples and opens the live screen:
+The native emulator starts from a ready state: ColdFire booted to the main screen, DSP
+running. Build it from the `.syx` alone:
 
 ```sh
-uv run python tools/dt2gui.py --samples samples
+mise run emu:ready -- dn2                     # Digitone II 1.11 (about 2 minutes)
+mise run emu:ready -- dt2 [--card-image IMG]  # Digitakt II 1.16, optionally with a +Drive image
 ```
 
-Everything is cached under a content key (the samples' bytes, the firmware,
-and `tools/plusdrive.py` itself), so a second run with the same samples
-reuses the image and snapshots instead of rebuilding (seconds instead of
-minutes). `--no-gui` builds/reuses and stops, for a headless check;
-`--rebuild` forces a clean rebuild. `emu/gui.py` itself refuses to open a
-snapshot against a `--card-image` that does not match what it was actually
-booted with, instead of silently showing an empty sample folder.
+The files go to `snapshots/<device>-audio-ready-cold-*`. Git ignores them.
 
-### What the emulator can and cannot do
-
-| Works | Does not work |
-| --- | --- |
-| The OS boots on all four builds and shows its user interface. | No audio. The emulator does not run the SHARC DSP. |
-| The screen runs at about 20-25 frames per second. | No real storage data by default: the +Drive is new and empty unless `tools/dt2gui.py`/`tools/plusdrive.py` (Digitakt II 1.16 only) built one. |
-| Test tools can press keys and turn encoders (`tools/guirun.py`, `tools/machinecheck.py`). | No live keyboard or encoder input from a person. |
-| Timers, interrupts, DMA, the front-panel link, the display and the SD/MMC controller. | |
-
-## Analyse the SHARC DSP
-
-The emulator does not run the SHARC. Instead, the tools decode the DSP
-program into a database, and you query and trace it. The DSP program is
-section 7 of the firmware. Extract it first (step 1 above).
-
-### Build the database
+## Desktop emulator
 
 ```sh
-uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin
+mise run emu                      # build once and run (emu:build builds only)
+mise run emu -- --cf-only --samples DIR Digitakt_II_OS1.16.syx   # your .wav files on the DT2 +Drive
+mise run emu -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
+mise run emu -- --cf-only         # ColdFire only: no DSP, no audio
 ```
 
-This takes about 15 seconds for all four images. It writes
-`out/sharcdb/<image>.sqlite` (for example `dt2-1.16.sqlite`). It skips an
-image that is already current. The database contains:
+With the DN2 ready inputs present, `mise run emu` plays DN2 audio. Without them it
+starts the ColdFire-only emulator. The DSP needs about 1.6 CPU seconds per audio second
+([finding 18](docs/findings/18-dsp-performance.md)), so real time is not reached yet.
+`--samples` builds a +Drive image from a folder of `.wav` files and caches it by content.
 
-- instructions, functions, call and jump edges, basic blocks and loops
-- literals, memory accesses, data references and resolved pointers
-- register definitions and uses
-- roots (boot entry, RTOS tasks, interrupt vectors, code-pointer tables),
-  reachability, call graph and dominators
-- function hashes that match the same function across images
-
-To add a ColdFire image from a Ghidra dump:
-`uv run python tools/sharcdb.py import-ghidra out/ghidra/dt2-1.16-emac --name dt2-1.16-cf`.
-
-### Query it
-
-Use `tools/sharc.py` in one short Python script:
-
-```python
-import sys; sys.path.insert(0, "tools")
-import sharc
-
-img = sharc.load("dt2-1.16")      # builds the database if necessary
-img.func(0x1c6553)                 # the function that contains an address
-img.listing(0x1c642a, 20)          # 20 instructions from an address
-img.callers(0x1c2b24)              # call and jump sites into a function
-img.card(0x1c06ba)                 # a short summary of one function
-img.writers(0x250738)              # instructions that store to an address
-img.last_def("R6", 0x1c6553)       # last writer of a register
-img.reach(0x1c642a, 0x1c7053)      # can one address reach another?
-img.sql("SELECT kind, count(*) FROM roots GROUP BY kind")
-```
-
-For one SQL query from the shell:
+## Web panel
 
 ```sh
-uv run python tools/sharc.py dt2-1.16 "SELECT kind, count(*) FROM roots GROUP BY kind"
+mise run web                       # build the browser core (WASM) and serve the panel
+mise run web:build                 # static build; it fails if firmware-derived files would ship
+mise run web:wasm                  # only the browser core
+mise run web:parity trig1-tap-release   # browser PCM equals native PCM
 ```
+The browser DSP is slow; the browser host is parked on the branch `wip/browser-host`.
 
-Canned queries are in `tools/sharcdb.sql`. Function notes (role, summary,
-confidence) are kept in `out/sharcdb/<image>.notes.sqlite` and appear in
-`img.card()`.
-
-### Trace code
-
-`tools/sharc_trace.py` runs SHARC code from the real firmware bytes. It uses
-only instruction semantics from the public manuals. It stops on anything
-undocumented instead of guessing.
+## Control socket and the patch loop
 
 ```sh
-uv run python tools/sharc_trace.py out/sections/dt2-1.16/section_7_BLOB.bin \
-  --blob --start 0x1c06ba --concrete-memory --assume-32bit-normal-words \
-  --set R4=0x3f800000 --set R8=0x40000000 --approx-recips --summary
+mise run emu:serve                      # headless, paused; serves the control socket
+mise run emu:ctl status                 # status, step N, tap CODE, frame out.png, events
+uv run python tools/digi_client.py inject PATCHED.syx   # hot DSP injection
+uv run python tools/dsp_patch.py syx BASE.syx tools/dsp_patches/dn2-1.11-master-half.patch OUT.syx
 ```
 
-From Python, `img.trace(start, R4=..., R8=...)` does the same and sets the
-firmware's fixed M registers for you.
+`tools/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched
+`.syx`. The protocol is in [docs/design/emulator-control.md](docs/design/emulator-control.md).
 
-### What is known about the DSP
+## Scenarios and tests
 
-The results are in
-[docs/findings/06-sharc-engine-and-startup.md](docs/findings/06-sharc-engine-and-startup.md).
-In short, for Digitakt II 1.16:
+A scenario is a list of panel inputs (button presses, encoder turns) that the headless
+runner plays against a ready state. It reports the PCM hash and level
+([scenarios/README.md](scenarios/README.md)).
 
-- An RTOS audio task renders each audio frame. It reads a command from the
-  ColdFire and converts the input and output rings.
-- Each track has a machine type. A remap table converts it to a selector. The
-  selector chooses the voice trigger in `FUN_1c642a`.
-- 32 voice records play samples with interpolation. Then the audio goes
-  through the per-track effects, the sends, and the master stage.
-- The layout of the voice record (step, positions, flags, buffers) is
-  verified. A new sound must use this layout.
+```sh
+mise run scenarios            # every DN2 scenario; fails when a pinned PCM hash differs
+mise run scenario trig1-taps --wav
+mise run test:quick           # fast checks
+mise run test                 # pytest, cargo test --workspace, web tests, all scenario pins
+mise run test:slow            # slow runs and gates that need private fixtures
+mise run lint                 # ruff, oxlint, cargo fmt on the clean crates
+mise run check                # lint + test:quick, the pre-merge gate
+```
+
+Pins are valid only for the firmware and ready state they were recorded with.
+
+## Performance and instrumentation
+
+```sh
+mise run perf                 # DSP CPU per audio second, tier split, per-function cost ranking
+mise run perf:cov             # fast-tier coverage per configuration
+```
+
+Method and results: [finding 18](docs/findings/18-dsp-performance.md). Every run tool
+writes `out/runs/<scenario-or-kind>/<UTC stamp>/` (report, audio, logs);
+[docs/INSTRUMENTATION.md](docs/INSTRUMENTATION.md) lists the output and the switches.
+
+## Analysis tools
+
+For the DSP, `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin`
+builds `out/sharcdb/<image>.sqlite`. `tools/sharc.py` queries it: `sharc.load("dt2-1.16")`
+gives `func`, `callers`, `callees`, `reach`, `last_def`, `refs`, `trace` and `sql`, and
+`uv run python tools/sharc.py dt2-1.16 "SQL"` runs one query. For the ColdFire OS, `tools/ghidradump.py` exports a
+Ghidra project, `tools/cfdb.py build` makes a database from the dump, and `tools/cf.py`
+queries it. Decoding uses only public manuals ([docs/sharc/SOURCES.md](docs/sharc/SOURCES.md)).
+All tools are indexed in [docs/TOOLS.md](docs/TOOLS.md).
 
 ## Patch the firmware
 
-`tools/machinebuild.py` adds an eighth machine to the ColdFire OS (section 3)
-and writes a new `.syx`. The new machine is a copy of an existing machine with
-different parameter fields. This changes only the ColdFire side. What the
-DSP does with the new machine type is not verified yet: its remap table
-covers machine types 0-6.
+`tools/machinebuild.py` adds an eighth machine to the ColdFire OS (section 3) and writes a
+new `.syx`. This changes only the ColdFire side; the DSP remap table covers machine types
+0-6. `tools/roundtrip.py` rebuilds and re-extracts a container and checks the checksums
+and HMAC that the device checks. See [docs/PATCHING.md](docs/PATCHING.md) and
+[findings 01](docs/findings/01-container-and-patching.md) and
+[02](docs/findings/02-machines-and-parameters.md).
 
-```sh
-uv run python tools/machinebuild.py --syx Digitakt_II_OS1.16.syx \
-  --profile dt2-1.16 --machine XSLICE:XSL:6:7 \
-  --fields 0xf8,0xf9,0xfa,0xfb,0xfc,0xfd,0,0xfe,0x0a \
-  --sections-dir out/sections/dt2-1.16 --out out/Digitakt_II_OS1.16.xslice.syx
-```
+**Hardware warning**
 
-To check the result in the emulator, extract the new `.syx`, build a
-snapshot, and select the machine with `tools/machinecheck.py`. See
-[docs/findings/02-machines-and-parameters.md](docs/findings/02-machines-and-parameters.md)
-for the steps, and `tools/cavefind.py` to find free space.
+- No patched image from this repository has been installed on a device. Only Em decides
+  to do that.
+- Never change section 2 (bootstrap) or section 4 (updater). `tools/patchimg.py` refuses.
+- Recovery through the bootstrap STARTUP menu (hold FUNC at power-on, SysEx over MIDI DIN)
+  is not tested on hardware.
+- Read `docs/findings/01-container-and-patching.md` before you install anything.
 
-`tools/roundtrip.py` rebuilds and re-extracts a container, and checks the
-same checksums and HMAC that the device checks
-([docs/findings/01-container-and-patching.md](docs/findings/01-container-and-patching.md)).
-
-### Hardware warning
-
-- No patched image from this repository has been installed on a device.
-  Only Em decides to do that.
-- Never change section 2 (bootstrap) or section 4 (updater).
-  `tools/patchimg.py` refuses to do it.
-- Recovery through the bootstrap STARTUP menu (hold FUNC at power-on, SysEx
-  over MIDI DIN) is not tested on hardware.
-- Read `docs/findings/01-container-and-patching.md` before you install
-  anything.
-
-## Hardware
-
-| | Part | Notes |
-| --- | --- | --- |
-| Control | Freescale ColdFire MCF54415 | 68k family, big-endian. User interface, sequencer, files, MIDI. |
-| Audio | Analog Devices ADSP-21569 SHARC+ | FreeRTOS. The program is an ADI boot stream in section 7. |
-
-## Tools and layout
-
-The full tool index is [docs/TOOLS.md](docs/TOOLS.md).
+## Repository layout
 
 ```
-dt2/            .syx container: decode, rebuild, decompress (elz.py)
-emu/            the ColdFire emulator (run, gui, checkpoint, extract)
-tools/          analysis tools; SHARC: sharcdb.py, sharc.py, sharc_trace.py
-devices/*.toml  firmware hashes and panel layout per device
-docs/findings/  results, one file per topic, indexed from docs/FINDINGS.md
-HANDOVER-*.md   current state and next steps (read the newest)
+dt2/             .syx container: decode, rebuild, decompress
+emu/             the Python ColdFire emulator (run, gui, checkpoint, extract)
+native/          Rust workspace: ColdFire core, SHARC+ engine, coupled runner (native/README.md)
+packages/web     browser panel (Astro + Solid); packages/desktop is the Tauri app
+tools/           analysis, run and measurement tools
+tests/           pytest suite (native tests live in the crates)
+scenarios/       scripted panel inputs and pinned PCM hashes
+devices/*.toml   firmware hashes and panel layout per device
+docs/            findings, designs, handovers
 ```
 
-## Continue the work
+## Documentation map
 
-Read the newest `HANDOVER-*.md` first. Record results in `docs/findings/`,
-not in handovers. The marks in the findings are: **[V]** verified here,
-**[D]** documented or read once, **[O]** open, **[C]** corrects an earlier
-claim.
+- [docs/FINDINGS.md](docs/FINDINGS.md): the results, one file per topic in
+  `docs/findings/`, plus an index of the other result documents.
+- [docs/handovers/](docs/handovers/): dated handovers with state and next steps. Read
+  the newest to continue the work.
+- [docs/design/](docs/design/), [docs/plans/](docs/plans/): designs and plans.
+  [docs/archive/](docs/archive/): superseded documents, kept for history.
+  [native/README.md](native/README.md): crate map and the coupled runner.
+
+Record results in `docs/findings/`, not in handovers. Marks: **[V]** verified here,
+**[D]** documented or read once, **[O]** open, **[C]** corrects an earlier claim.
 
 ## Licence
 
-GPL-2.0-or-later. See [LICENSE](LICENSE). The patches in `patches/` change
-QEMU source inside Unicorn, so they carry the GPL.
-
-The licence covers the code in this repository only. It gives no rights to
-Elektron's software. This project is not affiliated with Elektron. The
-container format knowledge comes from `mischa85/elektron-firmware-tool`
-(MIT). Some architecture facts come from
-`lalzart/digitakt-ii-firmware-research-public`. The public SHARC+ assembler
-`js216/selache` is used only as a read-only cross-check.
+GPL-2.0-or-later ([LICENSE](LICENSE)). The patches in `patches/` change QEMU source inside
+Unicorn, so they carry the GPL. The licence covers the code here only; it gives no rights
+to Elektron's software, and this project is not affiliated with Elektron. Container format
+knowledge comes from `mischa85/elektron-firmware-tool` (MIT); some architecture facts from
+`lalzart/digitakt-ii-firmware-research-public`. The public SHARC+ assembler `js216/selache`
+is used only as a read-only cross-check.

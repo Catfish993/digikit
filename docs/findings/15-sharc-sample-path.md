@@ -537,3 +537,27 @@ frame-build gate open (item 2 above), the LP0 model (item 4) and
 50,000 instructions: over 30M instructions the forced frames made the run
 8% slower in wall time, and the main task's loop ran 16 times instead of
 48. **[D]**
+
+## DT2 coupled audio: link port 0 delivery, SIMD fix, AOT core (2026-10-07) **[D]**
+
+Folded from a lane notebook; not re-checked by a second agent.
+
+- The DT2 idle loop is the DN2 code moved by -0x26dc (range 0xb8636d..0xb863df, head
+  0xb863cf). `devices/*.toml` and `native/device-profile` carry `dsp = { image, idle_start,
+  idle_end, idle_head, sample_link }` per firmware.
+- ColdFire FlexBus bytes (falling edge of bit 7 of a halfword write to 0x8C000002) become
+  0x401-word work units (4100 bytes), up to 4 per frame, delivered to the LP0 DMA channel
+  (0x30FFF000, SEC 81) by `Engine::lp0_transfer`. The DSP then runs until its own ISR has
+  re-armed the port. The slot table (DM 0x257810, 297 slots of `{0x40, 0x40, len, rate, 0}`)
+  and the 48,000 samples in SDRAM equal the WAV with error 0.
+- **[C]** The left-channel burst after a DT2 trig was a core bug, not a firmware or
+  parameter effect. SIMD (MODE1.PEYEN) executes a compute in both PEx and PEy, but Type 7a
+  and the compute half of Type 9a/11a ran PEx only, so the S registers went stale and fed
+  the reverb send (L scale 5.96e-6, R 0). After the fix L == R bit for bit and the tone
+  share is 0.9986. The fix is in `tools/sharc_core` only; the six golden hashes did not change.
+- `mise run perf:aot -- dt2 --card-image IMG` (`tools/aot_gen.py --cycles N`) profiles a
+  trig run and generates a DT2 block library (1112 blocks after one cycle), registered by DSP
+  image SHA-256 in `out/native/gen-index.json`. DSP CPU per audio s on `dt2-sample-trig`:
+  interpreter 37.7, one cycle 3.07, two 1.83, three 1.76, same PCM. **[O]** There is no DT2
+  entry in `tools/fast_regions.json`: the hot DT2 loops are SIMD-mode code that the fast
+  tier did not lower.

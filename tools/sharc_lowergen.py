@@ -1,6 +1,6 @@
 """Trace tools/sharc_core form handlers into lowering programs.
 
-The generator behind the load-time SHARC+ translator (docs/notes/laneF.md).
+The generator behind the load-time SHARC+ translator (docs/findings/18-dsp-performance.md).
 It runs the real handlers of sharc_core.forms, unmodified, over a tracing
 machine state:
 

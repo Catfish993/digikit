@@ -279,6 +279,48 @@ state that a raw Unicorn CPU/memory context does not. An external Unicorn
 debug server can still be useful for manual discovery, but it does not replace
 this checkpoint state, accelerate counted runs, or qualify an experiment.
 
+## Native emulator, scenarios and performance tools
+
+The native emulator (`native/`, see [`native/README.md`](../native/README.md)) is built
+and run through mise (`mise tasks` lists every task). These tools sit behind those tasks;
+each has a module docstring with its full command line.
+
+| Tool | Purpose |
+| --- | --- |
+| `tools/native_emu.py` | `mise run emu`, `emu:build`, `emu:serve`: build the desktop emulator once and run it (`--samples DIR`, `--dsp-patch FILE`, `--cf-only`, `--daemon`). |
+| `tools/native_target.py` | Pick the cargo target dir for a generated core (`prod`, `nogen`, `generic`, `g-<hash>`). |
+| `tools/native_pgo.py` | Profile-guided optimisation of the desktop build (`mise run perf:pgo`; `bench-bins`). |
+| `tools/native_wasm.py` | `mise run web:wasm`: build the browser cores. |
+| `tools/native_boot.py` / `tools/native_plusdrive.py` | `mise run dev:boot` and `dev:plusdrive`: the bounded native boot diagnostic and the standalone +Drive CLI. |
+| `tools/ready.py` | `mise run emu:ready -- dn2\|dt2`: build the ready snapshots from the `.syx` alone (cold DSP start). |
+| `tools/coupled.py` | `mise run scenario`, `scenarios`, `scenario:replay`, `scenario:bisect`: build and run `coupled-run`, bisect DSP tiers. |
+| `tools/coupled_matrix.py` | Run scenarios across DSP configurations, repeated, under the benchmark lock. |
+| `tools/digi_client.py` | `mise run emu:ctl`: drive a running emulator over its control socket (`status`, `inject`, `step`, `tap`, `frame`, `call`, `events`). |
+| `tools/dsp_patch.py` | DSP patch files: `check`, `show`, `apply` on a packed image, `syx` writes a patched `.syx`. Patches in `tools/dsp_patches/`. |
+| `tools/perf.py` | `mise run perf`: the standard DSP performance report (CPU per audio second, tier split, per-function cost ranking, `--calibrate`). |
+| `tools/fastcov.py` | `mise run perf:cov`: DSP CPU, tier split and fast-tier refusals per tier configuration. `perf.py` is built on it. |
+| `tools/fast_ddmin.py` | Shrink the set of fast-tier regions that reproduces a DSP halt (delta debugging with `SHARC_FAST_ONLY`). |
+| `tools/aot_gen.py` | `mise run perf:aot`: generate and register a firmware block library (AOT core) by DSP image. |
+| `tools/sharc_regionbench.py` | One-region microbenchmark for generated block code (about 50 s per variant). |
+| `tools/benchlock.py` | Shared lock for builds and exclusive lock for timed runs (`status` shows holders). |
+| `tools/rust_ws.py` | `mise run test` / `test:slow` / `lint:rust` helper: cargo over the whole workspace with the pinned toolchain. |
+| `tools/digi_env.py` | Paths, firmware lookup, ready-input lookup, the generated-core registry and fast-region tables (`tools/fast_regions.json`). |
+| `tools/wasm_parity.mjs` | `mise run web:parity NAME`: check the browser core renders a scenario's PCM byte-identical to native. |
+| `tools/worktree-setup.sh` | Link `out/`, `sections/`, `snapshots/`, `.venv` and generated language files into an agent worktree. |
+
+Generated fast-tier lowering (see finding 18 for the design):
+
+| Tool | Purpose |
+| --- | --- |
+| `tools/sharc_lowergen_regen.py` | `mise run gen:regen`: regenerate the shared core, `gen_forms.rs`, the fuzz vectors and the test programs. |
+| `tools/sharc_lowergen.py` | The form tracer. `sharc_lowergen_rs.py` is the Rust emitter, `sharc_lowergen_helpers.py` prints helper bodies. |
+| `tools/sharc_lowergen_survey.py` / `sharc_lowergen_leaf.py` | Show the traced leaves of all forms or of one form with pinned fields. |
+| `tools/sharc_lowergen_vectors.py` / `sharc_lowergen_programs.py` | Write the random-encoding fuzz vectors and the hand-assembled test programs. |
+| `tools/sharc_lowergen_bisect.sh` | PCM and tier split with a subset of the generated forms. |
+
+`tools/archive/` holds one-off probes that nothing references any more (see its README).
+Run output goes to `out/runs/<scenario-or-kind>/<stamp>/` ([INSTRUMENTATION.md](INSTRUMENTATION.md)).
+
 ## Machine and frame-link tools
 
 | Tool | Purpose |

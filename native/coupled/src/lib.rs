@@ -1129,7 +1129,7 @@ mod coupled {
             }
             // Updated 2026-10-06 for the Type 17 SIMD Cureg fix (docs/findings/16); the CF digest covers the DSPI RX buffer filled with DSP replies.
             // Updated again 2026-10-06 for the dn2-audio-ready-2026-10-06 snapshot (pSLC 32 GB card, no SLC dialog; docs/findings/14): the CF state changed, the PCM and the DSP export did not.
-            // Updated 2026-10-07: reference state rebuilt from cold start (`mise run ready-dn2`, tools/ready_dn2.py: DSP state from the .syx alone) with the DSPI1 eDMA ch14 board fix. The old state had the DC-blocker coefficient (DM 0x24f378) corrupted by the pre-ed02999 SIMD Type 17 bug. CF digest, PCM and DSP export are all new.
+            // Updated 2026-10-07: reference state rebuilt from cold start (`mise run emu:ready -- dn2`, tools/ready.py: DSP state from the .syx alone) with the DSPI1 eDMA ch14 board fix. The old state had the DC-blocker coefficient (DM 0x24f378) corrupted by the pre-ed02999 SIMD Type 17 bug. CF digest, PCM and DSP export are all new.
             assert_eq!(
                 runtime.emulator.state_digest().unwrap(),
                 "55dc699e233f37735b83ce886a6fe8951a6c5984abf21057462501d73227e4e0"

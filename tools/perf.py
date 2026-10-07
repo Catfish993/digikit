@@ -50,7 +50,7 @@ finally:
 
 OUT = ROOT / "out" / "native" / "perf"
 CALIB = OUT / "calibration.json"
-# Used until `--calibrate` has run: the profile of 2026-10-07 (docs/notes/laneB.md).
+# Used until `--calibrate` has run: the profile of 2026-10-07 (docs/findings/18-dsp-performance.md).
 DEFAULT_COSTS = {
     "interp": 119.0,
     "call": 100.0,
@@ -94,7 +94,7 @@ def fit(samples: list[dict], kernel_ns: float = 0.5) -> dict[str, float]:
 
     The kernel cost cannot be fitted: kernel instructions are about the same
     in every configuration, so they are confounded with the constant. It is
-    the measured gate figure (docs/notes/laneB.md, 0.435-0.5 ns/insn). A
+    the measured gate figure (docs/findings/18-dsp-performance.md, 0.435-0.5 ns/insn). A
     per-audio-second constant is not fitted: it is collinear with the others on
     these runs and came out negative.
     """
