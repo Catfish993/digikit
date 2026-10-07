@@ -1,457 +1,34 @@
-use std::{
-    fs::File,
-    io::{Read, Seek, SeekFrom},
-    path::PathBuf,
-    sync::{Arc, Mutex, mpsc},
-    thread,
-};
+//! The desktop app: the webview's commands are thin messages to the shared
+//! emulator controller (`native/control`), which also serves the control
+//! socket when the app runs with `--control` (the launcher adds it).
+use std::{path::PathBuf, process};
 
+use digi_control::{
+    Command, Config, Handle, Mode, ScenarioSetup,
+    cli::{self, StartupArgs},
+    controller::spawn,
+    dispatch::Dispatcher,
+    load_scenario,
+};
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
-use desktop_runtime::{AudioMode, AudioOptions, DesktopRuntime, STEP_CHUNK};
-use emmc_card::{Card, CardIdentity, RandomAccessRead};
-use serde::Deserialize;
+use serde_json::Value;
+use std::sync::mpsc;
 use tauri::State;
 
-const MAX_SYX: usize = 32 * 1024 * 1024;
-
-struct FileBacking {
-    file: Mutex<File>,
-    len: u64,
-    error: Arc<Mutex<Option<String>>>,
-}
-impl RandomAccessRead for FileBacking {
-    fn len(&self) -> u64 {
-        self.len
-    }
-    fn read_at(&self, offset: u64, destination: &mut [u8]) -> usize {
-        let mut file = match self.file.lock() {
-            Ok(file) => file,
-            Err(_) => return 0,
-        };
-        if let Err(error) = file
-            .seek(SeekFrom::Start(offset))
-            .and_then(|_| file.read_exact(destination))
-        {
-            *self.error.lock().expect("backing error mutex") = Some(error.to_string());
-            return 0;
-        }
-        destination.len()
-    }
-}
-fn card(path: PathBuf) -> Result<(Card, Arc<Mutex<Option<String>>>), String> {
-    let metadata = std::fs::metadata(&path).map_err(|e| format!("card image: {e}"))?;
-    if !metadata.is_file() || metadata.len() % 512 != 0 {
-        return Err("card image must be a regular 512-byte aligned file".into());
-    }
-    let identity = CardIdentity::from_env()?;
-    let blocks = u32::try_from(metadata.len() / 512).map_err(|_| "card image is too large")?;
-    if blocks > identity.blocks() {
-        return Err(format!(
-            "card image has {blocks:#x} sectors, more than the {} identity's {:#x}",
-            identity.name(),
-            identity.blocks()
-        ));
-    }
-    let error = Arc::new(Mutex::new(None));
-    let backing = FileBacking {
-        file: Mutex::new(File::open(path).map_err(|e| format!("card image: {e}"))?),
-        len: metadata.len(),
-        error: error.clone(),
-    };
-    Ok((
-        Card::with_backing(identity, Some(Box::new(backing))).map_err(|e| format!("card: {e:?}"))?,
-        error,
-    ))
-}
-
-fn runtime_from(
-    bytes: &[u8],
-    image: Option<PathBuf>,
-    audio: Option<&AudioOptions>,
-) -> Result<(DesktopRuntime, Option<Arc<Mutex<Option<String>>>>), String> {
-    match image {
-        Some(path) => card(path).and_then(|(card, error)| {
-            DesktopRuntime::new(bytes, Some(card), audio).map(|runtime| (runtime, Some(error)))
-        }),
-        None => DesktopRuntime::new(bytes, None, audio).map(|runtime| (runtime, None)),
-    }
-}
-
-enum Command {
-    Diagnostics {
-        session: u64,
-        reply: JsonReply,
-    },
-    AudioStatus {
-        session: u64,
-        reply: JsonReply,
-    },
-    Startup {
-        reply: Reply,
-    },
-    Load {
-        session: u64,
-        bytes: Vec<u8>,
-        card: Option<PathBuf>,
-        reply: Reply,
-    },
-    Restart {
-        session: u64,
-        next_session: u64,
-        reply: Reply,
-    },
-    Step {
-        session: u64,
-        budget: u32,
-        reply: Reply,
-    },
-    Button {
-        session: u64,
-        code: u8,
-        down: bool,
-        reply: Reply,
-    },
-    Turn {
-        session: u64,
-        encoder: u8,
-        detents: i32,
-        reply: Reply,
-    },
-    Tap {
-        session: u64,
-        code: u8,
-        hold: u32,
-        reply: Reply,
-    },
-    Stop {
-        session: u64,
-        reply: Reply,
-    },
-}
-type Reply = mpsc::Sender<Result<Snapshot, String>>;
-type JsonReply = mpsc::Sender<Result<serde_json::Value, String>>;
 struct Host {
-    sender: mpsc::Sender<Command>,
-}
-#[derive(Deserialize)]
-struct StartupArgs {
-    syx: Option<PathBuf>,
-    card_image: Option<PathBuf>,
-    #[serde(skip)]
-    audio: Option<AudioOptions>,
-    #[serde(skip)]
-    #[cfg_attr(not(feature = "coupled-audio"), allow(dead_code))]
-    scenario: Option<String>,
-    #[serde(skip)]
-    #[cfg_attr(not(feature = "coupled-audio"), allow(dead_code))]
-    report: Option<PathBuf>,
+    handle: Handle,
 }
 
-#[cfg(feature = "coupled-audio")]
-struct ScenarioSetup {
-    scenario: digi_coupled::scenario::Scenario,
-    report: Option<PathBuf>,
-}
-#[cfg(not(feature = "coupled-audio"))]
-type ScenarioSetup = std::convert::Infallible;
-
-#[cfg(feature = "coupled-audio")]
-struct ScenarioRun {
-    scenario: digi_coupled::scenario::Scenario,
-    next: usize,
-    started: Option<std::time::Instant>,
-    report: Option<PathBuf>,
+fn parse_args() -> Result<StartupArgs, String> {
+    cli::parse_values(std::env::args_os().skip(1), cfg!(feature = "coupled-audio"))
 }
 
-#[cfg(feature = "coupled-audio")]
-fn load_scenario(spec: &str) -> Result<digi_coupled::scenario::Scenario, String> {
-    use digi_coupled::scenario;
-    if std::path::Path::new(spec).is_file() {
-        let text = std::fs::read_to_string(spec).map_err(|e| format!("scenario file: {e}"))?;
-        let value: serde_json::Value =
-            serde_json::from_str(&text).map_err(|e| format!("scenario file: {e}"))?;
-        let found = scenario::find_scenario(&value)
-            .ok_or("scenario file has no scenario (need \"scenarios\" or a scenario object)")?;
-        scenario::parse_scenario(found)
-    } else {
-        scenario::parse_scenarios(scenario::DEFAULT_SCENARIOS)?
-            .into_iter()
-            .find(|candidate| candidate.name == spec)
-            .ok_or_else(|| format!("unknown scenario: {spec}"))
-    }
-}
-
-fn actor(
-    receiver: mpsc::Receiver<Command>,
-    audio: Option<AudioOptions>,
-    scenario: Option<ScenarioSetup>,
-) {
-    #[cfg(feature = "coupled-audio")]
-    let mut scenario_run = scenario.map(|setup| ScenarioRun {
-        scenario: setup.scenario,
-        next: 0,
-        started: None,
-        report: setup.report,
-    });
-    #[cfg(not(feature = "coupled-audio"))]
-    let _ = scenario;
-    let mut runtime: Option<DesktopRuntime> = None;
-    let mut session = 0u64;
-    let mut cached: Option<(Vec<u8>, Option<PathBuf>)> = None;
-    let mut read_error: Option<Arc<Mutex<Option<String>>>> = None;
-    let mut startup_snapshot: Option<Snapshot> = None;
-    while let Ok(command) = receiver.recv() {
-        let command = match command {
-            Command::Diagnostics {
-                session: token,
-                reply,
-            } => {
-                let result = if token != session {
-                    Err("stale emulator session".into())
-                } else {
-                    runtime
-                        .as_mut()
-                        .map(DesktopRuntime::diagnostics)
-                        .ok_or_else(|| "No firmware selected".into())
-                };
-                let _ = reply.send(result);
-                continue;
-            }
-            Command::AudioStatus {
-                session: token,
-                reply,
-            } => {
-                let result = if token != session {
-                    Err("stale emulator session".into())
-                } else {
-                    runtime
-                        .as_mut()
-                        .map(|runtime| runtime.audio_status().unwrap_or(serde_json::Value::Null))
-                        .ok_or_else(|| "No firmware selected".into())
-                };
-                let _ = reply.send(result);
-                continue;
-            }
-            command => command,
-        };
-        if !matches!(&command, Command::Load { .. } | Command::Startup { .. }) {
-            startup_snapshot = None;
-        }
-        let (request_session, reply) = match &command {
-            Command::Diagnostics { .. } | Command::AudioStatus { .. } => {
-                unreachable!("JSON command handled above")
-            }
-            Command::Startup { reply } => (session, reply.clone()),
-            Command::Load { session, reply, .. }
-            | Command::Restart { session, reply, .. }
-            | Command::Step { session, reply, .. }
-            | Command::Button { session, reply, .. }
-            | Command::Turn { session, reply, .. }
-            | Command::Tap { session, reply, .. }
-            | Command::Stop { session, reply } => (*session, reply.clone()),
-        };
-        if request_session != session
-            && !matches!(command, Command::Load { .. } | Command::Stop { .. })
-        {
-            let _ = reply.send(Err("stale emulator session".into()));
-            continue;
-        }
-        let result = match command {
-            Command::Diagnostics { .. } | Command::AudioStatus { .. } => {
-                unreachable!("JSON command handled above")
-            }
-            Command::Startup { .. } => startup_snapshot.take().map(Ok).unwrap_or_else(|| {
-                runtime
-                    .as_mut()
-                    .ok_or_else(|| "No startup firmware selected".to_string())
-                    .map(|runtime| runtime.snapshot())
-            }),
-            Command::Load {
-                session: next,
-                bytes,
-                card: image,
-                ..
-            } => {
-                startup_snapshot = None;
-                if next <= session {
-                    Err("stale emulator session".into())
-                } else {
-                    runtime = None;
-                    read_error = None;
-                    session = next;
-                    cached = None;
-                    if bytes.len() > MAX_SYX {
-                        Err("firmware image exceeds 32 MiB cache limit".into())
-                    } else {
-                        match runtime_from(&bytes, image.clone(), audio.as_ref()) {
-                            Ok((next_runtime, error)) => {
-                                cached = Some((bytes, image));
-                                read_error = error;
-                                runtime = Some(next_runtime);
-                                let snapshot = runtime.as_mut().expect("new runtime").snapshot();
-                                startup_snapshot = Some(snapshot.clone());
-                                Ok(snapshot)
-                            }
-                            Err(error) => Err(error),
-                        }
-                    }
-                }
-            }
-            Command::Restart { next_session, .. } => match cached.clone() {
-                Some((bytes, image)) if next_session > session => {
-                    match runtime_from(&bytes, image, audio.as_ref()) {
-                        Ok((next, error)) => {
-                            session = next_session;
-                            read_error = error;
-                            runtime = Some(next);
-                            Ok(runtime.as_mut().expect("restarted runtime").snapshot())
-                        }
-                        Err(error) => Err(error),
-                    }
-                }
-                Some(_) => Err("stale emulator session".into()),
-                None => Err("No firmware selected".into()),
-            },
-            Command::Step { budget, .. } => runtime
-                .as_mut()
-                .ok_or_else(|| "No firmware selected".into())
-                .and_then(|runtime| {
-                    #[cfg(feature = "coupled-audio")]
-                    let mut budget = budget;
-                    #[cfg(feature = "coupled-audio")]
-                    if let Some(run) = scenario_run.as_mut() {
-                        use digi_coupled::scenario::{self, When};
-                        let started = *run.started.get_or_insert_with(std::time::Instant::now);
-                        let elapsed = runtime.elapsed_instructions();
-                        while let Some(event) = run.scenario.events.get(run.next).copied() {
-                            let due = match event.when {
-                                When::Instr(n) => elapsed >= n,
-                                When::Frames(n) => runtime.frames_sent() >= n,
-                            };
-                            if !due {
-                                break;
-                            }
-                            scenario::fire(runtime, event.action)?;
-                            run.next += 1;
-                        }
-                        let done = run.scenario.instructions.is_some_and(|n| elapsed >= n)
-                            || run.scenario.seconds.is_some_and(|s| {
-                                runtime.frames_sent() as f64 >= s * scenario::FRAMES_PER_SECOND
-                            });
-                        if done {
-                            let report = serde_json::json!({
-                                "scenario": run.scenario.name,
-                                "wall_seconds": started.elapsed().as_secs_f64(),
-                                "elapsed_instructions": elapsed,
-                                "audio": runtime.audio_status().unwrap_or(serde_json::Value::Null),
-                                "diagnostics": runtime.diagnostics(),
-                            });
-                            let text =
-                                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-                            match &run.report {
-                                Some(path) => {
-                                    if let Some(parent) = path.parent() {
-                                        std::fs::create_dir_all(parent)
-                                            .map_err(|e| format!("report: {e}"))?;
-                                    }
-                                    std::fs::write(path, text)
-                                        .map_err(|e| format!("report: {e}"))?;
-                                }
-                                None => println!("{text}"),
-                            }
-                            std::process::exit(0);
-                        }
-                        if run.scenario.exact_events
-                            && let Some(event) = run.scenario.events.get(run.next)
-                            && let When::Instr(n) = event.when
-                            && n > elapsed
-                        {
-                            budget = budget.min(u32::try_from(n - elapsed).unwrap_or(u32::MAX));
-                        }
-                    }
-                    let snapshot = runtime.step_chunk(budget.min(STEP_CHUNK));
-                    if let Some(error) = read_error
-                        .as_ref()
-                        .and_then(|error| error.lock().ok().and_then(|mut slot| slot.take()))
-                    {
-                        Err(format!("card image read: {error}"))
-                    } else {
-                        Ok(snapshot)
-                    }
-                }),
-            Command::Button { code, down, .. } => runtime
-                .as_mut()
-                .ok_or_else(|| "No firmware selected".into())
-                .and_then(|runtime| {
-                    runtime.button(code, down)?;
-                    Ok(runtime.snapshot())
-                }),
-            Command::Turn {
-                encoder, detents, ..
-            } => runtime
-                .as_mut()
-                .ok_or_else(|| "No firmware selected".into())
-                .and_then(|runtime| {
-                    runtime.turn(encoder, detents)?;
-                    Ok(runtime.snapshot())
-                }),
-            Command::Tap { code, hold, .. } => runtime
-                .as_mut()
-                .ok_or_else(|| "No firmware selected".into())
-                .and_then(|runtime| {
-                    runtime.button(code, true)?;
-                    let held = (hold.clamp(1, 100_000_000)) as u64;
-                    let initial = runtime.snapshot();
-                    let start = initial.status.icount;
-                    let mut status = initial.status;
-                    let mut frame = initial.frame;
-                    let result = loop {
-                        let remaining = held.saturating_sub(status.icount.saturating_sub(start));
-                        if remaining == 0 {
-                            break Ok(Snapshot { status, frame });
-                        }
-                        let snapshot =
-                            runtime.step_chunk(remaining.min(u64::from(STEP_CHUNK)) as u32);
-                        if let Some(error) = snapshot.status.error.clone() {
-                            break Err(error);
-                        }
-                        status = snapshot.status;
-                        if snapshot.frame.is_some() {
-                            frame = snapshot.frame;
-                        }
-                    };
-                    let released = runtime.button(code, false);
-                    match (result, released) {
-                        (Ok(snapshot), Ok(())) => Ok(snapshot),
-                        (Err(error), _) | (_, Err(error)) => Err(error),
-                    }
-                }),
-            Command::Stop { .. } => {
-                if request_session < session {
-                    Err("stale emulator session".into())
-                } else {
-                    session = request_session;
-                    let result = runtime
-                        .as_mut()
-                        .ok_or_else(|| "No firmware selected".to_string())
-                        .map(|runtime| runtime.snapshot());
-                    if result.is_ok() {
-                        runtime = None;
-                        cached = None;
-                    }
-                    result
-                }
-            }
-        };
-        let _ = reply.send(result);
-    }
-}
 async fn send(
     host: State<'_, Host>,
-    command: impl FnOnce(Reply) -> Command + Send + 'static,
+    command: impl FnOnce(digi_control::Reply) -> Command + Send + 'static,
 ) -> Result<Snapshot, String> {
-    let sender = host.sender.clone();
+    let sender = host.handle.sender().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (reply, response) = mpsc::channel();
         sender
@@ -464,19 +41,16 @@ async fn send(
     .await
     .map_err(|e| e.to_string())?
 }
-#[tauri::command]
-async fn emu_diagnostics(
+
+async fn send_json(
     host: State<'_, Host>,
-    session_id: u64,
-) -> Result<serde_json::Value, String> {
-    let sender = host.sender.clone();
+    command: impl FnOnce(digi_control::JsonReply) -> Command + Send + 'static,
+) -> Result<Value, String> {
+    let sender = host.handle.sender().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (reply, response) = mpsc::channel();
         sender
-            .send(Command::Diagnostics {
-                session: session_id,
-                reply,
-            })
+            .send(command(reply))
             .map_err(|_| "emulator actor stopped")?;
         response
             .recv()
@@ -484,6 +58,15 @@ async fn emu_diagnostics(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn emu_diagnostics(host: State<'_, Host>, session_id: u64) -> Result<Value, String> {
+    send_json(host, move |reply| Command::Diagnostics {
+        session: session_id,
+        reply,
+    })
+    .await
 }
 
 /// Writes an exported diagnostics report to `out/native/diagnostics/` under
@@ -509,25 +92,12 @@ fn emu_save_diagnostics(name: String, json: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn emu_audio_status(
-    host: State<'_, Host>,
-    session_id: u64,
-) -> Result<serde_json::Value, String> {
-    let sender = host.sender.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let (reply, response) = mpsc::channel();
-        sender
-            .send(Command::AudioStatus {
-                session: session_id,
-                reply,
-            })
-            .map_err(|_| "emulator actor stopped")?;
-        response
-            .recv()
-            .map_err(|_| "emulator actor dropped reply")?
+async fn emu_audio_status(host: State<'_, Host>, session_id: u64) -> Result<Value, String> {
+    send_json(host, move |reply| Command::AudioStatus {
+        session: session_id,
+        reply,
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -638,6 +208,39 @@ async fn emu_stop(host: State<'_, Host>, session_id: u64) -> Result<(), String> 
         Err(error) => Err(error),
     }
 }
+
+/// The desktop `--scenario` mode ends the app when the controller reports the
+/// scenario done: write the report (to `--report` or stdout) and exit.
+fn exit_on_scenario_done(handle: &Handle, report: Option<PathBuf>) {
+    let events = handle
+        .events()
+        .subscribe(Some(vec!["scenario.done".into()]));
+    std::thread::spawn(move || {
+        let Ok(event) = events.recv() else { return };
+        let text = match serde_json::to_string_pretty(&event["report"]) {
+            Ok(text) => text,
+            Err(error) => {
+                eprintln!("report: {error}");
+                process::exit(1)
+            }
+        };
+        match report {
+            Some(path) => {
+                let written = path
+                    .parent()
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|()| std::fs::write(&path, text));
+                if let Err(error) = written {
+                    eprintln!("report: {error}");
+                    process::exit(1)
+                }
+            }
+            None => println!("{text}"),
+        }
+        process::exit(0)
+    });
+}
+
 fn main() {
     #[cfg(feature = "coupled-audio")]
     if std::env::args_os()
@@ -647,63 +250,95 @@ fn main() {
         match desktop_runtime::pgo_training_workload() {
             Ok(()) => {
                 println!("pgo_train=ok");
-                std::process::exit(0)
+                process::exit(0)
             }
             Err(error) => {
                 println!("pgo_train=failed: {error}");
-                std::process::exit(1)
+                process::exit(1)
             }
         }
     }
     let startup = parse_args().unwrap_or_else(|error| {
         eprintln!("{error}");
-        std::process::exit(2)
+        process::exit(2)
     });
-    let (sender, receiver) = mpsc::channel();
-    let audio = startup.audio.clone();
-    #[cfg(feature = "coupled-audio")]
-    let scenario = startup
-        .scenario
-        .as_deref()
-        .map(load_scenario)
-        .transpose()
-        .unwrap_or_else(|error| {
+    let run_dir = startup
+        .run_dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("out/native/run"));
+    let mut config = Config::new(startup.audio.clone());
+    config.mode = if startup.paused {
+        Mode::Paused
+    } else {
+        Mode::Ui
+    };
+    config.run_dir = run_dir.clone();
+    config.on_quit = Some(Box::new(|| {
+        // Let the socket thread write the reply first.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        process::exit(0)
+    }));
+    config.scenario = startup.scenario.as_deref().map(|spec| ScenarioSetup {
+        scenario: load_scenario(spec).unwrap_or_else(|error| {
             eprintln!("{error}");
-            std::process::exit(2)
-        })
-        .map(|scenario| ScenarioSetup {
-            scenario,
-            report: startup.report.clone(),
-        });
-    #[cfg(not(feature = "coupled-audio"))]
-    let scenario: Option<ScenarioSetup> = None;
-    thread::spawn(move || actor(receiver, audio, scenario));
-    if let Some(path) = startup.syx {
+            process::exit(2)
+        }),
+    });
+    let has_scenario = config.scenario.is_some();
+    let (handle, _controller) = spawn(config);
+    if has_scenario {
+        exit_on_scenario_done(&handle, startup.report.clone());
+    }
+    if let Some(path) = startup.syx.clone() {
         let bytes = std::fs::read(&path).unwrap_or_else(|error| {
             eprintln!("firmware input: {error}");
-            std::process::exit(2)
+            process::exit(2)
         });
         let (reply, response) = mpsc::channel();
-        sender
+        handle
+            .sender()
             .send(Command::Load {
                 session: 1,
                 bytes,
-                card: startup.card_image,
+                card: startup.card_image.clone(),
                 reply,
             })
             .unwrap_or_else(|error| {
                 eprintln!("emulator startup: {error}");
-                std::process::exit(2)
+                process::exit(2)
             });
         if let Err(error) = response
             .recv()
             .unwrap_or_else(|error| Err(error.to_string()))
         {
             eprintln!("emulator startup: {error}");
-            std::process::exit(2);
+            process::exit(2);
         }
     }
-    let host = Host { sender };
+    #[cfg(unix)]
+    // The control socket is on unless `--no-control` (design question 3).
+    let _server = if startup.control != Some(false) {
+        match digi_control::server::serve(
+            Dispatcher::new(handle.clone(), "digiemu-desktop"),
+            digi_control::server::ServerOptions { run_dir },
+            "digiemu-desktop",
+        ) {
+            Ok(server) => {
+                eprintln!("control socket: {}", server.socket.display());
+                Some(server)
+            }
+            Err(error) => {
+                // The emulator still runs; only scripted control is lost.
+                eprintln!("control socket: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(not(unix))]
+    let _ = (&run_dir, Dispatcher::new);
+    let host = Host { handle };
     tauri::Builder::default()
         .manage(host)
         .invoke_handler(tauri::generate_handler![
@@ -722,132 +357,19 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("tauri runtime error");
 }
-fn parse_args() -> Result<StartupArgs, String> {
-    parse_values(std::env::args_os().skip(1))
-}
-fn parse_values(
-    values: impl IntoIterator<Item = std::ffi::OsString>,
-) -> Result<StartupArgs, String> {
-    let mut values = values.into_iter();
-    let (mut syx, mut card_image, mut image, mut state, mut snapshot) =
-        (None, None, None, None, None);
-    let mut audio_profile_syx = None;
-    let mut coupled = false;
-    let mut automatic = false;
-    let mut buffer = None;
-    let mut no_audio = false;
-    let mut audio_mode = None;
-    let mut scenario = None;
-    let mut report = None;
-    while let Some(value) = values.next() {
-        let mut path = |label: &str| -> Result<PathBuf, String> {
-            values
-                .next()
-                .map(Into::into)
-                .ok_or_else(|| format!("{label} requires a file"))
-        };
-        if value == "--card-image" {
-            card_image = Some(path("--card-image")?);
-        } else if value == "--coupled" {
-            coupled = true;
-        } else if value == "--auto-coupled" {
-            coupled = true;
-            automatic = true;
-        } else if value == "--audio-profile-syx" {
-            audio_profile_syx = Some(path("--audio-profile-syx")?);
-        } else if value == "--dsp-image" {
-            image = Some(path("--dsp-image")?);
-        } else if value == "--dsp-state" {
-            state = Some(path("--dsp-state")?);
-        } else if value == "--cf-snapshot" {
-            snapshot = Some(path("--cf-snapshot")?);
-        } else if value == "--no-audio" {
-            no_audio = true;
-        } else if value == "--audio-buffer" {
-            let seconds = values.next().ok_or("--audio-buffer requires seconds")?;
-            let seconds: f64 = seconds
-                .to_str()
-                .ok_or("invalid --audio-buffer")?
-                .parse()
-                .map_err(|_| "invalid --audio-buffer")?;
-            if !seconds.is_finite() || !(0.0..=10.0).contains(&seconds) {
-                return Err("--audio-buffer must be finite and between 0 and 10 seconds".into());
-            }
-            buffer = Some(seconds);
-        } else if value == "--audio-mode" {
-            let mode = values.next().ok_or("--audio-mode requires a mode")?;
-            audio_mode = Some(AudioMode::parse(
-                mode.to_str().ok_or("invalid --audio-mode")?,
-            )?);
-        } else if value == "--scenario" {
-            let spec = values.next().ok_or("--scenario requires a name or file")?;
-            scenario = Some(
-                spec.into_string()
-                    .map_err(|_| "invalid --scenario".to_string())?,
-            );
-        } else if value == "--report" {
-            report = Some(path("--report")?);
-        } else if value.to_string_lossy().starts_with("--") {
-            return Err(format!("unknown option: {}", value.to_string_lossy()));
-        } else if syx.is_none() {
-            syx = Some(value.into());
-        } else {
-            return Err("usage: digiemu [SYX] [--card-image FILE] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]]".into());
-        }
-    }
-    if !cfg!(feature = "coupled-audio") && (scenario.is_some() || report.is_some()) {
-        return Err("--scenario needs a coupled-audio build".into());
-    }
-    let audio = if coupled {
-        if syx.is_none() {
-            return Err("--coupled requires a startup SYX".into());
-        }
-        Some(AudioOptions {
-            image: image.ok_or("--coupled requires --dsp-image")?,
-            state: state.ok_or("--coupled requires --dsp-state")?,
-            snapshot: snapshot.ok_or("--coupled requires --cf-snapshot")?,
-            buffer_seconds: buffer.unwrap_or(0.0),
-            playback: !no_audio,
-            automatic,
-            expected_syx: if automatic {
-                Some(audio_profile_syx.unwrap_or_else(|| {
-                    std::env::var_os("DIGI_EMU_SYX")
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("Digitone_II_OS1.11.syx"))
-                }))
-            } else {
-                None
-            },
-            link_timing: false,
-            audio_mode: audio_mode.unwrap_or_default(),
-        })
-    } else {
-        if image.is_some()
-            || state.is_some()
-            || snapshot.is_some()
-            || buffer.is_some()
-            || audio_mode.is_some()
-            || scenario.is_some()
-            || report.is_some()
-        {
-            return Err("audio options require --coupled".into());
-        }
-        None
-    };
-    Ok(StartupArgs {
-        syx,
-        card_image,
-        audio,
-        scenario,
-        report,
-    })
-}
+
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+    use desktop_runtime::{AudioMode, AudioOptions};
+
     fn parse(args: &[&str]) -> Result<StartupArgs, String> {
-        parse_values(args.iter().map(std::ffi::OsString::from))
+        cli::parse_values(
+            args.iter().map(std::ffi::OsString::from),
+            cfg!(feature = "coupled-audio"),
+        )
     }
+
     #[test]
     fn default_is_cf_only_and_card_path_is_preserved() {
         assert!(parse(&[]).unwrap().audio.is_none());
@@ -922,8 +444,8 @@ mod cli_tests {
         let Ok(bytes) = std::fs::read(syx) else {
             return;
         };
-        let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || actor(receiver, None, None));
+        let (handle, _join) = spawn(Config::new(None));
+        let sender = handle.sender().clone();
         let (load_reply, load_response) = mpsc::channel();
         sender
             .send(Command::Load {
@@ -949,8 +471,8 @@ mod cli_tests {
 
     #[test]
     fn audio_status_validates_session_and_reports_no_coupled_audio_as_null() {
-        let (sender, receiver) = mpsc::channel();
-        let actor = thread::spawn(move || actor(receiver, None, None));
+        let (handle, controller) = spawn(Config::new(None));
+        let sender = handle.sender().clone();
         let (missing_reply, missing_response) = mpsc::channel();
         sender
             .send(Command::AudioStatus {
@@ -978,8 +500,8 @@ mod cli_tests {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("../../../Digitone_II_OS1.11.syx"));
         let Ok(bytes) = std::fs::read(syx) else {
-            drop(sender);
-            actor.join().unwrap();
+            drop((sender, handle));
+            controller.join().unwrap();
             return;
         };
         let (load_reply, load_response) = mpsc::channel();
@@ -999,12 +521,9 @@ mod cli_tests {
                 reply: status_reply,
             })
             .unwrap();
-        assert_eq!(
-            status_response.recv().unwrap().unwrap(),
-            serde_json::Value::Null
-        );
-        drop(sender);
-        actor.join().unwrap();
+        assert_eq!(status_response.recv().unwrap().unwrap(), Value::Null);
+        drop((sender, handle));
+        controller.join().unwrap();
     }
 
     #[test]
@@ -1029,9 +548,10 @@ mod cli_tests {
             expected_syx: None,
             link_timing: false,
             audio_mode: AudioMode::default(),
+            dsp_patch: None,
         };
-        let (sender, receiver) = mpsc::channel();
-        let actor = thread::spawn(move || actor(receiver, Some(audio), None));
+        let (handle, controller) = spawn(Config::new(Some(audio)));
+        let sender = handle.sender().clone();
         let (load_reply, load_response) = mpsc::channel();
         sender
             .send(Command::Load {
@@ -1064,7 +584,7 @@ mod cli_tests {
             })
             .unwrap();
         assert!(second_response.recv().unwrap().unwrap().frame.is_none());
-        drop(sender);
-        actor.join().unwrap();
+        drop((sender, handle));
+        controller.join().unwrap();
     }
 }

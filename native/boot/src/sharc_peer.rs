@@ -98,6 +98,10 @@ pub trait DspEngine {
     fn model_stats(&self) -> Option<sharc_native::ModelStats> {
         None
     }
+    /// Overlay a DSP patch onto the running engine's memory between frames.
+    fn apply_dsp_patch(&mut self, _patch: &crate::dsp_patch::DspPatch) -> Result<(), String> {
+        Err("this DSP engine cannot be patched".into())
+    }
     /// Enable or clear opt-in per-entry dispatch profiling.
     fn set_region_profile(&mut self, _enabled: bool) {}
     /// Cumulative opt-in per-entry dispatch profile.
@@ -802,6 +806,12 @@ enum Msg {
         ack: mpsc::Sender<bool>,
     },
     ExecutionProfileReport,
+    /// Overlay a DSP patch between frames; the ack carries the DSP
+    /// instruction count when it took effect.
+    Patch {
+        patch: crate::dsp_patch::DspPatch,
+        ack: mpsc::Sender<Result<u64, String>>,
+    },
 }
 
 /// Most per-period records the worker keeps (about 22 minutes of audio).
@@ -1055,6 +1065,13 @@ impl ThreadedPeer {
                         Msg::ExecutionProfileReport => {
                             let _ = execution_profile_tx.send(core.engine.execution_profile());
                         }
+                        Msg::Patch { patch, ack } => {
+                            let result = core
+                                .engine
+                                .apply_dsp_patch(&patch)
+                                .map(|()| core.engine.icount());
+                            let _ = ack.send(result);
+                        }
                     }
                 }
             })
@@ -1157,6 +1174,26 @@ impl ThreadedHandle {
         });
         sent && ack_rx.recv().unwrap_or(false)
     }
+    /// Overlay a DSP patch onto the running engine. The worker applies it
+    /// between two frames, after every frame already sent (the channel is
+    /// ordered), so it lands at a defined frame count. Returns the DSP
+    /// instruction count at that point.
+    pub fn apply_patch(&self, patch: crate::dsp_patch::DspPatch) -> Result<u64, String> {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        let sent = self
+            .link
+            .borrow()
+            .tx
+            .as_ref()
+            .is_some_and(|c| c.send(Msg::Patch { patch, ack: ack_tx }).is_ok());
+        if !sent {
+            return Err("DSP worker has stopped".into());
+        }
+        ack_rx
+            .recv()
+            .map_err(|_| "DSP worker stopped while patching".to_string())?
+    }
+
     /// Commit completed frames without waiting; streaming hosts use this between steps.
     /// Call `sync` instead before reading final totals or exporting state.
     pub fn poll(&self) {
@@ -1284,6 +1321,9 @@ impl DspEngine for NativeDsp {
     }
     fn region_profile(&self) -> Option<sharc_native::RegionProfile> {
         self.0.region_profile()
+    }
+    fn apply_dsp_patch(&mut self, patch: &crate::dsp_patch::DspPatch) -> Result<(), String> {
+        apply_dsp_patch(&mut self.0, patch)
     }
     fn set_execution_profile(&mut self, enabled: bool) -> bool {
         self.0.set_option(26, enabled as i64) == 0
@@ -1435,6 +1475,88 @@ pub fn open_dn2_engine(
     state: &[u8],
     clock_base: u64,
 ) -> Result<sharc_native::Engine, String> {
+    open_dn2_engine_patched(image, state, clock_base, None)
+}
+
+/// Overlay a DSP patch onto an engine's memory (`crate::dsp_patch`). Every
+/// `was` guard is checked before any byte of that op is written.
+pub fn apply_dsp_patch(
+    e: &mut sharc_native::Engine,
+    patch: &crate::dsp_patch::DspPatch,
+) -> Result<(), String> {
+    use crate::dsp_patch::PatchOp;
+    fn read(e: &sharc_native::Engine, addr: u32, n: usize) -> Result<Vec<u8>, String> {
+        (0..n)
+            .map(|k| match e.peek(u64::from(addr) + k as u64, 1) {
+                Ok(Some(b)) => Ok(b as u8),
+                _ => Err(format!(
+                    "DSP patch: {:#x} is unknown memory",
+                    addr + k as u32
+                )),
+            })
+            .collect()
+    }
+    fn write(e: &mut sharc_native::Engine, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        if e.poke(u64::from(addr), bytes, 1) as usize != bytes.len() {
+            return Err(format!("DSP patch: write at {addr:#x} refused"));
+        }
+        Ok(())
+    }
+    for op in &patch.ops {
+        match op {
+            PatchOp::Pm { pc, words, was } => {
+                let n = words.len() * 2;
+                let low = 0x2800_0000u32.wrapping_add(pc.wrapping_mul(2));
+                let alias = 0x2000_0000u32.wrapping_add(pc.wrapping_sub(0xb8_0000).wrapping_mul(2));
+                let addr = if (0xb8_0000..0xc0_0000).contains(pc)
+                    && !matches!(e.peek(u64::from(low), 1), Ok(Some(_)))
+                {
+                    alias
+                } else {
+                    low
+                };
+                // A short word is little endian in memory; the first
+                // instruction word is the most significant (written first).
+                if let Some(old) = was {
+                    let have = read(e, addr, n)?;
+                    let want: Vec<u8> = old.iter().flat_map(|w| w.to_le_bytes()).collect();
+                    if have != want {
+                        return Err(format!(
+                            "DSP patch: PM {pc:#x} holds {have:02x?}, patch expects {want:02x?}"
+                        ));
+                    }
+                }
+                let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+                write(e, addr, &bytes)?;
+            }
+            PatchOp::Bytes { addr, bytes, was } => {
+                if let Some(old) = was {
+                    let have = read(e, *addr, old.len())?;
+                    if &have != old {
+                        return Err(format!(
+                            "DSP patch: {addr:#x} holds {have:02x?}, patch expects {old:02x?}"
+                        ));
+                    }
+                }
+                write(e, *addr, bytes)?;
+            }
+        }
+    }
+    e.invalidate_runtime_decode();
+    Ok(())
+}
+
+/// `open_dn2_engine` with an optional DSP patch overlaid on the imported
+/// state, so a snapshot's DSP runs the patched code and data. Generated AOT
+/// blocks re-check their code range (per range, with a region-entry table in
+/// the generated core) and the fast tier re-verifies its code words, so both
+/// stay on for the code a patch does not touch.
+pub fn open_dn2_engine_patched(
+    image: &[u8],
+    state: &[u8],
+    clock_base: u64,
+    patch: Option<&crate::dsp_patch::DspPatch>,
+) -> Result<sharc_native::Engine, String> {
     let mut e = sharc_native::Engine::from_image(image).map_err(|c| format!("image error {c}"))?;
     e.import(state)
         .map_err(|c| format!("state import error {c}"))?;
@@ -1470,6 +1592,9 @@ pub fn open_dn2_engine(
     // absent byte reads as unknown.
     if std::env::var("SHARC_IMPORT_RAW").as_deref() != Ok("1") {
         concretise_import(&mut e);
+    }
+    if let Some(patch) = patch {
+        apply_dsp_patch(&mut e, patch)?;
     }
     Ok(e)
 }

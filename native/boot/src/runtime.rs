@@ -142,6 +142,12 @@ pub struct Emulator {
     fused_loops: Vec<(u32, Loop, Vec<u8>)>,
     /// The watched PCs other than fused-loop heads, sorted.
     observed_pcs: Vec<u32>,
+    /// Host-requested PC hit counters (`probe_pcs`), for headless diagnosis.
+    probe_hits: BTreeMap<u32, u64>,
+    /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
+    irq1_pending: bool,
+    /// (probed pc, word at the stack top = return address for a `jsr`) -> (hits, last icount)
+    probe_rets: BTreeMap<(u32, u32, u32), (u64, u64)>,
     interpreted_instructions: u64,
     idle_fast_forwarded_instructions: u64,
     ram_clear_fast_forwarded_instructions: u64,
@@ -222,6 +228,28 @@ impl Emulator {
         card: Option<Card>,
         policy: ExecutionPolicy,
     ) -> Result<Self, String> {
+        Self::build(syx, card, policy, None)
+    }
+
+    /// Boot a patched build of a known firmware. `base_sha256` names the
+    /// unpatched .syx whose profile (device, version, readiness contract,
+    /// panel) applies; neither the whole-file digest nor the MAIN digest is
+    /// checked, so any MAIN bytes boot if every signature lookup still
+    /// resolves (each one fails loudly otherwise).
+    pub fn new_patched(
+        syx: &[u8],
+        card: Option<Card>,
+        base_sha256: &str,
+    ) -> Result<Self, String> {
+        Self::build(syx, card, ExecutionPolicy::Reference, Some(base_sha256))
+    }
+
+    fn build(
+        syx: &[u8],
+        card: Option<Card>,
+        policy: ExecutionPolicy,
+        base_sha256: Option<&str>,
+    ) -> Result<Self, String> {
         let firmware = parse(syx).map_err(|e| format!("parse SYX/ELE3: {e}"))?;
         let decoded = decode_syx(syx).map_err(|e| format!("decode SYX transport: {e}"))?;
         let container_start = decoded
@@ -246,10 +274,11 @@ impl Emulator {
             return Err("entry prefix verification failed".into());
         }
         let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
-        let syx_sha = digest(syx);
-        let (device, profile, _) = registry
-            .boot_for_main(&syx_sha, &main)
-            .map_err(|e| e.to_string())?;
+        let (device, profile, _) = match base_sha256 {
+            Some(base) => registry.boot_for_base(base),
+            None => registry.boot_for_main(&digest(syx), &main),
+        }
+        .map_err(|e| e.to_string())?;
         let contract = profile
             .readiness_contract
             .ok_or("firmware has no readiness contract")?;
@@ -426,6 +455,9 @@ impl Emulator {
             ram_clear,
             fused_loops,
             observed_pcs: Vec::new(),
+            probe_hits: BTreeMap::new(),
+            irq1_pending: false,
+            probe_rets: BTreeMap::new(),
             interpreted_instructions: 0,
             idle_fast_forwarded_instructions: 0,
             ram_clear_fast_forwarded_instructions: 0,
@@ -494,6 +526,15 @@ impl Emulator {
         Snapshot { status, frame }
     }
 
+    /// The latest OLED frame and its revision, without consuming it: unlike
+    /// `snapshot`, this does not mark the frame as delivered, so a control
+    /// client can read it without taking it from the UI.
+    pub fn current_frame(&self) -> Option<(u64, &[u8])> {
+        self.current_frame
+            .as_deref()
+            .map(|frame| (self.frame_revision, frame))
+    }
+
     /// Export observations without stepping, reading guest memory, or consuming a frame.
     pub fn diagnostics(&self) -> DiagnosticReport {
         DiagnosticReport {
@@ -543,6 +584,30 @@ impl Emulator {
 
     /// ColdFire instructions executed so far (the clock scenarios and
     /// recorded inputs are timed in).
+    /// Count how often each of `pcs` is executed from now on (diagnostics;
+    /// reads no guest state and changes no behaviour).
+    pub fn probe_pcs(&mut self, pcs: &[u32]) {
+        for &pc in pcs {
+            self.probe_hits.entry(pc).or_insert(0);
+        }
+        self.rebuild_watch();
+    }
+
+    /// ((pc, word at the stack top), (hits, last icount)).
+    pub fn probe_rets(&self) -> Vec<((u32, u32, u32), (u64, u64))> {
+        self.probe_rets.iter().map(|(k, v)| (*k, *v)).collect()
+    }
+
+    /// Read a guest longword without side effects (None when unmapped or
+    /// device-owned). For headless diagnosis only.
+    pub fn peek32(&mut self, addr: u32) -> Option<u32> {
+        self.bus.board.read32(addr).ok()
+    }
+
+    pub fn probe_hits(&self) -> Vec<(u32, u64)> {
+        self.probe_hits.iter().map(|(&pc, &n)| (pc, n)).collect()
+    }
+
     pub fn icount(&self) -> u64 {
         self.cpu.icount
     }
@@ -592,7 +657,7 @@ impl Emulator {
         Ok(())
     }
 
-    fn status(&mut self) -> Status {
+    pub fn status(&mut self) -> Status {
         let main_frame = self.frames.latest_for(self.mainloop_tcb);
         let main_ui_reached = is_ready(
             self.intro_done_hits,
@@ -680,6 +745,8 @@ impl Emulator {
             || self.cpu.d[4..8] != [0; 4]
             || !self.input_packets.is_empty()
             || self.rx_pending
+            || self.bus.board.dspi1_irq()
+            || self.irq1_pending
             || self.input_attempted_in_chunk
             || !self.bus.board.ram_matches(clear.entry, &clear.code)
         {
@@ -763,6 +830,8 @@ impl Emulator {
             || self.cpu.last_unimplemented.is_some()
             || !self.input_packets.is_empty()
             || self.rx_pending
+            || self.bus.board.dspi1_irq()
+            || self.irq1_pending
             || self.input_attempted_in_chunk
             || !self.bus.board.ram_matches(previous_pc, &[0x60, 0xfe])
         {
@@ -838,6 +907,7 @@ impl Emulator {
             self.uart_wait,
         ]);
         pcs.extend(self.softfloat.entries());
+        pcs.extend(self.probe_hits.keys().copied());
         if let Some(clear) = &self.ram_clear {
             pcs.push(clear.loop_pc);
         }
@@ -881,6 +951,7 @@ impl Emulator {
         if budget == 0
             || self.error.is_some()
             || self.rx_pending
+            || self.irq1_pending
             || !self.input_packets.is_empty()
             || self.fs_clear_pending.is_some()
             || self.cpu.state != coldfire::RunState::Running
@@ -1104,6 +1175,16 @@ impl Emulator {
                 return;
             }
         }
+        if self.bus.board.dspi1_irq() || self.irq1_pending {
+            match self.service_dspi1() {
+                Ok(true) => return,
+                Ok(false) => {}
+                Err(error) => {
+                    self.set_error(error);
+                    return;
+                }
+            }
+        }
         // `service_input` is a no-op unless a packet is queued or acknowledged.
         if self.rx_pending || !self.input_packets.is_empty() {
             match self.service_input() {
@@ -1220,6 +1301,14 @@ impl Emulator {
     }
 
     fn observe_marks(&mut self, pc: u32) {
+        if let Some(hits) = self.probe_hits.get_mut(&pc) {
+            *hits += 1;
+            let ret = self.bus.board.read32(self.cpu.a[7]).unwrap_or(0);
+            let arg = self.bus.board.read32(self.cpu.a[7].wrapping_add(4)).unwrap_or(0);
+            let entry = self.probe_rets.entry((pc, ret, arg)).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 = self.cpu.icount;
+        }
         if pc == self.task_create {
             self.task_create_hits += 1;
             if self.task_create_hits == 1 {
@@ -1394,6 +1483,67 @@ impl Emulator {
             return None;
         }
         Some((base, consumed, daddr))
+    }
+
+    /// Deliver the DSPI1 peer's interrupts once the guest's mask and priority
+    /// allow them: first the RX completion (eDMA channel 14, INTC0 source 22,
+    /// vector 86), then the peer's IRQ1 (EPORT, source 1, vector 65) that it
+    /// raises after every transfer -- the command phase waits for it before
+    /// reading the response back (`FUN_400124a0`/`FUN_40012500`).
+    fn service_dspi1(&mut self) -> Result<bool, String> {
+        let (source, vector) = if self.bus.board.dspi1_irq() {
+            (22u32, 86u8)
+        } else {
+            (1, 65)
+        };
+        const INTC0_BASE: u32 = 0xfc04_8000;
+        let level = self
+            .bus
+            .board
+            .read8(INTC0_BASE + 0x40 + source)
+            .map_err(|_| "DSPI1 ICR")?
+            & 7;
+        let imrl = self
+            .bus
+            .board
+            .read32(INTC0_BASE + 0x0c)
+            .map_err(|_| "DSPI1 IMRL")?;
+        if level == 0 || (imrl >> source) & 1 != 0 || ((self.cpu.sr >> 8) & 7) >= u16::from(level)
+        {
+            if vector == 65 {
+                // The pin pulsed while the guest had it masked: edge lost.
+                self.irq1_pending = false;
+            }
+            return Ok(false);
+        }
+        let stack = if self.cpu.sr & 0x2000 == 0 && self.cpu.ctrl.cacr & 0x20 != 0 {
+            self.cpu.other_a7
+        } else {
+            self.cpu.a[7]
+        };
+        let frame = (stack & !3).wrapping_sub(8);
+        if !self.bus.board.can_write_ram_range(frame, 8) {
+            return Ok(false);
+        }
+        match self.cpu.take_interrupt(
+            &mut self.bus.board,
+            vector,
+            Some(level),
+            InterruptPolicy::Oracle,
+        ) {
+            Ok(true) => {
+                self.delivery_counts[usize::from(vector)] += 1;
+                if vector == 86 {
+                    self.bus.board.clear_dspi1_irq();
+                    self.irq1_pending = true;
+                } else {
+                    self.irq1_pending = false;
+                }
+                Ok(true)
+            }
+            Ok(false) => Err("DSPI1 handler rejected".into()),
+            Err(error) => Err(format!("DSPI1 delivery poisoned({error:?})")),
+        }
     }
 
     fn service_input(&mut self) -> Result<bool, String> {
@@ -1857,6 +2007,9 @@ impl Emulator {
         use periph::snap::Writer;
         if self.error.is_some() {
             return Err("cannot snapshot a faulted emulator".into());
+        }
+        if self.irq1_pending {
+            return Err("a DSPI1 peer interrupt is pending".into());
         }
         self.cpu.resolve_nzv();
         if self.cpu.fpu.is_some() || self.cpu.last_unimplemented.is_some() {

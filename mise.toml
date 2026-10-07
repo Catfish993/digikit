@@ -19,6 +19,14 @@ description = "Build or inspect a standalone +Drive image"
 run = "tools/native_emu.sh"
 description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready)"
 
+[tasks."emu:serve"]
+run = "tools/native_emu.sh --daemon"
+description = "Run the emulator without a window, paused, serving the control socket (out/native/run/current.json); drive it with tools/digi_client.py. --free runs it live."
+
+[tasks."emu:ctl"]
+run = "uv run python tools/digi_client.py"
+description = "Control a running emulator: mise run emu:ctl status | inject PATCHED.syx | step N | tap CODE | frame out.png | call METHOD k=v | events"
+
 [tasks."emu:build"]
 run = "tools/native_emu.sh --build-only"
 description = "Build the desktop emulator exactly as `mise run emu` does, without launching it"
@@ -43,6 +51,14 @@ description = "Retrain the desktop PGO profile (~6 min); do it at milestones, no
 run = "uv run python tools/coupled.py scenario"
 description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"
 
+[tasks.fastcov]
+run = "uv run python tools/fastcov.py"
+description = "DSP CPU, tier split and fast-tier refusals/exits per tier config: mise run fastcov -- --config default --config fast-auto"
+
+[tasks.core]
+run = "uv run python tools/sharc_transpile.py --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
+description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
+
 [tasks.replay]
 run = "uv run python tools/coupled.py replay"
 description = "Replay inputs recorded by the desktop app (Export diagnostics file) headless"
@@ -57,3 +73,7 @@ run = [
   "uv run python tools/coupled.py test-quick",
 ]
 description = "Fast checks for the tooling, the audio sink and the coupled runtime"
+
+[tasks."ready-dn2"]
+run = "uv run python tools/ready_dn2.py"
+description = "Build the DN2 ready snapshot from the .syx alone (cold DSP start; about 2 min)"

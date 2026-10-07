@@ -76,9 +76,9 @@ T=$(uv run python tools/native_target.py dir)
 cargo build --release --locked --target-dir "$T" -p digi-coupled --features coupled-audio --bin coupled-run
 SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509 "$T"/release/coupled-run \
   --syx Digitone_II_OS1.11.syx \
-  --dsp-image snapshots/dn2-audio-ready-2026-10-03/digi-audio-dn2-image.bin \
-  --dsp-state snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap.dsp \
-  --cf-snapshot snapshots/dn2-audio-ready-2026-10-03/digi-audio-m5.snap \
+  --dsp-image snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
+  --dsp-state snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
+  --cf-snapshot snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
   --scenario idle --scenario trig1-hold --out out/native/runs/x/report.json
 ```
 
@@ -110,8 +110,8 @@ inputs. `qa_script` also plays the shared QA sequence of
 | `idle` | 10 s of audio with no input. |
 | `trig1-hold` | QA prelude, then Audition Trig 1 (button 25) pressed at +60M and held to the end. One voice. |
 | `kb-chord16` | QA prelude, keyboard mode on (button 18 tapped at +50M), then all 16 trig keys (25..40) pressed at +60M and held: a chromatic chord of several voices. |
-| `exactness-100m` | Validation: the `coupled_ready_exactness` workload (QA, Trig 1 down at +60M, up at +100M, 100M instructions). Its PCM hash must be `3b600f6d...7f267` (was `38d2a322...3ff1f8` before the Type 17 SIMD fix). |
-| `trig1-noqa-40m` | Validation: `desktop_trig1_capture_without_qa_script` (Trig 1 from ready, 40M instructions, silent). Hash `a50586e8...b75a`. |
+| `exactness-100m` | Validation: the `coupled_ready_exactness` workload (QA, Trig 1 down at +60M, up at +100M, 100M instructions). Its PCM hash must be `b3f5230f...4d03f` (cold-start reference state, 2026-10-07; was `3b600f6d...7f267` on the old state and `38d2a322...3ff1f8` before the Type 17 SIMD fix). |
+| `trig1-noqa-40m` | Validation: `desktop_trig1_capture_without_qa_script` (Trig 1 from ready, 40M instructions, silent). Hash `2861ce03...c6f21` (cold-start reference state; `a50586e8...b75a` on the pre-2026-10-06 state). |
 
 The QA prelude matters: from the ready snapshot, Trig 1 pressed with no prelude
 gives exact silence (the second validation scenario); the first NO presses

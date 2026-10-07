@@ -854,6 +854,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "digi-control"
+version = "0.1.0"
+dependencies = [
+ "digi-coupled",
+ "dt2-firmware-loader",
+ "elektron-native-boot",
+ "emmc-card",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "digi-coupled"
 version = "0.1.0"
 dependencies = [
@@ -869,6 +881,7 @@ dependencies = [
 name = "digiemu-desktop"
 version = "0.1.0"
 dependencies = [
+ "digi-control",
  "digi-coupled",
  "elektron-native-boot",
  "emmc-card",

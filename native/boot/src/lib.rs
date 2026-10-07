@@ -5,6 +5,8 @@ mod abi;
 mod capture;
 mod common;
 mod cputime;
+pub mod dsp_patch;
+pub mod dsp_stream;
 #[cfg(feature = "play")]
 pub mod pcm_play;
 mod ram_clear;

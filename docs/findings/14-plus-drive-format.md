@@ -1205,3 +1205,7 @@ Checks with the new snapshot (`tools/digi_env.py` `READY` now points at it):
   `DIGI_DESKTOP_TRIG1_REQUIRE_NONZERO=1` passes (it was silent before). **[V]**
 - Finding 16, "Reproduce", says the ready snapshot has the SLC dialog open and
   a tap must not come first. That holds only for the 2026-10-03 snapshot **[C]**.
+
+**[C]** 2026-10-07: the `snapshots/dn2-audio-ready-2026-10-06` DSP state is
+superseded by a cold-start rebuild (`mise run ready-dn2`); the hashes pinned in
+this section moved (see finding 16, "Reference state rebuilt from cold start").

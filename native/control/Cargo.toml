@@ -1,0 +1,30 @@
+[package]
+name = "digi-control"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+description = "Host-agnostic emulator controller and control protocol (JSON-RPC over NDJSON), shared by the desktop app and the headless daemon"
+
+[lib]
+name = "digi_control"
+
+[features]
+default = ["server"]
+# Unix-socket transport and the discovery file (unix only; not for wasm).
+server = []
+# Local-only DN2 coupling: generated DSP code must never be distributed.
+coupled-audio = ["digi-coupled/coupled-audio"]
+
+[dependencies]
+digi-coupled = { path = "../coupled" }
+dt2-firmware-loader = { path = "../loader" }
+elektron-native-boot = { path = "../boot" }
+emmc-card = { path = "../card" }
+serde_json = "1"
+sha2 = "0.10"
+
+[[bin]]
+name = "digi-emud"
+path = "src/bin/digi_emud.rs"
+required-features = ["server"]

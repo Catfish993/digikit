@@ -11,10 +11,10 @@
 //!
 //! ```text
 //! coupled-run --syx Digitone_II_OS1.11.syx \
-//!   --dsp-image snapshots/dn2-audio-ready-2026-10-06/digi-audio-dn2-image.bin \
-//!   --dsp-state snapshots/dn2-audio-ready-2026-10-06/digi-audio-m5.snap.dsp \
-//!   --cf-snapshot snapshots/dn2-audio-ready-2026-10-06/digi-audio-m5.snap \
-//!   [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--playback] [--audio-buffer S] [--no-pcm-tap] [--no-link-timing] [--profile-regions] [--profile-execution] \
+//!   --dsp-image snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
+//!   --dsp-state snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
+//!   --cf-snapshot snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
+//!   [--dsp-patch FILE] [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--playback] [--audio-buffer S] [--no-pcm-tap] [--no-link-timing] [--profile-regions] [--profile-execution] \
 //!   [--out report.json] [--list] \
 //!   [--replay FILE.json] [--wav PATH] [--audio-mode rebuffer|stretch|gap]
 //! ```
@@ -77,6 +77,7 @@ struct Args {
     list: bool,
     replay: Option<PathBuf>,
     wav: Option<PathBuf>,
+    dsp_patch: Option<PathBuf>,
     audio_mode: AudioMode,
 }
 
@@ -100,6 +101,7 @@ fn parse_args() -> Result<Args, String> {
         replay: None,
         wav: None,
         audio_mode: AudioMode::default(),
+        dsp_patch: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -109,6 +111,7 @@ fn parse_args() -> Result<Args, String> {
             "--dsp-image" => a.image = value("--dsp-image")?.into(),
             "--dsp-state" => a.state = value("--dsp-state")?.into(),
             "--cf-snapshot" => a.snapshot = value("--cf-snapshot")?.into(),
+            "--dsp-patch" => a.dsp_patch = Some(value("--dsp-patch")?.into()),
             "--scenarios" => a.scenarios = Some(value("--scenarios")?.into()),
             "--scenario" => a.names.push(value("--scenario")?),
             "--seconds" => {
@@ -499,6 +502,7 @@ fn run_scenario(
         expected_syx: None,
         link_timing: args.link_timing,
         audio_mode: args.audio_mode,
+        dsp_patch: args.dsp_patch.clone(),
     };
     let mut rt = CoupledRuntime::new(syx, None, Some(&options))?;
     if let Some(path) = wav {

@@ -41,3 +41,7 @@ live-audio = { path = "../live", optional = true }
 [[example]]
 name = "sharc_live"
 required-features = ["sharc"]
+
+[[example]]
+name = "dsp_cold"
+required-features = ["sharc"]

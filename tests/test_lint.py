@@ -14,6 +14,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
     "tools/benchlock.py",
+    "tools/digi_client.py",
+    "tests/test_digi_client.py",
+    "tools/dsp_patch.py",
+    "tools/sharc_cold_state.py",
     "tools/dspi_log.py",
     "tests/test_dspi_log.py",
     "tools/dsp_frames.py",

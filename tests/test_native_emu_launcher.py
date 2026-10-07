@@ -513,3 +513,31 @@ def test_pgo_build_failure_skips_the_check(monkeypatch, capsys):
     assert exc.value.code == 101
     assert len(calls) == 1
     assert capsys.readouterr().err == ""
+
+
+def test_daemon_command_builds_digi_emud_without_pgo_or_the_panel():
+    scope = launcher()
+    plain = scope["daemon_command"](["x.syx"])
+    assert plain[plain.index("--manifest-path") + 1] == "native/control/Cargo.toml"
+    assert plain[plain.index("--bin") + 1] == "digi-emud"
+    assert "--features" not in plain
+    assert plain[plain.index("--") + 1 :] == ["x.syx"]
+    coupled = scope["daemon_command"](["x.syx", "--coupled"])
+    assert coupled[coupled.index("--features") + 1] == "coupled-audio"
+    assert scope["app_binary"](plain, None).name == "digi-emud"
+    assert scope["app_binary"](scope["cargo_command"](["x.syx"]), None).name == (
+        "digiemu-desktop"
+    )
+
+
+def test_main_daemon_builds_and_runs_digi_emud(monkeypatch):
+    scope, calls = _build_run_setup(monkeypatch)
+    panel = []
+    monkeypatch.setitem(
+        scope["main"].__globals__, "build_panel", lambda environ: panel.append(1)
+    )
+    scope["main"](["x.syx", "--cf-only", "--daemon"])
+    assert panel == []
+    assert calls[0][:2] == ["cargo", "build"]
+    assert calls[1][0].endswith("release/digi-emud")
+    assert calls[1][1:] == ["x.syx"]

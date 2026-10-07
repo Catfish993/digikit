@@ -281,12 +281,48 @@ def verify_pgo(command: list[str], env: dict[str, str]) -> None:
         print(PGO_MISMATCH_WARNING, file=sys.stderr, flush=True)
 
 
+def daemon_command(args: list[str]) -> list[str]:
+    """`cargo run` for the windowless daemon `digi-emud` (native/control).
+
+    Same target-dir rules as the desktop app, so a coupled daemon and the app
+    share one compiled copy of the generated core. No PGO: the profile is
+    trained on the desktop binary.
+    """
+    command = [
+        "cargo",
+        "run",
+        "--release",
+        "--locked",
+        "--manifest-path",
+        "native/control/Cargo.toml",
+        "--bin",
+        "digi-emud",
+    ]
+    if "--coupled" in args or "--auto-coupled" in args:
+        command.extend(
+            [
+                "--features",
+                "coupled-audio",
+                "--target-dir",
+                target_dir_for(generated_core()),
+            ]
+        )
+    else:
+        command.extend(["--target-dir", target_dir_for(None)])
+    return [*command, "--", *args]
+
+
 def app_binary(command: list[str], plan: object | None) -> pathlib.Path:
-    """The digiemu-desktop binary the build command produces."""
+    """The binary the build command produces (digiemu-desktop, or digi-emud)."""
     target = pathlib.Path(command[command.index("--target-dir") + 1])
+    name = (
+        command[command.index("--bin") + 1]
+        if "--bin" in command[: command.index("--")]
+        else "digiemu-desktop"
+    )
     if plan is not None:
-        return target / digi_env.TRIPLE / "release" / "digiemu-desktop"
-    return target / "release" / "digiemu-desktop"
+        return target / digi_env.TRIPLE / "release" / name
+    return target / "release" / name
 
 
 def panel_digest() -> str:
@@ -328,11 +364,100 @@ def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
     PANEL_STAMP.write_text(json.dumps({"digest": digest}) + "\n")
 
 
+def plusdrive_card(
+    samples: pathlib.Path, syx: pathlib.Path, env: dict[str, str]
+) -> pathlib.Path:
+    """Build (or reuse) a +Drive card image from a folder of WAV files.
+
+    Uses the native `plusdrive build` (native/plusdrive). The image lives in
+    out/plusdrive/native/<key12>/dt2.img, keyed by the SHA-256 of the firmware,
+    the plusdrive binary and every sample's name and bytes, so unchanged
+    inputs reuse the image.
+    """
+    if not samples.is_dir():
+        raise SystemExit(f"--samples: {samples} is not a directory")
+    names = sorted(
+        p.name for p in samples.iterdir() if p.suffix.lower() == ".wav" and p.is_file()
+    )
+    if not names:
+        raise SystemExit(f"--samples: no .wav files directly in {samples}")
+    manifest = ROOT / "native" / "plusdrive" / "Cargo.toml"
+    # Share the CF-only target dir with the desktop app: one dependency build.
+    target = target_dir_for(None)
+    done = subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--release",
+            "--locked",
+            "--manifest-path",
+            str(manifest),
+            "--bin",
+            "plusdrive",
+            "--target-dir",
+            target,
+        ],
+        cwd=ROOT,
+        env=env,
+    )
+    if done.returncode:
+        raise SystemExit(done.returncode)
+    binary = pathlib.Path(target) / "release" / "plusdrive"
+    h = hashlib.sha256()
+    h.update(b"firmware\0" + hashlib.sha256(syx.read_bytes()).digest())
+    h.update(b"plusdrive\0" + hashlib.sha256(binary.read_bytes()).digest())
+    for name in names:
+        h.update(b"sample\0" + name.encode() + b"\0")
+        h.update(hashlib.sha256((samples / name).read_bytes()).digest())
+    key = h.hexdigest()[:12]
+    image = ROOT / "out" / "plusdrive" / "native" / key / "dt2.img"
+    if image.is_file():
+        print(f"+Drive card: reusing {image} ({len(names)} sample(s))", file=sys.stderr)
+        return image
+    image.parent.mkdir(parents=True, exist_ok=True)
+    partial = image.with_suffix(".part")
+    partial.unlink(missing_ok=True)
+    done = subprocess.run(
+        [str(binary), "build", str(samples), "-o", str(partial), "--syx", str(syx)],
+        cwd=ROOT,
+        env=env,
+    )
+    if done.returncode:
+        partial.unlink(missing_ok=True)
+        raise SystemExit(done.returncode)
+    partial.rename(image)
+    print(f"+Drive card: built {image} ({len(names)} sample(s))", file=sys.stderr)
+    return image
+
+
 def main(args: list[str] | None = None) -> None:
     args = sys.argv[1:] if args is None else args
     force_cf = "--cf-only" in args
     build_only = "--build-only" in args
-    args = [arg for arg in args if arg not in ("--cf-only", "--build-only")]
+    daemon = "--daemon" in args
+    args = [arg for arg in args if arg not in ("--cf-only", "--build-only", "--daemon")]
+    if "--samples" in args:
+        i = args.index("--samples")
+        if i + 1 >= len(args):
+            raise SystemExit("--samples needs a directory of .wav files")
+        samples = pathlib.Path(args[i + 1])
+        del args[i : i + 2]
+        if "--card-image" in args:
+            raise SystemExit("--samples and --card-image cannot be combined")
+        value_options = {"--card-image", "--audio-buffer"}
+        syx_arg = next(
+            (
+                v
+                for j, v in enumerate(args)
+                if not v.startswith("--")
+                and (j == 0 or args[j - 1] not in value_options)
+            ),
+            None,
+        )
+        syx = pathlib.Path(syx_arg) if syx_arg else digi_env.firmware(os.environ)
+        env = digi_env.rust_env(dict(os.environ))
+        card = plusdrive_card(samples, syx, env)
+        args = [*([] if syx_arg else [str(syx)]), *args, "--card-image", str(card)]
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:
@@ -347,10 +472,12 @@ def main(args: list[str] | None = None) -> None:
         set_fast_regions(args, os.environ)
     # The native shell serves the built panel; it does not load browser WASM.
     # Avoid rebuilding the browser core (and its local DSP code) for a desktop run.
-    build_panel(os.environ)
-    plan = pgo_plan(args)
+    # The daemon has no window: no panel, no PGO.
+    if not daemon:
+        build_panel(os.environ)
+    plan = None if daemon else pgo_plan(args)
     env = digi_env.rust_env({**os.environ, **(plan.env if plan is not None else {})})  # type: ignore[attr-defined]
-    command = cargo_command(args, plan)
+    command = daemon_command(args) if daemon else cargo_command(args, plan)
     if plan is not None:
         verify_pgo(command, env)
     else:

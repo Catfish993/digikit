@@ -7,7 +7,7 @@ publish = false
 [features]
 diagnostics = ["elektron-native-boot/diagnostic-profile", "elektron-native-boot/diagnostic-events"]
 # Local-only DN2 coupling: generated DSP code must never be distributed.
-coupled-audio = ["digi-coupled/coupled-audio"]
+coupled-audio = ["digi-coupled/coupled-audio", "digi-control/coupled-audio"]
 
 [build-dependencies]
 tauri-build = { version = "2.5.1", features = [] }
@@ -19,6 +19,7 @@ serde_json = "1"
 elektron-native-boot = { path = "../../../native/boot" }
 emmc-card = { path = "../../../native/card" }
 digi-coupled = { path = "../../../native/coupled" }
+digi-control = { path = "../../../native/control" }
 
 [dev-dependencies]
 sha2 = "0.10"

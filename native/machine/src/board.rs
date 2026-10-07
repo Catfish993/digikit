@@ -32,6 +32,8 @@ const PAGE_MASK: u32 = PAGE_SIZE as u32 - 1;
 /// The console TX descriptor is a 4 KiB modulo ring. Keep host collection
 /// bounded even when a malformed descriptor requests a larger transfer.
 const TX35_MAX_BYTES: usize = 4096;
+/// eDMA channel the DT2 firmware uses for DSPI1 RX (finding 04, transfer inventory).
+const DSPI1_RX_CHAN: usize = 14;
 type RamPage = Box<[u8]>;
 
 // `owned_mmio`'s fast reject: no owned device slot starts below the end of
@@ -157,6 +159,9 @@ pub struct Board {
     /// Bytes drained by the eDMA35 UART8-TX model. This is host observation
     /// only; UART RX and peripheral responses remain outside this Board seam.
     uart_tx: Vec<u8>,
+    /// DSPI1 RX completion (eDMA channel 14) waiting for the host to raise
+    /// its interrupt. Not part of the snapshot: `snap_save` refuses while set.
+    dspi1_irq: bool,
 }
 impl Board {
     /// Enable the recovered SSI/eDMA clock only for bounded diagnostics.
@@ -360,6 +365,7 @@ impl Board {
             oracle_fault_pages: 0,
             sd_gate: None,
             uart_tx: vec![],
+            dspi1_irq: false,
         }
     }
 
@@ -369,8 +375,8 @@ impl Board {
     /// loader, same optional lanes enabled); host-owned peers are untouched.
     /// Fails if completion events or DMA ranges are still undrained.
     pub fn snap_save(&self, w: &mut periph::snap::Writer) -> Result<(), String> {
-        if !self.events.is_empty() || !self.dma_written.is_empty() {
-            return Err("board has undrained completion events or DMA ranges".into());
+        if !self.events.is_empty() || !self.dma_written.is_empty() || self.dspi1_irq {
+            return Err("board has undrained completion events, DMA ranges or a DSPI1 interrupt".into());
         }
         const BLOCK: usize = 4096;
         w.tag("BORD");
@@ -723,7 +729,59 @@ impl Board {
     /// `take_uart_tx` would return anything.
     #[inline]
     pub fn has_host_events(&self) -> bool {
-        !self.events.is_empty() || !self.dma_written.is_empty() || !self.uart_tx.is_empty()
+        !self.events.is_empty()
+            || !self.dma_written.is_empty()
+            || !self.uart_tx.is_empty()
+            || self.dspi1_irq
+    }
+    /// A DSPI1 RX completion interrupt (eDMA channel 14) is waiting for the
+    /// host to deliver it; the host calls `clear_dspi1_irq` once it has.
+    #[inline]
+    pub fn dspi1_irq(&self) -> bool {
+        self.dspi1_irq
+    }
+    pub fn clear_dspi1_irq(&mut self) {
+        self.dspi1_irq = false;
+    }
+    /// DSPI1 (`0xFC03_C000`) has no modelled peer on the DT2 board: its
+    /// command/response protocol (`FUN_400124a0`) sends a command and reads
+    /// back a block, then waits for the RX channel's completion. Model the
+    /// peer as answering with zeros: when the guest arms channel 14 with the
+    /// DSPI1 POPR source, fill the destination, retire the major loop and
+    /// raise the completion. Without this the sample loader blocked forever
+    /// on the first sample (every pend that waited on DSPI1 never woke).
+    fn dspi1_rx_request(&mut self) -> Result<(), BoardWriteError> {
+        const DSPI1_POPR_LO: u32 = 0xFC03_C03A;
+        let mut tcd = edma::TcdView::new(&mut self.dma.edma_regs, DSPI1_RX_CHAN);
+        if tcd.saddr() != DSPI1_POPR_LO || tcd.citer() == 0 || tcd.nbytes() == 0 {
+            return Ok(());
+        }
+        let total = u32::from(tcd.citer()) * tcd.nbytes();
+        let dest = tcd.daddr();
+        let step = tcd.doff();
+        let end = (i64::from(dest) + step * i64::from(tcd.citer()) + tcd.dlast()) as u32;
+        let biter = tcd.biter();
+        tcd.set_daddr(end);
+        tcd.set_citer(biter);
+        // Contiguous destination (DOFF == element size) is all the firmware uses.
+        if step != i64::from(tcd.nbytes()) {
+            return Ok(());
+        }
+        for offset in 0..total {
+            let at = dest.wrapping_add(offset);
+            if Self::owned_mmio(at) || self.page(at).is_none() {
+                return Err(BoardWriteError::DspiDma {
+                    address: at,
+                    bytes: total as usize,
+                });
+            }
+        }
+        for offset in 0..total {
+            assert!(self.ram_write(dest.wrapping_add(offset), 1, 0));
+        }
+        self.dma_written.push((dest, total as usize));
+        self.dspi1_irq = true;
+        Ok(())
     }
     pub fn take_completion_events(&mut self) -> Vec<CompletionEvent> {
         std::mem::take(&mut self.events)
@@ -1447,6 +1505,13 @@ impl Board {
                 self.write_dspi2_rx(dest, &bytes)?;
             }
             self.update_dma59_request(addr, size, value);
+            if addr == edma::SERQ
+                && size == 1
+                && value as u8 & 0xC0 == 0
+                && (value as u8 & 0x3F) as usize == DSPI1_RX_CHAN
+            {
+                self.dspi1_rx_request()?;
+            }
             return Ok(());
         }
         if !Esdhc::<Card>::owns(addr) {

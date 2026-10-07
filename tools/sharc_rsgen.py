@@ -1349,6 +1349,15 @@ def generate(
             '(%#x, %d, "%s")' % (lo, n, h) for lo, n, h in code_ranges(mem, blocks)
         ),
         "",
+        "/// The entry PCs of each generated region (a region's bodies pass control",
+        "/// directly, so the engine bars all of a region's entries when any of its",
+        "/// code ranges no longer matches CODE_RANGES).",
+        "pub static REGION_ENTRIES: &[&[u32]] = &[%s];"
+        % ", ".join(
+            "&[%s]" % ", ".join("%#x" % st for st in sorted(starts_))
+            for _n, starts_, _t in regions
+        ),
+        "",
         "/// The decoded instruction at PC (sequencer.decode_at over the image).",
         "pub fn insn_at(pc: Int) -> Option<Insn> {",
         "    crate::canon::insn_table(INSN_BLOB).get(pc)",

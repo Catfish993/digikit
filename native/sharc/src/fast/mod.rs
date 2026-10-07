@@ -453,6 +453,14 @@ pub struct FastEngine {
     ctx: glue::Ctx,
     pub stats: FastStats,
     log: bool,
+    /// Reports at exit (`SHARC_FAST_LOG` set to anything).
+    summary: bool,
+    /// `SHARC_FAST_FOLLOW=1`: the instruction after an instruction a region
+    /// stopped at (one the lowering cannot run) becomes an entry too, so the
+    /// code after it runs from a region again once the interpreter has run
+    /// the stop instruction. Never dropped as unprofitable.
+    follow: bool,
+    follow_queue: Vec<u32>,
     cap_chain: bool,
     /// Entry PCs not yet added to the engine's chain stop set
     /// (`FastTier::sync_chain_stops`); filled at setup and by `arm`.
@@ -515,11 +523,17 @@ impl FastEngine {
             pcs: list,
             ctx: glue::Ctx::default(),
             stats: FastStats::default(),
+            // SHARC_FAST_LOG=summary: only the reports at exit (tools/fastcov.py);
+            // any other value also logs every event and run.
             log: {
-                let on = std::env::var_os("SHARC_FAST_LOG").is_some();
+                let v = std::env::var("SHARC_FAST_LOG").ok();
+                let on = v.as_deref().is_some_and(|v| v != "summary");
                 glue::set_shape_log(on);
                 on
             },
+            summary: std::env::var_os("SHARC_FAST_LOG").is_some(),
+            follow: std::env::var("SHARC_FAST_FOLLOW").is_ok_and(|v| v == "1"),
+            follow_queue: Vec::new(),
             // SHARC_FAST_CHAIN=0 keeps chaining (entries reached by a chain
             // are then missed).
             cap_chain: std::env::var("SHARC_FAST_CHAIN").map_or(true, |v| v != "0"),
@@ -589,6 +603,9 @@ impl FastEngine {
         };
         self.pcs.swap_remove(i);
         self.slots.swap_remove(i);
+        // Slot indexes moved: the pending exit gap would name another slot
+        // (or none: an index past the end panicked under SHARC_FAST_COV).
+        self.cov_last = None;
         if let Some(&moved) = self.pcs.get(i) {
             self.lookup.insert(moved, i);
         }
@@ -736,6 +753,24 @@ impl FastEngine {
                         }
                         if self.cov {
                             cov_built(s, pc, &r);
+                        }
+                        if self.follow
+                            && let Some(c) = &r.cfg
+                        {
+                            for (at, why) in &c.stops {
+                                // Calls, jumps, loops and delay slots leave
+                                // the interpreter at another PC (an entry of
+                                // its own or not worth one).
+                                if ["call", "jump", "indirect", "delay", "loop", "zero", "DO"]
+                                    .iter()
+                                    .any(|k| why.starts_with(k))
+                                {
+                                    continue;
+                                }
+                                if let Ok(d) = region::decode_one(s, *at) {
+                                    self.follow_queue.push(*at + d.len_sw);
+                                }
+                            }
                         }
                         self.stats.built += 1;
                         slot.region = Some(r);
@@ -904,6 +939,19 @@ fn mode1_bits(s: &St) -> u32 {
 }
 
 impl FastEngine {
+    /// Make PC an entry (kept for good: not auto-selected, so never dropped).
+    fn add_entry(&mut self, pc: u32) {
+        if self.index(pc).is_some() {
+            return;
+        }
+        self.lookup.insert(pc, self.pcs.len());
+        self.pcs.push(pc);
+        self.stops_new.push(pc);
+        self.slots.push(Slot::default());
+        let (w, m) = Self::bit(pc);
+        self.bloom[w] |= m;
+    }
+
     /// A counter reached the threshold: make the PC an entry.
     fn arm(&mut self, pc: u32) {
         if self.index(pc).is_some() {
@@ -934,7 +982,7 @@ impl FastEngine {
 
 impl Drop for FastEngine {
     fn drop(&mut self) {
-        if self.log && (self.stats.calls > 0 || self.stats.armed > 0) {
+        if self.summary && (self.stats.calls > 0 || self.stats.armed > 0) {
             eprintln!("{}", self.report());
         }
         if self.cov {
@@ -980,6 +1028,9 @@ impl Drop for FastEngine {
 
 impl FastEngine {
     fn run_inner(&mut self, s: &mut St, pc: u32, chained: bool) -> Option<u32> {
+        while let Some(next) = self.follow_queue.pop() {
+            self.add_entry(next);
+        }
         let ix = self.index(pc)?;
         if chained {
             // Only a built, current region of the CFG shape; nothing is
@@ -1320,8 +1371,13 @@ impl FastTier for FastEngine {
 
 /// `SHARC_BLOCKTRANS=0xb8276c,...` (hex cluster roots).
 pub fn blocktrans_roots() -> Vec<u32> {
-    std::env::var("SHARC_BLOCKTRANS")
-        .unwrap_or_default()
+    let mut text = std::env::var("SHARC_BLOCKTRANS").unwrap_or_default();
+    if let Some(path) = text.strip_prefix('@') {
+        text = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("SHARC_BLOCKTRANS=@{path}: {e}"))
+            .replace(char::is_whitespace, ",");
+    }
+    text
         .split(',')
         .filter(|x| !x.trim().is_empty())
         .filter_map(|x| u32::from_str_radix(x.trim().trim_start_matches("0x"), 16).ok())
@@ -1331,7 +1387,14 @@ pub fn blocktrans_roots() -> Vec<u32> {
 /// `SHARC_FAST_REGIONS=0x1c399a,...` (hex entry PCs) as a fast tier.
 /// `SHARC_FAST_AUTO=threshold,min_insns[,blocks]` adds run-time selection.
 pub fn from_env() -> Option<FastEngine> {
-    let text = std::env::var("SHARC_FAST_REGIONS").unwrap_or_default();
+    let mut text = std::env::var("SHARC_FAST_REGIONS").unwrap_or_default();
+    // `@FILE`: the PC list (hex, separated by commas or white space) is in FILE
+    // (a program database's blocks or instructions do not fit in the environment).
+    if let Some(path) = text.strip_prefix('@') {
+        text = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("SHARC_FAST_REGIONS=@{path}: {e}"))
+            .replace(char::is_whitespace, ",");
+    }
     let pcs: Vec<u32> = text
         .split(',')
         .filter(|x| !x.trim().is_empty())

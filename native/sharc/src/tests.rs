@@ -1062,3 +1062,114 @@ fn chain_stop_set_holds_what_was_added() {
     assert!(!s.chain_stops_at(0x1c0001));
     assert!(!s.chain_stops_at(0xb8276c));
 }
+
+/// Two `JUMP 0` self-loops, at PC 0 and PC 3 (three short words each), in
+/// the short-word alias. Byte 4 of each instruction is its relative offset.
+#[cfg(sharc_gen)]
+const SPIN_ALIAS: u32 = 0x2800_0000;
+
+/// An engine running `SPIN_ALIAS` code through the runtime decoder, with the
+/// reference fast tier at PC 0 when `fast`.
+#[cfg(sharc_gen)]
+fn patch_engine(fast: bool, models: bool) -> crate::Engine {
+    let spin = [0x3e, 0x07, 0, 0, 0, 0];
+    let mut mem = Mem::new();
+    mem.load(SPIN_ALIAS, &spin);
+    mem.load(SPIN_ALIAS + 6, &spin);
+    mem.reset();
+    let mut e = crate::Engine::new(mem);
+    assert_eq!(e.set_option(4, 1), 0);
+    if models {
+        let gen_model = i64::from(crate::gen_explicit_memory_model());
+        for (k, v) in [(5, 1), (6, 12345), (10, gen_model), (21, 1)] {
+            assert_eq!(e.set_option(k, v), 0);
+        }
+        e.s.r[116] = V::c(0x20); // MODE2.TIMEN
+        e.s.r[110] = V::c(100_000);
+        e.s.r[111] = V::c(100_000);
+    }
+    e.s.r[114] = V::c(0); // MODE1
+    e.s.r[122] = V::c(0); // IRPTL
+    e.s.r[123] = V::c(0); // IMASK
+    e.s.r[124] = V::c(0); // IMASKP
+    if fast {
+        e.set_fast(Some(Box::new(crate::fast::FastEngine::new(
+            Box::new(crate::fast::interp::InterpBackend),
+            &[0],
+        ))));
+    }
+    e
+}
+
+/// A fast region is made from the code in memory, so code that changes under
+/// it (a host store, a store through the other alias, a restore) must not run
+/// from the old region; the result is what the interpreter alone gives.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_region_follows_code_changes() {
+    for models in [false, true] {
+        let mut plain = patch_engine(false, models);
+        let mut fast = patch_engine(true, models);
+        // The loop at PC 0 runs from a built region.
+        for e in [&mut plain, &mut fast] {
+            assert_eq!(e.step(100), 100, "{:?}", e.halt);
+        }
+        let st = fast.fast.as_ref().unwrap().fast_stats().unwrap();
+        assert_eq!((st.built, st.runs), (1, 1), "models {models}");
+        same_state(&plain, &fast, "before the patch");
+        // JUMP 0 -> JUMP 3 (host store): the loop at PC 3 runs, not the old region.
+        for e in [&mut plain, &mut fast] {
+            e.s.mem.write_byte(SPIN_ALIAS + 4, 3);
+            assert_eq!(e.step(100), 100, "{:?}", e.halt);
+            assert_eq!(e.step(100), 100, "{:?}", e.halt);
+        }
+        assert_eq!(plain.s.pc_sw, 3);
+        same_state(&plain, &fast, "after the host store");
+        // JUMP 3 -> JUMP 0 again, through the DM write fast path (a byte
+        // store by the program itself); the loop at PC 0 is back.
+        for e in [&mut plain, &mut fast] {
+            e.s.pc_sw = 0;
+            assert_eq!(e.s.mem.fast_write(SPIN_ALIAS + 4, 1, 0), Some(3));
+            assert_eq!(e.step(100), 100, "{:?}", e.halt);
+            assert_eq!(e.step(100), 100, "{:?}", e.halt);
+        }
+        assert_eq!(plain.s.pc_sw, 0);
+        same_state(&plain, &fast, "after the fast store");
+        // A change in an instruction the region never reads leaves it valid.
+        let calls = fast.fast.as_ref().unwrap().fast_stats().unwrap().runs;
+        for e in [&mut plain, &mut fast] {
+            e.s.mem.write_byte(SPIN_ALIAS + 6 + 4, 1);
+            assert_eq!(e.step(100), 100, "{:?}", e.halt);
+        }
+        same_state(&plain, &fast, "after an unrelated store");
+        assert!(fast.fast.as_ref().unwrap().fast_stats().unwrap().runs > calls);
+    }
+}
+
+/// With the loaded code not the code the generated blocks came from, blocks
+/// stay off but the fast tier (which checks its own code) keeps running,
+/// under the models too (coupled runs of patched DSP code).
+#[cfg(sharc_gen)]
+#[test]
+fn fast_tier_runs_where_blocks_are_barred_by_the_code_check() {
+    let mut e = patch_engine(true, true);
+    e.dispatch = crate::Dispatch::new(&[(0, fake_spin_block)], &[0]);
+    // The stand-in block code is not what the memory holds.
+    e.code_known = true;
+    e.code_ok = false;
+    e.code_checked = e.s.mem.code_gen;
+    assert_eq!(e.step(1000), 1000, "{:?}", e.halt);
+    let st = e.fast.as_ref().unwrap().fast_stats().unwrap();
+    assert!(st.insns > 0, "the fast tier did not run: {st:?}");
+    // Every block instruction is the fast tier's (the stand-in never ran).
+    assert_eq!(e.stats.block_instructions, st.insns);
+    assert!(e.model_stats.code_mismatch > 0);
+    // `SHARC_AOT=0`: blocks off, fast tier on.
+    let mut e = patch_engine(true, true);
+    e.dispatch = crate::Dispatch::new(&[(0, fake_spin_block)], &[0]);
+    e.use_blocks = false;
+    assert_eq!(e.step(1000), 1000, "{:?}", e.halt);
+    let st = e.fast.as_ref().unwrap().fast_stats().unwrap();
+    assert!(st.insns > 0);
+    assert_eq!(e.stats.block_instructions, st.insns);
+}

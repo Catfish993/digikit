@@ -247,3 +247,17 @@ samples unchanged.
   interpreter switches plus `DIGI_DSP_MODEL_LOG=m.csv`; compare absolute
   frames with `tools/dsp_frames.py first A B --align 1000 1000 --after 400`.
 
+
+## Reference state rebuilt from cold start (2026-10-07)
+
+**[C]** The DN2 hashes above (`3b600f6d..`, `aa1dbd9e..`, `1ca0ae84..`, CF digest
+`ab27c5c9..`, DSP export `c24a3040..`) belong to the old ready state, whose
+DSP start state (`digi-audio-loop2-fresh.bin`) had the DC-blocker coefficient
+DM `0x24f378` (c22 of the record at `0x24f320`, read by `0xb809f2`) corrupted:
+the pre-ed02999 SIMD Type 17 bug left the S2 lane at -0.0 instead of -a/16.
+The reference is now `mise run ready-dn2` (tools/ready_dn2.py: CF cold boot
+plus a DSP cold-start state from the .syx alone). New pins: exactness-100m
+`b3f5230f..`, trig1-taps `d60ad339..`, trig1-tap-release `88347621..`,
+trig1-noqa-40m `2861ce03..`, CF digest `55dc699e..`, DSP export `4dc48019..`
+(`native/coupled/scenarios.json`, `coupled_ready_exactness`). The retrigger
+scans of this finding were made on the old state and are not repeated **[O]**.

@@ -277,6 +277,10 @@ pub struct Engine {
     code_checked: u64,
     code_known: bool,
     code_ok: bool,
+    /// With `code_ok` false: the entry PCs of the generated regions that touch
+    /// a code range that no longer matches (sorted), or None for every entry.
+    /// Other blocks keep running.
+    code_barred: Option<Vec<u32>>,
     /// Optional fast tier (src/fast): tried at its entry PCs before the
     /// generated block. None by default; behaviour is unchanged without it.
     pub fast: Option<Box<dyn fast::FastTier>>,
@@ -642,6 +646,7 @@ impl Engine {
             code_checked: 0,
             code_known: false,
             code_ok: false,
+            code_barred: None,
             fast: None,
             fast_auto: false,
             fast_auto_dispatch: false,
@@ -1067,10 +1072,15 @@ impl Engine {
         self.code_ok
     }
 
-    fn verify_code(&self) -> bool {
+    /// Check the loaded code against the generator's per-range hashes; with
+    /// per-region data, record which entries a mismatch bars (`code_barred`)
+    /// and end chains at them.
+    fn verify_code(&mut self) -> bool {
         #[cfg(all(sharc_gen, sharc_image))]
         {
-            for &(start, len, want) in generated::image::CODE_RANGES {
+            let ranges = generated::image::CODE_RANGES;
+            let mut bad = Vec::new();
+            for (i, &(start, len, want)) in ranges.iter().enumerate() {
                 let mut bytes = Vec::with_capacity(len as usize * 2);
                 for k in 0..len {
                     match self.s.mem.read_sw(start + k) {
@@ -1081,10 +1091,40 @@ impl Engine {
                 let mut h = sha256::Sha256::new();
                 h.update(&bytes);
                 if frames::hex(&h.finish()) != want {
-                    return false;
+                    bad.push(i);
                 }
             }
-            true
+            if bad.is_empty() {
+                self.code_barred = Some(Vec::new());
+                return true;
+            }
+            #[cfg(sharc_region_entries)]
+            {
+                let range_of = |pc: u32| {
+                    let i = ranges.partition_point(|r| r.0 <= pc).checked_sub(1)?;
+                    (pc < ranges[i].0 + ranges[i].1).then_some(i)
+                };
+                let mut barred = Vec::new();
+                for entries in generated::image::REGION_ENTRIES {
+                    if entries
+                        .iter()
+                        .any(|&pc| range_of(pc).is_none_or(|i| bad.contains(&i)))
+                    {
+                        barred.extend_from_slice(entries);
+                    }
+                }
+                barred.sort_unstable();
+                barred.dedup();
+                for &pc in &barred {
+                    self.s.chain_stop_add(pc);
+                }
+                self.code_barred = Some(barred);
+            }
+            #[cfg(not(sharc_region_entries))]
+            {
+                self.code_barred = None;
+            }
+            false
         }
         #[cfg(not(all(sharc_gen, sharc_image)))]
         {
@@ -1157,8 +1197,7 @@ impl Engine {
     /// the ticks before that), and no peripheral store (those leave the block
     /// as TRAP_BLOCK_MODEL).
     fn block_plan(&mut self, limit: u64) -> Option<(Option<Entry>, BlockPlan)> {
-        if !(self.use_blocks
-            && self.s.cfg.block_base_ok
+        if !(self.s.cfg.block_base_ok
             && !self.stop_software_interrupt
             && self.stop_pc.is_none()
             && self.s.probe.is_none())
@@ -1177,11 +1216,27 @@ impl Engine {
         // A PC the fast tier handles needs no generated block (firmware-free
         // mode): the same gates apply, the model-safety of its region being
         // established by the fast tier's own register whitelist.
-        let mut entry = if loops_ok {
+        // `use_blocks` (SHARC_AOT=0) turns off the generated blocks only; the
+        // fast tier does not depend on them (fast-only measurement mode).
+        // Blocks also need the loaded code to be the code they were generated
+        // from; the fast tier checks its own code words (`verify_code` in
+        // fast/mod.rs), so a patched image still runs there.
+        let code_ok = self.blocks_code_ok();
+        let mut entry = if loops_ok && self.use_blocks {
             self.dispatch.get_entry(self.s.pc_sw)
         } else {
             None
         };
+        if !code_ok
+            && entry.is_some_and(|_| {
+                self.code_barred.as_ref().is_none_or(|b| {
+                    b.binary_search(&(self.s.pc_sw as u32)).is_ok()
+                })
+            })
+        {
+            entry = None;
+            self.model_stats.code_mismatch += 1;
+        }
         let fast_pc = self
             .fast
             .as_ref()
@@ -1263,15 +1318,8 @@ impl Engine {
                     plan.timer_count = Some(count.b);
                 }
             }
-            if !self.blocks_code_ok() {
-                self.model_stats.code_mismatch += 1;
-                return None;
-            }
             plan.models = true;
             self.model_stats.gated += 1;
-        } else if !self.blocks_code_ok() {
-            self.model_stats.code_mismatch += 1;
-            return None;
         }
         Some((entry, plan))
     }
@@ -1355,9 +1403,6 @@ impl Engine {
                 if (self.software_interrupts || s.cfg.core_timer || s.cfg.peripheral_model)
                     && self.latent_interrupt() != Some(false)
                 {
-                    break;
-                }
-                if !self.blocks_code_ok() {
                     break;
                 }
             }

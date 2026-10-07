@@ -14,6 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TYPED = [
     "tools/benchlock.py",
+    "tools/digi_client.py",
     "emu/livesharc.py",
     "emu/mmiotrace.py",
     "emu/sharc_peer.py",

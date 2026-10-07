@@ -9,6 +9,7 @@ use std::path::Path;
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(sharc_gen)");
     println!("cargo:rustc-check-cfg=cfg(sharc_image)");
+    println!("cargo:rustc-check-cfg=cfg(sharc_region_entries)");
     println!("cargo:rustc-check-cfg=cfg(sharc_gen_version)");
     println!("cargo:rustc-check-cfg=cfg(region_bench_sol)");
     println!("cargo:rerun-if-env-changed=SHARC_GEN_DIR");
@@ -35,6 +36,11 @@ fn main() {
     println!("cargo:rustc-cfg=sharc_gen");
     if dir.join("image.rs").is_file() {
         println!("cargo:rustc-cfg=sharc_image");
+        // Generated since REGION_ENTRIES: blocks can be barred per region.
+        let image = std::fs::read_to_string(dir.join("image.rs")).unwrap_or_default();
+        if image.contains("REGION_ENTRIES") {
+            println!("cargo:rustc-cfg=sharc_region_entries");
+        }
     }
     // Generated before the staleness guard: no GENERATOR_VERSION.
     let tables = std::fs::read_to_string(dir.join("tables.rs")).expect("tables.rs");

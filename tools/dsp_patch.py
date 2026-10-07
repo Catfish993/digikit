@@ -1,0 +1,320 @@
+"""DSP patch files: edits addressed in SHARC+ memory terms (see
+native/boot/src/dsp_patch.rs for the format, which the Rust side also parses).
+
+    BASE <sha256 of the unpatched .syx>
+    PM <pc> <hex> [was <hex>]      4/8/12 hex digits = 16/32/48-bit instruction
+    SW <pc> <hex16> [<hex16> ...]  raw short words
+    DM <addr> <hex32> [was <hex32>]
+    BYTES <addr> <hex>
+
+Commands (the image is the packed loader image, `tools/sharc_pack_image.py`):
+
+    dsp_patch.py check IMAGE.bin PATCH [--syx SYX]   guards and BASE only
+    dsp_patch.py apply IMAGE.bin PATCH OUT.bin       write a patched image
+    dsp_patch.py show  IMAGE.bin PATCH               before/after bytes
+    dsp_patch.py syx   BASE.syx PATCH OUT.syx        write a patched .syx
+
+`coupled-run --dsp-patch PATCH` overlays the same file onto an imported DSP
+state (a snapshot holds its own copy of code and data, so patching the image
+alone does not change a snapshot run). Output is firmware-derived: keep it
+outside the repository. Writing a patched .syx would need a packer for the
+ELZ stream (dt2/elz.py only depacks), so the patch file plus the base .syx is
+the input.
+
+`syx` is that writer, built on dt2/build.py (store-only aPLib packing, so the
+file is about 3x larger than the original): it applies the patch to the DSP boot
+stream (section 7) of BASE.syx and rebuilds the container with correct
+checksums and HMAC trailer. Every other section keeps its decoded bytes, so the
+MAIN OS digest is unchanged. The emulator's `firmware.load` (and
+`tools/digi_client.py inject OUT.syx`) takes such a file and hot-injects the
+changed DSP words into the running emulator. A patch can only change bytes the
+boot stream stores (not FILL blocks).
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import re
+import struct
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+LOW = 0x2800_0000
+ALIAS = 0x2000_0000
+
+
+@dataclass
+class Op:
+    addr: int  # byte address
+    new: bytes
+    was: bytes | None
+    text: str
+
+
+@dataclass
+class Patch:
+    base_sha256: str | None = None
+    ops: list[Op] = field(default_factory=list)
+
+
+def _hex(s: str) -> int:
+    return int(s.removeprefix("0x"), 16)
+
+
+def _words(s: str) -> bytes:
+    s = s.removeprefix("0x")
+    if not s or len(s) % 4 or not re.fullmatch(r"[0-9a-fA-F]+", s):
+        raise ValueError(f"bad word list {s!r}")
+    return b"".join(
+        int(s[i : i + 4], 16).to_bytes(2, "little") for i in range(0, len(s), 4)
+    )
+
+
+def pc_address(pc: int, present=lambda a: True) -> int:
+    """Byte address of short-word pc (the 0x20000000 alias for the
+    0xb80000 window when the low alias is empty)."""
+    low = LOW + pc * 2
+    if 0xB80000 <= pc < 0xC00000 and not present(low):
+        return ALIAS + (pc - 0xB80000) * 2
+    return low
+
+
+def parse(text: str, present=lambda a: True) -> Patch:
+    patch = Patch()
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = re.split(r"[#;]|//", raw)[0].strip()
+        if not line:
+            continue
+        t = line.split()
+        key = t[0].upper()
+        try:
+            was = None
+            if key in ("PM", "DM") and len(t) > 3:
+                if t[3] != "was" or len(t) != 5:
+                    raise ValueError("expected 'was <hex>'")
+                was = t[4]
+            if key == "BASE" and len(t) == 2:
+                if not re.fullmatch(r"[0-9a-fA-F]{64}", t[1]):
+                    raise ValueError("BASE needs a 64-digit sha256")
+                patch.base_sha256 = t[1].lower()
+            elif key == "PM" and len(t) >= 3:
+                new = _words(t[2])
+                if len(new) > 6:
+                    raise ValueError("PM takes 4, 8 or 12 hex digits")
+                old = _words(was) if was else None
+                if old is not None and len(old) != len(new):
+                    raise ValueError("'was' width differs from the new value")
+                patch.ops.append(Op(pc_address(_hex(t[1]), present), new, old, line))
+            elif key == "SW" and len(t) >= 3:
+                patch.ops.append(
+                    Op(
+                        pc_address(_hex(t[1]), present),
+                        b"".join(_words(w) for w in t[2:]),
+                        None,
+                        line,
+                    )
+                )
+            elif key == "DM" and len(t) >= 3:
+                patch.ops.append(
+                    Op(
+                        _hex(t[1]),
+                        struct.pack("<I", _hex(t[2])),
+                        struct.pack("<I", _hex(was)) if was else None,
+                        line,
+                    )
+                )
+            elif key == "BYTES" and len(t) == 3:
+                s = t[2].removeprefix("0x")
+                patch.ops.append(Op(_hex(t[1]), bytes.fromhex(s), None, line))
+            else:
+                raise ValueError("cannot parse")
+        except ValueError as e:
+            raise SystemExit(f"patch line {n}: {e}: {line!r}") from e
+    return patch
+
+
+class Image:
+    """The SHIM loader image blob: (address, bytes) segments."""
+
+    def __init__(self, blob: bytes):
+        if blob[:4] != b"SHIM":
+            raise SystemExit("not a packed DSP image (no SHIM magic)")
+        self.blob = bytearray(blob)
+        (count,) = struct.unpack_from("<I", blob, 8)
+        pos, self.segs = 12, []
+        for _ in range(count):
+            lo, n = struct.unpack_from("<II", blob, pos)
+            self.segs.append((lo, pos + 8, n))
+            pos += 8 + n
+
+    def _find(self, addr: int, n: int) -> int | None:
+        for lo, off, size in self.segs:
+            if lo <= addr and addr + n <= lo + size:
+                return off + addr - lo
+        return None
+
+    def present(self, addr: int) -> bool:
+        return self._find(addr, 1) is not None
+
+    def read(self, addr: int, n: int) -> bytes:
+        off = self._find(addr, n)
+        if off is None:
+            raise SystemExit(f"{addr:#x}+{n}: not in one image segment")
+        return bytes(self.blob[off : off + n])
+
+    def write(self, addr: int, data: bytes) -> None:
+        off = self._find(addr, len(data))
+        if off is None:
+            raise SystemExit(f"{addr:#x}+{len(data)}: not in one image segment")
+        self.blob[off : off + len(data)] = data
+
+
+def check(img: Image, patch: Patch, syx: Path | None) -> None:
+    if syx is not None and patch.base_sha256:
+        have = hashlib.sha256(syx.read_bytes()).hexdigest()
+        if have != patch.base_sha256:
+            raise SystemExit(f"BASE {patch.base_sha256} but {syx} is {have}")
+    for op in patch.ops:
+        if op.was is not None and img.read(op.addr, len(op.was)) != op.was:
+            raise SystemExit(
+                f"{op.text!r}: image holds {img.read(op.addr, len(op.was)).hex()}"
+            )
+
+
+class Stream:
+    """The DSP boot stream (section 7) with writes mapped back into the file.
+
+    Addresses are loader byte addresses, as in `Image`; a byte can be written
+    only where a block with a payload (not a FILL block) last wrote it.
+    """
+
+    def __init__(self, blob: bytes):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import sharcldr
+        finally:
+            sys.path.pop(0)
+        self.blob = bytearray(blob)
+        self.mem = sharcldr.LoadedMemory.from_stream(blob)
+
+    def _offset(self, addr: int) -> int:
+        found = self.mem._segment(addr)
+        if found is None:
+            raise SystemExit(f"{addr:#x}: the boot stream does not load this address")
+        block = self.mem.blocks[found[1]]
+        if block["fill"]:
+            raise SystemExit(
+                f"{addr:#x}: a FILL block loads this address (no stored bytes)"
+            )
+        return int(block["payload_offset"] + addr - block["target_address"])
+
+    def present(self, addr: int) -> bool:
+        return self.mem._segment(addr) is not None
+
+    def read(self, addr: int, n: int) -> bytes:
+        data = self.mem.read(addr, n)
+        if data is None:
+            raise SystemExit(f"{addr:#x}+{n}: not loaded by the boot stream")
+        return bytes(data)
+
+    def write(self, addr: int, data: bytes) -> None:
+        for k, byte in enumerate(data):
+            self.blob[self._offset(addr + k)] = byte
+
+
+def section_blob(syx: Path, section: int) -> bytes:
+    """The decoded bytes of one section of a .syx."""
+    sys.path.insert(0, str(ROOT))
+    try:
+        from dt2.container import sections
+        from dt2.elz import depack_section
+        from emu.extract import classify
+    finally:
+        sys.path.pop(0)
+    container, table = sections(str(syx))
+    for sid, off, clen, _dest in table:
+        if sid == section:
+            kind, payload = classify(bytes(container[off : off + clen]))
+            return depack_section(payload) if kind == "packed" else bytes(payload)
+    raise SystemExit(f"{syx}: no section {section}")
+
+
+def write_syx(base: Path, patch: Patch, out: Path) -> tuple[int, int]:
+    """Apply PATCH to BASE's DSP stream and write the rebuilt .syx to OUT.
+
+    Returns (edits, changed bytes)."""
+    have = hashlib.sha256(base.read_bytes()).hexdigest()
+    if (
+        patch.base_sha256
+        and patch.base_sha256 != "0" * 64
+        and have != patch.base_sha256
+    ):
+        raise SystemExit(f"BASE {patch.base_sha256} but {base} is {have}")
+    stream = Stream(section_blob(base, 7))
+    changed = 0
+    for op in patch.ops:
+        if op.was is not None and stream.read(op.addr, len(op.was)) != op.was:
+            raise SystemExit(
+                f"{op.text!r}: the stream holds {stream.read(op.addr, len(op.was)).hex()}"
+            )
+        before = stream.read(op.addr, len(op.new))
+        changed += sum(a != b for a, b in zip(before, op.new, strict=True))
+        stream.write(op.addr, op.new)
+    sys.path.insert(0, str(ROOT))
+    try:
+        from dt2.build import rebuild
+    finally:
+        sys.path.pop(0)
+    out.write_bytes(rebuild(str(base), {7: bytes(stream.blob)}))
+    return len(patch.ops), changed
+
+
+def parse_for_stream(text: str, base: Path) -> Patch:
+    return parse(text, Stream(section_blob(base, 7)).present)
+
+
+def main(argv: list[str]) -> int:
+    if argv[:1] == ["syx"]:
+        s = argparse.ArgumentParser(prog="dsp_patch.py syx")
+        s.add_argument("command")
+        s.add_argument("base", type=Path)
+        s.add_argument("patch", type=Path)
+        s.add_argument("out", type=Path)
+        sa = s.parse_args(argv)
+        edits, changed = write_syx(
+            sa.base, parse_for_stream(sa.patch.read_text(), sa.base), sa.out
+        )
+        print(f"{sa.out}: {edits} edits, {changed} changed bytes")
+        return 0
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("command", choices=["check", "apply", "show"])
+    p.add_argument("image", type=Path)
+    p.add_argument("patch", type=Path)
+    p.add_argument("out", type=Path, nargs="?")
+    p.add_argument("--syx", type=Path, help="verify the patch's BASE against this")
+    a = p.parse_args(argv)
+    img = Image(a.image.read_bytes())
+    patch = parse(a.patch.read_text(), img.present)
+    check(img, patch, a.syx)
+    for op in patch.ops:
+        before = img.read(op.addr, len(op.new))
+        if a.command == "show":
+            print(f"{op.addr:#010x}: {before.hex()} -> {op.new.hex()}   ({op.text})")
+        if a.command == "apply":
+            img.write(op.addr, op.new)
+    if a.command == "apply":
+        if a.out is None:
+            raise SystemExit("apply needs OUT.bin")
+        a.out.write_bytes(bytes(img.blob))
+        print(f"{a.out}: {len(img.blob)} bytes, {len(patch.ops)} edits")
+    elif a.command == "check":
+        print(f"ok: {len(patch.ops)} edits")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

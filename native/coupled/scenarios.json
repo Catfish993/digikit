@@ -122,7 +122,7 @@
       "description": "Validation, not a load: the coupled_ready_exactness workload (QA prelude, Trig 1 down at +60M, up at +100M, ended at +100M instructions, as NOTE_EVENTS=trig). PCM must hash to the value the test asserts.",
       "instructions": 100000000,
       "qa_script": true,
-      "expect_sha256": "3b600f6de8fc20f3e444bf1fb2a9fd56f47c0985855755b69b6df4e29dd7f267",
+      "expect_sha256": "b3f5230f6c266bb1b77a28bcb4191f8be409e632dfac6a73a77e39eac724d03f",
       "validation": true,
       "events": [
         {
@@ -142,7 +142,7 @@
       "description": "Validation, not a load: desktop_trig1_capture_without_qa_script (Trig 1 held from ready for 40M instructions, no prelude). With the 2026-10-06 ready snapshot (pSLC card, no SLC dialog) it sounds (rms 0.60). The 2026-10-03 snapshot (4G MLC card, DIGI_CARD_IDENTITY=mlc4g) stayed silent behind the SLC dialog, hash a50586e86b2d0246bd05181dd1f877b1b2570f2c1eb74b7613c9b17dbd4eb75a.",
       "instructions": 40000000,
       "clip_last_chunk": true,
-      "expect_sha256": "680639a59b5bd07eb624fdb5238157f77b7dc0b0dd50d3561bdd0c59d8a97eb1",
+      "expect_sha256": "2861ce03828040c151a7fe70b482fff6cb121c51222fe7c2e869ce2e840c6f21",
       "validation": true,
       "events": [
         {
@@ -162,7 +162,7 @@
       "description": "Three Trig 1 taps (0.3 s hold each, the desktop Audition default) without the QA script; 10 s. A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
       "seconds": 10.5,
       "exact_events": true,
-      "expect_sha256": "1ca0ae84a2374b1308ba89c61a2a5109e3a5c49c4f79eafba042d6e71c55f91a",
+      "expect_sha256": "d60ad3390038a84b30ced82723f526a1e0c0e58e691f5def3024f56005c6d9d3",
       "events": [
         {
           "at_instr": 0,
@@ -211,7 +211,7 @@
       "description": "One Trig 1 tap, then 8 s of release and idle (the desktop 'sine then noise' case). A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
       "seconds": 8.5,
       "exact_events": true,
-      "expect_sha256": "aa1dbd9e40e534434987894098cd89c5c8857b8b7b27c54f2391db8b899561ce",
+      "expect_sha256": "883476213933333f0c5f4e2b343f65ed470fda0c50c8fa37905972457e819cdd",
       "events": [
         {
           "at_instr": 0,

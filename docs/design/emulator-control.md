@@ -1,8 +1,40 @@
 # Emulator control protocol
 
-Status: design, not implemented. Scope: the desktop app (`mise run emu`), a new
-headless daemon `digi-emud`, Python clients under `tools/`, and later the
-browser worker. Marks: **[V]** read in the code for this design, **[O]** open.
+Status: P0, P1 and the injection part of P3 are implemented (2026-10-07); P2
+and the rest of P3 are design. Scope: the desktop app (`mise run emu`), the
+headless daemon `digi-emud` (`mise run emu:serve`), the Python client
+`tools/digi_client.py` (`mise run emu:ctl`), and later the browser worker.
+Marks: **[V]** read in the code for this design, **[O]** open.
+
+## What is built
+
+Crate `native/control` (`digi-control`): `proto` (JSON-RPC types, error codes,
+no I/O), `controller` (the former desktop `actor()`; one owner thread, jobs and
+run modes), `dispatch` (one request object in, one response out: the
+transport-independent entry a browser worker feeds too), `server` (Unix socket,
+discovery file; feature `server`, unix only), `firmware`, `events`, `cli` (the
+command line the desktop app and the daemon share). The desktop app keeps its
+Tauri commands; they are messages to the same controller. The socket is on in
+the desktop app unless `--no-control` (question 3: default on).
+
+Methods now served: `hello`, `status`, `firmware.load`, `restart`, `run.mode`,
+`step`, `run_until`, `input.button/turn/tap/schedule`, `inputs.recorded`,
+`framebuffer.get` (raw 1024-byte panel bytes; the client makes the PNG),
+`diagnostics`, `audio.report`, `state.digest`, `pcm.tap` (start/report PCM
+level, window RMS and SHA-256 of the DSP output), `dsp.patch` (inject a patch
+file's text), `events.subscribe`, `quit`. Events: `session.changed`,
+`firmware.loaded`, `mode`, `scenario.done`, `lagged`. Not built yet (P2):
+captures, `mem.*.read`, `state.save/load`, `scenario.run`, `replay`,
+`dsp.counters`.
+
+Differences from the text below: `input.tap` schedules the press and the
+release (returns `scheduled_at` and `release_at`) instead of being a job; the
+UI session id is kept when a control request replaces the runtime (the webview
+keeps stepping the new one) and a separate `epoch` counts replacements;
+`firmware.load` accepts `dsp_patch` (a patch file applied on top of the .syx);
+the daemon refuses `--scenario`. `emu_step` returns the status without
+stepping while a job runs or the mode is not `ui`; a frame a control chunk
+consumed is handed to the webview's next call.
 
 ## Goals and non-goals
 
@@ -27,6 +59,9 @@ exactness (playback pacing and sink statistics stay host-dependent); a new
 async runtime.
 
 ## Constraints found in the code
+
+Written before the build: items 7, 8 and 10 are now handled by `firmware.load`
+(see Firmware injection).
 
 1. `CoupledRuntime` is `!Send` (`Rc<RefCell<Shared>>`, `ThreadedHandle` on
    `Rc<RefCell<Link>>`): one owner thread builds and uses it, as the Tauri actor
@@ -171,28 +206,48 @@ and stop on `PcmPlayer` **[O]**; `dspi_log` and `dsp_watch` via a new worker
 
 ## Firmware injection
 
-`firmware.load` with `start: auto` takes the first that applies:
+`firmware.load {syx, [base_sha256], [start: auto|snapshot|cold], [card],
+[dsp_patch]}` compares the new .syx with the running one section by section
+(decoded SHA-256) and picks the cheapest way (**built**):
 
-1. Same .syx as the snapshot profile: restore CF snapshot + DSP state (~2 s).
-2. Patched, MAIN unchanged (e.g. DSP blob only): the CF snapshot loads. If the
-   DSP code changed, the generated core and fast regions describe old code, so
-   the controller forces the interpreter (`SHARC_AOT=0`, no fast regions) and
-   reports `dsp_tier: "interpreter"` (much slower than real time). The
-   snapshot's DSP memory also holds the old code; re-importing the patched
-   words (`dsp_overlay`) is **[O]**.
-3. Patched MAIN: the snapshot is refused; `auto`/`cold` boot the CF cold
-   (~33 s CF-only; with audio the DSP attaches from frame 0 — wall time **[O]**),
-   then `state.save` to `out/native/run/patched/<syx_sha>.snap`, so the next
-   load of the same patch takes path 1.
-4. `start: snapshot` never falls back (error 4).
+1. Same MAIN, DSP stream changed (the dev loop): no restart. The two boot
+   streams are loaded as memory (`elektron_native_boot::dsp_stream`, the Rust
+   twin of `tools/sharcldr.py`), the changed bytes become `BYTES` patch
+   operations, and the DSP worker applies them between two frames
+   (`Msg::Patch`; the report carries `at_frame`). The engine's code-identity
+   checks do the rest: generated blocks of regions that touch a changed range
+   are barred (per range, lane B), the fast tier re-verifies its code words.
+   Report: `start_used: "hot-dsp"`, `sections_changed`, `dsp.changed_bytes`,
+   `dsp.ranges`, `seconds`. Without a DSP audio session the change is reported
+   and not applied.
+2. MAIN is the base's again (or the file is the base): rebuild from the base
+   .syx and restore the CF snapshot and DSP state (`start_used: "snapshot"`,
+   about 0.2 s with the ready inputs), then re-apply the DSP difference.
+3. Patched MAIN: `Emulator::new_patched(syx, base_sha256)` identifies the
+   firmware by the base's hash (no whole-file or MAIN digest check; each
+   signature lookup still has to resolve). The ColdFire side boots cold to
+   ready as a job (`start_used: "cold"`, 4.4 s for DN2 1.11) and the snapshot
+   is cached at `<run_dir>/patched/<MAIN sha256>.snap`; the next load of the
+   same MAIN restores it (`"snapshot-cache"`, 0.13 s). `start: snapshot` never
+   boots cold (error 4); `start: cold` ignores the cache. A patched MAIN runs
+   without DSP audio: the DSP state cannot be rebuilt (**[O]**: a coupled cold
+   start, see `native/boot/examples/dsp_cold.rs`).
+4. `base_sha256` is optional: it defaults to the running firmware's base and
+   must match it when given. The first load of a patched file needs it.
 
-Needed: `Emulator::new_patched(syx, base_sha256)` (identify by the base,
-skip only the whole-syx and MAIN digest checks, fail loudly on any signature
-lookup that no longer resolves, report `patched: true` and changed sections);
-strict coupled loads (no silent audio fallback); fast tables keyed by the
-packed DSP image SHA-256; cost reporting `{seconds, start_used, cache_hit}`.
-A "snapshot plus MAIN overlay" start is **[O]** until the boot copy of MAIN is
-checked.
+A patched .syx comes from `tools/dsp_patch.py syx BASE.syx PATCH OUT.syx`
+(applies a patch file to the DSP stream and rebuilds the container with
+`dt2/build.py`, store-only packing so the file is about 3x larger), or the
+patch file goes straight in with `firmware.load {syx: BASE, dsp_patch: FILE}`.
+
+Not built: a hot ColdFire code overlay. It is only safe when the changed MAIN
+bytes are code that is entered afresh (not on a task's stack or PC, not
+init-time code that already ran) and no data layout, signature site or address
+the controller resolved at construction moves; it cannot be told from the bytes
+alone. A possible `start: overlay` would diff MAIN, refuse changes outside
+function bodies, write them into guest RAM at a chunk boundary, drop the
+decode and fused-loop caches, and be checked against the cold-boot digest of
+the same patch. **[O]**
 
 ## Determinism
 
@@ -274,7 +329,7 @@ with Emu.spawn("--auto-coupled", "--audio-buffer", "1") as emu:
   version gating, `step` exactness, record-then-replay to the same state
   digest, errors, quit.
 - `slow`: coupled run from the private fixtures; `trig1-tap-release` through
-  the socket gives PCM `aa1dbd9e40e534434987894098cd89c5c8857b8b7b27c54f2391db8b899561ce`, the same as `coupled-run`.
+  the socket gives PCM `883476213933333f0c5f4e2b343f65ed470fda0c50c8fa37905972457e819cdd` (cold-start reference state, 2026-10-07; was `aa1dbd9e..`), the same as `coupled-run`.
 - No GUI tests; the desktop app shares the controller.
 
 ## Phases

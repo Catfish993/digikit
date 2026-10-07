@@ -271,6 +271,24 @@ impl Registry {
             .ok_or(RegistryError::UnknownFirmware { sha256 })
     }
 
+    /// The boot profile of a known firmware named by its SHA-256, without
+    /// looking at the bytes being booted. For a patched build of that
+    /// firmware: the caller vouches that the patch stays within what the
+    /// profile's signatures describe (each lookup still has to resolve).
+    pub fn boot_for_base(
+        &self,
+        base_sha256: &str,
+    ) -> Result<(&DeviceProfile, &FirmwareProfile, &BootProfile), RegistryError> {
+        let (device, firmware) = self.identify(base_sha256)?;
+        let Some(boot) = firmware.boot.as_ref() else {
+            return Err(RegistryError::UnsupportedBoot {
+                version: firmware.version.clone(),
+                sha256: firmware.sha256.clone(),
+            });
+        };
+        Ok((device, firmware, boot))
+    }
+
     /// Looks up a firmware and verifies its MAIN bytes before returning the
     /// supported explicit Oracle diagnostic contract.
     pub fn boot_for_main(

@@ -86,6 +86,9 @@ pub struct AudioOptions {
     pub link_timing: bool,
     /// What live playback does when the emulator falls behind real time.
     pub audio_mode: AudioMode,
+    /// A DSP patch file (`elektron_native_boot::dsp_patch`) overlaid on the
+    /// imported DSP state. Its BASE line, if any, must match the firmware's SHA-256.
+    pub dsp_patch: Option<PathBuf>,
 }
 
 pub struct CoupledRuntime {
@@ -121,6 +124,11 @@ impl CoupledRuntime {
         options: Option<&AudioOptions>,
     ) -> Result<Self, String> {
         let options = options.filter(|options| matches_automatic_profile(options, syx));
+        if let Some(path) = options.and_then(|o| o.dsp_patch.as_deref()) {
+            use sha2::{Digest, Sha256};
+            elektron_native_boot::dsp_patch::DspPatch::load(path)?
+                .check_base(&format!("{:x}", Sha256::digest(syx)))?;
+        }
         let mut runtime = Self {
             emulator: Emulator::new(syx, card)?,
             #[cfg(feature = "coupled-audio")]
@@ -131,6 +139,73 @@ impl CoupledRuntime {
         runtime.attach(options)?;
         runtime.input_base = runtime.emulator.icount();
         Ok(runtime)
+    }
+    /// A runtime for a patched build of the firmware whose SHA-256 is
+    /// `base_sha256` (`Emulator::new_patched`), without DSP audio: the
+    /// ColdFire side boots cold from the patched MAIN.
+    pub fn new_patched(syx: &[u8], card: Option<Card>, base_sha256: &str) -> Result<Self, String> {
+        let mut runtime = Self {
+            emulator: Emulator::new_patched(syx, card, base_sha256)?,
+            #[cfg(feature = "coupled-audio")]
+            audio: None,
+            inputs: Vec::new(),
+            input_base: 0,
+        };
+        runtime.input_base = runtime.emulator.icount();
+        Ok(runtime)
+    }
+    /// Load a ColdFire snapshot into this fresh runtime and restart the
+    /// scenario clock there (`elapsed_instructions` counts from the restored
+    /// state, as after a coupled restore).
+    pub fn restore_state(&mut self, data: &[u8]) -> Result<(), String> {
+        self.emulator.load_state(data)?;
+        self.input_base = self.emulator.icount();
+        Ok(())
+    }
+    /// Restart the scenario clock here (a cold boot that reached ready).
+    pub fn rebase_clock(&mut self) {
+        self.input_base = self.emulator.icount();
+    }
+    /// Wait for the DSP frames in flight and commit them (heavier than
+    /// `audio_status`; a no-op without audio).
+    pub fn sync_audio(&mut self) {
+        #[cfg(feature = "coupled-audio")]
+        if let Some(audio) = &mut self.audio {
+            audio.sync();
+        }
+    }
+    /// Whether a DSP audio session is attached.
+    pub fn has_audio(&self) -> bool {
+        #[cfg(feature = "coupled-audio")]
+        {
+            self.audio.is_some()
+        }
+        #[cfg(not(feature = "coupled-audio"))]
+        {
+            false
+        }
+    }
+    /// Overlay a DSP patch onto the running DSP between two frames and drop
+    /// every cached decode and generated block that touched the patched code
+    /// (the engine re-verifies code identity on its own). Returns the frame
+    /// count at which it took effect.
+    pub fn inject_dsp_patch(
+        &mut self,
+        patch: elektron_native_boot::dsp_patch::DspPatch,
+    ) -> Result<Value, String> {
+        #[cfg(feature = "coupled-audio")]
+        {
+            let audio = self.audio.as_mut().ok_or("no DSP audio session")?;
+            let ops = patch.ops.len();
+            let frame = audio.handle.frames_sent();
+            let dsp_icount = audio.handle.apply_patch(patch)?;
+            Ok(json!({"ops": ops, "at_frame": frame, "dsp_icount": dsp_icount}))
+        }
+        #[cfg(not(feature = "coupled-audio"))]
+        {
+            let _ = patch;
+            Err("no DSP audio session".into())
+        }
     }
     fn attach(&mut self, options: Option<&AudioOptions>) -> Result<(), String> {
         let Some(options) = options else {
@@ -319,7 +394,7 @@ mod coupled {
         pcm_play::{Mode, PcmPlayer, Recovery, SOURCE_RATE},
         sharc_peer::{
             DEFAULT_PERIOD, DN2_IDLE_RANGE, NativeDsp, Shared, ThreadedHandle, ThreadedPeer,
-            ThreadedTimingProfile, open_dn2_engine,
+            ThreadedTimingProfile,
         },
         wav::WavWriter,
     };
@@ -575,6 +650,11 @@ mod coupled {
                 return Err("--audio-buffer must be finite and between 0 and 10 seconds".into());
             }
             let image = std::fs::read(&options.image).map_err(|e| format!("DSP image: {e}"))?;
+            let patch = options
+                .dsp_patch
+                .as_deref()
+                .map(elektron_native_boot::dsp_patch::DspPatch::load)
+                .transpose()?;
             let sidecar = std::fs::read(&options.state).map_err(|e| format!("DSP state: {e}"))?;
             let (clock, initial_instructions, state) = continuation(&sidecar)?;
             let state = state.to_vec();
@@ -588,7 +668,15 @@ mod coupled {
             // SHARC_FAST_REGIONS names regions (the launcher sets that).
             sharc_fast_cl::register();
             let (peer, handle, shared) = ThreadedPeer::spawn_with_timing(
-                move || open_dn2_engine(&image, &state, clock).map(NativeDsp),
+                move || {
+                    elektron_native_boot::sharc_peer::open_dn2_engine_patched(
+                        &image,
+                        &state,
+                        clock,
+                        patch.as_ref(),
+                    )
+                    .map(NativeDsp)
+                },
                 elektron_native_boot::sharc_peer::period_from_env(),
                 DN2_IDLE_RANGE,
                 link_timing,
@@ -928,6 +1016,7 @@ mod coupled {
                 expected_syx: None,
                 link_timing: false,
                 audio_mode: crate::AudioMode::default(),
+                dsp_patch: None,
             }
         }
         pub fn syx() -> Vec<u8> {
@@ -1025,9 +1114,10 @@ mod coupled {
             }
             // Updated 2026-10-06 for the Type 17 SIMD Cureg fix (docs/findings/16); the CF digest covers the DSPI RX buffer filled with DSP replies.
             // Updated again 2026-10-06 for the dn2-audio-ready-2026-10-06 snapshot (pSLC 32 GB card, no SLC dialog; docs/findings/14): the CF state changed, the PCM and the DSP export did not.
+            // Updated 2026-10-07: reference state rebuilt from cold start (`mise run ready-dn2`, tools/ready_dn2.py: DSP state from the .syx alone) with the DSPI1 eDMA ch14 board fix. The old state had the DC-blocker coefficient (DM 0x24f378) corrupted by the pre-ed02999 SIMD Type 17 bug. CF digest, PCM and DSP export are all new.
             assert_eq!(
                 runtime.emulator.state_digest().unwrap(),
-                "ab27c5c9ed6e3dddf5780325e1ff518c967c6f13e63d71dda5f02cbdc48bdb23"
+                "55dc699e233f37735b83ce886a6fe8951a6c5984abf21057462501d73227e4e0"
             );
             let audio = runtime.audio.as_ref().unwrap();
             let pcm: Vec<u8> = captured(audio)
@@ -1040,15 +1130,15 @@ mod coupled {
             assert_eq!(captured(audio).len(), 72_896);
             assert_eq!(
                 format!("{:x}", Sha256::digest(&pcm)),
-                "3b600f6de8fc20f3e444bf1fb2a9fd56f47c0985855755b69b6df4e29dd7f267"
+                "b3f5230f6c266bb1b77a28bcb4191f8be409e632dfac6a73a77e39eac724d03f"
             );
             if let Some(path) = std::env::var_os("DIGI_COUPLED_DSP_EXPORT") {
                 std::fs::write(path, audio.handle.export().0).unwrap();
             }
-            // Same snapshot: the export differs from the 2026-10-03 one in 433 of 6,702,604 bytes (06980a01..); that snapshot predates the Type 17 fix.
+            // Cold-start snapshot: the export is the DSP state after the 100M-instruction workload from the rebuilt ready state.
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "c24a304090641d4cb391ad93f96e29eb94773e505bf879111069be30d3f300ff"
+                "4dc48019eb2672fad747992301d0e417bf4a9d8b376b7181f1e803a9dcce389b"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());
@@ -1239,6 +1329,16 @@ mod coupled {
         }
     }
 }
+#[cfg(all(test, feature = "coupled-audio"))]
+mod gate_tests {
+    /// The ready-fixture exactness gate without the desktop crate (private
+    /// fixtures: DIGI_COUPLED_FIXTURES, DIGI_COUPLED_SYX).
+    #[test]
+    #[ignore = "private DN2 ready fixtures and locally generated DSP; bounded 100M-instruction gate"]
+    fn coupled_ready_exactness() {
+        crate::gates::coupled_ready_exactness();
+    }
+}
 #[cfg(test)]
 mod profile_tests {
     use super::*;
@@ -1254,6 +1354,7 @@ mod profile_tests {
             expected_syx: Some(profile),
             link_timing: false,
             audio_mode: AudioMode::default(),
+            dsp_patch: None,
         }
     }
 
