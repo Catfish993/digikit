@@ -74,6 +74,10 @@ impl Lower {
     /// (bit 31) into the CACC history, a pseudo register that starts as the
     /// entry ASTATX bits 24-31 (`PSEUDO_CACC`).
     pub fn compare_flag(&mut self, eq: Val, lt: Val, gt: Val, float: bool) -> LR<()> {
+        if self.pe_off != 0 {
+            // PEy's compare shifts ASTATY's CACC history, which is not tracked.
+            return refuse("compare on PEy");
+        }
         let two = self.ci(2);
         let k31 = self.ci(31);
         let l = self.bin(Bin::Shl, lt, two);

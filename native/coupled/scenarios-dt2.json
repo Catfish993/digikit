@@ -1,0 +1,50 @@
+{
+  "scenarios": [
+    {
+      "name": "dt2-sample-trig",
+      "description": "DT2 1.16 with a one-sample card (test-sine-1khz.wav, 48 kHz mono, 1 s): the QA prelude (NO at 0), then Trig 1 down at +60M and up at +100M, 3 s. Needs the card's ready state (tools/ready.py dt2 --card-image) and `coupled-run --card-image`; tools/dt2_sample_check.py runs it and checks the spectrum. The PCM hash is of this firmware, card and cold DSP state.",
+      "seconds": 3.0,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 60000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 100000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "dt2-sample-trig-noqa",
+      "description": "As dt2-sample-trig without the NO prelude.",
+      "seconds": 1.8,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 60000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 100000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    }
+  ]
+}

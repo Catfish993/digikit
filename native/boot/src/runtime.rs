@@ -153,6 +153,8 @@ pub struct Emulator {
     ram_clear_fast_forwarded_instructions: u64,
     flash_hle_calls: u64,
     dspi2_capture: Option<Dspi2Capture>,
+    #[cfg(feature = "cf-profile")]
+    prof: crate::cfprof::CfProf,
 }
 
 impl Emulator {
@@ -463,6 +465,8 @@ impl Emulator {
             ram_clear_fast_forwarded_instructions: 0,
             flash_hle_calls: 0,
             dspi2_capture: None,
+            #[cfg(feature = "cf-profile")]
+            prof: Default::default(),
         };
         emulator.rebuild_watch();
         emulator.mark(Mark::Entry, "before_instruction");
@@ -480,21 +484,46 @@ impl Emulator {
                     .as_ref()
                     .is_some_and(|clear| self.cpu.pc == clear.loop_pc)
             {
+                #[cfg(feature = "cf-profile")]
+                let t = crate::cputime::thread_cpu_ns();
                 let count = self.advance_ram_clear(budget - iterations);
+                #[cfg(feature = "cf-profile")]
+                if count != 0 {
+                    self.prof.add(0, crate::cputime::thread_cpu_ns() - t, u64::from(count));
+                }
                 if count != 0 {
                     iterations += count;
                     continue;
                 }
             }
+            #[cfg(feature = "cf-profile")]
+            let t0 = crate::cputime::thread_cpu_ns();
             let fast = self.run_fast(budget - iterations);
             if fast != 0 {
+                #[cfg(feature = "cf-profile")]
+                self.prof.add(1, crate::cputime::thread_cpu_ns() - t0, u64::from(fast));
                 iterations += fast;
                 continue;
             }
             let previous_pc = self.cpu.pc;
+            #[cfg(feature = "cf-profile")]
+            let t1 = crate::cputime::thread_cpu_ns();
             self.step_once();
+            #[cfg(feature = "cf-profile")]
+            {
+                self.prof.add(2, crate::cputime::thread_cpu_ns() - t1, 1);
+                self.prof.sample(previous_pc, 1);
+            }
             iterations += 1;
-            iterations += self.advance_idle(previous_pc, budget - iterations);
+            #[cfg(feature = "cf-profile")]
+            let t2 = crate::cputime::thread_cpu_ns();
+            let idle = self.advance_idle(previous_pc, budget - iterations);
+            #[cfg(feature = "cf-profile")]
+            if idle != 0 {
+                self.prof.add(3, crate::cputime::thread_cpu_ns() - t2, u64::from(idle));
+                self.prof.sample_idle(previous_pc, u64::from(idle));
+            }
+            iterations += idle;
         }
         if budget != 0 {
             self.refresh_frame();
@@ -606,6 +635,12 @@ impl Emulator {
 
     pub fn probe_hits(&self) -> Vec<(u32, u64)> {
         self.probe_hits.iter().map(|(&pc, &n)| (pc, n)).collect()
+    }
+
+    /// The ColdFire path/PC profile (feature `cf-profile`).
+    #[cfg(feature = "cf-profile")]
+    pub fn cf_profile(&self) -> serde_json::Value {
+        self.prof.report()
     }
 
     pub fn icount(&self) -> u64 {
@@ -978,17 +1013,31 @@ impl Emulator {
         // stops), so the per-step deltas sum to the difference at exit.
         let start_icount = self.cpu.icount;
         let mut n = 0;
+        #[cfg(feature = "cf-profile")]
+        let (mut next_sample, mut last_n) = (0u32, 0u32);
         while n < budget {
             let pc = self.cpu.pc;
             if pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset {
+                #[cfg(feature = "cf-profile")]
+                self.prof.exit(1, pc);
                 break;
+            }
+            #[cfg(feature = "cf-profile")]
+            if n >= next_sample {
+                self.prof.sample(pc, u64::from((n - last_n).max(1)));
+                last_n = n;
+                next_sample = n + 64;
             }
             if self.watched(pc) {
                 // Only fused-loop heads are handled here (0: step the head
                 // like any other instruction); any other observed PC goes
                 // to `step_once`.
                 match self.at_watched(pc, budget - n, limit, calls) {
-                    None => break,
+                    None => {
+                        #[cfg(feature = "cf-profile")]
+                        self.prof.exit(2, pc);
+                        break;
+                    }
                     Some(0) => {}
                     Some(fused) => {
                         n += fused;
@@ -1015,6 +1064,26 @@ impl Emulator {
                 || self.bus.board.mmio_epoch() != epoch
                 || ((self.cpu.sr >> 8) & 7) < u16::from(level)
             {
+                #[cfg(feature = "cf-profile")]
+                {
+                    let reason = if result.is_err() {
+                        4
+                    } else if done >= limit {
+                        5
+                    } else if self.cpu.last_exception.is_some()
+                        || self.cpu.state != coldfire::RunState::Running
+                    {
+                        6
+                    } else if self.bus.board.mmio_epoch() != epoch {
+                        7
+                    } else {
+                        8
+                    };
+                    self.prof.exit(
+                        reason,
+                        if reason == 7 { self.bus.board.last_epoch_addr() } else { pc },
+                    );
+                }
                 self.interpreted_instructions += self.cpu.icount.saturating_sub(start_icount);
                 self.finish_step(result.map_err(|error| format!("{error:?}")));
                 return n;

@@ -32,6 +32,8 @@ main_sha256 = "57b06a7960b7c3dc9803bde6b31896b89a2fbdcc404a932ff503f3856d4d7a61"
 boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"
 readiness_contract = "main-panel-v1"
+# The SHARC+ DSP the coupled audio runs (see devices/digitakt-ii.toml).
+dsp = { image = "dn2-1.11", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_head = 0xb88aab }
 
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.

@@ -947,6 +947,22 @@ impl Actor {
                 })
                 .map(Some),
             "pcm.tap" => self.rpc_pcm_tap(&p).map(Some),
+            "cf.profile" => self
+                .with_runtime(|r| {
+                    #[cfg(feature = "cf-profile")]
+                    {
+                        let mut v = r.cf_profile();
+                        v["controller_cpu_ns"] =
+                            elektron_native_boot::thread_cpu_ns().into();
+                        Ok(v)
+                    }
+                    #[cfg(not(feature = "cf-profile"))]
+                    {
+                        let _ = r;
+                        Err(RpcError::new(code::METHOD_NOT_FOUND, "built without cf-profile"))
+                    }
+                })
+                .map(Some),
             "dsp.patch" => self.rpc_dsp_patch(&p).map(Some),
             "quit" => {
                 self.quit = true;
@@ -1026,6 +1042,7 @@ impl Actor {
         let audio = summarize_audio(runtime);
         let frame = runtime.current_frame().map(|(revision, _)| revision);
         Ok(json!({
+            "controller_cpu_ns": elektron_native_boot::thread_cpu_ns(),
             "firmware": loaded, "cf": cf, "audio": audio, "job": job,
             "scheduled_inputs": scheduled, "frame_revision": frame,
             "dsp_frames": frames(runtime),

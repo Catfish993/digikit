@@ -27,6 +27,7 @@ pub const METHODS: &[&str] = &[
     "audio.report",
     "state.digest",
     "pcm.tap",
+    "cf.profile",
     "dsp.patch",
     "events.subscribe",
     "quit",

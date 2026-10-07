@@ -32,7 +32,7 @@ impl Lower {
         if !self.env.assume_nw32 {
             return refuse("assume_nw32 off");
         }
-        if matches!(x, Xfer::Store(_)) && w.signed {
+        if matches!(x, Xfer::Store(_) | Xfer::StoreV(_)) && w.signed {
             return refuse("sign-extended store");
         }
         let iv = self.rd_i(ic)?;

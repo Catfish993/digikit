@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Hand-assembled test programs for the generated lowering (no firmware).
+
+Encodes instructions from tools/sharcspec/decode_table.json (the public ISA
+field layout) and writes native/sharc/src/tests_gen_programs.rs: for each
+program a list of 16-bit parcels. The SIMD loop below has the shape of the
+MODE1/PEYEN-toggling loops the Digitone II firmware runs (a SIMD enable, a DO
+loop of pointer moves, loads, float adds and stores with SIMD companions, a
+SIMD disable), written here from the ISA, not copied.
+
+    uv run python tools/sharc_lowergen_programs.py --out native/sharc/src/tests_gen_programs.rs
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def table() -> dict:
+    d = json.load(open(os.path.join(HERE, "sharcspec", "decode_table.json")))
+    return {re.sub(r"\s*\((\w+)\)", r"_\1", f["name"][4:]): f for f in d["forms"]}
+
+
+TAB = table()
+
+
+def enc(form: str, **fields) -> list[int]:
+    f = TAB[form]
+    word = int(f["value"], 16)
+    labels = {x["label"]: x for x in f["fields"]}
+    stems: dict[str, list[str]] = {}
+    for label in labels:
+        stems.setdefault(label.split("[")[0], []).append(label)
+    for key, v in fields.items():
+        if key in labels:
+            x = labels[key]
+            word |= (v & ((1 << (x["hi"] - x["lo"] + 1)) - 1)) << x["lo"]
+        else:
+            # A whole field given by its stem (compute, data, addr, reladdr...):
+            # split over the labelled pieces, most significant first.
+            pieces = sorted((labels[l] for l in stems[key]), key=lambda x: -x["lo"])
+            width = sum(x["hi"] - x["lo"] + 1 for x in pieces)
+            shift = width
+            for x in pieces:
+                w = x["hi"] - x["lo"] + 1
+                shift -= w
+                word |= ((v >> shift) & ((1 << w) - 1)) << x["lo"]
+    n = f["width"] // 16
+    ps = [(word >> 32) & 0xFFFF, (word >> 16) & 0xFFFF, word & 0xFFFF]
+    return ps[:n]
+
+
+def compute(op: int, rn: int, rx: int, ry: int, cu: int = 0) -> int:
+    return (cu << 20) | (op << 12) | (rn << 8) | (rx << 4) | ry
+
+
+FADD = 0x81
+
+
+# UREG codes
+def R(n):
+    return n
+
+
+def I(n):
+    return 16 + n
+
+
+def M(n):
+    return 32 + n
+
+
+def simd_loop(trips: int = 16) -> list[int]:
+    """SIMD on; I4 = I13, I2 = I12; DO trips { I0 = I4 + 8; I1 = I2 + 8;
+    R1 = DM(I0 + 30); R0 = DM(I2, M5); R12 = DM(I4, 2) (post);
+    F12 = F0 + F12 || R0 = DM(I1 + 30); F1 = F0 + F1 || DM(I2, 2) = R12 (post);
+    DM(I1 + 30) = R1 }; SIMD off."""
+    body = []
+    body += enc(
+        "19a", g=0, **{"is[2:0]": 4, "idis[2:0]": 4}, data=8
+    )  # I0 = modify(I4, 8)
+    body += enc(
+        "19a", g=0, **{"is[2:0]": 2, "idis[2:0]": 3}, data=8
+    )  # I1 = modify(I2, 8)
+    body += enc(
+        "15a", d=0, g=0, l=0, **{"i[2:0]": 0}, ureg=R(1), addr=30
+    )  # R1 = DM(I0 + 30)
+    body += enc(
+        "3a", cond=0x1F, d=0, g=0, i=2, l=0, m=5, u=1, ureg=R(0), compute=0
+    )  # R0 = DM(I2, M5)
+    body += enc(
+        "4a", cond=0x1F, d=0, g=0, **{"i[2:0]": 4}, u=1, dreg=12, data=2, compute=0
+    )  # R12 = DM(I4, 2)
+    body += enc(
+        "4a",
+        cond=0x1F,
+        d=0,
+        g=0,
+        **{"i[2:0]": 1},
+        u=0,
+        dreg=0,
+        data=30,
+        compute=compute(FADD, 12, 0, 12),
+    )
+    body += enc(
+        "4a",
+        cond=0x1F,
+        d=1,
+        g=0,
+        **{"i[2:0]": 2},
+        u=1,
+        dreg=12,
+        data=2,
+        compute=compute(FADD, 1, 0, 1),
+    )
+    body += enc(
+        "15a", d=1, g=0, l=0, **{"i[2:0]": 1}, ureg=R(1), addr=30
+    )  # DM(I1 + 30) = R1
+    prog = []
+    prog += enc("18a", bop=0, sreg=2, data=0x200000)  # MODE1 = set(MODE1, PEYEN)
+    prog += enc(
+        "5b_move",
+        cond=0x1F,
+        dstureg=I(4),
+        srcureghigh=I(13) >> 2,
+        **{"srcureglow[1:1]": (I(13) >> 1) & 1, "srcureglow[0:0]": I(13) & 1},
+    )
+    prog += enc(
+        "5b_move",
+        cond=0x1F,
+        dstureg=I(2),
+        srcureghigh=I(12) >> 2,
+        **{"srcureglow[1:1]": (I(12) >> 1) & 1, "srcureglow[0:0]": I(12) & 1},
+    )
+    end = len(body) // 3 * 0  # placeholder; the DO's end is given in short words below
+    do_at = len(prog)
+    body_words = len(body)
+    # DO (to the last instruction of the body) UNTIL LCE: the end address is
+    # relative to the DO; the last body instruction starts at do_at + 3 + body_words - 3.
+    rel = 3 + body_words - 3
+    prog += enc("12a_imm", mode=1, data=trips, reladdr=rel)
+    prog += body
+    prog += enc("18a", bop=1, sreg=2, data=0x200000)  # MODE1 = clear(MODE1, PEYEN)
+    return prog
+
+
+PROGRAMS = {"simd_loop": simd_loop}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", required=True)
+    a = ap.parse_args()
+    lines = [
+        "// Generated by tools/sharc_lowergen_programs.py (public ISA encodings).",
+        "pub const PROGRAMS: &[(&str, &[u16])] = &[",
+    ]
+    for name, fn in PROGRAMS.items():
+        ps = fn()
+        lines.append('    ("%s", &[%s]),' % (name, ", ".join("%#06x" % p for p in ps)))
+    lines.append("];")
+    open(a.out, "w").write("\n".join(lines) + "\n")
+
+
+if __name__ == "__main__":
+    main()

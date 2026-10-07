@@ -144,6 +144,7 @@ pub struct Board {
     /// SSI/DSP slots, eSDHC, PIT/DTIM/INTC writes, GPIO sense). A host loop may
     /// batch plain RAM instructions until this changes.
     mmio_epoch: u64,
+    last_epoch_addr: u32,
     /// Opt-in only: ordinary long-running execution must not retain every Bus access.
     capture_guest_accesses: bool,
     guest_reads: Vec<GuestAccess>,
@@ -172,6 +173,19 @@ impl Board {
 
     /// Device-register accesses so far; see the field docs.
     #[inline]
+    #[inline(always)]
+    fn in_dsp_port(addr: u32) -> bool {
+        addr.wrapping_sub(periph::dsp::BASE) < SLOT_SIZE as u32
+    }
+    #[inline(always)]
+    fn bump_epoch(&mut self, addr: u32) {
+        self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
+        self.last_epoch_addr = addr;
+    }
+    /// Address of the access that last advanced `mmio_epoch` (diagnostics).
+    pub fn last_epoch_addr(&self) -> u32 {
+        self.last_epoch_addr
+    }
     pub fn mmio_epoch(&self) -> u64 {
         self.mmio_epoch
     }
@@ -357,6 +371,7 @@ impl Board {
             forced_mmio: BTreeMap::new(),
             sdram_fast: true,
             mmio_epoch: 0,
+            last_epoch_addr: 0,
             capture_guest_accesses: false,
             guest_reads: vec![],
             guest_writes: vec![],
@@ -1385,11 +1400,17 @@ impl Board {
                 .ok_or(Self::bus_error(addr, false));
         }
         if let Some(value) = self.dma.read(addr, size) {
-            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
+            // The FlexBus coprocessor port (`periph::dsp::Fifo`) keeps only a
+            // poll counter and an echo register: no timer, DMA or interrupt
+            // state can change, so a poll loop on it need not leave the
+            // fast path (its state still changes exactly as before).
+            if !Self::in_dsp_port(addr) {
+                self.bump_epoch(addr);
+            }
             return Ok(value);
         }
         if let Some(value) = self.esdhc.read(addr, size) {
-            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
+            self.bump_epoch(addr);
             self.drain_esdhc_host_writes();
             return Ok(value);
         }
@@ -1398,6 +1419,7 @@ impl Board {
             && let Some(gate) = self.sd_gate.as_mut()
         {
             self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
+            self.last_epoch_addr = addr;
             let sensed = gate.sense();
             let wrote = self.ram_write(addr, 1, u32::from(sensed));
             debug_assert!(wrote);
@@ -1427,7 +1449,7 @@ impl Board {
     #[inline(never)]
     fn write_inner_slow(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
         if Time::owns(addr) {
-            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
+            self.bump_epoch(addr);
             if let Some(time) = self.time.as_mut()
                 && time.write(addr, size, value)
             {
@@ -1445,7 +1467,9 @@ impl Board {
             return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));
         }
         if DmaLink::owns(addr) {
-            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
+            if !Self::in_dsp_port(addr) {
+                self.bump_epoch(addr);
+            }
             let tx35_citer =
                 edma::TcdView::new(&mut self.dma.edma_regs, self.dma.tx35.chan).citer();
             let is_tx35_serq = addr == edma::SERQ
@@ -1533,7 +1557,7 @@ impl Board {
             }
             return wrote;
         }
-        self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
+        self.bump_epoch(addr);
         let xfer = (addr == esdhc::BASE + esdhc::XFERTYP && size == 4).then_some(value);
         let command = xfer.map(|v| ((v >> 24) & 0x3f) as u8);
         let data = xfer.is_some_and(|v| v & (1 << 21) != 0);

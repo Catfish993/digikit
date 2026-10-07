@@ -2,7 +2,10 @@
 
 #[cfg(target_arch = "wasm32")]
 mod abi;
+pub mod card_file;
 mod capture;
+#[cfg(feature = "cf-profile")]
+pub mod cfprof;
 mod common;
 mod cputime;
 pub mod dsp_patch;

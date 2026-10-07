@@ -28,8 +28,18 @@ const SSTAT_PND: u32 = 0x100;
 const SSTAT_ACT: u32 = 0x200;
 const SCTL_IEN: u32 = 0x1;
 const SCTL_SEN: u32 = 0x4;
-/// SPI2 TX/RX (DMA26/27) and SPORT4A/B (DMA10/11).
-pub const DMA_BASES: [u32; 4] = [0x3102_D200, 0x3102_D280, 0x3102_3000, 0x3102_3080];
+/// Link port 0 receive channel (SEC source 81, [`SID_LP0_DMA`]): the table the
+/// firmware keeps at DM 0x269468 names `{LP0_CTL 0x30FFE000, 0x30FFF000, 81, ..}`.
+pub const LP0_DMA: u32 = 0x30FF_F000;
+pub const SID_LP0_DMA: u32 = 81;
+/// SPI2 TX/RX (DMA26/27), SPORT4A/B (DMA10/11) and LP0.
+pub const DMA_BASES: [u32; 5] = [
+    0x3102_D200,
+    0x3102_D280,
+    0x3102_3000,
+    0x3102_3080,
+    LP0_DMA,
+];
 const DMA_CFG: u32 = 0x08;
 const DMA_STAT: u32 = 0x30;
 const STAT_IRQDONE: u32 = 0x1;
@@ -348,6 +358,15 @@ pub fn periph_write(s: &mut St, a: u32, value: u32) -> R<bool> {
                 set(s, base + DMA_STAT, stat & STAT_IRQERR)?;
             } else if value & 1 == 0 {
                 set(s, base + DMA_STAT, stat & !STAT_RUN)?;
+            }
+            // LP0 is driven in register mode with the stop flow (no
+            // descriptor fetch): enabling it starts the work unit in the
+            // registers, which waits for the link-port data (HWR "Stop Flow
+            // Mode": RUN is cleared when the unit completes). Re-arming is a
+            // CFG write with EN set.
+            if base == LP0_DMA && value & 1 != 0 && (value >> 12) & 7 == 0 {
+                let stat = mmr(s, base + DMA_STAT)?;
+                set(s, base + DMA_STAT, (stat & !STAT_RUN) | STAT_RUN_TRANSFER)?;
             }
             return Ok(true);
         }

@@ -40,8 +40,8 @@ mod common;
 use elektron_native_boot::{
     Emulator,
     sharc_peer::{
-        DEFAULT_PERIOD, DN2_IDLE_RANGE, NativeDsp, SharcPeer, Shared, SharedDsp, ThreadedHandle,
-        ThreadedPeer, open_dn2_engine,
+        DEFAULT_PERIOD, DN2_IDLE, DT2_IDLE, NativeDsp, SharcPeer, Shared, SharedDsp, ThreadedHandle,
+        ThreadedPeer, open_engine_patched,
     },
 };
 use sha2::{Digest, Sha256};
@@ -205,31 +205,48 @@ fn main() {
         _ => state,
     };
 
+    let idle = if env::var("DSP_DEVICE").as_deref() == Ok("dt2") { DT2_IDLE } else { DN2_IDLE };
     let threaded = env::var("DSP_THREAD").as_deref() == Ok("1");
     let (peer, dsp, shared): (Box<dyn periph::dspi::Peer>, DspCtl, _) = if threaded {
         let (image, state) = (image.clone(), state.clone());
         let (p, h, sh) = ThreadedPeer::spawn(
-            move || open_dn2_engine(&image, &state, base).map(NativeDsp),
+            move || open_engine_patched(&image, &state, base, None, idle).map(NativeDsp),
             period,
-            DN2_IDLE_RANGE,
+            idle.range,
         )
         .expect("DSP worker");
+        if env::var("DSP_SAMPLE_LINK").as_deref() == Ok("lp0") {
+            p.enable_sample_link();
+        }
         (p.boxed(), DspCtl::Worker(h), sh)
     } else {
-        let d = SharedDsp::new(open_dn2_engine(&image, &state, base).expect("DSP engine"));
+        let d = SharedDsp::new(open_engine_patched(&image, &state, base, None, idle).expect("DSP engine"));
         if env::var_os("DSP_PROFILE").is_some() {
             // The interpreter profile for tools/sharc_rsgen.py (option 26).
             d.0.borrow_mut().set_option(26, 1);
         }
-        let (p, sh) = SharcPeer::new(d.clone(), period);
+        let (mut p, sh) = SharcPeer::new(d.clone(), period);
+        p.set_idle_range(idle.range);
+        if env::var("DSP_SAMPLE_LINK").as_deref() == Ok("lp0") {
+            p.enable_sample_link();
+        }
         (p.boxed(), DspCtl::Local(d), sh)
     };
     shared.borrow_mut().attached = !attach_at_ready;
     shared.borrow_mut().dsp_instructions = dsp_instructions0;
-    let mut emu = Emulator::new(&syx, None).unwrap();
+    // CARD_IMAGE=FILE: boot from that +Drive image (the card the snapshot is for).
+    let card = env::var_os("CARD_IMAGE")
+        .map(|p| elektron_native_boot::card_file::card_from_image(p.as_ref()).unwrap());
+    let mut emu = Emulator::new(&syx, card).unwrap();
     emu.enable_ssi_diagnostic(96_000).unwrap();
 
     let mut script = common::Script::from_env();
+    // SAVE_QUIET_FRAMES=N (DT2): the sample loader keeps sending after the
+    // panel is ready, so save the snapshot at the first ready point where
+    // link port 0 has been quiet for N frames with nothing queued, and hold
+    // the QA inputs until then.
+    let quiet_frames: Option<usize> = env::var("SAVE_QUIET_FRAMES").ok().and_then(|v| v.parse().ok());
+    let (mut last_lp0, mut last_change) = ((0u64, 0u32), 0usize);
     let t0 = Instant::now();
     let mut saved = false;
     let mut pcm_base = 0usize;
@@ -253,8 +270,17 @@ fn main() {
         let s = &snap.status;
         first_status.get_or_insert_with(|| s.clone());
         last_status = Some(s.clone());
+        let quiet = quiet_frames.is_none_or(|n| {
+            let sh = shared.borrow();
+            let now = (sh.lp0_units, sh.lp0_pending);
+            if now != last_lp0 {
+                last_lp0 = now;
+                last_change = sh.frames.len();
+            }
+            sh.lp0_pending == 0 && sh.frames.len() >= last_change + n
+        });
         if let Some(p) = &snap_path {
-            if common::save_if_ready(&mut emu, p, &script, s.ready, &mut saved) && !attach_at_ready
+            if common::save_if_ready(&mut emu, p, &script, s.ready && quiet, &mut saved) && !attach_at_ready
             {
                 let (exported, icount) = dsp.export(); // also syncs the worker
                 let mut f = DSP_MAGIC.to_vec();
@@ -267,7 +293,7 @@ fn main() {
                 println!("saved DSP state ({} KB)", f.len() >> 10);
             }
         }
-        if script.poll(&mut emu, s.icount, s.ready) && attach_at_ready {
+        if script.poll(&mut emu, s.icount, s.ready && (quiet || saved)) && attach_at_ready {
             shared.borrow_mut().attached = true;
         }
         audio.feed(&shared);

@@ -196,10 +196,10 @@ pub const CTX_WIN: u32 = 16;
 /// (zero-extended, wrapping).
 pub const WIN_STRIDE: u32 = 8;
 
-/// Windows a region may use, registers it may touch (UREG codes 0..47:
-/// R, I and M) and flag sources it may keep.
+/// Windows a region may use, registers it may touch (UREG codes 0..127; the
+/// lowering allows R, I, M, L, B, S and MODE1) and flag sources it may keep.
 pub const MAX_WIN: u32 = 12;
-pub const NREGS: u32 = 48;
+pub const NREGS: u32 = 128;
 pub const MAX_FSRC: u32 = 64;
 pub const CTX_REGS_IN: u32 = CTX_WIN + WIN_STRIDE * MAX_WIN;
 pub const CTX_REGS_OUT: u32 = CTX_REGS_IN + 4 * NREGS;
@@ -211,7 +211,6 @@ pub const CONST_POOL: [u32; 3] = [0x7f80_0000, 0x0080_0000, 0];
 /// Pseudo registers (the kernel's ASTATX bits and known mask, in/out), the
 /// instruction budget and the counters of CFG kernels. All of this lies after
 /// the original layout, so a kernel that does not use it is unchanged.
-pub const NPSEUDO: u32 = 11;
 pub const CTX_PSEUDO_IN: u32 = (CTX_CONSTS + 4 * CONST_POOL.len() as u32 + 7) & !7;
 pub const CTX_PSEUDO_OUT: u32 = CTX_PSEUDO_IN + 4 * NPSEUDO;
 /// Instructions the kernel may run (CFG kernels): `limit - icount`, clamped.
@@ -274,7 +273,9 @@ pub const fn ctx_reg_out(c: u32) -> u32 {
 /// the three flag groups (0 ALU, 1 multiplier, 2 shifter) the kind of the last
 /// writer and its two sources (`pseudo_flag(group, 0..3)`).
 pub const PSEUDO_FB0: u32 = NREGS;
-pub const NGROUPS: u32 = 3;
+/// Groups 0..2 are PEx's (ASTATX), 3..5 PEy's (ASTATY, SIMD).
+pub const NGROUPS: u32 = 6;
+pub const NPSEUDO: u32 = 2 + 3 * NGROUPS;
 pub const fn pseudo_flag(group: u32, part: u32) -> u32 {
     NREGS + 1 + 3 * group + part
 }

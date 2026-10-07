@@ -239,6 +239,7 @@ impl DmaLink {
                         }
                     }
                     if self.dspi2.arms_rx(v) {
+                        self.flush_link();
                         hw = self
                             .dspi2
                             .arm_rx(&mut self.edma_regs, self.peer.as_mut())
@@ -271,7 +272,7 @@ impl DmaLink {
             return (true, SerqEffect::None, None);
         }
         if base == DSP_SLOT {
-            self.dsp.write(addr);
+            self.dsp.write(addr, size, value);
             self.dsp_regs.write(addr - base, size, value);
             return (true, SerqEffect::None, None);
         }
@@ -293,9 +294,19 @@ impl DmaLink {
         self.dspi2.capture(&mut self.edma_regs, source)
     }
 
+    /// Hand the link-port bytes latched so far to the peer (they join the
+    /// next frame it handles).
+    fn flush_link(&mut self) {
+        let bytes = self.dsp.take_link();
+        if !bytes.is_empty() {
+            self.peer.link_bytes(&bytes);
+        }
+    }
+
     /// `SERQ` may have armed RX before the caller supplied TX source RAM.
     /// Exchange only when both halves are ready, then return its host write.
     pub fn finish_dspi2_exchange(&mut self) -> Option<(u32, Vec<u8>)> {
+        self.flush_link();
         self.dspi2
             .exchange_after_capture(&mut self.edma_regs, self.peer.as_mut())
             .map(|w| (w.addr, w.data))

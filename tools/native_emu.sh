@@ -90,16 +90,43 @@ def set_fast_regions(
             environ["SHARC_BLOCKTRANS"] = roots
 
 
-def generated_core() -> pathlib.Path:
-    return digi_env.generated_dir()
+def generated_core(args: list[str] | None = None) -> pathlib.Path:
+    """The generated core for a launch: SHARC_GEN_DIR, else the one registered
+    for the --dsp-image in ARGS (tools/aot_gen.py), else the DN2 default."""
+    image = None
+    if args and "--dsp-image" in args:
+        position = args.index("--dsp-image") + 1
+        image = args[position] if position < len(args) else None
+    return digi_env.generated_dir(image=image)
 
 
 def default_audio_args(args: list[str] | None = None) -> list[str]:
     """Add local ready audio inputs to a normal launcher command line."""
     args = [] if args is None else list(args)
-    paths = digi_env.ready_inputs()
+    value_options = {"--card-image", "--audio-buffer"}
+    positional = next(
+        (
+            value
+            for index, value in enumerate(args)
+            if not value.startswith("--")
+            and (index == 0 or args[index - 1] not in value_options)
+        ),
+        None,
+    )
+    syx = pathlib.Path(positional) if positional else digi_env.firmware()
+    device = digi_env.device_for_syx(syx) or "dn2"
+    paths = digi_env.ready_inputs(device=device)
+    if positional and device != "dn2":
+        paths["firmware"] = syx
+    card = (
+        pathlib.Path(args[args.index("--card-image") + 1])
+        if "--card-image" in args and args.index("--card-image") + 1 < len(args)
+        else None
+    )
+    if device != "dn2" and (card is not None or not paths["CF snapshot"].is_file()):
+        paths = ready_for(device, syx, card, paths)
     missing = [label for label, path in paths.items() if not path.is_file()]
-    generated = generated_core()
+    generated = digi_env.generated_dir(image=paths["DSP image"])
     if not generated.is_dir():
         missing.append("generated DN2 core (set SHARC_GEN_DIR)")
     if missing:
@@ -112,16 +139,6 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
         )
         return []
     os.environ.setdefault("SHARC_GEN_DIR", str(generated))
-    value_options = {"--card-image", "--audio-buffer"}
-    positional = next(
-        (
-            value
-            for index, value in enumerate(args)
-            if not value.startswith("--")
-            and (index == 0 or args[index - 1] not in value_options)
-        ),
-        None,
-    )
     if positional is None:
         args.insert(0, str(paths["firmware"]))
     args.extend(
@@ -141,6 +158,52 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
     if "--audio-buffer" not in args:
         args.extend(["--audio-buffer", "1"])
     return args
+
+
+def ready_for(
+    device: str,
+    syx: pathlib.Path,
+    card: pathlib.Path | None,
+    paths: dict[str, pathlib.Path],
+) -> dict[str, pathlib.Path]:
+    """The ready inputs of a device whose snapshot depends on the card (DT2:
+    the sample list is in the restored RAM), built from the .syx alone by
+    tools/ready.py on first use and reused after."""
+    command = [
+        sys.executable,
+        str(ROOT / "tools" / "ready.py"),
+        device,
+        "--syx",
+        str(syx),
+    ]
+    if card is not None:
+        command += ["--card-image", str(card)]
+    print(
+        f"Preparing the {device.upper()} audio state for this card (first time only)...",
+        file=sys.stderr,
+    )
+    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    sys.stderr.write(done.stderr[-2000:])
+    ready_dir = next(
+        (
+            line.partition("=")[2]
+            for line in done.stdout.splitlines()
+            if line.startswith("ready_dir=")
+        ),
+        None,
+    )
+    if done.returncode or ready_dir is None:
+        print(
+            f"tools/ready.py {device} failed:\n{done.stdout[-2000:]}", file=sys.stderr
+        )
+        return paths
+    base = pathlib.Path(ready_dir)
+    return {
+        **paths,
+        "DSP image": base / "digi-audio-dn2-image.bin",
+        "DSP state": base / "digi-audio-m5.snap.dsp",
+        "CF snapshot": base / "digi-audio-m5.snap",
+    }
 
 
 def target_dir_for(gen: pathlib.Path | None) -> str:
@@ -173,7 +236,7 @@ def cargo_command(args: list[str], pgo: object | None = None) -> list[str]:
         if pgo is not None:
             command = [*pgo.prefix, *command, *pgo.cargo_args]  # type: ignore[attr-defined]
         else:
-            command.extend(["--target-dir", target_dir_for(generated_core())])
+            command.extend(["--target-dir", target_dir_for(generated_core(args))])
     else:
         command.extend(["--target-dir", target_dir_for(None)])
     return [*command, "--", *args]
@@ -304,7 +367,7 @@ def daemon_command(args: list[str]) -> list[str]:
                 "--features",
                 "coupled-audio",
                 "--target-dir",
-                target_dir_for(generated_core()),
+                target_dir_for(generated_core(args)),
             ]
         )
     else:
@@ -463,7 +526,7 @@ def main(args: list[str] | None = None) -> None:
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:
         args = default_audio_args(args)
     if "--coupled" in args or "--auto-coupled" in args:
-        generated = generated_core()
+        generated = generated_core(args)
         if not generated.is_dir():
             raise SystemExit(
                 "--coupled needs SHARC_GEN_DIR pointing to a local generated DN2 core"

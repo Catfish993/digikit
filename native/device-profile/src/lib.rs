@@ -65,6 +65,28 @@ pub struct FirmwareProfile {
     pub boot: Option<BootProfile>,
     pub plusdrive_project_contract: Option<PlusdriveProjectContract>,
     pub readiness_contract: Option<ReadinessContract>,
+    pub dsp: Option<DspProfile>,
+}
+
+/// The SHARC+ DSP behind the coupled audio of one firmware.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DspProfile {
+    /// Image name of `tools/sharcdb.py` / `tools/sharc_pack_image.py`.
+    pub image: String,
+    /// RTOS idle task spin loop, short-word PCs: `[idle_start, idle_end)`.
+    pub idle_start: u32,
+    pub idle_end: u32,
+    pub idle_head: u32,
+    /// How card samples reach the DSP, when the ColdFire pushes them.
+    #[serde(default)]
+    pub sample_link: Option<SampleLink>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SampleLink {
+    /// ColdFire FlexBus writes to SHARC link port 0 (findings 15).
+    Lp0,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +186,7 @@ struct SourceFirmware {
     symbol_profile: Option<SymbolProfile>,
     plusdrive_project_contract: Option<PlusdriveProjectContract>,
     readiness_contract: Option<ReadinessContract>,
+    dsp: Option<DspProfile>,
 }
 
 impl Registry {
@@ -226,6 +249,7 @@ impl Registry {
                     boot,
                     plusdrive_project_contract: firmware.plusdrive_project_contract,
                     readiness_contract: firmware.readiness_contract,
+                    dsp: firmware.dsp,
                 });
             }
             let panel = parsed
@@ -252,6 +276,16 @@ impl Registry {
 
     pub fn devices(&self) -> &[DeviceProfile] {
         &self.devices
+    }
+
+    /// The DSP profile of a firmware named by device short id and version.
+    pub fn dsp_for(&self, device: &str, version: &str) -> Option<&DspProfile> {
+        self.devices
+            .iter()
+            .filter(|d| d.short == device)
+            .flat_map(|d| d.firmwares.iter())
+            .find(|f| f.version == version)
+            .and_then(|f| f.dsp.as_ref())
     }
 
     pub fn identify(
@@ -501,5 +535,23 @@ mod tests {
             Registry::parse(&[("dt2", &alias)]),
             Err(RegistryError::Invalid { .. })
         ));
+    }
+
+    #[test]
+    fn dsp_profiles_name_the_idle_loops_and_the_sample_link() {
+        let registry = Registry::embedded().unwrap();
+        let dt2 = registry.dsp_for("dt2", "1.16").unwrap();
+        assert_eq!(
+            (dt2.idle_start, dt2.idle_end, dt2.idle_head),
+            (0xb8636d, 0xb863df, 0xb863cf)
+        );
+        assert_eq!(dt2.sample_link, Some(SampleLink::Lp0));
+        let dn2 = registry.dsp_for("dn2", "1.11").unwrap();
+        assert_eq!(
+            (dn2.idle_start, dn2.idle_end, dn2.idle_head),
+            (0xb88a49, 0xb88abb, 0xb88aab)
+        );
+        assert_eq!(dn2.sample_link, None);
+        assert!(registry.dsp_for("dn2", "1.10E").is_none());
     }
 }

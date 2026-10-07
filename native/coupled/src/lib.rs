@@ -393,7 +393,7 @@ mod coupled {
     use elektron_native_boot::{
         pcm_play::{Mode, PcmPlayer, Recovery, SOURCE_RATE},
         sharc_peer::{
-            DEFAULT_PERIOD, DN2_IDLE_RANGE, NativeDsp, Shared, ThreadedHandle, ThreadedPeer,
+            DEFAULT_PERIOD, NativeDsp, Shared, ThreadedHandle, ThreadedPeer,
             ThreadedTimingProfile,
         },
         wav::WavWriter,
@@ -641,9 +641,20 @@ mod coupled {
             player: impl FnOnce(Mode, Recovery) -> Result<PcmPlayer, String>,
         ) -> Result<Self, String> {
             let profile = emulator.diagnostics();
-            if (profile.device.as_str(), profile.version.as_str()) != ("dn2", "1.11") {
-                return Err("desktop coupled audio supports only DN2 OS 1.11".into());
-            }
+            let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
+            let dsp = registry
+                .dsp_for(&profile.device, &profile.version)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "desktop coupled audio has no DSP profile for {} OS {}",
+                        profile.device, profile.version
+                    )
+                })?;
+            let idle = elektron_native_boot::sharc_peer::IdleLoop {
+                range: (dsp.idle_start, dsp.idle_end),
+                head: dsp.idle_head,
+            };
             if !options.buffer_seconds.is_finite()
                 || !(0.0..=10.0).contains(&options.buffer_seconds)
             {
@@ -669,18 +680,22 @@ mod coupled {
             sharc_fast_cl::register();
             let (peer, handle, shared) = ThreadedPeer::spawn_with_timing(
                 move || {
-                    elektron_native_boot::sharc_peer::open_dn2_engine_patched(
+                    elektron_native_boot::sharc_peer::open_engine_patched(
                         &image,
                         &state,
                         clock,
                         patch.as_ref(),
+                        idle,
                     )
                     .map(NativeDsp)
                 },
                 elektron_native_boot::sharc_peer::period_from_env(),
-                DN2_IDLE_RANGE,
+                idle.range,
                 link_timing,
             )?;
+            if dsp.sample_link == Some(device_profile::SampleLink::Lp0) {
+                peer.enable_sample_link();
+            }
             shared.borrow_mut().dsp_instructions = initial_instructions;
             emulator.set_dspi2_peer(peer.boxed());
             let mode = if options.buffer_seconds == 0.0 {

@@ -72,6 +72,12 @@ impl CfgRefresh for rt::Cfg {
 
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, sharc_gen))]
+mod tests_gen;
+#[cfg(all(test, sharc_gen))]
+mod tests_gen_programs;
+#[cfg(all(test, sharc_gen))]
+mod tests_gen_vectors;
 
 use rt::*;
 
@@ -851,6 +857,37 @@ impl Engine {
         self.host_event(|s| rt::periph::dma_done(s, TX, 69))?;
         self.host_event(|s| rt::periph::dma_done(s, RX, 70))?;
         Ok(swap16(&reply))
+    }
+
+    /// Whether link port 0's receive DMA is waiting for a work unit: enabled
+    /// in stop flow with RUN set (the firmware's driver arms it, the previous
+    /// unit's completion clears RUN). Always false before the firmware opens
+    /// the port.
+    pub fn lp0_ready(&self) -> bool {
+        use rt::periph::LP0_DMA;
+        let reg = |a: u32| self.s.mmr_get(a).filter(|v| v.is_c()).map(|v| v.b);
+        reg(LP0_DMA + 0x08).is_some_and(|cfg| cfg & 1 != 0 && (cfg >> 12) & 7 == 0)
+            && reg(LP0_DMA + 0x30).is_some_and(|stat| stat & 0x700 != 0)
+    }
+
+    /// One link port 0 work unit (ADSP-2156x HWR chapter 14): BYTES, the
+    /// latched byte stream of exactly XCNT 32-bit words (little-endian
+    /// packing, the first byte of a word in its low bits), lands at the
+    /// channel's start address and the DMA completes (SEC source 81). The
+    /// firmware's own ISR and callback then run as the engine steps. Traps
+    /// unless [`Self::lp0_ready`] and the unit size matches the byte count.
+    pub fn lp0_transfer(&mut self, bytes: &[u8]) -> Result<(), Trap> {
+        use rt::periph::{LP0_DMA, SID_LP0_DMA, dma_done, dma_start};
+        let start = self.host_event(|s| dma_start(s, LP0_DMA))?;
+        let reg = |s: &rt::St, a: u32| s.mmr_get(a).filter(|v| v.is_c()).map(|v| v.b);
+        let xcnt = reg(&self.s, LP0_DMA + 0x0C).ok_or(rt::TRAP_PERIPHERAL)?;
+        if reg(&self.s, LP0_DMA + 0x10) != Some(4) || xcnt as usize * 4 != bytes.len() {
+            return Err(rt::TRAP_PERIPHERAL);
+        }
+        for (k, &byte) in bytes.iter().enumerate() {
+            self.s.mem.write_byte(start.wrapping_add(k as u32), byte);
+        }
+        self.host_event(|s| dma_done(s, LP0_DMA, SID_LP0_DMA))
     }
 
     /// tools/sharc_periph_host.sport_block: one audio block through SPORT4A

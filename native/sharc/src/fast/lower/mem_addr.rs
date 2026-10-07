@@ -15,6 +15,10 @@ use super::*;
 pub enum Xfer {
     Load(u32),
     Store(u32),
+    /// A load whose value is left in `Lower::xout` (generated forms).
+    LoadV,
+    /// A store of an already read value (generated forms).
+    StoreV(Val),
 }
 
 /// The width of a transfer: a normal word (4 bytes; the address is a byte
@@ -80,7 +84,7 @@ impl Lower {
         if !self.env.assume_nw32 {
             return refuse("assume_nw32 off");
         }
-        if matches!(x, Xfer::Store(_)) && w.signed {
+        if matches!(x, Xfer::Store(_) | Xfer::StoreV(_)) && w.signed {
             return refuse("sign-extended store");
         }
         let iv = self.rd_i(ic)?;
@@ -160,7 +164,7 @@ impl Lower {
         x: Xfer,
         w: Width,
     ) -> LR<()> {
-        let write = matches!(x, Xfer::Store(_));
+        let write = matches!(x, Xfer::Store(_) | Xfer::StoreV(_));
         let (p, o, slot) = self.dynamic_window(addr, anchor, write)?;
         let lo = self.emit(Ty::I32, Op::Ctx32(CTX_WIN_EXT + 8 * slot));
         let span = self.emit(Ty::I32, Op::Ctx32(CTX_WIN_DYN_LEN + 4 * slot));
@@ -184,7 +188,7 @@ impl Lower {
     /// The load or store of W at window pointer P plus byte offset O.
     fn emit_access(&mut self, p: Val, o: Val, x: Xfer, w: Width) -> LR<()> {
         match x {
-            Xfer::Load(code) => {
+            Xfer::Load(_) | Xfer::LoadV => {
                 let v = if w.is_nw() {
                     self.emit(Ty::I32, Op::Load32 { base: p, off: o })
                 } else {
@@ -204,10 +208,20 @@ impl Lower {
                         v
                     }
                 };
-                self.wr(code, v)
+                match x {
+                    Xfer::Load(code) => self.wr(code, v),
+                    _ => {
+                        self.xout = Some(v);
+                        Ok(())
+                    }
+                }
             }
             Xfer::Store(code) => {
                 let val = self.rd_bits(code)?;
+                self.pend_store_n(p, o, val, w.bytes);
+                Ok(())
+            }
+            Xfer::StoreV(val) => {
                 self.pend_store_n(p, o, val, w.bytes);
                 Ok(())
             }
@@ -245,8 +259,12 @@ impl Lower {
     /// checked to be plain; a byte or short word needs no such check).
     pub fn mem_xfer_w(&mut self, addr: Val, x: Xfer, w: Width) -> LR<()> {
         match x {
-            Xfer::Load(_) => {
+            Xfer::Load(_) | Xfer::LoadV => {
                 let (p, o) = self.window_access(addr, w.bytes as i64, false)?;
+                self.emit_access(p, o, x, w)
+            }
+            Xfer::StoreV(_) => {
+                let (p, o) = self.window_access(addr, w.bytes as i64, true)?;
                 self.emit_access(p, o, x, w)
             }
             Xfer::Store(code) => {

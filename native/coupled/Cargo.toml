@@ -16,6 +16,7 @@ coupled-audio = ["elektron-native-boot/sharc", "elektron-native-boot/play", "dep
 region-profile = ["sharc-native?/region-profile"]
 
 [dependencies]
+device-profile = { path = "../device-profile" }
 elektron-native-boot = { path = "../boot" }
 emmc-card = { path = "../card" }
 serde_json = "1"

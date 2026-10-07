@@ -17,6 +17,8 @@ reference-ram-clear = []
 diagnostic-profile = []
 diagnostic-events = []
 diagnostic-trace = []
+# Host-time and PC profile of the ColdFire execution paths (src/cfprof.rs).
+cf-profile = []
 diagnostics = ["diagnostic-profile", "diagnostic-events", "diagnostic-trace"]
 # Opt-in live ColdFire<->SHARC+ coupling (SharcPeer). Needs SHARC_GEN_DIR at
 # build time for real DSP execution (see native/sharc/build.rs).

@@ -221,6 +221,10 @@ impl Lower {
     /// The execution condition `cond` (a 5-bit code) as a 0/1 value, and the
     /// ASTATX bits it reads recorded.
     pub fn cond_value(&mut self, cond: u32) -> LR<Val> {
+        if self.mode1_cur & (1 << 21) != 0 {
+            // SIMD: each PE has its own condition (and branches combine them).
+            return refuse("condition in SIMD mode");
+        }
         if !self.flag_v() {
             return refuse("condition in a region without kernel flags");
         }
@@ -546,8 +550,27 @@ impl Lower {
     /// A flag writer ran: note its kind and sources (no flag bit is computed;
     /// see the module comment). Under an execution condition the notes are
     /// selected like any register write.
-    pub(super) fn flag_note(&mut self, kind: FlagKind, srcs: &[Val]) -> LR<()> {
+    pub(super) fn flag_note(&mut self, kind: FlagKind, srcs: &[Val], pe: u8) -> LR<()> {
         let (g, id) = kind.group_id();
+        if pe != 0 {
+            // PEy (SIMD): ASTATY is only replayed at the exits; no condition
+            // reads it (`cond_value` refuses SIMD).
+            let gy = g + 3;
+            self.flag_kinds_out[gy as usize] |= 1 << id;
+            let s0 = match srcs.first() {
+                Some(&v) => self.to_i(v),
+                None => self.ci(0),
+            };
+            let s1 = match srcs.get(1) {
+                Some(&v) => self.to_i(v),
+                None => self.ci(0),
+            };
+            let kid = self.ci(id);
+            self.wr_any(pseudo_flag(gy, 0), kid);
+            self.wr_any(pseudo_flag(gy, 1), s0);
+            self.wr_any(pseudo_flag(gy, 2), s1);
+            return Ok(());
+        }
         self.flag_kinds_out[g as usize] |= 1 << id;
         if kind == FlagKind::FmulForget {
             self.forget_mask |= MULT_MASK;

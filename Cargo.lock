@@ -869,6 +869,7 @@ dependencies = [
 name = "digi-coupled"
 version = "0.1.0"
 dependencies = [
+ "device-profile",
  "elektron-native-boot",
  "emmc-card",
  "serde_json",

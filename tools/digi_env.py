@@ -23,10 +23,13 @@ import tomllib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 # The DN2 ready-inputs directory: ready_dir in tools/ready_inputs.json (shared
 # with the JS tools), overridden by DIGI_EMU_READY_DIR.
-READY = ROOT / (
-    os.environ.get("DIGI_EMU_READY_DIR")
-    or json.loads((ROOT / "tools" / "ready_inputs.json").read_text())["ready_dir"]
-)
+_READY_JSON = json.loads((ROOT / "tools" / "ready_inputs.json").read_text())
+READY = ROOT / (os.environ.get("DIGI_EMU_READY_DIR") or _READY_JSON["ready_dir"])
+# The ready directory of the other devices (`ready_dirs` in the same file).
+READY_DIRS = {
+    "dn2": READY,
+    **{k: ROOT / v for k, v in _READY_JSON.get("ready_dirs", {}).items()},
+}
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
 DEFAULT_SYX = ROOT / "Digitone_II_OS1.11.syx"
 FAST_TABLE = ROOT / "tools" / "fast_regions.json"
@@ -36,11 +39,48 @@ TRIPLE = "aarch64-apple-darwin"
 Environ = dict[str, str] | os._Environ[str]
 
 
-def generated_dir(environ: Environ | None = None) -> pathlib.Path:
-    """The generated DN2 core: SHARC_GEN_DIR, else the prod default."""
+GEN_INDEX = ROOT / "out" / "native" / "gen-index.json"
+
+
+def _image_sha(image: pathlib.Path | str) -> str:
+    return hashlib.sha256(pathlib.Path(image).read_bytes()).hexdigest()
+
+
+def gen_for_image(image: pathlib.Path | str) -> pathlib.Path | None:
+    """The generated core (block library) made for a packed DSP image, found by
+    the image's SHA-256 in out/native/gen-index.json; None when none is
+    registered (the image then runs interpreted on any core)."""
+    try:
+        index = json.loads(GEN_INDEX.read_text())
+        found = pathlib.Path(index[_image_sha(image)])
+    except (OSError, KeyError, ValueError):
+        return None
+    return found if found.is_dir() else None
+
+
+def register_gen(image: pathlib.Path | str, gen: pathlib.Path | str) -> None:
+    """Record GEN as the core for IMAGE (tools/aot_gen.py)."""
+    try:
+        index = json.loads(GEN_INDEX.read_text())
+    except (OSError, ValueError):
+        index = {}
+    index[_image_sha(image)] = str(pathlib.Path(gen).resolve())
+    GEN_INDEX.parent.mkdir(parents=True, exist_ok=True)
+    GEN_INDEX.write_text(json.dumps(index, indent=1, sort_keys=True) + "\n")
+
+
+def generated_dir(
+    environ: Environ | None = None, image: pathlib.Path | str | None = None
+) -> pathlib.Path:
+    """The generated core to build against: SHARC_GEN_DIR, else the one
+    registered for IMAGE (a packed DSP image), else the DN2 prod default."""
     environ = os.environ if environ is None else environ
     configured = environ.get("SHARC_GEN_DIR")
-    return pathlib.Path(configured) if configured else DEFAULT_GENERATED
+    if configured:
+        return pathlib.Path(configured)
+    if image is not None and (registered := gen_for_image(image)) is not None:
+        return registered
+    return DEFAULT_GENERATED
 
 
 def firmware(environ: Environ | None = None) -> pathlib.Path:
@@ -51,9 +91,44 @@ def firmware(environ: Environ | None = None) -> pathlib.Path:
     )
 
 
-def ready_inputs(environ: Environ | None = None) -> dict[str, pathlib.Path]:
-    """The private DN2 audio inputs, each overridable by its DIGI_EMU_* variable."""
+def device_for_syx(path: pathlib.Path) -> str | None:
+    """The device short id (`dn2`, `dt2`) of a firmware file, by SHA-256 against
+    devices/*.toml; None when no profile knows it."""
+    try:
+        digest = hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+    for toml_path in sorted((ROOT / "devices").glob("*.toml")):
+        doc = tomllib.loads(toml_path.read_text())
+        if any(f.get("sha256") == digest for f in doc.get("firmware", [])):
+            return doc["device"]["short"]
+    return None
+
+
+def firmware_for(device: str, environ: Environ | None = None) -> pathlib.Path:
+    """The .syx of a device: DIGI_EMU_SYX_<DEVICE>, else the repo-root default
+    (DN2 also honours DIGI_EMU_SYX and DIGI_COUPLED_SYX, see `firmware`)."""
     environ = os.environ if environ is None else environ
+    if device == "dn2":
+        return firmware(environ)
+    default = {"dt2": "Digitakt_II_OS1.16.syx"}[device]
+    return pathlib.Path(environ.get(f"DIGI_EMU_SYX_{device.upper()}") or ROOT / default)
+
+
+def ready_inputs(
+    environ: Environ | None = None, device: str = "dn2"
+) -> dict[str, pathlib.Path]:
+    """The private audio inputs of a device, each overridable by its DIGI_EMU_*
+    variable (DN2)."""
+    environ = os.environ if environ is None else environ
+    if device != "dn2":
+        base = READY_DIRS[device]
+        return {
+            "firmware": firmware_for(device, environ),
+            "DSP image": base / "digi-audio-dn2-image.bin",
+            "DSP state": base / "digi-audio-m5.snap.dsp",
+            "CF snapshot": base / "digi-audio-m5.snap",
+        }
     return {
         "firmware": firmware(environ),
         "DSP image": pathlib.Path(

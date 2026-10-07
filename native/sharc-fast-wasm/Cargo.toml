@@ -1,0 +1,35 @@
+[package]
+name = "sharc-fast-wasm"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "WebAssembly backend for the SHARC fast tier's kernel IR (native/sharc/src/fast/ir.rs), plus the V8 gate tools"
+
+# A root of its own (like native/sharc-jit): not a member of the repository
+# workspace, own Cargo.lock and target dir. Build with SHARC_GEN_DIR pointing
+# at a transpile output (mise run core) so sharc-native links.
+[workspace]
+
+[dependencies]
+sharc-native = { path = "../sharc" }
+wasm-encoder = "0.259.0"
+# The native replay (the gate's Cranelift column) needs Cranelift.
+sharc-fast-cl = { path = "../sharc-fast-cl", optional = true }
+
+[features]
+native-bench = ["dep:sharc-fast-cl"]
+
+[lib]
+name = "sharc_fast_wasm"
+
+[[bin]]
+name = "wasmgen"
+path = "src/bin/wasmgen.rs"
+
+[[bin]]
+name = "clbench"
+path = "src/bin/clbench.rs"
+required-features = ["native-bench"]
+
+[profile.release]
+opt-level = 3

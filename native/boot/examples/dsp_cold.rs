@@ -10,7 +10,7 @@
 //! repository.
 
 use elektron_native_boot::dsp_patch::DspPatch;
-use elektron_native_boot::sharc_peer::{DN2_IDLE_RANGE, open_dn2_engine_patched};
+use elektron_native_boot::sharc_peer::{DN2_IDLE, DT2_IDLE, open_engine_patched};
 use sha2::{Digest, Sha256};
 use std::{env, fs, time::Instant};
 
@@ -24,7 +24,8 @@ fn main() {
     let state = fs::read(&a[2]).unwrap();
     let max: u64 = a.get(4).map_or(800_000_000, |v| v.parse().unwrap());
     let patch = env::var_os("DSP_PATCH").map(|p| DspPatch::load(p.as_ref()).unwrap());
-    let mut e = open_dn2_engine_patched(&image, &state, 0, patch.as_ref()).expect("engine");
+    let idle = if env::var("DSP_DEVICE").as_deref() == Ok("dt2") { DT2_IDLE } else { DN2_IDLE };
+    let mut e = open_engine_patched(&image, &state, 0, patch.as_ref(), idle).expect("engine");
     let t0 = Instant::now();
     let mut done = 0u64;
     let mut rested = 0u32;
@@ -36,7 +37,7 @@ fn main() {
             println!("halt at {done}: {:?} pc={pc:#x}", e.halt);
             break;
         }
-        if (DN2_IDLE_RANGE.0..=DN2_IDLE_RANGE.1).contains(&pc) {
+        if (idle.range.0..=idle.range.1).contains(&pc) {
             rested += 1;
             if rested >= 8 {
                 println!("idle: pc={pc:#x} after {} instructions", e.s.icount);

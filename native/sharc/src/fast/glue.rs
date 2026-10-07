@@ -272,14 +272,15 @@ pub fn flag_mask(kind: FlagKind) -> u32 {
 /// writer whose bits are all defined (or forgotten) again by later ones is
 /// dropped (`define`/`forget` overwrite `b` and `m` on their whole mask).
 pub fn reduce_flags(all: &[FlagWriter]) -> Vec<FlagWriter> {
-    let mut covered = 0u32;
+    let mut covered = [0u32; 2];
     let mut keep = Vec::new();
     for w in all.iter().rev() {
         let m = flag_mask(w.kind);
-        if m & !covered != 0 {
+        let c = &mut covered[w.pe as usize & 1];
+        if m & !*c != 0 {
             keep.push(*w);
         }
-        covered |= m;
+        *c |= m;
     }
     keep.reverse();
     keep
@@ -852,9 +853,10 @@ pub fn run(
         return Err(Decline::Shape);
     }
     let mode1 = s.r[MODE1];
-    if !mode1.is_c() || mode1.b & (7 << 21) != 0 {
-        // Unknown MODE1, or SIMD (PEx and PEy both execute), or a broadcast
-        // load (BDCST9/BDCST1: a second register is loaded).
+    if !mode1.is_c() || mode1.b & (3 << 22) != 0 {
+        // Unknown MODE1, or a broadcast load (BDCST9/BDCST1: a second
+        // register is loaded). SIMD is part of every region's MODE1
+        // requirement (`Req::Mode1`, bit 21).
         return Err(Decline::Shape);
     }
     let k = r.insns.len() as u64;
@@ -922,6 +924,7 @@ pub fn run(
     pmark!(pt, 2);
     // Windows.
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
+    super::dump::begin();
     for (w, spec) in r.wins.iter().enumerate() {
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
             if spec.dynamic_anchor.is_some() {
@@ -931,6 +934,7 @@ pub fn run(
             return Err(Decline::Window);
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
+        super::dump::win(w as u32, ptr, lo, hi);
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }
@@ -959,7 +963,9 @@ pub fn run(
     // each dynamic address is checked before its load and instruction commit.
     // The kernel was lowered for this engine state layout.
     pmark!(pt, 4);
+    let cap = super::dump::before(&r.kernel, ctx.ptr(), std::ptr::from_mut(s).cast());
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
+    super::dump::after(cap, code, ctx.ptr(), std::ptr::from_mut(s).cast());
     pmark!(pt, 5);
     let done = ctx.get32(CTX_DONE) as u64;
     let kk = if code == 0 {
@@ -1046,59 +1052,71 @@ fn apply_groups(s: &mut St, r: &Region, ctx: &Ctx) {
     if !r.flag_groups.iter().any(|g| *g) {
         return;
     }
-    let mut v = s.r[118];
+    let mut v = [s.r[118], s.r[119]];
+    let mut any = [false; 2];
     for g in 0..NGROUPS {
         if !r.flag_groups[g as usize] {
             continue;
         }
         let id = ctx.get32(ctx_reg_out(pseudo_flag(g, 0)));
-        if let Some(kind) = FlagKind::from_group_id(g, id) {
+        // Groups 0..2 are PEx's, 3..5 PEy's (ASTATY).
+        if let Some(kind) = FlagKind::from_group_id(g % 3, id) {
             let src = [
                 ctx.get32(ctx_reg_out(pseudo_flag(g, 1))),
                 ctx.get32(ctx_reg_out(pseudo_flag(g, 2))),
             ];
-            v = apply_flag(v, kind, src);
+            let pe = (g / 3) as usize;
+            v[pe] = apply_flag(v[pe], kind, src);
+            any[pe] = true;
         }
     }
-    s.r[118] = v;
+    if any[0] {
+        s.r[118] = v[0];
+    }
+    if any[1] {
+        s.r[119] = v[1];
+    }
 }
 
 fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64) {
     if r.flags.is_empty() {
         return;
     }
-    let mut v = s.r[118];
-    let mut any = false;
-    let one = |w: &super::FlagWriter, v: &mut V| {
+    // ASTATX (PEx) and ASTATY (PEy, SIMD).
+    let mut v = [s.r[118], s.r[119]];
+    let mut any = [false; 2];
+    let one = |w: &super::FlagWriter, v: &mut [V; 2], any: &mut [bool; 2]| {
         let mut src = [0u32; 2];
         for (j, slot) in w.fsrc.iter().enumerate() {
             if *slot != 255 {
                 src[j] = ctx.get32(CTX_FSRC + 4 * *slot as u32);
             }
         }
-        *v = apply_flag(*v, w.kind, src);
+        let pe = w.pe as usize & 1;
+        v[pe] = apply_flag(v[pe], w.kind, src);
+        any[pe] = true;
     };
     if full {
         for w in &r.full_flags {
-            one(w, &mut v);
-            any = true;
+            one(w, &mut v, &mut any);
         }
     } else {
         if done > 0 {
             // Writers after the failing instruction last ran in the
             // previous iteration.
             for w in r.flags.iter().filter(|w| w.insn as u64 >= kk) {
-                one(w, &mut v);
-                any = true;
+                one(w, &mut v, &mut any);
             }
         }
         for w in r.flags.iter().filter(|w| (w.insn as u64) < kk) {
-            one(w, &mut v);
-            any = true;
+            one(w, &mut v, &mut any);
         }
     }
-    if any {
-        s.r[118] = v;
+    if any[0] {
+        s.r[118] = v[0];
+    }
+    if any[1] {
+        s.r[119] = v[1];
     }
 }
 
@@ -1443,9 +1461,10 @@ pub fn run_cfg(
         return Err(shape("PC stack change in flight"));
     }
     let mode1 = s.r[MODE1];
-    if !mode1.is_c() || mode1.b & (7 << 21) != 0 {
-        // Unknown MODE1, SIMD, or a broadcast load (BDCST9/BDCST1).
-        return Err(shape("MODE1 unknown, SIMD or broadcast load"));
+    if !mode1.is_c() || mode1.b & (3 << 22) != 0 {
+        // Unknown MODE1 or a broadcast load (BDCST9/BDCST1). SIMD is part of
+        // every region's MODE1 requirement (`Req::Mode1`, bit 21).
+        return Err(shape("MODE1 unknown or a broadcast load"));
     }
     // The loops active at entry that the region models.
     let n = meta.n_entry;
@@ -1531,6 +1550,7 @@ pub fn run_cfg(
         return Err(Decline::Budget);
     }
     pmark!(pt, 2);
+    super::dump::begin();
     for (w, spec) in r.wins.iter().enumerate() {
         if let Some(l) = lean
             && spec.dynamic_anchor.is_none()
@@ -1553,6 +1573,7 @@ pub fn run_cfg(
                 return Err(Decline::Window);
             };
             ctx.set64(win_ptr(w as u32), off);
+            super::dump::win(w as u32, off.wrapping_add(lo as u64) as *const u8, lo as u32, hi as u64);
             ctx.set32(CTX_WIN_DYN_LEN + 4 * w as u32, 0);
             continue;
         }
@@ -1577,6 +1598,7 @@ pub fn run_cfg(
             );
         }
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
+        super::dump::win(w as u32, ptr, lo, hi);
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }
@@ -1605,7 +1627,9 @@ pub fn run_cfg(
     // address is checked before its load and instruction commit. The kernel
     // was lowered for this engine state layout.
     pmark!(pt, 4);
+    let cap = super::dump::before(&r.kernel, ctx.ptr(), std::ptr::from_mut(s).cast());
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
+    super::dump::after(cap, code, ctx.ptr(), std::ptr::from_mut(s).cast());
     pmark!(pt, 5);
     if code == RUN_ENTRY_FAILED {
         // The kernel's own entry checks failed before it did anything.

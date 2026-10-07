@@ -26,6 +26,11 @@ pub struct Fifo {
     pub polls: u64,
     pub words: u64,
     pub bursts: u64,
+    /// The bytes the SHARC's link port 0 has latched, in wire order, not yet
+    /// taken by a host ([`Fifo::take_link`]).
+    link: Vec<u8>,
+    /// The link clock (bit 7 of the last `STATUS` write) is high.
+    clock_high: bool,
 }
 
 impl Default for Fifo {
@@ -41,7 +46,14 @@ impl Fifo {
             polls: 0,
             words: 0,
             bursts: 0,
+            link: Vec::new(),
+            clock_high: false,
         }
+    }
+
+    /// Take the link-port bytes latched since the last call.
+    pub fn take_link(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.link)
     }
 
     pub fn owns(addr: u32) -> bool {
@@ -67,10 +79,20 @@ impl Fifo {
 
     /// A guest write anywhere in this bank's range: bookkeeping only, no
     /// guest-visible effect (`emu/dsp.py`'s `on_write`/`on_latch`).
-    pub fn write(&mut self, addr: u32) -> bool {
+    pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
         if (STATUS..STATUS + 2).contains(&addr) {
             self.words += 1;
             self.polls = 0;
+            // Link port 0 (docs/findings/04, "The wire"): the byte is in bits
+            // 15:8 of a halfword write and bit 7 is the clock; the receiver
+            // latches the byte on the falling edge.
+            if size == 2 && addr == STATUS {
+                let high = value & u32::from(STROBE) != 0;
+                if self.clock_high && !high {
+                    self.link.push((value >> 8) as u8);
+                }
+                self.clock_high = high;
+            }
             true
         } else if (LATCH..LATCH + 2).contains(&addr) {
             self.bursts += 1;

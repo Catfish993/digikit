@@ -79,6 +79,10 @@ pub const PUSHR_TAG: u16 = 0x8001;
 pub trait Peer {
     /// -> exactly `tx.len()` bytes.
     fn exchange(&mut self, tx: &[u8]) -> Vec<u8>;
+    /// The bytes the ColdFire sent to the SHARC's link port 0 (FlexBus
+    /// `0x8C000002`, wire order) since the previous frame; called before the
+    /// frame's `exchange`. The default drops them.
+    fn link_bytes(&mut self, _bytes: &[u8]) {}
 }
 
 /// What the unmodeled hardware already implies: an untouched, zero-

@@ -62,7 +62,7 @@ pub struct Region {
     /// The kernel tracks flags in pseudo registers (in `inputs`); the groups
     /// with writers write their last writer out (`glue::apply_groups`).
     pub flag_v: bool,
-    pub flag_groups: [bool; 3],
+    pub flag_groups: [bool; NGROUPS as usize],
     /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
     pub cacc: bool,
     /// The kernel was lowered for an ASTATX that is not fully known

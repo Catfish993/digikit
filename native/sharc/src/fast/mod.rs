@@ -20,6 +20,7 @@
 
 pub mod cfg;
 pub mod decode_view;
+pub mod dump;
 pub mod glue;
 pub mod interp;
 pub mod ir;
@@ -165,6 +166,9 @@ pub struct FlagWriter {
     pub kind: FlagKind,
     /// Flag-source slots (context `fsrc` indices); 255 for none.
     pub fsrc: [u8; 2],
+    /// The processing element whose status the writer defines: 0 ASTATX,
+    /// 1 ASTATY (SIMD).
+    pub pe: u8,
 }
 
 /// A condition on the engine state a region needs.
@@ -1004,6 +1008,16 @@ impl FastEngine {
 
 impl Drop for FastEngine {
     fn drop(&mut self) {
+        if dump::enabled() {
+            let rows: Vec<(u32, u64, u64)> = self
+                .pcs
+                .iter()
+                .zip(&self.slots)
+                .filter(|(_, sl)| sl.calls > 0)
+                .map(|(pc, sl)| (*pc, sl.calls, sl.insns))
+                .collect();
+            dump::totals(&rows);
+        }
         if self.summary && (self.stats.calls > 0 || self.stats.armed > 0) {
             eprintln!("{}", self.report());
         }
@@ -1228,6 +1242,7 @@ impl FastEngine {
             Ok(code) => {
                 self.stats.runs += 1;
                 self.stats.insns += s.icount - before;
+                dump::finish(pc, s.icount - before);
                 Some(code)
             }
             Err(d) => {

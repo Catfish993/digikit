@@ -36,10 +36,21 @@ struct Joins {
     fm: HashMap<u32, u32>,
     /// The forgotten multiplier bits on some path (`Lower::fg_static`).
     fg: HashMap<u32, u32>,
+    /// MODE1 as the lowering knew it on the edges into each label (and the
+    /// value the label was lowered under), and whether two edges disagreed.
+    mode1: HashMap<u32, u32>,
+    mode1_conflict: bool,
 }
 
 impl Joins {
-    fn edge(&mut self, pc: u32, abs: &[Option<Abs>], fm: u32, fg: u32) {
+    fn edge(&mut self, pc: u32, abs: &[Option<Abs>], fm: u32, fg: u32, mode1: u32) {
+        match self.mode1.get(&pc) {
+            Some(&m) if m != mode1 => self.mode1_conflict = true,
+            Some(_) => {}
+            None => {
+                self.mode1.insert(pc, mode1);
+            }
+        }
         match self.abs.get(&pc) {
             Some(old) => {
                 let merged = merge(old, abs);
@@ -226,7 +237,7 @@ impl Lower {
                     self.close_block(&v);
                     let cur = self.var_abs.clone();
                     let (fm, fg) = (self.fm_static, self.fg_static);
-                    joins.edge(pc, &cur, fm, fg);
+                    joins.edge(pc, &cur, fm, fg, self.mode1_cur);
                 } else {
                     // The previous block ended in a jump or an exit: nothing
                     // it computed is visible here.
@@ -237,6 +248,9 @@ impl Lower {
                 } else if pc == st.entry {
                     self.var_abs = entry_abs.clone();
                 }
+                // MODE1 here: what every edge into the label saw, else (the
+                // entry, code placed before its callers) the entry value.
+                self.mode1_cur = *joins.mode1.entry(pc).or_insert(self.env.mode1);
                 self.fm_static = joins.fm.get(&pc).copied().unwrap_or(0);
                 self.fg_static = joins.fg.get(&pc).copied().unwrap_or(0);
                 // A register written on a cycle through a backward branch has
@@ -296,6 +310,9 @@ impl Lower {
         }
         if open {
             return refuse("the region falls off its last instruction");
+        }
+        if joins.mode1_conflict {
+            return refuse("MODE1 differs where paths join");
         }
         for &pc in &st.call_targets {
             if let Some(a) = joins.abs.get(&pc) {
@@ -473,7 +490,7 @@ impl Lower {
                             self.pass, cur[22], cur[23]
                         );
                     }
-                    joins.edge(*target, &cur, fm, fg);
+                    joins.edge(*target, &cur, fm, fg, self.mode1_cur);
                     label_of[target]
                 };
                 match cv {
@@ -497,9 +514,9 @@ impl Lower {
 
     /// The registers written by the instructions at addresses LO..=HI, as
     /// the previous pass saw them (all of them in the first pass).
-    fn written_in(&self, lo: u32, hi: u32) -> u64 {
+    fn written_in(&self, lo: u32, hi: u32) -> u128 {
         if self.plan.node_written.is_empty() {
-            return u64::MAX;
+            return u128::MAX;
         }
         self.plan
             .node_written
@@ -507,7 +524,7 @@ impl Lower {
             .fold(0, |a, (_, m)| a | m)
     }
 
-    fn blank(&mut self, mask: u64) {
+    fn blank(&mut self, mask: u128) {
         for c in 0..NREGS as usize {
             if mask >> c & 1 == 1 {
                 self.var_abs[c] = None;

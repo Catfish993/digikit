@@ -20,6 +20,8 @@ pub mod cond;
 pub mod fixed_alu;
 pub mod float_alu;
 pub mod flow;
+pub mod gen_forms;
+pub mod gen_prims;
 pub mod mem_addr;
 pub mod mem_imm;
 pub mod move_misc;
@@ -191,13 +193,13 @@ pub struct Plan {
     /// CFG kernels: the registers (bit per code) each instruction writes,
     /// by address (delay slots included), and the per-iteration step of each
     /// register in each loop as the previous pass measured it.
-    pub node_written: std::collections::BTreeMap<u32, u64>,
+    pub node_written: std::collections::BTreeMap<u32, u128>,
     pub loop_stride: Vec<[Option<i64>; NREGS as usize]>,
     /// Which loops had their loop-back lowered (the others never iterate in
     /// the kernel).
     pub loop_back_seen: Vec<bool>,
     /// The flag-writer kinds of each group in the region (bit per id).
-    pub flag_kinds: [u32; 3],
+    pub flag_kinds: [u32; NGROUPS as usize],
     /// Index registers (bit per UREG code) the region writes with a plain
     /// move (CJUMP, RFRAME), not as a circular update: their circular buffer
     /// (`circ_range`) says nothing about the value.
@@ -218,7 +220,7 @@ impl Default for Plan {
             node_written: Default::default(),
             loop_stride: Vec::new(),
             loop_back_seen: Vec::new(),
-            flag_kinds: [0; 3],
+            flag_kinds: [0; NGROUPS as usize],
             plain: 0,
             entry_abs: Default::default(),
         }
@@ -262,6 +264,27 @@ pub struct Env {
     pub cacc_known: bool,
 }
 
+/// `SHARC_FAST_GEN=all` or a comma list of forms: lower those forms with the
+/// generated emitters (`gen_forms`) instead of the hand-written ones.
+pub static GEN_FORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+fn gen_enabled(form: &str) -> bool {
+    match GEN_FORCE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => return false,
+        2 => return true,
+        _ => {}
+    }
+    static SET: std::sync::OnceLock<Option<Vec<String>>> = std::sync::OnceLock::new();
+    let set = SET.get_or_init(|| {
+        let v = std::env::var("SHARC_FAST_GEN").ok()?;
+        Some(v.split(',').map(str::to_string).collect())
+    });
+    match set {
+        Some(l) => l.iter().any(|f| f == "all" || f == form),
+        None => false,
+    }
+}
+
 /// Registers the lowering tracks: R, I, M and the pseudo registers (the
 /// kernel's ASTATX bits and known mask).
 pub const NALL: usize = (NREGS + NPSEUDO) as usize;
@@ -275,6 +298,9 @@ struct Pending {
     /// A second flag writer of the same instruction (multifunction: the
     /// ALU and the multiplier both write flags).
     flag2: Option<(FlagKind, Vec<Val>)>,
+    /// The same two for PEy (SIMD): ASTATY.
+    flag_y: Option<(FlagKind, Vec<Val>)>,
+    flag2_y: Option<(FlagKind, Vec<Val>)>,
 }
 
 pub struct Lower {
@@ -284,7 +310,7 @@ pub struct Lower {
     /// The last writer of each flag group, as far as this block knows.
     pub lw: [Option<cond::LastW>; 3],
     /// The writer kinds seen so far (bit per id), for the next pass.
-    pub flag_kinds_out: [u32; 3],
+    pub flag_kinds_out: [u32; NGROUPS as usize],
     /// `Plan::plain` as this pass found it.
     pub plain_out: u64,
     /// The instruction being lowered is followed in the kernel by nothing
@@ -340,14 +366,14 @@ pub struct Lower {
     /// MODE1 bits the lowering relies on.
     pub mode1_mask: u32,
     /// Registers (R, I, M codes) written by the instruction just lowered.
-    pub written_mask: u64,
+    pub written_mask: u128,
     /// The kernel is a CFG kernel (loop strides are tracked by `flow`).
     pub cfg_shape: bool,
     /// CFG kernels: the address of the node whose lowering failed.
     pub fail_pc: Option<u32>,
     /// CFG kernels: what this pass learns for the next (see `Plan`), and the
     /// ranges of the registers at each loop's entry and head.
-    pub node_written: std::collections::BTreeMap<u32, u64>,
+    pub node_written: std::collections::BTreeMap<u32, u128>,
     pub loop_stride_out: Vec<[Option<i64>; NREGS as usize]>,
     pub loop_back_seen_out: Vec<bool>,
     pub loop_in: Vec<Vec<Option<Abs>>>,
@@ -380,6 +406,14 @@ pub struct Lower {
     pub bank_next_ok: bool,
     pub bank_site: Option<(u32, u32)>,
     pub bank_site_next: Option<(u32, u32)>,
+    /// Generated forms (`gen_prims`): the value a `Xfer::LoadV` produced, the
+    /// register each value was read from (for anchors and moves), and MODE1 as
+    /// the lowering knows it at this point of the region.
+    pub xout: Option<Val>,
+    pub gtag: Vec<Option<gen_prims::Tag>>,
+    pub mode1_cur: u32,
+    /// 80 while a compute of PEy runs (R/F codes 0..15 mean S/SF), else 0.
+    pub pe_off: u32,
 }
 
 /// A kernel variable that is not a register: loaded from the context in
@@ -416,7 +450,7 @@ impl Lower {
             plan,
             pass,
             lw: [None; 3],
-            flag_kinds_out: [0; 3],
+            flag_kinds_out: [0; NGROUPS as usize],
             plain_out: 0,
             tail_write: false,
             entry_abs_out: Default::default(),
@@ -470,7 +504,12 @@ impl Lower {
             bank_next_ok: false,
             bank_site: None,
             bank_site_next: None,
+            xout: None,
+            gtag: Vec::new(),
+            mode1_cur: 0,
+            pe_off: 0,
         };
+        l.mode1_cur = l.env.mode1;
         l.var_abs = (0..NREGS as usize).map(|c| l.init_abs(c)).collect();
         l
     }
@@ -746,10 +785,19 @@ impl Lower {
     // -- registers ---------------------------------------------------------
 
     fn check_code(&self, code: u32) -> LR<usize> {
-        if code < NREGS {
+        if code < 96 {
             Ok(code as usize)
         } else {
-            refuse(format!("register code {code} outside R/I/M"))
+            refuse(format!("register code {code} outside R/I/M/L/B/S"))
+        }
+    }
+
+    /// The register a compute operand names: R/F 0..15 are S/SF on PEy.
+    fn pe_code(&self, code: u32) -> u32 {
+        if self.pe_off != 0 && code < 16 {
+            code + self.pe_off
+        } else {
+            code
         }
     }
 
@@ -946,11 +994,25 @@ impl Lower {
         modified: Val,
         scale: i64,
     ) -> LR<()> {
+        let v = self.post_value(ic, iv, delta, modified, scale)?;
+        self.wr_i(ic, v)
+    }
+
+    /// The new value of index register IC after a post-modify (see
+    /// `post_update_scaled`), without writing it.
+    pub fn post_value(
+        &mut self,
+        ic: u32,
+        iv: Val,
+        delta: Val,
+        modified: Val,
+        scale: i64,
+    ) -> LR<Val> {
         self.self_update.push(ic as u8);
         self.no_plain_circ(ic)?;
         if self.env.circ_off {
             self.require_linear(ic)?;
-            return self.wr_i(ic, modified);
+            return Ok(modified);
         }
         let n = (ic - 16) as usize;
         let Some(len) = self.env.dag_l[n] else {
@@ -959,19 +1021,18 @@ impl Lower {
         if len == 0 {
             // No circular buffer: the plain sum whatever MODE1 says.
             self.require_eq(48 + n as u32, 0);
-            return self.wr_i(ic, modified);
+            return Ok(modified);
         }
         if self.env.mode1 & MODE1_CBUFEN == 0 {
             return refuse("MODE1.CBUFEN clear with L != 0");
         }
         if self.pass == 0 {
             // Pass 0 only finds which registers are written.
-            return self.wr_i(ic, modified);
+            return Ok(modified);
         }
         let (base, lenb, d) = self.circ_params(ic, scale, delta)?;
         self.mode1_mask |= MODE1_CBUFEN;
-        let new = self.wrap_add(iv, delta, d, base, lenb)?;
-        self.wr_i(ic, new)
+        self.wrap_add(iv, delta, d, base, lenb)
     }
 
     /// `Id = MODIFY(Is, delta)` for the forms that wrap on the source's B and
@@ -1062,7 +1123,7 @@ impl Lower {
 
     /// The register's current value (before the instruction), as a typed Val.
     fn rd(&mut self, code: u32) -> LR<Val> {
-        if code >= NREGS {
+        if code >= 96 {
             return self.rd_sys(code);
         }
         let c = self.check_code(code)?;
@@ -1090,6 +1151,7 @@ impl Lower {
     }
 
     pub fn rd_i(&mut self, code: u32) -> LR<Val> {
+        let code = self.pe_code(code);
         self.check_code(code)?;
         let v = self.rd(code)?;
         self.regs[code as usize].i_uses += 1;
@@ -1097,6 +1159,7 @@ impl Lower {
     }
 
     pub fn rd_f(&mut self, code: u32) -> LR<Val> {
+        let code = self.pe_code(code);
         self.check_code(code)?;
         let v = self.rd(code)?;
         self.regs[code as usize].f_uses += 1;
@@ -1105,24 +1168,32 @@ impl Lower {
 
     /// Typeless read (moves, stores).
     pub fn rd_bits(&mut self, code: u32) -> LR<Val> {
+        let code = self.pe_code(code);
         let v = self.rd(code)?;
         Ok(self.to_i(v))
     }
 
     /// Buffer a write of CODE (applied in order by `commit`).
     pub fn wr(&mut self, code: u32, v: Val) -> LR<()> {
+        let code = self.pe_code(code);
         let c = self.check_code(code)?;
+        if (48..80).contains(&code) {
+            // L and B are baked into the circular-buffer lowering.
+            return refuse(format!("write of L/B (code {code})"));
+        }
         self.pending.writes.push((c as u8, v));
         Ok(())
     }
 
     pub fn wr_i(&mut self, code: u32, v: Val) -> LR<()> {
+        let code = self.pe_code(code);
         let c = self.check_code(code)?;
         self.regs[c].i_uses += 1;
         self.wr(code, v)
     }
 
     pub fn wr_f(&mut self, code: u32, v: Val) -> LR<()> {
+        let code = self.pe_code(code);
         let c = self.check_code(code)?;
         self.regs[c].f_uses += 1;
         self.wr(code, v)
@@ -1138,17 +1209,25 @@ impl Lower {
     }
 
     pub fn pend_flag(&mut self, kind: FlagKind, srcs: Vec<Val>) {
-        self.pending.flag = Some((kind, srcs));
+        if self.pe_off != 0 {
+            self.pending.flag_y = Some((kind, srcs));
+        } else {
+            self.pending.flag = Some((kind, srcs));
+        }
     }
 
     /// A second flag writer for the same instruction (applied after the first).
     pub fn pend_flag_also(&mut self, kind: FlagKind, srcs: Vec<Val>) {
-        self.pending.flag2 = Some((kind, srcs));
+        if self.pe_off != 0 {
+            self.pending.flag2_y = Some((kind, srcs));
+        } else {
+            self.pending.flag2 = Some((kind, srcs));
+        }
     }
 
     /// The flag effect of an instruction that has no source to remember.
     pub fn pend_flag_none(&mut self, kind: FlagKind) {
-        self.pending.flag = Some((kind, Vec::new()));
+        self.pend_flag(kind, Vec::new());
     }
 
     // -- memory windows ----------------------------------------------------
@@ -1306,16 +1385,19 @@ impl Lower {
         let cond = self.cond;
         let mut flag_srcs = Vec::new();
         // One writer per flag group (a multifunction instruction has two).
-        for (kind, srcs) in [self.pending.flag.take(), self.pending.flag2.take()]
-            .into_iter()
-            .flatten()
-        {
+        for (pe, w) in [
+            (0u8, self.pending.flag.take()),
+            (0, self.pending.flag2.take()),
+            (1, self.pending.flag_y.take()),
+            (1, self.pending.flag2_y.take()),
+        ] {
+            let Some((kind, srcs)) = w else { continue };
             if self.flag_v() {
                 // The kernel notes the writer in pseudo registers, written
                 // (and made conditional) with the others.
-                self.flag_note(kind, &srcs)?;
+                self.flag_note(kind, &srcs, pe)?;
             } else {
-                flag_srcs.push((kind, srcs));
+                flag_srcs.push((kind, srcs, pe));
             }
         }
         let stores = std::mem::take(&mut self.pending.stores);
@@ -1395,12 +1477,12 @@ impl Lower {
                     .find(|m| m.0 == c as u8)
                     .and_then(|m| self.hint[m.1 as usize]);
             }
-            if c < 64 {
-                self.written_mask |= 1 << c;
+            if c < 128 {
+                self.written_mask |= 1u128 << c;
             }
             self.cur[c] = Some(v);
         }
-        for (kind, srcs) in flag_srcs {
+        for (kind, srcs, pe) in flag_srcs {
             let mut slots = [255u8; 2];
             for (i, v) in srcs.iter().enumerate() {
                 let n = self.nfsrc;
@@ -1418,6 +1500,7 @@ impl Lower {
                 insn: self.idx,
                 kind,
                 fsrc: slots,
+                pe,
             });
         }
         Ok(())
@@ -1449,6 +1532,13 @@ impl Lower {
             }
             _ => d,
         };
+        if gen_enabled(d.form) && self.gen_lower(d)? {
+            return self.commit();
+        }
+        if self.mode1_cur & (1 << 21) != 0 && !matches!(d.form, "21a" | "21c") {
+            // The hand-written forms are made for SISD.
+            return refuse(format!("{} in SIMD mode (no generated lowering)", d.form));
+        }
         match d.form {
             "2a" | "2a_short" => self.form_2a(d)?,
             "2c" => self.form_2c(d)?,
@@ -1486,6 +1576,9 @@ impl Lower {
         // End of the iteration: the registers it wrote go back to their
         // variables (the loop-carried state).
         let cfg = self.cfgx.is_some();
+        if !cfg && self.mode1_cur != self.env.mode1 {
+            return refuse("MODE1 changes in a kernel that is not a CFG kernel");
+        }
         if !cfg {
             for c in 0..NALL {
                 if self.written_iter[c]
@@ -1648,7 +1741,8 @@ impl Lower {
         // core models it only in `fix`, `falu_fix`; every other float op
         // rounds to nearest in either mode); ALUSAT (bit 13) is part of the
         // requirement when a condition reads it.
-        let mode1_mask = self.mode1_mask | (1 << 15);
+        // Bit 21 (PEYEN): a region is made for one SIMD state.
+        let mode1_mask = self.mode1_mask | (1 << 15) | (1 << 21);
         reqs.push(Req::Mode1 {
             mask: mode1_mask,
             value: self.env.mode1 & mode1_mask,
@@ -1683,11 +1777,7 @@ impl Lower {
             }
         }
         let flag_v = self.flag_v();
-        let flag_groups = [
-            self.flag_kinds_out[0] != 0,
-            self.flag_kinds_out[1] != 0,
-            self.flag_kinds_out[2] != 0,
-        ];
+        let flag_groups = self.flag_kinds_out.map(|k| k != 0);
         Ok(Lowered {
             kernel,
             regs: self.regs,
@@ -1708,7 +1798,7 @@ pub struct Lowered {
     /// The kernel tracks flags in pseudo registers, and the groups with
     /// writers (their last writer's kind and sources are written out).
     pub flag_v: bool,
-    pub flag_groups: [bool; 3],
+    pub flag_groups: [bool; NGROUPS as usize],
     /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
     pub cacc: bool,
     /// See `Region::cacc_unknown`.

@@ -14,6 +14,8 @@ default = ["server"]
 # Unix-socket transport and the discovery file (unix only; not for wasm).
 server = []
 # Local-only DN2 coupling: generated DSP code must never be distributed.
+# ColdFire path/PC profile (`cf.profile` method).
+cf-profile = ["elektron-native-boot/cf-profile"]
 coupled-audio = ["digi-coupled/coupled-audio"]
 
 [dependencies]

@@ -30,6 +30,30 @@ use periph::dspi::Peer;
 pub const DN2_IDLE_RANGE: (u32, u32) = (0xb8_8a49, 0xb8_8abb);
 /// Head of the idle task's spin loop (a linked call to `0xb88a49`).
 pub const DN2_IDLE_HEAD: u32 = 0xb8_8aab;
+/// DT2 1.16 RTOS idle loop: the same code as DN2's (function hashes match
+/// `0xb88a49` -> `0xb8636d`, `0xb88aa6` -> `0xb863ca`), moved by -0x26dc.
+pub const DT2_IDLE_RANGE: (u32, u32) = (0xb8_636d, 0xb8_63df);
+/// Head of the DT2 idle task's spin loop (a linked call to `0xb8636d`).
+pub const DT2_IDLE_HEAD: u32 = 0xb8_63cf;
+
+/// Where a firmware's RTOS idle task spins (from the device profile).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IdleLoop {
+    /// Short-word PCs, inclusive start, exclusive end.
+    pub range: (u32, u32),
+    /// First instruction of the spin loop.
+    pub head: u32,
+}
+
+pub const DN2_IDLE: IdleLoop = IdleLoop {
+    range: DN2_IDLE_RANGE,
+    head: DN2_IDLE_HEAD,
+};
+pub const DT2_IDLE: IdleLoop = IdleLoop {
+    range: DT2_IDLE_RANGE,
+    head: DT2_IDLE_HEAD,
+};
+
 /// 1 GHz DSP clock / 1.5 kHz frame rate.
 pub const DEFAULT_PERIOD: u32 = 666_667;
 /// DSP instructions per DSPI2 frame: `DIGI_DSP_PERIOD` (an experiment
@@ -55,6 +79,14 @@ pub fn fnv1a(data: &[u8]) -> u64 {
 /// What the peer needs from a DSP engine.
 pub trait DspEngine {
     fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, String>;
+    /// Whether link port 0's receive DMA is waiting for a work unit.
+    fn lp0_ready(&self) -> bool {
+        false
+    }
+    /// Deliver one link port 0 work unit (the sample-load path of findings 15).
+    fn lp0_transfer(&mut self, _bytes: &[u8]) -> Result<(), String> {
+        Err("link port 0 is not modelled by this engine".into())
+    }
     /// Run up to `n` instructions; fewer than `n` means the engine stopped.
     fn step(&mut self, n: u32) -> u32;
     /// Like `step(n)`, but also end at the first instruction boundary whose
@@ -386,6 +418,10 @@ pub struct FrameStat {
     /// (the whole period if idle was never reached).
     pub busy: u32,
     pub reached_idle: bool,
+    /// Link port 0 work units delivered so far, and bytes still queued
+    /// (the ColdFire's sample loads in flight).
+    pub lp0_units: u64,
+    pub lp0_pending: u32,
     pub executed: u32,
     /// None: SPORTs not running; zeros were appended.
     pub block: bool,
@@ -442,6 +478,9 @@ pub struct Shared {
     pub dsp_instructions: u64,
     pub nonzero_replies: u64,
     pub missing_blocks: u64,
+    /// Link port 0 work units delivered, and bytes queued, as of the last frame.
+    pub lp0_units: u64,
+    pub lp0_pending: u32,
     /// While false, frames get zero replies and the DSP does not run.
     pub attached: bool,
 }
@@ -465,7 +504,19 @@ struct Core<E: DspEngine> {
     pre_idle: bool,
     /// Engine PC right before the SPI exchange.
     pc_at_rx: u32,
+    /// Link port 0 bytes the ColdFire has sent that no work unit took yet.
+    lp0_pending: Vec<u8>,
+    /// Work units delivered to link port 0 so far.
+    lp0_units: u64,
 }
+
+/// One link port 0 work unit: a tag word and 1024 payload words
+/// (docs/findings/15: the descriptor the firmware arms is XCNT 0x401).
+pub const LP0_UNIT_BYTES: usize = 0x401 * 4;
+/// Work units delivered per frame at most; the rest wait for the next frame.
+const LP0_UNITS_PER_FRAME: usize = 4;
+/// DSP instructions the firmware may take to re-arm the port after a unit.
+const LP0_REARM_BUDGET: u32 = 100_000;
 
 /// What the exchange half of a frame leaves for the render half.
 struct Exchanged {
@@ -498,6 +549,63 @@ impl<E: DspEngine> Core<E> {
             pre_busy: 0,
             pre_idle: false,
             pc_at_rx: 0,
+            lp0_pending: Vec::new(),
+            lp0_units: 0,
+        }
+    }
+
+    /// Queue link port 0 bytes (in wire order) for delivery from the next
+    /// frame on.
+    fn push_link(&mut self, bytes: &[u8]) {
+        self.lp0_pending.extend_from_slice(bytes);
+    }
+
+    /// Deliver whole work units to link port 0 the way the hardware does:
+    /// a unit lands in the buffer the firmware's descriptor names and
+    /// completes the DMA (SEC 81); the DSP then runs the firmware's own ISR
+    /// and callback until it has re-armed the port, which is counted in this
+    /// frame's pre-exchange instructions. A unit that finds the port not yet
+    /// armed waits.
+    fn deliver_lp0(&mut self) {
+        let mut delivered = 0;
+        while self.lp0_pending.len() >= LP0_UNIT_BYTES
+            && delivered < LP0_UNITS_PER_FRAME
+            && self.halted.is_none()
+            && self.engine.lp0_ready()
+        {
+            let unit: Vec<u8> = self.lp0_pending.drain(..LP0_UNIT_BYTES).collect();
+            if let Err(e) = self.engine.lp0_transfer(&unit) {
+                eprintln!("sharc_peer: link port 0 transfer failed: {e}");
+                self.halted = Some(e);
+                return;
+            }
+            let mut ran = 0u32;
+            while !self.engine.lp0_ready() && ran < LP0_REARM_BUDGET {
+                let n = self.engine.step(2000);
+                ran += n;
+                if n < 2000 {
+                    break;
+                }
+            }
+            self.pre_ran += ran;
+            self.pre_busy += ran;
+            self.lp0_units += 1;
+            if std::env::var_os("DIGI_LP0_LOG").is_some() {
+                let w = |i: usize| u32::from_le_bytes(unit[4 * i..4 * i + 4].try_into().unwrap());
+                eprintln!(
+                    "lp0 unit {} tag {:#x} w1 {:#x} w2 {:#x} rearm_instr {ran} ready {}",
+                    self.lp0_units,
+                    w(0),
+                    w(1),
+                    w(2),
+                    self.engine.lp0_ready()
+                );
+            }
+            delivered += 1;
+        }
+        if let Some(h) = self.engine.halt_reason() {
+            eprintln!("sharc_peer: DSP halted in link port 0 delivery: {h}");
+            self.halted = Some(h);
         }
     }
 
@@ -596,6 +704,7 @@ impl<E: DspEngine> Core<E> {
                 self.halted = Some(h);
             }
         }
+        self.deliver_lp0();
         self.pc_at_rx = self.engine.pc();
         let spi_start = timing.as_ref().map(|_| Instant::now());
         let exchange = self.engine.spi2_exchange(tx);
@@ -640,6 +749,8 @@ impl<E: DspEngine> Core<E> {
             };
         }
         let mut halted = self.halted.clone();
+        stat.lp0_units = self.lp0_units;
+        stat.lp0_pending = self.lp0_pending.len() as u32;
         if halted.is_none() {
             let dsp_start = timing.as_ref().map(|_| Instant::now());
             let (executed, busy, idle) = if self.pre_ran == 0 {
@@ -719,6 +830,8 @@ fn commit(sh: &mut Shared, d: Done) {
         return;
     }
     let mut stat = stat;
+    sh.lp0_units = stat.lp0_units;
+    sh.lp0_pending = stat.lp0_pending;
     sh.nonzero_replies += (stat.reply_nonzero_bytes != 0) as u64;
     sh.dsp_instructions += stat.executed as u64;
     if halted.is_some() && sh.halted.is_none() {
@@ -745,6 +858,8 @@ fn commit(sh: &mut Shared, d: Done) {
 /// The synchronous peer: the whole frame runs inside the ColdFire bus write.
 pub struct SharcPeer<E: DspEngine> {
     core: Core<E>,
+    /// Feed the ColdFire's FlexBus link-port bytes to the DSP (DT2).
+    sample_link: bool,
     shared: Rc<RefCell<Shared>>,
     diag: Diag,
 }
@@ -757,10 +872,16 @@ impl<E: DspEngine> SharcPeer<E> {
         }));
         let peer = Self {
             core: Core::new(engine, period),
+            sample_link: false,
             shared: shared.clone(),
             diag: Diag::from_env(),
         };
         (peer, shared)
+    }
+
+    /// Feed the ColdFire's FlexBus link-port bytes (sample loads) to the DSP.
+    pub fn enable_sample_link(&mut self) {
+        self.sample_link = true;
     }
 
     pub fn set_idle_range(&mut self, range: (u32, u32)) {
@@ -790,11 +911,18 @@ impl<E: DspEngine> Peer for SharcPeer<E> {
     fn exchange(&mut self, tx: &[u8]) -> Vec<u8> {
         self.frame(tx)
     }
+    fn link_bytes(&mut self, bytes: &[u8]) {
+        if self.sample_link {
+            self.core.push_link(bytes);
+        }
+    }
 }
 
 enum Msg {
     Frame {
         tx: Vec<u8>,
+        /// Link port 0 bytes sent by the ColdFire since the previous frame.
+        link: Vec<u8>,
         attached: bool,
         enqueued: Option<Instant>,
     },
@@ -849,6 +977,10 @@ struct Link {
     report_rx: mpsc::Receiver<WorkerReport>,
     execution_profile_rx: mpsc::Receiver<Option<ExecutionProfile>>,
     frames_sent: u64,
+    /// Feed the ColdFire's FlexBus link-port bytes to the DSP (DT2).
+    sample_link: bool,
+    /// Link port 0 bytes waiting for the next frame message.
+    pending_link: Vec<u8>,
     /// Frames sent whose [`Done`] has not been committed yet.
     outstanding: usize,
     timing: Option<ThreadedTimingProfile>,
@@ -1003,9 +1135,13 @@ impl ThreadedPeer {
                     match msg {
                         Msg::Frame {
                             tx,
+                            link,
                             attached,
                             enqueued,
                         } => {
+                            if attached {
+                                core.push_link(&link);
+                            }
                             let mut timing = enqueued.map(|start| WorkerTiming {
                                 queue_ns: elapsed_ns(start),
                                 ..WorkerTiming::default()
@@ -1091,6 +1227,8 @@ impl ThreadedPeer {
             report_rx,
             execution_profile_rx,
             frames_sent: 0,
+            sample_link: false,
+            pending_link: Vec::new(),
             outstanding: 0,
             timing: timing_enabled.then(ThreadedTimingProfile::default),
             live,
@@ -1103,9 +1241,21 @@ impl ThreadedPeer {
     pub fn boxed(self) -> Box<dyn Peer> {
         Box::new(self)
     }
+
+    /// Feed the ColdFire's FlexBus link-port bytes (sample loads) to the DSP's
+    /// link port 0 (the device profile's `sample_link = "lp0"`).
+    pub fn enable_sample_link(&self) {
+        self.link.borrow_mut().sample_link = true;
+    }
 }
 
 impl Peer for ThreadedPeer {
+    fn link_bytes(&mut self, bytes: &[u8]) {
+        let mut l = self.link.borrow_mut();
+        if l.sample_link {
+            l.pending_link.extend_from_slice(bytes);
+        }
+    }
     fn exchange(&mut self, tx: &[u8]) -> Vec<u8> {
         let mut l = self.link.borrow_mut();
         let attached = l.shared.borrow().attached;
@@ -1113,9 +1263,11 @@ impl Peer for ThreadedPeer {
         let tx = tx.to_vec();
         let tx_len = tx.len();
         let enqueued = l.timing.as_ref().map(|_| Instant::now());
+        let link_bytes = std::mem::take(&mut l.pending_link);
         let sent = l.tx.as_ref().is_some_and(|c| {
             c.send(Msg::Frame {
                 tx,
+                link: link_bytes,
                 attached,
                 enqueued,
             })
@@ -1275,6 +1427,14 @@ impl DspEngine for NativeDsp {
             .spi2_exchange(frame)
             .map_err(|t| format!("spi2_exchange trap {}", sharc_native::trap_name(t)))
     }
+    fn lp0_ready(&self) -> bool {
+        self.0.lp0_ready()
+    }
+    fn lp0_transfer(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.0
+            .lp0_transfer(bytes)
+            .map_err(|t| format!("lp0_transfer trap {}", sharc_native::trap_name(t)))
+    }
     fn step(&mut self, n: u32) -> u32 {
         self.0.step(n)
     }
@@ -1365,6 +1525,15 @@ impl DspEngine for SharedDsp {
             .borrow_mut()
             .spi2_exchange(frame)
             .map_err(|t| format!("spi2_exchange trap {}", sharc_native::trap_name(t)))
+    }
+    fn lp0_ready(&self) -> bool {
+        self.0.borrow().lp0_ready()
+    }
+    fn lp0_transfer(&mut self, bytes: &[u8]) -> Result<(), String> {
+        self.0
+            .borrow_mut()
+            .lp0_transfer(bytes)
+            .map_err(|t| format!("lp0_transfer trap {}", sharc_native::trap_name(t)))
     }
     fn step(&mut self, n: u32) -> u32 {
         self.0.borrow_mut().step(n)
@@ -1557,6 +1726,18 @@ pub fn open_dn2_engine_patched(
     clock_base: u64,
     patch: Option<&crate::dsp_patch::DspPatch>,
 ) -> Result<sharc_native::Engine, String> {
+    open_engine_patched(image, state, clock_base, patch, DN2_IDLE)
+}
+
+/// `open_dn2_engine_patched` for any firmware: `idle` is the RTOS idle loop
+/// the exact idle skip (options 23-25) is armed on.
+pub fn open_engine_patched(
+    image: &[u8],
+    state: &[u8],
+    clock_base: u64,
+    patch: Option<&crate::dsp_patch::DspPatch>,
+    idle: IdleLoop,
+) -> Result<sharc_native::Engine, String> {
     let mut e = sharc_native::Engine::from_image(image).map_err(|c| format!("image error {c}"))?;
     e.import(state)
         .map_err(|c| format!("state import error {c}"))?;
@@ -1578,9 +1759,9 @@ pub fn open_dn2_engine_patched(
     // DSP_IDLE_SKIP=0 turns it off.
     if std::env::var("DSP_IDLE_SKIP").as_deref() != Ok("0") {
         options.extend([
-            (23, DN2_IDLE_HEAD as i64),
-            (24, DN2_IDLE_RANGE.0 as i64),
-            (25, DN2_IDLE_RANGE.1 as i64),
+            (23, idle.head as i64),
+            (24, idle.range.0 as i64),
+            (25, idle.range.1 as i64),
         ]);
     }
     for (k, v) in options {

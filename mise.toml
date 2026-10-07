@@ -74,6 +74,10 @@ run = [
 ]
 description = "Fast checks for the tooling, the audio sink and the coupled runtime"
 
-[tasks."ready-dn2"]
-run = "uv run python tools/ready_dn2.py"
-description = "Build the DN2 ready snapshot from the .syx alone (cold DSP start; about 2 min)"
+[tasks.ready]
+run = "uv run python tools/ready.py"
+description = "Build a device's ready snapshot from the .syx alone: mise run ready -- dn2|dt2 [--card-image IMG] (cold DSP start; about 2 min)"
+
+[tasks."aot-gen"]
+run = "uv run python tools/aot_gen.py"
+description = "Generate a firmware block library (AOT core) and register it by DSP image: mise run aot-gen -- dt2 --card-image IMG"

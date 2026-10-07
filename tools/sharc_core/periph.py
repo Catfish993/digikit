@@ -42,7 +42,9 @@ SSTAT_ACT = 0x200
 SCTL_IEN = 0x1
 SCTL_SEN = 0x4
 # SPI2 TX/RX (DMA26/27) and SPORT4A/B (DMA10/11).
-DMA_BASES = (0x3102D200, 0x3102D280, 0x31023000, 0x31023080)
+LP0_DMA = 0x30FFF000
+SID_LP0_DMA = 81
+DMA_BASES = (0x3102D200, 0x3102D280, 0x31023000, 0x31023080, LP0_DMA)
 DMA_CFG = 0x08
 DMA_STAT = 0x30
 STAT_IRQDONE = 0x1
@@ -322,5 +324,10 @@ def _periph_write(state: State, address: int, value: int) -> bool:
                 _set(state, base + DMA_STAT, stat & STAT_IRQERR)
             elif not value & 1:
                 _set(state, base + DMA_STAT, stat & ~STAT_RUN)
+            if base == LP0_DMA and value & 1 and (value >> 12) & 7 == 0:
+                # LP0 runs in register mode with the stop flow: enabling it
+                # starts the work unit in the registers (HWR "Stop Flow Mode").
+                stat = _mmr(state, base + DMA_STAT)
+                _set(state, base + DMA_STAT, (stat & ~STAT_RUN) | STAT_RUN_TRANSFER)
             return True
     return False
