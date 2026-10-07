@@ -1651,6 +1651,9 @@ pub fn run_cfg(
         }
     } else if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters)
     {
+        if std::env::var_os("SHARC_FAST_DEBUG_REQ").is_some() {
+            req_why(s, r, iters);
+        }
         return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);
@@ -1906,4 +1909,34 @@ pub fn run_cfg(
     _ctx: &mut Ctx,
 ) -> Result<u32, Decline> {
     Err(Decline::Shape)
+}
+
+
+/// `SHARC_FAST_DEBUG_REQ`: which requirement of R failed (stderr, first 40 only).
+fn req_why(s: &St, r: &Region, iters: i64) {
+    static SEEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let want = std::env::var("SHARC_FAST_DEBUG_REQ").ok();
+    let hex = want.as_deref().and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+    if hex.is_some_and(|h| h != r.entry_pc) || SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 12 {
+        return;
+    }
+    let mut why = Vec::new();
+    for q in &r.reqs {
+        let ok = match *q {
+            Req::NwPlain { .. } | Req::Within { .. } => eval_req(s, q, iters),
+            _ => eval_req(s, q, iters),
+        };
+        if !ok {
+            let extra = match *q {
+                Req::Known(c) | Req::Eq(c, _) => format!(" r{c}={:?}", s.r[c as usize]),
+                Req::Within { c, .. } => format!(" r{c}={:?}", s.r[c as usize]),
+                _ => String::new(),
+            };
+            why.push(format!("{q:?}{extra}"));
+        }
+    }
+    if !cacc_ok(s, r) {
+        why.push("cacc".into());
+    }
+    eprintln!("fast: req declined at {:#x}: {}", r.entry_pc, why.join("; "));
 }

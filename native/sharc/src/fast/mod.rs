@@ -403,6 +403,10 @@ struct Slot {
     /// Calls in a row that no variant accepted (reset by any run).
     alt_fail: u32,
     rebuilds: u32,
+    /// M registers whose baked value failed the last requirement check.
+    last_eq: u64,
+    /// Calls whose first instruction left the kernel before completing.
+    exit0: u32,
     transient: u32,
     /// Selected by `Auto` (dropped again on refusal or low yield).
     auto: bool,
@@ -1306,9 +1310,44 @@ impl FastEngine {
                         .entry(format!("decline req: {why}"))
                         .or_default() += 1;
                 }
-                if d == glue::Decline::Req
+                if d == glue::Decline::Req && std::env::var_os("SHARC_FAST_NOVOLATILE").is_none() {
+                    // An M register that differs from its baked value twice in
+                    // a row is data, not a constant: do not bake it near here.
+                    let mut fails = 0u64;
+                    for &(c, k) in &region.eqs {
+                        if (32..48).contains(&(c as usize)) {
+                            let v = s.r[c as usize];
+                            if !v.is_c() || v.b != k {
+                                fails |= 1 << (c - 32);
+                            }
+                        }
+                    }
+                    let both = fails & slot.last_eq;
+                    slot.last_eq = fails;
+                    if both != 0 {
+                        region::mark_volatile(pc, both);
+                    }
+                }
+                let mut exit0_rebuild = false;
+                if d == glue::Decline::Exit0 && std::env::var_os("SHARC_FAST_NOEXIT0").is_none() {
+                    slot.exit0 += 1;
+                    if slot.exit0 == 4
+                        && slot.rebuilds < REBUILD_BUDGET
+                        && let Ok(dec) = region::decode_one(s, pc)
+                        && cfg::helper_ok(&dec)
+                    {
+                        // The first instruction's guard keeps failing: make it
+                        // a helper call in the regions built from here on.
+                        cfg::force_helper(pc);
+                        exit0_rebuild = true;
+                    }
+                } else if !matches!(d, glue::Decline::Exit0) {
+                    slot.exit0 = 0;
+                }
+                if (d == glue::Decline::Req
                     && slot.rebuilds < REBUILD_BUDGET
-                    && !req_is_within(s, region)
+                    && !req_is_within(s, region))
+                    || exit0_rebuild
                 {
                     // No variant fits the state (a baked constant, MODE1 or
                     // the CACC history differs): make another from this

@@ -168,6 +168,28 @@ fn helper_range() -> &'static Option<Vec<(u32, u32)>> {
     })
 }
 
+/// Entries whose first instruction left the kernel again and again (a guard on
+/// a data-dependent address that never holds): from then on that instruction is
+/// a helper call wherever a region is built (`mod.rs`, Decline::Exit0).
+static FORCED: std::sync::Mutex<Option<std::collections::BTreeSet<u32>>> =
+    std::sync::Mutex::new(None);
+
+pub fn force_helper(pc: u32) {
+    FORCED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(Default::default)
+        .insert(pc);
+}
+
+pub fn is_forced(pc: u32) -> bool {
+    FORCED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|f| f.contains(&pc))
+}
+
 pub fn helper_enabled() -> bool {
     helper_range().is_some()
 }
@@ -535,7 +557,7 @@ pub fn build_structure(
                 }
             }
             Cls::Seq => {
-                node.helper = helpers.contains(&pc);
+                node.helper = helpers.contains(&pc) || (is_forced(pc) && helper_ok(&dec));
                 work.push(pc + len);
             }
             Cls::Do => {

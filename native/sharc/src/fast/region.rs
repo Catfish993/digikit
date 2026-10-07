@@ -126,6 +126,27 @@ fn within_of(reqs: &[Req]) -> Vec<(u8, u32, u32)> {
         .collect()
 }
 
+/// M registers (bit k = M<k>) found to change between calls in the code near
+/// an entry (`pc >> 7`): the next builds there do not bake them in.
+static VOLATILE: std::sync::Mutex<Option<std::collections::HashMap<u32, u64>>> =
+    std::sync::Mutex::new(None);
+
+pub fn mark_volatile(pc: u32, mask: u64) {
+    let mut g = VOLATILE.lock().unwrap_or_else(|e| e.into_inner());
+    *g.get_or_insert_with(Default::default).entry(pc >> 7).or_default() |= mask;
+}
+
+fn apply_volatile(env: &mut Env, pc: u32) {
+    let g = VOLATILE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(m) = g.as_ref().and_then(|h| h.get(&(pc >> 7))) {
+        for k in 0..16 {
+            if m >> k & 1 != 0 {
+                env.regs[32 + k] = None;
+            }
+        }
+    }
+}
+
 fn env_of(s: &St, flag_v: bool) -> Env {
     let mut regs = [None; NREGS as usize];
     for (c, slot) in regs.iter_mut().enumerate() {
@@ -219,7 +240,8 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
     let flag_v = decs
         .iter()
         .any(|(_, d)| d.field("cond").is_some_and(|c| c != 0x1f));
-    let env = env_of(s, flag_v);
+    let mut env = env_of(s, flag_v);
+    apply_volatile(&mut env, pc);
     let mut plan = Plan::default();
     let mut last = None;
     for pass in 0..MAX_PASSES {
@@ -364,6 +386,7 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
         return Err(Refuse("MODE1 unknown".into()));
     }
     let mut env = env_of(s, true);
+    apply_volatile(&mut env, pc);
     env.guarded_dyn = cluster;
     // An instruction that cannot be lowered where it stands (an address that
     // has no range, too many windows) becomes the end of the region.

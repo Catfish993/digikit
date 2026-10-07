@@ -240,3 +240,23 @@ applied to the state before the call and reset after (lane B: +10 ns), and a bod
 flags: the tracer would have to give dynamic branches and dynamic known-bit masks of ASTATX a
 meaning, or the body falls back to the interpreter step (about 60 ns without Engine::step) which
 still saves about 300 ns against a region exit plus an interpreted instruction.
+
+## Class (e): why regions do not run (564e4c5, DN2 trig1-taps, static-insns+follow, 12 s)
+
+Before building the universal helper fallback, `tools/sharc_classe.py` (new) joins the interpreted-PC
+histogram with the per-region run records of a `--diag only` run. Finding: most interpreted PCs of
+class (e) have a region that was built and called; the call was declined on a requirement. Example
+0xb82d04: `Req::Eq(M4, 3040)` failed on every call (M4 = 3041, 3042, ...): `Lower::baked` bakes an M
+register the region never writes as a constant, and here the M register is data (a counter). The
+engine rebuilt the region for the new value up to REBUILD_BUDGET (16) times, spent the compile time,
+then declined for good. 17 builds per entry; req declines 4.05M -> 0.58M per 1.5 s after the fix.
+
+Fixes (both small, `SHARC_FAST_NOVOLATILE=1` / `SHARC_FAST_NOEXIT0=1` turn them off):
+1. An M register whose baked value fails two calls in a row is marked volatile for the code around
+   the entry (`pc >> 7`, `region::mark_volatile`) and is not baked in later builds there.
+2. A call whose first instruction leaves the kernel before completing (`Decline::Exit0`: a guarded
+   dynamic window that never holds, e.g. `DM(I3, M4)` with M4 an index) four times turns that
+   instruction into a helper call in the next build (`cfg::force_helper`).
+DSP CPU per audio s, same session, three runs each: 8.82 (both off) -> 7.19 (1) -> 6.93 (1+2);
+built regions 8317 -> 5169 -> 5291; interpreted 6.22% -> 5.89% -> 5.66%; PCM 8cbae26b73014732.
+`SHARC_FAST_DEBUG_REQ=0xPC` prints which requirement fails for an entry.
