@@ -135,3 +135,51 @@ a SIMD vector decline in the glue that hid the first three.
    intrinsic; the register-write special cases come from tracing
    `_write_ureg` over a symbolic code.
 5. Conditions in SIMD and PEy compares: about 1 M.
+
+## How to add a family (read this first)
+
+Entry points
+- Trace and print a form: `uv run python tools/sharc_lowergen_survey.py FORM...` (no
+  args: all forms; shows leaves, refusing leaves and why, Rust lines, or the
+  exception that is the next intrinsic or lifting to write).
+- One leaf: `tools/sharc_lowergen_leaf.py FORM field=value ...`.
+- Emit: `uv run python tools/sharc_lowergen_rs.py native/sharc/src/fast/lower/gen_forms.rs F1,F2,...`
+  (the form list is the whole list: take it from `GENERATED` in gen_forms.rs and
+  add yours). `tests/test_sharc_lowergen.py` fails when the file is stale.
+
+Where things go
+- A new intrinsic (a semantics function the trace records as an effect instead of
+  running): `tools/sharc_lowergen.py`, a function `i_*` and an entry in `PATCHES`;
+  an effect kind needs a case in `leaf_items`/`operands`/`Emitter.prog` in
+  `tools/sharc_lowergen_rs.py` and a `g_*` primitive in
+  `native/sharc/src/fast/lower/gen_prims.rs` (hand-written once, serves every
+  form). Static lowering context (L, B, config) is a `("v", name)` symbol, with its
+  Rust text in `rs_e`.
+- Never edit `gen_forms.rs` by hand.
+
+Verify
+- Vectors: add the forms to `tools/sharc_lowergen_vectors.py` (steer random fields
+  into the accepted region, or the fuzz proves nothing), regenerate with
+  `--out native/sharc/src/tests_gen_vectors.rs --n 24 <all forms>`; for sequences
+  add a program to `tools/sharc_lowergen_programs.py`.
+- `cd native/sharc && SHARC_GEN_DIR=$PWD/../../out/native/shared-core/gen cargo test --lib gen_ -- --nocapture`
+  (about 75 s; the table shows hand vs generated acceptance), then `cargo test --lib`.
+- Coverage and PCM: `uv run python tools/coupled.py build`, then
+  `tools/sharc_lowergen_bisect.sh 1.5 static-insns+follow none all` (PCM must be
+  3bf3ba3026953c22 at 1.5 s); `--diag only` for the interpreted-reason table.
+  Do not build into prod/pgo-use.
+
+Shared files (conflict map)
+- Append-only per family: a new `g_*` block in gen_prims.rs, new `i_*` in
+  sharc_lowergen.py, new rows in the vectors/programs tools. Keep your edits in
+  your own block, do not reorder.
+- Hot shared: `lower/mod.rs`, `glue.rs`, `flow.rs`, `cond.rs`, `ir.rs`: touch
+  minimally, tell the integrator. gen_forms.rs and tests_gen_vectors.rs are
+  generated: do not merge them, regenerate after merging.
+- Deliver `scratchpad/bundles/F<n>.patch` without the generated files.
+
+## Running coverage table (integrator)
+
+| state | fast (1.5 s, static-insns+follow) | interpreted | PCM |
+| base 0414505, hand | 89.5 % | 10.48 % | 3bf3ba3026953c22 |
+| F1 merged (24 forms) | 92.5 % | 7.45 % | 3bf3ba3026953c22 |
