@@ -140,6 +140,50 @@ pub struct Node {
     pub kind: NodeKind,
     /// Delay slot instructions (decoded) of a delayed jump.
     pub slots: Vec<(u32, Dec)>,
+    /// A `Seq` instruction the kernel does not lower: it runs through a helper
+    /// call (`Op::Helper`, the interpreter's one-instruction step) and the
+    /// kernel goes on (`SHARC_FAST_HELPER`, see `lower::helper`).
+    pub helper: bool,
+}
+
+/// `SHARC_FAST_HELPER=1` (or `=LO-HI`, hex addresses): instructions that
+/// cannot be lowered for want of an address range become helper calls instead
+/// of ending the region (only those in [LO, HI] with a range).
+fn helper_range() -> &'static Option<Vec<(u32, u32)>> {
+    static R: std::sync::OnceLock<Option<Vec<(u32, u32)>>> = std::sync::OnceLock::new();
+    R.get_or_init(|| {
+        let v = std::env::var("SHARC_FAST_HELPER").ok()?;
+        // "1": everywhere; else a comma list of LO-HI hex ranges.
+        let mut out = Vec::new();
+        for part in v.split(',') {
+            match part.split_once('-') {
+                Some((a, b)) => out.push((
+                    u32::from_str_radix(a, 16).ok()?,
+                    u32::from_str_radix(b, 16).ok()?,
+                )),
+                None => out.push((0, u32::MAX)),
+            }
+        }
+        Some(out)
+    })
+}
+
+pub fn helper_enabled() -> bool {
+    helper_range().is_some()
+}
+
+/// Whether PC may become a helper call.
+pub fn helper_at(pc: u32) -> bool {
+    helper_range()
+        .as_ref()
+        .is_some_and(|r| r.iter().any(|&(lo, hi)| (lo..=hi).contains(&pc)))
+}
+
+/// The instructions the helper stub runs: a `3a` transfer of an R register to
+/// or from DM/PM through an index and a modify register, unconditional and
+/// with no compute, no long word.
+pub fn helper_ok(d: &Dec) -> bool {
+    super::helper::plan(d, &super::helper::NoRegs).is_some()
 }
 
 impl Node {
@@ -405,6 +449,7 @@ pub fn build_structure(
     entry: u32,
     decode: &dyn Fn(u32) -> Result<Dec, Refuse>,
     deny: &BTreeSet<u32>,
+    helpers: &BTreeSet<u32>,
 ) -> Result<Structure, Refuse> {
     let refuse = |m: String| Err(Refuse(m));
     let mut nodes: BTreeMap<u32, Node> = BTreeMap::new();
@@ -438,8 +483,17 @@ pub fn build_structure(
             dec: dec.clone(),
             kind: NodeKind::Seq,
             slots: Vec::new(),
+            helper: false,
         };
         match classify(env, s, pc, &dec, decode) {
+            Cls::Stop(why)
+                if helper_at(pc)
+                    && helper_ok(&dec)
+                    && (helpers.contains(&pc) || why.contains("address range unknown")) =>
+            {
+                node.helper = true;
+                work.push(pc + len);
+            }
             Cls::Stop(why) => node.kind = NodeKind::Stop(why),
             Cls::Return { delayed, comp } => {
                 let mut next = pc + len;
@@ -480,7 +534,10 @@ pub fn build_structure(
                     node.kind = NodeKind::Stop(format!("delay slot ({why})"));
                 }
             }
-            Cls::Seq => work.push(pc + len),
+            Cls::Seq => {
+                node.helper = helpers.contains(&pc);
+                work.push(pc + len);
+            }
             Cls::Do => {
                 node.kind = NodeKind::Do(0);
                 work.push(pc + len);
@@ -964,6 +1021,7 @@ fn stop_node(pc: u32, why: &str) -> Node {
         dec: Dec::nop(),
         kind: NodeKind::Stop(why.to_string()),
         slots: Vec::new(),
+        helper: false,
     }
 }
 

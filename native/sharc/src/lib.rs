@@ -577,6 +577,10 @@ impl Drop for Engine {
             v.sort_unstable_by(|a, b| b.cmp(a));
             let tot: u64 = v.iter().map(|x| x.0).sum();
             eprintln!("hist: {} interpreted insns over {} PCs", tot, v.len());
+            eprintln!(
+                "helper calls: {}",
+                fast::helper::CALLS.load(std::sync::atomic::Ordering::Relaxed)
+            );
             for (n, pc) in v.iter().take(3000) {
                 eprintln!("hist: {pc:#x} {n}");
             }

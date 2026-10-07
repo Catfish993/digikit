@@ -244,6 +244,11 @@ impl Emit<'_> {
                 self.get(c);
                 self.i(I::Select);
             }
+            Op::Helper(_) => {
+                // Helper calls name host records; the browser core would need
+                // an imported function and a record table in its memory.
+                unimplemented!("helper calls in wasm kernels")
+            }
             Op::Load32 { base, off } => {
                 self.addr(base, off);
                 self.i(I::I32Load(ma(0, 0)));

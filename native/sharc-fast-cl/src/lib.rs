@@ -90,6 +90,7 @@ struct Emit<'a, 'b> {
     /// has been ended by a jump (so a label need not add a fall-through).
     labels: Vec<ir::Block>,
     terminated: bool,
+    call_conv: cranelift_codegen::isa::CallConv,
 }
 
 impl Emit<'_, '_> {
@@ -385,6 +386,20 @@ impl Emit<'_, '_> {
                 let a = self.b.ins().iadd(base, o);
                 self.b.ins().load(types::I64, mem_flags(), a, 0)
             }
+            Op::Helper(rec) => {
+                let mut sig = ir::Signature::new(self.call_conv);
+                sig.params.push(AbiParam::new(types::I64));
+                sig.params.push(AbiParam::new(types::I64));
+                sig.returns.push(AbiParam::new(types::I32));
+                let sig = self.b.import_signature(sig);
+                let f = self.b.ins().iconst(
+                    types::I64,
+                    sharc_native::fast::helper::helper_exec as usize as i64,
+                );
+                let r = self.b.ins().iconst(types::I64, rec as i64);
+                let call = self.b.ins().call_indirect(sig, f, &[self.st, r]);
+                self.b.inst_results(call)[0]
+            }
         }
     }
 }
@@ -443,6 +458,7 @@ fn build(
         fails: HashMap::new(),
         labels: Vec::new(),
         terminated: false,
+        call_conv: tc.default_call_conv,
     };
     let _ = e.k;
     e.labels = (0..k.nlabels).map(|_| e.b.create_block()).collect();

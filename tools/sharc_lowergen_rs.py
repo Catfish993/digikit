@@ -64,6 +64,13 @@ def rs_str(s: str) -> str:
     return '"%s"' % s.replace("\\", "\\\\").replace('"', "'")
 
 
+# While emitting a helper body: the Rust expression of the engine state `s`
+# (or None for the lowering's own `self`). Helper bodies read MODE1, L and B
+# from the state at run time.
+HELPER_SYMS = None
+HELPER_RR = "rr"
+
+
 def rs_e(e: tuple, fv: dict) -> str:
     """Static expression E as Rust i128 code; FV maps field label -> variable."""
     k = e[0]
@@ -71,6 +78,14 @@ def rs_e(e: tuple, fv: dict) -> str:
         return "%di128" % e[1]
     if k == "f":
         return fv[e[1]]
+    if k == "v" and HELPER_SYMS is not None:
+        if e[1][0] in "LB" and e[1][1:].isdigit():
+            return "(%s!(%s, %d) as i128)" % (
+                HELPER_RR, HELPER_SYMS, (48 if e[1][0] == "L" else 64) + int(e[1][1:])
+            )
+        return "(%s!(%s, 114) as i128)" % (HELPER_RR, HELPER_SYMS)
+    if k == "&" and e[1] == ("v", "mode1") and e[2][0] == "c" and HELPER_SYMS is not None:
+        return "((%s!(%s, 114) as i128) & %d)" % (HELPER_RR, HELPER_SYMS, e[2][1])
     if k == "v":
         if e[1][0] in "LB" and e[1][1:].isdigit():
             return "(self.sv_lb(%d)? as i128)" % (

@@ -370,3 +370,132 @@ fn gen_control_programs_match_the_interpreter() {
     }
     GEN_FORCE.store(0, Ordering::Relaxed);
 }
+
+// -- helper bodies ------------------------------------------------------------
+
+/// Every vector of a form that has a generated helper body: the body on the
+/// engine state against one interpreter step. A body that returns 1 must have
+/// left every register as it was.
+#[test]
+fn gen_helpers_match_the_interpreter() {
+    use crate::fast::gen_helpers;
+    use crate::fast::helper;
+    let mut ran = BTreeMap::<&str, (u32, u32)>::new();
+    let mut skipped = BTreeMap::<&str, u32>::new();
+    for (vi, (form, parcels, words)) in VECTORS.iter().enumerate() {
+        if !gen_helpers::FORMS.contains(form) {
+            continue;
+        }
+        let code = &words[..*parcels as usize];
+        for (mode1, cfg) in [(0, 0), (0, 1), (PEYEN, 0)] {
+            for k in 0..3u64 {
+                let seed = 0x1357_9bdf_2468_ace0u64 ^ ((vi as u64) << 8) ^ k;
+                let why = format!("helper {form} {code:04x?} mode1 {mode1:#x} cfg {cfg} seed {k}");
+                let mut plain = engine_cfg(code, mode1, seed, false, cfg);
+                let mut hel = engine_cfg(code, mode1, seed, false, cfg);
+                match crate::fast::region::decode_one(&plain.s, 0) {
+                    Ok(dec) if dec.form == *form => {
+                        let Some(p) = helper::plan(&dec, &*hel.s) else {
+                            skipped.entry(form).and_modify(|n| *n += 1).or_insert(1);
+                            continue;
+                        };
+                        let before: Vec<_> = (0..NUREG).map(|c| hel.s.r[c]).collect();
+                        let st = gen_helpers::run(p.id, &mut hel.s, &p.f);
+                        let e = ran.entry(form).or_default();
+                        e.0 += 1;
+                        if st != 0 {
+                            for c in 0..NUREG {
+                                assert_eq!(hel.s.r[c], before[c], "trap changed r{c}: {why}");
+                            }
+                            continue;
+                        }
+                        e.1 += 1;
+                        assert_eq!(plain.step(1), 1, "{why}: {:?}", plain.halt);
+                        for c in 0..NUREG {
+                            // The sequencer's registers (loop and PC stack
+                            // mirrors) are the kernel's, not the body's.
+                            if (96..112).contains(&c) {
+                                continue;
+                            }
+                            assert_eq!(plain.s.r[c], hel.s.r[c], "r{c}: {why}");
+                        }
+                        let mut diffs = Vec::new();
+                        for b in 0..DATA_WORDS * 4 {
+                            let a = plain.s.mem.canonical_of(DATA + b);
+                            if plain.s.mem.byte(a) != hel.s.mem.byte(a) {
+                                diffs.push(b);
+                            }
+                        }
+                        assert!(diffs.is_empty(), "data {diffs:x?}: {why}");
+                    }
+                    _ => continue,
+                }
+            }
+        }
+    }
+    for (form, (n, ok)) in &ran {
+        let sk = skipped.get(form).copied().unwrap_or(0);
+        eprintln!("helper {form:8} planned {n:5} completed {ok:5} no plan {sk:5}");
+    }
+    eprintln!("no plan at all: {skipped:?}");
+    assert!(ran.values().any(|v| v.1 > 0), "no helper body ran");
+}
+
+/// ns per helper call, the generated body against the interpreter's step on
+/// the same instruction (`cargo test --release --lib helper_ns -- --ignored --nocapture`).
+#[test]
+#[ignore]
+fn helper_ns() {
+    use crate::fast::gen_helpers;
+    use crate::fast::helper;
+    use std::time::Instant;
+    // 3c: R0 = DM(I0, M0) (post-modify), no compute; 4a-like store variants are
+    // measured through the vectors below.
+    let mut pick = Vec::new();
+    for (vi, (form, parcels, words)) in VECTORS.iter().enumerate() {
+        if !["3c", "4a", "15b", "4b"].contains(form) {
+            continue;
+        }
+        let code = &words[..*parcels as usize];
+        let e = engine_cfg(code, 0, 0x77 ^ vi as u64, false, 0);
+        if let Ok(dec) = crate::fast::region::decode_one(&e.s, 0)
+            && dec.form == *form
+            && let Some(p) = helper::plan(&dec, &*e.s)
+        {
+            let mut t = e;
+            let before: Vec<_> = (0..NUREG).map(|c| t.s.r[c]).collect();
+            if gen_helpers::run(p.id, &mut t.s, &p.f) == 0 {
+                pick.push((form, code.to_vec(), p, before));
+            }
+        }
+        if pick.len() >= 12 {
+            break;
+        }
+    }
+    assert!(!pick.is_empty());
+    let n = 200_000u32;
+    let mut tot_gen = 0.0;
+    let mut tot_int = 0.0;
+    for (form, code, p, _) in &pick {
+        let mut e = engine_cfg(code, 0, 0x77, false, 0);
+        let t0 = Instant::now();
+        for _ in 0..n {
+            std::hint::black_box(gen_helpers::run(p.id, &mut e.s, &p.f));
+        }
+        let g = t0.elapsed().as_nanos() as f64 / n as f64;
+        let rec = helper::HelperRec::leak_gen(0, None);
+        let mut e2 = engine_cfg(code, 0, 0x77, false, 0);
+        let t1 = Instant::now();
+        for _ in 0..n {
+            // The interpreter's step at PC 0 (what the stub does).
+            e2.s.pc_sw = 0;
+            std::hint::black_box(helper::helper_exec(&mut *e2.s as *mut _ as *mut u8, rec));
+        }
+        let i = t1.elapsed().as_nanos() as f64 / n as f64;
+        eprintln!("helper_ns {form:4} gen {g:6.1} ns, interpreter step {i:6.1} ns");
+        tot_gen += g;
+        tot_int += i;
+    }
+    let k = pick.len() as f64;
+    eprintln!("helper_ns mean gen {:.1} ns, interpreter {:.1} ns", tot_gen / k, tot_int / k);
+}

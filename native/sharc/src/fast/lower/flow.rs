@@ -383,7 +383,11 @@ impl Lower {
                         .nodes
                         .get(&next)
                         .is_some_and(|n| matches!(n.kind, NodeKind::Seq));
-                self.lower_insn(idx, &node.dec)?;
+                if node.helper {
+                    self.lower_helper(idx, &node.dec, pc)?;
+                } else {
+                    self.lower_insn(idx, &node.dec)?;
+                }
                 self.bank_next_ok = false;
                 self.note_written(st, pc);
                 self.cfg_x().nblock += 1;

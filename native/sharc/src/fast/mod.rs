@@ -21,7 +21,9 @@
 pub mod cfg;
 pub mod decode_view;
 pub mod dump;
+pub mod gen_helpers;
 pub mod glue;
+pub mod helper;
 pub mod interp;
 pub mod ir;
 pub mod lean;

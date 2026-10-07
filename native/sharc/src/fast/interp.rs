@@ -207,6 +207,7 @@ impl InterpKernel {
                             let p = (v(base) as usize).wrapping_add(v(off) as u32 as usize);
                             unsafe { (p as *const u64).read_unaligned() }
                         }
+                        Op::Helper(rec) => super::helper::helper_exec(st, rec) as u64,
                         Op::Load32 { base, off } => {
                             self.check_window(ctx, v(base), v(off) as u32, 4);
                             let p = (v(base) as usize).wrapping_add(v(off) as u32 as usize);

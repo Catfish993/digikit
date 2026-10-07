@@ -128,6 +128,10 @@ pub enum Op {
         base: Val,
         off: Val,
     },
+    /// A helper call (`fast::helper`): the interpreter's one-instruction step
+    /// on the engine state, for the record at this address; 0 when the
+    /// instruction completed, 1 when it trapped (undone).
+    Helper(u64),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -426,7 +430,7 @@ impl Kernel {
                             None => return err("undeclared value"),
                         };
                         let got = match op {
-                            Op::CI32(_) | Op::Ctx32(_) | Op::St32(_) => Ty::I32,
+                            Op::CI32(_) | Op::Ctx32(_) | Op::St32(_) | Op::Helper(_) => Ty::I32,
                             Op::CF32(_) | Op::CtxF32(_) => Ty::F32,
                             Op::CI64(_) | Op::Ctx64(_) => Ty::I64,
                             Op::GetVar(v) => match self.vars.get(v.0 as usize) {
@@ -780,6 +784,7 @@ impl Kernel {
                             }
                             Op::St32(o) => w.extend([11, o]),
                             Op::Load64 { base, off } => w.extend([13, base, off]),
+                            Op::Helper(r) => w.extend([14, r as u32, (r >> 32) as u32]),
                         }
                     }
                     Inst::Set(v, x) => w.extend([1, v.0, x]),
@@ -868,6 +873,7 @@ impl Kernel {
                                 base: next()?,
                                 off: next()?,
                             },
+                            14 => Op::Helper(next()? as u64 | (next()? as u64) << 32),
                             o => return Err(format!("bad op {o}")),
                         };
                         Inst::Def(d, op)

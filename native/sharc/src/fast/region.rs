@@ -224,7 +224,8 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
     let mut last = None;
     for pass in 0..MAX_PASSES {
         let mut l = Lower::new(env.clone(), plan.clone(), pass);
-        for (i, (_, d)) in decs.iter().enumerate() {
+        for (i, (at, d)) in decs.iter().enumerate() {
+            l.cur_pc = Some(*at);
             l.lower_insn(i as u32, d)?;
         }
         let out = l.finish()?;
@@ -367,8 +368,21 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
     // An instruction that cannot be lowered where it stands (an address that
     // has no range, too many windows) becomes the end of the region.
     let mut deny = std::collections::BTreeSet::new();
+    let mut helpers = std::collections::BTreeSet::new();
     for _ in 0..80 {
-        match build_cfg_with(s, pc, &env, &deny) {
+        match build_cfg_with(s, pc, &env, &deny, &helpers) {
+            Err((e, Some(at)))
+                if at != pc
+                    && !deny.contains(&at)
+                    && !helpers.contains(&at)
+                    && cfg::helper_at(at)
+                    && decode_one(s, at).is_ok_and(|d| cfg::helper_ok(&d)) =>
+            {
+                if std::env::var_os("SHARC_FAST_COV").is_some() {
+                    eprintln!("cov helper root={pc:#x} at={at:#x} why={}", e.0);
+                }
+                helpers.insert(at);
+            }
             Err((e, Some(at))) if at != pc && !deny.contains(&at) => {
                 if std::env::var_os("SHARC_FAST_LOG").is_some() {
                     eprintln!("fast: {pc:#x}: {at:#x} cannot be lowered here: {}", e.0);
@@ -391,9 +405,10 @@ fn build_cfg_with(
     pc: u32,
     env: &Env,
     deny: &std::collections::BTreeSet<u32>,
+    helpers: &std::collections::BTreeSet<u32>,
 ) -> Result<Region, (Refuse, Option<u32>)> {
-    let st =
-        cfg::build_structure(s, env, pc, &|at| decode_one(s, at), deny).map_err(|e| (e, None))?;
+    let st = cfg::build_structure(s, env, pc, &|at| decode_one(s, at), deny, helpers)
+        .map_err(|e| (e, None))?;
     let mut plan = Plan::default();
     let mut last = None;
     for pass in 0..MAX_PASSES {

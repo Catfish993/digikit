@@ -25,6 +25,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 import sharc_lowergen_rs as r  # noqa: E402
 
 
+# Forms with a generated helper body (flag-neutral transfers; tools/sharc_lowergen_helpers.py).
+HELPER_FORMS = ["3a", "3b", "3c", "3d", "4a", "4b", "4d", "14a", "15a", "15b"]
+
+
 def generated_list() -> list[str]:
     text = GEN.read_text()
     m = re.search(r"pub const GENERATED: &\[&str\] = &\[(.*?)\];", text)
@@ -57,6 +61,10 @@ def main() -> None:
     run(
         "uv", "run", "python", "tools/sharc_lowergen_vectors.py",
         "--out", "native/sharc/src/tests_gen_vectors.rs", "--n", "24", *forms,
+    )  # fmt: skip
+    run(
+        "uv", "run", "python", "tools/sharc_lowergen_helpers.py",
+        "native/sharc/src/fast/gen_helpers.rs", ",".join(HELPER_FORMS),
     )  # fmt: skip
     run(
         "uv", "run", "python", "tools/sharc_lowergen_programs.py",

@@ -183,3 +183,60 @@ Shared files (conflict map)
 | state | fast (1.5 s, static-insns+follow) | interpreted | PCM |
 | base 0414505, hand | 89.5 % | 10.48 % | 3bf3ba3026953c22 |
 | F1 merged (24 forms) | 92.5 % | 7.45 % | 3bf3ba3026953c22 |
+
+## AOT cost profile and a mask-free estimate (f0a3180, DN2 trig1-taps, default config, 1.41 DSP CPU/audio s)
+
+Method: `xctrace` CPU Profiler on the coupled-run DSP thread (5 s, 13.6k samples) with a
+line-tables build (`tools/sharc_build_dbg.py`, same codegen), leaf addresses symbolicated with
+`atos -i` (`tools/sharc_prof_addrs.py`), lines classified by their source text
+(`tools/sharc_prof_classify.py`; `tools/sharc_xctrace.sh` runs it). `sample` alone cannot do this:
+everything inlines into the region function.
+
+DSP thread: Cranelift kernels 24 %, engine/glue/std 4-6 %, AOT 70 %. Inside AOT (share of the DSP
+thread): V{b,m}/Option/Result plumbing 27 %, memory (page lookup, present/dirty bitmaps, watch)
+14 %, uncategorised moves/copies 11 %, float arithmetic 5 %, loop/stack/pc bookkeeping 4 %, undo and
+budget and rf copies 4 %, address-map checks 3 %, flags 3 %. Real arithmetic is under 10 %.
+
+Per instruction a region does: budget test, 3-4 V copies for undo, `_sync_empty_loop_registers`,
+`_access_modifier_scale` (range tests on the address), `_advance` (pending, loops, pc), then the
+operation on V (mask AND/known checks, `Err(Trap)` branches). The code is the core partially
+evaluated on the fields only; LLVM folds the masks of values it can see, not those that come out of
+memory, flags or calls.
+
+Mask-free emission (concrete values, one budget check per block, no per-insn undo, no loop sync, no
+address-map test, flags lazy, memory through a cheaper guarded access): removes about 45-50 points
+of the 100 of the DSP thread, so AOT 70 -> ~22, ns/insn 4.4 -> ~1.5, default CPU 1.41 -> ~0.75.
+Confidence medium-low (+-30 %): the classification is by source line text. Effort 1-2 weeks, high
+risk (it changes the transpiler's V type in block mode). The fast-tier route reaches 0.5 ns/insn
+without touching the AOT generator; prefer it for the hot functions, keep AOT for the rest.
+
+## Generated helper bodies (base f0a3180 + lane B's stub)
+
+`tools/sharc_lowergen_helpers.py` prints each traced form a second time as plain Rust over concrete
+`u32` values (`gen_helpers.rs`: `h_FORM` runs the instruction on the engine state, `t_FORM` says
+which registers it reads and writes, both from the same decision tree and effect programs as the IR
+lowering). `fast/helper.rs` has the small runtime (`hload`, `hstore_ok`, `hpost`, `RegRead`,
+`Touch`, `plan`); `lower/helper.rs` syncs exactly the touched registers around `Op::Helper`.
+Forms: 3a 3b 3c 3d 4a 4b 4d 14a 15a 15b, unconditional, no compute. `mise run regen` rebuilds it.
+`SHARC_FAST_HELPER=1|LO-HI[,LO-HI]` selects sites (an instruction that cannot be lowered becomes a
+helper instead of ending the region); `SHARC_FAST_HELPER_INTERP=1` uses the interpreter step as
+the body, `SHARC_FAST_HELPER_NODYN=1` is lane B's rule (give up the dynamic window).
+
+Measured. Body: 6 ns mean (3.5-13) against 62 ns for the interpreter step in a microbenchmark
+(`cargo test --release --lib helper_ns -- --ignored --nocapture`), plus about 5 ns of sync: about 11
+ns per helper instruction against the model's 30. Exactness: `gen_helpers_match_the_interpreter`
+(every vector, SISD/SIMD, bank/stack models, a trap leaves every register unchanged), 62 lib tests,
+PCM 3bf3ba3026953c22 at 1.5 s and 8cbae26b73014732 at 12 s. Effect on DSP CPU/audio s, static-insns+
+follow at 12 s (steady state; 1.5 s runs are dominated by compile time): hand/IR only 7.64, helpers
+in 0x1c8ef1 7.28 (-5%, 1.3M helper calls per audio s), helpers everywhere 7.72 (+1%), ten hot
+functions 14.8 vs 14.1 at 1.5 s (more denied instructions means more rebuilds). A second machine
+state moved the baseline to 8.06 and the range to 8.01: the gain of this family is inside the noise
+of unlocked runs, as the call count says (1.3M calls per audio s x 100-250 ns saved = 0.1-0.3 s).
+
+Why the model's 8.8 -> 5 is not reached: the instructions that end regions in the hot functions
+are mostly compute (2a_short opcodes, 5a_move compute, multifunction, MR moves: about 20% of the
+interpreted ones) and they write ASTATX. A helper for them needs the kernel's pending flag writers
+applied to the state before the call and reset after (lane B: +10 ns), and a body that computes
+flags: the tracer would have to give dynamic branches and dynamic known-bit masks of ASTATX a
+meaning, or the body falls back to the interpreter step (about 60 ns without Engine::step) which
+still saves about 300 ns against a region exit plus an interpreted instruction.

@@ -22,6 +22,7 @@ pub mod float_alu;
 pub mod flow;
 pub mod gen_forms;
 pub mod gen_prims;
+pub mod helper;
 pub mod mem_addr;
 pub mod mem_imm;
 pub mod move_misc;
@@ -422,6 +423,13 @@ pub struct Lower {
     pub mode1_cur: u32,
     /// 80 while a compute of PEy runs (R/F codes 0..15 mean S/SF), else 0.
     pub pe_off: u32,
+    /// The instruction being lowered is one the helper stub runs: a guarded
+    /// dynamic window that would end the region on every miss is refused, so
+    /// that the instruction becomes a helper call (`lower::helper`).
+    pub helper_form: bool,
+    /// The address of the instruction being lowered in a loop or straight
+    /// kernel (a CFG kernel has it in `cfgx`).
+    pub cur_pc: Option<u32>,
 }
 
 /// A kernel variable that is not a register: loaded from the context in
@@ -517,6 +525,8 @@ impl Lower {
             gtag: Vec::new(),
             mode1_cur: 0,
             pe_off: 0,
+            helper_form: false,
+            cur_pc: None,
         };
         l.mode1_cur = l.env.mode1;
         l.var_abs = (0..NREGS as usize).map(|c| l.init_abs(c)).collect();
@@ -1341,6 +1351,9 @@ impl Lower {
     /// span before the access, so an address outside it leaves the kernel
     /// before the instruction. One slot per anchor serves both directions.
     pub fn dynamic_window(&mut self, addr: Val, anchor: u8, write: bool) -> LR<(Val, Val, u32)> {
+        if self.helper_form {
+            return refuse("address range unknown (no dynamic window under the helper stub)");
+        }
         let w = match self
             .wins
             .iter()
@@ -1582,6 +1595,15 @@ impl Lower {
 
     fn lower_insn_inner(&mut self, idx: u32, d: &Dec) -> LR<()> {
         self.begin_insn(idx);
+        let at = self.cfgx.as_ref().map(|x| x.pc).or(self.cur_pc);
+        // Only an instruction that cannot be lowered becomes a helper (region.rs
+        // `deny`); one with a guarded dynamic window keeps it. With
+        // SHARC_FAST_HELPER_NODYN=1 (lane B's stub) every helper-capable
+        // instruction in range gives up its dynamic window instead.
+        static NODYN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let nodyn = *NODYN.get_or_init(|| std::env::var_os("SHARC_FAST_HELPER_NODYN").is_some());
+        self.helper_form =
+            nodyn && at.is_some_and(super::cfg::helper_at) && super::cfg::helper_ok(d);
         // An execution condition is handled here, for every form: the form
         // code sees the unconditional instruction.
         let plain;
