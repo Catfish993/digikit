@@ -36,6 +36,7 @@ from __future__ import annotations
 import os
 import struct
 import sys
+from typing import Any
 
 _here = os.path.dirname(os.path.abspath(__file__))
 _root = os.path.dirname(_here)
@@ -51,6 +52,34 @@ except ImportError:  # pragma: no cover - cf_names.py always ships alongside thi
     cf_names = None  # type: ignore[assignment]
 
 PAGE = 0x100000
+RUST_MAGIC = b"DT2SNP01"
+
+
+def _load_rust_pages(path: str) -> dict[int, bytearray]:
+    """Memory pages of a Rust DT2SNP01 snapshot (native/machine board.rs
+    `BORD` section): u64 LE page count, then per page a u32 LE index (address
+    >> 20) and 256 chunks of 4 KiB, each preceded by a presence byte. Regs and
+    the rest of the file are not parsed."""
+    with open(path, "rb") as fh:
+        d = fh.read()
+    i = d.find(b"BORD")
+    if i < 0:
+        raise ValueError("%s: no BORD section" % path)
+    (n,) = struct.unpack_from("<Q", d, i + 4)
+    p = i + 12
+    pages: dict[int, bytearray] = {}
+    for _ in range(n):
+        (idx,) = struct.unpack_from("<I", d, p)
+        p += 4
+        pg = bytearray(PAGE)
+        for b in range(256):
+            f = d[p]
+            p += 1
+            if f:
+                pg[b * 4096 : (b + 1) * 4096] = d[p : p + 4096]
+                p += 4096
+        pages[idx] = pg
+    return pages
 
 
 def name_for(addr: int) -> str | None:
@@ -72,9 +101,23 @@ class Snapshot:
 
     def __init__(self, path: str):
         self.path = path
+        self._page_cache: dict[int, bytes] = {}
+        with open(path, "rb") as fh:
+            magic = fh.read(8)
+        if magic == RUST_MAGIC:
+            # Rust DT2SNP01 file (native/boot runtime.rs): memory only.
+            pages = _load_rust_pages(path)
+            self._blob: dict[str, Any] = {
+                "regs": {},
+                "mmio": {},
+                "ctlregs": {},
+                "extra": {},
+            }
+            self._mapped = {i << 20 for i in pages}
+            self._page_cache = {i << 20: bytes(pg) for i, pg in pages.items()}
+            return
         self._blob = _load_blob(path)
         self._mapped = set(self._blob["all_mapped"])
-        self._page_cache: dict[int, bytes] = {}
 
     # --- raw blob bits, exposed as-is -----------------------------------
 

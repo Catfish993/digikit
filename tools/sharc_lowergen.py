@@ -870,6 +870,10 @@ def i_shift_immediate(f, values, special=None):
     return CompTok("shiftimm", "x", False)
 
 
+def i_shift_immediate_pey(f, values, special=None):
+    return CompTok("shiftimm", "y", False)
+
+
 def i_apply_compute(state, insn, result):
     CTX.emit(("apply", result.kind, result.pe, result.short))
 
@@ -1055,6 +1059,7 @@ PATCHES = {
     "_compute": i_compute,
     "_compute_pey": i_compute_pey,
     "_shift_immediate": i_shift_immediate,
+    "_shift_immediate_pey": i_shift_immediate_pey,
     "_apply_compute": i_apply_compute,
     "_apply_compute_pey": i_apply_compute,
 }

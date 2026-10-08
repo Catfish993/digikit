@@ -138,6 +138,7 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
             file=sys.stderr,
         )
         return []
+    digi_env.check_generated(generated)
     os.environ.setdefault("SHARC_GEN_DIR", str(generated))
     if positional is None:
         args.insert(0, str(paths["firmware"]))
@@ -531,6 +532,7 @@ def main(args: list[str] | None = None) -> None:
             raise SystemExit(
                 "--coupled needs SHARC_GEN_DIR pointing to a local generated DN2 core"
             )
+        digi_env.check_generated(generated)
         os.environ.setdefault("SHARC_GEN_DIR", str(generated))
         set_fast_regions(args, os.environ)
     # The native shell serves the built panel; it does not load browser WASM.

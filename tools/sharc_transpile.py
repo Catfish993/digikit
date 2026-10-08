@@ -5267,6 +5267,9 @@ def write(out: Output, directory: str) -> None:
             fh.write(text)
     with open(os.path.join(directory, "transpile-report.json"), "w") as fh:
         json.dump(out.report, fh, indent=1, sort_keys=True)
+    import digi_env
+
+    digi_env.write_core_fingerprint(directory)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -8,7 +8,7 @@
     },
     {
       "name": "trig1-hold",
-      "description": "QA prelude (NO, NO, encoder A), then Audition Trig 1 (button 25) pressed at +60M instructions and held to the end: 10 s of audio. One voice. Without the prelude the ready snapshot ignores Trig 1 and stays silent (see trig1-noqa-40m).",
+      "description": "QA prelude (NO, NO, encoder A), then Audition Trig 1 (button 25) pressed at +60M instructions and held to the end: 10 s of audio. One voice. The prelude is not needed on the current ready state: trig1-noqa-40m sounds without it.",
       "seconds": 10,
       "qa_script": true,
       "events": [
@@ -159,7 +159,7 @@
     },
     {
       "name": "trig1-taps",
-      "description": "Three Trig 1 taps (0.3 s hold each, the desktop Audition default) without the QA script; 10 s. A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
+      "description": "Three Trig 1 taps (0.3 s hold each, the desktop Audition default) without the QA script; 10 s. The NO press (button 12) at 0 is kept so the pinned hash stays valid; the current ready state does not need it (trig1-noqa-40m sounds without it). Trig events are offset by 60M.",
       "seconds": 10.5,
       "exact_events": true,
       "expect_sha256": "d60ad3390038a84b30ced82723f526a1e0c0e58e691f5def3024f56005c6d9d3",
@@ -208,7 +208,7 @@
     },
     {
       "name": "trig1-tap-release",
-      "description": "One Trig 1 tap, then 8 s of release and idle (the desktop 'sine then noise' case). A NO press (button 12) at 0 is the minimum prelude: from the ready snapshot Trig 1 alone is silent at any time, and trig1-noqa-40m records that. Trig events are offset by 60M.",
+      "description": "One Trig 1 tap, then 8 s of release and idle (the desktop 'sine then noise' case). The NO press (button 12) at 0 is kept so the pinned hash stays valid; the current ready state does not need it (trig1-noqa-40m sounds without it). Trig events are offset by 60M.",
       "seconds": 8.5,
       "exact_events": true,
       "expect_sha256": "883476213933333f0c5f4e2b343f65ed470fda0c50c8fa37905972457e819cdd",

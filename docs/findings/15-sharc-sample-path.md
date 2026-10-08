@@ -561,3 +561,114 @@ Folded from a lane notebook; not re-checked by a second agent.
   interpreter 37.7, one cycle 3.07, two 1.83, three 1.76, same PCM. **[O]** There is no DT2
   entry in `tools/fast_regions.json`: the hot DT2 loops are SIMD-mode code that the fast
   tier did not lower.
+
+## DT2 runs through coupled.py used the DN2 generated core (2026-10-08) **[V][C]**
+
+`tools/coupled.py` resolved its generated core with
+`digi_env.generated_dir()` and no image argument. It therefore built every
+DT2 run, including `tools/dt2_sample_check.py`, against the DN2 core
+`out/native/dn2-audio/gen`. That core was generated on 10-06, before the SIMD
+fix above. Only `tools/native_emu.py` looked the core up in `gen-index.json`
+by the image.
+
+Results of `dt2_sample_check` with each core:
+
+| Core | peak_share | L vs R | Status |
+|---|---|---|---|
+| Old DN2 core (interpreter, or the generated blocks off) | 0.50 | L louder than R | fails |
+| DN2 core regenerated 2026-10-08 | 0.9986 | identical | passes |
+| DT2 core | 0.9986 | identical | passes, in about 9 s instead of 86 s |
+
+The DT2 core was already current. Regenerating it changed only its report.
+After regenerating the DN2 core, every DN2 scenario pin still matches, so the
+DN2 default-patch output is unchanged.
+
+Fixes:
+
+- `coupled.py` now picks the core by the device's DSP image.
+- Every generated core carries `CORE_FINGERPRINT`, a hash of
+  `tools/sharc_core`, `sharc_transpile.py` and `sharc_rsgen.py`.
+  `digi_env.check_generated` refuses a missing or different fingerprint
+  before `coupled.py`, `native_emu.py` and `native_pgo.py` build.
+  `DIGI_ALLOW_STALE_GEN=1` turns the error into a warning.
+
+Measured on the clean DT2 output of the test card's kit: the 1 kHz sample
+plays at 840.4 Hz (-3.01 semitones, presumably the kit's tune). The
+harmonics are odd only: 3rd -34 dB, 5th -50 dB, 7th -59 dB, and every even
+harmonic below -127 dB. That is symmetric saturation, consistent with the
+kit's master overdrive at 0x7f00. It has not been checked by setting the
+overdrive to 0. **[O]**
+
+## SIMD Type 6 and BIT TST ran in PEx only (DN2 delay send had no effect)
+
+**[D]** On DN2 1.11 the delay send did nothing. `FUN_b84099` (a saturator over
+two 32-word blocks) sets MODE1.PEYEN at 0xb840d2, loads `R2 = DM(I6-4)`
+(0x10), runs `btst` bit 0 at 0xb84225 and then `JUMP IF SZ` to 0xb84240 at
+0xb84228. Our core ran the `btst` (Type 6b) in PEx only: ASTATX.SZ was set,
+ASTATY stayed stale (0x400) although S2 = 0x10 too. A SIMD conditional jump
+needs both elements, so the jump was not taken. The odd-pair epilogue
+0xb8422b..0xb8423e ran past the buffers and doubled the delay write position
+at 0x80459234 every frame. Forcing the jump with `--dsp-patch` made the delay
+audible.
+
+Manual (SHARC+ Core Programming Reference, `out/refs/sharc-plus-prm`):
+
+- p.3-39 (Compute Instructions in SIMD Mode): `R5 = LSHIFT R6 by <data8>`
+  has the implicit `S5 = LSHIFT S6 by <data8>`; "the immediate data are valid
+  for both PEx and PEy units".
+- p.13-43 (Type 6a, SIMD Mode): the Type 6 shift runs "simultaneously for the
+  X and Y processing elements"; the memory access is "performed
+  simultaneously on the X and Y processing elements"; X uses Ia and
+  post-modifies it, Y uses Ia+k (k = 1 normal word, 0 in broadcast load
+  mode) with no modify; a condition is evaluated per element ("independent
+  of the condition result for the other element"). The same text is in the
+  Type 6a (no memory) description, p.13-44.
+- p.4-54 and p.4-57 (Conditional Branches, Table 4-32): a conditional
+  JUMP/CALL "occurs only when the condition is true in PEx and PEy" (AND).
+  This is why the stale ASTATY mattered.
+- p.4-55 (Bit Test Flag in SIMD Mode, with Table 2-3 on p.2-12): in SIMD mode
+  `BIT TST USTAT1` makes two independent tests, USTAT1 into ASTATX.BTF and
+  USTAT2 into ASTATY.BTF. The pairs are USTAT1/2, USTAT3/4, ASTATx/y and
+  STKYx/y.
+
+Forms fixed in `tools/sharc_core`:
+
+- `6b_shiftimm`: the shift (including BTST) runs on PEx and PEy
+  (`compute._shift_immediate_simd`, `_shift_immediate_pey`); a conditional
+  one is gated per element.
+- `6a_mem`: the same, plus the PEy memory transfer at Ia+k (DM through
+  `_companion_transfer`, PM through `_pm_companion_transfer`, broadcast
+  loads included). A SIMD condition that differs between the elements stops
+  the trace (`mixed-PE conditional SIMD Type6a`); it is not modelled.
+- `18a` BIT TST: the PEy BTF update now also covers USTAT1/2 and USTAT3/4
+  (it covered ASTAT/STKY only). BIT SET/CLEAR/TOGGLE on a SIMD-paired system
+  register is still unmodelled (it stops). **[O]**
+- A bit-FIFO shift in SIMD mode raises (the manual says SIMD must be off for
+  bit FIFO operations).
+
+Other compute-bearing forms already ran both PEs (2a, 2a_short, 2b, 2c, 1a, 3a,
+4a, 5a/5b move, 5a swap, 7a, 9a, 11a); 4a with a SIMD condition still stops.
+Forms without a compute or flag write need no change.
+
+Tests: `tests/test_sharc_simd_shift.py` (R and S results, ASTATX/ASTATY SZ, the
+firmware pattern `btst` then `JUMP IF SZ`, 6a store/load with the companion,
+per-element conditions, USTAT BIT TST). The golden hashes did not change.
+
+Regenerated 2026-10-08 (same block sets as before: DN2 1751 blocks, DT2 1202):
+the shared core, then the DN2 and DT2 per-firmware cores (previous cores in
+`gen-pre-6b-20261008`). `dt2_sample_check` still reports a clean tone.
+
+Measured with `scenarios/dn2-fx.json` (`fx-dry-tap` is the reference), 48 kHz,
+note held 0.30..0.60 s: the delay is audible now. `fx-del-127` is identical to
+dry while the note plays (the dry path is untouched) and the first echo arrives
+at +0.96 s (onset 1.26 s) at about the dry level (-29 dB). Later repeats start
+at 2.02, 2.40, 2.78 and 3.14 s: -55, -61, -67 and -74 dB, a factor of about
+0.5 per 0.38 s repeat. The spacing before the second echo (0.76 s) differs
+from the later 0.38 s, so the repeat pattern is not yet explained. **[O]**
+`fx-del-turnmore` rms 0.0162 (dry 0.0099), `fx-del-hold` rms 0.0538 (dry hold
+0.0180). `fx-rev-127` differs from dry as before.
+
+DN2 scenario pins after the fix: only the two scenarios that hit the fixed forms
+moved. `trig1-taps` `d60ad339` -> `e0e6c8af` (rms 0.01038 -> 0.01007, -3 %),
+`kb-chord16` (unpinned) `e0964600` -> `6d97fd57` (rms 0.10607 -> 0.10178,
+-4 %). The `trig1-taps` pin in `scenarios/dn2.json` is not updated yet.

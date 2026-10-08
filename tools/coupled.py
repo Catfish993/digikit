@@ -142,6 +142,7 @@ def scenario_results(report: dict) -> list[dict]:
                 "sha256": pcm.get("sha256"),
                 "ok": (sc.get("gates") or {}).get("ok"),
                 "windows": list(pcm.get("window_rms_100ms") or []),
+                "peek": sc.get("peek") or {},
             }
         )
     return results
@@ -150,8 +151,14 @@ def scenario_results(report: dict) -> list[dict]:
 # Paths and processes
 
 
-def generated() -> pathlib.Path:
-    gen = digi_env.generated_dir()
+def generated(
+    device: str = "dn2", image: pathlib.Path | str | None = None
+) -> pathlib.Path:
+    """The generated core of a device: SHARC_GEN_DIR, else the one registered
+    for its packed DSP image (IMAGE, else the device's ready-input default)."""
+    if image is None:
+        image = digi_env.ready_inputs(device=device)["DSP image"]
+    gen = digi_env.generated_dir(image=image)
     if not gen.is_dir():
         raise SystemExit(f"coupled: generated core dir is missing: {gen}")
     return gen
@@ -165,16 +172,17 @@ def inputs(device: str = "dn2") -> dict[str, pathlib.Path]:
     return found
 
 
-def binary_path() -> pathlib.Path:
-    return native_target.target_dir(generated()) / "release" / BINARY_NAME
+def binary_path(device: str = "dn2", image=None) -> pathlib.Path:
+    return native_target.target_dir(generated(device, image)) / "release" / BINARY_NAME
 
 
 def cargo(args: list[str]) -> list[str]:
     return ["rustup", "run", TOOLCHAIN, "cargo", *args]
 
 
-def build() -> pathlib.Path:
-    gen = generated()
+def build(device: str = "dn2", image=None) -> pathlib.Path:
+    gen = generated(device, image)
+    digi_env.check_generated(gen)
     target = native_target.target_dir(gen)
     env = {**digi_env.rust_env(), "SHARC_GEN_DIR": str(gen)}
     command = cargo(
@@ -196,10 +204,10 @@ def build() -> pathlib.Path:
     return binary
 
 
-def ensure_binary(no_build: bool) -> pathlib.Path:
+def ensure_binary(no_build: bool, device: str = "dn2", image=None) -> pathlib.Path:
     if not no_build:
-        return build()
-    binary = binary_path()
+        return build(device, image)
+    binary = binary_path(device, image)
     if not binary.is_file():
         raise SystemExit(f"coupled: no binary at {binary} (drop --no-build)")
     return binary
@@ -239,6 +247,8 @@ def summarize(report_path: pathlib.Path) -> None:
             f"{r['name']:<16} sha256 {sha} ok={r['ok']} "
             f"first >6dB window {'-' if jump is None else jump}"
         )
+        for name, hexval in (r.get("peek") or {}).items():
+            print(f"  peek {name} = {hexval}")
     print(f"report: {report_path}")
 
 
@@ -259,8 +269,15 @@ def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
         extra += ["--seconds", str(args.seconds)]
     extra += args.extra
     device = getattr(args, "device", "dn2")
-    if device != "dn2":
+    scenario_file = getattr(args, "scenarios", None)
+    if scenario_file:
+        extra = ["--scenarios", str(pathlib.Path(scenario_file).resolve()), *extra]
+    elif device != "dn2":
         extra = ["--scenarios", str(ROOT / "scenarios" / f"{device}.json"), *extra]
+    for spec in getattr(args, "peek", None) or []:
+        extra += ["--peek", spec]
+    if getattr(args, "dump_dsp", False):
+        extra += ["--dump-dsp", str(out.parent / "dsp.bin")]
     argv = run_args(binary, inputs(device), extra)
     env = run_env(digi_env.diag_env(diag, out.parent))
     if digi_env.diag_stderr(diag):
@@ -275,7 +292,7 @@ def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
 
 
 def cmd_build(args) -> int:
-    binary = build()
+    binary = build(getattr(args, "device", "dn2"))
     print(binary)
     return 0
 
@@ -289,7 +306,7 @@ def want_dump(args) -> None:
 
 def cmd_scenario(args) -> int:
     want_dump(args)
-    binary = ensure_binary(args.no_build)
+    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
     if not args.names and not args.all:
         raise SystemExit("coupled: give scenario names or --all")
     # No --scenario means every scenario of the file; coupled-run exits 2 on
@@ -300,7 +317,7 @@ def cmd_scenario(args) -> int:
 
 def cmd_replay(args) -> int:
     want_dump(args)
-    binary = ensure_binary(args.no_build)
+    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
     return run_and_report(binary, ["--replay", args.file], args)
 
 
@@ -344,11 +361,16 @@ def result_of(path: pathlib.Path, name: str) -> dict:
 
 
 def cmd_bisect(args) -> int:
-    binary = ensure_binary(args.no_build)
+    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
     name, seconds = args.name, args.seconds
     key = hashlib.sha256(
         "\0".join(
-            [file_digest(binary), name, str(seconds), str(generated().resolve())]
+            [
+                file_digest(binary),
+                name,
+                str(seconds),
+                str(generated(getattr(args, "device", "dn2")).resolve()),
+            ]
         ).encode()
     ).hexdigest()
     ref_path = BISECT_DIR / name / f"reference-{key[:16]}.json"
@@ -395,6 +417,7 @@ def cmd_bisect(args) -> int:
 
 def cmd_test_quick(args) -> int:
     gen = generated()
+    digi_env.check_generated(gen)
     nogen = native_target.target_dir("")
     prod = native_target.target_dir(gen)
     base_env = digi_env.rust_env()
@@ -461,6 +484,20 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--all", action="store_true", help="run every scenario of the file")
     p.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
     p.add_argument("--seconds", type=float)
+    p.add_argument(
+        "--scenarios", metavar="FILE", help="scenario file (replaces the device's)"
+    )
+    p.add_argument(
+        "--peek",
+        action="append",
+        metavar="NAME=SPEC",
+        help="guest read at the end: ADDR:LEN or *ADDR+OFF:LEN (repeatable)",
+    )
+    p.add_argument(
+        "--dump-dsp",
+        action="store_true",
+        help="write the DSP state at the end to <run>/dsp-<scenario>.bin (tools/dspdiff.py)",
+    )
     run_flags(p)
     p = add("replay", cmd_replay, "replay a scenario or diagnostics export")
     p.add_argument("file", metavar="FILE")

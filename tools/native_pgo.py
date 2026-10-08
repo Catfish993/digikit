@@ -714,6 +714,7 @@ def require_inputs(gen: pathlib.Path) -> None:
         raise SystemExit(f"missing rustup toolchain {toolchain_dir()}")
     if not gen.is_dir():
         raise SystemExit(f"generated DN2 core not found: {gen} (set SHARC_GEN_DIR)")
+    digi_env.check_generated(gen)
     for path in (
         run_env(pathlib.Path("."))["DIGI_COUPLED_FIXTURES"],
         run_env(pathlib.Path("."))["DIGI_COUPLED_SYX"],

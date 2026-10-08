@@ -16,14 +16,17 @@
 //!   --cf-snapshot snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
 //!   [--dsp-patch FILE] [--card-image FILE] [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--playback] [--audio-buffer S] [--no-pcm-tap] [--no-link-timing] [--profile-regions] [--profile-execution] \
 //!   [--out report.json] [--list] \
-//!   [--replay FILE.json] [--wav PATH] [--audio-mode rebuffer|stretch|gap]
+//!   [--replay FILE.json] [--wav PATH] [--dump-dsp PATH] [--audio-mode rebuffer|stretch|gap]
 //! ```
 //!
 //! `--replay FILE` runs only the scenario in FILE (a scenario object, or a desktop
 //! diagnostics export carrying a `recorded_scenario`); it ignores `--scenario` and
 //! the scenarios file. `--wav PATH` writes the emulator's own PCM to PATH (a float
 //! WAV for `.wav`, else raw f32le); with several scenarios `-<name>` goes before the
-//! extension. `--audio-mode` is the underrun recovery of `--playback`.
+//! extension. `--dump-dsp PATH` writes the DSP's canonical state blob (`SHRD`, all
+//! memory written since the image; read it with `tools/dspdiff.py`) at the end of
+//! each scenario to `PATH` with `-<name>` before the extension. `--audio-mode` is
+//! the underrun recovery of `--playback`.
 //!
 //! Scenario file: `{"scenarios": [{"name", "description", "seconds" | "instructions",
 //! "qa_script", "clip_last_chunk", "expect_sha256", "events": [...]}]}`. An event is `{"at_s" | "at_instr", "button",
@@ -77,9 +80,77 @@ struct Args {
     list: bool,
     replay: Option<PathBuf>,
     wav: Option<PathBuf>,
+    dump_dsp: Option<PathBuf>,
     dsp_patch: Option<PathBuf>,
     card: Option<PathBuf>,
     audio_mode: AudioMode,
+    peeks: Vec<(String, Peek)>,
+}
+
+/// A guest read taken at the end of a run: `ADDR:LEN` or `*ADDR+OFF:LEN`
+/// (read the big-endian u32 at ADDR, add OFF).
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct Peek {
+    addr: u32,
+    hop: bool,
+    off: u32,
+    len: usize,
+}
+
+fn parse_num(t: &str) -> Result<u32, String> {
+    let t = t.trim();
+    let r = match t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        Some(h) => u32::from_str_radix(h, 16),
+        None => t.parse(),
+    };
+    r.map_err(|_| format!("bad number {t:?}"))
+}
+
+fn parse_peek(spec: &str) -> Result<(String, Peek), String> {
+    let (name, rest) = spec.split_once('=').ok_or("--peek needs NAME=SPEC")?;
+    let (loc, len) = rest.rsplit_once(':').ok_or("--peek SPEC needs :LEN")?;
+    let len = parse_num(len)? as usize;
+    if len == 0 || len > 4096 {
+        return Err("--peek LEN must be 1..4096".into());
+    }
+    let (hop, loc) = match loc.strip_prefix('*') {
+        Some(l) => (true, l),
+        None => (false, loc),
+    };
+    let (addr, off) = match loc.split_once('+') {
+        Some((a, o)) if hop => (parse_num(a)?, parse_num(o)?),
+        Some(_) => return Err("+OFF needs a leading *".into()),
+        None => (parse_num(loc)?, 0),
+    };
+    Ok((name.to_string(), Peek { addr, hop, off, len }))
+}
+
+fn read_bytes(rt: &mut CoupledRuntime, addr: u32, len: usize) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(len);
+    let mut a = addr & !3;
+    while out.len() < len + (addr - (addr & !3)) as usize {
+        out.extend_from_slice(&rt.peek32(a)?.to_be_bytes());
+        a = a.wrapping_add(4);
+    }
+    let skip = (addr & 3) as usize;
+    Some(out[skip..skip + len].to_vec())
+}
+
+fn do_peeks(rt: &mut CoupledRuntime, peeks: &[(String, Peek)]) -> Value {
+    let mut m = serde_json::Map::new();
+    for (name, p) in peeks {
+        let base = if p.hop {
+            read_bytes(rt, p.addr, 4)
+                .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]).wrapping_add(p.off))
+        } else {
+            Some(p.addr)
+        };
+        let hex = base
+            .and_then(|a| read_bytes(rt, a, p.len))
+            .map(|b| b.iter().map(|x| format!("{x:02x}")).collect::<String>());
+        m.insert(name.clone(), hex.map_or(Value::Null, Value::from));
+    }
+    Value::Object(m)
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -101,9 +172,11 @@ fn parse_args() -> Result<Args, String> {
         list: false,
         replay: None,
         wav: None,
+        dump_dsp: None,
         audio_mode: AudioMode::default(),
         dsp_patch: None,
         card: None,
+        peeks: Vec::new(),
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -133,7 +206,9 @@ fn parse_args() -> Result<Args, String> {
             "--out" => a.out = Some(value("--out")?.into()),
             "--list" => a.list = true,
             "--replay" => a.replay = Some(value("--replay")?.into()),
+            "--peek" => a.peeks.push(parse_peek(&value("--peek")?)?),
             "--wav" => a.wav = Some(value("--wav")?.into()),
+            "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
             other => return Err(format!("unknown option {other}")),
         }
@@ -620,6 +695,16 @@ fn run_scenario(
         }
     }
     let end = probe(&mut rt)?;
+    let peek = do_peeks(&mut rt, &args.peeks);
+    let dsp_dump = match &args.dump_dsp {
+        Some(base) => {
+            let path = wav_path_for(base, &sc.name);
+            let (blob, dsp_icount) = rt.dsp_export().ok_or("--dump-dsp: no DSP engine")?;
+            std::fs::write(&path, &blob).map_err(|e| format!("{}: {e}", path.display()))?;
+            json!({"path": path, "bytes": blob.len(), "dsp_icount": dsp_icount})
+        }
+        None => Value::Null,
+    };
     let execution_profile = if args.profile_execution {
         let profile = rt
             .execution_profile()
@@ -729,6 +814,8 @@ fn run_scenario(
         },
         "dsp_period_wall": period_histogram(periods),
         "pcm": pcm,
+        "peek": peek,
+        "dsp_dump": dsp_dump,
         "gates": gates,
     }))
 }
@@ -903,6 +990,21 @@ mod tests {
                 detents: -2
             }
         ));
+    }
+
+    #[test]
+    fn peek_specs_parse() {
+        let (n, p) = parse_peek("br=*0x800052a0+0x106:2").unwrap();
+        assert_eq!(n, "br");
+        assert_eq!(
+            p,
+            Peek { addr: 0x8000_52a0, hop: true, off: 0x106, len: 2 }
+        );
+        let (_, p) = parse_peek("x=2147500000:16").unwrap();
+        assert_eq!(p, Peek { addr: 2_147_500_000, hop: false, off: 0, len: 16 });
+        assert!(parse_peek("x=0x10+4:2").is_err());
+        assert!(parse_peek("x=0x10").is_err());
+        assert!(parse_peek("x=0x10:0").is_err());
     }
 
     #[test]

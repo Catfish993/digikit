@@ -373,6 +373,12 @@ impl CoupledRuntime {
     pub fn execution_profile(&self) -> Option<ExecutionProfile> {
         self.audio.as_ref()?.handle.execution_profile()
     }
+    /// The DSP's canonical state blob (`SHRD`, every overlay byte as a range)
+    /// and its instruction count, after every frame sent so far.
+    pub fn dsp_export(&self) -> Option<(Vec<u8>, u64)> {
+        let (blob, icount) = self.audio.as_ref()?.handle.export();
+        (!blob.is_empty()).then_some((blob, icount))
+    }
     /// The native audio health report (includes link timing when enabled).
     pub fn audio_report(&self) -> Option<Value> {
         self.audio.as_ref().map(coupled::AudioSession::report)

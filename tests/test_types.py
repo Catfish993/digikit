@@ -13,6 +13,11 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TYPED = [
+    "tools/audiocheck.py",
+    "tools/fxcheck.py",
+    "tools/dspdiff.py",
+    "tests/test_dspdiff.py",
+    "tests/test_audiocheck.py",
     "tools/benchlock.py",
     "tools/digi_client.py",
     "emu/livesharc.py",

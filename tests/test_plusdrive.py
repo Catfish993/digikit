@@ -641,6 +641,33 @@ class BuiltinProjectTest(unittest.TestCase):
         )
         self.assertEqual(summary["track_slots"][0], 7)
 
+    def test_active_kit_is_the_default_kit_with_sample_refs(self):
+        ref = struct.pack(">IIII", 3, 0x12345679, 0x1000, 3)
+        record, _ = pd.build_project_record(self.main_os, ref)
+        body = record[pd.PROJECT_HEADER_SIZE :]
+        k0 = pd.V3_KITS + pd.ACTIVE_KIT * pd.V3_KIT_SIZE
+        k32 = pd.V3_KITS + pd.DEFAULT_KIT * pd.V3_KIT_SIZE
+        kit0 = bytearray(body[k0 : k0 + pd.V3_KIT_SIZE])
+        kit32 = bytearray(self.container[k32 : k32 + pd.V3_KIT_SIZE])
+        # The kit name stays; the sound data equals the default kit's except
+        # for each track's sample slot and reference copy.
+        self.assertEqual(
+            kit0[: pd.V3_KIT_HEADER], self.container[k0 : k0 + pd.V3_KIT_HEADER]
+        )
+        for t in range(16):
+            o = pd.V3_TRACK0 + t * pd.V3_TRACK_SIZE
+            self.assertEqual(
+                struct.unpack_from(">h", kit0, o + pd.V3_TRACK_SLOT)[0],
+                pd.kit_track_slot(self.container, pd.ACTIVE_KIT, t),
+            )
+            self.assertEqual(kit0[o + pd.V3_TRACK_REF : o + pd.V3_TRACK_REF + 16], ref)
+            for b in (
+                slice(o + pd.V3_TRACK_SLOT, o + pd.V3_TRACK_SLOT + 2),
+                slice(o + pd.V3_TRACK_REF, o + pd.V3_TRACK_REF + 16),
+            ):
+                kit0[b] = kit32[b]
+        self.assertEqual(kit0[pd.V3_KIT_HEADER :], kit32[pd.V3_KIT_HEADER :])
+
     def test_rejects_other_images(self):
         with self.assertRaises(ValueError):
             pd.builtin_project(self.main_os[:-1] + bytes([self.main_os[-1] ^ 1]))

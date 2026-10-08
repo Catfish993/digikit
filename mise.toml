@@ -22,15 +22,15 @@ description = "Install the Python and web dependencies; build the patched Unicor
 # --- desktop emulator ---
 
 [tasks.emu]
-run = "tools/native_emu.py"
+run = "uv run python tools/native_emu.py"
 description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready)"
 
 [tasks."emu:build"]
-run = "tools/native_emu.py --build-only"
+run = "uv run python tools/native_emu.py --build-only"
 description = "Build the desktop emulator exactly as `mise run emu` does, without launching it"
 
 [tasks."emu:serve"]
-run = "tools/native_emu.py --daemon"
+run = "uv run python tools/native_emu.py --daemon"
 description = "Run the emulator without a window, paused, serving the control socket (out/native/run/current.json); drive it with tools/digi_client.py. --free runs it live."
 
 [tasks."emu:ctl"]

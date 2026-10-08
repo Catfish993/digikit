@@ -278,6 +278,12 @@ V3_TRACK_REF = 0x129
 # list "Load all samples" walks) run on the decoded project lists kit 0's
 # track slots first (7, 1, 3, 8, ...), tools/plusdrive_check.py.
 ACTIVE_KIT = 0
+# The built-in project's kit 0 is a factory demo kit ("SOUND 1" tracks with
+# edited FX, compressor on, odd tuning). Kits 32.. are the untouched "PRESET 1"
+# kits that a card-less boot's default kit matches. Kit 0 is rebuilt from kit
+# 32 so the card's live kit starts at the firmware defaults.
+DEFAULT_KIT = 32
+V3_KIT_HEADER = V3_TRACK0  # kit name/header bytes before track 0, kept from kit 0
 
 
 def _u16(v):
@@ -831,6 +837,37 @@ def kit_track_slot(container, kit, track):
     return struct.unpack_from(">h", container, off + V3_TRACK_SLOT)[0]
 
 
+def reset_active_kit(container):
+    """-> container with the active kit's contents (everything after the
+    kit header) replaced by the untouched default kit's, keeping each
+    track's sample slot (+0x64) and its 16-byte reference copy (+0x129) so
+    the sample reference survives. Run after `point_refs_at`."""
+    buf = bytearray(container)
+    dst = V3_KITS + ACTIVE_KIT * V3_KIT_SIZE
+    src = V3_KITS + DEFAULT_KIT * V3_KIT_SIZE
+    keep = []
+    for t in range(16):
+        o = V3_TRACK0 + t * V3_TRACK_SIZE
+        keep.append(
+            (
+                o + V3_TRACK_SLOT,
+                bytes(buf[dst + o + V3_TRACK_SLOT : dst + o + V3_TRACK_SLOT + 2]),
+            )
+        )
+        keep.append(
+            (
+                o + V3_TRACK_REF,
+                bytes(buf[dst + o + V3_TRACK_REF : dst + o + V3_TRACK_REF + 16]),
+            )
+        )
+    buf[dst + V3_KIT_HEADER : dst + V3_KIT_SIZE] = buf[
+        src + V3_KIT_HEADER : src + V3_KIT_SIZE
+    ]
+    for o, data in keep:
+        buf[dst + o : dst + o + len(data)] = data
+    return bytes(buf)
+
+
 def point_refs_at(container, ref):
     """Replace every non-empty reference in the slot table with `ref` (16
     bytes), and every other copy of an old reference anywhere in the
@@ -860,6 +897,7 @@ def build_project_record(main_os, ref, seq=0):
     slots."""
     source = builtin_project(main_os)
     container, slots, copies = point_refs_at(source, ref)
+    container = reset_active_kit(container)
     header = build_project_header(
         PROJECT_HEADER_SIZE, seq=seq, fs_version=SUPERBLOCK_VERSION
     )

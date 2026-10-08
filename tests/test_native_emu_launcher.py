@@ -20,6 +20,12 @@ def pinned_rustc(monkeypatch):
     monkeypatch.setattr(digi_env, "toolchain_rustc", lambda: "/fake/bin/rustc")
 
 
+@pytest.fixture(autouse=True)
+def fresh_gen(monkeypatch):
+    """The fake gen dirs here carry no CORE_FINGERPRINT."""
+    monkeypatch.setenv("DIGI_ALLOW_STALE_GEN", "1")
+
+
 def launcher():
     return runpy.run_path(str(ROOT / "tools/native_emu.py"), run_name="launcher_test")
 

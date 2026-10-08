@@ -21,7 +21,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.11.2",
     "mypy==2.3.1",
+    "numpy>=2.5.3",
     "pytest>=8",
     "ruff==0.16.9",
 ]
@@ -55,3 +57,8 @@ ignore_missing_imports = true
 check_untyped_defs = true
 follow_imports = "silent"
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*", "matplotlib", "matplotlib.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true

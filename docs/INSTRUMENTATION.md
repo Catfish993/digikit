@@ -49,6 +49,16 @@ the default directory for every native `*_OUT` that is unset.
 SHARC_FAST_REGIONS= SHARC_BLOCKTRANS=`. `fastcov` output is read by
 `tools/fastcov.py` (`Diag`); `perf.py` and `fastcov.py` run it themselves.
 
+DSP memory dumps: `uv run python tools/coupled.py scenario NAME --dump-dsp` (or
+`coupled-run --dump-dsp PATH`) writes the DSP's canonical state blob (`SHRD`,
+every byte written since the image, as ranges; the format of
+`tools/sharc_diff.py`) to `<run>/dsp-<scenario>.bin` at the end of the run.
+`tools/dspdiff.py A B [C..] [--image dn2-1.11] [--ignore-volatile --noise X Y]`
+lists the differing words per range with float32 values and the functions that
+reference them. Runs are deterministic, so two dumps of one scenario are equal
+and scenarios with identical event times give dumps at the same DSP instruction
+count.
+
 Not in `--diag` (set the variable by hand): `SHARC_LIVE_AOT_CAPTURE_PC/_DIR/_LIMIT`
 (raw block-call snapshots), `SHARC_FAST_DUMP_ALL`, `SHARC_TRAP_REGS` (registers
 not fully known at a trap), `SHARC_FAST_KEYS` (with `SHARC_FAST_COV`),

@@ -13,6 +13,12 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/audiocheck.py",
+    "tools/fxcheck.py",
+    "tools/dspdiff.py",
+    "tests/test_dspdiff.py",
+    "tests/test_audiocheck.py",
+    "tests/test_gen_fingerprint.py",
     "tools/benchlock.py",
     "tools/digi_client.py",
     "tests/test_digi_client.py",
@@ -51,6 +57,7 @@ CLEAN = [
     "tests/test_sharc_circular_buffers.py",
     "tests/test_sharc_conditional_move.py",
     "tests/test_sharc_conditional_shift.py",
+    "tests/test_sharc_simd_shift.py",
     "tests/test_sharc_register_banks.py",
     "tests/test_sharc_rsgen_model_safe.py",
     "tools/autoevents.py",

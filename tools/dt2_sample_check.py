@@ -131,7 +131,9 @@ def main(argv: list[str] | None = None) -> int:
         import coupled
     finally:
         sys.path.pop(0)
-    binary = coupled.ensure_binary(not a.rebuild)
+    binary = coupled.ensure_binary(
+        not a.rebuild, "dt2", ready_dir / "digi-audio-dn2-image.bin"
+    )
     wav = work / "trig.wav"
     env = {**os.environ, "SHARC_FAST_REGIONS": ""}
     subprocess.run(

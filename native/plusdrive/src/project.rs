@@ -15,6 +15,16 @@ const CONTAINER_END_OFFSET: usize = 0x00c3_e400;
 const CONTAINER_END_MAGIC: u32 = 0xbace_f00c;
 const REF_TABLE_OFFSET: usize = 0x00c2_d6fb;
 const REF_COUNT: usize = 1024;
+const KITS_OFFSET: usize = 0x00ae_0200;
+const KIT_SIZE: usize = 0x2800;
+const KIT_HEADER: usize = 0x3c;
+const TRACK_SIZE: usize = 0x155;
+const TRACK_SLOT: usize = 0x64;
+const TRACK_REF: usize = 0x129;
+/// Kit 0 of the built-in project is a factory demo kit; kit 32 is an
+/// untouched default kit, which a card-less boot's kit matches.
+const ACTIVE_KIT: usize = 0;
+const DEFAULT_KIT: usize = 32;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ProjectSeed<'a> {
@@ -156,6 +166,25 @@ fn point_refs_at(
     ))
 }
 
+/// Replaces the active kit (after its header) with the default kit, keeping
+/// every track's sample slot and reference copy. Run after `point_refs_at`.
+fn reset_active_kit(container: &mut [u8]) {
+    let dst = KITS_OFFSET + ACTIVE_KIT * KIT_SIZE;
+    let src = KITS_OFFSET + DEFAULT_KIT * KIT_SIZE;
+    let mut keep: Vec<(usize, Vec<u8>)> = Vec::new();
+    for track in 0..16 {
+        let at = KIT_HEADER + track * TRACK_SIZE;
+        for (field, len) in [(TRACK_SLOT, 2), (TRACK_REF, 16)] {
+            let from = dst + at + field;
+            keep.push((from, container[from..from + len].to_vec()));
+        }
+    }
+    container.copy_within(src + KIT_HEADER..src + KIT_SIZE, dst + KIT_HEADER);
+    for (at, data) in keep {
+        container[at..at + data.len()].copy_from_slice(&data);
+    }
+}
+
 pub fn build_project_record(
     seed: ProjectSeed<'_>,
     reference: [u8; 16],
@@ -165,7 +194,8 @@ pub fn build_project_record(
         return Err(ProjectError::InvalidReference);
     }
     let source = extract(seed)?;
-    let (container, report) = point_refs_at(source, reference)?;
+    let (mut container, report) = point_refs_at(source, reference)?;
+    reset_active_kit(&mut container);
     let mut record = build_project_header(PROJECT_HEADER_SIZE, sequence, 4)
         .map_err(|_| ProjectError::OutputOverflow)?;
     record.extend_from_slice(&container);
