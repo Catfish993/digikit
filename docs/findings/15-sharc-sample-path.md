@@ -740,3 +740,21 @@ one run, not yet compared with a device.
   inaudible. **[O]** against hardware.
 - Master compressor: Dry/Wet 127 with default settings +4.0 dB on the held
   sine; Threshold 0 -7.3 dB; Ratio 7 -12.5 dB; Makeup 127 +15.9 dB.
+
+Against the Digitone II manual (OS 1.12, section 12.2, p.65-66; the
+manual says "Digitone II", the emulated firmware is 1.11):
+
+- Delay TIME is in 128th notes at the current BPM. 24 = 1/8. (dotted) and
+  128 = one bar. The measured spacing, (value/256 + 1) x 15.625 ms at 120
+  BPM, matches the manual exactly. **[V]**
+- With X (ping-pong) OFF, WID sets the stereo position of the delay
+  signal. The emulator puts it hard left at the minimum and hard right at
+  the maximum, which is correct. With X ON the delay alternates left and
+  right, and WID sets how far. **[V]**
+- FDBK: "with higher parameter settings, infinite and/or swelling delays
+  are possible". The emulator swells above about 64 and saturates near
+  -3 dBFS. On the desktop app (2026-10-08), Em heard it run away above
+  about 100 and stall before it swells again. The offline render shows the
+  same steps. The manual gives no threshold. **[O]**
+- The manual says nothing about the taper of the mix volume or the sends.
+  They measure as value squared. **[O]**
