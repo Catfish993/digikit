@@ -231,11 +231,14 @@ state.
       `tools/coupled.py` into a shared module; `coupled.py` keeps its CLI.
 - [ ] `tools/scenario_dsl.py`: builders that emit scenario JSON
       (`trig(n)`, `fx_page()`, `turn(enc, n)`, per-FX setters).
-- [ ] `tests/scenarios/conftest.py`: session fixture `emulator(device)`;
+- [x] `tests/scenarios/conftest.py`: session fixture `emulator(device)`;
       skip when the ready inputs are missing or the firmware hash differs;
       `--diag` and `--update-baselines` options; runs kept in
-      `out/runs/<scenario>/<stamp>/`.
-- [ ] mise task `scenarios:check` running `pytest tests/scenarios`.
+      `out/runs/<scenario>/<stamp>/`. Done except: the firmware hash is not
+      compared and there is no `--update-baselines` (no baselines yet); runs
+      go to `out/runs/tests/<stamp>/<file>-<n>/`; `coupled.run_batch` is the
+      library entry; fixture `render`; options `--sweep`, `--keep-runs`.
+- [x] mise tasks `scenarios:check` (fast subset) and `scenarios:sweep`.
 - [ ] Test: PCM is identical with and without `--diag`.
 
 ### Phase 5: FX verdicts on DT2 (M)
@@ -350,3 +353,12 @@ state.
   in `tools/fxcheck.py`, three new generic measures in `tools/audiocheck.py`.
   Runs: `out/runs/sendfx/run1..run3`. Open: Master Overdrive page, routing
   parameters, hardware A/B for feedback gain, mix taper and Width.
+
+Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools/native_wasm.py (coupled browser core), tools/rust_ws.py, tools/sharc_regionbench.py (cmd_build), tools/sharc_build_dbg.py, tools/native_pgo.py (cmd_build), on top of coupled.py, native_emu.py and native_pgo.py require_inputs.
+- 2026-10-08 (cont.): Phase 4 oracle suite: `tests/scenarios/` (conftest
+  `emulator`/`render` fixtures, `test_dn2_fx.py`), `coupled.run_batch`,
+  `fxcheck.reference_for`/`companions`, mise `scenarios:check` (61 tests, 173 s)
+  and `scenarios:sweep` (191 tests, about 24 min). All pass; one false growth
+  alarm (sf-del-time-u127: an echo in the last tenth of the run) is checked by
+  peak instead. Not done: PCM-identical-with-`--diag` test, shared module
+  refactor, `--update-baselines`.

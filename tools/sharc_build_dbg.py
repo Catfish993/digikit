@@ -18,6 +18,7 @@ import digi_env  # noqa: E402
 import native_target  # noqa: E402
 
 gen = coupled.generated()
+digi_env.check_generated(gen)
 target = native_target.target_dir(gen, variant="dbg")
 env = {**digi_env.rust_env(), "SHARC_GEN_DIR": str(gen), "CARGO_PROFILE_RELEASE_DEBUG": "line-tables-only"}
 cmd = coupled.cargo(

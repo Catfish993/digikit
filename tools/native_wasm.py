@@ -53,6 +53,8 @@ if generated and not pathlib.Path(generated).is_dir():
 if args.sharc and args.cf_only:
     raise SystemExit("--sharc and --cf-only cannot be used together")
 coupled = bool(generated) and not args.cf_only
+if coupled:
+    digi_env.check_generated(pathlib.Path(generated))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import native_target  # noqa: E402
 

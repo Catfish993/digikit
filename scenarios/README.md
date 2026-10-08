@@ -48,3 +48,45 @@ only valid for the firmware and ready snapshot they were recorded with.
 
 `out/runs/<scenario>/<UTC stamp>/report.json` (or `--out`), plus `audio.wav` with
 `--wav`. The report lists, per scenario, the PCM hash, RMS windows and gates.
+
+## Oracle tests
+
+`tests/scenarios/` renders DN2 FX scenarios headless and asserts relationships
+that were measured (docs/findings/15) and checked against the manual, so a
+translator or performance change cannot silently break an effect. All of it is
+marked `slow`, so plain `pytest tests` skips it.
+
+```
+mise run scenarios:check      # fast subset (61 tests, about 3 min)
+mise run scenarios:sweep      # plus the full sweeps (every tf-* and sf-* scenario)
+uv run python -m pytest tests/scenarios --slow -k delay      # only what you select is rendered
+```
+
+Options: `--diag LIST` (as `coupled.py --diag`), `--keep-runs` (keep the WAVs;
+by default they are deleted at the end), `--device`, `--sweep` (or `-m sweep`).
+Runs go to `out/runs/tests/<stamp>/<file>-<n>/` (report, WAVs, `fxcheck.json`,
+logs); the path is printed. The tests skip, with the reason, when the ready
+inputs, the generated core or the MAIN OS image are missing.
+
+Every scenario restores the ready snapshot, so nothing is shared. The session
+fixture `emulator` builds `coupled-run` once. The fixture `render(name, ...)`
+returns `Rendered` objects (rate, `x`, report entry, decoded read-back, the
+`tools/fxcheck.py` row) and renders all scenarios that the selected tests
+declare with `@pytest.mark.scn(...)` in one `coupled-run` process per scenario
+file, together with their dry references (`fxcheck.reference_for`).
+
+Asserted: the read-back of the intended parameter and no other stored
+parameter changed; controls at 0 are bit-identical to dry; L == R for mono
+chains; delay spacing (TIME + 1) x 15.625 ms (2 ms), one echo at feedback 0,
+-6 dB per repeat at the default (1 dB), WID minimum puts the delay in L
+(R 40 dB lower); bit reduction and overdrive error rise, SRR effective rate
+falls, reverb RT60 rises with decay, chorus rate rises with speed and L/R
+decorrelate with width; every scenario is finite, DC below 1e-3 and bounded
+(growth only where the feedback is above unity).
+
+Add a test: put the scenario in `scenarios/dn2-*.json` (generators in
+`tools/gen_*.py`), add its name to the fast or sweep list in
+`tests/scenarios/test_dn2_fx.py` (`params(...)`, `series(...)`, or a
+`@pytest.mark.scn(name)` on the test), and assert on `render(name).row`
+(a measure from `tools/fxcheck.py`; add new measures there, not in the test).
+A known-bad case gets `xfail(strict=True)`.

@@ -413,6 +413,7 @@ def main() -> int:
                  "--work", str(core.parent / "work")],
                 cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
             )  # fmt: skip
+        digi_env.check_generated(core)
         os.environ["SHARC_GEN_DIR"] = str(core)
     if args.device == "dt2":
         use_dt2(args)

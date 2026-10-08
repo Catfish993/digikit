@@ -291,6 +291,50 @@ def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
     return done.returncode
 
 
+def run_batch(
+    device: str,
+    scenarios_file: pathlib.Path | str,
+    names: list[str],
+    run_dir: pathlib.Path | str,
+    peeks: tuple[str, ...] | list[str] = (),
+    diag: str | None = None,
+    binary: pathlib.Path | None = None,
+    no_build: bool = False,
+) -> dict:
+    """Render ``names`` of a scenario file in one coupled-run process into
+    ``run_dir`` (report.json, audio-<name>.wav, logs/) and return the parsed
+    report. ``peeks`` are ``NAME=SPEC`` guest reads at the end of each scenario
+    (``--peek``). Raises RuntimeError when coupled-run fails to run (exit 1 or
+    no report); exit 2 (failed gate or pin) still returns the report, whose
+    ``gates`` say which. ``binary`` skips the build step."""
+    parsed = digi_env.parse_diag(diag or "")
+    if binary is None:
+        binary = ensure_binary(no_build, device)
+    run_dir = pathlib.Path(run_dir)
+    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
+    out = run_dir / "report.json"
+    extra = ["--scenarios", str(pathlib.Path(scenarios_file).resolve())]
+    for name in names:
+        extra += ["--scenario", name]
+    extra += ["--out", str(out), "--wav", str(run_dir / "audio.wav")]
+    for spec in peeks:
+        extra += ["--peek", spec]
+    argv = run_args(binary, inputs(device), extra)
+    env = run_env(digi_env.diag_env(parsed, run_dir))
+    with (
+        (run_dir / "logs" / "stdout.log").open("wb") as stdout,
+        (run_dir / "logs" / "stderr.log").open("wb") as stderr,
+    ):
+        done = subprocess.run(
+            argv, cwd=ROOT, env=env, stdout=stdout, stderr=stderr, check=False
+        )
+    if done.returncode not in (0, 2) or not out.is_file():
+        raise RuntimeError(
+            f"coupled-run failed ({done.returncode}); see {run_dir / 'logs'}"
+        )
+    return read_report(out)
+
+
 def cmd_build(args) -> int:
     binary = build(getattr(args, "device", "dn2"))
     print(binary)

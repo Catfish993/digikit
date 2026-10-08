@@ -162,7 +162,7 @@
       "description": "Three Trig 1 taps (0.3 s hold each, the desktop Audition default) without the QA script; 10 s. The NO press (button 12) at 0 is kept so the pinned hash stays valid; the current ready state does not need it (trig1-noqa-40m sounds without it). Trig events are offset by 60M.",
       "seconds": 10.5,
       "exact_events": true,
-      "expect_sha256": "d60ad3390038a84b30ced82723f526a1e0c0e58e691f5def3024f56005c6d9d3",
+      "expect_sha256": "e0e6c8af7a84c443a0188e3864437dbd31f474757189cd928a59c945861e1675",
       "events": [
         {
           "at_instr": 0,

@@ -225,6 +225,30 @@ def load_run(d: pathlib.Path) -> dict[str, tuple[dict, pathlib.Path]]:
     return out
 
 
+def reference_for(name: str, hold: float | None) -> str:
+    """Dry reference scenario of ``name`` (the Trig 1 hold decides tap or hold)."""
+    held = (hold or 0) > 1
+    if name.startswith("sf-"):
+        return "sf-dry-hold" if held else "sf-dry-tap"
+    if name.startswith("tf-"):
+        if "-flt" in name:
+            return "tf-dry-flt"
+        return "tf-dry-hold" if held else "tf-dry-tap"
+    return "fx-dry-tap"
+
+
+def companions(name: str) -> list[str]:
+    """Scenarios ``check`` also needs to analyse ``name``: the send page's
+    reference (read-back diff) and the routing-0 partner of a '-rt1' run."""
+    fx, param, _ = sf_name(name)
+    out = []
+    if fx in ("del", "rev", "chr") and param != "ref":
+        out.append(f"sf-{fx}-ref")
+    if name.startswith("tf-") and name.endswith("-rt1"):
+        out.append(name.removesuffix("-rt1"))
+    return out
+
+
 # --- read-back by parameter name ----------------------------------------------
 
 # Owners whose values live in the kit's Fx array; the owners of the Sound array
@@ -767,20 +791,7 @@ def check(
     refs: dict[str, str] = {}
     for name in loaded:
         hold = hold_seconds(evs.get(name, []))
-        if ref_name:
-            refs[name] = ref_name
-        elif name.startswith("sf-"):
-            refs[name] = "sf-dry-hold" if (hold or 0) > 1 else "sf-dry-tap"
-        elif name.startswith("tf-"):
-            refs[name] = (
-                "tf-dry-flt"
-                if "-flt" in name
-                else "tf-dry-hold"
-                if (hold or 0) > 1
-                else "tf-dry-tap"
-            )
-        else:
-            refs[name] = "fx-dry-tap"
+        refs[name] = ref_name or reference_for(name, hold)
     refw_cache: dict[str, dict[str, Any]] = {}
     for name, (d, sc, rate, x) in loaded.items():
         t0 = onset(x, rate)

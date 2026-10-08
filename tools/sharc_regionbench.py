@@ -29,6 +29,7 @@ import argparse
 import hashlib
 import json
 import os
+import pathlib
 import re
 import shlex
 import statistics
@@ -236,6 +237,7 @@ def cmd_build(args) -> str:
     gen = PROD_GEN if getattr(args, "prod_gen", False) else os.path.join(vdir, "gen")
     if not os.path.isdir(gen):
         sys.exit("no gen for variant %s: run gen first" % args.variant)
+    digi_env.check_generated(pathlib.Path(gen))
     src = tree_files(os.path.join(ROOT, "native", "sharc", "src"), (".rs",))
     src += [
         os.path.join(ROOT, "native", "sharc", "examples", "region_bench.rs"),

@@ -85,6 +85,14 @@ depends = ["scenario:build"]
 run = "uv run python tools/coupled.py scenario --all --no-build"
 description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python tools/coupled.py scenario --all --device dt2"
 
+[tasks."scenarios:check"]
+run = "uv run python -m pytest tests/scenarios --slow -q"
+description = "Oracle tests: render the DN2 FX scenarios headless and assert measured relationships (fast subset, about 3 min)"
+
+[tasks."scenarios:sweep"]
+run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
+description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
+
 [tasks.scenario]
 run = "uv run python tools/coupled.py scenario"
 description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"

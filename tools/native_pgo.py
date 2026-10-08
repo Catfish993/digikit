@@ -1098,6 +1098,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 def cmd_build(args: argparse.Namespace) -> None:
     """Plain release coupled test binary for a generated core (SHARC_GEN_DIR)."""
     gen = pathlib.Path(args.gen).resolve()
+    digi_env.check_generated(gen)
     target = (
         pathlib.Path(args.target_dir).resolve()
         if args.target_dir

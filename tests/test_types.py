@@ -19,6 +19,8 @@ TYPED = [
     "tools/scenario_dsl.py",
     "tools/gen_trackfx.py",
     "tools/gen_sendfx.py",
+    "tests/scenarios/conftest.py",
+    "tests/scenarios/test_dn2_fx.py",
     "tests/test_trackfx.py",
     "tests/test_sendfx.py",
     "tools/dspdiff.py",
