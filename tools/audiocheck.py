@@ -10,6 +10,11 @@ detector is tested on synthetic signals in tests/test_audiocheck.py.
     levels               distinct values on a ramp, effective bit depth
     spectrum, peaks      Hann spectrum (dB, full-scale sine = 0) and its peaks
     alias_products       expected images of a sine held at a lower rate
+    tone_harmonics       harmonic levels of a decaying tone (least squares)
+    image_search         effective sample rate from alias images of a sine
+    modulation_rate      rate of a slow L-R / phase modulation
+    autocorr_spacing     repeat spacing of an envelope (echo time)
+    plot_spectrum        spectrum PNG with marked frequencies
 
     uv run python tools/audiocheck.py RUN_DIR_OR_WAV [--no-plots]
 
@@ -242,6 +247,165 @@ def alias_products(f0: float, srr_rate: float, rate: float = RATE) -> list[float
     return sorted(out)
 
 
+def tone_harmonics(
+    x: F,
+    rate: int,
+    f0: float,
+    kmax: int = 10,
+    search: float = 1.5,
+    order: int = 4,
+) -> dict[str, object]:
+    """Least-squares fit of harmonics 1..kmax of a tone near f0 (searched +-search
+    Hz in 0.05 Hz steps on the fundamental), each with a polynomial amplitude
+    envelope of ``order`` terms, so a decaying note is not counted as noise.
+    Returns f0_hz, power (mean square of each harmonic, index 0 = fundamental),
+    resid_ms (mean square of what is left: noise, quantisation, aliasing) and
+    residual (the array). Peak sine amplitude A has mean square A**2 / 2."""
+    m = _mono(x)
+    t = np.arange(len(m)) / rate
+    u = np.linspace(-1, 1, len(m))
+
+    def fit(f: float, k: int) -> tuple[F, F, F]:
+        cols = []
+        for h in range(1, k + 1):
+            for j in range(order):
+                cols.append(np.cos(2 * np.pi * h * f * t) * u**j)
+                cols.append(np.sin(2 * np.pi * h * f * t) * u**j)
+        a = np.stack(cols, axis=1)
+        c, *_ = np.linalg.lstsq(a, m, rcond=None)
+        return a, c, m - a @ c
+
+    best = min(
+        np.arange(f0 - search, f0 + search, 0.05),
+        key=lambda f: float(np.sum(fit(float(f), 1)[2] ** 2)),
+    )
+    a, c, res = fit(float(best), kmax)
+    w = 2 * order
+    power = [
+        float(np.mean((a[:, h * w : (h + 1) * w] @ c[h * w : (h + 1) * w]) ** 2))
+        for h in range(kmax)
+    ]
+    return {
+        "f0_hz": float(best),
+        "power": power,
+        "resid_ms": float(np.mean(res**2)),
+        "residual": res,
+    }
+
+
+def image_search(
+    res: F,
+    rate: int,
+    f0: float,
+    lo: float = 400.0,
+    hi: float = 47500.0,
+    step: float = 5.0,
+    n_img: int = 6,
+    top: int = 3,
+) -> list[tuple[float, float]]:
+    """Effective sample rate fs of a sine f0 held at fs, from the spectrum of the
+    residual ``res`` (the signal without its harmonics of f0): the candidates
+    fs (Hz) on a grid whose first n_img images k*fs +- f0 (folded to the
+    output band) hold the most energy relative to the median bin. Returns the
+    best ``top`` as (fs, score in dB), best first, with candidates closer than
+    50 Hz to a better one dropped. fs and rate - fs give the same images when
+    only the pair k = 1 is present; the k = 2 images tell them apart."""
+    m = _mono(res)
+    spec = np.abs(np.fft.rfft(m * np.hanning(len(m)))) ** 2
+    df = rate / len(m)
+    floor = float(np.median(spec)) + 1e-30
+
+    def level(f: float) -> float:
+        i = int(round(f / df))
+        return float(spec[max(i - 1, 0) : i + 2].max())
+
+    cands = []
+    for fs in np.arange(lo, hi, step):
+        imgs = []
+        for k in range(1, n_img):
+            for f in (k * fs - f0, k * fs + f0):
+                f %= rate
+                imgs.append(rate - f if f > rate / 2 else f)
+            if len(imgs) >= n_img:
+                break
+        imgs = sorted(set(round(f, 1) for f in imgs))[:n_img]
+        score = 10 * math.log10(np.mean([level(f) for f in imgs]) / floor)
+        cands.append((float(fs), score))
+    cands.sort(key=lambda c: -c[1])
+    out: list[tuple[float, float]] = []
+    for fs, sc in cands:
+        if all(abs(fs - o) > 50 for o, _ in out):
+            out.append((fs, sc))
+        if len(out) == top:
+            break
+    return out
+
+
+def autocorr_spacing(
+    env_db: F, hop_s: float, lo_s: float = 0.1, hi_s: float = 1.5, rises: bool = False
+) -> tuple[float, float]:
+    """Repeat spacing (s) of an envelope given in dB at one value per hop_s: the
+    lag in lo_s..hi_s with the highest normalised autocorrelation of the linear
+    amplitude with its mean removed, and that correlation (1 = identical).
+    With rises=True only the upward steps of the amplitude are correlated, so
+    overlapping echoes that each start a new step (a delay line fed a sine
+    note) still give their start spacing."""
+    a = 10 ** (np.clip(env_db, -120, None) / 20)
+    a = np.maximum(np.diff(a), 0) if rises else a
+    a = a - a.mean()
+    n = len(a)
+    f = np.fft.rfft(a, 2 * n)
+    ac_ = np.fft.irfft(f * np.conj(f))[:n]
+    if ac_[0] <= 0:
+        return math.nan, 0.0
+    ac_ = ac_ / ac_[0]
+    i0, i1 = int(lo_s / hop_s), min(int(hi_s / hop_s) + 1, n - 1)
+    if i1 <= i0:
+        return math.nan, 0.0
+    k = i0 + int(np.argmax(ac_[i0:i1]))
+    return k * hop_s, float(ac_[k])
+
+
+def modulation_rate(
+    x: F, rate: int, f0: float, lo_hz: float = 0.2, hi_hz: float = 20.0
+) -> dict[str, float]:
+    """Rate (Hz) of a slow modulation between the two channels of a sine near f0.
+    The L/R phase difference of the analytic signals (unwrapped, mean removed)
+    is analysed for its strongest frequency in lo_hz..hi_hz, as is the
+    envelope of the analytic L-R (phase_dev is the peak-to-peak phase in rad).
+    Needs a window of at least two periods of the modulation; NaN when the two
+    channels are identical."""
+    if x.shape[1] < 2:
+        return {"phase_hz": math.nan, "env_hz": math.nan, "phase_dev": 0.0}
+
+    def analytic(v: F) -> NDArray[np.complex128]:
+        f = np.fft.fft(v)
+        h = np.zeros(len(v))
+        h[0] = 1
+        h[1 : (len(v) + 1) // 2] = 2
+        if len(v) % 2 == 0:
+            h[len(v) // 2] = 1
+        return np.fft.ifft(f * h)
+
+    def peak_hz(sig: F) -> float:
+        sig = sig - sig.mean()
+        if not np.any(sig):
+            return math.nan
+        sp = np.abs(np.fft.rfft(sig * np.hanning(len(sig)), 8 * len(sig)))
+        fr = np.fft.rfftfreq(8 * len(sig), 1 / rate)
+        band = (fr >= lo_hz) & (fr <= hi_hz)
+        return float(fr[band][np.argmax(sp[band])]) if band.any() else math.nan
+
+    a, b = analytic(x[:, 0]), analytic(x[:, 1])
+    ph = np.unwrap(np.angle(a * np.conj(b)))
+    env = np.abs(analytic(x[:, 0] - x[:, 1]))
+    return {
+        "phase_hz": peak_hz(ph),
+        "env_hz": peak_hz(env),
+        "phase_dev": float(np.ptp(ph)),
+    }
+
+
 def analyse(x: F, rate: int) -> dict[str, object]:
     """Always-on features, JSON-serialisable: basic, lr_diff (max_abs,
     rel_db or None when identical) and the envelope peak (dB, time in s)."""
@@ -296,6 +460,31 @@ def plots(x: F, rate: int, out_dir: str | pathlib.Path) -> list[pathlib.Path]:
     ax.set(xlabel="s", ylabel="Hz", title="spectrogram")
     save(fig, "spectrogram.png")
     return paths
+
+
+def plot_spectrum(
+    x: F,
+    rate: int,
+    path: str | pathlib.Path,
+    marks: list[float] | None = None,
+    title: str = "spectrum",
+) -> None:
+    """Write a spectrum PNG (dB, full-scale sine = 0) of x; ``marks`` are
+    frequencies (Hz) drawn as vertical lines."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fr, sp = spectrum(x, rate)
+    fig, ax = plt.subplots(figsize=(10, 3.5))
+    for f in marks or []:
+        ax.axvline(f, color="tab:red", lw=0.5, alpha=0.5)
+    ax.plot(fr, sp, lw=0.6)
+    ax.set(xlabel="Hz", ylabel="dB FS", title=title, ylim=(-140, 0))
+    ax.grid(alpha=0.3)
+    fig.savefig(path, dpi=100, bbox_inches="tight")
+    plt.close(fig)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -15,6 +15,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TYPED = [
     "tools/audiocheck.py",
     "tools/fxcheck.py",
+    "tools/paramtable.py",
+    "tools/scenario_dsl.py",
+    "tools/gen_trackfx.py",
+    "tests/test_trackfx.py",
     "tools/dspdiff.py",
     "tests/test_dspdiff.py",
     "tests/test_audiocheck.py",

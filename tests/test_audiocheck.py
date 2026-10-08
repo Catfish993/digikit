@@ -145,3 +145,53 @@ def test_analyse_json(tmp_path: pathlib.Path) -> None:
     feats = ac.analyse(sine(1000, 0.2), R)
     json.dumps(feats, allow_nan=False)
     assert feats["lr_diff"]["rel_db"] is None  # type: ignore[index]
+
+
+def test_tone_harmonics_levels() -> None:
+    x = sine(261.6, 0.3, 0.5)
+    x = x + sine(3 * 261.6, 0.3, 0.05)  # 3rd harmonic 20 dB down
+    h = ac.tone_harmonics(x, R, 261.6, kmax=6)
+    p = h["power"]
+    assert abs(10 * math.log10(p[2] / p[0]) + 20) < 0.5  # type: ignore[index]
+    assert 10 * math.log10(p[1] / p[0]) < -60  # type: ignore[index]
+
+
+def test_image_search_finds_held_rate() -> None:
+    fs = 12000.0
+    n = int(0.3 * R)
+    t = np.arange(n) / R
+    held = np.sin(2 * np.pi * 261.6 * (np.floor(t * fs) / fs))  # zero-order hold
+    h = ac.tone_harmonics(held[:, None], R, 261.6, kmax=1)
+    cands = ac.image_search(h["residual"][:, None], R, 261.6)  # type: ignore[index]
+    assert abs(cands[0][0] - fs) < 30
+
+
+def test_autocorr_spacing() -> None:
+    hop = 0.005
+    e = np.full(800, -90.0)
+    for k in range(4):
+        e[20 + k * 75 : 40 + k * 75] = -20.0 - 6 * k  # 0.375 s apart
+    sp, corr = ac.autocorr_spacing(e, hop, 0.1, 1.5)
+    assert abs(sp - 0.375) < 0.011
+    assert corr > 0.3
+
+
+def test_modulation_rate() -> None:
+    t = np.arange(int(2.0 * R)) / R
+    f0, fm = 261.6, 1.5
+    left = np.sin(2 * np.pi * f0 * t + 2 * np.sin(2 * np.pi * fm * t))
+    right = np.sin(2 * np.pi * f0 * t)
+    m = ac.modulation_rate(np.stack([left, right], axis=1), R, f0)
+    assert abs(m["phase_hz"] - fm) < 0.2
+    mono = ac.modulation_rate(np.stack([right, right], axis=1), R, f0)
+    assert math.isnan(mono["phase_hz"]) or mono["phase_dev"] < 1e-6
+
+
+def test_autocorr_spacing_rises() -> None:
+    # Overlapping echoes: each starts a step up, blocks are longer than the spacing.
+    hop = 0.005
+    amp = np.zeros(800)
+    for k in range(5):
+        amp[20 + k * 75 : 20 + k * 75 + 90] += 0.5**k
+    sp, _ = ac.autocorr_spacing(20 * np.log10(amp + 1e-9), hop, 0.1, 1.5, rises=True)
+    assert abs(sp - 0.375) < 0.011

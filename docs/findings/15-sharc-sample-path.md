@@ -599,9 +599,9 @@ harmonic below -127 dB. That is symmetric saturation, consistent with the
 kit's master overdrive at 0x7f00. It has not been checked by setting the
 overdrive to 0. **[O]**
 
-## SIMD Type 6 and BIT TST ran in PEx only (DN2 delay send had no effect)
+## SIMD Type 6 and BIT TST ran in PEx only (DN2 delay send had no effect) **[V][C]**
 
-**[D]** On DN2 1.11 the delay send did nothing. `FUN_b84099` (a saturator over
+On DN2 1.11 the delay send did nothing. `FUN_b84099` (a saturator over
 two 32-word blocks) sets MODE1.PEYEN at 0xb840d2, loads `R2 = DM(I6-4)`
 (0x10), runs `btst` bit 0 at 0xb84225 and then `JUMP IF SZ` to 0xb84240 at
 0xb84228. Our core ran the `btst` (Type 6b) in PEx only: ASTATX.SZ was set,
@@ -672,3 +672,32 @@ DN2 scenario pins after the fix: only the two scenarios that hit the fixed forms
 moved. `trig1-taps` `d60ad339` -> `e0e6c8af` (rms 0.01038 -> 0.01007, -3 %),
 `kb-chord16` (unpinned) `e0964600` -> `6d97fd57` (rms 0.10607 -> 0.10178,
 -4 %). The `trig1-taps` pin in `scenarios/dn2.json` is not updated yet.
+
+Second check, 2026-10-08: an independent agent confirmed the manual
+statements in the SHARC+ Core Programming Reference:
+
+- shift immediates are valid for both PEs (p.3-39);
+- Type 6a runs in both PEs, each under its own condition, with the PEy
+  access at Ia+k and no modify (p.13-43); the no-memory form follows on the
+  next page;
+- a SIMD branch is taken only when the condition is true in PEx and PEy
+  (p.4-62);
+- BIT TST tests both registers of a complementary pair (p.4-55).
+
+It also matched the implementation against them, and decoded 0xb840d2,
+0xb84225 and 0xb84228 from the DN2 1.11 image as stated above. The
+track-FX sweep (`scenarios/dn2-trackfx.json`, `tools/fxcheck.py`) then
+measured the delay with the fix: echoes 0.375 s apart, each about 6 dB
+quieter than the one before.
+
+Three limits remain, all conservative stops that never give a wrong result:
+
+- a 6a memory form whose condition differs between the PEs stops;
+- a SIMD bit-FIFO shift raises an error, because the manual requires SIMD
+  off for it;
+- PX1/2 is not reachable through 18a.
+
+`test_native_conditional_shift_matches_reference` fails with
+`dlsym sharc_native_profile`. The native library it loads is stale; the
+failure does not come from this change.
+
