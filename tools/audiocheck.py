@@ -14,6 +14,9 @@ detector is tested on synthetic signals in tests/test_audiocheck.py.
     image_search         effective sample rate from alias images of a sine
     modulation_rate      rate of a slow L-R / phase modulation
     autocorr_spacing     repeat spacing of an envelope (echo time)
+    segment_stats        per-segment level, L/R balance, centroid, bands
+    first_above, rt60_slope   wet onset time; decay time from an envelope slope
+    inst_freq_dev        frequency deviation, rate and delay swing of a sine
     plot_spectrum        spectrum PNG with marked frequencies
 
     uv run python tools/audiocheck.py RUN_DIR_OR_WAV [--no-plots]
@@ -404,6 +407,99 @@ def modulation_rate(
         "env_hz": peak_hz(env),
         "phase_dev": float(np.ptp(ph)),
     }
+
+
+def segment_stats(
+    x: F,
+    rate: int,
+    starts: list[float],
+    length: float,
+    edges: tuple[float, ...] = (0, 300, 1000, 3000, 8000, 24001),
+) -> list[dict[str, float]]:
+    """Per segment (start in s, length in s, Hann window): rms_db (mean of the
+    channels' mean squares, re full scale), lr_db (10 log10 of left over right
+    energy, NaN for mono or silence), centroid_hz (power-weighted mean
+    frequency of both channels) and band_db (energy per band between edges)."""
+    out = []
+    for s in starts:
+        seg = x[int(s * rate) : int((s + length) * rate)]
+        if len(seg) < 64:
+            out.append({"rms_db": math.nan, "lr_db": math.nan, "centroid_hz": math.nan})
+            continue
+        w = np.hanning(len(seg))[:, None]
+        p = np.abs(np.fft.rfft(seg * w, axis=0)) ** 2
+        fr = np.fft.rfftfreq(len(seg), 1 / rate)
+        tot = float(p.sum())
+        e = np.mean(seg**2, axis=0)
+        lr = (
+            10 * math.log10(max(float(e[0]), 1e-30) / max(float(e[1]), 1e-30))
+            if seg.shape[1] > 1 and float(e.sum()) > 1e-20
+            else math.nan
+        )
+        rec: dict[str, float] = {
+            "rms_db": 10 * math.log10(max(float(e.mean()), 1e-30)),
+            "lr_db": lr,
+            "centroid_hz": float((p.sum(axis=1) * fr).sum() / tot)
+            if tot > 0
+            else math.nan,
+        }
+        for lo, hi in zip(edges, edges[1:], strict=False):
+            sel = (fr >= lo) & (fr < hi)
+            rec[f"band_{int(lo)}"] = 10 * math.log10(max(float(p[sel].sum()), 1e-30))
+        out.append(rec)
+    return out
+
+
+def first_above(t: F, env_db: F, rel_db: float) -> float:
+    """Time (s) of the first envelope value within rel_db below its maximum;
+    NaN for an empty envelope."""
+    if not len(env_db):
+        return math.nan
+    k = np.flatnonzero(env_db > env_db.max() - rel_db)
+    return float(t[k[0]])
+
+
+def rt60_slope(t: F, env_db: F, t0: float, t1: float) -> float:
+    """RT60 (s) from a straight-line fit of the dB envelope between t0 and t1
+    (60 / -slope). NaN when the fit does not fall."""
+    sel = (t >= t0) & (t <= t1)
+    if sel.sum() < 3:
+        return math.nan
+    slope = float(np.polyfit(t[sel], env_db[sel], 1)[0])
+    return 60.0 / -slope if slope < -1e-6 else math.nan
+
+
+def inst_freq_dev(
+    v: F, rate: int, f0: float, lo_hz: float = 0.2, hi_hz: float = 20.0
+) -> dict[str, float]:
+    """Frequency modulation of a near-sine v (1-D) around f0: the instantaneous
+    frequency (analytic signal, smoothed over two periods of f0, 5 % trimmed
+    each end) gives dev_pp_hz (2-98 percentile range), mod_hz (strongest line in
+    lo_hz..hi_hz) and tau_pp_ms, the delay swing that would cause it
+    (dev_pp / (2 pi f0 mod_hz))."""
+    n = len(v)
+    f = np.fft.fft(v)
+    h = np.zeros(n)
+    h[0] = 1
+    h[1 : (n + 1) // 2] = 2
+    if n % 2 == 0:
+        h[n // 2] = 1
+    a = np.fft.ifft(f * h)
+    inst = np.diff(np.unwrap(np.angle(a))) * rate / (2 * math.pi)
+    k = max(1, int(2 * rate / f0))
+    inst = np.convolve(inst, np.ones(k) / k, mode="valid")
+    cut = len(inst) // 20
+    inst = inst[cut : len(inst) - cut]
+    if len(inst) < 16:
+        return {"dev_pp_hz": math.nan, "mod_hz": math.nan, "tau_pp_ms": math.nan}
+    dev = float(np.percentile(inst, 98) - np.percentile(inst, 2))
+    sig = inst - inst.mean()
+    sp = np.abs(np.fft.rfft(sig * np.hanning(len(sig)), 8 * len(sig)))
+    fr = np.fft.rfftfreq(8 * len(sig), 1 / rate)
+    band = (fr >= lo_hz) & (fr <= hi_hz)
+    mod = float(fr[band][np.argmax(sp[band])]) if band.any() else math.nan
+    tau = 1000 * dev / (2 * math.pi * f0 * mod) if mod and mod > 0 else math.nan
+    return {"dev_pp_hz": dev, "mod_hz": mod, "tau_pp_ms": tau}
 
 
 def analyse(x: F, rate: int) -> dict[str, object]:

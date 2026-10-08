@@ -195,3 +195,37 @@ def test_autocorr_spacing_rises() -> None:
         amp[20 + k * 75 : 20 + k * 75 + 90] += 0.5**k
     sp, _ = ac.autocorr_spacing(20 * np.log10(amp + 1e-9), hop, 0.1, 1.5, rises=True)
     assert abs(sp - 0.375) < 0.011
+
+
+def test_segment_stats() -> None:
+    t = np.arange(R) / R
+    a = np.sin(2 * np.pi * 500 * t)
+    b = np.sin(2 * np.pi * 4000 * t)
+    x = np.stack([a, 0.5 * b], axis=1)
+    s = ac.segment_stats(x, R, [0.0, 0.5], 0.4)
+    assert s[0]["lr_db"] == pytest.approx(10 * np.log10(0.5 / 0.125), abs=0.2)
+    assert 500 < s[0]["centroid_hz"] < 4000
+    assert s[0]["band_300"] > s[0]["band_3000"] + 5
+    mono = ac.segment_stats(a[:, None], R, [0.0], 0.4)[0]
+    assert math.isnan(mono["lr_db"]) and mono["centroid_hz"] == pytest.approx(
+        500, abs=30
+    )
+    assert math.isnan(ac.segment_stats(x, R, [5.0], 0.4)[0]["rms_db"])
+
+
+def test_first_above_and_rt60_slope() -> None:
+    t = np.arange(400) * 0.005
+    e = np.where(t < 0.5, -80.0, -10.0 - 30.0 * (t - 0.5))
+    assert ac.first_above(t, e, 20) == pytest.approx(0.5, abs=0.006)
+    assert ac.rt60_slope(t, e, 0.6, 1.8) == pytest.approx(2.0, rel=0.02)
+    assert math.isnan(ac.rt60_slope(t, np.zeros_like(t), 0.1, 1.0))
+
+
+def test_inst_freq_dev() -> None:
+    t = np.arange(2 * R) / R
+    f0, fm, tau = 261.6, 1.5, 0.004  # delay swing amplitude 4 ms
+    x = np.sin(2 * np.pi * f0 * (t - tau * np.sin(2 * np.pi * fm * t)))
+    r = ac.inst_freq_dev(x, R, f0)
+    assert r["mod_hz"] == pytest.approx(fm, abs=0.15)
+    assert r["tau_pp_ms"] == pytest.approx(8.0, rel=0.15)
+    assert ac.inst_freq_dev(np.sin(2 * np.pi * f0 * t), R, f0)["dev_pp_hz"] < 0.5

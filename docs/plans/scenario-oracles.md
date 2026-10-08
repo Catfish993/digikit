@@ -344,3 +344,9 @@ state.
   Next: second check of the fix; Em listens to the delay; clean echo
   oracle needs a click source (DT2 card) since sine taps overlap echoes.
 
+- 2026-10-08 (cont.): send FX sweep (Delay, Reverb, Chorus pages, Master
+  compressor): navigation map, laws and verdicts in finding 15 (last
+  section). `tools/gen_sendfx.py`, `scenarios/dn2-sendfx.json`, `sf-*` measures
+  in `tools/fxcheck.py`, three new generic measures in `tools/audiocheck.py`.
+  Runs: `out/runs/sendfx/run1..run3`. Open: Master Overdrive page, routing
+  parameters, hardware A/B for feedback gain, mix taper and Width.

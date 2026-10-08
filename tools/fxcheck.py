@@ -17,6 +17,12 @@ DN2 1.11 MAIN OS) and lists the ones that differ from the reference, and the
 per-control measures are printed in a second table. ``--ref`` overrides the
 reference.
 
+Send FX sweeps (scenarios/dn2-sendfx.json, ``sf-*``): the dry reference is
+sf-dry-tap or sf-dry-hold, the read-back diff is against sf-<fx>-ref (send up,
+page at defaults), the wet signal is the scenario minus the dry reference, and
+the per-effect measures (delay echoes, reverb decay and onset, chorus
+modulation) are printed as one table per effect.
+
 Per scenario: basic checks and L-R; on the 0.1-0.3 s after the note onset
 (the same window for every scenario) the distinct sample values, the
 fundamental level, THD and the noise floor relative to it, and the RMS of the
@@ -182,7 +188,7 @@ def diff_vs_dry(
 
 # --- scenario files, run loading ---------------------------------------------
 
-SCENARIO_FILES = ("dn2-fx.json", "dn2-trackfx.json")
+SCENARIO_FILES = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
 
@@ -477,6 +483,217 @@ def plot_tf(x: ac.F, rate: int, t0: float, d: pathlib.Path, m: dict[str, Any]) -
         plt.close(fig)
 
 
+# --- send FX pages (scenarios/dn2-sendfx.json) --------------------------------
+
+PRE = 0.02  # alignment pre-roll before the note onset, s
+
+
+def sf_name(name: str) -> tuple[str | None, str | None, int | None]:
+    """('del', 'fb', -127) for 'sf-del-fb-d127'; (fx, 'ref', None) for the
+    reference, (None, None, None) for anything else."""
+    p = name.split("-")
+    if p[0] != "sf" or len(p) < 3:
+        return None, None, None
+    if len(p) == 4 and p[3][:1] in "ud" and p[3][1:].isdigit():
+        return p[1], p[2], int(p[3][1:]) * (1 if p[3][0] == "u" else -1)
+    return p[1], p[2], None
+
+
+def sf_measures(
+    fx: str, x: ac.F, dry: ac.F, rate: int, t0: float, r0: float, hold: float
+) -> dict[str, Any]:
+    """Wet signal = x - dry (aligned): level, onset and the effect's measures."""
+    a, b = align2(x, dry, rate, t0, r0)
+    res = a - b
+    hop = 0.005
+    t, e = ac.envelope(res, rate, hop * 1000)
+    pk = float(e.max())
+    off = PRE + hold
+    out: dict[str, Any] = {
+        "wet_peak_db": round(pk, 1),
+        "wet_rms_db": round(db10(float(np.mean(res**2))), 1),
+        "wet_onset30_s": round(ac.first_above(t, e, 30) - PRE, 3),
+        "tail_end_db": round(float(e[-20:].mean()), 1),
+        "_res": res,
+    }
+    out["wet_l_db"] = round(db10(float(np.mean(res[:, 0] ** 2))), 1)
+    out["wet_r_db"] = round(db10(float(np.mean(res[:, -1] ** 2))), 1)
+    mx, rel = ac.lr_diff(res)
+    out["wet_lr_rel_db"] = round(rel, 1) if math.isfinite(rel) else None
+    if res.shape[1] > 1 and float(res.std()) > 0:
+        out["wet_corr"] = round(float(np.corrcoef(res[:, 0], res[:, 1])[0, 1]), 3)
+    if fx == "del":
+        t_echo = out["wet_onset30_s"]
+        sp, corr = ac.autocorr_spacing(e, hop, 0.1, 2.5, rises=True)
+        out["spacing_s"] = None if math.isnan(sp) else round(sp, 4)
+        out["spacing_corr"] = round(corr, 2)
+        n = 6
+        starts = [PRE + k * t_echo + 0.1 for k in range(1, n + 1)]
+        ln = max(0.05, min(0.15, t_echo - 0.1))
+        seg = ac.segment_stats(res, rate, starts, ln)
+        lv = [r["rms_db"] for r in seg]
+        keep = [i for i, v in enumerate(lv) if math.isfinite(v) and v > pk - 55]
+        out["echo_rms_db"] = [round(v, 1) for v in lv]
+        out["echo_lr_db"] = [
+            None if math.isnan(r["lr_db"]) else round(r["lr_db"], 1) for r in seg
+        ]
+        out["echo_centroid_hz"] = [
+            round(r["centroid_hz"]) if keep and i in keep else None
+            for i, r in enumerate(seg)
+        ]
+        steps = [lv[i + 1] - lv[i] for i in keep[:-1] if i + 1 in keep]
+        out["db_per_repeat"] = round(float(np.mean(steps)), 2) if steps else None
+        out["n_echoes"] = len(keep)
+        if t_echo > 0.36:
+            g0, g1 = PRE + t_echo + 0.32, PRE + 2 * t_echo - 0.02
+            if g1 - g0 > 0.03:
+                out["between_echo_db"] = round(
+                    float(np.mean(e[int(g0 / hop) : int(g1 / hop)])), 1
+                )
+    elif fx == "rev":
+        k = int(np.argmax(e))
+        rt = ac.decay_time(res[k * int(hop * rate) :], rate)
+        out["rt60_s"] = None if math.isnan(rt) else round(rt, 2)
+        below = np.flatnonzero((t > off + 0.2) & (e < pk - 45))
+        t1 = float(t[below[0]]) if len(below) else float(t[-1])
+        rs = ac.rt60_slope(t, e, off + 0.2, t1)
+        out["rt60_slope_s"] = None if math.isnan(rs) else round(rs, 2)
+        out["onset35_s"] = round(ac.first_above(t, e, 35) - PRE, 3)
+        out["onset25_s"] = round(ac.first_above(t, e, 25) - PRE, 3)
+        out["level_after_off_db"] = {
+            f"{dt:g}s": round(float(e[int((off + dt) / hop)]), 1)
+            for dt in (0.3, 1.0, 2.0, 3.0)
+            if int((off + dt) / hop) < len(e)
+        }
+        st = ac.segment_stats(res, rate, [off + 0.3], 1.0)[0]
+        out["tail_centroid_hz"] = (
+            None if math.isnan(st["centroid_hz"]) else round(st["centroid_hz"])
+        )
+        out["tail_bands_db"] = {
+            k_: round(v, 1) for k_, v in st.items() if k_.startswith("band_")
+        }
+    elif fx == "mst":
+        w, w0 = window(x, rate, t0), window(dry, rate, r0)
+        h = ac.tone_harmonics(w, rate, F0)
+        h0 = ac.tone_harmonics(w0, rate, F0)
+        p: list[float] = h["power"]  # type: ignore[assignment]
+        p0: list[float] = h0["power"]  # type: ignore[assignment]
+        out["fund_change_db"] = round(db10(p[0]) - db10(p0[0]), 2)
+        out["thd_db"] = round(db10(sum(p[1:])) - db10(p[0]), 1)
+        out["rms_change_db"] = round(
+            db10(float(np.mean(a**2))) - db10(float(np.mean(b**2))), 2
+        )
+        late = slice(int((PRE + 1.0) * rate), int((PRE + hold) * rate))
+        early = slice(int((PRE + 0.05) * rate), int((PRE + 0.3) * rate))
+        out["gain_early_vs_late_db"] = round(
+            db10(float(np.mean(a[early] ** 2))) - db10(float(np.mean(a[late] ** 2))), 2
+        )
+    elif fx == "chr":
+        keep = np.flatnonzero(e > pk - 30)
+        sl = slice(int(keep[0] * hop * rate), int((keep[-1] + 1) * hop * rate))
+        seg_ = res[sl]
+        out["audible_s"] = round(len(seg_) / rate, 2)
+        m = ac.modulation_rate(seg_, rate, F0)
+        out["mod_phase_hz"] = round(m["phase_hz"], 2)
+        out["mod_phase_dev_rad"] = round(m["phase_dev"], 2)
+        for c, lab in enumerate("lr"):
+            f = ac.inst_freq_dev(seg_[:, c], rate, F0)
+            out[f"fm_{lab}"] = {k_: round(v, 2) for k_, v in f.items()}
+        st = ac.segment_stats(seg_, rate, [0.0], len(seg_) / rate - 0.001)[0]
+        out["wet_centroid_hz"] = (
+            None if math.isnan(st["centroid_hz"]) else round(st["centroid_hz"])
+        )
+        out["wet_bands_db"] = {
+            k_: round(v, 1) for k_, v in st.items() if k_.startswith("band_")
+        }
+    return out
+
+
+def sf_delta(fx: str, res: ac.F, ref: ac.F, rate: int, hold: float) -> dict[str, Any]:
+    """What a send parameter added to the effect: res - ref (both wet signals)."""
+    n = min(len(res), len(ref))
+    dl = res[:n] - ref[:n]
+    hop = 0.005
+    t, e = ac.envelope(dl, rate, hop * 1000)
+    pk = float(e.max())
+    off = PRE + hold
+    out: dict[str, Any] = {
+        "delta_rms_db": round(db10(float(np.mean(dl**2))), 1),
+        "delta_peak_db": round(pk, 1),
+        "delta_onset30_s": round(ac.first_above(t, e, 30) - PRE, 3),
+        "delta_after_off_db": {
+            f"{dt:g}s": round(float(e[int((off + dt) / hop)]), 1)
+            for dt in (0.3, 1.0, 2.0, 3.0)
+            if int((off + dt) / hop) < len(e)
+        },
+    }
+    sp, corr = ac.autocorr_spacing(e, hop, 0.1, 2.5, rises=True)
+    out["delta_spacing_s"] = None if math.isnan(sp) else round(sp, 4)
+    out["delta_spacing_corr"] = round(corr, 2)
+    below = np.flatnonzero((t > off + 0.2) & (e < pk - 45))
+    t1 = float(t[below[0]]) if len(below) else float(t[-1])
+    rs = ac.rt60_slope(t, e, off + 0.2, t1)
+    out["delta_rt60_slope_s"] = None if math.isnan(rs) else round(rs, 2)
+    st = ac.segment_stats(dl, rate, [off + 0.3], 1.0)[0]
+    out["delta_tail_bands_db"] = {
+        k: round(v, 1) for k, v in st.items() if k.startswith("band_")
+    }
+    return out
+
+
+def sf_lines(res: dict[str, dict[str, Any]]) -> list[str]:
+    """One block per effect: the swept parameter's read-back value and the key
+    measures, in sweep order."""
+    keys = {
+        "del": (
+            "wet_rms_db",
+            "wet_onset30_s",
+            "spacing_s",
+            "n_echoes",
+            "db_per_repeat",
+            "echo_lr_db",
+            "echo_centroid_hz",
+            "between_echo_db",
+            "tail_end_db",
+            "wet_corr",
+        ),
+        "rev": (
+            "wet_rms_db",
+            "rt60_s",
+            "rt60_slope_s",
+            "onset35_s",
+            "onset25_s",
+            "level_after_off_db",
+            "tail_centroid_hz",
+            "tail_bands_db",
+        ),
+        "mst": ("fund_change_db", "rms_change_db", "thd_db", "gain_early_vs_late_db"),
+        "chr": (
+            "wet_rms_db",
+            "wet_lr_rel_db",
+            "wet_corr",
+            "mod_phase_hz",
+            "fm_l",
+            "fm_r",
+            "wet_centroid_hz",
+            "wet_bands_db",
+            "audible_s",
+        ),
+    }
+    lines = []
+    for n, r in res.items():
+        m = r.get("sf")
+        if not m:
+            continue
+        fx = sf_name(n)[0]
+        rb = r.get("readback_vs_ref") or {}
+        lines.append(f"{n}: readback {dict(rb)}")
+        lines.append(
+            "    " + ", ".join(f"{k}={m[k]}" for k in keys[fx or "del"] if k in m)
+        )
+    return lines
+
+
 def monotone(v: list[float]) -> str:
     d = np.diff(v)
     if len(d) and bool(np.all(d >= -1e-9)):
@@ -552,6 +769,8 @@ def check(
         hold = hold_seconds(evs.get(name, []))
         if ref_name:
             refs[name] = ref_name
+        elif name.startswith("sf-"):
+            refs[name] = "sf-dry-hold" if (hold or 0) > 1 else "sf-dry-tap"
         elif name.startswith("tf-"):
             refs[name] = (
                 "tf-dry-flt"
@@ -583,6 +802,9 @@ def check(
         }
         if dec and ref and not is_ref:
             row["readback_diff"] = readback_diff(dec, decoded[refs[name]])
+        sfx = sf_name(name)[0]
+        if dec and sfx and f"sf-{sfx}-ref" in decoded and name != f"sf-{sfx}-ref":
+            row["readback_vs_ref"] = readback_diff(dec, decoded[f"sf-{sfx}-ref"])
         row["bits"] = bit_features(x, rate, t0, rx, r0)
         if (
             rx is not None
@@ -605,14 +827,40 @@ def check(
             row["tf"] = m
             if plots:
                 plot_tf(x, rate, t0, _mkdir(d / f"plots-{name}"), m)
+        if (
+            name.startswith("sf-")
+            and rx is not None
+            and hold
+            and sfx in ("del", "rev", "chr", "mst")
+        ):
+            sm = sf_measures(sfx, x, rx, rate, t0, r0, hold)
+            row["sf"] = sm
+            if plots:
+                plot_tf(x, rate, t0, _mkdir(d / f"plots-{name}"), sm)
         res[name] = row
         if plots:
             ac.plots(x, rate, _mkdir(d / f"plots-{name}"))
+    for name, row in res.items():
+        fx, param, _ = sf_name(name)
+        ref_row = res.get(f"sf-{fx}-ref")
+        if "sf" in row and param in ("rsend", "dsend") and ref_row and "sf" in ref_row:
+            rate = loaded[name][2]
+            sfm: dict[str, Any] = row["sf"]  # type: ignore[assignment]
+            refm: dict[str, Any] = ref_row["sf"]
+            row["delta"] = sf_delta(
+                fx or "",
+                sfm["_res"],
+                refm["_res"],
+                rate,
+                hold_seconds(evs.get(name, [])) or 0.3,
+            )
     for d in runs:
         mine = {k: v for k, v in res.items() if v["run_dir"] == str(d)}
         for v in mine.values():
             if "tf" in v:
                 v["tf"].pop("_res", None)
+            if "sf" in v:
+                v["sf"].pop("_res", None)
         (d / "fxcheck.json").write_text(json.dumps(mine, indent=2, default=str) + "\n")
     return res
 
@@ -679,6 +927,7 @@ def table(res: dict[str, dict[str, Any]]) -> str:
                 k: v for k, v in m.items() if k not in ("family", "setting", "_res")
             }
             lines.append(f"{name}: {show}")
+    lines += sf_lines(res)
     lines += series(res)
     return "\n".join(lines)
 

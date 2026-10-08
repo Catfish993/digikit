@@ -701,3 +701,42 @@ Three limits remain, all conservative stops that never give a wrong result:
 `dlsym sharc_native_profile`. The native library it loads is stale; the
 failure does not come from this change.
 
+
+## DN2 1.11 send FX pages swept against expected behaviour (2026-10-08)
+
+Scenarios `scenarios/dn2-sendfx.json` (`tools/gen_sendfx.py`), measures
+`tools/fxcheck.py` (`sf-*`), runs `out/runs/sendfx/run1..run3`. All **[D]**:
+one run, not yet compared with a device.
+
+- Navigation **[V]** (read-back of the kit Fx array): FUNC + FX opens Delay;
+  each further FUNC + FX chord steps Delay -> Reverb -> Chorus -> Delay
+  (DOWN from Delay also reaches Reverb). FUNC need not be held while turning.
+  Encoders A..H = 1..8, LEVEL = 9 (Mix Volume on every send FX page).
+  Delay: A Time, B Pingpong, C Width, D Feedback Gain, E Feedback HPF,
+  F Feedback LPF, G -, H Reverb Send. Reverb: A Pre-delay, B Decay, C Shelving
+  Freq, D Shelving Gain, E Input HPF, F Input LPF, G/H -. Chorus: A Depth,
+  B Speed, C High-pass, D Width, E/F -, G Delay Send, H Reverb Send. The
+  routing parameters (Fx[40], Fx[48]) did not move with any encoder turn.
+  FUNC + MOD opens the Master compressor (A Threshold, B Attack, C Release,
+  D Makeup, E Ratio, F Sidechain Src, G Sidechain Filter, H Dry/Wet, LEVEL
+  Pattern Volume); a second and third FUNC + MOD show the track mixer banks.
+  Master Overdrive (Fx[68]) was not reached.
+- Delay time **[D]**: echo spacing = (value/256 + 1) x 15.625 ms (UI 23: 0.375 s,
+  32.5: 0.525, 80.2: 1.27, 127: 2.00). Feedback loop gain = value/64 (UI 33.5:
+  -5.7 dB/repeat, 41.5: -3.8, 58.7: -0.9, 89.2: +2.8; 0: one echo, no second).
+  Above 64 the repeats grow until the output saturates at 0.693 (-3.2 dBFS)
+  and sustains. **[O]** whether hardware reaches unity at 127 instead of 64.
+- Mix Volume (delay, reverb, chorus) and the track sends follow (value/110)^2
+  in level (UI 25: -25.8 dB, 127: +2.5 dB). **[O]** taper or double multiply.
+- Reverb decay **[D]**: RT60 0.71 s (0), 1.53 (31), 1.99 (40.5), 5.49 (88),
+  no decay within 4 s at 127; about 0.71 x exp(0.0245 x UI). Pre-delay: wet
+  onset 0 up to UI 36, 0.14 s at 73, 0.21 at 95, 0.34 at 127 (about
+  4.5 ms/step above UI 42).
+- Chorus speed **[D]**: 0.89 Hz (32), 1.45 (52), 2.86 (117), 3.13 (127),
+  about 0.1 + 0.0245 x UI Hz. Depth 0 gives no modulation.
+- Delay Width without Pingpong behaves like a balance control (0: left only,
+  64: both, 127: right only); with Pingpong on, echoes alternate L/R and the
+  alternation depth grows with |Width - 64|. Pingpong at Width 64 is
+  inaudible. **[O]** against hardware.
+- Master compressor: Dry/Wet 127 with default settings +4.0 dB on the held
+  sine; Threshold 0 -7.3 dB; Ratio 7 -12.5 dB; Makeup 127 +15.9 dB.

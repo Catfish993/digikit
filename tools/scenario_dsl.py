@@ -25,6 +25,8 @@ from typing import Any
 
 CF_HZ = 132_000_000  # ColdFire instructions per audio second (about)
 FX_PAGE = 5  # track FX page button
+FUNC = 17  # modifier: latched in chords
+MOD_PAGE = 6  # FUNC + MOD opens the Master / Mixer pages
 TRIG1 = 25  # Trig 1 button: plays the 261.6 Hz audition sine
 SLOT = 1_000_000  # instructions between encoder events
 TURN_START = 20_000_000
@@ -43,6 +45,15 @@ class Timeline:
 
     def turn(self, at: int, encoder: int, detents: int) -> None:
         self.events.append({"at_instr": at, "turn": encoder, "detents": detents})
+
+    def chord(self, at: int, modifier: int, key: int, gap: int = 1_000_000) -> None:
+        """Latched chord: modifier down, key down and up, modifier up (each
+        ``gap`` instructions apart). A press/release pair per button would
+        not be seen as a chord (docs/findings/03-ui-and-panel.md)."""
+        self.button(at, modifier, True)
+        self.button(at + gap, key, True)
+        self.button(at + 2 * gap, key, False)
+        self.button(at + 3 * gap, modifier, False)
 
     def as_list(self) -> list[Event]:
         return sorted(self.events, key=lambda e: e["at_instr"])
