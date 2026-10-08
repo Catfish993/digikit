@@ -341,6 +341,10 @@ pub struct Lower {
     /// A circular index register was found written outside its buffer in a
     /// pass that should have emitted the kernel: lower again with it plain.
     pub retry: bool,
+    /// Addresses of the instructions lowered with a guarded dynamic window
+    /// (`dyn_xfer`): one that fails its guard on most calls is lowered flat
+    /// instead (`SHARC_FAST_DYNFLAT`, `FastEngine::run_inner`).
+    pub dyn_pcs: Vec<u32>,
     /// The instruction being lowered is followed in the kernel by nothing
     /// that reads the registers it writes (RFRAME before the exit of a
     /// return): its plain writes of index registers need no circular range.
@@ -448,6 +452,8 @@ pub struct Lower {
     pub helper_form: bool,
     /// The instruction being lowered gets a flat access when it has no address range.
     pub flat_cur: bool,
+    /// As `flat_cur`, for an instruction whose dynamic window kept failing.
+    pub flat_dyn_cur: bool,
     /// The address of the instruction being lowered in a loop or straight
     /// kernel (a CFG kernel has it in `cfgx`).
     pub cur_pc: Option<u32>,
@@ -490,6 +496,7 @@ impl Lower {
             flag_kinds_out: [0; NGROUPS as usize],
             plain_out: 0,
             retry: false,
+            dyn_pcs: Vec::new(),
             tail_write: false,
             entry_abs_out: Default::default(),
             val_ty: Vec::new(),
@@ -548,6 +555,7 @@ impl Lower {
             pe_off: 0,
             helper_form: false,
             flat_cur: false,
+            flat_dyn_cur: false,
             cur_pc: None,
         };
         l.mode1_cur = l.env.mode1;
@@ -721,6 +729,22 @@ impl Lower {
     /// The record `k` of a guard in the current instruction: the instruction
     /// index in a loop kernel, an exit site of the CFG in a CFG kernel.
     pub fn site_k(&mut self) -> u32 {
+        self.site_k_for("insn")
+    }
+
+    /// `site_k` for a guard: with coverage on, the site is told apart by the
+    /// source line that emitted the guard (the report names which guard fails).
+    fn site_k_guard(&mut self, at: &'static std::panic::Location<'static>) -> u32 {
+        let kind = if super::glue::cov_on() {
+            let file = at.file().rsplit('/').next().unwrap_or("");
+            Box::leak(format!("g@{file}@{}", at.line()).into_boxed_str())
+        } else {
+            "insn"
+        };
+        self.site_k_for(kind)
+    }
+
+    fn site_k_for(&mut self, kind: &'static str) -> u32 {
         let Some(x) = self.cfgx.as_mut() else {
             return self.idx;
         };
@@ -732,6 +756,7 @@ impl Lower {
             pending: x.pending,
             ret: 0,
             tail: Default::default(),
+            kind,
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -767,6 +792,12 @@ impl Lower {
             pending: None,
             ret,
             tail,
+            kind: match tail {
+                crate::fast::cfg::Tail::Call(_) => "call",
+                crate::fast::cfg::Tail::Rts => "ret",
+                crate::fast::cfg::Tail::None if pc == crate::fast::cfg::DYN_PC => "ret",
+                crate::fast::cfg::Tail::None => "edge",
+            },
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -823,17 +854,19 @@ impl Lower {
         e
     }
 
+    #[track_caller]
     pub fn guard(&mut self, ok: Val) {
         let ok = self.weaken(ok);
         let exit = self.exit_for_insn();
-        let k = self.site_k();
+        let k = self.site_k_guard(std::panic::Location::caller());
         self.body.push(Inst::Guard { ok, k, exit });
     }
 
+    #[track_caller]
     pub fn guard_any(&mut self, a: Val, b: Val) {
         let a = self.weaken(a);
         let exit = self.exit_for_insn();
-        let k = self.site_k();
+        let k = self.site_k_guard(std::panic::Location::caller());
         self.body.push(Inst::GuardAny { a, b, k, exit });
     }
 
@@ -1300,7 +1333,7 @@ impl Lower {
 
     /// Whether an access with no window may be a flat guarded access here.
     fn flat_ok(&self) -> bool {
-        mem_addr::flat_xfers() || self.flat_cur || self.env.flat_windows
+        mem_addr::flat_xfers() || self.flat_cur || self.flat_dyn_cur || self.env.flat_windows
     }
 
     /// The access at ADDR through the engine's page table when no window can
@@ -1383,6 +1416,11 @@ impl Lower {
     pub fn dynamic_window(&mut self, addr: Val, anchor: u8, write: bool) -> LR<(Val, Val, u32)> {
         if self.helper_form {
             return refuse("address range unknown (no dynamic window under the helper stub)");
+        }
+        if let Some(pc) = self.cfgx.as_ref().map(|x| x.pc).or(self.cur_pc)
+            && !self.dyn_pcs.contains(&pc)
+        {
+            self.dyn_pcs.push(pc);
         }
         let w = match self
             .wins
@@ -1627,6 +1665,7 @@ impl Lower {
         self.begin_insn(idx);
         let at = self.cfgx.as_ref().map(|x| x.pc).or(self.cur_pc);
         self.flat_cur = at.is_some_and(super::cfg::is_flat_pc);
+        self.flat_dyn_cur = at.is_some_and(super::cfg::is_flat_dyn);
         // Only an instruction that cannot be lowered becomes a helper (region.rs
         // `deny`); one with a guarded dynamic window keeps it. With
         // SHARC_FAST_HELPER_NODYN=1 (lane B's stub) every helper-capable
@@ -1909,6 +1948,7 @@ impl Lower {
             stored,
             next,
             retry: self.retry,
+            dyn_pcs: self.dyn_pcs,
         })
     }
 }
@@ -1933,6 +1973,8 @@ pub struct Lowered {
     pub next: Plan,
     /// See `Lower::retry`.
     pub retry: bool,
+    /// See `Lower::dyn_pcs`.
+    pub dyn_pcs: Vec<u32>,
 }
 
 /// The f32 result must be finite (not a NaN or an infinity): those make the

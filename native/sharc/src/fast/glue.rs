@@ -1489,6 +1489,11 @@ thread_local! {
 }
 
 /// `SHARC_FAST_COV`: remember why the last call was declined.
+/// Coverage reporting is on (`SHARC_FAST_COV`).
+pub fn cov_on() -> bool {
+    COV_ON.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub fn set_cov(on: bool) {
     COV_ON.store(on, std::sync::atomic::Ordering::Relaxed);
 }

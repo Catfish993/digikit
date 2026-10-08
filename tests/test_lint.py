@@ -16,6 +16,7 @@ CLEAN = [
     "tools/audiocheck.py",
     "tools/fxcheck.py",
     "tools/paramtable.py",
+    "tools/perf_calls.py",
     "tools/scenario_dsl.py",
     "tools/gen_trackfx.py",
     "tools/gen_sendfx.py",

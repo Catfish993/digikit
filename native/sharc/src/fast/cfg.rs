@@ -67,6 +67,11 @@ pub struct Site {
     pub ret: u32,
     /// The call or return this exit completes.
     pub tail: Tail,
+    /// How the exit arises, for the coverage report: "insn" (a guard or a
+    /// stop at the instruction itself), "edge" (a taken branch or loop-back
+    /// the kernel does not hold, or the end of a dormant loop), "call",
+    /// "ret" (a return).
+    pub kind: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,7 +187,7 @@ pub fn force_helper(pc: u32) {
         .insert(pc);
 }
 
-/// `SHARC_FAST_FLATAUTO=1`: an access that has no address range (no register
+/// On by default; `SHARC_FAST_FLATAUTO=0` turns it off (A/B). An access that has no address range (no register
 /// anchor either) is lowered as a flat guarded access (`Lower::flat_access`)
 /// at that instruction only, instead of ending the region there; and a region
 /// whose static windows keep declining at run time (a window needs every byte
@@ -190,7 +195,7 @@ pub fn force_helper(pc: u32) {
 /// accesses instead. Exact: a failing guard leaves before the instruction.
 pub fn flat_auto() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SHARC_FAST_FLATAUTO").is_ok_and(|v| v != "0"))
+    *ON.get_or_init(|| std::env::var("SHARC_FAST_FLATAUTO").map_or(true, |v| v != "0"))
 }
 
 static FLAT_PCS: std::sync::Mutex<Option<std::collections::BTreeSet<u32>>> =
@@ -205,6 +210,27 @@ pub fn mark_flat_pc(pc: u32) -> bool {
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(Default::default)
         .insert(pc)
+}
+
+static FLAT_DYN_PCS: std::sync::Mutex<Option<std::collections::BTreeSet<u32>>> =
+    std::sync::Mutex::new(None);
+
+/// Instructions whose guarded dynamic window kept failing at run time
+/// (`SHARC_FAST_DYNFLAT`): lowered as flat accesses instead; true if new.
+pub fn mark_flat_dyn(pc: u32) -> bool {
+    FLAT_DYN_PCS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(Default::default)
+        .insert(pc)
+}
+
+pub fn is_flat_dyn(pc: u32) -> bool {
+    FLAT_DYN_PCS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|f| f.contains(&pc))
 }
 
 pub fn is_flat_pc(pc: u32) -> bool {

@@ -92,6 +92,8 @@ pub struct Region {
     /// `Mem::dec_gen` moves).
     pub code_words: Vec<(u32, u16)>,
     pub verified_gen: u64,
+    /// Instructions with a guarded dynamic window (`Lower::dyn_pcs`).
+    pub dyn_pcs: Vec<u32>,
     /// Form names, for reports.
     pub forms: Vec<&'static str>,
     /// `Some` for a CFG region (see `cfg`): `lp` is None, the kernel counts
@@ -365,6 +367,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         kernel: out.kernel,
         code_words,
         verified_gen: s.mem.dec_gen,
+        dyn_pcs: out.dyn_pcs.clone(),
         forms: decs.iter().map(|(_, d)| d.form).collect(),
         cfg: None,
         lean: None,
@@ -669,6 +672,7 @@ fn assemble_cfg(
         kernel: out.kernel,
         code_words,
         verified_gen: s.mem.dec_gen,
+        dyn_pcs: out.dyn_pcs.clone(),
         insns,
         forms,
         cfg: Some(meta),

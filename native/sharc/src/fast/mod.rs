@@ -301,6 +301,8 @@ pub struct FastStats {
     /// dropped as unprofitable, refusals by normalized reason.
     pub armed: u64,
     pub unprofitable: u64,
+    /// Regions rebuilt with flat accesses after their dynamic windows kept failing.
+    pub dyn_flat: u64,
     pub cached_refusals: u64,
     pub reasons: std::collections::BTreeMap<String, u64>,
 }
@@ -409,6 +411,9 @@ struct Slot {
     exit0: u32,
     /// Calls declined for want of a resolvable window (`cfg::flat_auto`).
     win_fails: u32,
+    /// Calls that left the kernel at an instruction with a guarded dynamic
+    /// window (`dynflat_range`).
+    dyn_exits: u32,
     transient: u32,
     /// Selected by `Auto` (dropped again on refusal or low yield).
     auto: bool,
@@ -842,6 +847,25 @@ impl FastEngine {
     }
 }
 
+/// `SHARC_FAST_DYNFLAT=1` (or `LO-HI`, hex PCs): a region whose calls mostly
+/// leave the kernel at an instruction with a guarded dynamic window (the span
+/// anchored on an index register cannot hold an address that is a loaded
+/// offset from it, so the guard fails on every call) is rebuilt with that
+/// instruction as a flat guarded access (`cfg::mark_flat_pc`). Exact: a flat
+/// access guards every access and leaves before the instruction.
+fn dynflat_range() -> Option<(u32, u32)> {
+    static R: std::sync::OnceLock<Option<(u32, u32)>> = std::sync::OnceLock::new();
+    *R.get_or_init(|| {
+        let v = std::env::var("SHARC_FAST_DYNFLAT").ok()?;
+        let hex = |t: &str| u32::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok();
+        match v.as_str() {
+            "" | "0" => None,
+            "1" => Some((0, u32::MAX)),
+            r => r.split_once('-').and_then(|(a, b)| Some((hex(a)?, hex(b)?))),
+        }
+    })
+}
+
 /// Cap on the gap (instructions) recorded after one kernel exit.
 const COV_GAP_CAP: u64 = 4096;
 
@@ -856,6 +880,12 @@ fn cov_built(s: &St, pc: u32, r: &region::Region) {
         r.wins.len(),
         pcs.join(",")
     );
+    // SHARC_FAST_IRDUMP=0xPC: print the kernel body of the region rooted at PC.
+    if std::env::var("SHARC_FAST_IRDUMP").is_ok_and(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16) == Ok(pc)) {
+        for (i, x) in r.kernel.body.iter().enumerate() {
+            eprintln!("ir {pc:#x} {i}: {x:?}");
+        }
+    }
     if let Some(c) = &r.cfg {
         for (at, why) in &c.stops {
             let form = region::decode_one(s, *at).map_or("undecodable", |d| d.form);
@@ -1250,12 +1280,21 @@ impl FastEngine {
                             .cfg
                             .as_ref()
                             .is_some_and(|c| c.stops.iter().any(|(p, _)| *p == x));
-                    let kind = if at_stop {
-                        "stop"
-                    } else if s.icount >= s.limit {
+                    let site_kind = region
+                        .cfg
+                        .as_ref()
+                        .map(|c| c.sites[self.ctx.get32(CTX_EXIT_K) as usize].kind);
+                    let kind = if s.icount >= s.limit {
                         "budget"
                     } else {
-                        "exit"
+                        match site_kind {
+                            Some("insn") if at_stop => "stop",
+                            Some("insn") => "guard",
+                            Some(k) if k.starts_with("g@") => k,
+                            Some(k) => k,
+                            None if at_stop => "stop",
+                            None => "exit",
+                        }
                     };
                     let e = slot.cov.exits.entry((x, kind)).or_default();
                     e[0] += 1;
@@ -1399,6 +1438,40 @@ impl FastEngine {
                 None
             }
         };
+        let mut dyn_flat: Option<Vec<u32>> = None;
+        if let Some((lo, hi)) = dynflat_range()
+            && res.is_ok()
+        {
+            let at = s.pc_sw as u32;
+            let sl = &mut self.slots[ix];
+            if let Some(r) = sl.region.as_ref()
+                && !r.dyn_pcs.is_empty()
+            {
+                sl.dyn_exits += r.dyn_pcs.contains(&at) as u32;
+                if sl.calls >= 64 && sl.calls.is_power_of_two() && sl.dyn_exits as u64 * 2 >= sl.calls {
+                    let pcs: Vec<u32> = r
+                        .dyn_pcs
+                        .iter()
+                        .copied()
+                        .filter(|p| (lo..=hi).contains(p))
+                        .collect();
+                    if !pcs.is_empty() {
+                        dyn_flat = Some(pcs);
+                    }
+                }
+            }
+        }
+        if let Some(pcs) = dyn_flat {
+            for p in pcs {
+                cfg::mark_flat_dyn(p);
+            }
+            // Built again from the next call's state, with the flat accesses.
+            self.slots[ix].region = None;
+            self.slots[ix].kernel = None;
+            self.slots[ix].alts.clear();
+            self.slots[ix].dyn_exits = 0;
+            self.stats.dyn_flat += 1;
+        }
         if drop_after {
             self.drop_slot(pc);
         }

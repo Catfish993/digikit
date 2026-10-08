@@ -383,3 +383,18 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   `+flat` config). No-AOT trig1-taps interpreted 5.48 -> 0.99%, timed 6.63 -> 5.00 CPU s per
   audio s, PCM `e0e6c8af7a84c443` unchanged; oracle suite 61 passed and `scenario --all` pins ok
   in that config (shared core); `cargo test` native/sharc 64 passed. Default stays off.
+- 2026-10-09: batch 1 flat fallback is now the default (`cfg::flat_auto`; opt out with
+  `SHARC_FAST_FLATAUTO=0`, fastcov `env:SHARC_FAST_FLATAUTO=0`). Default config (AOT + fast tier),
+  same binary, exclusive lock, alternating pairs: trig1-taps median 1.393 (on) vs 1.395 (off) DSP
+  CPU s per audio s (10 pairs), tf-br-127 1.433 vs 1.443 (10 pairs): no change beyond noise. No-AOT
+  `static-insns+follow` trig1-taps 5.66 vs 7.32 (5 pairs, -23%). PCM identical in every run. Oracle
+  suite 61 passed, `scenarios` pins ok, DT2 sample check clean, golden 6 passed, `cargo test --lib`
+  48 passed (`region_bench` example does not compile: missing `flat_windows` in its `Env`).
+- 2026-10-09: region-call overhead (finding 18, "Region-call overhead"). No-AOT trig1-taps: the 10.5 s
+  headline (5.10) is 2.16 s compile + 2.94 s run time per audio s; 29% of the 18.66M calls/s were a
+  dynamic-window guard that failed on every call (address = base + loaded modifier). Opt-in
+  `SHARC_FAST_DYNFLAT=1` rebuilds such regions with flat accesses: calls 18.66M -> 13.21M, DSP CPU
+  5.099 -> 4.599 (run time 2.942 -> 2.306), 3 exclusive pairs, PCM `e0e6c8af7a84c443` in all 18 runs;
+  oracle suite 61 passed in the no-AOT config with the flag on, `cargo test --lib --tests` in
+  native/sharc 64 passed. Default stays off. New `tools/perf_calls.py` (call sources and exit kinds);
+  `tools/fastcov.py` `parse_run` now reads every exit of a root (`;` separated).

@@ -271,7 +271,7 @@ this config, but each remaining function is under 1%). Separately, `FUN_b8258f` 
 or hybrid arming of those two functions fixes the desktop.
 
 Batch 1 of the refusals (2026-10-09) **[D]**, no-AOT `static-insns+follow`, `trig1-taps`,
-shared core, opt-in `SHARC_FAST_FLATAUTO=1` (config suffix `+flat` in `tools/fastcov.py`). Not
+shared core, first opt-in `SHARC_FAST_FLATAUTO=1` (config suffix `+flat` in `tools/fastcov.py`), default since the flip below. Not
 re-checked by a second agent.
 - Root causes. The four "3a/3b cannot be lowered" stops were not one refusal. (1) Address
   range unknown: a pointer loaded from memory or passed in a register has no static range and
@@ -305,11 +305,129 @@ re-checked by a second agent.
 - Exactness: oracle suite (`tests/scenarios --slow`, 61 passed) and `scenario --all` pins ok in
   this config on the shared core; `cargo test` in `native/sharc` 64 passed (two new unit tests).
   Default (AOT) config not measured: the flag is opt-in, `as_addr` is always on.
+- Default flip (2026-10-09) **[D]**: `SHARC_FAST_FLATAUTO` is now on unless set to `0`
+  (`+flat` in fastcov is a no-op; `env:SHARC_FAST_FLATAUTO=0` turns it off). Default config
+  (AOT core + fast tier), one binary, env on/off, exclusive lock, alternating pairs, full scenario
+  length, DSP CPU s per audio s (median, IQR): `trig1-taps` on 1.393 (1.392-1.397) vs off 1.395
+  (1.392-1.399), 10 pairs; `tf-br-127` on 1.433 (1.413-1.445) vs off 1.443 (1.415-1.527), 10 pairs.
+  No slowdown, no gain (AOT covers these regions). No-AOT `static-insns+follow` `trig1-taps`: on
+  5.66 (5.14-5.67) vs off 7.32 (6.49-7.36), 5 pairs, so the batch-1 gain holds. PCM identical in
+  every run (`e0e6c8af7a84c443`, `16f3d0a81e686049`). Checks with the default on: `scenarios`
+  pins ok, oracle suite 61 passed, `dt2_sample_check` clean tone, golden 6 passed, `cargo test
+  --lib --tests` in `native/sharc` 48 passed. The `region_bench` example no longer compiles (its
+  `Env` literal lacks `flat_windows`), so `cargo test --workspace` fails; not touched here.
 - Left in these functions (batch 2): `2a_short` compute cu=0 opcode 0xad at 0x1c4fa3, 0x1c516b,
   0x1c5186; multifunction category 0x1e/0x1f at 0x1c5060 (3a), 0x1c553a, 0x1c5547; `8a_rel` with a
   compute in the delay slot at 0x1c55c5; in `FUN_1c244d` the 17a/4a/18a loop stops at 0x1c2583,
   0x1c25ae, 0x1c25bd and 0x1c252d. Interpreted share is now 0.99%; the top remaining are
   `FUN_1c0c76` (1.1M), `FUN_1c07c6` (0.87M), `FUN_1c06ba` (0.69M), `FUN_1c0a6f`, `FUN_1c02a4`.
+
+## Region-call overhead **[D]**
+
+Measured 2026-10-09 on `work/scenario-oracles` (uncommitted), no-AOT `static-insns+follow`, shared
+core, DN2 `trig1-taps`, 10.5 audio s, flat fallback on (`SHARC_FAST_FLATAUTO=1`), PCM
+`e0e6c8af7a84c443` throughout. Not re-checked by a second agent. Tools: `tools/perf.py` (diagnostic
+run), new `tools/perf_calls.py` (call sources and exit kinds from its stderr), `xctrace` Time
+Profiler on `tools/sharc_build_dbg.py` output (`generic/dbg` target).
+
+Instrumentation added: every `cov run` exit now carries a kind (`ret`, `call`, `edge` = taken
+branch or loop-back to an address the kernel does not hold, `stop`, `guard`, `budget`; with
+SHARC_FAST_COV a guard is named by the source line that emitted it, `g@mem_addr.rs@207` is the
+dynamic-window guard). `tools/fastcov.py` `Diag.parse_run` split the `exits=` field on `,` while
+the engine joins it with `;`, so it kept only roots with a single exit (it saw 82M of 196M calls);
+fixed.
+
+**The 10.5 s headline is 55% compile.** Timed run: 53.6 DSP-thread s = 19.8 s Cranelift compile +
+2.9 s region build (6483 regions; the JSON has `fast_compile_ms_total` and `fast_build_ms_total`)
++ 30.9 s run time. Run time is 2.94 s per audio s; the 5.1 headline adds 2.16 s of compile. All A/B
+below therefore give both numbers. (The 20 s run costs 110 s, 5.5 per audio s: later audio compiles
+more regions; no linear fit.)
+
+*Call sources.* 18.66M region calls per audio s: 16.75M run a kernel, 1.9M decline (exit0 1.23M,
+req 0.55M, shape 0.13M, window 5k per run, budget 0). No chain misses (every PC is a root; the
+interpreted gap between a region exit and the next call is 0.03M insns/s). Exits that ran, M per
+audio s (insns per call): `edge>pc` 4.29 (6.9), `stop` 2.99 (23.7), `ret` 2.88 (112.6), dynamic-window
+guard 2.69 (7.6), `edge>fn` 2.04 (8.1), loop-shape guard 1.23 (21.5), other guards 0.37 (4.3), call
+0.22 (31.2). Top five functions, 8.25M calls (44%):
+
+| function | calls/s | insns/call | why the calls end |
+|---|---:|---:|---|
+| `FUN_1c8ef1` (1352 roots) | 3.48M | 6.6 | the DO loop 0x1c9b12..0x1c9b2d is three regions per iteration (2.16M; 480 iterations per call, 1500 calls/s): edge>pc 0.92 (1.4i), loop guard 0.77 (7.3i), dynamic-window guard 0.76 (6.4i); stop 0.61 (8.8i); edge>fn 0.29; exit0 declines 0.11 |
+| `FUN_b80c39` (22) | 1.75M | 2.7 | DO loop 0xb80c54..0xb80c60 calls 0xb809f2 every iteration: region to the call (4 insns, edge>fn 0.86M), callee, region at the loop end (1 insn, edge>pc 0.84M) |
+| `FUN_b82d1a` (602) | 1.15M | 6.0 | dynamic-window guard 0.73 (4.1i), edge>pc 0.39 (5.0i) |
+| `FUN_b809f2` (15) | 1.00M | 14.4 | the callee of the previous loop, ends in its return (ret 0.96M, 14.9i) |
+| `FUN_b82a5b` (73) | 0.87M | 6.9 | dynamic-window guard 0.58 (4.8i), edge>pc 0.29; exit0 0.29M |
+
+Next: `FUN_1c0c76` 0.73M (stop 0.44, ret/call 0.30), `FUN_1cdfa1` 0.58M and `FUN_1cdf46` 0.29M (the
+same loop-calls-small-function shape as b80c39), `FUN_1c07c6` 0.58M (stop+ret, 3-4 insns).
+
+*Cause of 29% of the calls.* A pre-modify or post-modify access whose address is a base register
+plus a modifier loaded from memory (`I0 = modify(I1, M4)` with `M4 = DM(I5,M6)`, then
+`DM(I0,M5) = R8`) is lowered through a guarded dynamic window anchored on the base register I1
+(`lower/mem_addr.rs` `xfer_at`/`dyn_xfer`). The span resolved at entry is around I1's value, and the
+real address (0x258xxx) is nowhere near it, so the guard fails on every call: the region does 4-5
+instructions, leaves, and the next region starts at the failing store, where I0 is an entry
+register and the window is right. Measured: 7.2M of 7.56M calls of that loop failed (only 480 distinct
+addresses, all present and dirty, so it is not a memory-state guard). The chain of regions reached
+from such exits is 252 roots, 5.9M calls per audio s, in `1c8ef1`, `b82d1a`, `b82a5b`, `1c57d2`.
+
+*Per-call cost, run time only* (xctrace, 22.6K samples of the 59 s DSP thread, the build samples
+removed, 9615 left; sampling covers a minority of the run, so shares only). JIT kernel code 46.3%
+(0x... leaf addresses), interpreter plus generated core 24.0% (4.9M insns/s at ~120 ns = 0.6 s,
+agrees), `glue` (`run_cfg`, `resolve_window`, `apply_*`, `sites`) 15.0%, engine step loop 3.4%,
+`run_inner`/`wants` 2.6%, memmove/memset 2.2%, `Mem::window` 2.0%, helpers 1.6%. Per ran call
+(2.94 s / 18.66M = 158 ns all in): about 73 ns in kernel code, of which ~13 ns is the instructions
+(26.6 x 0.5); about 39 ns in Rust glue, dispatch, window and copy; plus the interpreter 0.6 s total.
+All-in cost of an avoided call, interpreter and kernel work taken out: 2.94 - 0.6 - 0.25 = 2.1 s over
+18.66M = 112 ns; measured below: 117 ns. The kernel's non-work part is not code size (a one-insn kernel
+is 53 IR ops, 27 machine instructions): **[O]** it is cold code and an indirect call per region over
+~1500 hot kernels, and data misses on the first loads; not separated. Chaining that only skips the
+Rust loop can therefore remove the 39 ns part (about 0.5 s of 2.94 at 13-16M calls), not the rest.
+
+*Ceilings* (run time per audio s, 112 ns per call): `FUN_1c8ef1` alone 3.48M calls = 0.39 s if all
+its calls went (10x fewer: 0.35 s); top five 8.25M = 0.92 s; the 5.9M-call guard chain 0.66 s; all
+calls 2.1 s (not reachable: the regions still run the same instructions).
+
+*Change tried, behind `SHARC_FAST_DYNFLAT` (off by default; `1` = every pc, `LO-HI` hex = a range).*
+When a region's calls leave the kernel at one of its dynamic-window instructions on at least half the
+calls (checked at 64, 128, 256, ... calls), the slot is dropped and rebuilt from the next call's state
+with those instructions as flat guarded accesses (`cfg::mark_flat_dyn`, `Lower::flat_dyn_cur`,
+`Region::dyn_pcs`, `FastEngine::run_inner`). It uses `flat_access`, which batch 1 already proved
+exact (a failing guard leaves before the instruction), and changes nothing without the flag.
+A/B, same binary, exclusive lock, alternating pairs, 3 pairs each, medians:
+
+| variant | calls/s | DSP CPU s / audio s | of which run time | compile + build s per run |
+|---|---:|---:|---:|---:|
+| base | 18.66M | 5.099 | 2.942 | 22.6 |
+| slice `1c8ef1-1c9b73` (FUN_1c8ef1 only) | 16.57M | 5.029 | 2.777 | 23.6 |
+| all pcs (`SHARC_FAST_DYNFLAT=1`) | 13.21M | 4.599 | 2.306 | 24.1 |
+
+PCM `e0e6c8af7a84c443` in all 18 runs. The slice removes 2.1M calls for 0.165 s (79 ns each), the
+widened change 5.45M for 0.637 s (117 ns each, run time -22%, headline -9.8%). The flat kernels are
+bigger: compile +1.5 s per run. Remaining calls: 13.21M (11.68M ran); top: `FUN_b80c39` 1.75M,
+`FUN_1c8ef1` 1.40M (stop 0.62M), `FUN_b809f2` 1.00M, `FUN_1c0c76` 0.73M, `FUN_1cdfa1` 0.58M,
+`FUN_1c07c6` 0.58M.
+
+*Next structural options, ranked by ceiling over exactness risk* (112 ns per call):
+1. A call from inside a DO loop to a callee outside it, and its return (b80c39+b809f2+1cdfa1+1cdf46+
+   1c07c6, 4.2M calls = 0.47 s). `cfg.rs` makes any branch whose target is outside the innermost loop
+   an exit, and a return (`JUMP (Mm,Ii)`, a register target) always leaves with `DYN_PC`. Inline the
+   callee (inside REACH) as nodes with the loop dormant, and turn the return into a guard "target ==
+   the address after the call's slots" that continues inline and leaves with `DYN_PC` otherwise. Risk:
+   the PC stack and loop stack at mid-callee exits (the sites must push the open calls), the 29-entry
+   stack limit, the loop-end test inside the callee; no wasm-specific risk (it is IR only).
+2. `stop` exits, 3.0M calls (24 insns each): form coverage, as in batch 2 above.
+3. Kernel-to-kernel chaining that skips the Rust loop (`fast_continue`, `run_inner`, `run_cfg`
+   entry checks and copy-out): at most the 39 ns glue part, about 0.5 s, and needs the state commit
+   moved into the kernels. A redesign; wasm needs the kernels in one module for direct calls (an
+   imported call costs 2.7 ns, an indirect call between modules does not exist).
+Not recommended now: JIT-first or commit-once-per-block; the data above show a quality bug, not the
+engine round trip alone, was the largest single source.
+
+Exactness: PCM identical in 18 timed runs (full 10.5 s, trig1-taps pin). Oracle suite and
+`scenario --all` in this config: see the status line in `docs/plans/scenario-oracles.md`.
+Open: **[O]** wasm: `flat_access` takes its 32-bit path when `usize` is 32 bits, not run here; the
+compile cost of the bigger kernels in V8 is not measured.
 
 ## Generated lowering: design and how to add a family **[D]**
 

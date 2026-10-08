@@ -136,8 +136,11 @@ impl Lower {
             None => self.hint[ic as usize],
         };
         // Earlier passes only collect facts: no windows are made for them.
-        let dynamic =
-            guarded && self.strict() && self.abs[addr as usize].is_none() && anchor.is_some();
+        let dynamic = guarded
+            && self.strict()
+            && self.abs[addr as usize].is_none()
+            && anchor.is_some()
+            && !self.flat_dyn_cur;
         let iv_ranged = self.abs[iv as usize].is_some();
         // No range and no anchor: access the engine's memory through its page
         // table, guarding every access (`flat_access`).
@@ -321,6 +324,7 @@ impl Lower {
     /// access is plain (`glue::NW_PLAIN`, a subset of the addresses
     /// `addressing::normal_word_to_byte` leaves alone): leave before the
     /// instruction otherwise.
+    #[track_caller]
     pub fn guard_plain(&mut self, v: Val) {
         let mut any: Option<Val> = None;
         for &(lo, hi) in super::super::glue::NW_PLAIN.iter() {
