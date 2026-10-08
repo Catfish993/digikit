@@ -273,9 +273,10 @@ state.
 
 ### Phase 8: performance per scenario (S)
 
-- [ ] `tools/perf.py` takes a scenario; report the no-AOT config per FX
+- [x] `tools/perf.py` takes a scenario; report the no-AOT config per FX
       scenario: DSP CPU-s per audio s, interpreted share, uncovered
-      functions ranked by cost.
+      functions ranked by cost. Done: `--scenarios FILE --scenario NAME...`,
+      `tools/perf_agg.py`; results in finding 18 ("Per-FX coverage").
 
 ### Phase 9: hardware reference (M, Em)
 
@@ -362,3 +363,9 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   alarm (sf-del-time-u127: an echo in the last tenth of the run) is checked by
   peak instead. Not done: PCM-identical-with-`--diag` test, shared module
   refactor, `--update-baselines`.
+- 2026-10-08 (cont.): Phase 8: `tools/perf.py` takes `--scenarios FILE
+  --scenario NAME...` (`--seconds 0` = scenario length); `tools/perf_agg.py`
+  aggregates. No-AOT config (`static-insns+follow`): 5.4-5.6% interpreted in all
+  12 scenarios, timed 6.52 (trig1-taps) and 7.26 (sf-chr-depth-d127) CPU s per
+  audio s; the FX add no new cold code except br (`FUN_b8258f`) and srr
+  (`FUN_b826c8`) in the AOT core. Ranked list in finding 18.

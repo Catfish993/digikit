@@ -150,6 +150,102 @@ Browser (no AOT possible without firmware; fast tier only):
 3. Chaining (3 above) in the wasm backend: imported calls are 2.7 ns, so kernel to
    kernel jumps in one module look cheaper than native; confidence low-medium.
 
+## Per-FX coverage in the no-AOT config **[D]**
+
+Measured 2026-10-08 on branch `work/scenario-oracles` (DN2 1.11, shared generated core, no
+firmware blocks). Not re-checked by a second agent. Tools: `tools/perf.py --scenarios FILE
+--scenario NAME... --seconds 0` (0 = each scenario's own length) and `tools/perf_agg.py DIR...`
+(union and FX increase over the dry hold). Scenarios: `scenarios/dn2.json`,
+`dn2-trackfx.json`, `dn2-sendfx.json`.
+
+Config: **`static-insns+follow`** is the translator-only, no-AOT configuration (finding 18's
+"fast-only"; fast regions armed at every instruction, generated lowering and helpers on, AOT
+off). It needs no per-firmware core, so the shared core is enough. Check: `trig1-taps`, 1.5 s,
+5.48% interpreted (finding: 5.57% at 10.5 s; the full run here gives 5.57% too), PCM
+`3bf3ba3026953c22` at 1.5 s as pinned.
+
+Counters are deterministic (untimed, shared lock, three runs in parallel). The CPU column is
+the finding-18 cost model (105 ns interpreted, 266 ns per call, 0.5 ns kernel) and is 15-35%
+high on this config; the two timed rows (exclusive lock) anchor it.
+
+| scenario | audio s | interp % (no AOT) | calls/s | est. CPU s per audio s | interp % (default) | est. CPU (default) |
+|---|---:|---:|---:|---:|---:|---:|
+| trig1-taps | 10.50 | 5.57 | 20.95M | 8.75 (timed 6.52) | 0.37 | 1.50 (meas. 1.47) |
+| tf-dry-hold | 4.10 | 5.50 | 19.67M | 8.38 | 0.25 | 1.42 |
+| tf-br-127 | 4.10 | 5.47 | 19.71M | 8.40 | **1.24** | 1.94 |
+| tf-over-127 | 4.10 | 5.50 | 19.67M | 8.38 | 0.25 | 1.42 |
+| tf-srr-127 | 4.10 | 5.42 | 19.69M | 8.39 | **1.88** | 2.28 |
+| tf-del-127 | 5.90 | 5.46 | 19.60M | 8.34 | 0.25 | 1.42 |
+| tf-rev-127 | 5.90 | 5.46 | 19.60M | 8.34 | 0.25 | 1.42 |
+| tf-chr-127 | 5.90 | 5.46 | 19.62M | 8.35 | 0.25 | 1.42 |
+| sf-dry-hold | 4.36 | 5.50 | 19.67M | 8.38 | 0.25 | 1.42 |
+| sf-del-fb-d127 | 6.16 | 5.46 | 19.63M | 8.35 | 0.25 | 1.42 |
+| sf-rev-decay-u20 | 6.16 | 5.45 | 19.62M | 8.34 | 0.25 | 1.42 |
+| sf-chr-depth-d127 | 4.36 | 5.52 | 19.86M | 8.44 (timed 7.26) | 0.25 | 1.42 |
+
+Timed (exclusive lock, no-AOT, unloaded machine): `trig1-taps` 6.52 CPU s per audio s,
+`sf-chr-depth-d127` 7.26 (the 4 s run carries more compile time per audio s); both gate ok,
+PCM unchanged from the untimed runs. The model over-estimates this config by 34% and 16%.
+Default-config runs were sequential but unlocked; the "est." column is the model, measured
+CPU was 1.47 (trig1-taps), 1.39 (dry hold), 2.21 (`tf-br-127`), 1.52 (`tf-over-127`) and
+2.23 (`tf-srr-127`).
+
+What this shows:
+- **No-AOT, the FX do not change the picture.** Every scenario sits at 5.4-5.6% interpreted
+  and 19.6-21M region calls per audio s. The FX code is part of a chain that runs whatever the
+  parameter values; the interpreted cost is the base DSP chain's, which the dry hold already
+  has. The interpreted tail to cover is therefore the same list for every FX.
+- **With AOT, br and srr are the exceptions.** `FUN_b8258f` (313 insns, br) and `FUN_b826c8`
+  (272 insns, srr) are cold in the AOT core: interpreted 0 insns/s on the dry hold,
+  5.0M and 8.3M insns/s with the effect up. That is +0.9% and +1.6% interpreted and about
+  +0.5 and +0.9 s of estimated CPU per audio s (default 1.42 -> 1.94 and 2.28).
+  Overdrive, delay, reverb and chorus (track and send pages) add no cold code in the AOT core
+  (at most 8k insns/s in `FUN_b80432`).
+- Without AOT, the same two functions are translated (70k insns/s for b8258f in `tf-br-127`,
+  35k in `FUN_1c07c6` for srr), so a translator-only build is not worse than AOT on them.
+- `FUN_b84099` (saturator) and `FUN_b8478d` (FX orchestrator) are not in the top 50 of the
+  cost ranking in any scenario: they are covered. `FUN_b83f72` (delay writer) is rank 4.
+- `tf-dry-hold` vs the del/rev/chr scenarios differ by the voice (hold vs tap); the negative
+  "extra" in `perf_agg` for those is that, not an FX saving.
+
+Ranked uncovered (interpreted) functions, no-AOT config, union of the 12 scenarios, by mean
+interpreted cost (interp insns x 105 ns). Share is of the 8.4 s estimate. "Baseline" is
+trig1-taps and the dry holds; no top-10 function is FX-only. The refusal is fastcov's reason
+at the function's hottest interpreted PC.
+
+| # | function | size | interp insns/s | est. ms per audio s | share | what | why the fast tier stops |
+|---|---|---:|---:|---:|---:|---|---|
+| 1 | 0xb82d1a | 1582 | 4.43M | 465 | 5.5% | loop kernel, unnamed | deny at 0xb832e3: form 3a, loop with a register step that is not stable |
+| 2 | 0x1c2712 | 2633 | 3.9M | 409 (+193 calls) | 4.9% | unnamed | stop at 0x1c2df3: form 14d (not lowered) |
+| 3 | 0x1c4f04 | 568 | 2.26M | 237 | 2.8% | unnamed | stop at 0x1c50e5: 3b "cannot be lowered in this region" |
+| 4 | 0xb83f72 | 295 | 1.86M | 196 | 2.3% | delay writer (finding 15) | stop at 0xb8403a: form 2a_short, a compute opcode with no lowering |
+| 5 | 0x1c54c7 | 779 | 1.85M | 194 | 2.3% | unnamed | stop at 0x1c5619: 8a_rel with a compute in the delay slot (4a) |
+| 6 | 0x1c3911 | 254 | 1.54M | 161 | 1.9% | unnamed | stop at 0x1c39e0: 3a "cannot be lowered in this region" |
+| 7 | 0x1c8ef1 | 3202 | 1.49M | 143 (+1072 calls) | 1.7% | unnamed, the largest call source (3.8M calls/s) | stop at 0x1c99a6: 2a_short compute |
+| 8 | 0x1c37b4 | 326 | 1.32M | 139 | 1.7% | unnamed | stop at 0x1c38bd: 3a "cannot be lowered in this region" |
+| 9 | 0x1c35a7 | 303 | 1.08M | 113 | 1.3% | unnamed | no stop recorded: never selected or dropped |
+| 10 | 0x1c244d | 709 | 0.79M | 78 (+235 calls) | 0.9% | unnamed | deny at 0x1c2680: 3a, address range unknown |
+
+Together the ten are about 2.1 s of the 2.9 s estimated interpreter time (the interpreted
+share is 5.5% of 502M insns per audio s). Reasons group into five: 3a/3b accesses the lowering
+cannot place (ranks 3, 6, 8, 10: "cannot be lowered in this region", "address range unknown"),
+a loop with an unstable register step (1), compute forms without a lowering (2a_short: 4, 7),
+form 14d (2) and a compute in a branch delay slot (5). Names for the 0x1c.... functions were
+not looked up in findings 06/15; `FUN_1c8ef1` is the biggest call source, so chaining matters
+more there than coverage.
+
+Recommendation: the FX are not a separate coverage problem in the no-AOT build; fix the base
+chain list above, in this order: (a) the 3a/3b "cannot be lowered in this region" and
+"address range unknown" refusals (ranks 3, 6, 8, 10, about 0.6 s); (b) the 2a_short compute
+opcodes at 0xb8403a and 0x1c99a6 (ranks 4, 7); (c) form 14d at 0x1c2df3 and the 8a_rel
+delay-slot compute at 0x1c5619 (ranks 2, 5); (d) the stable-step loop in `FUN_b82d1a`
+(rank 1, the single largest, 5.5%). Together the ten are 25% of the estimated CPU. The interpreted
+tail needs to fall from 5.5% to 0.1% for the browser (see "Next levers"), so this list is a
+start, not the goal: the rest is a long tail (top 20 are 78% of the estimated cost in
+this config, but each remaining function is under 1%). Separately, `FUN_b8258f` and
+`FUN_b826c8` are the only FX code that the AOT desktop build misses; a regenerated AOT core
+or hybrid arming of those two functions fixes the desktop.
+
 ## Generated lowering: design and how to add a family **[D]**
 
 Folded from the lane F notebooks (not re-checked by a second agent).

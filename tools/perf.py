@@ -255,6 +255,20 @@ def report_config(label, t, ranking, costs, top) -> str:
     return "\n".join(lines) + "\n"
 
 
+def refusal_reasons(diag, funcs, rows) -> dict[str, str]:
+    """Why the fast tier left each function interpreted (fastcov's reason text)."""
+    if diag is None:
+        return {}
+    out = {}
+    for r in rows:
+        mine = [(n, pc) for pc, n in diag.hist.items() if funcs.of(pc)[0] == r["entry"]]
+        pc = max(mine)[1] if mine else r["entry"]
+        out[f"{r['entry']:#x}"] = (
+            f"hottest interpreted pc {pc:#x}: {diag.reason_of(pc, funcs)}"
+        )
+    return out
+
+
 def hybrid_entries(funcs, entries: list[int], image: str) -> list[int]:
     """Every static basic-block start (and the entry) inside the given functions."""
     db = funcs.db
@@ -344,14 +358,15 @@ def use_dt2(args) -> None:
         "DSP state": ready / "digi-audio-m5.snap.dsp",
         "CF snapshot": ready / "digi-audio-m5.snap",
     }
-    extra = ["--scenarios", str(ROOT / "scenarios/dt2.json")]
+    extra = ["--scenarios", str(args.scenarios or ROOT / "scenarios/dt2.json")]
     if args.card_image:
         extra += ["--card-image", args.card_image]
     coupled.inputs = lambda: inputs
     original = coupled.run_args
     coupled.run_args = lambda binary, ins, ex: original(binary, ins, [*extra, *ex])
-    if args.scenario == "trig1-taps":
-        args.scenario = "dt2-sample-trig"
+    args.scenario = [
+        "dt2-sample-trig" if n == "trig1-taps" else n for n in args.scenario
+    ]
     if args.image == "dn2-1.11":
         args.image = "dt2-1.16"
     fastcov.STATIC_IMAGE = args.image
@@ -359,8 +374,26 @@ def use_dt2(args) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--scenario", default="trig1-taps")
-    ap.add_argument("--seconds", type=float, default=1.5)
+    ap.add_argument(
+        "--scenario",
+        nargs="+",
+        action="extend",
+        default=None,
+        metavar="NAME",
+        help="scenario name(s), default trig1-taps; each is run and reported in turn",
+    )
+    ap.add_argument(
+        "--scenarios",
+        default=None,
+        metavar="FILE",
+        help="scenario file holding the names (default: the device's file)",
+    )
+    ap.add_argument(
+        "--seconds",
+        type=float,
+        default=1.5,
+        help="audio seconds per run; 0 runs each scenario for its own length",
+    )
     ap.add_argument("--config", action="append", default=None, metavar="NAME")
     ap.add_argument(
         "--timed", action="store_true", help="take the exclusive benchmark lock"
@@ -400,6 +433,9 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=2400)
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
+    args.scenario = args.scenario or ["trig1-taps"]
+    if args.seconds <= 0:  # 0: each scenario's own length
+        args.seconds = None
 
     # The shared core (`mise run core`): current semantics, no firmware-derived
     # blocks, so no AOT configs; `--gen prod` keeps the prod generated core.
@@ -417,6 +453,12 @@ def main() -> int:
         os.environ["SHARC_GEN_DIR"] = str(core)
     if args.device == "dt2":
         use_dt2(args)
+    elif args.scenarios:
+        file = str(pathlib.Path(args.scenarios).resolve())
+        base = coupled.run_args
+        coupled.run_args = lambda binary, ins, ex: base(
+            binary, ins, ["--scenarios", file, *ex]
+        )
     if args.regions:
         wrapped = coupled.run_args
         coupled.run_args = lambda binary, ins, ex: wrapped(
@@ -426,19 +468,18 @@ def main() -> int:
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d-%H%M%S")
     # out/runs/perf/<stamp>/: report.md and perf.json here, the runs' own
     # reports and stderr in logs/.
-    report_dir = (
-        pathlib.Path(args.out) if args.out else digi_env.run_dir("perf", stamp)
-    )
+    report_dir = pathlib.Path(args.out) if args.out else digi_env.run_dir("perf", stamp)
     out = report_dir / "logs"
     out.mkdir(parents=True, exist_ok=True)
     if args.calibrate:
-        calibrate(binary, args.scenario, args.seconds, out, args.timeout, args.image)
+        calibrate(binary, args.scenario[0], args.seconds, out, args.timeout, args.image)
         return 0
     costs = load_costs()
     funcs = fastcov.Functions(args.image)
+    first = args.scenario[0]
     configs = [
         hybrid_config(
-            c, binary, args.scenario, args.rank_seconds, out, args.timeout,
+            c, binary, first, args.rank_seconds, out, args.timeout,
             args.image, funcs, costs,
         )
         if c.startswith("hybrid-top:")
@@ -446,45 +487,62 @@ def main() -> int:
         for c in (args.config or ["static-blocks+follow"])
     ]  # fmt: skip
     md = [
-        f"# DSP performance, {args.scenario}, {args.seconds} s, {'timed (locked)' if args.timed else 'unlocked'}",
+        f"# DSP performance, {', '.join(args.scenario)}, {args.seconds} s, {'timed (locked)' if args.timed else 'unlocked'}",
         f"firmware {os.environ.get('DIGI_EMU_SYX', 'default')}, {stamp}",
         "",
     ]
     results = []
-    for label, env in configs:
-        t = timed_run(
-            binary,
-            args.scenario,
-            args.seconds,
-            env,
-            label,
-            out,
-            args.timed,
-            args.timeout,
-        )
-        ranking = []
-        if args.regions:
-            sc = fastcov.scenario_report(pathlib.Path(t["report"]), args.scenario)
-            rr = region_rank(sc, funcs)
-            tot = sum(r["ns"] for r in rr) or 1
-            md.append(f"### region profile (fast + AOT wall time) for {label}\n")
-            md.append("cumulative share of that time: " + cumulative(rr, "ns") + "\n")
-            md.append(
-                "| function | fast ms/audio s | AOT ms/audio s | insns/s | calls/s | share |\n|---|---:|---:|---:|---:|---:|"
+    for scenario in args.scenario:
+        if len(args.scenario) > 1:
+            md.append(f"# scenario {scenario}\n")
+            out = report_dir / "logs" / scenario
+            out.mkdir(parents=True, exist_ok=True)
+        for label, env in configs:
+            t = timed_run(
+                binary,
+                scenario,
+                args.seconds,
+                env,
+                label,
+                out,
+                args.timed,
+                args.timeout,
             )
-            for r in rr[: args.top]:
+            ranking = []
+            if args.regions:
+                sc = fastcov.scenario_report(pathlib.Path(t["report"]), scenario)
+                rr = region_rank(sc, funcs)
+                tot = sum(r["ns"] for r in rr) or 1
+                md.append(f"### region profile (fast + AOT wall time) for {label}\n")
                 md.append(
-                    f"| {r['entry']:#x} {r['name']} | {r['fast_ns'] / 1e6 / t['audio']:.0f} | {r['aot_ns'] / 1e6 / t['audio']:.0f} "
-                    f"| {r['insns'] / t['audio'] / 1e6:.1f}M | {r['calls'] / t['audio'] / 1e6:.3f}M | {100 * r['ns'] / tot:.1f}% |"
+                    "cumulative share of that time: " + cumulative(rr, "ns") + "\n"
                 )
-            md.append("")
-        if not args.no_diag:
-            diag = diag_run(
-                binary, args.scenario, args.seconds, env, label, out, args.timeout
+                md.append(
+                    "| function | fast ms/audio s | AOT ms/audio s | insns/s | calls/s | share |\n|---|---:|---:|---:|---:|---:|"
+                )
+                for r in rr[: args.top]:
+                    md.append(
+                        f"| {r['entry']:#x} {r['name']} | {r['fast_ns'] / 1e6 / t['audio']:.0f} | {r['aot_ns'] / 1e6 / t['audio']:.0f} "
+                        f"| {r['insns'] / t['audio'] / 1e6:.1f}M | {r['calls'] / t['audio'] / 1e6:.3f}M | {100 * r['ns'] / tot:.1f}% |"
+                    )
+                md.append("")
+            diag = None
+            if not args.no_diag:
+                diag = diag_run(
+                    binary, scenario, args.seconds, env, label, out, args.timeout
+                )
+                ranking = rank(diag, funcs, costs, t["audio"])
+            md.append(report_config(label, t, ranking, costs, args.top))
+            results.append(
+                {
+                    "scenario": scenario,
+                    "config": label,
+                    "env": env,
+                    "run": t,
+                    "ranking": ranking[:50],
+                    "reasons": refusal_reasons(diag, funcs, ranking[:20]),
+                }
             )
-            ranking = rank(diag, funcs, costs, t["audio"])
-        md.append(report_config(label, t, ranking, costs, args.top))
-        results.append({"config": label, "env": env, "run": t, "ranking": ranking[:50]})
     text = "\n".join(md)
     (report_dir / "report.md").write_text(text)
     (report_dir / "perf.json").write_text(json.dumps(results, indent=1))
