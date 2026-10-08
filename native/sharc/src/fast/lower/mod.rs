@@ -122,6 +122,22 @@ impl Abs {
     }
     /// Range over all iterations t in [0, n-1] of the value at a fixed point
     /// of the body.
+    /// The range as byte addresses: a constant range that lies below zero
+    /// is the 32-bit address a `ci` constant above 2^31 stands for
+    /// (`ci` sign-extends); the sum is taken modulo 2^32.
+    pub fn as_addr(self) -> Abs {
+        let constant = self.base == Base::None && self.ts == 0 && self.nf == 0;
+        if constant && self.hi < 0 && self.lo >= -(1 << 32) {
+            Abs {
+                lo: self.lo + (1 << 32),
+                hi: self.hi + (1 << 32),
+                ..self
+            }
+        } else {
+            self
+        }
+    }
+
     pub fn span(&self, n: i64) -> (i64, i64) {
         let d = self.ts * (n - 1);
         let f = self.nf * n;
@@ -263,6 +279,9 @@ pub struct Env {
     /// otherwise the kernel is made for unknown history bits
     /// (`Req::CaccUnknown`), which the generic core's compare forgets.
     pub cacc_known: bool,
+    /// Every window access of the region is a flat guarded access
+    /// (`cfg::flat_auto`): the static windows kept declining at run time.
+    pub flat_windows: bool,
 }
 
 /// `SHARC_FAST_GEN`: `0` lowers with the hand-written forms only, a comma list
@@ -427,6 +446,8 @@ pub struct Lower {
     /// dynamic window that would end the region on every miss is refused, so
     /// that the instruction becomes a helper call (`lower::helper`).
     pub helper_form: bool,
+    /// The instruction being lowered gets a flat access when it has no address range.
+    pub flat_cur: bool,
     /// The address of the instruction being lowered in a loop or straight
     /// kernel (a CFG kernel has it in `cfgx`).
     pub cur_pc: Option<u32>,
@@ -526,6 +547,7 @@ impl Lower {
             mode1_cur: 0,
             pe_off: 0,
             helper_form: false,
+            flat_cur: false,
             cur_pc: None,
         };
         l.mode1_cur = l.env.mode1;
@@ -1276,10 +1298,15 @@ impl Lower {
 
     // -- memory windows ----------------------------------------------------
 
+    /// Whether an access with no window may be a flat guarded access here.
+    fn flat_ok(&self) -> bool {
+        mem_addr::flat_xfers() || self.flat_cur || self.env.flat_windows
+    }
+
     /// The access at ADDR through the engine's page table when no window can
     /// serve it (`mem_addr::flat_access`), else the refusal WHY.
     fn flat_window(&mut self, addr: Val, bytes: i64, write: bool, why: &str) -> LR<(Val, Val)> {
-        if !mem_addr::flat_xfers() {
+        if !self.flat_ok() {
             return refuse(why);
         }
         if bytes == 4 {
@@ -1290,8 +1317,11 @@ impl Lower {
 
     /// Byte address in range `a` is a window access of `bytes` bytes.
     pub fn window_access(&mut self, addr: Val, bytes: i64, write: bool) -> LR<(Val, Val)> {
+        if self.env.flat_windows && self.strict() {
+            return self.flat_access(addr, bytes as u8, write);
+        }
         let abs = match self.abs[addr as usize] {
-            Some(a) => a,
+            Some(a) => a.as_addr(),
             None if !self.strict() => Abs::konst(0),
             None => return self.flat_window(addr, bytes, write, "address range unknown"),
         };
@@ -1393,7 +1423,7 @@ impl Lower {
     /// the range where normal-word accesses are plain byte addresses scaled
     /// by 4 (no normal-word mapping).
     pub fn require_plain(&mut self, addr: Val, bytes: i64) -> LR<()> {
-        match self.abs[addr as usize] {
+        match self.abs[addr as usize].map(Abs::as_addr) {
             Some(a) => {
                 let r = Req::NwPlain {
                     base: a.base,
@@ -1409,7 +1439,7 @@ impl Lower {
             }
             None if !self.strict() => Ok(()),
             // No range to require: guard each access instead (flat accesses).
-            None if mem_addr::flat_xfers() => {
+            None if self.flat_ok() => {
                 self.guard_plain(addr);
                 Ok(())
             }
@@ -1596,6 +1626,7 @@ impl Lower {
     fn lower_insn_inner(&mut self, idx: u32, d: &Dec) -> LR<()> {
         self.begin_insn(idx);
         let at = self.cfgx.as_ref().map(|x| x.pc).or(self.cur_pc);
+        self.flat_cur = at.is_some_and(super::cfg::is_flat_pc);
         // Only an instruction that cannot be lowered becomes a helper (region.rs
         // `deny`); one with a guarded dynamic window keeps it. With
         // SHARC_FAST_HELPER_NODYN=1 (lane B's stub) every helper-capable
@@ -1946,6 +1977,7 @@ mod tests {
             guarded_dyn: false,
             bank_model: false,
             cacc_known: true,
+            flat_windows: false,
         }
     }
 
@@ -1975,5 +2007,28 @@ mod tests {
         // Another anchor gets its own slot.
         l.dynamic_window(addr, 19, true).unwrap();
         assert_eq!(l.wins.len(), 2);
+    }
+    #[test]
+    fn flat_windows_make_no_window_slot() {
+        let mut e = env();
+        e.flat_windows = true;
+        let mut l = Lower::new(e, Plan::default(), 2);
+        let addr = l.ci(0x20_0000);
+        l.window_access(addr, 4, true).unwrap();
+        l.window_access(addr, 4, false).unwrap();
+        assert!(l.wins.is_empty());
+    }
+
+    #[test]
+    fn a_negative_constant_range_is_a_high_address() {
+        // `ci` sign-extends: 0x8052d790 is the range -2142053488, the address
+        // 0x8052d790 modulo 2^32.
+        let a = Abs::konst(0x8052_d790u32 as i32 as i64).as_addr();
+        assert_eq!((a.lo, a.hi), (0x8052_d790, 0x8052_d790));
+        // A range that crosses zero, or has a base, stays as it is.
+        let b = Abs { lo: -4, hi: 4, ..Abs::konst(0) };
+        assert_eq!(b.as_addr(), b);
+        let c = Abs { base: Base::Reg(2), ..Abs::konst(-8) };
+        assert_eq!(c.as_addr(), c);
     }
 }

@@ -182,6 +182,56 @@ pub fn force_helper(pc: u32) {
         .insert(pc);
 }
 
+/// `SHARC_FAST_FLATAUTO=1`: an access that has no address range (no register
+/// anchor either) is lowered as a flat guarded access (`Lower::flat_access`)
+/// at that instruction only, instead of ending the region there; and a region
+/// whose static windows keep declining at run time (a window needs every byte
+/// of its hull present, or overlay-written for a store) is rebuilt with flat
+/// accesses instead. Exact: a failing guard leaves before the instruction.
+pub fn flat_auto() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SHARC_FAST_FLATAUTO").is_ok_and(|v| v != "0"))
+}
+
+static FLAT_PCS: std::sync::Mutex<Option<std::collections::BTreeSet<u32>>> =
+    std::sync::Mutex::new(None);
+static FLAT_WINS: std::sync::Mutex<Option<std::collections::BTreeSet<u32>>> =
+    std::sync::Mutex::new(None);
+
+/// Instructions lowered with a flat access (see `flat_auto`); true if new.
+pub fn mark_flat_pc(pc: u32) -> bool {
+    FLAT_PCS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(Default::default)
+        .insert(pc)
+}
+
+pub fn is_flat_pc(pc: u32) -> bool {
+    FLAT_PCS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|f| f.contains(&pc))
+}
+
+/// Region roots whose windows are all flat accesses (see `flat_auto`); true if new.
+pub fn mark_flat_win(root: u32) -> bool {
+    FLAT_WINS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(Default::default)
+        .insert(root)
+}
+
+pub fn is_flat_win(root: u32) -> bool {
+    FLAT_WINS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|f| f.contains(&root))
+}
+
 pub fn is_forced(pc: u32) -> bool {
     FORCED
         .lock()

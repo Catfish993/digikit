@@ -26,6 +26,7 @@ TYPED = [
     "tools/dspdiff.py",
     "tests/test_dspdiff.py",
     "tests/test_audiocheck.py",
+    "tools/aot_fxprof.py",
     "tools/benchlock.py",
     "tools/digi_client.py",
     "emu/livesharc.py",

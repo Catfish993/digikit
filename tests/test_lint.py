@@ -32,6 +32,7 @@ CLEAN = [
     "tests/test_digi_client.py",
     "tools/dsp_patch.py",
     "tools/ready.py",
+    "tools/aot_fxprof.py",
     "tools/aot_gen.py",
     "tools/dt2_sample_check.py",
     "tools/sharc_frame_diff.py",

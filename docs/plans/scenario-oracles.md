@@ -369,3 +369,17 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   12 scenarios, timed 6.52 (trig1-taps) and 7.26 (sf-chr-depth-d127) CPU s per
   audio s; the FX add no new cold code except br (`FUN_b8258f`) and srr
   (`FUN_b826c8`) in the AOT core. Ranked list in finding 18.
+- 2026-10-09: DN2 AOT core regenerated with FX-active profiles (`tools/aot_fxprof.py`;
+  tf/sf *-127 scenarios merged into cov6/ent9/trans9). 1751 -> 2657 blocks. Default-config
+  interpreted: br 1.24 -> 0.33%, srr 1.88 -> 0.24%, dry 0.25%. `mise run scenarios` pins
+  unchanged, `mise run scenarios:check` 61 passed. Backup: `gen-pre-fxprof-20261009`. See
+  finding 18. Dry-hold CPU not re-timed (needs an exclusive run).
+- 2026-10-09 (cont.): timed exclusive A/B of the FX-profile core vs `gen-pre-fxprof-20261009`:
+  br-127 2.04 -> 1.62, srr-127 1.94 -> 1.47 DSP CPU s per audio s; dry hold and trig1-taps
+  +0.3-0.4% (20 pairs, noise level); PCM identical in all runs. Keep the larger core (finding 18).
+- 2026-10-09: translator refusals batch 1 (finding 18, "Batch 1"): flat guarded access for
+  unknown-range accesses and for roots whose static windows keep declining, plus a u32 read of
+  sign-extended constant ranges (`native/sharc/src/fast`, opt-in `SHARC_FAST_FLATAUTO=1`,
+  `+flat` config). No-AOT trig1-taps interpreted 5.48 -> 0.99%, timed 6.63 -> 5.00 CPU s per
+  audio s, PCM `e0e6c8af7a84c443` unchanged; oracle suite 61 passed and `scenario --all` pins ok
+  in that config (shared core); `cargo test` native/sharc 64 passed. Default stays off.

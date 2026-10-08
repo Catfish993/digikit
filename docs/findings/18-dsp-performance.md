@@ -203,6 +203,30 @@ What this shows:
   (at most 8k insns/s in `FUN_b80432`).
 - Without AOT, the same two functions are translated (70k insns/s for b8258f in `tf-br-127`,
   35k in `FUN_1c07c6` for srr), so a translator-only build is not worse than AOT on them.
+- **Fix [V by pins, counters from one run]: FX-active profiles (2026-10-09).** The DN2 AOT
+  core was regenerated from the old inputs (cov6/ent9/trans9) plus `coupled-run
+  --profile-execution` profiles of `tf-br/srr/over/del/rev/chr-127` and `sf-del-fb-d127`,
+  `sf-rev-decay-u20`, `sf-chr-depth-d127`, `sf-mst-thr0` (default config, current core;
+  `tools/aot_fxprof.py`, merged by sum per key, same rsgen flags). Blocks 1751 -> 2657 (20722
+  -> 38378 insns; gen 90 -> 122 MB, so the `sharc-gen` compile is longer). Default config,
+  `perf.py --gen prod --config default`, interpreted share: br 1.24% -> 0.33%, srr 1.88% ->
+  0.24%, dry hold 0.25% -> 0.25%. `FUN_b826c8` is now 0 interpreted; `FUN_b8258f` fell from
+  3.7M to 0.44M insns/s (its loop body at 0xb825f2..0xb82658 still runs in the interpreter;
+  +46 ms/audio s, not resolved). Measured CPU s per audio s (unlocked, other jobs running):
+  br 2.21 -> 1.61, srr 2.23 -> 1.51, dry hold 1.39 -> 1.51. The dry-hold figure went up with
+  the larger core (or the load), so check with an exclusive timed run before quoting it. DT2
+  was not regenerated: it has no FX scenarios to profile.
+- **A/B of the larger core [V, timed, exclusive lock, 2026-10-09].** Old (`gen-pre-fxprof-20261009`,
+  binary in `out/native/target/g-e220e7a2`) vs new (prod gen), same sources, `coupled-run`
+  alternated old/new, 2.0 s each, DSP CPU s per audio s (median, min-max): br-127 2.04
+  (1.97-2.15) -> 1.62 (1.53-1.64), 7 pairs, -21%; srr-127 1.94 (1.92-1.99) -> 1.47
+  (1.45-1.51), 7 pairs, -24%; dry hold 1.439 (1.41-1.57) -> 1.444 (1.42-1.63), 20 pairs, +0.3%
+  (inside the IQR 1.42-1.46 / 1.43-1.48); trig1-taps 1.424 (1.41-1.47) -> 1.430 (1.41-1.46), 20
+  pairs, +0.4%. PCM sha256 is identical old vs new in every run of all four scenarios. The
+  earlier "dry hold 1.39 -> 1.51" was load noise. **Recommendation: keep the larger core**
+  (large FX wins, no measurable cost elsewhere; the price is a longer `sharc-gen` compile).
+  Script: scratchpad `ab.py` over `perf.timed_run` (`native_pgo bench-bins` runs the PGO
+  workload test binary, not `coupled-run`).
 - `FUN_b84099` (saturator) and `FUN_b8478d` (FX orchestrator) are not in the top 50 of the
   cost ranking in any scenario: they are covered. `FUN_b83f72` (delay writer) is rank 4.
 - `tf-dry-hold` vs the del/rev/chr scenarios differ by the voice (hold vs tap); the negative
@@ -245,6 +269,47 @@ start, not the goal: the rest is a long tail (top 20 are 78% of the estimated co
 this config, but each remaining function is under 1%). Separately, `FUN_b8258f` and
 `FUN_b826c8` are the only FX code that the AOT desktop build misses; a regenerated AOT core
 or hybrid arming of those two functions fixes the desktop.
+
+Batch 1 of the refusals (2026-10-09) **[D]**, no-AOT `static-insns+follow`, `trig1-taps`,
+shared core, opt-in `SHARC_FAST_FLATAUTO=1` (config suffix `+flat` in `tools/fastcov.py`). Not
+re-checked by a second agent.
+- Root causes. The four "3a/3b cannot be lowered" stops were not one refusal. (1) Address
+  range unknown: a pointer loaded from memory or passed in a register has no static range and
+  no anchor register (0x1c2680 `R1 = DM(I2,M6)`, I2 loaded from a stack slot; 0x1c399a,
+  0x1c3862 the same; 0x1c5054), or a constant base with a data-dependent modifier (jump-table
+  loads `I12 = DM(I4,M4)` at 0x1c50f1 and 0x1c5284, I4 constant, M4 = R8). The region ended
+  there (`deny`). (2) Window decline at run time, the larger part: 0x1c3911 and 0x1c37b4 (roots
+  never ran: 569 and 284 declines, then back-off) and the roots 0x1c4fbe..0x1c5016 of
+  `FUN_1c4f04` declined `window: not plain/present RAM (write)`. A static store window is the
+  hull of all stores of the region and `Mem::window` needs every byte of the hull
+  overlay-written; the hull covers stores on paths that never ran for that object (first byte
+  and last byte neither present nor dirty), so the region declined forever.
+- Fix, translator only (`native/sharc/src/fast`): (a) `flat_auto`: an instruction refused for
+  "address range unknown" is re-lowered as a flat guarded access (the existing
+  `Lower::flat_access`, per-access page-table and bitmap guards) at that PC only, not for every
+  access as `SHARC_FAST_FLAT` does; (b) a root whose windows decline 3 times is rebuilt with
+  every window access flat (`Env::flat_windows`), so a hole in a hull costs one guard exit on
+  the path that touches it; (c) `Abs::as_addr`: a constant above 2^31 was sign-extended
+  (`I4 = 0x8052d790` gave the range -2142053488), so its `NwPlain` requirement and window range
+  failed for ever; it is now read modulo 2^32 (needed once (a) let regions reach such code:
+  `FUN_1c8ef1` went 2.1M to 6.4M interpreted insns per 1.5 s without it).
+- Result (1.5 s): interpreted 5.48% -> 0.99% of 502M insns/s, region calls 19.5M -> 17.2M/s,
+  PCM `3bf3ba3026953c22` unchanged. Interpreted insns/s of the four: `FUN_1c4f04` 2.26M ->
+  0.08M, `FUN_1c3911` 1.54M -> 0, `FUN_1c37b4` 1.32M -> 0, `FUN_1c244d` 0.79M -> 0.06M. It also
+  covers most of the next ranks (`FUN_b82d1a` 4.43M -> 0.04M, `FUN_1c2712` 3.9M -> 0.15M,
+  `FUN_b83f72`, `FUN_1c54c7`, `FUN_1c35a7`, `FUN_1c8ef1` 1.4M -> 0.24M).
+- Timed (exclusive lock, 10.5 s, no diagnostics): 6.63 -> 5.00 DSP CPU s per audio s (-25%), PCM
+  `e0e6c8af7a84c443` in both (the current `trig1-taps` pin). A 1.5 s run shows 15.7 s per audio
+  s because the flat kernels are larger: Cranelift compile time is paid up front, so judge it on
+  the full length. For the browser that compile cost has to be re-measured with the wasm backend.
+- Exactness: oracle suite (`tests/scenarios --slow`, 61 passed) and `scenario --all` pins ok in
+  this config on the shared core; `cargo test` in `native/sharc` 64 passed (two new unit tests).
+  Default (AOT) config not measured: the flag is opt-in, `as_addr` is always on.
+- Left in these functions (batch 2): `2a_short` compute cu=0 opcode 0xad at 0x1c4fa3, 0x1c516b,
+  0x1c5186; multifunction category 0x1e/0x1f at 0x1c5060 (3a), 0x1c553a, 0x1c5547; `8a_rel` with a
+  compute in the delay slot at 0x1c55c5; in `FUN_1c244d` the 17a/4a/18a loop stops at 0x1c2583,
+  0x1c25ae, 0x1c25bd and 0x1c252d. Interpreted share is now 0.99%; the top remaining are
+  `FUN_1c0c76` (1.1M), `FUN_1c07c6` (0.87M), `FUN_1c06ba` (0.69M), `FUN_1c0a6f`, `FUN_1c02a4`.
 
 ## Generated lowering: design and how to add a family **[D]**
 

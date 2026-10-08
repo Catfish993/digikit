@@ -142,7 +142,7 @@ impl Lower {
         // No range and no anchor: access the engine's memory through its page
         // table, guarding every access (`flat_access`).
         if !dynamic
-            && flat_xfers()
+            && self.flat_ok()
             && self.strict()
             && !iv_ranged
             && self.abs[addr as usize].is_none()

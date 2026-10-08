@@ -1653,6 +1653,9 @@ pub fn run_cfg(
             l.regs_ok(s)
         };
         if !regs || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters) {
+            if debug_req() {
+                req_why(s, r, iters);
+            }
             return Err(Decline::Req);
         }
     } else if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters)
@@ -1707,6 +1710,22 @@ pub fn run_cfg(
             if spec.dynamic_anchor.is_some() {
                 empty_dyn_window(ctx, w);
                 continue;
+            }
+            // SHARC_FAST_WINFAIL: name the window that could not be resolved.
+            if std::env::var_os("SHARC_FAST_WINFAIL").is_some() {
+                let b = match spec.base {
+                    Base::None => 0,
+                    Base::Reg(c) => s.r[c as usize].b as i64,
+                };
+                let (lo, hi) = (b + spec.lo, b + spec.hi);
+                let pg = |a: i64| {
+                    let a = a as u32;
+                    (s.mem.present(a), s.mem.dirty(a))
+                };
+                eprintln!(
+                    "winfail root={:#x} w{w} base {:?} b={:#x} lo={:#x} hi={:#x} ts={} nf={} iters={} write={} first(pres,dirty)={:?} last={:?}",
+                    r.entry_pc, spec.base, b, lo, hi, spec.ts, spec.nf, iters, spec.write, pg(lo), pg(hi - 1)
+                );
             }
             cov_why(|| {
                 let dynamic = spec.dynamic_anchor.is_some();

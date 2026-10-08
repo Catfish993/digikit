@@ -407,6 +407,8 @@ struct Slot {
     last_eq: u64,
     /// Calls whose first instruction left the kernel before completing.
     exit0: u32,
+    /// Calls declined for want of a resolvable window (`cfg::flat_auto`).
+    win_fails: u32,
     transient: u32,
     /// Selected by `Auto` (dropped again on refusal or low yield).
     auto: bool,
@@ -434,6 +436,8 @@ const BLOOM_WORDS: usize = 1024;
 const MAX_VARIANTS: usize = 4;
 const REBUILD_BUDGET: u32 = 16;
 const WIN_BACKOFF_MAX: u8 = 8;
+/// Window declines of one entry before it is rebuilt with flat accesses.
+const WIN_FLAT_AFTER: u32 = 3;
 /// After the build budget is spent, the alternatives are no longer tried
 /// once this many calls in a row were declined by every variant.
 const ALT_GIVE_UP: u32 = 64;
@@ -1344,10 +1348,25 @@ impl FastEngine {
                 } else if !matches!(d, glue::Decline::Exit0) {
                     slot.exit0 = 0;
                 }
+                let mut win_rebuild = false;
+                if d == glue::Decline::Window && cfg::flat_auto() {
+                    slot.win_fails += 1;
+                    if slot.win_fails == WIN_FLAT_AFTER
+                        && slot.rebuilds < REBUILD_BUDGET
+                        && cfg::mark_flat_win(pc)
+                    {
+                        // The static windows keep failing (an unwritten byte
+                        // in a hull): guard each access instead.
+                        win_rebuild = true;
+                        slot.win_back = 0;
+                        slot.win_skip = 0;
+                    }
+                }
                 if (d == glue::Decline::Req
                     && slot.rebuilds < REBUILD_BUDGET
                     && !req_is_within(s, region))
                     || exit0_rebuild
+                    || win_rebuild
                 {
                     // No variant fits the state (a baked constant, MODE1 or
                     // the CACC history differs): make another from this

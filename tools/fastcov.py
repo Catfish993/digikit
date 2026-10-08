@@ -24,6 +24,7 @@ Configurations (``--config``, repeatable; default ``default fast-auto``):
     fast-verified       SHARC_AOT=0, only the verified regions and cluster roots
     fast-auto[:T,M[,1]] SHARC_AOT=0, no verified regions, SHARC_FAST_AUTO=T,M[,blocks]
                         (fast tier only: the firmware-free case; default 256,64)
+    <config>+flat       SHARC_FAST_FLATAUTO=1 over any fast-only config
     static-funcs[:IMAGE] / static-blocks[:IMAGE]   SHARC_AOT=0, region entries = every function
                         entry / basic-block start of the program database, chosen at load
     fast-auto+verified[:T,M[,1]]   the same plus the verified regions
@@ -118,6 +119,11 @@ def parse_config(spec: str) -> tuple[str, dict[str, str]]:
         # The generated lowering of tools/sharc_lowergen (lane F) for every form it has.
         _, env = parse_config(spec.removesuffix("+gen"))
         return spec, {**env, "SHARC_FAST_GEN": "all"}
+    if spec.endswith("+flat"):
+        # Accesses with no address range, and regions whose static windows keep
+        # declining, are lowered as flat guarded accesses (cfg::flat_auto).
+        _, env = parse_config(spec.removesuffix("+flat"))
+        return spec, {**env, "SHARC_FAST_FLATAUTO": "1"}
     if spec.endswith("+follow"):
         # Also make the instruction after each stop instruction an entry.
         _, env = parse_config(spec.removesuffix("+follow"))

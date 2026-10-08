@@ -178,6 +178,7 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         guarded_dyn: false,
         bank_model: s.cfg.bank_model,
         cacc_known: s.r[118].m & 0xff00_0000 == 0xff00_0000,
+        flat_windows: false,
     }
 }
 
@@ -242,6 +243,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         .any(|(_, d)| d.field("cond").is_some_and(|c| c != 0x1f));
     let mut env = env_of(s, flag_v);
     apply_volatile(&mut env, pc);
+    env.flat_windows = cfg::is_flat_win(pc);
     let mut plan = Plan::default();
     let mut last = None;
     for pass in 0..MAX_PASSES {
@@ -387,6 +389,7 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
     }
     let mut env = env_of(s, true);
     apply_volatile(&mut env, pc);
+    env.flat_windows = cfg::is_flat_win(pc);
     env.guarded_dyn = cluster;
     // An instruction that cannot be lowered where it stands (an address that
     // has no range, too many windows) becomes the end of the region.
@@ -405,6 +408,16 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
                     eprintln!("cov helper root={pc:#x} at={at:#x} why={}", e.0);
                 }
                 helpers.insert(at);
+            }
+            Err((e, Some(at)))
+                if cfg::flat_auto()
+                    && e.0.contains("address range unknown")
+                    && !deny.contains(&at)
+                    && cfg::mark_flat_pc(at) =>
+            {
+                if std::env::var_os("SHARC_FAST_COV").is_some() {
+                    eprintln!("cov flat root={pc:#x} at={at:#x} why={}", e.0);
+                }
             }
             Err((e, Some(at))) if at != pc && !deny.contains(&at) => {
                 if std::env::var_os("SHARC_FAST_LOG").is_some() {
