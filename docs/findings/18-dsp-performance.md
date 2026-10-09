@@ -429,6 +429,43 @@ Exactness: PCM identical in 18 timed runs (full 10.5 s, trig1-taps pin). Oracle 
 Open: **[O]** wasm: `flat_access` takes its 32-bit path when `usize` is 32 bits, not run here; the
 compile cost of the bigger kernels in V8 is not measured.
 
+## Compile timeline and offload premises **[D]**
+
+Measured 2026-10-09 on `work/scenario-oracles`, no-AOT `static-insns+follow` (flat fallback on),
+DN2 1.11, shared core, exclusive lock; new `SHARC_FAST_TL=1` timeline, summarised by
+`tools/fast_timeline.py`. Not re-checked by a second agent. Design: `docs/design/fast-compile-offload.md`.
+
+- **Compile is a cold-start freeze, not a trickle.** `trig1-taps` 20 audio s, PCM `e1556053127f219c`:
+  99.8 DSP-thread s = compile 19.8 + build 2.9 + run 77.1. 6789 of 8741 builds and 16.5 s of compile fall
+  in the first 0.1 audio s (wall 20.2 s to reach audio 0.25 s); 1429 builds (2.67 s) come after audio 1 s,
+  in bursts (1038 ms in one 0.25 s window at 1.5 s) and stop at 13.5 s. After audio 1 s: 867 first entries,
+  229 `rebuild-exit0`, 200 retries, 93 `rebuild-req`, 40 `rebuild-win`.
+- **Stall.** Compile per region mean 3.06 ms, p50 1.01, p99 27.2, max 42.6 ms (8226 IR ops, ~1.9 us per
+  op); build mean 0.42, p99 4.4, max 27.7 ms. Build plus compile in one call: p99 25.4 ms, max 64.4 ms (97
+  periods of 0.667 ms); 4253 builds exceed a period and hold 22.0 of 22.8 s. AOT default: 22 builds, 0.02 s,
+  worst 2.3 ms, so offload does nothing for the AOT desktop build.
+- **Waste.** 95% of rebuilds (2150 of 2270, 1.5 s run) replaced a slot that had run no instruction: 4.83 s of
+  17.5 s compile (28%) went into kernels discarded before their first run (window and requirement declines
+  are found at the first call).
+- **Run time without compile**, DSP CPU minus compile and build: audio 2.5-8.5 s **2.66** per audio s
+  (DYNFLAT 1.99, AOT 1.42); audio 12-19.75 s **4.88** (DYNFLAT 4.28, AOT 1.83). The call rate steps from
+  19.4M to 26.8M/s around 9.2 s with no builds; cause **[O]**. The 10.5 s headline mixes both regimes.
+- **Determinism [V]:** `SHARC_FAST_DEFER=N` (a new kernel is not used for N-4N calls of its entry) gives the
+  same PCM (`40d829c95c1d1480`, 2 s) for N = 0, 1, 7, 40 and 3000 (interpreted share 0.98% to 4.6%) and for
+  AOT N = 0, 7, 300; the AOT and no-AOT PCM are equal at 2 s and 20 s. The switch point does not change results.
+- **Cacheability [V in process, O across processes]:** Cranelift code has 0 relocations in 5599 kernels, is
+  byte-deterministic, loads from stored bytes in 4.6 us (`define_function_bytes`), and a run with every kernel
+  loaded from a blob (`SHARC_FAST_RELOAD=1`) has the pin PCM `3bf3ba3026953c22`. Not yet relocatable: the 8.8% of
+  kernels with `Op::Helper` (a leaked record pointer in the IR and `helper_exec` as an immediate). Native
+  compile scales with threads: 16.1 s (1), 4.2 (4), 2.15 (8), 1.36 s (16) for 4566 kernels. Code size 32.9 MB
+  for them. `SHARC_FAST_CL_OPT=none`: compile -27% (19.8 to 14.4 s), code -26%, run time +1%, same PCM.
+- **Wasm in V8 (Node 24)** for the same 4566 kernels: emit 179 us, 14.3 KB mean (66.7 MB; 24.7 MB zstd);
+  `new Module` 0.05 ms (lazy), first call compiles: mean 1.43 ms, p99 23.8, max 45.2 ms, 6.5 s total; async
+  eager compile 2.3 s wall; a worker that compiles and calls each kernel once hands over a `Module` whose first
+  call costs 2 us; V8 does not share compiled code across threads by bytes. `Op::Helper` is unimplemented in the
+  wasm emitter (8.8% of kernels). The DSP worker blocks in `Atomics.wait`, so receiving a `Module` needs a
+  yield or `Atomics.waitAsync`. Browser behaviour **[O]** (Node only).
+
 ## Generated lowering: design and how to add a family **[D]**
 
 Folded from the lane F notebooks (not re-checked by a second agent).

@@ -415,6 +415,12 @@ struct Slot {
     /// window (`dynflat_range`).
     dyn_exits: u32,
     transient: u32,
+    /// `SHARC_FAST_DEFER`: calls still to be interpreted before the freshly
+    /// built kernel is used (simulates a background compile that has not
+    /// finished). Measurement only.
+    defer: u32,
+    /// `SHARC_FAST_TL`: why the next build of this slot happens.
+    tl_why: &'static str,
     /// Selected by `Auto` (dropped again on refusal or low yield).
     auto: bool,
     calls: u64,
@@ -508,6 +514,50 @@ pub struct FastEngine {
     /// The last kernel exit awaiting the gap to the next fast-tier call:
     /// (slot, exit pc, exit kind, icount at exit).
     cov_last: Option<(usize, u32, &'static str, u64)>,
+    /// `SHARC_FAST_TL=1`: a timeline of builds and compiles on stderr
+    /// (`tl build ...`, `tl tick ...`); measurement only.
+    tl: Option<Tl>,
+    /// `SHARC_FAST_DEFER=N`: interpret the first N..4N calls of a freshly built
+    /// kernel before using it (N scaled by the entry PC); measurement only.
+    defer_n: u32,
+}
+
+/// State of the `SHARC_FAST_TL` timeline.
+struct Tl {
+    t0: std::time::Instant,
+    next_tick: u64,
+    seen: std::collections::HashSet<u64>,
+    dup: u64,
+    builds: u64,
+}
+
+/// Instructions per timeline tick (1/4 audio second at ~1G insns/s counting idle skip).
+const TL_TICK: u64 = 250_000_000;
+
+#[cfg(unix)]
+fn thread_cpu_ns() -> u64 {
+    #[repr(C)]
+    struct Ts {
+        sec: i64,
+        nsec: i64,
+    }
+    unsafe extern "C" {
+        fn clock_gettime(clock: i32, ts: *mut Ts) -> i32;
+    }
+    #[cfg(target_os = "macos")]
+    const CLK: i32 = 16;
+    #[cfg(not(target_os = "macos"))]
+    const CLK: i32 = 3;
+    let mut ts = Ts { sec: 0, nsec: 0 };
+    // SAFETY: valid out pointer.
+    if unsafe { clock_gettime(CLK, &mut ts) } != 0 {
+        return 0;
+    }
+    ts.sec as u64 * 1_000_000_000 + ts.nsec as u64
+}
+#[cfg(not(unix))]
+fn thread_cpu_ns() -> u64 {
+    0
 }
 
 // SAFETY: a FastEngine is owned by one Engine and used from one thread at a
@@ -589,6 +639,17 @@ impl FastEngine {
                 on
             },
             cov_last: None,
+            tl: std::env::var_os("SHARC_FAST_TL").map(|_| Tl {
+                t0: std::time::Instant::now(),
+                next_tick: TL_TICK,
+                seen: Default::default(),
+                dup: 0,
+                builds: 0,
+            }),
+            defer_n: std::env::var("SHARC_FAST_DEFER")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
         };
         fe.stops_new = fe.pcs.clone();
         fe.rebuild_bloom();
@@ -698,6 +759,84 @@ impl FastEngine {
     }
 
     fn build(&mut self, s: &mut St, pc: u32) -> Option<()> {
+        if self.tl.is_none() && self.defer_n == 0 {
+            return self.build_inner(s, pc);
+        }
+        let (b0, c0) = (self.stats.build_ns, self.stats.compile_ns);
+        let t = std::time::Instant::now();
+        let ix = self.lookup.get(&pc).copied();
+        let why = ix.map_or("", |i| std::mem::take(&mut self.slots[i].tl_why));
+        let kind = if !why.is_empty() {
+            why
+        } else if ix.is_some_and(|i| self.slots[i].rebuilds > 0) {
+            "rebuild"
+        } else if ix.is_some_and(|i| self.slots[i].transient > 0) {
+            "retry"
+        } else {
+            "first"
+        };
+        let (sc, si) = ix.map_or((0, 0), |i| (self.slots[i].calls, self.slots[i].insns));
+        let r = self.build_inner(s, pc);
+        let wall_us = t.elapsed().as_micros();
+        if let Some(i) = ix
+            && r.is_some()
+            && self.defer_n > 0
+        {
+            self.slots[i].defer = self.defer_n * (1 + ((pc >> 2) & 3));
+        }
+        if let Some(tl) = &mut self.tl {
+            tl.builds += 1;
+            let (ops, helpers, words, hash) = match ix.and_then(|i| self.slots[i].region.as_ref()) {
+                Some(reg) if r.is_some() => {
+                    let mut w = reg.kernel.encode();
+                    let helpers = reg
+                        .kernel
+                        .pre
+                        .iter()
+                        .chain(&reg.kernel.body)
+                        .chain(&reg.kernel.post)
+                        .filter(|i| matches!(i, ir::Inst::Def(_, ir::Op::Helper(_))))
+                        .count();
+                    let n = w.len();
+                    // Helper records are host pointers: not part of the identity.
+                    let mut h = 0xcbf2_9ce4_8422_2325u64;
+                    let mut i = 0;
+                    while i < w.len() {
+                        h = (h ^ w[i] as u64).wrapping_mul(0x100_0000_01b3);
+                        i += 1;
+                    }
+                    if helpers == 0 && !tl.seen.insert(h) {
+                        tl.dup += 1;
+                    } else if helpers == 0
+                        && let Some(dir) = std::env::var_os("SHARC_FAST_TL_DUMP")
+                    {
+                        // Measurement: the pointer-free kernels, for the wasm backend.
+                        let bytes: Vec<u8> = w.iter().flat_map(|x| x.to_le_bytes()).collect();
+                        let _ = std::fs::create_dir_all(&dir);
+                        let _ = std::fs::write(
+                            std::path::Path::new(&dir).join(format!("kernel-{h:016x}.bin")),
+                            bytes,
+                        );
+                    }
+                    w.clear();
+                    (reg.kernel.inst_count(), helpers, n, h)
+                }
+                _ => (0, 0, 0, 0),
+            };
+            eprintln!(
+                "tl build t_ms={:.3} ic={} pc={pc:#x} kind={kind} ok={} build_us={} compile_us={} wall_us={wall_us} scalls={sc} sinsns={si} ops={ops} helpers={helpers} words={words} hash={hash:016x} dup={}",
+                tl.t0.elapsed().as_secs_f64() * 1e3,
+                s.icount,
+                r.is_some() as u8,
+                (self.stats.build_ns - b0) / 1000,
+                (self.stats.compile_ns - c0) / 1000,
+                tl.dup,
+            );
+        }
+        r
+    }
+
+    fn build_inner(&mut self, s: &mut St, pc: u32) -> Option<()> {
         let t0 = std::time::Instant::now();
         // The remaining iterations of the active DO loop that starts here,
         // else (or when that is refused) the CFG shape from this pc.
@@ -1141,6 +1280,23 @@ impl Drop for FastEngine {
 
 impl FastEngine {
     fn run_inner(&mut self, s: &mut St, pc: u32, chained: bool) -> Option<u32> {
+        if let Some(tl) = &mut self.tl
+            && s.icount >= tl.next_tick
+        {
+            tl.next_tick = s.icount - s.icount % TL_TICK + TL_TICK;
+            eprintln!(
+                "tl tick t_ms={:.1} ic={} cpu_ms={:.1} compile_ms={:.1} build_ms={:.1} builds={} calls={} runs={} insns={}",
+                tl.t0.elapsed().as_secs_f64() * 1e3,
+                s.icount,
+                thread_cpu_ns() as f64 / 1e6,
+                self.stats.compile_ns as f64 / 1e6,
+                self.stats.build_ns as f64 / 1e6,
+                tl.builds,
+                self.stats.calls,
+                self.stats.runs,
+                self.stats.insns,
+            );
+        }
         while let Some(next) = self.follow_queue.pop() {
             self.add_entry(next);
         }
@@ -1152,6 +1308,7 @@ impl FastEngine {
             let region = slot.region.as_ref()?;
             if slot.refused.is_some()
                 || slot.kernel.is_none()
+                || slot.defer > 0
                 || region.cfg.is_none()
                 || s.mem.dec_gen != region.verified_gen
             {
@@ -1193,6 +1350,10 @@ impl FastEngine {
             }
         }
         let slot = &mut self.slots[ix];
+        if slot.defer > 0 {
+            slot.defer -= 1;
+            return None;
+        }
         if slot.win_skip > 0 && self.win_backoff {
             slot.win_skip -= 1;
             return None;
@@ -1201,6 +1362,7 @@ impl FastEngine {
         if !verify_code(s, region) {
             slot.region = None;
             slot.kernel = None;
+            slot.tl_why = "code";
             return None;
         }
         self.stats.calls += 1;
@@ -1412,6 +1574,13 @@ impl FastEngine {
                     // state, a bounded number of times. The variants that
                     // exist stay (most recent first, at most MAX_VARIANTS).
                     slot.rebuilds += 1;
+                    slot.tl_why = if win_rebuild {
+                        "rebuild-win"
+                    } else if exit0_rebuild {
+                        "rebuild-exit0"
+                    } else {
+                        "rebuild-req"
+                    };
                     let n = slot.rebuilds;
                     let old = (slot.region.take(), slot.kernel.take());
                     if self.build(s, pc).is_some() {
@@ -1468,6 +1637,7 @@ impl FastEngine {
             // Built again from the next call's state, with the flat accesses.
             self.slots[ix].region = None;
             self.slots[ix].kernel = None;
+            self.slots[ix].tl_why = "dynflat";
             self.slots[ix].alts.clear();
             self.slots[ix].dyn_exits = 0;
             self.stats.dyn_flat += 1;

@@ -398,3 +398,10 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   oracle suite 61 passed in the no-AOT config with the flag on, `cargo test --lib --tests` in
   native/sharc 64 passed. Default stays off. New `tools/perf_calls.py` (call sources and exit kinds);
   `tools/fastcov.py` `parse_run` now reads every exit of a root (`;` separated).
+- 2026-10-09: compile offload design (`docs/design/fast-compile-offload.md`, finding 18 "Compile timeline and
+  offload premises"). No-AOT trig1-taps 20 s: 19.8 s compile + 2.9 s build of 99.8 DSP s, 16.5 s of it in the
+  first 0.1 audio s, worst call 64 ms; AOT default compiles 0.02 s. Switch point between interpreter and kernel
+  proven PCM-neutral (`SHARC_FAST_DEFER`, 8 runs); machine code has no relocations and reloads from bytes (PCM
+  equal). Nothing built beyond measurement hooks (`SHARC_FAST_TL`, `_DEFER`, `_RELOAD`, `_CL_OPT`,
+  `tools/fast_timeline.py`, `tools/wasm_compile_bench.mjs`, `compile_par` example); default PCM pins unchanged.
+  Next, if agreed: stage 1 native background compile.

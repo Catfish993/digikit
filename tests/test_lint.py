@@ -14,6 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
     "tools/audiocheck.py",
+    "tools/fast_timeline.py",
     "tools/fxcheck.py",
     "tools/paramtable.py",
     "tools/perf_calls.py",

@@ -26,7 +26,12 @@ pub struct ClBackend {
 impl Default for ClBackend {
     fn default() -> Self {
         ClBackend {
-            opt: "speed",
+            // SHARC_FAST_CL_OPT=none|speed_and_size: measurement of the compile-time/code trade.
+            opt: match std::env::var("SHARC_FAST_CL_OPT").as_deref() {
+                Ok("none") => "none",
+                Ok("speed_and_size") => "speed_and_size",
+                _ => "speed",
+            },
             verify: std::env::var_os("SHARC_FAST_CL_NOVERIFY").is_none(),
         }
     }
@@ -525,13 +530,51 @@ impl KernelBackend for ClBackend {
     }
 }
 
+/// Machine code of one kernel, position independent (no relocations: the
+/// helper entry point and its record are immediates), so it can be stored and
+/// loaded into another process by `load_blob` on the same target and
+/// Cranelift flags. Measurement and cache building block; the engine does not
+/// use it yet (docs/design/fast-compile-offload.md).
+pub struct CodeBlob {
+    pub bytes: Vec<u8>,
+    pub align: u64,
+    pub entry_checked: bool,
+    /// Relocations the code needs (0 for every kernel measured).
+    pub relocs: usize,
+}
+
+/// Load a blob into fresh executable memory.
+pub fn load_blob(b: &CodeBlob) -> Result<Box<dyn CompiledKernel>, String> {
+    if b.relocs != 0 {
+        return Err("blob needs relocations".into());
+    }
+    let isa = ClBackend::default().isa()?;
+    let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
+    let mut sig = module.make_signature();
+    sig.params.push(AbiParam::new(types::I64));
+    sig.params.push(AbiParam::new(types::I64));
+    sig.returns.push(AbiParam::new(types::I32));
+    let id = module
+        .declare_function("kernel", Linkage::Local, &sig)
+        .map_err(|e| e.to_string())?;
+    module
+        .define_function_bytes(id, b.align, &b.bytes, &[])
+        .map_err(|e| e.to_string())?;
+    module.finalize_definitions().map_err(|e| e.to_string())?;
+    let p = module.get_finalized_function(id);
+    // SAFETY: the bytes are the code of a function of this signature.
+    let f = unsafe {
+        std::mem::transmute::<*const u8, unsafe extern "C" fn(*mut u8, *mut u8) -> u32>(p)
+    };
+    Ok(Box::new(ClKernel {
+        entry_checked: b.entry_checked,
+        module: Some(module),
+        f,
+    }))
+}
+
 impl ClBackend {
-    fn compile_entry(
-        &mut self,
-        k: &Kernel,
-        entry: &EntryChecks,
-    ) -> Result<Box<dyn CompiledKernel>, String> {
-        k.validate()?;
+    fn isa(&self) -> Result<std::sync::Arc<dyn cranelift_codegen::isa::TargetIsa>, String> {
         let mut flags = settings::builder();
         flags
             .set("use_colocated_libcalls", "false")
@@ -546,10 +589,49 @@ impl ClBackend {
                 if self.verify { "true" } else { "false" },
             )
             .map_err(|e| e.to_string())?;
-        let isa = cranelift_native::builder()
+        cranelift_native::builder()
             .map_err(|e| e.to_string())?
             .finish(settings::Flags::new(flags))
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())
+    }
+
+    /// Compile to machine code without loading it.
+    pub fn compile_blob(&mut self, k: &Kernel, entry: &EntryChecks) -> Result<CodeBlob, String> {
+        k.validate()?;
+        let isa = self.isa()?;
+        let mut sig = ir::Signature::new(isa.default_call_conv());
+        sig.params.push(AbiParam::new(types::I64));
+        sig.params.push(AbiParam::new(types::I64));
+        sig.returns.push(AbiParam::new(types::I32));
+        let mut cctx = cranelift_codegen::Context::new();
+        cctx.func.signature = sig;
+        cctx.func.name = ir::UserFuncName::user(0, 0);
+        let mut fctx = FunctionBuilderContext::new();
+        build(k, entry, &mut cctx.func, &mut fctx, isa.frontend_config());
+        let code = cctx
+            .compile(&*isa, &mut cranelift_codegen::control::ControlPlane::default())
+            .map_err(|e| format!("{:?}", e.inner))?;
+        Ok(CodeBlob {
+            bytes: code.code_buffer().to_vec(),
+            align: isa.function_alignment().minimum as u64,
+            entry_checked: !entry.known_m.is_empty() || !entry.words.is_empty(),
+            relocs: code.buffer.relocs().len(),
+        })
+    }
+
+    fn compile_entry(
+        &mut self,
+        k: &Kernel,
+        entry: &EntryChecks,
+    ) -> Result<Box<dyn CompiledKernel>, String> {
+        k.validate()?;
+        if std::env::var_os("SHARC_FAST_RELOAD").is_some() {
+            // Measurement: run every kernel from a blob loaded with
+            // `define_function_bytes` instead of the module that compiled it.
+            let blob = self.compile_blob(k, entry)?;
+            return load_blob(&blob);
+        }
+        let isa = self.isa()?;
         let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
         let mut sig = module.make_signature();
         sig.params.push(AbiParam::new(types::I64));
@@ -579,6 +661,14 @@ impl ClBackend {
             .compiled_code()
             .map(|c| c.code_buffer().len())
             .unwrap_or(0);
+        if std::env::var_os("SHARC_FAST_TL").is_some() {
+            // Measurement: is the machine code position independent?
+            let relocs = cctx
+                .compiled_code()
+                .map(|c| c.buffer.relocs().len())
+                .unwrap_or(0);
+            eprintln!("tl cl bytes={code_size} relocs={relocs}");
+        }
         if std::env::var_os("SHARC_FAST_LOG").is_some() {
             eprintln!(
                 "cranelift: kernel of {} ops compiled to {code_size} bytes",
