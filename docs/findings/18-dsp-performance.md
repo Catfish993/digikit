@@ -561,6 +561,45 @@ brings the AOT run to its pre-step cost (1.41), so it is small.
   audio s (8 pairs, no change). No-AOT `static-insns+follow`, 5 pairs: 4.72 vs 5.89 (-20%), compile 1.62 vs 2.09,
   run 2.79 vs 3.50 per audio s. Not re-checked by a second agent.
 
+## Tier mismatch: MODE1 read at entry **[D]**
+
+`sf-del-time-u20` (scenarios/dn2-sendfx.json) rendered `67e0ea5c3f9a7166` in the default config
+(AOT core and fast tier) and `c4688d57f9ef9aa9` in no-AOT `static-insns+follow` (rms 0.0127184 vs
+0.0127187); finding 15 recorded it as open.
+
+- Ground truth: the interpreter (`SHARC_AOT=0 SHARC_FAST_REGIONS= SHARC_BLOCKTRANS=`, 6.16 audio s, about
+  12 min) renders `67e0ea5c3f9a7166`. AOT is right, the fast tier was wrong. The two WAVs first differ at
+  frame 115653 (t = 2.4094 s); 24-bit-scale differences of the delay line contents follow from there.
+- Cause: the fast tier read MODE1 bits from `Env::mode1` (the value at region entry) where it needs MODE1 as
+  the kernel has it after an earlier MODE1 write in the same region (`mode1_cur`). The `fix` lowering
+  (`falu_fix`) took MODE1.TRUNCATE from the entry value. DN2 1.11 function `0xb8b4dc` has
+  `MODE1 = set(MODE1, TRUNCATE)` at `0xb8b4de` (decoded from the image); a region that goes on to a `fix`: the kernel rounded to
+  nearest where the core truncates. Reverting only that line in an otherwise fixed tree gives
+  `c4688d57f9ef9aa9` again; the fix alone gives `67e0ea5c3f9a7166`. (The generated forms already read
+  MODE1 through `m1()`, which uses `mode1_cur`; only hand-written lowering used `env.mode1`.)
+- Same pattern, fixed with it: ALUSAT in the signed conditions (`cond_value`, LT/GE/LE/GT) and
+  MODE1.CBUFEN in the circular post-modify (`post_value`). A write makes the region require all of MODE1 at
+  entry (`mode1_mask = u32::MAX`), so only the reads were stale. Not observed in a scenario, found by review;
+  covered by unit tests.
+- Related entry-state check: a MODE1 write that turns IRPTEN or NESTM on can make a latched, unmasked source
+  deliverable at the next instruction boundary. The region's entry check (`latent_interrupt`) saw interrupts
+  off, so the kernel ran on past the write while the interpreter enters the interrupt. Such a write is now
+  refused (`g_wr_mode1`: "MODE1 write enables interrupts"). Unit test: without the refusal the kernel and the
+  interpreter end at different PCs. `sf-del-time-u20` does not need it (equal with and without); the sweep below ran with it.
+- Checked, no change: other `env.` reads are guarded. Registers the region writes are not baked (`baked`,
+  `entry_value_of` use `plan.written`); L and B of an index register are refused when written
+  (`lb_stale`), with one gap closed: `require_linear` (7a/19a MODIFY, hand-written forms only; the generated
+  forms already refuse) now checks `lb_stale` too. MODE2, USTAT and MMASK are plain registers in the kernel.
+  Register bank selection: a MODE1 write that changes the bank bits is refused with the bank model. STKY is
+  not lowered. ASTAT is tracked per instruction (`fm_static`); `cacc_known` is an entry property by design.
+- Tier equivalence after the fix, DN2 1.11, PCM sha256 of every scenario of `dn2-trackfx.json` (47) and
+  `dn2-sendfx.json` (87), default (AOT + fast tier) against no-AOT `static-insns+follow`: 134 of 134 equal,
+  `sf-del-time-u20` `67e0ea5c3f9a7166` in the interpreter, the default and the no-AOT config.
+- Tests: `fast_reads_mode1_as_the_region_wrote_it` (TRUNCATE on/off, ALUSAT on/off, CBUFEN on/off in the
+  region; fails on `env.mode1`), `fast_mode1_write_that_enables_interrupts_matches_the_interpreter`,
+  `fast_modify_follows_l_written_in_the_region` (passes with and without the `require_linear` check, since
+  the generated forms are the default; it guards the default path).
+
 ## Generated lowering: design and how to add a family **[D]**
 
 Folded from the lane F notebooks (not re-checked by a second agent).

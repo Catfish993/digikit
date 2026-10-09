@@ -1576,6 +1576,21 @@ fn lp_check(
     total: u32,
     setup: &dyn Fn(&mut crate::Engine),
 ) -> u64 {
+    let ran = lp_compare(name, code, entries, total, setup);
+    assert!(ran > 0, "{name}: the fast tier never ran");
+    ran
+}
+
+/// `lp_check` without the requirement that the fast tier ran (a case where
+/// the lowering must refuse).
+#[cfg(sharc_gen)]
+fn lp_compare(
+    name: &str,
+    code: &[u64],
+    entries: &[u32],
+    total: u32,
+    setup: &dyn Fn(&mut crate::Engine),
+) -> u64 {
     let mut ran = 0;
     for chunk in [1u32, 2, 3, 5, 7, 11, 64, 1000] {
         let mut plain = lp_engine(code, entries, false, setup);
@@ -1591,7 +1606,6 @@ fn lp_check(
         let st = fast.fast.as_ref().unwrap().fast_stats().unwrap();
         ran = ran.max(st.insns);
     }
-    assert!(ran > 0, "{name}: the fast tier never ran");
     ran
 }
 
@@ -1845,4 +1859,210 @@ fn fast_type_3d_matches_the_interpreter() {
         lp_check(&format!("3d loop l{l} x{x}"), &prog, &entries, 120, &setup);
         lp_check(&format!("3d loop from 0 l{l} x{x}"), &prog, &[0], 120, &setup);
     }
+}
+
+// -- fast tier: a MODE1 write that enables interrupts ---------------------------------
+
+/// `MODE1 = set(MODE1, mask)` (Type 18a, BOP set).
+#[cfg(sharc_gen)]
+fn lp_mode1_set(mask: u32) -> u64 {
+    0x1402_0000_0000 | u64::from(mask)
+}
+
+/// `MODE1 = clear(MODE1, mask)` (Type 18a, BOP clear).
+#[cfg(sharc_gen)]
+fn lp_mode1_clear(mask: u32) -> u64 {
+    0x1422_0000_0000 | u64::from(mask)
+}
+
+/// A MODE1 write that sets IRPTEN (or NESTM) while a source is already
+/// latched and unmasked makes that interrupt deliverable at the next
+/// instruction boundary: the interpreter enters it after the write, so a
+/// kernel must not run on through the instructions that follow (the region
+/// entry check sees IRPTEN clear and finds no candidate). Found by review of
+/// the entry-state reads; no scenario of the DN2 sweep needs it.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
+    let code = [
+        lp_mode1_set(0x1000),    // 0: MODE1.IRPTEN on
+        lp_add(1, 1, 2),         // 1: R1 += R2
+        lp_add(3, 3, 2),         // 2: R3 += R2
+        lp_add(4, 4, 2),         // 3: R4 += R2
+        lp_jump(0x1f, 0),        // 4: spin
+    ];
+    // (MODE1, IRPTL, IMASK, IMASKP): the write enables a latched source;
+    // the same with nesting (a source in service, a higher one latched); the
+    // write changes nothing (already enabled, nothing latched).
+    let cases: [(&str, u32, u32, u32, u32); 4] = [
+        ("irpten", 0, 0x1000_0000, 0x1000_0000, 0),
+        ("nestm", 0x1000, 0x1000_0000, 0x1000_0000, 0x2000_0000),
+        // Nothing latched: the write still enables, so the kernel is refused
+        // (the entry check cannot know a source will not latch in the region).
+        ("nothing latched", 0, 0, 0x1000_0000, 0),
+        // Already enabled and nothing latched: the write changes nothing and
+        // the kernel runs.
+        ("unchanged", 0x1000, 0, 0x1000_0000, 0),
+    ];
+    for (name, mode1, latch, mask, active) in cases {
+        let code: Vec<u64> = if name == "nestm" {
+            let mut c = code.to_vec();
+            c[0] = lp_mode1_set(0x0800);
+            c
+        } else {
+            code.to_vec()
+        };
+        let setup = move |e: &mut crate::Engine| {
+            assert_eq!(e.set_option(9, 1), 0);
+            e.s.cfg.stack_model = true;
+            e.s.cfg.bank_model = true;
+            e.s.cfg.refresh();
+            e.s.mmr_put(0x30024, V::c(4));
+            // The vector of the latched source (SFT0, level 28): a spin. The
+            // vector table holds one 48-bit instruction per 6 bytes.
+            let raw = lp_jump(0x1f, 0).to_le_bytes();
+            for (k, b) in raw[..6].iter().enumerate() {
+                e.s.mem.write_byte(0x2824_0000 + 28 * 4 * 6 + k as u32, *b);
+            }
+            lp_regs(e, &[(2, 1), (115, 0)]); // R2, MMASK
+            e.s.r[114] = V::c(mode1 as Int);
+            e.s.r[122] = V::c(latch as Int);
+            e.s.r[123] = V::c(mask as Int);
+            e.s.r[124] = V::c(active as Int);
+        };
+        // Regions at every instruction, and one only at the write.
+        let all: Vec<u32> = (0..5).map(lp_pc).collect();
+        lp_compare(&format!("mode1 enable {name}"), &code, &all, 12, &setup);
+        let ran = lp_compare(&format!("mode1 enable {name}, at the write"), &code, &[0], 12, &setup);
+        // The enabling write is never lowered (the generated core of a
+        // firmware image may run its own blocks at these PCs instead).
+        if name != "unchanged" {
+            assert_eq!(ran, 0, "{name}: the fast tier ran the enabling write");
+        }
+    }
+}
+
+/// `Rn = FIX Fx` (compute cu 0, opcode 0xc9).
+#[cfg(sharc_gen)]
+fn lp_fix(rn: u64, rx: u64) -> u64 {
+    lp_2a(0x1f, 0x0c9, rn, rx, 0)
+}
+
+/// A kernel reads MODE1 as the region itself left it: a MODE1 write earlier
+/// in the region changes `fix` (TRUNCATE), the signed conditions (ALUSAT) and
+/// the circular post-modify (CBUFEN), and the entry value of the bit is not
+/// the one that applies. Found with `sf-del-time-u20` (DN2 1.11 `0xb8b4de`:
+/// `MODE1 = set(MODE1, TRUNCATE)` then `fix`).
+#[cfg(sharc_gen)]
+#[test]
+fn fast_reads_mode1_as_the_region_wrote_it() {
+    const TRUNCATE: u32 = 1 << 15;
+    const ALUSAT: u32 = 1 << 13;
+    const CBUFEN: u32 = 1 << 24;
+    let at = |k: u32| LP_DATA + k;
+    // (name, MODE1 at entry, code, setup): each also with a region at every
+    // instruction.
+    type Setup = Box<dyn Fn(&mut crate::Engine)>;
+    let mode = |m: u32| -> Setup {
+        Box::new(move |e| {
+            lp_regs(e, &[(1, 0x4030_0000), (4, 0x7fff_ffff), (2, 1)]); // F1 = 2.75
+            e.s.r[114] = V::c(m as Int);
+        })
+    };
+    let cases: Vec<(&str, Vec<u64>, Setup)> = vec![
+        (
+            "truncate on in the region",
+            vec![lp_mode1_set(TRUNCATE), lp_fix(0, 1), lp_jump(0x1f, 0)],
+            mode(0),
+        ),
+        (
+            "truncate off in the region",
+            vec![lp_mode1_clear(TRUNCATE), lp_fix(0, 1), lp_jump(0x1f, 0)],
+            mode(TRUNCATE),
+        ),
+        (
+            // 0x7fffffff + 1 overflows: AN and AV set; LT = AN ^ AV unless
+            // ALUSAT, when it is AN.
+            "alusat on in the region",
+            vec![
+                lp_mode1_set(ALUSAT),
+                lp_add(5, 4, 2),
+                lp_2a(0x01, 0x01, 6, 6, 2), // IF LT R6 = R6 + R2
+                lp_jump(0x1f, 0),
+            ],
+            mode(0),
+        ),
+        (
+            "alusat off in the region",
+            vec![
+                lp_mode1_clear(ALUSAT),
+                lp_add(5, 4, 2),
+                lp_2a(0x01, 0x01, 6, 6, 2),
+                lp_jump(0x1f, 0),
+            ],
+            mode(ALUSAT),
+        ),
+        (
+            // A post-modify that crosses the end of a 16-byte circular buffer.
+            "cbufen off in the region",
+            vec![
+                lp_mode1_clear(CBUFEN),
+                lp_3d(0x1f, false, true, 1, 0, 6, 0, 0),
+                lp_jump(0x1f, 0),
+            ],
+            Box::new(move |e| {
+                lp_regs(
+                    e,
+                    &[(17, at(0x40) + 12), (32, 8), (49, 16), (65, at(0x40))],
+                );
+                e.s.r[114] = V::c(CBUFEN as Int);
+            }),
+        ),
+        (
+            "cbufen on in the region",
+            vec![
+                lp_mode1_set(CBUFEN),
+                lp_3d(0x1f, false, true, 1, 0, 6, 0, 0),
+                lp_jump(0x1f, 0),
+            ],
+            Box::new(move |e| {
+                lp_regs(
+                    e,
+                    &[(17, at(0x40) + 12), (32, 8), (49, 16), (65, at(0x40))],
+                );
+                e.s.r[114] = V::c(0);
+            }),
+        ),
+    ];
+    for (name, code, setup) in &cases {
+        let n = code.len() as u32;
+        let all: Vec<u32> = (0..n).map(lp_pc).collect();
+        lp_compare(name, code, &all, 3 * (n - 1), setup.as_ref());
+        lp_compare(&format!("{name}, region at the write"), code, &[0], 3 * (n - 1), setup.as_ref());
+    }
+}
+
+/// `I(dst) = MODIFY(I(src), imm)` (Type 19a, unscaled; `dst = src ^ idis`).
+#[cfg(sharc_gen)]
+fn lp_modify_imm(src: u64, idis: u64, imm: u32) -> u64 {
+    0x1600_0000_0000 | (idis << 35) | (src << 32) | u64::from(imm)
+}
+
+/// The circular wrap of MODIFY follows L and B as the region left them (the
+/// interpreter wraps whenever L is nonzero): a region that sets L1/B1 and
+/// then modifies I1 must not use the entry L1 = 0 (`require_linear`).
+#[cfg(sharc_gen)]
+#[test]
+fn fast_modify_follows_l_written_in_the_region() {
+    let at = |k: u32| LP_DATA + k;
+    let code = [
+        lp_imm(49, 16),               // 0: L1 = 16
+        lp_imm(65, at(0x40)),         // 1: B1 = buffer
+        lp_modify_imm(1, 0, 8),       // 2: I1 = MODIFY(I1, 8): wraps past B1 + 16
+        lp_jump(0x1f, 0),             // 3: spin
+    ];
+    let setup = move |e: &mut crate::Engine| lp_regs(e, &[(17, at(0x40) + 12)]);
+    let all: Vec<u32> = (0..4).map(lp_pc).collect();
+    lp_compare("modify after L write", &code, &all, 9, &setup);
+    lp_check("modify after L write, region at the write", &code, &[0], 9, &setup);
 }

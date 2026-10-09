@@ -852,7 +852,7 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
   ones). The denormal state was below the 24-bit output, so the flush shows only in time.
 - Oracle suite (`tests/scenarios --slow`): 61 passed in the default and in the no-AOT config.
   The 23 scenarios it renders have the same PCM hash as in the runs before the change, in both
-  configs. Not caused by this change **[O]**: `sf-del-time-u20` differs between the two configs in the
+  configs. Not caused by this change (**[C]** fixed later: finding 18, "Tier mismatch: MODE1 read at entry"): `sf-del-time-u20` differs between the two configs in the
   old runs and the new (AOT `67e0ea5c3f9a7166`, no-AOT `c4688d57f9ef9aa9`, rms 0.0127184 vs 0.0127187).
   DT2 `tools/dt2_sample_check.py`: clean tone, 1007.8 Hz, peak share 0.99995, rms 0.01572 as before.
 - Late-run step, no `SHARC_FAST_DENORM`, exclusive lock, `trig1-taps` 14 s, run time per audio s

@@ -437,3 +437,9 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   `min(cpus - 2, 6)` (`--jobs`, `DIGI_JOBS`, `--no-build`). Each process is about 0.4 to 0.5 GB RSS. PCM identical to
   jobs=1 for all 23 scenarios of the fast check and the `dn2.json` pins hold with `--all --jobs 6`. `scenarios:check`
   586 s (jobs 1) vs 199 s (jobs 6) at machine load about 33 (16 CPUs, another build running); `scenarios:sweep` (191 tests) 672 s at jobs 6, load about 35.
+- 2026-10-09: tier mismatch `sf-del-time-u20` fixed (finding 18, "Tier mismatch: MODE1 read at entry", **[D]**): the
+  interpreter and AOT render `67e0ea5c3f9a7166`; the fast tier lowering of `fix`, signed conditions and circular
+  post-modify read MODE1 at region entry instead of after an earlier MODE1 write in the region (`mode1_cur`).
+  Also refuses a MODE1 write that enables IRPTEN/NESTM. DN2 sweep default vs no-AOT: 134 of 134 scenarios equal;
+  `scenarios` pins hold; `scenarios:check` 61 passed in the default and the no-AOT config; `cargo test --lib`
+  68 passed; golden 6 passed; DT2 sample check clean tone.

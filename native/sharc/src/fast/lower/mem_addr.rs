@@ -377,6 +377,11 @@ impl Lower {
         if !(16..32).contains(&ic) {
             return refuse("require_linear: not an index register");
         }
+        if self.lb_stale((ic - 16) as usize) {
+            // The entry L is not the L the update sees: a write of L or B
+            // earlier in the region can turn on the wrap.
+            return refuse("L/B of the index register written in the region");
+        }
         if !self.env.circ_off && self.env.dag_l[(ic - 16) as usize].is_some_and(|l| l != 0) {
             // MODIFY wraps on B/L whatever MODE1.CBUFEN says; not lowered.
             return refuse("MODIFY on an index register with L != 0");

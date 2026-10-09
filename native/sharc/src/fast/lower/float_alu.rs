@@ -270,9 +270,11 @@ impl Lower {
     /// rounds to nearest, or toward zero when MODE1.TRUNCATE is set.
     pub fn falu_fix(&mut self, rn: u32, rx: u32, by: Option<u32>, trunc: bool) -> LR<()> {
         // `fix` follows MODE1.TRUNCATE (`floats._float_to_fixed`): the bit is
-        // a translation-time constant (`Env::mode1`) that every region
-        // requires at entry (`finish`).
-        let truncate = trunc || self.env.mode1 & (1 << 15) != 0;
+        // a translation-time constant, MODE1 as the kernel has it here
+        // (`mode1_cur`: a MODE1 write earlier in the region counts); the
+        // entry value is required at entry (`finish`, and in full after any
+        // MODE1 write).
+        let truncate = trunc || self.mode1_cur & (1 << 15) != 0;
         let x = self.rd_f(rx)?;
         let xb = self.to_i(x);
         let sh = match by {

@@ -1123,7 +1123,7 @@ impl Lower {
             self.require_eq(48 + n as u32, 0);
             return Ok(modified);
         }
-        if self.env.mode1 & MODE1_CBUFEN == 0 {
+        if self.mode1_cur & MODE1_CBUFEN == 0 {
             return refuse("MODE1.CBUFEN clear with L != 0");
         }
         if self.pass == 0 {
