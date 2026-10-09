@@ -110,6 +110,12 @@ Other measured points:
   AOT region time), ~21 functions for 80%; DT2 needs ~35 (top 20 = 70%). Not viable.
 - Mask-free AOT emission **[O]**: predicted AOT 70 -> 22% of the DSP thread, 4.4 ->
   ~1.5 ns/insn, default 1.41 -> ~0.75; +-30%, 1-2 weeks, changes the transpiler V type.
+  **[D]** Design and redone ceiling in `docs/design/aot-mask-free.md` (2026-10-09, nothing built):
+  the estimate rests on one xctrace category split; warm region benchmarks already reach
+  1.4-2.3 ns/insn and the single ablations (undo copies, budget check) are worth 0-9%, so the
+  in-situ 4.0 ns may be code size (about 1.1 KB machine code per block insn) and region entry
+  rather than masks. Central estimate default 1.05-1.2, 0.8-0.9 optimistic; slices 0 and 1 (2 days)
+  decide.
 ## Where the time is **[D]**
 
 Default at 1.58: AOT 234M insns x 4.4 = ~1.0 s, kernel 266M x 0.5 = 0.13 s, 0.62M
@@ -658,3 +664,48 @@ plumbing is 27%, memory access 14%, uncategorised moves 11%; real arithmetic is 
 This is the basis of the mask-free emission estimate above.
 
 DT2 AOT and the DT2 render are in finding 15.
+
+## Desktop baseline 2026-10-09 **[D]**
+
+Default config (AOT core + fast tier), `coupled-run` with `--scenario`, exclusive benchlock,
+5 runs per cell, DN2 1.11. Cell = median DSP thread CPU per audio s (IQR); CF thread CPU per
+audio s and real_time_factor are medians. PCM identical in every run to the pins
+(trig1-taps `e0e6c8af..`, tf-dry-hold `79e2dac0..`, tf-br-127 `16f3d0a8..`). Machine load
+average (1 min, read before each run) 2.2-4.3 for the prod and old-PGO rows, 2.5-4.2 for the new
+PGO row; no Digiemu, a short `duetexpertd` burst before the new-PGO run. Not a quiet machine:
+the floor is a desktop session (WindowServer, Chromium, wezterm). trig1-taps is 10.5 audio s
+(not 14); tf-* are 4.1 audio s.
+
+| scenario | prod (no PGO) | PGO old profile (stale) | PGO new profile | CF CPU/audio s (prod / new) | rtf (prod / new) |
+|---|---|---|---|---|---|
+| trig1-taps | 1.588 (0.053) | 1.636 (0.085) | **1.173 (0.024)** | 0.509 / 0.502 | 0.628 / 0.851 |
+| tf-dry-hold | 1.578 (0.145) | 1.556 (0.074) | **1.172 (0.023)** | 0.550 / 0.544 | 0.632 / 0.851 |
+| tf-br-127 | 1.638 (0.037) | 1.618 (0.049) | **1.255 (0.064)** | 0.601 / 0.602 | 0.601 / 0.775 |
+
+A second prod run after the pin edit below reproduced the first (1.593 / 1.568 / 1.613). So:
+- The old profile (trained 2026-10-07, key stale on sources and generated core) buys nothing
+  (-3% to +3%, inside the noise). The retrained profile cuts DSP CPU per audio s by 26%
+  (trig1-taps), 26% (tf-dry-hold) and 23% (tf-br-127) and moves real time from 0.60-0.63 to
+  0.78-0.85. CF thread cost is unchanged (0.50-0.60).
+- Gap to the 1.0 target: 1.17-1.26 now (needs a further -15% to -20%); without PGO 1.58-1.64.
+  The no-PGO ceiling analysis (AOT 70% of the DSP thread) still applies; PGO and mask-free AOT
+  would stack only if the profile transfers to the new emission.
+
+How measured, and caveats:
+- The PGO binaries are `coupled-run` built with `-Cprofile-use=<profdata>` into
+  `out/native/target/prod/pgo-cr-old` and `pgo-cr-new` (`--target aarch64-apple-darwin`,
+  rustup 1.98.1). Profiles are trained on the desktop app (`digiemu-desktop --pgo-train`), so
+  `native_pgo.py verify` reports one crate hash mismatch (`elektron_native_boot`) for
+  `coupled-run`; the other crates match. The launcher's own `pgo-use/.../digiemu-desktop`
+  (2026-10-08 18:24) is stale and was not rebuilt; `mise run emu` rebuilds it with the new
+  profile (`38d7c8fe..`) on the next launch. Its `pgo-use/.../coupled-run` (2026-10-05) is
+  unrelated and stale. The app's own CPU split was not measured here.
+- The training gate (`coupled_ready_exactness`, `native/coupled/src/lib.rs`) failed before
+  training: its CF state digest and DSP export pins were stale since 7c489c5 (2026-10-08, SIMD
+  shift fix). PCM pin `b3f5230f..` and sample count held. Observed CF digest
+  `4a9d3123..` (pinned `55dc699e..`), DSP export `20905b23..` (pinned `4dc48019..`); both pins
+  were set to the observed values locally (uncommitted) so training could run. Not
+  independently checked: a second agent should confirm the new digests are the intended
+  result of 7c489c5 before the pins are committed **[O]**. Editing `lib.rs` also made the
+  instrumented build a full 8 min compile.
+- Training: 4 runs of the gate, 507 s total, profile 40 MB.

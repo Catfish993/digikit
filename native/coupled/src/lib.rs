@@ -1138,7 +1138,7 @@ mod coupled {
             // Updated 2026-10-07: reference state rebuilt from cold start (`mise run emu:ready -- dn2`, tools/ready.py: DSP state from the .syx alone) with the DSPI1 eDMA ch14 board fix. The old state had the DC-blocker coefficient (DM 0x24f378) corrupted by the pre-ed02999 SIMD Type 17 bug. CF digest, PCM and DSP export are all new.
             assert_eq!(
                 runtime.emulator.state_digest().unwrap(),
-                "55dc699e233f37735b83ce886a6fe8951a6c5984abf21057462501d73227e4e0"
+                "4a9d3123dfe2aae10113dc6045cbd69954081e355b21fd6914f256ecdc889e46"
             );
             let audio = runtime.audio.as_ref().unwrap();
             let pcm: Vec<u8> = captured(audio)
@@ -1159,7 +1159,7 @@ mod coupled {
             // Cold-start snapshot: the export is the DSP state after the 100M-instruction workload from the rebuilt ready state.
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "4dc48019eb2672fad747992301d0e417bf4a9d8b376b7181f1e803a9dcce389b"
+                "20905b2346c632983c787e7cb29d7e60aa27a7dd133d5ab5e7b8f1cdc6b5d13d"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());

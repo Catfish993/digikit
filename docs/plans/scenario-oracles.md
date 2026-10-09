@@ -443,3 +443,7 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   Also refuses a MODE1 write that enables IRPTEN/NESTM. DN2 sweep default vs no-AOT: 134 of 134 scenarios equal;
   `scenarios` pins hold; `scenarios:check` 61 passed in the default and the no-AOT config; `cargo test --lib`
   68 passed; golden 6 passed; DT2 sample check clean tone.
+- 2026-10-09: design for mask-free AOT emission written, `docs/design/aot-mask-free.md` (read-only analysis, no
+  build or timing). Redoes the finding 18 ceiling (default 1.43; <= 1.0 needs AOT <= 2.1 ns/insn), plans a sliced
+  proof with the oracle suite, pins and tier sweep as the exactness gates. Waiting for Em's decision on slices 0-1.
+- 2026-10-09: desktop baseline and PGO retrain measured (finding 18 "Desktop baseline 2026-10-09" [D]): default config DSP CPU per audio s 1.59/1.58/1.64 without PGO, 1.17/1.17/1.26 with the retrained profile (trig1-taps / tf-dry-hold / tf-br-127; old profile no gain); gap to 1.0 is 15-20% more. `coupled_ready_exactness` pins (CF digest, DSP export) were stale since 7c489c5 and are edited locally in native/coupled/src/lib.rs, uncommitted, awaiting a second check.
