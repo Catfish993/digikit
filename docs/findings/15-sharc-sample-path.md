@@ -759,9 +759,9 @@ manual says "Digitone II", the emulated firmware is 1.11):
 - The manual says nothing about the taper of the mix volume or the sends.
   They measure as value squared. **[O]**
 
-## Denormal flush: the core and the fast tier now follow the manual **[D]**
+## Denormal flush: the core and the fast tier now follow the manual **[V]**
 
-Done 2026-10-09 on `work/scenario-oracles` (uncommitted). Not yet re-checked by a second agent.
+Done 2026-10-09 on `work/scenario-oracles` (e8353a8); second-checked the same day (see the end of this section).
 Before this, `tools/sharc_core/floats.py` said flush-to-zero "is not modeled": a decayed filter or
 envelope state stuck at a 1-3 ulp denormal, the fast tier left its kernel at every denormal product,
 and the run got slower after a sound had decayed (finding 18, "Late-run slowdown"). The core now
@@ -874,3 +874,5 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
 - Rule 12 and the rules marked "general" are inferences from the manuals, not read from hardware
   **[O]**.
 - The 64-bit ops keep denormals (rule 15).
+
+Second check 2026-10-09: every spec row re-read in the manuals and confirmed (row 12 and the "general" rows remain inferences, as marked; the exact 2^-126 - 2^-151 cut is derived from "post-rounded" plus nearest-even, the manuals do not state the number; row 14's threshold is stated in the ALU "32-bit and 40-bit" entries, PRM pp.453-473, not on p.100); `_float32`, `_float32_result`, `_float_multiply`, `_astatx_mult_float` and `compute_multi._float_multiply_parts` match the rules including the cut and the zero sign; `tests/test_sharc_denormal.py` and `tests/test_sharc_golden.py`: 28 passed. Not modelled: MODE1.TRUNCATE=1 float results (the core rounds to nearest only, so the truncating cut, exactly 2^-126, is absent).

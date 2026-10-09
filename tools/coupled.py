@@ -25,6 +25,7 @@ failure, 1 error); ``bisect`` returns 0 when the default matches the reference.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import math
@@ -291,36 +292,58 @@ def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
     return done.returncode
 
 
-def run_batch(
-    device: str,
-    scenarios_file: pathlib.Path | str,
-    names: list[str],
-    run_dir: pathlib.Path | str,
-    peeks: tuple[str, ...] | list[str] = (),
-    diag: str | None = None,
-    binary: pathlib.Path | None = None,
-    no_build: bool = False,
-) -> dict:
-    """Render ``names`` of a scenario file in one coupled-run process into
-    ``run_dir`` (report.json, audio-<name>.wav, logs/) and return the parsed
-    report. ``peeks`` are ``NAME=SPEC`` guest reads at the end of each scenario
-    (``--peek``). Raises RuntimeError when coupled-run fails to run (exit 1 or
-    no report); exit 2 (failed gate or pin) still returns the report, whose
-    ``gates`` say which. ``binary`` skips the build step."""
-    parsed = digi_env.parse_diag(diag or "")
-    if binary is None:
-        binary = ensure_binary(no_build, device)
-    run_dir = pathlib.Path(run_dir)
-    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
+def scenario_seconds(scenarios_file: pathlib.Path | str) -> dict[str, float]:
+    """Audio seconds of each scenario in a scenario file (its cost to render)."""
+    with pathlib.Path(scenarios_file).open() as handle:
+        doc = json.load(handle)
+    return {
+        sc["name"]: float(sc.get("seconds") or 0.0) for sc in doc.get("scenarios", [])
+    }
+
+
+def shard_names(
+    names: list[str], seconds: dict[str, float], jobs: int
+) -> list[list[str]]:
+    """Split ``names`` into at most ``jobs`` non-empty shards of similar total
+    ``seconds`` (longest first onto the lightest shard); each shard keeps the
+    order of ``names``. A name missing from ``seconds`` weighs the mean."""
+    jobs = max(1, min(jobs, len(names)))
+    known = [seconds[n] for n in names if seconds.get(n)]
+    mean = sum(known) / len(known) if known else 1.0
+    weight = {n: seconds.get(n) or mean for n in names}
+    shards: list[list[str]] = [[] for _ in range(jobs)]
+    load = [0.0] * jobs
+    for n in sorted(names, key=lambda n: -weight[n]):
+        i = min(range(jobs), key=lambda k: (load[k], k))
+        shards[i].append(n)
+        load[i] += weight[n]
+    order = {n: i for i, n in enumerate(names)}
+    return [sorted(s, key=order.__getitem__) for s in shards if s]
+
+
+def merge_reports(reports: list[dict], names: list[str]) -> dict:
+    """One report from shard reports: the first's top-level fields and the
+    scenario entries in the order of ``names``."""
+    by_name = {sc["name"]: sc for r in reports for sc in r.get("scenarios", [])}
+    missing = [n for n in names if n not in by_name]
+    if missing:
+        raise RuntimeError(f"coupled-run reports lack scenarios: {missing}")
+    return {**reports[0], "scenarios": [by_name[n] for n in names]}
+
+
+def default_jobs() -> int:
+    """Parallel coupled-run processes for tests: DIGI_JOBS, else
+    min(cpus - 2, 6) (scenarios/README.md, "Parallel rendering")."""
+    env = os.environ.get("DIGI_JOBS")
+    if env:
+        return max(1, int(env))
+    return max(1, min((os.cpu_count() or 1) - 2, 6))
+
+
+def _run_one(
+    argv: list[str], env: dict[str, str], run_dir: pathlib.Path
+) -> pathlib.Path:
     out = run_dir / "report.json"
-    extra = ["--scenarios", str(pathlib.Path(scenarios_file).resolve())]
-    for name in names:
-        extra += ["--scenario", name]
-    extra += ["--out", str(out), "--wav", str(run_dir / "audio.wav")]
-    for spec in peeks:
-        extra += ["--peek", spec]
-    argv = run_args(binary, inputs(device), extra)
-    env = run_env(digi_env.diag_env(parsed, run_dir))
     with (
         (run_dir / "logs" / "stdout.log").open("wb") as stdout,
         (run_dir / "logs" / "stderr.log").open("wb") as stderr,
@@ -332,7 +355,104 @@ def run_batch(
         raise RuntimeError(
             f"coupled-run failed ({done.returncode}); see {run_dir / 'logs'}"
         )
-    return read_report(out)
+    return out
+
+
+def run_batch(
+    device: str,
+    scenarios_file: pathlib.Path | str,
+    names: list[str],
+    run_dir: pathlib.Path | str,
+    peeks: tuple[str, ...] | list[str] = (),
+    diag: str | None = None,
+    binary: pathlib.Path | None = None,
+    no_build: bool = False,
+    jobs: int = 1,
+) -> dict:
+    """Render ``names`` of a scenario file into ``run_dir`` (report.json,
+    audio-<name>.wav, logs/) and return the parsed report. ``peeks`` are
+    ``NAME=SPEC`` guest reads at the end of each scenario (``--peek``). With
+    ``jobs`` > 1 the names are sharded by audio seconds over that many
+    concurrent coupled-run processes (shards in ``run_dir/shard-N/``; each
+    scenario restores its own snapshot, so the PCM is identical) and the
+    reports are merged; the processes hold the benchlock shared. Raises
+    RuntimeError when coupled-run fails to run (exit 1 or no report); exit 2
+    (failed gate or pin) still returns the report, whose ``gates`` say which.
+    ``binary`` skips the build step."""
+    parsed = digi_env.parse_diag(diag or "")
+    if binary is None:
+        binary = ensure_binary(no_build, device)
+    run_dir = pathlib.Path(run_dir)
+    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
+    scn = str(pathlib.Path(scenarios_file).resolve())
+    shards = (
+        shard_names(names, scenario_seconds(scn), jobs) if jobs > 1 else [list(names)]
+    )
+
+    def launch(shard: list[str], d: pathlib.Path) -> pathlib.Path:
+        (d / "logs").mkdir(parents=True, exist_ok=True)
+        extra = ["--scenarios", scn]
+        for name in shard:
+            extra += ["--scenario", name]
+        extra += ["--out", str(d / "report.json"), "--wav", str(d / "audio.wav")]
+        for spec in peeks:
+            extra += ["--peek", spec]
+        argv = run_args(binary, inputs(device), extra)
+        return _run_one(argv, run_env(digi_env.diag_env(parsed, d)), d)
+
+    if len(shards) == 1:
+        return read_report(launch(shards[0], run_dir))
+    dirs = [run_dir / f"shard-{i}" for i in range(len(shards))]
+    with (
+        benchlock("shared", f"coupled-run x{len(shards)}"),
+        concurrent.futures.ThreadPoolExecutor(len(shards)) as pool,
+    ):
+        futures = [
+            pool.submit(launch, sh, d) for sh, d in zip(shards, dirs, strict=True)
+        ]
+        outs = [f.result() for f in futures]
+    for shard, d in zip(shards, dirs, strict=True):
+        for name in shard:
+            wav = d / f"audio-{name}.wav"
+            if not wav.exists() and len(shard) == 1:
+                wav = d / "audio.wav"
+            if wav.exists():
+                os.replace(wav, run_dir / f"audio-{name}.wav")
+    merged = merge_reports([read_report(o) for o in outs], names)
+    (run_dir / "report.json").write_text(json.dumps(merged))
+    return merged
+
+
+def run_parallel(binary: pathlib.Path, args) -> int:
+    """`scenario --jobs N`: run_batch over the named scenarios (or all of the
+    file's), then the usual summary. Exit 2 when a gate or pin failed."""
+    if args.seconds is not None or args.extra or args.dump_dsp:
+        raise SystemExit(
+            "coupled: --jobs does not combine with --seconds/--dump-dsp/--"
+        )
+    device = getattr(args, "device", "dn2")
+    scn = pathlib.Path(args.scenarios or ROOT / "scenarios" / f"{device}.json")
+    names = args.names or list(scenario_seconds(scn))
+    run_dir = (
+        pathlib.Path(args.out).parent
+        if args.out
+        else digi_env.run_dir(
+            run_kind([x for n in args.names for x in ("--scenario", n)])
+        )
+    )
+    report = run_batch(
+        device,
+        scn,
+        names,
+        run_dir,
+        peeks=args.peek or (),
+        diag=args.diag,
+        binary=binary,
+        jobs=args.jobs,
+    )
+    summarize(run_dir / "report.json")
+    bad = [r["name"] for r in scenario_results(report) if r["ok"] is False]
+    return 2 if bad else 0
 
 
 def cmd_build(args) -> int:
@@ -356,6 +476,8 @@ def cmd_scenario(args) -> int:
     # No --scenario means every scenario of the file; coupled-run exits 2 on
     # any expect_sha256 mismatch or failed gate.
     selection = [x for name in args.names for x in ("--scenario", name)]
+    if args.jobs > 1:
+        return run_parallel(binary, args)
     return run_and_report(binary, selection, args)
 
 
@@ -528,6 +650,14 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--all", action="store_true", help="run every scenario of the file")
     p.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
     p.add_argument("--seconds", type=float)
+    p.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        metavar="N",
+        help="render over N concurrent coupled-run processes (PCM identical; "
+        "default 1)",
+    )
     p.add_argument(
         "--scenarios", metavar="FILE", help="scenario file (replaces the device's)"
     )

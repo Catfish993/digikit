@@ -1,8 +1,8 @@
 """Fixtures for the scenario oracle tests (scenarios/README.md, "Oracle tests").
 
 A test asks ``render`` for scenarios by name. Every scenario a selected test
-declares (``@pytest.mark.scn(name, ...)``) is rendered in one ``coupled-run``
-process per scenario file the first time any of them is needed, together with
+declares (``@pytest.mark.scn(name, ...)``) is rendered over parallel ``coupled-run``
+processes (``--jobs``) per scenario file the first time any of them is needed, together with
 its dry reference and companions; each scenario restores the ready snapshot,
 so nothing is shared between them. All tests here are marked ``slow`` and
 ``scenario``; tests marked ``sweep`` need ``--sweep`` (or ``-m sweep``).
@@ -47,6 +47,19 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "reports stay under out/runs/tests/<stamp>/)",
     )
     parser.addoption("--device", default="dn2", choices=["dn2"], help="device")
+    parser.addoption(
+        "--no-build",
+        action="store_true",
+        help="use the existing coupled-run binary (no cargo build)",
+    )
+    parser.addoption(
+        "--jobs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="coupled-run processes rendering a batch in parallel "
+        "(default: DIGI_JOBS or min(cpus - 2, 6); 1 = one process)",
+    )
     parser.addoption(
         "--sweep", action="store_true", help="also run the full sweeps (~20 min)"
     )
@@ -128,6 +141,8 @@ class Renderer:
         self.device = device
         self.binary = binary
         self.diag: str | None = config.getoption("--diag")
+        jobs = config.getoption("--jobs")
+        self.jobs: int = coupled.default_jobs() if jobs is None else jobs
         self.keep = bool(config.getoption("--keep-runs"))
         self.base = digi_env.run_dir("tests")
         self.names = fxcheck.name_maps(fxcheck.DEFAULT_IMAGE)
@@ -164,6 +179,7 @@ class Renderer:
             peeks=PEEKS,
             diag=self.diag,
             binary=self.binary,
+            jobs=self.jobs,
         )
         rows = fxcheck.check([run], None, False, fxcheck.DEFAULT_IMAGE)
         loaded = fxcheck.load_run(run)
@@ -214,7 +230,9 @@ def emulator(request: pytest.FixtureRequest, device: str) -> Renderer:
             f"MAIN OS image for read-back names missing: {fxcheck.DEFAULT_IMAGE}"
         )
     try:
-        binary = coupled.ensure_binary(False, device)
+        binary = coupled.ensure_binary(
+            bool(request.config.getoption("--no-build")), device
+        )
     except SystemExit as exc:
         pytest.fail(f"coupled-run build failed: {exc}")
     rend = Renderer(device, binary, request.config)

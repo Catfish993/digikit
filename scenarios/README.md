@@ -41,6 +41,11 @@ mise run scenario:replay FILE           # a desktop "Export diagnostics" file
 mise run scenario:bisect NAME           # which DSP tier changes the PCM
 ```
 
+`--jobs N` (scenario command) splits the scenarios over N concurrent
+`coupled-run` processes by their `seconds`, then merges the reports. Each scenario
+restores its own ready snapshot, so the PCM hashes equal the single-process ones.
+Not combinable with `--seconds` or `--dump-dsp`. Default 1.
+
 The runs need the private ready inputs (`mise run emu:ready -- dn2|dt2`). Pins are
 only valid for the firmware and ready snapshot they were recorded with.
 
@@ -61,6 +66,11 @@ mise run scenarios:check      # fast subset (61 tests, about 3 min)
 mise run scenarios:sweep      # plus the full sweeps (every tf-* and sf-* scenario)
 uv run python -m pytest tests/scenarios --slow -k delay      # only what you select is rendered
 ```
+
+Batches are rendered in parallel: `--jobs N` (default `DIGI_JOBS`, else
+`min(cpus - 2, 6)`; `--jobs 1` is one process) coupled-run processes, each about
+0.5 GB, holding the benchlock shared. Each lands in `<run>/shard-<i>/` (logs) and
+the merged report and the WAVs in `<run>/`. `--no-build` uses the existing binary.
 
 Options: `--diag LIST` (as `coupled.py --diag`), `--keep-runs` (keep the WAVs;
 by default they are deleted at the end), `--device`, `--sweep` (or `-m sweep`).

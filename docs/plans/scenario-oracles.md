@@ -432,3 +432,8 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   unchanged, `tests/test_sharc_denormal.py` 22 passed, `native/sharc` `cargo test --lib --tests` 65 passed, DT2
   sample check clean tone. DN2 and DT2 cores regenerated (`gen-pre-ftz-20261009` backups, same block counts).
   Open: ALU sticky bits unmodelled, 64-bit ops keep denormals.
+- 2026-10-09: parallel rendering: `coupled.run_batch(jobs=N)` / `coupled.py scenario --jobs N` shard a batch by scenario
+  `seconds` over N concurrent coupled-run processes (benchlock shared) and merge the reports; the oracle tests default to
+  `min(cpus - 2, 6)` (`--jobs`, `DIGI_JOBS`, `--no-build`). Each process is about 0.4 to 0.5 GB RSS. PCM identical to
+  jobs=1 for all 23 scenarios of the fast check and the `dn2.json` pins hold with `--all --jobs 6`. `scenarios:check`
+  586 s (jobs 1) vs 199 s (jobs 6) at machine load about 33 (16 CPUs, another build running); `scenarios:sweep` (191 tests) 672 s at jobs 6, load about 35.

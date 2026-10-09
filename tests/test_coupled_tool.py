@@ -68,3 +68,37 @@ def test_scenario_results_reads_the_report_keys():
     assert result["sha256"] == "ab" * 32
     assert result["ok"] is True
     assert result["windows"] == [0.0, 0.5]
+
+
+def test_shard_names_balances_and_keeps_order():
+    names = ["a", "b", "c", "d", "e"]
+    secs = {"a": 4.0, "b": 1.0, "c": 3.0, "d": 1.0, "e": 3.0}
+    shards = coupled.shard_names(names, secs, 2)
+    assert sorted(n for s in shards for n in s) == names
+    for s in shards:
+        assert s == sorted(s, key=names.index)
+    loads = sorted(sum(secs[n] for n in s) for s in shards)
+    assert loads == [6.0, 6.0]
+    assert coupled.shard_names(["a", "b"], {}, 5) == [["a"], ["b"]]
+    assert coupled.shard_names(names, secs, 1) == [names]
+
+
+def test_merge_reports_keeps_requested_order():
+    r1 = {"schema_version": 1, "scenarios": [{"name": "c"}, {"name": "a"}]}
+    r2 = {"schema_version": 1, "scenarios": [{"name": "b"}]}
+    merged = coupled.merge_reports([r1, r2], ["a", "b", "c"])
+    assert [s["name"] for s in merged["scenarios"]] == ["a", "b", "c"]
+    assert merged["schema_version"] == 1
+    try:
+        coupled.merge_reports([r2], ["a", "b"])
+    except RuntimeError as exc:
+        assert "a" in str(exc)
+    else:
+        raise AssertionError("missing scenario not reported")
+
+
+def test_default_jobs(monkeypatch):
+    monkeypatch.setenv("DIGI_JOBS", "3")
+    assert coupled.default_jobs() == 3
+    monkeypatch.delenv("DIGI_JOBS")
+    assert 1 <= coupled.default_jobs() <= 6
