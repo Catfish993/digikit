@@ -36,7 +36,7 @@ from .floats import (
     _fixed_to_float,
     _fixed_to_float_scaled,
     _float32,
-    _float32_bits,
+    _float32_result,
     _float_binary,
     _float_max,
     _float_min,
@@ -71,11 +71,11 @@ def _float_multiply_parts(
     if a is None or b is None:
         return Unknown(label), MULT_FLAGS_FORGET
     raw = a * b
-    bits, overflowed = _float32_bits(raw)
+    bits, overflowed, underflowed = _float32_result(raw)
     value = Const(bits)
     if _isnan(raw):
         return value, _mult_flags(None, None, None, True)
-    return value, _astatx_mult_float(value, overflowed, False)
+    return value, _astatx_mult_float(value, overflowed, underflowed, False)
 
 
 # ---------------------------------------------------------------------------

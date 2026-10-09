@@ -48,11 +48,16 @@ from .values import (
 # tracer has no pipeline/forwarding model and every UREG it tracks is a
 # plain 32-bit value, so every float result here is computed and stored at
 # IEEE-754 single precision -- the same width a real RN/FN write-back uses
-# regardless of the extended-precision mode. Denormal-flush-to-zero, which
-# several PGR entries below document for their inputs/outputs, is also not
-# modeled (struct's round-trip preserves denormals exactly); this only
-# matters for subnormal magnitudes, which real audio sample/parameter data
-# essentially never produces.
+# regardless of the extended-precision mode.
+#
+# Denormals follow the manuals (docs/findings/15-sharc-sample-path.md,
+# "Denormal flush"): a denormal INPUT to a computational unit is read as a
+# zero of the same sign (PRM p.3-38, 2106x manual p.2-3), and a post-rounded
+# denormal RESULT is returned as a zero of the same sign (PRM p.19-1 and the
+# other ALU float entries). Data moves are not computational and pass
+# denormal bits unchanged. 64-bit (double) operations are the one gap: they
+# keep denormals (see the block comment above ``_double``); no firmware
+# image we analyse executes one.
 # ---------------------------------------------------------------------------
 
 
@@ -80,8 +85,11 @@ _isfinite = math.isfinite
 _copysign = math.copysign
 _sqrt = math.sqrt
 _INF = math.inf
-# The smallest float32 normal magnitude; a result below it is a denormal.
-_F32_MIN_NORMAL = 2.0**-126
+# A result is returned as zero when its magnitude rounds (to 24 significant
+# bits, unbounded exponent, nearest-even) to less than 2**-126. The largest
+# such 24-bit value is 2**-126 - 2**-150, so the cut is the midpoint to
+# 2**-126: a magnitude at or above it rounds up to the smallest normal.
+_F32_FLUSH_BELOW = 2.0**-126 - 2.0**-151
 
 _PACK_U32 = struct.Struct("<I").pack
 _UNPACK_F32 = struct.Struct("<f").unpack
@@ -96,6 +104,14 @@ _UNPACK_U64 = struct.Struct(">Q").unpack
 def _f32_from_bits(bits: int) -> float:
     """The float32 whose bit pattern is BITS (32 bits), as a Python float."""
     return _UNPACK_F32(_PACK_U32(bits))[0]
+
+
+def _flush_denormal_bits(bits: int) -> int:
+    """BITS with a denormal (biased exponent 0, nonzero fraction) replaced
+    by a zero of the same sign; every other pattern unchanged."""
+    if (bits & 0x7F800000) == 0:
+        return bits & 0x80000000
+    return bits
 
 
 def _f64_from_words(hi: int, lo: int) -> float:
@@ -123,7 +139,10 @@ def _round_even_int(value: float) -> int:
 
 
 def _float32(value: Value) -> float | None:
-    """Reinterpret VALUE's 32-bit pattern as IEEE-754 single precision.
+    """Reinterpret VALUE's 32-bit pattern as IEEE-754 single precision, as a
+    computational unit reads it: a denormal is a zero of the same sign
+    (PRM p.3-38: "Denormal operands ... flush to zero when input to a
+    computational unit").
 
     Returns None when VALUE isn't a fully known Const: an Affine (symbolic
     address arithmetic) or Unknown source is not float data and must not be
@@ -131,7 +150,7 @@ def _float32(value: Value) -> float | None:
     """
     if not isinstance(value, Const):
         return None
-    return _f32_from_bits(value.value)
+    return _f32_from_bits(_flush_denormal_bits(value.value))
 
 
 def _float32_bits(value: float) -> tuple[int, bool]:
@@ -149,6 +168,25 @@ def _float32_bits(value: float) -> tuple[int, bool]:
     except OverflowError:
         sign = 0x80000000 if _copysign(1.0, value) < 0 else 0
         return (0x7F800000 | sign), True
+
+
+def _float32_result(value: float) -> tuple[int, bool, bool]:
+    """Round VALUE to a float32 result the way a computational unit returns
+    it; return (bits, overflowed, underflowed).
+
+    ``_float32_bits`` plus the denormal rule: a nonzero VALUE whose
+    post-rounded magnitude is below 2**-126 returns a zero of VALUE's sign
+    and UNDERFLOWED is true (PRM p.19-1: "Post-rounded denormal returns
+    +-zero"; MU: "unbiased exponent of the result is less than -126",
+    p.22-1). A magnitude between the cut ``_F32_FLUSH_BELOW`` and 2**-126
+    rounds up to the smallest normal and is returned as that. An exact zero
+    is not an underflow.
+    """
+    magnitude = abs(value)
+    if magnitude > 0.0 and magnitude < _F32_FLUSH_BELOW:
+        return (0x80000000 if _copysign(1.0, value) < 0 else 0), False, True
+    bits, overflowed = _float32_bits(value)
+    return bits, overflowed, False
 
 
 _FLOAT_ALL_ONES = Const(0xFFFFFFFF)
@@ -175,8 +213,27 @@ def _float_binary(
     if _isnan(a) or _isnan(b):
         return _FLOAT_ALL_ONES, False, True
     raw = operation(a, b)
-    bits, overflowed = _float32_bits(raw)
+    bits, overflowed, _underflowed = _float32_result(raw)
     return Const(bits), overflowed, _isnan(raw)
+
+
+def _float_multiply(
+    left: Value, right: Value, expression: str
+) -> tuple[Value, bool | None, bool | None, bool | None]:
+    """FN = FX * FY: (result, overflowed, underflowed, invalid). Like
+    ``_float_binary`` with a multiply, plus UNDERFLOWED for the multiplier's
+    MU flag. The inputs are flushed first, so a denormal operand is a zero
+    and never underflows (PRM p.28-6 MU: "Denormal operands are treated as
+    zeros. So, they never cause underflows"); infinity times a denormal is
+    infinity times zero, an invalid operation."""
+    a, b = _float32(left), _float32(right)
+    if a is None or b is None:
+        return Unknown(expression), None, None, None
+    if _isnan(a) or _isnan(b):
+        return _FLOAT_ALL_ONES, False, False, True
+    raw = a * b
+    bits, overflowed, underflowed = _float32_result(raw)
+    return Const(bits), overflowed, underflowed, _isnan(raw)
 
 
 def _float_unary(
@@ -189,7 +246,7 @@ def _float_unary(
     if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
     raw = operation(a)
-    bits, overflowed = _float32_bits(raw)
+    bits, overflowed, _underflowed = _float32_result(raw)
     return Const(bits), overflowed, _isnan(raw)
 
 
@@ -332,9 +389,7 @@ def _float_scalb(
         return _FLOAT_ALL_ONES, False, True
     shift = _signed32(scale.value)
     scaled = _ldexp(a, shift)
-    if scaled != 0.0 and not _isinf(scaled) and abs(scaled) < _F32_MIN_NORMAL:
-        return Const(0x80000000 if scaled < 0 else 0), False, False
-    bits, overflowed = _float32_bits(scaled)
+    bits, overflowed, _underflowed = _float32_result(scaled)
     return Const(bits), overflowed, False
 
 
@@ -471,9 +526,7 @@ def _fixed_to_float_scaled(
     unscaled = float(_signed32(value.value))
     shift = _signed32(scale.value)
     scaled = _ldexp(unscaled, shift)
-    if scaled != 0.0 and not _isinf(scaled) and abs(scaled) < _F32_MIN_NORMAL:
-        return Const(0x80000000 if scaled < 0 else 0), False
-    bits, overflowed = _float32_bits(scaled)
+    bits, overflowed, _underflowed = _float32_result(scaled)
     return Const(bits), overflowed
 
 
@@ -495,8 +548,6 @@ def _float_copysign(
     if _isnan(a) or _isnan(b):
         return _FLOAT_ALL_ONES, True
     magnitude = abs(a)
-    if 0.0 < magnitude < _F32_MIN_NORMAL:
-        magnitude = 0.0
     negative = _copysign(1.0, b) < 0
     result = -magnitude if negative else magnitude
     bits, _overflowed = _float32_bits(result)
@@ -537,9 +588,6 @@ def _float_round32(value: Value, expression: str) -> tuple[Value, bool | None]:
         return Unknown(expression), None
     if _isnan(a):
         return _FLOAT_ALL_ONES, True
-    magnitude = abs(a)
-    if 0.0 < magnitude < _F32_MIN_NORMAL:
-        return Const(0x80000000 if a < 0 else 0), False
     bits, _overflowed = _float32_bits(a)
     return Const(bits), False
 
@@ -776,7 +824,7 @@ def _double_to_float32(
         return Unknown(expression), None, None
     if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
-    bits, overflowed = _float32_bits(a)
+    bits, overflowed, _underflowed = _float32_result(a)
     return Const(bits), overflowed, False
 
 

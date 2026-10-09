@@ -135,6 +135,7 @@ impl Lower {
             self.written_iter[c] = false;
         }
         self.conv.clear();
+        self.ftz_ok.clear();
         self.exit_id = None;
         self.lw = [None; 3];
         self.cfg_x().nblock = 0;

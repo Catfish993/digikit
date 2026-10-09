@@ -69,6 +69,7 @@ CLEAN = [
     "tests/test_sharc_conditional_move.py",
     "tests/test_sharc_conditional_shift.py",
     "tests/test_sharc_simd_shift.py",
+    "tests/test_sharc_denormal.py",
     "tests/test_sharc_register_banks.py",
     "tests/test_sharc_rsgen_model_safe.py",
     "tools/autoevents.py",

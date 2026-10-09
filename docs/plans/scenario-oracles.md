@@ -421,3 +421,14 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   `scenarios` pins ok, oracle suite 61 passed in the default and in the no-AOT config, `cargo test --lib --tests` in
   native/sharc 64 passed (needs the shared-core `SHARC_GEN_DIR`), native/sharc-fast-cl and `cargo check --examples`
   clean, golden 6 passed, DT2 sample check clean tone. Decisions: `docs/design/fast-compile-offload.md`.
+- 2026-10-09: denormal flush in the core (finding 15, "Denormal flush", **[D]**): denormal operands read as zero,
+  post-rounded denormal results returned as zero, multiplier MU from the underflow (`tools/sharc_core` floats,
+  compute_mult, compute_multi), `bnd.rs` fast paths and the fast tier (`rd_f_op`, `flush_denormal_result`,
+  `result_no_underflow`) follow; `SHARC_FAST_DENORM` and `Req::StkyMus` removed (not needed: the late-run step is
+  gone, no-AOT run time 2.695 / 2.697 per audio s before/after 9 s, region calls 11.7M / 11.6M; AOT 2.187 / 2.171,
+  0.50M / 0.50M). PCM unchanged everywhere: `trig1-taps` 1.5 s `3bf3ba3026953c22` in interpreter, AOT and no-AOT,
+  14 s `18e5204f2015f2eb` (AOT, no-AOT), `sf-del-fb-d127`, `sf-rev-decay-u20`, `tf-br-127` equal in the three tiers
+  and to the earlier hashes, the four `dn2.json` pins hold, oracle suite 61 passed (default and no-AOT), golden
+  unchanged, `tests/test_sharc_denormal.py` 22 passed, `native/sharc` `cargo test --lib --tests` 65 passed, DT2
+  sample check clean tone. DN2 and DT2 cores regenerated (`gen-pre-ftz-20261009` backups, same block counts).
+  Open: ALU sticky bits unmodelled, 64-bit ops keep denormals.

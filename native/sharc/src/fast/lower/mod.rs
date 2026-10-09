@@ -282,26 +282,7 @@ pub struct Env {
     /// Every window access of the region is a flat guarded access
     /// (`cfg::flat_auto`): the static windows kept declining at run time.
     pub flat_windows: bool,
-    /// STKYX.MUS is set at build time and `SHARC_FAST_DENORM` is on: a float
-    /// multiply may produce a denormal result in the kernel (`Req::StkyMus`).
-    pub mus_set: bool,
 }
-
-/// `SHARC_FAST_DENORM=1`: a region built while STKYX.MUS is set lowers a float
-/// multiply whose result is denormal in the kernel (MU from the result at the
-/// exit replay, MUS already set) instead of leaving at a guard. Off by default.
-pub fn denorm_flag() -> bool {
-    match DENORM_FORCE.load(std::sync::atomic::Ordering::Relaxed) {
-        1 => return false,
-        2 => return true,
-        _ => {}
-    }
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SHARC_FAST_DENORM").is_ok_and(|v| v != "0"))
-}
-
-/// Tests: 1 forces `denorm_flag` off, 2 on, 0 leaves it to the environment.
-pub static DENORM_FORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// `SHARC_FAST_GEN`: `0` lowers with the hand-written forms only, a comma list
 /// of forms picks which use the generated emitters (`gen_forms`); the default is all.
@@ -411,8 +392,11 @@ pub struct Lower {
     /// defines (they must be known at entry), the bits known so far, and the
     /// bits some writer forgets or a condition reads (checked at the end).
     pub need_flags_known: u32,
-    /// A multiply in the region was lowered for `Req::StkyMus`.
-    pub need_mus: bool,
+    /// Float values the kernel has shown not to be a nonzero denormal (a
+    /// guard in this block, or a result built to be normal or zero): the
+    /// device reads a denormal operand as zero, which the kernel does not
+    /// do, so such an operand leaves (`guard_not_denormal`).
+    ftz_ok: std::collections::HashSet<Val>,
     pub fm_static: u32,
     forget_mask: u32,
     read_mask: u32,
@@ -546,7 +530,7 @@ impl Lower {
             ncond: None,
             nlabels: 0,
             need_flags_known: 0,
-            need_mus: false,
+            ftz_ok: std::collections::HashSet::new(),
             fm_static: 0,
             forget_mask: 0,
             read_mask: 0,
@@ -852,6 +836,7 @@ impl Lower {
             self.written_iter[c] = false;
         }
         self.conv.clear();
+        self.ftz_ok.clear();
         self.exit_id = None;
         self.lw = [None; 3];
     }
@@ -1286,6 +1271,53 @@ impl Lower {
         let v = self.rd(code)?;
         self.regs[code as usize].f_uses += 1;
         Ok(self.to_f(v))
+    }
+
+    /// `rd_f` for a computational float op: a nonzero denormal operand reads
+    /// as a zero on the device (`floats._float32`), which the kernel does
+    /// not model, so the kernel leaves at one.
+    pub fn rd_f_op(&mut self, code: u32) -> LR<Val> {
+        let x = self.rd_f(code)?;
+        self.guard_not_denormal(x);
+        Ok(x)
+    }
+
+    /// Guard that the f32 value X is not a nonzero denormal.
+    pub fn guard_not_denormal(&mut self, x: Val) {
+        if self.ftz_ok.contains(&x) {
+            return;
+        }
+        // The magnitude shifted left by one, minus 2, is below 0xfffffd
+        // exactly for the exponent field 0 with a nonzero mantissa.
+        let xb = self.to_i(x);
+        let k1 = self.ci(1);
+        let mag2 = self.bin(Bin::Shl, xb, k1);
+        let k2 = self.ci(2);
+        let m = self.bin(Bin::Sub, mag2, k2);
+        let lim = self.ci(0x00ff_fffd);
+        let ok = self.bin(Bin::GeU, m, lim);
+        self.guard(ok);
+        if self.cond.is_none() {
+            self.ftz_ok.insert(x);
+        }
+    }
+
+    /// The f32 sum or difference R of two operands that are normal or zero,
+    /// with a denormal result returned as the zero of its sign (the device
+    /// returns post-rounded denormals as zeros; add and subtract of floats
+    /// are exact there, so the native result is the exact one).
+    pub fn flush_denormal_result(&mut self, r: Val) -> Val {
+        let rb = self.to_i(r);
+        let me = self.ci(0x7f80_0000);
+        let e = self.bin(Bin::And, rb, me);
+        let z = self.ci(0);
+        let tiny = self.bin(Bin::Eq, e, z);
+        let sg = self.ci(0x8000_0000);
+        let zero = self.bin(Bin::And, rb, sg);
+        let bits = self.select(tiny, zero, rb);
+        let out = self.to_f(bits);
+        self.ftz_ok.insert(out);
+        out
     }
 
     /// Typeless read (moves, stores).
@@ -1916,9 +1948,6 @@ impl Lower {
         if self.need_flags_known != 0 {
             reqs.push(Req::FlagsKnown(self.need_flags_known));
         }
-        if self.need_mus {
-            reqs.push(Req::StkyMus);
-        }
         // Float rounding: TRUNCATE (bit 15) is part of every requirement (the
         // core models it only in `fix`, `falu_fix`; every other float op
         // rounds to nearest in either mode); ALUSAT (bit 13) is part of the
@@ -2013,28 +2042,28 @@ pub fn result_finite(l: &mut Lower, r: Val) {
     l.guard(ok);
 }
 
-/// The f32 result of a multiply must be a finite normal number or zero: a
-/// denormal result sets MU (and the sticky MUS) in the interpreter.
-pub fn result_normal_or_zero(l: &mut Lower, r: Val) {
-    if l.env.mus_set && l.pe_off == 0 {
-        // STKYX.MUS is set at entry (`Req::StkyMus`): a denormal result needs
-        // no exit. The interpreter's MU comes from the result bits (`apply_flag`).
-        l.need_mus = true;
-        let abs = l.un(Un::FAbs, r);
-        let inf = l.cf(0x7f80_0000);
-        let fin = l.bin(Bin::FLt, abs, inf);
-        l.guard(fin);
-        return;
-    }
-    let abs = l.un(Un::FAbs, r);
+/// The f32 result M of the multiply X * Y must be a finite normal number, or
+/// zero because an operand is zero. A product below the smallest normal
+/// (a denormal, or a zero made by underflow) is returned as a zero by the
+/// device and sets MU and the sticky MUS, which the kernel does not do, so
+/// it leaves (the interpreter runs `floats._float_multiply`). The operands
+/// are normal or zero (`guard_not_denormal`), so a zero result with a
+/// nonzero operand is an underflow.
+pub fn result_no_underflow(l: &mut Lower, x: Val, y: Val, m: Val) {
+    let abs = l.un(Un::FAbs, m);
     let inf = l.cf(0x7f80_0000);
     let min = l.cf(0x0080_0000);
     let zero = l.cf(0);
     let fin = l.bin(Bin::FLt, abs, inf);
     l.guard(fin);
     let big = l.bin(Bin::FGe, abs, min);
-    let z = l.bin(Bin::FEq, abs, zero);
-    l.guard_any(big, z);
+    let xz = l.bin(Bin::FEq, x, zero);
+    let yz = l.bin(Bin::FEq, y, zero);
+    let either = l.bin(Bin::Or, xz, yz);
+    l.guard_any(big, either);
+    if l.cond.is_none() {
+        l.ftz_ok.insert(m);
+    }
 }
 
 #[cfg(test)]
@@ -2054,7 +2083,6 @@ mod tests {
             guarded_dyn: false,
             bank_model: false,
             cacc_known: true,
-            mus_set: false,
             flat_windows: false,
         }
     }

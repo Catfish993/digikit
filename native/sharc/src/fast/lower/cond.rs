@@ -27,7 +27,7 @@
 
 use super::*;
 use crate::fast::MAX_FLAG_ID;
-use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MU, MULT_MASK, SS, SV, SZ};
+use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MULT_MASK, SS, SV, SZ};
 
 /// The forms whose condition gates the whole instruction (transfer, index
 /// update and compute), as `forms_compute`/`forms_move` execute them for
@@ -459,22 +459,6 @@ impl Lower {
                 if want & MN != 0 {
                     let r = self.to_i(srcs[0]);
                     parts.push(self.sign_to(r, 6));
-                }
-                if want & MU != 0 {
-                    // A denormal result: exponent field 0, mantissa not 0.
-                    let r = self.to_i(srcs[0]);
-                    let me = self.ci(0x7f80_0000);
-                    let mm = self.ci(0x007f_ffff);
-                    let e = self.bin(Bin::And, r, me);
-                    let m = self.bin(Bin::And, r, mm);
-                    let z = self.ci(0);
-                    let e0 = self.bin(Bin::Eq, e, z);
-                    let m0 = self.bin(Bin::Eq, m, z);
-                    let one = self.ci(1);
-                    let mnz = self.bin(Bin::Xor, m0, one);
-                    let d = self.bin(Bin::And, e0, mnz);
-                    let k = self.ci(8);
-                    parts.push(self.bin(Bin::Shl, d, k));
                 }
             }
             FlagKind::FmulForget => {

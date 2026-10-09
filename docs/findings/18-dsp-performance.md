@@ -471,7 +471,9 @@ DN2 1.11, shared core, exclusive lock; new `SHARC_FAST_TL=1` timeline, summarise
 Measured 2026-10-09 on `work/scenario-oracles`, DN2 1.11 and DT2 1.16, shared core (no-AOT,
 `static-insns+follow`, `SHARC_FAST_DYNFLAT=0`, `SHARC_FAST_CL_OPT=none` set explicitly) and the prod
 core (AOT, `default`); a binary copy per run; timed pairs under the exclusive lock. Not re-checked by
-a second agent. Fix behind `SHARC_FAST_DENORM=1` (off by default).
+a second agent. **Superseded 2026-10-09:** the core now flushes denormals as the SHARC+ does
+(finding 15, "Denormal flush"); the step is gone without any flag and `SHARC_FAST_DENORM` and
+`Req::StkyMus` were removed. The text below is the measurement that found the cause and the interim fix.
 
 **Characterisation.** "Calls" are fast-tier region calls per audio s, "run" is DSP CPU minus compile
 and build per audio s (`tools/fast_timeline.py` ticks, `SHARC_FAST_TL=1`).

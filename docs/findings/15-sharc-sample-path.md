@@ -758,3 +758,119 @@ manual says "Digitone II", the emulated firmware is 1.11):
   same steps. The manual gives no threshold. **[O]**
 - The manual says nothing about the taper of the mix volume or the sends.
   They measure as value squared. **[O]**
+
+## Denormal flush: the core and the fast tier now follow the manual **[D]**
+
+Done 2026-10-09 on `work/scenario-oracles` (uncommitted). Not yet re-checked by a second agent.
+Before this, `tools/sharc_core/floats.py` said flush-to-zero "is not modeled": a decayed filter or
+envelope state stuck at a 1-3 ulp denormal, the fast tier left its kernel at every denormal product,
+and the run got slower after a sound had decayed (finding 18, "Late-run slowdown"). The core now
+reads and returns denormals as the SHARC+ does. PCM did not change in any scenario we have (below).
+
+### Specification
+
+Page numbers are PDF pages of `out/refs/sharc-plus-prm` ("PRM", printed page in brackets),
+`out/refs/50836807228561adsp2106xsharcprocessorusersmanual_revision2_1` ("2106x") and
+`out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4` ("PGR"). "Said" means the entry itself says it;
+"general" means only the general rule applies (the entry is silent), which we take as the
+rule for every computational unit **[D]**.
+
+| # | Rule | Source |
+|---|---|---|
+| 1 | A denormal input to a computational unit is read as a zero of the same sign; no underflow exception | PRM p.100 [3-38] (IEEE single and 40-bit alike); 2106x p.45 [2-3] |
+| 2 | Said per op for add, subtract, abs(add), abs(sub), average (`+-zero`; abs forms `+zero`), neg, pass, abs (`+zero`), rnd, scalb, mant, logb, copysign, min, max, clip | PRM pp.453-456 [19-1..19-4], 458-462 [19-6..19-10], 471-473 [19-19..19-21] |
+| 3 | General only: comp, fix/trunc (and BY RY), recips, rsqrts | PRM pp.457, 463-466, 468-470 are silent; rule 1 |
+| 4 | Float multiply: denormal operands are zeros and "never cause underflows"; infinity times a denormal is infinity times zero (MI) | PRM p.571 [28-6] (MU); 2106x p.58-59 [2-16/2-17] (MU, MI) |
+| 5 | A post-rounded denormal result is returned as a zero of its sign: add, subtract, average (`+-zero`; abs forms `+zero`), scalb, FLOAT RX BY RY (underflow `+-zero`) | PRM pp.453-456, 461, 467-468 |
+| 6 | General only for the float multiplier result (the entry says nothing about the value): "any denormal or underflow result from an arithmetic operation is flushed to zero" | 2106x p.45 [2-3]; PRM p.500 [22-1] silent |
+| 7 | ALU flags: AZ is set for a zero result and, for add, subtract, average, scalb, FLOAT BY RY, "if the post-rounded result is a denormal (unbiased exponent < -126) or zero"; the flushed result is zero, so AZ is set; AN is the sign of the returned zero; AV and AI are not set by a denormal input | PRM pp.453-461, 467 |
+| 8 | Multiplier flags: MU is set when the unbiased exponent of the result is < -126, never by a denormal operand; MN is the sign of the (flushed) result; MUS is the sticky copy | PRM p.500 [22-1], p.571 |
+| 9 | ALU sticky: AUS is "sticky indicator for AZ bit set" on the ops of rule 5. **Not modelled**: the core keeps no ALU stickies (AUS, AVS, AOS, AIS) at all, before and after | PRM pp.453-461 |
+| 10 | comp: two denormals compare equal and equal to zero (rule 3) | general |
+| 11 | Float to fixed of a denormal gives 0, AZ set; fixed to float cannot give a denormal | general; PRM p.467 |
+| 12 | A data move (register, memory, DAG) is not a computation: denormal bits pass unchanged | PRM p.100 ("when input to a computational unit") **[D]** |
+| 13 | PEy is the same unit on the S registers; ASTATY and STKYY take the flags | PRM p.101 (SIMD Mode), p.571 |
+| 14 | Rounding boundary: the exponent threshold (< -126) is the same for RND32 = 0 (40-bit) and 1. The core stores 32-bit results for both, so it models the IEEE single case only | PRM p.100; `floats.py` header |
+| 15 | 64-bit (double) ops carry the same wording with exponent < -1022 | PRM pp.474-490. **Not implemented** (none of dt2 1.16, dt2 1.15C, dn2 1.11, dn2 1.10E executes one: lane F1 census) |
+
+"Post-rounded" is taken as: round to 24 significant bits with an unbounded exponent (nearest even),
+then test the exponent. A magnitude in [2^-126 - 2^-151, 2^-126) rounds up to the smallest normal
+and is returned as it; below that it is a flushed zero. The multiplier's "exact zero" (a zero
+operand) is not an underflow; whether the device sets MU for 0 x x is not stated **[O]**.
+
+### Audit of `tools/sharc_core` (before -> after)
+
+| Where | Before | After |
+|---|---|---|
+| `floats._float32` (every float input: add/sub/avg/comp/neg/pass/abs/rnd/min/max/clip/copysign/scalb/fix/trunc BY RY/multiply, multifunction halves, short ops) | raw bits, denormals kept | `_flush_denormal_bits` first |
+| `_float_binary`, `_float_unary` result (`_float32_bits`) | denormal results returned as denormals, AZ clear | `_float32_result`: zero of the sign, AZ set from the result bits |
+| `_float_scalb`, `_fixed_to_float_scaled` | already flushed results | same rule through `_float32_result` |
+| `_float_copysign`, `_float_round32` | explicit denormal checks | removed (the input flush covers them) |
+| `_float_mantissa`, `_float_logb`, `_approx_recips`, `_alu_recip_seed_impl` | already read exponent 0 as zero | unchanged |
+| float multiply (`compute_mult.mult_float`, `compute_multi._float_multiply_parts`) | MU read from a denormal result; a product that underflowed fully to 0 did not set MU | new `floats._float_multiply` (4th value: underflowed); `_astatx_mult_float(result, overflowed, underflowed, invalid)`; MU = underflowed |
+| `_double_*`, `_double_alu_updates`, `_astatx_mult_double` | keep denormals | unchanged (rule 15) |
+| ALU stickies AUS AVS AOS AIS | not modelled | unchanged (rule 9) |
+
+### Runtime and fast tier
+
+- `native/sharc-rt/src/rt/bnd.rs`: hand-written fast paths for add, subtract (`float_binary_fast!`)
+  and the new `_float_multiply` flush operands and results (a zero-exponent f32 result is a flushed
+  zero; the smallest-normal result is the one value that can come from either side of the cut, so
+  it and NaN take the slow path), `_float32_result`, `_astatx_mult_float` with the underflow
+  argument. `sharc_transpile.py` maps `_float_multiply` to it and drops the old multiply entry and the
+  dead `_multifn_fm_value`. The differential test (`float_binary_fast_paths_match_reference`,
+  30M comparisons, operands near the smallest-normal cut) passes.
+- Fast tier (`native/sharc/src/fast/lower`): float ops read their operands through `rd_f_op`, which
+  exits to the interpreter at a nonzero denormal (`guard_not_denormal`, 4 IR ops, once per value per
+  block: `ftz_ok`); add and subtract results are flushed in the kernel (exact, so the native result
+  is the exact one: `flush_denormal_result`); a multiply whose product is below the smallest normal
+  while both operands are nonzero exits (`result_no_underflow`; the interpreter sets MU and the
+  sticky MUS). `fix`, `trunc`, `scalb`, `logb`, `recips` kept their exit at a denormal operand.
+  Removed: `SHARC_FAST_DENORM`, `Req::StkyMus`, `Env::mus_set`; the Fmul flag replay no longer
+  derives MU from the result bits (a kernel result never underflows).
+
+### Results
+
+- `tests/test_sharc_denormal.py` (22 tests, also under PyPy): one test per rule above (inputs to
+  add/sub/avg, compare, pass/neg/abs, min/max/clip/copysign/rnd/scalb, fix/trunc, mant/logb, multiply
+  and infinity x denormal; underflowing results, sign of the zero, AZ/AN/MU/MUS, the cut at
+  2^-126 - 2^-151, exact zero is no underflow, the decayed filter reaches 0, a register move keeps the
+  bits, PEy with ASTATY/STKYY). Existing core tests, `tests/test_sharc_golden.py` (six hashes) pass
+  **unchanged**: no output of the golden runs touches a denormal.
+- Python core vs the native core built from it: `tools/sharc_transpile_run.py corpus --cases-per-op
+  200` 57,400 cases, 0 diverged (edge values now include 1.5 x 2^-126, 2^-100, 2^-63).
+- `native/sharc` `cargo test --lib --tests` (shared core): 65 passed, with the new
+  `fast_denormal_float_ops_match_the_interpreter` (add, subtract, multiply with denormal operands,
+  denormal and underflowing results, a negative one, a flag-reading `IF MS`, 8 chunk sizes);
+  `native/sharc-rt` 12 passed.
+- PCM in the three tiers is identical and also equal to the hashes before the change:
+  `trig1-taps` 1.5 s `3bf3ba3026953c22` (interpreter only, default AOT, no-AOT
+  `static-insns+follow`), 14 s `18e5204f2015f2eb` (AOT, no-AOT), `sf-del-fb-d127`
+  `c973b17a35b3c85c`, `sf-rev-decay-u20` `0e88d4528b389f15`, `tf-br-127` `16f3d0a81e686049`
+  (interpreter only, AOT, no-AOT). `scenarios`: all seven DN2 scenarios, the four pins hold
+  (`trig1-taps` `e0e6c8af7a84c443`, `trig1-tap-release` `883476213933...`, the two instruction-count
+  ones). The denormal state was below the 24-bit output, so the flush shows only in time.
+- Oracle suite (`tests/scenarios --slow`): 61 passed in the default and in the no-AOT config.
+  The 23 scenarios it renders have the same PCM hash as in the runs before the change, in both
+  configs. Not caused by this change **[O]**: `sf-del-time-u20` differs between the two configs in the
+  old runs and the new (AOT `67e0ea5c3f9a7166`, no-AOT `c4688d57f9ef9aa9`, rms 0.0127184 vs 0.0127187).
+  DT2 `tools/dt2_sample_check.py`: clean tone, 1007.8 Hz, peak share 0.99995, rms 0.01572 as before.
+- Late-run step, no `SHARC_FAST_DENORM`, exclusive lock, `trig1-taps` 14 s, run time per audio s
+  (DSP CPU minus compile and build) 3-8.5 s / 10-13.7 s, region calls per audio s; the machine was
+  busy with other processes, so only the pairs are comparable:
+
+  | config | run pre / post | calls pre / post | before (finding 18, no fix) |
+  |---|---|---|---|
+  | default AOT | 2.187 / 2.171 | 0.50M / 0.50M | 1.84 post, 0.5M -> 0.9M |
+  | no-AOT `static-insns+follow` | 2.695 / 2.697 | 11.73M / 11.61M | 4.9-5.1 post, 17.2M -> 26.2M |
+
+  The step is gone in both. `SHARC_FAST_DENORM` is not needed and was removed.
+
+### Open
+
+- ALU sticky bits (AUS, AVS, AIS, AOS) are not modelled by the core at all **[O]**; a firmware that reads
+  STKYX after a denormal result sees no AUS.
+- Whether MU is set for an exact-zero product, and the exact post-rounding cut in 40-bit mode **[O]**.
+- Rule 12 and the rules marked "general" are inferences from the manuals, not read from hardware
+  **[O]**.
+- The 64-bit ops keep denormals (rule 15).

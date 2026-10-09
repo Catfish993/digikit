@@ -741,6 +741,9 @@ _EDGE_VALUES = (
     0x00000001,  # smallest denormal
     0x807FFFFF,  # largest negative denormal
     0x00800000,  # smallest normal
+    0x00C00000,  # 1.5 * smallest normal (a difference with it is a denormal)
+    0x0D800000,  # 2**-100 (a square is a denormal or an underflow)
+    0x1A800000,  # 2**-63
     0x7F7FFFFF,  # largest finite
     0x3F800000,  # 1.0
     0xBF800000,  # -1.0

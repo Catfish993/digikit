@@ -32,7 +32,7 @@ from .floats import (
     _double_pair_bits,
     _f_mul,
     _float32,
-    _float_binary,
+    _float_multiply,
     _isfinite,
     _isinf,
     _isnan,
@@ -199,22 +199,25 @@ def _astatx_mult_from(
 
 
 def _astatx_mult_float(
-    result: Value, overflowed: bool | None, invalid: bool | None
+    result: Value,
+    overflowed: bool | None,
+    underflowed: bool | None,
+    invalid: bool | None,
 ) -> FlagUpdate:
     """PRM Table 3-9 "FN = FX * FY": MU/MN/MV/MI all data-dependent (unlike
-    every fixed-point row). MN is RESULT's own sign bit; MV is OVERFLOWED
-    (post-rounded exponent > 127, exactly what ``_float_binary`` already
-    reports via struct's OverflowError path); MU is a denormal RESULT
-    (biased exponent 0, nonzero mantissa -- "the floating-point result
-    underflows (unbiased exponent < -126)", and a denormal's unbiased
-    exponent is exactly -127); MI is INVALID as ``_float_binary`` already
-    computes it (NaN input)."""
+    every fixed-point row). MN is RESULT's own sign bit (a flushed zero keeps
+    the sign of the product); MV is OVERFLOWED (post-rounded exponent > 127,
+    what ``_float_multiply`` reports); MU is UNDERFLOWED, a nonzero product
+    whose post-rounded exponent is below -126 ("the floating-point result
+    underflows (unbiased exponent < -126)"). The result of such a product is
+    a zero, so MU cannot be read from the result bits. A denormal operand is
+    a zero and never underflows; MI is INVALID as ``_float_multiply``
+    computes it (NaN input, or infinity times zero)."""
     mn = mv = mu = None
     if isinstance(result, Const):
-        bits = result.value
-        mn = bool(bits & 0x80000000)
+        mn = bool(result.value & 0x80000000)
         mv = bool(overflowed)
-        mu = (bits & 0x7F800000) == 0 and (bits & 0x007FFFFF) != 0
+        mu = underflowed
     return _mult_flags(mn, mv, mu, invalid)
 
 
@@ -636,10 +639,10 @@ def mult_fixed(
 # above rather than forgotten -- unlike the fixed-point rows, every one of
 # these four is genuinely data-dependent for a float multiply.
 def mult_float(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
-    result, overflowed, invalid = _float_binary(
-        left, right, "F%d * F%d" % (rx, ry), _f_mul
+    result, overflowed, underflowed, invalid = _float_multiply(
+        left, right, "F%d * F%d" % (rx, ry)
     )
-    astatx = _astatx_mult_float(result, overflowed, invalid)
+    astatx = _astatx_mult_float(result, overflowed, underflowed, invalid)
     return rn, result, "float-multiply", astatx
 
 

@@ -211,10 +211,6 @@ pub enum Req {
     /// MODE1 write of the same value changes nothing after its two-
     /// instruction delay (`lower::sysops`).
     BankSync,
-    /// STKYX.MUS (the sticky float-multiply underflow bit, bit 8) is known to
-    /// be set. A kernel made for it lets a multiply produce a denormal
-    /// result: the interpreter sets MU and MUS, and MUS stays set.
-    StkyMus,
 }
 
 /// A memory window the region touches: the bytes

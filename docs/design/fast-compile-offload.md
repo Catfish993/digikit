@@ -58,7 +58,7 @@ Whole run: DSP thread 99.8 s = Cranelift compile 19.8 + region build 2.9 + run 7
 - **Run time without compile**, DSP CPU minus compile and build, per audio s: audio
   2.5-8.5 s **2.66** (17.4M region calls/s); 12-19.75 s **4.88** (26.2M calls/s, no
   builds). The step happens at about 9.2 s and takes 0.5 s (calls 19.4M to 26.8M/s);
-  the cause is found: denormal filter state and a kernel guard (finding 18, "Late-run slowdown"; fixed behind `SHARC_FAST_DENORM=1`). The finding-18 headline for 10.5 s (5.10 = 2.16
+  the cause is found: denormal filter state and a kernel guard (finding 18, "Late-run slowdown"; fixed by flushing denormals in the core, finding 15; the interim `SHARC_FAST_DENORM=1` flag is gone). The finding-18 headline for 10.5 s (5.10 = 2.16
   compile + 2.94 run) mixes both regimes. With `SHARC_FAST_DYNFLAT=1`: 1.99 and 4.28.
   AOT default: 1.42 and 1.83 (the 20 s run costs 1.65 against the 1.43 of the 10.5 s
   pin).

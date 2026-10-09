@@ -1620,45 +1620,59 @@ fn lp_fmul(rn: u64, rx: u64, ry: u64) -> u64 {
     lp_2a(0x1f, 0x130, rn, rx, ry)
 }
 
-/// A float multiply whose result is denormal (and one whose input is) leaves
-/// the interpreter's state in a kernel made for STKYX.MUS set: the result bits,
-/// ASTATX (MU from the result) and STKYX; and with MUS clear at entry the
-/// kernel still leaves at the guard and the interpreter sets it.
+/// `Fn = Fx + Fy` and `Fn = Fx - Fy`.
+#[cfg(sharc_gen)]
+fn lp_fadd(rn: u64, rx: u64, ry: u64) -> u64 {
+    lp_2a(0x1f, 0x081, rn, rx, ry)
+}
+
+#[cfg(sharc_gen)]
+fn lp_fsub(rn: u64, rx: u64, ry: u64) -> u64 {
+    lp_2a(0x1f, 0x082, rn, rx, ry)
+}
+
+/// Denormal operands read as zeros and denormal results are returned as zeros
+/// of their sign (`floats.py`, "Denormal flush"): the fast tier must leave
+/// the interpreter's state, ASTATX and STKYX included, for float multiplies
+/// and adds whose operand or result is a denormal, a product that underflows
+/// to zero, a sum that cancels into the denormal range, and the neighbours
+/// that stay normal.
 #[cfg(sharc_gen)]
 #[test]
-fn fast_denormal_multiply_matches_the_interpreter() {
-    use std::sync::atomic::Ordering::Relaxed;
-    crate::fast::lower::DENORM_FORCE.store(2, Relaxed);
+fn fast_denormal_float_ops_match_the_interpreter() {
     let code = [
         lp_fmul(10, 6, 6),              // 0: F10 = 1.0 * 1.0 (a normal result)
-        lp_fmul(2, 0, 1),               // 1: F2 = F0 * F1 (2^-140: denormal)
-        lp_fmul(3, 2, 1),               // 2: F3 = F2 * F1 (denormal input: zero)
-        lp_fmul(4, 0, 0),               // 3: F4 = F0 * F0 (2^-200: zero)
+        lp_fmul(2, 0, 1),               // 1: F2 = F0 * F1 (2^-140: denormal product)
+        lp_fmul(3, 2, 1),               // 2: F3 = F2 * F1
+        lp_fmul(4, 0, 0),               // 3: F4 = F0 * F0 (2^-200: underflow to zero)
         lp_fmul(5, 6, 1),               // 4: F5 = F6 * F1 (a normal result)
-        lp_fmul(7, 8, 9),               // 5: F7 = F8 * F9 (a negative denormal)
-        lp_2a(0x06, 0x01, 11, 11, 6),   // 6: IF MS R11 = R11 + R6 (reads MN of the last multiply)
-        lp_jump(0x1f, lp_rel(7, 0)),    // 7: back to 0
+        lp_fmul(7, 8, 9),               // 5: F7 = F8 * F9 (a negative denormal product)
+        lp_fmul(2, 13, 6),              // 6: F2 = F13 * 1.0 (a denormal operand: zero)
+        lp_fmul(14, 13, 15),            // 7: F14 = F13 * 2^97 (a denormal operand: zero)
+        lp_fadd(3, 13, 6),              // 8: F3 = F13 + 1.0 (a denormal operand: 1.0)
+        lp_fsub(4, 11, 12),             // 9: F4 = 1.5*2^-126 - 2^-126 (a denormal difference: +0)
+        lp_fsub(5, 12, 11),             // 10: F5 = 2^-126 - 1.5*2^-126 (a negative one: -0)
+        lp_fadd(7, 11, 12),             // 11: F7 = 1.5*2^-126 + 2^-126 (normal)
+        lp_2a(0x06, 0x01, 10, 10, 6),   // 12: IF MS R10 = R10 + R6 (reads MN of the last multiply)
+        lp_jump(0x1f, lp_rel(13, 0)),   // 13: back to 0
     ];
-    let mut kernel_insns = Vec::new();
-    for (mus, stky) in [("set", 0x100u32), ("clear", 0)] {
-        let set = move |e: &mut crate::Engine| {
-            lp_regs(
-                e,
-                &[
-                    (0, 0x0d80_0000), // 2^-100
-                    (1, 0x2b80_0000), // 2^-40
-                    (6, 0x3f80_0000), // 1.0
-                    (8, 0x8d80_0000), // -2^-100
-                    (9, 0x2b80_0000), // 2^-40
-                    (120, stky),
-                ],
-            )
-        };
-        kernel_insns.push(lp_check(&format!("denormal mul, MUS {mus}"), &code, &[0], 240, &set));
-    }
-    crate::fast::lower::DENORM_FORCE.store(0, Relaxed);
-    // The relaxed kernel runs the denormal multiplies; the strict one leaves at them.
-    assert!(kernel_insns[0] > kernel_insns[1], "{kernel_insns:?}");
+    let set = |e: &mut crate::Engine| {
+        lp_regs(
+            e,
+            &[
+                (0, 0x0d80_0000),  // 2^-100
+                (1, 0x2b80_0000),  // 2^-40
+                (6, 0x3f80_0000),  // 1.0
+                (8, 0x8d80_0000),  // -2^-100
+                (9, 0x2b80_0000),  // 2^-40
+                (11, 0x00c0_0000), // 1.5 * 2^-126
+                (12, 0x0080_0000), // 2^-126
+                (13, 0x0000_0123), // a denormal
+                (15, 0x7080_0000), // 2^97
+            ],
+        )
+    };
+    lp_check("denormal float ops", &code, &[0], 400, &set);
 }
 
 /// DO loops nested two deep, started in the region (entry at the top), and
