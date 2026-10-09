@@ -26,6 +26,8 @@ Configurations (``--config``, repeatable; default ``default fast-auto``):
                         (fast tier only: the firmware-free case; default 256,64)
     <config>+flat       SHARC_FAST_FLATAUTO=1 over any config (the default now; explicit)
     env:SHARC_FAST_FLATAUTO=0   turns the flat fallback off for an A/B
+    env:SHARC_FAST_DYNFLAT=0    turns the dynamic-window flat rebuild off (on by default)
+    env:SHARC_FAST_CL_OPT=speed Cranelift opt level of the fast tier back to `speed` (default `none`)
     static-funcs[:IMAGE] / static-blocks[:IMAGE]   SHARC_AOT=0, region entries = every function
                         entry / basic-block start of the program database, chosen at load
     fast-auto+verified[:T,M[,1]]   the same plus the verified regions

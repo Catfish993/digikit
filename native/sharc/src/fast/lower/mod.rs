@@ -282,7 +282,26 @@ pub struct Env {
     /// Every window access of the region is a flat guarded access
     /// (`cfg::flat_auto`): the static windows kept declining at run time.
     pub flat_windows: bool,
+    /// STKYX.MUS is set at build time and `SHARC_FAST_DENORM` is on: a float
+    /// multiply may produce a denormal result in the kernel (`Req::StkyMus`).
+    pub mus_set: bool,
 }
+
+/// `SHARC_FAST_DENORM=1`: a region built while STKYX.MUS is set lowers a float
+/// multiply whose result is denormal in the kernel (MU from the result at the
+/// exit replay, MUS already set) instead of leaving at a guard. Off by default.
+pub fn denorm_flag() -> bool {
+    match DENORM_FORCE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => return false,
+        2 => return true,
+        _ => {}
+    }
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SHARC_FAST_DENORM").is_ok_and(|v| v != "0"))
+}
+
+/// Tests: 1 forces `denorm_flag` off, 2 on, 0 leaves it to the environment.
+pub static DENORM_FORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// `SHARC_FAST_GEN`: `0` lowers with the hand-written forms only, a comma list
 /// of forms picks which use the generated emitters (`gen_forms`); the default is all.
@@ -392,6 +411,8 @@ pub struct Lower {
     /// defines (they must be known at entry), the bits known so far, and the
     /// bits some writer forgets or a condition reads (checked at the end).
     pub need_flags_known: u32,
+    /// A multiply in the region was lowered for `Req::StkyMus`.
+    pub need_mus: bool,
     pub fm_static: u32,
     forget_mask: u32,
     read_mask: u32,
@@ -525,6 +546,7 @@ impl Lower {
             ncond: None,
             nlabels: 0,
             need_flags_known: 0,
+            need_mus: false,
             fm_static: 0,
             forget_mask: 0,
             read_mask: 0,
@@ -1894,6 +1916,9 @@ impl Lower {
         if self.need_flags_known != 0 {
             reqs.push(Req::FlagsKnown(self.need_flags_known));
         }
+        if self.need_mus {
+            reqs.push(Req::StkyMus);
+        }
         // Float rounding: TRUNCATE (bit 15) is part of every requirement (the
         // core models it only in `fix`, `falu_fix`; every other float op
         // rounds to nearest in either mode); ALUSAT (bit 13) is part of the
@@ -1991,6 +2016,16 @@ pub fn result_finite(l: &mut Lower, r: Val) {
 /// The f32 result of a multiply must be a finite normal number or zero: a
 /// denormal result sets MU (and the sticky MUS) in the interpreter.
 pub fn result_normal_or_zero(l: &mut Lower, r: Val) {
+    if l.env.mus_set && l.pe_off == 0 {
+        // STKYX.MUS is set at entry (`Req::StkyMus`): a denormal result needs
+        // no exit. The interpreter's MU comes from the result bits (`apply_flag`).
+        l.need_mus = true;
+        let abs = l.un(Un::FAbs, r);
+        let inf = l.cf(0x7f80_0000);
+        let fin = l.bin(Bin::FLt, abs, inf);
+        l.guard(fin);
+        return;
+    }
     let abs = l.un(Un::FAbs, r);
     let inf = l.cf(0x7f80_0000);
     let min = l.cf(0x0080_0000);
@@ -2019,6 +2054,7 @@ mod tests {
             guarded_dyn: false,
             bank_model: false,
             cacc_known: true,
+            mus_set: false,
             flat_windows: false,
         }
     }

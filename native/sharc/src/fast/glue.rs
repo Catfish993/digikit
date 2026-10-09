@@ -214,6 +214,11 @@ pub const AF: u32 = 1 << 10;
 pub const ALU_MASK: u32 = AZ | AV | AN | AC | AS | AI | AF;
 pub const MULT_MASK: u32 = 0x3c0;
 pub const MN: u32 = 1 << 6;
+/// ASTATX.MU, and STKYX.MUS (the same bit number): a float multiply result below
+/// the smallest normal.
+pub const MU: u32 = 1 << 8;
+pub const MUS: u32 = 1 << 8;
+pub const STKYX_CODE: usize = 120;
 pub const SV: u32 = 1 << 11;
 pub const SZ: u32 = 1 << 12;
 pub const SS: u32 = 1 << 13;
@@ -327,7 +332,15 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
             ALU_MASK,
             arith_bits(src[0], src[1], false) | arith_bits(src[0], src[1], true),
         ),
-        FlagKind::Fmul => define(v, MULT_MASK, if src[0] >> 31 != 0 { MN } else { 0 }),
+        FlagKind::Fmul => {
+            let r = src[0];
+            let mut bits = if r >> 31 != 0 { MN } else { 0 };
+            // A denormal result (a kernel made for `Req::StkyMus` produces it).
+            if r & 0x7f80_0000 == 0 && r & 0x007f_ffff != 0 {
+                bits |= MU;
+            }
+            define(v, MULT_MASK, bits)
+        }
         FlagKind::FmulForget => forget(v, MULT_MASK),
         FlagKind::Iadd => define(v, ALU_MASK, arith_bits(src[0], src[1], false)),
         FlagKind::Isub => define(v, ALU_MASK, arith_bits(src[0], src[1], true)),
@@ -565,6 +578,11 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
                 mask: v_word(0, mask),
                 want: v_word(0, mask),
             },
+            Req::StkyMus => RegChk {
+                off: off(STKYX_CODE),
+                mask: v_word(MUS, MUS),
+                want: v_word(MUS, MUS),
+            },
             // CaccUnknown is checked on the engine state by `astat_ok`, not a masked compare.
             Req::NwPlain { .. } | Req::Within { .. } | Req::BankSync | Req::CaccUnknown => continue,
         };
@@ -576,6 +594,13 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
         }
     }
     out
+}
+
+/// `Req::StkyMus`: STKYX.MUS is known and set.
+#[inline]
+pub fn sticky_mus(s: &St) -> bool {
+    let v = s.r[STKYX_CODE];
+    v.m & MUS != 0 && v.b & MUS != 0
 }
 
 /// `Req::BankSync`: the applied bank selection is MODE1's.
@@ -812,6 +837,7 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
         }
         Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
         Req::BankSync => !s.cfg.bank_model || bank_synced(s),
+        Req::StkyMus => sticky_mus(s),
         Req::CaccUnknown => s.r[118].m & 0xff00_0000 != 0xff00_0000,
         Req::Within { c, lo, hi } => {
             let v = s.r[c as usize];

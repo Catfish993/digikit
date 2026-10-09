@@ -58,7 +58,7 @@ Whole run: DSP thread 99.8 s = Cranelift compile 19.8 + region build 2.9 + run 7
 - **Run time without compile**, DSP CPU minus compile and build, per audio s: audio
   2.5-8.5 s **2.66** (17.4M region calls/s); 12-19.75 s **4.88** (26.2M calls/s, no
   builds). The step happens at about 9.2 s and takes 0.5 s (calls 19.4M to 26.8M/s);
-  the cause is not found **[O]**. The finding-18 headline for 10.5 s (5.10 = 2.16
+  the cause is found: denormal filter state and a kernel guard (finding 18, "Late-run slowdown"; fixed behind `SHARC_FAST_DENORM=1`). The finding-18 headline for 10.5 s (5.10 = 2.16
   compile + 2.94 run) mixes both regimes. With `SHARC_FAST_DYNFLAT=1`: 1.99 and 4.28.
   AOT default: 1.42 and 1.83 (the 20 s run costs 1.65 against the 1.43 of the 10.5 s
   pin).
@@ -389,6 +389,26 @@ code with it if the worker has already run the function.
   scratch memory (it returned for all 4566 tested; for other kernels it is an
   assumption, so the call needs a guard such as a zero iteration count in the
   scratch `ctx`).
+
+## Decisions (Em, 2026-10-09)
+
+1. Build the offload, after the late-run slowdown (finding 18, "Compile timeline and offload premises",
+   open item 1) is understood.
+2. Async compile only in the app and the browser. Synchronous (deterministic) mode stays the default for
+   tools, pins and the oracle suite.
+3. Accept an interpreted cold start, with a "warming" UI state while the first kernels compile.
+4. Cranelift `opt_level` is `none` for the fast tier **(done 2026-10-09)**, together with `SHARC_FAST_DYNFLAT`
+   on by default. Opt out: `SHARC_FAST_CL_OPT=speed`, `SHARC_FAST_DYNFLAT=0` (fastcov:
+   `env:SHARC_FAST_CL_OPT=speed`, `env:SHARC_FAST_DYNFLAT=0`). The AOT generated core is compiled by rustc and is
+   not affected. Numbers, same binary, exclusive lock, alternating pairs, PCM `e0e6c8af7a84c443` in all 26 runs:
+   default AOT config `trig1-taps` 10.5 s, 8 pairs: 1.476 (IQR 1.465-1.482) new vs 1.477 (1.469-1.485) old DSP CPU
+   per audio s, no change. No-AOT `static-insns+follow`, 5 pairs: 4.72 (IQR 4.63-4.97) vs 5.89 (5.82-6.19), -20%; per
+   audio s compile 1.62 vs 2.09, build 0.31 vs 0.31, run 2.79 vs 3.50 (median of the per-run `tl` split).
+5. Cache helper-free kernels first (91% of kernels; `Op::Helper` kernels carry a process pointer).
+6. A firmware-derived kernel cache in the user cache directory is acceptable as long as it stays local: never
+   committed, never shipped.
+7. Pool size `clamp(cores-3, 1, 6)` at utility QoS.
+8. The browser handoff mechanism (Module transfer, `Atomics.waitAsync` or a yield) is decided at stage 4.
 
 ## Staged plan
 

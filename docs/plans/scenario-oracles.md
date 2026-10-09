@@ -405,3 +405,19 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   equal). Nothing built beyond measurement hooks (`SHARC_FAST_TL`, `_DEFER`, `_RELOAD`, `_CL_OPT`,
   `tools/fast_timeline.py`, `tools/wasm_compile_bench.mjs`, `compile_par` example); default PCM pins unchanged.
   Next, if agreed: stage 1 native background compile.
+- 2026-10-09: late-run slowdown found (finding 18 "Late-run slowdown", **[D]**). Cause: denormal filter/envelope
+  state (the core does not flush denormals as the SHARC+ does) makes the fast tier's float-multiply result guard
+  fail 2M times per audio s after the tail of a sound has decayed (`trig1-taps` from 9.2 s; `idle` and `trig1-hold`
+  never; DT2 sample trig at 4 s); the firmware executes the same instructions. Opt-in `SHARC_FAST_DENORM=1`
+  (a region built with STKYX.MUS set keeps denormal products in the kernel, `Req::StkyMus`): post-step run time
+  no-AOT 4.9-5.1 -> 2.8, AOT 1.84 -> 1.41 (headline 14 s: -19% / -10%), 2 + 3 exclusive pairs; PCM equal in 12 timed
+  runs, in 25 scenarios no-AOT and 25 AOT (off vs on; pins `trig1-taps` `e0e6c8af7a84c443` and `trig1-tap-release`
+  `883476213933...` hold), DT2 sample trig equal. New unit test `fast_denormal_multiply_matches_the_interpreter`,
+  `cargo test --lib` in native/sharc 65 passed. Default off; next: make it the default, then decide on flushing
+  denormals in the core as the hardware does.
+- 2026-10-09: `SHARC_FAST_DYNFLAT` on by default and the fast tier's Cranelift `opt_level` `none` (opt out
+  `SHARC_FAST_DYNFLAT=0`, `SHARC_FAST_CL_OPT=speed`; fastcov `env:` form). Default AOT trig1-taps 1.476 vs 1.477 (8
+  pairs, no change); no-AOT `static-insns+follow` 4.72 vs 5.89 (5 pairs, -20%). PCM `e0e6c8af7a84c443` throughout.
+  `scenarios` pins ok, oracle suite 61 passed in the default and in the no-AOT config, `cargo test --lib --tests` in
+  native/sharc 64 passed (needs the shared-core `SHARC_GEN_DIR`), native/sharc-fast-cl and `cargo check --examples`
+  clean, golden 6 passed, DT2 sample check clean tone. Decisions: `docs/design/fast-compile-offload.md`.

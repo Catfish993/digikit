@@ -2,7 +2,9 @@
 //!
 //! The full form `FN = FX * FY` sets MN from the result's sign and clears
 //! MV, MU, MI for results in the fast domain (finite normal or zero); the
-//! sticky MUS, MVS, MIS then stay as they are. The short form
+//! sticky MUS, MVS, MIS then stay as they are. With `SHARC_FAST_DENORM=1` and STKYX.MUS
+//! set at build time a denormal result stays in the fast domain too (MU is set from the
+//! result at the flag replay, MUS is already set: `Req::StkyMus`). The short form
 //! `FN = FX * FY` (2a_short, 2c) now sets them like the full form (2a).
 
 use super::*;

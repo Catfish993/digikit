@@ -26,11 +26,11 @@ pub struct ClBackend {
 impl Default for ClBackend {
     fn default() -> Self {
         ClBackend {
-            // SHARC_FAST_CL_OPT=none|speed_and_size: measurement of the compile-time/code trade.
+            // Default `none` (compile -27%, run +1%, same PCM); SHARC_FAST_CL_OPT=speed|speed_and_size restores/changes it.
             opt: match std::env::var("SHARC_FAST_CL_OPT").as_deref() {
-                Ok("none") => "none",
+                Ok("speed") => "speed",
                 Ok("speed_and_size") => "speed_and_size",
-                _ => "speed",
+                _ => "none",
             },
             verify: std::env::var_os("SHARC_FAST_CL_NOVERIFY").is_none(),
         }

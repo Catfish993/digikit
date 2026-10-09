@@ -449,7 +449,7 @@ DN2 1.11, shared core, exclusive lock; new `SHARC_FAST_TL=1` timeline, summarise
   are found at the first call).
 - **Run time without compile**, DSP CPU minus compile and build: audio 2.5-8.5 s **2.66** per audio s
   (DYNFLAT 1.99, AOT 1.42); audio 12-19.75 s **4.88** (DYNFLAT 4.28, AOT 1.83). The call rate steps from
-  19.4M to 26.8M/s around 9.2 s with no builds; cause **[O]**. The 10.5 s headline mixes both regimes.
+  19.4M to 26.8M/s around 9.2 s with no builds; cause found: see "Late-run slowdown" below (**[D]**). The 10.5 s headline mixes both regimes.
 - **Determinism [V]:** `SHARC_FAST_DEFER=N` (a new kernel is not used for N-4N calls of its entry) gives the
   same PCM (`40d829c95c1d1480`, 2 s) for N = 0, 1, 7, 40 and 3000 (interpreted share 0.98% to 4.6%) and for
   AOT N = 0, 7, 300; the AOT and no-AOT PCM are equal at 2 s and 20 s. The switch point does not change results.
@@ -465,6 +465,99 @@ DN2 1.11, shared core, exclusive lock; new `SHARC_FAST_TL=1` timeline, summarise
   call costs 2 us; V8 does not share compiled code across threads by bytes. `Op::Helper` is unimplemented in the
   wasm emitter (8.8% of kernels). The DSP worker blocks in `Atomics.wait`, so receiving a `Module` needs a
   yield or `Atomics.waitAsync`. Browser behaviour **[O]** (Node only).
+
+## Late-run slowdown **[D]**
+
+Measured 2026-10-09 on `work/scenario-oracles`, DN2 1.11 and DT2 1.16, shared core (no-AOT,
+`static-insns+follow`, `SHARC_FAST_DYNFLAT=0`, `SHARC_FAST_CL_OPT=none` set explicitly) and the prod
+core (AOT, `default`); a binary copy per run; timed pairs under the exclusive lock. Not re-checked by
+a second agent. Fix behind `SHARC_FAST_DENORM=1` (off by default).
+
+**Characterisation.** "Calls" are fast-tier region calls per audio s, "run" is DSP CPU minus compile
+and build per audio s (`tools/fast_timeline.py` ticks, `SHARC_FAST_TL=1`).
+
+| case | step | calls/s before -> after | run before -> after |
+|---|---|---|---|
+| `trig1-taps`, no-AOT, 20 s | yes: ramp from 6.5 s, jump 9.0-9.5 s, flat to 20 s | 17.2M -> 26.2M | 2.66 -> 4.88 |
+| `trig1-taps`, AOT default, 20 s | yes, same time | 0.5M -> 0.9M | 1.38 -> 1.86 |
+| `idle`, no-AOT, 20 s | none | 17.2M flat | 3.2 flat (loaded machine) |
+| `trig1-hold`, no-AOT, 20 s | none | 17.2M flat | 3.2 flat (loaded machine) |
+| `dt2-sample-trig`, no-AOT, 20 s | yes, smaller, at about 4 s (the 1 s sample ended at 1.3 s) | 17.4M -> 19.1M | 2.8 -> 3.3 (loaded) |
+| run length | none: the 12, 14 and 20 s runs and the 4/8/12/16 s diagnostic runs agree at equal audio time | | |
+
+- The taps are at 0.06-0.10, 0.21-0.25 and 0.36-0.40 audio s (events at 60M-400M instructions,
+  `scenarios/dn2.json`). The step comes 9 s after the last release, so it is not an event time. It
+  needs a sound that has decayed (`idle` never made one, `trig1-hold` never lets it decay) and it is
+  independent of config and run length.
+- **The firmware executes the same instructions.** Non-idle instructions per audio s are 497M before and
+  after (the 492M seen without the fix looks like accounting at guard exits **[O]**: with the fix the count
+  stays 497M); AOT config 267M both with the fix, 260M after the step without it. The extra work is the engine's, not the firmware's.
+
+**Cause (verified).** Diagnostic runs (`SHARC_FAST_COV`/`HIST`, cumulative, differenced as
+4-8 s against 12-16 s windows): region calls 17.4M -> 26.3M/s, interpreted instructions 5.0M -> 9.7M/s,
+kernel instructions 497M -> 492M/s; the growth is in guard exits at one site, `result_normal_or_zero`
+(`native/sharc/src/fast/lower/mod.rs`, the float multiply result guard): 0.07M -> 2.19M exits/s, plus the
+edge and `exit` re-entries each exit forces (edge +1.1M, exit +1.0M). Another 0.19M/s come from the
+`guard_zero_or_normal` guard (`float_alu.rs`: `fix`/`trunc`/`scalb` of a denormal operand, one site in `FUN_1c244d`, not fixed). The functions are
+the per-voice and FX stages: `FUN_1cdc30`, `FUN_b826c8`, `FUN_1c6664`, `FUN_1c244d`, `FUN_1c1f1e`,
+`FUN_b809f2`, `FUN_b80432`, `FUN_b851e5` (IIR/envelope/gain loops), each from 0.00 to 0.1-1.5M calls/s.
+`SHARC_PCDUMP` at `0xb82772..0xb8278e` in the window 12.0-12.1 s shows the multiplier operands: the
+filter and envelope state registers hold **denormal floats** (`1e-45`, `3e-45`, `-1.96e-43`, `2e-44`,
+`3.5e-39`) and STKYX is `0x01000100` (MUS already set). The guard fails because the product is
+nonzero and below 2^-126, a case the lowering sends to the interpreter since the interpreter sets
+ASTATX.MU and the sticky MUS.
+
+**Why they appear and stay (verified for the persistence, inferred for the onset).** As a tail decays
+the recurrences pass through the denormal range (the ramp from 6.5 s) and then stick at 1-3 ulp:
+`x * g` with `g > 0.5` rounds back to the same denormal, so the state never reaches zero. The core
+does not flush denormals (`tools/sharc_core/floats.py` header: "not modeled"; the Rust runtime computes
+f32 in IEEE). `idle` has no excited state; `trig1-hold` stays normal.
+
+**Hardware: not genuine load [D].** SHARC+ PRM (`out/refs/sharc-plus-prm`, "Floating-Point Format" PDF p.100, "Denormal
+operands ... flush to zero when input to a computational unit and do not generate an underflow
+exception"; the 2136x PGR add/mult entries: "post-rounded denormal returns +-zero. Denormal inputs are
+flushed to +-zero"; multiplier MU/MUS flag text in chapter 22 p.22-1). On the device the same states
+decay to exact zero and every instruction takes the same time whatever the data. The late cost exists
+only because the emulator keeps denormal state alive and its fast tier leaves a kernel at each
+denormal product. Flushing as the hardware does would change the model; its effect on PCM is
+**[O]**, not tried (it needs the Python core, the transpile and the golden hashes).
+
+**Fix (behind `SHARC_FAST_DENORM=1`).** A region built while STKYX.MUS is known set (`Env::mus_set`)
+lowers a float multiply without the denormal half of the guard (infinities and NaN still leave); it
+adds `Req::StkyMus` (a masked compare of STKYX bit 8 at entry, `glue::reg_checks`), so MUS needs no
+update; ASTATX.MU comes from the result bits at the flag replay (`glue::apply_flag` `Fmul`, and
+`cond.rs` for lazily tracked flags). PEy (SIMD) multiplies keep the old guard. A region built with MUS
+clear keeps the old guard and nothing else changes without the flag. Test:
+`fast_denormal_multiply_matches_the_interpreter` (`native/sharc/src/tests.rs`: all registers
+including ASTATX and STKYX equal the interpreter at 8 chunk sizes, MUS set and clear, a flag-reading
+`IF MS` in the loop; dropping the MU line makes it fail on `r118`); `cargo test --lib` 65 passed.
+
+A/B, same binary (`SHARC_FAST_DENORM` unset vs `1`), exclusive lock, 14 audio s, run time per audio s
+in the windows 3-8.5 s and 10-14 s (the second pair of the no-AOT runs was redone because a build ran
+beside it):
+
+| config | pair | base pre / post | fixed pre / post | headline DSP CPU per audio s |
+|---|---|---|---|---|
+| no-AOT | 1 | 2.67 / 4.92 | 2.63 / 2.77 | 4.76 -> 3.88 |
+| no-AOT | 2 | 2.82 / 5.08 | 2.69 / 2.84 | 4.95 -> 3.98 |
+| AOT default | 1-3 | 1.42, 1.41, 1.41 / 1.84, 1.83, 1.83 | 1.41, 1.41, 1.40 / 1.42, 1.41, 1.40 | 1.575, 1.567, 1.566 -> 1.423, 1.412, 1.404 |
+
+The step is gone in both configs: post-step run time -44% (no-AOT) and -23% (AOT) and the 14 s
+headline -19% / -10%; calls 26.2M -> 17.9M (no-AOT), 0.9M -> 0.5M (AOT). PCM `18e5204f2015f2eb`
+(14 s) in all 12 14-s runs, AOT and no-AOT, flag off and on. DT2 (20 s, unlocked): calls
+19.1M -> 17.4M, PCM `16b4abef610918fe` equal. Scenario sweep, flag off vs on, PCM equal in 25 scenarios no-AOT (idle, trig1-hold, kb-chord16,
+exactness-100m, trig1-noqa-40m, trig1-tap-release, 7 dn2-fx, 7 trackfx, 5 sendfx) and the same 25 AOT plus
+`trig1-taps` (pin `e0e6c8af7a84c443` holds); AOT and no-AOT hashes are equal per scenario.
+
+Residual **[O]**: the tail of an AOT run also pays the interpreter's `_astatx_mult_float` general path
+(four `_flags_put`) for denormal results in AOT blocks; not separated, and the fix above already
+brings the AOT run to its pre-step cost (1.41), so it is small.
+
+- **[D] Defaults changed 2026-10-09:** `SHARC_FAST_DYNFLAT` is on by default (`=0` off, `LO-HI` still works) and
+  the fast tier's Cranelift `opt_level` is `none` (`SHARC_FAST_CL_OPT=speed` restores it). Same binary, exclusive
+  lock, alternating pairs, PCM `e0e6c8af7a84c443` in all runs. Default AOT `trig1-taps`: 1.476 vs 1.477 DSP CPU per
+  audio s (8 pairs, no change). No-AOT `static-insns+follow`, 5 pairs: 4.72 vs 5.89 (-20%), compile 1.62 vs 2.09,
+  run 2.79 vs 3.50 per audio s. Not re-checked by a second agent.
 
 ## Generated lowering: design and how to add a family **[D]**
 

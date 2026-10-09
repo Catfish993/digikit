@@ -211,6 +211,10 @@ pub enum Req {
     /// MODE1 write of the same value changes nothing after its two-
     /// instruction delay (`lower::sysops`).
     BankSync,
+    /// STKYX.MUS (the sticky float-multiply underflow bit, bit 8) is known to
+    /// be set. A kernel made for it lets a multiply produce a denormal
+    /// result: the interpreter sets MU and MUS, and MUS stays set.
+    StkyMus,
 }
 
 /// A memory window the region touches: the bytes
@@ -986,7 +990,7 @@ impl FastEngine {
     }
 }
 
-/// `SHARC_FAST_DYNFLAT=1` (or `LO-HI`, hex PCs): a region whose calls mostly
+/// On by default (`SHARC_FAST_DYNFLAT=0` turns it off; `LO-HI`, hex PCs, limits it to a range): a region whose calls mostly
 /// leave the kernel at an instruction with a guarded dynamic window (the span
 /// anchored on an index register cannot hold an address that is a loaded
 /// offset from it, so the guard fails on every call) is rebuilt with that
@@ -995,7 +999,7 @@ impl FastEngine {
 fn dynflat_range() -> Option<(u32, u32)> {
     static R: std::sync::OnceLock<Option<(u32, u32)>> = std::sync::OnceLock::new();
     *R.get_or_init(|| {
-        let v = std::env::var("SHARC_FAST_DYNFLAT").ok()?;
+        let v = std::env::var("SHARC_FAST_DYNFLAT").unwrap_or_else(|_| "1".into());
         let hex = |t: &str| u32::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok();
         match v.as_str() {
             "" | "0" => None,
