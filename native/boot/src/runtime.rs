@@ -58,6 +58,11 @@ pub struct Status {
 pub struct Snapshot {
     pub status: Status,
     pub frame: Option<Vec<u8>>,
+    /// Set when `emu_step` only reported because something else steps the
+    /// guest (free running, paused, a job); the webview then polls once per
+    /// display frame instead of at once.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub polled: bool,
 }
 
 /// Persistent, bounded Oracle diagnostic state. It has no host I/O and does
@@ -556,7 +561,11 @@ impl Emulator {
             self.emitted_revision = Some(self.frame_revision);
             self.replay_restored_frame = false;
         }
-        Snapshot { status, frame }
+        Snapshot {
+            status,
+            frame,
+            polled: false,
+        }
     }
 
     /// The latest OLED frame and its revision, without consuming it: unlike

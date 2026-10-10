@@ -185,6 +185,16 @@ impl CoupledRuntime {
             false
         }
     }
+
+    /// True when the queued output audio has reached the pace target; the
+    /// controller's free running waits then. False without playback.
+    pub fn audio_ahead(&self) -> bool {
+        #[cfg(feature = "coupled-audio")]
+        if let Some(audio) = &self.audio {
+            return audio.queue_ahead();
+        }
+        false
+    }
     /// Overlay a DSP patch onto the running DSP between two frames and drop
     /// every cached decode and generated block that touched the patched code
     /// (the engine re-verifies code identity on its own). Returns the frame
@@ -253,6 +263,12 @@ impl CoupledRuntime {
         if let Some(audio) = &mut self.audio {
             audio.sync();
         }
+        self.emulator.snapshot()
+    }
+
+    /// The guest status and any new screen frame without waiting for the DSP
+    /// frames in flight (for the webview's poll while the controller steps).
+    pub fn peek(&mut self) -> Snapshot {
         self.emulator.snapshot()
     }
     pub fn diagnostics(&mut self) -> Value {
@@ -626,6 +642,9 @@ mod coupled {
             &data[24..],
         ))
     }
+    /// The free-running pace target without prefill (`--audio-buffer 0`).
+    const PACE_MIN_SECONDS: f64 = 0.05;
+
     pub(super) struct AudioSession {
         pub(super) handle: ThreadedHandle,
         pub(super) shared: Rc<RefCell<Shared>>,
@@ -648,6 +667,9 @@ mod coupled {
         tiers_printed: std::cell::Cell<Option<Instant>>,
         audio_mode: crate::AudioMode,
         spike: Option<elektron_native_boot::spikelog::CfWindow>,
+        /// Queued audio at which free running waits: the prefill, at least
+        /// `PACE_MIN_SECONDS`.
+        pace_seconds: f64,
     }
     impl AudioSession {
         fn new_with_player(
@@ -722,6 +744,7 @@ mod coupled {
             };
             // The refill threshold must fit the ~1 s output ring.
             let refill = options.buffer_seconds.clamp(0.2, 0.9);
+            let pace_seconds = options.buffer_seconds.max(PACE_MIN_SECONDS);
             let recovery = match options.audio_mode {
                 crate::AudioMode::Rebuffer => Recovery::Rebuffer(refill),
                 crate::AudioMode::Stretch => Recovery::Stretch(refill),
@@ -757,6 +780,7 @@ mod coupled {
                 tiers_printed: std::cell::Cell::new(None),
                 audio_mode: options.audio_mode,
                 spike: elektron_native_boot::spikelog::CfWindow::open(),
+                pace_seconds,
             })
         }
         pub(super) fn new(emulator: &mut Emulator, options: &AudioOptions) -> Result<Self, String> {
@@ -842,6 +866,18 @@ mod coupled {
                 serde_json::json!(p.queue_state())
             });
             spike.flush(reply_wait_ns, self.handle.frames_sent(), queue);
+        }
+
+        /// True when the device ring plus the feeder's pending input holds
+        /// at least `pace_seconds`. False without a player.
+        pub(super) fn queue_ahead(&self) -> bool {
+            self.player.as_ref().is_some_and(|p| {
+                let q = p.queue_state();
+                // Pending frames are at the 48 kHz source rate (pcm_play::SOURCE_RATE).
+                let queued = q.queued_device_frames as f64 / f64::from(q.device_rate.max(1))
+                    + q.feeder_pending_source_frames as f64 / 48_000.0;
+                queued >= self.pace_seconds
+            })
         }
         pub(super) fn sync(&mut self) {
             let wall_start = self.link_timing.then(Instant::now);

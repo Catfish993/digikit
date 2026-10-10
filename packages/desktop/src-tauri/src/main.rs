@@ -269,8 +269,11 @@ fn main() {
     let mut config = Config::new(startup.audio.clone());
     config.mode = if startup.paused {
         Mode::Paused
-    } else {
+    } else if startup.scenario.is_some() {
+        // Scenario ticks run in the webview's `emu_step`.
         Mode::Ui
+    } else {
+        Mode::Free
     };
     config.run_dir = run_dir.clone();
     config.on_quit = Some(Box::new(|| {

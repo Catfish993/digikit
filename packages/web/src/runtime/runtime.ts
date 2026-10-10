@@ -5,7 +5,7 @@ export interface RuntimeStatus {
   main_ui_reached: boolean; filesystem_verified: boolean | null; input_ready: boolean;
   input_pending: number; input_irqs: number;
 }
-export interface RuntimeSnapshot { status: RuntimeStatus; frame?: Uint8Array }
+export interface RuntimeSnapshot { status: RuntimeStatus; frame?: Uint8Array; polled?: boolean }
 export interface RuntimeDiagnostics {
   schema_version: number; device: string; version: string;
   sharc_execution_connected: boolean; pcm_output_connected: boolean;
@@ -112,9 +112,12 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     try {
       const begin = performance.now(); const snapshot = await api.invoke<RuntimeSnapshot>('emu_step', { sessionId: token, budget: 250_000 });
       if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
-      metrics.step(begin, performance.now(), snapshot); onUpdate({ type: 'snapshot', snapshot });
+      if (!snapshot.polled) metrics.step(begin, performance.now(), snapshot);
+      onUpdate({ type: 'snapshot', snapshot });
       if (snapshot.status.error) { fault(snapshot.status.error); return; }
-      timer = window.setTimeout(() => { void pump(token, run); }, 0);
+      // The controller steps the guest itself: poll once per display frame (a stale callback returns on the epoch check).
+      if (snapshot.polled) window.requestAnimationFrame(() => { void pump(token, run); });
+      else timer = window.setTimeout(() => { void pump(token, run); }, 0);
     } catch (error) { if (token === generation && run === epoch) fault(error); }
   };
   const start = (token: number) => { metrics.invalidatePumpGap(); paused = false; const run = ++epoch; timer = window.setTimeout(() => { void pump(token, run); }, 0); };

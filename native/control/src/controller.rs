@@ -172,11 +172,12 @@ pub enum Command {
 /// Who advances the guest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
-    /// The webview pump's `emu_step` (the desktop default).
+    /// The webview pump's `emu_step` (desktop scenario runs).
     Ui,
     /// Nobody; `emu_step` returns the status without stepping.
     Paused,
-    /// The controller, chunk after chunk, whenever it is idle.
+    /// The controller, chunk after chunk, whenever it is idle, waiting while
+    /// the output audio queue is at its target (the desktop default).
     Free,
 }
 
@@ -432,10 +433,20 @@ impl Actor {
         while !self.quit {
             let busy = self.runtime.is_some() && (self.job.is_some() || self.mode == Mode::Free);
             let command = if busy {
-                match self.rx.try_recv() {
-                    Ok(command) => Some(command),
-                    Err(mpsc::TryRecvError::Empty) => None,
-                    Err(mpsc::TryRecvError::Disconnected) => break,
+                if self.job.is_none() && self.runtime.as_ref().is_some_and(Runtime::audio_ahead) {
+                    // Free running with the audio queue at its target: wait for
+                    // a command instead of stepping.
+                    match self.rx.recv_timeout(std::time::Duration::from_millis(1)) {
+                        Ok(command) => Some(command),
+                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                } else {
+                    match self.rx.try_recv() {
+                        Ok(command) => Some(command),
+                        Err(mpsc::TryRecvError::Empty) => None,
+                        Err(mpsc::TryRecvError::Disconnected) => break,
+                    }
                 }
             } else {
                 match self.rx.recv() {
@@ -713,7 +724,11 @@ impl Actor {
         let result = loop {
             let remaining = held.saturating_sub(status.icount.saturating_sub(start));
             if remaining == 0 {
-                break Ok(Snapshot { status, frame });
+                break Ok(Snapshot {
+                    status,
+                    frame,
+                    polled: false,
+                });
             }
             let snapshot = runtime.step_chunk(remaining.min(u64::from(STEP_CHUNK)) as u32);
             if let Some(error) = snapshot.status.error.clone() {
@@ -736,8 +751,20 @@ impl Actor {
             return Err("No firmware selected".into());
         }
         // Something else advances the guest: report, do not step.
+        if self.mode == Mode::Free && self.job.is_none() {
+            // Do not wait for the DSP frames in flight while free running.
+            let snapshot = self.runtime.as_mut().expect("runtime").peek();
+            let mut snapshot = self.with_held(snapshot);
+            snapshot.polled = true;
+            return Ok(snapshot);
+        }
         if self.mode != Mode::Ui || self.job.is_some() {
-            return self.ui_snapshot("No firmware selected");
+            return self
+                .ui_snapshot("No firmware selected")
+                .map(|mut snapshot| {
+                    snapshot.polled = true;
+                    snapshot
+                });
         }
         let mut budget = budget;
         if self.scenario_run.is_some() {
