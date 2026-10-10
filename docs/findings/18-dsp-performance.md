@@ -831,3 +831,21 @@ on track 1 with send delay, a little reverb and track SRR, PGO launcher build, 1
 - Headroom in the paced app: DSP busy per 0.1 audio s window p50 94.0, p99 99.7, max 100.4 ms (4 of 519 windows
   over). CF work reached 1.0 to 1.4 per audio s in bursts while browsing pages; with the depth-1 link pipeline a
   CF burst stalls the DSP. A buffer well below 1 s needs DSP headroom first (target about 0.8).
+
+## Linker order file: ceiling 2026-10-11 **[D]**
+
+Measured before building (trig1-taps, DN2, PGO `pgo-cr-s3b` and prod `coupled-run`, exclusive benchlock, busy
+machine; scripts and traces were in a session scratchpad, not kept). Not re-checked by a second agent.
+
+- Front end of the DSP thread (`tools/xctrace_bottleneck.py`): PGO 11.8%, no PGO 24.1%; discarded (mispredict
+  flush) 2.5% in both. The CPU Counters template gives no L1I/iTLB/resteer split.
+- 20% (PGO) and 15% (no PGO) of DSP samples are outside the binary (Cranelift kernels, system libraries); 73% of the
+  in-binary samples are in `r_*` AOT regions.
+- Functions holding 90% of in-binary samples: PGO 167 functions, 6.1 MB, 467 16 KB pages, 94 address ranges over
+  18.5 MB of a 31.2 MB text. Executed bytes are 15-25% of each region function (60-175 KB each), so the hot set is
+  about 1.2-1.6 MB (lower bound from samples 268 KB): 6-8x the 192 KB P-core L1I, spread over 430-650 pages.
+- Ceiling: an order file is function-granular. It can pack the pages (about 100 instead of 430-650, inside the L1
+  iTLB reach) but not the cold blocks inside the region functions, so L1I capacity misses stay. Estimated 0-3% of
+  DSP CPU with PGO, 1-4% without (1.10 -> 1.06-1.09); most of the no-PGO front-end excess is in-function layout.
+  Not built. Note: `tools/xctrace_bottleneck.py` needs the `record` options before OUT, or xctrace fails with
+  "Path not found '--time-limit'".
