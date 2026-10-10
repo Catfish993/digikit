@@ -108,7 +108,8 @@ Other measured points:
 - Blanket helpers **[D]** (all `3a`): +0.30 s; 1 ns guarded hits became 140 ns.
 - Hot-function HLE **[D]**: DN2 top 20 functions are 84% of executed insns (79.5% of
   AOT region time), ~21 functions for 80%; DT2 needs ~35 (top 20 = 70%). Not viable.
-- Mask-free AOT emission **[O]**: predicted AOT 70 -> 22% of the DSP thread, 4.4 ->
+- Mask-free AOT emission **[O]** (superseded: slices 0-2' below and in the design doc; concrete registers were
+  dropped, hot-code density gave -15% without PGO and -9% with PGO): predicted AOT 70 -> 22% of the DSP thread, 4.4 ->
   ~1.5 ns/insn, default 1.41 -> ~0.75; +-30%, 1-2 weeks, changes the transpiler V type.
   **[D]** Design and redone ceiling in `docs/design/aot-mask-free.md` (2026-10-09, nothing built):
   the estimate rests on one xctrace category split; warm region benchmarks already reach
@@ -723,3 +724,31 @@ How measured, and caveats:
   result of 7c489c5 before the pins are committed **[O]**. Editing `lib.rs` also made the
   instrumented build a full 8 min compile.
 - Training: 4 runs of the gate, 507 s total, profile 40 MB.
+
+## Slice 2' (hot-code density) 2026-10-10 **[D]**
+
+`docs/design/aot-mask-free.md` section 7. Built, not committed: flag registers required fully known at region
+entry (they were at `0xFFFFFFFF` at every dispatch of seven scenarios; the `0x00FFFFFF` ASTATX mask in the old
+comment was stale), cold marking of every trap, budget and entry-gate path, one trap tail per region, chain exits as
+two tables and one function per successor set, one budget check per body (a body that would cross the limit is left
+to the interpreter), the normal-word range table out of line, a 32-bit plain-RAM address path.
+
+| | old core | slice 2' |
+|---|---:|---:|
+| bytes per SHARC site (150 hottest in-situ regions) | 868 | 465 |
+| front end of the DSP thread in situ (no PGO / PGO) | 27-32% / 14.6% | 21-24% / 10.4% |
+| DSP CPU per audio s, trig1-taps, no PGO / PGO | 1.502 / 1.163 | **1.277 / 1.055** |
+| tf-dry-hold, no PGO / PGO | 1.510 / 1.161 | **1.282 / 1.059** |
+| tf-br-127, no PGO / PGO | 1.612 / 1.237 | **1.368 / 1.129** |
+
+Exclusive alternating A/B (`tools/coupled_ab.py`), 6 to 7 pairs, paired ratio 0.85 without PGO and 0.91 with PGO
+(0.90 to 0.93 over all pairs); PCM equal to every pin; DN2 pins, oracle suites (default and no-AOT), the sweep, the
+134-scenario AOT against no-AOT comparison and DT2 (clean tone, AOT = no-AOT = AOT + fast WAV hash) unchanged.
+Block traps are identical in count and code in 25 scenarios; block entries grow 0.27% and interpreted instructions
+0.5 to 0.7% because a body that would cross the budget limit is no longer split at the instruction. The density
+gate of the design (<= 400 B per site, front end < 12% without PGO) was missed (465 B, 21-24%); the warm gate was met
+(0.77 to 0.91). The undo-copy ordering analysis was not built: deleting every undo copy (unsound ablation) is worth
+2.4% of the bytes and 0 to 9% warm, and LLVM already drops the restores of Err paths it can prove dead. The
+desktop is at **1.06 (trig1-taps), 1.06 (tf-dry-hold), 1.13 (tf-br-127) with PGO: not yet 1.0**; it needs
+another 5 to 11%. Largest remaining items in `tools/aot_attrib.py`: the normal-word test (12.6% of the bytes), the
+memory fast paths (8.6%), the float helpers (19%), `rf_set` (3.8%), `s_set_special` (3.1%).

@@ -1,9 +1,10 @@
 # Mask-free AOT emission: design and slice proof
 
 Status: design (2026-10-09); slices 0 and 1 measured 2026-10-10, results in section 6 (gate: do not build
-concrete registers, build the flag-known gate and cold-path density instead). Sections 0 to 5 are the
-original design and were not edited; the numbers marked **[D]** come from earlier measurements cited in place, **[O]** is open. Marks as
-in CLAUDE.md. No firmware-derived code is quoted: block code is described, and the few lines shown
+concrete registers, build the flag-known gate and cold-path density instead); slice 2' built and measured
+2026-10-10, results in section 7 (default config -15% without PGO, -9% with PGO; desktop 1.06 to 1.13 with PGO, not
+yet 1.0). Sections 0 to 5 are the original design and were not edited; the numbers marked **[D]** come from earlier
+measurements cited in place, **[O]** is open. Marks as in CLAUDE.md. No firmware-derived code is quoted: block code is described, and the few lines shown
 are generic.
 
 Goal: the desktop build (AOT generated core plus fast tier) from about 1.43 DSP CPU s per audio s to
@@ -541,3 +542,157 @@ documented mapping; hardware retired-instruction counts were not obtained, the i
 are from single-stepping; the in-situ vs warm region comparison used entry points that differ from
 the in-situ ones; the flag-known gate's soundness (that no scenario forgets a flag bit in AOT code)
 is shown for trig1-taps only (identical traps and entries), not for the sweep.
+
+## 7. Slice 2' results (2026-10-10) **[D]**
+
+Built on the branch `work/scenario-oracles`, uncommitted. The density gate of section 6.5 (bytes per SHARC site
+<= 400, front end < 12% without PGO, warm >= 10% faster) was **missed on two of three numbers** (465 B per site on
+the hot regions, front end 21 to 24% without PGO) and met on the third (warm 0.77 to 0.91 on the six default
+regions). The instruction was to stop and report at that point (the alternative route is offline fast-tier kernels).
+An early in-situ A/B (the full core built once for calibration) already showed -15% DSP CPU, so the work went on
+to the regenerated cores, the verification and the PGO retrain instead: DSP CPU per audio s -15% without PGO and
+-9% with PGO, PCM pins and all tier checks unchanged. That is a deviation from the stop rule; the old cores are
+kept (`gen-pre-s2-20261010`) and `rsgen --step-budget` restores the old budget form, so Em can back it out.
+
+### 7.1 What changed, per item
+
+All in the files that make the generated core: `tools/sharc_rsgen.py`, `tools/sharc_transpile.py` (both are in
+`CORE_FINGERPRINT`: the DN2, DT2 and shared cores were regenerated, backups `gen-pre-s2-20261010`) and the runtime
+`native/sharc-rt/src/{rt.rs,rt/bnd.rs,addressing.rs}`.
+
+1. **Flag-known gate.** `rsgen` no longer takes ASTATX, ASTATY, STKYX, STKYY out of the registers that must be
+   fully known at region entry (`region_text` and `body_lines`: `known` is every register a body reads), and the
+   transpiler writes them with `rf_set` like any register (only an explicit `V::UNK` store stays `rf_put`). A
+   flag update that would leave a bit unknown is `rf_set`'s cold exit with `TRAP_BLOCK_UNKNOWN`, before any commit,
+   the protocol every other register already used. Basis, measured with a temporary counter at the engine's block
+   call (not kept): at every block dispatch of trig1-taps (24.7M counted), kb-chord16, tf-br-127, tf-srr-127,
+   sf-mst-thr0 and sf-rev-decay-u20 all four masks were `0xFFFFFFFF`; in the new core's entry-bail histogram
+   (`--profile-execution`, 25 scenarios, 14.0M zero-progress bails) no bail has a flag register among the
+   registers that were not fully known. The `PARTIAL_MASKS[118] = 0x00FFFFFF` of the
+   old comment (CACC unknown) is stale. Soundness evidence: trap codes and counts are identical to the old core in
+   25 scenarios (7.4), so no update in AOT code forgot a flag bit there; the region with `allow_unknown`
+   (`r_1C253F`) is unchanged. A state with a partial flag at entry now declines the region (the interpreter runs
+   it): the regionbench state of region `1C25CC`, captured from an old note replay, does (warm ratio 0.14 in the
+   compare run); no in-situ entry does.
+2. **One trap tail per region.** A trap site now records `tp` (PC), `tt` (trap) and `tpd` (pending transfer) in
+   three locals and leaves; the region applies them once before the write-back (`Tail` in `rsgen`). The sites keep
+   their register restores. The ordering analysis ("no restores where every Err precedes the first commit") was
+   **not built**, because the compiler already does it: the register file is a local array with constant indices,
+   so a restore of an unchanged register is a no-op after SROA, and the `sv` copies of the Err paths that LLVM
+   proves never fire are dead. The upper bound, measured by deleting every `sv` copy and restore (unsound, mini
+   gen only): bytes -2.4%, warm 0 to 9% (mean 4%: 1C399A 1.69 vs 1.72 ns/insn, 1C3862 1.62 vs 1.70, 1C364F 1.87
+   vs 1.90, B8276C 2.46 vs 2.49, 1C5765 1.38 vs 1.52, B823DB 2.83 vs 2.98). Any exact elision is a fraction of that
+   and needs statement reordering (a load writes its register before the post-modify check that can fail); not
+   worth it yet **[O]**.
+3. **Cold paths and shared exits.**
+   - Every Err arm is marked unlikely: `ColdErr::ce` (`x.ce()?`), `cold_err`, `core::hint::cold_path()` in
+     `rf_set`, in the `Err(t)` block of every step, the entry gates and the budget exits.
+   - The chain exit (a block of another region follows) was one stop test plus one call per link, 30% of the bytes
+     of a typical region; now two static tables (`PCS`, `FNS`) and one stop test.
+   - The successor match calls one `#[inline(never)]` function per distinct set of chained PCs (`r_X_cN`) instead of
+     repeating the compare tree at every exit site.
+   - The normal-word range walk (11 ranges, 25% of all AOT bytes in two copies, one from the Python core
+     (`BOUNDARY` entry for `addressing.normal_word_to_byte`) and one in `bnd.rs`) is one out-of-line table
+     (`addressing::normal_word_map`) behind a 3-instruction inline range test; the plain-RAM access paths work on a
+     32-bit address (`fast_address_b`) and only the slow path maps again. Unit test against the old table in
+     `addressing.rs`.
+4. **Budget check per body.** The model-safe form checked `icount + ic >= limit` before every instruction. Each of
+   those early exits is an edge into the common write-back that costs about 80 bytes of register fix-up (157 KB of
+   1.3 MB in the mini set). Now a body (or a loop iteration) is entered only if it fits under the limit; else the
+   call ends with no progress and the interpreter runs up to the limit, which is architecturally exact. This is
+   **not** block-entry-identical (7.4); `rsgen --step-budget` restores the old form.
+
+Tools added: `tools/aot_attrib.py` (machine-code bytes and executed bytes per source function and per kind of
+generated statement, from `llvm-objdump -l` and an `aot_dyntrace.py --dump`; needs
+`REGIONBENCH_DEBUG=1 tools/sharc_regionbench.py` and the target's `region_bench.dSYM`), `tools/coupled_ab.py`
+(alternating exclusive A/B of `coupled-run` binaries). `aot_dyntrace.py --dump` writes the function start for
+`aot_attrib`. Test: `tests/test_sharc_rsgen_density.py`.
+
+### 7.2 Where the bytes were
+
+`aot_attrib.py` on the mini set (21 regions, 1959 SHARC sites, fxprof inputs), old core: normal-word table 25%
+(two copies), chain exit 15% + 13.5% + 1.8%, budget check 10.6%, float helpers about 15% (mostly the cold slow
+paths, partly already `cold_path`), memory fast paths 8%, `rf_set` 3%, `s_set_special` 3%. After the changes:
+normal-word 12.6%, memory fast paths 8.6%, `rf_set` 3.8%, float helpers about 19%, `s_set_special` 3.1%. What is left is the
+semantics of the model (flag updates, denormal flush, memory presence tests), no longer plumbing.
+
+### 7.3 Density gate
+
+Mini set (`mf`-style gens, 21 regions, 1959 sites, old profile = `fxprof`), `aot_mcount.py` and warm `compare
+--rounds 9` (paired median B/A, no PGO, same entry states):
+
+| | old core | slice 2' |
+|---|---:|---:|
+| bytes per SHARC site (mini set) | 1016 | **534** |
+| machine insns per site | 254 | 134 |
+| bytes per site, 150 hottest in-situ regions (8247 sites, ranked by trig1-taps block transitions) | 868 | **465** |
+| lines touched, one warm call, 1C3862 / B8276C / B823DB | 233 / 289 / 442 | 177 / 244 / 342 |
+| machine insns executed, same calls | 110452 / 74412 / 55057 | 84710 / 65375 / 46286 |
+| warm ratio, 1C399A 1C3862 1C364F B8276C 1C5765 B823DB | | 0.80 0.77 0.91 0.82 0.84 0.79 |
+| front end, DSP thread, in situ, no PGO (two runs each) | 27.4%, 32.4% | **20.9%, 23.5%** |
+| front end, in situ, PGO | 14.6% | **10.4%** |
+
+Gate: bytes per site <= 400 not met (465, 534); front end < 12% without PGO not met (it is met with PGO);
+warm >= 10% met. The hot set got 21 to 24% smaller in lines (1C3862), the machine code 46% smaller.
+
+### 7.4 Exactness
+
+PCM: every pin holds (`dn2.json` all seven, `tf-br-127 16f3d0a8..`, `tf-dry-hold 79e2dac0..`).
+Block behaviour, old core against new, `coupled-run --profile-execution`, six scenarios (trig1-taps, kb-chord16,
+tf-br-127, tf-dry-hold, sf-mst-thr0, sf-rev-decay-u20) and 19 more sampled over every FX family: **block traps
+identical in count and in code** (all `0x8000000d`, `TRAP_BLOCK_UNKNOWN`: 315000 in trig1-taps), so the exit set
+of the gate and of `rf_set` is the same. Block entries +0.26 to +0.27% (trig1-taps 31,910,436 to 31,995,146),
+interpreted instructions +0.5 to +0.7% (13,065,273 to 13,151,269) and the same number fewer in AOT: the bodies that
+now decline at the limit. That is the only difference and it is by design (item 4).
+
+### 7.5 Verification
+
+- `dn2.json` pins (`mise run scenarios`): all hold.
+- `scenarios:check` 61 passed in the default and the no-AOT config; `scenarios:sweep` 191 passed.
+- Tier sweep, all 134 FX scenarios (47 track, 87 send), AOT against `SHARC_AOT=0`: **134 of 134 PCM equal**.
+- `tests/test_sharc_golden.py` and `tests/test_sharc_denormal.py` 28 passed; `tests/test_sharc_rsgen_density.py`,
+  lint, `sharc_rsgen_model_safe`, `gen_fingerprint` pass; `cargo test` sharc-rt 13 passed (with the new address
+  table test); sharc-native 66 passed, 2 failed (`tests_gen::gen_programs_match_the_interpreter`,
+  `gen_control_programs_match_the_interpreter`: "simd_loop: the fast tier never ran"): they fail the same way on the
+  parent commit with the old core, so they are not from this change **[O]**.
+- DT2: `tools/dt2_sample_check.py` clean tone (peak share 0.99995 at 1008 Hz); the 3 s `dt2-sample-trig` render
+  with the card has the same WAV hash `4bab8330915f0929` in AOT, no-AOT and AOT + fast tier.
+
+### 7.6 Timing
+
+`tools/coupled_ab.py`, exclusive benchlock, alternating pairs, DSP thread CPU per audio s, default config, DN2 1.11,
+machine load average 2 to 4, PCM equal to the pins in every run. Cell = median (IQR).
+
+| scenario | old core | slice 2' | paired ratio |
+|---|---:|---:|---:|
+| no PGO, trig1-taps (7 pairs) | 1.502 (0.006) | **1.277** (0.005) | 0.849 |
+| no PGO, tf-dry-hold (7) | 1.510 (0.028) | **1.282** (0.025) | 0.850 |
+| no PGO, tf-br-127 (7) | 1.612 (0.022) | **1.368** (0.013) | 0.851 |
+| PGO, trig1-taps (6) | 1.163 (0.007) | **1.055** (0.006) | 0.907 |
+| PGO, tf-dry-hold (6) | 1.161 (0.007) | **1.059** (0.003) | 0.911 |
+| PGO, tf-br-127 (6) | 1.237 (0.020) | **1.129** (0.006) | 0.911 |
+
+PGO "old" is the 2026-10-09 binary (old core, profile of that day, `pgo-cr-new`); "slice 2'" is `coupled-run` built
+with `-Cprofile-use` of the profile retrained on the new core (`mise run pgo`, 4 runs, `coupled_ready_exactness`
+passed with the CF digest and DSP export pins unchanged, so no pin was edited) into `out/native/target/prod/pgo-cr-s2`.
+PGO buys 23% on the old core (1.502 to 1.163) and 17% on the new one (1.277 to 1.055): part of the layout benefit
+is now in the code (front end 14.6% with PGO on the old core, 10.4% on the new one). Binaries: `out/native/ab/coupled-{old,s2}-{nopgo,pgo}`.
+
+Fit: the old core's trig1-taps is 0.49 + 234M x 4.3 ns; the new one 0.49 + 234M x 3.4 ns.
+
+### 7.7 Desktop against 1.0, open items, next step
+
+The desktop did **not** cross 1.0: 1.055 (trig1-taps), 1.059 (tf-dry-hold), 1.129 (tf-br-127) with PGO, 1.28 to 1.37
+without. It needs another 5% to 11% with PGO.
+
+Open **[O]**: the block entry/exit histogram is not identical because of item 4 (a `--step-budget` build would be);
+sharc-native's two `tests_gen` failures predate this; the ordering analysis for the undo copies was not built (ceiling
+4% warm); the flag gate assumes fully known flags at every in-situ entry, shown for the 25 scenarios above and the
+DT2 render, not for arbitrary play (a partial flag only costs an interpreter run, it is not wrong).
+
+Next step, in order: (1) commit this slice after Em's review; (2) re-fit the cost split (AOT, kernels, the rest) on
+the new core with `xctrace`, since AOT is no longer 70% of the thread; (3) the remaining hot code is the model's
+own: about 37 machine instructions per SHARC instruction in the loops, of which the flag updates (`_float_alu_updates`,
+`_astatx_define`), the float flush and the memory presence tests are the largest named items in `aot_attrib.py`;
+exact fast paths for those are the next AOT lever; (4) offline fast-tier kernels for the 25 regions that carry
+88% of the AOT instructions stay the route to 0.9 and below.

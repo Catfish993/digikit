@@ -478,6 +478,9 @@ for _n in [
     BOUNDARY["sharc_core.periph." + _n] = Bnd()
 for _n in ["_concrete_address", "_byte_present"]:
     BOUNDARY["sharc_core.memory." + _n] = Bnd()
+# The address table: one out-of-line range walk in the runtime instead of a
+# copy at every use (native/sharc-rt/src/addressing.rs).
+BOUNDARY["sharc_core.addressing.normal_word_to_byte"] = Bnd()
 for _n in [
     "_canonical_dm_address",
     "dm_write_range",
@@ -545,14 +548,16 @@ SETTING_FACTS = ("nolog",)
 LOOP_SYNC = "sharc_core.state._sync_empty_loop_registers"
 LOOP_SYNCED_FACT = "loop_synced"
 
-# Registers that are PartialConst in practice (ASTATX, ASTATY: the CACC bits
-# are not known; STKYX, STKYY: once a status restore or move brings in an
-# unknown value, until the guest rewrites them, which in the coupled DN2 run
-# is for long stretches): block code keeps their known-bit masks at run time
-# instead of requiring them known at entry.
+# The flag registers (ASTATX, ASTATY, STKYX, STKYY) were PartialConst in the
+# early cores (the CACC bits, and STKY once a status restore brought in an
+# unknown value), so block code kept their known-bit masks at run time. In the
+# coupled DN2 runs they are fully known at every region entry (measured on
+# trig1-taps, kb-chord16 and FX scenarios, docs/design/aot-mask-free.md
+# section 7), so block code now requires them known at entry like any other
+# register it reads, and a flag update that would leave a bit unknown is
+# rf_set's cold exit. PARTIAL_MASKS and tools/sharc_rsgen.py REQUIRE_MASKS
+# remain for an image whose flags are known to carry a usual partial mask.
 PARTIAL_REGS = frozenset({118, 119, 120, 121})
-# Their usual known-bit masks (the CACC compare history, ASTATX bits 24-31,
-# is never known): block code requires these at entry, so they fold.
 PARTIAL_MASKS = {118: 0x00FFFFFF, 119: 0xFFFFFFFF, 120: 0xFFFFFFFF, 121: 0xFFFFFFFF}
 
 # floats._float_binary called with one of these operations (and
@@ -1124,7 +1129,8 @@ class Translator:
             name = "%s__v%d" % (rust_ident(fullname.rpartition(".")[2]), index)
             path = "crate::generated::image::spec_%02d::%s" % (module, name)
             self.variant_by_text[digest] = path
-            self.variant_texts.append((module, text.replace("__VARIANT__", name)))
+            text = text.replace("__VARIANT__", name)
+            self.variant_texts.append((module, _cold_paths(text) if self.blk else text))
         self.variant_effects[path] = set(fnt.effects)
         self.variant_facts_out[path] = facts_out
         self.variant_memreads[path] = fnt.memreads
@@ -4247,11 +4253,10 @@ class FnT:
                     self.wregs.add(reg)
                     self.reg_written(reg, v)
                     vcode = self.coerce(v, VAL, node)
-                    fn = (
-                        "rf_put"
-                        if vcode.strip() == "V::UNK" or reg in PARTIAL_REGS
-                        else "rf_set"
-                    )
+                    # The flag registers are required known at region entry
+                    # (tools/sharc_rsgen.py), so a flag update that would leave
+                    # a bit unknown is rf_set's cold exit like any register.
+                    fn = "rf_put" if vcode.strip() == "V::UNK" else "rf_set"
                     if fn == "rf_put":
                         self.putregs.add(reg)
                     return [
@@ -4919,6 +4924,26 @@ def _can_trap(body: str, traps: dict[str, bool]) -> bool:
         if i < len(body) and body[i] == "?" and not traps.get(m.group()[:-1], True):
             q -= 1
     return q > 0
+
+
+_STRING_OR_Q = re.compile(r'"(?:[^"\\]|\\.)*"|\?|return Err\(')
+
+
+def _cold_paths(text: str) -> str:
+    """Block-mode variant text with every trap path marked unlikely: `x?` is
+    `x.ce()?` and `return Err(t)` is `return cold_err(t)` (rt.rs ColdErr,
+    cold_err), so LLVM places the trap paths out of line and the hot path of
+    a block stays dense. Same values and control flow."""
+
+    def sub(m: re.Match) -> str:
+        t = m.group(0)
+        if t == "?":
+            return ".ce()?"
+        if t.startswith("return Err("):
+            return "return cold_err("
+        return t
+
+    return _STRING_OR_Q.sub(sub, text)
 
 
 # Runtime calls that write the undo log (rt.rs St::log).

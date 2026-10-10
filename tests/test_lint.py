@@ -13,6 +13,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/aot_attrib.py",
     "tools/aot_dyntrace.py",
     "tools/aot_mcount.py",
     "tools/xctrace_bottleneck.py",
@@ -56,6 +57,7 @@ CLEAN = [
     "tools/digi_env.py",
     "tools/coupled.py",
     "tests/test_coupled_tool.py",
+    "tools/coupled_ab.py",
     "tools/coupled_matrix.py",
     "tests/test_native_pgo.py",
     "tests/test_native_target.py",
@@ -74,6 +76,7 @@ CLEAN = [
     "tests/test_sharc_simd_shift.py",
     "tests/test_sharc_denormal.py",
     "tests/test_sharc_register_banks.py",
+    "tests/test_sharc_rsgen_density.py",
     "tests/test_sharc_rsgen_model_safe.py",
     "tools/autoevents.py",
     "tools/wireevents.py",

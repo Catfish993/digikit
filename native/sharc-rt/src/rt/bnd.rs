@@ -129,6 +129,12 @@ pub fn _is_unknown(_s: &St, value: V) -> bool {
     !value.is_c()
 }
 
+/// addressing.normal_word_to_byte
+#[inline(always)]
+pub fn normal_word_to_byte(_s: &St, address: Int) -> Option<Int> {
+    crate::addressing::normal_word_to_byte(address)
+}
+
 /// values._astatx_known_bit
 #[inline(always)]
 pub fn _astatx_known_bit(_s: &St, value: V, bit: Int) -> Option<bool> {
@@ -993,6 +999,24 @@ fn access_address(address: VI, normal_word: bool) -> VI {
     address
 }
 
+/// A block-code access's plain address, after the normal-word mapping, as a
+/// 32-bit value; None when the address is not a plain known one (then the
+/// general path below decides, from the original address). Equal to
+/// `plain_address_b(access_address(address, normal_word))` where it is Some.
+#[inline(always)]
+fn fast_address_b(address: VI, normal_word: bool) -> Option<u32> {
+    let a = match address {
+        VI::V(v) if v.is_c() => v.b,
+        VI::I(i) if (0..=u32::MAX as Int).contains(&i) => i as u32,
+        _ => return None,
+    };
+    Some(if normal_word {
+        crate::addressing::normal_word_or_same(a)
+    } else {
+        a
+    })
+}
+
 /// _dm_read for block code.
 #[inline(always)]
 pub fn _dm_read_b(
@@ -1002,8 +1026,7 @@ pub fn _dm_read_b(
     signed: bool,
     normal_word: bool,
 ) -> R<Option<V>> {
-    let address = access_address(address, normal_word);
-    if let Some(a) = plain_address_b(address)
+    if let Some(a) = fast_address_b(address, normal_word)
         && matches!(width, 1 | 2 | 4)
         && let Some(raw) = s.mem.fast_read(a, width as u32)
     {
@@ -1020,24 +1043,23 @@ pub fn _dm_read_b(
         };
         return Ok(Some(V::c(value)));
     }
-    _dm_read_full(s, address, width, signed, false)
+    _dm_read_full(s, address, width, signed, normal_word)
 }
 
 /// _dm_write for block code.
 #[inline(always)]
 pub fn _dm_write_b(s: &mut St, address: VI, width: Int, value: V, normal_word: bool) -> R<bool> {
-    let address = access_address(address, normal_word);
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
         && s.un < UNDO_CAP
-        && let Some(a) = plain_address_b(address)
+        && let Some(a) = fast_address_b(address, normal_word)
         && let Some(old) = s.mem.fast_write(a, width as u32, value.b)
     {
         let c = s.mem.canonical_of(a);
         s.log(Undo::MemWord(c, width as u8, old))?;
         return Ok(true);
     }
-    _dm_write_full(s, address, width, value, false)
+    _dm_write_full(s, address, width, value, normal_word)
 }
 
 /// _dm_write_nolog for block code.
@@ -1049,23 +1071,22 @@ pub fn _dm_write_nolog_b(
     value: V,
     normal_word: bool,
 ) -> R<bool> {
-    let address = access_address(address, normal_word);
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
-        && let Some(a) = plain_address_b(address)
+        && let Some(a) = fast_address_b(address, normal_word)
         && s.mem.fast_write(a, width as u32, value.b).is_some()
     {
         return Ok(true);
     }
-    _dm_write_nolog_full(s, address, width, value, false)
+    _dm_write_nolog_full(s, address, width, value, normal_word)
 }
 
 /// memory._dm_read. Inline: a plain-RAM read of present bytes; the rest
 /// out of line.
 #[inline(always)]
 pub fn _dm_read(s: &St, address: VI, width: Int, signed: bool, normal_word: bool) -> R<Option<V>> {
-    let address = access_address(address, normal_word);
-    if let Some(a) = plain_address(s, address)
+    if s.cfg.fast_mem
+        && let Some(a) = fast_address_b(address, normal_word)
         && matches!(width, 1 | 2 | 4)
         && let Some(raw) = plain_read(s, a, width as u32)
     {
@@ -1082,7 +1103,7 @@ pub fn _dm_read(s: &St, address: VI, width: Int, signed: bool, normal_word: bool
         };
         return Ok(Some(V::c(value)));
     }
-    _dm_read_full(s, address, width, signed, false)
+    _dm_read_full(s, address, width, signed, normal_word)
 }
 
 /// memory._dm_read, every rule.

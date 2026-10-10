@@ -453,3 +453,12 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   17.7% with PGO). Concrete-register mask-free dropped; next: sound flag-known gate plus hot-code density (slice 2').
   Experiment patch (unsound, not in the tree): `out/native/regionbench/assume-known.patch`. New tools:
   `aot_mcount.py`, `aot_dyntrace.py`, `xctrace_bottleneck.py`.
+- 2026-10-10: AOT slice 2' (hot-code density, `docs/design/aot-mask-free.md` section 7, finding 18 **[D]**) built on this
+  branch, uncommitted: flag registers required known at entry, cold trap/budget/entry paths, one trap tail, chain exits as
+  tables, one budget check per body, address table out of line. Density gate missed (465 B per site against 400; front end
+  21-24% against 12% without PGO; warm 0.77-0.91 met), run on regardless: DSP CPU per audio s -15% without PGO (trig1-taps
+  1.502 -> 1.277) and -9% with the retrained PGO (1.163 -> 1.055; tf-dry-hold 1.059, tf-br-127 1.129), so the desktop is
+  not yet at 1.0. Pins, oracle suites (default and no-AOT), sweep, 134 of 134 AOT = no-AOT, DT2 clean tone unchanged; block
+  traps identical in 25 scenarios, entries +0.27% (per-body budget decline). DN2, DT2 and shared cores regenerated (backups
+  `gen-pre-s2-20261010`). `sharc-native` `tests_gen` has 2 failures that predate this. New tools: `aot_attrib.py`,
+  `coupled_ab.py`.

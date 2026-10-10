@@ -273,7 +273,12 @@ def cmd_build(args) -> str:
     prod_gen = getattr(args, "prod_gen", False)
     # Production reuses the app cache only with its explicit profile.  Mini
     # variants retain the historical benchmark profile overrides.
-    profile_env = {} if prod_gen else PROFILE_ENV
+    profile_env = {} if prod_gen else dict(PROFILE_ENV)
+    if os.environ.get("REGIONBENCH_DEBUG") and not prod_gen:
+        # Line tables for tools/aot_attrib.py (code size and executed bytes
+        # per inlined helper).
+        profile_env["CARGO_PROFILE_RELEASE_DEBUG"] = "line-tables-only"
+        profile_env["CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO"] = "packed"
     key = hashlib.sha256(
         (
             sha256_files(src + gen_files)

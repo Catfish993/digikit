@@ -104,6 +104,9 @@ def main() -> None:
             kinds["stack"] += n
     if args.dump:
         with open(args.dump, "w") as fh:
+            sym = target.ResolveLoadAddress(order[0]).GetSymbol()
+            start = sym.GetStartAddress().GetLoadAddress(target)
+            fh.write("# function-start %x\n" % start)
             for pc in order:
                 insn = target.ReadInstructions(lldb.SBAddress(pc, target), 1)[0]
                 fh.write(

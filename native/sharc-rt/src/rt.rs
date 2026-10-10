@@ -75,6 +75,30 @@ pub const FN_OP_ANDNOT: FnId = 3;
 pub struct Trap(pub u32);
 pub type R<T> = Result<T, Trap>;
 
+/// Block code's `?` on an `R`: the Err arm is marked unlikely, so LLVM lays
+/// the trap path out of line (hot-code density, docs/design/aot-mask-free.md
+/// section 7). Generated variants write `x.ce()?`.
+pub trait ColdErr {
+    fn ce(self) -> Self;
+}
+
+impl<T, E> ColdErr for Result<T, E> {
+    #[inline(always)]
+    fn ce(self) -> Self {
+        if self.is_err() {
+            core::hint::cold_path();
+        }
+        self
+    }
+}
+
+/// `return Err(t)` of a generated variant, with the path marked unlikely.
+#[inline(always)]
+pub fn cold_err<T>(t: Trap) -> R<T> {
+    core::hint::cold_path();
+    Err(t)
+}
+
 pub const TRAP_RT_BASE: u32 = 0x8000_0000;
 pub const TRAP_UNMODELED_MMR: Trap = Trap(TRAP_RT_BASE + 1);
 pub const TRAP_SYMBOLIC: Trap = Trap(TRAP_RT_BASE + 2);
@@ -1438,6 +1462,7 @@ pub fn rf_set(rf: &mut Rf, code: Int, v: V) -> R<()> {
         return Ok(());
     }
     if v.m != u32::MAX {
+        core::hint::cold_path();
         return Err(TRAP_BLOCK_UNKNOWN);
     }
     rf.r[code as usize] = V {
