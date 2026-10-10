@@ -447,3 +447,9 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   build or timing). Redoes the finding 18 ceiling (default 1.43; <= 1.0 needs AOT <= 2.1 ns/insn), plans a sliced
   proof with the oracle suite, pins and tier sweep as the exactness gates. Waiting for Em's decision on slices 0-1.
 - 2026-10-09: desktop baseline and PGO retrain measured (finding 18 "Desktop baseline 2026-10-09" [D]): default config DSP CPU per audio s 1.59/1.58/1.64 without PGO, 1.17/1.17/1.26 with the retrained profile (trig1-taps / tf-dry-hold / tf-br-127; old profile no gain); gap to 1.0 is 15-20% more. `coupled_ready_exactness` pins (CF digest, DSP export) were stale since 7c489c5 and are edited locally in native/coupled/src/lib.rs, uncommitted, awaiting a second check.
+- 2026-10-10: mask-free slices 0-1 done (`docs/design/aot-mask-free.md` section 6, finding 18 **[D]**). Gate: not
+  mask handling (ordinary registers fold already; ASTAT/STKY masks worth 6.5% in situ, paired 0.935, PCM and exits
+  identical) and not region entry (34 ns per call); the largest item is front-end stalls (28-32% of DSP cycles,
+  17.7% with PGO). Concrete-register mask-free dropped; next: sound flag-known gate plus hot-code density (slice 2').
+  Experiment patch (unsound, not in the tree): `out/native/regionbench/assume-known.patch`. New tools:
+  `aot_mcount.py`, `aot_dyntrace.py`, `xctrace_bottleneck.py`.

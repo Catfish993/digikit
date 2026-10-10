@@ -663,6 +663,20 @@ AOT cost profile **[D]** (default config, 1.41 DSP CPU per audio s, sampled with
 plumbing is 27%, memory access 14%, uncategorised moves 11%; real arithmetic is under 10%.
 This is the basis of the mask-free emission estimate above.
 
+Mask-free slices 0-1 **[D]** (2026-10-10, `docs/design/aot-mask-free.md` section 6; the correction
+of the profile above is: the plumbing share is not the register masks). LLVM already folds the
+masks of the 123 ordinary registers (asserting them known: warm 0.98-1.02, in situ not built);
+only the ASTAT/STKY known-bit pairs remain, and assuming those known too (unsound experiment,
+exits and PCM identical) is 6-16% warm and 6.5% in situ (paired 0.935, trig1-taps, 8 pairs).
+In situ AOT is 34 ns per region call + 4.0 ns per instruction (region profile, 27.1M calls);
+the default-bench regions (1C399A, 1C3862, 1C364F, 1C5765, B823DB, B8276C) are fast-tier kernels in
+the default config, not AOT. The DSP thread loses 28-32% of its cycles to the front end in situ
+(17.7% with PGO) against 1.5% warm (CPU Counters bottleneck split, calibrated with synthetic
+programs); AOT code is 208-283 machine instructions per SHARC instruction in the binary (832-1130
+B), 47-103 executed. Gate: no concrete-register mask-free; do the sound flag-known gate and hot-code
+density (cold-path outlining, shared trap tail) first. Tools: `tools/aot_mcount.py`,
+`tools/aot_dyntrace.py`, `tools/xctrace_bottleneck.py`.
+
 DT2 AOT and the DT2 render are in finding 15.
 
 ## Desktop baseline 2026-10-09 **[D]**

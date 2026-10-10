@@ -265,6 +265,11 @@ def cmd_build(args) -> str:
         if n != "rsgen-report.json" and not n.startswith("transpile-report")
     ]
     pgo = getattr(args, "pgo", None)
+    # Cargo features of sharc-native: --features, else the variant's FEATURES file.
+    features = getattr(args, "features", None)
+    if not features and os.path.isfile(os.path.join(vdir, "FEATURES")):
+        with open(os.path.join(vdir, "FEATURES")) as fh:
+            features = fh.read().strip() or None
     prod_gen = getattr(args, "prod_gen", False)
     # Production reuses the app cache only with its explicit profile.  Mini
     # variants retain the historical benchmark profile overrides.
@@ -273,6 +278,7 @@ def cmd_build(args) -> str:
         (
             sha256_files(src + gen_files)
             + repr(pgo)
+            + repr(features)
             + repr(sorted(profile_env.items()))
         ).encode()
     ).hexdigest()
@@ -326,6 +332,7 @@ def cmd_build(args) -> str:
         secs = run(
             ["rustup", "run", TOOLCHAIN, "cargo", "build", "--release", "--locked"]
             + ["--example", "region_bench"]
+            + (["--features", features] if features else [])
             + target_args
             + ["--manifest-path", os.path.join(ROOT, "native", "sharc", "Cargo.toml")]
             + ["--target-dir", target],
@@ -713,6 +720,10 @@ def main(argv: list[str] | None = None) -> int:
             sp.add_argument("--variant", default="base")
         sp.add_argument("--regions", default=DEFAULT_REGIONS)
         sp.add_argument("--pgo", help="profdata for -Cprofile-use (default: none)")
+        sp.add_argument(
+            "--features",
+            help="cargo features of sharc-native (experiments: docs/design/aot-mask-free.md)",
+        )
         sp.add_argument("--calls", type=int, default=4000)
         return sp
 

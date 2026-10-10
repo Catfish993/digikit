@@ -13,6 +13,9 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/aot_dyntrace.py",
+    "tools/aot_mcount.py",
+    "tools/xctrace_bottleneck.py",
     "tools/audiocheck.py",
     "tools/fast_timeline.py",
     "tools/fxcheck.py",

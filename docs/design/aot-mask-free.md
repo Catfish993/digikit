@@ -1,7 +1,8 @@
 # Mask-free AOT emission: design and slice proof
 
-Status: design only (2026-10-09, branch `work/scenario-oracles`). Nothing here is built or timed;
-the numbers marked **[D]** come from earlier measurements cited in place, **[O]** is open. Marks as
+Status: design (2026-10-09); slices 0 and 1 measured 2026-10-10, results in section 6 (gate: do not build
+concrete registers, build the flag-known gate and cold-path density instead). Sections 0 to 5 are the
+original design and were not edited; the numbers marked **[D]** come from earlier measurements cited in place, **[O]** is open. Marks as
 in CLAUDE.md. No firmware-derived code is quoted: block code is described, and the few lines shown
 are generic.
 
@@ -359,3 +360,184 @@ higher risk). My call: run slices 0 and 1. The one open question that could chan
 whether the 2x gap between warm and in-situ AOT is code size or the engine/region entry, and the
 slice measures it. Expect 1.05-1.2 from mask-free alone, not 0.8; plan on mask-free plus PGO
 plus either B/C or alternative 1 to reach <= 1.0.
+
+## 6. Slices 0-1 results (2026-10-10) **[D]**
+
+Tooling added: `tools/aot_mcount.py` (machine code per SHARC site from a binary and its gen),
+`tools/aot_dyntrace.py` (lldb single-step of one region call: machine instructions executed, code
+touched), `tools/xctrace_bottleneck.py` (CPU Counters bottleneck split per thread, no root),
+`sharc_regionbench.py --features/FEATURES` (cargo features per variant). The upper-bound
+experiment is the patch `out/native/regionbench/assume-known.patch` (features `assume-known` and
+`assume-flags` in sharc-rt, sharc-native, coupled; `rf_get` returns `assert_unchecked(m == MAX)`).
+It is unsound and is not in the tree. Machine: Apple silicon 16 cores (P and E), rustup 1.98.1,
+regionbench profile (opt 3, cgu 16, no LTO/PGO), coupled-run default config. PCM
+`e0e6c8af7a84c443` (the trig1-taps pin) in every coupled run below, including the experiment.
+
+### 6.1 Slice 0
+
+`region_bench` builds and runs as is (nothing to fix; dca9af1 and the denormal commit left it
+sound). Mini gen `mf-base` of the six default regions (30 blocks, 6294 variants) builds in 53 s.
+
+Static machine code (aarch64, `llvm-objdump` of the region functions):
+
+| set | regions | SHARC sites | bytes | machine insns | bytes/site | insns/site |
+|---|---:|---:|---:|---:|---:|---:|
+| mini gen, 6 default regions + chained | 19 | 688 | 0.78 MB | 194k | 1130 | 283 |
+| prod gen (non-PGO coupled-run), the 150 hottest in-situ AOT regions | 150 | 8716 | 7.25 MB | 1.81M | 832 | 208 |
+
+(The mini gen uses the old profile inputs, so its transition arms inflate the cold part; use the
+prod row.) A site is one `ic += 1` step. Loads 11-25%, stores 4-11%, branches 14-17%, stack-slot
+accesses 5-21% of the machine instructions.
+
+Dynamic (one warm call stepped in lldb, mini gen):
+
+| region | SHARC insns | machine insns | per SHARC insn | distinct addresses | 64-byte lines touched |
+|---|---:|---:|---:|---:|---:|
+| 1C399A (loop, 25-insn body) | 1600 | 80263 | 50.2 | 1739 | 176 |
+| 1C3862 | 2304 | 110452 | 47.9 | 2314 | 233 |
+| 1C364F | 1984 | 92744 | 46.7 | 1991 | 199 |
+| 1C5765 | 1216 | 65950 | 54.2 | 1410 | 152 |
+| B8276C (straight line) | 832 | 74412 | 89.4 | 2891 | 289 |
+| B823DB (straight line) | 537 | 55057 | 102.5 | 4309 | 442 |
+
+So 47-54 machine instructions per SHARC instruction in the loops and 89-103 in the straight-line
+regions, executed at high IPC when warm (2.0 ns/insn in the loops = 8 cycles for 50 instructions).
+Only 15-25% of a region's bytes are executed in a call (hot 200 B of 830-1130 B per site): the rest
+is trap tails (one `sv` restore block per Err site), the exit matches and the not-taken variants.
+
+Hot set against the L1 instruction cache (in-situ AOT rows of the region profile, below): the
+hottest 25 regions are 87.6% of the AOT instructions (2.3 MB static), 50 are 96.8% (3.9 MB), 100 are
+99.9% (5.6 MB). At 16-22% touched that is 0.4 MB for 25 and 0.9-1.2 MB for 100 regions, against 192 KB
+(P core) or 128 KB (E core) of L1i; L2 holds it.
+
+Mask folding verdict. For ordinary registers LLVM already folds the masks. In the hot path of
+1C399A the 3000 executed instructions I read contain no `.m` AND/compare of a register: the only
+`cmn w, #1` are the memory `present` tests. The register prologue loads `m` as the constant
+`u32::MAX`. What is not folded is the known-bit logic of ASTATX/ASTATY/STKYX/STKYY (118-121,
+`PARTIAL_REGS`): every compute instruction merges `FlagUpdate` define/forget masks into a runtime
+(value, mask) pair (`and/orr/csel` chains on `ands w, #0x100` style tests; `_apply_flag_update`,
+`_astatx_define/forget`). That is the V plumbing that is left.
+
+### 6.2 Slice 1: the upper-bound experiment
+
+Warm, `compare --rounds 9`, paired median of ratio (experiment / base), same gen and states,
+insns per call and exits identical (`constant yes`):
+
+| region | A: ordinary registers assumed known | B: all registers assumed known (flags too) |
+|---|---:|---:|
+| 1C399A | 1.023 | 0.853 |
+| 1C3862 | 0.985 | 0.844 |
+| 1C364F | 0.997 | 0.929 |
+| 1C2484/B8276C | 0.997 | 0.931 |
+| 1C5765 | 1.002 | 0.939 |
+| B823DB | 0.995 | 0.881 |
+
+A is zero within the noise (+-2%) and changes the code size by -1.1%: the plan's experiment as
+specified has nothing to fold. B (the flag registers assumed fully known as well) is 6-16% faster
+warm and 2.4% smaller. In situ (coupled-run, whole core, default config, trig1-taps, exclusive,
+alternating, load 2-3, 8 pairs): DSP CPU per audio s base 1.658 (1.525-1.721), B 1.532
+(1.472-1.658), paired ratio median **0.935** (0.866-1.014); an earlier 6-pair series (first pair at
+load 28 after the builds) gave 0.949. Block entries (31.91M), block traps (315000) and AOT
+instructions (2457M) are identical between the two builds, so the exit set is unchanged, and PCM is
+the pin. Ceiling of every mask route: **about 6% of the DSP thread in situ, 6-16% warm**, all of it
+in the four flag registers. A in situ was not built (warm zero, asm folded).
+
+### 6.3 Warm against in situ
+
+In-situ per-region cost: `coupled-run --profile-regions` (a `region-profile` build, timer overhead
+included), trig1-taps, default config: AOT 27.13M calls, 2457M SHARC insns, 12.40 s, 5.05
+ns/insn (90.6 insns per call), the rest is fast tier. A least-squares fit of wall time on calls and
+instructions over the 1243 AOT entry rows gives **34 ns per call + 4.02 ns per instruction**, so
+region entry and exit are 0.4 ns/insn at the mean call size, not the gap. By call size:
+
+| insns per call | calls | share of AOT insns | ns/insn |
+|---|---:|---:|---:|
+| < 20 | 10.7M | 3% | 12.3 |
+| 20-50 | 7.8M | 12% | 5.5 |
+| 50-100 | 2.6M | 8% | 6.9 |
+| 100-300 | 4.4M | 25% | 5.6 |
+| 300-1000 | 1.4M | 27% | 4.5 |
+| >= 1000 | 0.17M | 25% | 3.5 |
+
+Only 100 regions carry 99.5% of the AOT time. Important: the six regions of the default region
+bench (1C399A, 1C3862, 1C364F, 1C5765, B823DB, B8276C) are fast-tier kernels in the default config
+(0.5-1.6 ns/insn in situ); they are not AOT code at run time. Their warm AOT numbers (2.0 in the
+loops, 2.9-3.6 straight line) are a fair comparison only for AOT code of the same shape. For the
+in-situ AOT regions that the bench can reach (mini gen `mf-ins`, 15 regions, entry chosen by the
+capture, not always the in-situ entry; timer resolution 41 ns, so only calls over 100 insns count):
+1C9538 5.15 warm / 4.34 in situ, 1C1F44 3.11 / 4.08, 1C2271 3.21 / 6.63, 1C2166 3.87 / 5.55, 1C0C9D
+5.05 / 5.48. In-situ is 1.1-1.5x warm (geometric mean about 1.3), not 2x.
+
+Counters (CPU Counters template, CPU Bottlenecks mode, per thread, steady state; `xctrace` exports
+four unlabelled values per 1 ms; order calibrated with synthetic programs: a dependent multiply
+chain and a 64 MB pointer chase give 90-100% in the second value, 6000 small functions called in
+random order (2.6 MB of code) raise the third to 29% from 0, so the values are useful, back end,
+front end (instruction delivery), other; the first and last labels are probable):
+
+| thread | useful | back end | front end | other |
+|---|---:|---:|---:|---:|
+| warm loop 1C399A / 1C3862 / B823DB | 69 / 67 / 71 | 29 / 32 / 27 | 1.4 / 1.5 / 1.6 | 0.3 |
+| in situ DSP thread, default config, no PGO (2 runs) | 56 / 52 | 14 / 14 | **28 / 32** | 2 |
+| in situ DSP thread, PGO (`pgo-cr-new`) | 61 | 19 | **17.7** | 2 |
+| in situ CF thread (interpreter) | 70 | 10 | 14 | 6 |
+
+The hardware retired-instruction and L1i-miss counters themselves are not available (the CLI
+cannot select events; kperf needs root). The bottleneck split answers the question: the DSP thread
+loses 28-32% of its cycles to the front end in situ (17.7% after PGO), against 1.5% warm.
+
+Where the 4.0 ns goes (in situ, per AOT instruction), from these measurements: about 3.0-3.5
+ns is the warm cost of the same-shaped code (89-103 machine instructions per SHARC insn at high
+IPC for straight-line forms); about 1.1 ns is front-end stall (28% of the cycles); 0.4 ns
+region entry/exit. Inside the warm part: flag known-bit logic 6-16% (B), the per-instruction budget
+check 7-9% and undo copies 0-3% (earlier ablations `abl-nobud`, `abl-nosv`, finding above), the
+`rf.o` snapshot copies unmeasured (`abl-noo` is broken), the rest is the semantics (float flags, denormal
+flush, memory path).
+
+### 6.4 Gate
+
+Is the in-situ cost dominated by mask handling? **No.** Ordinary-register masks are already folded
+(0%); the flag registers' masks are worth about 6% in situ. Full mask-free (concrete `u32` registers,
+`bndc`, slice 3) has a ceiling of that 6% plus whatever C and B give, and it is the most expensive
+route: not worth building. Is it undo copies and trap tails? **Partly, but small as time**: undo
+0-3%, budget 7-9% (a different exactness question), snapshots unknown; as code, trap tails are
+most of the 75-85% cold bytes. Is it code size, entry/exit or I-cache? **Entry/exit no (0.4
+ns/insn); front-end stalls yes, the single largest identified item**: 28-32% of DSP cycles before
+PGO, 17.7% after, and the straight-line regions pay it every call.
+
+Ceilings per route, default config, trig1-taps, DSP CPU per audio s, from the two bases (no PGO
+1.59, PGO 1.17); a ceiling removes the named cost completely, none is a prediction:
+
+| route | what it removes | ceiling (no PGO / PGO) | basis |
+|---|---|---:|---|
+| full mask-free (A+B+C, concrete registers) | flag masks, nothing else from A | 1.49 / 1.10 | measured 0.935 |
+| sound flag-known gate only (ASTAT/STKY m == MAX at entry, cold exit when a forget would drop a bit) | same 6% at 1 day of work | 1.49 / 1.10 | B above; exits identical in this scenario |
+| undo copies + trap tails as code (B, C) | 0-3% time, 15-25% of the bytes' density | 1.45-1.55 / 1.07-1.14 | ablations |
+| per-body budget check | 7-9% of warm AOT | 1.50 / 1.12 | ablation, needs the exactness argument of section 2 |
+| smaller hot code (fewer variants, outlined cold paths, shared trap tail, hot/cold layout) | up to all of the front-end stall | 1.08-1.14 / 0.96 | 28-32% / 17.7% of the thread; half of it is a realistic aim: 1.35 / 1.07 |
+| offline-AOT kernels with chaining (section 4 alternative 1) | AOT time itself | 0.65-0.8 | unchanged, still the only route to <= 0.9 |
+
+Decision: **do not do slice 3 (concrete registers)**. The cheap, sound part of B (flags known at
+entry) is worth about 6% and is a one-day slice; the larger lever is hot-code density (front
+end), which also pays for itself on the browser path. Mask-free as designed would not reach 1.0 even
+with PGO (1.10 at best); 1.0 needs density plus the flag gate plus the budget check (about 1.0-1.05
+with PGO, optimistic), or the offline-kernel route.
+
+### 6.5 Next slice
+
+Slice 2' (2-3 days, measured on the same `mf-base` and `mf-ins` mini gens with `aot_mcount`,
+`aot_dyntrace` and `xctrace_bottleneck`, then one exclusive in-situ A/B and one PGO retrain at
+the end): (1) sound flag-known gate: ASTATX/ASTATY/STKYX/STKYY must be fully known at region entry
+(extend the entry AND) and a flag update that would forget a bit becomes a cold exit with the
+same trap code as `rf_set` (check the exit histogram on the scenarios, they are identical in
+trig1-taps today); (2) one shared trap tail per region and no `sv` restores where every Err
+precedes the first commit (section 2 B and C, byte-checked per form); (3) put the rarely taken
+exit matches and tails out of line (`#[cold]` functions or a region-end block), then read
+bytes/site (target <= 400), lines touched and the front-end share before timing anything. Gate for
+continuing: front end below 12% without PGO and warm >= 10% faster; otherwise stop and go to the
+offline-kernel route.
+
+Open **[O]**: the order of the bottleneck values rests on the synthetic calibration, not on a
+documented mapping; hardware retired-instruction counts were not obtained, the instruction counts
+are from single-stepping; the in-situ vs warm region comparison used entry points that differ from
+the in-situ ones; the flag-known gate's soundness (that no scenario forgets a flag bit in AOT code)
+is shown for trig1-taps only (identical traps and entries), not for the sweep.
