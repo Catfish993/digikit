@@ -105,6 +105,19 @@ def main() -> None:
         action="store_true",
         help="split the region function's own bytes by the kind of generated statement",
     )
+    ap.add_argument(
+        "--src-lines",
+        metavar="FN",
+        help="also print dynamic instructions per source line of functions matching FN",
+    )
+    ap.add_argument(
+        "--trace-range",
+        type=int,
+        nargs=2,
+        metavar=("START", "N"),
+        help="print N executed instructions of the --exec dump from the START-th, with source lines",
+    )
+    ap.add_argument("--by-dyn", action="store_true", help="sort by dynamic count")
     args = ap.parse_args()
     nm = subprocess.check_output([OBJDUMP, "-t", args.binary], text=True)
     dw = glob.glob(
@@ -113,6 +126,7 @@ def main() -> None:
     extra = ["--dsym=" + dw[0]] if dw else []
     per: list[tuple[int, tuple[str, int]]] = []
     executed: set[int] = set()
+    dyn_n: Counter[int] = Counter()
     regions = args.region.split(",")
     if regions == ["all"]:
         regions = sorted(
@@ -166,9 +180,12 @@ def main() -> None:
                     continue
                 if ln.startswith("["):
                     continue
-                executed.add(int(ln.split()[0], 16) - (slide or 0))
+                a = int(ln.split()[0], 16) - (slide or 0)
+                executed.add(a)
+                dyn_n[a] += 1
     static: Counter[str] = Counter()
     ran: Counter[str] = Counter()
+    dyn: Counter[str] = Counter()
     for addr, (path, line) in per:
         if args.lines and os.path.basename(path).startswith("blocks_"):
             f = "gen: " + stmt_kind(path, line)
@@ -177,14 +194,64 @@ def main() -> None:
         static[f] += 4
         if addr in executed:
             ran[f] += 4
+            dyn[f] += dyn_n[addr]
+    if args.trace_range:
+        where = {addr: loc for addr, loc in per}
+        seq = []
+        with open(args.exec_file) as fh:
+            slide2 = None
+            for ln in fh:
+                if ln.startswith("# function-start"):
+                    slide2 = int(ln.split()[2], 16) - int(per[0][0])
+                elif not ln.startswith("["):
+                    seq.append(ln.rstrip())
+        start, n = args.trace_range
+        for ln in seq[start : start + n]:
+            a = int(ln.split()[0], 16) - (slide2 or 0)
+            loc = where.get(a)
+            tag = (
+                "outlined"
+                if loc is None
+                else "%s:%d" % (os.path.basename(loc[0]), loc[1])
+            )
+            print("%-34s %s" % (ln[:34], tag))
+        return
+    if args.src_lines:
+        per_line: Counter[tuple[str, int]] = Counter()
+        for addr, (path, line) in per:
+            if args.src_lines in fn_at(path, line):
+                per_line[(os.path.basename(path), line)] += dyn_n[addr]
+        for (b, ln), n in per_line.most_common(args.top):
+            print("  %s:%d  %d" % (b, ln, n))
+        return
     total = sum(static.values())
     rt = sum(ran.values())
-    print("region r_%s: %d bytes, %d executed in the call" % (args.region, total, rt))
-    print("%-48s %8s %6s %8s %6s" % ("function", "bytes", "%", "executed", "%"))
-    for f, n in static.most_common(args.top):
+    nd = sum(dyn.values())
+    outside = sum(dyn_n.values()) - nd
+    print(
+        "region r_%s: %d bytes, %d executed in the call, %d dynamic instructions "
+        "(+%d in outlined callees)" % (args.region, total, rt, nd, outside)
+    )
+    print(
+        "%-48s %8s %6s %8s %6s %8s %6s"
+        % ("function", "bytes", "%", "executed", "%", "dynamic", "%")
+    )
+    for f, n in (
+        sorted(static.items(), key=lambda kv: (-dyn[kv[0]], -kv[1]))[: args.top]
+        if args.by_dyn
+        else static.most_common(args.top)
+    ):
         print(
-            "%-48s %8d %5.1f%% %8d %5.1f%%"
-            % (f[:48], n, 100 * n / total, ran[f], 100 * ran[f] / max(rt, 1))
+            "%-48s %8d %5.1f%% %8d %5.1f%% %8d %5.1f%%"
+            % (
+                f[:48],
+                n,
+                100 * n / total,
+                ran[f],
+                100 * ran[f] / max(rt, 1),
+                dyn[f],
+                100 * dyn[f] / max(nd, 1),
+            )
         )
 
 

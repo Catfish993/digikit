@@ -752,3 +752,54 @@ gate of the design (<= 400 B per site, front end < 12% without PGO) was missed (
 desktop is at **1.06 (trig1-taps), 1.06 (tf-dry-hold), 1.13 (tf-br-127) with PGO: not yet 1.0**; it needs
 another 5 to 11%. Largest remaining items in `tools/aot_attrib.py`: the normal-word test (12.6% of the bytes), the
 memory fast paths (8.6%), the float helpers (19%), `rf_set` (3.8%), `s_set_special` (3.1%).
+
+### `tests_gen` "the fast tier never ran" (2026-10-10) **[D]**
+
+`gen_programs_match_the_interpreter` and `gen_control_programs_match_the_interpreter` failed ("simd_loop: the fast
+tier never ran", `ctl_call_ret` in the control test) only when built against a gen directory with an image (DN2/DT2
+`out/native/*-audio/gen`); they passed against `shared-core/gen`. Not a fast-tier regression and not specific to
+`simd_loop`: configuration 1 of the test turns on the bank and stack models (`set_option` 19, 20), which calls
+`Cfg::refresh`; that recomputes `block_base_ok`, which also requires `explicit_memory_model` to equal the image's
+`GEN_EXPLICIT_MEMORY_MODEL` (false for the DN2/DT2 images, true for the test engine's default). With a mismatch,
+`Engine::block_plan` returns None before it offers the fast tier (gated 0, nothing built). Configuration 0 never calls
+`refresh`, so it was unaffected. The runtime sets the image's value. Fix: `tests_gen.rs` `engine_cfg` sets option 10 to
+`gen_explicit_memory_model()` for configuration 1. Both tests pass against the DN2, DT2 and shared gens.
+Observation (open): `block_plan` also gates the fast tier on `block_base_ok`, though the fast tier does not use
+blocks; a coupled run with a mismatched memory-model setting would silently run no fast tier.
+
+## Slice 3 (float, memory and interpreter items) 2026-10-11 **[D]**
+
+`docs/design/aot-mask-free.md` section 8. Built, not committed. The desktop is under real time: DSP CPU per audio s with
+PGO **0.896 (trig1-taps), 0.901 (tf-dry-hold), 0.922 (tf-br-127)** (slice 2': 1.054, 1.056, 1.126), without PGO 1.104,
+1.106, 1.122 (1.279, 1.280, 1.358); paired ratios 0.82 to 0.86, 6 exclusive alternating pairs each, PCM equal to every
+pin.
+
+| | slice 2' | slice 3 |
+|---|---:|---:|
+| DSP CPU per audio s, trig1-taps, no PGO / PGO | 1.279 / 1.054 | **1.104 / 0.896** |
+| tf-dry-hold, no PGO / PGO | 1.280 / 1.056 | **1.106 / 0.901** |
+| tf-br-127, no PGO / PGO | 1.358 / 1.126 | **1.122 / 0.922** |
+| warm time, hot AOT regions (ratio, 13 regions) | | 0.70 to 0.94 (two at 1.0 and 1.1) |
+| interpreted instructions, trig1-taps | 13,151,269 | 6,760,382 |
+| bytes per SHARC site, whole DN2 core | 397.5 | 394.5 |
+| front end of the DSP thread, no PGO / PGO | 20.6% / 10.4% | 20.9% / 9.0% |
+
+What moved it, in order of size: (1) the interpreter ran 7.5 of 13.2M instructions as one 238-instruction routine
+because a block entry gated by a pending bank swap sends the whole block body to the interpreter (a region has entries
+only at block starts). The profile now records the PC after the first instruction of such a run, 35 more block starts
+(6 rounds of `tools/aot_entry_iter.py`) cut the interpreted instructions by half and the DSP time by about 7% (no PGO; the build before the search
+measured 0.926 against slice 2', after it 0.862). (2) The memory path was 34% of the dynamic instructions of the in-situ AOT regions (not the 8.6% and 12.6% of the
+bytes): aligned-word and narrow paths, fixed-size page tables, a two-compare normal-word band test, no `fast_mem` test
+and no 128-bit address mapping in the register load. (3) Float add, subtract and multiply flush the operands and
+classify the result (normal, zero, rest), and the multifunction multiply, `_float32` and `_float32_result` are native
+boundary functions. (4) `sec_arbitrate` visits only the SSTAT registers that exist (2.4% to 0.6% of the thread).
+Dropped: float variants that test the operands first (they follow the data: silence is slower), memory accesses as
+one shared out-of-line body per width (-9% code, +0 to +68% warm), running blocks in the idle probe (the probe
+iteration is 24 instructions of the idle range, which has no blocks).
+
+Exactness: the seven DN2 pins, `scenarios:check` (default and no-AOT, 61 each), `scenarios:sweep` (191), 134 of 134 FX
+scenarios AOT = no-AOT PCM, golden/denormal/density/lint tests, `cargo test -p sharc-rt` (16, three new differential
+tests), DT2 clean tone and WAV hash `4bab8330915f0929` in AOT, no-AOT and AOT + fast. Block traps: count identical in
+all 134 FX scenarios, code and count identical in six profiled ones; block entries +1.1% and zero-progress bails +7%
+in trig1-taps (the new block starts), AOT instructions +0.26%. **[O]** DT2 has no entry search yet; the loop end
+(`stk_set_loops` with its undo entry, 8% of the in-situ regions) and the idle probes are the next items.

@@ -744,6 +744,15 @@ macro_rules! float_binary_fast {
             let (a, b) = (f32::from_bits(ftz32(left.b)), f32::from_bits(ftz32(right.b)));
             let r = a $op b;
             let rb = r.to_bits();
+            // A normal result, then a zero or denormal one (flushed to a zero
+            // of its sign), neither overflowed nor NaN.
+            let mag = rb & 0x7FFF_FFFF;
+            if mag.wrapping_sub(0x0080_0001) < 0x7EFF_FFFF {
+                return (V::c(rb as Int), Some(false), Some(false));
+            }
+            if mag < 0x0080_0000 {
+                return (V::c((rb & 0x8000_0000) as Int), Some(false), Some(false));
+            }
             if !r.is_nan() && rb & 0x7FFF_FFFF != 0x0080_0000 {
                 let overflowed = r.is_infinite() && a.is_finite() && b.is_finite();
                 return (V::c(ftz32(rb) as Int), Some(overflowed), Some(false));
@@ -768,6 +777,22 @@ pub fn _float_multiply(
     let (a, b) = (f32::from_bits(ftz32(left.b)), f32::from_bits(ftz32(right.b)));
     let r = a * b;
     let rb = r.to_bits();
+    let mag = rb & 0x7FFF_FFFF;
+    if mag.wrapping_sub(0x0080_0001) < 0x7EFF_FFFF {
+        // A normal result: not overflowed, not underflowed, not NaN.
+        return (V::c(rb as Int), Some(false), Some(false), Some(false));
+    }
+    if mag < 0x0080_0000 {
+        // A zero or denormal result is a zero of its sign; of two nonzero
+        // numbers it is an underflow.
+        let underflowed = a != 0.0 && b != 0.0;
+        return (
+            V::c((rb & 0x8000_0000) as Int),
+            Some(false),
+            Some(underflowed),
+            Some(false),
+        );
+    }
     if !r.is_nan() && rb & 0x7FFF_FFFF != 0x0080_0000 {
         let overflowed = r.is_infinite() && a.is_finite() && b.is_finite();
         // A zero-exponent result of two nonzero numbers is an underflow
@@ -802,6 +827,84 @@ fn float_multiply_slow(
         Some(overflowed),
         Some(underflowed),
         Some(raw.is_nan()),
+    )
+}
+
+/// floats._float32: a fully known value read as a computational unit reads
+/// it (a denormal is a zero of the same sign), widened to a double; None
+/// for anything not fully known.
+#[inline(always)]
+pub fn _float32(s: &St, value: V) -> Option<f64> {
+    if !value.is_c() {
+        return None;
+    }
+    Some(_f32_from_bits(s, ftz32(value.b) as Int))
+}
+
+/// compute_multi._float_multiply_parts: a float multiply's result and its
+/// MN/MV/MU/MI update.
+#[inline(always)]
+pub fn _float_multiply_parts(s: &St, left: V, right: V, _label: Sym) -> (V, FlagUpdate) {
+    if !left.is_c() || !right.is_c() {
+        return (
+            V::UNK,
+            FlagUpdate {
+                define_mask: 0,
+                define_bits: 0,
+                forget_mask: 960,
+                cacc: -1,
+            },
+        );
+    }
+    // The product of the flushed operands in single precision: a normal
+    // result, or one that is a (flushed) zero, is built directly. The
+    // smallest normal, an infinity and a NaN take the original sequence.
+    let (a, b) = (f32::from_bits(ftz32(left.b)), f32::from_bits(ftz32(right.b)));
+    let rb = (a * b).to_bits();
+    let mag = rb & 0x7FFF_FFFF;
+    if mag.wrapping_sub(0x0080_0001) < 0x7EFF_FFFF {
+        return (
+            V::c(rb as Int),
+            FlagUpdate {
+                define_mask: 0x3C0,
+                define_bits: ((rb >> 31) as Int) << 6,
+                forget_mask: 0,
+                cacc: -1,
+            },
+        );
+    }
+    if mag < 0x0080_0000 {
+        let value = V::c((rb & 0x8000_0000) as Int);
+        let underflowed = a != 0.0 && b != 0.0;
+        return (
+            value,
+            _astatx_mult_float(s, value, Some(false), Some(underflowed), Some(false)),
+        );
+    }
+    float_multiply_parts_general(s, left, right)
+}
+
+#[inline(always)]
+fn float_multiply_parts_general(s: &St, left: V, right: V) -> (V, FlagUpdate) {
+    let a = _f32_from_bits(s, ftz32(left.b) as Int);
+    let b = _f32_from_bits(s, ftz32(right.b) as Int);
+    let raw = fmul(a, b);
+    let (bits, overflowed, underflowed) = _float32_result(s, raw);
+    let value = V::c(bits);
+    if raw.is_nan() {
+        return (
+            value,
+            FlagUpdate {
+                define_mask: 512,
+                define_bits: 512,
+                forget_mask: 448,
+                cacc: -1,
+            },
+        );
+    }
+    (
+        value,
+        _astatx_mult_float(s, value, Some(overflowed), Some(underflowed), Some(false)),
     )
 }
 
@@ -970,7 +1073,78 @@ fn plain_address(s: &St, address: VI) -> Option<u32> {
 /// (_canonical_dm_address).
 #[inline(always)]
 fn plain_read(s: &St, a: u32, width: u32) -> Option<u32> {
-    s.mem.fast_read(a, width)
+    blk_read(&s.mem, a, width)
+}
+
+/// `Mem::fast_read` for block code: an aligned word takes the shorter path
+/// (it declines an unaligned one to the full rules).
+#[inline(always)]
+fn blk_read(m: &crate::mem::Mem, a: u32, width: u32) -> Option<u32> {
+    if width == 4 {
+        m.fast_read_word(a)
+    } else {
+        m.fast_read(a, width)
+    }
+}
+
+/// `Mem::fast_write` for block code (see `blk_read`).
+#[inline(always)]
+fn blk_write(m: &mut crate::mem::Mem, a: u32, width: u32, v: u32) -> Option<u32> {
+    if width == 4 {
+        m.fast_write_word(a, v)
+    } else {
+        m.fast_write(a, width, v)
+    }
+}
+
+/// The plain address of a block-code access before the normal-word mapping.
+#[inline(always)]
+fn raw_address_b(address: VI) -> Option<u32> {
+    match address {
+        VI::V(v) if v.is_c() => Some(v.b),
+        VI::I(i) if (0..=u32::MAX as Int).contains(&i) => Some(i as u32),
+        _ => None,
+    }
+}
+
+#[inline(always)]
+fn blk_read_at(m: &crate::mem::Mem, a: u32, width: Int, nw: bool) -> Option<u32> {
+    let a = if nw {
+        crate::addressing::normal_word_or_same(a)
+    } else {
+        a
+    };
+    blk_read(m, a, width as u32)
+}
+
+#[inline(always)]
+fn blk_write_nolog_at(m: &mut crate::mem::Mem, a: u32, width: Int, v: u32, nw: bool) -> bool {
+    let a = if nw {
+        crate::addressing::normal_word_or_same(a)
+    } else {
+        a
+    };
+    blk_write(m, a, width as u32, v).is_some()
+}
+
+#[inline(always)]
+fn blk_write_log_at(s: &mut St, a: u32, width: Int, v: u32, nw: bool) -> R<bool> {
+    if s.un >= UNDO_CAP {
+        return Ok(false);
+    }
+    let a = if nw {
+        crate::addressing::normal_word_or_same(a)
+    } else {
+        a
+    };
+    match blk_write(&mut s.mem, a, width as u32, v) {
+        Some(old) => {
+            let c = s.mem.canonical_of(a);
+            s.log(Undo::MemWord(c, width as u8, old))?;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
 }
 
 /// A block-code access's address (block code runs only under the default
@@ -1026,9 +1200,9 @@ pub fn _dm_read_b(
     signed: bool,
     normal_word: bool,
 ) -> R<Option<V>> {
-    if let Some(a) = fast_address_b(address, normal_word)
+    if let Some(a) = raw_address_b(address)
         && matches!(width, 1 | 2 | 4)
-        && let Some(raw) = s.mem.fast_read(a, width as u32)
+        && let Some(raw) = blk_read_at(&s.mem, a, width, normal_word)
     {
         let raw = raw as Int;
         let value = if signed {
@@ -1051,12 +1225,9 @@ pub fn _dm_read_b(
 pub fn _dm_write_b(s: &mut St, address: VI, width: Int, value: V, normal_word: bool) -> R<bool> {
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
-        && s.un < UNDO_CAP
-        && let Some(a) = fast_address_b(address, normal_word)
-        && let Some(old) = s.mem.fast_write(a, width as u32, value.b)
+        && let Some(a) = raw_address_b(address)
+        && blk_write_log_at(s, a, width, value.b, normal_word)?
     {
-        let c = s.mem.canonical_of(a);
-        s.log(Undo::MemWord(c, width as u8, old))?;
         return Ok(true);
     }
     _dm_write_full(s, address, width, value, normal_word)
@@ -1073,8 +1244,8 @@ pub fn _dm_write_nolog_b(
 ) -> R<bool> {
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
-        && let Some(a) = fast_address_b(address, normal_word)
-        && s.mem.fast_write(a, width as u32, value.b).is_some()
+        && let Some(a) = raw_address_b(address)
+        && blk_write_nolog_at(&mut s.mem, a, width, value.b, normal_word)
     {
         return Ok(true);
     }
@@ -1265,7 +1436,8 @@ pub fn _load_normal_ureg_rf(
         rf_put(rf, UREG_PX1 as Int, V::UNK)?;
         rf_put(rf, UREG_PX2 as Int, V::UNK)?;
     } else if space == S_DM || space == S_PM {
-        let loaded = _dm_read(s, address, 4, false, true)?;
+        // Block code only: the run configuration has the plain-RAM paths.
+        let loaded = _dm_read_b(s, address, 4, false, true)?;
         match loaded {
             Some(v) => rf_set(rf, code, v)?,
             None if rf.allow_unknown => rf_set(rf, code, V::UNK)?,
@@ -1286,7 +1458,7 @@ pub fn _dm_write(s: &mut St, address: VI, width: Int, value: V, normal_word: boo
         && matches!(width, 1 | 2 | 4)
         && s.un < UNDO_CAP
         && let Some(a) = plain_address(s, address)
-        && let Some(old) = s.mem.fast_write(a, width as u32, value.b)
+        && let Some(old) = blk_write(&mut s.mem, a, width as u32, value.b)
     {
         let c = s.mem.canonical_of(a);
         s.log(Undo::MemWord(c, width as u8, old))?;
@@ -1345,7 +1517,7 @@ pub fn _dm_write_nolog(
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
         && let Some(a) = plain_address(s, address)
-        && s.mem.fast_write(a, width as u32, value.b).is_some()
+        && blk_write(&mut s.mem, a, width as u32, value.b).is_some()
     {
         return Ok(true);
     }
@@ -1710,5 +1882,84 @@ mod fast_diff {
         }
         assert!(count >= 10_000_000);
         eprintln!("astatx_mult_float differential: {count} comparisons, 0 mismatches");
+    }
+
+    /// compute_multi._float_multiply_parts as the generated code ran it
+    /// before it became a boundary function.
+    fn float_multiply_parts_ref(s: &St, left: V, right: V) -> (V, FlagUpdate) {
+        if !left.is_c() || !right.is_c() {
+            return (
+                V::UNK,
+                FlagUpdate {
+                    define_mask: 0,
+                    define_bits: 0,
+                    forget_mask: 960,
+                    cacc: -1,
+                },
+            );
+        }
+        let (a, b) = (operand_ref(s, left), operand_ref(s, right));
+        let raw = fmul(a, b);
+        let (bits, overflowed, underflowed) = result_ref(s, raw);
+        let value = V::c(bits);
+        if raw.is_nan() {
+            return (
+                value,
+                FlagUpdate {
+                    define_mask: 512,
+                    define_bits: 512,
+                    forget_mask: 448,
+                    cacc: -1,
+                },
+            );
+        }
+        (
+            value,
+            astatx_mult_float_ref(s, value, Some(overflowed), Some(underflowed), Some(false)),
+        )
+    }
+
+    #[test]
+    fn float_multiply_parts_and_float32_match_reference() {
+        let s = St::new(crate::mem::Mem::new());
+        let mut count = 0u64;
+        let mut check = |a: V, b: V| {
+            assert_eq!(
+                _float_multiply_parts(&s, a, b, S_EMPTY),
+                float_multiply_parts_ref(&s, a, b),
+                "a={:#x}/{:#x} b={:#x}/{:#x}",
+                a.b,
+                a.m,
+                b.b,
+                b.m
+            );
+            count += 1;
+        };
+        let sp = specials_f32();
+        for &a in &sp {
+            for &b in &sp {
+                check(V::c(a as Int), V::c(b as Int));
+            }
+            check(V::UNK, V::c(a as Int));
+            check(V::c(a as Int), V::UNK);
+            check(V::partial(0xFFFF_0000, a as Int), V::c(a as Int));
+            let want = if a & 0x7F80_0000 == 0 {
+                f32::from_bits(a & 0x8000_0000) as f64
+            } else if f32::from_bits(a).is_nan() {
+                _f32_from_bits(&s, a as Int)
+            } else {
+                f32::from_bits(a) as f64
+            };
+            let got = _float32(&s, V::c(a as Int)).unwrap();
+            assert!(got.to_bits() == want.to_bits() || (got.is_nan() && want.is_nan()));
+            assert_eq!(_float32(&s, V::UNK), None);
+            assert_eq!(_float32(&s, V::partial(0xFFFF_0000, a as Int)), None);
+        }
+        let mut rng = Rng(0x7777_1234_5678_9ABC);
+        for _ in 0..4_000_000u64 {
+            let (a, b) = pair(&mut rng);
+            check(V::c(a as Int), V::c(b as Int));
+        }
+        assert!(count >= 4_000_000);
     }
 }

@@ -102,8 +102,25 @@ fn sec_arbitrate(s: &mut St) -> R<()> {
     let mut best: Option<u32> = None;
     let mut best_prio = 0x100;
     let mut active_prio = 0x100;
-    for sid in 0..SEC_SOURCES {
-        let status = mmr(s, sstat(sid))?;
+    // A source with no SSTAT register reads status 0 and is skipped, so
+    // only the SSTAT registers that exist are visited, in source order
+    // (`mmrs` is sorted by address; the scan of all SEC_SOURCES addresses
+    // did one binary search each).
+    let lo = sstat(0);
+    let first = s.mmrs.partition_point(|&(k, _)| k < lo);
+    for k in first..s.mmrs.len() {
+        let (addr, value) = s.mmrs[k];
+        if addr > sstat(SEC_SOURCES - 1) {
+            break;
+        }
+        if (addr - lo) & 7 != 0 {
+            continue;
+        }
+        let sid = (addr - lo) / 8;
+        if !value.is_c() {
+            return Err(TRAP_PERIPHERAL);
+        }
+        let status = value.b;
         if status & (SSTAT_PND | SSTAT_ACT) == 0 {
             continue;
         }
@@ -372,4 +389,100 @@ pub fn periph_write(s: &mut St, a: u32, value: u32) -> R<bool> {
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod arbitrate_tests {
+    use super::*;
+
+    /// The scan of every source address that `sec_arbitrate` replaced.
+    fn arbitrate_reference(s: &mut St) -> R<()> {
+        if mmr(s, SEC_GCTL)? & 1 == 0 || mmr(s, SEC_CCTL)? & 1 == 0 {
+            return Ok(());
+        }
+        if mmr(s, SEC_CSTAT)? & CSTAT_SIDV != 0 {
+            return Ok(());
+        }
+        let mut best: Option<u32> = None;
+        let mut best_prio = 0x100;
+        let mut active_prio = 0x100;
+        for sid in 0..SEC_SOURCES {
+            let status = mmr(s, sstat(sid))?;
+            if status & (SSTAT_PND | SSTAT_ACT) == 0 {
+                continue;
+            }
+            let sctl = mmr(s, SEC_SCTL + 8 * sid)?;
+            let prio = (sctl >> 8) & 0xFF;
+            if status & SSTAT_ACT != 0 {
+                if prio < active_prio {
+                    active_prio = prio;
+                }
+            } else if sctl & SCTL_IEN != 0 && (sctl >> 24) & 0xF == 0 && prio < best_prio {
+                best = Some(sid);
+                best_prio = prio;
+            }
+        }
+        let Some(best) = best else {
+            return Ok(());
+        };
+        if best_prio >= active_prio {
+            return Ok(());
+        }
+        set(s, SEC_CSID, best)?;
+        set(s, SECI_ID, best)?;
+        let cstat = mmr(s, SEC_CSTAT)? | CSTAT_SIDV | CSTAT_PNDV;
+        set(s, SEC_CSTAT, cstat)
+    }
+
+    #[test]
+    fn sparse_scan_matches_the_full_scan() {
+        let mut s = St::new(crate::mem::Mem::new());
+        let mut x = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let (mut errors, mut raised) = (0u32, 0u32);
+        for round in 0..4000u32 {
+            s.mmrs.clear();
+            s.un = 0;
+            s.mmr_put(SEC_GCTL, V::c(1));
+            s.mmr_put(SEC_CCTL, V::c(if round % 11 == 0 { 0 } else { 1 }));
+            s.mmr_put(SEC_CSTAT, V::c(if round % 13 == 0 { CSTAT_SIDV as Int } else { 0 }));
+            for _ in 0..(next() % 12) {
+                let sid = (next() % SEC_SOURCES as u64) as u32;
+                let status = match next() % 5 {
+                    0 => SSTAT_PND,
+                    1 => SSTAT_ACT,
+                    2 => SSTAT_PND | SSTAT_ERR,
+                    3 => 0,
+                    _ => (next() as u32) & 0x3FF,
+                };
+                let sstat_value = if next() % 40 == 0 {
+                    V::UNK
+                } else {
+                    V::c(status as Int)
+                };
+                s.mmr_put(sstat(sid), sstat_value);
+                if next() % 6 != 0 {
+                    let sctl = (next() as u32 & 0x0F00_FF01) | ((next() as u32 & 0xFF) << 8);
+                    let value = if next() % 50 == 0 { V::UNK } else { V::c(sctl as Int) };
+                    s.mmr_put(SEC_SCTL + 8 * sid, value);
+                }
+            }
+            let before = s.mmrs.clone();
+            let got = sec_arbitrate(&mut s);
+            let after = std::mem::replace(&mut s.mmrs, before);
+            s.un = 0;
+            let want = arbitrate_reference(&mut s);
+            assert_eq!(got, want, "round {round}");
+            assert_eq!(after, s.mmrs, "round {round}");
+            errors += want.is_err() as u32;
+            raised += s.mmr_get(SEC_CSID).is_some() as u32;
+        }
+        // Some rounds trap on a non-concrete register, some raise a source.
+        assert!(errors > 0 && raised > 0, "{errors} {raised}");
+    }
 }

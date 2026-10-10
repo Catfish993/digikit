@@ -14,6 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
     "tools/aot_attrib.py",
+    "tools/aot_entry_iter.py",
     "tools/aot_dyntrace.py",
     "tools/aot_mcount.py",
     "tools/xctrace_bottleneck.py",

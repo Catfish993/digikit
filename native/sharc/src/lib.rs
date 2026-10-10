@@ -269,6 +269,8 @@ pub struct Engine {
     pub trans: Option<std::collections::HashMap<(u32, u32), u64>>,
     /// The PC the last interpreted instruction left (to tell a run's start).
     last_interp_next: Int,
+    /// The first PC of the interpreter run in progress (profile only).
+    run_start: Option<Int>,
     /// Opt-in idle-loop skip (option 23): the loop head PC, and the PC range
     /// every instruction of the loop must lie in (options 24, 25).
     pub idle_head: Option<u32>,
@@ -651,6 +653,7 @@ impl Engine {
             #[cfg(feature = "region-profile")]
             region_profile: None,
             last_interp_next: -1,
+            run_start: None,
             idle_head: None,
             idle_lo: 0,
             idle_hi: 0x00ff_ffff,
@@ -1504,10 +1507,23 @@ impl Engine {
         if let Some(cov) = &mut self.cov {
             let m = self.s.r[MODE1];
             *cov.entry((self.s.pc_sw as u32, m.b, m.is_c())).or_default() += 1;
-            if let Some(en) = &mut self.entries
-                && self.s.pc_sw != self.last_interp_next
-            {
-                *en.entry(self.s.pc_sw as u32).or_default() += 1;
+            if let Some(en) = &mut self.entries {
+                let pc = self.s.pc_sw;
+                if pc != self.last_interp_next {
+                    *en.entry(pc as u32).or_default() += 1;
+                    self.run_start = Some(pc);
+                } else if let Some(start) = self.run_start.take()
+                    && self.use_blocks
+                    && self.dispatch.get_entry(start).is_some()
+                    && self.dispatch.get_entry(pc).is_none()
+                {
+                    // A block entry the model gate sent to the interpreter
+                    // (a pending bank swap, a timer about to tick): the
+                    // interpreter then runs on through the block's body,
+                    // which has no entry at the next instruction. That PC is
+                    // an entry candidate for the generator.
+                    *en.entry(pc as u32).or_default() += 1;
+                }
             }
         }
         if let Some(h) = &mut self.hist {

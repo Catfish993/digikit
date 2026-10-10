@@ -696,3 +696,168 @@ own: about 37 machine instructions per SHARC instruction in the loops, of which 
 `_astatx_define`), the float flush and the memory presence tests are the largest named items in `aot_attrib.py`;
 exact fast paths for those are the next AOT lever; (4) offline fast-tier kernels for the 25 regions that carry
 88% of the AOT instructions stay the route to 0.9 and below.
+
+## 8. Slice 3 results (2026-10-11) **[D]**
+
+Built on the branch `work/scenario-oracles`, uncommitted, on the slice-2' core. Goal: close the last 5 to 11% to real
+time on the desktop. **Reached**: with PGO the DSP thread needs 0.896 (trig1-taps), 0.901 (tf-dry-hold) and 0.922
+(tf-br-127) CPU s per audio s (slice 2': 1.054, 1.056, 1.126); without PGO 1.104, 1.106, 1.122 (1.279, 1.280, 1.358).
+Every pin, oracle test and tier comparison holds (8.5). The largest single item was not on the list of the task:
+the interpreter (8.2, item 5).
+
+### 8.1 Cost split on the slice-2' core
+
+`sample` of `coupled-run` (no PGO, trig1-taps, 8 s, 1 ms samples), DSP thread only, leaf frames; the fast tier's JIT
+code has no symbol (`???`). Old = slice-2' binary, new = the final one.
+
+| part of the DSP thread | slice 2' | now |
+|---|---:|---:|
+| AOT region functions (`r_*`) | 63.8% | 63.5% |
+| fast tier, JIT code + glue | 15.8% | 18.8% |
+| interpreter forms (`core_g`, `core_i`, `exec_insn`) | 6.0% | 4.3% |
+| `Engine::step` dispatch loop | 5.9% | 5.6% |
+| `sec_arbitrate` | 2.4% | 0.6% |
+| other (periph, decode, memcmp, allocation) | 6.1% | 7.2% |
+
+(Shares of a total that shrank by 12%: the AOT part got about 12% cheaper in absolute terms.) Inside the AOT part,
+dynamic machine instructions per source function (`aot_attrib.py --by-dyn`, one warm call each of the in-situ AOT
+regions 1C0C9D, 1C926F, 1C9538, 1C9A46, 1C2271, 1C2166, 1C38BB; the loop regions 1C399A and 1C1F44 skew it, so they
+are counted separately): memory path (`fast_read`, `fast_write`, normal-word test, `note_write`) **34%** of the
+instructions of the in-situ regions (about 80% in the copy loop 1C1F44), measured on the build with the memory changes and the first float form, float helpers (`ftz32`, the add/mul fast paths,
+`_float32_result`, multiply parts, `_float_alu_updates`, `_astatx_mult_float`) 24%, loop-stack ops and the undo log 8%,
+`rf_set` 3.4%, the region functions themselves 8%. The bytes-based list of slice 2' (float 19%, normal-word 12.6%,
+presence tests 8.6%) understated the memory path, because a normal-word access runs the test two or three times
+(access, stride in `_normal_word_stride`, post-modify) and every access walks `eff`, `watch`, the dirty bitmap.
+"s_set_special" in `aot_attrib` is not the special-register write: the macro `stack_ops!` in `rt.rs` (loop stack,
+PC stack, call stack accessors) has no `fn` line the attribution regex matches, so its lines are charged to the
+function above it. Those are the loop-end `stk_set_loops` / `stk_at_loops` with their undo-log entry, 4.7% of the
+in-situ regions. The regionbench states have the bank, stack, timer and peripheral models on (`cfg.stack_model`), as
+the coupled run has, so the loop-slot code runs there as in situ.
+
+### 8.2 What changed, per item
+
+Files: `native/sharc-rt/src/{addressing,mem}.rs`, `native/sharc-rt/src/rt/{bnd,periph}.rs`,
+`native/sharc/src/lib.rs`, `tools/sharc_transpile.py` (in `CORE_FINGERPRINT`: DN2, DT2 and shared cores regenerated,
+backups `gen-pre-s3-20261010`), tools `aot_entry_iter.py` (new), `aot_attrib.py`, `aot_dyntrace.py`.
+
+1. **Float helpers.** `_float_binary_add/sub` and `_float_multiply` flush both operands (`ftz32`), compute in `f32`
+   and classify the result by its magnitude: a normal result (above the smallest normal, below infinity) is returned
+   as it is with no flag set; a zero or denormal result is the zero of its sign (a multiply of two nonzero numbers
+   also sets underflow); infinity, NaN and the smallest normal run the original sequence. A result below the smallest
+   normal in `f32` comes from an exact value below the midpoint to the smallest normal, which lies below the flush cut,
+   so the Python core flushes it too (the existing differential tests cover the multiply products at the cut). `floats._float32`, `floats._float32_result` and
+   `compute_multi._float_multiply_parts` (the multifunction multiply) are boundary functions of the runtime
+   (`BOUNDARY` in the transpiler, bodies in `bnd.rs`); `_float_multiply_parts` has the same fast path and falls back
+   to the original sequence (the NaN result keeps MI and no other flag). New differential test
+   `float_multiply_parts_and_float32_match_reference` (4M pairs, every special operand pair) next to the existing
+   ones; 0 mismatches.
+2. **Normal-word test.** `nw_band`: every range of the table lies in [0x90000, 0xe8000) or [0x4000000, 0x18000000) and
+   every boundary is a multiple of 0x2000, so two compares of `a >> 13` against small immediates decide whether the
+   out-of-line `normal_word_map` is needed. Seven instructions where the two 32-bit range tests with their
+   `movk` constants took 12 to 14. The reference test of `addressing.rs` passes unchanged.
+3. **Memory presence tests.** `Mem.pages` and `Mem.watch` are fixed-size boxed arrays (no bounds check on
+   `a >> 16`). `fast_read_word` / `fast_write_word` answer an aligned 4-byte access with one present or dirty nibble test
+   (an aligned word can neither cross the page end nor a 64-bit bitmap word; an unaligned address declines to the full
+   rules, so the answer where it answers is that of `fast_read` / `fast_write`; the code watch is noted before the dirty test as before). 1- and
+   2-byte accesses skip the page-end test of the 4-byte load. Block code uses them (`_dm_read_b`, `_dm_write_b`,
+   `_dm_write_nolog_b`, and `_load_normal_ureg_rf` now calls `_dm_read_b` instead of `_dm_read`, which tested
+   `cfg.fast_mem` and went through the 128-bit mapping). Differential test `word_paths_match_the_general_ones`.
+4. **`rf_set`, `s_set_special`.** Not changed. The `m != MAX` tests of `rf_set` that remain (3.4%) are values read
+   back from the loop-slot stack, whose mask is not a constant; the stack accessors are the loop-end machinery above.
+   A cheaper loop end (no undo entry for `stk_set_loops` when `stack_model` is off, as nothing after it can fail)
+   is an idea for the generator, **[O]** and not exact for the model-safe blocks that run with the stack model on.
+5. **Gated block entries sent to the interpreter** (not on the task list; the biggest win). With the bank model on,
+   a block entry is declined (`timer_gated`, 435,666 times in trig1-taps) while a bank swap is pending (a MODE1 write
+   by the previous instruction). The interpreter runs that one instruction, and then the rest of the block's body,
+   because a region has entries only at its block starts: 7.5M of the 13.2M interpreted instructions of trig1-taps
+   were one 238-instruction routine (0xB8A9C4..0xB8AAB7), run 31,500 times. `diag_step` now also records, in the
+   `entries` profile map, the PC after the first instruction of an interpreter run that began at a block entry (only
+   with the blocks on); `tools/aot_entry_iter.py` runs the 12 profile scenarios of the fxprof recipe with the current
+   core and prints the new entries. Making them block starts lets the run end after one instruction. The new starts
+   can be gated the same way, so the search was repeated (6 rounds: 19, 7, 3, 3, 3, 2 new PCs; the last round found
+   only PCs with counts under 200): 2657 to 2692 blocks, 38,378 to 39,154 block instructions (+2%), 41 to 42 files. Interpreted
+   instructions in trig1-taps 13,151,269 to 6,760,382 (idle probes 1.86M, the 0x1C06FE delay-slot decline 0.78M, the
+   rest spread); median over the 134 FX scenarios 0.52 of the old count. Also `sec_arbitrate` visits only the SSTAT
+   registers that exist (`mmrs` is sorted; the scan did a binary search for each of 256 sources): 2.4% to 0.6% of the
+   thread; differential test `sparse_scan_matches_the_full_scan` against the old scan, including non-concrete
+   registers.
+
+### 8.3 Tried and dropped
+
+- Float fast path variants, warm ns per call (ratio B/A of two builds, 7 rounds). **B** test both exponents nonzero,
+  then compute (`mf-b`): 1C399A 0.87, 1C364F 0.88, B8276C 0.82, B823DB 0.87 against slice 2', but 1C3862 1.05 and
+  1C2271 1.04: with zero operands (silence) the test fails and the original sequence runs, and the branch follows the
+  data. **C** flush first, one classification (`mf-c`) against B: 1C3862 0.85, 1C5765 0.90, 1C2271 0.90, but 1C364F
+  1.10, B8276C 1.09. **D** B in front of C's fallback: between the two. **E** (kept) C with the result tested for a
+  normal value first, then for zero: against D 1C5765 0.93, B823DB 0.95, 1C2271 0.94, 1C2166 0.96, 1C399A 0.98,
+  1C364F 1.04, 1C0C9D 1.12 (a 48-instruction region). Smaller code too (540 against 555 B per site).
+- Memory access as a shared out-of-line body per width and normal-word flag (a call at the site instead of the
+  mapping, the page walk and the store): the mini set shrinks 9% (505 against 555 B per site), but the warm time
+  grows 1.0 to 1.7 times (1C1F44 1.68, 1C2484 1.19, 1C5765 1.18). Not kept.
+- Running the generated blocks during an idle-skip probe iteration: the probe iteration is the 24-instruction loop in
+  the idle range, which has no blocks (`--exclude`), so the interpreter count did not move; removed again.
+
+### 8.4 Density and warm
+
+| | slice 2' | slice 3 |
+|---|---:|---:|
+| bytes per SHARC site, mini set (21 regions, 1959 sites) | 534 | 530 |
+| machine insns per site, mini set | 134 | 133 |
+| bytes per SHARC site, whole DN2 core (64,818 sites) | 397.5 | 394.5 |
+| front end of the DSP thread in situ, no PGO / PGO | 20.6% / 10.4% | 20.9% / 9.0% |
+
+The code did not get smaller (the front end share without PGO is the same); the gain is instructions: warm ratio
+new/old (same entry states, 9 rounds, `sharc_regionbench.py compare`): 1C399A 0.85, 1C3862 0.80, 1C364F 0.88, 1C2484
+(B8276C) 0.79, 1C5765 0.86, B823DB 0.75, 1C0C9D 0.94, 1C9538 (B81368) 0.70, 1C1F44 0.81, 1C9A46 1.01, 1C2271 0.87,
+1C2166 0.79, 1C38BB 1.11 (35 instructions, 73 against 80 ns, within the timer step).
+
+### 8.5 Verification
+
+- DN2 pins (`mise run scenarios`): all seven, hashes unchanged (trig1-taps `e0e6c8af7a84c443`).
+- `scenarios:check` 61 passed in the default and in the no-AOT configuration; `scenarios:sweep` 191 passed.
+- Tier sweep, all 134 FX scenarios, AOT against `SHARC_AOT=0`: **134 of 134 PCM equal**.
+- `test_sharc_golden.py`, `test_sharc_denormal.py`, `test_sharc_rsgen_density.py`, `test_lint.py`,
+  `test_gen_fingerprint.py`, `test_sharc_rsgen_model_safe.py`, `test_types.py`: pass. `cargo test -p sharc-rt`: 16
+  passed (3 new).
+- DT2: `dt2_sample_check.py --rebuild` clean tone (peak share 0.99995 at 1008 Hz); the 3 s `dt2-sample-trig` render has
+  the WAV hash `4bab8330915f0929` in AOT, no-AOT and AOT + fast tier, as before.
+- Block traps against the slice-2' core: count identical in all 134 FX scenarios; code and count identical in the
+  `--profile-execution` exit tables of tf-br-127, tf-dry-hold, sf-mst-thr0, sf-rev-decay-u20, kb-chord16 and
+  trig1-taps (all `0x8000000d`: 315,000 in trig1-taps); the rows of the other exits are identical in the four FX
+  scenarios (0 of about 1000 differ); zero-progress bails rise by 7% in trig1-taps (1,026,622 to 1,100,264) and 0.1%
+  in kb-chord16, the new entries declining like their neighbours. Block entries +1.1% (31,995,146 to 32,353,230),
+  AOT instructions +0.26%, interpreted instructions -49%: the differences are the new block starts of item 5.
+
+### 8.6 Timing
+
+`tools/coupled_ab.py`, exclusive benchlock, alternating pairs, DSP thread CPU per audio s, default config, DN2 1.11,
+load average 3 to 4, PCM equal to the pin in every run. Cell = median (IQR); 6 pairs each.
+
+| scenario | slice 2' | slice 3 | paired ratio |
+|---|---:|---:|---:|
+| no PGO, trig1-taps | 1.279 (0.003) | **1.104** (0.004) | 0.862 |
+| no PGO, tf-dry-hold | 1.280 (0.005) | **1.106** (0.004) | 0.864 |
+| no PGO, tf-br-127 | 1.358 (0.006) | **1.122** (0.005) | 0.827 |
+| PGO, trig1-taps | 1.054 (0.012) | **0.896** (0.006) | 0.850 |
+| PGO, tf-dry-hold | 1.056 (0.003) | **0.901** (0.006) | 0.854 |
+| PGO, tf-br-127 | 1.126 (0.003) | **0.922** (0.003) | 0.819 |
+
+PGO: `mise run pgo` on the final core (4 runs), `coupled-run` built with `-Cprofile-use` into
+`out/native/target/prod/pgo-cr-s3` (binaries `out/native/ab/coupled-{s2,s3e}-{nopgo,pgo}`); the old one is the
+slice-2' PGO binary. Machine absolute numbers move with its state (the slice-2' binary read 1.277 earlier and 1.311
+and 1.445 on busier days); the ratios hold. Real time on the desktop is now reached with a margin of 8 to 10%.
+
+Progress during the slice (no PGO, trig1-taps, paired against slice 2'): 0.93 with the word paths and the first float
+form (3 pairs), 0.926 with the narrow paths, the float32 and multiply-parts boundary functions, `sec_arbitrate` and
+the E form (6 pairs), 0.862 with the entry search.
+
+### 8.7 Open, next step
+
+**[O]** DT2 was regenerated with the new transpiler but not given the entry search (its profile inputs are the
+old ones; the gating exists there too, `tools/aot_entry_iter.py` is DN2 scenarios only). The search is
+profile-driven: a core generated from other scenarios needs its own rounds. The loop end (`stk_set_loops`, the undo
+entry, `loop_slots`) is the largest named item left in the in-situ regions (about 8%); the idle probes (1.86M
+interpreted instructions) and the 0x1C06FE delay-slot declines (0.78M) are the largest interpreter items. The
+gate of section 6.5 (front end below 12% without PGO) still is not met; with PGO it is (9.0%).
+Next: commit after review; DT2 entry search; then the loop-end undo entry with a proof that nothing can fail after
+it, or offline kernels (section 4) for 0.8 and below.

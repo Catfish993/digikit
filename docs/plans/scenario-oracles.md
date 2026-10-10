@@ -462,3 +462,12 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   traps identical in 25 scenarios, entries +0.27% (per-body budget decline). DN2, DT2 and shared cores regenerated (backups
   `gen-pre-s2-20261010`). `sharc-native` `tests_gen` has 2 failures that predate this. New tools: `aot_attrib.py`,
   `coupled_ab.py`.
+- 2026-10-10: the two `sharc-native` `tests_gen` failures are fixed in the test (not a fast-tier regression): config 1
+  refreshed `block_base_ok` against the image's `GEN_EXPLICIT_MEMORY_MODEL` (false), gating the fast tier off; the test now
+  sets the image's value. Passes against DN2, DT2 and shared gens (finding 18).
+- 2026-10-11: AOT slice 3 (uncommitted; `docs/design/aot-mask-free.md` section 8, finding 18): float add/multiply and
+  multifunction multiply fast paths, normal-word band test, aligned-word and narrow memory paths, gated-entry search
+  (35 more block starts, interpreted instructions -49%), sparse `sec_arbitrate`. Desktop DSP CPU per audio s with PGO
+  0.896 / 0.901 / 0.922 (trig1-taps, tf-dry-hold, tf-br-127), under real time; all pins, oracle tests, the 134-scenario
+  tier sweep and DT2 unchanged. DN2, DT2 and shared cores regenerated (backups `gen-pre-s3-20261010`). New tool:
+  `aot_entry_iter.py`.

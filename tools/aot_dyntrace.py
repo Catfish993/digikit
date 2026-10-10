@@ -44,12 +44,16 @@ def main() -> None:
         "--dump", metavar="FILE", help="write the executed instructions in order"
     )
     ap.add_argument("--call", type=int, default=2, help="trace this call (1 = first)")
+    ap.add_argument(
+        "--region",
+        help="region function to trace when it differs from the entry (1C9538 for entry B81368)",
+    )
     args = ap.parse_args()
     lldb = load_lldb()
     dbg = lldb.SBDebugger.Create()
     dbg.SetAsync(False)
     target = dbg.CreateTarget(args.binary)
-    bp = target.BreakpointCreateByRegex("r_%s$" % re.escape(args.entry))
+    bp = target.BreakpointCreateByRegex("r_%s$" % re.escape(args.region or args.entry))
     if bp.GetNumLocations() != 1:
         sys.exit(
             "expected one location for r_%s, got %d"

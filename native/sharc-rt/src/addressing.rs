@@ -1,18 +1,25 @@
 //! ADSP-2156x datasheet Rev D Tables 2--6, pp.9--10.
 //! Access space is supplied by the instruction, never inferred from width.
-/// The mapped byte address of a normal-word address, or None. Most data
-/// addresses fail the first test at once (tools/sharc_core/addressing.py
-/// does the same); the range table is one out-of-line function, so block
-/// code carries it once, not at every memory access.
+/// May A be mapped by `normal_word_map`? Every range of the table lies in
+/// [0x90000, 0xe8000) or [0x4000000, 0x18000000) and every boundary is a
+/// multiple of 0x2000, so two small-immediate band tests on A >> 13 decide
+/// it (most data addresses fail both at once).
+#[inline(always)]
+fn nw_band(a: u32) -> bool {
+    let h = a >> 13;
+    h.wrapping_sub(0x48) < 0x2c || h.wrapping_sub(0x2000) < 0xa000
+}
+
+/// The mapped byte address of a normal-word address, or None. The range
+/// table is one out-of-line function, so block code carries it once, not at
+/// every memory access.
 #[inline(always)]
 pub fn normal_word_to_byte(address: i128) -> Option<i128> {
-    // Every range of the table lies in [0x90000, 0x18000000), none in
-    // [0xe8000, 0x4000000).
-    if (address as u128).wrapping_sub(0x90000) >= 0x1800_0000 - 0x90000 {
+    if (address as u128) >> 32 != 0 {
         return None;
     }
     let a = address as u32;
-    if a.wrapping_sub(0xe8000) < 0x400_0000 - 0xe8000 {
+    if !nw_band(a) {
         return None;
     }
     match normal_word_map(a) {
@@ -26,10 +33,7 @@ pub fn normal_word_to_byte(address: i128) -> Option<i128> {
 /// rt/bnd.rs): the mapped byte address, else A.
 #[inline(always)]
 pub fn normal_word_or_same(a: u32) -> u32 {
-    // The ranges lie in [0x90000, 0x18000000), none in [0xe8000, 0x4000000).
-    if a.wrapping_sub(0x90000) >= 0x1800_0000 - 0x90000
-        || a.wrapping_sub(0xe8000) < 0x400_0000 - 0xe8000
-    {
+    if !nw_band(a) {
         return a;
     }
     match normal_word_map(a) {

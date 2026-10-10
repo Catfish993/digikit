@@ -504,8 +504,13 @@ for _n in [
     "_round_even_int",
     "_float32_bits",
     "_double_pair_bits",
+    "_float32",
+    "_float32_result",
 ]:
     BOUNDARY["sharc_core.floats." + _n] = Bnd()
+# The multifunction multiply: one native body, a fast path for the usual
+# operands and the original sequence for the rest (bnd.rs).
+BOUNDARY["sharc_core.compute_multi._float_multiply_parts"] = Bnd()
 
 # Boundary functions that touch the register file: block mode calls their
 # ``_rf`` forms over the block's register file (rt.rs Rf, bnd.rs).

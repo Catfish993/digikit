@@ -42,7 +42,7 @@ impl Page {
 }
 
 pub struct Mem {
-    pages: Vec<Option<Box<Page>>>,
+    pages: Box<[Option<Box<Page>>; NPAGES]>,
     loader: Vec<Option<Box<Page>>>,
     /// Pages holding overlay bytes (for export and reset).
     touched: Vec<u32>,
@@ -58,7 +58,7 @@ pub struct Mem {
     /// read (`watch_sw`). A write to a bit-0 page bumps `code_gen` (the
     /// engine re-verifies the code the blocks were generated for), to a
     /// bit-1 page `dec_gen` (cached decodes are re-checked word by word).
-    watch: Vec<u8>,
+    watch: Box<[u8; NPAGES]>,
     pub code_gen: u64,
     pub dec_gen: u64,
     /// Changes whenever a host pointer into a page or the present/dirty
@@ -87,8 +87,15 @@ impl Default for Mem {
 
 impl Mem {
     pub fn new() -> Mem {
+        // Fixed-size tables: an index by `a >> PAGE_BITS` of a u32 needs no
+        // bounds check in the inline fast paths.
         let mut pages = Vec::with_capacity(NPAGES);
         pages.resize_with(NPAGES, || None);
+        let pages: Box<[Option<Box<Page>>; NPAGES]> =
+            match pages.into_boxed_slice().try_into() {
+                Ok(b) => b,
+                Err(_) => unreachable!("NPAGES entries"),
+            };
         let mut loader = Vec::with_capacity(NPAGES);
         loader.resize_with(NPAGES, || None);
         Mem {
@@ -100,7 +107,10 @@ impl Mem {
                 .try_into()
                 .expect("NPAGES entries"),
             mmr: vec![false; NPAGES],
-            watch: vec![0; NPAGES],
+            watch: vec![0u8; NPAGES]
+                .into_boxed_slice()
+                .try_into()
+                .expect("NPAGES entries"),
             code_gen: 0,
             dec_gen: 0,
             layout_gen: NEXT_LAYOUT_GEN.fetch_add(1 << 40, std::sync::atomic::Ordering::Relaxed),
@@ -223,6 +233,23 @@ impl Mem {
         let p = unsafe { &*p };
         let off = (a as usize) & (PAGE_SIZE - 1);
         let bit = off & 63;
+        if width < 3 {
+            // One or two bytes: no 4-byte load, so nothing to cross at the
+            // page end; the present word test also bounds the access.
+            if bit + width as usize > 64 {
+                return None;
+            }
+            let m = ((1u64 << width) - 1) << bit;
+            if p.present[off >> 6] & m != m {
+                return None;
+            }
+            // SAFETY: bit + width <= 64 puts off + width within the page.
+            return Some(if width == 1 {
+                unsafe { *p.data.get_unchecked(off) as u32 }
+            } else {
+                unsafe { u16::from_le_bytes(*(p.data.as_ptr().add(off) as *const [u8; 2])) as u32 }
+            });
+        }
         if off + 4 > PAGE_SIZE || bit + width as usize > 64 {
             return None;
         }
@@ -252,6 +279,29 @@ impl Mem {
         let p = unsafe { &mut *p };
         let off = (a as usize) & (PAGE_SIZE - 1);
         let bit = off & 63;
+        if width < 3 {
+            // One or two bytes (see `fast_read`).
+            if bit + width as usize > 64 {
+                return None;
+            }
+            let m = ((1u64 << width) - 1) << bit;
+            if p.dirty[off >> 6] & m != m {
+                return None;
+            }
+            // SAFETY: bit + width <= 64 puts off + width within the page.
+            unsafe {
+                if width == 1 {
+                    let q = p.data.get_unchecked_mut(off);
+                    let old = *q as u32;
+                    *q = v as u8;
+                    return Some(old);
+                }
+                let q = p.data.as_mut_ptr().add(off) as *mut [u8; 2];
+                let old = u16::from_le_bytes(*q) as u32;
+                *q = (v as u16).to_le_bytes();
+                return Some(old);
+            }
+        }
         if off + 4 > PAGE_SIZE || bit + width as usize > 64 {
             return None;
         }
@@ -272,6 +322,53 @@ impl Mem {
         } else {
             old & ((1u32 << (8 * width)) - 1)
         })
+    }
+
+    /// `fast_read` of an aligned 4-byte word, for block code: the same
+    /// answer where it answers (the address is a multiple of 4, so the word
+    /// can neither cross the page end nor a 64-bit present word); an
+    /// unaligned address declines here and takes the full rules.
+    #[inline(always)]
+    pub fn fast_read_word(&self, a: u32) -> Option<u32> {
+        let p = self.eff[(a >> PAGE_BITS) as usize];
+        if p.is_null() || a & 3 != 0 {
+            return None;
+        }
+        // SAFETY: eff holds null or a page `pages` owns (kept in step).
+        let p = unsafe { &*p };
+        let off = (a as usize) & (PAGE_SIZE - 1);
+        if (p.present[off >> 6] >> (off & 63)) & 0xF != 0xF {
+            return None;
+        }
+        // SAFETY: off is a multiple of 4 below PAGE_SIZE.
+        Some(u32::from_le_bytes(unsafe {
+            *(p.data.as_ptr().add(off) as *const [u8; 4])
+        }))
+    }
+
+    /// `fast_write` of an aligned 4-byte word, for block code (see
+    /// `fast_read_word`); returns the old word. The code watch is noted
+    /// before the dirty test, as `fast_write` does.
+    #[inline(always)]
+    pub fn fast_write_word(&mut self, a: u32, v: u32) -> Option<u32> {
+        let p = self.eff[(a >> PAGE_BITS) as usize];
+        if p.is_null() || a & 3 != 0 {
+            return None;
+        }
+        self.note_write(a);
+        // SAFETY: eff holds null or a page `pages` owns (kept in step).
+        let p = unsafe { &mut *p };
+        let off = (a as usize) & (PAGE_SIZE - 1);
+        if (p.dirty[off >> 6] >> (off & 63)) & 0xF != 0xF {
+            return None;
+        }
+        // SAFETY: off is a multiple of 4 below PAGE_SIZE.
+        unsafe {
+            let q = p.data.as_mut_ptr().add(off) as *mut [u8; 4];
+            let old = u32::from_le_bytes(*q);
+            *q = v.to_le_bytes();
+            Some(old)
+        }
     }
 
     /// A host pointer to the bytes [A, A+LEN) for a fast-tier window: all on
@@ -639,5 +736,84 @@ impl Mem {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod word_path_tests {
+    use super::*;
+
+    /// The aligned-word paths answer exactly as the general ones where the
+    /// address is a multiple of 4, and decline everywhere else.
+    #[test]
+    fn word_paths_match_the_general_ones() {
+        let mut a = Mem::new();
+        let mut b = Mem::new();
+        // A page with a mix of loader bytes, overlay bytes and gaps.
+        let base = 0x2000_0000u32;
+        let mut x = 0x1234_5678u64;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let mut bytes = vec![0u8; 0x400];
+        for byte in bytes.iter_mut() {
+            *byte = next() as u8;
+        }
+        for m in [&mut a, &mut b] {
+            m.load(base, &bytes);
+            m.load(base + 0x500, &bytes[..0x100]);
+            m.load(base + 0xfff0, &bytes[..0x10]);
+            // overlay bytes (dirty) over part of the loaded range
+            for k in 0..0x180u32 {
+                if k % 7 != 3 {
+                    m.write_byte(base + 0x100 + k, (k * 5) as u8);
+                }
+            }
+        }
+        for off in (0..0x10020u32).chain(0xffe0..0x1_0004) {
+            let addr = base.wrapping_add(off);
+            let general = a.fast_read(addr, 4);
+            let word = a.fast_read_word(addr);
+            if addr & 3 == 0 {
+                assert_eq!(word, general, "read {addr:#x}");
+            } else {
+                assert_eq!(word, None, "read {addr:#x}");
+            }
+            let v = (off.wrapping_mul(0x9e37_79b9)) ^ 0xa5a5_a5a5;
+            let g = a.fast_write(addr, 4, v);
+            let w = b.fast_write_word(addr, v);
+            if addr & 3 == 0 {
+                assert_eq!(w, g, "write {addr:#x}");
+                assert_eq!(a.fast_read(addr, 4), b.fast_read(addr, 4), "after {addr:#x}");
+                assert_eq!(a.code_gen, b.code_gen);
+            } else {
+                assert_eq!(w, None, "write {addr:#x}");
+                // keep the two memories in step: undo the general write
+                if let Some(old) = g {
+                    a.fast_write(addr, 4, old);
+                }
+            }
+        }
+        // Narrow accesses: where the old rule answers the new one agrees, and
+        // it answers whenever the bytes are present on the page.
+        for off in 0..0x10020u32 {
+            let addr = base.wrapping_add(off);
+            for w in [1u32, 2] {
+                let want = a.read_present(addr, w);
+                let got = a.fast_read(addr, w);
+                let same_word = (addr as usize & 63) + w as usize <= 64;
+                if same_word {
+                    assert_eq!(got, want, "narrow read {addr:#x} {w}");
+                } else {
+                    assert_eq!(got, None);
+                }
+            }
+        }
+        // An absent page and an MMR page decline.
+        assert_eq!(a.fast_read_word(0x7000_0000), None);
+        assert_eq!(a.fast_write_word(0x7000_0000, 1), None);
     }
 }
