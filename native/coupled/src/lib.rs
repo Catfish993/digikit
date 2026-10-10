@@ -863,7 +863,9 @@ mod coupled {
                 .timing_profile()
                 .map_or(0, |t| t.host_reply_wait_ns);
             let queue = self.player.as_ref().map_or(serde_json::Value::Null, |p| {
-                serde_json::json!(p.queue_state())
+                let mut queue = serde_json::json!(p.queue_state());
+                queue["pace_seconds"] = self.pace_seconds.into();
+                queue
             });
             spike.flush(reply_wait_ns, self.handle.frames_sent(), queue);
         }

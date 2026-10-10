@@ -803,3 +803,31 @@ tests), DT2 clean tone and WAV hash `4bab8330915f0929` in AOT, no-AOT and AOT + 
 all 134 FX scenarios, code and count identical in six profiled ones; block entries +1.1% and zero-progress bails +7%
 in trig1-taps (the new block starts), AOT instructions +0.26%. **[O]** DT2 has no entry search yet; the loop end
 (`stk_set_loops` with its undo entry, 8% of the in-situ regions) and the idle probes are the next items.
+
+## Desktop app real time 2026-10-11 **[D]**
+
+Spike log (`DIGI_SPIKE_LOG`, `tools/spikes.py`, docs/INSTRUMENTATION.md) in the desktop app: DN2 1.11, Trig 1
+on track 1 with send delay, a little reverb and track SRR, PGO launcher build, 1 s prefill, Rebuffer. Steady state
+(after the queue first reaches 900 ms), one run each; not re-checked by a second agent.
+
+| | webview pump (`Mode::Ui`, b4f3693) | paced free running (f344278) |
+|---|---:|---:|
+| audio s per wall s | 0.907 | 0.995 (held by pacing) |
+| underruns | 9 in 100 s | 0 in 53 s |
+| queue min / median | 0 / 506 ms | 899 / 992 ms |
+| DSP busy / CPU per audio s | 0.988 / 1.002 | 0.942 / 0.955 |
+| CF work / DSP reply wait / gap between steps, per audio s | 0.492 / 0.356 / 0.254 | 0.478 / 0.489 / 0.039 |
+| worst DSP period / CF step | 1.36 / 13.4 ms | 1.63 / 7.2 ms |
+
+- The app was below real time on average, not spiking: the 1 s prefill hid it until it ran out. Fast-tier
+  compile was 1.7 ms in the whole run; no period exceeded 2.1 ms.
+- The webview's `setTimeout(0)` `emu_step` loop cost the CF thread 0.48 ms per call (25% of its time) and slowed
+  the DSP thread by about 5% (1.002 -> 0.955 CPU per audio s); the cause of the DSP slowdown (contention) was not
+  measured.
+- The DSP runs the same 502M non-idle instructions per audio s whatever the FX settings (the FX code runs whether
+  audible or not): headless `trig1-taps`, `sf-del-ref`, `sf-rev-ref`, `tf-srr-127` and `tf-del-127` all cost 0.93
+  to 0.94 with the slice 3 PGO `coupled-run` (load average about 3; 0.896 earlier on a quieter machine). One
+  scenario stands for every patch.
+- Headroom in the paced app: DSP busy per 0.1 audio s window p50 94.0, p99 99.7, max 100.4 ms (4 of 519 windows
+  over). CF work reached 1.0 to 1.4 per audio s in bursts while browsing pages; with the depth-1 link pipeline a
+  CF burst stalls the DSP. A buffer well below 1 s needs DSP headroom first (target about 0.8).
