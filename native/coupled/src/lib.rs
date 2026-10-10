@@ -230,6 +230,11 @@ impl CoupledRuntime {
             .as_ref()
             .is_some_and(coupled::AudioSession::link_timing_enabled)
             .then(Instant::now);
+        #[cfg(feature = "coupled-audio")]
+        let spike_start = self
+            .audio
+            .as_mut()
+            .and_then(coupled::AudioSession::spike_step_start);
         let snapshot = self.emulator.step_chunk(budget);
         #[cfg(feature = "coupled-audio")]
         if let Some(audio) = &mut self.audio {
@@ -237,6 +242,9 @@ impl CoupledRuntime {
                 audio.record_cf_step(start.elapsed().as_nanos());
             }
             audio.poll();
+            if let Some(start) = spike_start {
+                audio.spike_step_end(start);
+            }
         }
         snapshot
     }
@@ -639,6 +647,7 @@ mod coupled {
         /// When the tier counters were last printed (every 10 s, link timing only).
         tiers_printed: std::cell::Cell<Option<Instant>>,
         audio_mode: crate::AudioMode,
+        spike: Option<elektron_native_boot::spikelog::CfWindow>,
     }
     impl AudioSession {
         fn new_with_player(
@@ -677,8 +686,10 @@ mod coupled {
             let state = state.to_vec();
             let snapshot =
                 std::fs::read(&options.snapshot).map_err(|e| format!("CF snapshot: {e}"))?;
-            let link_timing =
-                options.link_timing || std::env::var("DN2_PROFILE_LINK").as_deref() == Ok("1");
+            // The spike log needs the per-period DSP times and the reply waits.
+            let link_timing = options.link_timing
+                || std::env::var("DN2_PROFILE_LINK").as_deref() == Ok("1")
+                || elektron_native_boot::spikelog::enabled();
             emulator.enable_ssi_diagnostic(96_000)?;
             emulator.load_state(&snapshot)?;
             // The fast tier's Cranelift backend; the engine uses it only when
@@ -745,6 +756,7 @@ mod coupled {
                 pcm_tap: None,
                 tiers_printed: std::cell::Cell::new(None),
                 audio_mode: options.audio_mode,
+                spike: elektron_native_boot::spikelog::CfWindow::open(),
             })
         }
         pub(super) fn new(emulator: &mut Emulator, options: &AudioOptions) -> Result<Self, String> {
@@ -804,6 +816,32 @@ mod coupled {
                     .audio_poll_wall_ns
                     .saturating_add(start.elapsed().as_nanos().min(u64::MAX as u128) as u64);
             }
+        }
+
+        /// Starts timing a `step_chunk` call for the spike log.
+        pub(super) fn spike_step_start(&mut self) -> Option<Instant> {
+            self.spike
+                .as_mut()
+                .map(elektron_native_boot::spikelog::CfWindow::step_start)
+        }
+
+        /// Ends a `step_chunk` call and writes the spike-log window when it is
+        /// full.
+        pub(super) fn spike_step_end(&mut self, start: Instant) {
+            let Some(spike) = &mut self.spike else {
+                return;
+            };
+            if !spike.step_end(start) {
+                return;
+            }
+            let reply_wait_ns = self
+                .handle
+                .timing_profile()
+                .map_or(0, |t| t.host_reply_wait_ns);
+            let queue = self.player.as_ref().map_or(serde_json::Value::Null, |p| {
+                serde_json::json!(p.queue_state())
+            });
+            spike.flush(reply_wait_ns, self.handle.frames_sent(), queue);
         }
         pub(super) fn sync(&mut self) {
             let wall_start = self.link_timing.then(Instant::now);

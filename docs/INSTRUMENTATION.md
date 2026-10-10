@@ -107,3 +107,14 @@ Read at start-up; defaults are what `tools/digi_env.py` and the shipped
 | `DIGI_DSP_PERIOD`, `DIGI_DSP_RX_PHASE` | DSP scheduling in the coupled run |
 | `DIGI_EMU_FAST=0` | tools/digi_env.py: no fast regions |
 | `SHARC_FAST_FLAT`, `SHARC_FAST_LEAN`, `SHARC_FAST_SHAPE=cfg`, `SHARC_FAST_CHAIN=0` | opt-in or legacy variants **[O]** likely obsolete: flat access gave no coverage gain (findings 18); check before use |
+
+## Spike log (`DIGI_SPIKE_LOG`)
+
+Per-window timing for real-time dropouts, in the app and in `coupled-run`.
+Set `DIGI_SPIKE_LOG=DIR`. The DSP worker writes `DIR/dsp.jsonl` (one record
+per 0.1 audio s: busy time, worst period, time spent waiting for frames,
+fast-tier build and compile time). The coupled run loop writes `DIR/cf.jsonl`
+(one record per ~20 ms of wall time: `step_chunk` time, the gap between calls,
+the wait for DSP replies, the audio queue). Setting it turns link timing on.
+Read it with `uv run python tools/spikes.py DIR`: it names the largest cost
+of every window that fell behind real time (dsp, compile, cf, ui-gap).

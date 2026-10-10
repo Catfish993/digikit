@@ -1142,6 +1142,7 @@ impl ThreadedPeer {
                 let mut period_ns: Vec<u32> = Vec::new();
                 let mut periods = 0u64;
                 let mut frames_done = 0u64;
+                let mut spike = crate::spikelog::DspWindow::open(crate::cputime::thread_cpu_ns());
                 while let Ok(msg) = rx.recv() {
                     match msg {
                         Msg::Frame {
@@ -1150,6 +1151,9 @@ impl ThreadedPeer {
                             attached,
                             enqueued,
                         } => {
+                            if let Some(w) = &mut spike {
+                                w.frame_start();
+                            }
                             if attached {
                                 core.push_link(&link);
                             }
@@ -1175,6 +1179,11 @@ impl ThreadedPeer {
                                     period_ns.push(busy.min(u32::MAX as u64) as u32);
                                 }
                             }
+                            if let Some(w) = &mut spike {
+                                w.frame_end(done.timing.as_ref().map(|t| {
+                                    t.spi_ns.saturating_add(t.dsp_ns).saturating_add(t.sport_ns)
+                                }));
+                            }
                             if done_tx.send(done).is_err() {
                                 return;
                             }
@@ -1187,6 +1196,13 @@ impl ThreadedPeer {
                                     periods: frames_done,
                                     ..WorkerReport::default()
                                 };
+                                if let Some(w) = &mut spike {
+                                    let (compile, build, built) =
+                                        report.tiers.as_ref().map_or((0, 0, 0), |t| {
+                                            (t.fast_compile_ns, t.fast_build_ns, t.fast_built)
+                                        });
+                                    w.flush(frames_done, report.cpu_ns, compile, build, built);
+                                }
                                 if let Ok(mut slot) = live_worker.lock() {
                                     *slot = Some(report);
                                 }
