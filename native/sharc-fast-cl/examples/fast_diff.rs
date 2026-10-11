@@ -459,6 +459,9 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("lshift_or_r", 2, 0x20),
     ("leftz", 2, 0x88),
     ("btst", 2, 0xcc),
+    ("bset_r", 2, 0xc0),
+    ("bclr_r", 2, 0xc4),
+    ("btgl_r", 2, 0xc8),
 ];
 
 const SHORT_OPS: &[(&str, u32)] = &[

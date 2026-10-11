@@ -148,6 +148,7 @@ impl Lower {
             (2, 0x00 | 0x04 | 0x20) => self.shift_reg(opcode, rn, rx, ry),
             (2, 0x88) => self.shift_leftz(rn, rx),
             (2, 0xcc) => self.shift_btst(rx, ry),
+            (2, 0xc0 | 0xc4 | 0xc8) => self.shift_bitop(opcode, rn, rx, ry),
             _ => refuse(format!("compute cu={cu} opcode={opcode:#x}")),
         }
     }

@@ -857,3 +857,36 @@ same DN2 gen; `out/native/target/prod/pgo-cr-hcs`). It outlined 1949 `.cold` fun
 42.6 MB (-8.2%), but DSP CPU per audio s rose: trig1-taps 0.935 (A) against 0.943 (B), paired ratio 1.014 (0.985 to
 1.023), 6 exclusive alternating pairs (`tools/coupled_ab.py`), load average about 3, PCM equal to the pin in all 12
 runs. Not adopted. Caveat: the profile was trained without the split, so its mapping onto outlined code is untested.
+
+## Fast-over-AOT: per-region ceiling and stop reasons 2026-10-11 **[D]**
+
+Can the hottest AOT regions run faster as fast-tier kernels? The fast tier already takes any PC listed in
+`SHARC_FAST_REGIONS` before AOT. Region profile (`region-profile` build, no PGO, DN2 trig1-taps, timer overhead of
+about 26 ns per dispatch subtracted): 1291 AOT entry PCs, 2.63M entries and 235M instructions per audio s (89 per
+entry), 668 ms, 2.85 ns per instruction, about 59% of the DSP thread. The top 25 regions hold 75.9% of AOT
+instructions and 70.1% of AOT time (top 50: 89.1% / 83.9%).
+
+- Estimated saving per region S = AOT wall - (insns x 0.5 ns + entries x 160 ns): positive for 767 regions, 328 ms
+  per audio s in total (the cost-model ceiling, no PGO; kernels run 0.5 to 1.6 ns per instruction in situ, so it is
+  an upper bound).
+- Probe: arming the top 5 by S (0x1cdb85, 0x1c0c9d, 0x1c926f, 0x1c25cc, 0x1c963b) on top of the shipped list changed
+  nothing (1.1413 -> 1.1409, 3 runs each); interpreted instructions +0.5%, so exits land on AOT block starts. The
+  kernels stop after a few instructions and AOT runs the rest, adding 219k region calls per audio s.
+- Stop reasons with the top 50 armed (each region charged to its dominant exit; blocked saving = S x uncovered
+  share; covered 57 of 300 ms):
+
+| reason | blocked ms/s | regions | kind |
+|---|---:|---:|---|
+| call, return or region edge: continuation outside the kernel | 76.3 | 16 | structural |
+| memory address range unknown: the 16a return-address push `DM(I7,M7)` in a CALL delay slot (I7 has no static range; `flat_auto` does not rescue it) | 67.3 | 11 | analysis |
+| loop "register step not stable" (0x1cdb85 alone 32) | 48.1 | 7 | structural |
+| shifter BTGL by register (cu=2, opcode 0xc8) | 23.3 | 1 | form |
+| never built or entered | 13.7 | 3 | analysis |
+| multifunction multiply with min/max (0x1e/0x1f), float MANT, a SIMD condition | 11.1 | 4 | form |
+
+- BSET/BCLR/BTGL by register (0xc0/0xc4/0xc8) are now lowered (`shift_bitop` in `fast/lower/shift.rs`, `ShiftDyn`
+  flags). `fast_diff forms` 16 runs x 5000 trials, both backends: 0 mismatches; seven DN2 pins, `scenarios:check`
+  in both configs (61 each), 134 of 134 FX scenarios AOT = no-AOT, DT2 clean tone. 0x1c926f now runs 23 instructions
+  per call (was 4) and exits at an edge to 0xb813e8; 0x1c963b runs 35 (was 18) and stops at form 25a with unknown
+  address ranges. The probe medians moved 5% between sessions for the unchanged configuration (1.14 -> 1.20), so no
+  speed change is claimed: each lifted stop exposes the next structural one.

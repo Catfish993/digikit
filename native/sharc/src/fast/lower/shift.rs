@@ -195,6 +195,31 @@ impl Lower {
         Ok(())
     }
 
+    /// `RN = bset / bclr / btgl RX by RY` (opcode 0xc0 / 0xc4 / 0xc8): a
+    /// position above 31 leaves RX as it is. SZ from the result, SV when the
+    /// position is above 31, SS cleared (`flags.py` `_astatx_bit_field`).
+    pub fn shift_bitop(&mut self, opcode: u32, rn: u32, rx: u32, ry: u32) -> LR<()> {
+        let x = self.rd_i(rx)?;
+        let pos = self.rd_i(ry)?;
+        let k31 = self.ci(31);
+        let oob = self.bin(Bin::GtU, pos, k31);
+        let one = self.ci(1);
+        // A count above 31 is masked by the backend; the select discards it.
+        let m = self.bin(Bin::Shl, one, pos);
+        let changed = match opcode {
+            0xc0 => self.bin(Bin::Or, x, m),
+            0xc4 => {
+                let nm = self.un(Un::Not, m);
+                self.bin(Bin::And, x, nm)
+            }
+            _ => self.bin(Bin::Xor, x, m),
+        };
+        let value = self.select(oob, x, changed);
+        self.wr_i(rn, value)?;
+        self.pend_flag(FlagKind::ShiftDyn, vec![value, oob]);
+        Ok(())
+    }
+
     pub fn form_6b(&mut self, d: &Dec) -> LR<()> {
         if d.field("cond") != Some(0x1f) {
             return refuse("conditional 6b");
