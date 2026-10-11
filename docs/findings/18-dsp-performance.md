@@ -1547,3 +1547,20 @@ anyway with the warning; the `sharc_gen` hash then decides how much applies. Ret
 
 New: `DIGI_EMU_PGO_VARIANT=NAME` builds the launcher's profile-use binary in target variant NAME instead of `pgo-use`
 (scratch builds, measurements); `native_pgo.py plan|verify|check --device dt2`.
+
+## App soak: latency and DT2 2026-10-11 **[D]**
+
+Unattended app runs (`tools/app_soak.py`: Trig 1 every 2 s, TRIG/SRC/FLTR/AMP/FX page changes every 5 s, frame
+revisions confirm the presses land), paced controller, spike log over the whole app life including boot.
+
+| run | prefill | DSP load overall / p99 window / max | queue min | underruns |
+|---|---:|---:|---:|---:|
+| DN2, DN2 profile (stale: sources changed) | 0.3 s | 0.926 / 1.004 / 1.086 | 99 ms | 0 |
+| DN2 (page codes partly guessed) | 0.15 s | 0.915 / 1.033 / 1.109 | 69 ms | 0 |
+| DT2 1.16, DT2 profile, `gen-lane-entry` | 1 s | 0.953 / 1.048 / 1.092 | 109 ms | 0 |
+| DT2 1.16, DT2 profile, `gen-lane-entry` | 0.3 s | 0.958 / 1.059 / 1.099 | 113 ms | 0 |
+
+- Every behind-real-time window is DSP-caused; the 1 s and 0.3 s buffers absorb the over-budget windows. The
+  launcher default prefill is now 0.3 s (was 1 s).
+- DT2 has no fast-tier regions (`fast_present: false`), which is why its load is above DN2's; a DT2 region list is
+  the next DT2 lever. One machine, one run per row, not re-checked by a second agent.
