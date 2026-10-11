@@ -23,6 +23,7 @@ digi-coupled = { path = "../coupled" }
 dt2-firmware-loader = { path = "../loader" }
 elektron-native-boot = { path = "../boot" }
 emmc-card = { path = "../card" }
+plusdrive-format = { path = "../plusdrive" }
 serde_json = "1"
 sha2 = "0.10"
 

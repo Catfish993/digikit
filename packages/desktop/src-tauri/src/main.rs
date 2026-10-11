@@ -18,6 +18,8 @@ use tauri::State;
 
 struct Host {
     handle: Handle,
+    /// Where the webview's chosen sample files are staged before the card is built.
+    staging: PathBuf,
 }
 
 fn parse_args() -> Result<StartupArgs, String> {
@@ -209,6 +211,98 @@ async fn emu_stop(host: State<'_, Host>, session_id: u64) -> Result<(), String> 
     }
 }
 
+/// A header value the webview percent-encoded (`encodeURIComponent`).
+fn percent_decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = text.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// Forget the staged sample files (the start of a new folder choice).
+#[tauri::command]
+async fn emu_card_reset(host: State<'_, Host>) -> Result<(), String> {
+    let dir = host.staging.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Stage one chosen `.wav` file: the raw body, its name in `x-name`.
+#[tauri::command]
+async fn emu_card_stage(
+    host: State<'_, Host>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let name = request
+        .headers()
+        .get("x-name")
+        .and_then(|value| value.to_str().ok())
+        .and_then(percent_decode)
+        .ok_or("missing x-name")?;
+    // A bare file name: the folder choice is flat, and nothing may escape the staging directory.
+    if name.is_empty()
+        || name.starts_with('.')
+        || name.contains(['/', '\\', '\0'])
+        || !name.to_ascii_lowercase().ends_with(".wav")
+    {
+        return Err(format!("not a sample file name: {name}"));
+    }
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        _ => return Err("sample files must use a raw byte body".into()),
+    };
+    let dir = host.staging.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::write(dir.join(name), bytes).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Build the card of the staged files and restart the DT2 on it; progress is
+/// read with `emu_card_status`.
+#[tauri::command]
+async fn emu_card_load(host: State<'_, Host>) -> Result<Value, String> {
+    let (handle, dir) = (host.handle.clone(), host.staging.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        handle
+            .call(
+                "card.load",
+                serde_json::json!({"dir": dir.display().to_string(), "wait": false}),
+            )
+            .map_err(|e| e.message)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn emu_card_status(host: State<'_, Host>) -> Result<Value, String> {
+    let handle = host.handle.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        handle
+            .call("card.status", serde_json::json!({}))
+            .map_err(|e| e.message)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The desktop `--scenario` mode ends the app when the controller reports the
 /// scenario done: write the report (to `--report` or stdout) and exit.
 fn exit_on_scenario_done(handle: &Handle, report: Option<PathBuf>) {
@@ -276,6 +370,7 @@ fn main() {
         Mode::Free
     };
     config.run_dir = run_dir.clone();
+    let run_dir_for_staging = run_dir.clone();
     config.on_quit = Some(Box::new(|| {
         // Let the socket thread write the reply first.
         std::thread::sleep(std::time::Duration::from_millis(200));
@@ -341,7 +436,10 @@ fn main() {
     };
     #[cfg(not(unix))]
     let _ = (&run_dir, Dispatcher::new);
-    let host = Host { handle };
+    let host = Host {
+        handle,
+        staging: run_dir_for_staging.join("cards").join("staging"),
+    };
     tauri::Builder::default()
         .manage(host)
         .invoke_handler(tauri::generate_handler![
@@ -355,7 +453,11 @@ fn main() {
             emu_button,
             emu_turn,
             emu_tap,
-            emu_stop
+            emu_stop,
+            emu_card_reset,
+            emu_card_stage,
+            emu_card_load,
+            emu_card_status
         ])
         .run(tauri::generate_context!())
         .expect("tauri runtime error");

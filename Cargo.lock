@@ -861,6 +861,7 @@ dependencies = [
  "dt2-firmware-loader",
  "elektron-native-boot",
  "emmc-card",
+ "plusdrive-format",
  "serde_json",
  "sha2",
 ]

@@ -4,6 +4,7 @@ import type { DspStart } from '../dsp-worker.ts';
 import type { DspStats, FastRegions } from '../split-session.ts';
 import fastRegionTable from '../../../../tools/fast_regions.json';
 import { sha256Hex } from './local-inputs';
+import type { CardBridge, CardStatus } from './cards';
 
 const pcs = (list: string | undefined) => (list ?? '').split(',').filter((x) => x.trim()).map((x) => parseInt(x.trim(), 16));
 
@@ -74,6 +75,8 @@ export interface EmulatorRuntime {
   diagnostics(): Promise<RuntimeDiagnostics>;
   /** Native desktop only: save a report to disk; returns the path written. */
   saveDiagnostics?(name: string, json: string): Promise<string>;
+  /** Native desktop only (Digitakt II): the controller builds a card from the files and boots with it. */
+  cards?: CardBridge;
   load(bytes: Uint8Array, name: string): Promise<RuntimeSnapshot>; restart(): Promise<RuntimeSnapshot>;
   pause(): void; resume(): void; press(code: number): Promise<void>; release(code: number): Promise<void>;
   turn(encoder: number, detents: number): Promise<void>; stop(): Promise<void>; dispose(): void;
@@ -206,6 +209,12 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
   }
   return {
     saveDiagnostics: (name: string, json: string) => api.invoke<string>('emu_save_diagnostics', { name, json }),
+    cards: {
+      reset: () => api.invoke<void>('emu_card_reset'),
+      stage: (name, bytes) => api.invoke<void>('emu_card_stage', bytes, { headers: { 'x-name': encodeURIComponent(name) } }),
+      load: () => api.invoke<unknown>('emu_card_load'),
+      status: () => api.invoke<CardStatus>('emu_card_status'),
+    },
     async diagnostics() { const session = activeSession; if (session === undefined) throw new Error('No firmware selected'); const report = await api.invoke<RuntimeDiagnostics>('emu_diagnostics', { sessionId: session }); if (disposed || activeSession !== session) throw new Error('Firmware session changed during diagnostic export'); return { ...report, host: metrics.report() }; },
     async nativeAudio() {
       const session = activeSession;
