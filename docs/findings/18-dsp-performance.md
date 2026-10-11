@@ -1519,3 +1519,31 @@ in real time (1.06); a bit-reduction scene does not (DSP 1.05, real-time factor 
 firmware hash and an AOT = fast = no-AOT gate over the 60 FX scenarios; on DN2 the list is worth 19% over AOT without PGO.
 Not tried **[O]**. A promoted `gen` or a later entry round changes `sharc_gen`, so the profile needs a retrain
 (`check --device dt2` reports stale).
+
+## Launcher: per-device PGO 2026-10-11 **[D]**
+
+The launcher now picks the profile by the firmware's device. `native_emu.device_for_args` maps `--audio-profile-syx`
+(else the default firmware) to `dn2` or `dt2` through `digi_env.device_for_syx`; `native_pgo.pgo_state`, `current_profile`,
+`check_state`, `launch_plan`, `training_blocker` and the notices take that device. DT2 reads
+`out/native/pgo/dt2/<triple>/manifest.json` (key as in `train --device dt2`, workload name included); DN2 is unchanged.
+Layout unchanged: the app binary is still `out/native/target/<gen-key>/pgo-use/<triple>/release/digiemu-desktop`, and the
+gen key already differs per device (a DT2 gen gives `g-<hash>`, the DN2 gen is `prod`), so the two binaries never share a
+target dir. No merge of profiles: a merged DN2 plus DT2 profile would not help, because each binary is built from one gen
+and `sharc_gen` has a different crate hash per gen, so each profile only matches its own device's binary.
+
+Coverage, measured on a DT2 desktop build (`SHARC_GEN_DIR=gen-lane-entry`, the gen the profile was trained with): the profile
+matches `sharc_native`, `sharc_gen` and `sharc_rt` (same crate hashes as the `coupled-run` build) and does not match the
+app's `elektron_native_boot` (as for the coupled-run profile in the section above). The DSP engine and the AOT blocks are in the
+matching crates, so the app's DSP cost should follow the 0.94 (trig) and 1.05 (bit reduction) measured on `coupled-run` with
+the same profile; the ColdFire thread (0.44 to 0.55 per audio s, parallel) is not profile-optimised in the app. Not measured on
+the app itself: it has no headless DT2 workload **[O]**. `native_pgo.py verify --device dt2` ignores
+`elektron_native_boot` (`DT2_APP_UNPROFILED`) and prints `ok` for this build; the launcher passes `--device` and the built
+binary to it, and prints the DT2 retrain command (`native_pgo.py train --device dt2`) when a DT2 profile is missing, stale
+or mismatched.
+
+The registered gen of the DT2 image (`out/native/gen-index.json` -> `dt2-audio/gen`) is not the gen the profile was trained
+with (`gen-lane-entry`), so a launch with the registered gen reports the profile stale (`changed: generated`) and uses it
+anyway with the warning; the `sharc_gen` hash then decides how much applies. Retrain after promoting a gen.
+
+New: `DIGI_EMU_PGO_VARIANT=NAME` builds the launcher's profile-use binary in target variant NAME instead of `pgo-use`
+(scratch builds, measurements); `native_pgo.py plan|verify|check --device dt2`.

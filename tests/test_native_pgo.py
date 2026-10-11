@@ -37,7 +37,9 @@ def tree(tmp_path, monkeypatch):
     toolchain = tmp_path / "toolchain"
     toolchain.mkdir()
     monkeypatch.setattr(native_pgo, "ROOT", tmp_path)
-    monkeypatch.setattr(native_pgo, "state_dir", lambda triple=None: state)
+    monkeypatch.setattr(
+        native_pgo, "state_dir", lambda triple=None, device="dn2": state
+    )
     monkeypatch.setattr(native_pgo, "toolchain_dir", lambda: toolchain)
     monkeypatch.setattr(native_pgo, "rustc_version", lambda: "rustc 1.98.1")
     profdata = state / "p.profdata"
@@ -171,6 +173,40 @@ def test_launch_plan_uses_a_stale_profile_with_a_warning(tree, monkeypatch):
     assert "mise run pgo" in notice
 
 
+def test_dt2_state_reads_the_dt2_manifest(tree, monkeypatch):
+    dt2 = tree / "state-dt2"
+    dt2.mkdir()
+    monkeypatch.setattr(
+        native_pgo,
+        "state_dir",
+        lambda triple=None, device="dn2": tree / "state" if device == "dn2" else dt2,
+    )
+    assert native_pgo.check_state(tree / "gen", "", "", "dt2")[0] == "missing"
+    manifest = json.loads((tree / "state" / "manifest.json").read_text())
+    # The DT2 key carries the DT2 workload name, so a DN2 manifest is stale.
+    (dt2 / "manifest.json").write_text(json.dumps(manifest))
+    assert native_pgo.check_state(tree / "gen", "", "", "dt2")[1] == "changed: workload"
+    manifest["components"]["workload"] = native_pgo.DT2_WORKLOAD_NAME
+    (dt2 / "manifest.json").write_text(json.dumps(manifest))
+    assert native_pgo.check_state(tree / "gen", "", "", "dt2")[0] == "ok"
+    assert native_pgo.current_profile("dt2") == str(tree / "state" / "p.profdata")
+
+
+def test_dt2_notices_name_the_dt2_train_command():
+    assert "train --device dt2" in native_pgo.fallback_notice("missing", "x", "dt2")
+    assert "train --device dt2" in native_pgo.fallback_notice("stale", "x", "dt2")
+    assert "train --device dt2" in native_pgo.stale_notice("x", "dt2")
+    assert "--device" not in native_pgo.fallback_notice("stale", "x")
+    assert "mise run pgo" in native_pgo.stale_notice("x")
+
+
+def test_pgo_variant_can_be_redirected_for_a_scratch_build():
+    assert native_pgo.pgo_variant({}) == "pgo-use"
+    assert (
+        native_pgo.pgo_variant({"DIGI_EMU_PGO_VARIANT": "pgo-scratch"}) == "pgo-scratch"
+    )
+
+
 def test_fallback_notice_is_prefixed_with_warning():
     for status, detail in (
         ("stale", "changed: sources"),
@@ -230,6 +266,16 @@ def test_binary_crates_reads_nm_output(monkeypatch):
         "sharc_native": {"ZZZ999"},
         "sharc_rt": {"ZZZ999"},
     }
+
+
+def test_dt2_app_ignores_its_own_boot_crate():
+    profile = {"sharc_native": {"A"}, "elektron_native_boot": {"B"}}
+    binary = {"sharc_native": {"A"}, "elektron_native_boot": {"C"}}
+    assert native_pgo.crate_mismatches(profile, binary)
+    ignore = native_pgo.DT2_APP_UNPROFILED
+    assert native_pgo.crate_mismatches(profile, binary, ignore) == []
+    binary["sharc_native"] = {"Z"}
+    assert native_pgo.crate_mismatches(profile, binary, ignore)
 
 
 def test_crate_mismatches_reports_only_disjoint_crates():
