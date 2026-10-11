@@ -118,3 +118,17 @@ fast-tier build and compile time). The coupled run loop writes `DIR/cf.jsonl`
 the wait for DSP replies, the audio queue). Setting it turns link timing on.
 Read it with `uv run python tools/spikes.py DIR`: it names the largest cost
 of every window that fell behind real time (dsp, compile, cf, ui-gap).
+
+## Browser bench (`mise run web:bench`)
+
+Headless Chrome/Chromium throughput of the coupled browser core (DN2, local
+inputs): `mise run web:bench -- --seconds 10 --runs 3 [--js-flags "..."]
+[--profile]` (exclusive bench lock, own `astro dev` on port 4399;
+`tools/browser_bench.mjs`, page mode `/?bench=1&seconds=N` in
+`packages/web/src/runtime/bench.ts`). Prints JSON: audio s per wall s (whole
+run, first and last half, per audio second), worker busy time inside the step
+call, DSP and ColdFire instructions per audio s. `--profile` adds a CDP CPU
+profile of the worker (DSP / ColdFire / idle split by wasm function name, top
+functions). Needs the firmware at the repo root or `DIGI_EMU_SYX`, and
+`packages/web/.local/emulator-core-sharc.wasm`. Chrome is used if installed,
+else Chromium or Edge (`--chrome PATH`).

@@ -49,7 +49,7 @@ function sendPcm() {
 }
 /** On-demand observational report; no stepping or new device reads. */
 function coupledReport() {
-  return { ...call('digi_sharc_stats'), pcm_values: pcmValues, ...pcmMetrics(pcmValues, performance.now() - audioStartedAt), dsp_attached: coupled, pcm_port_connected: Boolean(audioPort), host: metrics.report() };
+  return { ...call('digi_sharc_stats'), cf_icount: lastIcount, pcm_values: pcmValues, ...pcmMetrics(pcmValues, performance.now() - audioStartedAt), dsp_attached: coupled, pcm_port_connected: Boolean(audioPort), host: metrics.report() };
 }
 /** Copy a page-supplied buffer into the module; returns its pointer. */
 function put(bytes: Uint8Array) {
