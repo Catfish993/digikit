@@ -1301,3 +1301,96 @@ Timing (trig1-taps, 8 audio s, 3 runs each, exclusive lock, load 2 to 4, PCM `f6
 | fast-only (`static-insns+follow`, no AOT) | 5.02 -> **4.86** (-3.2%; includes about 3 s of one-time compile of 6000 kernels) | region calls 91.9M -> 87.0M (-5.3%), interpreted 1.45% -> 1.44% |
 | default (shipped regions) | 1.107 -> 1.108 | no region changes |
 | shipped + 0x1cdb85, 0x1c0c9d, 0x1c926f, 0x1c25cc, 0x1c963b | 1.131 -> **1.110** (-1.9%) | same calls |
+
+## Kernels that follow calls: proof 2026-10-11 **[D]**
+
+Question: can a fast-tier kernel follow a call into its callee and come back (CALL ... RETURN inside one kernel), and
+does that deliver the modelled gain? One lane, base 9bba563, DN2 1.11 `trig1-taps` 10.5 audio s, PCM `e0e6c8af7a84c443`
+in every run listed. Not re-checked by a second agent. Switch: `SHARC_FAST_RETFOLLOW=0` turns the new code off.
+
+**What the compiler call is.** The firmware's calls are `25a_direct` (CJUMP, a delayed jump with `R2 = I6; I6 = I7`, the
+return address pushed by a `16a` store in the slots) and the return is the indirect `JUMP (M14, I12) (DB)` with
+RFRAME in its slots (`cfg::NodeKind::Return`). Neither touches the PC stack, call stack or `at_loaded_entry`
+(stack model), so a kernel can follow them with no state to replay at an exit. The kernel already followed the CALL
+(an edge inside the region when the target lies within 0x1000 and in the same loop context); only the return always
+left (`Site::pc == DYN_PC`). That is the 39% "ret" share of the run-length data. Hardware `CALL`/`RTS` (`Tail::Call`,
+`Tail::Rts`) are not touched.
+
+**Design (cfg.rs, lower/flow.rs).**
+- A CJUMP whose callee is in the kernel makes the instruction after its slots a continuation (`Structure::conts`);
+  each `Return` of that callee (a walk that steps over nested calls) gets the continuation in `NodeKind::Return::conts`.
+- The lowered return stores the run-time target as before, then for each continuation `BrIf(target == cont)` to its
+  label; no match leaves at `DYN_PC` as before. Exact by construction: the kernel continues where the interpreter
+  would land, and a mismatch exits with the same state as today.
+- At the continuation the register ranges are the call site's minus every register the callee (with everything it
+  calls) can write (`Plan::node_written`), MODE1 and known flag bits as at the call (`Lower::cont_saved`); loop heads
+  also blank what followed callees write (`written_in`), and a compare/forget pair across a dispatch is refused.
+- A call inside a loop to code outside the loop's range: the callee's instructions take the caller's loop context
+  (`propagate_call_ctx`, only when the callee has no DO of its own and no other context uses it).
+- Calls follow at any distance (`CALL_REACH` 0xff_ffff), `MAX_CFG_JUMPS` 16 -> 64 and `MAX_CFG_LOOPS` 12 -> 24 (ctx
+  layout), `SHARC_FAST_MAXNODES` (default still 400).
+- The I7 push (K2's item): `form_16a` now goes through `dm_transfer_w` (static, guarded dynamic or flat window like the
+  other stores) instead of a static window only. Minimum change; K2 may replace it.
+- The `STKYX` bit 26 bookkeeping needed two fixes the new unit test found: a DO after a loop end in one run (var value 3)
+  and a loop end with STKYX not fully known (the generic core's `_bitwise` gives Unknown) in `glue::sites::apply`.
+- Diagnostic: `SHARC_FAST_KTIME=1` prints cumulative wall ns per CFG kernel root (kernel.run only).
+
+**Exactness [V by pins].** `cargo test` workspace (prod gen) passes, with the new `fast_kernel_follows_calls_and_returns`
+(runs of >= 100 insns across nested calls, call in a DO loop, callee DO loop) and the existing
+`fast_calls_and_returns_match_the_interpreter` (state equal to the interpreter at five step sizes; it found the two
+STKYX cases). `verify.py --only build,pins,check` and `--only check-no-aot` pass; trig1-taps with the chain armed passes
+10.5 s. `fast_diff` was not run (it needs a captured state and has no call/return generator; the `16a` change is covered
+by the pins only).
+
+**Chain (default config, shipped regions plus 0x1c94f7, 0xb84d99, 0xb84d12, 0xb836ff armed; exclusive lock, 2 paired
+rounds, DSP s per audio s excluding the one-time 0.62 s compile and build).**
+
+| | run time | region calls/s | kernel insns/s |
+|---|---|---|---|
+| base, shipped regions | 1.129 1.128 | 0.503M | 266.7M |
+| base, chain armed (kernels stop at the 16a push) | 1.134 1.127 | 0.532M | 266.8M |
+| new, chain armed | 1.115 1.118 | 0.461M | 289.6M |
+| new, `RETFOLLOW=0`, chain armed | 1.133 1.151 | 0.532M | 266.9M |
+| new, shipped regions only | 1.127 1.160 | 0.503M | 266.7M |
+
+Runs differ by +-0.015. Root 0x1c94f7: 20 -> 15,705 insns per call (72k -> 4.5k calls per 3 audio s); 0xb84d12: 24 ->
+2,447. Model: 22.8M insns/s move from AOT (4.4 ns) to kernel (0.5 ns) and 71k calls/s disappear (266 ns):
+saves 108 ms/s (9.5%). Measured 15-35 ms/s (1.5-3%).
+**In-situ ns per instruction** (`SHARC_FAST_KTIME`): 0x1c94f7 2.08 (Cranelift `none`) and 1.57 (`speed`), the shipped
+cluster 0xb8276c 1.01 and 0.82, against the model's 0.5. With 2.08 the model gives 71 ms/s. The cause is op count: the
+0x1c94f7 kernel has 19-21k ops for 384 insns (50 per insn; 0xb8276c 19) and 167 flat guarded accesses (105 are `15b`
+frame loads), because I6 and I7 lose their ranges across the call (the callee writes them, `RFRAME` restores them, the
+analysis cannot see that).
+
+**Fast-only (no-AOT, `static-insns+follow`, every instruction a root), 10.5 s, PCM pin held:**
+
+| | base | new |
+|---|---|---|
+| region calls/s | 11.52M | 8.70M (-24%) |
+| interpreted insns/s | 7.3M | 12.3M |
+| run time (CPU - compile - build) | 2.369 | 3.028 (+28%) |
+| compile / build (s per run) | 16.5 / 3.5 | 35.9 / 19.2 |
+
+Exits per 3 audio s: edge 13.2M -> 5.3M, ret 8.6M -> 5.2M, stop 7.1M -> 8.8M, total 30.4M -> 20.7M (-32%). The stops
+grew because a CALL whose slot store has no range (I7 after an earlier followed call) is denied (flat slots are limited
+to returns, below); the engine then declines 'pending transfer' at the armed slot addresses (1.5M -> 4.0M per 3 s).
+
+**Verdict: NO-GO as built, medium confidence.** The call reduction on the chain is as modelled (16x fewer calls per
+root) and the exactness holds, but the in-situ cost of the extended kernels is 3-4x the 0.5 ns model (1.6-2.1 ns),
+so the gain is about a fifth of the model, and in the all-roots fast-only configuration the net effect is negative
+(compile 2x, more stops and declines). Following calls is not the blocker; kernel quality and coverage after the call are.
+Estimate for general following in fast-only: calls fall from 11.5M to about 3M/s (the stop, exit and guard share, 9.5M
+per 3 s); at 1.5 ns per kernel insn and 105 ns per interpreted insn that is about 2.1 DSP s per audio s against
+2.37, far from the < 1M calls/s bar.
+
+**What generalising needs (in order).** (1) Ranges for I6/I7 (and callee-saved index registers) across a return: keep
+the call site's range at the continuation and guard it at the dispatch (`(I - base) in [lo, hi]` against the entry
+value); expect ops per insn to fall toward the cluster kernels' 19. An unguarded experiment is not enough because
+`mark_flat_pc` is process-wide and sticky. (2) A kernel-local return stack for hardware `CALL`/`RTS` (the
+`Tail::Call` push and `Tail::Rts` pop replayed at an exit; `max_call_depth` and the PC stack depth checked at entry).
+(3) Callees with their own DO loops under a caller loop (loop depth and `deepest_in_region`). (4) Share callee code between
+kernels (direct kernel-to-kernel calls) instead of duplicating it: compile time doubled. (5) **[O]** flat accesses in
+the delay slots of a Jump (not a Return) crash the DSP thread in the all-roots no-AOT run after about 7 audio s
+(root 0xb80515, SIGBUS in a flat window load); flat slot marking is therefore limited to Return nodes
+(`lower_cfg` error path). Find the cause before lifting it. (6) Region selection for kernels with many exits (stop
+nodes) so declines at slot addresses do not appear.
