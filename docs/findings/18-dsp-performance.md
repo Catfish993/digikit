@@ -1476,3 +1476,46 @@ across the call; neither is a range question.
 **Verdict: NO-GO, medium confidence.** 0x1c94f7 stays at 2.06 ns/insn (needs <= 0.8) and the no-AOT run time at 3.02
 (needs < 2.37). PCM `e0e6c8af7a84c443` held in every chain and no-AOT run above; the exactness gates hold, with the code that is committed (K1 merged, `16a` always through
 `dm_transfer`). Open: the Jump-slot SIGBUS (root 0xb80515) was not chased.
+
+## DT2 PGO 2026-10-11 **[D]**
+
+Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), core `out/native/dt2-audio/gen-lane-entry` (the entry-search
+core; `gen` is not it and is unchanged), headless `coupled-run` on the one-sample card, default config (AOT, idle skip,
+interpreter; no DT2 fast regions). One machine, load average 2.2 to 3.2 (other lanes running), exclusive alternating pairs,
+6 per cell (`tools/coupled_ab.py --dt2-card --device dt2`). Not re-checked by a second agent.
+
+**Workload: instrumented `coupled-run`, not the desktop app.** The app's `--pgo-train` runs the `coupled_ready_exactness`
+gate, which restores the DN2 ready snapshot and pins a DN2 PCM; DT2 would need a second gate, its own fixtures and an app
+mode to select them. `coupled-run` already runs DT2 on the card's ready state, so `tools/native_pgo.py train --device dt2`
+builds it with `-Cprofile-generate` (target dir variant `pgo-dt2-instrument`), runs `dt2-sample-trig` (3 s), `tf-br-127`
+(2 s), `sf-del-ppwidth-u50`, `sf-rev-decay-u50` and `sf-mst-thr0` (4 s each; delay send, reverb send, master compressor)
+three times (42 s per pass, instrumented), and merges. Profile (8.2 MB):
+`out/native/pgo/dt2/aarch64-apple-darwin/profiles/48c76e4edd336a0c35fa908fd1516f1055e00f5416ca4f2acacb91997f163dca.profdata`
+(manifest next to it; key `f77b62da`). The profile applies to `coupled-run` (the crate hashes of `sharc_native`, `sharc_gen`,
+`sharc_rt` and `elektron_native_boot` match, and they are the same in a worktree and the main tree, so a main-tree build
+uses it). It does not train the desktop app's DT2 build (the app's `elektron_native_boot` differs, as for DN2). New options:
+`native_pgo.py train|check --device dt2`, `native_pgo.py coupled-build --device dt2 [--profile PATH|current] [--variant V]`
+(plain or profile build, prints the crate-hash check), `dt2_sample_check.py --binary PATH`. The DN2 paths are unchanged
+(`plan` and `check` output identical before and after).
+
+| DSP CPU per audio s (median of 6, IQR) | no PGO | DT2 profile | paired ratio | CF CPU per audio s (no PGO / PGO) | real-time factor (no PGO / PGO) |
+|---|---:|---:|---:|---:|---:|
+| dt2-sample-trig (3 s) | 1.150 (0.024) | **0.938** (0.010) | **0.814** (0.804 to 0.840) | 0.482 / 0.444 | 0.866 / 1.060 |
+| tf-br-127 (2 s, bit reduction) | 1.289 (0.037) | **1.051** (0.039) | **0.813** (0.808 to 0.818) | 0.620 / 0.546 | 0.724 / 0.896 |
+
+Cross-device: the DN2 profile (`a76e820c...`, stale for the current sources) applied to the DT2 build (only
+`elektron_native_boot` mismatches): dt2-sample-trig 1.148 -> 1.116 (ratio 0.973, 0.949 to 1.013), tf-br-127 1.279 -> 1.225
+(0.958, 0.940 to 0.976). Worth 3% to 4%, through shared engine code only, so DT2 needs its own profile.
+
+Exactness. PCM hash equal in every run of each scenario: `dt2-sample-trig` 999dd10944ce7e62 (plain, DT2 profile, DN2
+profile) and `tf-br-127` 18ea948d77b551da; interpreted instruction counts equal (5,926,406 and 5,682,912).
+`dt2_sample_check.py --seconds 3.0` with the plain and the DT2-profile binary, and the DT2-profile binary with the default
+fast tier: clean tone (peak share 0.99995) and WAV hash `4bab8330915f0929`.
+
+What dominates at 0.94 to 1.05. Interpreted code is 5.7M to 5.9M of about 950M instructions per run (0.6%), so the cost is
+the AOT blocks plus the ColdFire thread, which runs in parallel (0.44 to 0.55 per audio s). The trig is under 1.0 and runs
+in real time (1.06); a bit-reduction scene does not (DSP 1.05, real-time factor 0.90). A DT2 fast-region list
+(`tools/fast_regions.json` has only the DN2 1.11 entry) is not cheap: it needs a region profile of the DT2 DSP, a list per
+firmware hash and an AOT = fast = no-AOT gate over the 60 FX scenarios; on DN2 the list is worth 19% over AOT without PGO.
+Not tried **[O]**. A promoted `gen` or a later entry round changes `sharc_gen`, so the profile needs a retrain
+(`check --device dt2` reports stale).
