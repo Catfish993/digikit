@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { panels } from '../data/faceplates';
 import { localReadyFirmwareSha256 } from '../data/device-profiles';
 import { browserRuntime, drawFrame, nativeRuntime, type EmulatorRuntime, type NativeAudioStatus, type RuntimeUpdate } from '../runtime/runtime';
@@ -151,6 +151,12 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
       pollCard();
     } catch (error) { setCardBusy(false); setCardStatus({ state: 'error', message: String(error) }); }
   };
+  // A DT2 that has just started may have mounted the last card on its own: show it, or the hint.
+  createEffect(() => {
+    const cards = runtime()?.cards;
+    if (!cards || !loaded() || device() !== 'dt2' || cardBusy()) return;
+    cards.status().then((status) => { if (!cardBusy()) setCardStatus(status); }, () => undefined);
+  });
   onCleanup(() => { if (cardTimer) window.clearTimeout(cardTimer); });
   const exportDiagnostics = async () => {
     try {

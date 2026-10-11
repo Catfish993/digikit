@@ -212,7 +212,7 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     cards: {
       reset: () => api.invoke<void>('emu_card_reset'),
       stage: (name, bytes) => api.invoke<void>('emu_card_stage', bytes, { headers: { 'x-name': encodeURIComponent(name) } }),
-      load: () => api.invoke<unknown>('emu_card_load'),
+      load: (name) => api.invoke<unknown>('emu_card_load', { name: name ?? null }),
       status: () => api.invoke<CardStatus>('emu_card_status'),
     },
     async diagnostics() { const session = activeSession; if (session === undefined) throw new Error('No firmware selected'); const report = await api.invoke<RuntimeDiagnostics>('emu_diagnostics', { sessionId: session }); if (disposed || activeSession !== session) throw new Error('Firmware session changed during diagnostic export'); return { ...report, host: metrics.report() }; },

@@ -237,6 +237,10 @@ pub struct Config {
     pub events: Events,
     /// Called on the controller thread when `quit` arrives, after the reply.
     pub on_quit: Option<Box<dyn Fn() + Send>>,
+    /// Keep the last loaded card in `<run_dir>/cards/last.json` and mount it
+    /// again when a DT2 firmware is loaded without a card (the desktop app;
+    /// off for scenarios and tests, which must not depend on earlier runs).
+    pub remember_card: bool,
 }
 
 impl Config {
@@ -248,6 +252,7 @@ impl Config {
             run_dir: PathBuf::from("out/native/run"),
             events: Events::default(),
             on_quit: None,
+            remember_card: false,
         }
     }
 }
@@ -402,6 +407,7 @@ struct Actor {
     card_last: Value,
     /// Press NO once the runtime is ready (closes DT2's FILE SYSTEM OK modal).
     auto_no: bool,
+    remember_card: bool,
     quit: bool,
 }
 
@@ -445,6 +451,7 @@ impl Actor {
             card_job: None,
             card_last: json!({"state": "idle"}),
             auto_no: false,
+            remember_card: config.remember_card,
             quit: false,
         }
     }
@@ -685,6 +692,7 @@ impl Actor {
         }
         self.cancel_card();
         self.audio = self.audio_default.clone();
+        self.card_last = json!({"state": "idle"});
         self.runtime = None;
         self.read_error = None;
         self.session = next;
@@ -693,13 +701,63 @@ impl Actor {
         if bytes.len() > MAX_SYX {
             return Err("firmware image exceeds 32 MiB cache limit".into());
         }
-        let (runtime, error) = runtime_from(&bytes, image.clone(), self.audio.as_ref())?;
+        let mounted = if image.is_none() {
+            self.remembered_card(&bytes)
+        } else {
+            None
+        };
+        let (runtime, error, image) = match mounted {
+            Some((last, paths)) => {
+                let mut audio = self.audio.clone();
+                if let (Some(audio), true) = (audio.as_mut(), paths.ready_cached()) {
+                    audio.snapshot = paths.snapshot();
+                    audio.state = paths.dsp_state();
+                }
+                match runtime_from(&bytes, Some(paths.image.clone()), audio.as_ref()) {
+                    Ok((runtime, error)) => {
+                        self.audio = audio;
+                        self.card_last = json!({
+                            "state": "ready", "phase": "ready", "message": "Card mounted",
+                            "fraction": 1.0, "key": paths.key, "name": last.name,
+                            "samples": last.samples, "auto": true,
+                            "card": paths.image.display().to_string(),
+                        });
+                        (runtime, error, Some(paths.image))
+                    }
+                    // A cache that no longer boots: start without a card.
+                    Err(_) => {
+                        let (runtime, error) = runtime_from(&bytes, None, self.audio.as_ref())?;
+                        (runtime, error, None)
+                    }
+                }
+            }
+            None => {
+                let (runtime, error) = runtime_from(&bytes, image.clone(), self.audio.as_ref())?;
+                (runtime, error, image)
+            }
+        };
         self.loaded = Some(Loaded::stock(bytes, image));
         self.install(runtime, error);
         let snapshot = self.runtime.as_mut().expect("new runtime").snapshot();
         self.startup_snapshot = Some(snapshot.clone());
         self.emit("session.changed", json!({"reason": "load"}));
         Ok(snapshot)
+    }
+
+    /// The card `last.json` names, when it is this DT2 firmware's and its
+    /// cache is whole (with audio the ready state must be cached too: a cold
+    /// boot is never started here).
+    fn remembered_card(&self, syx: &[u8]) -> Option<(cards::LastCard, CardPaths)> {
+        if !self.remember_card || plusdrive_format::Dt2Seed::from_syx(syx).is_err() {
+            return None;
+        }
+        let last = cards::read_last(&self.run_dir)?;
+        if last.firmware_sha256 != cards::sha256_hex(syx) {
+            return None;
+        }
+        let paths = CardPaths::new(&self.run_dir, &last.key);
+        let whole = paths.image.is_file() && (self.audio.is_none() || paths.ready_cached());
+        whole.then_some((last, paths))
     }
 
     fn ui_restart(&mut self, next_session: u64) -> Result<Snapshot, String> {
@@ -1799,6 +1857,8 @@ struct CardJob {
     reply: Option<RpcReply>,
     started: Instant,
     syx: Vec<u8>,
+    /// What the UI calls the card (the chosen folder's name).
+    name: String,
 }
 
 fn set_status(status: &Mutex<Value>, value: Value) {
@@ -1928,6 +1988,14 @@ impl Actor {
 
     fn rpc_card_load(&mut self, p: &Params, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
         let dir = PathBuf::from(p.str("dir")?);
+        let name = p
+            .opt_str("name")?
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                dir.file_name()
+                    .map_or_else(|| dir.display().to_string(), |n| n.to_string_lossy().into())
+            });
         let wait = p.opt_bool("wait")?.unwrap_or(true);
         let auto_no = p.opt_bool("auto_no")?.unwrap_or(true);
         if self.job.is_some() || self.card_job.is_some() {
@@ -1973,6 +2041,7 @@ impl Actor {
             reply: wait.then(|| reply.clone()),
             started: Instant::now(),
             syx,
+            name,
         });
         self.emit("card.started", json!({}));
         if wait {
@@ -1994,7 +2063,8 @@ impl Actor {
         };
         let job = self.card_job.take().expect("card job");
         let seconds = job.started.elapsed().as_secs_f64();
-        let result = outcome.and_then(|ready| self.install_card(&job.syx, ready, seconds));
+        let result =
+            outcome.and_then(|ready| self.install_card(&job.syx, &job.name, ready, seconds));
         match &result {
             Ok(report) => {
                 self.card_last = report.clone();
@@ -2017,6 +2087,7 @@ impl Actor {
     fn install_card(
         &mut self,
         syx: &[u8],
+        name: &str,
         ready: CardReady,
         seconds: f64,
     ) -> Result<Value, String> {
@@ -2037,9 +2108,21 @@ impl Actor {
             self.held_frame = runtime.snapshot().frame;
         }
         self.emit("session.changed", json!({"reason": "card"}));
+        if self.remember_card {
+            let last = cards::LastCard {
+                key: ready.paths.key.clone(),
+                name: name.to_string(),
+                samples: ready.samples,
+                firmware_sha256: cards::sha256_hex(syx),
+            };
+            // Not fatal: the card works, it just is not mounted next time.
+            if let Err(error) = cards::write_last(&self.run_dir, &last) {
+                eprintln!("card: could not remember the card: {error}");
+            }
+        }
         Ok(json!({
             "state": "ready", "phase": "ready", "message": "Card ready", "fraction": 1.0,
-            "key": ready.paths.key, "card": ready.paths.image.display().to_string(),
+            "key": ready.paths.key, "name": name, "card": ready.paths.image.display().to_string(),
             "samples": ready.samples, "audio": has_audio,
             "card_cached": ready.card_cached, "ready_cached": ready.ready_cached,
             "build_seconds": ready.build_seconds, "boot_seconds": ready.boot_seconds,

@@ -220,7 +220,7 @@ pub fn ensure_card(
     let source = json!({
         "key": paths.key,
         "format": FORMAT_TAG,
-        "firmware_sha256": Sha256::digest(syx).iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        "firmware_sha256": sha256_hex(syx),
         "samples": info.samples,
     });
     let _ = fs::write(
@@ -228,6 +228,56 @@ pub fn ensure_card(
         serde_json::to_string_pretty(&source).unwrap_or_default(),
     );
     Ok((paths, false))
+}
+
+/// The card the app mounts on its own at the next DT2 start
+/// (`<run_dir>/cards/last.json`): which cached card, for which firmware, and
+/// what to call it in the UI.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LastCard {
+    pub key: String,
+    pub name: String,
+    pub samples: usize,
+    pub firmware_sha256: String,
+}
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn last_path(run_dir: &Path) -> PathBuf {
+    run_dir.join("cards").join("last.json")
+}
+
+/// Remember `last` (through a `.part` file, so a crash keeps the old one).
+pub fn write_last(run_dir: &Path, last: &LastCard) -> Result<(), String> {
+    let path = last_path(run_dir);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(&json!({
+        "key": last.key, "name": last.name, "samples": last.samples,
+        "firmware_sha256": last.firmware_sha256,
+    }))
+    .map_err(|e| e.to_string())?;
+    let partial = path.with_extension("json.part");
+    fs::write(&partial, text).map_err(|e| format!("{}: {e}", partial.display()))?;
+    fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The remembered card, if `last.json` is readable.
+pub fn read_last(run_dir: &Path) -> Option<LastCard> {
+    let value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(last_path(run_dir)).ok()?).ok()?;
+    Some(LastCard {
+        key: value["key"].as_str()?.to_string(),
+        name: value["name"].as_str()?.to_string(),
+        samples: usize::try_from(value["samples"].as_u64()?).ok()?,
+        firmware_sha256: value["firmware_sha256"].as_str()?.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -362,6 +412,23 @@ mod tests {
         let (again, cached) = ensure_card(&dir.join("run"), &syx, &files, |_, _| {}).unwrap();
         assert!(cached);
         assert_eq!(again.image, paths.image);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn last_card_round_trips_and_ignores_garbage() {
+        let dir = scratch("last");
+        assert_eq!(read_last(&dir), None);
+        let last = LastCard {
+            key: "ab".repeat(32),
+            name: "Kick drums".into(),
+            samples: 7,
+            firmware_sha256: sha256_hex(b"fw"),
+        };
+        write_last(&dir, &last).unwrap();
+        assert_eq!(read_last(&dir), Some(last));
+        fs::write(dir.join("cards/last.json"), b"{not json").unwrap();
+        assert_eq!(read_last(&dir), None);
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -100,6 +100,31 @@ def generated_core(args: list[str] | None = None) -> pathlib.Path:
     return digi_env.generated_dir(image=image)
 
 
+def pgo_trained_core(device: str) -> pathlib.Path | None:
+    """The generated core the current PGO profile of DEVICE was trained on
+    (manifest `generated_dir`), so the launcher's default core matches the
+    profile without SHARC_GEN_DIR. None unless it exists and is current."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import native_pgo
+    except ImportError:
+        return None
+    finally:
+        sys.path.pop(0)
+    manifest = native_pgo.read_manifest(device)
+    value = manifest.get("generated_dir") if manifest else None
+    if not isinstance(value, str) or not value:
+        return None
+    path = pathlib.Path(value)
+    if not path.is_dir():
+        return None
+    try:
+        digi_env.check_generated(path)
+    except SystemExit:
+        return None
+    return path
+
+
 def default_audio_args(args: list[str] | None = None) -> list[str]:
     """Add local ready audio inputs to a normal launcher command line."""
     args = [] if args is None else list(args)
@@ -127,6 +152,11 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
         paths = ready_for(device, syx, card, paths)
     missing = [label for label, path in paths.items() if not path.is_file()]
     generated = digi_env.generated_dir(image=paths["DSP image"])
+    reason = "SHARC_GEN_DIR" if os.environ.get("SHARC_GEN_DIR") else "registered core"
+    if device == "dt2" and not os.environ.get("SHARC_GEN_DIR"):
+        trained = pgo_trained_core(device)
+        if trained is not None:
+            generated, reason = trained, "the core the DT2 PGO profile was trained on"
     if not generated.is_dir():
         missing.append("generated DN2 core (set SHARC_GEN_DIR)")
     if missing:
@@ -140,6 +170,7 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
         return []
     digi_env.check_generated(generated)
     os.environ.setdefault("SHARC_GEN_DIR", str(generated))
+    print(f"native core: {generated} ({reason})", file=sys.stderr)
     if positional is None:
         args.insert(0, str(paths["firmware"]))
     args.extend(

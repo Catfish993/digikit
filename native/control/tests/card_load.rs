@@ -5,7 +5,7 @@
 
 use std::{fs, path::PathBuf};
 
-use digi_control::{Config, spawn};
+use digi_control::{Command, Config, spawn};
 use serde_json::json;
 
 fn wav(frequency: f64) -> Vec<u8> {
@@ -109,5 +109,110 @@ fn card_load_builds_the_card_and_restarts_the_dt2_on_it() {
     handle.call("quit", json!({})).unwrap();
     drop(handle);
     join.join().unwrap();
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The desktop app's own startup: a `Command::Load` of the firmware, no card.
+fn ui_load(handle: &digi_control::Handle, syx: &[u8], session: u64) {
+    let (reply, response) = std::sync::mpsc::channel();
+    handle
+        .sender()
+        .send(Command::Load {
+            session,
+            bytes: syx.to_vec(),
+            card: None,
+            reply,
+        })
+        .unwrap();
+    response.recv().unwrap().unwrap();
+}
+
+fn stop(handle: digi_control::Handle, join: std::thread::JoinHandle<()>) {
+    handle.call("quit", json!({})).unwrap();
+    drop(handle);
+    join.join().unwrap();
+}
+
+fn card_state(handle: &digi_control::Handle) -> serde_json::Value {
+    handle.call("card.status", json!({})).unwrap()
+}
+
+#[test]
+fn the_last_card_is_mounted_again_when_the_dt2_starts() {
+    let Some(syx) = dt2_syx() else { return };
+    let bytes = fs::read(&syx).unwrap();
+    let dir = std::env::temp_dir().join(format!("digi-card-last-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let samples = dir.join("Kick drums");
+    fs::create_dir_all(&samples).unwrap();
+    for (name, frequency) in [("a.wav", 220.0), ("b.wav", 880.0), ("c.wav", 1760.0)] {
+        fs::write(samples.join(name), wav(frequency)).unwrap();
+    }
+    let config = |remember: bool| {
+        let mut config = Config::new(None);
+        config.run_dir = dir.join("run");
+        config.remember_card = remember;
+        config
+    };
+
+    // Nothing remembered yet: the DT2 starts without a card.
+    let (handle, join) = spawn(config(true));
+    ui_load(&handle, &bytes, 1);
+    assert_eq!(card_state(&handle)["state"], "idle");
+    let first = handle
+        .call(
+            "card.load",
+            json!({"dir": samples.display().to_string(), "name": "Kick drums"}),
+        )
+        .unwrap();
+    stop(handle, join);
+    assert!(dir.join("run/cards/last.json").is_file());
+
+    // A new controller mounts it on its own, with the name and the count.
+    let (handle, join) = spawn(config(true));
+    ui_load(&handle, &bytes, 1);
+    let status = card_state(&handle);
+    assert_eq!(status["state"], "ready");
+    assert_eq!(status["auto"], true);
+    assert_eq!(status["name"], "Kick drums");
+    assert_eq!(status["samples"], 3);
+    assert_eq!(status["key"], first["key"]);
+    assert_eq!(status["card"], first["card"]);
+    assert_eq!(
+        handle.call("status", json!({})).unwrap()["cf"]["device"],
+        "dt2"
+    );
+
+    // Choose samples still works, and the new load is what is remembered.
+    let other = dir.join("Snares");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("s.wav"), wav(440.0)).unwrap();
+    handle
+        .call("card.load", json!({"dir": other.display().to_string()}))
+        .unwrap();
+    stop(handle, join);
+    let (handle, join) = spawn(config(true));
+    ui_load(&handle, &bytes, 1);
+    let status = card_state(&handle);
+    assert_eq!(status["name"], "Snares");
+    assert_eq!(status["samples"], 1);
+    stop(handle, join);
+
+    // A run that does not remember (scenarios, tests) never mounts it.
+    let (handle, join) = spawn(config(false));
+    ui_load(&handle, &bytes, 1);
+    assert_eq!(card_state(&handle)["state"], "idle");
+    stop(handle, join);
+
+    // The cached card gone: no card.
+    let last: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(dir.join("run/cards/last.json")).unwrap())
+            .unwrap();
+    let key = last["key"].as_str().unwrap();
+    fs::remove_file(dir.join("run/cards").join(&key[..12]).join("dt2.img")).unwrap();
+    let (handle, join) = spawn(config(true));
+    ui_load(&handle, &bytes, 1);
+    assert_eq!(card_state(&handle)["state"], "idle");
+    stop(handle, join);
     let _ = fs::remove_dir_all(&dir);
 }
