@@ -19,7 +19,8 @@
 //   --cf-snapshot PATH READY/digi-audio-m5.snap       (DIGI_EMU_CF_SNAPSHOT)
 //   --scenarios PATH   scenarios/dn2.json
 //   --scenario NAME    scenario to play (required)
-//   --fast T,M,F       turn the DSP fast tier on (wasm kernels; needs a `fast-wasm` core): threshold, min insns, follow
+//   --fast T,M,F       turn the DSP fast tier on (wasm kernels; needs a `fast-wasm` core): threshold, min insns, follow;
+//                      `desktop` = the shipped regions and cluster roots of tools/fast_regions.json, `desktop+auto` adds run-time selection
 //   --split 1          two core instances in two threads (ColdFire here, DSP in a worker_threads worker); PCM must equal the single instance's
 //   --seconds S        override the scenario length in audio seconds (like coupled-run)
 //   --out PATH         write the raw f32le PCM (compare with coupled-run --wav x.f32)
@@ -58,6 +59,16 @@ if (!scenario) throw new Error(`no scenario ${args.scenario} in ${paths.scenario
 // The fast tier of the browser core (`--fast threshold,min_insns,follow`, a core
 // built with the `fast-wasm` feature): its kernels are wasm modules the core
 // emits and this host compiles over the core's own memory.
+// `--fast desktop[+auto]`: the desktop configuration (tools/fast_regions.json for this firmware's SHA-256), with run-time selection on top for `+auto`.
+const fastConfig = (() => {
+  if (!args.fast) return undefined;
+  if (!args.fast.startsWith('desktop')) return args.fast.split(',').map(Number).concat([0, 0, 0]).slice(0, 3);
+  const table = JSON.parse(fs.readFileSync(path.join(root, 'tools/fast_regions.json'), 'utf8'));
+  const entry = table[crypto.createHash('sha256').update(fs.readFileSync(paths.syx)).digest('hex')];
+  if (!entry) throw new Error('no entry in tools/fast_regions.json for this firmware');
+  const pcs = (t) => (t ?? '').split(',').filter((x) => x.trim()).map((x) => parseInt(x, 16));
+  return { regions: pcs(entry.fast_regions), roots: pcs(entry.blocktrans), ...(args.fast.startsWith('desktop+auto') ? { auto: [256, 64] } : {}) };
+})();
 const kernels = [];
 const hostStats = { compileMs: 0, compiled: 0, runs: 0, bytes: 0 };
 const hostEnv = {
@@ -65,7 +76,7 @@ const hostEnv = {
     const bytes = new Uint8Array(mem(), ptr, len).slice();
     const t = performance.now();
     try {
-      const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { memory: e.memory } });
+      const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { memory: e.memory, helper: e.digi_helper_exec } });
       kernels.push(inst.exports.k0);
     } catch (err) { console.error(`kernel module refused: ${err}`); return -1; }
     hostStats.compileMs += performance.now() - t; hostStats.compiled++; hostStats.bytes += len;
@@ -88,7 +99,7 @@ if (args.split === '1') {
   const read = (p) => new Uint8Array(fs.readFileSync(p));
   const wasm = read(paths.core);
   linkBuffer = createLinkBuffer();
-  const dspWorker = new Worker(path.join(here, 'wasm_split.mjs'), { workerData: { wasm, image: read(paths.image), state: read(paths.dsp), link: linkBuffer, keepPcm: true }, execArgv: process.execArgv });
+  const dspWorker = new Worker(path.join(here, 'wasm_split.mjs'), { workerData: { wasm, image: read(paths.image), state: read(paths.dsp), link: linkBuffer, keepPcm: true, fast: fastConfig }, execArgv: process.execArgv });
   dspDone = new Promise((resolve, reject) => { dspWorker.on('message', (m) => { if (m.type === 'done') resolve(m); }); dspWorker.on('error', reject); });
   await new Promise((resolve, reject) => { dspWorker.once('message', (m) => m.type === 'ready' && resolve()); dspWorker.once('error', reject); });
   const t0 = performance.now();
@@ -122,9 +133,14 @@ if (args.split === '1') {
   for (const k of Object.keys(ptrs)) e.digi_dealloc(ptrs[k], bufs[k].length);
 }
 if (!first.status.ready) throw new Error('the restored snapshot is not at ready');
-if (args.fast) {
-  const [t, m, f] = args.fast.split(',').map(Number);
-  call('digi_sharc_fast', t, m, f ?? 0);
+if (args.split !== '1' && fastConfig) {
+  if (Array.isArray(fastConfig)) call('digi_sharc_fast', ...fastConfig);
+  else {
+    const putU32 = (list) => { const p = e.digi_alloc(list.length * 4); new Uint32Array(mem(), p, list.length).set(list); return p; };
+    const reg = putU32(fastConfig.regions);
+    const roots = putU32(fastConfig.roots);
+    call('digi_sharc_fast_regions', reg, fastConfig.regions.length, roots, fastConfig.roots.length, ...(fastConfig.auto ?? [0xffffffff, 0]), 0);
+  }
 }
 const readyAt = first.status.icount;
 console.error(`scenario ${scenario.name}: load ${loadS.toFixed(2)} s, ready at icount ${readyAt}`);
@@ -210,8 +226,11 @@ const sha = crypto.createHash('sha256').update(pcm).digest('hex');
 console.log(`scenario=${scenario.name} cf_instr=${icount - readyAt} chunks=${nChunks} frames=${stats.frames} dsp_instr=${stats.dsp_instructions} halted=${stats.halted} missing_blocks=${stats.missing_blocks}`);
 console.log(`pcm values=${values} audio=${audioS.toFixed(3)}s sha256=${sha}`);
 console.log(`wall=${wallS.toFixed(1)}s load=${loadS.toFixed(2)}s real_time_factor=${(wallS / audioS).toFixed(1)}x slower than real time`);
-if (args.fast) console.log('fast report', JSON.stringify(call('digi_sharc_fast_report')));
-if (args.fast) console.log(`fast tier: ${hostStats.compiled} kernels compiled in ${hostStats.compileMs.toFixed(0)} ms (${(hostStats.bytes / 1e6).toFixed(2)} MB wasm), ${hostStats.runs} kernel runs`);
+if (args.fast) {
+  const k = cfSide ? (await dspDone).stats.kernels : { compiled: hostStats.compiled, compileMs: hostStats.compileMs, wasmBytes: hostStats.bytes, runs: hostStats.runs };
+  console.log('fast report', JSON.stringify(cfSide ? (await dspDone).stats.fast : call('digi_sharc_fast_report')));
+  console.log(`fast tier: ${k.compiled} kernels compiled in ${k.compileMs.toFixed(0)} ms (${(k.wasmBytes / 1e6).toFixed(2)} MB wasm), ${k.runs} kernel runs`);
+}
 if (args.out) fs.writeFileSync(args.out, pcm);
 let rc = 0;
 if (scenario.expect_sha256) {

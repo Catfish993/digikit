@@ -1175,3 +1175,71 @@ by a second agent.
   start is skipped. Give the worktree a real `node_modules` directory with symlinked entries (not `.astro`), start
   `astro dev --port N` once and pass `--url`. The first baseline numbers of this lane (0.36-0.40) were taken against
   another lane's server; the figures above are from a private one and agree.
+
+## Browser: fast tier in wasm 2026-10-11 **[D]**
+
+Question: what does the fast tier buy in Chrome, replacing the modelled 1.24x? Setup as the previous browser lanes
+(private `astro dev` on its own port, `--url`, real `node_modules` directory, exclusive benchlock; headless Chromium 150,
+split workers, `--seconds 10`; other lanes ran unlocked jobs, so single runs differ by up to +-8%). Not re-checked by a
+second agent.
+
+- **`Op::Helper` in the wasm emitter.** A kernel with a helper call imports `env.helper(st, rec) -> status` (function 0,
+  `k<i>` shift by one; only when a kernel needs it). The page links the import to the core's `digi_helper_exec(st, rec)`
+  export (`native/boot/src/abi.rs`, `helper_exec` with `rec` as the wasm32 pointer), a wasm-to-wasm call with no JS
+  trampoline; `core-host.ts` and `tools/wasm_parity.mjs` pass it. A record above 32 bits is refused (`emit_function`
+  returns Err; the region falls back to the interpreter). No helper kernel arises in the shipped DN2 config (helpers
+  need `SHARC_FAST_HELPER`, which the browser core cannot set, or the `exit0` rebuild, which did not fire in
+  these runs), so the path is tested apart: `cargo test -p sharc-fast-wasm` (module imports `helper`; wide record
+  refused) and `node native/sharc-fast-wasm/helper_check.mjs` on the emitted module (V8 validates it; the stub sees
+  `(st, rec)` per iteration; status 0 leaves with exit 3). **[O]** a real helper kernel in the browser, which needs a
+  way to turn `SHARC_FAST_HELPER` on without an environment (`cfg.rs`).
+- **Build and seeding.** `tools/native_wasm.py` now builds the coupled core with `fast-wasm` (`--no-fast` leaves it out;
+  the tier stays off until the page asks). New ABI `digi_sharc_fast_regions(regions, n, roots, n, threshold, min_insns,
+  follow)` = the desktop configuration: the static regions and the block-translator cluster roots of
+  `tools/fast_regions.json` for the firmware's SHA-256 (`FastEngine::new(..).with_clusters(..)`), optional run-time
+  selection on top (`threshold != u32::MAX`). Page: `?fast=desktop|desktop+auto|auto|T,M,F`; `browser_bench.mjs --fast X`;
+  `wasm_parity.mjs --fast desktop[+auto]` (also with `--split 1`). The bench reports the kernel host's counters and
+  `digi_sharc_fast_report` (`dsp_kernels`, `dsp_fast`). The dev page is the only consumer: `?fast=` is off by default.
+- **Exactness [V under Node].** `node tools/wasm_parity.mjs --scenario trig1-tap-release --fast desktop` and
+  `--fast desktop --split 1`: `883476213933333f0c5f4e2b343f65ed470fda0c50c8fa37905972457e819cdd` = the native pin
+  (816000 values). Generic core, `--fast desktop+auto --split 1`: the same hash. In Chromium `pcm_peak` 0.0549 and
+  `missing_blocks` 0 in every run. Web tests (`node --test`, 10) and `astro check` (0 errors) pass.
+- **Kernels.** DN2 desktop config: 23 kernels (11 regions + 12 clusters), 0.09 MB wasm, 0 refused. Chrome: module
+  compile + instantiate 2.3 ms in total (Liftoff compiles lazily), the first call of every kernel 5 ms in total
+  (compile plus one run), so the cold start is about 7 ms; 5.0M kernel calls per 10 audio s. With `desktop+auto`: 41
+  kernels, 0.38 MB, 4.6 ms + 40 ms. Node: 2 ms for the 23 kernels.
+
+AOT core (`SHARC_GEN_DIR` = prod gen) with fast tier off or on, 10 audio s, split workers:
+
+| config | runs | audio s / wall s | DSP worker busy / audio s | kernel insns / non-idle insns |
+|---|---|---|---|---|
+| AOT only | 8 (2.34-2.77) | 0.399 | 2.54 | 0 |
+| AOT + fast, desktop config | 8 (2.05-2.29) | 0.469 | **2.16** | 53% (2.67G of 5.0G per 10 s) |
+| AOT + fast, desktop + auto 256,64 | 5 (1.93-2.24) | 0.46-0.52 | 2.11 | 53% |
+
+  Interleaved ABA runs (3 each): 2.62 / 2.15 / 2.22. **The fast tier is worth 15% in Chrome (2.54 -> 2.16), against
+  19% native and 19% modelled (2.6 -> 2.1)**; audio per wall second 0.40 -> 0.47. The ColdFire worker (0.71 s per
+  audio s) is then blocked 1.4 s of every 2.2 on the DSP. `desktop+auto` adds 18 kernels and no instructions
+  (interleaved it is not better than `desktop`; the 1.93-1.98 runs were from a quiet period). The kernel share of
+  executed instructions equals native (53%).
+
+Generic core (`out/native/shared-core/gen`, 3.2 MB, no AOT; the DSP image is decoded at run time), one 10 s run each,
+the same page, DSP worker busy per audio s and share of the 4.70G non-idle instructions the interpreter runs:
+
+| config | DSP busy / audio s | audio / wall | interpreted share | kernels (compile, first calls, wasm) |
+|---|---|---|---|---|
+| no fast tier | 88.9 | 0.011 | 100% | 0 |
+| desktop regions | 42.3 | 0.024 | 44% | 24 (2 ms, 5 ms, 0.09 MB) |
+| desktop + auto 256,64 | 24.3 | 0.041 | 25% | 617 (41 ms, 566 ms, 6.4 MB) |
+| auto 256,64 + follow | 17.8 | 0.056 | 18% | 2234 (163 ms, 1.75 s, 35.7 MB) |
+
+  Exact against the pin (Node, `desktop+auto`, split). The interpreter runs at about 190 ns per instruction in the
+  browser (88.9 s for the 4.70G non-idle instructions; the other rows fit it: 2.08G x 190 ns = 400 s of 423 s
+  for `desktop`), and the kernel engine's job is to take that share to zero: at the AOT's 5.4 ns per instruction
+  all 4.70G would cost 2.5 s per audio s, the AOT core's 2.2-2.5. So the generic core can only reach AOT speed if
+  nearly all instructions run in kernels. Today the interpreted share (18-44%) and the 58M kernel calls per 10
+  audio s of `auto+follow` (43.6M ran, 13.9M declined at the shape check) dominate, not kernel compile time (first
+  calls 1.75 s once, 35.7 MB of wasm in memory).
+- **Open.** Single-worker mode (`?split=0`) still stubs the kernel host (`runtime-worker.ts`); a helper kernel in the
+  browser; the Safari/Firefox timings; compile in a worker pool (design doc, stage 4) is not needed for the desktop
+  config (7 ms) but would be for the generic core (0.6-1.8 s on the DSP worker).

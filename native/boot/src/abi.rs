@@ -495,6 +495,56 @@ mod coupled {
         })
     }
 
+    /// The desktop configuration of the fast tier: REGIONS and ROOTS are
+    /// arrays of little-endian u32 entry PCs (`n` entries each; the static
+    /// regions and the block-translator cluster roots of
+    /// `tools/fast_regions.json`), and a `threshold` other than `u32::MAX`
+    /// adds run-time selection as `digi_sharc_fast` does.
+    #[cfg(feature = "fast-wasm")]
+    #[unsafe(no_mangle)]
+    pub extern "C" fn digi_sharc_fast_regions(
+        regions: *const u32,
+        n_regions: usize,
+        roots: *const u32,
+        n_roots: usize,
+        threshold: u32,
+        min_insns: u32,
+        follow: u32,
+    ) -> i32 {
+        use sharc_native::fast::FastEngine;
+        sharc_fast_wasm::host::register();
+        // SAFETY: the page passes two buffers it allocated with `digi_alloc`.
+        let (regions, roots) = unsafe {
+            (
+                std::slice::from_raw_parts(regions, n_regions),
+                std::slice::from_raw_parts(roots, n_roots),
+            )
+        };
+        ENGINE.with(|slot| match slot.borrow().as_ref() {
+            Some(dsp) => {
+                let mut fe = FastEngine::new(sharc_native::fast::default_backend(), regions)
+                    .with_clusters(roots)
+                    .with_follow(follow != 0);
+                if threshold != u32::MAX {
+                    fe = fe.with_auto(threshold, min_insns as u64, false);
+                }
+                dsp.0.borrow_mut().set_fast(Some(Box::new(fe)));
+                result(serde_json::json!({"fast": true, "regions": n_regions, "roots": n_roots}));
+                0
+            }
+            None => failure("no coupled emulator loaded"),
+        })
+    }
+
+    /// `helper_exec` for the kernels' `env.helper` import: the page links the
+    /// import to this export (a wasm-to-wasm call). REC is a record pointer of
+    /// this core's memory.
+    #[cfg(feature = "fast-wasm")]
+    #[unsafe(no_mangle)]
+    pub extern "C" fn digi_helper_exec(st: *mut u8, rec: u32) -> u32 {
+        sharc_native::fast::helper::helper_exec(st, rec as u64)
+    }
+
     /// JSON: the fast tier's report (regions armed, built, refused, calls) and
     /// the engine's tier counters.
     #[cfg(feature = "fast-wasm")]

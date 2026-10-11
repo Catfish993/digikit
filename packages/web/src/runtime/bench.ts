@@ -75,6 +75,7 @@ export async function runBench() {
       worker_cpu_per_audio_s: +((end.busy_s - first.busy_s) / audio).toFixed(4),
       dsp_instructions: end.dsp_instructions - first.dsp_instructions, cf_instructions: end.cf_instructions - first.cf_instructions,
       dsp_instr_per_audio_s: Math.round((end.dsp_instructions - first.dsp_instructions) / audio), cf_instr_per_audio_s: Math.round((end.cf_instructions - first.cf_instructions) / audio),
+      fast_param: query.get('fast'), dsp_kernels: last?.dsp_kernels ?? null, dsp_fast: last?.dsp_fast ?? null,
       pcm_messages: pcmMessages, pcm_peak: +pcmPeak.toFixed(4), missing_blocks: last?.missing_blocks ?? null, trig_pressed: trigged, dsp_halted: last?.halted ?? null, windows,
     });
   } catch (error) {
