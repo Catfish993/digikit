@@ -876,3 +876,40 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
 - The 64-bit ops keep denormals (rule 15).
 
 Second check 2026-10-09: every spec row re-read in the manuals and confirmed (row 12 and the "general" rows remain inferences, as marked; the exact 2^-126 - 2^-151 cut is derived from "post-rounded" plus nearest-even, the manuals do not state the number; row 14's threshold is stated in the ALU "32-bit and 40-bit" entries, PRM pp.453-473, not on p.100); `_float32`, `_float32_result`, `_float_multiply`, `_astatx_mult_float` and `compute_multi._float_multiply_parts` match the rules including the cut and the zero sign; `tests/test_sharc_denormal.py` and `tests/test_sharc_golden.py`: 28 passed. Not modelled: MODE1.TRUNCATE=1 float results (the core rounds to nearest only, so the truncating cut, exactly 2^-126, is absent).
+
+## Register-form shifter ops: FEXT in the DT2 64/64 divide halted the DSP (2026-10-12) **[D]**
+
+Em's DT2 1.16 app stopped with `sharc_peer: DSP halted: native-trap: sharc_core.compute._compute:359:
+raise ValueError at 0xb88e8b`. 0xb88e8b is `R13 = fext(R13, R4)` (form 2a_short, cu=2, shifter opcode
+0x40, bit6 = Ry[5:0], len6 = Ry[11:6]). The core's shifter table (`SHIFT_OPS` in
+`tools/sharc_core/compute_shift.py`) held only lshift/ashift/OR-lshift, leftz/lefto, the bit set/clear/
+toggle/test group, the BFFWRP pair and two undocumented opcodes; every other register-form opcode of
+PRM Table 18-9 raised "unsupported full compute". The ShiftImm (Type 6) twins existed, which hid the gap.
+
+- **Where.** 0xb88e4e is an unsigned 64/64 divide (dividend R13:R12, divisor R15:R14, remainder in
+  R15:R14, quotient returned in R13:R12 after the delay slots). When the dividend's high word R13 is
+  not zero and the divisor is below 2^31 (R15 = 0) it takes the 64/32 path that ends in the FEXT at
+  0xb88e8b; a divisor of 33 or more bits ends in the FEXT at 0xb88edb (same routine). The
+  routine is reached once a per-voice 64-bit counter passes 2^48, so it ran fine for the first part of
+  a session and stopped the DSP after the counter grew. `sw 0xb88e8b` and `0xb88edb` were the only two
+  coverage gaps of `sharc_coverage dt2-1.16 --all-roots` (golden `cov_all`); both close with this change.
+- **Added** (register forms, PRM Table 18-9 pp.431-433 and the instruction pages 23-3..23-19): 0x40
+  fext, 0x48 fext (se), 0x44 fdep, 0x4c fdep (se), 0x64 / 0x6c OR-fdep (se), 0x08 rot, 0x24 OR-ashift,
+  0x80 exp, 0x84 exp (ex), 0x94 funpack, 0x50 / 0x58 bitext (nu), 0x74 bitdep. Flags follow the
+  immediate twins (SZ = result zero; SV = len6 + bit6 > 32 for the field ops). BITEXT and BITDEP are
+  now shared helpers (`_bitext`, `_bitdep`) between the immediate and register forms.
+- **Left out: 0x90 FPACK.** The PRM gives the exponent ranges but not the rounding rule of "the rounded
+  upper 11 bits", so it cannot be written from the manual. In the DT2 1.16 program database the only
+  register-form shifter ops other than the immediates are the two FEXTs above (query on mnemonics without
+  `pos=`); DN2 1.11 shows fdep/or_fdep/funpack/exp_ex only in 0xb8f4xx-0xb96dxx, conditional forms in
+  odd places, which look like data decoded as code **[O]**.
+- **Assumptions.** FUNPACK of an all-zero exponent and fraction returns signed zero (the manual's
+  leading-zero rule has no leading one to find). The register BITEXT takes its count from Rx[5:0] and
+  BITDEP from Ry[5:0] as the manual says ("lower 6 bits"). ROT uses Ry[4:0] as the left-rotate count.
+  OR-ashift leaves SS unknown, as the immediate OR-ashift does (its manual entry has no SS line).
+- **Check.** `tests/test_sharc_udiv64.py` runs the routine in the concrete runner against Python's
+  `divmod` (40 + 80 random cases on the two FEXT paths): it fails with the ValueError on the old core and
+  passes now. `tests/test_sharc_shift_register_forms.py` holds the per-op cases worked by hand
+  (`fext(0x1234abcd, bit6 = 4, len6 = 8)` = 0xbc, len6 = 0, bit6 >= 32, flags).
+- **Generated cores.** The change alters `CORE_FINGERPRINT`: the generated DN2, DT2 and shared cores must
+  be regenerated (`gen-fext` next to each `gen`).

@@ -135,6 +135,7 @@ CLEAN = [
     "tests/test_sharc_capture_run.py",
     "tests/test_sharc_compute_mr.py",
     "tests/test_sharc_compute_shift.py",
+    "tests/test_sharc_shift_register_forms.py",
     "tests/test_sharc_compute_table.py",
     "tests/test_sharc_contract.py",
     "tests/test_sharc_coverage.py",

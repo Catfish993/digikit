@@ -159,10 +159,53 @@ fn claim_slots(container: &[u8]) -> [usize; 16] {
     claimed
 }
 
+/// One input file: every reference, in the table and in the copies elsewhere
+/// in the container, becomes `reference`; the tracks keep their slots. This
+/// is the card the one-sample tools (`tools/dt2_sample_check.py`, `--dt2-card`)
+/// were pinned on, so it stays byte-identical.
+fn point_all_refs_at(
+    mut container: Vec<u8>,
+    reference: [u8; 16],
+    old: Vec<[u8; 16]>,
+) -> (Vec<u8>, ProjectReport) {
+    let mut table_refs = 0;
+    for slot in 0..REF_COUNT {
+        let at = REF_TABLE_OFFSET + slot * 16;
+        if is_used(&container[at..at + 16].try_into().unwrap()) {
+            container[at..at + 16].copy_from_slice(&reference);
+            table_refs += 1;
+        }
+    }
+    let mut distinct = old;
+    distinct.sort_unstable();
+    distinct.dedup();
+    let mut copies = 0;
+    for old_ref in distinct {
+        let mut at = 0;
+        while let Some(found) = container[at..]
+            .windows(16)
+            .position(|candidate| candidate == old_ref)
+        {
+            let position = at + found;
+            container[position..position + 16].copy_from_slice(&reference);
+            copies += 1;
+            at = position + 16;
+        }
+    }
+    (
+        container,
+        ProjectReport {
+            table_refs,
+            extra_refs: copies,
+        },
+    )
+}
+
 /// Points the project's sample references at `references` (the input files
 /// in sorted order). Track t of the active kit gets its own table slot and
 /// plays `references[t % n]`; every other reference, in the table and in
-/// the copies elsewhere in the container, becomes `references[0]`.
+/// the copies elsewhere in the container, becomes `references[0]`. With one
+/// file nothing is remapped (`point_all_refs_at`).
 fn point_refs_at(
     mut container: Vec<u8>,
     references: &[[u8; 16]],
@@ -177,6 +220,9 @@ fn point_refs_at(
                 extra_refs: 0,
             },
         ));
+    }
+    if references.len() == 1 {
+        return Ok(point_all_refs_at(container, first, old));
     }
     let claimed = claim_slots(&container);
     let table = REF_TABLE_OFFSET..REF_TABLE_OFFSET + REF_COUNT * 16;
@@ -307,8 +353,8 @@ mod tests {
         container[REF_TABLE_OFFSET..REF_TABLE_OFFSET + 16].copy_from_slice(&old);
         container[100..116].copy_from_slice(&old);
         let (mut patched, report) = point_refs_at(container, &[[2; 16]]).unwrap();
-        // Slot 0 plus the 16 slots the tracks claim.
-        assert_eq!(report.table_refs, 1 + 16);
+        // One input file: the tracks keep their slots.
+        assert_eq!(report.table_refs, 1);
         assert_eq!(report.extra_refs, 1);
         assert_eq!(&patched[100..116], &[2; 16]);
         patched[4..8].copy_from_slice(&2u32.to_be_bytes());

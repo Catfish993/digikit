@@ -499,6 +499,17 @@ def _astatx_fext(span: int, result: Value) -> FlagUpdate:
     )
 
 
+def _astatx_fext_reg(spec: Value, result: Value) -> FlagUpdate:
+    """fext/fdep register forms (PRM pp.511-516): as ``_astatx_fext``, with
+    the span len6 + bit6 read from the Y register SPEC (bit6 = SPEC[5:0],
+    len6 = SPEC[11:6]); an unknown SPEC forgets SV and SZ, SS stays cleared."""
+    if not isinstance(spec, Const):
+        update = _flags_define(1 << SS_BIT, 0)
+        update = _flags_put(update, SV_BIT, None)
+        return _flags_put(update, SZ_BIT, None)
+    return _astatx_fext((spec.value & 0x3F) + ((spec.value >> 6) & 0x3F), result)
+
+
 def _astatx_leftz(source: Value, result: Value) -> FlagUpdate:
     """leftz (PRM p.521): SS cleared; SZ = MSB of RX is 1; SV = result == 32."""
     update = _flags_define(1 << SS_BIT, 0)
