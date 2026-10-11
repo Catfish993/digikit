@@ -82,6 +82,12 @@ impl InterpKernel {
         // A flat access (Lower::flat_access): the base is a page of the engine's
         // memory, found in the page table the context points to.
         let eff = unsafe { (ctx.add(CTX_FLAT_EFF as usize) as *const u64).read_unaligned() };
+        // The lookups themselves read the page table and the code-watch bytes
+        // through their own pointers (`Lower::flat_access`).
+        let watch = unsafe { (ctx.add(CTX_FLAT_WATCH as usize) as *const u64).read_unaligned() };
+        if eff != 0 && (base == eff || base == watch) {
+            return;
+        }
         if eff != 0 {
             let n = 1usize << 16;
             let table = eff as usize;

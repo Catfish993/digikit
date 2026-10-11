@@ -639,6 +639,8 @@ fn units() -> Vec<Unit> {
                     0x8 => Check::FAdd(rn, rx),
                     0x9 => Check::FSub(rn, rx),
                     0xf => Check::FMul(rn, rx),
+                    // RN = RN * RX (ssi): a product beyond 32 bits sets MV.
+                    0x7 => Check::MulSsi(rn, rx),
                     0xb => Check::FComp(rn, rx),
                     _ => Check::None,
                 };
@@ -1226,32 +1228,50 @@ fn not_finite(bits: u32) -> bool {
     !f32::from_bits(bits).is_finite()
 }
 
+/// A nonzero denormal. The device reads it as a zero; the kernel does not
+/// model that, so every computational float op leaves on one (`rd_f_op`,
+/// docs/findings/15-sharc-sample-path.md "Denormal flush").
+fn is_denormal(bits: u32) -> bool {
+    bits & 0x7f80_0000 == 0 && bits & 0x007f_ffff != 0
+}
+
+/// The multiply `x * y` leaves: a NaN or infinity, a product below the
+/// smallest normal, or a zero made by underflow (`result_no_underflow`).
+fn mul_leaves(x: f32, y: f32) -> bool {
+    let p = x * y;
+    is_special(p.to_bits()) || (p == 0.0 && x != 0.0 && y != 0.0)
+}
+
 fn expect_special(c: Check, s: &St) -> bool {
     let f = |code: u32| f32::from_bits(s.r[code as usize].b);
+    let dn = |code: u32| is_denormal(s.r[code as usize].b);
     match c {
         Check::None => false,
-        Check::FAdd(x, y) => not_finite((f(x) + f(y)).to_bits()),
-        Check::FSub(x, y) => not_finite((f(x) - f(y)).to_bits()),
-        Check::FMul(x, y) => is_special((f(x) * f(y)).to_bits()),
-        Check::FNeg(x) => not_finite((-f(x)).to_bits()),
+        Check::FAdd(x, y) => dn(x) || dn(y) || not_finite((f(x) + f(y)).to_bits()),
+        Check::FSub(x, y) => dn(x) || dn(y) || not_finite((f(x) - f(y)).to_bits()),
+        Check::FMul(x, y) => dn(x) || dn(y) || mul_leaves(f(x), f(y)),
+        Check::FNeg(x) => dn(x) || not_finite((-f(x)).to_bits()),
         Check::Trunc(x) => s.r[x as usize].b & 0x7fff_ffff >= 0x4f00_0000,
         Check::MfAdd([xm, ym, xa, ya], sub) => {
             let a = if sub { f(xa) - f(ya) } else { f(xa) + f(ya) };
-            not_finite((f(xm) * f(ym)).to_bits()) || not_finite(a.to_bits())
+            [xm, ym, xa, ya].into_iter().any(dn)
+                || mul_leaves(f(xm), f(ym))
+                || not_finite(a.to_bits())
         }
         Check::MfDual([xm, ym, xa, ya]) => {
-            not_finite((f(xm) * f(ym)).to_bits())
+            [xm, ym, xa, ya].into_iter().any(dn)
+                || mul_leaves(f(xm), f(ym))
                 || not_finite((f(xa) + f(ya)).to_bits())
                 || not_finite((f(xa) - f(ya)).to_bits())
         }
         Check::DualF(x, y) => {
-            not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
+            dn(x) || dn(y) || not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
         }
-        Check::FAbs(x) => f(x).is_nan(),
-        Check::FPass(x) => not_finite(s.r[x as usize].b),
+        Check::FAbs(x) => dn(x) || f(x).is_nan(),
+        Check::FPass(x) => dn(x) || not_finite(s.r[x as usize].b),
         Check::FClip(x, y) => {
             let (a, b) = (f(x), f(y));
-            if a.is_nan() || b.is_nan() {
+            if dn(x) || dn(y) || a.is_nan() || b.is_nan() {
                 true
             } else {
                 let r = if a.abs() < b.abs() {
@@ -1262,7 +1282,9 @@ fn expect_special(c: Check, s: &St) -> bool {
                 !r.is_finite()
             }
         }
-        Check::FComp(x, y) | Check::FMinMax(x, y) => f(x).is_nan() || f(y).is_nan(),
+        Check::FComp(x, y) | Check::FMinMax(x, y) => {
+            dn(x) || dn(y) || f(x).is_nan() || f(y).is_nan()
+        }
         Check::Logb(x) => !(1..=254).contains(&((s.r[x as usize].b >> 23) & 0xff)),
         Check::Scalb(x, y) => {
             let sh = s.r[y as usize].b as i32 as i64;
@@ -3073,10 +3095,26 @@ fn cfgprog(args: &[String]) {
                 let (m_hi, _) = pair(&mut ei, &mut ef, st_seed, mode1, hi);
                 let (_, pc_lo) = pair(&mut ei, &mut ef, st_seed, mode1, lo);
                 println!(
+                    "      state before it: interp ASTATx {:?} STKYx {:?}, fast ASTATx {:?} STKYx {:?}",
+                    ei.s.r[118], ei.s.r[119], ef.s.r[118], ef.s.r[119]
+                );
+                println!(
                     "      at budget {lo}: pc interp {:#x} fast {:#x}, icount {} {}",
                     ei.s.pc_sw, ef.s.pc_sw, ei.s.icount, ef.s.icount
                 );
+                if std::env::var_os("FD_REQS").is_some() {
+                    for pc in &entries {
+                        if let Some(r) = fe.borrow().region(*pc) {
+                            println!("      region {pc:#x}: forms {:?} reqs {:?}", r.forms, r.reqs);
+                        }
+                    }
+                }
                 let _ = pair(&mut ei, &mut ef, st_seed, mode1, hi);
+                println!(
+                    "      after it: MODE1 interp {:#x} fast {:#x}, ASTATx {:#x} {:#x}, ASTATy {:#x} {:#x}",
+                    ei.s.r[114].b, ef.s.r[114].b, ei.s.r[118].b, ef.s.r[118].b,
+                    ei.s.r[119].b, ef.s.r[119].b
+                );
                 println!(
                     "      at budget {hi}: pc interp {:#x} fast {:#x}, icount {} {}, fast pending {:?} loops {:?}",
                     ei.s.pc_sw,

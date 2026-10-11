@@ -2132,6 +2132,47 @@ fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
     }
 }
 
+/// A MODE1 write inside a DO loop body that changes a bit the body depends on
+/// (here PEYEN: from the second iteration the whole body runs in SIMD). The
+/// kernel lowers the body once under the MODE1 of the loop head, so the back
+/// edge must meet the head under the same MODE1: a region whose body leaves
+/// MODE1 different is refused. Found by `fast_diff cfg --simple` (cases 180
+/// and 275 of the default seed): the kernel ran every iteration under the
+/// first iteration's MODE1.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_mode1_write_in_a_loop_body_is_not_carried_to_the_next_iteration() {
+    const PEYEN: u32 = 1 << 21;
+    let code = [
+        lp_do(4, lp_rel(0, 3)), // 0: DO (end 3) 4 times
+        lp_add(3, 3, 2),        // 1: R3 += R2 (and S3 += S2 once SIMD)
+        lp_mode1_set(PEYEN),    // 2: SIMD on
+        lp_add(1, 1, 2),        // 3: R1 += R2 (and S1 += S2)  (end)
+        lp_mode1_clear(PEYEN),  // 4: SIMD off
+        lp_jump(0x1f, 0),       // 5: spin
+    ];
+    let set = |e: &mut crate::Engine| {
+        for code in 80..96 {
+            e.s.r[code] = V::c(0);
+        }
+        lp_regs(e, &[(2, 1), (82, 1)]); // R2, S2
+    };
+    let all: Vec<u32> = (0..6).map(lp_pc).collect();
+    lp_compare("mode1 in a loop body, all entries", &code, &all, 40, &set);
+    for entries in [vec![lp_pc(0)], vec![lp_pc(1)], vec![lp_pc(3)]] {
+        lp_compare(&format!("mode1 in a loop body {entries:?}"), &code, &entries, 40, &set);
+    }
+    // A body that leaves MODE1 as it found it still runs in a region.
+    let steady = [
+        lp_do(4, lp_rel(0, 3)),
+        lp_add(3, 3, 2),
+        lp_mode1_set(0),
+        lp_add(1, 1, 2),
+        lp_jump(0x1f, 0),
+    ];
+    lp_check("mode1 steady in a loop body", &steady, &[lp_pc(0)], 20, &set);
+}
+
 /// `Rn = FIX Fx` (compute cu 0, opcode 0xc9).
 #[cfg(sharc_gen)]
 fn lp_fix(rn: u64, rx: u64) -> u64 {
