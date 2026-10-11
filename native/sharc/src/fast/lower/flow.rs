@@ -198,6 +198,8 @@ impl Lower {
         self.var_abs = (0..NREGS as usize).map(|c| self.init_abs_pub(c)).collect();
         self.loop_stride_out = vec![[None; NREGS as usize]; st.loops.len()];
         self.loop_back_seen_out = vec![false; st.loops.len()];
+        self.reg_lit = vec![None; st.loops.len()];
+        self.has_call_targets = !st.call_targets.is_empty();
         self.loop_in = vec![Vec::new(); st.loops.len()];
         self.loop_head = vec![Vec::new(); st.loops.len()];
         let budget = self.new_val(Ty::I32, None);
@@ -331,6 +333,9 @@ impl Lower {
         if joins.mode1_conflict {
             return refuse("MODE1 differs where paths join");
         }
+        if self.pass >= 2 && self.plan.reg_sym != self.reg_sym {
+            return refuse("register loop count source not stable");
+        }
         for &pc in &st.call_targets {
             if let Some(a) = joins.abs.get(&pc) {
                 self.entry_abs_out.insert(pc, a.clone());
@@ -338,6 +343,15 @@ impl Lower {
             if self.pass >= 2 && self.plan.entry_abs.get(&pc) != self.entry_abs_out.get(&pc) {
                 // What the lowering assumed at the entry is not what flows
                 // into it.
+                if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
+                    let (p, o) = (self.plan.entry_abs.get(&pc), self.entry_abs_out.get(&pc));
+                    for c in 0..NREGS as usize {
+                        let (x, y) = (p.and_then(|v| v[c]), o.and_then(|v| v[c]));
+                        if x != y {
+                            eprintln!("abs: call entry {pc:#x} r{c}: plan {x:?} now {y:?}");
+                        }
+                    }
+                }
                 return refuse(format!("call entry {pc:#x}: register ranges not stable"));
             }
         }
@@ -406,6 +420,7 @@ impl Lower {
                     LoopCount::Lit(n) => self.ci(n),
                     LoopCount::Reg(code) => {
                         let c = self.rd_i(code)?;
+                        self.note_reg_count(st, *li as usize, c);
                         let z = self.ci(0);
                         let ok = self.bin(Bin::Ne, c, z);
                         self.guard(ok);
@@ -587,7 +602,45 @@ impl Lower {
         match st.loops[i].count {
             LoopCount::Lit(n) => Count::Lit(n as i64),
             LoopCount::Entry if i + 1 == n_entry => Count::Entry,
+            LoopCount::Reg(_) => match (self.reg_lit.get(i).copied().flatten(), self.reg_sym) {
+                (Some(n), _) => Count::Lit(n),
+                (_, Some((j, _, _))) if j == i => Count::Entry,
+                _ => Count::Unknown,
+            },
             _ => Count::Unknown,
+        }
+    }
+
+    /// At the DO of loop I with the count in C: when the abstract value says
+    /// the count exactly (a constant, or `R[c] + k` at region entry), the
+    /// loop has a known trip count. A region with no entry loop has one
+    /// symbolic count (its N): the first loop of that kind.
+    fn note_reg_count(&mut self, st: &Structure, i: usize, c: Val) {
+        // SHARC_FAST_NOREGN: register counts stay unknown (A/B).
+        static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *OFF.get_or_init(|| std::env::var_os("SHARC_FAST_NOREGN").is_some()) {
+            return;
+        }
+        // A region with call targets placed before their callers measures
+        // the ranges flowing into them over several passes; a count source
+        // that appears in a later pass would keep them from settling.
+        if !st.call_targets.is_empty() {
+            return;
+        }
+        let Some(a) = self.abs[c as usize] else {
+            return;
+        };
+        if a.lo != a.hi || a.ts != 0 || a.nf != 0 {
+            return;
+        }
+        match a.base {
+            Base::None if (1..=u32::MAX as i64).contains(&a.lo) => self.reg_lit[i] = Some(a.lo),
+            Base::Reg(r)
+                if self.reg_sym.is_none() && st.loops.iter().all(|l| !l.entry()) =>
+            {
+                self.reg_sym = Some((i, r, a.lo));
+            }
+            _ => {}
         }
     }
 

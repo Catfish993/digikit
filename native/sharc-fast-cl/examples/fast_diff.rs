@@ -1138,6 +1138,10 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
         };
         s.r[c] = V::c(v as Int);
     }
+    if REGLOOP.load(std::sync::atomic::Ordering::Relaxed) && !r.chance(12) {
+        // A count a loop can run (0 and 1 give the empty and one-trip loops).
+        s.r[R_SRC as usize] = V::c(r.below(8) as Int);
+    }
     for c in 16..32 {
         // Index registers: word aligned inside the data window (mostly).
         let mut a = DATA_LO + 0x400 + 4 * r.below(0x100);
@@ -2294,6 +2298,13 @@ fn _unused(_: usize) -> usize {
 const R_COUNT: u32 = 15; // DO counts
 const R_TRIPS: u32 = 13; // back-loop counter
 const R_MINUS1: u32 = 14; // constant -1
+const R_SRC: u32 = 12; // `--regloop`: the entry value a DO count is relative to
+
+/// `--regloop`: DO loops whose count is `R12 -/+ 1` (exact relative to the
+/// entry value, the region's symbolic trip count), with R12 small at entry.
+static REGLOOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// `--pushcall`: delayed CALLs whose first slot is a 16a push through I0-I5.
+static PUSHCALL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn words_of(raw: u64, n: usize) -> Vec<u16> {
     [(raw >> 32) as u16, (raw >> 16) as u16, raw as u16][..n].to_vec()
@@ -2328,6 +2339,25 @@ fn i_jump(cond: u32, delayed: bool, rel: i32) -> Vec<u16> {
     raw.set(37, 33, cond as u64);
     raw.set(26, 26, delayed as u64);
     raw.set(23, 0, (rel as u32 & 0xff_ffff) as u64);
+    words_of(raw.0, 3)
+}
+
+/// CALL (DB) with a relative offset in short words from the call.
+fn i_call_db(rel: i32) -> Vec<u16> {
+    let mut raw = Raw(0x07 << 40);
+    raw.set(39, 39, 1);
+    raw.set(37, 33, 0x1f);
+    raw.set(26, 26, 1);
+    raw.set(23, 0, (rel as u32 & 0xff_ffff) as u64);
+    words_of(raw.0, 3)
+}
+
+/// `DM(Ii, Mm) = data32` with a post-modify (Type 16a).
+fn i_16a(i: u32, m: u32, data: u32) -> Vec<u16> {
+    let mut raw = Raw(0x9000_0000_0000);
+    raw.set(43, 41, i as u64);
+    raw.set(40, 38, m as u64);
+    raw.set(31, 0, data as u64);
     words_of(raw.0, 3)
 }
 
@@ -2584,6 +2614,20 @@ enum Item {
         count: u32,
         body: Vec<Item>,
     },
+    /// A DO loop counting `R_SRC + 1` (`sub`) or `R_SRC - 1` times, computed
+    /// just before it.
+    DoRel {
+        sub: bool,
+        body: Vec<Item>,
+    },
+    /// A delayed CALL to the instruction after its slots, whose first slot
+    /// is `DM(Ii, Mm) = data` (the return-address push, Type 16a).
+    Push {
+        i: u32,
+        m: u32,
+        data: u32,
+        slot: Vec<u16>,
+    },
     /// A counted loop closed by a backward JUMP IF NE.
     Back {
         trips: u32,
@@ -2623,10 +2667,17 @@ fn gen_items(r: &mut Rng, depth: u32, in_back: bool, n: u32) -> Vec<Item> {
                 let n = 1 + r.below(4);
                 let mut body = gen_items(r, depth + 1, in_back, n);
                 body.push(Item::Insn(gen_insn(r, true)));
-                Item::Do {
-                    by_reg: r.chance(3),
-                    count: 1 + r.below(4),
-                    body,
+                if REGLOOP.load(std::sync::atomic::Ordering::Relaxed) && r.chance(2) {
+                    Item::DoRel {
+                        sub: r.chance(2),
+                        body,
+                    }
+                } else {
+                    Item::Do {
+                        by_reg: r.chance(3),
+                        count: 1 + r.below(4),
+                        body,
+                    }
                 }
             }
             15 if !in_back => {
@@ -2640,6 +2691,13 @@ fn gen_items(r: &mut Rng, depth: u32, in_back: bool, n: u32) -> Vec<Item> {
                 }
             }
             16 => Item::Exit { cond: real_cond(r) },
+            17 if PUSHCALL.load(std::sync::atomic::Ordering::Relaxed) => Item::Push {
+                // I0-I5: the registers the random instructions step.
+                i: r.below(6),
+                m: r.below(8),
+                data: r.u32(),
+                slot: gen_insn(r, true),
+            },
             _ => Item::Insn(gen_insn(r, true)),
         });
     }
@@ -2696,6 +2754,16 @@ impl Asm {
                     let rel = (end - d) as i32;
                     self.patch(d, i_do(by_reg.then_some(R_COUNT), *count, rel));
                 }
+                Item::DoRel { sub, body } => {
+                    let opc = if *sub { 0x02 } else { 0x01 };
+                    self.insn(i_2a(0x1f, compute_field(0, opc, R_COUNT, R_SRC, R_MINUS1)));
+                    let d = self.words.len();
+                    self.insn(i_do(Some(R_COUNT), 0, 0));
+                    self.items(body);
+                    let end = *self.starts.last().unwrap() as usize;
+                    let rel = (end - d) as i32;
+                    self.patch(d, i_do(Some(R_COUNT), 0, rel));
+                }
                 Item::Back {
                     trips,
                     delayed,
@@ -2719,6 +2787,16 @@ impl Asm {
                 }
                 Item::Exit { cond } => {
                     self.insn(i_jump(*cond, false, 0x2000));
+                }
+                Item::Push { i, m, data, slot } => {
+                    // CALL to the next instruction after its two slots; the
+                    // first slot is the return-address push (16a).
+                    let c = self.words.len();
+                    self.insn(i_call_db(0));
+                    self.insn(i_16a(*i, *m, *data));
+                    self.insn(slot.clone());
+                    let rel = (self.words.len() - c) as i32;
+                    self.patch(c, i_call_db(rel));
                 }
             }
         }
@@ -2779,6 +2857,15 @@ fn cfgprog(args: &[String]) {
     // --simple: a few instructions, then a DO loop with a straight body
     // (the loop shape), entered at every instruction.
     let simple = args.iter().any(|a| a == "--simple");
+    // --regloop: DO loops counting R12 +- 1 (see `REGLOOP`).
+    REGLOOP.store(
+        args.iter().any(|a| a == "--regloop"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    PUSHCALL.store(
+        args.iter().any(|a| a == "--pushcall"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     KNOWN_FLAGS.store(true, std::sync::atomic::Ordering::Relaxed);
     ASTAT_MIX.store(
         args.iter().any(|a| a == "--astat-mix"),
@@ -2798,6 +2885,7 @@ fn cfgprog(args: &[String]) {
     let mut runs_total = 0u64;
     let mut built = 0u64;
     let (mut cacc_total, mut cacc_unknown_total) = (0u64, 0u64);
+    let mut regn_total = 0u64;
     let mut declined = [0u64; 5];
     let mut refusals: BTreeMap<String, u64> = BTreeMap::new();
     let t0 = std::time::Instant::now();
@@ -3011,6 +3099,7 @@ fn cfgprog(args: &[String]) {
             if let Some(r) = fb.region(*pc) {
                 cacc_total += r.cacc as u64;
                 cacc_unknown_total += r.cacc_unknown as u64;
+                regn_total += r.cfg.as_ref().is_some_and(|m| m.reg_n.is_some()) as u64;
             }
         }
         built += fb.stats.built;
@@ -3043,6 +3132,7 @@ fn cfgprog(args: &[String]) {
     );
     println!("declined shape/req/window/budget/exit0 = {declined:?}");
     println!("final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}");
+    println!("final regions with a register trip count: {regn_total}");
     for (why, n) in &refusals {
         println!("{n:>5} x refused: {why}");
     }

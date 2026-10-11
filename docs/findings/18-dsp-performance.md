@@ -1175,3 +1175,62 @@ by a second agent.
   start is skipped. Give the worktree a real `node_modules` directory with symlinked entries (not `.astro`), start
   `astro dev --port N` once and pass `--url`. The first baseline numbers of this lane (0.36-0.40) were taken against
   another lane's server; the figures above are from a private one and agree.
+
+## Lowering: register-count loops and the I7 push 2026-10-11 **[D]**
+
+Two coverage features of the CFG lowering (lane K2, branch `worktree-agent-a39ce353f62582daa`), each exact against the
+interpreter and switchable for an A/B (`SHARC_FAST_NOREGN=1`, `SHARC_FAST_NOPUSHDYN=1`). Not re-checked by a second agent.
+
+- **A. DO loops with a register trip count.** `Lower::note_reg_count` (`lower/flow.rs`) reads the abstract value of the
+  count at the DO. If it is exact (`lo == hi`, no `ts`/`nf` term) the loop gets a known count: a constant 1..=u32::MAX
+  becomes `Count::Lit`; `Base::Reg(c) + k` becomes the region's one symbolic N (`Count::Entry` semantics: `ts` while
+  widening, `nf` after the loop), but only when the region has no entry loop and no earlier loop took N.
+  `Lowered::reg_n` -> `CfgMeta::reg_n`; `glue::run_cfg` sets `iters = r[c] + k` at entry (register known, result in
+  1..=u32::MAX, else `Decline::Shape` with no rebuild), and `iters` feeds `nw_ok`, the window spans and the lean path as
+  before. The kernel still reads the count register and guards it non-zero. A pass-2 change of the count source refuses
+  the region (one refusal in 1800 fuzz runs). Regions with call targets placed before their callers keep the old
+  behaviour (a count source that appears in a later pass keeps the call-entry ranges from settling).
+- **B. The push in a call delay slot.** `form_16a` (`lower/callret.rs`) is now `dm_transfer(post, StoreV(imm))`, so an
+  I7 with no static range gets the guarded dynamic window anchored on I7 (`xfer_at`/`dyn_xfer`: a store outside the
+  span leaves the kernel before the instruction). Same restriction: not in regions with call targets, where the 64
+  regions it newly built were refused with "call entry: register ranges not stable" and the fast-only interpreted
+  instructions rose 12%. **[O]** K1's call-entry convergence is the next blocker there.
+- **Found on the way.** `glue::sites::apply`: in the stack model a DO that ends in the region (`CTX_STK26 == 2`) set
+  STKYX bit 26 known even where the entry bit was unknown; the interpreter keeps it unknown (value bit as at entry).
+  Newly exposed by `fast_calls_and_returns_match_the_interpreter` ("callee loop"), now fixed.
+
+Tests. `fast_register_count_loop_with_stepped_pointers_matches` (R5 = R7 - 2 and R7 = R7 - 2, two stepped pointers, a
+pointer read after the loop, counts 1..40, 3000 and 0x10000002; asserts `reg_n == (7, -2)`),
+`fast_call_slot_push_through_an_unranged_stack_pointer_matches` (fails with `SHARC_FAST_NOPUSHDYN=1`: the call becomes a
+stop). `cargo test -p sharc-native -p sharc-rt` passes. `fast_diff cfg` with the new `--regloop` (DO loops counting
+R12 +- 1; 61 regions with a register trip count per 300 cases) and `--pushcall` (delayed CALL with a 16a slot) over
+`--stride`, `--shape cfg`, `--circ` and other seeds: 0 mismatches. `verify.py --only build,pins,check,check-no-aot`
+passes. Failures that are not from this change (identical with both switches set and on other lanes' binaries):
+`fast_diff cfg --simple`, `--check-windows` with `--shape cfg` or past 100 cases ("window access ... outside every
+window"), `fast_diff forms --trials 1000` (2a, 2a_short, 2c, 3a, 4a, 5a, 7a). **[O]** The fuzz does not catch an
+under-sized N: a mutant `iters = n - 1` survived 100 cases of `--regloop --stride --check-windows`; the argument for
+the windows rests on the Abs algebra shared with `Count::Entry` and the unit test.
+
+Census (`SHARC_FAST_COV`, DN2 trig1-taps 3 s, every AOT entry of the gen plus the shipped list armed, 2692 roots,
+before -> after):
+
+| root | kernel insns per call | note |
+|---|---:|---|
+| 0x1cdb85 (R7 = R15 - 2, I3 += 4) | 55.0 -> **484.0** | 72,000 calls, now runs to its return |
+| 0x1c963b | 35.3 -> 38.3 | |
+| 95 roots cut by a 16a push | 30.3M -> 34.4M insns in total | +3 insns per call (the push and its slot) |
+| 0x1c0c9d, 0x1c926f, 0x1c254e, 0x1c248a, 0xb82a5b, 0x1c25cc | unchanged | other stop reasons |
+
+Denials at a CJUMP (25a_direct) by "address range unknown", weighted by root calls: 4.25M -> 0.64M (what is left is in
+regions with call targets). All denials 969 -> 777. The loop "register step not stable" denials stay (301 -> 310): the
+other loops are not register-count loops. Top stop reasons now (denial weighted by root calls): 8a_rel address range
+unknown 0.70M, 25a_direct address range unknown 0.64M (call targets), MODE1 write with the bank model 0.64M, condition
+in SIMD mode 0.60M, 8a_rel address range unknown (another insn) 0.57M, loop step in a 3a body 0.40M.
+
+Timing (trig1-taps, 8 audio s, 3 runs each, exclusive lock, load 2 to 4, PCM `f679cda8f1233791` equal in all runs):
+
+| config | DSP CPU per audio s, before -> after | other |
+|---|---:|---|
+| fast-only (`static-insns+follow`, no AOT) | 5.02 -> **4.86** (-3.2%; includes about 3 s of one-time compile of 6000 kernels) | region calls 91.9M -> 87.0M (-5.3%), interpreted 1.45% -> 1.44% |
+| default (shipped regions) | 1.107 -> 1.108 | no region changes |
+| shipped + 0x1cdb85, 0x1c0c9d, 0x1c926f, 0x1c25cc, 0x1c963b | 1.131 -> **1.110** (-1.9%) | same calls |

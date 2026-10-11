@@ -1484,6 +1484,30 @@ fn lp_do_reg(ureg: u64, rel: i32) -> u64 {
     0x0d00_0000_0000 | (ureg << 32) | (rel as u32 & 0x7f_ffff) as u64
 }
 
+/// Type 3a: `ureg <-> DM(Ii, Mm)`, a normal word.
+#[cfg(sharc_gen)]
+fn lp_3a(cond: u64, store: bool, post: bool, i: u64, m: u64, ureg: u64) -> u64 {
+    0x4000_0000_0000
+        | ((post as u64) << 44)
+        | (i << 41)
+        | (m << 38)
+        | (cond << 33)
+        | ((store as u64) << 31)
+        | (ureg << 23)
+}
+
+/// Type 16a: `DM(Ii, Mm) = data32` with a post-modify.
+#[cfg(sharc_gen)]
+fn lp_16a(i: u64, m: u64, data: u32) -> u64 {
+    0x9000_0000_0000 | (i << 41) | (m << 38) | data as u64
+}
+
+/// `CALL (pc + REL) (DB)`: a delayed call.
+#[cfg(sharc_gen)]
+fn lp_call_db(rel: i32) -> u64 {
+    0x0700_0000_0000 | (1 << 39) | (0x1f << 33) | (1 << 26) | (rel as u32 & 0xff_ffff) as u64
+}
+
 /// Type 3d: `ureg <-> DM(Ii, Mm)` of the byte or short access (l, x), in
 /// the ACCESS group (w = 0) without the exclusive monitor (ex = 0).
 #[cfg(sharc_gen)]
@@ -1739,6 +1763,115 @@ fn fast_single_iteration_and_register_count_loops_match() {
         for entries in [0, 2, 3, 5, 8, 9].map(|k| vec![lp_pc(k)]) {
             lp_check(&format!("single {count} {entries:?}"), &code, &entries, 80, &set);
         }
+    }
+}
+
+/// A loop whose register count is exact relative to the entry registers
+/// (`R5 = R7 - 2`, or `R7 = R7 - 2`), stepping two pointers, with a pointer
+/// read after the loop: the region's iteration count comes from the register
+/// at entry. Counts of 0 and past the end of the data decline or leave; every
+/// run must match the interpreter.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_register_count_loop_with_stepped_pointers_matches() {
+    let at = |k: u32| LP_DATA + k;
+    for same in [false, true] {
+        let cnt = if same { 7 } else { 5 };
+        let code = [
+            lp_imm(6, 2),                                  // 0: R6 = 2
+            lp_sub(cnt, 7, 6),                             // 1: count = R7 - R6
+            lp_do_reg(cnt, lp_rel(2, 6)),                  // 2: DO (end 6) count times
+            lp_3d(0x1f, false, true, 0, 0, 4, 0, 0),       // 3: R4 = DM(I0, M0) byte, post
+            lp_3d(0x1f, true, true, 1, 0, 4, 0, 0),        // 4: DM(I1, M0) = R4 byte, post
+            lp_add(3, 3, 4),                               // 5: R3 += R4
+            lp_add(9, 9, 2),                               // 6: R9 += R2   (end)
+            lp_3d(0x1f, false, true, 0, 0, 8, 0, 0),       // 7: R8 = DM(I0, M0) after the loop
+            lp_3d(0x1f, true, true, 1, 0, 8, 0, 0),        // 8: DM(I1, M0) = R8 after the loop
+            lp_jump(0x1f, 0),                              // 9: spin
+        ];
+        let all: Vec<u32> = (0..10).map(lp_pc).collect();
+        // The region's trip count is R7 - 2, evaluated at entry.
+        let probe = lp_engine(&code, &[], false, &|e| {
+            lp_regs(e, &[(2, 1), (7, 9), (16, at(0x10)), (17, at(0x200)), (32, 1)])
+        });
+        let region = crate::fast::region::build_cfg(&probe.s, lp_pc(0)).expect("region");
+        assert_eq!(region.cfg.as_ref().unwrap().reg_n, Some((7, -2)), "same={same}");
+        for n in [1u32, 2, 3, 7, 40] {
+            let set = move |e: &mut crate::Engine| {
+                lp_regs(
+                    e,
+                    &[(2, 1), (7, n + 2), (16, at(0x10)), (17, at(0x200)), (32, 1)],
+                )
+            };
+            let total = 3 * n + 12;
+            for entries in [vec![0], vec![lp_pc(1)], vec![lp_pc(2)], all.clone()] {
+                lp_check(&format!("regcount same={same} n={n} {entries:?}"), &code, &entries, total, &set);
+            }
+        }
+        // A count of 1, one whose windows run past the data, and a huge one.
+        for r7 in [3u32, 3_000, 0x1000_0002] {
+            let set = move |e: &mut crate::Engine| {
+                lp_regs(
+                    e,
+                    &[(2, 1), (7, r7), (16, at(0x10)), (17, at(0x200)), (32, 1)],
+                )
+            };
+            lp_compare(&format!("regcount edge same={same} r7={r7:#x}"), &code, &all, 40, &set);
+        }
+    }
+}
+
+/// The return-address push in the delay slot of a call (`DM(I7, M7) = imm`,
+/// Type 16a) where I7 has no static range (it steps in a backward-branch
+/// cycle before): the push is a guarded dynamic-window store. Pushes inside
+/// the window, at its edge and outside plain memory must all match.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_call_slot_push_through_an_unranged_stack_pointer_matches() {
+    let at = |k: u32| LP_DATA + k;
+    // The stack model, with loaded calls followed (a CALL ends a kernel).
+    let stack_calls = |e: &mut crate::Engine| {
+        for (opt, v) in [(13, 1), (14, 16), (20, 1)] {
+            assert_eq!(e.set_option(opt, v), 0);
+        }
+    };
+    let code = [
+        lp_imm(4, 3),                          // 0: R4 = 3
+        lp_3a(0x1f, true, true, 7, 7, 0),      // 1: DM(I7, M7) = R0 (post)   <- cycle head
+        lp_sub(4, 4, 2),                       // 2: R4 -= R2 (AZ)
+        lp_jump(0x10, lp_rel(3, 1)),           // 3: IF NE JUMP 1
+        lp_add(0, 0, 2),                       // 4: R0 += R2
+        lp_call_db(lp_rel(5, 9)),              // 5: CALL 9 (DB)
+        lp_16a(7, 7, 0x1234_5678),             // 6: slot 1: DM(I7, M7) = imm (post)
+        lp_add(1, 1, 2),                       // 7: slot 2: R1 += R2
+        lp_jump(0x1f, 0),                      // 8: spin (the return point)
+        lp_add(3, 3, 2),                       // 9: the callee
+        lp_jump(0x1f, 0),                      // 10: spin
+    ];
+    let all: Vec<u32> = (0..11).map(lp_pc).collect();
+    // The push is lowered in the kernel (not the end of the region).
+    let probe = lp_engine(&code, &[], false, &|e| {
+        stack_calls(e);
+        lp_regs(e, &[(2, 1), (23, at(0x300)), (39, 0xffff_ffff)])
+    });
+    let region = crate::fast::region::build_cfg(&probe.s, lp_pc(0)).expect("region");
+    let stops = &region.cfg.as_ref().unwrap().stops;
+    assert!(
+        !stops.iter().any(|(pc, _)| *pc == lp_pc(5) || *pc == lp_pc(6)),
+        "the call with the 16a push became a stop: {stops:?}"
+    );
+    for (sp, m7) in [
+        (at(0x300), 0xffff_ffffu32), // downward in the window
+        (at(0x100), 1),              // upward
+        (at(0x3f0), 1),              // past the end of the data window
+        (at(0x8), 0xffff_ffff),      // below the low edge of the data
+        (0x1000, 0xffff_ffff),       // not in the data window at all
+    ] {
+        let set = move |e: &mut crate::Engine| {
+            stack_calls(e);
+            lp_regs(e, &[(2, 1), (23, sp), (39, m7)])
+        };
+        lp_compare(&format!("push sp={sp:#x} m7={m7:#x}"), &code, &all, 40, &set);
     }
 }
 

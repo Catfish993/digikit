@@ -1399,12 +1399,22 @@ mod sites {
             _ => None,
         };
         set_bit26(s, ev, entry_stkyx);
-        if ctx.get32(CTX_STK26) == 1 && entry_stkyx.m & BIT26 == 0 && s.r[STKYX].m & BIT26 != 0 {
+        let stk26 = ctx.get32(CTX_STK26);
+        if (stk26 == 1 || (stk26 == 2 && s.cfg.stack_model))
+            && entry_stkyx.m & BIT26 == 0
+            && s.r[STKYX].m & BIT26 != 0
+        {
             // A DO alone (no loop end after it) clears bit 26 where it was
             // known, and leaves it unknown where it was not (the generic
-            // core's `_push` keeps the known mask).
+            // core's `_push` keeps the known mask). The stack model's loop
+            // end (`_pop_loop_resource`) keeps the mask too.
             let cur = s.r[STKYX];
-            s.r[STKYX] = V { b: cur.b, m: cur.m & !BIT26 };
+            let b = if stk26 == 2 {
+                (cur.b & !BIT26) | (entry_stkyx.b & BIT26)
+            } else {
+                cur.b
+            };
+            s.r[STKYX] = V { b, m: cur.m & !BIT26 };
         }
         if s.loops.n != loops_before || did {
             s.check_loops();
@@ -1656,7 +1666,20 @@ pub fn run_cfg(
             ctx.set32(CTX_LOOP_REM_IN + 4 * i as u32, s.loops.a[nloops - n + i].remaining as u32);
         }
     }
-    let iters = rem_top.max(1);
+    let iters = match meta.reg_n {
+        // The region's symbolic trip count is `R[c] + k` (a register-count
+        // loop with no entry loop): windows and requirements are checked
+        // for that many iterations.
+        Some((c, k)) => {
+            let v = s.r[c as usize];
+            let n = v.b as i64 + k;
+            if !v.is_c() || !(1..=u32::MAX as i64).contains(&n) {
+                return Err(shape("register loop count unknown or out of range"));
+            }
+            n
+        }
+        None => rem_top.max(1),
+    };
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     // The lean contract (`lean`) applies while no window check is asked for.
     let lean = r.lean.as_ref().filter(|_| !check);
