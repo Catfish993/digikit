@@ -36,6 +36,13 @@ const localInputs = {
   name: 'digi-local-inputs',
   apply: 'serve',
   configureServer(server) {
+    // Cross-origin isolation for the dev page, so SharedArrayBuffer works and the
+    // coupled core can run its ColdFire and DSP in two workers (runtime.ts `splitAvailable`).
+    server.middlewares.use((_req, res, next) => {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+      next();
+    });
     server.middlewares.use('/__digi-local', (req, res) => {
       if (!loopback.has(req.socket.remoteAddress ?? '')) { res.statusCode = 403; res.end(); return; }
       if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; res.end(); return; }

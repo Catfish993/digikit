@@ -929,6 +929,63 @@ impl<E: DspEngine> Peer for SharcPeer<E> {
     }
 }
 
+/// The DSP half of a two-instance session (the browser's DSP worker). Like
+/// the native [`ThreadedPeer`] worker it answers frame N as soon as the SPI
+/// exchange is done (`reply`, which first finishes rendering frame N-1) and
+/// renders the period afterwards (`render`), so the ColdFire side runs
+/// ahead of the DSP by up to one frame while every reply and DSP state is
+/// exactly the synchronous peer's.
+pub struct RemoteDsp<E: DspEngine> {
+    core: Core<E>,
+    shared: Rc<RefCell<Shared>>,
+    pending: Option<Exchanged>,
+    sample_link: bool,
+}
+
+impl<E: DspEngine> RemoteDsp<E> {
+    pub fn new(engine: E, period: u32) -> (Self, Rc<RefCell<Shared>>) {
+        let shared = Rc::new(RefCell::new(Shared {
+            attached: true,
+            ..Shared::default()
+        }));
+        let remote = Self {
+            core: Core::new(engine, period),
+            shared: shared.clone(),
+            pending: None,
+            sample_link: false,
+        };
+        (remote, shared)
+    }
+
+    pub fn enable_sample_link(&mut self) {
+        self.sample_link = true;
+    }
+
+    /// First half of a frame: the reply. Renders the previous frame first if
+    /// the caller has not.
+    pub fn reply(&mut self, tx: &[u8]) -> Vec<u8> {
+        self.render();
+        let attached = self.shared.borrow().attached;
+        let (reply, ex) = self.core.exchange(tx, attached, None);
+        self.pending = Some(ex);
+        reply
+    }
+
+    /// Second half: run the DSP for the period and record the audio block.
+    pub fn render(&mut self) {
+        if let Some(ex) = self.pending.take() {
+            let done = self.core.render(ex, None);
+            commit(&mut self.shared.borrow_mut(), done);
+        }
+    }
+
+    pub fn link_bytes(&mut self, bytes: &[u8]) {
+        if self.sample_link {
+            self.core.push_link(bytes);
+        }
+    }
+}
+
 enum Msg {
     Frame {
         tx: Vec<u8>,

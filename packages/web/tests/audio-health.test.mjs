@@ -49,6 +49,7 @@ function workerHarness({ ordinaryHasCoupling = false } = {}) {
   };
   if (ordinaryHasCoupling) abi.digi_load_coupled = () => writeResult({ snapshot: { status: { icount } } });
   const source = fs.readFileSync(new URL('../src/runtime/runtime-worker.ts', import.meta.url), 'utf8')
+    .replace("import { LinkClient } from '../sab-link.ts';", 'class LinkClient {}')
     .replace("import { hostMetrics, pcmMetrics } from './runtime-metrics';", 'const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, report() { return {}; } }); const pcmMetrics = () => ({});');
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const context = {
@@ -62,6 +63,8 @@ function workerHarness({ ordinaryHasCoupling = false } = {}) {
     },
     TextDecoder, TextEncoder, Uint8Array, Float32Array, performance: { now: () => 0 },
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    // The pump yields through a MessageChannel: each port2 post queues one port1 task, like a timer.
+    MessageChannel: class { constructor() { const port1 = {}; this.port1 = port1; this.port2 = { postMessage: () => { timers.push(() => port1.onmessage?.({})); } }; } },
     postMessage: (message) => { if (message.reply) replies.get(message.reply)?.(message); },
     self: {}, console,
   };

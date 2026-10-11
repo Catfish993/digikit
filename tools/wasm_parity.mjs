@@ -19,6 +19,8 @@
 //   --cf-snapshot PATH READY/digi-audio-m5.snap       (DIGI_EMU_CF_SNAPSHOT)
 //   --scenarios PATH   scenarios/dn2.json
 //   --scenario NAME    scenario to play (required)
+//   --fast T,M,F       turn the DSP fast tier on (wasm kernels; needs a `fast-wasm` core): threshold, min insns, follow
+//   --split 1          two core instances in two threads (ColdFire here, DSP in a worker_threads worker); PCM must equal the single instance's
 //   --seconds S        override the scenario length in audio seconds (like coupled-run)
 //   --out PATH         write the raw f32le PCM (compare with coupled-run --wav x.f32)
 //   --repo PATH        repo root (default: the parent of this script's directory, else cwd)
@@ -53,30 +55,77 @@ if (!args.scenario) throw new Error('--scenario NAME is required');
 const scenario = JSON.parse(fs.readFileSync(paths.scenarios, 'utf8')).scenarios.find((s) => s.name === args.scenario);
 if (!scenario) throw new Error(`no scenario ${args.scenario} in ${paths.scenarios}`);
 
-const { instance } = await WebAssembly.instantiate(fs.readFileSync(paths.core), {});
-const e = instance.exports;
-const mem = () => e.memory.buffer;
-const json = () => JSON.parse(new TextDecoder().decode(new Uint8Array(mem(), e.digi_result_ptr(), e.digi_result_len())));
-const call = (name, ...a) => {
-  const c = e[name](...a);
-  const v = json();
-  if (c !== 0 || v.error) throw new Error(`${name}: ${v.error ?? c}`);
-  return v.snapshot ?? v;
+// The fast tier of the browser core (`--fast threshold,min_insns,follow`, a core
+// built with the `fast-wasm` feature): its kernels are wasm modules the core
+// emits and this host compiles over the core's own memory.
+const kernels = [];
+const hostStats = { compileMs: 0, compiled: 0, runs: 0, bytes: 0 };
+const hostEnv = {
+  host_wasm_compile(ptr, len) {
+    const bytes = new Uint8Array(mem(), ptr, len).slice();
+    const t = performance.now();
+    try {
+      const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { memory: e.memory } });
+      kernels.push(inst.exports.k0);
+    } catch (err) { console.error(`kernel module refused: ${err}`); return -1; }
+    hostStats.compileMs += performance.now() - t; hostStats.compiled++; hostStats.bytes += len;
+    return kernels.length - 1;
+  },
+  host_wasm_run(id, ctx, st) { hostStats.runs++; return kernels[id](ctx, st); },
+  host_wasm_free(id) { kernels[id] = null; },
 };
-const put = (b) => {
-  const p = e.digi_alloc(b.length);
-  if (!p) throw new Error('digi_alloc failed');
-  new Uint8Array(mem(), p, b.length).set(b);
-  return p;
-};
+// --split 1: the two-worker session of the browser (packages/web/src/split-session.ts):
+// the ColdFire instance runs in this thread, the DSP instance in a worker_threads
+// worker (tools/wasm_split.mjs), DSPI2 frames cross a SharedArrayBuffer. Same
+// scenario loop and events, so the PCM must be the single-instance PCM.
+let e, mem, call, first, loadS, cfSide, dspDone, linkBuffer;
+const dspiStub = { host_dspi_exchange() { throw new Error('no remote DSP'); }, host_dspi_link() { throw new Error('no remote DSP'); } };
+if (args.split === '1') {
+  const web = path.join(root, 'packages/web/src');
+  const { createCfSide } = await import(path.join(web, 'split-session.ts'));
+  const { createLinkBuffer } = await import(path.join(web, 'sab-link.ts'));
+  const { Worker } = await import('node:worker_threads');
+  const read = (p) => new Uint8Array(fs.readFileSync(p));
+  const wasm = read(paths.core);
+  linkBuffer = createLinkBuffer();
+  const dspWorker = new Worker(path.join(here, 'wasm_split.mjs'), { workerData: { wasm, image: read(paths.image), state: read(paths.dsp), link: linkBuffer, keepPcm: true }, execArgv: process.execArgv });
+  dspDone = new Promise((resolve, reject) => { dspWorker.on('message', (m) => { if (m.type === 'done') resolve(m); }); dspWorker.on('error', reject); });
+  await new Promise((resolve, reject) => { dspWorker.once('message', (m) => m.type === 'ready' && resolve()); dspWorker.once('error', reject); });
+  const t0 = performance.now();
+  cfSide = await createCfSide({ wasm, syx: read(paths.syx), snapshot: read(paths.snap), link: linkBuffer });
+  loadS = (performance.now() - t0) / 1000;
+  e = cfSide.core.exports; mem = cfSide.core.memory; call = cfSide.core.call;
+  first = cfSide.loaded;
+} else {
+  const { instance } = await WebAssembly.instantiate(fs.readFileSync(paths.core), { env: { ...dspiStub, ...hostEnv } });
+  e = instance.exports;
+  mem = () => e.memory.buffer;
+  const json = () => JSON.parse(new TextDecoder().decode(new Uint8Array(mem(), e.digi_result_ptr(), e.digi_result_len())));
+  call = (name, ...a) => {
+    const c = e[name](...a);
+    const v = json();
+    if (c !== 0 || v.error) throw new Error(`${name}: ${v.error ?? c}`);
+    return v.snapshot ?? v;
+  };
+  const put = (b) => {
+    const p = e.digi_alloc(b.length);
+    if (!p) throw new Error('digi_alloc failed');
+    new Uint8Array(mem(), p, b.length).set(b);
+    return p;
+  };
 
-const bufs = Object.fromEntries(['syx', 'image', 'dsp', 'snap'].map((k) => [k, fs.readFileSync(paths[k])]));
-const ptrs = Object.fromEntries(Object.entries(bufs).map(([k, b]) => [k, put(b)]));
-const t0 = performance.now();
-const first = call('digi_load_coupled', ptrs.syx, bufs.syx.length, ptrs.image, bufs.image.length, ptrs.dsp, bufs.dsp.length, ptrs.snap, bufs.snap.length);
-const loadS = (performance.now() - t0) / 1000;
-for (const k of Object.keys(ptrs)) e.digi_dealloc(ptrs[k], bufs[k].length);
+  const bufs = Object.fromEntries(['syx', 'image', 'dsp', 'snap'].map((k) => [k, fs.readFileSync(paths[k])]));
+  const ptrs = Object.fromEntries(Object.entries(bufs).map(([k, b]) => [k, put(b)]));
+  const t0 = performance.now();
+  first = call('digi_load_coupled', ptrs.syx, bufs.syx.length, ptrs.image, bufs.image.length, ptrs.dsp, bufs.dsp.length, ptrs.snap, bufs.snap.length);
+  loadS = (performance.now() - t0) / 1000;
+  for (const k of Object.keys(ptrs)) e.digi_dealloc(ptrs[k], bufs[k].length);
+}
 if (!first.status.ready) throw new Error('the restored snapshot is not at ready');
+if (args.fast) {
+  const [t, m, f] = args.fast.split(',').map(Number);
+  call('digi_sharc_fast', t, m, f ?? 0);
+}
 const readyAt = first.status.icount;
 console.error(`scenario ${scenario.name}: load ${loadS.toFixed(2)} s, ready at icount ${readyAt}`);
 
@@ -110,7 +159,7 @@ const untilInstr = args.seconds !== undefined ? null : scenario.instructions ?? 
 
 const chunks = [];
 let values = 0, icount = readyAt, next = 0, nChunks = 0;
-const frames = () => Math.floor(values / VALUES_PER_FRAME);
+const frames = () => (cfSide ? cfSide.stats().frames : Math.floor(values / VALUES_PER_FRAME));
 const wallStart = performance.now();
 let lastLog = wallStart;
 for (;;) {
@@ -131,7 +180,7 @@ for (;;) {
   const status = call('digi_step', budget).status;
   nChunks++;
   icount = status.icount;
-  const n = e.digi_pcm_take();
+  const n = cfSide ? 0 : e.digi_pcm_take(); // split: the PCM is in the DSP worker
   if (n) {
     chunks.push(new Uint8Array(mem(), e.digi_pcm_ptr(), n * 4).slice());
     values += n;
@@ -144,13 +193,25 @@ for (;;) {
   }
 }
 const wallS = (performance.now() - wallStart) / 1000;
-const pcm = Buffer.concat(chunks);
-const stats = call('digi_sharc_stats');
+let pcm = Buffer.concat(chunks);
+let stats;
+if (cfSide) {
+  const { LinkServer } = await import(path.join(root, 'packages/web/src/sab-link.ts'));
+  new LinkServer(linkBuffer).close();
+  const done = await dspDone;
+  pcm = Buffer.from(done.pcm);
+  values = pcm.length / 4;
+  stats = done.stats.engine;
+  const s = cfSide.stats();
+  console.log(`split: ColdFire thread blocked on the DSP ${(s.waitedMs / 1000).toFixed(2)} s of ${wallS.toFixed(2)} s, DSP worker busy ${(done.stats.busyMs / 1000).toFixed(2)} s, ${s.requests} link requests`);
+} else stats = call('digi_sharc_stats');
 const audioS = values / 2 / 48000;
 const sha = crypto.createHash('sha256').update(pcm).digest('hex');
 console.log(`scenario=${scenario.name} cf_instr=${icount - readyAt} chunks=${nChunks} frames=${stats.frames} dsp_instr=${stats.dsp_instructions} halted=${stats.halted} missing_blocks=${stats.missing_blocks}`);
 console.log(`pcm values=${values} audio=${audioS.toFixed(3)}s sha256=${sha}`);
 console.log(`wall=${wallS.toFixed(1)}s load=${loadS.toFixed(2)}s real_time_factor=${(wallS / audioS).toFixed(1)}x slower than real time`);
+if (args.fast) console.log('fast report', JSON.stringify(call('digi_sharc_fast_report')));
+if (args.fast) console.log(`fast tier: ${hostStats.compiled} kernels compiled in ${hostStats.compileMs.toFixed(0)} ms (${(hostStats.bytes / 1e6).toFixed(2)} MB wasm), ${hostStats.runs} kernel runs`);
 if (args.out) fs.writeFileSync(args.out, pcm);
 let rc = 0;
 if (scenario.expect_sha256) {

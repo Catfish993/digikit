@@ -986,3 +986,42 @@ instructions, ColdFire 132M.
   0.25 -> 0.30. **[O]** not tried.
 - Getting to real time in one worker needs the DSP about 2x faster in wasm; the alternative is the DSP in a
   second worker (shared memory, needs cross-origin isolation). **[O]**
+
+## Browser: yield and split workers 2026-10-11 **[D]**
+
+Same method as the baseline above (`mise run web:bench -- --seconds 10 --runs 3`, headless Chromium 150, DN2 1.11,
+`tap(25)` at load, exclusive benchlock, one machine, load not controlled, not re-checked by a second agent). The
+core was rebuilt for this lane (adds `digi_dsp_*`, `digi_load_coupled_remote`); `--split 0` keeps one worker.
+
+| Step | audio s / wall s (3 runs) | mean | ColdFire worker busy / audio s | DSP worker busy / audio s |
+|---|---|---:|---:|---:|
+| baseline: one worker, `setTimeout(0)` re-arm | 0.251, 0.247, 0.252 | 0.250 | 3.28 (both chips, 82% of wall) | (same worker) |
+| one worker, `MessageChannel` yield | 0.315, 0.304, 0.294 | 0.305 | 3.2-3.4 (99.8% of wall) | (same worker) |
+| one worker, yield, rebuilt core (`--split 0`) | 0.312, 0.301, 0.312 | 0.309 | same | same |
+| two workers over a SharedArrayBuffer | 0.394, 0.390, 0.389 | 0.391 | 0.71-0.72 (blocked on the DSP the rest) | 2.57-2.59 |
+
+- **Yield: confirmed.** Replacing the 4 ms-clamped `setTimeout(0)` by a `MessageChannel` task in
+  `runtime-worker.ts` moves the worker from 82% to 99.8% busy and 0.25 to 0.30-0.31, as the idle share predicted.
+  Input still interleaves (the queue is the worker's task queue; `web:test` passes with the harness faking the channel).
+- **Split: 0.39, bounded by the DSP.** The DSP instance's 2.57 s per audio s equals the whole run's wall time per
+  audio s (2.56): the ColdFire's 0.71 s overlaps it entirely. The split is pipelined like the native `ThreadedPeer`:
+  the DSP worker answers frame N after the SPI exchange and renders the period afterwards (`RemoteDsp::reply` /
+  `render`, `digi_dsp_reply` / `digi_dsp_render`), so the ColdFire runs up to one frame ahead. The branch's
+  `digi_dsp_exchange` (reply and render in one call) would have been serial; it is kept as reply then render.
+- **Exactness [V under Node, D in the browser].** `node tools/wasm_parity.mjs --scenario trig1-tap-release --split 1`
+  (ColdFire instance in the main thread, DSP instance in a `worker_threads` worker, frames over the same
+  `sab-link.ts`) gives `883476213933333f0c5f4e2b343f65ed470fda0c50c8fa37905972457e819cdd`, the pinned native hash
+  and the single-instance wasm hash (816000 values, 8.5 s). Wall 23.6 s against 30.6 s single. In Chromium the Trig
+  tap lands at a host-timing dependent instruction count, so the PCM cannot be hashed there; the bench reports
+  `pcm_peak` (0.0549 in both modes), `missing_blocks` 0 and no halt.
+- **Setup.** The page needs cross-origin isolation: the astro dev server now sends COOP `same-origin` and COEP
+  `require-corp` (`astro.config.mjs`), `splitAvailable()` in `runtime.ts` enables the split when the page is isolated
+  and the core exports `digi_dsp_reply`, else (or with `?split=0`) the single worker runs. The page compiles the core
+  once and hands the `WebAssembly.Module` to both workers. `coi-serviceworker.js` from the parked branch is in
+  `public/` but not loaded (GitHub Pages has no coupled core anyway). The generic-core build step of the branch's
+  `tools/native_wasm.py` was left out.
+- **Why wasm is still about 2.5x the native DSP.** Not measured further here. Known from above: not tiering; the
+  browser core has no fast tier (V8 runs the AOT blocks; native reaches 0.93-1.10 s per audio s with its fast tier
+  and AOT), so the remaining gap is wasm codegen of the generated blocks (bounds checks, no SIMD in the generated
+  Rust for wasm32, 32-bit pointers). The wasm fast tier of the parked branch (`digi_sharc_fast`, generic core)
+  is a separate path. **[O]**
