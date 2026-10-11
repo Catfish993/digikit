@@ -1069,7 +1069,7 @@ def shift_funpack(rn, rx, ry, left, right, values, special, approx_recips) -> tu
 # (BITDEP) or "of Rx" (BITEXT), with a count over 32 prohibited (SV); the
 # FIFO arithmetic is _bitdep/_bitext, shared with the immediate forms. An
 # unknown count undefines the FIFO, the pointer and the result.
-def _bit_fifo_unknown(rn, label: str, writes_rn: bool) -> tuple:
+def _bit_fifo_unknown(rn: int, label: str, writes_rn: bool) -> ComputeResult:
     unknown = Unknown(label)
     updates = _flags_from_pairs(
         (
