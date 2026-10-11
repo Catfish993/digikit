@@ -347,12 +347,24 @@ def read_manifest(device: str = "dn2") -> dict[str, object] | None:
         return None
 
 
+def profdata_path(manifest: dict[str, object], device: str = "dn2") -> pathlib.Path:
+    """The manifest's profile file, preferring this tree's copy.
+
+    A profile trained in a linked worktree records that tree's absolute path;
+    the file itself is in the shared out/ directory, so the same name under
+    this tree's state directory is used when it exists.
+    """
+    path = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    local = device_state(device) / "profiles" / path.name
+    return local if local.is_file() else path
+
+
 def current_profile(device: str = "dn2") -> str | None:
     """The manifest's profile file if it still exists (even when stale)."""
     manifest = read_manifest(device)
     if not manifest:
         return None
-    path = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    path = profdata_path(manifest, device)
     return str(path) if path.is_file() else None
 
 
@@ -375,7 +387,7 @@ def check_state(
     manifest = read_manifest(device)
     if manifest is None:
         return "missing", "no manifest", False
-    profdata = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    profdata = profdata_path(manifest, device)
     if not profdata.is_file():
         return "missing", f"profile file {profdata} is gone", False
     if not toolchain_dir().is_dir():
@@ -944,7 +956,7 @@ def cmd_check(_: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     manifest = read_manifest(args.device)
-    profdata = pathlib.Path(str(manifest["profdata"]["path"])) if manifest else None  # type: ignore[index]
+    profdata = profdata_path(manifest, args.device) if manifest else None
     if profdata is None or not profdata.is_file():
         print("no trained profile to verify against")
         return 1
@@ -1162,7 +1174,7 @@ def cmd_check_dt2() -> int:
     if manifest is None:
         print("missing (no manifest)")
         return 1
-    profdata = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    profdata = profdata_path(manifest, "dt2")
     if not profdata.is_file():
         print(f"missing (profile file {profdata} is gone)")
         return 1
@@ -1190,7 +1202,7 @@ def cmd_coupled_build(args: argparse.Namespace) -> None:
         manifest = read_manifest(args.device)
         if manifest is None:
             raise SystemExit(f"no {args.device} manifest")
-        profile = str(manifest["profdata"]["path"])  # type: ignore[index]
+        profile = str(profdata_path(manifest, args.device))
     if profile:
         profile = str(pathlib.Path(profile).resolve())
         flags = profile_use_flags(profile)
