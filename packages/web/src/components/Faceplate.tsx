@@ -38,10 +38,11 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   const [cardStatus, setCardStatus] = createSignal<CardStatus>();
   const [cardBusy, setCardBusy] = createSignal(false);
   const [cardNote, setCardNote] = createSignal('');
+  const [runtimeSignal, setRuntimeSignal] = createSignal<EmulatorRuntime | undefined>(undefined);
   let cardTimer: number | undefined;
   let cardInput: HTMLInputElement | undefined;
   let lastAudio: { produced: number; wall: number } | undefined;
-  const runtime = () => activeRuntime ?? props.runtime;
+  const runtime = () => runtimeSignal() ?? activeRuntime ?? props.runtime;
   let activeRuntime: EmulatorRuntime | undefined;
   let runtimeReady: Promise<EmulatorRuntime | undefined> | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -94,7 +95,7 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
     parts.push(`produced ${audio.source_audio_seconds.toFixed(2)} s`);
     return parts.join(' · ');
   };
-  onMount(() => { runtimeReady = Promise.resolve(props.runtime ?? nativeRuntime(update)).then((runtime) => { const selected = runtime ?? browserRuntime(update); if (disposed) { selected.dispose(); return undefined; } activeRuntime = selected; setBrowserAudioSetup(!runtime); void refreshNativeAudio(); audioTimer = window.setInterval(() => { void refreshNativeAudio(); }, 1000); return selected; }); });
+  onMount(() => { runtimeReady = Promise.resolve(props.runtime ?? nativeRuntime(update)).then((runtime) => { const selected = runtime ?? browserRuntime(update); if (disposed) { selected.dispose(); return undefined; } activeRuntime = selected; setRuntimeSignal(selected); setBrowserAudioSetup(!runtime); void refreshNativeAudio(); audioTimer = window.setInterval(() => { void refreshNativeAudio(); }, 1000); return selected; }); });
   onCleanup(() => { disposed = true; window.removeEventListener('blur', releaseAll); if (clearSuppression) window.clearTimeout(clearSuppression); if (audioTimer) window.clearInterval(audioTimer); releaseAll(); void activeRuntime?.stop().catch((error) => update({ type: 'error', error: String(error) })); activeRuntime?.dispose(); });
   const choose = async (file?: File) => {
     if (!file) return;
