@@ -243,11 +243,26 @@ def cargo_command(args: list[str], pgo: object | None = None) -> list[str]:
     return [*command, "--", *args]
 
 
-def train_profile() -> str:
+def device_for_args(args: list[str]) -> str:
+    """The device a coupled launch runs (`dn2`, `dt2`), by its firmware file."""
+    if "--audio-profile-syx" in args:
+        position = args.index("--audio-profile-syx") + 1
+        syx = pathlib.Path(args[position]) if position < len(args) else None
+    else:
+        syx = digi_env.firmware()
+    return (digi_env.device_for_syx(syx) if syx else None) or "dn2"
+
+
+def train_profile(device: str = "dn2") -> str:
     """Run `native_pgo.py train`; returns "" on success, else why it failed."""
     try:
         done = subprocess.run(
-            [sys.executable, str(ROOT / "tools" / "native_pgo.py"), "train"],
+            [
+                sys.executable,
+                str(ROOT / "tools" / "native_pgo.py"),
+                "train",
+                *(["--device", device] if device != "dn2" else []),
+            ],
             cwd=ROOT,
             check=False,
         )
@@ -259,6 +274,8 @@ def train_profile() -> str:
 def pgo_plan(args: list[str]) -> object | None:
     """Profile-use plan for the coupled build, or None for the ordinary build.
 
+    Each device has its own profile (`native_pgo.py train --device dt2`): a DN2
+    profile gives a DT2 build only the shared-engine 3%, a DT2 profile 19%.
     The launcher never trains on its own. A stale profile is used anyway with a
     WARNING (unchanged functions keep their profile); a missing one falls back
     to the ordinary build. DIGI_EMU_PGO_TRAIN=1 trains a stale or missing
@@ -276,12 +293,13 @@ def pgo_plan(args: list[str]) -> object | None:
     finally:
         sys.path.pop(0)
     environ = os.environ
-    status, detail = native_pgo.pgo_state(environ)
+    device = device_for_args(args)
+    status, detail = native_pgo.pgo_state(environ, device)
     if status == "off":
         return None
     if status in ("stale", "missing"):
         if environ.get("DIGI_EMU_PGO_TRAIN") == "1":
-            blocker = native_pgo.training_blocker(environ)
+            blocker = native_pgo.training_blocker(environ, device)
             if blocker:
                 detail = f"{detail}; cannot train: {blocker}"
             else:
@@ -291,23 +309,27 @@ def pgo_plan(args: list[str]) -> object | None:
                     file=sys.stderr,
                     flush=True,
                 )
-                failure = train_profile()
+                failure = train_profile(device)
                 if failure:
                     status, detail = "failed", failure
                 else:
-                    status, detail = native_pgo.pgo_state(environ)
+                    status, detail = native_pgo.pgo_state(environ, device)
         elif status == "stale":
-            profile = native_pgo.current_profile()
+            profile = native_pgo.current_profile(device)
             if profile:
-                print(native_pgo.stale_notice(detail), file=sys.stderr)
+                print(native_pgo.stale_notice(detail, device), file=sys.stderr)
                 return native_pgo.plan_for(profile, environ)
         else:
-            print(native_pgo.fallback_notice(status, detail), file=sys.stderr)
+            print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
             return None
     if status != "ok":
-        print(native_pgo.fallback_notice(status, detail), file=sys.stderr)
+        print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
         return None
-    print("native PGO: using profile " + pathlib.Path(detail).name, file=sys.stderr)
+    print(
+        f"native PGO: using {device.upper() + ' ' if device != 'dn2' else ''}profile "
+        + pathlib.Path(detail).name,
+        file=sys.stderr,
+    )
     return native_pgo.plan_for(detail, environ)
 
 
@@ -315,6 +337,7 @@ PGO_MISMATCH_WARNING = (
     "WARNING: PGO profile does not match this binary (crate hashes differ); "
     "live DSP will run ~35% slower. Run tools/native_pgo.py train."
 )
+PGO_MISMATCH_WARNING_DT2 = PGO_MISMATCH_WARNING.replace("train.", "train --device dt2.")
 
 
 def build_command(command: list[str]) -> list[str]:
@@ -325,7 +348,7 @@ def build_command(command: list[str]) -> list[str]:
     return head
 
 
-def verify_pgo(command: list[str], env: dict[str, str]) -> None:
+def verify_pgo(command: list[str], env: dict[str, str], device: str = "dn2") -> None:
     """Build, then warn loudly if the profile's crate hashes miss the binary.
 
     A failed build stops the launch; a failed check only warns.
@@ -335,14 +358,26 @@ def verify_pgo(command: list[str], env: dict[str, str]) -> None:
         raise SystemExit(built.returncode)
     try:
         done = subprocess.run(
-            [sys.executable, str(ROOT / "tools" / "native_pgo.py"), "verify"],
+            [
+                sys.executable,
+                str(ROOT / "tools" / "native_pgo.py"),
+                "verify",
+                "--device",
+                device,
+                *(
+                    ["--binary", str(app_binary(command, True))]
+                    if "--target-dir" in command
+                    else []
+                ),
+            ],
             cwd=ROOT,
             check=False,
         )
     except (OSError, ValueError):
         return
     if done.returncode == 1:
-        print(PGO_MISMATCH_WARNING, file=sys.stderr, flush=True)
+        warning = PGO_MISMATCH_WARNING_DT2 if device == "dt2" else PGO_MISMATCH_WARNING
+        print(warning, file=sys.stderr, flush=True)
 
 
 def daemon_command(args: list[str]) -> list[str]:
@@ -544,7 +579,7 @@ def main(args: list[str] | None = None) -> None:
     env = digi_env.rust_env({**os.environ, **(plan.env if plan is not None else {})})  # type: ignore[attr-defined]
     command = daemon_command(args) if daemon else cargo_command(args, plan)
     if plan is not None:
-        verify_pgo(command, env)
+        verify_pgo(command, env, device_for_args(args))
     else:
         done = subprocess.run(build_command(command), cwd=ROOT, env=env)
         if done is not None and done.returncode:

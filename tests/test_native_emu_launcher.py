@@ -319,13 +319,13 @@ def test_main_runs_the_built_binary_not_cargo_run(monkeypatch):
 def test_cargo_command_uses_the_gen_keyed_target_dir(monkeypatch, tmp_path):
     scope = launcher()
     plain = scope["cargo_command"](["example.syx"])
-    assert plain[plain.index("--target-dir") + 1].endswith("out/native/target/nogen")
+    assert plain[plain.index("--target-dir") + 1].endswith("/nogen")
     gen = tmp_path / "gen"
     gen.mkdir()
     monkeypatch.setenv("SHARC_GEN_DIR", str(gen))
     coupled = scope["cargo_command"](["example.syx", "--coupled"])
     target = coupled[coupled.index("--target-dir") + 1]
-    assert target.endswith("out/native/target/generic")
+    assert target.endswith("/generic")
     assert coupled.index("--target-dir") < coupled.index("--")
 
 
@@ -349,8 +349,10 @@ def pgo(monkeypatch):
     box.blocker = ""
     box.train_exit = 0
     box.commands = []
+    box.devices = []
 
-    def pgo_state(_environ=None):
+    def pgo_state(_environ=None, device="dn2"):
+        box.devices.append(device)
         return box.states.pop(0) if len(box.states) > 1 else box.states[0]
 
     def run(command, **_kwargs):
@@ -358,11 +360,13 @@ def pgo(monkeypatch):
         return subprocess.CompletedProcess(command, box.train_exit)
 
     monkeypatch.setattr(native_pgo, "pgo_state", pgo_state)
-    monkeypatch.setattr(native_pgo, "training_blocker", lambda _env=None: box.blocker)
+    monkeypatch.setattr(
+        native_pgo, "training_blocker", lambda _env=None, device="dn2": box.blocker
+    )
     monkeypatch.setattr(
         native_pgo, "plan_for", lambda detail, _env=None: ("plan", detail)
     )
-    monkeypatch.setattr(native_pgo, "current_profile", lambda: None)
+    monkeypatch.setattr(native_pgo, "current_profile", lambda device="dn2": None)
     monkeypatch.setattr(subprocess, "run", run)
     return box
 
@@ -402,7 +406,9 @@ def test_stale_profile_is_used_with_a_warning_without_training(
     pgo, monkeypatch, capsys
 ):
     monkeypatch.setattr(
-        sys.modules["native_pgo"], "current_profile", lambda: "old.profdata"
+        sys.modules["native_pgo"],
+        "current_profile",
+        lambda device="dn2": "old.profdata",
     )
     assert launcher()["pgo_plan"](COUPLED) == ("plan", "old.profdata")
     assert trained(pgo) == []
@@ -461,6 +467,60 @@ def test_rustflags_skip_warns_and_never_trains(pgo, capsys):
     assert capsys.readouterr().err.startswith("WARNING: native PGO: skipped")
 
 
+def dt2_syx(monkeypatch, tmp_path):
+    syx = tmp_path / "dt2.syx"
+    syx.write_bytes(b"dt2")
+    monkeypatch.setattr(
+        digi_env, "device_for_syx", lambda p: "dt2" if p == syx else None
+    )
+    return syx
+
+
+def test_dt2_firmware_selects_the_dt2_profile(pgo, monkeypatch, tmp_path):
+    syx = dt2_syx(monkeypatch, tmp_path)
+    pgo.states = [("ok", "/p/dt2.profdata")]
+    args = ["x.syx", "--coupled", "--audio-profile-syx", str(syx)]
+    assert launcher()["pgo_plan"](args) == ("plan", "/p/dt2.profdata")
+    assert pgo.devices == ["dt2"]
+    assert launcher()["pgo_plan"](COUPLED) == ("plan", "/p/dt2.profdata")
+    assert pgo.devices == ["dt2", "dn2"]
+
+
+def test_missing_dt2_profile_says_how_to_train_it(pgo, monkeypatch, tmp_path, capsys):
+    syx = dt2_syx(monkeypatch, tmp_path)
+    pgo.states = [("missing", "no manifest")]
+    assert (
+        launcher()["pgo_plan"](["--coupled", "--audio-profile-syx", str(syx)]) is None
+    )
+    assert "native_pgo.py train --device dt2" in capsys.readouterr().err
+
+
+def test_dt2_opt_in_training_trains_the_dt2_profile(pgo, monkeypatch, tmp_path):
+    syx = dt2_syx(monkeypatch, tmp_path)
+    monkeypatch.setenv("DIGI_EMU_PGO_TRAIN", "1")
+    pgo.states = [("missing", "no manifest"), ("ok", "/p/dt2.profdata")]
+    args = ["--coupled", "--audio-profile-syx", str(syx)]
+    assert launcher()["pgo_plan"](args) is not None
+    assert trained(pgo) == []
+    assert pgo.commands[0][-3:] == ["train", "--device", "dt2"]
+
+
+def test_pgo_verify_names_the_device_and_the_built_binary(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **_k: (
+            calls.append(command) or subprocess.CompletedProcess(command, 0)
+        ),
+    )
+    command = ["cargo", "run", "--target-dir", "/t/x", "--", "a"]
+    launcher()["verify_pgo"](command, {}, "dt2")
+    verify = calls[1]
+    assert verify[verify.index("--device") + 1] == "dt2"
+    assert verify[verify.index("--binary") + 1].startswith("/t/x/")
+
+
 def test_cf_only_build_never_asks_about_pgo(pgo):
     assert launcher()["pgo_plan"](["x.syx"]) is None
     assert pgo.commands == []
@@ -496,7 +556,7 @@ def test_pgo_mismatch_warns_but_never_blocks(monkeypatch, capsys, verify_exit, w
 
     def run(command, **_kwargs):
         calls.append(command)
-        code = verify_exit if command[-1] == "verify" else 0
+        code = verify_exit if "verify" in command else 0
         return subprocess.CompletedProcess(command, code)
 
     monkeypatch.setattr(subprocess, "run", run)

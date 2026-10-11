@@ -335,17 +335,21 @@ def key_of(components: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(components, sort_keys=True).encode()).hexdigest()
 
 
+def device_state(device: str = "dn2") -> pathlib.Path:
+    """The profile state directory of a device (DN2: the original location)."""
+    return state_dir() if device == "dn2" else state_dir(device=device)
+
+
 def read_manifest(device: str = "dn2") -> dict[str, object] | None:
     try:
-        state = state_dir() if device == "dn2" else state_dir(device=device)
-        return json.loads((state / "manifest.json").read_text())
+        return json.loads((device_state(device) / "manifest.json").read_text())
     except (OSError, ValueError):
         return None
 
 
-def current_profile() -> str | None:
+def current_profile(device: str = "dn2") -> str | None:
     """The manifest's profile file if it still exists (even when stale)."""
-    manifest = read_manifest()
+    manifest = read_manifest(device)
     if not manifest:
         return None
     path = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
@@ -358,10 +362,17 @@ def desktop_digest(hasher: FileHasher) -> str:
 
 
 def check_state(
-    gen: pathlib.Path | None = None, fast: str = "", blocktrans: str = ""
+    gen: pathlib.Path | None = None,
+    fast: str = "",
+    blocktrans: str = "",
+    device: str = "dn2",
 ) -> tuple[str, str, bool]:
-    """Return (status, detail, desktop_changed); status is ok, stale or missing."""
-    manifest = read_manifest()
+    """Return (status, detail, desktop_changed); status is ok, stale or missing.
+
+    DEVICE selects the profile (``train --device``); a DT2 profile's key also
+    carries the DT2 workload name.
+    """
+    manifest = read_manifest(device)
     if manifest is None:
         return "missing", "no manifest", False
     profdata = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
@@ -369,10 +380,12 @@ def check_state(
         return "missing", f"profile file {profdata} is gone", False
     if not toolchain_dir().is_dir():
         return "stale", f"rustup toolchain {TOOLCHAIN} is not installed", False
-    hasher = FileHasher(state_dir() / "hash-cache.json")
+    hasher = FileHasher(device_state(device) / "hash-cache.json")
     components, _ = compute_components(
         list(manifest["packages"]), gen or generated_dir(), hasher, fast, blocktrans
     )  # type: ignore[call-overload]
+    if device == "dt2":
+        components["workload"] = DT2_WORKLOAD_NAME
     desktop = desktop_digest(hasher)
     hasher.save()
     old = manifest["components"]
@@ -383,10 +396,13 @@ def check_state(
 
 
 def check(
-    gen: pathlib.Path | None = None, fast: str = "", blocktrans: str = ""
+    gen: pathlib.Path | None = None,
+    fast: str = "",
+    blocktrans: str = "",
+    device: str = "dn2",
 ) -> tuple[str, str]:
     """Return (status, detail): status is ok, stale or missing."""
-    status, detail, _ = check_state(gen, fast, blocktrans)
+    status, detail, _ = check_state(gen, fast, blocktrans, device)
     return status, detail
 
 
@@ -403,6 +419,7 @@ class LaunchPlan:
 
 def pgo_state(
     environ: dict[str, str] | os._Environ[str] | None = None,
+    device: str = "dn2",
 ) -> tuple[str, str]:
     """The launcher's view of the profile: (status, detail).
 
@@ -418,7 +435,18 @@ def pgo_state(
         generated_dir(environ),
         environ.get("SHARC_FAST_REGIONS", ""),
         environ.get("SHARC_BLOCKTRANS", ""),
+        device,
     )
+
+
+def pgo_variant(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
+    """Target-dir variant of the launcher's profile-use build.
+
+    DIGI_EMU_PGO_VARIANT builds somewhere else (a scratch copy for a
+    measurement); the default ``pgo-use`` belongs to the launcher.
+    """
+    environ = os.environ if environ is None else environ
+    return environ.get("DIGI_EMU_PGO_VARIANT") or "pgo-use"
 
 
 def plan_for(
@@ -431,20 +459,30 @@ def plan_for(
             "--target",
             TRIPLE,
             "--target-dir",
-            str(native_target().target_dir(generated_dir(environ), "pgo-use")),
+            str(
+                native_target().target_dir(generated_dir(environ), pgo_variant(environ))
+            ),
         ],
         env={"RUSTFLAGS": profile_use_flags(profdata), "RUSTC": toolchain_rustc()},
     )
 
 
-def fallback_notice(status: str, detail: str) -> str:
+def train_hint(device: str = "dn2") -> str:
+    return (
+        "tools/native_pgo.py train --device dt2"
+        if device == "dt2"
+        else "tools/native_pgo.py train"
+    )
+
+
+def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
     if status == "skipped":
         return f"WARNING: native PGO: skipped ({detail}); building without PGO"
     what = detail if status == "failed" else f"profile {status} ({detail})"
     hint = (
-        "(mise run pgo to train)"
+        f"({'mise run pgo' if device == 'dn2' else train_hint(device)} to train)"
         if status == "missing"
-        else ("Run tools/native_pgo.py train")
+        else f"Run {train_hint(device)}"
     )
     return (
         f"WARNING: native PGO: {what}; building without PGO "
@@ -452,18 +490,23 @@ def fallback_notice(status: str, detail: str) -> str:
     )
 
 
-def stale_notice(detail: str) -> str:
+def stale_notice(detail: str, device: str = "dn2") -> str:
+    retrain = "mise run pgo" if device == "dn2" else train_hint(device)
     return (
         f"WARNING: native PGO: profile stale ({detail}); using it anyway "
-        "(unchanged functions keep their profile). Retrain at a milestone: "
-        "mise run pgo"
+        "(unchanged functions keep their profile). Retrain at a milestone: " + retrain
     )
 
 
-def training_blocker(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
+def training_blocker(
+    environ: dict[str, str] | os._Environ[str] | None = None, device: str = "dn2"
+) -> str:
     """Why `train` cannot run here ("" when it can)."""
     try:
-        require_inputs(generated_dir(environ))
+        if device == "dt2":
+            digi_env.check_generated(dt2_generated(), environ)
+        else:
+            require_inputs(generated_dir(environ))
     except SystemExit as exc:
         return str(exc)
     return ""
@@ -471,6 +514,7 @@ def training_blocker(environ: dict[str, str] | os._Environ[str] | None = None) -
 
 def launch_plan(
     environ: dict[str, str] | os._Environ[str] | None = None,
+    device: str = "dn2",
 ) -> tuple[LaunchPlan | None, str]:
     """Decide whether the launcher can use the PGO build; returns (plan, notice).
 
@@ -479,15 +523,15 @@ def launch_plan(
     notice means stay silent (opted out or unsupported host).
     """
     environ = os.environ if environ is None else environ
-    status, detail = pgo_state(environ)
+    status, detail = pgo_state(environ, device)
     if status == "off":
         return None, ""
     if status == "stale":
-        profile = current_profile()
+        profile = current_profile(device)
         if profile:
-            return plan_for(profile, environ), stale_notice(detail)
+            return plan_for(profile, environ), stale_notice(detail, device)
     if status != "ok":
-        return None, fallback_notice(status, detail)
+        return None, fallback_notice(status, detail, device)
     return plan_for(detail, environ), "native PGO: using profile " + pathlib.Path(
         detail
     ).name
@@ -544,12 +588,21 @@ def binary_crates(path: str | os.PathLike[str]) -> dict[str, set[str]]:
     return crates_in(shown)
 
 
+# A DT2 profile is trained on coupled-run, not on the desktop app, so the
+# app's own boot crate never matches it; the engine crates carry the DSP cost.
+DT2_APP_UNPROFILED = ("elektron_native_boot",)
+
+
 def crate_mismatches(
-    profile: dict[str, set[str]], binary: dict[str, set[str]]
+    profile: dict[str, set[str]],
+    binary: dict[str, set[str]],
+    ignore: tuple[str, ...] = (),
 ) -> list[str]:
     """One "MISMATCH crate X: ..." line per crate whose hashes do not overlap."""
     lines = []
     for name in GUARDED_CRATES:
+        if name in ignore:
+            continue
         want, have = profile.get(name, set()), binary.get(name, set())
         if want and have and not want & have:
             lines.append(
@@ -562,13 +615,22 @@ def pgo_binary(
     environ: dict[str, str] | os._Environ[str] | None = None,
 ) -> pathlib.Path:
     """The app binary the launcher's PGO build produces."""
-    target = native_target().target_dir(generated_dir(environ), "pgo-use")
+    target = native_target().target_dir(generated_dir(environ), pgo_variant(environ))
     return pathlib.Path(target) / TRIPLE / "release" / "digiemu-desktop"
 
 
-def verify_binary(binary: pathlib.Path, profdata: str | os.PathLike[str]) -> list[str]:
-    """Mismatch lines for `binary` against `profdata` (empty when they match)."""
-    return crate_mismatches(profile_crates(profdata), binary_crates(binary))
+def verify_binary(
+    binary: pathlib.Path, profdata: str | os.PathLike[str], device: str = "dn2"
+) -> list[str]:
+    """Mismatch lines for `binary` against `profdata` (empty when they match).
+
+    For DT2 the app's boot crate is expected to differ (see DT2_APP_UNPROFILED).
+    """
+    return crate_mismatches(
+        profile_crates(profdata),
+        binary_crates(binary),
+        DT2_APP_UNPROFILED if device == "dt2" else (),
+    )
 
 
 # --- training and benchmarking -------------------------------------------------
@@ -881,7 +943,7 @@ def cmd_check(_: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    manifest = read_manifest()
+    manifest = read_manifest(args.device)
     profdata = pathlib.Path(str(manifest["profdata"]["path"])) if manifest else None  # type: ignore[index]
     if profdata is None or not profdata.is_file():
         print("no trained profile to verify against")
@@ -890,19 +952,20 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if not binary.is_file():
         print(f"no binary at {binary}")
         return 1
-    lines = verify_binary(binary, profdata)
+    lines = verify_binary(binary, profdata, args.device)
     print("\n".join(lines) if lines else "ok")
     return 1 if lines else 0
 
 
-def cmd_plan(_: argparse.Namespace) -> int:
-    plan, notice = launch_plan(
-        {
-            **os.environ,
-            "SHARC_FAST_REGIONS": fast_regions(),
-            "SHARC_BLOCKTRANS": blocktrans_roots(),
-        }
-    )
+def cmd_plan(args: argparse.Namespace) -> int:
+    environ = {
+        **os.environ,
+        "SHARC_FAST_REGIONS": fast_regions(),
+        "SHARC_BLOCKTRANS": blocktrans_roots(),
+    }
+    if args.device == "dt2" and not environ.get("SHARC_GEN_DIR"):
+        environ["SHARC_GEN_DIR"] = str(dt2_generated())
+    plan, notice = launch_plan(environ, args.device)
     print(notice or "native PGO: not used")
     if plan:
         print(
@@ -1392,7 +1455,9 @@ def main(argv: list[str] | None = None) -> int:
         "verify", help="check the profile's crate hashes against the app binary"
     )
     verify.add_argument("--binary", help="default: the launcher's pgo-use app binary")
-    sub.add_parser("plan", help="show what the launcher would do")
+    verify.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    plan = sub.add_parser("plan", help="show what the launcher would do")
+    plan.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
     bench = sub.add_parser("bench", help="paired control vs profile-use benchmark")
     bench.add_argument("--pairs", type=int, default=5)
     build = sub.add_parser(
