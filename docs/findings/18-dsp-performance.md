@@ -1394,3 +1394,20 @@ the delay slots of a Jump (not a Return) crash the DSP thread in the all-roots n
 (root 0xb80515, SIGBUS in a flat window load); flat slot marking is therefore limited to Return nodes
 (`lower_cfg` error path). Find the cause before lifting it. (6) Region selection for kernels with many exits (stop
 nodes) so declines at slot addresses do not appear.
+
+## Second check: register-count N 2026-10-11 **[D]**
+
+Verdict: sound, no bug found. Read `note_reg_count`, `loop_kind`, the pass-2 `reg_sym` refusal and `glue::run_cfg`. N is
+`r[c] + k` only when the count's Abs is exact (`lo == hi`, no `ts`/`nf`) with `Base::Reg(c)`, so it is the entry value plus
+a constant on every path that reaches the DO (a join of unequal values is inexact; a count changed in an outer body is
+widened away and a changed source refuses the region). `iters` is evaluated in i64 and declined outside 1..=u32::MAX, so
+a 32-bit wrap or a negative sum only declines (the real count would be the residue; the sign of `b` cannot make the
+window smaller). Early exits and a DO on a conditional path only make the window an upper bound. Nested: a Lit outer
+loop widens the inner Entry-kind terms through the same `widen`, and a stride with a `ts` term gives no stride. Regions
+with entry loops or call targets never take N. The `iters = n - 1` mutant survives the old fuzz and test because a
+window is a host pointer into one 64 KiB page: a window one byte short is harmless until the last access crosses the page
+end. New test `fast_register_count_loop_windows_end_exactly_at_the_page_boundary` (`native/sharc/src/tests.rs`) steps a
+load pointer or a store pointer to end just before, on and one byte past the page end (n = 3, 6, 9) and reads the last
+store back; it passes on the real code and fails on the mutant (R3 differs at ptr=0 n=3 d=1). **[O]** the same mutant on
+the NwPlain hull (`nw_ok`) is not covered: byte forms do not take NwPlain, so a normal-word variant at a plain-range end
+is still untested.

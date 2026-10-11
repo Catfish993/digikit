@@ -1821,6 +1821,63 @@ fn fast_register_count_loop_with_stepped_pointers_matches() {
     }
 }
 
+/// The register-count loop's windows must span exactly `R7 - 2` iterations.
+/// A window is a host pointer into one 64 KiB page, so a window that is one
+/// byte short is harmless until the last access crosses the page end: the
+/// exact window then does not fit the page (the fast tier declines and the
+/// interpreter runs it), while a short one would run the kernel past the
+/// page buffer. A stepped load pointer or a stepped store pointer ends its
+/// last access just before, on, or just after the page end; the byte stored
+/// last is read back after the loop. A mutant with `iters = n - 1` fails here.
+#[cfg(sharc_gen)]
+#[test]
+fn fast_register_count_loop_windows_end_exactly_at_the_page_boundary() {
+    let code = [
+        lp_imm(6, 2),                            // 0: R6 = 2
+        lp_sub(5, 7, 6),                         // 1: R5 = R7 - R6
+        lp_do_reg(5, lp_rel(2, 5)),              // 2: DO (end 5) R5 times
+        lp_3d(0x1f, false, true, 0, 0, 4, 0, 0), // 3: R4 = DM(I0, M0) byte, post
+        lp_3d(0x1f, true, true, 1, 0, 4, 0, 0),  // 4: DM(I1, M0) = R4 byte, post
+        lp_add(3, 3, 4),                         // 5: R3 += R4   (end)
+        lp_3d(0x1f, false, true, 2, 0, 8, 0, 0), // 6: R8 = DM(I2, M0) byte (the last store)
+        lp_jump(0x1f, 0),                        // 7: spin
+    ];
+    let at = |k: u32| LP_DATA + k;
+    let end = 0x26_0000u32; // the page end after LP_DATA
+    let entries: Vec<u32> = (0..8).map(lp_pc).collect();
+    let mut ran_total = 0;
+    for pointer in [0u32, 1] {
+        for n in [3u32, 6, 9] {
+            // The last access is at `end - 1 + d`: d = 0 fits the page
+            // exactly, d = 1 is the first byte of the next page.
+            for d in [-1i64, 0, 1] {
+                let start = (end as i64 - n as i64 + d) as u32;
+                let set = move |e: &mut crate::Engine| {
+                    let (i0, i1, i2) = if pointer == 0 {
+                        (start, at(0x200), at(0x300))
+                    } else {
+                        (at(0x10), start, start + n - 1)
+                    };
+                    lp_regs(e, &[(2, 1), (7, n + 2), (16, i0), (17, i1), (18, i2), (32, 1)]);
+                    // Distinct non-zero bytes either side of the boundary.
+                    for k in 0..64u32 {
+                        let ca = e.s.mem.canonical_of(end - 32 + k);
+                        e.s.mem.write_byte(ca, (k as u8).wrapping_mul(13).wrapping_add(0x55));
+                    }
+                };
+                ran_total += lp_compare(
+                    &format!("regcount page end ptr={pointer} n={n} d={d}"),
+                    &code,
+                    &entries,
+                    3 * n + 8,
+                    &set,
+                );
+            }
+        }
+    }
+    assert!(ran_total > 0, "the fast tier never ran");
+}
+
 /// The return-address push in the delay slot of a call (`DM(I7, M7) = imm`,
 /// Type 16a) where I7 has no static range (it steps in a backward-branch
 /// cycle before): the push is a guarded dynamic-window store. Pushes inside
