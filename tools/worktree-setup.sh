@@ -30,6 +30,7 @@ links=(
   snapshots
   .venv
   packages/web/.local
+  packages/web/dist
   tools/ghidra/SHARC
   tools/ghidra/ColdfireEMAC/data/languages/coldfire_emac.sla
   tools/ghidra/ColdfireEMAC/extension.properties

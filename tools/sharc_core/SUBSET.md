@@ -90,7 +90,7 @@ call is allowed only inside an observability call.
 result's destination is a tagged union (`ComputeDest`: register number,
 special-register name, or a tuple of those; a Rust enum), and only
 `compute._apply_compute` and `compute._apply_compute_pey` match on it
-with `isinstance(rn, str | tuple | int)` (`DEST_MATCH`).
+with `isinstance(rn, str | tuple | int)` (`DEST_MATCH`); `_shift_immediate_pey` matches the same way to refuse bit FIFO destinations in SIMD.
 
 **Records.** Fixed-shape data is a `NamedTuple` (`FlagUpdate`,
 `MultSpec`, `MultifnOperands`) or a frozen dataclass of the lattice. A
