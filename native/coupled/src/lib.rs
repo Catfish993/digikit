@@ -18,6 +18,8 @@ use std::{
 
 /// Largest number of ColdFire instructions a host runs per `step_chunk`.
 pub const STEP_CHUNK: u32 = 250_000;
+#[cfg(feature = "coupled-audio")]
+pub mod cold;
 pub mod scenario;
 /// Most inputs kept for replay.
 const INPUT_LOG_LIMIT: usize = 100_000;
@@ -407,6 +409,12 @@ impl CoupledRuntime {
     pub fn audio_report(&self) -> Option<Value> {
         self.audio.as_ref().map(coupled::AudioSession::report)
     }
+    /// Stop the PCM capture (the file is complete after this returns).
+    pub fn stop_pcm_capture(&mut self) {
+        if let Some(audio) = self.audio.as_mut() {
+            audio.stop_capture();
+        }
+    }
     /// Capture the emulator's own PCM (before the output buffer) to `path`:
     /// a float WAV when it ends in .wav, else raw f32le. No length limit.
     pub fn capture_pcm(&mut self, path: &std::path::Path) -> Result<(), String> {
@@ -423,8 +431,7 @@ mod coupled {
     use elektron_native_boot::{
         pcm_play::{Mode, PcmPlayer, Recovery, SOURCE_RATE},
         sharc_peer::{
-            DEFAULT_PERIOD, NativeDsp, Shared, ThreadedHandle, ThreadedPeer,
-            ThreadedTimingProfile,
+            DEFAULT_PERIOD, NativeDsp, Shared, ThreadedHandle, ThreadedPeer, ThreadedTimingProfile,
         },
         wav::WavWriter,
     };
@@ -785,6 +792,11 @@ mod coupled {
         }
         pub(super) fn new(emulator: &mut Emulator, options: &AudioOptions) -> Result<Self, String> {
             Self::new_with_player(emulator, options, PcmPlayer::spawn_with_recovery)
+        }
+        /// Close the PCM capture, if any, after the samples produced so far.
+        pub(super) fn stop_capture(&mut self) {
+            self.sync();
+            self.pcm_capture = None;
         }
         /// Replace the PCM capture with one for `path` (no length limit).
         pub(super) fn capture_pcm(&mut self, path: &std::path::Path) -> Result<(), String> {

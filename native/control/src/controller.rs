@@ -13,9 +13,13 @@ use std::{
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use digi_coupled::{
@@ -27,12 +31,15 @@ use emmc_card::{Card, CardIdentity, RandomAccessRead};
 use serde_json::{Value, json};
 
 use crate::{
+    cards::{self, CardPaths},
     events::Events,
     firmware::{self, Analysis},
     proto::{Params, RpcError, RpcResult, base64, code},
 };
 
 pub const MAX_SYX: usize = 32 * 1024 * 1024;
+/// Guest instructions NO is held when the controller closes the boot modal.
+const NO_HOLD: u64 = 2_000_000;
 /// Most guest instructions a cold boot may take before it is called stuck.
 const BOOT_LIMIT: u64 = 3_000_000_000;
 
@@ -368,7 +375,10 @@ struct ScenarioRun {
 
 struct Actor {
     rx: mpsc::Receiver<Command>,
+    /// The audio options in force: a loaded card's own ready state replaces the
+    /// launch options' until a firmware is loaded without a card.
     audio: Option<AudioOptions>,
+    audio_default: Option<AudioOptions>,
     run_dir: PathBuf,
     events: Events,
     on_quit: Option<Box<dyn Fn() + Send>>,
@@ -386,6 +396,12 @@ struct Actor {
     schedule: Vec<Scheduled>,
     /// A frame a control chunk produced that the webview has not seen yet.
     held_frame: Option<Vec<u8>>,
+    /// A card being built and booted on a worker thread.
+    card_job: Option<CardJob>,
+    /// The last card job's outcome, for `card.status`.
+    card_last: Value,
+    /// Press NO once the runtime is ready (closes DT2's FILE SYSTEM OK modal).
+    auto_no: bool,
     quit: bool,
 }
 
@@ -406,6 +422,7 @@ impl Actor {
     fn new(rx: mpsc::Receiver<Command>, config: Config) -> Self {
         Self {
             rx,
+            audio_default: config.audio.clone(),
             audio: config.audio,
             run_dir: config.run_dir,
             events: config.events,
@@ -425,13 +442,20 @@ impl Actor {
             job: None,
             schedule: Vec::new(),
             held_frame: None,
+            card_job: None,
+            card_last: json!({"state": "idle"}),
+            auto_no: false,
             quit: false,
         }
     }
 
     fn run(mut self) {
         while !self.quit {
-            let busy = self.runtime.is_some() && (self.job.is_some() || self.mode == Mode::Free);
+            self.poll_card();
+            // While a card boots on its worker thread the running guest waits.
+            let carding = self.card_job.is_some();
+            let busy = self.runtime.is_some()
+                && (self.job.is_some() || (self.mode == Mode::Free && !carding));
             let command = if busy {
                 if self.job.is_none() && self.runtime.as_ref().is_some_and(Runtime::audio_ahead) {
                     // Free running with the audio queue at its target: wait for
@@ -447,6 +471,12 @@ impl Actor {
                         Err(mpsc::TryRecvError::Empty) => None,
                         Err(mpsc::TryRecvError::Disconnected) => break,
                     }
+                }
+            } else if carding {
+                match self.rx.recv_timeout(Duration::from_millis(50)) {
+                    Ok(command) => Some(command),
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             } else {
                 match self.rx.recv() {
@@ -622,6 +652,7 @@ impl Actor {
                     self.session = request_session;
                     let result = self.ui_snapshot("No firmware selected");
                     if result.is_ok() {
+                        self.cancel_card();
                         self.runtime = None;
                         self.loaded = None;
                         self.job = None;
@@ -652,6 +683,8 @@ impl Actor {
         if next <= self.session {
             return Err("stale emulator session".into());
         }
+        self.cancel_card();
+        self.audio = self.audio_default.clone();
         self.runtime = None;
         self.read_error = None;
         self.session = next;
@@ -829,6 +862,27 @@ impl Actor {
     // ----- jobs and free running ------------------------------------------
 
     fn fire_due(&mut self) -> Result<(), RpcError> {
+        if self.auto_no && self.runtime.as_mut().is_some_and(|r| r.status().ready) {
+            self.auto_no = false;
+            let elapsed = self
+                .runtime
+                .as_ref()
+                .map_or(0, Runtime::elapsed_instructions);
+            self.place_input(
+                None,
+                Action::Button {
+                    code: 12,
+                    down: true,
+                },
+            )?;
+            self.place_input(
+                Some(elapsed + NO_HOLD),
+                Action::Button {
+                    code: 12,
+                    down: false,
+                },
+            )?;
+        }
         let Some(runtime) = self.runtime.as_mut() else {
             return Ok(());
         };
@@ -979,18 +1033,23 @@ impl Actor {
                     #[cfg(feature = "cf-profile")]
                     {
                         let mut v = r.cf_profile();
-                        v["controller_cpu_ns"] =
-                            elektron_native_boot::thread_cpu_ns().into();
+                        v["controller_cpu_ns"] = elektron_native_boot::thread_cpu_ns().into();
                         Ok(v)
                     }
                     #[cfg(not(feature = "cf-profile"))]
                     {
                         let _ = r;
-                        Err(RpcError::new(code::METHOD_NOT_FOUND, "built without cf-profile"))
+                        Err(RpcError::new(
+                            code::METHOD_NOT_FOUND,
+                            "built without cf-profile",
+                        ))
                     }
                 })
                 .map(Some),
             "dsp.patch" => self.rpc_dsp_patch(&p).map(Some),
+            "card.load" => self.rpc_card_load(&p, &reply),
+            "card.status" => Ok(Some(self.card_status())),
+            "card.cancel" => Ok(Some(json!({"cancelled": self.cancel_card()}))),
             "quit" => {
                 self.quit = true;
                 self.runtime = None;
@@ -1259,7 +1318,20 @@ impl Actor {
                             "window_rms": tap.window_rms,
                         }))
                     }
-                    _ => Err(RpcError::bad_params("action is start or report")),
+                    "capture" => {
+                        let path = p.str("path")?;
+                        r.sync_audio();
+                        r.capture_pcm(Path::new(path))
+                            .map(|()| json!({"capturing": path}))
+                            .map_err(RpcError::io)
+                    }
+                    "capture_stop" => {
+                        r.stop_pcm_capture();
+                        Ok(json!({"capturing": null}))
+                    }
+                    _ => Err(RpcError::bad_params(
+                        "action is start, report, capture or capture_stop",
+                    )),
                 }
             })
         }
@@ -1703,6 +1775,276 @@ impl Actor {
             return Ok(true);
         }
         Ok(false)
+    }
+}
+
+// ----- cards: a folder of WAV files to a running DT2 -------------------------
+
+/// What a finished card job hands to the controller.
+struct CardReady {
+    paths: CardPaths,
+    samples: usize,
+    /// The ready snapshot and DSP state, when the app has coupled audio.
+    ready: Option<(PathBuf, PathBuf)>,
+    card_cached: bool,
+    ready_cached: bool,
+    build_seconds: f64,
+    boot_seconds: f64,
+}
+
+struct CardJob {
+    status: Arc<Mutex<Value>>,
+    done: mpsc::Receiver<Result<CardReady, String>>,
+    cancel: Arc<AtomicBool>,
+    reply: Option<RpcReply>,
+    started: Instant,
+    syx: Vec<u8>,
+}
+
+fn set_status(status: &Mutex<Value>, value: Value) {
+    if let Ok(mut slot) = status.lock() {
+        *slot = value;
+    }
+}
+
+/// Build the card of `dir` and its ready state; runs on a worker thread.
+fn run_card_job(
+    syx: Vec<u8>,
+    dir: PathBuf,
+    run_dir: PathBuf,
+    audio: Option<AudioOptions>,
+    status: &Mutex<Value>,
+    cancel: &AtomicBool,
+) -> Result<CardReady, String> {
+    let started = Instant::now();
+    set_status(
+        status,
+        json!({"state": "working", "phase": "scanning", "message": "Reading the sample folder", "fraction": 0.0}),
+    );
+    let files = cards::list_wavs(&dir)?;
+    let total = files.len();
+    let (paths, card_cached) = cards::ensure_card(&run_dir, &syx, &files, |done, total| {
+        set_status(
+            status,
+            json!({
+                "state": "working", "phase": "building",
+                "message": format!("Building the card ({done}/{total} samples)"),
+                "fraction": 0.1 * done as f64 / total.max(1) as f64,
+                "done": done, "total": total,
+            }),
+        );
+    })?;
+    let build_seconds = started.elapsed().as_secs_f64();
+    if cancel.load(Ordering::Relaxed) {
+        return Err("cancelled".into());
+    }
+    let ready_cached = paths.ready_cached();
+    let mut boot_seconds = 0.0;
+    let mut ready = None;
+    if let Some(audio) = &audio {
+        if ready_cached {
+            set_status(
+                status,
+                json!({"state": "working", "phase": "restoring", "message": "Restoring the cached ready state", "fraction": 0.95}),
+            );
+        } else {
+            #[cfg(feature = "coupled-audio")]
+            {
+                let image = std::fs::canonicalize(&audio.image)
+                    .map_err(|e| format!("DSP image {}: {e}", audio.image.display()))?;
+                let cold_idle = image
+                    .parent()
+                    .map(|parent| parent.join("cold-idle.dsp"))
+                    .filter(|path| path.is_file())
+                    .ok_or("cold-idle.dsp not found next to the DSP image (run `mise run ready -- dt2` once)")?;
+                let card = elektron_native_boot::card_file::card_from_image(&paths.image)?;
+                let boot_started = Instant::now();
+                digi_coupled::cold::boot_to_ready(
+                    &syx,
+                    card,
+                    &digi_coupled::cold::ColdInputs { image, cold_idle },
+                    &paths.ready,
+                    cancel,
+                    |progress| {
+                        set_status(
+                            status,
+                            json!({
+                                "state": "working", "phase": "booting",
+                                "message": format!(
+                                    "Booting the Digitakt II with the card ({:.0}%)",
+                                    100.0 * (0.1 + 0.85 * progress.fraction)
+                                ),
+                                "fraction": 0.1 + 0.85 * progress.fraction,
+                                "icount": progress.icount, "wall_seconds": progress.wall_seconds,
+                            }),
+                        );
+                    },
+                )?;
+                boot_seconds = boot_started.elapsed().as_secs_f64();
+            }
+            #[cfg(not(feature = "coupled-audio"))]
+            {
+                let _ = audio;
+                return Err("this build has no coupled audio to boot the card with".into());
+            }
+        }
+        ready = Some((paths.snapshot(), paths.dsp_state()));
+    }
+    Ok(CardReady {
+        paths,
+        samples: total,
+        ready,
+        card_cached,
+        ready_cached,
+        build_seconds,
+        boot_seconds,
+    })
+}
+
+impl Actor {
+    fn card_status(&self) -> Value {
+        match &self.card_job {
+            Some(job) => {
+                let mut status = job.status.lock().map(|s| s.clone()).unwrap_or(Value::Null);
+                status["wall_seconds"] = job.started.elapsed().as_secs_f64().into();
+                status
+            }
+            None => self.card_last.clone(),
+        }
+    }
+
+    /// Stop a running card job; whether there was one.
+    fn cancel_card(&mut self) -> bool {
+        let Some(job) = self.card_job.take() else {
+            return false;
+        };
+        job.cancel.store(true, Ordering::Relaxed);
+        if let Some(reply) = job.reply {
+            let _ = reply.send(Err(RpcError::new(code::BUSY, "card load cancelled")));
+        }
+        self.card_last = json!({"state": "idle", "message": "Card load cancelled"});
+        true
+    }
+
+    fn rpc_card_load(&mut self, p: &Params, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
+        let dir = PathBuf::from(p.str("dir")?);
+        let wait = p.opt_bool("wait")?.unwrap_or(true);
+        let auto_no = p.opt_bool("auto_no")?.unwrap_or(true);
+        if self.job.is_some() || self.card_job.is_some() {
+            return Err(RpcError::new(code::BUSY, "another job is running"));
+        }
+        let loaded = self.loaded.as_ref().ok_or_else(RpcError::no_firmware)?;
+        let syx = loaded
+            .base
+            .clone()
+            .unwrap_or_else(|| loaded.current.clone());
+        plusdrive_format::Dt2Seed::from_syx(&syx).map_err(|e| {
+            RpcError::new(
+                code::FIRMWARE_REJECTED,
+                format!("not a DT2 1.16 firmware: {e}"),
+            )
+        })?;
+        let status = Arc::new(Mutex::new(
+            json!({"state": "working", "phase": "scanning", "fraction": 0.0}),
+        ));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (done_tx, done) = mpsc::channel();
+        let (worker_status, worker_cancel) = (status.clone(), cancel.clone());
+        let (worker_syx, run_dir, audio) = (syx.clone(), self.run_dir.clone(), self.audio.clone());
+        thread::Builder::new()
+            .name("digi-card".into())
+            .spawn(move || {
+                let result = run_card_job(
+                    worker_syx,
+                    dir,
+                    run_dir,
+                    audio,
+                    &worker_status,
+                    &worker_cancel,
+                );
+                let _ = done_tx.send(result);
+            })
+            .map_err(|e| RpcError::io(format!("card thread: {e}")))?;
+        self.auto_no = auto_no;
+        self.card_job = Some(CardJob {
+            status,
+            done,
+            cancel,
+            reply: wait.then(|| reply.clone()),
+            started: Instant::now(),
+            syx,
+        });
+        self.emit("card.started", json!({}));
+        if wait {
+            Ok(None)
+        } else {
+            Ok(Some(json!({"started": true})))
+        }
+    }
+
+    /// Install the finished card's runtime, or report why not.
+    fn poll_card(&mut self) {
+        let Some(job) = self.card_job.as_ref() else {
+            return;
+        };
+        let outcome = match job.done.try_recv() {
+            Ok(outcome) => outcome,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err("card worker stopped".into()),
+        };
+        let job = self.card_job.take().expect("card job");
+        let seconds = job.started.elapsed().as_secs_f64();
+        let result = outcome.and_then(|ready| self.install_card(&job.syx, ready, seconds));
+        match &result {
+            Ok(report) => {
+                self.card_last = report.clone();
+                self.emit("card.ready", report.clone());
+            }
+            Err(error) => {
+                self.auto_no = false;
+                self.card_last = json!({"state": "error", "message": error, "fraction": 0.0});
+                self.emit("card.error", json!({"message": error}));
+            }
+        }
+        if let Some(reply) = job.reply {
+            let _ = reply.send(match result {
+                Ok(report) => Ok(self.envelope(report)),
+                Err(error) => Err(RpcError::io(error)),
+            });
+        }
+    }
+
+    fn install_card(
+        &mut self,
+        syx: &[u8],
+        ready: CardReady,
+        seconds: f64,
+    ) -> Result<Value, String> {
+        let mut audio = self.audio.clone();
+        if let (Some(audio), Some((snapshot, dsp))) = (audio.as_mut(), ready.ready.as_ref()) {
+            audio.snapshot = snapshot.clone();
+            audio.state = dsp.clone();
+        }
+        let (runtime, error) = runtime_from(syx, Some(ready.paths.image.clone()), audio.as_ref())?;
+        let has_audio = runtime.has_audio();
+        if let Some(loaded) = self.loaded.as_mut() {
+            loaded.card = Some(ready.paths.image.clone());
+        }
+        self.audio = audio;
+        self.install(runtime, error);
+        // The webview's pump never sees the restore; hand it the first frame.
+        if let Some(runtime) = self.runtime.as_mut() {
+            self.held_frame = runtime.snapshot().frame;
+        }
+        self.emit("session.changed", json!({"reason": "card"}));
+        Ok(json!({
+            "state": "ready", "phase": "ready", "message": "Card ready", "fraction": 1.0,
+            "key": ready.paths.key, "card": ready.paths.image.display().to_string(),
+            "samples": ready.samples, "audio": has_audio,
+            "card_cached": ready.card_cached, "ready_cached": ready.ready_cached,
+            "build_seconds": ready.build_seconds, "boot_seconds": ready.boot_seconds,
+            "seconds": seconds,
+        }))
     }
 }
 

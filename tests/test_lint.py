@@ -46,6 +46,7 @@ CLEAN = [
     "tools/aot_fxprof.py",
     "tools/aot_gen.py",
     "tools/dt2_sample_check.py",
+    "tools/card_check.py",
     "tools/sharc_frame_diff.py",
     "tools/sharc_cold_state.py",
     "tools/dspi_log.py",
