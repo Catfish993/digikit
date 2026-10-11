@@ -1839,7 +1839,7 @@ fn run_card_job(
         return Err("cancelled".into());
     }
     let ready_cached = paths.ready_cached();
-    let boot_seconds = 0.0;
+    let mut boot_seconds = 0.0;
     let mut ready = None;
     if let Some(audio) = &audio {
         if ready_cached {
