@@ -158,13 +158,13 @@ class Emu:
             for stale in keep.glob("*.sock"):
                 stale.unlink(missing_ok=True)
             (keep / "current.json").unlink(missing_ok=True)
-        run_dir = (
+        run_dir_obj: _KeptDir | tempfile.TemporaryDirectory[str] = (
             _KeptDir(str(run_dir))
             if run_dir is not None
             else tempfile.TemporaryDirectory(prefix="digi-run-")
         )
         proc = subprocess.Popen(
-            [exe, "--run-dir", run_dir.name, *args],
+            [exe, "--run-dir", run_dir_obj.name, *args],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=ROOT,
@@ -173,21 +173,21 @@ class Emu:
         while time.monotonic() < deadline:
             if proc.poll() is not None:
                 err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
-                run_dir.cleanup()
+                run_dir_obj.cleanup()
                 raise RuntimeError(
                     f"digi-emud exited {proc.returncode}: {err.strip()[-400:]}"
                 )
             try:
-                path = discover(run_dir.name)
+                path = discover(run_dir_obj.name)
                 break
             except FileNotFoundError:
                 time.sleep(0.1)
         else:
             proc.kill()
-            run_dir.cleanup()
+            run_dir_obj.cleanup()
             raise TimeoutError("digi-emud did not open its socket")
         emu = cls.connect(path)
-        emu._proc, emu._run_dir = proc, run_dir
+        emu._proc, emu._run_dir = proc, run_dir_obj
         return emu
 
     def close(self) -> None:
