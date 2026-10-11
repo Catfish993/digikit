@@ -66,7 +66,9 @@ class Gate:
         self.out = out
         self.failed: list[str] = []
 
-    def report(self, name: str, problem: str | None, seconds: float, text: str = "") -> None:
+    def report(
+        self, name: str, problem: str | None, seconds: float, text: str = ""
+    ) -> None:
         if problem is None:
             print(f"PASS {name} ({seconds:.0f} s)", flush=True)
             return
@@ -86,7 +88,11 @@ class Gate:
         proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True)
         text = proc.stdout + proc.stderr
         (self.out / f"{name}.log").write_text(text)
-        problem = f"exit {proc.returncode}" if proc.returncode else (check(text) if check else None)
+        problem = (
+            f"exit {proc.returncode}"
+            if proc.returncode
+            else (check(text) if check else None)
+        )
         self.report(name, problem, time.monotonic() - start, text)
 
 
@@ -101,7 +107,9 @@ def tier_sweep(gate: Gate) -> None:
             report.parent.mkdir(parents=True, exist_ok=True)
             cmd = [*PY, "tools/coupled.py", "scenario", "--scenarios", name, "--all"]
             cmd += ["--no-build", "--jobs", jobs, "--out", str(report)]
-            proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True)
+            proc = subprocess.run(
+                cmd, cwd=ROOT, env=env, capture_output=True, text=True
+            )
             text = proc.stdout + proc.stderr
             (report.parent / "run.log").write_text(text)
             # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
@@ -112,18 +120,28 @@ def tier_sweep(gate: Gate) -> None:
             for result in coupled.scenario_results(json.loads(report.read_text())):
                 shas.setdefault(result["name"], {})[label] = result["sha256"]
     differ = [n for n, s in shas.items() if s.get("default") != s.get("no-aot")]
-    problem = f"{len(differ)} of {len(shas)} differ: {', '.join(differ[:5])}" if differ else None
+    problem = (
+        f"{len(differ)} of {len(shas)} differ: {', '.join(differ[:5])}"
+        if differ
+        else None
+    )
     gate.report("tier-sweep", problem, time.monotonic() - start)
     if not differ:
         print(f"     {len(shas)} of {len(shas)} scenarios equal", flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Run the exactness gate, one line per step.")
-    ap.add_argument("--full", action="store_true", help="every step (default: build, pins, check)")
+    ap = argparse.ArgumentParser(
+        description="Run the exactness gate, one line per step."
+    )
+    ap.add_argument(
+        "--full", action="store_true", help="every step (default: build, pins, check)"
+    )
     ap.add_argument("--only", help=f"comma-separated steps from: {', '.join(STEPS)}")
     args = ap.parse_args(argv)
-    steps = tuple(args.only.split(",")) if args.only else (STEPS if args.full else QUICK)
+    steps = (
+        tuple(args.only.split(",")) if args.only else (STEPS if args.full else QUICK)
+    )
     unknown = sorted(set(steps) - set(STEPS))
     if unknown:
         ap.error(f"unknown steps: {', '.join(unknown)}")
@@ -131,12 +149,22 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     print(f"verify: logs in {out}", flush=True)
     gate = Gate(out)
-    scenario_tests = [*PY, "-m", "pytest", "tests/scenarios", "--slow", "-q", "--no-build"]
+    scenario_tests = [
+        *PY,
+        "-m",
+        "pytest",
+        "tests/scenarios",
+        "--slow",
+        "-q",
+        "--no-build",
+    ]
     for step in steps:
         if step == "build":
             gate.run("build", [*PY, "tools/coupled.py", "build"])
         elif step == "pins":
-            gate.run("pins", [*PY, "tools/coupled.py", "scenario", "--all", "--no-build"])
+            gate.run(
+                "pins", [*PY, "tools/coupled.py", "scenario", "--all", "--no-build"]
+            )
         elif step == "check":
             gate.run("check", scenario_tests, check=pytest_ran)
         elif step == "check-no-aot":
@@ -144,9 +172,20 @@ def main(argv: list[str] | None = None) -> int:
         elif step == "tier-sweep":
             tier_sweep(gate)
         elif step == "python-tests":
-            gate.run("python-tests", [*PY, "-m", "pytest", "-q", *PY_TESTS], check=pytest_ran)
+            gate.run(
+                "python-tests", [*PY, "-m", "pytest", "-q", *PY_TESTS], check=pytest_ran
+            )
         elif step == "rust-tests":
-            cmd = [*PY, "tools/rust_ws.py", "test", "--", "-p", "sharc-native", "-p", "sharc-rt"]
+            cmd = [
+                *PY,
+                "tools/rust_ws.py",
+                "test",
+                "--",
+                "-p",
+                "sharc-native",
+                "-p",
+                "sharc-rt",
+            ]
             gate.run("rust-tests", cmd)
         elif step == "dt2-tone":
             gate.run("dt2-tone", [*PY, "tools/dt2_sample_check.py"])
