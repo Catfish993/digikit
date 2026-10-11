@@ -1105,3 +1105,73 @@ need (1) a device argument for the state directory and `SHARC_GEN_DIR`, (2) a DT
 `bench-bins`. Cost: one 6-minute train and one 6-minute bench; headless DT2 is at 1.18 DSP CPU per audio s without PGO
 (DN2 0.93 with it).
 
+## Browser: why the wasm DSP is slower 2026-10-11 **[D]**
+
+Question: the dev page's AOT SHARC core in wasm costs about 2.6 DSP-worker s per audio s (DN2 1.11, headless Chromium
+150, split workers), native 0.93-1.21. Method: `tools/browser_bench.mjs` against a private dev server
+(`--url`, below), `--seconds 10 --runs 2-3`, exclusive benchlock; native by `coupled.py scenario trig1-taps
+--seconds 10 --no-build` (prod core, no PGO) with and without `SHARC_FAST_REGIONS=`. One machine; other lanes run
+unlocked jobs, so consecutive identical runs differ by up to +-8% (base core: 2.46-2.71 over 7 runs). Not re-checked
+by a second agent.
+
+- **Build configuration: same as native, nothing wrong.** `Cargo.toml` `[profile.release]`: opt-level 3, no LTO,
+  16 codegen units, no debug, no overflow checks, panic=abort (forced on wasm32-unknown-unknown); the desktop
+  build uses the same profile (plus PGO in the launcher). Target features at rustc 1.98.1: bulk-memory,
+  multivalue, mutable-globals, nontrapping-fptoint, reference-types, sign-ext; not simd128, tail-call, atomics.
+  `tools/native_wasm.py` runs no `wasm-opt` (none installed) and passes no RUSTFLAGS. The core has a name section
+  (45 MB). Native differs only by PGO (0.93 against 1.10) and the fast tier.
+- **Tier split.** The browser core runs no fast tier, so the instructions the desktop runs as Cranelift kernels
+  run in AOT blocks. Native, 10 audio s, per audio s: default 235M AOT + 267M kernel insns (0.50M kernel calls),
+  0.6M interpreted, DSP CPU **1.209**; with `SHARC_FAST_REGIONS=` 472M AOT + 28M kernel (blocktrans clusters) +
+  1.2M interpreted, **1.498** (3.2 ns per executed insn); same PCM. So the fast tier is worth 19% native, and the
+  browser at 2.6 (about 5.4 ns per executed insn) is **1.74x native AOT-only** (the wasm codegen share) times
+  **1.24x** for the missing tier: 1.21 x 1.24 x 1.74 = 2.6. Browser instructions per audio s as in the baseline
+  (1.31G with idle skip).
+- **Profile** (CDP, DSP worker, 5 s, 15.0 s sampled, `--profile` now reports every worker and
+  `--profile-all FILE` dumps all self times): AOT regions `r_*`/`b_*` **84.9%** (1209 functions; top r_1C399A 6.4%,
+  r_1C3862 4.0%, r_1C364F 3.5%, r_1C9504 2.6%, r_B8276C 2.2%, r_1C5765 2.1%, r_1C1884 1.5%, r_1C0CA0 1.4%,
+  r_1CDBAC 1.4%, r_B823DB 1.4%), `Engine::step` 3.6%, `exec_insn` 1.5%, generated per-insn interpreter (`core_g`)
+  3.8%, sharc_rt 1.3%, SAB-link wait/serve 2.0%, other glue 0.7%. No single function stands out; the distribution
+  is the native one with the 53% kernel share added to the regions. Out-of-line helpers in the hot regions
+  (`normal_word_map`, `nan_order`, `__dm_read_full`, `__multi3`, `__fixdfti`) never appear in self time. A hot
+  region (r_1C399A, 24 KB of wasm) has 207 i32 and 139 i64 loads, 97 calls and one `call_indirect`: the register
+  file and state live in linear memory as natively.
+- **Refuted (a) guesses of the earlier note:** bounds checks (`--js-flags=--no-wasm-bounds-checks`: no change, the
+  trap handler is active), wasm inlining and loop peeling flags (`--no-wasm-inlining`, `--no-wasm-loop-peeling`,
+  `--wasm-loop-unrolling`: all within noise), Rosetta (Chromium and Node are arm64). **[C]** "No SIMD in the generated
+  Rust" is not the gap either (below).
+- **Experiments** (DSP worker busy s per audio s, runs in order; parity = `wasm_parity.mjs --scenario
+  trig1-tap-release` single instance, and `--split 1` where noted, pin `883476213933...819cdd`):
+
+| change | audio s / wall s | DSP busy / audio s | parity |
+|---|---|---|---|
+| base (as `tools/native_wasm.py`) | 0.37-0.41 | 2.71 2.56 2.70 / 2.47 2.46 2.59 2.64 | match, split match |
+| `lto=fat`, `codegen-units=1` (25 min build) | 0.36-0.37 | 2.75 2.70 2.77 | match |
+| `sharc-gen` opt-level `s` | 0.36-0.41 | 2.47 2.46 2.47 / 2.74 2.79 2.82 2.60 | match |
+| `-C target-feature=+simd128` | 0.37-0.44 | 2.40 2.30 2.30 / 2.53 2.64 2.60 2.76 | match, split match |
+| simd128 + `sharc-gen` opt-level `s` | 0.36-0.40 | 2.63 2.79 2.75 / 2.79 2.60 2.50 2.73 | match, split match |
+| simd128 + `sharc-gen` opt-level 2 | 0.37-0.41 | 2.48 2.48 2.43 / 2.65 2.60 2.55 2.71 | match, split match |
+
+  No variant beats the base outside the noise (means 2.59 base, 2.74 LTO, 2.62 s, 2.50 simd128, 2.68, 2.56). The
+  first batch of every variant ran in a quiet period (about 2.3-2.5) and the interleaved A/B (2 rounds, same
+  order) did not repeat the gain, so I read it as load, not as a gain. simd128 changes the code (24 `v128`
+  loads/stores and some `f32x4` in r_1C399A) but not the time. No build change is kept.
+- **Ceiling (a), AOT core with build fixes: about 2.4-2.6** (confidence medium-high; the build knobs are exhausted
+  short of `wasm-opt`, which is not installed and which V8's TurboFan mostly duplicates). The 1.7x is V8's
+  code for LLVM's wasm output against LLVM's arm64 output for the same Rust.
+- **Ceiling (b), the fast tier in the browser core: about 2.0 (1.8-2.3), confidence low.** Not measurable here:
+  `digi_sharc_fast` panics on the first kernel build on `wasm32-unknown-unknown` (`std::time::Instant::now`; fixed
+  in `fast/mod.rs` by a clock shim), and with the DN2 static regions (`tools/fast_regions.json`, tried via a
+  temporary `threshold 0` seeding) it stops at `Op::Helper` (`unimplemented!`, `sharc-fast-wasm/src/lib.rs`).
+  Auto selection (256,64,0) is exact (3 s hash equals the AOT-only 3 s hash `ae86d0b3...`) but arms only 19
+  kernels worth 0.4% of the instructions. Model from the native numbers: AOT 235M x 5.4 ns = 1.27 s, plus the
+  kernel part (native 0.46 s: 0.13 s kernel body at 1.15x for V8, 0.33 s engine round trips at 1.7x, plus about
+  0.1 s for 0.5M `host_wasm_run` crossings) about 0.8 s: 2.1 against 2.6, the same 19% as native. Real time
+  (<= 1.0) is out of reach for AOT plus today's regions in one worker either way; it needs kernels that follow
+  calls and chain (fewer than 1M calls per audio s at 0.5 ns per insn), which is the engine work of step 2.
+- **Bench pitfalls found.** (1) `browser_bench.mjs` without `--url` starts `astro dev --port 4399`; if another
+  worktree's server owns 4399 the run silently measures that server's core. (2) Astro 7 keeps one dev server per
+  `packages/web/node_modules/.astro`; a worktree that symlinks `node_modules` as a whole shares that lock and its
+  start is skipped. Give the worktree a real `node_modules` directory with symlinked entries (not `.astro`), start
+  `astro dev --port N` once and pass `--url`. The first baseline numbers of this lane (0.36-0.40) were taken against
+  another lane's server; the figures above are from a private one and agree.

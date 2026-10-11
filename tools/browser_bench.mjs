@@ -107,7 +107,7 @@ function selfTimes(profileData) {
   }
   const busy = categories.dsp + categories.coldfire + categories.other;
   const split = { ...Object.fromEntries(Object.entries(categories).map(([k, us]) => [`${k}_ms`, +(us / 1000).toFixed(1)])), dsp_share_of_busy: +(categories.dsp / busy).toFixed(3), coldfire_share_of_busy: +(categories.coldfire / busy).toFixed(3) };
-  const top = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([name, us]) => ({ name, self_ms: +(us / 1000).toFixed(1), pct: +(100 * us / total).toFixed(2) }));
+  const top = [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([name, us]) => ({ name, self_ms: +(us / 1000).toFixed(1), pct: +(100 * us / total).toFixed(2) }));
   return { total_ms: +(total / 1000).toFixed(1), split, top, all: self };
 }
 
@@ -161,8 +161,13 @@ async function oneRun(url, chrome, port) {
         if (p) profiles.push(selfTimes(p));
       }
       if (profiles.length) {
-        const worst = profiles.sort((a, b) => b.total_ms - a.total_ms)[0];
-        result.profile = { total_ms: worst.total_ms, split: worst.split, top: worst.top.map((t) => ({ ...t, name: t.name.replace(/^_R[A-Za-z]*?\d+/, '').replace(/ emulator-core-sharc.wasm$/, '').slice(0, 110) })) };
+        // One entry per worker (the ColdFire worker's top is the wait on the DSP; the DSP worker's is the generated core).
+        const shape = (w) => ({ total_ms: w.total_ms, split: w.split, top: w.top.map((t) => ({ ...t, name: t.name.replace(/^_R[A-Za-z]*?\d+/, '').replace(/ emulator-core-sharc.wasm$/, '').slice(0, 110) })) });
+        profiles.sort((a, b) => b.split.dsp_ms - a.split.dsp_ms);
+        result.profile = shape(profiles[0]);
+        result.profiles = profiles.map(shape);
+        // --profile-all FILE: every function's self time (ms) of every worker, for grouping.
+        if (opt('profile-all')) fs.writeFileSync(opt('profile-all'), JSON.stringify(profiles.map((w) => [...w.all].map(([name, us]) => [name, +(us / 1000).toFixed(2)]))));
       }
     }
     cdp.close();
