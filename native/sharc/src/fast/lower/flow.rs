@@ -43,6 +43,16 @@ struct Joins {
 }
 
 impl Joins {
+    /// A loop's back edge enters the loop head with MODE1 as the body leaves
+    /// it. The head was lowered under the MODE1 its other edges saw, so a
+    /// body that changes MODE1 (a SET or CLEAR of an enable or rounding bit,
+    /// PEYEN) would run its next iteration under different bits.
+    fn back_edge_mode1(&mut self, head: u32, mode1: u32) {
+        if self.mode1.get(&head).is_some_and(|&m| m != mode1) {
+            self.mode1_conflict = true;
+        }
+    }
+
     fn edge(&mut self, pc: u32, abs: &[Option<Abs>], fm: u32, fg: u32, mode1: u32) {
         match self.mode1.get(&pc) {
             Some(&m) if m != mode1 => self.mode1_conflict = true,
@@ -407,6 +417,7 @@ impl Lower {
                 self.note_written(st, pc);
                 self.cfg_x().nblock += 1;
                 if let Some((i, l)) = st.loops.iter().enumerate().find(|(_, l)| l.end == pc) {
+                    joins.back_edge_mode1(l.start, self.mode1_cur);
                     self.loop_back(st, i, l, v, label_of, stubs, &active)?;
                     if l.dormant {
                         *open = false;
