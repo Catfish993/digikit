@@ -18,6 +18,28 @@
 //! `SHARC_FAST_REGIONS` environment variable (comma separated hex PCs) read
 //! by `Engine::from_image`. Off by default.
 
+/// `Instant` for the tier's build timings. `wasm32-unknown-unknown` has no
+/// clock (`std::time::Instant::now` panics), so there the timings read zero.
+mod clock {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use std::time::Instant;
+
+    #[cfg(target_arch = "wasm32")]
+    #[derive(Clone, Copy)]
+    pub struct Instant;
+
+    #[cfg(target_arch = "wasm32")]
+    impl Instant {
+        pub fn now() -> Self {
+            Instant
+        }
+
+        pub fn elapsed(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
+    }
+}
+
 pub mod cfg;
 pub mod decode_view;
 pub mod dump;
@@ -524,7 +546,7 @@ pub struct FastEngine {
 
 /// State of the `SHARC_FAST_TL` timeline.
 struct Tl {
-    t0: std::time::Instant,
+    t0: clock::Instant,
     next_tick: u64,
     seen: std::collections::HashSet<u64>,
     dup: u64,
@@ -640,7 +662,7 @@ impl FastEngine {
             },
             cov_last: None,
             tl: std::env::var_os("SHARC_FAST_TL").map(|_| Tl {
-                t0: std::time::Instant::now(),
+                t0: clock::Instant::now(),
                 next_tick: TL_TICK,
                 seen: Default::default(),
                 dup: 0,
@@ -770,7 +792,7 @@ impl FastEngine {
             return self.build_inner(s, pc);
         }
         let (b0, c0) = (self.stats.build_ns, self.stats.compile_ns);
-        let t = std::time::Instant::now();
+        let t = clock::Instant::now();
         let ix = self.lookup.get(&pc).copied();
         let why = ix.map_or("", |i| std::mem::take(&mut self.slots[i].tl_why));
         let kind = if !why.is_empty() {
@@ -844,7 +866,7 @@ impl FastEngine {
     }
 
     fn build_inner(&mut self, s: &mut St, pc: u32) -> Option<()> {
-        let t0 = std::time::Instant::now();
+        let t0 = clock::Instant::now();
         // The remaining iterations of the active DO loop that starts here,
         // else (or when that is refused) the CFG shape from this pc.
         // SHARC_FAST_SHAPE=cfg skips the loop shape (tests, comparisons).
@@ -899,7 +921,7 @@ impl FastEngine {
                 None
             }
             Ok(mut r) => {
-                let t1 = std::time::Instant::now();
+                let t1 = clock::Instant::now();
                 let k = match &r.lean {
                     Some(l) => self.backend.compile_checked(&r.kernel, &l.entry),
                     None => self.backend.compile(&r.kernel),
