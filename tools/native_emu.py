@@ -155,9 +155,10 @@ def default_audio_args(args: list[str] | None = None) -> list[str]:
             str(paths["CF snapshot"]),
         ]
     )
-    # One second of prefill: below real time the DSP underruns at once with no buffer; pass --audio-buffer 0 for lowest latency.
+    # 0.3 s of prefill: the paced app held DN2 and DT2 at 0 underruns with it (finding 18 "Desktop app
+    # real time"); pass --audio-buffer 1 on a slower machine, or 0 for the lowest latency.
     if "--audio-buffer" not in args:
-        args.extend(["--audio-buffer", "1"])
+        args.extend(["--audio-buffer", "0.3"])
     return args
 
 

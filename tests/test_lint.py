@@ -183,6 +183,7 @@ CLEAN = [
     "tools/cfrealtime.py",
     "tools/spikes.py",
     "tools/verify.py",
+    "tools/app_soak.py",
     "tools/dt2_reach_running.py",
     "tools/dt2gui.py",
     "tools/gen_test_samples.py",

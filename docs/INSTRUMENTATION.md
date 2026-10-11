@@ -118,6 +118,7 @@ fast-tier build and compile time). The coupled run loop writes `DIR/cf.jsonl`
 the wait for DSP replies, the audio queue). Setting it turns link timing on.
 Read it with `uv run python tools/spikes.py DIR`: it names the largest cost
 of every window that fell behind real time (dsp, compile, cf, ui-gap).
+`tools/app_soak.py` drives the running app over its control socket (Trig 1 taps and page changes) for an unattended run.
 
 ## Browser bench (`mise run web:bench`)
 
