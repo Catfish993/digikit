@@ -890,3 +890,23 @@ instructions and 70.1% of AOT time (top 50: 89.1% / 83.9%).
   per call (was 4) and exits at an edge to 0xb813e8; 0x1c963b runs 35 (was 18) and stops at form 25a with unknown
   address ranges. The probe medians moved 5% between sessions for the unchanged configuration (1.14 -> 1.20), so no
   speed change is claimed: each lifted stop exposes the next structural one.
+
+### Run length to the first call or return (top 50 regions) 2026-10-11 **[D]**
+
+Interpreter-only `coupled-run --profile-execution` of trig1-taps (exact per-PC counts) combined with the static CFG
+in `out/sharcdb/dn2-1.11.sqlite`; branch probabilities fitted from the counts, 3000 Monte Carlo walks per region from
+the entry to the first CALL, return, indirect or cross-function jump. The means match the kernel diagnostic's exact
+per-call counts on all 10 regions where a kernel already reaches a call (e.g. 0x1c0c9d 34/34, 0xb83635 50/50,
+0x1c25cc 8483/8378). p10/p90 are Markov estimates.
+
+| share of the top-50 saving S | run >= 100 insns | 45-100 | < 45 |
+|---|---:|---:|---:|
+| kernel stops at the first call | 40.6% (23 regions) | 3.0% | 56.4% (24) |
+| leaf callees of <= 64 insns followed | 50.6% (26) | 5.4% | 44.0% (22) |
+
+- 58% of S ends at a call, 39% at a return. The long share is mostly regions that run to a return without a call:
+  0x1cdb85 (446 insns), 0x1c25cc, 0x1c9ad5, 0x1c248a, 0x1c254e; their blockers are the loop step, unknown address
+  ranges and one region never built.
+- The short share stops after 5 to 45 insns at a call into a non-leaf callee (e.g. 0xb836ff: 5 insns, then 0xb82a5b
+  at 4232 insns per call), so it needs kernels that follow calls.
+- Without call following, the reachable part is about 5-8% of DSP CPU with PGO (0.93 -> about 0.86), an estimate.
