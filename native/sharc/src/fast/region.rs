@@ -591,6 +591,7 @@ fn assemble_cfg(
         sites,
         loops: st.loops.clone(),
         n_entry,
+        reg_n: out.reg_n,
         jumps,
         jump_tail,
         has_rts,

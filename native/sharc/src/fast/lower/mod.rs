@@ -225,6 +225,9 @@ pub struct Plan {
     /// lies before its caller (see `Structure::call_targets`), as the
     /// previous pass saw them.
     pub entry_abs: std::collections::HashMap<u32, Vec<Option<Abs>>>,
+    /// CFG kernels: the in-region register-count loop whose trip count is the
+    /// region's symbolic N, with its count source (`Lower::reg_sym`).
+    pub reg_sym: Option<(usize, u8, i64)>,
 }
 
 impl Default for Plan {
@@ -240,6 +243,7 @@ impl Default for Plan {
             flag_kinds: [0; NGROUPS as usize],
             plain: 0,
             entry_abs: Default::default(),
+            reg_sym: None,
         }
     }
 }
@@ -413,6 +417,16 @@ pub struct Lower {
     pub node_written: std::collections::BTreeMap<u32, u128>,
     pub loop_stride_out: Vec<[Option<i64>; NREGS as usize]>,
     pub loop_back_seen_out: Vec<bool>,
+    /// CFG kernels, per loop: the exact constant a register trip count has
+    /// at its DO (the loop is then a literal-count loop).
+    pub reg_lit: Vec<Option<i64>>,
+    /// CFG kernels: the region has call targets placed before their callers
+    /// (`Structure::call_targets`).
+    pub has_call_targets: bool,
+    /// The one register-count loop whose count is exactly `R[code] + k` at
+    /// region entry (loop index, code, k): the region's symbolic N when it
+    /// has no entry loop. The glue evaluates it at entry.
+    pub reg_sym: Option<(usize, u8, i64)>,
     pub loop_in: Vec<Vec<Option<Abs>>>,
     pub loop_head: Vec<Vec<Option<Abs>>>,
     /// The abstract value of each register's variable at the current point
@@ -541,6 +555,9 @@ impl Lower {
             node_written: Default::default(),
             loop_stride_out: Vec::new(),
             loop_back_seen_out: Vec::new(),
+            reg_lit: Vec::new(),
+            has_call_targets: false,
+            reg_sym: None,
             loop_in: Vec::new(),
             loop_head: Vec::new(),
             var_abs: Vec::new(),
@@ -1967,6 +1984,7 @@ impl Lower {
             flag_kinds: self.flag_kinds_out,
             plain: self.plain_out | self.plan.plain,
             entry_abs: std::mem::take(&mut self.entry_abs_out),
+            reg_sym: self.reg_sym,
             ..Plan::default()
         };
         for c in 0..NREGS as usize {
@@ -2001,6 +2019,7 @@ impl Lower {
             flags: self.flags,
             stored,
             next,
+            reg_n: self.reg_sym.map(|(_, c, k)| (c, k)),
             retry: self.retry,
             dyn_pcs: self.dyn_pcs,
         })
@@ -2025,6 +2044,9 @@ pub struct Lowered {
     /// (CFG kernels); the others are not touched.
     pub stored: Vec<u32>,
     pub next: Plan,
+    /// The symbolic trip count of a CFG kernel without an entry loop: the
+    /// register and the constant added to it (`Lower::reg_sym`).
+    pub reg_n: Option<(u8, i64)>,
     /// See `Lower::retry`.
     pub retry: bool,
     /// See `Lower::dyn_pcs`.

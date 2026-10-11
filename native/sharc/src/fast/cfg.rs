@@ -1198,6 +1198,10 @@ pub struct CfgMeta {
     /// Entry loops (outer to inner) first, then the loops started inside.
     pub loops: Vec<LoopDef>,
     pub n_entry: usize,
+    /// The symbolic trip count of a region without an entry loop: a
+    /// register at entry plus a constant (`lower::Lowered::reg_n`). The
+    /// glue evaluates it as the window iteration count.
+    pub reg_n: Option<(u8, i64)>,
     /// Delayed branches: (target, jump address).
     pub jumps: Vec<(u32, u32)>,
     /// What each delayed branch of `jumps` is (a call, a return, a jump).
