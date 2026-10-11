@@ -78,7 +78,9 @@ def generated_dir(
     environ = os.environ if environ is None else environ
     configured = environ.get("SHARC_GEN_DIR")
     if configured:
-        return pathlib.Path(configured)
+        # Relative to the repo root (mise runs tasks there); build scripts run in their crate dir.
+        path = pathlib.Path(configured)
+        return path if path.is_absolute() else ROOT / path
     if image is not None and (registered := gen_for_image(image)) is not None:
         return registered
     return DEFAULT_GENERATED
@@ -270,6 +272,9 @@ def rust_env(environ: Environ | None = None) -> dict[str, str]:
     """A copy of the environment with RUSTC/RUSTDOC pinned to the toolchain."""
     environ = os.environ if environ is None else environ
     env = dict(environ)
+    if env.get("SHARC_GEN_DIR"):
+        # Cargo build scripts run in their crate directory, so pass the generated core as an absolute path.
+        env["SHARC_GEN_DIR"] = str(generated_dir(env))
     rustc = toolchain_rustc()
     if rustc:
         env["RUSTC"] = rustc
