@@ -849,3 +849,11 @@ machine; scripts and traces were in a session scratchpad, not kept). Not re-chec
   DSP CPU with PGO, 1-4% without (1.10 -> 1.06-1.09); most of the no-PGO front-end excess is in-function layout.
   Not built. Note: `tools/xctrace_bottleneck.py` needs the `record` options before OUT, or xctrace fails with
   "Path not found '--time-limit'".
+
+## LLVM hot-cold splitting with PGO 2026-10-11 **[D]**
+
+`-Cllvm-args=-hot-cold-split=true` added to the slice 3 PGO `coupled-run` build (same profile `a76e820c...profdata`,
+same DN2 gen; `out/native/target/prod/pgo-cr-hcs`). It outlined 1949 `.cold` functions and cut `__TEXT` from 46.4 to
+42.6 MB (-8.2%), but DSP CPU per audio s rose: trig1-taps 0.935 (A) against 0.943 (B), paired ratio 1.014 (0.985 to
+1.023), 6 exclusive alternating pairs (`tools/coupled_ab.py`), load average about 3, PCM equal to the pin in all 12
+runs. Not adopted. Caveat: the profile was trained without the split, so its mapping onto outlined code is untested.

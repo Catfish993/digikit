@@ -110,8 +110,9 @@ current state and next steps in the newest `HANDOVER-*.md` in `docs/handovers/`.
   iteration out of it.
 - Timed runs and heavy builds share the machine through
   `tools/benchlock.py` (shared for builds, exclusive for benchmarks;
-  `status` shows holders). `tools/native_pgo.py` and
-  `tools/sharc_regionbench.py` take it themselves; wrap ad-hoc runs with
+  `status` shows holders). `tools/native_pgo.py`,
+  `tools/sharc_regionbench.py` and `tools/coupled_ab.py` take it themselves
+  (wrapping them deadlocks); wrap ad-hoc runs with
   `uv run python tools/benchlock.py run --exclusive -- CMD`.
 - Build and run through mise: `mise run emu` (build once, run the binary),
   `mise run emu:build` (the same build, no launch), `mise run web` (browser),
