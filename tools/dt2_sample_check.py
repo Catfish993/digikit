@@ -145,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--seconds", type=float, default=1.6)
     p.add_argument("--rebuild", action="store_true", help="rebuild coupled-run first")
+    p.add_argument(
+        "--binary", type=pathlib.Path, help="run this coupled-run (e.g. a PGO build)"
+    )
     p.add_argument("--wav", type=pathlib.Path, help="output WAV (default trig.wav)")
     p.add_argument(
         "--env", action="append", default=[], metavar="K=V",
@@ -158,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         import coupled
     finally:
         sys.path.pop(0)
-    binary = coupled.ensure_binary(
+    binary = a.binary or coupled.ensure_binary(
         not a.rebuild, "dt2", ready_dir / "digi-audio-dn2-image.bin"
     )
     wav = a.wav or work / "trig.wav"
