@@ -62,6 +62,8 @@ function workerHarness({ ordinaryHasCoupling = false } = {}) {
     },
     TextDecoder, TextEncoder, Uint8Array, Float32Array, performance: { now: () => 0 },
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    // The pump yields through a MessageChannel: each port2 post queues one port1 task, like a timer.
+    MessageChannel: class { constructor() { const port1 = {}; this.port1 = port1; this.port2 = { postMessage: () => { timers.push(() => port1.onmessage?.({})); } }; } },
     postMessage: (message) => { if (message.reply) replies.get(message.reply)?.(message); },
     self: {}, console,
   };

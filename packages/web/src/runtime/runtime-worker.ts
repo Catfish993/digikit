@@ -23,6 +23,12 @@ const pendingRelease: { code: number; at: number }[] = [];
 // A coupled step runs ~3 DSP frames, so loop steps inside one task (setTimeout
 // would clamp to 4 ms between them) and yield about every 20 ms for input.
 const COUPLED_SLICE_MS = 20;
+// Re-arm through a MessageChannel: it queues a task without the 4 ms clamp
+// that nested setTimeout(0) calls get, and worker messages still interleave.
+const yieldChannel = new MessageChannel();
+const yieldQueue: (() => void)[] = [];
+yieldChannel.port1.onmessage = () => { yieldQueue.shift()?.(); };
+function yieldThen(fn: () => void) { yieldQueue.push(fn); yieldChannel.port2.postMessage(0); }
 
 function result() {
   if (!wasm) throw new Error('WASM core is not loaded');
@@ -91,7 +97,7 @@ async function pump(token: number, epoch: number) {
     publish(snapshot, token);
     if (snapshot.status?.error) { running = false; postMessage({ type: 'error', generation: token, error: snapshot.status.error }); return; }
   } catch (error) { running = false; postMessage({ type: 'error', generation: token, error: String(error) }); return; }
-  setTimeout(() => { void pump(token, epoch); }, 0);
+  yieldThen(() => { void pump(token, epoch); });
 }
 function reject(data: { id?: string }, error: string) { if (data.id) postMessage({ reply: data.id, error }); }
 type Message = { type: string; id?: string; generation: number; bytes?: ArrayBuffer; image?: ArrayBuffer; dsp?: ArrayBuffer; snapshot?: ArrayBuffer; port?: MessagePort; hold?: number; code?: number; down?: boolean; encoder?: number; detents?: number };
@@ -113,7 +119,7 @@ async function handle(data: Message) {
     try {
         new Uint8Array((wasm!.memory as unknown as WebAssembly.Memory).buffer, pointer, bytes.length).set(bytes);
       metrics.reset(); const snapshot = call('digi_load', pointer, bytes.length); metrics.loaded();
-      publish(snapshot, generation); running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0);
+      publish(snapshot, generation); running = true; const epoch = ++runEpoch; yieldThen(() => { void pump(generation, epoch); });
       if (data.id) postMessage({ reply: data.id, value: snapshot });
     } finally { wasm!.digi_dealloc(pointer, bytes.length); }
     return;
@@ -131,7 +137,7 @@ async function handle(data: Message) {
       metrics.reset();
       const snapshot = call('digi_load_coupled', ...parts.flatMap((part, i) => [pointers[i], part.length]));
       metrics.loaded(); coupled = true; pcmValues = 0; audioStartedAt = performance.now();
-      publish(snapshot, generation); running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0);
+      publish(snapshot, generation); running = true; const epoch = ++runEpoch; yieldThen(() => { void pump(generation, epoch); });
       if (data.id) postMessage({ reply: data.id, value: snapshot });
     } finally { parts.forEach((part, i) => { if (i < pointers.length) wasm!.digi_dealloc(pointers[i], part.length); }); }
     return;
@@ -145,7 +151,7 @@ async function handle(data: Message) {
   if (data.type === 'tap') { call('digi_button', data.code!, 1); pendingRelease.push({ code: data.code!, at: lastIcount + (data.hold ?? 40_000_000) }); if (data.id) postMessage({ reply: data.id, value: undefined }); return; }
   if (data.type === 'diagnostics') { const report = { ...call('digi_diagnostics'), host: metrics.report(), audio: coupled ? coupledReport() : undefined }; if (data.id) postMessage({ reply: data.id, value: report }); return; }
   if (data.type === 'pause') { running = false; runEpoch += 1; return; }
-  if (data.type === 'resume') { if (!running) { running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0); } return; }
+  if (data.type === 'resume') { if (!running) { running = true; const epoch = ++runEpoch; yieldThen(() => { void pump(generation, epoch); }); } return; }
   if (data.type === 'button') { call('digi_button', data.code!, data.down ? 1 : 0); if (data.id) postMessage({ reply: data.id, value: undefined }); return; }
   if (data.type === 'turn') { call('digi_turn', data.encoder!, data.detents!); if (data.id) postMessage({ reply: data.id, value: undefined }); return; }
 }
