@@ -277,13 +277,15 @@ async fn emu_card_stage(
 /// Build the card of the staged files and restart the DT2 on it; progress is
 /// read with `emu_card_status`.
 #[tauri::command]
-async fn emu_card_load(host: State<'_, Host>) -> Result<Value, String> {
+async fn emu_card_load(host: State<'_, Host>, name: Option<String>) -> Result<Value, String> {
     let (handle, dir) = (host.handle.clone(), host.staging.clone());
     tauri::async_runtime::spawn_blocking(move || {
         handle
             .call(
                 "card.load",
-                serde_json::json!({"dir": dir.display().to_string(), "wait": false}),
+                serde_json::json!({
+                    "dir": dir.display().to_string(), "wait": false, "name": name,
+                }),
             )
             .map_err(|e| e.message)
     })
@@ -370,6 +372,8 @@ fn main() {
         Mode::Free
     };
     config.run_dir = run_dir.clone();
+    // Mount the last card again at start (not for scenarios, which must not depend on earlier runs).
+    config.remember_card = startup.scenario.is_none();
     let run_dir_for_staging = run_dir.clone();
     config.on_quit = Some(Box::new(|| {
         // Let the socket thread write the reply first.

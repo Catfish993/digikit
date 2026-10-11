@@ -1,5 +1,6 @@
 """The launcher restores local DN2 audio by default, with CF-only escape hatches."""
 
+import os
 import runpy
 import subprocess
 import sys
@@ -607,3 +608,80 @@ def test_main_daemon_builds_and_runs_digi_emud(monkeypatch):
     assert calls[0][:2] == ["cargo", "build"]
     assert calls[1][0].endswith("release/digi-emud")
     assert calls[1][1:] == ["x.syx"]
+
+
+def _dt2_launch(monkeypatch, tmp_path, manifest_core):
+    """A DT2 launch with ready inputs, a registered core and a PGO manifest."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import native_pgo
+    finally:
+        sys.path.pop(0)
+    syx = dt2_syx(monkeypatch, tmp_path)
+    ready = tmp_path / "ready-dt2"
+    ready.mkdir()
+    for name in [
+        "digi-audio-dn2-image.bin",
+        "digi-audio-m5.snap.dsp",
+        "digi-audio-m5.snap",
+    ]:
+        (ready / name).touch()
+    registered = tmp_path / "registered"
+    registered.mkdir()
+    monkeypatch.setitem(digi_env.READY_DIRS, "dt2", ready)
+    monkeypatch.setattr(digi_env, "gen_for_image", lambda _image: registered)
+    monkeypatch.setattr(
+        native_pgo,
+        "read_manifest",
+        lambda device="dn2": {"generated_dir": str(manifest_core)},
+    )
+    # default_audio_args exports SHARC_GEN_DIR: have monkeypatch undo it.
+    monkeypatch.setenv("SHARC_GEN_DIR", "x")
+    monkeypatch.delenv("SHARC_GEN_DIR")
+    return syx, registered
+
+
+def test_dt2_default_core_is_the_one_the_profile_was_trained_on(
+    monkeypatch, tmp_path, capsys
+):
+    trained = tmp_path / "trained"
+    trained.mkdir()
+    syx, _ = _dt2_launch(monkeypatch, tmp_path, trained)
+    args = launcher()["default_audio_args"]([str(syx)])
+    assert "--auto-coupled" in args
+    assert os.environ["SHARC_GEN_DIR"] == str(trained)
+    err = capsys.readouterr().err
+    assert f"native core: {trained}" in err and "PGO profile" in err
+
+
+def test_dt2_default_core_falls_back_to_the_registered_one(
+    monkeypatch, tmp_path, capsys
+):
+    syx, registered = _dt2_launch(monkeypatch, tmp_path, tmp_path / "gone")
+    launcher()["default_audio_args"]([str(syx)])
+    assert os.environ["SHARC_GEN_DIR"] == str(registered)
+    assert "registered core" in capsys.readouterr().err
+
+
+def test_dt2_default_core_skips_a_stale_trained_core(monkeypatch, tmp_path):
+    trained = tmp_path / "trained"
+    trained.mkdir()
+    syx, registered = _dt2_launch(monkeypatch, tmp_path, trained)
+    # Only the registered core carries the current fingerprint.
+    (registered / digi_env.CORE_FINGERPRINT_FILE).write_text(
+        digi_env.core_fingerprint()
+    )
+    monkeypatch.delenv("DIGI_ALLOW_STALE_GEN")
+    launcher()["default_audio_args"]([str(syx)])
+    assert os.environ["SHARC_GEN_DIR"] == str(registered)
+
+
+def test_dt2_explicit_gen_dir_wins(monkeypatch, tmp_path):
+    trained = tmp_path / "trained"
+    trained.mkdir()
+    syx, _ = _dt2_launch(monkeypatch, tmp_path, trained)
+    chosen = tmp_path / "chosen"
+    chosen.mkdir()
+    monkeypatch.setenv("SHARC_GEN_DIR", str(chosen))
+    launcher()["default_audio_args"]([str(syx)])
+    assert os.environ["SHARC_GEN_DIR"] == str(chosen)

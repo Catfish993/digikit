@@ -1276,3 +1276,16 @@ Measured on this machine (loaded, load average about 5): three 1 s files, card b
 cold boot to ready 11.6 s (fast tier on; `tools/ready.py` takes about 2 min with the interpreter),
 cached restore 0.3 s. **[O]** The in-app snapshot is made with the fast tier where `ready.py`
 sets `SHARC_FAST_REGIONS=`; the exactness of the two ready states was not compared.
+
+### Last card is mounted again at the next start **[D]**
+
+After a successful `card.load` the controller writes `<run dir>/cards/last.json` (`key`, `name`,
+`samples`, `firmware_sha256`; `name` is the chosen folder, `card.load {name}` or the directory name).
+When the desktop app loads a DT2 firmware without `--card-image` (and without `--scenario`:
+`Config::remember_card`), `last.json` names a card whose firmware hash matches, and the cached
+image exists (with audio, the cached ready state too: a cold boot is never started at launch),
+the controller mounts it before the first frame (the cached restore, about 0.3 s). `card.status`
+then reports `state ready, auto true, name, samples`, and the toolbar shows "Samples: NAME (N
+files)"; with nothing cached it shows "Choose samples to load a folder of WAVs". DN2 is
+unchanged. Test: `native/control/tests/card_load.rs`
+(`the_last_card_is_mounted_again_when_the_dt2_starts`).
