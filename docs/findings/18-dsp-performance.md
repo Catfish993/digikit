@@ -910,3 +910,43 @@ per-call counts on all 10 regions where a kernel already reaches a call (e.g. 0x
 - The short share stops after 5 to 45 insns at a call into a non-leaf callee (e.g. 0xb836ff: 5 insns, then 0xb82a5b
   at 4232 insns per call), so it needs kernels that follow calls.
 - Without call following, the reachable part is about 5-8% of DSP CPU with PGO (0.93 -> about 0.86), an estimate.
+
+## DT2 parity 2026-10-11 **[D]**
+
+Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), prod core `out/native/dt2-audio/gen`, default config, scenario
+`dt2-sample-trig` (3 s, one-sample card of `tools/dt2_sample_check.py`; the only DT2 load scenario). The DT2 DSP image has
+no fast regions in `tools/fast_regions.json`, so the tiers are AOT block, idle skip and interpreter. `tools/aot_entry_iter.py`
+now takes `--device dt2` (`aot_fxprof.py --dt2-card` runs on the card's ready state; the base profile is
+`prof-merged-c2`). Four rounds, each profiled with the core built from the previous round (rsgen about 50 s, build 1.5 min):
+new block starts 27, 8, 3, 1 (the fifth round finds one PC again, a 9000-count chain of one instruction per round, not
+worth a round). The hot one is 0x1c0885 (873,000 interpreter runs in 3 s: a gated entry whose body ran in the
+interpreter). Timing is `tools/coupled_ab.py --dt2-card --device dt2`: 6 exclusive alternating pairs, load average
+3.4 to 6.6 from other jobs (pair ratios stay within 0.870 to 0.874).
+
+| | prod core | with entry search (`gen-lane-entry`, not promoted) |
+|---|---:|---:|
+| DSP CPU per audio s, median of 6 (no PGO) | 1.311 (IQR 0.005) | **1.144** (IQR 0.004) |
+| paired ratio | | **0.871** (0.870 to 0.874) |
+| interpreted instructions, 3 s | 13,227,236 (0.44% of all, 1.4% of non-idle) | 5,926,406 (0.20%) |
+| AOT block instructions | 938.4M | 945.7M |
+| block entries | 6,832,135 | 6,907,129 |
+| blocks / instructions in the core | 1202 / 12,588 | 1241 / 13,398 |
+| PCM hash (3 s, coupled run) | 999dd10944ce7e62 | 999dd10944ce7e62 |
+
+Exactness: `dt2_sample_check.py --seconds 3.0` gives a clean tone and WAV hash `4bab8330915f0929` for the new core in
+AOT, AOT + fast (`--fast`) and no-AOT (`--env SHARC_AOT=0`), as the prod core does. (The pin is of the 3.0 s run; the
+default 1.6 s run hashes a9cbc3beee5267fc for both cores.) DT2 has no pinned scenario hashes. Block traps: 36,000 in
+both.
+
+**[O]** 5.9M instructions are still interpreted; they are not gated block bodies and were not analysed. The DT2 core
+has no FX profile (only a trig of one sample), so FX code stays interpreted whenever an effect is on.
+
+DT2 FX scenarios, plan (not built). (1) Find the DT2 FX page button and encoder map (finding 03) and measure the UI
+value per encoder event by read-back of the live kit Fx array (`*0x80004708`) and Sound array, as DN2 did (`UPS` in
+`gen_trackfx.py`). Parameter codes are known (finding 02: sends 0x44/0x45/0x43, delay time 0x71, feedback 0x74, reverb
+decay 0x7c, BR/SRR/routing/overdrive 0xff..0x102). (2) Check the DT2 values of `FX_PAGE` and `TRIG1` in
+`scenario_dsl.py` (TRIG1 = 25 and the NO prelude already work in `dt2.json`). (3) Generate `scenarios/dt2-trackfx.json`
+(BR, SRR, overdrive, delay, reverb, chorus sweeps on a card sample, so the DSP is loaded) and `dt2-sendfx.json` (send
+FX and master). (4) Run them on the card's ready state (`--card-image`, as `aot_fxprof.py --dt2-card` now does;
+`coupled.py scenario --device dt2` has no card option yet). (5) Profile with `aot_fxprof.py --device dt2 --dt2-card`,
+merge into `prof-merged-c2`, run entry rounds, regenerate, and gate on AOT = no-AOT PCM in every scenario.

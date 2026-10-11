@@ -49,6 +49,10 @@ SCENARIOS = [
 ]
 
 
+# The DT2 scenario (one-sample card, tools/dt2_sample_check.py).
+DT2_SCENARIOS = ["scenarios/dt2.json:dt2-sample-trig"]
+
+
 def read_entries(path: pathlib.Path) -> dict[str, int]:
     """prof-fx.entries: `pc count` lines."""
     rows = (line.split() for line in path.read_text().splitlines())
@@ -60,12 +64,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("names", nargs="*", metavar="FILE:SCENARIO")
     p.add_argument("--base", type=pathlib.Path, required=True)
     p.add_argument("--out", type=pathlib.Path, required=True)
+    p.add_argument("--device", default="dn2", choices=["dn2", "dt2"])
     p.add_argument("--min-count", type=int, default=1000)
     a = p.parse_args(argv)
-    names = a.names or SCENARIOS
+    names = a.names or (DT2_SCENARIOS if a.device == "dt2" else SCENARIOS)
+    dt2 = ["--device", "dt2", "--dt2-card"] if a.device == "dt2" else []
     status = aot_fxprof.main(
         [
-            "--out", str(a.out),
+            "--out", str(a.out), *dt2,
             "--base-cov", str(a.base / "prof-fx"),
             "--base-entries", str(a.base / "prof-fx.entries"),
             "--base-trans", str(a.base / "prof-fx.trans"),

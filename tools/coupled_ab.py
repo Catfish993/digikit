@@ -38,6 +38,10 @@ finally:
     sys.path.pop(0)
 
 
+# Set by --dt2-card: the sample card's ready inputs and its `--card-image` argument.
+CARD: tuple[dict[str, pathlib.Path], list[str]] | None = None
+
+
 def one_run(binary: str, scenario: str, scenarios: str | None, device: str) -> dict:
     """One headless run; the scenario's numbers from its report."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -45,7 +49,8 @@ def one_run(binary: str, scenario: str, scenarios: str | None, device: str) -> d
         extra = ["--scenario", scenario, "--out", str(out)]
         if scenarios:
             extra = ["--scenarios", str(pathlib.Path(scenarios).resolve())] + extra
-        argv = coupled.run_args(binary, coupled.inputs(device), extra)
+        ins, card = CARD or (coupled.inputs(device), [])
+        argv = coupled.run_args(binary, ins, [*card, *extra])
         load = os.getloadavg()[0]
         done = subprocess.run(
             argv, cwd=ROOT, env=coupled.run_env(), capture_output=True, text=True
@@ -85,9 +90,19 @@ def main() -> None:
     ap.add_argument("-s", "--scenario", action="append", required=True)
     ap.add_argument("--scenarios", help="scenario file (default: the device's)")
     ap.add_argument("--device", default="dn2")
+    ap.add_argument(
+        "--dt2-card",
+        action="store_true",
+        help="DT2: run on the one-sample card of tools/dt2_sample_check.py",
+    )
     ap.add_argument("--pairs", type=int, default=6)
     ap.add_argument("--out")
     args = ap.parse_args()
+    if args.dt2_card:
+        import dt2_sample_check
+
+        global CARD
+        CARD = dt2_sample_check.card_inputs()
     bins = []
     for item in args.binaries:
         label, _, path = item.partition("=")

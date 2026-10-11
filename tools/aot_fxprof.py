@@ -47,15 +47,20 @@ INTERP_ENV = {
 MAPS = {"coverage": "", "entries": ".entries", "transitions": ".trans"}
 
 
+# Set by --dt2-card: the sample card's ready inputs and its `--card-image` argument.
+CARD: tuple[dict[str, pathlib.Path], list[str]] | None = None
+
+
 def run(scenarios: str, name: str, cycle: int, out: pathlib.Path, device: str) -> dict:
     """One profiled run; returns {suffix: text}."""
     report = out / f"c{cycle}" / name / "report.json"
     report.parent.mkdir(parents=True, exist_ok=True)
     binary = coupled.ensure_binary(True, device)
+    ins, card = CARD or (coupled.inputs(device), [])
     argv = coupled.run_args(
         binary,
-        coupled.inputs(device),
-        ["--scenarios", str(pathlib.Path(scenarios).resolve()), "--scenario", name,
+        ins,
+        [*card, "--scenarios", str(pathlib.Path(scenarios).resolve()), "--scenario", name,
          "--out", str(report), "--profile-execution"],
     )  # fmt: skip
     env = {**os.environ, **digi_env_fast(), **(INTERP_ENV if cycle == 0 else {})}
@@ -86,7 +91,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--base-cov", type=pathlib.Path)
     p.add_argument("--base-entries", type=pathlib.Path)
     p.add_argument("--base-trans", type=pathlib.Path)
+    p.add_argument(
+        "--dt2-card",
+        action="store_true",
+        help="DT2: run on the one-sample card of tools/dt2_sample_check.py",
+    )
     a = p.parse_args(argv)
+    if a.dt2_card:
+        import dt2_sample_check
+
+        global CARD
+        CARD = dt2_sample_check.card_inputs()
     a.out.mkdir(parents=True, exist_ok=True)
     texts: dict[str, list[str]] = {s: [] for s in MAPS.values()}
     for base, suffix in (

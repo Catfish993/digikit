@@ -18,6 +18,7 @@ Exit status 0 only when the tone is clean (peak share >= 0.9).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.machinery
 import importlib.util
 import math
@@ -105,11 +106,8 @@ def analyse(left: list[float], rate: float = 48000.0) -> dict:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--seconds", type=float, default=1.6)
-    p.add_argument("--rebuild", action="store_true", help="rebuild coupled-run first")
-    a = p.parse_args(argv)
+def prepare() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
+    """The card, its ready state and the firmware: (syx, card, ready_dir, work)."""
     work = ROOT / "out" / "dt2-sample-check"
     samples = work / "samples"
     write_sine(samples / "test-sine-1khz.wav")
@@ -126,6 +124,35 @@ def main(argv: list[str] | None = None) -> int:
         for line in ready.stdout.splitlines()
         if line.startswith("ready_dir=")
     )
+    return syx, card, ready_dir, work
+
+
+def card_inputs() -> tuple[dict[str, pathlib.Path], list[str]]:
+    """The coupled-run inputs on the card's ready state, and `--card-image CARD`."""
+    syx, card, ready, _ = prepare()
+    return (
+        {
+            "firmware": syx,
+            "DSP image": ready / "digi-audio-dn2-image.bin",
+            "DSP state": ready / "digi-audio-m5.snap.dsp",
+            "CF snapshot": ready / "digi-audio-m5.snap",
+        },
+        ["--card-image", str(card)],
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--seconds", type=float, default=1.6)
+    p.add_argument("--rebuild", action="store_true", help="rebuild coupled-run first")
+    p.add_argument("--wav", type=pathlib.Path, help="output WAV (default trig.wav)")
+    p.add_argument(
+        "--env", action="append", default=[], metavar="K=V",
+        help="environment of the run (default SHARC_FAST_REGIONS=: AOT, no fast tier)",
+    )  # fmt: skip
+    p.add_argument("--fast", action="store_true", help="the default fast tier too")
+    a = p.parse_args(argv)
+    syx, card, ready_dir, work = prepare()
     sys.path.insert(0, str(ROOT / "tools"))
     try:
         import coupled
@@ -134,8 +161,9 @@ def main(argv: list[str] | None = None) -> int:
     binary = coupled.ensure_binary(
         not a.rebuild, "dt2", ready_dir / "digi-audio-dn2-image.bin"
     )
-    wav = work / "trig.wav"
-    env = {**os.environ, "SHARC_FAST_REGIONS": ""}
+    wav = a.wav or work / "trig.wav"
+    env = coupled.run_env({}) if a.fast else {**os.environ, "SHARC_FAST_REGIONS": ""}
+    env.update(kv.partition("=")[::2] for kv in a.env)
     subprocess.run(
         [
             str(binary), "--syx", str(syx), "--card-image", str(card),
@@ -150,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     )  # fmt: skip
     result = analyse(read_left(wav))
     print(result)
+    print("wav sha256", hashlib.sha256(wav.read_bytes()).hexdigest()[:16])
     ok = result["peak_share"] >= 0.9
     print("clean tone" if ok else "NOT a clean tone (peak share < 0.9)")
     return 0 if ok else 1
