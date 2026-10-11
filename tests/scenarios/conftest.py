@@ -29,12 +29,11 @@ try:
 finally:
     sys.path.pop(0)
 
-# Standard peeks of the DN2 Sound (track 1) and Fx (kit) parameter arrays.
-PEEKS = (fxcheck.SND_PEEK, fxcheck.FX_PEEK)
+# Scenario file by name prefix and device. The standard peeks (the Sound array
+# of track 1 and the Fx array of the kit) come from fxcheck, per device.
 FILES = {
-    "tf": "dn2-trackfx.json",
-    "sf": "dn2-sendfx.json",
-    "fx": "dn2-fx.json",
+    "dn2": {"tf": "dn2-trackfx.json", "sf": "dn2-sendfx.json", "fx": "dn2-fx.json"},
+    "dt2": {"tf": "dt2-trackfx.json", "sf": "dt2-sendfx.json"},
 }
 
 
@@ -46,7 +45,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="keep the WAVs of the runs (default: delete them at the end; "
         "reports stay under out/runs/tests/<stamp>/)",
     )
-    parser.addoption("--device", default="dn2", choices=["dn2"], help="device")
+    parser.addoption(
+        "--device",
+        default="dn2",
+        choices=["dn2", "dt2"],
+        help="device (dt2 runs test_dt2_fx.py on the one-sample card, dn2 the rest)",
+    )
     parser.addoption(
         "--no-build",
         action="store_true",
@@ -84,6 +88,10 @@ def pytest_collection_modifyitems(
     dropped: list[pytest.Item] = []
     for item in items:
         if _mine(item):
+            want = "dt2" if item.path.name.startswith("test_dt2") else "dn2"
+            if config.getoption("--device") != want:
+                dropped.append(item)
+                continue
             item.add_marker(pytest.mark.slow)
             item.add_marker(pytest.mark.scenario)
             if "sweep" in item.keywords and not sweep:
@@ -146,14 +154,15 @@ class Renderer:
         self.keep = bool(config.getoption("--keep-runs"))
         self.base = digi_env.run_dir("tests")
         self.names = fxcheck.name_maps(fxcheck.DEFAULT_IMAGE)
+        self.peeks = (fxcheck.SND_PEEK, fxcheck.FX_PEEK)
         self.cache: dict[str, Rendered] = {}
         self.wanted: dict[str, set[str]] = {}
         self.batches = 0
         self.events = fxcheck.scenario_events()
 
-    @staticmethod
-    def file_of(name: str) -> str:
-        return FILES.get(name.split("-")[0], "dn2-fx.json")
+    def file_of(self, name: str) -> str:
+        files = FILES[self.device]
+        return files.get(name.split("-")[0], files.get("fx", ""))
 
     def need(self, names: list[str]) -> None:
         """Declare scenarios that will be asked for (rendered together)."""
@@ -176,7 +185,7 @@ class Renderer:
             ROOT / "scenarios" / fname,
             names,
             run,
-            peeks=PEEKS,
+            peeks=self.peeks,
             diag=self.diag,
             binary=self.binary,
             jobs=self.jobs,
@@ -219,7 +228,10 @@ def device(request: pytest.FixtureRequest) -> str:
 def emulator(request: pytest.FixtureRequest, device: str) -> Renderer:
     """Binary built, ready inputs present, generated core current. Skips (with
     the reason) when an input is missing or the core is stale."""
+    fxcheck.configure(device)
     try:
+        if device == "dt2":
+            coupled.enable_dt2_card()
         coupled.inputs(device)
         gen = coupled.generated(device)
         digi_env.check_generated(gen)

@@ -63,6 +63,21 @@ def benchlock(mode: str, label: str):
 # Pure helpers
 
 
+# Set by enable_dt2_card(): the one-sample card's ready inputs and `--card-image`.
+CARD: tuple[dict[str, pathlib.Path], list[str]] | None = None
+
+
+def enable_dt2_card() -> None:
+    """Run DT2 on the one-sample card of tools/dt2_sample_check.py: `inputs`
+    gives the card's ready state and `run_args` adds `--card-image`. Needed by
+    the dt2-trackfx / dt2-sendfx scenarios (a trig plays the card's sample)."""
+    global CARD
+    if CARD is None:
+        import dt2_sample_check
+
+        CARD = dt2_sample_check.card_inputs()
+
+
 def run_args(
     binary: str | os.PathLike[str], inputs: dict[str, pathlib.Path], extra: list[str]
 ) -> list[str]:
@@ -73,6 +88,7 @@ def run_args(
         "--dsp-image", str(inputs["DSP image"]),
         "--dsp-state", str(inputs["DSP state"]),
         "--cf-snapshot", str(inputs["CF snapshot"]),
+        *(CARD[1] if CARD else []),
         *extra,
     ]  # fmt: skip
 
@@ -166,6 +182,8 @@ def generated(
 
 
 def inputs(device: str = "dn2") -> dict[str, pathlib.Path]:
+    if CARD:
+        return CARD[0]
     found = digi_env.ready_inputs(device=device)
     missing = [f"{k}: {v}" for k, v in found.items() if not pathlib.Path(v).exists()]
     if missing:
@@ -630,6 +648,12 @@ def parser() -> argparse.ArgumentParser:
     def run_flags(p: argparse.ArgumentParser) -> None:
         p.add_argument("--no-build", action="store_true", help="skip the cargo build")
         p.add_argument(
+            "--dt2-card",
+            action="store_true",
+            help="DT2: the one-sample card (tools/dt2_sample_check.py) and its "
+            "ready state; DIGI_DT2_CARD=1 does the same",
+        )
+        p.add_argument(
             "--wav", action="store_true", help="write audio.wav next to the report"
         )
         p.add_argument(
@@ -692,6 +716,8 @@ def main(argv: list[str] | None = None) -> int:
         argv, extra = argv[:cut], argv[cut + 1 :]
     args = parser().parse_args(argv)
     args.extra = extra
+    if getattr(args, "dt2_card", False) or os.environ.get("DIGI_DT2_CARD"):
+        enable_dt2_card()
     if extra and args.command not in ("scenario", "replay"):
         raise SystemExit(
             "coupled: extra arguments after -- only apply to scenario/replay"

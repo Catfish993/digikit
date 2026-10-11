@@ -188,7 +188,7 @@ def diff_vs_dry(
 
 # --- scenario files, run loading ---------------------------------------------
 
-SCENARIO_FILES = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
+SCENARIO_FILES: tuple[str, ...] = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
 
@@ -257,6 +257,30 @@ FX_OWNERS = {"LFO1", "LFO2", "LFO3", "Chorus", "Delay", "Reverb", "Ext-in", "Mas
 SOUND_OWNERS = {"Filter", "Amp", "FX", "Portamento"}
 SND_PEEK = "snd=*0x800052a0+0x48:202"
 FX_PEEK = "fx=*0x800052a4+0:202"
+BR_IDX, DSEND_IDX = 95, 86  # Sound array indices of Bit Reduction and Delay Send
+
+
+def configure(device: str) -> None:
+    """Switch the module to a device: DN2 (the default) or DT2 1.16, whose track-1
+    Sound array is at *0x8000470c+0x14 and Fx array at *0x80004708 (finding 02),
+    with the 1 kHz card sample instead of the 261.6 Hz audition sine."""
+    global F0, SCENARIO_FILES, DEFAULT_IMAGE, SND_PEEK, FX_PEEK, BR_IDX, DSEND_IDX
+    if device == "dt2":
+        F0 = 1000.0
+        SCENARIO_FILES = ("dt2-trackfx.json", "dt2-sendfx.json")
+        DEFAULT_IMAGE = ROOT / "out" / "sections" / "dt2-1.16" / "section_3_MAIN_OS.bin"
+        SND_PEEK = "snd=*0x8000470c+0x14:142"
+        FX_PEEK = "fx=*0x80004708+0:142"
+        BR_IDX, DSEND_IDX = 64, 55
+    elif device == "dn2":
+        F0 = 261.6
+        SCENARIO_FILES = ("dn2-fx.json", "dn2-trackfx.json", "dn2-sendfx.json")
+        DEFAULT_IMAGE = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
+        SND_PEEK = "snd=*0x800052a0+0x48:202"
+        FX_PEEK = "fx=*0x800052a4+0:202"
+        BR_IDX, DSEND_IDX = 95, 86
+    else:
+        raise ValueError(device)
 
 
 def name_maps(image: str | pathlib.Path) -> tuple[dict[int, str], dict[int, str]]:
@@ -803,8 +827,8 @@ def check(
         pui = {k: ui(v) for k, v in pk.items() if k not in ("snd", "fx")}
         dec = decoded[name]
         if dec:
-            pui.setdefault("br", snd_ui(dec, 95))
-            pui.setdefault("dsend", snd_ui(dec, 86))
+            pui.setdefault("br", snd_ui(dec, BR_IDX))
+            pui.setdefault("dsend", snd_ui(dec, DSEND_IDX))
         row: dict[str, object] = {
             "run_dir": str(d),
             "peek_ui": pui,
@@ -949,10 +973,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--ref", default=None, help="dry reference scenario (default by name)"
     )
-    ap.add_argument("--image", type=pathlib.Path, default=DEFAULT_IMAGE)
+    ap.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    ap.add_argument("--image", type=pathlib.Path, default=None)
     ap.add_argument("--no-plots", action="store_true")
     a = ap.parse_args(argv)
-    print(table(check(a.runs, a.ref, not a.no_plots, a.image)))
+    configure(a.device)
+    print(table(check(a.runs, a.ref, not a.no_plots, a.image or DEFAULT_IMAGE)))
     return 0
 
 

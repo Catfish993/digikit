@@ -93,6 +93,10 @@ description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash dif
 run = "uv run python -m pytest tests/scenarios --slow -q"
 description = "Oracle tests: render the DN2 FX scenarios headless and assert measured relationships (fast subset, about 3 min)"
 
+[tasks."scenarios:dt2"]
+run = "uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow --sweep -q"
+description = "Oracle tests for the DT2 FX scenarios on the one-sample card (about 2 min)"
+
 [tasks."scenarios:sweep"]
 run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
 description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"

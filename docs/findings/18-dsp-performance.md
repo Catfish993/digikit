@@ -1025,3 +1025,83 @@ core was rebuilt for this lane (adds `digi_dsp_*`, `digi_load_coupled_remote`); 
   and AOT), so the remaining gap is wasm codegen of the generated blocks (bounds checks, no SIMD in the generated
   Rust for wasm32, 32-bit pointers). The wasm fast tier of the parked branch (`digi_sharc_fast`, generic core)
   is a separate path. **[O]**
+
+## DT2 FX scenarios and profile 2026-10-11 **[D]**
+
+Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), the one-sample card of `tools/dt2_sample_check.py` (1 kHz sine,
+1 s), core `gen-lane-entry` as the baseline, new core `out/native/dt2-audio/gen-lane-fx` (PROVENANCE.txt there; neither is
+promoted). Two lanes' work on one machine: load average 3 to 130 during the runs, so every timing is a paired A/B.
+Not re-checked by a second agent.
+
+**Scenarios.** `scenarios/dt2-trackfx.json` (25) and `dt2-sendfx.json` (35), generator `tools/gen_dt2fx.py`, same names and
+layout as the DN2 files (`tf-*`, `sf-*`) so `tools/fxcheck.py` (`configure("dt2")`: F0 1 kHz, Sound array
+`*0x8000470c+0x14:142`, Fx array `*0x80004708:142`) and `tests/scenarios/conftest.py` (`--device dt2`) read them. The
+panel is the DN2's (finding 03, "DT2 1.16 FX pages"). Each run is 2 to 4 audio s: NO prelude, a 56-slot sweep (1M
+instructions per slot), Trig 1. `coupled.py scenario --device dt2 --dt2-card` (new flag, `DIGI_DT2_CARD=1`) runs them on the
+card's ready state; `tools/dt2fx.py render|check|tiers` renders both files with the peeks, prints the fxcheck tables and
+compares PCM hashes. Oracle tests: `tests/scenarios/test_dt2_fx.py` (146 cases, 106 s, `mise run scenarios:dt2`).
+
+- **Read-back [D].** The intended parameter lands on a calibrated UI value (BR/overdrive/SRR 22, 54, 127; sends 54, 127;
+  delay time 0, 30, 100; feedback 0, 39, 109; reverb decay 0, 37, 108; and so on) and no other stored parameter differs from
+  the reference, in all 52 non-reference scenarios. The DN2 event counts do not transfer (44 events give UI 90, not 127; the
+  value is not smooth in the count: 48 events 127, 50 events 113), so the counts are calibrated by read-back per layout
+  (`gen_dt2fx.py OUT --ladder`).
+- **Audio direction [D].** BR: error against dry -52.1, -19.5, +0.7 dB and THD -56.9, -21.2, -7.3 dB for 22, 54, 127;
+  overdrive: 3rd harmonic -40.3, -35.6, -25.3 dB, gain +2.7, +7.1, +15.8 dB; SRR: lowest alias image 12000, 2525, 475 Hz,
+  error rising; BR 0 is bit-identical to dry; filter at UI 60 takes 35 dB off the 1 kHz note; SRR/overdrive routing 1 gives a
+  different signal with the filter closed. Sends: wet RMS rises with the send (delay -48.2 to -33.4 dB, reverb -60.4 to
+  -48.1, chorus -52.2 to -37.3). Delay: first echo at 0.087, 0.443, 0.568, 1.863 s for time 0, 23, 30, 100; repeats change by
+  -9.4, -4.6, -3.1, +4.7 dB for feedback 0, 32, 39, 109 (above unity grows, peak 0.69); width 0 puts the echo hard left (R
+  92 dB lower), 127 right (L 36 dB lower); pingpong follows the width; LPF 0 takes 29 dB off; mix 0 leaves no echo. Reverb
+  RT60 1.41, 1.94, 2.12, 6.06 s for decay 0, 31, 37, 108; pre-delay 127 delays the onset by 0.38 s; mix 0 is silent. Chorus
+  rate 0.86, 0.99, 3.11 Hz for speed 0, 32, 127; depth 0 removes the modulation (L/R wet correlation 0.999 against 0.04);
+  mix 0 is silent. Master compressor (fully wet): RMS change -7.7 (ratio), -3.6 (threshold 0), +7.5 (mix only), +19.5 dB
+  (makeup 127).
+- **DT2 against DN2.** Delay repeat step at the default feedback is -4.6 dB (DN2 -6.0); echo spacing is about 18.4 ms per
+  TIME step against DN2's 15.625 ms (not proportional to TIME + 1; the tempo of the ready state is the likely cause, not
+  checked) **[O]**; chorus Depth and Width start at their maximum (a +4 turn changes nothing).
+
+**Tier equality [D].** All 60 scenarios give the same PCM sha in the default config, in `SHARC_AOT=0` (interpreter only; DT2
+has no fast regions, so that is the only other tier) and, on `gen-lane-fx`, in the default config again: 60 of 60 for both
+cores. The no-AOT render of 197 audio s took 2189 s on six jobs (about 67 CPU s per audio s). `tools/verify.py --full --dt2`
+(step `dt2-tier-sweep`) does the same comparison with `coupled.py scenario --device dt2 --dt2-card`.
+
+**Profile and regeneration.** `aot_fxprof.py --device dt2 --dt2-card` over `dt2-sample-trig` and 18 FX scenarios, merged with
+the entry-lane r4 profile, then two entry rounds (3 new block starts, then 1; the next one is a 190k-count chain of one
+instruction per round, as before: stopped). The FX scenarios change the DSP instruction mix much less than expected:
+block instructions differ by 0.0% to 0.4% between a dry run and any send or master scenario, because the send FX, reverb
+and the compressor code run the same instructions whatever the sends and mix are. Interpreted instructions per 2 audio s:
+3.95M dry, 3.95M with overdrive or SRR, **5.3 to 5.5M with bit reduction** (+1.4M: the only effect with its own interpreted
+path), 7.9M per 4 s with sends. So the claim above, that FX code stays interpreted whenever an effect is on, was wrong
+**[C]**: the baseline trig profile already covers it, except for the bit-reduction code. In `gen-lane-fx` the BR scenario
+interprets 3.76M (was 5.5M); over the 60 scenarios the total falls from 396M to 372M (-6.3%); block traps are equal in 60
+of 60.
+
+| Paired DSP CPU per audio s, 6 exclusive pairs | gen-lane-entry | gen-lane-fx | paired ratio |
+|---|---:|---:|---:|
+| dt2-sample-trig (3 s) | 1.176 | 1.180 | 1.003 (1.001 to 1.010) |
+| tf-br-127 (bit reduction on) | 1.303 | 1.189 | **0.913** (0.909 to 0.917) |
+| tf-srr-127-flt-rt1 | 1.178 | 1.186 | 1.006 (1.002 to 1.016) |
+| sf-del-ppwidth-u50 | 1.171 | 1.181 | 1.008 (1.004 to 1.012) |
+| sf-mst-thr0 | 1.178 | 1.186 | 1.006 (1.001 to 1.015) |
+
+PCM hashes are equal in every pair. The new core has 1256 blocks / 13,654 instructions against 1241 / 13,398. Verdict:
+bit reduction on is 8.7% cheaper, everything else is 0.3% to 0.8% dearer (more entry checks and a larger table; not
+analysed), so **do not promote `gen-lane-fx` over `gen-lane-entry`** unless bit reduction matters; the FX profile has no
+other payoff on DT2. Gate on `gen-lane-fx`: `dt2_sample_check.py --seconds 3.0` is a clean tone (peak share 0.99995,
+harmonics below -89 dB) with WAV hash `4bab8330915f0929` in AOT, AOT + fast and `SHARC_AOT=0`; block traps unchanged (36,000
+for the 3 s trig; equal in all 60 scenarios); the oracle tests pass on both cores (146).
+
+**[O]** What is left interpreted: about 1.9M instructions per audio s in every DT2 run. The largest single source is the entry
+bail at 0x1c06fe (455,870 interpreter runs in the 3 s trig, a gated entry that is already a block start); the rest was not
+analysed.
+
+DT2 PGO, what it would need (measured by reading, nothing built): `tools/native_pgo.py` trains one profile for DN2 only
+(state in `out/native/pgo/dn2/<triple>`; the workload is the `coupled_ready_exactness` gate run from the instrumented
+desktop app with `--pgo-train`, and the gate restores the DN2 ready snapshot). There is no DT2 training workload. It would
+need (1) a device argument for the state directory and `SHARC_GEN_DIR`, (2) a DT2 workload: the card's ready state
+(`--card-image`) with `dt2-sample-trig` and three or four FX scenarios (tf-br-127, sf-del-ppwidth-u50, sf-mst-thr0, about
+15 audio s) as a `coupled-run` scenario batch or as a DT2 variant of the gate, (3) the A/B on tf-br-127 and the trig with
+`bench-bins`. Cost: one 6-minute train and one 6-minute bench; headless DT2 is at 1.18 DSP CPU per audio s without PGO
+(DN2 0.93 with it).
+

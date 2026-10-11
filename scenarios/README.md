@@ -5,6 +5,12 @@ app's `--scenario` mode and the browser parity check). One file per device:
 
 - `dn2.json` is embedded into `coupled-run` as its default set.
 - `dt2.json` is passed with `--scenarios` (done for you by `--device dt2`).
+- `dt2-trackfx.json` and `dt2-sendfx.json` are DT2 FX sweeps (generator `tools/gen_dt2fx.py`).
+  They need the one-sample card: `coupled.py scenario --device dt2 --dt2-card
+  --scenarios scenarios/dt2-trackfx.json --all` (or `DIGI_DT2_CARD=1`), and a peek of
+  the Sound and Fx arrays (finding 18, "DT2 FX scenarios"). `tools/dt2fx.py render|check|tiers`
+  renders both files with the peeks, prints the `tools/fxcheck.py` tables and compares the
+  PCM hashes of two renders; the oracle tests are `mise run scenarios:dt2`.
 
 ## Format
 
@@ -93,6 +99,14 @@ chains; delay spacing (TIME + 1) x 15.625 ms (2 ms), one echo at feedback 0,
 falls, reverb RT60 rises with decay, chorus rate rises with speed and L/R
 decorrelate with width; every scenario is finite, DC below 1e-3 and bounded
 (growth only where the feedback is above unity).
+
+DT2: `uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow [--sweep]`
+renders `dt2-trackfx.json` / `dt2-sendfx.json` on the card and asserts the same kinds of
+relationships (read-back of the intended parameter, nothing else changed; BR/SRR/overdrive
+error rises, send and delay/reverb/chorus/master parameters move the audio in the expected
+direction). `--device` picks the files: the DN2 tests are dropped under `dt2` and these
+under `dn2`. `verify.py --full --dt2` also checks that every DT2 FX scenario gives the same
+PCM with and without AOT (about 40 min).
 
 Add a test: put the scenario in `scenarios/dn2-*.json` (generators in
 `tools/gen_*.py`), add its name to the fast or sweep list in

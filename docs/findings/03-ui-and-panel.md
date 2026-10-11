@@ -484,3 +484,30 @@ SRC-page hang. `native/boot/examples/turn_probe.rs` boots, taps buttons, turns e
 reports OLED pixel changes (`CARD=img`; `b:CODE` tap, `d:ENC:DET:COUNT:GAP` drag,
 `c:HOLD:TAP` chord, `w:M` wait). The web faceplate knob drag was checked in Chromium only;
 WebKit was not tested **[O]**.
+
+## DT2 1.16 FX pages and encoder map, by read-back (2026-10-11) **[D]**
+
+Found with `native` scenario runs on the one-sample card (`coupled.py scenario --device dt2 --dt2-card`, 8 probe
+scenarios, then one scenario per encoder), reading the live Sound array of track 1 (`*(0x8000470c)+0x14`) and the
+Fx array (`*0x80004708`) after 10 events of +-4 detents (finding 02 for the arrays). Button and encoder codes are the
+DN2's (`tools/scenario_dsl.py`: FX 5, FLTR 3, MOD 6, FUNC 17, NO 12, TRIG 1 = 25), and so are the pages: FUNC + FX
+(a latched chord) opens Delay, a second chord Reverb, a third Chorus, a fourth Delay again; FUNC + MOD opens the
+Master compressor page. Encoder rotation is ignored until NO has closed the boot modal (the `dt2-sample-trig`
+prelude).
+
+| Page | Encoders (1..8, then LEVEL = 9) |
+|---|---|
+| FX (button 5) | 1 Bit Reduction, 2 Overdrive, 3 Sample-Rate Redux, 4 SRR Routing (0/1), 5 Delay Send, 6 Reverb Send, 7 Chorus Send, 8 OVR Routing (0/1) |
+| Delay | 1 Time, 2 Pingpong (0/1), 3 Stereo Width, 4 Feedback Gain, 5 Feedback HPF, 6 Feedback LPF, 8 Reverb Send, LEVEL Mix Volume |
+| Reverb | 1 Pre-delay, 2 Decay Time, 3 FB Shelving Freq, 4 FB Shelving Gain, 5 Input HPF, 6 Input LPF, LEVEL Mix Volume |
+| Chorus | 2 Speed, 3 High-pass, 7 Delay Send, 8 Reverb Send, LEVEL Mix Volume (1 Depth and 4 Width start at their maximum, so a +4 turn changes nothing) |
+| Master (FUNC + MOD) | 1 Threshold, 2 Attack, 3 Release, 4 Makeup Gain, 5 Ratio, 6 Sidechain Src, 7 Sidechain Filter, 8 Dry/Wet Mix |
+| Filter (button 3) | 5 Frequency (127 at start), 2 Env. Decay, 4 Env. Release, 8 Env. Depth |
+
+**The UI value is not a smooth function of the event count.** The encoder accelerates by the time between events, and
+the value after N events of +4 detents (1M instructions apart) is irregular and the same for every parameter of a
+layout: in the DT2 FX-page layout of `tools/gen_dt2fx.py`, N = 24, 30, 52 give UI 22, 54, 127, while N = 48 gives 127
+and N = 50 gives 113 (`gen_dt2fx.py OUT --ladder` measures it). The DN2 counts (22, 26, 30, 40, 44 events for UI 28 to
+127) do not carry over: 44 events reach UI 90 on DT2. A scenario is therefore calibrated by read-back in its own
+event layout, and the filter-closed layout (sweep 60M instructions later) needs N = 46 for 127.
+
