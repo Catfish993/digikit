@@ -9,7 +9,7 @@
 //   mise run web:bench -- --js-flags=--no-liftoff
 //   mise run web:bench -- --profile            # top wasm functions by self time
 //
-// Options: --seconds N (10) --runs N (1) --js-flags "..." --profile
+// Options: --seconds N (10) --runs N (1) --js-flags "..." --profile --split 0|1
 //   --url http://host:port (use a running dev server) --port N (4399)
 //   --chrome PATH (else $CHROME, Google Chrome, Chromium, Edge)
 //   --syx PATH (else $DIGI_EMU_SYX, repo-root Digitone_II_OS1.11.syx, main tree)
@@ -35,6 +35,7 @@ const seconds = Number(opt('seconds', 10));
 const runs = Number(opt('runs', 1));
 const jsFlags = opt('js-flags', '');
 const profile = flag('profile');
+const splitOpt = opt('split'); // 0: one worker; 1 (default when isolated): ColdFire and DSP workers
 const timeoutS = Number(opt('timeout', 900));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...m) => console.error('[browser_bench]', ...m);
@@ -144,7 +145,7 @@ async function oneRun(url, chrome, port) {
     // Warm the dev server (Vite may optimise dependencies and reload on the first visit).
     await cdp.send('Page.navigate', { url: `${url}/` }, sessionId);
     await sleep(4000);
-    await cdp.send('Page.navigate', { url: `${url}/?bench=1&seconds=${seconds}${profile ? '&hold=1' : ''}` }, sessionId);
+    await cdp.send('Page.navigate', { url: `${url}/?bench=1&seconds=${seconds}${profile ? '&hold=1' : ''}${splitOpt === undefined ? '' : `&split=${splitOpt}`}` }, sessionId);
     const end = Date.now() + timeoutS * 1000;
     let result;
     for (;;) {

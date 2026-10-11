@@ -49,6 +49,7 @@ function workerHarness({ ordinaryHasCoupling = false } = {}) {
   };
   if (ordinaryHasCoupling) abi.digi_load_coupled = () => writeResult({ snapshot: { status: { icount } } });
   const source = fs.readFileSync(new URL('../src/runtime/runtime-worker.ts', import.meta.url), 'utf8')
+    .replace("import { LinkClient } from '../sab-link.ts';", 'class LinkClient {}')
     .replace("import { hostMetrics, pcmMetrics } from './runtime-metrics';", 'const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, report() { return {}; } }); const pcmMetrics = () => ({});');
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const context = {

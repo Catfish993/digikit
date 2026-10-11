@@ -132,3 +132,12 @@ profile of the worker (DSP / ColdFire / idle split by wasm function name, top
 functions). Needs the firmware at the repo root or `DIGI_EMU_SYX`, and
 `packages/web/.local/emulator-core-sharc.wasm`. Chrome is used if installed,
 else Chromium or Edge (`--chrome PATH`).
+
+The page runs the ColdFire and the DSP in two workers (SharedArrayBuffer link,
+dev server sends COOP/COEP) when cross-origin isolated; `--split 0` forces the
+single worker. The JSON has `mode` (`single`/`split`) and, in split mode,
+`cf_worker_busy_per_audio_s` (step time minus time blocked on the DSP),
+`cf_worker_blocked_per_audio_s` and `dsp_worker_busy_per_audio_s`; `pcm_peak`
+and `missing_blocks` check that audio is produced. Exactness of the split:
+`node tools/wasm_parity.mjs --scenario NAME --split 1` (two instances in two
+threads) must print the same PCM hash as without `--split`.

@@ -14,7 +14,7 @@ declare global { interface Window { __bench?: Record<string, unknown> } }
 const params = () => new URLSearchParams(location.search);
 export const benchRequested = () => params().get('bench') !== null;
 
-interface Sample { wall_s: number; audio_s: number; dsp_instructions: number; cf_instructions: number; busy_s: number }
+interface Sample { wall_s: number; audio_s: number; dsp_instructions: number; cf_instructions: number; busy_s: number; dsp_busy_s: number; cf_wait_s: number }
 
 export async function runBench() {
   const query = params();
@@ -30,7 +30,8 @@ export async function runBench() {
     if (!runtime.loadCoupled || !await runtime.coupledAvailable?.()) throw new Error('no coupled core (packages/web/.local/emulator-core-sharc.wasm)');
     const channel = new MessageChannel();
     let pcmMessages = 0;
-    channel.port2.onmessage = () => { pcmMessages += 1; };
+    let pcmPeak = 0;
+    channel.port2.onmessage = ({ data }: MessageEvent<Float32Array>) => { pcmMessages += 1; for (let i = 0; i < data.length; i += 1) { const v = Math.abs(data[i]); if (v > pcmPeak) pcmPeak = v; } };
     const loadStart = performance.now();
     await runtime.loadCoupled({ syx, image: inputs.image, dsp: inputs.state, snapshot: inputs.snapshot }, channel.port1);
     const start = performance.now();
@@ -43,7 +44,7 @@ export async function runBench() {
       last = stats;
       const audio = stats.pcm_produced_seconds;
       if (!trigged && audio >= trigAfter) { await runtime.tap!(25); trigged = true; }
-      samples.push({ wall_s: (performance.now() - start) / 1000, audio_s: audio, dsp_instructions: stats.dsp_instructions, cf_instructions: stats.cf_icount ?? 0, busy_s: Number(stats.host.step_response_wall_ms ?? 0) / 1000 });
+      samples.push({ wall_s: (performance.now() - start) / 1000, audio_s: audio, dsp_instructions: stats.dsp_instructions, cf_instructions: stats.cf_icount ?? 0, busy_s: Number(stats.host.step_response_wall_ms ?? 0) / 1000, dsp_busy_s: (stats.split?.dsp_worker_busy_ms ?? 0) / 1000, cf_wait_s: (stats.split?.cf_link_wait_ms ?? 0) / 1000 });
       if (stats.halted) throw new Error(`DSP halted: ${stats.halted}`);
       if (audio >= seconds) break;
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -63,11 +64,18 @@ export async function runBench() {
       state: 'done', user_agent: navigator.userAgent, seconds_target: seconds, load_s: +(loadMs / 1000).toFixed(3),
       audio_s: +audio.toFixed(3), wall_s: +wall.toFixed(3), audio_per_wall: +(audio / wall).toFixed(4),
       rate_first_half: mean(windows.slice(0, half)), rate_last_half: mean(windows.slice(half)),
+      mode: last?.split ? 'split' : 'single', cross_origin_isolated: (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true,
+      // Per worker: one worker's step time; split mode reports the ColdFire worker without its time blocked on the DSP, and the DSP worker's time answering and rendering.
+      ...(last?.split ? {
+        cf_worker_busy_s: +(end.busy_s - first.busy_s - (end.cf_wait_s - first.cf_wait_s)).toFixed(3), cf_worker_busy_per_audio_s: +((end.busy_s - first.busy_s - (end.cf_wait_s - first.cf_wait_s)) / audio).toFixed(4),
+        cf_worker_blocked_per_audio_s: +((end.cf_wait_s - first.cf_wait_s) / audio).toFixed(4),
+        dsp_worker_busy_s: +(end.dsp_busy_s - first.dsp_busy_s).toFixed(3), dsp_worker_busy_per_audio_s: +((end.dsp_busy_s - first.dsp_busy_s) / audio).toFixed(4),
+      } : {}),
       worker_busy_s: +(end.busy_s - first.busy_s).toFixed(3), worker_busy_fraction: +((end.busy_s - first.busy_s) / wall).toFixed(4),
       worker_cpu_per_audio_s: +((end.busy_s - first.busy_s) / audio).toFixed(4),
       dsp_instructions: end.dsp_instructions - first.dsp_instructions, cf_instructions: end.cf_instructions - first.cf_instructions,
       dsp_instr_per_audio_s: Math.round((end.dsp_instructions - first.dsp_instructions) / audio), cf_instr_per_audio_s: Math.round((end.cf_instructions - first.cf_instructions) / audio),
-      pcm_messages: pcmMessages, trig_pressed: trigged, dsp_halted: last?.halted ?? null, windows,
+      pcm_messages: pcmMessages, pcm_peak: +pcmPeak.toFixed(4), missing_blocks: last?.missing_blocks ?? null, trig_pressed: trigged, dsp_halted: last?.halted ?? null, windows,
     });
   } catch (error) {
     publish({ state: 'error', error: String(error) });

@@ -538,3 +538,60 @@ impl KernelBackend for WasmBackend {
         }))
     }
 }
+
+/// The backend of the browser core (wasm32): kernels are emitted here and
+/// instantiated by the page over this module's memory, which is the same
+/// memory the kernels address (a host pointer of this core is a linear-memory
+/// address). The page provides three imports from module `env`:
+///
+/// * `host_wasm_compile(ptr, len) -> i32`: compile the module at `ptr..ptr+len`
+///   and return a kernel id (>= 0), or < 0 on failure;
+/// * `host_wasm_run(id, ctx, st) -> u32`: run kernel `id`;
+/// * `host_wasm_free(id)`: drop it.
+#[cfg(target_arch = "wasm32")]
+pub mod host {
+    use super::*;
+
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
+        fn host_wasm_compile(ptr: *const u8, len: usize) -> i32;
+        fn host_wasm_run(id: i32, ctx: *mut u8, st: *mut u8) -> u32;
+        fn host_wasm_free(id: i32);
+    }
+
+    pub struct HostBackend;
+
+    struct HostKernel(i32);
+
+    impl CompiledKernel for HostKernel {
+        unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32 {
+            unsafe { host_wasm_run(self.0, ctx, st) }
+        }
+    }
+
+    impl Drop for HostKernel {
+        fn drop(&mut self) {
+            unsafe { host_wasm_free(self.0) }
+        }
+    }
+
+    impl KernelBackend for HostBackend {
+        fn name(&self) -> &'static str {
+            "wasm-host"
+        }
+        fn compile(&mut self, k: &Kernel) -> Result<Box<dyn CompiledKernel>, String> {
+            let bytes = emit_kernel(k)?;
+            // SAFETY: the page reads the bytes during the call only.
+            let id = unsafe { host_wasm_compile(bytes.as_ptr(), bytes.len()) };
+            if id < 0 {
+                return Err(format!("the host refused the kernel module ({id})"));
+            }
+            Ok(Box::new(HostKernel(id)))
+        }
+    }
+
+    /// Make `FastEngine`s use the host backend.
+    pub fn register() {
+        sharc_native::fast::register_backend(|| Box::new(HostBackend));
+    }
+}

@@ -656,6 +656,13 @@ impl FastEngine {
         fe
     }
 
+    /// Make the instruction after each stop instruction an entry
+    /// (`SHARC_FAST_FOLLOW=1` without an environment).
+    pub fn with_follow(mut self, on: bool) -> FastEngine {
+        self.follow = on;
+        self
+    }
+
     /// Make the entries ROOTS block-translator clusters (adding them as
     /// entries): CFG regions with the cluster lowering (`Env::guarded_dyn`).
     pub fn with_clusters(mut self, roots: &[u32]) -> FastEngine {
