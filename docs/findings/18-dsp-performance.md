@@ -1416,3 +1416,62 @@ fast_diff mismatch triage 2026-10-11 **[D]**. Setup: DN2 1.11 DSP image and `sna
 - `cfg --simple` cases 180 and 275: class (b), real lowering bug. A MODE1 write inside a DO loop body that changes MODE1 (the generator's `BIT SET MODE1 0x200000` or a random mask sets PEYEN; `gen_prims::g_wr_mode1` lowers such writes by tracking `mode1_cur`) was lowered once under the MODE1 of the loop head, and `flow.rs::loop_back` branched back to the head without comparing it (`Joins::edge` checks only jumps and fall-through). From the second iteration the interpreter runs the body in SIMD (case 275: ASTATY `0x401` in the interpreter, `0` in the kernel; case 180: memory bytes written by a PEy half). The kernel is refused now when a loop body leaves MODE1 different from the loop head (`Joins::back_edge_mode1`, "MODE1 differs where paths join"); regression test `fast_mode1_write_in_a_loop_body_is_not_carried_to_the_next_iteration` (fails without the check, S3 differs after 11 steps; also covers a body with a no-op MODE1 write that still runs). Present since 0c88ae5 (2026-10-07: `g_wr_mode1` and the `Joins` MODE1 check arrived together without a loop-edge check), not from the register-count loop change. Reachable in firmware only by a DO loop whose body changes MODE1 (PEYEN, ALUSAT, TRUNCATE, RND32, CBUFEN); the DN2 pins and tier sweep do not contain one.
 - `cfg --check-windows` ("window access at 0x128 outside every window with this base", case 19 of the default seed, regions with 0 windows): class (a), checker artefact in `InterpKernel::check_window`. The flat-access lookup reads the page table (`CTX_FLAT_EFF`) and the code-watch bytes (`CTX_FLAT_WATCH`) through their own pointers, which are neither a window nor an entry of the table. Fixed: those two bases pass. `cfg --check-windows` 300 cases, with `--shape cfg`, with `--stride --regloop --pushcall --shape cfg`: 0 mismatches. `cfg --simple` 300 cases (cl and interp), `cfg --simple --circ --stride` 200, `cfg --simple --stride --seed 11` and `--seed 5 --shape cfg`: 0 mismatches except the crash below.
 - **[O]** `fast_diff cfg --simple --seed 11 --stride --case 170` (cl and interp, also with the tier armed only at pc 0) crashes with SIGSEGV in `InterpKernel::exec`: a `Load32` whose base pointer is 0 and whose offset is `0x97daf` (a variable, `Var(30)`), in a region with static windows w0 and w2 at one page. It does not depend on the MODE1 fix (same crash with the check disabled). Possibly the same family as the flat-window SIGBUS in item (5) above. Not diagnosed; case 170 is the reproducer (13 instructions, a 7d, 3a, 4a and a 7a with a shifter immediate).
+
+## Kernels that follow calls: ranges across calls 2026-10-11 **[D]**
+
+Question: if I6/I7 (and the other registers the callee writes) kept their ranges at the continuation after a followed
+call, would the 0x1c94f7 kernel drop from 2.08 to about 0.8 ns/insn and make the follow-calls tier pay? Lane K4, base
+6b4daf7 plus K1 (d84aa8a) merged. Same chain and scenario as above (DN2 1.11 `trig1-taps` 10.5 s, PCM `e0e6c8af7a84c443`
+in every run listed). Not re-checked by a second agent.
+
+**Merge.** K1 and K2 both rewrote `form_16a` and the STKYX bit 26 bookkeeping. Kept: K2's `dm_transfer` path (guarded
+dynamic window anchored on the entry value) and its bit 26 test (`CTX_STK26` 1, or 2 with the stack model), plus K1's
+"loop end with STKYX not fully known gives Unknown" case. K2's condition that sent `16a` through the old static-window
+path in a region with call targets before their callers is gone: with it, 0x1c94f7 stops at its first push ("address
+range unknown") and runs 2 insns per call instead of 15,705. Tests `fast_kernel_follows_calls_and_returns`,
+`fast_calls_and_returns_match_the_interpreter`, `fast_register_count_loop_with_stepped_pointers_matches` and
+`fast_call_slot_push_through_an_unranged_stack_pointer_matches` pass.
+
+**What was tried.**
+1. Call-site range kept at the continuation, with a run-time guard at the return dispatch (I6/I7 equal to the values the
+   CJUMP read, flag and two saved values per call site; ranges for the next pass in `Plan`; loop heads ignore the writes
+   of guarded call sequences; a back edge whose I6/I7 range is not inside the head's refuses). I6 gets
+   `Reg(22)+[0,0]` at the first three call sites of 0x1c94f7, **I7 never has a range there**: the root's loop
+   (0x1c94f7 .. 0x1c9505) reads through the stack pointer with post-modify (`7a`/`3a` write I7 at 0x1c94f7 and
+   0x1c94fa, so I7 steps every iteration) and three other call sites have no I6 range either. The first-pass learning had to be made optimistic (pass 0
+   cannot bake modifiers, so it never sees an I7 range) and `improve` (more passes, not an error) added to
+   `region.rs`. With the back-edge check the root is refused at its third call (I6 not kept over the loop back edge), so
+   the kernel shrinks to 17 insns per run. Dropped; the patch is not kept in the tree.
+2. Anchor hint only: at the continuation, `hint[I6] = I6`, `hint[I7] = I7` (the entry values of the registers RFRAME
+   wrote), so the accesses after the call become guarded dynamic windows instead of flat ones. This is sound (hints
+   only choose a window, each access is checked) and is the cheap form of the idea. It changes the first two builds
+   (flat accesses per kernel 89 -> 41 and 174 -> 121) and nothing in the final one: **the final kernel is the rebuild
+   after `dynflat`** (`SHARC_FAST_DYNFLAT`, on by default): at least half the calls leave at a pc that has a guarded
+   dynamic window, so every such pc is rebuilt flat. With `DYNFLAT=0` the hint kernel exits after 22 insns per run
+   (240,000 runs against 8,192), so the guessed anchor is wrong at run time. Dropped.
+
+**Measurements (same binary, hint on/off; exclusive lock, loaded machine so absolute times are inflated).**
+
+| | K1 merged (no hint) | hint (anchors of I6/I7 restored) |
+|---|---|---|
+| 0x1c94f7 in situ, ns/insn (`SHARC_FAST_KTIME`) | 2.069, 2.070 | 2.062, 2.059 |
+| 0x1c94f7 insns per call | 15,705 | 15,626 |
+| final kernel: ops / flat accesses | 20,637 / 206 | 20,613 / 206 |
+| chain, DSP CPU per audio s (incl. 0.6 s compile) | 1.216, 1.212 | 1.201, 1.193 |
+| no-AOT `static-insns+follow`, run time (CPU - compile - build) | 3.04 | 3.02 |
+| no-AOT region calls per audio s | 8.56M | 8.30M |
+
+K1's figures were 2.08 ns/insn, 3.03 and 8.7M; the baseline (no follow) is 2.37 and 11.5M. The 1% chain difference is
+within the +-0.015 spread.
+
+**Why the idea does not reach 0.8 ns/insn.** The flat accesses are not there because I6/I7 lost a proven range: I7 had
+none to lose (it steps in the loop around the call), and the dynamic windows that would replace the flat accesses fail at
+run time and are flattened by `dynflat` anyway. Also `SHARC_FAST_WINFAIL` shows a second cost in this root: a static
+window `Reg(25)+[0x0, 0x13919]` (I9, 80 KB) that is not resident, so the entry declines it. What would be needed is a
+cheaper flat access (the per-access page-table walk is the difference between ~19 ops/insn in cluster kernels and ~50
+here, not measured per op) or keeping the frame in one resolved span
+across the call; neither is a range question.
+
+**Verdict: NO-GO, medium confidence.** 0x1c94f7 stays at 2.06 ns/insn (needs <= 0.8) and the no-AOT run time at 3.02
+(needs < 2.37). PCM `e0e6c8af7a84c443` held in every chain and no-AOT run above; the exactness gates hold, with the code that is committed (K1 merged, `16a` always through
+`dm_transfer`). Open: the Jump-slot SIGBUS (root 0xb80515) was not chased.
