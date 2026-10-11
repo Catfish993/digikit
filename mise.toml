@@ -103,11 +103,11 @@ description = "Oracle tests with the full sweeps (every track FX and send FX sce
 
 [tasks.verify]
 run = "uv run python tools/verify.py"
-description = "Exactness gate, quick: build, DN2 pins, scenarios:check (one PASS/FAIL line per step; logs in out/runs/verify/)"
+description = "Exactness gate for what changed (tools/verify.py; --base BRANCH in a lane, --only STEPS); one PASS/FAIL line per step, logs in out/runs/verify/"
 
 [tasks."verify:full"]
 run = "uv run python tools/verify.py --full"
-description = "Exactness gate, full: + no-AOT suite, 134-scenario tier sweep, Python and Rust tests, DT2 tone (about 30 min)"
+description = "Exactness gate, every step with the full 134-scenario tier sweep (about 45 min): before merging to main"
 
 [tasks.scenario]
 run = "uv run python tools/coupled.py scenario"
