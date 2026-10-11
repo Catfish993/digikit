@@ -36,7 +36,8 @@ const runs = Number(opt('runs', 1));
 const jsFlags = opt('js-flags', '');
 const profile = flag('profile');
 const splitOpt = opt('split'); // 0: one worker; 1 (default when isolated): ColdFire and DSP workers
-const timeoutS = Number(opt('timeout', 900));
+const fastOpt = opt('fast'); // DSP fast tier of the page: desktop, auto, desktop+auto or T,M,F (default off)
+const timeoutS =Number(opt('timeout', 900));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...m) => console.error('[browser_bench]', ...m);
 
@@ -145,7 +146,7 @@ async function oneRun(url, chrome, port) {
     // Warm the dev server (Vite may optimise dependencies and reload on the first visit).
     await cdp.send('Page.navigate', { url: `${url}/` }, sessionId);
     await sleep(4000);
-    await cdp.send('Page.navigate', { url: `${url}/?bench=1&seconds=${seconds}${profile ? '&hold=1' : ''}${splitOpt === undefined ? '' : `&split=${splitOpt}`}` }, sessionId);
+    await cdp.send('Page.navigate', { url: `${url}/?bench=1&seconds=${seconds}${profile ? '&hold=1' : ''}${splitOpt === undefined ? '' : `&split=${splitOpt}`}${fastOpt === undefined ? '' : `&fast=${encodeURIComponent(fastOpt)}`}` }, sessionId);
     const end = Date.now() + timeoutS * 1000;
     let result;
     for (;;) {

@@ -43,6 +43,11 @@ parser.add_argument(
     help="fail unless the coupled SHARC+ core (emulator-core-sharc.wasm) can be built "
     "(needs SHARC_GEN_DIR or the default generated core)",
 )
+parser.add_argument(
+    "--no-fast",
+    action="store_true",
+    help="leave the fast tier (feature fast-wasm, off until the page turns it on) out of the coupled core",
+)
 args = parser.parse_args()
 configured_generated = os.environ.get("SHARC_GEN_DIR")
 generated = configured_generated or str(digi_env.DEFAULT_GENERATED)
@@ -121,16 +126,17 @@ def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], de
     shutil.copyfile(target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm", dest)
 
 
-# The browser core has no fast tier: SHARC_FAST_REGIONS is read from the
-# environment, which wasm32-unknown-unknown does not have, and the fast tier's
-# Cranelift backend emits host machine code.
+# The plain core has no fast tier. The coupled core has one (feature fast-wasm,
+# off until the page calls digi_sharc_fast or digi_sharc_fast_regions): it
+# reads no SHARC_FAST_REGIONS (wasm32-unknown-unknown has no environment) and
+# its kernels are wasm modules the page compiles (packages/web/src/core-host.ts).
 diagnostics = ["diagnostic-profile", "diagnostic-events"] if args.diagnostics else []
 plain_env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
 build(diagnostics, resolve_target_dir(None), plain_env, public / "emulator-core.wasm")
 sharc_wasm = local_dir / "emulator-core-sharc.wasm"
 if coupled:
     build(
-        [*diagnostics, "sharc"],
+        [*diagnostics, "sharc", *([] if args.no_fast else ["fast-wasm"])],
         resolve_target_dir(generated),
         base_env | {"SHARC_GEN_DIR": generated},
         sharc_wasm,

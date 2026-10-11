@@ -1,7 +1,28 @@
 import { hostMetrics } from './runtime-metrics';
 import { createLinkBuffer, LinkServer } from '../sab-link.ts';
 import type { DspStart } from '../dsp-worker.ts';
-import type { DspStats } from '../split-session.ts';
+import type { DspStats, FastRegions } from '../split-session.ts';
+import fastRegionTable from '../../../../tools/fast_regions.json';
+import { sha256Hex } from './local-inputs';
+
+const pcs = (list: string | undefined) => (list ?? '').split(',').filter((x) => x.trim()).map((x) => parseInt(x.trim(), 16));
+
+/**
+ * The DSP fast tier of the page (dev page, `?fast=`): off by default; `desktop` is the desktop
+ * configuration (the static regions and cluster roots of tools/fast_regions.json for this
+ * firmware); `auto` or `T,M,F` is run-time selection (threshold, min insns, follow); `desktop+auto`
+ * both. A firmware without an entry in the table gets no static regions.
+ */
+export async function fastConfig(syx: Uint8Array, query = new URLSearchParams(location.search).get('fast')): Promise<[number, number, number] | FastRegions | undefined> {
+  if (!query) return undefined;
+  const auto = (text: string): [number, number, number] => { const [t, m, f] = text.split(',').map(Number); return [t || 256, m || 64, f || 0]; };
+  if (query === 'auto') return [256, 64, 0];
+  if (!query.startsWith('desktop')) return auto(query);
+  const entry = (fastRegionTable as Record<string, { fast_regions?: string; blocktrans?: string }>)[await sha256Hex(syx)];
+  const config: FastRegions = { regions: pcs(entry?.fast_regions), roots: pcs(entry?.blocktrans) };
+  if (query.startsWith('desktop+auto')) config.auto = [256, 64];
+  return config;
+}
 export interface RuntimeStatus {
   device: string; version: string; icount: number; pc: number; ready: boolean; phase: string;
   error: string | null; frame_revision: number; frame_source: string | null;
@@ -38,7 +59,9 @@ export interface NativeAudioStatus {
 export interface CoupledFiles { syx: Uint8Array; image: Uint8Array; dsp: Uint8Array; snapshot?: Uint8Array }
 export interface CoupledStats { cf_icount?: number; frames: number; dsp_instructions: number; halted: string | null; nonzero_replies: number; missing_blocks: number; pcm_values: number; pcm_produced_seconds: number; production_elapsed_wall_seconds: number; pcm_seconds_per_wall_second: number; dsp_attached: boolean; pcm_port_connected: boolean; host: Record<string, unknown>;
   /** Two-worker session only: the DSP worker's busy time and the ColdFire worker's time blocked on it. */
-  split?: { dsp_worker_busy_ms: number; cf_link_wait_ms: number; link_requests: number } }
+  split?: { dsp_worker_busy_ms: number; cf_link_wait_ms: number; link_requests: number };
+  /** Two-worker session with the fast tier: the kernel host's counters and `digi_sharc_fast_report`. */
+  dsp_kernels?: { compiled: number; compileMs: number; wasmBytes: number; runs: number }; dsp_fast?: unknown }
 export interface EmulatorRuntime {
   /** Browser worker only, and only with a core built with the `sharc` feature. */
   loadCoupled?(files: CoupledFiles, audioPort: MessagePort): Promise<RuntimeSnapshot>;
@@ -85,6 +108,7 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
   const startDsp = async (files: CoupledFiles, audioPort: MessagePort) => {
     const module = await coreModule();
     if (!WebAssembly.Module.exports(module).some((e) => e.name === 'digi_dsp_reply')) return undefined;
+    const fast = await fastConfig(files.syx);
     const buffer = createLinkBuffer(), thread = new Worker(new URL('../dsp-worker.ts', import.meta.url), { type: 'module' });
     await new Promise<void>((resolve, reject) => {
       thread.onmessage = ({ data }) => {
@@ -93,7 +117,7 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
         else if (data.type === 'error') { reject(new Error(data.error)); onUpdate({ type: 'error', error: data.error }); }
       };
       thread.onerror = (event) => reject(new Error(event.message));
-      const start: DspStart = { type: 'start', module, image: files.image, state: files.dsp, link: buffer, pcmPort: audioPort };
+      const start: DspStart = { type: 'start', module, image: files.image, state: files.dsp, link: buffer, fast, pcmPort: audioPort };
       thread.postMessage(start, [audioPort]);
     }).catch((error) => { thread.terminate(); throw error; });
     dsp = thread; link = buffer;
@@ -126,7 +150,8 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
       const d = dspStats, engine = (d?.engine ?? {}) as Partial<CoupledStats>;
       return { ...cf, frames: engine.frames ?? 0, dsp_instructions: engine.dsp_instructions ?? 0, halted: engine.halted ?? null, nonzero_replies: engine.nonzero_replies ?? 0, missing_blocks: engine.missing_blocks ?? 0,
         pcm_values: d?.pcmValues ?? 0, pcm_produced_seconds: d?.pcm_produced_seconds ?? 0, production_elapsed_wall_seconds: d?.production_elapsed_wall_seconds ?? 0, pcm_seconds_per_wall_second: d?.pcm_seconds_per_wall_second ?? 0,
-        split: { dsp_worker_busy_ms: d?.busyMs ?? 0, cf_link_wait_ms: cf.split.link_wait_ms, link_requests: cf.split.link_requests } };
+        split: { dsp_worker_busy_ms: d?.busyMs ?? 0, cf_link_wait_ms: cf.split.link_wait_ms, link_requests: cf.split.link_requests },
+        dsp_kernels: d?.kernels, dsp_fast: d?.fast };
     },
     coupledAvailable: () => request<boolean>('coupled-capable'),
     tap: (code, hold) => request<void>('tap', { code, hold }),

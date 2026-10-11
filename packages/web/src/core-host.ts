@@ -12,6 +12,8 @@
 export interface KernelStats {
   compiled: number;
   compileMs: number;
+  /** Time of every kernel's first call (V8 compiles the function there; includes one run). */
+  firstRunMs: number;
   wasmBytes: number;
   runs: number;
 }
@@ -31,8 +33,9 @@ export async function instantiateCore(
   wasm: BufferSource | Response | Promise<Response> | WebAssembly.Module,
   extra: Record<string, (...a: number[]) => any> = {},
 ): Promise<Core> {
-  const kernels: KernelStats = { compiled: 0, compileMs: 0, wasmBytes: 0, runs: 0 };
+  const kernels: KernelStats = { compiled: 0, compileMs: 0, firstRunMs: 0, wasmBytes: 0, runs: 0 };
   const table: ((ctx: number, st: number) => number)[] = [];
+  const ran: number[] = [];
   let exports: Record<string, any> = {};
   const memory = () => (exports.memory as WebAssembly.Memory).buffer;
   const env = {
@@ -41,7 +44,8 @@ export async function instantiateCore(
       const t = performance.now();
       try {
         const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), {
-          env: { memory: exports.memory },
+          // `helper` is `helper_exec` for the kernels that call it (a wasm-to-wasm import).
+          env: { memory: exports.memory, helper: exports.digi_helper_exec },
         });
         table.push(instance.exports.k0 as (ctx: number, st: number) => number);
       } catch {
@@ -54,7 +58,13 @@ export async function instantiateCore(
     },
     host_wasm_run(id: number, ctx: number, st: number): number {
       kernels.runs++;
-      return table[id](ctx, st);
+      if (ran[id]) return table[id](ctx, st);
+      // First call: V8 compiles the function lazily (Liftoff) here, so the time is compile plus one run.
+      ran[id] = 1;
+      const t = performance.now();
+      const status = table[id](ctx, st);
+      kernels.firstRunMs += performance.now() - t;
+      return status;
     },
     host_wasm_free(id: number): void {
       table[id] = undefined as never;
