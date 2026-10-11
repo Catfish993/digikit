@@ -69,6 +69,10 @@ alias = "wasm"
 run = "tools/native_wasm.py"
 description = "Build only the browser emulator core (WASM)"
 
+[tasks."web:bench"]
+run = "uv run python tools/benchlock.py run --exclusive -- node tools/browser_bench.mjs"
+description = "Headless Chrome throughput bench of the coupled browser core (needs local inputs): mise run web:bench -- --seconds 10 --runs 3 [--js-flags=--no-liftoff] [--profile]"
+
 [tasks."web:parity"]
 alias = "wasm:parity"
 run = "node tools/wasm_parity.mjs --scenario"

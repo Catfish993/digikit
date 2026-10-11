@@ -950,3 +950,38 @@ decay 0x7c, BR/SRR/routing/overdrive 0xff..0x102). (2) Check the DT2 values of `
 FX and master). (4) Run them on the card's ready state (`--card-image`, as `aot_fxprof.py --dt2-card` now does;
 `coupled.py scenario --device dt2` has no card option yet). (5) Profile with `aot_fxprof.py --device dt2 --dt2-card`,
 merge into `prof-merged-c2`, run entry rounds, regenerate, and gate on AOT = no-AOT PCM in every scenario.
+## Browser (Chrome) baseline 2026-10-11 **[D]**
+
+Em's page showed 0.22 audio s per wall s on DN2 1.11 after Trig 1 (underruns 9). Method: `mise run web:bench`
+(docs/INSTRUMENTATION.md): headless Chromium 150 (Google Chrome is not installed here; same V8), dev server,
+`packages/web/.local/emulator-core-sharc.wasm` built 12:55 on 2026-10-11, DN2 1.11 ready state, `tap(25)` at
+load as the Trig 1 button does, 10 audio s, no AudioContext (PCM port drained), exclusive benchlock, fresh
+profile per run (no code cache). One machine, load not controlled, not re-checked by a second agent.
+
+| V8 flags | audio s / wall s | first half / last half | worker busy per audio s |
+|---|---:|---:|---:|
+| default (3 runs) | 0.259, 0.256, 0.249 | 0.247 / 0.261 (mean) | 3.17-3.30 |
+| `--no-liftoff`, TurboFan only (3 runs) | 0.222, 0.238, 0.219 | 0.178 / 0.280 (mean) | 3.52-3.83 |
+| `--liftoff --no-wasm-tier-up`, Liftoff only | 0.248 (1 run; 0.254 and 0.243 in an interrupted batch) | 0.228 / 0.261 | 3.32 |
+
+Each run leaves 17-18% of wall time outside the step call (busy fraction 0.82). Per audio s: DSP 1.000G
+instructions, ColdFire 132M.
+
+- **H1 (one worker, costs add): true, but not the main cause.** `digi_step` runs the DSP synchronously inside
+  the ColdFire DSPI2 frame write (native/boot/src/abi.rs `mod coupled`), in the one worker
+  (packages/web/src/runtime/runtime-worker.ts). CDP CPU profile of that worker (6 s, default flags, share of
+  non-idle time): DSP 77% (generated `sharc_gen` kernels plus the engine), ColdFire 21%, other 2%. Per audio s
+  that is about DSP 2.6 s and ColdFire 0.7 s, against the desktop's 0.93-1.10 and 0.5. Serial on the
+  desktop numbers the page would reach about 0.66; it reaches 0.25, so the wasm is also about 2.5x (DSP) and
+  1.4x (ColdFire) slower than native.
+- **H2 (generated code stuck in Liftoff): refuted as the main cause.** Liftoff only is about 3% slower than
+  default. TurboFan only reaches 0.27-0.29 in the last half of a run, after a first half of 0.17-0.19 (lazy
+  compile of the 45 MB module), against 0.26 for default. Steady-state TurboFan is at most about 10% faster
+  than default, so the 2.5x gap to native is not a missing tier-up. Top self time: `image::blocks_10` kernels
+  (4.9% and 3.1%), `Emulator::step_chunk` 5.7%.
+- **New: about 16.5% of the worker is idle by construction.** The profile's `(idle)` is 16.2-16.5%, the
+  complement of the busy fraction. The pump runs 20 ms slices and re-arms with `setTimeout(0)`; nested timers
+  clamp to 4 ms, and 4 / 24 ms = 16.7%. A `MessageChannel` yield or a longer slice should give about
+  0.25 -> 0.30. **[O]** not tried.
+- Getting to real time in one worker needs the DSP about 2x faster in wasm; the alternative is the DSP in a
+  second worker (shared memory, needs cross-origin isolation). **[O]**

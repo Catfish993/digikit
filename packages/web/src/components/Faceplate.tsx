@@ -5,6 +5,7 @@ import { browserRuntime, drawFrame, nativeRuntime, type EmulatorRuntime, type Na
 import { PcmSink, resumeOnNextGesture } from '../runtime/audio';
 import { fetchLocalInputs, localManifest, sha256Hex } from '../runtime/local-inputs';
 import CoupledAudio, { startCoupled } from './CoupledAudio';
+import { benchRequested, runBench } from '../runtime/bench';
 import './faceplate.css';
 
 const iconPaths: Record<string, string> = {
@@ -19,6 +20,7 @@ const iconPaths: Record<string, string> = {
 function Icon(props: { name: string }) { return <g class="icon" aria-hidden="true"><path class="icon-stroke" d={iconPaths[props.name] ?? ''} /><Show when={props.name === 'settings'}><circle class="icon-stroke" cx="12" cy="12" r="3" /></Show><Show when={props.name === 'perform'}><circle class="icon-fill" cx="5.5" cy="17.5" r="2.6" /></Show><Show when={props.name === 'arp'}><circle class="icon-fill" cx="6" cy="18.5" r="2.6"/><circle class="icon-fill" cx="16" cy="16.5" r="2.6"/><path class="icon-fill" d="M8.4 5.8 L18.4 3.8 V7 L8.4 9 Z" /></Show><Show when={props.name === 'noteedit'}><circle class="icon-fill" cx="11.8" cy="19" r="2.5"/><circle class="icon-fill" cx="11.8" cy="13" r="1.5"/><circle class="icon-fill" cx="11.8" cy="9" r="1.5"/><circle class="icon-fill" cx="11.8" cy="5" r="1.5"/></Show><Show when={props.name === 'unison'}><circle class="icon-stroke" cx="5" cy="5" r="2.2"/><circle class="icon-stroke" cx="12" cy="4" r="2.2"/><circle class="icon-stroke" cx="19" cy="5" r="2.2"/><circle class="icon-fill" cx="12" cy="19" r="2.6"/></Show><Show when={props.name === 'keyboard'}><rect class="icon-fill" x="6" y="3" width="3" height="11"/><rect class="icon-fill" x="10.5" y="3" width="3" height="11"/><rect class="icon-fill" x="15" y="3" width="3" height="11"/></Show><Show when={props.name === 'headphones'}><rect class="icon-fill" x="3" y="13.5" width="4.5" height="7.5"/><rect class="icon-fill" x="16.5" y="13.5" width="4.5" height="7.5"/></Show></g>; }
 
 export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
+  if (benchRequested()) { onMount(() => { void runBench(); }); return <output id="bench-status">bench mode: see window.__bench</output>; }
   const [device, setDevice] = createSignal<'dt2' | 'dn2'>('dt2');
   const [pressed, setPressed] = createSignal(new Set<number>());
   const [status, setStatus] = createSignal('Choose a firmware image to start the diagnostic runtime.');
