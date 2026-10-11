@@ -950,6 +950,7 @@ decay 0x7c, BR/SRR/routing/overdrive 0xff..0x102). (2) Check the DT2 values of `
 FX and master). (4) Run them on the card's ready state (`--card-image`, as `aot_fxprof.py --dt2-card` now does;
 `coupled.py scenario --device dt2` has no card option yet). (5) Profile with `aot_fxprof.py --device dt2 --dt2-card`,
 merge into `prof-merged-c2`, run entry rounds, regenerate, and gate on AOT = no-AOT PCM in every scenario.
+
 ## Browser (Chrome) baseline 2026-10-11 **[D]**
 
 Em's page showed 0.22 audio s per wall s on DN2 1.11 after Trig 1 (underruns 9). Method: `mise run web:bench`

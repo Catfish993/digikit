@@ -178,6 +178,7 @@ CLEAN = [
     "tools/cfisa/oracle.py",
     "tools/cfrealtime.py",
     "tools/spikes.py",
+    "tools/verify.py",
     "tools/dt2_reach_running.py",
     "tools/dt2gui.py",
     "tools/gen_test_samples.py",

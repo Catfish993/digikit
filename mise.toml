@@ -97,6 +97,14 @@ description = "Oracle tests: render the DN2 FX scenarios headless and assert mea
 run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
 description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
 
+[tasks.verify]
+run = "uv run python tools/verify.py"
+description = "Exactness gate, quick: build, DN2 pins, scenarios:check (one PASS/FAIL line per step; logs in out/runs/verify/)"
+
+[tasks."verify:full"]
+run = "uv run python tools/verify.py --full"
+description = "Exactness gate, full: + no-AOT suite, 134-scenario tier sweep, Python and Rust tests, DT2 tone (about 30 min)"
+
 [tasks.scenario]
 run = "uv run python tools/coupled.py scenario"
 description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"

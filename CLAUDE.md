@@ -126,6 +126,10 @@ current state and next steps in the newest `HANDOVER-*.md` in `docs/handovers/`.
 - Iterate DSP speed with `tools/sharc_regionbench.py` (one region, about
   50 s per variant); use `tools/native_pgo.py bench-bins` (coupled, about
   6 min) and `train` (PGO, about 6 min) only at milestones.
+- Exactness gate: `mise run verify` (build, DN2 pins, scenarios:check) and
+  `mise run verify:full` (adds the no-AOT suite, the 134-scenario tier sweep,
+  Python and Rust tests, DT2 tone); one PASS/FAIL line per step, logs in
+  `out/runs/verify/`.
 - Tests: `uv run python -m pytest tests -q`. It skips tests
   marked `slow` (long firmware integration runs); add `--slow` before a
   commit. While working, run only the test files for the code you changed.
