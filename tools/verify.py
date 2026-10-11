@@ -1,6 +1,6 @@
 """One command for the exactness gate (the handover's "How to verify after any change").
 
-    uv run python tools/verify.py            # quick: build, DN2 pins, scenarios:check
+    uv run python tools/verify.py            # quick: build, desktop app check, DN2 pins, scenarios:check
     uv run python tools/verify.py --full     # + no-AOT suite, tier sweep, Python and Rust tests, DT2 tone
     uv run python tools/verify.py --only tier-sweep,dt2-tone
     uv run python tools/verify.py --full --dt2     # + the DT2 FX scenarios, AOT = no-AOT
@@ -39,6 +39,7 @@ PY_TESTS = (
 )
 STEPS = (
     "build",
+    "desktop",
     "pins",
     "check",
     "check-no-aot",
@@ -49,7 +50,7 @@ STEPS = (
     "dt2-tier-sweep",
 )
 FULL = tuple(s for s in STEPS if s != "dt2-tier-sweep")  # --dt2 adds the last one
-QUICK = ("build", "pins", "check")
+QUICK = ("build", "desktop", "pins", "check")
 
 
 def no_aot_env() -> dict[str, str]:
@@ -143,12 +144,23 @@ def tier_sweep(gate: Gate, device: str = "dn2") -> None:
         print(f"     {len(shas)} of {len(shas)} scenarios equal", flush=True)
 
 
+def desktop_check(gate: Gate) -> None:
+    """The desktop app crate must compile with its own features (the gate's other builds do not cover it)."""
+    env = digi_env.rust_env()
+    env["SHARC_GEN_DIR"] = str(digi_env.generated_dir())
+    cmd = ["cargo", "check", "--manifest-path", "packages/desktop/src-tauri/Cargo.toml"]
+    cmd += ["--target-dir", str(ROOT / "out" / "native" / "target" / "check-desktop")]
+    gate.run("desktop", cmd, env=env)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run the exactness gate, one line per step."
     )
     ap.add_argument(
-        "--full", action="store_true", help="every step (default: build, pins, check)"
+        "--full",
+        action="store_true",
+        help="every step (default: build, desktop, pins, check)",
     )
     ap.add_argument("--only", help=f"comma-separated steps from: {', '.join(STEPS)}")
     ap.add_argument(
@@ -184,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     for step in steps:
         if step == "build":
             gate.run("build", [*PY, "tools/coupled.py", "build"])
+        elif step == "desktop":
+            desktop_check(gate)
         elif step == "pins":
             gate.run(
                 "pins", [*PY, "tools/coupled.py", "scenario", "--all", "--no-build"]
