@@ -28,7 +28,8 @@ one implementation:
   DIN only** (USB MIDI is not available there). The bootstrap checks only the content checksum and HMAC; on
   failure it prints UPGRADE ABORTED and writes nothing [V]. That the menu comes up with a broken MAIN OS is [O].
 - The bootstrap's receive and flash-write path has no size limit. NOR flash is 16 MiB; the container is written at
-  flash offset 0x80000. What lies past the OS container is not known [O]. DDR is 64 MiB (finding 08).
+  flash offset 0x80000 and record sectors (tagged fields, serial number) start at 0x380000, so the container must
+  stay at or under 0x300000 bytes (finding 01, spike 0.2). DDR is 128 MiB [C] (finding 08, spike 0.3).
 - ColdFire space today: `flash_cave` only (DT2 1.16 2,108 B, DN2 1.11 2,136 B). `cave_b` is cleared at reset.
   `tools/cavefind.py` is lost (only its .pyc remains).
 - SHARC space: L2 past the loader looks free (about 900 KB DT2, 490 KB DN2), weak evidence. `dsp_patch.py` can only
@@ -111,10 +112,11 @@ patching never rebuilds the emulator (patched images boot through `boot_for_base
 
 ### Space
 
-- ColdFire expansion segment: append module code and data to MAIN OS; a small loader in `flash_cave`, hooked in
-  the reset path before the RAM clear, copies it to a reserved region. The region is decided in Phase 0.3 (the
-  clear end 0x47e28470 conflicts with the 64 MiB DDR finding; resolve the memory map first). Candidates: top of DDR
-  carved from the cleared range, or shrinking the clear range end.
+- ColdFire expansion segment: append module code and data to MAIN OS; a 34-byte loader in `flash_cave`, called
+  from the reset path at 0x4000053e (before the .data copy and RAM clear, before caches are on), copies
+  `[len][dest][payload]` from the image end into the region above the DMA arena: DT2 0x47e8b000-0x47fe0000
+  (1.33 MiB), DN2 about 24.8 MiB. Canary-checked on all four images (finding 01, spike 0.3). The loader must zero
+  module bss itself.
 - SHARC: new loader blocks in free L2, verified by canary.
 - eMMC/+Drive: not used. The file system starts late in boot, the file can be missing or deleted, and the browser
   flow would need a card file. Revisit only if flash or memory capacity binds.
@@ -151,22 +153,35 @@ Upload, identify (device-profiles), list `modules/index.json` (generated at buil
 download. Routes: emulator and `/patch`. Dev-only pickers move behind a dev flag. Until the browser DSP is fast
 enough, audio is an offline render.
 
+## Phase 0 results (wave 1, 2026-10-13)
+
+- 0.1: DT2 1.17 and DN2 1.12 boot to ready; device profiles load at run time; `tools/cfmatch.py` matches 97.5-98%
+  of functions in about 8 s (99.8-99.9% precision against Version Tracking). Open: 36 of 135 DT2 FX oracles fail
+  on 1.17 (encoder read-backs differ); DN2 1.12 keeps 3 of 4 PCM pins.
+- 0.2: the real bootstrap runs on the ColdFire core (`native/bootstrap`): [FUNC] is tested before MAIN OS is
+  touched, the STARTUP menu comes up over a faulting MAIN OS, the bootstrap's checksum/HMAC accepts rebuilt images
+  and rejects corrupt ones, recovery to stock works, and a 1.16/1.17 image does not rewrite the bootstrap [V].
+  `tools/patched_image.py` builds the harmless stock-size test image. Open: MAIN OS validator (0x400d9e4c) not run.
+- 0.3: RAM map, expansion region and loader hook as above; `tools/regions.py` replaces cavefind; `dt2/aplibpack.py`
+  passes the bootstrap's own depacker on all 16 sections; `rebuild` keeps untouched sections verbatim and has a
+  `max_container` guard.
+
 ## Phases
 
 Estimates are agent time. Phase 0 spikes run in parallel lanes (`tools/lane.sh`); each ends with a go/no-go.
 
 ### Phase 0: de-risk
 
-- [ ] **0.1 Onboard 1.17 and 1.12** (about 1 day, high). Device profile entries (make `devices/*.toml` loadable at
+- [x] **0.1 Onboard 1.17 and 1.12** (about 1 day, high). Device profile entries (make `devices/*.toml` loadable at
       run time, compiled-in fallback); emulator boots both to ready; sharcdb reuse (blobs identical); Ghidra import
       with seeds and RTTI; cfdb; in-house ColdFire function matcher (address-masked hash plus call-graph
       propagation) to port 1.16/1.11 names; ready snapshots; AOT cores unchanged (same DSP image).
-- [ ] **0.2 Bricking and recovery** (about 2 days, medium-high). Run the bootstrap (section 2) in the emulator:
+- [x] **0.2 Bricking and recovery** (about 2 days, medium-high). Run the bootstrap (section 2) in the emulator:
       [FUNC] held reaches the STARTUP menu with a MAIN OS that faults at reset; the bootstrap's own checksum and HMAC
       code accepts a patchkit image (DIN MIDI receive or a direct call of its verifier); confirm a patched 1.17 does
       not trigger a bootstrap upgrade on a 1.16 device. Then Em decides on a hardware test: a harmless patch (one
       string), flashed, then recovery to stock through the STARTUP menu. Prerequisite: a MIDI DIN interface.
-- [ ] **0.3 Space** (about 2 days, medium). Resolve the DDR map against the reset clear range; choose and canary
+- [x] **0.3 Space** (about 2 days, medium). Resolve the DDR map against the reset clear range; choose and canary
       the ColdFire expansion region through long runs; aPLib packer (round trip through our depacker and the
       firmware's); flash layout past the OS container, and the size cap patchkit enforces; rewrite cavefind as a
       port region resolver.
