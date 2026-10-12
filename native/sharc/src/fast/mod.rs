@@ -1242,17 +1242,6 @@ impl FastEngine {
 
 impl Drop for FastEngine {
     fn drop(&mut self) {
-        #[cfg(feature = "fast-prof")]
-        if self.summary {
-            let (ticks, _) = glue::prof::take(0);
-            let f = glue::prof::freq() as f64;
-            let calls = self.stats.calls.max(1) as f64;
-            let mut line = format!("fast-prof: {} calls;", self.stats.calls);
-            for (n, t) in glue::prof::PHASES.iter().zip(&ticks) {
-                line += &format!(" {n} {:.1} ns;", *t as f64 / f * 1e9 / calls);
-            }
-            eprintln!("{line}");
-        }
         if dump::enabled() {
             let rows: Vec<(u32, u64, u64)> = self
                 .pcs

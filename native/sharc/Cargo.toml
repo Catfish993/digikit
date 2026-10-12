@@ -17,9 +17,7 @@ sharc-gen = { path = "../sharc-gen" }
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 sharc-fast-cl = { path = "../sharc-fast-cl" }
 
-# fast-prof: per-phase cost marks in the fast tier's glue (region_bench fast-bench).
 [features]
-fast-prof = []
 # Per-entry dispatch timing for coupled-run diagnostic builds.
 region-profile = []
 # SHARC_FAST_DUMP: capture the fast tier's kernels and real calls (the wasm gate).
