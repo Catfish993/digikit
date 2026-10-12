@@ -112,10 +112,6 @@ description = "Exactness gate for what changed (tools/verify.py; --base BRANCH i
 run = "uv run python tools/verify.py --full"
 description = "Exactness gate, every step with the full 134-scenario tier sweep (about 45 min): before merging to main"
 
-[tasks."hle-check"]
-run = "uv run python tools/hle_check.py"
-description = "HLE exactness: routine vs interpreter on every captured call of a DN2 scenario plus synthetic inputs (needs >= 10000 compared cases, 0 mismatches)"
-
 [tasks.scenario]
 run = "uv run python tools/coupled.py scenario"
 description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"

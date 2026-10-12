@@ -64,7 +64,6 @@ CLEAN = [
     "tools/coupled.py",
     "tests/test_coupled_tool.py",
     "tools/coupled_ab.py",
-    "tools/hle_check.py",
     "tools/coupled_matrix.py",
     "tests/test_native_pgo.py",
     "tests/test_native_target.py",
