@@ -1044,7 +1044,6 @@ fn cov_built(s: &St, pc: u32, r: &region::Region) {
         r.wins.len(),
         pcs.join(",")
     );
-    // SHARC_FAST_IRDUMP=0xPC: print the kernel body of the region rooted at PC.
     if let Some(c) = &r.cfg {
         for (at, why) in &c.stops {
             let form = region::decode_one(s, *at).map_or("undecodable", |d| d.form);
