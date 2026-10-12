@@ -736,6 +736,59 @@ pub struct CachedInsn {
     pub seen: u64,
 }
 
+/// The runtime decode cache: PC -> `CachedInsn`, a two-level table for PCs
+/// below 2^24 (a page of 4096 indexes into `entries`) and a hash map above.
+#[derive(Default)]
+pub struct DecodeCache {
+    pages: Vec<Option<Box<[u32; 4096]>>>,
+    entries: Vec<CachedInsn>,
+    high: std::collections::HashMap<u32, CachedInsn, PcHash>,
+}
+
+impl DecodeCache {
+    #[inline(always)]
+    pub fn get_mut(&mut self, pc: u32) -> Option<&mut CachedInsn> {
+        if pc >= 1 << 24 {
+            return self.high.get_mut(&pc);
+        }
+        let page = self.pages.get((pc >> 12) as usize)?.as_ref()?;
+        let i = page[(pc & 0xFFF) as usize];
+        if i == 0 {
+            return None;
+        }
+        Some(&mut self.entries[i as usize - 1])
+    }
+    pub fn insert(&mut self, pc: u32, c: CachedInsn) {
+        if pc >= 1 << 24 {
+            self.high.insert(pc, c);
+            return;
+        }
+        let p = (pc >> 12) as usize;
+        if self.pages.len() <= p {
+            self.pages.resize_with(p + 1, || None);
+        }
+        let page = self.pages[p].get_or_insert_with(|| Box::new([0; 4096]));
+        let slot = &mut page[(pc & 0xFFF) as usize];
+        if *slot != 0 {
+            self.entries[*slot as usize - 1] = c;
+        } else {
+            self.entries.push(c);
+            *slot = self.entries.len() as u32;
+        }
+    }
+    pub fn len(&self) -> usize {
+        self.entries.len() + self.high.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    pub fn clear(&mut self) {
+        self.pages.clear();
+        self.entries.clear();
+        self.high.clear();
+    }
+}
+
 /// Run configuration (State fields that do not change during a run).
 #[derive(Clone, Debug)]
 pub struct Cfg {
@@ -937,7 +990,7 @@ pub struct St {
     /// `read_sw` is `Mem::read_sw`, so `Mem::watch_sw` knows the bytes it
     /// reads and a cached decode stays valid while `Mem::dec_gen` does.
     pub dec_watch: bool,
-    pub decode_cache: std::collections::HashMap<u32, CachedInsn, PcHash>,
+    pub decode_cache: DecodeCache,
     /// Addresses named by sharcimm.name_address: exact addresses and
     /// [lo, hi) ranges, from the image blob.
     pub named_mmrs: Vec<u32>,

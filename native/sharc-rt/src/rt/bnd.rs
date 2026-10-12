@@ -550,7 +550,7 @@ pub fn decode_at_with(s: &mut St, pc_sw: Int, sym_of: impl Fn(&str) -> Option<Sy
     let pc = u32::try_from(pc_sw).map_err(|_| TRAP_NO_INSN)?;
     let read_sw = s.read_sw;
     let dec_gen = s.mem.dec_gen;
-    if let Some(cached) = s.decode_cache.get_mut(&pc) {
+    if let Some(cached) = s.decode_cache.get_mut(pc) {
         if s.dec_watch && cached.seen == dec_gen {
             // No write reached a page holding one of its words since they
             // last matched (Mem::watch_sw).
