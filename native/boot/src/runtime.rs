@@ -665,6 +665,46 @@ impl Emulator {
         self.bus.board.read32(addr).ok()
     }
 
+    /// Write a guest longword without bus side effects (headless diagnosis:
+    /// canary fills). Unmapped SDRAM pages are mapped zeroed first.
+    pub fn poke32(&mut self, addr: u32, value: u32) -> Result<(), String> {
+        if addr & 3 != 0 || !(0x4000_0000..0x5000_0000).contains(&addr) {
+            return Err(format!("poke32 {addr:#x}: not an aligned word in SDRAM or its +128 MiB alias"));
+        }
+        self.bus
+            .board
+            .map_zeroed_ram_page(addr & !0xf_ffff)
+            .map_err(|e| format!("poke32 map {addr:#x}: {e:?}"))?;
+        self.bus
+            .board
+            .write_guest(addr, 4, value)
+            .map_err(|e| format!("poke32 {addr:#x}: {e:?}"))?;
+        self.cpu.invalidate_external_write(addr, 4);
+        Ok(())
+    }
+
+    /// Step (reset-clear batches included) until the program counter equals
+    /// `target`; false when `max` instructions pass first or the run errors.
+    pub fn run_until_pc(&mut self, target: u32, max: u64) -> bool {
+        let start = self.cpu.icount;
+        while self.error.is_none() && self.cpu.icount - start < max {
+            if self.cpu.pc == target {
+                return true;
+            }
+            if ACCELERATE_RAM_CLEAR
+                && self
+                    .ram_clear
+                    .as_ref()
+                    .is_some_and(|clear| self.cpu.pc == clear.loop_pc)
+                && self.advance_ram_clear(250_000) != 0
+            {
+                continue;
+            }
+            self.step_once();
+        }
+        self.cpu.pc == target
+    }
+
     pub fn probe_hits(&self) -> Vec<(u32, u64)> {
         self.probe_hits.iter().map(|(&pc, &n)| (pc, n)).collect()
     }

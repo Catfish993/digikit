@@ -330,21 +330,40 @@ exact fingerprint:
 | `0xFC080000`-`0xFC08C000` | PIT0-PIT3 |
 | `0xFC090000` | EPORT |
 
-### Flash and DDR capacity **[V]**
+### Flash and DDR capacity **[V]**, DDR corrected **[C]**
 
 Both come out of the firmware's own code; neither needs a datasheet or a probe.
 
-DDR is **64 MiB**, from the bootstrap's own DDRMC writes:
+DDR is **128 MiB** **[C]** (an earlier version of this section said 64 MiB),
+from the bootstrap's own DDRMC writes and the OS's own use of RAM:
 
 ```
 DDR_CR04 @0xFC0B8010 = 0x00010101   ; bit 8 8BNK=1     -> 8 banks
-DDR_CR15 @0xFC0B803C = 0x02000103   ; ADDPINS=2        -> rows = 15-2 = 13
+DDR_CR15 @0xFC0B803C = 0x02000103   ; ADDPINS=2        -> rows = 16-2 = 14
 DDR_CR16 @0xFC0B8040 = 0x02000407   ; COLSIZ=2         -> cols = 12-2 = 10
 ```
 
-with the controller's fixed 1 chip select and x8 datapath: `2^23 * 8 * 1 =
-67,108,864`. The init sequence is byte-identical on both devices.
-`tools/ddr_geometry.py` re-derives this from any bootstrap image.
+with the controller's fixed 1 chip select and x8 datapath: `2^(14+10+3) * 1 =
+134,217,728`, the geometry of a standard 1 Gbit x8 DDR2 part (14 row, 10 column
+bits, 8 banks). The register values and the single x8 component are as before;
+the correction is the row limit. The reference manual contradicts itself: the
+DDR_CR15 field table (Table 21-20) gives the maximum as 16 address pins, and the
+text of 21.5.2.2 says 15 rows. With 15 the result is 64 MiB, which the firmware
+rules out **[D]**:
+
+- the reset entry sets the stack pointer to `0x48000000` (`movea.l
+  #0x48000000,a7` at `0x400004f2`) and the bss clear runs to `0x47e28470`; on
+  64 MiB the clear would wrap into the running image;
+- statics and the 32 MiB C++ heap sit above `0x44000000` (heap arena
+  `0x44f39c40-0x46f39c40` on DT2 1.16; framebuffers at `0x44e4a5b8`);
+- ACR0 (`0x4007e020`) maps exactly `0x40000000-0x47ffffff`, 128 MiB.
+
+Addresses `0x48000000-0x4fffffff` are an uncached alias of the same DDR (ACR0
+does not cover them); the firmware's DMA buffers are reached through it (see
+01, "RAM map"). `tools/ddr_geometry.py` now uses 16 as the maximum row bits and
+prints 128 MiB for both devices. A second check would read the DDR_CR15 field
+width off the MCF5441x part's own register table, or find a write above
+`0x44000000` that a 64 MiB part would alias onto the image.
 
 NOR flash is **16 MiB**. The bootstrap issues RDID (`0x9F`) and dispatches on
 the 5 ID bytes at `FUN_800024ec`; only the branch matching mfg `0x01`, id

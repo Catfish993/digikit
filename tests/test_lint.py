@@ -13,6 +13,11 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "dt2/aplibpack.py",
+    "tools/regions.py",
+    "tools/aplib_check.py",
+    "tests/test_aplibpack.py",
+    "tests/test_regions.py",
     "tools/aot_attrib.py",
     "tools/aot_entry_iter.py",
     "tools/aot_dyntrace.py",
