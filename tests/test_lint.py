@@ -13,6 +13,11 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/bootstrap_run.py",
+    "tools/patched_image.py",
+    "dt2/inplace.py",
+    "tests/test_bootstrap.py",
+    "tests/test_inplace.py",
     "tools/aot_attrib.py",
     "tools/aot_entry_iter.py",
     "tools/aot_dyntrace.py",
