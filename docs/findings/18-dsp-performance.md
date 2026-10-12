@@ -1677,3 +1677,35 @@ Candidates: the hottest AOT region entries in the top functions. They are call c
   AOT path already ran at ~2.3 ns per instruction, so they gained 1.4% against ~6.7% modelled. Not shipped. Reaching
   the ~0.6 ceiling needs kernels that span calls (cluster roots like DN2's `blocktrans`, or call following) and the
   lowering gaps closed — the same blockers as "Kernels that follow calls".
+
+
+## HLE: silent voice fast-forward 2026-10-12 **[D]**
+
+**Verdict: not built; the premise is false.** An inactive DN2 voice (0x1c54c7, 10411 instructions per call, 16 calls per
+frame) cannot be skipped: it still computes and stores real signal, and its hot loops are already fast-tier kernels.
+
+Trace of one idle call (`SHARC_PCDUMP=all` with `SHARC_PCDUMP_ICOUNT`, new `all` mode in `pc_dump.rs`; scenario i1,
+icount 600030698..600041108, no fast tier/AOT, 10411 rows). Path: prologue and parameter setup (87 insns), the four-slot
+loop at 0x1c5619 (4 trips, about 26 insns), then the oscillator trio: 0x1c35a7 (loop 0x1c364f, 64 x 31), 0x1c3911 (loop
+0x1c399a, 64 x 25), 0x1c37b4 (loop 0x1c3862, 64 x 36), 0x1c3911 again, then the output stage (loop 0x1c5765, 64 x 19)
+and the return at 0x1c57d1. The rest of the 10411 is the caller's per-voice work (0x1c962e, 0xb82728 loop 32 x 26).
+The five 64-trip loops are 8.7k of the 10.4k instructions.
+
+- The loops are not idle arithmetic. Loop 0x1c364f writes 64 samples to the scratch streams at 0x25e2e8 and 0x25e6e8 (for
+  example 0xbf0e0f00, 0xbf0e2bac, ...: a smooth ramp of -0.555 to -0.578), i.e. a table-interpolated sine at 8.18 Hz,
+  and the later loops read and filter these streams. The "16 changed words" seen in the voice record and the 0x24ebb0
+  block are only the persistent state; the checker compares all memory, so the 64-sample stream stores must be
+  reproduced bit for bit. No closed form exists (table lookup, linear interpolation, float rounding per sample).
+- All four loop heads (0x1c399a, 0x1c3862, 0x1c364f, 0x1c5765) are already in `tools/fast_regions.json`
+  (`fast_regions`) and run as Cranelift kernels, with 0x1c369b and 0x1c5796 as `blocktrans` roots. So the work an HLE
+  could not avoid is the work that already runs at kernel speed. From "HLE: first function and checker", a
+  hand-written exact routine costs about 0.9 ns per replaced instruction (value-domain checks, flags), no better than a
+  kernel. What remains for an HLE to win is the AOT glue (about 2.5k instructions per call, about 7.6% of DSP CPU at
+  2.85 ns), and that glue contains the loop entries, setup and register restores that must be exact too.
+- Rough ceiling: loops at kernel speed cannot gain; glue gain at most about 7.6% of DSP CPU on 16 voices, well below the
+  model's 19% and the stop line (70% of the model, 13% on trig1-taps). Not built, no checker or A/B run.
+
+What DT2 would need: the same analysis per voice function (DT2 has no HLE entry; its hot code is call-heavy and runs
+in AOT, see "DT2 fast-region probe"). A silent-voice skip is possible only where the inactive path stores nothing
+that is read later. Check that first with the write-watch (`SHARC_WWATCH`) over one inactive call: any stream store
+that a later stage reads kills the skip.
