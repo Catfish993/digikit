@@ -234,6 +234,172 @@
           "down": false
         }
       ]
+    },
+    {
+      "name": "dn2-rec-play",
+      "description": "Probe: NO, RECORD, trigs 1/5/9/13, RECORD, PLAY; 6 s. Not a pin.",
+      "seconds": 6.0,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 60000000,
+          "button": 19,
+          "down": true
+        },
+        {
+          "at_instr": 62000000,
+          "button": 19,
+          "down": false
+        },
+        {
+          "at_instr": 64000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 66000000,
+          "button": 25,
+          "down": false
+        },
+        {
+          "at_instr": 68000000,
+          "button": 29,
+          "down": true
+        },
+        {
+          "at_instr": 70000000,
+          "button": 29,
+          "down": false
+        },
+        {
+          "at_instr": 72000000,
+          "button": 33,
+          "down": true
+        },
+        {
+          "at_instr": 74000000,
+          "button": 33,
+          "down": false
+        },
+        {
+          "at_instr": 76000000,
+          "button": 37,
+          "down": true
+        },
+        {
+          "at_instr": 78000000,
+          "button": 37,
+          "down": false
+        },
+        {
+          "at_instr": 80000000,
+          "button": 19,
+          "down": true
+        },
+        {
+          "at_instr": 82000000,
+          "button": 19,
+          "down": false
+        },
+        {
+          "at_instr": 84000000,
+          "button": 20,
+          "down": true
+        },
+        {
+          "at_instr": 86000000,
+          "button": 20,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "dn2-rec-noplay",
+      "description": "Probe: NO, RECORD, trigs 1/5/9/13, RECORD; 6 s. Not a pin.",
+      "seconds": 6.0,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 60000000,
+          "button": 19,
+          "down": true
+        },
+        {
+          "at_instr": 62000000,
+          "button": 19,
+          "down": false
+        },
+        {
+          "at_instr": 64000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 66000000,
+          "button": 25,
+          "down": false
+        },
+        {
+          "at_instr": 68000000,
+          "button": 29,
+          "down": true
+        },
+        {
+          "at_instr": 70000000,
+          "button": 29,
+          "down": false
+        },
+        {
+          "at_instr": 72000000,
+          "button": 33,
+          "down": true
+        },
+        {
+          "at_instr": 74000000,
+          "button": 33,
+          "down": false
+        },
+        {
+          "at_instr": 76000000,
+          "button": 37,
+          "down": true
+        },
+        {
+          "at_instr": 78000000,
+          "button": 37,
+          "down": false
+        },
+        {
+          "at_instr": 80000000,
+          "button": 19,
+          "down": true
+        },
+        {
+          "at_instr": 82000000,
+          "button": 19,
+          "down": false
+        }
+      ]
     }
   ]
 }

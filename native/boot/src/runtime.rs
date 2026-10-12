@@ -1495,7 +1495,11 @@ impl Emulator {
                 (u64::from(address) << 32) | bytes as u64,
             );
         }
-        let uart_bytes = self.bus.board.take_uart_tx().len() as u64;
+        let uart = self.bus.board.take_uart_tx();
+        let uart_bytes = uart.len() as u64;
+        if uart_bytes != 0 {
+            panel_tx_log(self.cpu.icount, &uart);
+        }
         self.uart_bytes += uart_bytes;
         if uart_bytes != 0 {
             self.mark(Mark::UartTx, "after_instruction");
@@ -2913,5 +2917,25 @@ mod tests {
         assert_eq!(runtime.input_packets, before);
         assert!(runtime.turn(1, i32::MAX).is_err());
         assert_eq!(runtime.input_packets, before);
+    }
+}
+
+/// `DIGI_PANEL_TX_LOG=<path>`: append one line `<icount> <hex bytes>` per UART8 drain
+/// (front-panel LED stream). The path is read once; unset costs one atomic load per drain.
+fn panel_tx_log(icount: u64, bytes: &[u8]) {
+    use std::io::Write;
+    use std::sync::{Mutex, OnceLock};
+    static SINK: OnceLock<Option<Mutex<std::io::BufWriter<std::fs::File>>>> = OnceLock::new();
+    let sink = SINK.get_or_init(|| {
+        let path = std::env::var_os("DIGI_PANEL_TX_LOG")?;
+        std::fs::File::create(path)
+            .ok()
+            .map(|f| Mutex::new(std::io::BufWriter::new(f)))
+    });
+    if let Some(sink) = sink {
+        let mut w = sink.lock().unwrap();
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let _ = writeln!(w, "{icount} {hex}");
+        let _ = w.flush();
     }
 }
