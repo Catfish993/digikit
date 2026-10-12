@@ -5,7 +5,7 @@
 //!   DSP_STATE  canonical SHRD state blob (a DN2 continuation; private)
 //!   DSP_IMAGE  packed loader image: `uv run python tools/sharc_pack_image.py dn2-1.11 OUT`
 //!   OUT.wav    48 kHz stereo 32-bit float; OUT.q31 raw words; OUT.csv per frame
-//! env: NOTE_EVENTS=trig|play (see dspi2_capture), DSP_PERIOD (instructions
+//! env: NOTE_EVENTS=trig|play (see common/mod.rs), DSP_PERIOD (instructions
 //!   per frame, default 666667), DSP_CLOCK_BASE (default 573627620),
 //!   DSP_ATTACH=start|ready (default start: the DSP sees every frame from the
 //!   first one; ready: zero replies and no DSP time until the panel is ready).

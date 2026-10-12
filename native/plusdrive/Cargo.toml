@@ -16,14 +16,6 @@ device-profile = { path = "../device-profile" }
 dt2-firmware-loader = { path = "../loader" }
 sha2 = "0.10"
 
-[[example]]
-name = "wav-convert"
-path = "examples/wav-convert.rs"
-
-[[example]]
-name = "image-build"
-path = "examples/image-build.rs"
-
 [[bin]]
 name = "plusdrive"
 path = "src/bin/plusdrive.rs"
