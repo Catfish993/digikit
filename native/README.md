@@ -9,7 +9,7 @@ Use mise (`mise tasks` lists every task). Cargo needs the generated SHARC+ core;
 the tools set `SHARC_GEN_DIR` and the target dir for you (see "Target dirs").
 
 ```
-mise run emu:build         # build the desktop emulator
+mise run emu -- --build-only   # build the desktop emulator without launching it
 mise run emu               # build and run it (DN2 audio when the ready inputs exist)
 mise run scenario:build    # build the headless runner coupled-run
 mise run scenarios         # run every DN2 scenario against its pinned PCM hash
@@ -212,10 +212,13 @@ under load, because benchlock only excludes work that also takes it.
 
 ### Browser core tiers
 
-The browser core (wasm32) runs AOT blocks and the interpreter only, with no fast
-tier. `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables,
-which wasm32-unknown-unknown does not have, and the fast tier's Cranelift backend
-emits host code. `node tools/wasm_parity.mjs --scenario NAME` (or
+The coupled browser core (wasm32) has a fast tier too (feature `fast-wasm`): its
+kernels are wasm modules the page compiles (`native/sharc-fast-wasm`, `packages/web/src/core-host.ts`).
+`SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables, which
+wasm32-unknown-unknown does not have, so the page passes the regions in
+(`digi_sharc_fast_regions`). With no `?fast=` query it uses the `desktop` regions
+of `tools/fast_regions.json` for a listed firmware (AOT blocks present), or
+run-time selection `4,2,1` on the generic core. `node tools/wasm_parity.mjs --scenario NAME` (or
 `mise run web:parity NAME`) checks that the browser PCM is byte-identical to
 the native `expect_sha256`.
 
