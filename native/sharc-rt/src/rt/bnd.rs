@@ -499,17 +499,10 @@ pub fn _mr_write_word(_s: &St, mr: Spec, word: Int, value: V) -> Spec {
 /// encoding._field: the exact key, else the first key STEM[...].
 #[inline(always)]
 pub fn _field(_s: &St, f: Fields, stem: Sym) -> R<Int> {
-    for e in f.entries() {
-        if e.0 == stem {
-            return Ok(e.4 as Int);
-        }
+    match f.lookup(stem) {
+        Some(e) => Ok(e.4 as Int),
+        None => Err(TRAP_KEY),
     }
-    for e in f.entries() {
-        if e.1 == stem && e.0 != e.1 {
-            return Ok(e.4 as Int);
-        }
-    }
-    Err(TRAP_KEY)
 }
 
 /// The field named exactly STEM[HI:LO].
