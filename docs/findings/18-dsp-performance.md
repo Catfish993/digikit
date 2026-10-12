@@ -1655,3 +1655,25 @@ So: (1) choose targets by the measured per-call cost of their current path, neve
 lever is moving AOT-path work (2.85 ns native, ~5.4 ns in wasm) onto the ~1 ns paths (fast-tier kernels or HLE),
 which matters most on DT2, where nothing runs in the fast tier; (3) the DSP executes ~500M instructions per audio s,
 so ~1 ns per instruction is a floor of ~0.5 s per audio s native unless the instruction count itself drops.
+
+### DT2 fast-region probe 2026-10-12 **[D]**
+
+DT2 1.16, gen-fext core, regprof `coupled-run` for every arm, dt2-sample-trig on the card (3 audio s; 1.158 DSP CPU
+per audio s without fast regions, no PGO), 4-5 alternating exclusive pairs, PCM `999dd10944ce7e62` in every run.
+Candidates: the hottest AOT region entries in the top functions. They are call continuations, not DO-loop heads
+(only 0x1cc481 is a loop header), unlike DN2's shipped 11 regions.
+
+| fast regions | DSP CPU per audio s | paired ratio |
+|---|---:|---|
+| none | 1.158 | 1.000 |
+| 25 PCs (6% of instructions in kernels, 870k region calls/s) | 1.479 | 1.278 |
+| 8 PCs (kernels under 30 insns per call dropped) | 1.423 | 1.231 |
+| 3 PCs: 0x1cb407, 0x1ccbd8, 0x1cbce1 | 1.147 | 0.986 |
+
+- Most kernels stop within 2-40 instructions at a return, call or edge (DT2's hot code is call-heavy): 0x1c642a
+  (13.2% of time) runs 5-17 kernel instructions per call against 6,383-6,969 on the AOT path; 0x1c4afe 3 vs 457.
+  Refusals: unknown address ranges (3a/3b/3c), form 14d, MODE1 bank swap, MR moves, multifunction min/max.
+- At 160-300 ns per region call a kernel needs well over 100 saved instructions per call; the three good kernels'
+  AOT path already ran at ~2.3 ns per instruction, so they gained 1.4% against ~6.7% modelled. Not shipped. Reaching
+  the ~0.6 ceiling needs kernels that span calls (cluster roots like DN2's `blocktrans`, or call following) and the
+  lowering gaps closed — the same blockers as "Kernels that follow calls".
