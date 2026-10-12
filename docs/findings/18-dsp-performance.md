@@ -1853,5 +1853,25 @@ function and checker" measured ~0.9 ns, so they do not hold.
 - **[C]** Not pursued: the SHARC state at a fixed low address (wasm only).
   - The micro-benchmark gained 17%, but in the real functions offset folding and address constants are a small share.
   - This corrects the 8-15% estimate above to about 3-6%, for about a day of generator and engine work.
+- **[D]** Instruction-level profile of V8's code for `r_1C3862` and `r_1C364F`: samply 0.13.1 on node 24 with
+  `--perf-prof --no-liftoff`, region bench variant `cur`, with the jitdump code bytes disassembled. Shares of samples:
+  - stack spill stores 29-31%, though they are 4% of instructions;
+  - stack reloads 13-21%;
+  - linear-memory loads and stores 20-27%;
+  - constants 2-4%;
+  - calls 0%.
+  Skid may move samples onto the stores that follow long-latency instructions.
+- **[C]** The helpers are `#[inline(always)]`, and the register file `rf` is scalarized into about 100 wasm locals, with
+  a 272-byte frame. Frame-based memory ops are at most 6% of samples. It is wrong that `&mut rf` forces `rf` into
+  linear memory.
+- **[D]** Sinking the per-instruction rollback snapshots (`svN`) into a volatile stack array in `r_1C3862`:
+  - V8 spill stores went from 614 to 627;
+  - the region got 13-23% slower on node and bun, and 53-62% slower natively.
+  The spill pressure comes from the roughly 100 live `rf.r` values, not from the snapshots (docs/design/aot-mask-free.md:
+  `abl-nosv` gave 0-3%).
+- **[O]** Fewer live values per function, by splitting regions, is the remaining code-shape lever for V8. It costs entry
+  and exit work natively and is a redesign, so it is not pursued.
 - Tools: `tools/browser_bench.mjs --browser chrome|firefox|safari` (Firefox through WebDriver BiDi, Safari through
-  safaridriver) and `--profile-out DIR` (raw `.cpuprofile` files, Chrome only).
+  safaridriver) and `--profile-out DIR` (raw `.cpuprofile` files, Chrome only); instruction-level V8 profiles:
+  `samply record -- node --perf-prof --perf-prof-path=/tmp --no-liftoff ...` (samply pinned in mise.toml); disassemble
+  the jitdump code bytes, since a `--print-wasm-code` run without `--perf-prof` compiles different code.
