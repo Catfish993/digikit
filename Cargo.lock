@@ -183,6 +183,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootstrap-emu"
+version = "0.1.0"
+dependencies = [
+ "coldfire",
+]
+
+[[package]]
 name = "brotli"
 version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

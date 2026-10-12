@@ -30,6 +30,7 @@ finally:
     sys.path.pop(0)
 
 CLEAN_CRATES = [
+    "bootstrap-emu",
     "coldfire",
     "device-profile",
     "digiemu-desktop",
