@@ -681,6 +681,14 @@ def main(argv: list[str] | None = None) -> int:
         print("matches written: %d" % len(mt.m))
     if args.cmd == "port":
         print("names ported: %d" % write_ported(mt))
+        differ = sum(
+            1
+            for s, d in mt.m.items()
+            if not DEFAULT_RE.match(mt.src.fname[s])
+            and not DEFAULT_RE.match(mt.dst.fname[d])
+            and mt.src.fname[s] != mt.dst.fname[d]
+        )
+        print("matched pairs named differently on the two sides (kept): %d" % differ)
     return 0
 
 
