@@ -19,7 +19,7 @@ export interface DspSideOptions {
   state: Uint8Array;
   link: SharedArrayBuffer;
   /** Fast tier: run-time selection `[threshold, min insns, follow]`, or the desktop configuration (omit for AOT and interpreter alone). */
-  fast?: [number, number, number] | FastRegions;
+  fast?: [number, number, number] | FastRegions | 'generic-default';
   /** Interleaved L/R f32 produced since the last call, about every `pcmEvery` frames. */
   onPcm?: (pcm: Float32Array) => void;
   pcmEvery?: number;
@@ -61,8 +61,11 @@ export async function createDspSide(o: DspSideOptions): Promise<DspSide> {
   core.call('digi_dsp_open', img, o.image.length, st, o.state.length);
   core.free(img, o.image.length);
   core.free(st, o.state.length);
+  let fastArmed = !!o.fast && o.fast !== 'generic-default';
   if (Array.isArray(o.fast)) core.call('digi_sharc_fast', ...o.fast);
-  else if (o.fast) {
+  else if (o.fast === 'generic-default') {
+    if (core.exports.digi_sharc_aot_blocks?.() === 0) { core.call('digi_sharc_fast', 4, 2, 1); fastArmed = true; }
+  } else if (o.fast) {
     const regions = core.put(new Uint8Array(new Uint32Array(o.fast.regions).buffer));
     const roots = core.put(new Uint8Array(new Uint32Array(o.fast.roots).buffer));
     const [threshold, minInsns] = o.fast.auto ?? [0xffffffff, 0];
@@ -86,7 +89,7 @@ export async function createDspSide(o: DspSideOptions): Promise<DspSide> {
   let lastFast: unknown;
   let statsCalls = 0;
   const stats = (): DspStats => {
-    if (o.fast && statsCalls++ % 20 === 0) lastFast = core.call('digi_sharc_fast_report');
+    if (fastArmed && statsCalls++ % 20 === 0) lastFast = core.call('digi_sharc_fast_report');
     return { frames, busyMs: server.busyMs, engine: core.call('digi_sharc_stats'), pcmValues, kernels: { ...core.kernels }, fast: lastFast };
   };
   return {
@@ -117,7 +120,7 @@ export async function createDspSide(o: DspSideOptions): Promise<DspSide> {
       return {
         ...stats(),
         kernels: core.kernels,
-        fast: o.fast ? core.call('digi_sharc_fast_report') : undefined,
+        fast: fastArmed ? core.call('digi_sharc_fast_report') : undefined,
       };
     },
   };

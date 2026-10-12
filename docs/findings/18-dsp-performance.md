@@ -1875,3 +1875,33 @@ function and checker" measured ~0.9 ns, so they do not hold.
   safaridriver) and `--profile-out DIR` (raw `.cpuprofile` files, Chrome only); instruction-level V8 profiles:
   `samply record -- node --perf-prof --perf-prof-path=/tmp --no-liftoff ...` (samply pinned in mise.toml); disassemble
   the jitdump code bytes, since a `--print-wasm-code` run without `--perf-prof` compiles different code.
+
+## Firmware-independent DSP in the browser 2026-10-12 **[D]**
+
+- Context: the browser build is meant for GitHub Pages, where users upload and patch their own firmware. It cannot ship
+  a per-firmware AOT core, so it runs the generic (shared) core with run-time translation.
+- **[D]** Fast tier on the generic core, DN2 1.11, Chrome 150 (DSP worker s per audio s, interpreted share, kernels):
+  - auto 256,64,1: 17.10, 13.6%, 2198 kernels.
+  - 16,8,1: 9.57, 7.7%.
+  - 4,2,1: 8.37, 5.8%, 2728 kernels, 260 ms compile, 2.14 s first runs, 36.9 MB of kernel wasm.
+  - PCM equals the pin under node (`wasm_parity`, 883476…).
+  - Native on the same core: 4,2+follow gives 5.12 at 5.78% interpreted; 2,1 gives 5.45%, the floor.
+  - `Op::Helper` and `flat_auto` already work in the wasm build, so the "Helper unimplemented" note in
+    docs/design/fast-compile-offload.md is stale.
+- **[D]** At 4,2,1 in Chrome:
+  - the fallback interpreter is about 72% of DSP time (27.4M instructions per audio s at about 220 ns);
+  - kernels and their calls are about 2.0 s;
+  - kernel chaining would save under 0.3%.
+- **[D]** Page default: with no `?fast=` and no fast_regions.json entry, the DSP worker arms 4,2,1 when the core
+  reports `digi_sharc_aot_blocks() == 0` (the generic core). An unlisted AOT core keeps the fast tier off.
+- **[D]** sharc-jit revived on lane/jit (a2292d7, 4637c61; about an hour of porting to today's sharc-rt):
+  - Exact on 91/91 frames of the drive3-f0 DT2 pack, against fresh interpreter hashes, in wasmtime and V8.
+  - 12.56 ns per instruction in V8 and 15.05 in wasmtime. With the loop-back fix (`SHARC_JIT_LOOPSTARTS`) and
+    wasm-opt: 10.08 in V8.
+  - 702 regions, 33.2 MB of wasm, 0.83% of instructions interpreted.
+  - Costs: 0.63 helper calls per instruction (every DM access is a cross-module call); 1.9 KB of wasm per
+    instruction; about 20 ms to translate and 19-64 ms to compile per region.
+- **[O]** Hybrid: sharc-jit regions as the fallback for the code the fast tier leaves to the interpreter.
+  - Model: the 5.8% interpreted at about 220 ns, moved to about 10 ns, cuts about 6 s to about 0.3 s. That gives about
+    2.5-3 DSP s per audio s in Chrome (inference).
+  - A proof on FUN_1c8ef1 (16% of interpreted instructions) is in progress on lane/jit.

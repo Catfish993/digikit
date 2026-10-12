@@ -9,17 +9,20 @@ import type { CardBridge, CardStatus } from './cards';
 const pcs = (list: string | undefined) => (list ?? '').split(',').filter((x) => x.trim()).map((x) => parseInt(x.trim(), 16));
 
 /**
- * The DSP fast tier of the page (dev page, `?fast=`): the default is `desktop` when tools/fast_regions.json
- * has an entry for the firmware, `?fast=off` disables it; `desktop` is the desktop
+ * The DSP fast tier of the page (dev page, `?fast=`). Defaults without a query: `desktop` when
+ * tools/fast_regions.json has an entry for the firmware; otherwise `4,2,1` when the core is generic
+ * (no AOT blocks; decided in the DSP worker via `digi_sharc_aot_blocks()`, returned here as
+ * `'generic-default'`); off for an unlisted AOT core. `?fast=off` disables it; `desktop` is the desktop
  * configuration (the static regions and cluster roots of tools/fast_regions.json for this
  * firmware); `auto` or `T,M,F` is run-time selection (threshold, min insns, follow); `desktop+auto`
  * both. A firmware without an entry in the table gets no static regions.
  */
-export async function fastConfig(syx: Uint8Array, query = new URLSearchParams(location.search).get('fast')): Promise<[number, number, number] | FastRegions | undefined> {
+export async function fastConfig(syx: Uint8Array, query = new URLSearchParams(location.search).get('fast')): Promise<[number, number, number] | FastRegions | 'generic-default' | undefined> {
   if (query === '' || query === 'off') return undefined;
   const table = fastRegionTable as Record<string, { fast_regions?: string; blocktrans?: string }>;
   const entry = table[await sha256Hex(syx)];
-  if (query === null && !entry) return undefined;
+  if (query === null && !entry) return 'generic-default';
+  // `m || 64` makes M=0 impossible.
   const auto = (text: string): [number, number, number] => { const [t, m, f] = text.split(',').map(Number); return [t || 256, m || 64, f || 0]; };
   if (query === 'auto') return [256, 64, 0];
   if (query !== null && !query.startsWith('desktop')) return auto(query);

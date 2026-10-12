@@ -585,4 +585,10 @@ mod coupled {
             None => failure("no coupled emulator loaded"),
         })
     }
+
+    /// The number of AOT blocks in the linked generated core (0: the generic core).
+    #[unsafe(no_mangle)]
+    pub extern "C" fn digi_sharc_aot_blocks() -> u32 {
+        sharc_native::aot_block_count() as u32
+    }
 }

@@ -15,7 +15,7 @@ export interface DspStart {
   image: Uint8Array;
   state: Uint8Array;
   link: SharedArrayBuffer;
-  fast?: [number, number, number] | FastRegions;
+  fast?: [number, number, number] | FastRegions | 'generic-default';
   pcmPort: MessagePort;
 }
 

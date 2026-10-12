@@ -551,6 +551,11 @@ fn image_blocks() -> &'static [(u32, BlockFn)] {
     }
 }
 
+/// The number of AOT blocks in the linked generated core (0: the generic core).
+pub fn aot_block_count() -> usize {
+    image_blocks().len()
+}
+
 fn image_model_safe() -> &'static [u32] {
     #[cfg(all(sharc_gen, sharc_image))]
     {
