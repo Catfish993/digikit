@@ -279,7 +279,13 @@ REGENERATE_HINT = (
 ALLOW_STALE_ENV = "SHARC_NATIVE_ALLOW_STALE"
 
 
-class StaleNativeLibrary(RuntimeError):
+class NativeLibraryUnusable(RuntimeError):
+    """The native library cannot serve this tree: it is missing symbols this
+    tree's tools call (built from older native/sharc sources), or it is stale.
+    Tests that need the library skip on this (tests/conftest.py)."""
+
+
+class StaleNativeLibrary(NativeLibraryUnusable):
     """A native library generated from other sharc_core sources or by
     another generator version than this tree's."""
 
@@ -326,6 +332,15 @@ class NativeCore(sd.NativeEngine):
     a stale library (check_build_info)."""
 
     def __init__(self, image: bytes, library_path: str = DEFAULT_LIB) -> None:
+        try:
+            self._load(image, library_path)
+        except AttributeError as exc:  # ctypes: the symbol is not in the library
+            raise NativeLibraryUnusable(
+                f"{library_path} lacks a symbol this tree needs ({exc}); "
+                f"build a current library: {REGENERATE_HINT}"
+            ) from exc
+
+    def _load(self, image: bytes, library_path: str) -> None:
         super().__init__(library_path, image)
         for name, argtypes, restype in _EXTRA_FUNCTIONS:
             fn = getattr(self._lib, name)

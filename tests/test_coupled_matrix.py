@@ -9,6 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import coupled_matrix as cm  # noqa: E402
+import native_target  # noqa: E402
 
 sys.path.pop(0)
 
@@ -107,16 +108,14 @@ def test_config_env_clears_tuning_and_sets_the_configs(monkeypatch):
 
 def test_binary_and_build_command_follow_the_target_dir_convention():
     prod = cm.CONFIGS["prod"]
-    assert cm.binary_path(prod, None) == (
-        ROOT / "out/native/target/prod/release/coupled-run"
-    )
+    # In a lane worktree the target root is out/native/target-wt/<name>.
+    target_root = native_target.TARGET_ROOT
+    assert cm.binary_path(prod, None) == target_root / "prod/release/coupled-run"
     pgo = cm.binary_path(prod, "/p.profdata")
-    assert pgo == (
-        ROOT / "out/native/target/prod/pgo-use" / cm.TRIPLE / "release/coupled-run"
-    )
+    assert pgo == target_root / "prod/pgo-use" / cm.TRIPLE / "release/coupled-run"
     cmd = cm.build_command(prod, None)
     assert "--locked" in cmd and "--target" not in cmd
-    assert cmd[cmd.index("--target-dir") + 1].endswith("target/prod")
+    assert cmd[cmd.index("--target-dir") + 1].endswith("/prod")
     assert "--target" in cm.build_command(prod, "/p.profdata")
     profile = cm.build_command(prod, None, profile_regions=True)
     assert profile[profile.index("--features") + 1] == "coupled-audio,region-profile"

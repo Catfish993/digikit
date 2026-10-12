@@ -4,7 +4,13 @@ Tests marked ``slow`` (long firmware integration runs) are skipped unless
 ``--slow`` is given.
 """
 
+import sys
+from pathlib import Path
+
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from sharc_transpile_run import NativeLibraryUnusable  # noqa: E402
 
 
 def pytest_addoption(parser):
@@ -13,6 +19,16 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "slow: long firmware integration test")
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):
+    """A test that needs the native SHARC library skips, with the reason, when
+    the library is missing symbols or stale (tools/sharc_transpile_run.py)."""
+    try:
+        return (yield)
+    except NativeLibraryUnusable as exc:
+        pytest.skip(str(exc))
 
 
 def pytest_collection_modifyitems(config, items):
