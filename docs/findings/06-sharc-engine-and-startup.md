@@ -5226,8 +5226,8 @@ stages, meters included) returned, so the buffer it reads is the final master. R
 is a one-instruction patch with no displaced instruction (`PM 1c7734 180400bd0000 was 1804001c74a1`).
 
 **Buffer.** 64 IEEE floats (nominally -1..+1): 32 left samples, then 32 right at +0x80 bytes, planar, at
-DT2 `0x25f180` and DN2 `0x268438` (byte addresses; `0x25f180` is also a work buffer of the track stages, but
-nothing reads it after the converter). One block is 32 samples; the DSP gets 1500 blocks/s (48 kHz). The
+DT2 `0x25f180` and DN2 `0x268438` (byte addresses; `0x25f180` is also a work buffer of the track stages: writing it in place had no
+other visible reader, since gain 1.0 gives bit-identical PCM). One block is 32 samples; the DSP gets 1500 blocks/s (48 kHz). The
 converter (19 instructions, `I3` = buffer, 32 iterations, `R2 = 0x1f` is the `fix_by` exponent, the
 `0x1c9d51` word of finding 17) writes interleaved Q31 into the ring half given in `R4` (left) and `R8`
 (right, `R4 + 4`, stride 2 words).
@@ -5331,3 +5331,29 @@ roughly 330,000 (DN2) and 450,000 (DT2) instructions per 32-sample block at the 
 per block (idle-skip difference over 12,750 and 4,500 blocks): 0.03 % of the period. Real hardware has cache
 and memory stalls that this count ignores, and the clock is assumed, so these are upper bounds **[O]**; an
 effect that needs 5,000 instructions per block (a compressor or a drive with a smoothed gain) is under 1 %.
+
+## Per-voice render hook: proposal for a new machine type (not built) **[D][O]**
+
+Confidence that this reaches a sounding added machine: about 40 %. The master hook above shows that new DSP
+code can be placed, run and verified; the rest is mapping.
+
+- **Where the per-voice render is called.** `FUN_1c642a` loops over 32 voice records (`0x2412cc`, stride
+  `0x1d8`, `R14 = 0x20`, `R13` = record pointer, `0x1c6ad7`-`0x1c6b09`). Per record it tests a bit (`R2 =
+  btgl(R2, bit 1)` from `DM(I2, M1)`, `0x1c6ae7`; branch at `0x1c6aeb`) and calls either `0x1c5576`
+  (`CALL` at `0x1c6af1`) or `0x1c4ecf` (`CALL` at `0x1c6b00`), both with `R4 = R13` (record), `R12 = R15`. Both
+  zero the output unless record word 0 and byte `+0x1b8` are non-zero; `0x1c4f81` then renders 64 floats into
+  record `+4..+0x103` (6-tap polyphase from the sample, table `0x25d940`) and `0xb80000` decimates them to 32.
+- **Proposal.** Retarget the `0x1c4ecf` CALL at `0x1c6b00` to a dispatcher in L2: if the record belongs to
+  our machine (a byte of the record that nothing stock writes, set from a hooked `FUN_1c60a2` / the type
+  change at `0x1c33d7`; the per-track flag `0x2412c8 + 4 + t*0x1d8 + 0x1b9` is the nearest existing hook),
+  render 64 floats into record `+4` and set up the state the later stages expect; else `JUMP 0x1c4ecf`.
+  Same register contract as the master hook (a tail jump keeps the stack). The later per-slot stages
+  (`FUN_1c71ec`, table `0x8055c874`) then treat the output like any voice.
+- **Selection.** The ColdFire type word (frame `+0x94 + 2t`) reaches `0x255970` and is used only as a change
+  detector (finding above); the `0x2567c0` table indexed by it holds the per-type selector, and type 7 collides
+  with the existing manual-slice entry. A new type needs a free selector entry, a non-colliding type number
+  and the ColdFire machine descriptor (finding 02).
+- **Unknown, in order of risk.** Which record fields the stages after `0x1c4ecf` read (the voice record
+  contract table above covers the sample path only); how a voice record is allocated at note-on (ColdFire
+  trig -> `0x1c60a2`); whether `0x1c5576` is a second path that an added type must also cover; the
+  decimator state at `+0x104`.

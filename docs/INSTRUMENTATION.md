@@ -44,6 +44,10 @@ the default directory for every native `*_OUT` that is unset.
 | `dump` | fast-tier kernels and real calls (wasm gate input) | `fastdump/` | `SHARC_FAST_DUMP`; needs the `fast-dump` feature (coupled.py adds it) |
 | `pcm` | the rendered audio | `../audio.wav` | `--wav` |
 
+`DSP_FRAME_POKE=OFF=VAL[/TRACKS][,...]` sets the big-endian 16-bit word at frame byte OFF (with `/N`, at
+OFF + 0x60*t for t < N) in every frame sent to the DSP, to drive a frame word no stock control reaches
+(finding 06, "Parameter channel"). `tools/hook_ab.py` renders and compares paired runs with a DSP patch.
+
 `wwatch` units: `i` interpreter step, `b` generated block, `f` fast tier,
 `s` idle skip; for exact writer PCs also run with `SHARC_AOT=0
 SHARC_FAST_REGIONS= SHARC_BLOCKTRANS=`. `fastcov` output is read by

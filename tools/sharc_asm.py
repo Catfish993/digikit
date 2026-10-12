@@ -182,8 +182,19 @@ class Asm:
         n = int(reg[1:])
         if not (reg.upper().startswith("R") and 0 <= n <= 15):
             raise ValueError(f"14d takes R0-R15, not {reg}")
-        frame = (0x1A << 40) | (1 << 38) | (int(signed) << 36) | (n << 32) | (addr & 0xFFFFFFFF)
-        self._add(48, "14d", f"R{n} = DM({addr:#x}) (sw{'se' if signed else ''})", lambda _l: frame)
+        frame = (
+            (0x1A << 40)
+            | (1 << 38)
+            | (int(signed) << 36)
+            | (n << 32)
+            | (addr & 0xFFFFFFFF)
+        )
+        self._add(
+            48,
+            "14d",
+            f"R{n} = DM({addr:#x}) (sw{'se' if signed else ''})",
+            lambda _l: frame,
+        )
 
     def alu(self, op: str, rn: int, rx: int, ry: int = 0) -> None:
         """Type 2a: an unconditional ALU operation by name (see ALU_OPS)."""

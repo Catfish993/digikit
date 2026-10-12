@@ -166,6 +166,12 @@ enough, audio is an offline render.
   passes the bootstrap's own depacker on all 16 sections; `rebuild` keeps untouched sections verbatim and has a
   `max_container` guard.
 
+- 0.7 (master hook, lane fastweb): the Q31 converter's single CALL (DT2 `0x1c7734`, DN2 `0x1c9fd2`) retargeted to a
+  routine in free L2 scales the final master block; gain 1.0 is bit-identical, gain 0.5 is -6.0206 dB on both devices
+  (finding 06). The CFADE word (`+0xde`) is read by the DSP only as a flag with no effect on a Sample-machine track,
+  so a hook can use it as a parameter channel ([C]: the earlier "discarded" reading missed a flag). Open: the
+  UI-knob leg (needs 0.6), DN2's parameter word, the flag's reader; voice hook only proposed.
+
 ## Phases
 
 Estimates are agent time. Phase 0 spikes run in parallel lanes (`tools/lane.sh`); each ends with a go/no-go.

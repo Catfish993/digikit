@@ -68,3 +68,13 @@ def test_patch_text_guards_the_call_site():
         text = dsp_master_hook.patch_text(device, 0.5, dsp_master_hook.GAIN_ADDR, True)
         assert line in text
         assert "DM 200a0100 3f000000" in text
+
+
+def test_param_variant_reads_the_frame_word():
+    text = [
+        line.split(None, 2)[2]
+        for line in dsp_master_hook.build_hook("dt2", param_word=0x2559BA).listing()
+    ]
+    assert text[0] == "R0 = DM(0x2559ba) (sw)"
+    assert "F0 = float(F0)" in text
+    assert "F0 = fadd(F0, F2)" in text
