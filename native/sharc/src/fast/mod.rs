@@ -43,6 +43,7 @@ mod clock {
 pub mod cfg;
 pub mod decode_view;
 pub mod dump;
+#[allow(unreachable_code)]
 pub mod gen_helpers;
 pub mod glue;
 pub mod helper;

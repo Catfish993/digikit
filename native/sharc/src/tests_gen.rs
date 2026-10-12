@@ -40,10 +40,6 @@ impl Rng {
 /// `JUMP` to itself (48 bits), the spin after the instruction under test.
 const SPIN: [u16; 3] = [0x073e, 0, 0];
 
-fn engine(parcels: &[u16], mode1: u32, seed: u64, fast: bool) -> crate::Engine {
-    engine_cfg(parcels, mode1, seed, fast, 0)
-}
-
 /// CFG 1: the runtime's own configuration (bank and stack models, and the
 /// explicit_memory_model setting of the generated image, if any).
 fn engine_cfg(parcels: &[u16], mode1: u32, seed: u64, fast: bool, cfg: u8) -> crate::Engine {
