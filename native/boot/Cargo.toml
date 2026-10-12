@@ -1,5 +1,7 @@
 [package]
 name = "elektron-native-boot"
+license.workspace = true
+repository.workspace = true
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"

@@ -31,6 +31,10 @@ exclude = [
     ".claude",
 ]
 
+[workspace.package]
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/m-dwyer/digikit"
+
 # Timing and shipping profile. Matches what the desktop app has always been
 # built with (default codegen units, unwinding panics): changing it moves the
 # PGO baseline.
