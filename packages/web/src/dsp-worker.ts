@@ -4,7 +4,7 @@
 // SharedArrayBuffer link. `serve()` blocks this worker until the page closes
 // the link; nothing else runs here (PCM goes straight to the audio worklet
 // through `pcmPort`, statistics to the page as `stats` messages).
-import { createDspSide, type FastRegions } from './split-session.ts';
+import { createDspSide, type FastDefault, type FastRegions } from './split-session.ts';
 import { pcmMetrics } from './runtime/runtime-metrics';
 
 export interface DspStart {
@@ -15,7 +15,7 @@ export interface DspStart {
   image: Uint8Array;
   state: Uint8Array;
   link: SharedArrayBuffer;
-  fast?: [number, number, number] | FastRegions | 'generic-default';
+  fast?: [number, number, number] | FastRegions | FastDefault;
   pcmPort: MessagePort;
 }
 

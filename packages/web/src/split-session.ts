@@ -19,7 +19,7 @@ export interface DspSideOptions {
   state: Uint8Array;
   link: SharedArrayBuffer;
   /** Fast tier: run-time selection `[threshold, min insns, follow]`, or the desktop configuration (omit for AOT and interpreter alone). */
-  fast?: [number, number, number] | FastRegions | 'generic-default';
+  fast?: [number, number, number] | FastRegions | FastDefault;
   /** Interleaved L/R f32 produced since the last call, about every `pcmEvery` frames. */
   onPcm?: (pcm: Float32Array) => void;
   pcmEvery?: number;
@@ -34,6 +34,12 @@ export interface FastRegions {
   roots: number[];
   auto?: [number, number];
   follow?: boolean;
+}
+
+/** No `?fast=` query: the DSP worker picks `4,2,1` for a generic core (no AOT blocks), else `desktop` if present, else off. */
+export interface FastDefault {
+  kind: 'default';
+  desktop?: FastRegions;
 }
 
 export interface DspStats {
@@ -61,18 +67,22 @@ export async function createDspSide(o: DspSideOptions): Promise<DspSide> {
   core.call('digi_dsp_open', img, o.image.length, st, o.state.length);
   core.free(img, o.image.length);
   core.free(st, o.state.length);
-  let fastArmed = !!o.fast && o.fast !== 'generic-default';
-  if (Array.isArray(o.fast)) core.call('digi_sharc_fast', ...o.fast);
-  else if (o.fast === 'generic-default') {
-    if (core.exports.digi_sharc_aot_blocks?.() === 0) { core.call('digi_sharc_fast', 4, 2, 1); fastArmed = true; }
-  } else if (o.fast) {
-    const regions = core.put(new Uint8Array(new Uint32Array(o.fast.regions).buffer));
-    const roots = core.put(new Uint8Array(new Uint32Array(o.fast.roots).buffer));
-    const [threshold, minInsns] = o.fast.auto ?? [0xffffffff, 0];
-    core.call('digi_sharc_fast_regions', regions, o.fast.regions.length, roots, o.fast.roots.length, threshold, minInsns, o.fast.follow ? 1 : 0);
-    core.free(regions, o.fast.regions.length * 4);
-    core.free(roots, o.fast.roots.length * 4);
-  }
+  let fastArmed = false;
+  const armRegions = (f: FastRegions) => {
+    const regions = core.put(new Uint8Array(new Uint32Array(f.regions).buffer));
+    const roots = core.put(new Uint8Array(new Uint32Array(f.roots).buffer));
+    const [threshold, minInsns] = f.auto ?? [0xffffffff, 0];
+    core.call('digi_sharc_fast_regions', regions, f.regions.length, roots, f.roots.length, threshold, minInsns, f.follow ? 1 : 0);
+    core.free(regions, f.regions.length * 4);
+    core.free(roots, f.roots.length * 4);
+    fastArmed = true;
+  };
+  if (Array.isArray(o.fast)) { core.call('digi_sharc_fast', ...o.fast); fastArmed = true; }
+  else if (o.fast && 'kind' in o.fast) {
+    const aot = core.exports.digi_sharc_aot_blocks?.();
+    if (aot === 0) { core.call('digi_sharc_fast', 4, 2, 1); fastArmed = true; }
+    else if (o.fast.desktop) armRegions(o.fast.desktop);
+  } else if (o.fast) armRegions(o.fast);
   const txp = core.put(new Uint8Array(MAX_PAYLOAD));
   const rxp = core.put(new Uint8Array(MAX_PAYLOAD));
   const server = new LinkServer(o.link);
