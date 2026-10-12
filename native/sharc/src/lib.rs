@@ -29,6 +29,7 @@
 pub mod canon;
 mod diag;
 pub mod fast;
+pub mod hle;
 pub mod frames;
 mod live_capture;
 mod region_profile;
@@ -293,6 +294,8 @@ pub struct Engine {
     /// Optional fast tier (src/fast): tried at its entry PCs before the
     /// generated block. None by default; behaviour is unchanged without it.
     pub fast: Option<Box<dyn fast::FastTier>>,
+    /// Hand-written native implementations of hot functions (`SHARC_HLE`).
+    pub hle: Option<Box<hle::Hle>>,
     /// The fast tier selects its own regions (`FastTier::note`); kept in
     /// step with `fast` by `set_fast`.
     fast_auto: bool,
@@ -440,7 +443,7 @@ struct IdleSnap {
 const R_EMUCLK: usize = 105;
 const R_EMUCLK2: usize = 106;
 const R_TPERIOD: usize = 110;
-const R_TCOUNT: usize = 111;
+pub(crate) const R_TCOUNT: usize = 111;
 const R_MODE2: usize = 116;
 /// Longest loop (instructions) the idle skip will watch for a return to head.
 const IDLE_MAX_LOOP: u64 = 512;
@@ -512,6 +515,18 @@ pub fn exec_insn(s: &mut St, insn: Insn) -> R<()> {
     }
 }
 
+/// Decode and execute the instruction at the PC through the generated core
+/// (the reference the HLE checker compares against).
+pub(crate) fn interp_one(s: &mut St) -> R<()> {
+    let insn = if s.runtime_decode {
+        let pc = s.pc_sw;
+        rt::bnd::decode_at(s, (), None, pc)?
+    } else {
+        (s.insn_at)(s.pc_sw).ok_or(TRAP_NO_INSN)?
+    };
+    exec_insn(s, insn)
+}
+
 /// The explicit_memory_model setting the image's block code was generated
 /// for (true without an image: the default configuration).
 pub fn gen_explicit_memory_model() -> bool {
@@ -578,6 +593,11 @@ fn image_insn_at() -> fn(Int) -> Option<Insn> {
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        if let Some(h) = &self.hle
+            && (std::env::var_os("SHARC_HLE_LOG").is_some() || std::env::var_os("SHARC_HLE_CHECK").is_some())
+        {
+            eprint!("{}", h.report());
+        }
         if let Some(h) = &self.hist {
             let mut v: Vec<_> = h.iter().map(|(a, b)| (*b, *a)).collect();
             v.sort_unstable_by(|a, b| b.cmp(a));
@@ -665,6 +685,7 @@ impl Engine {
             code_ok: false,
             code_barred: None,
             fast: None,
+            hle: None,
             fast_auto: false,
             fast_auto_dispatch: false,
             hist: std::env::var_os("SHARC_FAST_HIST")
@@ -677,6 +698,13 @@ impl Engine {
             diag_on: false,
         };
         engine.refresh_diag();
+        engine.hle = hle::Hle::from_env(interp_one).map(Box::new);
+        if let Some(h) = &engine.hle {
+            let pcs: Vec<u32> = h.entries().collect();
+            for pc in pcs {
+                engine.s.chain_stop_add(pc);
+            }
+        }
         engine
     }
 
@@ -1198,6 +1226,9 @@ impl Engine {
         #[cfg(all(sharc_gen, sharc_image))]
         {
             self.s.mem.unwatch_code();
+            if let Some(h) = &mut self.hle {
+                h.watched = false;
+            }
             for &(start, len, _) in generated::image::CODE_RANGES {
                 let (lo, hi) = (start, start + len);
                 self.s
@@ -1300,7 +1331,11 @@ impl Engine {
         let fast_pc = self
             .fast
             .as_ref()
-            .is_some_and(|f| f.wants(self.s.pc_sw as u32));
+            .is_some_and(|f| f.wants(self.s.pc_sw as u32))
+            || self
+                .hle
+                .as_ref()
+                .is_some_and(|h| h.wants(self.s.pc_sw as u32));
         if entry.is_none() && !fast_pc {
             return None;
         }
@@ -1707,7 +1742,14 @@ impl Engine {
                     }
                     self.s.in_block = plan.models;
                     let mut code = None;
-                    if let Some(f) = self.fast.as_mut().filter(|_| !plan.stop_loop_empty) {
+                    if let Some(h) = self.hle.as_mut().filter(|_| !plan.stop_loop_empty)
+                        && h.wants(entry_pc)
+                    {
+                        code = h.run(&mut self.s, entry_pc);
+                    }
+                    if code.is_none()
+                        && let Some(f) = self.fast.as_mut().filter(|_| !plan.stop_loop_empty)
+                    {
                         #[cfg(feature = "region-profile")]
                         {
                             let profile_start =

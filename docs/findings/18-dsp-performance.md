@@ -1564,3 +1564,64 @@ revisions confirm the presses land), paced controller, spike log over the whole 
   launcher default prefill is now 0.3 s (was 1 s).
 - DT2 has no fast-tier regions (`fast_present: false`), which is why its load is above DN2's; a DT2 region list is
   the next DT2 lever. One machine, one run per row, not re-checked by a second agent.
+
+## HLE: first function and checker 2026-10-12 **[D]**
+
+Hand-written native replacement of a hot DSP function ("HLE"), with an exactness checker. **Verdict for the first
+function: no gain, killed.** The mechanism and the checker work and are reusable; the cost model that chose the
+function was wrong.
+
+**Mechanism** (`native/sharc/src/hle.rs`, `hle/dn2_b82342.rs`; off unless `SHARC_HLE=1` or `SHARC_HLE=name,..`). A table
+maps an entry PC to a Rust routine. `Engine::step` tries it where it tries the fast tier (same `block_plan` gates:
+models, latent interrupt, timer limit, `stop_loop_empty`), before the fast tier and the AOT block; entry PCs are in
+the chain-stop set. Guards: SHA-256 of the function's code words (re-run when a watched code page is stored to), then
+the state the routine was written for (all used registers known, MODE1 without PEYEN/BDCST, M6=1, M7=-1, no circular
+buffer on I2..I5, I6's buffer covers every address used, plain-RAM windows from `Mem::window`, `icount + insns <=
+s.limit`), then the value domain (every float operand and result a finite normal or a zero, no zero product of two
+nonzero operands; anything else declines). A decline leaves the state untouched: stores go to the window with an undo
+log, the loop bookkeeping runs in one `begin`/`commit_host`/`rollback` unit. On success it writes the registers
+(scratch ones too), ASTATX by the last writer of each flag group (`glue::apply_flag`), LCNTR, the DO loop's push/pop
+bookkeeping (as `glue::sites` does it), PC, `icount`, `steps`. The call is atomic: no interrupt is taken inside it.
+
+**Function.** DN2 0xb82342 (byte-exact in DT2 1.16 at 0x1cdbb2; the table is keyed to the DN2 PC): 17-insn DO loop
+(N-2 trips, N the stack argument) with spill prologue and `JUMP (M14,I12)` + RFRAME return; 98 + 17 (N-2) insns
+(608 at N=32), 24k calls per audio s. Gotchas found by the checker: low addresses are keyed by their short-word alias
+in the interpreter's write probe; DO UNTIL LCE loads LCNTR with the count (invisible while the count never changes);
+the core's state functions journal register writes, so calling them without `begin`/`commit_host` overflows the
+journal every ~5 calls and the failure shows as a loop-depth leak and a guest halt in the context switch
+(`_restore_packed_loop`) far from the cause; I6 is a 994-word circular buffer (CBUFEN set), so the routine checks that
+its addresses stay inside it.
+
+**Checker** (`SHARC_HLE_CHECK=N,V`, `tools/hle_check.py`, `mise run hle-check`). In a coupled run, at each of the first N
+calls (and 1 in 1000 after): snapshot the machine, run the routine, snapshot, roll back, run the interpreter (generated
+core, one instruction at a time, with the write probe) to the routine's return PC, compare every register,
+the stacks, loop slots, flags, MMRs, PC, `icount`, `steps` and every stored byte, roll back; V further cases per
+call mutate the record, streams and trip count (zeros, denormals, NaN, infinity, extremes, random, N in 0..200). The
+run itself is unchanged. Results with the final routine: **252,000 captured calls (the whole trig1-taps scenario): 0
+mismatches; 110,160 cases (12,240 captured + 97,920 synthetic), 84,856 run by both, 25,304 declined on the value
+domain: 0 mismatches.** With `SHARC_HLE=1`: `verify.py --only build,pins,check` passes (7 PCM pins, 61 oracles), and
+the DT2 gates (`dt2-tone`, `card`, `SHARC_GEN_DIR=.../dt2-audio/gen-fext`) pass. Open: the synthetic cases decline
+on exceptional values, so the denormal/underflow edge is covered by "declines", not by comparing flags **[O]**.
+
+**Measured (trig1-taps, DN2, `coupled_ab.py`, 8 pairs, PCM identical `e0e6c8af7a84c443`).** A (no HLE) 1.112, B
+(HLE) 1.115 DSP CPU per audio s, B/A 1.003 (0.998 to 1.009): no saving. Model: 24k x (1.7 us AOT - 0.3 us) = 34 ms
+= 3.5 %. In situ the routine costs 0.72 us per call (`SHARC_HLE_TIME`/`SHARC_HLE_PROF`, 1 ns counter ticks, ~40 ns of
+it the timing itself): windows 51, compute 568, commit 48. The first version cost 0.83 us; cheaper checks (flag
+accumulation, one test before commit) and unchecked window accesses took off 0.12 us. The old path costs about
+0.65 us per call: its loop is the fast-tier region 0xb823db (Cranelift kernel) and the rest is AOT, ~1.1 ns/insn, not
+the 2.85 ns/insn average the model used.
+
+**Why the model failed.** (1) The baseline per call was 2.6x too high: the function was already partly native.
+(2) The routine is 530 ns of float work with a dependent chain (~24 cycles per trip, ~0.2 us floor), and the
+value-domain test costs as many uops as the arithmetic (6 per result, ~110 per trip). Floor with these checks ~0.5
+us; without them the exact flags and sticky bits cannot be reproduced. (3) Hook and exit state are small: ~0.1 us
+(guard, windows, commit). Even a free routine would save 0.65 us x 24k = 16 ms/s = 1.4 %.
+
+**Recipe for the next function.** Pick by measured per-call cost of the current path, not insns x average:
+(a) skip anything inside a fast-tier region or kernel (`fast_regions`); (b) prefer integer/memory-bound routines
+(copies, clears, table walks, bit work) where native code beats 1 ns/insn by 3x or more, over float chains;
+(c) estimate the ceiling first: instructions x measured ns/insn of the current tier vs the dependency-chain floor;
+(d) write the routine against `hle::Win`/`Hx` (windows with undo log, `state_ok`, `astatx`, `run_do_loop`), decline
+on every state or value it does not model; (e) run `mise run hle-check` until 0 mismatches over >= 10,000 compared
+cases, then `SHARC_HLE=1 verify.py --only build,pins,check`, then one paired A/B.
+
