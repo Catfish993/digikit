@@ -39,9 +39,19 @@ from sharc_trace import UREG_CODES  # noqa: E402
 
 COND_TRUE = 0x1F
 
-# multiplier opcode "FN = FX * FY" (PRM Table 18-7), compute unit field cu = 1
+# compute unit field cu (PRM Figure 18-1): 0 ALU, 1 multiplier, 2 shifter
+_CU_ALU = 0
 _CU_MUL = 1
 _MUL_FLOAT = 0x30
+# ALU opcodes (PRM Table 18-5)
+ALU_OPS = {
+    "fadd": 0x81,  # Fn = Fx + Fy
+    "fsub": 0x82,  # Fn = Fx - Fy
+    "float": 0xCA,  # Fn = float Rx
+    "float_by": 0xDA,  # Fn = float Rx by Ry
+    "fix": 0xC9,  # Rn = fix Fx
+    "fix_by": 0xD9,  # Rn = fix Fx by Ry
+}
 
 
 def ureg(name: str) -> int:
@@ -164,6 +174,24 @@ class Asm:
             48,
             "2a",
             f"F{rn} = F{rx} * F{ry}",
+            lambda _l: (0x01 << 40) | (COND_TRUE << 33) | compute,
+        )
+
+    def load_sw_abs(self, reg: str, addr: int, signed: bool = False) -> None:
+        """Type 14d: Rn = DM(absolute address) as a short word (R0-R15 only)."""
+        n = int(reg[1:])
+        if not (reg.upper().startswith("R") and 0 <= n <= 15):
+            raise ValueError(f"14d takes R0-R15, not {reg}")
+        frame = (0x1A << 40) | (1 << 38) | (int(signed) << 36) | (n << 32) | (addr & 0xFFFFFFFF)
+        self._add(48, "14d", f"R{n} = DM({addr:#x}) (sw{'se' if signed else ''})", lambda _l: frame)
+
+    def alu(self, op: str, rn: int, rx: int, ry: int = 0) -> None:
+        """Type 2a: an unconditional ALU operation by name (see ALU_OPS)."""
+        compute = (_CU_ALU << 20) | (ALU_OPS[op] << 12) | (rn << 8) | (rx << 4) | ry
+        self._add(
+            48,
+            "2a",
+            f"{op} {rn}, {rx}, {ry}",
             lambda _l: (0x01 << 40) | (COND_TRUE << 33) | compute,
         )
 

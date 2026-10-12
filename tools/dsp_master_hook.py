@@ -60,10 +60,23 @@ def f32_bits(x: float) -> int:
     return struct.unpack("<I", struct.pack("<f", x))[0]
 
 
-def build_hook(device: str, gain_addr: int = GAIN_ADDR) -> sharc_asm.Asm:
+def build_hook(
+    device: str, gain_addr: int = GAIN_ADDR, param_word: int | None = None
+) -> sharc_asm.Asm:
+    """The hook routine. With `param_word` (the DSP-memory byte address of a
+    16-bit frame word) the gain is 1.0 + word / 32768; otherwise it is the
+    float at `gain_addr`."""
     d = DEVICES[device]
     a = sharc_asm.Asm(CODE_PC)
-    a.load_abs("R0", gain_addr)
+    if param_word is None:
+        a.load_abs("R0", gain_addr)
+    else:
+        a.load_sw_abs("R0", param_word)  # R0 = frame word, zero-extended
+        a.alu("float", 0, 0)  # F0 = float(R0)
+        a.ureg_imm("R3", f32_bits(2.0**-15))
+        a.fmul(0, 0, 3)  # F0 = F0 * 2**-15
+        a.ureg_imm("R2", f32_bits(1.0))
+        a.alu("fadd", 0, 0, 2)  # F0 = F0 + 1.0
     a.ureg_imm("I4", d["buffer"])
     a.do_lcntr(64, "last")
     a.load("R1", 4, 5, post=False)  # R1 = DM(I4, M5), M5 = 0
@@ -74,9 +87,15 @@ def build_hook(device: str, gain_addr: int = GAIN_ADDR) -> sharc_asm.Asm:
     return a
 
 
-def patch_text(device: str, gain: float | None, gain_addr: int, hook: bool) -> str:
+def patch_text(
+    device: str,
+    gain: float | None,
+    gain_addr: int,
+    hook: bool,
+    param_word: int | None = None,
+) -> str:
     d = DEVICES[device]
-    a = build_hook(device, gain_addr)
+    a = build_hook(device, gain_addr, param_word)
     out = [
         f"# {device} master hook (spike 0.7): scale the master float block, then run the Q31 converter.",
         f"# Routine at pc {CODE_PC:#x} (L2 byte {CODE_BYTE:#x}); gain word at DM {gain_addr:#x}.",
@@ -107,17 +126,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--no-hook", action="store_true", help="routine only, call site untouched"
     )
+    p.add_argument(
+        "--param-word",
+        type=lambda s: int(s, 0),
+        help="gain = 1 + word/32768 from this 16-bit DSP-memory frame word"
+        " (DT2 track 0 +0xde: 0x2559ba)",
+    )
     p.add_argument("--listing", action="store_true")
     args = p.parse_args(argv)
     if args.listing:
-        print("\n".join(build_hook(args.device, args.gain_addr).listing()))
+        asm = build_hook(args.device, args.gain_addr, args.param_word)
+        print("\n".join(asm.listing()))
+    gain = None if (args.no_gain_word or args.param_word is not None) else args.gain
     args.out.write_text(
-        patch_text(
-            args.device,
-            None if args.no_gain_word else args.gain,
-            args.gain_addr,
-            not args.no_hook,
-        )
+        patch_text(args.device, gain, args.gain_addr, not args.no_hook, args.param_word)
     )
     return 0
 

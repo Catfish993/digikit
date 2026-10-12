@@ -5213,3 +5213,121 @@ post-modifies, all on I7 (the software stack, B/L `0x2d08c0/0x3e2`,
 `0x26f000/0x1fd`, `0x269170/0xc2`), and none wraps
 (`tools/sharc_circstats.py`). The L7 values read earlier as delay lines are
 stack buffers; the coupled hashes and PCM are unchanged by the fix.
+
+## Master hook: a routine in free L2 scales the final block before the Q31 conversion (spike 0.7) **[D]**
+
+Measured in the coupled emulator on DT2 1.16 and DN2 1.11 (the DSP blobs of DT2 1.17 and DN2 1.12 are
+byte-identical, so the addresses hold there). One agent; not yet checked by a second.
+
+**Site.** The block handler's render command ends with one call of the Q31 converter: DT2 `CALL 0x1c74a1`
+at `0x1c7734` (`1804001c74a1`, Type 25a direct, delayed), DN2 `CALL 0x1c9d3f` at `0x1c9fd2` (`1804001c9d3f`).
+Each converter has exactly one caller. It runs after `FUN_1c2b24` / `FUN_1c2712` (all track, send and master
+stages, meters included) returned, so the buffer it reads is the final master. Retargeting the CALL operand
+is a one-instruction patch with no displaced instruction (`PM 1c7734 180400bd0000 was 1804001c74a1`).
+
+**Buffer.** 64 IEEE floats (nominally -1..+1): 32 left samples, then 32 right at +0x80 bytes, planar, at
+DT2 `0x25f180` and DN2 `0x268438` (byte addresses; `0x25f180` is also a work buffer of the track stages, but
+nothing reads it after the converter). One block is 32 samples; the DSP gets 1500 blocks/s (48 kHz). The
+converter (19 instructions, `I3` = buffer, 32 iterations, `R2 = 0x1f` is the `fix_by` exponent, the
+`0x1c9d51` word of finding 17) writes interleaved Q31 into the ring half given in `R4` (left) and `R8`
+(right, `R4 + 4`, stride 2 words).
+
+**State at the hook, as read from the callers and the converter.** `I6` frame pointer and `I7` stack are
+live, and so are `R4` and `R8` (arguments of the converter). `M5 = 0`, `M6 = 1`, `M7 = -1` are the firmware's
+global constants. SIMD is off (`MODE1` bit 0x200000 cleared at `0x1c7709` / `0x1c9fa7`), no DO loop is
+active, and the converter itself addresses `I3`/`I4`/`I5` linearly, so `L3..L5` are 0. Dead at the call:
+`R0..R3`, `I0..I4` (the converter loads `I4` from `R4`; it saves and restores `I3` and `I5` itself; the
+caller reloads everything else from its own frame). A hooked routine may therefore use `R0..R3`, `I4`
+freely and must end by jumping to the converter with `R4`, `R8`, `I6`, `I7` unchanged (a tail `JUMP`, so the
+converter's `RETURN` goes to the original caller).
+
+**Routine and site, as emitted by `tools/dsp_master_hook.py` (DT2 shown; DN2 differs in the buffer and the
+final jump):**
+
+```
+0xbd0000  R0 = DM(0x200a0100)            ; gain float (or: the frame-word variant below)
+0xbd0003  I4 = 0x25f180
+0xbd0006  DO 0xbd000e UNTIL LCE (64)
+0xbd0009  R1 = DM(I4, M5)                ; M5 = 0, normal word
+0xbd000b  F1 = F1 * F0
+0xbd000e  DM(I4, M6) = R1                ; M6 = 1
+0xbd0010  JUMP 0x1c74a1
+```
+
+L2 byte `0x200a0000` (pc `0xbd0000`; pc = `0xb80000` + (byte - `0x20000000`) / 2) is past the last word either
+loader writes (DT2 `0x2001ab7b`, DN2 `0x2008823b`). 200 instructions per block.
+`tools/sharc_asm.py` builds the words from `tools/sharcspec/decode_table.json` and re-decodes each with the
+repository decoder; the forms it emits were checked against the firmware's own words
+(`tests/test_sharc_asm.py`). A first version used the short-word access bits by mistake (`l,x,w = 1,0,0`
+instead of `0,1,1`): the decoder accepted both, the PCM showed it, so check access width in the listing.
+
+**PCM evidence.** `tools/hook_ab.py run` / `compare`, same ready inputs, one audio render each:
+
+| device | scenario | gain word | result vs unpatched |
+|---|---|---|---|
+| DN2 1.11 | `trig1-tap-release` (8.5 s) | 1.0 | bit-identical; sha256 `f4f6d19f...` is the scenario's pin |
+| DN2 1.11 | same | 0.5 | RMS -6.0206 dB, peak ratio 0.5, max error 2.3e-10 (half a Q31 step) |
+| DT2 1.16 | `dt2-sample-trig` (3 s, one-sample card) | 1.0 | bit-identical (`999dd109...`) |
+| DT2 1.16 | same | 0.5 | RMS -6.0206 dB, max error 2.3e-10 |
+
+**Engine fix needed to run it.** `Engine::poke` of an address that holds no loaded byte stores at the
+short-word alias (`_canonical_dm_address`, finding 07), where neither the instruction fetch of an L2 pc
+(`Mem::read_sw`) nor a plain data read looks, so new code halted with "no decoded instruction at 0xbd0000".
+`Engine::poke_raw` writes the bytes at their own address and `apply_dsp_patch` uses it for absent L2 bytes.
+Run-time patches only; the boot-stream append (spike 0.4) is not needed for this result. A patch that changes
+the call site bars the generated blocks that contain it, as for any code patch (finding 18); the new routine
+runs in the interpreter (200 instructions per block, no wall-time effect visible).
+
+## Parameter channel: the CFADE word is read, but its only effect is a flag **[C][D][O]**
+
+**[C]** Corrects "`+0xde` CFADE discarded" and "`+0xe6` dropped" (this file, "Where the SRC-page words go").
+Two spills hid the uses.
+- `+0xde`: `0x1c265f R11 = DM(I2+2) (sw)`, `0x1c2661` shifts it right by 8, `0x1c2687` spills it. `0x1c26ed`
+  reloads it into `R10`, and `0x1c26ef R10 = pass(R10)` sets the ALU flags that `0x1c2700 IF GT R3 = M6`
+  tests. `R3` (0 or 1) is stored as a float at slot word 4 (`0x1c2711`/`0x1c2714`, `DM(I5 - 23)`, slot =
+  `0x2506ec + R8*0xdc`). So CFADE >= 0x100 raises a flag in the voice table. Its reader is not found **[O]**.
+- `+0xe6` (mirror 31, SAMPLE's START): `0x1c2664 F8 = float(F13)`, scaled by `0x38088889` (1/30720) at
+  `0x1c26e8`, spilled, stored by `0x1c26f4` at slot word 1. It is live.
+
+**[D]** Whole-engine test, `DSP_FRAME_POKE` (a diagnostic of the coupled worker: `OFF=VAL[/TRACKS]`, a
+big-endian 16-bit wire word set in every frame sent to the DSP; the frame offset is the one of finding 04),
+DT2 `dt2-sample-trig` with the one-sample card, Sample machine, no hook:
+
+| poke (all 16 tracks) | PCM vs unpatched |
+|---|---|
+| `+0xde` = 0x0100, 0x7f00 | bit-identical |
+| `+0xe6` = 0x4000 | changes (RMS -1.6 dB) |
+
+So for the Sample machine the CFADE word has no effect on the output at any value in its range, including
+the flag-raising ones. Other machine types (slot type bits differ) and the flag's reader are untested **[O]**.
+
+**[D]** The hooked routine can read the word. DSP memory holds the frame copy at `0x2558dc` (512 short words
+copied at `0x1c2c79` each block), so track 0 `+0xde` is the short word at `0x2559ba` (track `t`: `+0x60*t`).
+Variant `--param-word 0x2559ba`: gain = 1.0 + word/32768 (`R0 = DM(0x2559ba) (sw)`, `float`, times 2^-15, plus
+1.0; 12 more instructions than the constant-gain routine, 201.8 per block). With the poke: word 0 gives the
+unpatched PCM bit for bit; word 0x4000 gives peak ratio 1.5000000 and +3.52 dB, exactly 1.5x.
+
+**What is not shown.** No stock control reaches `+0xde`: the firmware's CFADE entries (param codes 0xcc Sample,
+0xfa MSlice) are in no stock descriptor. The real chain, a UI knob -> mirror index 27 -> frame -> hook, needs a
+patched MAIN (the XSLICE route of finding 02) and so a coupled cold boot with DSP audio (spike 0.6). The poke
+sets the same wire word the ColdFire would send; it is not a knob. DN2: not examined (its per-track unpack is
+not `FUN_1c24e9`; the hook itself works there).
+
+## Headroom **[D]**
+
+Instruction counts of the coupled runner (the DSP is stepped 666,667 instructions per 1500 Hz block, i.e. an
+assumed 1 GHz core with one instruction per cycle; the idle loop is skipped exactly and counted):
+
+| device | scenario | idle share | busy per block |
+|---|---|---|---|
+| DN2 1.11 | one voice (`trig1-tap-release`) | 49.8 % | 335,000 of 666,667 |
+| DN2 1.11 | `kb-chord16`, 16 voices | 49.75 % | 335,003 |
+| DT2 1.16 | one voice (`dt2-sample-trig`) | 68.3 % | 211,000 |
+| DT2 1.16 | all 16 trig keys down in keyboard mode (`dt2-chord16` probe, rms unchanged) | 68.5 % | 210,047 |
+
+The cost is a constant background; 16 voices do not show on DN2 (rms 0.10 vs 0.0065). A master effect has
+roughly 330,000 (DN2) and 450,000 (DT2) instructions per 32-sample block at the assumed clock, i.e. about
+10,000 and 14,000 per output sample. The constant-gain hook costs 192.0 (DN2) and 195.6 (DT2) instructions
+per block (idle-skip difference over 12,750 and 4,500 blocks): 0.03 % of the period. Real hardware has cache
+and memory stalls that this count ignores, and the clock is assumed, so these are upper bounds **[O]**; an
+effect that needs 5,000 instructions per block (a compressor or a drive with a smoothed gain) is under 1 %.
