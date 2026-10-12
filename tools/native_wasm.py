@@ -48,6 +48,10 @@ parser.add_argument(
     action="store_true",
     help="leave the fast tier (feature fast-wasm, off until the page turns it on) out of the coupled core",
 )
+parser.add_argument(
+    "--out",
+    help="output path of the coupled SHARC+ core (default packages/web/.local/emulator-core-sharc.wasm)",
+)
 args = parser.parse_args()
 configured_generated = os.environ.get("SHARC_GEN_DIR")
 generated = configured_generated or str(digi_env.DEFAULT_GENERATED)
@@ -133,7 +137,7 @@ def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], de
 diagnostics = ["diagnostic-profile", "diagnostic-events"] if args.diagnostics else []
 plain_env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
 build(diagnostics, resolve_target_dir(None), plain_env, public / "emulator-core.wasm")
-sharc_wasm = local_dir / "emulator-core-sharc.wasm"
+sharc_wasm = pathlib.Path(args.out) if args.out else local_dir / "emulator-core-sharc.wasm"
 if coupled:
     build(
         [*diagnostics, "sharc", *([] if args.no_fast else ["fast-wasm"])],

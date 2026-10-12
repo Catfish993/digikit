@@ -14,11 +14,15 @@
 //   --chrome PATH (else $CHROME, Google Chrome, Chromium, Edge)
 //   --syx PATH (else $DIGI_EMU_SYX, repo-root Digitone_II_OS1.11.syx, main tree)
 //   --timeout S (900) --headed
+//   env BENCH_CDP_BASE=N (9400): first Chrome CDP port, run i uses N+i; the bench exits 2 if a port it needs is taken
+//   --fast off|desktop|auto|desktop+auto|T,M,F (page default is now desktop for firmware listed in
+//   tools/fast_regions.json; --fast off measures AOT only)
 // The dev server serves the local DSP inputs and the coupled wasm only to
 // loopback; nothing firmware-derived is written by this tool. Timed runs must
 // hold the bench lock: `mise run web:bench` does (exclusive).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +40,7 @@ const runs = Number(opt('runs', 1));
 const jsFlags = opt('js-flags', '');
 const profile = flag('profile');
 const splitOpt = opt('split'); // 0: one worker; 1 (default when isolated): ColdFire and DSP workers
-const fastOpt = opt('fast'); // DSP fast tier of the page: desktop, auto, desktop+auto or T,M,F (default off)
+const fastOpt = opt('fast'); // DSP fast tier of the page: off, desktop, auto, desktop+auto or T,M,F (page default: desktop when fast_regions.json lists the firmware)
 const timeoutS =Number(opt('timeout', 900));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...m) => console.error('[browser_bench]', ...m);
@@ -66,10 +70,23 @@ async function waitHttp(url, ms = 120000) {
   }
 }
 
+// Refuse to measure a server or browser this run did not start: exit 2 when something already listens on the port.
+async function requireFreePort(port) {
+  await new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once('error', (e) => {
+      if (e.code !== 'EADDRINUSE') throw e;
+      console.error(`[browser_bench] port ${port} is in use: another process is listening there (find it with: lsof -iTCP:${port} -sTCP:LISTEN)`);
+      process.exit(2);
+    });
+    probe.listen(port, '127.0.0.1', () => probe.close(() => resolve()));
+  });
+}
+
 function startDevServer(port, syx) {
   const cwd = path.join(root, 'packages', 'web');
   const bin = path.join(cwd, 'node_modules', '.bin', 'astro');
-  const child = spawn(bin, ['dev', '--host', '127.0.0.1', '--port', String(port)], { cwd, env: { ...process.env, DIGI_EMU_SYX: syx, ...(fs.existsSync(path.join(root, 'node_modules')) ? { DIGI_VITE_FS_ALLOW: path.dirname(fs.realpathSync(path.join(root, 'node_modules'))) } : {}) }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(bin, ['dev', '--host', '127.0.0.1', '--port', String(port)], { cwd, env: { ...process.env, DIGI_EMU_SYX: syx, ...(fs.existsSync(path.join(root, 'node_modules')) ? { DIGI_VITE_FS_ALLOW: path.dirname(fs.realpathSync(path.join(root, 'node_modules'))) } : {}) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   child.stdout.on('data', () => {}); child.stderr.on('data', () => {});
   return child;
 }
@@ -184,8 +201,11 @@ const chrome = findChrome();
 let server;
 let url = opt('url');
 try {
+  const cdpBase = Number(process.env.BENCH_CDP_BASE || 9400);
+  for (let i = 0; i < runs; i += 1) await requireFreePort(cdpBase + i);
   if (!url) {
     const port = Number(opt('port', 4399));
+    await requireFreePort(port);
     const syx = findSyx();
     log(`starting astro dev on ${port} (firmware ${syx})`);
     server = startDevServer(port, syx);
@@ -195,7 +215,7 @@ try {
   const out = [];
   for (let i = 0; i < runs; i += 1) {
     log(`run ${i + 1}/${runs} flags=${JSON.stringify(jsFlags)} seconds=${seconds}`);
-    const r = await oneRun(url, chrome, 9400 + i);
+    const r = await oneRun(url, chrome, Number(process.env.BENCH_CDP_BASE || 9400) + i);
     out.push(r);
     log(r.state === 'done' ? `audio/wall ${r.audio_per_wall} (first half ${r.rate_first_half}, last half ${r.rate_last_half})` : `error: ${r.error}`);
   }
@@ -203,5 +223,5 @@ try {
   console.log(JSON.stringify(summary, null, 2));
   if (out.some((r) => r.state !== 'done')) process.exitCode = 1;
 } finally {
-  if (server) server.kill('SIGTERM');
+  if (server) { try { process.kill(-server.pid, 'SIGTERM'); } catch { /* already gone */ } }
 }

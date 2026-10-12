@@ -16,7 +16,7 @@ const localFiles = {
   // Used only by the headless bench (`?bench=1`, tools/browser_bench.mjs): the page cannot pick a file there.
   firmware: process.env.DIGI_EMU_SYX || path.join(repoRoot, 'Digitone_II_OS1.11.syx'),
 };
-const coupledCore = fileURLToPath(new URL('./.local/emulator-core-sharc.wasm', import.meta.url));
+const coupledCore = process.env.DIGI_EMU_SHARC_CORE || fileURLToPath(new URL('./.local/emulator-core-sharc.wasm', import.meta.url));
 const loopback = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 // Answers GET (body) and HEAD (headers only) for one file; false when the file is missing.

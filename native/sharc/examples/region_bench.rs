@@ -47,7 +47,9 @@ mod sol {
 mod concrete;
 
 use sharc_native::rt::{Int, Loop, Pending, Spec, St, Stk, V};
-use sharc_native::{CHAIN_MAX, EXIT_BUDGET, EXIT_NEXT, EXIT_TRAP, Engine};
+use sharc_native::{CHAIN_MAX, EXIT_TRAP, Engine};
+#[cfg(not(target_family = "wasm"))]
+use sharc_native::{EXIT_BUDGET, EXIT_NEXT};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
@@ -448,6 +450,7 @@ fn bench(args: &[String]) {
     let calls = flag(args, "--calls", 4000) as usize;
     let warm = flag(args, "--warm", 500) as usize;
     let reps = flag(args, "--reps", 5) as usize;
+    let agg = args.iter().any(|a| a == "--agg");
     for rep in 0..reps {
         for &pc in &pcs {
             let m = meta(&format!("{dir}/r_{pc:X}.meta"));
@@ -465,11 +468,15 @@ fn bench(args: &[String]) {
             let (mut kmin, mut kmax, mut ksum) = (u64::MAX, 0u64, 0u64);
             let (mut code0, mut pc0) = (None, None);
             let mut varying = false;
+            let mut t_all = None;
             for i in 0..warm + calls {
+                if agg && i == warm {
+                    t_all = Some(Instant::now());
+                }
                 light.restore(&mut e.s);
-                let t = Instant::now();
+                let t = (!agg).then(Instant::now);
                 let (code, k) = std::hint::black_box(call_region(&mut e, entry.f));
-                let dt = t.elapsed().as_nanos() as u64;
+                let dt = t.map_or(0, |t| t.elapsed().as_nanos() as u64);
                 if code0.is_none() {
                     code0 = Some(code);
                     pc0 = Some(e.s.pc_sw);
@@ -482,6 +489,25 @@ fn bench(args: &[String]) {
                     kmax = kmax.max(k);
                     ksum += k;
                 }
+            }
+            if let Some(t0) = t_all {
+                let total = t0.elapsed().as_nanos();
+                // The restore alone, timed the same way, is subtracted.
+                let t1 = Instant::now();
+                for _ in 0..calls {
+                    light.restore(&mut e.s);
+                    std::hint::black_box(&mut e.s);
+                }
+                let restore_total = t1.elapsed().as_nanos();
+                light.restore(&mut e.s);
+                let per = total.saturating_sub(restore_total) as f64 / calls as f64;
+                println!(
+                    "{{\"region\":\"{pc:X}\",\"rep\":{rep},\"calls\":{calls},\"insns_min\":{kmin},\"insns_max\":{kmax},\"insns_mean\":{:.3},\"code\":{},\"pc_after\":{},\"exit_varies\":{varying},\"median_ns\":{per:.1},\"trim_ns\":{per:.1},\"p10_ns\":{per:.1},\"p90_ns\":{per:.1},\"mean_ns\":{per:.1},\"agg\":true,\"total_ns\":{total},\"restore_total_ns\":{restore_total}}}",
+                    ksum as f64 / calls as f64,
+                    code0.unwrap(),
+                    pc0.unwrap(),
+                );
+                continue;
             }
             times.sort_unstable();
             let mean = times.iter().sum::<u64>() as f64 / times.len() as f64;
@@ -509,6 +535,7 @@ fn bench(args: &[String]) {
 /// `bench`. The fast region is built (and compiled) before timing starts;
 /// its compile time is reported.
 /// `fe.run` with the per-phase marks of bucket B (feature `fast-prof`).
+#[cfg(not(target_family = "wasm"))]
 fn prof_run(fe: &mut sharc_native::fast::FastEngine, s: &mut St, pc: u32, _b: usize) -> u32 {
     use sharc_native::fast::FastTier;
     #[cfg(feature = "fast-prof")]
@@ -519,6 +546,7 @@ fn prof_run(fe: &mut sharc_native::fast::FastEngine, s: &mut St, pc: u32, _b: us
     c
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn fast_bench(args: &[String]) {
     use sharc_native::fast::{FastEngine, FastTier};
     let image = std::fs::read(&args[0]).expect("image");
@@ -682,6 +710,7 @@ pub(crate) fn host_state(e: &Engine) -> String {
 /// This deliberately does not assume that one tail
 /// block is sufficient: CFG exits and a capped generated chain may need zero,
 /// one, or several successors.
+#[cfg(not(target_family = "wasm"))]
 fn fast_to_boundary(
     e: &mut Engine,
     fe: &mut sharc_native::fast::FastEngine,
@@ -733,6 +762,7 @@ fn fast_to_boundary(
     Ok(finish_call(e, plan, code))
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn emit_fast_refusal(pc: u32, reason: &str) {
     println!(
         "{{\"region\":\"{pc:X}\",\"status\":\"refused\",\"reason\":\"{}\"}}",
@@ -744,10 +774,12 @@ fn emit_fast_refusal(pc: u32, reason: &str) {
 /// budget exit where the uncapped reference reports next.  That is acceptable
 /// only after the full state/boundary checks below; traps and every other exit
 /// mismatch remain refusals.
+#[cfg(not(target_family = "wasm"))]
 fn exits_match(aot: u32, fast: u32) -> bool {
     aot == fast || (aot == EXIT_NEXT && fast == EXIT_BUDGET)
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn exit_normalized(aot: u32, fast: u32) -> bool {
     aot == EXIT_NEXT && fast == EXIT_BUDGET
 }
@@ -757,6 +789,7 @@ fn exit_normalized(aot: u32, fast: u32) -> bool {
 /// AOT establishes a retired-instruction boundary; fast plus generated
 /// successors must reach it and produce byte-identical canonical exports and
 /// identical dispatcher-visible state before any timing is emitted.
+#[cfg(not(target_family = "wasm"))]
 fn fast_compare(args: &[String]) {
     use sharc_native::fast::FastEngine;
     let image = std::fs::read(&args[0]).expect("image");
@@ -972,6 +1005,7 @@ fn fast_compare(args: &[String]) {
 /// deliberately separate from timing: they exercise the u32 containment
 /// rule, including a span whose exclusive end is 2^32, before a captured
 /// loop is allowed to claim a full completion.
+#[cfg(not(target_family = "wasm"))]
 fn fast_guard_check() {
     use sharc_native::fast::glue::Ctx;
     use sharc_native::fast::ir::{
@@ -1104,8 +1138,11 @@ fn main() {
     match args.first().map(String::as_str) {
         Some("capture") => capture(&args[1..]),
         Some("bench") => bench(&args[1..]),
+        #[cfg(not(target_family = "wasm"))]
         Some("fast-bench") => fast_bench(&args[1..]),
+        #[cfg(not(target_family = "wasm"))]
         Some("fast-compare") => fast_compare(&args[1..]),
+        #[cfg(not(target_family = "wasm"))]
         Some("fast-guard-check") => fast_guard_check(),
         #[cfg(sharc_gen)]
         Some("concrete-compare") => concrete::compare(&args[1..]),

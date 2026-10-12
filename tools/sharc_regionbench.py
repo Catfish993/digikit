@@ -9,6 +9,9 @@ function from that state (native/sharc/examples/region_bench.rs).
     sharc_regionbench.py gen [--variant base] [--tools-dir DIR] [-- RSGEN ARGS]
     sharc_regionbench.py capture [--variant base]
     sharc_regionbench.py bench [--variant base] [--regions PC,..] [--reps 5]
+        [--engine native|node|bun] [--agg] [--prod-gen]
+        [--engine-args "--liftoff-only"] [--engine-bin PATH]
+    sharc_regionbench.py ratio A.jsonl B.jsonl
     sharc_regionbench.py compare A B [--rounds 5]
     sharc_regionbench.py check [--variant base]
     sharc_regionbench.py fast-bench [--variant base] [--regions PC,..] [--reps 5]
@@ -65,6 +68,8 @@ SOL = os.path.join(BENCH, "sol", "sol.rs")
 DEFAULT_REGIONS = "1C399A,1C3862,1C364F,1C2484,1C5765,B823DB"
 TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
+WASM_TRIPLE = "wasm32-wasip1"
+WASM_RUNNER = os.path.join(ROOT, "tools", "wasm_regionbench.mjs")
 RSGEN_BASE = [
     "--model-safe",
     "--explicit-memory-model",
@@ -287,8 +292,11 @@ def cmd_build(args) -> str:
             + repr(sorted(profile_env.items()))
         ).encode()
     ).hexdigest()
-    exe = os.path.join(vdir, "region_bench")
-    stamp = os.path.join(vdir, "build.json")
+    wasm = getattr(args, "wasm", False)
+    if wasm and pgo:
+        sys.exit("--wasm and --pgo do not combine")
+    exe = os.path.join(vdir, "region_bench.wasm" if wasm else "region_bench")
+    stamp = os.path.join(vdir, "build-wasm.json" if wasm else "build.json")
     # A variant with a FROZEN file keeps its binary whatever the sources do
     # (an A/B against a build of older sources).
     if os.path.exists(exe) and os.path.exists(os.path.join(vdir, "FROZEN")):
@@ -329,6 +337,10 @@ def cmd_build(args) -> str:
             target = str(nt.target_dir(gen, "pgo-" + tag))
         target_args = ["--target", TRIPLE]
         built_dir = os.path.join(target, TRIPLE, "release", "examples")
+    elif wasm:
+        target = str(nt.target_dir(gen))
+        target_args = ["--target", WASM_TRIPLE]
+        built_dir = os.path.join(target, WASM_TRIPLE, "release", "examples")
     else:
         target = str(nt.target_dir(gen))
         target_args = []
@@ -343,23 +355,23 @@ def cmd_build(args) -> str:
             + ["--target-dir", target],
             env=env,
         )
-    built = os.path.join(built_dir, "region_bench")
+    built = os.path.join(built_dir, os.path.basename(exe))
     with open(built, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
     subprocess.run(["cp", built, exe], check=True)
     with open(exe + ".sha256", "w") as fh:
-        fh.write("%s  region_bench\n" % digest)
+        fh.write("%s  %s\n" % (digest, os.path.basename(exe)))
+    stamp_data = {
+        "key": key,
+        "build_seconds": round(secs, 1),
+        "pgo": pgo,
+        "profile_env": profile_env,
+        "sha256": digest,
+    }
+    if wasm:
+        stamp_data["target"] = WASM_TRIPLE
     with open(stamp, "w") as fh:
-        json.dump(
-            {
-                "key": key,
-                "build_seconds": round(secs, 1),
-                "pgo": pgo,
-                "profile_env": profile_env,
-                "sha256": digest,
-            },
-            fh,
-        )
+        json.dump(stamp_data, fh)
     print("build %s: %.1fs sha256 %s" % (args.variant, secs, digest[:12]))
     return exe
 
@@ -408,22 +420,44 @@ def pick_entries(names: list[str]) -> dict[str, str]:
     return picked
 
 
-def run_bench(exe: str, names: list[str], reps: int, calls: int) -> list[dict]:
+def run_bench(
+    exe: str,
+    names: list[str],
+    reps: int,
+    calls: int,
+    engine: str = "native",
+    agg: bool = False,
+    engine_args: str = "",
+    engine_bin: str | None = None,
+) -> list[dict]:
     """Rows keyed by region name (entry in row['entry'])."""
     entries = pick_entries(names)
     back = {e: n for n, e in entries.items()}
-    out = subprocess.run(
-        [exe, "bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
-        + ["--reps", str(reps), "--calls", str(calls)],
-        check=True,
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    ).stdout
+    # node/bun run the wasm build of the example through tools/wasm_regionbench.mjs.
+    if engine == "native":
+        prefix = [exe]
+    else:
+        prefix = [engine_bin or engine, *shlex.split(engine_args)]
+        prefix += [WASM_RUNNER, exe]
+    command = (
+        prefix
+        + ["bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
+        + ["--reps", str(reps), "--calls", str(calls)]
+        + (["--agg"] if agg else [])
+    )
+    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    if done.returncode != 0:
+        print("command: %s" % shlex.join(command), file=sys.stderr)
+        print("\n".join(done.stderr.splitlines()[-40:]), file=sys.stderr)
+        sys.exit("bench failed with exit code %d" % done.returncode)
+    out = done.stdout
     rows = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
     for r in rows:
         r["entry"] = r["region"]
         r["region"] = back[r["entry"]]
+        r["engine"] = engine
+        if engine != "native":
+            r["engine_args"] = engine_args
     return rows
 
 
@@ -467,17 +501,68 @@ def print_table(table: list[tuple]) -> None:
 
 
 def cmd_bench(args) -> None:
+    args.wasm = args.engine != "native"
+    if args.prod_gen and args.variant == "base":
+        # Keep the production-gen binary apart from the mini-gen variant.
+        args.variant = "prod-bench"
+    os.makedirs(variant_dir(args.variant), exist_ok=True)
     exe = cmd_build(args)
     names = args.regions.split(",")
     t = time.perf_counter()
     with benchlock("exclusive", "regionbench bench"):
-        rows = run_bench(exe, names, args.reps, args.calls)
+        rows = run_bench(
+            exe,
+            names,
+            args.reps,
+            args.calls,
+            args.engine,
+            args.agg,
+            args.engine_args,
+            args.engine_bin,
+        )
     secs = time.perf_counter() - t
-    path = os.path.join(variant_dir(args.variant), "bench-%d.jsonl" % int(time.time()))
+    if args.engine != "native":
+        slug = re.sub(r"[^A-Za-z0-9]+", "_", args.engine_args)[:40]
+        stem = "bench-%s%s-%d.jsonl" % (
+            args.engine,
+            "-" + slug if slug else "",
+            int(time.time()),
+        )
+    elif args.agg:
+        stem = "bench-agg-%d.jsonl" % int(time.time())
+    else:
+        stem = "bench-%d.jsonl" % int(time.time())
+    path = os.path.join(variant_dir(args.variant), stem)
     with open(path, "w") as fh:
         fh.write("".join(json.dumps(r) + "\n" for r in rows))
     print_table(summarize(rows))
     print("bench run: %.1fs -> %s" % (secs, path))
+
+
+def read_rows(path: str) -> list[dict]:
+    with open(path) as fh:
+        return [json.loads(line) for line in fh if line.startswith("{")]
+
+
+def cmd_ratio(args) -> None:
+    """Per-region B/A of the median trimmed ns/call of two bench-*.jsonl files."""
+    a = {t[0]: t for t in summarize(read_rows(args.a))}
+    b = {t[0]: t for t in summarize(read_rows(args.b))}
+    common = [k for k in a if k in b]
+    both = [k for k in common if a[k][2] > 0 and b[k][2] > 0]
+    skipped = [k for k in common if k not in both]
+    lines = sorted(both, key=lambda k: b[k][2] / a[k][2], reverse=True)
+    print("region/entry    insns/call   A ns/call   B ns/call     B/A")
+    for k in lines:
+        print(
+            "%-15s %10.1f %11.1f %11.1f %7.3f"
+            % (k, a[k][1], a[k][2], b[k][2], b[k][2] / a[k][2])
+        )
+    if skipped:
+        print("skipped (<= 0 ns after restore subtraction): " + ", ".join(skipped))
+    sum_a = sum(a[k][2] for k in both)
+    sum_b = sum(b[k][2] for k in both)
+    print("overall B/A (weighted by A ns/call): %.3f" % (sum_b / sum_a))
 
 
 def cmd_fast_bench(args) -> None:
@@ -739,6 +824,18 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--min-frame", type=int, default=4620)
     b = common(sub.add_parser("bench", help="build and time one variant"))
     b.add_argument("--reps", type=int, default=5)
+    b.add_argument("--engine", choices=["native", "node", "bun"], default="native")
+    b.add_argument("--agg", action="store_true", help="one clock around all calls")
+    b.add_argument(
+        "--prod-gen",
+        action="store_true",
+        help="use the production DN2 core (variant prod-bench unless --variant)",
+    )
+    b.add_argument("--engine-args", default="", help="node/bun flags, shlex-split")
+    b.add_argument("--engine-bin", help="node/bun executable (default: on PATH)")
+    r = sub.add_parser("ratio", help="per-region B/A of two bench jsonl files")
+    r.add_argument("a")
+    r.add_argument("b")
     k = common(sub.add_parser("compare", help="alternating A/B"), variant=False)
     k.add_argument("a")
     k.add_argument("b")
@@ -766,6 +863,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd_bench(args)
     elif args.cmd == "compare":
         cmd_compare(args)
+    elif args.cmd == "ratio":
+        cmd_ratio(args)
     elif args.cmd == "fast-bench":
         cmd_fast_bench(args)
     elif args.cmd == "fresh-fast":

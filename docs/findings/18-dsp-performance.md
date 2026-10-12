@@ -1774,3 +1774,27 @@ function and checker" measured ~0.9 ns, so they do not hold.
 - Method for any next attempt: a ceiling from the measured per-call cost of the current path (never instructions x
   an average), a one-function or one-region proof (`mise run hle-check`, the region bench), and a stop when the
   measured gain is under 70% of the model.
+
+## Browser: where the wasm penalty is 2026-10-12 **[D]**
+
+- **[D]** The page arms the fast tier `desktop` by default when tools/fast_regions.json has an entry for the firmware
+  (DN2 1.11 only; a DT2 image arms nothing). `?fast=off` turns it off. DN2 in headless Chromium, 3 runs of 10 s: DSP
+  worker 2.07-2.21 s per audio s and 0.471 audio s per wall s by default, against 2.45-2.48 and 0.411 with
+  `?fast=off`.
+- **[D]** Region micro-benchmark under wasm: `tools/sharc_regionbench.py bench --agg --engine node|bun` runs the same
+  AOT region entries from the same captured states, built for wasm32-wasip1 and run by tools/wasm_regionbench.mjs.
+  Instruction counts and exit PCs are equal on native, node and bun. `ratio A B` prints the per-region table.
+- **[D]** Production DN2 core, 24 regions (all 51 captured states), 16000 calls and 7 reps. For the 8 regions of at
+  least 1 µs native: node (V8 13.6) is 1.57x native and bun (JavaScriptCore) 1.33x. Six default regions on the mini
+  core: node 1.63x, bun 1.38x. Same wasm bytes, so most of the penalty is specific to V8.
+- **[D]** V8 flag sweep (node, six regions, ratio to node default): `--liftoff-only` 1.42 (so tier-up works);
+  `--no-liftoff` 0.99; `--no-wasm-bounds-checks` 0.99; `--wasm-enforce-bounds-checks` 1.04 (so the trap handler is
+  on); `--no-wasm-stack-checks` 0.99; `--no-wasm-loop-unrolling` 1.00; `--no-turboshaft-wasm-load-elimination` 0.98;
+  a larger inlining budget 0.99; `--no-wasm-inlining` 1.06; `--no-wasm-loop-peeling` 1.06. No flag closes the gap.
+- **[O]** The whole page in Chrome (DSP 2.15 s per audio s against about 1.11 native without PGO, about 1.9x) costs
+  more than the region ratio (1.6x) predicts. About 0.35 s per audio s is outside the AOT region code: candidates are
+  dispatch (`Engine::step`, 5% self in the CDP profile), JS glue (8.5% "other" in the DSP worker) and kernel
+  crossings. Not yet attributed.
+- Caveats: the bench restores a light state before each call. The restore loop is 47-94% of the measured time and is
+  subtracted, so regions under about 1 µs are noise. Node 24 runs V8 13.6; Chrome runs a newer V8. PGO for wasm was
+  not tried: cargo's crate hashes include the target triple, so a native profile would likely match no wasm function.

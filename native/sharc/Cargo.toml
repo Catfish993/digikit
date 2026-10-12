@@ -14,7 +14,7 @@ description = "Native SHARC+ core generated from tools/sharc_core (tools/sharc_t
 sharc-rt = { path = "../sharc-rt" }
 sharc-gen = { path = "../sharc-gen" }
 
-[dev-dependencies]
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 sharc-fast-cl = { path = "../sharc-fast-cl" }
 
 # fast-prof: per-phase cost marks in the fast tier's glue (region_bench fast-bench).

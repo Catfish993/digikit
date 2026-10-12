@@ -9,19 +9,22 @@ import type { CardBridge, CardStatus } from './cards';
 const pcs = (list: string | undefined) => (list ?? '').split(',').filter((x) => x.trim()).map((x) => parseInt(x.trim(), 16));
 
 /**
- * The DSP fast tier of the page (dev page, `?fast=`): off by default; `desktop` is the desktop
+ * The DSP fast tier of the page (dev page, `?fast=`): the default is `desktop` when tools/fast_regions.json
+ * has an entry for the firmware, `?fast=off` disables it; `desktop` is the desktop
  * configuration (the static regions and cluster roots of tools/fast_regions.json for this
  * firmware); `auto` or `T,M,F` is run-time selection (threshold, min insns, follow); `desktop+auto`
  * both. A firmware without an entry in the table gets no static regions.
  */
 export async function fastConfig(syx: Uint8Array, query = new URLSearchParams(location.search).get('fast')): Promise<[number, number, number] | FastRegions | undefined> {
-  if (!query) return undefined;
+  if (query === '' || query === 'off') return undefined;
+  const table = fastRegionTable as Record<string, { fast_regions?: string; blocktrans?: string }>;
+  const entry = table[await sha256Hex(syx)];
+  if (query === null && !entry) return undefined;
   const auto = (text: string): [number, number, number] => { const [t, m, f] = text.split(',').map(Number); return [t || 256, m || 64, f || 0]; };
   if (query === 'auto') return [256, 64, 0];
-  if (!query.startsWith('desktop')) return auto(query);
-  const entry = (fastRegionTable as Record<string, { fast_regions?: string; blocktrans?: string }>)[await sha256Hex(syx)];
+  if (query !== null && !query.startsWith('desktop')) return auto(query);
   const config: FastRegions = { regions: pcs(entry?.fast_regions), roots: pcs(entry?.blocktrans) };
-  if (query.startsWith('desktop+auto')) config.auto = [256, 64];
+  if (query?.startsWith('desktop+auto')) config.auto = [256, 64];
   return config;
 }
 export interface RuntimeStatus {
