@@ -56,10 +56,10 @@ parser.add_argument(
 )
 parser.add_argument(
     "--wasm-opt",
-    default="",
+    default="-O3",
     metavar="STR",
-    help="run wasm-opt with these extra flags (e.g. '-O3') on the coupled SHARC+ core only; "
-    "the raw build stays next to the output as <stem>.raw.wasm",
+    help="run wasm-opt with these flags on the coupled SHARC+ core only (default -O3; "
+    "--wasm-opt= turns it off); the raw build stays next to the output as <stem>.raw.wasm",
 )
 args = parser.parse_args()
 configured_generated = os.environ.get("SHARC_GEN_DIR")
