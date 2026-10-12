@@ -224,6 +224,43 @@ impl IntcBank {
         (iprl, iprh)
     }
 
+    /// The software-forced source (INTFRCH/INTFRCL) that would be offered
+    /// next, ignoring the CPU IPL: the highest (level, vector) among forced,
+    /// unmasked sources with a nonzero ICR level. `skip_vector` is a source
+    /// another model already delivers (INTC1 source 63, vector 191, is the
+    /// SSI model's). A forced source stays asserted until the guest clears
+    /// its bit, so the caller offers it only above the live IPL.
+    pub fn forced_candidate(&self, skip_vector: u16) -> Option<(u16, u8)> {
+        let mut best: Option<(u16, u8)> = None;
+        for (i, c) in self.ctrl.iter().enumerate() {
+            let (lo, hi) = (c.u32_at(INTFRCL), c.u32_at(INTFRCH));
+            if lo == 0 && hi == 0 {
+                continue;
+            }
+            for src in 1u32..64 {
+                let bit = if src < 32 {
+                    lo >> src
+                } else {
+                    hi >> (src - 32)
+                } & 1;
+                if bit == 0 {
+                    continue;
+                }
+                let vector = VECTOR_BASE[i] + src as u16;
+                if vector == skip_vector {
+                    continue;
+                }
+                let Some(level) = self.level_for_vector(vector) else {
+                    continue;
+                };
+                if best.is_none_or(|(bv, bl)| (level, vector) > (bl, bv)) {
+                    best = Some((vector, level));
+                }
+            }
+        }
+        best
+    }
+
     pub fn hw_intfrc_bit(&self, ctrl_idx: usize, src: u32) -> bool {
         let c = &self.ctrl[ctrl_idx];
         if src < 32 {
