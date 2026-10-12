@@ -5,8 +5,10 @@
     uv run python tools/verify.py --full           # every step, with the full 134-scenario tier sweep
     uv run python tools/verify.py --full --dt2     # plus the full DT2 FX tier sweep
     uv run python tools/verify.py --only pins,check
+    uv run python tools/verify.py --jobs 1         # sequential (default: half the CPUs in parallel)
 
-Prints the chosen steps, then one PASS/FAIL line per step; each step's output is in
+Prints the chosen steps, then one PASS/FAIL line per step as each finishes (independent steps
+run in parallel after the builds they need; each step's output is printed whole); each step's output is in
 out/runs/verify/<stamp>/<step>.log. Exits 1 when any step failed.
 """
 
@@ -17,13 +19,16 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import benchlock  # noqa: E402
 import coupled  # noqa: E402
 import digi_env  # noqa: E402
 import fastcov  # noqa: E402
@@ -157,6 +162,8 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
     """The steps the changed files need, in gate order."""
     wanted: set[str] = set()
     for path in files:
+        if path.endswith(".md"):
+            continue  # documentation selects no steps
         rule = next(
             (steps for prefixes, steps in RULES if path.startswith(prefixes)), FALLBACK
         )
@@ -178,19 +185,32 @@ def pytest_ran(text: str) -> str | None:
 
 
 class Gate:
+    """Collects each step's output lines in a per-thread buffer, so parallel steps
+    print whole and in order when they finish."""
+
     def __init__(self, out: Path) -> None:
         self.out = out
         self.failed: list[str] = []
+        self.local = threading.local()
+        self.lock = threading.Lock()
+
+    def say(self, line: str) -> None:
+        buf = getattr(self.local, "lines", None)
+        if buf is None:
+            print(line, flush=True)
+        else:
+            buf.append(line)
 
     def report(
         self, name: str, problem: str | None, seconds: float, text: str = ""
     ) -> None:
         if problem is None:
-            print(f"PASS {name} ({seconds:.0f} s)", flush=True)
+            self.say(f"PASS {name} ({seconds:.0f} s)")
             return
-        self.failed.append(name)
+        with self.lock:
+            self.failed.append(name)
         tail = " | ".join(text.strip().splitlines()[-3:])
-        print(f"FAIL {name} ({seconds:.0f} s): {problem}: {tail}", flush=True)
+        self.say(f"FAIL {name} ({seconds:.0f} s): {problem}: {tail}")
 
     def run(
         self,
@@ -202,7 +222,8 @@ class Gate:
     ) -> None:
         """Run one step, log its output and print its line."""
         start = time.monotonic()
-        proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
+        with benchlock.hold("shared", f"verify {name}"):
+            proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
         text = proc.stdout + proc.stderr
         (self.out / f"{name}.log").write_text(text)
         if proc.returncode:
@@ -232,9 +253,10 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
             cmd += ["--no-build", "--jobs", jobs, "--out", str(report)]
             if dt2:
                 cmd += ["--device", "dt2", "--dt2-card"]
-            proc = subprocess.run(
-                cmd, cwd=ROOT, env=env, capture_output=True, text=True
-            )
+            with benchlock.hold("shared", f"verify {name}"):
+                proc = subprocess.run(
+                    cmd, cwd=ROOT, env=env, capture_output=True, text=True
+                )
             text = proc.stdout + proc.stderr
             (report.parent / "run.log").write_text(text)
             # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
@@ -252,7 +274,7 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     )
     gate.report(name, problem, time.monotonic() - start)
     if not differ:
-        print(f"     {len(shas)} of {len(shas)} scenarios equal", flush=True)
+        gate.say(f"     {len(shas)} of {len(shas)} scenarios equal")
 
 
 def desktop_check(gate: Gate) -> None:
@@ -270,6 +292,168 @@ def web_check(gate: Gate) -> None:
     gate.run("web-types", ["npx", "astro", "check"], cwd=web)
 
 
+def default_step_jobs() -> int:
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
+# Steps that need a built binary: DN2 steps the DN2 coupled-run, DT2 steps the DT2 one.
+# The build nodes run first; the others are independent of each other.
+DN2_BINARY = ("pins", "check", "check-no-aot", "tier-quick", "tier-sweep")
+DT2_BINARY = ("dt2-tone", "dt2-check", "dt2-tier-quick", "dt2-tier-sweep")
+# Longest first, so the pool is not left waiting on one long step at the end.
+PRIORITY = (
+    "build",
+    "build-dt2",
+    "tier-sweep",
+    "dt2-tier-sweep",
+    "dt2-tier-quick",
+    "check-no-aot",
+    "check",
+    "tier-quick",
+    "dt2-check",
+    "pins",
+)
+
+
+def plan(steps: tuple[str, ...]) -> tuple[list[str], dict[str, tuple[str, ...]]]:
+    """The nodes to run (steps plus the builds they need) and each node's dependencies."""
+    nodes = list(steps)
+    if any(s in DN2_BINARY for s in steps) and "build" not in nodes:
+        nodes.append("build")
+    if any(s in DT2_BINARY for s in steps) and "build-dt2" not in nodes:
+        nodes.append("build-dt2")
+    deps: dict[str, tuple[str, ...]] = {}
+    for node in nodes:
+        if node in DN2_BINARY:
+            deps[node] = ("build",)
+        elif node in DT2_BINARY:
+            deps[node] = ("build-dt2",)
+        else:
+            deps[node] = ()
+    # "build" also builds DT2 when only DT2 steps need it, via its own node; when the
+    # user picked "build" and DT2 steps, build-dt2 is added above.
+    order = {n: i for i, n in enumerate(PRIORITY)}
+    nodes.sort(
+        key=lambda n: (order.get(n, len(PRIORITY)), STEPS.index(n) if n in STEPS else 0)
+    )
+    return nodes, deps
+
+
+def run_step(gate: Gate, step: str) -> None:
+    scenario_tests = [
+        *PY,
+        "-m",
+        "pytest",
+        "tests/scenarios",
+        "--slow",
+        "-q",
+        "--no-build",
+    ]
+    jobs = str(coupled.default_jobs())
+    if step == "build":
+        gate.run("build", [*PY, "tools/coupled.py", "build"])
+    elif step == "build-dt2":
+        gate.run("build-dt2", [*PY, "tools/coupled.py", "build", "--device", "dt2"])
+    elif step == "desktop":
+        desktop_check(gate)
+    elif step == "web":
+        web_check(gate)
+    elif step == "pins":
+        cmd = [
+            *PY,
+            "tools/coupled.py",
+            "scenario",
+            "--all",
+            "--no-build",
+            "--jobs",
+            jobs,
+        ]
+        gate.run("pins", cmd)
+    elif step == "check":
+        gate.run("check", scenario_tests, check=pytest_ran)
+    elif step == "check-no-aot":
+        gate.run("check-no-aot", scenario_tests, env=no_aot_env(), check=pytest_ran)
+    elif step == "tier-quick":
+        tier(gate, "tier-quick", TIER_QUICK_EVERY)
+    elif step == "tier-sweep":
+        tier(gate, "tier-sweep", 1)
+    elif step == "python-tests":
+        gate.run(
+            "python-tests", [*PY, "-m", "pytest", "-q", *PY_TESTS], check=pytest_ran
+        )
+    elif step == "rust-tests":
+        cmd = [
+            *PY,
+            "tools/rust_ws.py",
+            "test",
+            "--",
+            "-p",
+            "sharc-native",
+            "-p",
+            "sharc-rt",
+        ]
+        gate.run("rust-tests", cmd)
+    elif step == "card":
+        gate.run("card", [*PY, "tools/card_check.py"])
+    elif step == "dt2-tone":
+        gate.run("dt2-tone", [*PY, "tools/dt2_sample_check.py"])
+    elif step == "dt2-check":
+        gate.run("dt2-check", [*scenario_tests, "--device", "dt2"], check=pytest_ran)
+    elif step == "dt2-tier-quick":
+        tier(gate, "dt2-tier-quick", TIER_QUICK_EVERY, "dt2")
+    elif step == "dt2-tier-sweep":
+        tier(gate, "dt2-tier-sweep", 1, "dt2")
+
+
+def run_steps(gate: Gate, steps: tuple[str, ...], jobs: int) -> list[tuple[str, float]]:
+    """Run the steps in a pool of JOBS threads, after the builds they need.
+
+    Each step's output is buffered and printed whole when it finishes. A step whose
+    build failed is skipped. Returns (node, seconds) in completion order."""
+    nodes, deps = plan(steps)
+    done: set[str] = set()
+    failed_nodes: set[str] = set()
+    pending = list(nodes)
+    running: dict[object, tuple[str, float]] = {}
+    times: list[tuple[str, float]] = []
+
+    def work(node: str) -> list[str]:
+        gate.local.lines = []
+        try:
+            run_step(gate, node)
+        except BaseException as exc:  # a crashed step is a failed step
+            with gate.lock:
+                gate.failed.append(node)
+            gate.say(f"FAIL {node}: {type(exc).__name__}: {exc}")
+        return gate.local.lines
+
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+        while pending or running:
+            for node in list(pending):
+                if any(d in failed_nodes for d in deps[node]):
+                    pending.remove(node)
+                    failed_nodes.add(node)
+                    print(f"SKIP {node}: its build failed", flush=True)
+                    with gate.lock:
+                        gate.failed.append(node)
+                elif all(d in done for d in deps[node]) and len(running) < max(1, jobs):
+                    pending.remove(node)
+                    running[pool.submit(work, node)] = (node, time.monotonic())
+            if not running:
+                continue
+            finished, _ = wait(list(running), return_when=FIRST_COMPLETED)
+            for fut in finished:
+                node, began = running.pop(fut)
+                lines = fut.result()
+                print("\n".join(lines), flush=True)
+                times.append((node, time.monotonic() - began))
+                if any(line.startswith("FAIL") for line in lines):
+                    failed_nodes.add(node)
+                else:
+                    done.add(node)
+    return times
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run the exactness gate for what changed, one line per step."
@@ -285,6 +469,12 @@ def main(argv: list[str] | None = None) -> int:
         "--dt2",
         action="store_true",
         help="with --full: the full DT2 FX tier sweep (about 35 min more)",
+    )
+    ap.add_argument(
+        "--jobs",
+        type=int,
+        default=0,
+        help="steps run at once (default: half the CPUs); 1 is sequential",
     )
     args = ap.parse_args(argv)
     if args.only:
@@ -308,70 +498,12 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
     gate = Gate(out)
-    scenario_tests = [
-        *PY,
-        "-m",
-        "pytest",
-        "tests/scenarios",
-        "--slow",
-        "-q",
-        "--no-build",
-    ]
-    jobs = str(coupled.default_jobs())
-    for step in steps:
-        if step == "build":
-            gate.run("build", [*PY, "tools/coupled.py", "build"])
-        elif step == "desktop":
-            desktop_check(gate)
-        elif step == "web":
-            web_check(gate)
-        elif step == "pins":
-            cmd = [
-                *PY,
-                "tools/coupled.py",
-                "scenario",
-                "--all",
-                "--no-build",
-                "--jobs",
-                jobs,
-            ]
-            gate.run("pins", cmd)
-        elif step == "check":
-            gate.run("check", scenario_tests, check=pytest_ran)
-        elif step == "check-no-aot":
-            gate.run("check-no-aot", scenario_tests, env=no_aot_env(), check=pytest_ran)
-        elif step == "tier-quick":
-            tier(gate, "tier-quick", TIER_QUICK_EVERY)
-        elif step == "tier-sweep":
-            tier(gate, "tier-sweep", 1)
-        elif step == "python-tests":
-            gate.run(
-                "python-tests", [*PY, "-m", "pytest", "-q", *PY_TESTS], check=pytest_ran
-            )
-        elif step == "rust-tests":
-            cmd = [
-                *PY,
-                "tools/rust_ws.py",
-                "test",
-                "--",
-                "-p",
-                "sharc-native",
-                "-p",
-                "sharc-rt",
-            ]
-            gate.run("rust-tests", cmd)
-        elif step == "card":
-            gate.run("card", [*PY, "tools/card_check.py"])
-        elif step == "dt2-tone":
-            gate.run("dt2-tone", [*PY, "tools/dt2_sample_check.py"])
-        elif step == "dt2-check":
-            gate.run(
-                "dt2-check", [*scenario_tests, "--device", "dt2"], check=pytest_ran
-            )
-        elif step == "dt2-tier-quick":
-            tier(gate, "dt2-tier-quick", TIER_QUICK_EVERY, "dt2")
-        elif step == "dt2-tier-sweep":
-            tier(gate, "dt2-tier-sweep", 1, "dt2")
+    jobs = args.jobs if args.jobs else default_step_jobs()
+    start = time.monotonic()
+    times = run_steps(gate, steps, jobs)
+    for name, seconds in times:
+        print(f"  {name:<16} {seconds:6.0f} s", flush=True)
+    print(f"verify: wall {time.monotonic() - start:.0f} s with {jobs} jobs", flush=True)
     if gate.failed:
         print(f"verify: FAILED: {', '.join(gate.failed)}", flush=True)
         return 1
