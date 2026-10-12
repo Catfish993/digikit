@@ -95,7 +95,7 @@ pub fn boot_to_ready(
 
     let mut emulator = Emulator::new(syx, Some(card))?;
     let profile = emulator.diagnostics();
-    let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
+    let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
     let dsp = registry
         .dsp_for(&profile.device, &profile.version)
         .cloned()

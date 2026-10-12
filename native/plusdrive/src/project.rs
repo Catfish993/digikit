@@ -57,13 +57,53 @@ fn word(bytes: &[u8], at: usize) -> Option<u32> {
         .map(u32::from_be_bytes)
 }
 
+/// Whether `main` holds a stream at `at`: a plausible length, then a byte sum
+/// that matches the checksum word.
+fn is_stream(main: &[u8], at: usize) -> bool {
+    let (Some(length), Some(sum)) = (word(main, at), word(main, at + 4)) else {
+        return false;
+    };
+    let length = length as usize;
+    if !(0x1000..=0x10_0000).contains(&length) {
+        return false;
+    }
+    main.get(at + 8..at + 8 + length).is_some_and(|payload| {
+        payload
+            .iter()
+            .fold(0u32, |total, byte| total.wrapping_add(u32::from(*byte)))
+            == sum
+    })
+}
+
+/// Where the built-in project stream starts in MAIN. 1.16 has it at
+/// `BUILTIN_STREAM_OFFSET`; a relinked build (1.17) moves it with the same
+/// bytes, so look for the stream by structure (length, byte sum, and a
+/// depacked container that validates) and fall back to the 1.16 offset.
+fn stream_offset(main: &[u8]) -> usize {
+    let valid = |at: usize| {
+        is_stream(main, at)
+            && main.get(at..).is_some_and(|stream| {
+                depack_section(stream, at, MAX_DEPACKED_BYTES)
+                    .is_ok_and(|container| validate_container(&container).is_ok())
+            })
+    };
+    if valid(BUILTIN_STREAM_OFFSET) {
+        return BUILTIN_STREAM_OFFSET;
+    }
+    (0..main.len().saturating_sub(8))
+        .step_by(4)
+        .find(|&at| is_stream(main, at) && valid(at))
+        .unwrap_or(BUILTIN_STREAM_OFFSET)
+}
+
 fn extract(seed: ProjectSeed<'_>) -> Result<Vec<u8>, ProjectError> {
     if seed.contract != PlusdriveProjectContract::Dt2V3Default116 {
         return Err(ProjectError::UnsupportedContract);
     }
+    let at = stream_offset(seed.main);
     let stream = seed
         .main
-        .get(BUILTIN_STREAM_OFFSET..)
+        .get(at..)
         .ok_or(ProjectError::StreamOutOfBounds)?;
     let length = word(stream, 0).ok_or(ProjectError::InvalidStreamHeader)? as usize;
     let sum = word(stream, 4).ok_or(ProjectError::InvalidStreamHeader)?;
@@ -78,7 +118,7 @@ fn extract(seed: ProjectSeed<'_>) -> Result<Vec<u8>, ProjectError> {
     {
         return Err(ProjectError::InvalidStreamChecksum);
     }
-    let container = depack_section(stream, BUILTIN_STREAM_OFFSET, MAX_DEPACKED_BYTES)
+    let container = depack_section(stream, at, MAX_DEPACKED_BYTES)
         .map_err(|error| ProjectError::Depack(error.to_string()))?;
     validate_container(&container)?;
     Ok(container)
@@ -316,6 +356,30 @@ pub fn build_project_record(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The built-in project stream is found in 1.16 and in the relinked 1.17
+    /// (where it moves by +0x53c) and decodes to the same container.
+    #[test]
+    fn finds_the_builtin_stream_in_relinked_firmware() {
+        let main_of = |file: &str| {
+            let syx = std::fs::read(format!("../../{file}")).ok()?;
+            let parsed = dt2_firmware_loader::parse(&syx).ok()?;
+            parsed.sections.into_iter().find(|s| s.id == 3).map(|s| s.bytes)
+        };
+        let (Some(a), Some(b)) = (
+            main_of("Digitakt_II_OS1.16.syx"),
+            main_of("Digitakt_II_OS1.17.syx"),
+        ) else {
+            return;
+        };
+        assert_eq!(stream_offset(&a), BUILTIN_STREAM_OFFSET);
+        assert_eq!(stream_offset(&b), BUILTIN_STREAM_OFFSET + 0x53c);
+        let seed = |main| ProjectSeed {
+            main,
+            contract: PlusdriveProjectContract::Dt2V3Default116,
+        };
+        assert_eq!(extract(seed(&a)).unwrap(), extract(seed(&b)).unwrap());
+    }
     #[test]
     fn malformed_streams_fail_before_depacking() {
         let seed = ProjectSeed {

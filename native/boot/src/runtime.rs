@@ -294,7 +294,7 @@ impl Emulator {
         if main.get(entry_offset..entry_offset + 6) != Some(&[0x41, 0xef, 0, 4, 0x23, 0xd0]) {
             return Err("entry prefix verification failed".into());
         }
-        let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
+        let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
         let (device, profile, _) = match base_sha256 {
             Some(base) => registry.boot_for_base(base),
             None => registry.boot_for_main(&digest(syx), &main),
@@ -387,10 +387,7 @@ impl Emulator {
             .filter(|(offset, bytes)| offset % 2 == 0 && *bytes == [0x60, 0xfe])
             .map(|(offset, _)| MAIN_LOAD + offset as u32)
             .collect();
-        let supported_softfloat = matches!(
-            (device.short.as_str(), profile.version.as_str()),
-            ("dt2", "1.16") | ("dn2", "1.11")
-        );
+        let supported_softfloat = profile.softfloat_abi;
         let softfloat = match policy {
             ExecutionPolicy::Reference => SoftfloatAbi::disabled("reference policy"),
             ExecutionPolicy::SoftfloatAbiV1 => {
@@ -2554,9 +2551,36 @@ mod tests {
         assert_eq!(runtime.delivery_counts[timer_vector as usize], 1);
     }
 
+    /// Every signature-resolved anchor of the boot path resolves on the
+    /// current firmware of both products, relinked builds included.
+    #[test]
+    fn boot_anchors_resolve_on_every_supported_firmware() {
+        for file in [
+            "Digitakt_II_OS1.16.syx",
+            "Digitakt_II_OS1.17.syx",
+            "Digitone_II_OS1.11.syx",
+            "Digitone_II_OS1.12.syx",
+        ] {
+            let Ok(syx) = std::fs::read(format!("../../{file}")) else {
+                continue;
+            };
+            let emu = Emulator::new_with_policy(&syx, None, ExecutionPolicy::SoftfloatAbiV1)
+                .unwrap_or_else(|e| panic!("{file}: {e}"));
+            assert!(emu.softfloat.enabled, "{file}: softfloat {:?}", emu.softfloat.reason);
+            assert!(emu.ram_clear.is_some(), "{file}: RAM clear loop");
+            assert!(!emu.fused_loops.is_empty(), "{file}: fused loops");
+            assert!(!emu.idle_spins.is_empty(), "{file}: idle spins");
+        }
+    }
+
     #[test]
     fn ram_clear_batches_match_interpreter_across_chunks_pages_and_final_flags() {
-        for file in ["Digitakt_II_OS1.16.syx", "Digitone_II_OS1.11.syx"] {
+        for file in [
+            "Digitakt_II_OS1.16.syx",
+            "Digitakt_II_OS1.17.syx",
+            "Digitone_II_OS1.11.syx",
+            "Digitone_II_OS1.12.syx",
+        ] {
             let Ok(syx) = std::fs::read(format!("../../{file}")) else {
                 continue;
             };

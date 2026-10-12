@@ -92,7 +92,14 @@ def main(argv: list[str]) -> int:
     a = p.parse_args(argv)
     cfg = DEVICES[a.device]
     syx = a.syx or digi_env.firmware_for(a.device)
-    out = a.out or pathlib.Path(cfg["out"])
+    # DIGI_EMU_READY_DIR (DN2) / DIGI_EMU_READY_DIR_<DEVICE> name another ready
+    # directory, as in digi_env: a second firmware's inputs live beside the first's.
+    env_out = os.environ.get(
+        "DIGI_EMU_READY_DIR"
+        if a.device == "dn2"
+        else f"DIGI_EMU_READY_DIR_{a.device.upper()}"
+    )
+    out = a.out or pathlib.Path(env_out or cfg["out"])
     out = out if out.is_absolute() else ROOT / out
     out.mkdir(parents=True, exist_ok=True)
     syx_sha = hashlib.sha256(syx.read_bytes()).hexdigest()
@@ -107,6 +114,14 @@ def main(argv: list[str]) -> int:
     if a.card_image is not None:
         card_sha = hashlib.sha256(a.card_image.read_bytes()).hexdigest()[:12]
         snap_dir = out / "by-card" / card_sha
+        try:
+            known = json.loads((snap_dir / "SOURCE.json").read_text())["syx_sha256"]
+        except (OSError, KeyError, ValueError):
+            known = syx_sha
+        if known != syx_sha:
+            # the same card under another firmware (a relinked MAIN OS can leave the
+            # card image byte-identical): its snapshot must not be reused
+            snap_dir = out / "by-card" / f"{card_sha}-{syx_sha[:8]}"
         snap_dir.mkdir(parents=True, exist_ok=True)
     snap = snap_dir / "digi-audio-m5.snap"
 

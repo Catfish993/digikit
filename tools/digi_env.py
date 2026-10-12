@@ -26,10 +26,14 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # with the JS tools), overridden by DIGI_EMU_READY_DIR.
 _READY_JSON = json.loads((ROOT / "tools" / "ready_inputs.json").read_text())
 READY = ROOT / (os.environ.get("DIGI_EMU_READY_DIR") or _READY_JSON["ready_dir"])
-# The ready directory of the other devices (`ready_dirs` in the same file).
+# The ready directory of the other devices (`ready_dirs` in the same file),
+# overridden per device by DIGI_EMU_READY_DIR_<DEVICE> (DIGI_EMU_READY_DIR_DT2).
 READY_DIRS = {
     "dn2": READY,
-    **{k: ROOT / v for k, v in _READY_JSON.get("ready_dirs", {}).items()},
+    **{
+        k: ROOT / (os.environ.get(f"DIGI_EMU_READY_DIR_{k.upper()}") or v)
+        for k, v in _READY_JSON.get("ready_dirs", {}).items()
+    },
 }
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
 DEFAULT_SYX = ROOT / "Digitone_II_OS1.11.syx"

@@ -43,7 +43,7 @@ import sqlite3
 import sys
 import time
 
-DB_VERSION = 1
+DB_VERSION = 2
 DEFAULT_DB_DIR = "out/cfdb"
 
 SCHEMA = """
@@ -84,6 +84,36 @@ CREATE TABLE symbols (
 );
 CREATE INDEX symbols_addr ON symbols(image, addr);
 CREATE INDEX symbols_name ON symbols(image, name);
+
+-- Version 2: cross-version matching facts (tools/cffacts.py, tools/cfmatch.py).
+-- h_*: masked instruction hashes of the function body; mnem_seq: its mnemonics.
+CREATE TABLE func_hash (
+  image TEXT, entry INTEGER, ninsn INTEGER, nbytes INTEGER,
+  h_strict TEXT, h_loose TEXT, h_mnem TEXT, mnem_seq TEXT,
+  PRIMARY KEY (image, entry)
+);
+CREATE INDEX func_hash_strict ON func_hash(image, h_strict);
+CREATE INDEX func_hash_loose ON func_hash(image, h_loose);
+
+-- RTTI from the dump (tools/rttiscan.py applied): typeinfo objects and one row
+-- per vtable slot.
+CREATE TABLE typeinfos (
+  image TEXT, addr INTEGER, kind TEXT, name TEXT, mangled TEXT, bases TEXT
+);
+CREATE INDEX typeinfos_name ON typeinfos(image, name);
+CREATE TABLE vtables (
+  image TEXT, addr INTEGER, class TEXT, typeinfo INTEGER, offset_to_top INTEGER,
+  slot INTEGER, target INTEGER, owner TEXT
+);
+CREATE INDEX vtables_class ON vtables(image, class);
+CREATE INDEX vtables_target ON vtables(image, target);
+
+-- Names carried from another image by tools/cfmatch.py port.
+CREATE TABLE ported (
+  image TEXT, entry INTEGER, name TEXT, from_image TEXT, from_entry INTEGER,
+  method TEXT, score REAL,
+  PRIMARY KEY (image, entry, name)
+);
 """
 
 _CALL_KIND = {
@@ -93,6 +123,39 @@ _CALL_KIND = {
     "COMPUTED_JUMP": "jump",
     "CONDITIONAL_JUMP": "cond_jump",
 }
+
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _cffacts():
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import cffacts
+    finally:
+        sys.path.pop(0)
+    return cffacts
+
+
+def _find_image(manifest, sha):
+    """The MAIN OS file whose SHA-256 is the dump's (the manifest's recorded
+    path can name a later image: sections/ is overwritten by each extract)."""
+    import glob
+    import hashlib
+
+    cands = [manifest.get("sections_image"), manifest.get("image_path")]
+    cands += sorted(
+        glob.glob(os.path.join(ROOT, "out/sections/*/section_3_MAIN_OS.bin"))
+    )
+    for cand in cands:
+        if not cand:
+            continue
+        for path in (cand, os.path.join(ROOT, cand)):
+            if os.path.isfile(path):
+                with open(path, "rb") as f:
+                    if hashlib.sha256(f.read()).hexdigest() == sha:
+                        return path
+    return None
 
 
 def open_db(path):
@@ -207,8 +270,33 @@ def build_database(dump_dir, out_path, name=None, force=False):
             if _table_exists(src, "symbols")
             else []
         )
+        typeinfos = (
+            src.execute(
+                "SELECT addr, kind, name, mangled, bases FROM typeinfos"
+            ).fetchall()
+            if _table_exists(src, "typeinfos")
+            else []
+        )
+        vtables = (
+            src.execute(
+                "SELECT addr, class, typeinfo, offset_to_top, slot, target, owner "
+                "FROM vtables"
+            ).fetchall()
+            if _table_exists(src, "vtables")
+            else []
+        )
     finally:
         src.close()
+
+    facts = {}
+    image_file = _find_image(manifest, sha)
+    if image_file is not None:
+        cffacts = _cffacts()
+        facts = cffacts.compute(
+            cffacts.Path(image_file),
+            cffacts.DEFAULT_BASE,
+            {e: ranges_by_func[e] for e, *_ in functions if ranges_by_func.get(e)},
+        )
 
     out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
     os.makedirs(out_dir, exist_ok=True)
@@ -285,6 +373,25 @@ def build_database(dump_dir, out_path, name=None, force=False):
                 for addr, sname, namespace, typ, is_primary in symbols
             ]
             db.executemany("INSERT INTO symbols VALUES (?,?,?,?,?,?)", symbol_rows)
+
+            db.executemany(
+                "INSERT INTO func_hash VALUES (?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        name, entry, f["ninsn"], f["nbytes"], f["h_strict"],
+                        f["h_loose"], f["h_mnem"], f["mnem_seq"],
+                    )
+                    for entry, f in facts.items()
+                ],
+            )  # fmt: skip
+            db.executemany(
+                "INSERT INTO typeinfos VALUES (?,?,?,?,?,?)",
+                [(name, *row) for row in typeinfos],
+            )
+            db.executemany(
+                "INSERT INTO vtables VALUES (?,?,?,?,?,?,?,?)",
+                [(name, *row) for row in vtables],
+            )
 
             db.commit()
         finally:

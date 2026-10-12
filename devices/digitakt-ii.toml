@@ -33,12 +33,29 @@ boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"
 plusdrive_project_contract = "dt2-v3-default-1.16"
 readiness_contract = "main-panel-fs-check-v1"
+# The softfloat ABI shortcuts (native/boot softfloat) are verified on this MAIN OS.
+softfloat_abi = true
 # The SHARC+ DSP the coupled audio runs. image: tools/sharcdb.py name. The idle
 # loop is the RTOS idle task's spin loop (same code as DN2, moved by -0x26dc:
 # function hashes of 0xb88a49/0xb88aa6 match 0xb8636d/0xb863ca). sample_link:
 # how card samples reach the DSP (findings 15): ColdFire FlexBus writes to link
 # port 0, so the peer must be fed them.
 dsp = { image = "dt2-1.16", idle_start = 0xb8636d, idle_end = 0xb863df, idle_head = 0xb863cf, sample_link = "lp0" }
+
+[[firmware]]
+version = "1.17"
+sha256 = "26c22f6652625ac2cfd47f7ee970d388ed8b6427dae3563c0a6a2f2d334350d5"
+filename = "Digitakt_II_OS1.17.syx"
+main_sha256 = "a1e7b657b705eba1a19d81c33c1e11ba9c409816447ad74005d7bbf36da6d964"
+boot_contract = "main-os-oracle-v1"
+symbol_profile = "elektron-rtos-v1"
+plusdrive_project_contract = "dt2-v3-default-1.16"
+readiness_contract = "main-panel-fs-check-v1"
+# The softfloat ABI shortcuts (native/boot softfloat) are verified on this MAIN OS.
+softfloat_abi = true
+# Section 7 (the SHARC+ blob) is byte-identical to 1.16, so the idle loop addresses carry over.
+dsp = { image = "dt2-1.17", idle_start = 0xb8636d, idle_end = 0xb863df, idle_head = 0xb863cf, sample_link = "lp0" }
+
 
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
