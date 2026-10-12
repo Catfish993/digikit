@@ -344,7 +344,8 @@ clear start. Checked by a second agent against the image bytes, and at
 runtime: a patched 1.16 image lost its `cave_b` bytes by the 60M rung of a
 fresh boot and kept its `0x403117c4` bytes.
 
-`tools/cavefind.py` finds caves that survive boot: it reads the copy and
+`tools/cavefind.py` (lost; `tools/regions.py` replaces it, see "RAM map" below)
+finds caves that survive boot: it reads the copy and
 clear ranges from the reset code by signature, takes runs of 0x00/0xFF below
 the clear start, rejects any run with a pointer literal into it (or a table
 starting just before it), rejects runs whose bytes differ in any saved
@@ -459,6 +460,9 @@ stock stream into tokens, applies the edit and re-encodes only the tokens it tou
 with no edit it reproduces the stock .syx **byte for byte** (so the token encoder, layout
 at 0x90, HMAC, checksums and framing are exact); the one-string image is +32 bytes.
 The emulated bootstrap depacks these streams (end marker gamma 2^24+2, 0xFF).
+Since the spike 0.3 merge, `rebuild` keeps untouched sections verbatim and takes
+`pack='aplib'` (see "aPLib packer" below), but its default still stores replaced
+sections literals-only: a store-only MAIN OS alone is about 3.7 MB, over the cap.
 
 ## Harmless test image **[D]**
 
@@ -467,3 +471,149 @@ The emulated bootstrap depacks these streams (end marker gamma 2^24+2, 0xFF).
 name shown at the top of the main screen of a new project. `check_authenticity` passes,
 only section 3 differs, container 1,484,096 B, the emulated bootstrap accepts, writes and
 boots it, and a cold ColdFire boot reaches the main screen with PATCHKIT in the title.
+## RAM map, an expansion region and a loader hook (Phase 0.3 of the patchkit plan)
+
+Tools: `tools/regions.py` (`report`, `confirm`, `loader-test`), `tools/aplib_check.py`,
+the native examples `regions_probe` and `depack_check` (native/boot/examples).
+`uv run python tools/regions.py report` prints everything below for dt2-1.16,
+dt2-1.17, dn2-1.11 and dn2-1.12 from `out/sections/`.
+
+### RAM map of MAIN OS **[D]**
+
+DDR is 128 MiB (`0x40000000-0x47ffffff`, finding 08 **[C]**). The clear end
+`0x47e28470` is a real address: it is the end of bss. The 8,066,631-iteration
+loop (finding 07) is `(0x47e28470 - 0x40312000) / 16`.
+
+| range (DT2 1.16) | what | evidence |
+|---|---|---|
+| `0x40000400-0x4031ff60` | MAIN OS image, 3,275,616 B | section 3 |
+| `0x40312000-0x4031ff60` | `.data` initialisers, copied to SRAM `0x80000000` (two 32 KiB halves, zero padded) by `FUN_4000045c`, then zeroed by the clear | reset code |
+| `0x40312000-0x47e28470` | bss, cleared at reset, 123.09 MiB | `FUN_400004b2` |
+| `0x44f39c40-0x46f39c40` | the C++ heap: a buddy allocator, 32 MiB, 16-byte blocks, order 21, bitmap `0x44dc8654` (256 KiB), descriptor `0x402b406c` (in `.data`), mutex `0x44e08654`; the allocator is `FUN_4011e674` (thunk `0x4011e8f0`, 4,248 callers; most likely `operator new`) and the free is `FUN_4011e87a` | decompiled bodies; descriptor words `{arena, bitmap, arena+0x2000000, 0x15, 0x200000}` |
+| task stacks | static arrays in bss, passed to `task_create` `FUN_400012c8(tcb, entry, prio, stack, size, ...)` at 15 call sites, e.g. `0x409636f0` (4 KiB, prio 9), `0x4096775c` (160 KiB, prio 6), `0x4039beac` (16 KiB, prio 2) | call sites |
+| `0x44e4a5b8`, `0x44e4a9b8` | the two display buffers (1 KiB each); the pointers live at `0x402b6058/5c` | `panel_diff` operands, ready snapshot |
+| `0x47e28470-0x47e30000` | not cleared, unreferenced, 31 KiB | refscan |
+| `0x47e30000-0x47e7a340` | DMA arena, reached through the **uncached alias** `+0x08000000` (`0x4fe30000...`): 82 absolute references, e.g. `0x4fe3b000`, `0x4fe57000`, `0x4fe79300`. Not cleared; the code initialises it. | refscan, canary (pages `0x47e3a000-0x47e72000` written) |
+| `0x47e7a340-0x47fff000` | **free** (see below), 1.5 MiB | refscan, canary |
+| `0x47fff000-0x48000000` | the reset stack: `main()` runs on it (`0x47fffff0` holds the return addresses `0x40196d7a` and `0x4000056e`); one page used | ready snapshot |
+
+DN2 1.11 has the same shape: image `0x40000400-0x4030b980`, bss
+`0x402fc000-0x466b74d0`, heap `0x4464abf0-0x4664abf0`, display buffers
+`0x44622bc8/fc8`, DMA arena `0x466b8000-0x46701300` (alias `0x4e6c...`), and
+**24.8 MiB** free above it up to the stack, because DN2 has no sample memory in
+RAM. 1.17 and 1.12 have the same layout (1.17: identical clear range and arena;
+1.12: bss `0x402fd000-0x466b84d0`, arena `0x466c0000-0x46709300`).
+
+There is no `malloc` arena above the bss end: no code references `_end`, and
+the heap is the fixed buddy arena in bss. Nothing else is allocated
+dynamically from the top of RAM.
+
+### Expansion region **[D]**
+
+`tools/regions.py` proposes the gap above the DMA arena: from the highest
+absolute reference into the arena plus 64 KiB, to 128 KiB below the stack top.
+It needs no change to the reset clear, because it lies above the bss end.
+
+| image | region | size |
+|---|---|---|
+| dt2-1.16, dt2-1.17 | `0x47e8b000-0x47fe0000` | 1,396,736 B (1.33 MiB) |
+| dn2-1.11 | `0x46712000-0x47fe0000` | 26,009,600 B (24.8 MiB) |
+| dn2-1.12 | `0x4671a000-0x47fe0000` | 25,976,832 B (24.8 MiB) |
+
+Evidence, three kinds with different blind spots: (a) no absolute reference into
+the region in either view (cached `0x47e...` and alias `0x4fe...`) beyond the
+arena cluster; the 3 to 48 stray values in range are constants such as the
+softfloat `0x47efffff`; (b) it is above the bss end, so the linker map owns
+nothing there and the reset clear does not touch it; (c) `regions.py confirm`
+fills it with an address-dependent pattern right after the reset clear returns
+(pc `0x40000546`), in both views, and runs the ColdFire emulator without the
+DSP: boot to ready plus 300M instructions, a navigation script (every page,
+mode, arrow, confirm, modifier and select button, encoder turns and pushes,
+about 0.8G instructions), a play script (PLAY, all 16 trigs, RECORD, STOP,
+about 1.4G), and a 4G-instruction idle soak. All PASS on the four images: zero
+changed words, and the final state digest (with the region zeroed) equals that of
+a baseline run that filled zeros, so the firmware did not read the region either.
+DT2 also passes `boot` and `play` with the +Drive card `out/plusdrive/dt2.img`.
+The harness has teeth: the same run flags the heap, the DMA arena and the
+display buffers as written.
+
+What the canary does not cover **[O]**: code paths the scripts do not reach
+(project save and load, sample recording and deletion, the SD-card write path,
+MIDI SysEx dumps, USB, the firmware update path), and real hardware (the
+emulator keeps the cached and alias views as separate memory). The stack page
+shows one 4 KiB page used; the 128 KiB reserve is a margin, not a measurement
+of the worst case.
+
+Not recommended: holes inside bss. The ready snapshot shows 13 MiB at
+`0x44000000` and 24 MiB at `0x45700000` as zero, and a 64 KiB canary at three
+places in them passes (boot, and boot plus play with the card), but they are
+unused sample-pool and table space of this run, not free space; no static
+argument separates them from live arrays.
+
+### Loader hook **[D]**
+
+The appended bytes land past the image end (`0x4031ff60` on DT2 1.16), inside
+the range the reset clear zeroes, so the loader must copy them out first. The
+reset entry runs, before the caches are enabled (CACR is written at `0x4000055a`):
+
+```
+0x4000053e  4eba ff1c   jsr FUN_4000045c(pc)   ; .data -> SRAM
+0x40000542  4eba ff6e   jsr FUN_400004b2(pc)   ; clear
+0x40000546  ...
+```
+
+The same bytes sit at the same addresses on all four images. Replacing the
+eight bytes with `4eb9 <cave> 4e71` (`jsr cave.l; nop`) and putting a 34-byte
+loader in `flash_cave` works: it reads `[u32 bytes][u32 dest][payload]` from the
+image end, copies the payload with a `move.l (a0)+,(a1)+` loop, then calls the
+two original helpers and returns. d0, d1, a0, a1 are free at that point.
+`tools/regions.py loader-test IMAGE --kib N` builds exactly this (segment, cave
+code and hook, via `dt2.build.rebuild`), cold-boots the patched image and
+compares the region with a random payload at ready: 256 KiB and 1 MiB (aPLib)
+on DT2 1.16, 1 MiB (store-only) on DT2 1.17, 1 MiB (aPLib) on DN2 1.11 and
+512 KiB on DN2 1.12, zero mismatching words each time, and ready is reached. Code placed this way is in DDR before the
+caches are enabled and invalidated, so it needs no cache maintenance. A module
+that DMAs from its region must use the `+0x08000000` alias. Module bss is not
+zeroed by the reset (the region is outside the clear): the loader must do it.
+
+**Staging limit [D].** The bootstrap stages the packed MAIN OS at `0x40400000`
+(`0x80000616`, `0x800005cc`) and unpacks to `0x40000400`, so an image longer
+than `0x3FFC00` = 4,193,280 bytes writes over the staged stream while it is still
+being read. That is harmless while the stream is read ahead of the write point:
+`dt2.aplibpack.inplace_margin(stream)` returns the smallest slack. For a DT2 1.16
+image with 1 MiB of incompressible payload appended it is 2.1 MB with the
+packer below and 4.7 MB store-only. It is a hard limit if a section is stored
+with a ratio near 1 and the image is much longer. The flash side is in "NOR flash
+map (spike 0.2)" above: the container must stay at or under 0x300000 bytes, a
+tighter limit than this one.
+
+### aPLib packer **[D]**
+
+`dt2/aplibpack.py` is a compressor for the stream `dt2/elz.py` decodes: hash
+chains over 4-byte keys, a forward dynamic program over the exact bit costs of
+the format (repeat offset taken from the best path), pure Python.
+`tools/aplib_check.py` packs every section of the four firmwares, reads the
+result back with `dt2/elz.py` and runs it through the **bootstrap's own
+depacker** (`0x80000436`, found by its prologue) on the native ColdFire core
+(`depack_check.rs`; it also reproduces the stock DT2 section 8 byte for byte,
+so the harness is faithful). All 16 sections pass both. Sizes in bytes (stored
+including the 8-byte header; stock from the .syx table):
+
+| image | section | decoded | packed | stock | store-only | seconds |
+|---|---|---|---|---|---|---|
+| dt2-1.16 | 3 MAIN OS | 3,275,616 | 1,107,873 | 1,146,652 | ~3,685,000 | 27 |
+| dt2-1.16 | 7 BLOB | 321,016 | 187,017 | 184,856 | ~361,000 | 1.4 |
+| dt2-1.16 | 8 | 159,948 | 106,986 | 103,416 | ~180,000 | 0.3 |
+| dt2-1.16 | 2 bootstrap | 30,302 | 16,558 | 16,136 | ~34,000 | 0.1 |
+| dn2-1.11 | 3 MAIN OS | 3,192,192 | 1,096,271 | 1,130,528 | ~3,591,000 | 24 |
+| dn2-1.11 | 7 BLOB | 836,956 | 615,802 | 602,076 | ~942,000 | 2.8 |
+
+dt2-1.17 and dn2-1.12 are within 0.1% of their predecessors (MAIN 1,108,851 and
+1,097,013). The MAIN OS stream is 3.4% under stock, the other sections 1.2% to
+4% over. `dt2.build.rebuild(..., pack='aplib')` uses it (the default stays
+store-only until reviewed). **[C]** `rebuild` used to decompress and re-store
+every section; a section that is not in `replacements` now keeps its stored
+bytes from the source verbatim, so only replaced sections change size (a DT2
+1.16 rebuild that replaces MAIN OS is about 1.45 MB with `pack='aplib'` instead
+of 4.0 MB). Section 2 (the bootstrap) is therefore no longer re-encoded by any
+rebuild.

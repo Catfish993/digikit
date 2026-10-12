@@ -7,9 +7,10 @@
     dt2/authcode.py). What genuinely remains before flashing:
       - the final chunk's zero padding is still an inference -- no sample
         file has a partial final chunk to confirm it against;
-      - store-only aPLib packing makes the image ~3x larger than stock, and
-        no device-side size limit is known from hardware (the receive code
-        imposes none);
+      - store-only aPLib packing (the default) makes the image ~3x larger
+        than stock; pack='aplib' (dt2/aplibpack.py) gives about the stock
+        size, and no device-side size limit is known from hardware (the
+        receive code imposes none);
       - no rebuilt image has been flashed to hardware.
 
 Layer cake, innermost first (mirrors dt2/container.py, in reverse):
@@ -37,7 +38,7 @@ module cannot build new ones from scratch.
 """
 import struct
 
-from dt2 import aplib
+from dt2 import aplib, aplibpack
 from dt2.container import MFR, COUNT_OFF, TABLE_OFF, ENTRY_SZ, decode_syx, sections
 
 # The first data message's counter value; see the module docstring in
@@ -91,12 +92,20 @@ def packet_checksum(body, k):
     return total & 0x7F
 
 
-def store_for_section(section_id, data):
+PACKERS = {
+    'store': aplib.pack_section,        # every byte a literal: about 12.5% larger
+    'aplib': aplibpack.pack_section,    # compressed, about the stock size
+}
+
+
+def store_for_section(section_id, data, pack='store'):
     """Decompressed section bytes -> stored bytes, applying the per-section
     storage rule dt2/container.py and emu/extract.py already document.
+    `pack` picks the packer for the aPLib sections: 'store' (the default, until
+    the compressor is reviewed) or 'aplib' (dt2/aplibpack.py).
     Raises on an unknown section id rather than guessing its rule."""
     if section_id in (2, 3, 7, 8):    # 8 is 1.16 and later
-        return aplib.pack_section(data)
+        return PACKERS[pack](data)
     if section_id == 4:
         # 8-byte header present, but byte_sum is 0 and the payload is raw.
         return struct.pack('>II', len(data), 0) + bytes(data)
@@ -233,7 +242,7 @@ def _source_framing(raw_syx):
     return messages[0], messages[-1]
 
 
-def rebuild(syx_path, replacements=None, checksum=None):
+def rebuild(syx_path, replacements=None, checksum=None, pack='store'):
     """Source .syx path -> rebuilt .syx bytes.
 
     Decodes the source, takes its container header, section order and
@@ -245,6 +254,11 @@ def rebuild(syx_path, replacements=None, checksum=None):
     total_len and the content checksum for a fresh preamble, and re-encodes
     to .syx reusing the source's own first and last framing messages.
 
+    A section that is not in `replacements` keeps its stored bytes from the
+    source verbatim (the packed stream, not a decompress and re-pack), so only
+    replaced sections change size. `pack` ('store' or 'aplib') is the packer
+    for the replaced ones; see PACKERS.
+
     `checksum`, if given, is passed through to encode_syx() as its
     per-message checksum function; the default leaves it at encode_syx's
     own default (packet_checksum()).
@@ -252,8 +266,6 @@ def rebuild(syx_path, replacements=None, checksum=None):
     import os
     import sys
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from emu.extract import classify
-    from dt2.elz import depack_section
     from dt2.authcode import seal, DEVICE_BY_ID
 
     replacements = replacements or {}
@@ -278,11 +290,9 @@ def rebuild(syx_path, replacements=None, checksum=None):
     for sid, s_off, clen, dest in secs:
         raw = bytes(c[s_off:s_off + clen])
         if sid in replacements:
-            decompressed = replacements[sid]
+            entries.append((sid, dest, store_for_section(sid, replacements[sid], pack)))
         else:
-            kind, payload = classify(raw)
-            decompressed = depack_section(payload) if kind == 'packed' else payload
-        entries.append((sid, dest, store_for_section(sid, decompressed)))
+            entries.append((sid, dest, raw))
 
     new_container = build_container(header, entries)
     new_container = seal(new_container, device)
