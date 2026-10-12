@@ -8,7 +8,6 @@ members = [
     "native/boot",
     "native/card",
     "native/coldfire",
-    "native/coldfire/cfabi",
     "native/control",
     "native/coupled",
     "native/device-profile",

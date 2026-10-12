@@ -29,7 +29,6 @@ root). The directory name is not always the package name; use the package name w
 | directory | package | role |
 |---|---|---|
 | `native/coldfire` | `coldfire` | ColdFire V4e core (ISA_C, EMAC); decoder generated from `tools/cfisa/coldfire.json`. Pure, builds for wasm32. |
-| `native/coldfire/cfabi` | `cfabi` | C ABI over `coldfire::Cpu` (the lockstep driver against the Python reference emulator was removed with it). Desktop only; no tool uses it now. |
 | `native/periph` | `periph` | MCF5441x timer, interrupt controller, eDMA, DSPI and SSI models. |
 | `native/card` | `emmc-card` | Minimal eMMC card identity and media model (sparse write overlay). |
 | `native/machine` | `machine` | The board seam: guest RAM, MMIO, eMMC DMA, timers. |

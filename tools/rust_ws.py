@@ -30,7 +30,6 @@ finally:
     sys.path.pop(0)
 
 CLEAN_CRATES = [
-    "cfabi",
     "coldfire",
     "device-profile",
     "digiemu-desktop",

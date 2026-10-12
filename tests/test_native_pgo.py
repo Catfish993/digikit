@@ -147,7 +147,7 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
             {"source": None, "manifest_path": str(ROOT / name / "Cargo.toml")}
             for name in (
                 "native/sharc",
-                "native/coldfire/cfabi",
+                "native/coldfire",
                 "packages/desktop/src-tauri",
             )
         ]
@@ -158,7 +158,7 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
         "run",
         lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(metadata), ""),
     )
-    assert native_pgo.local_package_dirs() == ["native/coldfire/cfabi", "native/sharc"]
+    assert native_pgo.local_package_dirs() == ["native/coldfire", "native/sharc"]
 
 
 def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):
