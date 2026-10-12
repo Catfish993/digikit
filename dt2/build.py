@@ -242,7 +242,13 @@ def _source_framing(raw_syx):
     return messages[0], messages[-1]
 
 
-def rebuild(syx_path, replacements=None, checksum=None, pack='store'):
+# Largest container the OS area of the NOR flash holds: the bootstrap writes it from
+# flash 0x80000 with no size check, and the record sectors start at 0x380000
+# (docs/findings/01-container-and-patching.md, "NOR flash map").
+FLASH_CONTAINER_MAX = 0x300000
+
+
+def rebuild(syx_path, replacements=None, checksum=None, pack='store', max_container=None):
     """Source .syx path -> rebuilt .syx bytes.
 
     Decodes the source, takes its container header, section order and
@@ -258,6 +264,9 @@ def rebuild(syx_path, replacements=None, checksum=None, pack='store'):
     source verbatim (the packed stream, not a decompress and re-pack), so only
     replaced sections change size. `pack` ('store' or 'aplib') is the packer
     for the replaced ones; see PACKERS.
+
+    `max_container`, if given, raises ValueError when the sealed container is
+    longer; pass FLASH_CONTAINER_MAX for any image that may be flashed.
 
     `checksum`, if given, is passed through to encode_syx() as its
     per-message checksum function; the default leaves it at encode_syx's
@@ -296,6 +305,9 @@ def rebuild(syx_path, replacements=None, checksum=None, pack='store'):
 
     new_container = build_container(header, entries)
     new_container = seal(new_container, device)
+    if max_container is not None and len(new_container) > max_container:
+        raise ValueError('container is %d bytes, over the %d-byte limit (pack=%r)'
+                         % (len(new_container), max_container, pack))
     stream = struct.pack('>II', len(new_container), content_checksum(new_container)) + new_container
 
     return encode_syx(stream, device_id, framing_start, framing_end, checksum=checksum)

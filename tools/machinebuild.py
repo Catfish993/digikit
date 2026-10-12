@@ -216,7 +216,8 @@ def rebuild_and_check(syx_path, patched_section3, out_path, extract_dir,
     from dt2 import build as dbuild
     import roundtrip as rt
 
-    out_bytes = dbuild.rebuild(syx_path, replacements={3: patched_section3})
+    out_bytes = dbuild.rebuild(syx_path, replacements={3: patched_section3}, pack='aplib',
+                              max_container=dbuild.FLASH_CONTAINER_MAX)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)) or '.', exist_ok=True)
     with open(out_path, 'wb') as f:
         f.write(out_bytes)

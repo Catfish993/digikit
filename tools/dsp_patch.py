@@ -266,10 +266,10 @@ def write_syx(base: Path, patch: Patch, out: Path) -> tuple[int, int]:
         stream.write(op.addr, op.new)
     sys.path.insert(0, str(ROOT))
     try:
-        from dt2.build import rebuild
+        from dt2.build import FLASH_CONTAINER_MAX, rebuild
     finally:
         sys.path.pop(0)
-    out.write_bytes(rebuild(str(base), {7: bytes(stream.blob)}))
+    out.write_bytes(rebuild(str(base), {7: bytes(stream.blob)}, max_container=FLASH_CONTAINER_MAX))
     return len(patch.ops), changed
 
 
