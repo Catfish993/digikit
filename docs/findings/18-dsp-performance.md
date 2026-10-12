@@ -1901,7 +1901,35 @@ function and checker" measured ~0.9 ns, so they do not hold.
   - 702 regions, 33.2 MB of wasm, 0.83% of instructions interpreted.
   - Costs: 0.63 helper calls per instruction (every DM access is a cross-module call); 1.9 KB of wasm per
     instruction; about 20 ms to translate and 19-64 ms to compile per region.
-- **[O]** Hybrid: sharc-jit regions as the fallback for the code the fast tier leaves to the interpreter.
-  - Model: the 5.8% interpreted at about 220 ns, moved to about 10 ns, cuts about 6 s to about 0.3 s. That gives about
-    2.5-3 DSP s per audio s in Chrome (inference).
-  - A proof on FUN_1c8ef1 (16% of interpreted instructions) is in progress on lane/jit.
+- **[D]** Hybrid with sharc-jit regions as the fallback tier (lane/jit fcd0d4b): stopped at the stop rule, with no
+  gain.
+  - sharc-jit was exact only with the opt-in models off. With models off, translated code halted on an empty
+    architectural PC stack within 14k instructions.
+  - With the real model flags it cannot translate code that runs inside a DO loop (`loop_depth`, `pc_stack` ops). All
+    39.2M interpreted instructions of FUN_1c8ef1 run inside one, so 0 regions were entered.
+  - In-core translation costs about 2.7 ms per SHARC instruction in V8 (75.5 s for 274 regions).
+  - V8 rejects 58 of the 274 regions for having more than 50k locals.
+  - The wiring is inert-exact: PCM equals the pin with the tier on.
+- **[O]** Making the translator model-aware, about 100x faster and region-capped is estimated at 4-6 agent-days, at
+  about 35% confidence. Parked.
+- **[D]** Profile of the native generic interpreter (shared core, `SHARC_AOT=0`, 4,2+follow), per interpreted
+  instruction, scaled to 105 ns:
+  - fetch/decode 15.6 ns (a by-value copy of the 224-byte `Insn` and a HashMap lookup);
+  - generic execute 63.2 ns (of which 19.7 is the field-by-name linear scan and 25.1 the core semantics);
+  - model and engine bookkeeping 23.4 ns;
+  - memory 0.7 ns.
+- **[D]** Fast-tier refusals behind the interpreted share at 4,2+follow:
+  - no stop recorded: 32% (open);
+  - address range unknown / too many windows: 17%;
+  - too many delayed branches: 10% (FUN_1c8ef1 hits `MAX_CFG_JUMPS = 16`, ir.rs:243);
+  - dynamic branch: 6.7%;
+  - MODE1 bank model: 6.6%.
+- **[D]** Faster generic interpreter (lane/fastweb d116a0d, 10497b3, b74c69a; no generated-core change):
+  - Native interpreter-only on the shared core went from 110.8 to 69.8 ns per instruction. Paired coupled_ab ratios:
+    interned `Fields` with perfect-hash lookup 0.69; dense two-level decode cache 0.93; inline `ww_flush` watch check
+    0.97.
+  - Generic web core at 4,2,1, node: 74.0/75.3 to 54.8/55.8 s for 8.5 audio s (0.74), PCM MATCH.
+  - Chrome 150: 7.90/8.09 to 5.82/5.83 DSP s per audio s (0.73), which is the native gain at the interpreter's ~72%
+    share.
+  - DN2 verify steps pass. The DT2 steps are blocked by the stale DT2 generated core.
+  - The `Fields` intern pool never frees blocks; it is bounded by the number of distinct decoded instructions.
