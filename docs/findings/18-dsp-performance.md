@@ -1625,3 +1625,33 @@ us; without them the exact flags and sticky bits cannot be reproduced. (3) Hook 
 on every state or value it does not model; (e) run `mise run hle-check` until 0 mismatches over >= 10,000 compared
 cases, then `SHARC_HLE=1 verify.py --only build,pins,check`, then one paired A/B.
 
+## DT2 hot functions and the per-instruction floor 2026-10-12 **[D]**
+
+DT2 1.16, gen-fext core, region-profile build, one-sample card, dt2-sample-trig + tf-br-127 + sf-del-ref (shares
+agree within 0.2 points; FX paths barely register). DT2 has no fast-tier regions, so ~95% of DSP instructions run
+as AOT blocks (interpreter ~0.2%). Top 20 by AOT region time:
+
+| # | DT2 fn | share | ins/call | calls/s | DN2 match |
+|---|---|---:|---:|---:|---|
+| 1 | 0x1c642a | 13.2% | 3540 | 13k | none |
+| 2 | 0x1c0d68 | 9.0% | 76 | 297k | reloc 1c0c76 |
+| 3 | 0x1c4afe | 8.4% | 457 | 51k | none |
+| 4 | 0x1cb3d8 | 7.1% | 526 | 51k | reloc 1cdb56 |
+| 5 | 0x1cd906 | 7.0% | 394 | 48k | reloc b82096 |
+| 6 | 0x1cbc44 | 4.6% | 310 | 46k | reloc b80432 |
+| 7 | 0x1c18a6 | 4.5% | 3414 | 4k | none |
+| 8 | 0x1c0874 | 4.1% | 25 | 582k | reloc 1c07c6 |
+| 9 | 0x1c2b24 | 3.7% | 1061 | 14k | none |
+| 10 | 0xb8063e | 3.4% | 1224 | 9k | reloc b82d1a |
+
+Top 5 / 10 / 20 hold 44.7 / 65.1 / 87.8% (under 40 functions cover ~99%). 50.6% of DT2 time is in functions with
+a DN2 counterpart (8.0% byte-exact), so per-firmware work is unavoidable; DN2 b82342 (byte-exact at DT2 0x1cdbb2)
+is not entered in these DT2 scenarios.
+
+Lesson from "HLE: first function and checker": the cost model's "2.85 ns per instruction" is the AOT average; code
+already in a fast-tier kernel runs at ~1.1 ns, and a hand-written, bit-exact native routine costs ~0.9 ns per
+replaced instruction (SHARC float semantics: value-domain checks, flush and flags) — no better than the fast tier.
+So: (1) choose targets by the measured per-call cost of their current path, never instructions × average; (2) the
+lever is moving AOT-path work (2.85 ns native, ~5.4 ns in wasm) onto the ~1 ns paths (fast-tier kernels or HLE),
+which matters most on DT2, where nothing runs in the fast tier; (3) the DSP executes ~500M instructions per audio s,
+so ~1 ns per instruction is a floor of ~0.5 s per audio s native unless the instruction count itself drops.
