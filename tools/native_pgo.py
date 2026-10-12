@@ -419,7 +419,11 @@ def check(
 
 
 def profile_use_flags(profdata: str) -> str:
-    return FLAGS_TEMPLATE.format(profdata=profdata)
+    # Not part of the profile key: it only silences partial-mismatch warnings.
+    return (
+        FLAGS_TEMPLATE.format(profdata=profdata)
+        + " -Cllvm-args=-pgo-warn-mismatch=false"
+    )
 
 
 @dataclasses.dataclass
@@ -502,11 +506,11 @@ def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
     )
 
 
-def stale_notice(detail: str, device: str = "dn2") -> str:
-    retrain = "mise run pgo" if device == "dn2" else train_hint(device)
+def stale_notice(detail: str = "", device: str = "dn2") -> str:
+    """The one line printed when a stale profile is not used."""
     return (
-        f"WARNING: native PGO: profile stale ({detail}); using it anyway "
-        "(unchanged functions keep their profile). Retrain at a milestone: " + retrain
+        "PGO profile is stale for this core; building without PGO. Retrain with "
+        "`mise run pgo` (DN2) or `uv run python tools/native_pgo.py train --device dt2`."
     )
 
 
@@ -530,8 +534,8 @@ def launch_plan(
 ) -> tuple[LaunchPlan | None, str]:
     """Decide whether the launcher can use the PGO build; returns (plan, notice).
 
-    A stale profile is used anyway (with a warning notice) when its file still
-    exists; a missing or unusable one gives (None, fallback notice). An empty
+    A stale, missing or unusable profile gives (None, notice): the build runs
+    without PGO. An empty
     notice means stay silent (opted out or unsupported host).
     """
     environ = os.environ if environ is None else environ
@@ -539,9 +543,7 @@ def launch_plan(
     if status == "off":
         return None, ""
     if status == "stale":
-        profile = current_profile(device)
-        if profile:
-            return plan_for(profile, environ), stale_notice(detail, device)
+        return None, stale_notice(detail, device)
     if status != "ok":
         return None, fallback_notice(status, detail, device)
     return plan_for(detail, environ), "native PGO: using profile " + pathlib.Path(

@@ -403,18 +403,13 @@ def test_current_profile_does_not_train(pgo):
     assert pgo.commands == []
 
 
-def test_stale_profile_is_used_with_a_warning_without_training(
+def test_stale_profile_builds_without_pgo_and_without_training(
     pgo, monkeypatch, capsys
 ):
-    monkeypatch.setattr(
-        sys.modules["native_pgo"],
-        "current_profile",
-        lambda device="dn2": "old.profdata",
-    )
-    assert launcher()["pgo_plan"](COUPLED) == ("plan", "old.profdata")
+    assert launcher()["pgo_plan"](COUPLED) is None
     assert trained(pgo) == []
     err = capsys.readouterr().err
-    assert "profile stale" in err
+    assert "stale for this core" in err
     assert "mise run pgo" in err
 
 

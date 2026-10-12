@@ -161,16 +161,16 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
     assert native_pgo.local_package_dirs() == ["native/coldfire/cfabi", "native/sharc"]
 
 
-def test_launch_plan_uses_a_stale_profile_with_a_warning(tree, monkeypatch):
+def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):
     monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
     monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
     monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
     (tree / "native/sharc/lib.rs").write_text("a changed")
     plan, notice = native_pgo.launch_plan({})
-    assert plan is not None
-    assert plan.env["RUSTC"] == "/fake/rustc"
-    assert "profile stale" in notice
+    assert plan is None
+    assert "stale for this core; building without PGO" in notice
     assert "mise run pgo" in notice
+    assert "-pgo-warn-mismatch=false" in native_pgo.profile_use_flags("p")
 
 
 def test_dt2_state_reads_the_dt2_manifest(tree, monkeypatch):
