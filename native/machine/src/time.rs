@@ -54,9 +54,10 @@ pub struct Time {
     /// nothing until a deadline, an IPL below `level`, or any register write
     /// or load (which clears this). Host-only cache, not checkpointed.
     blocked: Option<(f64, u8)>,
-    /// Deliver guest-forced INTC sources (INTFRCH/INTFRCL). Off by default:
-    /// it changes ColdFire state, so every pinned PCM. `DIGI_INTC_FORCE=1`
-    /// turns it on at construction (finding 19, sequencer step ISR).
+    /// Deliver guest-forced INTC sources (INTFRCH/INTFRCL). On by default
+    /// since 2026-10-13 (finding 19, sequencer step ISR). Native
+    /// `DIGI_INTC_FORCE=0` turns it off at construction for A/B; on wasm32 it
+    /// is always on. `restore_timer_component` does not touch it.
     force_irq: bool,
 }
 
@@ -89,7 +90,18 @@ impl Time {
             host_writes: Vec::new(),
             service_not_before: None,
             blocked: None,
-            force_irq: std::env::var_os("DIGI_INTC_FORCE").is_some_and(|v| v != "0"),
+            force_irq: Self::default_force_irq(),
+        }
+    }
+
+    fn default_force_irq() -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            true
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::env::var_os("DIGI_INTC_FORCE").is_none_or(|v| v != "0")
         }
     }
 

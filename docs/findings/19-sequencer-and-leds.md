@@ -89,4 +89,5 @@ one key): the key-to-LED map is `devices/digitakt-ii-leds.toml` and `devices/dig
 - The meaning of the low nibble (modes 2, 6, 0xa) and bit 7 needs the panel MCU's side or a device recording.
 - Whether vector 108 at level 5 and vector 121 at level 2 interleave exactly as on the device (the model offers a
   forced source once per boundary above the IPL; PIT/DTIM keep their existing order).
-- The default `DIGI_INTC_FORCE` and the four pins.
+
+Forced-interrupt delivery is on by default since 2026-10-13 (`DIGI_INTC_FORCE=0` turns it off natively; always on in wasm), with the four pins re-pinned, Em-approved.
