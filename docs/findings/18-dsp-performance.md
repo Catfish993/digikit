@@ -1709,3 +1709,68 @@ What DT2 would need: the same analysis per voice function (DT2 has no HLE entry;
 in AOT, see "DT2 fast-region probe"). A silent-voice skip is possible only where the inactive path stores nothing
 that is read later. Check that first with the write-watch (`SHARC_WWATCH`) over one inactive call: any stream store
 that a later stage reads kills the skip.
+
+## Busy-wait loops 2026-10-12 **[D]**
+
+Interpreter-only per-PC profile of DN2 trig1-taps (10.5 s) mapped onto sharcdb loops, blocks and memory accesses;
+a cf-profile build for the ColdFire (DN2 trig1-taps and DT2 dt2-sample-trig).
+
+- DSP: the idle skip already covers the waiting. The idle loop's own PCs still execute 1.86M instructions per run
+  (0.035% of interpreted work). The 12 hottest loops are DO compute loops that store; the only no-store backward
+  branches are epilogues. Ceiling: 0.
+- ColdFire, per audio s: 132M instructions, 50.3M idle-skipped, 81.5M in run_fast (0.577 s), of which the 5 fused
+  loops (MacA 0x400db160, interleave 0x400cf918, MacB 0x400db1f4, copy 0x401344a6, clear 0x40133ec8) are 44M at
+  0.118 s and ~37M unfused instructions cost ~12 ns each; ~124k run_fast calls per s. No MMIO polling loops in
+  either firmware. Ceiling: <= 0.03 CPU s per audio s. The ColdFire levers are unfused interpreter speed and the
+  run_fast call overhead.
+
+## DN2 hot functions 2026-10-12 **[D]**
+
+Per-function cost from the interpreter per-PC profile, fast-tier instructions at their measured ~0.98 ns and the
+rest at the AOT 2.85 ns (scaled to the 0.93 PGO figure). Top 20 = 74.6% of desktop time, 84% of instructions; top
+10 = 51% / 62%. Largest: 0x1c8ef1 voice/track mixer driver 7.4%; 0x1c244d buffer clear + pair FMULs 6.5%; 0x1c0c76
+exp/mapping primitive 5.8% (shared with DT2 0x1c0d68); the oscillator trio 0x1c3911 / 0x1c35a7 / 0x1c37b4 (64-trip
+loops, FEXT phase, linear interpolation; 15.5% desktop, ~37% browser; already fast-tier kernels); 0xb809f2 small
+IIR, 960k calls per s (shared with DT2). 8 of the 20 exist in DT2 1.16 by function hash (5 byte-exact). The
+hand-written ceilings first estimated from this table assumed 0.2-0.5 ns per replaced instruction; "HLE: first
+function and checker" measured ~0.9 ns, so they do not hold.
+
+## Silent voices (DN2) 2026-10-12 **[D]**
+
+| scenario | voices playing | DSP non-idle instructions per audio s |
+|---|---:|---:|
+| idle | 0 | 501.7M |
+| trig1-hold | 1 | 502.0M |
+| kb-chord16 | 13 of 16 | 502.5M |
+
+- The voice function 0x1c54c7 runs 16 times per frame (records 0x2412a0 + k*0x240) at exactly 10411 instructions,
+  active or not: 49.8% of DSP instructions. Its path does not depend on activity; an inactive voice's oscillators
+  free-run (an 8.18 Hz table-interpolated sine).
+- Liveness over 3 frames of idle voices (a derived access log from `SHARC_PCDUMP=all` plus sharcdb operand decode;
+  no engine read watch): 6 of the 7 scratch streams at 0x25e1e8..0x25e9e4 are overwritten by the next voice before
+  any read (dead); the stream 0x25e5e8..0x25e6e4 is read by voice k+1 before it writes it (voice 0 reads voice 15's
+  from the previous frame); about 25 record words and the 12-word output block at 0x24ebb0 + 0x78*k are read by the
+  same voice's next-frame call (carried state, not a mixer input); the tail words 0x2d1523-0x2d153c and
+  0x2d1596-0x2d15b0 are rewritten by every voice and only voice 15's values are read after the loop.
+- An exact skip of a silent voice would still have to reproduce its oscillator state recurrences and the carried
+  64-word stream, so it keeps a large part of the cost and needs per-voice hand-written recurrences; not pursued.
+  Open **[O]**: a capture with an actively playing voice, the PCM bus path (outside the logged range), what note-on
+  resets.
+
+## Performance: where it stands 2026-10-12 **[D]**
+
+- Desktop: real time on both devices (DSP CPU per audio s with PGO: DN2 ~0.93, DT2 ~0.95); the paced app holds the
+  0.3 s prefill with 0 underruns ("App soak: latency and DT2").
+- Browser: 0.47x real time on the DN2 dev page (AOT core in wasm, fast tier, split workers), DSP-bound at ~2.16 s
+  per audio s.
+- Measured and closed (sections above): linker order file; LLVM hot-cold splitting; fast-over-AOT regions on DN2
+  and DT2; kernels that follow calls (K1) and keep ranges across calls (K4); hand-written functions (HLE, 0xb82342);
+  busy-wait skipping; silent-voice skipping.
+- Floor: exact emulation costs ~1 ns per SHARC instruction whether by fast-tier kernel or hand-written code, and the
+  DSP executes ~500M instructions per audio s, so ~0.5 s per audio s native unless the instruction count drops.
+- Remaining levers, all large and uncertain: kernels that span calls with cheap memory access (the flat and dynamic
+  window problem), a different AOT code shape for wasm (the 1.74x wasm penalty; only build flags were tried),
+  frame-level skipping of idle voices with state recurrences.
+- Method for any next attempt: a ceiling from the measured per-call cost of the current path (never instructions x
+  an average), a one-function or one-region proof (`mise run hle-check`, the region bench), and a stop when the
+  measured gain is under 70% of the model.
