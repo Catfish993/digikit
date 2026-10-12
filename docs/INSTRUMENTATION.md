@@ -64,7 +64,8 @@ Not in `--diag` (set the variable by hand): `SHARC_LIVE_AOT_CAPTURE_PC/_DIR/_LIM
 `DIGI_LP0_LOG` (stderr), `DN2_PROFILE_LINK=1`,
 `DIGI_EMU_SINK_WAV`, `DIGI_EMU_PCM_F32LE` + `DIGI_EMU_PCM_SECONDS` (desktop audio
 captures), `DIGI_COUPLED_PCM_F32LE`, `DIGI_COUPLED_DSP_EXPORT` (the pinned test),
-`DIGI_PANEL_TX_LOG=PATH` (front-panel LED bytes from UART8: one line `icount hex` per drain).
+`DIGI_PANEL_TX_LOG=PATH` (front-panel LED bytes from UART8: one line `icount hex` per drain), `DIGI_INTC_FORCE=1` (deliver guest-forced INTC sources, INTFRCH/INTFRCL: the
+sequencer step ISRs; off by default because it changes every pinned PCM; finding 19).
 
 ## Cost when off
 

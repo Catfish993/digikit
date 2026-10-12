@@ -14,9 +14,23 @@ LEN = {0xB8: 0, 0xB9: 2, 0xB5: 4, 0xB7: 1, 0xBB: 3, 0xBC: 1}
 
 def load(path):
     out = []
-    for line in open(path):
-        t, h = line.split()
-        out += [(int(t), b) for b in bytes.fromhex(h)]
+    with open(path) as f:
+        for line in f:
+            t, h = line.split(None, 1)
+            if not h.startswith("@"):
+                out += [(int(t), b) for b in bytes.fromhex(h)]
+    return out
+
+
+def marks(path):
+    """The injected panel buttons: [(icount, code, down)]."""
+    out = []
+    with open(path) as f:
+        for line in f:
+            t, h = line.split(None, 1)
+            if h.startswith("@button"):
+                _, code, d = h.split()
+                out.append((int(t), int(code), d == "d"))
     return out
 
 
@@ -43,7 +57,9 @@ def main():
     for t, c, d in parse(load(a.log)):
         if a.leds and c not in (0xB9, 0xB5):
             continue
-        print(f"{(t - a.base) / 1e6:9.2f}M", "??" if c is None else f"{c:02x}", d.hex(" "))
+        print(
+            f"{(t - a.base) / 1e6:9.2f}M", "??" if c is None else f"{c:02x}", d.hex(" ")
+        )
 
 
 if __name__ == "__main__":
