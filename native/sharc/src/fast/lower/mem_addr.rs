@@ -73,16 +73,6 @@ pub(super) fn guarded_xfers() -> bool {
     *ON.get_or_init(|| std::env::var_os("SHARC_FAST_NOGUARD").is_none())
 }
 
-/// Flat guarded accesses (`flat_access`) for transfers with no static range
-/// and no anchor register (a pointer loaded from memory): the kernel reads
-/// the engine's page table itself and guards every access. Off unless
-/// `SHARC_FAST_FLAT` is set: PCM-exact, but the kernels are large (compile
-/// time) and the DN2 hot loops still stop elsewhere (docs/findings/18-dsp-performance.md).
-pub(super) fn flat_xfers() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_FLAT").is_some())
-}
-
 impl Lower {
     /// A normal-word transfer through index register IC with modifier MC.
     pub fn dm_transfer(&mut self, ic: u32, mc: u32, post: bool, x: Xfer) -> LR<()> {
@@ -382,7 +372,7 @@ impl Lower {
             // earlier in the region can turn on the wrap.
             return refuse("L/B of the index register written in the region");
         }
-        if !self.env.circ_off && self.env.dag_l[(ic - 16) as usize].is_some_and(|l| l != 0) {
+        if self.env.dag_l[(ic - 16) as usize].is_some_and(|l| l != 0) {
             // MODIFY wraps on B/L whatever MODE1.CBUFEN says; not lowered.
             return refuse("MODIFY on an index register with L != 0");
         }

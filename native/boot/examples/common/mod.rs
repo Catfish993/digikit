@@ -1,6 +1,6 @@
 //! Panel script shared by the headless examples: the handover QA sequence
 //! (NO button at ready and +20M, encoder A at +40M) plus optional
-//! NOTE_EVENTS=trig|play key events (see `dspi2_capture.rs`).
+//! NOTE_EVENTS=trig|play key events (see `sharc_live.rs`).
 
 use elektron_native_boot::Emulator;
 

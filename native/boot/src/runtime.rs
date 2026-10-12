@@ -17,8 +17,8 @@ use crate::telemetry::{DiagnosticReport, Mark, Position, Recorder};
 use coldfire::fused::Loop;
 
 const CHUNK_MAX: u32 = 250_000;
-const CAPTURE_BUS_TRACE: bool = cfg!(feature = "diagnostic-trace");
-const ACCELERATE_RAM_CLEAR: bool = !CAPTURE_BUS_TRACE && !cfg!(feature = "reference-ram-clear");
+const CAPTURE_BUS_TRACE: bool = false;
+const ACCELERATE_RAM_CLEAR: bool = true;
 const SET_PIXEL_SIG: &str = "2f032f02206f000c222f0010202f00144a816d4c4a806d48b2a800046c42b0a800086c3c43e8000c761f4c1118002400ea82c680202f001820680010d282e589";
 const TCD34_BASE: u32 = 0xfc04_5440;
 const TCD34_DADDR: u32 = TCD34_BASE + 0x10;
@@ -2525,7 +2525,6 @@ mod tests {
         assert_eq!(runtime.delivery_counts[timer_vector as usize], 1);
     }
 
-    #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
     #[test]
     fn ram_clear_batches_match_interpreter_across_chunks_pages_and_final_flags() {
         for file in ["Digitakt_II_OS1.16.syx", "Digitone_II_OS1.11.syx"] {
@@ -2598,7 +2597,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
     #[test]
     fn ram_clear_declines_modified_code_inputs_active_timers_and_invalid_state() {
         let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {

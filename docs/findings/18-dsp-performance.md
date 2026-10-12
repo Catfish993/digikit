@@ -1625,6 +1625,8 @@ us; without them the exact flags and sticky bits cannot be reproduced. (3) Hook 
 on every state or value it does not model; (e) run `mise run hle-check` until 0 mismatches over >= 10,000 compared
 cases, then `SHARC_HLE=1 verify.py --only build,pins,check`, then one paired A/B.
 
+HLE mechanism removed 2026-10-12 (closed experiment).
+
 ## DT2 hot functions and the per-instruction floor 2026-10-12 **[D]**
 
 DT2 1.16, gen-fext core, region-profile build, one-sample card, dt2-sample-trig + tf-br-127 + sf-del-ref (shares

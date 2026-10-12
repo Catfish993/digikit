@@ -534,15 +534,11 @@ fn bench(args: &[String]) {
 /// an engine with both would run). Same call plan, restore and trimming as
 /// `bench`. The fast region is built (and compiled) before timing starts;
 /// its compile time is reported.
-/// `fe.run` with the per-phase marks of bucket B (feature `fast-prof`).
+/// `fe.run` (the bucket argument is unused now the per-phase marks are gone).
 #[cfg(not(target_family = "wasm"))]
 fn prof_run(fe: &mut sharc_native::fast::FastEngine, s: &mut St, pc: u32, _b: usize) -> u32 {
     use sharc_native::fast::FastTier;
-    #[cfg(feature = "fast-prof")]
-    sharc_native::fast::glue::prof::outer_start(_b);
     let c = fe.run(s, pc).unwrap_or(EXIT_TRAP);
-    #[cfg(feature = "fast-prof")]
-    sharc_native::fast::glue::prof::outer_end();
     c
 }
 
@@ -647,27 +643,6 @@ fn fast_bench(args: &[String]) {
                         *ksum += k;
                     }
                 }
-            }
-            #[cfg(feature = "fast-prof")]
-            {
-                use sharc_native::fast::glue::prof;
-                let f = prof::freq() as f64;
-                for (b, name) in [(1, "fast_loop"), (3, "fast_1iter")] {
-                    let (ticks, n) = prof::take(b);
-                    // Mean ns per call by phase (warm-up calls included).
-                    let parts: Vec<String> = prof::PHASES
-                        .iter()
-                        .zip(&ticks)
-                        .map(|(p, t)| {
-                            format!("\"{p}\":{:.1}", *t as f64 / n.max(1) as f64 * 1e9 / f)
-                        })
-                        .collect();
-                    println!(
-                        "{{\"region\":\"{pc:X}\",\"mode\":\"prof_{name}\",\"rep\":{rep},\"calls\":{n},{}}}",
-                        parts.join(",")
-                    );
-                }
-                let _ = prof::take(2);
             }
             for (name, mut times, ksum) in series {
                 times.sort_unstable();
@@ -1067,7 +1042,6 @@ fn fast_guard_check() {
         regs: [None; NREGS as usize],
         dag_l: [None; 16],
         dag_b: [None; 16],
-        circ_off: false,
         assume_nw32: true,
         mode1: 0,
         flag_v: false,

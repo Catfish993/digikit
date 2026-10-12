@@ -259,12 +259,10 @@ fn run_sharc(a: &Args) {
     let log = source.log();
 
     if let Some(n) = a.bench {
-        if std::env::var_os("LIVE_NO_QOS").is_none() {
-            println!(
-                "qos: user-interactive {}",
-                live_audio::priority::raise_current_thread()
-            );
-        }
+        println!(
+            "qos: user-interactive {}",
+            live_audio::priority::raise_current_thread()
+        );
         let mut dump = a.dump.as_ref().map(|p| {
             std::io::BufWriter::new(
                 std::fs::File::create(p).unwrap_or_else(|e| die(&format!("{p}: {e}"))),

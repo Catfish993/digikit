@@ -48,7 +48,6 @@ pub mod glue;
 pub mod helper;
 pub mod interp;
 pub mod ir;
-pub mod lean;
 pub mod lower;
 pub mod plugin;
 pub mod region;
@@ -922,10 +921,7 @@ impl FastEngine {
             }
             Ok(mut r) => {
                 let t1 = clock::Instant::now();
-                let k = match &r.lean {
-                    Some(l) => self.backend.compile_checked(&r.kernel, &l.entry),
-                    None => self.backend.compile(&r.kernel),
-                };
+                let k = self.backend.compile(&r.kernel);
                 self.stats.compile_ns += t1.elapsed().as_nanos() as u64;
                 match k {
                     Err(e) => {
@@ -1048,12 +1044,6 @@ fn cov_built(s: &St, pc: u32, r: &region::Region) {
         r.wins.len(),
         pcs.join(",")
     );
-    // SHARC_FAST_IRDUMP=0xPC: print the kernel body of the region rooted at PC.
-    if std::env::var("SHARC_FAST_IRDUMP").is_ok_and(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16) == Ok(pc)) {
-        for (i, x) in r.kernel.body.iter().enumerate() {
-            eprintln!("ir {pc:#x} {i}: {x:?}");
-        }
-    }
     if let Some(c) = &r.cfg {
         for (at, why) in &c.stops {
             let form = region::decode_one(s, *at).map_or("undecodable", |d| d.form);
@@ -1112,51 +1102,6 @@ fn req_failure(s: &St, r: &region::Region) -> String {
         }
     }
     "misc (mode1/flags)".into()
-}
-
-/// `SHARC_FAST_KEYS=1` (with `SHARC_FAST_COV`): print the entry state each
-/// declined call saw (diagnostic, to pick what a variant has to key on).
-fn keys_log() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_KEYS").is_some())
-}
-
-fn state_key(s: &mut St, r: &region::Region) -> String {
-    let m1 = s.r[crate::rt::MODE1];
-    let a = s.r[118];
-    let mut out = format!("mode1={:#x}/{:#x} astatx_known={:#x}", m1.b, m1.m, a.m);
-    for q in &r.misc {
-        out += &format!(" {q:?}");
-    }
-    for &c in &r.known {
-        let v = s.r[c as usize];
-        if v.m != u32::MAX {
-            out += &format!(" known-fail r{c}={:#x}/{:#x}", v.b, v.m);
-        }
-    }
-    for &(c, k) in &r.eqs {
-        let v = s.r[c as usize];
-        if v.m != u32::MAX || v.b != k {
-            out += &format!(" eq-fail r{c} want {k:#x} have {:#x}/{:#x}", v.b, v.m);
-        }
-    }
-    // Windows at one iteration: the span and whether it resolves for the
-    // read / write it asks (diagnostic; the probe is `Mem::window`).
-        for (w, spec) in r.wins.iter().enumerate() {
-        let b = match spec.base {
-            Base::None => 0,
-            Base::Reg(c) => s.r[c as usize].b as i64,
-        };
-        let (lo, hi) = (b + spec.lo + spec.nf, b + spec.hi + spec.nf);
-        let len = (hi - lo).max(0) as u32;
-        let rd = s.mem.window(lo as u32, len, true, false).is_some();
-        let wr = s.mem.window(lo as u32, len, false, true).is_some();
-        out += &format!(
-            " win{w} {lo:#x}..{hi:#x} spec r={} w={} dyn={:?} probe r={rd} w={wr}",
-            spec.read, spec.write, spec.dynamic_anchor
-        );
-    }
-    out
 }
 
 /// Are the code words R was made from still the ones in memory? (Cached
@@ -1242,17 +1187,6 @@ impl FastEngine {
 
 impl Drop for FastEngine {
     fn drop(&mut self) {
-        #[cfg(feature = "fast-prof")]
-        if self.summary {
-            let (ticks, _) = glue::prof::take(0);
-            let f = glue::prof::freq() as f64;
-            let calls = self.stats.calls.max(1) as f64;
-            let mut line = format!("fast-prof: {} calls;", self.stats.calls);
-            for (n, t) in glue::prof::PHASES.iter().zip(&ticks) {
-                line += &format!(" {n} {:.1} ns;", *t as f64 / f * 1e9 / calls);
-            }
-            eprintln!("{line}");
-        }
         if dump::enabled() {
             let rows: Vec<(u32, u64, u64)> = self
                 .pcs
@@ -1290,18 +1224,6 @@ impl Drop for FastEngine {
                     exits.join(";"),
                     why.join(";")
                 );
-            }
-        }
-        if std::env::var_os("SHARC_FAST_LEAN_STATS").is_some() {
-            for (pc, s) in self.pcs.iter().zip(&self.slots) {
-                if let Some(l) = s.region.as_ref().and_then(|r| r.lean.as_ref()) {
-                    eprintln!(
-                        "lean {pc:#x}: calls {} window hit/miss {}/{}",
-                        s.calls,
-                        l.win_hit.get(),
-                        l.win_miss.get(),
-                    );
-                }
             }
         }
     }
@@ -1494,9 +1416,6 @@ impl FastEngine {
                 }
                 Err(d) => {
                     slot.cov.declined[*d as usize] += 1;
-                    if keys_log() {
-                        eprintln!("key root={pc:#x} {d:?} {}", state_key(s, region));
-                    }
                     let why = match d {
                         glue::Decline::Req => format!("req: {}", req_failure(s, region)),
                         glue::Decline::Shape | glue::Decline::Window => glue::take_cov_why(),
@@ -1532,6 +1451,12 @@ impl FastEngine {
                 self.stats.runs += 1;
                 self.stats.insns += s.icount - before;
                 dump::finish(pc, s.icount - before);
+                if self.auto.is_some() && s.pc_sw as u32 != pc {
+                    // The kernel left at another PC (a call it performed, a
+                    // stop): the interpreter never saw a branch to it, so
+                    // `note` was not called. A candidate region start.
+                    self.note(s.pc_sw as u32);
+                }
                 Some(code)
             }
             Err(d) => {
@@ -1544,7 +1469,7 @@ impl FastEngine {
                         .entry(format!("decline req: {why}"))
                         .or_default() += 1;
                 }
-                if d == glue::Decline::Req && std::env::var_os("SHARC_FAST_NOVOLATILE").is_none() {
+                if d == glue::Decline::Req {
                     // An M register that differs from its baked value twice in
                     // a row is data, not a constant: do not bake it near here.
                     let mut fails = 0u64;
@@ -1563,7 +1488,7 @@ impl FastEngine {
                     }
                 }
                 let mut exit0_rebuild = false;
-                if d == glue::Decline::Exit0 && std::env::var_os("SHARC_FAST_NOEXIT0").is_none() {
+                if d == glue::Decline::Exit0 {
                     slot.exit0 += 1;
                     if slot.exit0 == 4
                         && slot.rebuilds < REBUILD_BUDGET

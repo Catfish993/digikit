@@ -29,7 +29,6 @@
 pub mod canon;
 mod diag;
 pub mod fast;
-pub mod hle;
 pub mod frames;
 mod live_capture;
 mod region_profile;
@@ -294,8 +293,6 @@ pub struct Engine {
     /// Optional fast tier (src/fast): tried at its entry PCs before the
     /// generated block. None by default; behaviour is unchanged without it.
     pub fast: Option<Box<dyn fast::FastTier>>,
-    /// Hand-written native implementations of hot functions (`SHARC_HLE`).
-    pub hle: Option<Box<hle::Hle>>,
     /// The fast tier selects its own regions (`FastTier::note`); kept in
     /// step with `fast` by `set_fast`.
     fast_auto: bool,
@@ -303,11 +300,6 @@ pub struct Engine {
     fast_auto_dispatch: bool,
     /// SHARC_FAST_HIST: interpreted instructions per PC (diagnostics).
     hist: Option<Box<std::collections::HashMap<u32, u64>>>,
-    /// SHARC_CONCRETISE_ON_BAIL (diagnostic): a block entry that bails with
-    /// no progress gets its unknown register bits set to zero, then retries.
-    concretise_on_bail: bool,
-    /// Bails concretised under `concretise_on_bail`.
-    concretised: u64,
     /// Opt-in raw generated-block call snapshots.  It is configured wholly
     /// through the environment and is absent in ordinary execution.
     live_capture: Option<live_capture::LiveCapture>,
@@ -515,18 +507,6 @@ pub fn exec_insn(s: &mut St, insn: Insn) -> R<()> {
     }
 }
 
-/// Decode and execute the instruction at the PC through the generated core
-/// (the reference the HLE checker compares against).
-pub(crate) fn interp_one(s: &mut St) -> R<()> {
-    let insn = if s.runtime_decode {
-        let pc = s.pc_sw;
-        rt::bnd::decode_at(s, (), None, pc)?
-    } else {
-        (s.insn_at)(s.pc_sw).ok_or(TRAP_NO_INSN)?
-    };
-    exec_insn(s, insn)
-}
-
 /// The explicit_memory_model setting the image's block code was generated
 /// for (true without an image: the default configuration).
 pub fn gen_explicit_memory_model() -> bool {
@@ -598,11 +578,6 @@ fn image_insn_at() -> fn(Int) -> Option<Insn> {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        if let Some(h) = &self.hle
-            && (std::env::var_os("SHARC_HLE_LOG").is_some() || std::env::var_os("SHARC_HLE_CHECK").is_some())
-        {
-            eprint!("{}", h.report());
-        }
         if let Some(h) = &self.hist {
             let mut v: Vec<_> = h.iter().map(|(a, b)| (*b, *a)).collect();
             v.sort_unstable_by(|a, b| b.cmp(a));
@@ -626,9 +601,6 @@ impl Drop for Engine {
                 self.stats.block_instructions,
             );
             eprintln!("{line}");
-            if self.concretise_on_bail {
-                eprintln!("concretise: {} bails concretised", self.concretised);
-            }
             let m = &self.model_stats;
             eprintln!(
                 "fast engine: models gated {} unsafe {} irq_deferred {} timer_gated {} mmr_exits {} code_mismatch {}; idle skipped {}",
@@ -690,26 +662,16 @@ impl Engine {
             code_ok: false,
             code_barred: None,
             fast: None,
-            hle: None,
             fast_auto: false,
             fast_auto_dispatch: false,
             hist: std::env::var_os("SHARC_FAST_HIST")
                 .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
-            concretise_on_bail: std::env::var_os("SHARC_CONCRETISE_ON_BAIL").is_some(),
-            concretised: 0,
             live_capture: live_capture::LiveCapture::from_env(),
             wwatch: write_watch::WriteWatch::from_env(),
             pcdump: pc_dump::PcDump::from_env(),
             diag_on: false,
         };
         engine.refresh_diag();
-        engine.hle = hle::Hle::from_env(interp_one).map(Box::new);
-        if let Some(h) = &engine.hle {
-            let pcs: Vec<u32> = h.entries().collect();
-            for pc in pcs {
-                engine.s.chain_stop_add(pc);
-            }
-        }
         engine
     }
 
@@ -1231,9 +1193,6 @@ impl Engine {
         #[cfg(all(sharc_gen, sharc_image))]
         {
             self.s.mem.unwatch_code();
-            if let Some(h) = &mut self.hle {
-                h.watched = false;
-            }
             for &(start, len, _) in generated::image::CODE_RANGES {
                 let (lo, hi) = (start, start + len);
                 self.s
@@ -1336,11 +1295,7 @@ impl Engine {
         let fast_pc = self
             .fast
             .as_ref()
-            .is_some_and(|f| f.wants(self.s.pc_sw as u32))
-            || self
-                .hle
-                .as_ref()
-                .is_some_and(|h| h.wants(self.s.pc_sw as u32));
+            .is_some_and(|f| f.wants(self.s.pc_sw as u32));
         if entry.is_none() && !fast_pc {
             return None;
         }
@@ -1470,10 +1425,7 @@ impl Engine {
     /// settings, the latent interrupt, the code check. A region that declines
     /// leaves the state untouched and is dispatched normally.
     fn fast_continue(&mut self, limit: u64, mut code: Option<u32>) -> Option<u32> {
-        // `SHARC_FAST_NOCONT=1`: every kernel exit returns to the dispatch loop.
-        static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *OFF.get_or_init(|| std::env::var_os("SHARC_FAST_NOCONT").is_some())
-            || self.one_dispatch
+        if self.one_dispatch
             || self.stop_pc.is_some()
             || self.stop_software_interrupt
             || self.s.probe.is_some()
@@ -1519,18 +1471,6 @@ impl Engine {
     }
 
     fn trapped(&mut self, t: Trap) {
-        if std::env::var_os("SHARC_TRAP_REGS").is_some() {
-            let unknown: Vec<String> = (0..NUREG)
-                .filter(|&c| self.s.r[c].m != u32::MAX)
-                .map(|c| format!("r{c}={:#x}/{:#x}", self.s.r[c].b, self.s.r[c].m))
-                .collect();
-            eprintln!(
-                "trap at {:#x}: icount {}, registers not fully known: {}",
-                self.s.pc_sw,
-                self.s.icount,
-                unknown.join(" ")
-            );
-        }
         self.stats.traps += 1;
         self.last_trap = Some(t);
         self.halt = Some(format!(
@@ -1755,13 +1695,7 @@ impl Engine {
                     }
                     self.s.in_block = plan.models;
                     let mut code = None;
-                    if let Some(h) = self.hle.as_mut().filter(|_| !plan.stop_loop_empty)
-                        && h.wants(entry_pc)
-                    {
-                        code = h.run(&mut self.s, entry_pc);
-                    }
-                    if code.is_none()
-                        && let Some(f) = self.fast.as_mut().filter(|_| !plan.stop_loop_empty)
+                    if let Some(f) = self.fast.as_mut().filter(|_| !plan.stop_loop_empty)
                     {
                         #[cfg(feature = "region-profile")]
                         {
@@ -1955,22 +1889,6 @@ impl Engine {
                             }
                             if self.s.icount > before {
                                 continue 'steploop;
-                            }
-                            if self.concretise_on_bail {
-                                // PCSTK (100) and MODE1STK (125) mirror the
-                                // stacks; they stay as the stack model left them.
-                                let mut changed = false;
-                                for (c, v) in self.s.r.iter_mut().enumerate() {
-                                    if c != 100 && c != 125 && v.m != u32::MAX {
-                                        v.b &= v.m;
-                                        v.m = u32::MAX;
-                                        changed = true;
-                                    }
-                                }
-                                if changed {
-                                    self.concretised += 1;
-                                    continue 'steploop;
-                                }
                             }
                         }
                     }

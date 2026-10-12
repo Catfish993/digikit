@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Acceptance gate for the repack chain: rebuild a firmware .syx from
-extracted sections, then re-extract the rebuilt container with the
-DEVICE's own depacker and prove every section comes back byte-identical.
+extracted sections, then re-extract the rebuilt container with dt2/elz.py
+and prove every section comes back byte-identical.
 
 What this proves: the container write path -- dt2/build.py's packing,
 its ELE3 table, the per-section storage rules, 8-in-7 encoding, SysEx
-framing -- reproduces content that the device's own depacker (emu/oracle.py,
-run under Unicorn) accepts and decodes to exactly the bytes it started
-from. That is a strong claim about the write path, checked against the
-real decoder rather than against this project's own packer's inverse.
+framing -- reproduces content that dt2/elz.py, the decoder verified against the
+device's own depacker, decodes to exactly the bytes it started from.
 
 The preamble's 32-bit content checksum, the container's 32-byte
 HMAC-SHA256 trailer, and each SysEx message's byte-125 checksum are all
@@ -24,10 +22,8 @@ receive code imposes no size limit, but the physical DDR and flash
 capacities on the device are not established. Flashing the output of this
 tool is untested -- proceed at your own risk.
 
-Runtime is dominated by depacking MAIN OS (section 3, ~3.1 MB) under
-emulation: expect ~90 seconds. --quick skips that section and finishes
-in a few seconds, for iteration; its result is a partial gate, not a
-pass on the real thing.
+--quick skips MAIN OS (section 3, ~3.1 MB); its result is a partial gate,
+not a pass on the real thing.
 
     uv run python tools/roundtrip.py FIRMWARE.syx
         [--sections DIR]      default: sections/
@@ -47,7 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dt2 import build
 from dt2.authcode import DEVICE_BY_ID, DEVICES, compute_trailer, derive_key
 from dt2.container import container as C, decode_syx
-from emu.oracle import depack
+from dt2.elz import depack_section
 from emu.extract import classify, NAMES, SOURCE_MARKER
 
 TABLE_OFF = 0x20
@@ -179,7 +175,6 @@ def main(argv=None):
 
         c = C(tmp_path)
         n = struct.unpack_from('>I', c, 0x1C)[0]
-        boot = orig[2]
 
         print('%-4s %-10s %-8s %12s %12s  %s' %
               ('id', 'name', 'kind', 'decomp len', 'dest', 'result'))
@@ -192,7 +187,7 @@ def main(argv=None):
                       (sid, name, '-', '-', dest, 'SKIPPED (quick)'))
                 continue
             kind, payload = classify(bytes(c[off:off + clen]))
-            got = depack(boot, payload) if kind == 'packed' else payload
+            got = depack_section(payload) if kind == 'packed' else payload
             ok = got == orig[sid]
             all_ok = all_ok and ok
             print('%-4d %-10s %-8s %12d %#12x  %s' %

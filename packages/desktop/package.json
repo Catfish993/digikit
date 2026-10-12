@@ -2,6 +2,7 @@
   "name": "@digi/desktop",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "dev": "tauri dev --release",
     "build": "tauri build"

@@ -8,7 +8,8 @@ program is an ADI boot stream in section 7 of the firmware.
 - A native emulator (Rust) runs the real firmware: ColdFire and SHARC+ together, with
   the front panel, the display and audio. It runs on the desktop and, in part, in the
   browser.
-- A Python ColdFire emulator (Unicorn) was the oracle for the native one.
+- A Python ColdFire reference emulator (Unicorn) was the oracle for the native one. It was removed;
+  the last commit that has it is tagged `unicorn-reference-final`.
 - Analysis tools (DSP and ColdFire databases, Ghidra tooling, tracers) and a container
   tool that rebuilds and patches a `.syx` file.
 
@@ -41,10 +42,9 @@ You need [mise](https://mise.jdx.dev/) (it installs the pinned Rust and pnpm) an
 
 ```sh
 mise install
-mise run setup      # uv sync, pnpm install, and the patched Unicorn if needed
+mise run setup      # uv sync, pnpm install
 ```
 
-The Python emulator needs a patched Unicorn ([docs/UNICORN.md](docs/UNICORN.md)).
 `mise tasks` lists every task.
 
 ## Extract the firmware
@@ -74,7 +74,7 @@ The files go to `snapshots/<device>-audio-ready-cold-*`. Git ignores them.
 ## Desktop emulator
 
 ```sh
-mise run emu                      # build once and run (emu:build builds only)
+mise run emu                      # build once and run (`mise run emu -- --build-only` builds only)
 mise run emu -- --cf-only --samples DIR Digitakt_II_OS1.16.syx   # your .wav files on the DT2 +Drive
 mise run emu -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
 mise run emu -- --cf-only         # ColdFire only: no DSP, no audio
@@ -187,7 +187,7 @@ and HMAC that the device checks. See [docs/PATCHING.md](docs/PATCHING.md) and
 
 ```
 dt2/             .syx container: decode, rebuild, decompress
-emu/             the Python ColdFire emulator (run, gui, checkpoint, extract)
+emu/             firmware extraction and the shared helpers (config, symbols, SHARC capture)
 native/          Rust workspace: ColdFire core, SHARC+ engine, coupled runner (native/README.md)
 packages/web     browser panel (Astro + Solid); packages/desktop is the Tauri app
 tools/           analysis, run and measurement tools
@@ -212,9 +212,16 @@ Record results in `docs/findings/`, not in handovers. Marks: **[V]** verified he
 
 ## Licence
 
-GPL-2.0-or-later ([LICENSE](LICENSE)). The patches in `patches/` change QEMU source inside
-Unicorn, so they carry the GPL. The licence covers the code here only; it gives no rights
-to Elektron's software, and this project is not affiliated with Elektron. Container format
-knowledge comes from `mischa85/elektron-firmware-tool` (MIT); some architecture facts from
+digikit ([github.com/m-dwyer/digikit](https://github.com/m-dwyer/digikit)) is licensed under
+AGPL-3.0-or-later ([LICENSE](LICENSE)), with additional terms under section 7 of the AGPL
+(attribution, origin and names) in [NOTICE](NOTICE). Keep NOTICE and the attribution
+"digikit by Em D - https://github.com/m-dwyer/digikit" in copies and modified versions; a
+user interface of a covered work shows it in its About, credits or footer area.
+
+The licence covers the code here only; it gives no rights to Elektron's software or
+firmware. digikit is not affiliated with or endorsed by Elektron. Digitakt, Digitone and
+Syntakt are trademarks of Elektron Music Machines. Container format knowledge comes from
+`mischa85/elektron-firmware-tool` (MIT); some architecture facts from
 `lalzart/digitakt-ii-firmware-research-public`. The public SHARC+ assembler `js216/selache`
-is used only as a read-only cross-check.
+is used only as a read-only cross-check. `tools/ghidra/ColdfireEMAC` contains files from
+Ghidra under the Apache License 2.0.

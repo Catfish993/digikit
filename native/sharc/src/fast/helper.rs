@@ -190,12 +190,6 @@ pub extern "C" fn helper_exec(st: *mut u8, rec: u64) -> u32 {
                 (s.insn_at)(r.pc as Int)
             };
             let Some(i) = i else {
-                if std::env::var_os("SHARC_FAST_DEBUG_HELPER").is_some() {
-                    eprintln!(
-                        "fast: helper at {:#x}: no instruction (runtime decode {})",
-                        r.pc, s.runtime_decode
-                    );
-                }
                 return 1;
             };
             r.insn.set(Some(i));
@@ -208,13 +202,7 @@ pub extern "C" fn helper_exec(st: *mut u8, rec: u64) -> u32 {
     s.pc_sw = pc;
     s.icount = icount;
     s.steps = steps;
-    if let Err(t) = res {
-        static SEEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        if std::env::var_os("SHARC_FAST_DEBUG_HELPER").is_some()
-            && SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 5
-        {
-            eprintln!("fast: helper at {:#x} trapped: {}", r.pc, crate::trap_name(t));
-        }
+    if res.is_err() {
         return 1;
     }
     0

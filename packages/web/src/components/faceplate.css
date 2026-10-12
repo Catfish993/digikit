@@ -24,3 +24,4 @@ main > .coupled { flex-shrink: 0; }
 .panel-icon { color: #e4e5e7; } .icon { color: inherit; } .icon-stroke { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; } .icon-fill { fill: currentColor; stroke: none; } .icon-record { color: #e2463f; } .icon-play { color: #46d160; } .icon-stop { color: #e6e6e6; }
 @media (max-width: 650px) { .toolbar { flex-wrap: wrap; } output { flex-basis: 100%; } .panel-wrap { place-items: start start; padding: .4rem; } .panel-surface { width: max(680px, 100%); max-width: none; } }
 .samples-note { color: #8a8e94; white-space: nowrap; } .card-status { color: #f3b52c; }
+.legal { flex-shrink: 0; padding: .35rem 1rem; border-top: 1px solid #36383c; background: #191a1d; color: #8a8e94; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .68rem; text-align: center; } .legal a { color: #aeb2b8; }

@@ -257,9 +257,6 @@ pub struct Env {
     /// circular-buffer length and base, `circ_range`).
     pub dag_l: [Option<u32>; 16],
     pub dag_b: [Option<u32>; 16],
-    /// `SHARC_FAST_NOCIRC` set: circular post-modifies are not lowered (an
-    /// index register with L != 0 declines, as before the wrap was added).
-    pub circ_off: bool,
     pub assume_nw32: bool,
     /// MODE1 at build time (the region is made for these rounding and
     /// saturation bits, see `Req::Mode1`).
@@ -465,10 +462,6 @@ pub struct Lower {
     pub mode1_cur: u32,
     /// 80 while a compute of PEy runs (R/F codes 0..15 mean S/SF), else 0.
     pub pe_off: u32,
-    /// The instruction being lowered is one the helper stub runs: a guarded
-    /// dynamic window that would end the region on every miss is refused, so
-    /// that the instruction becomes a helper call (`lower::helper`).
-    pub helper_form: bool,
     /// The instruction being lowered gets a flat access when it has no address range.
     pub flat_cur: bool,
     /// As `flat_cur`, for an instruction whose dynamic window kept failing.
@@ -576,7 +569,6 @@ impl Lower {
             gtag: Vec::new(),
             mode1_cur: 0,
             pe_off: 0,
-            helper_form: false,
             flat_cur: false,
             flat_dyn_cur: false,
             cur_pc: None,
@@ -991,8 +983,7 @@ impl Lower {
     /// of it in the body must be a wrapped update (`commit` refuses others),
     /// and `Req::Within` makes it so at entry.
     pub fn circ_range(&self, c: usize) -> Option<(u32, u32)> {
-        if self.env.circ_off
-            || self.pass == 0
+        if self.pass == 0
             || !(16..32).contains(&c)
             || !self.plan.written[c]
             || (self.plan.plain >> c) & 1 != 0
@@ -1124,10 +1115,6 @@ impl Lower {
         scale: i64,
     ) -> LR<Val> {
         self.self_update.push(ic as u8);
-        if self.env.circ_off {
-            self.require_linear(ic)?;
-            return Ok(modified);
-        }
         let n = (ic - 16) as usize;
         if self.lb_stale(n) {
             return refuse("L/B of the index register written in the region");
@@ -1176,11 +1163,6 @@ impl Lower {
     ) -> LR<()> {
         self.note_modify(src, dst);
         self.no_plain_circ(src)?;
-        if self.env.circ_off {
-            self.require_linear(src)?;
-            self.require_linear(dst)?;
-            return self.wr_i(dst, plain);
-        }
         let n = (src - 16) as usize;
         if self.lb_stale(n) {
             return refuse("L/B of the index register written in the region");
@@ -1219,7 +1201,6 @@ impl Lower {
     /// register has a circular buffer at all.
     fn no_plain_circ(&self, ic: u32) -> LR<()> {
         if ((self.plan.plain | self.plain_out) >> ic) & 1 != 0
-            && !self.env.circ_off
             && self.env.dag_l[(ic - 16) as usize] != Some(0)
         {
             return refuse("circular update of an index register that is also written plainly");
@@ -1404,7 +1385,7 @@ impl Lower {
 
     /// Whether an access with no window may be a flat guarded access here.
     fn flat_ok(&self) -> bool {
-        mem_addr::flat_xfers() || self.flat_cur || self.flat_dyn_cur || self.env.flat_windows
+        self.flat_cur || self.flat_dyn_cur || self.env.flat_windows
     }
 
     /// The access at ADDR through the engine's page table when no window can
@@ -1485,9 +1466,6 @@ impl Lower {
     /// span before the access, so an address outside it leaves the kernel
     /// before the instruction. One slot per anchor serves both directions.
     pub fn dynamic_window(&mut self, addr: Val, anchor: u8, write: bool) -> LR<(Val, Val, u32)> {
-        if self.helper_form {
-            return refuse("address range unknown (no dynamic window under the helper stub)");
-        }
         if let Some(pc) = self.cfgx.as_ref().map(|x| x.pc).or(self.cur_pc)
             && !self.dyn_pcs.contains(&pc)
         {
@@ -1553,16 +1531,6 @@ impl Lower {
                 Ok(())
             }
             None => {
-                if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-                    eprintln!(
-                        "abs: require_plain pass {} idx {} var_abs I6 {:?} I7 {:?} cur {:?}",
-                        self.pass,
-                        self.idx,
-                        self.var_abs[22],
-                        self.var_abs[23],
-                        (self.cur[22], self.cur[23])
-                    );
-                }
                 refuse("address range unknown")
             }
         }
@@ -1738,13 +1706,7 @@ impl Lower {
         self.flat_cur = at.is_some_and(super::cfg::is_flat_pc);
         self.flat_dyn_cur = at.is_some_and(super::cfg::is_flat_dyn);
         // Only an instruction that cannot be lowered becomes a helper (region.rs
-        // `deny`); one with a guarded dynamic window keeps it. With
-        // SHARC_FAST_HELPER_NODYN=1 (lane B's stub) every helper-capable
-        // instruction in range gives up its dynamic window instead.
-        static NODYN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let nodyn = *NODYN.get_or_init(|| std::env::var_os("SHARC_FAST_HELPER_NODYN").is_some());
-        self.helper_form =
-            nodyn && at.is_some_and(super::cfg::helper_at) && super::cfg::helper_ok(d);
+        // `deny`); one with a guarded dynamic window keeps it.
         // An execution condition is handled here, for every form: the form
         // code sees the unconditional instruction.
         let plain;
@@ -2097,7 +2059,6 @@ mod tests {
             regs: [None; NREGS as usize],
             dag_l: [None; 16],
             dag_b: [None; 16],
-            circ_off: false,
             assume_nw32: true,
             mode1: 0,
             flag_v: false,

@@ -2,15 +2,10 @@
 """Read memory/registers/task state out of an emu snapshot without restoring
 a Unicorn machine.
 
-A snapshot restore (emu.snapshot.restore/restore_into) needs a live Machine
--- Unicorn mapped, hooks installed -- just to answer "what's at this
-address". That was worth it when the next step was *running* forward from
-the checkpoint, but a lot of investigation is read-only: "what does track 3's
-row look like in this capture", "which tasks exist and where is each one's
-stack". This wraps emu.snapshot's own blob format (so there is exactly one
-place that understands a .snap file: emu/snapshot.py's _load_blob/
-_validate_blob) with a plain read/u32/u16/u8/regs/tasks API, no Machine, no
-Unicorn.
+Investigation of a snapshot is mostly read-only: "what does track 3's row
+look like in this capture", "which tasks exist and where is each one's
+stack". This reads the Rust DT2SNP01 format and the old pickled Python
+format with a plain read/u32/u16/u8/regs/tasks API, no machine.
 
     from tools.snapread import Snapshot
     s = Snapshot("snapshots/dt2-1.16-drive3/loaded.snap")
@@ -34,6 +29,7 @@ pc/a-registers and `tasks`' entry/tcb when the CLI prints them.
 from __future__ import annotations
 
 import os
+import pickle
 import struct
 import sys
 from typing import Any
@@ -44,7 +40,27 @@ for p in (_here, _root):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from emu.snapshot import _load_blob  # noqa: E402
+
+class _SnapshotUnpickler(pickle.Unpickler):
+    """Python snapshots contain only primitive state, never executable classes."""
+
+    def find_class(self, module, name):
+        raise pickle.UnpicklingError(
+            "checkpoint may not contain %s.%s" % (module, name)
+        )
+
+
+def _load_blob(path):
+    """A pickled Python-machine snapshot (the Unicorn-era format)."""
+    with open(path, "rb") as f:
+        blob = _SnapshotUnpickler(f).load()
+    if not isinstance(blob, dict) or any(
+        k not in blob
+        for k in ("regs", "pages", "all_mapped", "mmio", "ctlregs", "extra")
+    ):
+        raise RuntimeError("invalid checkpoint blob")
+    return blob
+
 
 try:
     import cf_names
@@ -96,7 +112,7 @@ class Snapshot:
     snapshots/dt2-1.16-drive3/loaded.snap can hold well over a hundred MB
     once decompressed), MMIO/control-register shadow state, and whatever
     `extra` the capturing tool stored (task_create hits, instruction count,
-    ...). Reuses emu.snapshot's own blob parsing/validation (_load_blob)
+    ...). Reads the pickled blob with _load_blob
     rather than re-implementing the pickle/zlib format here."""
 
     def __init__(self, path: str):

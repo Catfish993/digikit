@@ -60,10 +60,8 @@ and scenarios with identical event times give dumps at the same DSP instruction
 count.
 
 Not in `--diag` (set the variable by hand): `SHARC_LIVE_AOT_CAPTURE_PC/_DIR/_LIMIT`
-(raw block-call snapshots), `SHARC_FAST_DUMP_ALL`, `SHARC_TRAP_REGS` (registers
-not fully known at a trap), `SHARC_FAST_KEYS` (with `SHARC_FAST_COV`),
-`SHARC_FAST_LEAN_STATS`, `SHARC_FAST_CL_DISASM`, `SHARC_FAST_DEBUG_WIN|REQ|ABS|HELPER`,
-`SHARC_CONCRETISE_ON_BAIL`, `DIGI_LP0_LOG` (stderr), `DN2_PROFILE_LINK=1`,
+(raw block-call snapshots), `SHARC_FAST_DUMP_ALL`, `SHARC_FAST_CL_DISASM`,
+`DIGI_LP0_LOG` (stderr), `DN2_PROFILE_LINK=1`,
 `DIGI_EMU_SINK_WAV`, `DIGI_EMU_PCM_F32LE` + `DIGI_EMU_PCM_SECONDS` (desktop audio
 captures), `DIGI_COUPLED_PCM_F32LE`, `DIGI_COUPLED_DSP_EXPORT` (the pinned test).
 
@@ -74,8 +72,7 @@ captures), `DIGI_COUPLED_PCM_F32LE`, `DIGI_COUPLED_DSP_EXPORT` (the pinned test)
   tested once per dispatched block.
 - Fast tier call path: the `dump` hooks exist only with the `fast-dump` cargo
   feature (without it `dump::enabled()` is constant false). Environment
-  lookups on that path are read once (`OnceLock`), including
-  `SHARC_FAST_DEBUG_REQ`. The other env lookups in `fast/` run at build or
+  lookups on that path are read once (`OnceLock`). The other env lookups in `fast/` run at build or
   decline-reporting time only.
 - Boot: `sharc_peer` reads its diagnostics once at start.
 
@@ -85,9 +82,8 @@ captures), `DIGI_COUPLED_PCM_F32LE`, `DIGI_COUPLED_DSP_EXPORT` (the pinned test)
 |---|---|---|
 | `native/sharc` (`coupled`: same names) | `fast-dump` | `SHARC_FAST_DUMP` capture hooks |
 | | `region-profile` | per-entry wall time (`perf.py --regions`; needs `DIGI_COUPLED_FEATURES=coupled-audio,region-profile`) |
-| | `fast-prof` | per-phase ticks of the region call, printed with `SHARC_FAST_LOG` |
 | `native/boot` | `cf-profile` | host-time and PC profile of ColdFire |
-| | `diagnostic-profile`, `-events`, `-trace` (`diagnostics` = all three) | boot event and trace records |
+| | `diagnostic-profile`, `-events` | boot event records and profile |
 | `native/periph` | `trace` (default) | DT2MMIO trace reader and `mmio-replay`; no runtime hook. Every product crate (`boot`, `card`, `host`, `machine`) takes periph with `default-features = false`, so a product build does not compile it. Turning the default off changes only a direct `cargo build -p periph`. Left as is. |
 
 ## Tuning switches (not diagnostics)
@@ -101,12 +97,12 @@ Read at start-up; defaults are what `tools/digi_env.py` and the shipped
 | `SHARC_FAST_REGIONS`, `SHARC_BLOCKTRANS` | fast region entries, block-translator roots (`@FILE` allowed) |
 | `SHARC_FAST_AUTO=a,b`, `SHARC_FAST_FOLLOW`, `SHARC_FAST_ONLY` | run-time region selection, extra entries, restrict to listed |
 | `SHARC_FAST_GEN` | generated lowering; default on; `0` = hand lowering only |
-| `SHARC_FAST_HELPER`, `_HELPER_INTERP`, `_HELPER_NODYN` | generated helper calls and their fall-backs |
-| `SHARC_FAST_NOBACKOFF`, `_NOCIRC`, `_NOCONT`, `_NOEXIT0`, `_NOVOLATILE`, `_NOGUARD` | switch one fast-tier mechanism off (A/B controls) |
-| `SHARC_FAST_CTXCLEAR`, `SHARC_FAST_CL_NOVERIFY`, `SHARC_FAST_BACKEND` | backend checks and plug-in path |
+| `SHARC_FAST_HELPER` | generated helper calls |
+| `SHARC_FAST_NOBACKOFF`, `_NOGUARD` | switch one fast-tier mechanism off (A/B controls) |
+| `SHARC_FAST_CL_NOVERIFY`, `SHARC_FAST_BACKEND` | backend checks and plug-in path |
 | `DIGI_DSP_PERIOD`, `DIGI_DSP_RX_PHASE` | DSP scheduling in the coupled run |
 | `DIGI_EMU_FAST=0` | tools/digi_env.py: no fast regions |
-| `SHARC_FAST_FLAT`, `SHARC_FAST_LEAN`, `SHARC_FAST_SHAPE=cfg`, `SHARC_FAST_CHAIN=0` | opt-in or legacy variants **[O]** likely obsolete: flat access gave no coverage gain (findings 18); check before use |
+| `SHARC_FAST_SHAPE=cfg`, `SHARC_FAST_CHAIN=0` | legacy variants **[O]** likely obsolete; check before use |
 
 ## Spike log (`DIGI_SPIKE_LOG`)
 

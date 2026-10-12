@@ -625,12 +625,6 @@ impl ClBackend {
         entry: &EntryChecks,
     ) -> Result<Box<dyn CompiledKernel>, String> {
         k.validate()?;
-        if std::env::var_os("SHARC_FAST_RELOAD").is_some() {
-            // Measurement: run every kernel from a blob loaded with
-            // `define_function_bytes` instead of the module that compiled it.
-            let blob = self.compile_blob(k, entry)?;
-            return load_blob(&blob);
-        }
         let isa = self.isa()?;
         let mut module = JITModule::new(JITBuilder::with_isa(isa, default_libcall_names()));
         let mut sig = module.make_signature();

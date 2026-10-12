@@ -58,7 +58,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 
 ## Build and run
 
-- mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app), `emu:build`, `emu:ctl`, `web` (browser dev page),
+- mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
   `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo`, `gen:core`.
 - Paths, toolchain and fast-region tables: tools/digi_env.py, tools/fast_regions.json.
 - SHARC crates: native/sharc-rt (runtime), native/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative
@@ -75,6 +75,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   deadlocks).
 - The shell is zsh: an unquoted `$VAR` is one word. There is no `timeout` binary.
 - Extract firmware: `uv run python -m emu.extract SYX -o DIR`.
+- The Python Unicorn reference emulator was removed; the last commit with it is tagged `unicorn-reference-final`.
 - Manuals: read `out/refs/<pdf stem>/` (`toc.md`, `pages/pNNNN.txt`, `all.txt`), built with
   `uv run --with pymupdf python tools/refstext.py`.
 

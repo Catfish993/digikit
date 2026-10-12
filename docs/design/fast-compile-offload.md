@@ -336,7 +336,8 @@ code with it if the worker has already run the function.
   Safari **[O]**) or yields through a `MessageChannel` turn after each frame batch
   while jobs are pending (about 20-50 us per yield; not the 4 ms of `setTimeout`).
   When no job is pending it keeps the blocking `Atomics.wait` path.
-- `Op::Helper` is `unimplemented!` in the wasm emitter today (8.8% of kernels). For
+- `Op::Helper` is implemented in the wasm emitter now (`native/sharc-fast-wasm/src/lib.rs`,
+  `helper_exec` as the imported function 0). The original plan, kept for the record: for
   the first version `Env` gets a `helpers_ok` flag set false for wasm, so those
   instructions end the region as refused; the follow-on is the stage-3 helper table
   with `helper_exec` as an imported function. This lowers wasm coverage and has to be
@@ -359,7 +360,7 @@ code with it if the worker has already run the function.
 | `native/sharc/src/fast/ir.rs` | `Send` bounds; blob methods on the trait; canonical `Kernel::key`; stage 3: `Op::Helper(slot)` |
 | `native/sharc/src/fast/glue.rs`, `lower/helper.rs`, `helper.rs` | stage 3: helper table in `ctx`; dry entry check (stage 2) |
 | `native/sharc-fast-cl/src/lib.rs` | `compile_blob`, `load_blob` (exist now); helper from `ctx`; worker-local backend |
-| `native/sharc-fast-wasm/src/lib.rs` | async `HostBackend`; `Op::Helper` import (stage 3 / 4) |
+| `native/sharc-fast-wasm/src/lib.rs` | async `HostBackend` (stage 4); `Op::Helper` import is done |
 | `native/boot/src/sharc_peer.rs`, `abi.rs` | per-period `FastTier::tick`; offload on for the app |
 | `native/coupled/src/bin/coupled_run.rs`, `tools/perf.py`, `tools/fastcov.py` | `--fast-offload N`, `SHARC_FAST_SYNC` default for tools |
 | `packages/web/src/dsp-worker.ts`, new `kernel-compile-worker.ts`, `core-host.ts` | async waits, compile pool, imports |
@@ -426,7 +427,7 @@ code with it if the worker has already run the function.
 3. **Cache.** 3a helper-free kernels: key, pack, load. Gate: second session
    compiles at most the helper kernels; PCM equal; patched-image test (flip one
    instruction, only affected keys miss). 3b helper table, then all kernels.
-4. **Browser.** Wasm `Helper` decision, async `HostBackend`, compile worker, yield in
+4. **Browser.** (Wasm `Helper` is done.) Async `HostBackend`, compile worker, yield in
    `serve()`; first under Node with the two-worker harness from `wip/browser-host`,
    then Chrome and Firefox. Gate: PCM equal to native, stall per period measured in
    the DSP worker.
