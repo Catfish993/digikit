@@ -1532,6 +1532,12 @@ impl FastEngine {
                 self.stats.runs += 1;
                 self.stats.insns += s.icount - before;
                 dump::finish(pc, s.icount - before);
+                if self.auto.is_some() && s.pc_sw as u32 != pc {
+                    // The kernel left at another PC (a call it performed, a
+                    // stop): the interpreter never saw a branch to it, so
+                    // `note` was not called. A candidate region start.
+                    self.note(s.pc_sw as u32);
+                }
                 Some(code)
             }
             Err(d) => {
