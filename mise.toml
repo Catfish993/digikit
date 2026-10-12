@@ -18,9 +18,8 @@ wasm-tools = "1.261.0"
 run = [
   "uv sync",
   "pnpm install --frozen-lockfile",
-  "uv run python -m emu.unicorn_compat || tools/install-patched-unicorn.sh",
 ]
-description = "Install the Python and web dependencies; build the patched Unicorn when the installed one lacks the patches"
+description = "Install the Python and web dependencies"
 
 # --- desktop emulator ---
 

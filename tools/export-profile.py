@@ -70,8 +70,7 @@ def md5_bytes(data):
 def load_main_os(image_path, syx_override=None, syx_sha256_override=None):
     """-> (main_os_bytes, source_syx_sha256_or_None).
 
-    Reuses emu.extract.extract (the same depack-under-Unicorn code path
-    emu.run uses) when given a `.syx`; reads a pre-extracted section_3
+    Reuses emu.extract.extract when given a `.syx`; reads a pre-extracted section_3
     directly otherwise. Never reimplements the depack/checksum logic itself.
     """
     if syx_sha256_override:

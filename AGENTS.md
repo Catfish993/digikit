@@ -75,6 +75,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   deadlocks).
 - The shell is zsh: an unquoted `$VAR` is one word. There is no `timeout` binary.
 - Extract firmware: `uv run python -m emu.extract SYX -o DIR`.
+- The Python Unicorn reference emulator was removed; the last commit with it is tagged `unicorn-reference-final`.
 - Manuals: read `out/refs/<pdf stem>/` (`toc.md`, `pages/pNNNN.txt`, `all.txt`), built with
   `uv run --with pymupdf python tools/refstext.py`.
 

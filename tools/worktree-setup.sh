@@ -2,7 +2,7 @@
 # Prepare a git worktree for an agent: fast-forward it to BASE (default: the
 # main tree's current branch), link the main tree's untracked inputs into it --
 # firmware and firmware-derived data, generated Ghidra/SLEIGH language files,
-# the web page's local DSP inputs and the virtualenv with the patched Unicorn
+# the web page's local DSP inputs and the virtualenv
 # and the dev tools -- and install node_modules from the pnpm store.
 # Persistent lanes: tools/lane.sh.
 #

@@ -3,7 +3,7 @@
 tools/cfisa/coldfire.json) against independent decoders, and count which
 instruction forms the firmware uses.
 
-    uv run python tools/cfisa/oracle.py check [IMAGE ...] [--no-unicorn]
+    uv run python tools/cfisa/oracle.py check [IMAGE ...]
     uv run python tools/cfisa/oracle.py census [IMAGE ...] [--out FILE]
 
 IMAGE is a name under out/sections/ with a Ghidra dump in
@@ -17,13 +17,10 @@ Oracles, per instruction:
   sleigh   length and operand text from pypcode with the repo's ColdfireEMAC
            language (tools/ghidra/ColdfireEMAC), normalised to our text form.
            Same SLEIGH spec as the listing, but raw numbers instead of labels.
-  unicorn  length from the patched Unicorn (QEMU's m68k decoder, an
-           independent implementation): one instruction is executed and the PC
-           read back. Only for straight-line instructions; ISA_C BITREV,
-           BYTEREV and FF1 are not implemented there (emu/boot.py) and are
-           reported as unsupported, not as disagreements.
+  (A third oracle, the patched Unicorn, was removed with the Python
+  reference emulator; see tag unicorn-reference-final.)
 
-The manual is the arbiter for every disagreement; known SLEIGH/Unicorn
+The manual is the arbiter for every disagreement; known SLEIGH
 deviations are listed in KNOWN (with the manual page) and counted separately.
 """
 
@@ -135,70 +132,6 @@ def sleigh(
             out[a] = (ins[0].length, ins[0].mnem, ins[0].body)
         else:
             out[a] = (0, "", "")
-    return out
-
-
-def unicorn_lengths(
-    image_bytes: bytes, base: int, addrs: list[int]
-) -> dict[int, int | str]:
-    """{address: length or reason} by executing one instruction in Unicorn."""
-    from unicorn import (
-        UC_ARCH_M68K,
-        UC_HOOK_INTR,
-        UC_HOOK_MEM_UNMAPPED,
-        UC_HOOK_MEM_WRITE,
-        UC_MODE_BIG_ENDIAN,
-        Uc,
-        UcError,
-    )
-    from unicorn import m68k_const as K
-
-    uc = Uc(UC_ARCH_M68K, UC_MODE_BIG_ENDIAN)
-    uc.ctl_set_cpu_model(K.UC_CPU_M68K_CFV4E)
-    lo, hi = base & ~0xFFF, (base + len(image_bytes) + 0xFFF) & ~0xFFF
-    uc.mem_map(lo, hi - lo)
-    uc.mem_write(base, image_bytes)
-    fill = b"\x11" * 0x1000
-
-    def unmapped(uc, access, addr, size, value, ud):
-        page = addr & ~0xFFF
-        uc.mem_map(page, 0x1000)
-        uc.mem_write(page, fill)
-        return True
-
-    dirty: list[tuple[int, int]] = []
-    state = {"intr": False}
-
-    def wrote(uc, access, addr, size, value, ud):
-        dirty.append((addr, size))
-
-    def intr(uc, intno, ud):
-        state["intr"] = True
-        uc.emu_stop()
-
-    uc.hook_add(UC_HOOK_MEM_UNMAPPED, unmapped)
-    uc.hook_add(UC_HOOK_MEM_WRITE, wrote, begin=base, end=base + len(image_bytes) - 1)
-    uc.hook_add(UC_HOOK_INTR, intr)
-    dregs = [getattr(K, "UC_M68K_REG_D%d" % i) for i in range(8)]
-    aregs = [getattr(K, "UC_M68K_REG_A%d" % i) for i in range(8)]
-    out: dict[int, int | str] = {}
-    for a in addrs:
-        for i, r in enumerate(dregs):
-            uc.reg_write(r, 0x11111111 + i)
-        for i, r in enumerate(aregs):
-            uc.reg_write(r, 0x20000000 + 0x10000 * i)
-        uc.reg_write(K.UC_M68K_REG_SR, 0x2700)
-        state["intr"] = False
-        try:
-            uc.emu_start(a, 0xFFFFFFFF, count=1)
-            pc = uc.reg_read(K.UC_M68K_REG_PC)
-            out[a] = "exception" if state["intr"] else pc - a
-        except UcError as e:
-            out[a] = "error: %s" % e
-        for w_addr, size in dirty:
-            off = w_addr - base
-            uc.mem_write(w_addr, image_bytes[off : off + size])
-        dirty.clear()
     return out
 
 
@@ -359,7 +292,7 @@ def known_deviation(form: str, text: str, n: int, slen: int) -> str | None:
     return None
 
 
-def check_image(name: str, use_unicorn: bool, show: int) -> dict:
+def check_image(name: str, show: int) -> dict:
     image, dump = image_paths(name)
     base = load_base(dump)
     img = image.read_bytes()
@@ -367,13 +300,6 @@ def check_image(name: str, use_unicorn: bool, show: int) -> dict:
     stream, overlapped = instruction_stream(image, base, lst)
     addrs = sorted(stream)
     sl = sleigh(img, base, addrs)
-    uni = (
-        unicorn_lengths(
-            img, base, [a for a in addrs if stream[a][0] and _straight(stream[a][1])]
-        )
-        if use_unicorn
-        else {}
-    )
     stats: collections.Counter = collections.Counter()
     bad: dict[str, list] = collections.defaultdict(list)
     known: dict[str, list] = collections.defaultdict(list)
@@ -416,18 +342,8 @@ def check_image(name: str, use_unicorn: bool, show: int) -> dict:
         else:
             bad["len_sleigh"].append((a, n, text, smn + " " + sbody))
             ok = False
-        if a in uni:
-            u = uni[a]
-            if isinstance(u, int) and u == n:
-                stats["len_unicorn_ok"] += 1
-            elif isinstance(u, int):
-                bad["len_unicorn"].append((a, n, text, u))
-                ok = False
-            else:
-                stats["unicorn_" + u.split(":")[0]] += 1
         if ok:
             stats["agree"] += 1
-    stats["unicorn_checked"] = len(uni)
     return {
         "name": name,
         "base": base,
@@ -437,16 +353,6 @@ def check_image(name: str, use_unicorn: bool, show: int) -> dict:
         "known": {k: v[:show] for k, v in known.items()},
         "known_counts": {k: len(v) for k, v in known.items()},
     }
-
-
-# Forms the Unicorn oracle cannot run: MOVEC to control registers QEMU does
-# not model aborts the process (RGPIOBAR 0x009 in the images); ISA_C BITREV,
-# BYTEREV and FF1 are not implemented in QEMU's ColdFire V4e model.
-UNICORN_UNSUPPORTED = {"movec", "bitrev", "byterev", "ff1"}
-
-
-def _straight(form: str) -> bool:
-    return FLOW.get(form, "") == "" and form not in UNICORN_UNSUPPORTED
 
 
 FLOW: dict[str, str] = {}
@@ -470,7 +376,7 @@ def cmd_check(args) -> int:
     rc = 0
     reports = []
     for name in args.images:
-        r = check_image(name, not args.no_unicorn, args.show)
+        r = check_image(name, args.show)
         reports.append(r)
         s = r["stats"]
         print(
@@ -489,13 +395,8 @@ def cmd_check(args) -> int:
             "len_ghidra_ok",
             "len_sleigh_ok",
             "text_ok",
-            "unicorn_checked",
-            "len_unicorn_ok",
         ):
             print("   %-24s %d" % (k, s.get(k, 0)))
-        for k, v in sorted(s.items()):
-            if k.startswith("unicorn_") and k not in ("unicorn_checked",):
-                print("   %-24s %d" % (k, v))
         for k, n in sorted(r["known_counts"].items()):
             print("   KNOWN %-24s %d" % (k, n))
             for row in r["known"][k]:
@@ -626,14 +527,6 @@ def cmd_census(args) -> int:
 
 
 SWEEP_EXTS = [(0x0000, 0x0000), (0x0800, 0x0800), (0x1804, 0x2000)]
-# Unicorn aborts the process on these (QEMU cpu_abort: MOVEC to an unmodelled
-# control register, WDEBUG, FBcc with predicate bit 5 set) or stops the CPU
-# (HALT, STOP).
-SWEEP_UNICORN_SKIP = (
-    {0x4E7B, 0x4AC8, 0x4E72} | set(range(0xFBC0, 0xFC00)) | set(range(0xF2A0, 0xF2C0))
-)
-# QEMU exception numbers that mean "not an instruction": illegal, line A, line F.
-QEMU_ILLEGAL = {4, 10, 11}
 
 
 def ours_words(rows: list[tuple[int, int, int, int]]) -> list[tuple[int, str, str]]:
@@ -649,68 +542,9 @@ def ours_words(rows: list[tuple[int, int, int, int]]) -> list[tuple[int, str, st
     return out
 
 
-def unicorn_sweep(codes: list[bytes], base: int) -> list[str | int]:
-    """Execute each 6-byte code at its own address; -> PC delta, or 'illegal'
-    (QEMU raised illegal/line-A/line-F), or 'exc<N>' for another exception."""
-    from unicorn import (
-        UC_ARCH_M68K,
-        UC_HOOK_INTR,
-        UC_HOOK_MEM_UNMAPPED,
-        UC_MODE_BIG_ENDIAN,
-        Uc,
-        UcError,
-    )
-    from unicorn import m68k_const as K
-
-    uc = Uc(UC_ARCH_M68K, UC_MODE_BIG_ENDIAN)
-    uc.ctl_set_cpu_model(K.UC_CPU_M68K_CFV4E)
-    size = (len(codes) * 8 + 0xFFFF) & ~0xFFFF
-    uc.mem_map(base, size)
-    uc.mem_write(base, b"".join(c.ljust(8, b"\0") for c in codes))
-    fill = b"\x11" * 0x1000
-
-    def unmapped(uc, access, addr, sz, value, ud):
-        page = addr & ~0xFFF
-        uc.mem_map(page, 0x1000)
-        uc.mem_write(page, fill)
-        return True
-
-    state = {"intr": -1}
-
-    def intr(uc, intno, ud):
-        state["intr"] = intno
-        uc.emu_stop()
-
-    uc.hook_add(UC_HOOK_MEM_UNMAPPED, unmapped)
-    uc.hook_add(UC_HOOK_INTR, intr)
-    dregs = [getattr(K, "UC_M68K_REG_D%d" % i) for i in range(8)]
-    aregs = [getattr(K, "UC_M68K_REG_A%d" % i) for i in range(8)]
-    out: list[str | int] = []
-    for i in range(len(codes)):
-        a = base + 8 * i
-        for j, r in enumerate(dregs):
-            uc.reg_write(r, 0x11111111 + j)
-        for j, r in enumerate(aregs):
-            uc.reg_write(r, 0x20000000 + 0x10000 * j)
-        uc.reg_write(K.UC_M68K_REG_SR, 0x2700)
-        state["intr"] = -1
-        try:
-            uc.emu_start(a, 0xFFFFFFFF, count=1)
-        except UcError as e:
-            out.append("error %s" % e)
-            continue
-        if state["intr"] in QEMU_ILLEGAL:
-            out.append("illegal")
-        elif state["intr"] >= 0:
-            out.append("exc%d" % state["intr"])
-        else:
-            out.append(uc.reg_read(K.UC_M68K_REG_PC) - a)
-    return out
-
-
 def cmd_sweep(args) -> int:
     """Compare legality and length of every opword (with a few extension-word
-    patterns) between our decoder, SLEIGH and Unicorn, grouped for review."""
+    patterns) between our decoder and SLEIGH, grouped for review."""
     import xml.etree.ElementTree as ET
 
     from pypcode import ArchLanguage, Context
@@ -725,20 +559,13 @@ def cmd_sweep(args) -> int:
     )
     examples: dict[tuple[str, str], str] = {}
     totals: collections.Counter = collections.Counter()
-    for vi, (e1, e2) in enumerate(SWEEP_EXTS):
+    for e1, e2 in SWEEP_EXTS:
         rows = [(base + 8 * w0, w0, e1, e2) for w0 in range(0x10000)]
         od = ours_words(rows)
-        run_uni = vi == 0 and not args.no_unicorn
         codes = [
             bytes([w0 >> 8, w0 & 0xFF, e1 >> 8, e1 & 0xFF, e2 >> 8, e2 & 0xFF])
             for w0 in range(0x10000)
         ]
-        if run_uni:
-            ucodes = [
-                c if (i not in SWEEP_UNICORN_SKIP) else b"\x4e\x71"
-                for i, c in enumerate(codes)
-            ]
-            uni = unicorn_sweep(ucodes, base)
         for w0 in range(0x10000):
             n, form, text = od[w0]
             code = codes[w0] + b"\0\0\0\0"
@@ -761,16 +588,6 @@ def cmd_sweep(args) -> int:
                 found.append(("ours legal, sleigh illegal", form))
             elif not n and slen:
                 found.append(("ours illegal, sleigh legal", sdesc.split()[0]))
-            if run_uni and w0 not in SWEEP_UNICORN_SKIP:
-                u = uni[w0]
-                totals["unicorn_run"] += 1
-                if n and u == "illegal":
-                    found.append(("ours legal, unicorn illegal", form))
-                elif not n and u != "illegal":
-                    key = sdesc.split()[0] if slen else "%04x" % (w0 & 0xFFC0)
-                    found.append(("ours illegal, unicorn legal", key))
-                elif n and isinstance(u, int) and FLOW.get(form, "") == "" and u != n:
-                    found.append(("len ours!=unicorn", form))
             for kind, key in found:
                 groups[kind][key] += 1
                 examples.setdefault((kind, key), example)
@@ -798,7 +615,6 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("check", help="compare the decoder with the oracles")
     c.add_argument("images", nargs="*", default=DEFAULT_IMAGES)
-    c.add_argument("--no-unicorn", action="store_true")
     c.add_argument("--show", type=int, default=12, help="disagreements shown per kind")
     c.add_argument("--json", help="write the full report as JSON")
     c.set_defaults(fn=cmd_check)
@@ -806,10 +622,7 @@ def main(argv=None) -> int:
     s.add_argument("images", nargs="*", default=DEFAULT_IMAGES)
     s.add_argument("--out", help="write the census as Markdown")
     s.set_defaults(fn=cmd_census)
-    w = sub.add_parser(
-        "sweep", help="every opword: legality and length against SLEIGH and Unicorn"
-    )
-    w.add_argument("--no-unicorn", action="store_true")
+    w = sub.add_parser("sweep", help="every opword: legality and length against SLEIGH")
     w.add_argument("--show", type=int, default=40, help="groups shown per kind")
     w.set_defaults(fn=cmd_sweep, images=None)
     args = ap.parse_args(argv)
