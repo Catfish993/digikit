@@ -353,15 +353,6 @@ impl Lower {
             if self.pass >= 2 && self.plan.entry_abs.get(&pc) != self.entry_abs_out.get(&pc) {
                 // What the lowering assumed at the entry is not what flows
                 // into it.
-                if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-                    let (p, o) = (self.plan.entry_abs.get(&pc), self.entry_abs_out.get(&pc));
-                    for c in 0..NREGS as usize {
-                        let (x, y) = (p.and_then(|v| v[c]), o.and_then(|v| v[c]));
-                        if x != y {
-                            eprintln!("abs: call entry {pc:#x} r{c}: plan {x:?} now {y:?}");
-                        }
-                    }
-                }
                 return refuse(format!("call entry {pc:#x}: register ranges not stable"));
             }
         }
@@ -557,12 +548,6 @@ impl Lower {
                 } else {
                     let cur = self.var_abs.clone();
                     let (fm, fg) = (self.fm_static, self.fg_static);
-                    if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-                        eprintln!(
-                            "abs: pass {} edge {pc:#x} -> {target:#x}: I6 {:?} I7 {:?}",
-                            self.pass, cur[22], cur[23]
-                        );
-                    }
                     joins.edge(*target, &cur, fm, fg, self.mode1_cur);
                     label_of[target]
                 };
@@ -685,19 +670,6 @@ impl Lower {
                 }
             };
         }
-        if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-            for c in 0..NREGS as usize {
-                if w >> c & 1 == 1 {
-                    eprintln!(
-                        "abs: pass {} loop {i} enter r{c}: in {:?} stride {:?} -> head {:?}",
-                        self.pass,
-                        in_abs[c],
-                        self.plan.loop_stride.get(i).and_then(|a| a[c]),
-                        self.var_abs[c]
-                    );
-                }
-            }
-        }
         self.loop_in[i] = in_abs;
         self.loop_head[i] = self.var_abs.clone();
     }
@@ -729,14 +701,6 @@ impl Lower {
                 (Some(e), Some(h)) => e.step_from(h),
                 _ => None,
             };
-            if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-                eprintln!(
-                    "abs: pass {} loop {i} back r{c}: end {:?} head {:?} -> step {measured:?}",
-                    self.pass,
-                    self.var_abs[c],
-                    self.loop_head[i].get(c)
-                );
-            }
             self.loop_stride_out[i][c] = measured;
             if self.pass >= 2 && self.plan.loop_stride.get(i).map(|a| a[c]) != Some(measured) {
                 return refuse(format!("loop at {:#x}: register step not stable", l.start));

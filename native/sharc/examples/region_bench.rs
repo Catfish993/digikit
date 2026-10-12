@@ -1042,7 +1042,6 @@ fn fast_guard_check() {
         regs: [None; NREGS as usize],
         dag_l: [None; 16],
         dag_b: [None; 16],
-        circ_off: false,
         assume_nw32: true,
         mode1: 0,
         flag_v: false,

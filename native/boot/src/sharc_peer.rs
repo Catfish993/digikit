@@ -1690,7 +1690,7 @@ impl DspEngine for SharedDsp {
 
 /// Remove two sources of unknown ("taint") state from a freshly imported DN2
 /// state so that code reading them stays on the fast tiers. Both are
-/// modelling choices; `SHARC_IMPORT_RAW=1` skips them.
+/// modelling choices.
 ///
 /// 1. Special registers (MRF, MRB, MSF, MSB, BFFWRP, BFF_HI, BFF_LO) that are
 ///    only partly known in the snapshot become fully known: known bits are
@@ -1855,9 +1855,7 @@ pub fn open_engine_patched(
     }
     // After the options: the explicit memory model (10) decides whether an
     // absent byte reads as unknown.
-    if std::env::var("SHARC_IMPORT_RAW").as_deref() != Ok("1") {
-        concretise_import(&mut e);
-    }
+    concretise_import(&mut e);
     if let Some(patch) = patch {
         apply_dsp_patch(&mut e, patch)?;
     }

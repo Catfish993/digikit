@@ -40,10 +40,7 @@ impl Lower {
                 v,
             });
         }
-        // SHARC_FAST_HELPER_INTERP=1: the interpreter's step as the body (for A/B runs).
-        static INTERP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let interp = *INTERP.get_or_init(|| std::env::var_os("SHARC_FAST_HELPER_INTERP").is_some());
-        let rec = HelperRec::leak_gen(pc, (!interp).then_some((p.id, p.f)));
+        let rec = HelperRec::leak_gen(pc, Some((p.id, p.f)));
         let status = self.emit(Ty::I32, Op::Helper(rec));
         let zero = self.ci(0);
         let ok = self.bin(Bin::Eq, status, zero);

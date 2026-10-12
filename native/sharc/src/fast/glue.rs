@@ -39,16 +39,6 @@ impl Default for Ctx {
 }
 
 impl Ctx {
-    /// Debug (`SHARC_FAST_CTXCLEAR`): forget everything an earlier call left in
-    /// the buffer (what a kernel does not store reads as zero).
-    pub fn clear(&mut self) {
-        self.buf.fill(0);
-        for (i, k) in CONST_POOL.iter().enumerate() {
-            self.set32(CTX_CONSTS + 4 * i as u32, *k);
-        }
-        self.win_check = false;
-    }
-
     #[inline(always)]
     pub fn ptr(&mut self) -> *mut u8 {
         self.buf.as_mut_ptr() as *mut u8
@@ -854,14 +844,6 @@ pub fn run(
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
         super::dump::win(w as u32, ptr, lo, hi);
-        if dbg_win() {
-            let seen = unsafe { (ptr as *const u32).read_unaligned() };
-            let canon = s.mem.canonical_of(lo);
-            eprintln!(
-                "win {:#x} w{w} lo {:#x} hi {:#x} base {:?} anchor {:?} -> host {:p} first word {:#x}, memory says {:#x} (canonical {:#x})",
-                r.entry_pc, lo, hi, spec.base, spec.dynamic_anchor, ptr, seen, s.mem.read_le(canon, 4), canon
-            );
-        }
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }
@@ -1371,22 +1353,6 @@ mod tests {
     }
 }
 
-/// `SHARC_FAST_DEBUG_REQ` is set (read once: the decline path is hot).
-fn debug_req() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_DEBUG_REQ").is_some())
-}
-
-fn dbg_win() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SHARC_FAST_DEBUG_WIN").is_ok_and(|v| v == "1"))
-}
-
-fn ctx_clear() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("SHARC_FAST_CTXCLEAR").is_ok_and(|v| v == "1"))
-}
-
 static SHAPE_LOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// `SHARC_FAST_LOG`: say why a call was declined as the wrong shape.
@@ -1544,17 +1510,6 @@ pub fn run_cfg(
     {
         return Err(shape("call stack too deep"));
     }
-    if ctx_clear() {
-        ctx.clear();
-        // The return target and loop counters set above are rewritten below.
-        if meta.has_rts {
-            let top = pc_stack_items(s).last().copied().unwrap_or(0);
-            ctx.set32(CTX_DYNPC, (top & 0xff_ffff) as u32);
-        }
-        for i in 0..n {
-            ctx.set32(CTX_LOOP_REM_IN + 4 * i as u32, s.loops.a[nloops - n + i].remaining as u32);
-        }
-    }
     let iters = match meta.reg_n {
         // The region's symbolic trip count is `R[c] + k` (a register-count
         // loop with no entry loop): windows and requirements are checked
@@ -1570,27 +1525,7 @@ pub fn run_cfg(
         None => rem_top.max(1),
     };
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
-    // The lean contract (`lean`) applies while no window check is asked for.
-    let lean = r.lean.as_ref().filter(|_| !check);
-    if let Some(l) = lean {
-        // A kernel that checks the register conditions itself leaves only
-        // the address bases (read below) to check here.
-        let regs = if kernel.checks_entry() {
-            l.bases_ok(s)
-        } else {
-            l.regs_ok(s)
-        };
-        if !regs || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters) {
-            if debug_req() {
-                req_why(s, r, iters);
-            }
-            return Err(Decline::Req);
-        }
-    } else if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters)
-    {
-        if debug_req() {
-            req_why(s, r, iters);
-        }
+    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters) {
         return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);
@@ -1599,60 +1534,10 @@ pub fn run_cfg(
     }
     super::dump::begin();
     for (w, spec) in r.wins.iter().enumerate() {
-        if let Some(l) = lean
-            && spec.dynamic_anchor.is_none()
-        {
-            let b = match spec.base {
-                Base::None => 0,
-                Base::Reg(c) => s.r[c as usize].b as i64,
-            };
-            let d = spec.ts * (iters - 1);
-            let f = spec.nf * iters;
-            let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
-            if lo < 0 || hi > (1i64 << 32) {
-                cov_why(|| format!("window {w}: address range outside 32 bits"));
-                return Err(Decline::Window);
-            }
-            let Some(off) =
-                super::lean::lean_window(l, &mut s.mem, &l.wc[w], spec, lo as u32, hi as u64)
-            else {
-                cov_why(|| format!("window {w}: lean window not plain RAM"));
-                return Err(Decline::Window);
-            };
-            ctx.set64(win_ptr(w as u32), off);
-            if dbg_win() {
-                let host = off.wrapping_add(lo as u64) as *const u8;
-                let seen = unsafe { (host as *const u32).read_unaligned() };
-                let canon = s.mem.canonical_of(lo as u32);
-                eprintln!(
-                    "win {:#x} w{w} lo {:#x} hi {:#x} base {:?} -> host {:p} first word {:#x}, memory says {:#x} (canonical {:#x})",
-                    r.entry_pc, lo, hi, spec.base, host, seen, s.mem.read_le(canon, 4), canon
-                );
-            }
-            super::dump::win(w as u32, off.wrapping_add(lo as u64) as *const u8, lo as u32, hi as u64);
-            ctx.set32(CTX_WIN_DYN_LEN + 4 * w as u32, 0);
-            continue;
-        }
         let Some((ptr, lo, hi)) = resolve_window(s, &r.wcache[w], spec, iters) else {
             if spec.dynamic_anchor.is_some() {
                 empty_dyn_window(ctx, w);
                 continue;
-            }
-            // SHARC_FAST_WINFAIL: name the window that could not be resolved.
-            if std::env::var_os("SHARC_FAST_WINFAIL").is_some() {
-                let b = match spec.base {
-                    Base::None => 0,
-                    Base::Reg(c) => s.r[c as usize].b as i64,
-                };
-                let (lo, hi) = (b + spec.lo, b + spec.hi);
-                let pg = |a: i64| {
-                    let a = a as u32;
-                    (s.mem.present(a), s.mem.dirty(a))
-                };
-                eprintln!(
-                    "winfail root={:#x} w{w} base {:?} b={:#x} lo={:#x} hi={:#x} ts={} nf={} iters={} write={} first(pres,dirty)={:?} last={:?}",
-                    r.entry_pc, spec.base, b, lo, hi, spec.ts, spec.nf, iters, spec.write, pg(lo), pg(hi - 1)
-                );
             }
             cov_why(|| {
                 let dynamic = spec.dynamic_anchor.is_some();
@@ -1671,14 +1556,6 @@ pub fn run_cfg(
         }
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
         super::dump::win(w as u32, ptr, lo, hi);
-        if dbg_win() {
-            let seen = unsafe { (ptr as *const u32).read_unaligned() };
-            let canon = s.mem.canonical_of(lo);
-            eprintln!(
-                "win {:#x} w{w} lo {:#x} hi {:#x} base {:?} anchor {:?} -> host {:p} first word {:#x}, memory says {:#x} (canonical {:#x})",
-                r.entry_pc, lo, hi, spec.base, spec.dynamic_anchor, ptr, seen, s.mem.read_le(canon, 4), canon
-            );
-        }
         if check || spec.dynamic_anchor.is_some() {
             note_window(ctx, w, lo, hi.min(u32::MAX as u64) as u32);
         }
@@ -1857,31 +1734,3 @@ pub fn run_cfg(
 }
 
 
-/// `SHARC_FAST_DEBUG_REQ`: which requirement of R failed (stderr, first 40 only).
-fn req_why(s: &St, r: &Region, iters: i64) {
-    static SEEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let want = std::env::var("SHARC_FAST_DEBUG_REQ").ok();
-    let hex = want.as_deref().and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok());
-    if hex.is_some_and(|h| h != r.entry_pc) || SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= 12 {
-        return;
-    }
-    let mut why = Vec::new();
-    for q in &r.reqs {
-        let ok = match *q {
-            Req::NwPlain { .. } | Req::Within { .. } => eval_req(s, q, iters),
-            _ => eval_req(s, q, iters),
-        };
-        if !ok {
-            let extra = match *q {
-                Req::Known(c) | Req::Eq(c, _) => format!(" r{c}={:?}", s.r[c as usize]),
-                Req::Within { c, .. } => format!(" r{c}={:?}", s.r[c as usize]),
-                _ => String::new(),
-            };
-            why.push(format!("{q:?}{extra}"));
-        }
-    }
-    if !cacc_ok(s, r) {
-        why.push("cacc".into());
-    }
-    eprintln!("fast: req declined at {:#x}: {}", r.entry_pc, why.join("; "));
-}

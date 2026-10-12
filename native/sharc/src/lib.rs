@@ -300,11 +300,6 @@ pub struct Engine {
     fast_auto_dispatch: bool,
     /// SHARC_FAST_HIST: interpreted instructions per PC (diagnostics).
     hist: Option<Box<std::collections::HashMap<u32, u64>>>,
-    /// SHARC_CONCRETISE_ON_BAIL (diagnostic): a block entry that bails with
-    /// no progress gets its unknown register bits set to zero, then retries.
-    concretise_on_bail: bool,
-    /// Bails concretised under `concretise_on_bail`.
-    concretised: u64,
     /// Opt-in raw generated-block call snapshots.  It is configured wholly
     /// through the environment and is absent in ordinary execution.
     live_capture: Option<live_capture::LiveCapture>,
@@ -606,9 +601,6 @@ impl Drop for Engine {
                 self.stats.block_instructions,
             );
             eprintln!("{line}");
-            if self.concretise_on_bail {
-                eprintln!("concretise: {} bails concretised", self.concretised);
-            }
             let m = &self.model_stats;
             eprintln!(
                 "fast engine: models gated {} unsafe {} irq_deferred {} timer_gated {} mmr_exits {} code_mismatch {}; idle skipped {}",
@@ -674,8 +666,6 @@ impl Engine {
             fast_auto_dispatch: false,
             hist: std::env::var_os("SHARC_FAST_HIST")
                 .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
-            concretise_on_bail: std::env::var_os("SHARC_CONCRETISE_ON_BAIL").is_some(),
-            concretised: 0,
             live_capture: live_capture::LiveCapture::from_env(),
             wwatch: write_watch::WriteWatch::from_env(),
             pcdump: pc_dump::PcDump::from_env(),
@@ -1435,10 +1425,7 @@ impl Engine {
     /// settings, the latent interrupt, the code check. A region that declines
     /// leaves the state untouched and is dispatched normally.
     fn fast_continue(&mut self, limit: u64, mut code: Option<u32>) -> Option<u32> {
-        // `SHARC_FAST_NOCONT=1`: every kernel exit returns to the dispatch loop.
-        static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *OFF.get_or_init(|| std::env::var_os("SHARC_FAST_NOCONT").is_some())
-            || self.one_dispatch
+        if self.one_dispatch
             || self.stop_pc.is_some()
             || self.stop_software_interrupt
             || self.s.probe.is_some()
@@ -1484,18 +1471,6 @@ impl Engine {
     }
 
     fn trapped(&mut self, t: Trap) {
-        if std::env::var_os("SHARC_TRAP_REGS").is_some() {
-            let unknown: Vec<String> = (0..NUREG)
-                .filter(|&c| self.s.r[c].m != u32::MAX)
-                .map(|c| format!("r{c}={:#x}/{:#x}", self.s.r[c].b, self.s.r[c].m))
-                .collect();
-            eprintln!(
-                "trap at {:#x}: icount {}, registers not fully known: {}",
-                self.s.pc_sw,
-                self.s.icount,
-                unknown.join(" ")
-            );
-        }
         self.stats.traps += 1;
         self.last_trap = Some(t);
         self.halt = Some(format!(
@@ -1914,22 +1889,6 @@ impl Engine {
                             }
                             if self.s.icount > before {
                                 continue 'steploop;
-                            }
-                            if self.concretise_on_bail {
-                                // PCSTK (100) and MODE1STK (125) mirror the
-                                // stacks; they stay as the stack model left them.
-                                let mut changed = false;
-                                for (c, v) in self.s.r.iter_mut().enumerate() {
-                                    if c != 100 && c != 125 && v.m != u32::MAX {
-                                        v.b &= v.m;
-                                        v.m = u32::MAX;
-                                        changed = true;
-                                    }
-                                }
-                                if changed {
-                                    self.concretised += 1;
-                                    continue 'steploop;
-                                }
                             }
                         }
                     }
