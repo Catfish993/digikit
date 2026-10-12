@@ -213,6 +213,86 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
   driver compares the TX length with `0xaf0` where 1.15C uses `0xbc0`.
   **[V]**
 
+## Digitakt II 1.17 and Digitone II 1.12: a relink plus one new menu, and an in-house function matcher **[D][V][O]**
+
+Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
+
+- **What changed.** Against 1.16 and 1.11 only section 3 (MAIN OS) and 5 (META) differ;
+  sections 2, 4, 7 (the SHARC+ blob) and 8 are byte-identical, so the DSP image, the idle-loop
+  PCs and the DSP databases carry over (`out/sharcdb/dt2-1.17.sqlite`, `dn2-1.12.sqlite`). **[V]**
+  The only new class in RTTI is `BreakOutBoxOutputRoutingMenuView` (with its `shared_ptr`
+  control block), on both products: 1066 -> 1068 typeinfos on DT2, 1047 -> 1049 on DN2. Of 14441
+  matched functions (DT2) 14421 are byte-identical after masking addresses and 8 have a changed
+  loose hash; 436 destination functions (46 KB, 14 of them in the new class) and 302 source
+  functions (27 KB) have no counterpart. Matched entries move by a few constants (`+0x164`,
+  `+0x2dc`, `+0x2e0`, `+0x416`, `+0x540`: insertions at about five places; DN2 `+0x41a`), not
+  at random. **[D]**
+- **Emulator.** `devices/*.toml` gained the two firmware entries (sha256, MAIN sha256,
+  `main-os-oracle-v1`, `elektron-rtos-v1`, readiness contract, DSP block copied from 1.16 / 1.11;
+  `plusdrive_project_contract` for DT2). All signature-resolved anchors of the boot path resolve
+  on both with no code change (`boot_anchors_resolve_on_every_supported_firmware`: softfloat ABI,
+  RAM clear, fused loops, idle spins); `emu/symbols.py` leaves the same nine (DT2) / eleven (DN2)
+  symbols unresolved as on 1.16 / 1.11, all on `tests/test_symbol_audit.py`'s allow-list. Both boot
+  to ready natively: DT2 1.17 ready at 1,114,985,926 ColdFire instructions, DN2 1.12 at
+  851,236,338. **[D]**
+- **Two things were version-keyed and are not any more.** `supported_softfloat` was a
+  `("dt2","1.16") | ("dn2","1.11")` match; it is now the profile field `softfloat_abi`. The built-in
+  project stream that `native/plusdrive` takes from MAIN sat at a fixed offset (`0x25edd8`); in
+  1.17 the same bytes are at `0x25f314`, so the stream is found by structure (length, byte sum,
+  container check). Without that the DT2 card builder fails with `StreamOutOfBounds`. **[V]**
+  `Registry::load()` reads `devices/*.toml` at run time (`$DIGI_DEVICES_DIR`, else `devices/` of the
+  working directory or an ancestor of the executable) and falls back to the embedded copy, so a new
+  firmware hash needs a TOML edit and no rebuild. **[D]**
+- **Scenarios** (ready inputs from the .syx alone, `snapshots/dt2-117-ready`, `dn2-112-ready`).
+  DN2 1.12: three of the four pinned PCM hashes (`exactness-100m`, `trig1-taps`,
+  `trig1-tap-release`) equal the 1.11 pins; `trig1-noqa-40m` (a 40 M-instruction validation
+  window) and the unpinned `dn2-rec-play` differ, which is what a different ColdFire timeline gives
+  with the same DSP. All 61 DN2 scenario oracles pass. DT2 1.17: the five `dt2.json` scenarios
+  run (no pins in that file); the DT2 FX oracles give 99 passed and 36 failed, all in
+  `test_readback` and the tests built on it: the encoder-turn scenarios end with different
+  parameter values (`tf-br-22` reads 37, `tf-over-127` reads 97). The RAM and SRAM addresses of the
+  peeks did not move (below), so this is a behaviour change or a different UI state at the ready
+  point, not a stale address. **[D][O]**
+- **Matcher.** `tools/cffacts.py` hashes the instruction stream of each function with the repo's
+  ColdFire decoder (`cfdis --ranges`): strict (relink-moved addresses and branch targets masked),
+  loose (all numbers masked), mnemonics only. `tools/cfdb.py` stores them (`func_hash`, DB_VERSION
+  2, plus RTTI `typeinfos` / `vtables`). `tools/cfmatch.py` pairs unique hashes, then strings, then
+  vtable slots, call-graph neighbours and address-order gaps, repeating until nothing changes.
+  It runs in about 8 s; Version Tracking took 1092 s with a 32 GB heap.
+
+  | pair | matched | strict | loose | strings | mnem | vtable | callee | caller | gap |
+  |---|---|---|---|---|---|---|---|---|---|
+  | DT2 1.15C -> 1.16 | 13924 / 14257 (97.7%) | 5681 | 229 | 186 | 3 | 3206 | 1383 | 457 | 2779 |
+  | DT2 1.16 -> 1.17 | 14441 / 14743 (98.0%) | 6226 | 12 | 152 | 3 | 3264 | 1354 | 483 | 2947 |
+  | DN2 1.10E -> 1.11 | 13109 / 13448 (97.5%) | 4917 | 320 | 191 | 5 | 3119 | 1422 | 449 | 2686 |
+  | DN2 1.11 -> 1.12 | 13724 / 14017 (97.9%) | 5703 | 8 | 147 | 2 | 3212 | 1357 | 476 | 2819 |
+
+  Against the Version Tracking exports (function associations, `out/vt/`): 1.15C -> 1.16 agrees on
+  9762 of 9769 shared sources (precision 99.93%) and finds 99.84% of the 9778 associations; 1.10E ->
+  1.11 agrees on 9054 of 9074 (99.78%), recall 99.6%. The matcher adds about 4100 pairs that Version
+  Tracking did not make. Version Tracking is not ground truth, so three independent checks: (a) for
+  the pairs where both images have an RTTI-derived name, the class agrees in 6735 of 6747 (99.8%; the
+  `_vN_t` storage-version rename counts as the same class; the rest are byte-identical sibling
+  getters); per stage the weakest is `gap` (1455 of 1461). (b) The 68 symbols that `emu/symbols.py`
+  resolves by its own signatures in both images: 62 map to the right address on 1.16 -> 1.17 and 61
+  of 67 on 1.11 -> 1.12, none wrong, the rest unmapped (fixed RTOS addresses outside any function,
+  two char* tables, one address inside a rewritten function); on 1.15C -> 1.16 one is wrong
+  (`transport`, which `emu/symbols.py` itself says is unverified). (c) the 86 addresses of
+  `tools/cf_names.py`: 85 carry to 1.17 (`tools/cf_names_dt2_1_17.py`, generated, all [D]); 45 moved,
+  40 did not. SRAM (`0x8000xxxx`) and the heap-side globals (`0x43...`, `0x44...`, `0x47...`,
+  `0x405b...`) are at the same address in 1.17; only data inside the image moved.
+  `machine_display_name_table` is not carried (no instruction refers to it by a literal). **[D]**
+- Pipeline for a new firmware, all serial in one JVM: `tools/ghidra.sh import` (the program in its
+  own folder of `elektron-emac`), `tools/entryhist.py` on a `--limit 1` dump for the code ranges,
+  `codeseeds.py` / `rttiscan.py`, `ghidraapply.py seeds --analyze` and `rtti`, `ghidradump.py --rtti`,
+  `cfdb.py build`. 1.17: 10921 functions after import, 11098 after seeds, 14877 after RTTI; 1.12:
+  10261 -> 14155. The matcher needs the dump only for function boundaries; the names it ports
+  (`cfmatch.py port`) go into the `ported` table of the destination cfdb. `pyghidra` is not in the
+  venv: run the dump and apply tools with `uv run --with <ghidra>/Ghidra/Features/PyGhidra/pypkg/dist/pyghidra-3.1.0-py3-none-any.whl
+  --with .../jpype1-1.5.2-cp312-cp312-macosx_10_9_universal2.whl python tools/ghidradump.py ...`. **[D]**
+- Open: what 1.17 changes in encoder-turn behaviour (the 36 FX oracle failures); the new
+  `BreakOutBoxOutputRoutingMenuView` has not been read. **[O]**
+
 ## What we were overlooking about ColdFire: eDMA **[V]**
 
 Feeding bytes to the UART model in `emu/console.py` could never have produced

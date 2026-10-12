@@ -13,6 +13,9 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/cffacts.py",
+    "tools/cfmatch.py",
+    "tests/test_cfmatch.py",
     "tools/aot_attrib.py",
     "tools/aot_entry_iter.py",
     "tools/aot_dyntrace.py",

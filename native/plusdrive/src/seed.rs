@@ -27,7 +27,7 @@ impl Dt2Seed {
             .find(|section| section.id == 3)
             .ok_or("firmware has no MAIN section")?
             .bytes;
-        let registry = Registry::embedded().map_err(|e| e.to_string())?;
+        let registry = Registry::load().map_err(|e| e.to_string())?;
         let (device, profile, _) = registry
             .boot_for_main(&digest, &main)
             .map_err(|e| e.to_string())?;
