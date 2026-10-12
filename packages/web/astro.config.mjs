@@ -97,4 +97,4 @@ const buildGuard = {
 const extraFsAllow = (process.env.DIGI_VITE_FS_ALLOW || '').split(path.delimiter).filter(Boolean);
 const server = extraFsAllow.length ? { fs: { allow: [repoRoot, ...extraFsAllow] } } : undefined;
 
-export default defineConfig({ integrations: [solid(), buildGuard], vite: { plugins: [localInputs], ...(server ? { server } : {}) } });
+export default defineConfig({ devToolbar: { enabled: false }, integrations: [solid(), buildGuard], vite: { plugins: [localInputs], ...(server ? { server } : {}) } });

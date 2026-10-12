@@ -11,7 +11,7 @@ width = 215.0
 height = 176.0
 accent = "#f3b52c"
 func_legend = "#9c6f0c"
-wordmark = "Digiemu"
+wordmark = "digikit"
 
 [display]
 bezel = [31.0, 21.7, 104.9, 73.1]
