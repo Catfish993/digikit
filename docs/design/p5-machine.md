@@ -1,5 +1,7 @@
 # P5 design: native/machine (ColdFire + periph + SHARC + live audio)
 
+> Historical: the Python emulator (`emu/` machine modules), the Unicorn oracle and the lockstep tools named below were removed (see tag `unicorn-reference-final`).
+
 Base: `5396f9a`. Sources read: `docs/plans/native-emulator.md`, `native/coldfire/src/{lib,cpu}.rs`
 (Bus trait, `Cpu::step`), `native/periph/src/{lib,machine,dspi,ssi,spilink,dsp}.rs` (signatures),
 `scratchpad/p4a-periph-timers.md`, `p4b-periph-dma.md`, `native/sharc/src/frames.rs`,

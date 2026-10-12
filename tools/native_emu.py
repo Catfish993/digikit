@@ -308,9 +308,8 @@ def pgo_plan(args: list[str]) -> object | None:
 
     Each device has its own profile (`native_pgo.py train --device dt2`): a DN2
     profile gives a DT2 build only the shared-engine 3%, a DT2 profile 19%.
-    The launcher never trains on its own. A stale profile is used anyway with a
-    WARNING (unchanged functions keep their profile); a missing one falls back
-    to the ordinary build. DIGI_EMU_PGO_TRAIN=1 trains a stale or missing
+    The launcher never trains on its own. A stale or missing profile falls back
+    to the ordinary build (its own target dir, not the launcher's pgo-use). DIGI_EMU_PGO_TRAIN=1 trains a stale or missing
     profile here when the training inputs exist (`mise run pgo` is the usual
     way); DIGI_EMU_PGO=0 skips PGO. Any failure falls back to the ordinary
     build with a WARNING line: launching is never blocked.
@@ -347,10 +346,8 @@ def pgo_plan(args: list[str]) -> object | None:
                 else:
                     status, detail = native_pgo.pgo_state(environ, device)
         elif status == "stale":
-            profile = native_pgo.current_profile(device)
-            if profile:
-                print(native_pgo.stale_notice(detail, device), file=sys.stderr)
-                return native_pgo.plan_for(profile, environ)
+            print(native_pgo.stale_notice(detail, device), file=sys.stderr)
+            return None
         else:
             print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
             return None

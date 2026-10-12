@@ -374,7 +374,7 @@ DT2_SECTIONS=/tmp/sec-dt uv run python emu/oracle.py
 DT2_SECTIONS=/tmp/sec-dt uv run python -m emu.softfloat
   -> 1774 cases checked, 0 mismatches, 1154 deferred
 
-DT2_SECTIONS=/tmp/sec-dt uv run python -m emu.dspboot 60000000
+DT2_SECTIONS=/tmp/sec-dt uv run python -m emu.dspboot 60000000   # emu.dspboot (removed; see tag unicorn-reference-final)
   -> 38247 distinct addrs, 5 tasks, pc=0x4012acbe, 13 idle spins
 
 DT2_SECTIONS=/tmp/sec-dt uv run python -m emu.frame snapshots/boot400M.snap 20000000

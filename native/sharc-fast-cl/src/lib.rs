@@ -399,7 +399,7 @@ impl Emit<'_, '_> {
                 let sig = self.b.import_signature(sig);
                 let f = self.b.ins().iconst(
                     types::I64,
-                    sharc_native::fast::helper::helper_exec as usize as i64,
+                    sharc_native::fast::helper::helper_exec as *const () as usize as i64,
                 );
                 let r = self.b.ins().iconst(types::I64, rec as i64);
                 let call = self.b.ins().call_indirect(sig, f, &[self.st, r]);

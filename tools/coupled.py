@@ -668,7 +668,8 @@ def parser() -> argparse.ArgumentParser:
             + " (docs/INSTRUMENTATION.md)",
         )
 
-    add("build", cmd_build, "build coupled-run")
+    p = add("build", cmd_build, "build coupled-run")
+    p.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
     p = add("scenario", cmd_scenario, "run named scenarios")
     p.add_argument("names", nargs="*", metavar="NAME")
     p.add_argument("--all", action="store_true", help="run every scenario of the file")

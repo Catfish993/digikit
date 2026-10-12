@@ -24,7 +24,7 @@
 //! section 17.3.1.3).
 //!
 //! **Oracle-compatible mode** (used by the replay harness, [`IntcBank::read`]
-//! / [`IntcBank::write`]): the Python emulator never intercepts a guest
+//! / [`IntcBank::write`]): the Python emulator (removed; see tag unicorn-reference-final) never intercepts a guest
 //! access to any of these registers -- `emu.pit.interrupt_level` only reads
 //! IMR/ICR bytes it did not write, so from the guest's side every register
 //! here, including IPR, INTFRC, SIMR and CIMR, is plain RAM (last write
@@ -125,7 +125,7 @@ impl IntcBank {
         }
     }
 
-    // -- oracle-compatible passthrough (matches the Python emulator) --------
+    // -- oracle-compatible passthrough (matched the Python emulator (removed; see tag unicorn-reference-final)) --------
 
     pub fn read(&self, addr: u32, size: u8) -> Option<u32> {
         let (i, off) = Self::locate(addr)?;

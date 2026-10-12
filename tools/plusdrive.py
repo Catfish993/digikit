@@ -21,10 +21,9 @@ reference, project-decode and sample-loader code on a built image.
 reader for any card image in it (including one dumped from a real firmware
 card overlay), since both share the same decode/encode tables below.
 
-To boot the emulator from a built image, pass its path as ``card_image=`` to
-``emu.dspboot.run``/``emu.longrun.build`` (or ``--card-image`` on the CLI
-runners that expose it); both construct the card via
-``emu.esdhc.Card.from_file``, which mmaps the file read-only -- writes during
+The former Python emulator booted from a built image given as ``card_image=`` to
+``emu.dspboot.run``/``emu.longrun.build`` and read it via
+``emu.esdhc.Card.from_file`` (removed; see tag unicorn-reference-final), which mmapped the file read-only -- writes during
 emulation go to the in-RAM overlay (already how snapshots capture +Drive
 writes; see ``Esdhc.checkpoint_state``), and this file is never modified.
 

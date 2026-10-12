@@ -1140,17 +1140,6 @@ fn blk_write_log_at(s: &mut St, a: u32, width: Int, v: u32, nw: bool) -> R<bool>
     }
 }
 
-/// A block-code access's address (block code runs only under the default
-/// configuration, Cfg::block_ok, which implies fast_mem).
-#[inline(always)]
-fn plain_address_b(address: VI) -> Option<u32> {
-    match address {
-        VI::V(v) if v.is_c() => Some(v.b),
-        VI::I(i) if (0..=u32::MAX as Int).contains(&i) => Some(i as u32),
-        _ => None,
-    }
-}
-
 #[inline(always)]
 fn access_address(address: VI, normal_word: bool) -> VI {
     if normal_word {
@@ -1168,8 +1157,7 @@ fn access_address(address: VI, normal_word: bool) -> VI {
 
 /// A block-code access's plain address, after the normal-word mapping, as a
 /// 32-bit value; None when the address is not a plain known one (then the
-/// general path below decides, from the original address). Equal to
-/// `plain_address_b(access_address(address, normal_word))` where it is Some.
+/// general path below decides, from the original address).
 #[inline(always)]
 fn fast_address_b(address: VI, normal_word: bool) -> Option<u32> {
     let a = match address {
