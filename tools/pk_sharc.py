@@ -154,7 +154,21 @@ def _object(obj: Path, source_sha: str, section: str | None) -> SharcObject:
     )
 
 
+# Selache encode bugs found against the firmware image (docs/findings/05-sharc-isa-and-decoding.md): the
+# re-decode below cannot see them when both decodes agree on a wrong immediate, so refuse the form.
+ENCODE_HAZARDS = [
+    (
+        re.compile(r"\blshift\b[^;]*\bby\s+-\s*\d", re.I),
+        "LSHIFT ... BY -n clears the immediate's sign-extension nibble",
+    ),
+]
+
+
 def assemble(source: str, section: str | None = None) -> SharcObject:
+    for pat, why in ENCODE_HAZARDS:
+        m = pat.search(source)
+        if m:
+            raise PkSharcError(f"known Selache encode bug ({why}): {m.group(0)!r}")
     with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
         src, obj = Path(d) / "m.s", Path(d) / "m.doj"
         src.write_text(source)
