@@ -268,7 +268,9 @@ independent of MAIN OS and validates only:
 
 **No version comparison on this path.** On failure: "UPGRADE ABORTED" and a spin
 loop, nothing written. **[V]** That a corrupt MAIN OS still lets the menu come up
-is a strong inference from the code layout, not demonstrated. **[O]**
+is **[V]** below (spike 0.2, 2026-10-13: read statically, checked by a second agent
+from the raw bytes, and run on the real bootstrap code, see "Bootstrap on the
+ColdFire core").
 
 The receive path itself, traced in the bootstrap: each message's 101 decoded
 bytes are written to `0x40000000 + seq*101`, the message count comes from the
@@ -360,3 +362,109 @@ From the MCF5441x reference manual: CACR is written once, `0xa50ce100`
 write-protected); there is no ACR1-3 write. Flashed cave code is in SDRAM
 before the caches are enabled, so it needs no cache maintenance.
 
+
+## Bootstrap on the ColdFire core (spike 0.2) **[V]** unless marked
+
+Section 2 (DT2 1.16 and 1.17 are byte-identical, version 0x0201) loads at 0x80000400
+(the file's first 4 bytes are a length word; the image's first two longwords are SP
+0x80010000 and PC 0x80000de8). `native/bootstrap` runs its real instructions on the
+native ColdFire core; `tools/bootstrap_run.py` drives it; `tests/test_bootstrap.py`
+pins the results. Modelled, not executed: the QSPI transport (flash read 0x8000f010,
+flash id 0x800024ec, sector erase 0x80002714, page program 0x8000227e), the panel UART
+(key banks, OLED records), the MIDI UART (one receive interrupt per byte), PLL, DDR
+and PIT status bits. No timing. The boot-mode stack argument (1 = normal; 0 runs a
+debug-register write) comes from a stage outside section 2, so the model passes 1. **[O]**
+
+### Order of events from reset (static, second agent agrees)
+
+1. 0x80000de8: PLL, copy flash routines to SRAM 0x8000f000, vectors, then by mode:
+   mode 1 calls the init routine 0x800009c6 and only then 0x80000596 (load MAIN OS).
+2. 0x800009c6 runs the bootstrap-upgrade routine 0x80001c48 (0x80000aea), scans the
+   panel key banks (0x80001276, request `0x60 0x01`), and tests key index 0x11 with
+   0x80001302. The bit comes from the table at 0x80006d74; key 0x11 = FUNC (names at
+   0x80006ca8), bank 2 bit 0. If FUNC is held, or the upgrade routine returned
+   non-zero, it calls the STARTUP MENU 0x80002dc4 (0x80000c60). Two other key chords
+   (5 and 3 keys, checked at 0xc2a and 0xd92) set flag bits and skip the menu.
+3. 0x80000596 finds section 3 in the flash container table (0x80020 + 0x10*i), copies
+   it to 0x40400000, depacks it (0x80000432) to 0x40000400 and 0x80000ef4 calls through
+   the first longword. **Nothing checks a checksum or HMAC of MAIN OS** (the compares in
+   0x800053ec are the container magic and 0x2b), and a missing section is ignored.
+4. So the FUNC test, the menu and the whole receive path precede any use of MAIN OS:
+   a MAIN OS that faults at its first instruction leaves the menu reachable.
+   Emulated: with such an image in flash, no key gives `fault vector 4 at 0x40000404`;
+   FUNC held gives the menu (0x80002dc4) and 0x80000596 is never reached.
+5. The menu is not an endless loop: codes 0x19, 0x1a, 0x1b, 0x1d exit (flag bits in
+   0x80008404, boot continues); the OS UPGRADE entry is key code 0x1c (TRIG 4).
+
+### Receive path, emulated end to end
+
+FUNC held, TRIG 4 at 0x800013ac, the stock 1.16 .syx fed over the MIDI UART (1,880,864
+bytes, 540 M instructions, 8 s): content checksum (0x80003c9c) and HMAC (0x80005e3a)
+pass, six 256 KiB sectors 0x80000..0x200000 are erased, 1,484,288 bytes programmed, soft
+reset (0x80 to 0xec090000), reboot, MAIN OS depacked equal to section 3, entry
+0x400004e8. Flash afterwards equals the container at 0x80000, 0xFF below 0x80000.
+Refusals: one container byte flipped, preamble checksum kept: UPGRADE ABORTED before the
+HMAC; one byte flipped and checksum recomputed: aborted at the HMAC; one transport byte
+flipped: the per-message checksum fails, the receiver silently resets, the transfer never
+completes. In all three nothing is erased or written. Recovery: flash holding the
+faulting MAIN OS, FUNC, TRIG 4, stock .syx, reboot: stock MAIN OS runs. These are the
+bootstrap's own verifier functions accepting an image rebuilt by `dt2.build`/`dt2.inplace`
+and the patched test image (`tools/patched_image.py`).
+
+### Bootstrap-upgrade gate **[V]**
+
+0x80001c48 runs on every boot, not only on a transfer. It looks up section 2 in the flash
+container table; if that entry's version halfword (first two bytes of the 4th longword)
+is <= the running 0x0201 it returns 0 at 0x800021dc before drawing or writing (compare
+0x80001c66-0x80001c72). Otherwise it stages the section, checks a CRC residue and that
+the image header's version equals the table's, and only then erases flash 0x40000 and
+programs the new bootstrap (<= 0xf000 bytes). So both install paths (STARTUP menu, and
+MAIN OS 0x4013a978, which only erases and writes from 0x80000 and never below) leave the
+bootstrap alone for an image whose section 2 equals the running one; the only decision
+is taken at the next boot. Emulated: stock boot and the receive path above never touch
+flash below 0x80000. A table version 0x0202 over an unchanged section 2 shows
+"BOOTSTRAP UPGRADE ... VERSION CHECK", writes nothing and forces the reduced menu (TEST
+MODE, OS UPGRADE). MAIN OS has one more bootstrap writer, the factory UART shell command
+`FULL UPGRADE` (0x400cae8c, erases and programs 0x40000). **[D]**
+
+## NOR flash map (spike 0.2) **[D]** (static reading, second agent agrees on addresses)
+
+| flash offset | content | evidence |
+|---|---|---|
+| 0x00000-0x3ffff | serial-boot loader area, content unknown | **[O]** the bootstrap never touches it |
+| 0x40000- | bootstrap image written by the bootstrap upgrade (<= 0xf000 B), one 256 KiB sector | 0x80001c48; MAIN `FULL UPGRADE` |
+| 0x80000- | OS container: header 'ELE3' + 0x2b, section table at 0x80020; erase from 0x80000 in 0x40000 sectors, 0x200-byte pages | bootstrap and MAIN read and write |
+| 0x380000 | 0x200-byte record of 2-letter tagged fields ("FH", "UU", "UI", ...), rewritten by MAIN (0x400ca4d6, 0x400ca5b2) | reads at 0x400ca396.. |
+| 0x3c0000 | serial number: tag "SERI", 14 bytes, CRC residue 0xdebb20e3 (0x400caa42) | |
+| 0x400000, 0x800000, 0xc00000 | probed once for magic 0x434f4b69; if found a 0xdd9714-byte copy to the eMMC and the sector is erased (0x400f04e2). The 0x40000/0x48000 values there are eMMC sector numbers | |
+
+The two records at 0x380000 and 0x3c0000 are sector-protected: MAIN tests them with the
+status command 0xE2 and unprotects with 0xE4 before writing, re-locks with 0xE3 (command
+meanings are the S25FL-S convention, an inference). The bootstrap's init writes status 0
+(0x80002742) and its receive path has no size limit, so an oversize container would erase
+the record sectors.
+
+**Size cap for patchkit: container <= 0x300000 = 3,145,728 bytes** (0x80000 + 0x300000 =
+0x380000, 12 whole sectors), ideally stock + a few hundred KB. Chip geometry the bootstrap
+recognises: S25FL127S-class 512-byte pages / 256 KiB sectors; other vendors 256 B / 64 KiB
+(0x800024ec). DSP blob limits: section 7 stored size <= 0x100000 and depacked size
+<= 0x100000 (0x400ccf74), about 700 KB free for the SHARC append. **[D]**
+
+### [C] `dt2.build.rebuild` is not a size to flash
+
+It stores every section literals-only: 4,293,296 B for 1.16 (stock 1,484,064), written to
+flash that reaches 0x4c0000, past the cap's neighbours only because they start at 0x380000
+(it would overwrite 0x380000 and 0x3c0000 for larger images; here 0x4c0000 > 0x380000, so
+it already does). Never flash a `rebuild` output of MAIN OS. `dt2/inplace.py` decodes the
+stock stream into tokens, applies the edit and re-encodes only the tokens it touches:
+with no edit it reproduces the stock .syx **byte for byte** (so the token encoder, layout
+at 0x90, HMAC, checksums and framing are exact); the one-string image is +32 bytes.
+The emulated bootstrap depacks these streams (end marker gamma 2^24+2, 0xFF).
+
+## Harmless test image **[D]**
+
+`uv run python tools/patched_image.py` writes `out/patch/dt2-1.16-harmless.syx` (+ .json,
+.png; never committed): UNTITLED -> PATCHKIT at 0x4023b85f (7 bytes), the default project
+name shown at the top of the main screen of a new project. `check_authenticity` passes,
+only section 3 differs, container 1,484,096 B, the emulated bootstrap accepts, writes and
+boots it, and a cold ColdFire boot reaches the main screen with PATCHKIT in the title.
