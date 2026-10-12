@@ -379,7 +379,10 @@ def check_state(
     blocktrans: str = "",
     device: str = "dn2",
 ) -> tuple[str, str, bool]:
-    """Return (status, detail, desktop_changed); status is ok, stale or missing.
+    """Return (status, detail, desktop_changed); status is ok, partial, stale or missing.
+
+    partial: only the sources digest differs (the profile is still used);
+    stale: the rustc or generated core (or any other component) differs.
 
     DEVICE selects the profile (``train --device``); a DT2 profile's key also
     carries the DT2 workload name.
@@ -402,6 +405,9 @@ def check_state(
     hasher.save()
     old = manifest["components"]
     changed = [name for name, value in components.items() if old.get(name) != value]  # type: ignore[attr-defined]
+    if changed == ["sources"]:
+        # Engine or tool edits only: LLVM skips profile data of changed functions.
+        return "partial", "changed: sources", False
     if changed:
         return "stale", "changed: " + ", ".join(changed), False
     return "ok", str(profdata), manifest.get("desktop_sha256") != desktop
@@ -413,7 +419,7 @@ def check(
     blocktrans: str = "",
     device: str = "dn2",
 ) -> tuple[str, str]:
-    """Return (status, detail): status is ok, stale or missing."""
+    """Return (status, detail): status is ok, partial, stale or missing."""
     status, detail, _ = check_state(gen, fast, blocktrans, device)
     return status, detail
 
@@ -421,8 +427,7 @@ def check(
 def profile_use_flags(profdata: str) -> str:
     # Not part of the profile key: it only silences partial-mismatch warnings.
     return (
-        FLAGS_TEMPLATE.format(profdata=profdata)
-        + " -Cllvm-args=-pgo-warn-mismatch=false"
+        FLAGS_TEMPLATE.format(profdata=profdata) + " -Cllvm-args=-no-pgo-warn-mismatch"
     )
 
 
@@ -510,8 +515,15 @@ def stale_notice(detail: str = "", device: str = "dn2") -> str:
     """The one line printed when a stale profile is not used."""
     return (
         "PGO profile is stale for this core; building without PGO. Retrain with "
-        "`mise run pgo` (DN2) or `uv run python tools/native_pgo.py train --device dt2`."
+        "`mise run pgo` (both devices), `mise run pgo:dn2` or `mise run pgo:dt2` "
+        "(`uv run python tools/native_pgo.py train --device dt2`)."
     )
+
+
+PARTIAL_NOTICE = (
+    "PGO profile partly stale (sources changed since training); using it. "
+    "Retrain at milestones with `mise run pgo`."
+)
 
 
 def training_blocker(
@@ -535,8 +547,9 @@ def launch_plan(
     """Decide whether the launcher can use the PGO build; returns (plan, notice).
 
     A stale, missing or unusable profile gives (None, notice): the build runs
-    without PGO. An empty
-    notice means stay silent (opted out or unsupported host).
+    without PGO. A partly stale profile (only the sources digest differs) is
+    used, with the PARTIAL_NOTICE line. An empty notice means stay silent
+    (opted out or unsupported host).
     """
     environ = os.environ if environ is None else environ
     status, detail = pgo_state(environ, device)
@@ -544,6 +557,11 @@ def launch_plan(
         return None, ""
     if status == "stale":
         return None, stale_notice(detail, device)
+    if status == "partial":
+        profile = current_profile(device)
+        if profile:
+            return plan_for(profile, environ), PARTIAL_NOTICE
+        return None, fallback_notice("missing", "profile file is gone", device)
     if status != "ok":
         return None, fallback_notice(status, detail, device)
     return plan_for(detail, environ), "native PGO: using profile " + pathlib.Path(
@@ -950,6 +968,8 @@ def cmd_check(_: argparse.Namespace) -> int:
             "ok (fast regions changed since training; the profile still applies, "
             "retrain at a milestone)"
         )
+    elif status == "partial":
+        print(f"partly stale ({detail}); the launcher still uses the profile")
     else:
         print(f"{status} {detail}" if status != "missing" else f"missing ({detail})")
     print(f"check took {time.monotonic() - began:.3f} s", file=sys.stderr)

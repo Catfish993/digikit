@@ -351,6 +351,12 @@ def pgo_plan(args: list[str]) -> object | None:
         else:
             print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
             return None
+    if status == "partial":
+        profile = native_pgo.current_profile(device)
+        if profile:
+            print(native_pgo.PARTIAL_NOTICE, file=sys.stderr)
+            return native_pgo.plan_for(profile, environ)
+        status, detail = "missing", "profile file is gone"
     if status != "ok":
         print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
         return None

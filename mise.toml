@@ -172,10 +172,22 @@ alias = "fastcov"
 run = "uv run python tools/fastcov.py"
 description = "DSP CPU, tier split and fast-tier refusals/exits per tier config: mise run perf:cov -- --config default --config fast-auto"
 
+[tasks."pgo:dn2"]
+run = "uv run python tools/native_pgo.py train"
+description = "Retrain the DN2 PGO profile against the current code and generated core"
+
+[tasks."pgo:dt2"]
+run = "uv run python tools/native_pgo.py train --device dt2"
+description = "Retrain the DT2 PGO profile against the current code and generated core"
+
 [tasks."perf:pgo"]
 alias = "pgo"
-run = "uv run python tools/native_pgo.py train"
-description = "Retrain the desktop PGO profile (~6 min); do it at milestones, not per edit"
+run = [
+  "uv run python tools/native_pgo.py train",
+  "uv run python tools/native_pgo.py train --device dt2",
+  "uv run python tools/native_emu.py --build-only",
+]
+description = "Retrain DN2 and DT2 PGO profiles, then rebuild the launcher with PGO. Run after core or engine changes, when `mise run emu` reports a stale profile."
 
 [tasks."perf:aot"]
 alias = "aot-gen"

@@ -1224,9 +1224,10 @@ mod coupled {
             // Updated 2026-10-06 for the Type 17 SIMD Cureg fix (docs/findings/16); the CF digest covers the DSPI RX buffer filled with DSP replies.
             // Updated again 2026-10-06 for the dn2-audio-ready-2026-10-06 snapshot (pSLC 32 GB card, no SLC dialog; docs/findings/14): the CF state changed, the PCM and the DSP export did not.
             // Updated 2026-10-07: reference state rebuilt from cold start (`mise run emu:ready -- dn2`, tools/ready.py: DSP state from the .syx alone) with the DSPI1 eDMA ch14 board fix. The old state had the DC-blocker coefficient (DM 0x24f378) corrupted by the pre-ed02999 SIMD Type 17 bug. CF digest, PCM and DSP export are all new.
+            // re-pinned 2026-10-13: forced IRQ delivery on by default (Em approved)
             assert_eq!(
                 runtime.emulator.state_digest().unwrap(),
-                "4a9d3123dfe2aae10113dc6045cbd69954081e355b21fd6914f256ecdc889e46"
+                "8914ba7b7ba8f00fa544c21193df64fed614ed72c51f10f0de39c88695fa1561"
             );
             let audio = runtime.audio.as_ref().unwrap();
             let pcm: Vec<u8> = captured(audio)
@@ -1239,7 +1240,7 @@ mod coupled {
             assert_eq!(captured(audio).len(), 72_896);
             assert_eq!(
                 format!("{:x}", Sha256::digest(&pcm)),
-                "b3f5230f6c266bb1b77a28bcb4191f8be409e632dfac6a73a77e39eac724d03f"
+                "826db0d1de8f7738ac5d0c4579198439bb5a0102b4b9d8bc36d93fa07ce15843"
             );
             if let Some(path) = std::env::var_os("DIGI_COUPLED_DSP_EXPORT") {
                 std::fs::write(path, audio.handle.export().0).unwrap();
@@ -1247,7 +1248,7 @@ mod coupled {
             // Cold-start snapshot: the export is the DSP state after the 100M-instruction workload from the rebuilt ready state.
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "20905b2346c632983c787e7cb29d7e60aa27a7dd133d5ab5e7b8f1cdc6b5d13d"
+                "5cf54eba4b404acfae2e15eae5ef26a12459c171e1a6440a27cc2aa48a692fc6"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());

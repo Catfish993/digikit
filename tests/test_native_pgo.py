@@ -80,10 +80,23 @@ def test_desktop_files_in_a_listed_package_list_are_ignored(tree):
     assert state(tree)[0] == "ok"
 
 
-def test_emulation_crate_change_is_stale(tree):
+def test_emulation_crate_change_is_partly_stale(tree):
     (tree / "native/sharc/lib.rs").write_text("a changed")
     status, detail, _ = state(tree)
-    assert (status, detail) == ("stale", "changed: sources")
+    assert (status, detail) == ("partial", "changed: sources")
+
+
+def test_rustc_change_is_stale(tree, monkeypatch):
+    monkeypatch.setattr(native_pgo, "rustc_version", lambda: "rustc 1.99.0")
+    assert state(tree)[:2] == ("stale", "changed: rustc")
+
+
+def test_sources_plus_generated_change_is_stale(tree):
+    (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "gen/core.rs").write_text("new core")
+    status, detail, _ = state(tree)
+    assert status == "stale"
+    assert "sources" in detail and "generated" in detail
 
 
 def test_generated_core_change_is_stale_but_fast_regions_are_not(tree):
@@ -115,6 +128,7 @@ def test_blocktrans_roots_follow_env_then_table(monkeypatch, tmp_path):
 
 def test_current_profile_returns_the_file_even_when_stale(tree):
     (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "gen/core.rs").write_text("new core")
     assert state(tree)[0] == "stale"
     assert native_pgo.current_profile() == str(tree / "state" / "p.profdata")
     (tree / "state" / "p.profdata").unlink()
@@ -165,12 +179,32 @@ def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):
     monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
     monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
     monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
-    (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "gen/core.rs").write_text("new core")
     plan, notice = native_pgo.launch_plan({})
     assert plan is None
     assert "stale for this core; building without PGO" in notice
     assert "mise run pgo" in notice
-    assert "-pgo-warn-mismatch=false" in native_pgo.profile_use_flags("p")
+    assert "-no-pgo-warn-mismatch" in native_pgo.profile_use_flags("p")
+
+
+def test_launch_plan_uses_a_partly_stale_profile(tree, monkeypatch):
+    monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
+    monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
+    monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
+    monkeypatch.setattr(
+        native_pgo,
+        "native_target",
+        lambda: type("T", (), {"target_dir": lambda *a, **k: tree / "target"}),
+    )
+    (tree / "native/sharc/lib.rs").write_text("a changed")
+    plan, notice = native_pgo.launch_plan({})
+    assert plan is not None
+    assert "-no-pgo-warn-mismatch" in plan.env["RUSTFLAGS"]
+    assert str(tree / "state" / "p.profdata") in plan.env["RUSTFLAGS"]
+    assert notice == (
+        "PGO profile partly stale (sources changed since training); using it. "
+        "Retrain at milestones with `mise run pgo`."
+    )
 
 
 def test_dt2_state_reads_the_dt2_manifest(tree, monkeypatch):

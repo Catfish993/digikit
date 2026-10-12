@@ -59,7 +59,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Build and run
 
 - mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
-  `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo`, `gen:core`.
+  `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo` (both devices, then rebuilds the launcher), `pgo:dn2`, `pgo:dt2`, `gen:core`.
 - Paths, toolchain and fast-region tables: tools/digi_env.py, tools/fast_regions.json.
 - SHARC crates: native/sharc-rt (runtime), native/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative
   paths resolve from the repo root), native/sharc (engine and fast tier), native/sharc-fast-cl and
@@ -69,7 +69,8 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   regenerate every core (DN2 and DT2 from out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt, the shared core with
   `mise run gen:core`), backing up each gen dir first.
 - `out/native/target/*/pgo-use` belongs to the launcher; experiments build elsewhere (`DIGI_EMU_PGO_VARIANT`).
-  PGO profiles are per device (`tools/native_pgo.py train [--device dt2]`); retrain at milestones.
+  PGO profiles are per device (`mise run pgo:dn2`, `mise run pgo:dt2`, or `mise run pgo` for both; underlying
+  `tools/native_pgo.py train [--device dt2]`); retrain at milestones.
 - Builds and timed runs share the machine through tools/benchlock.py (shared for builds, exclusive for
   benchmarks). tools/coupled_ab.py, native_pgo.py and sharc_regionbench.py take the lock themselves (wrapping them
   deadlocks).
