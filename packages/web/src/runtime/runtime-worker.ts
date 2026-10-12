@@ -113,7 +113,10 @@ async function pump(token: number, epoch: number) {
   if (!running || token !== generation || epoch !== runEpoch) return;
   try {
     const begin = performance.now(); let snapshot = step(); metrics.step(begin, performance.now(), snapshot);
-    while (coupled && !snapshot.status?.error && performance.now() - begin < COUPLED_SLICE_MS) { const t = performance.now(); snapshot = step(); metrics.step(t, performance.now(), snapshot); }
+    // `leds` is sent only when it changed, so an intermediate step's value must survive to the published one.
+    let leds = snapshot.leds, rgb = snapshot.rgb;
+    while (coupled && !snapshot.status?.error && performance.now() - begin < COUPLED_SLICE_MS) { const t = performance.now(); snapshot = step(); metrics.step(t, performance.now(), snapshot); if (snapshot.leds !== undefined) { leds = snapshot.leds; rgb = snapshot.rgb; } }
+    if (leds !== undefined) { snapshot.leds = leds; snapshot.rgb = rgb; }
     publish(snapshot, token);
     if (snapshot.status?.error) { running = false; postMessage({ type: 'error', generation: token, error: snapshot.status.error }); return; }
   } catch (error) { running = false; postMessage({ type: 'error', generation: token, error: String(error) }); return; }

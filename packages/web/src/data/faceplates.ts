@@ -4,10 +4,11 @@ import { parse } from 'smol-toml';
 import dt2Source from './faceplates/digitakt-ii.toml?raw';
 import dn2Source from './faceplates/digitone-ii.toml?raw';
 
-export type Key = { code: number; x: number; y: number; w: number; h: number; legend?: string; sub?: string; sub_y?: number; sub_style?: string; icon?: string; style?: string };
+export type Key = { code: number; x: number; y: number; w: number; h: number; legend?: string; sub?: string; sub_y?: number; sub_style?: string; icon?: string; style?: string;
+  /** Panel LED index (UART8 `b9 idx val`). Defaults to the key code for trig keys; unset = never lit. */ led?: number; /** CSS colour of the lit legend. */ led_color?: string };
 export type Knob = { encoder?: number; push?: number; x: number; y: number; r: number; marker?: string; label: string; label_y?: number; sub?: string };
 export type Text = { text: string; x: number; y: number; style: string };
-export type Panel = { name: string; accent: string; func_legend: string; bezel: number[]; glass: number[]; wordmark: number[]; leds: { x: number[]; y: number[]; r: number }; screws: { x: number; y: number }[]; keys: Key[]; knobs: Knob[]; texts: Text[] };
+export type Panel = { name: string; accent: string; func_legend: string; bezel: number[]; glass: number[]; wordmark: number[]; leds: { x: number[]; y: number[]; r: number; idx?: number[]; color?: string }; screws: { x: number; y: number }[]; keys: Key[]; knobs: Knob[]; texts: Text[] };
 type Source = { faceplate: { wordmark: string; accent: string; func_legend: string }; display: { bezel: number[]; glass: number[]; wordmark: number[] }; leds: Panel['leds']; controls: { screws: Panel['screws']; keys: Key[]; knobs: Knob[]; texts: Text[] } };
 function panel(name: string, source: string): Panel {
   const data = parse(source) as unknown as Source;

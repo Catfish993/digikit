@@ -24,6 +24,7 @@
 //   --split 1          two core instances in two threads (ColdFire here, DSP in a worker_threads worker); PCM must equal the single instance's
 //   --seconds S        override the scenario length in audio seconds (like coupled-run)
 //   --out PATH         write the raw f32le PCM (compare with coupled-run --wav x.f32)
+//   --leds 1           print every panel LED change the snapshots report (`leds`, led_revision), with the scenario's button events
 //   --repo PATH        repo root (default: the parent of this script's directory, else cwd)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -174,6 +175,7 @@ const targetFrames = seconds === undefined ? null : Math.ceil(seconds * FRAMES_P
 const untilInstr = args.seconds !== undefined ? null : scenario.instructions ?? null;
 
 const chunks = [];
+let ledState;
 let values = 0, icount = readyAt, next = 0, nChunks = 0;
 const frames = () => (cfSide ? cfSide.stats().frames : Math.floor(values / VALUES_PER_FRAME));
 const wallStart = performance.now();
@@ -183,6 +185,7 @@ for (;;) {
     const ev = events[next];
     const due = ev.at_instr !== undefined ? icount - readyAt >= ev.at_instr : frames() >= Math.round(ev.at_s * FRAMES_PER_SECOND);
     if (!due) break;
+    if (args.leds) console.log(`+${((icount - readyAt) / 1e6).toFixed(1)}M event ${JSON.stringify(ev)}`);
     if (ev.button !== undefined) call('digi_button', ev.button, (ev.down ?? true) ? 1 : 0);
     else call('digi_turn', ev.turn, ev.detents ?? 1);
     next++;
@@ -193,7 +196,14 @@ for (;;) {
   if (untilInstr !== null && scenario.clip_last_chunk) budget = Math.min(untilInstr - elapsed, STEP_CHUNK);
   const ev = events[next];
   if (scenario.exact_events && ev && ev.at_instr !== undefined && ev.at_instr > elapsed) budget = Math.min(budget, ev.at_instr - elapsed);
-  const status = call('digi_step', budget).status;
+  const snap = call('digi_step', budget);
+  const status = snap.status;
+  if (args.leds && snap.leds !== undefined) {
+    const prev = ledState ?? '0'.repeat(128), changes = [];
+    for (let i = 0; i < 64; i++) if (snap.leds.slice(i * 2, i * 2 + 2) !== prev.slice(i * 2, i * 2 + 2)) changes.push(`${i.toString(16).padStart(2, '0')}:${prev.slice(i * 2, i * 2 + 2)}->${snap.leds.slice(i * 2, i * 2 + 2)}`);
+    ledState = snap.leds;
+    console.log(`+${((status.icount - readyAt) / 1e6).toFixed(1)}M leds rev=${status.led_revision} ${changes.join(' ')}`);
+  }
   nChunks++;
   icount = status.icount;
   const n = cfSide ? 0 : e.digi_pcm_take(); // split: the PCM is in the DSP worker

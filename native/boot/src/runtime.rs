@@ -35,6 +35,8 @@ pub struct Status {
     pub error: Option<String>,
     pub frame_revision: u64,
     pub frame_source: Option<String>,
+    /// Front-panel LED revision (see `panel_leds`); `Snapshot::leds` follows it.
+    pub led_revision: u32,
     pub main_ui_reached: bool,
     pub filesystem_verified: Option<bool>,
     pub input_ready: bool,
@@ -58,6 +60,13 @@ pub struct Status {
 pub struct Snapshot {
     pub status: Status,
     pub frame: Option<Vec<u8>>,
+    /// The 64 panel LED values as 128 hex digits, only when `status.led_revision` changed since the
+    /// last snapshot that carried them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leds: Option<String>,
+    /// The 64 RGB LED values (r, g, b each) as 384 hex digits, sent with `leds` once any is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rgb: Option<String>,
     /// Set when `emu_step` only reported because something else steps the
     /// guest (free running, paused, a job); the webview then polls once per
     /// display frame instead of at once.
@@ -116,6 +125,8 @@ pub struct Emulator {
     frame_source: Option<String>,
     frame_revision: u64,
     emitted_revision: Option<u64>,
+    panel_leds: crate::panel_leds::PanelLeds,
+    emitted_led_revision: u32,
     // A restore has a new host observer. This is intentionally not saved:
     // serializing it would change a load/save state digest.
     replay_restored_frame: bool,
@@ -439,6 +450,8 @@ impl Emulator {
             frame_source: None,
             frame_revision: 0,
             emitted_revision: None,
+            panel_leds: Default::default(),
+            emitted_led_revision: 0,
             replay_restored_frame: false,
             delivery_counts: [0; 256],
             deliveries: Vec::new(),
@@ -561,9 +574,15 @@ impl Emulator {
             self.emitted_revision = Some(self.frame_revision);
             self.replay_restored_frame = false;
         }
+        let led_changed = self.emitted_led_revision != self.panel_leds.revision;
+        if led_changed {
+            self.emitted_led_revision = self.panel_leds.revision;
+        }
         Snapshot {
             status,
             frame,
+            leds: led_changed.then(|| self.panel_leds.leds_hex()),
+            rgb: led_changed.then(|| self.panel_leds.rgb_hex()).flatten(),
             polled: false,
         }
     }
@@ -737,6 +756,7 @@ impl Emulator {
             "booting"
         };
         Status {
+            led_revision: self.panel_leds.revision,
             device: self.device.clone(),
             version: self.version.clone(),
             icount: self.cpu.icount,
@@ -1499,6 +1519,7 @@ impl Emulator {
         let uart_bytes = uart.len() as u64;
         if uart_bytes != 0 {
             panel_tx_log(self.cpu.icount, &uart);
+            self.panel_leds.feed(&uart);
         }
         self.uart_bytes += uart_bytes;
         if uart_bytes != 0 {

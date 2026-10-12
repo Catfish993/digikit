@@ -25,7 +25,7 @@ function pump() {
   const begin = performance.now();
   try {
     do side.step(); while (performance.now() - begin < SLICE_MS);
-    postMessage({ type: 'status', ...side.stats() });
+    postMessage({ type: 'status', ...side.stats(), leds: side.leds() });
   } catch (error) {
     running = false;
     postMessage({ type: 'error', error: String(error) });
