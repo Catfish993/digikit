@@ -8,6 +8,8 @@ activate_aggressive = true
 [tools]
 rust = "1.98.1"
 pnpm = "12.8.2"
+"aqua:WebAssembly/binaryen" = "version_133"
+wasm-tools = "1.261.0"
 
 # --- setup ---
 
@@ -66,8 +68,8 @@ description = "Run the web panel's audio-health tests (node --test)"
 
 [tasks."web:wasm"]
 alias = "wasm"
-run = "tools/native_wasm.py"
-description = "Build only the browser emulator core (WASM)"
+run = "tools/native_wasm.py --wasm-opt=-O3"
+description = "Build only the browser emulator core (WASM), with wasm-opt -O3 on the coupled core (--wasm-opt= turns it off)"
 
 [tasks."web:bench"]
 run = "uv run python tools/benchlock.py run --exclusive -- node tools/browser_bench.mjs"

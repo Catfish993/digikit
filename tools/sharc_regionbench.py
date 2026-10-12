@@ -11,6 +11,7 @@ function from that state (native/sharc/examples/region_bench.rs).
     sharc_regionbench.py bench [--variant base] [--regions PC,..] [--reps 5]
         [--engine native|node|bun] [--agg] [--prod-gen]
         [--engine-args "--liftoff-only"] [--engine-bin PATH]
+        [--rustflags "-C target-feature=+tail-call"] [--wasm-opt "-O3"]
     sharc_regionbench.py ratio A.jsonl B.jsonl
     sharc_regionbench.py compare A B [--rounds 5]
     sharc_regionbench.py check [--variant base]
@@ -35,6 +36,7 @@ import os
 import pathlib
 import re
 import shlex
+import shutil
 import statistics
 import subprocess
 import sys
@@ -276,6 +278,8 @@ def cmd_build(args) -> str:
         with open(os.path.join(vdir, "FEATURES")) as fh:
             features = fh.read().strip() or None
     prod_gen = getattr(args, "prod_gen", False)
+    wasm = getattr(args, "wasm", False)
+    rustflags = getattr(args, "rustflags", "") if wasm else ""
     # Production reuses the app cache only with its explicit profile.  Mini
     # variants retain the historical benchmark profile overrides.
     profile_env = {} if prod_gen else dict(PROFILE_ENV)
@@ -290,13 +294,18 @@ def cmd_build(args) -> str:
             + repr(pgo)
             + repr(features)
             + repr(sorted(profile_env.items()))
+            + repr(rustflags)
         ).encode()
     ).hexdigest()
-    wasm = getattr(args, "wasm", False)
     if wasm and pgo:
         sys.exit("--wasm and --pgo do not combine")
     exe = os.path.join(vdir, "region_bench.wasm" if wasm else "region_bench")
     stamp = os.path.join(vdir, "build-wasm.json" if wasm else "build.json")
+    flags_tag = ""
+    if wasm and rustflags:
+        flags_tag = hashlib.sha256(rustflags.encode()).hexdigest()[:8]
+        exe = os.path.join(vdir, "region_bench-%s.wasm" % flags_tag)
+        stamp = os.path.join(vdir, "build-wasm-%s.json" % flags_tag)
     # A variant with a FROZEN file keeps its binary whatever the sources do
     # (an A/B against a build of older sources).
     if os.path.exists(exe) and os.path.exists(os.path.join(vdir, "FROZEN")):
@@ -338,7 +347,11 @@ def cmd_build(args) -> str:
         target_args = ["--target", TRIPLE]
         built_dir = os.path.join(target, TRIPLE, "release", "examples")
     elif wasm:
-        target = str(nt.target_dir(gen))
+        if rustflags:
+            env["RUSTFLAGS"] = rustflags
+            target = str(nt.target_dir(gen, "wasm-" + flags_tag))
+        else:
+            target = str(nt.target_dir(gen))
         target_args = ["--target", WASM_TRIPLE]
         built_dir = os.path.join(target, WASM_TRIPLE, "release", "examples")
     else:
@@ -355,7 +368,7 @@ def cmd_build(args) -> str:
             + ["--target-dir", target],
             env=env,
         )
-    built = os.path.join(built_dir, os.path.basename(exe))
+    built = os.path.join(built_dir, "region_bench.wasm" if wasm else "region_bench")
     with open(built, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
     subprocess.run(["cp", built, exe], check=True)
@@ -370,6 +383,7 @@ def cmd_build(args) -> str:
     }
     if wasm:
         stamp_data["target"] = WASM_TRIPLE
+        stamp_data["rustflags"] = rustflags
     with open(stamp, "w") as fh:
         json.dump(stamp_data, fh)
     print("build %s: %.1fs sha256 %s" % (args.variant, secs, digest[:12]))
@@ -500,6 +514,26 @@ def print_table(table: list[tuple]) -> None:
         )
 
 
+def run_wasm_opt(exe: str, opt: str) -> str:
+    """Optimize the built wasm with binaryen's wasm-opt; returns the new path."""
+    if shutil.which("wasm-opt") is None:
+        sys.exit("wasm-opt not on PATH: run `mise install`")
+    tag = hashlib.sha256(opt.encode()).hexdigest()[:8]
+    base, ext = os.path.splitext(exe)
+    out = "%s.opt-%s%s" % (base, tag, ext)
+    run(
+        ["wasm-opt", *shlex.split(opt)]
+        + ["--enable-bulk-memory", "--enable-sign-ext", "--enable-mutable-globals"]
+        + ["--enable-nontrapping-float-to-int", "--enable-multivalue"]
+        + ["--enable-reference-types", exe, "-o", out]
+    )
+    print(
+        "wasm-opt %s: %d -> %d bytes"
+        % (opt, os.path.getsize(exe), os.path.getsize(out))
+    )
+    return out
+
+
 def cmd_bench(args) -> None:
     args.wasm = args.engine != "native"
     if args.prod_gen and args.variant == "base":
@@ -507,6 +541,8 @@ def cmd_bench(args) -> None:
         args.variant = "prod-bench"
     os.makedirs(variant_dir(args.variant), exist_ok=True)
     exe = cmd_build(args)
+    if args.wasm_opt:
+        exe = run_wasm_opt(exe, args.wasm_opt)
     names = args.regions.split(",")
     t = time.perf_counter()
     with benchlock("exclusive", "regionbench bench"):
@@ -522,7 +558,11 @@ def cmd_bench(args) -> None:
         )
     secs = time.perf_counter() - t
     if args.engine != "native":
-        slug = re.sub(r"[^A-Za-z0-9]+", "_", args.engine_args)[:40]
+        for r in rows:
+            r["rustflags"] = args.rustflags
+            r["wasm_opt"] = args.wasm_opt
+        parts = [args.engine_args, args.rustflags, args.wasm_opt]
+        slug = re.sub(r"[^A-Za-z0-9_]+", "_", " ".join(p for p in parts if p))[:60]
         stem = "bench-%s%s-%d.jsonl" % (
             args.engine,
             "-" + slug if slug else "",
@@ -833,6 +873,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     b.add_argument("--engine-args", default="", help="node/bun flags, shlex-split")
     b.add_argument("--engine-bin", help="node/bun executable (default: on PATH)")
+    b.add_argument(
+        "--rustflags", default="", help="RUSTFLAGS of the wasm build (wasm engines)"
+    )
+    b.add_argument(
+        "--wasm-opt", default="", help="wasm-opt flags, shlex-split (wasm engines)"
+    )
     r = sub.add_parser("ratio", help="per-region B/A of two bench jsonl files")
     r.add_argument("a")
     r.add_argument("b")

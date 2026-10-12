@@ -1791,10 +1791,67 @@ function and checker" measured ~0.9 ns, so they do not hold.
   `--no-liftoff` 0.99; `--no-wasm-bounds-checks` 0.99; `--wasm-enforce-bounds-checks` 1.04 (so the trap handler is
   on); `--no-wasm-stack-checks` 0.99; `--no-wasm-loop-unrolling` 1.00; `--no-turboshaft-wasm-load-elimination` 0.98;
   a larger inlining budget 0.99; `--no-wasm-inlining` 1.06; `--no-wasm-loop-peeling` 1.06. No flag closes the gap.
-- **[O]** The whole page in Chrome (DSP 2.15 s per audio s against about 1.11 native without PGO, about 1.9x) costs
-  more than the region ratio (1.6x) predicts. About 0.35 s per audio s is outside the AOT region code: candidates are
-  dispatch (`Engine::step`, 5% self in the CDP profile), JS glue (8.5% "other" in the DSP worker) and kernel
-  crossings. Not yet attributed.
+- **[D]** Where Chrome's time goes. Method: a CDP profile of the DSP worker (page default) against an Instruments CPU
+  Profiler run of a no-PGO `coupled-run trig1-taps` with the `desktop` fast regions. Shares are scaled to the
+  quiet-machine totals of 2.15 and 1.11 s per audio s; the machine load was 21-26. Native / Chrome, in s per audio s:
+  - AOT code 0.78 / 1.65 (2.1x).
+  - Dispatch and interpreter (`Engine::step`, `exec_insn`) 0.10 / 0.18.
+  - Fast-tier glue 0.04 / 0.08.
+  - Fast kernels 0.14 / 0.13.
+  - sharc_rt helpers 0.03 / 0.04.
+  - JS (sab-link `serve`, `onPcm`) 0 / 0.04.
+  - Other 0.02 / 0.03.
+  - Kernel crossings through `host_wasm_run` are 0.07% of the profile and GC is negligible.
+- **[D]** Inside the AOT code, the 56 functions above 3 ms native run at 1.67x in Chrome, as the region bench predicts.
+  The other 529 small block functions run at 2.5x and add about 0.47 s per audio s.
+- **[D]** The 529 "small" block functions are region functions of 5k-43k native instructions that run rarely, not
+  short code.
+  - V8 emits 1.76-2.57x native's instructions for them.
+  - Spills and movz/movk constants are 77% of the excess: on `b24_1C98B6`, +6.5k and +2.8k instructions. The wasm
+    calling convention has no callee-saved registers, so V8 spills live values around each of the hundreds of helper
+    calls per function.
+  - The fixed per-entry cost is about 20-45 ns per entry, or 13-30% of the excess. It includes:
+    - a 7-instruction prologue;
+    - the mask check;
+    - the register write-back;
+    - a chain link of about 25 instructions, a `call_indirect` where native uses a tail `br`.
+  - Offset folding is only 2-4% of these functions' instructions.
 - Caveats: the bench restores a light state before each call. The restore loop is 47-94% of the measured time and is
   subtracted, so regions under about 1 µs are noise. Node 24 runs V8 13.6; Chrome runs a newer V8. PGO for wasm was
   not tried: cargo's crate hashes include the target triple, so a native profile would likely match no wasm function.
+- **[D]** V8 machine code for `r_1C3862` (node 24, TurboFan):
+  - About 2x the instructions of native, and 1.6x those of JavaScriptCore's optimizing tier (OMG), for the same wasm.
+  - About 95% of CPU-state accesses become `movz` + `add` + `ldr [membase, reg]`. V8 does not fold the constant offset
+    into the load, and 299 of the 646 wasm memory ops have offsets above 4095. JSC computes `membase + s` once and
+    uses `ldr [reg, #imm]`.
+  - V8 reloads each spilled value about 4.5 times. It reloads the memory base, the instance and `s` after each of the
+    ~134 calls.
+  - Chromium 150 has no disassembler in its release build. It emits code 6.6% smaller for the same function, so the
+    pattern very likely holds there too.
+- **[D]** Micro-benchmark: 64 read-modify-writes over a 32 KB struct, with 16 cold calls.
+  - Only a `static` state at a low linear-memory address (1024, linked with `--no-stack-first --global-base=1024`)
+    turns each access into one `ldr [membase, #imm]` in V8.
+  - That gives -36% instructions and -17% time on node, -8% time on bun, and no change natively.
+  - A pointer parameter, or a static at the default address of 1 MB, gains nothing.
+  - Estimate for the real code: 8-15% of AOT time on V8 (inference). V8 still reloads the memory base and the
+    instance after calls.
+- **[D]** Firefox 148 against Chrome 150, paired runs on a loaded machine: the DSP worker takes 4.67-4.76 against
+  3.05-3.14 s per audio s, so Firefox is about 1.5x slower. Safari is not measured yet (it needs Develop > Allow
+  Remote Automation).
+- **[D]** Cheap build experiments on the region bench (variant `cur`, 4 node rounds and 2 bun rounds, load 21-27, ratios
+  to the baseline wasm):
+  - `-C target-feature=+tail-call`: 1.04 node, 1.01 bun. 60 `return_call` are emitted, but `r_1C3862` is unchanged.
+  - `--no-stack-first --global-base=1024`: 1.01, 1.02. It removes only 2% of the movz/movk instructions, because the
+    engine state is heap-allocated, not static data.
+  - `wasm-opt -O3`: 0.91, 0.97.
+  - Instruction counts and exit PCs equal native in every variant.
+- **[D]** `wasm-opt -O3` (binaryen 133) on the DN2 web core:
+  - Size 45.1 to 41.6 MB, 55 s extra build time.
+  - PCM equals the pin (`wasm_parity --scenario trig1-tap-release --fast desktop`) and cold start is unchanged.
+  - Chrome, 3 paired runs, load 21-26: DSP worker 3.114 to 2.987 s per audio s (0.959) and audio per wall 1.042x.
+  - Now the default of `mise run web:wasm`.
+- **[C]** Not pursued: the SHARC state at a fixed low address (wasm only).
+  - The micro-benchmark gained 17%, but in the real functions offset folding and address constants are a small share.
+  - This corrects the 8-15% estimate above to about 3-6%, for about a day of generator and engine work.
+- Tools: `tools/browser_bench.mjs --browser chrome|firefox|safari` (Firefox through WebDriver BiDi, Safari through
+  safaridriver) and `--profile-out DIR` (raw `.cpuprofile` files, Chrome only).

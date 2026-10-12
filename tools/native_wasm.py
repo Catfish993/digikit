@@ -16,9 +16,11 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
+import time
 
 root = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -51,6 +53,13 @@ parser.add_argument(
 parser.add_argument(
     "--out",
     help="output path of the coupled SHARC+ core (default packages/web/.local/emulator-core-sharc.wasm)",
+)
+parser.add_argument(
+    "--wasm-opt",
+    default="",
+    metavar="STR",
+    help="run wasm-opt with these extra flags (e.g. '-O3') on the coupled SHARC+ core only; "
+    "the raw build stays next to the output as <stem>.raw.wasm",
 )
 args = parser.parse_args()
 configured_generated = os.environ.get("SHARC_GEN_DIR")
@@ -139,12 +148,37 @@ plain_env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
 build(diagnostics, resolve_target_dir(None), plain_env, public / "emulator-core.wasm")
 sharc_wasm = pathlib.Path(args.out) if args.out else local_dir / "emulator-core-sharc.wasm"
 if coupled:
+    if args.wasm_opt and shutil.which("wasm-opt") is None:
+        raise SystemExit("wasm-opt not found: run `mise install` (mise.toml pins binaryen)")
+    raw_wasm = sharc_wasm.with_name(f"{sharc_wasm.stem}.raw.wasm")
     build(
         [*diagnostics, "sharc", *([] if args.no_fast else ["fast-wasm"])],
         resolve_target_dir(generated),
         base_env | {"SHARC_GEN_DIR": generated},
-        sharc_wasm,
+        raw_wasm if args.wasm_opt else sharc_wasm,
     )
+    if args.wasm_opt:
+        started = time.monotonic()
+        subprocess.run(
+            [
+                "wasm-opt",
+                *shlex.split(args.wasm_opt),
+                "--enable-bulk-memory",
+                "--enable-sign-ext",
+                "--enable-mutable-globals",
+                "--enable-nontrapping-float-to-int",
+                "--enable-multivalue",
+                "--enable-reference-types",
+                str(raw_wasm),
+                "-o",
+                str(sharc_wasm),
+            ],
+            check=True,
+        )
+        print(
+            f"wasm-opt: raw {raw_wasm.stat().st_size} bytes, optimised {sharc_wasm.stat().st_size} bytes, "
+            f"{time.monotonic() - started:.1f} s"
+        )
 else:
     sharc_wasm.unlink(missing_ok=True)
     print("coupled SHARC+ core skipped (--cf-only or no generated core); removed any stale emulator-core-sharc.wasm")
