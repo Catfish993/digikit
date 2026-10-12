@@ -5,7 +5,7 @@ repository.workspace = true
 version = "0.0.1"
 edition = "2024"
 publish = false
-description = "MCF5441x timer/INTC peripheral models (PIT, DTIM, INTC), plus a DT2MMIO trace reader and replay harness for checking them against the Python emulator (the frozen oracle)."
+description = "MCF5441x timer/INTC peripheral models (PIT, DTIM, INTC), plus a DT2MMIO trace reader and replay harness for checking them against the Python emulator, which was removed (see tag unicorn-reference-final)."
 
 # The models themselves (this file's default target) are std-only, no
 # dependencies, so they build for wasm32. The trace reader/replay binary

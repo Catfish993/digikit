@@ -612,8 +612,8 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
         value: u32,
         failed: bool,
     ) -> bool {
-        // emu.harness.Machine._fault maps a zeroed page for any unmapped guest
-        // access.  This is a diagnostic compatibility policy only: it never
+        // The former Python harness (emu.harness (removed; see tag unicorn-reference-final); its _fault) mapped a zeroed
+        // page for any unmapped guest access.  This is a diagnostic compatibility policy only: it never
         // supplies a device value. Owned-device errors still fail their retry.
         if !failed || !self.zero_page_mmio {
             return false;
@@ -1004,7 +1004,7 @@ pub(crate) fn service_tx35_wait<const TRACE: bool>(
     }
 }
 
-// Exact emu.longrun.py flash_read ABI: [return, offset, length, destination]
+// The flash_read ABI of the former emu.longrun (removed; see tag unicorn-reference-final): [return, offset, length, destination]
 // at A7; copy only an in-range request, return D0=0, pop return address.
 pub(crate) fn hle_flash_read<const TRACE: bool>(
     bus: &mut LoggingBus<TRACE>,

@@ -7,7 +7,7 @@
 //! Also documents DSPI0/1/3's shared register layout (RM Chapter 40, Table
 //! 40-3 p.1180): none of this crate's replayed traces exercise DSPI1 beyond
 //! a handful of plain register writes (`scratchpad/p4-mmio-recorder.md`,
-//! "Peripherals... the Python emulator does not model"), so DSPI1/DSPI3 stay
+//! "Peripherals... the Python emulator does not model" (removed; see tag unicorn-reference-final)), so DSPI1/DSPI3 stay
 //! plain `RegFile` passthrough in `EdmaBank`'s neighbour slot -- see
 //! [`DSPI1_BASE`]'s doc comment.
 //!
