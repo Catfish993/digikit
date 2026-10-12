@@ -453,9 +453,8 @@ recognises: S25FL127S-class 512-byte pages / 256 KiB sectors; other vendors 256 
 ### [C] `dt2.build.rebuild` is not a size to flash
 
 It stores every section literals-only: 4,293,296 B for 1.16 (stock 1,484,064), written to
-flash that reaches 0x4c0000, past the cap's neighbours only because they start at 0x380000
-(it would overwrite 0x380000 and 0x3c0000 for larger images; here 0x4c0000 > 0x380000, so
-it already does). Never flash a `rebuild` output of MAIN OS. `dt2/inplace.py` decodes the
+flash up to 0x4c0000, past 0x380000: it would erase the record sectors at 0x380000 and
+0x3c0000 (the emulated receive of such an image erases 17 sectors to 0x4c0000). Never flash a `rebuild` output of MAIN OS. `dt2/inplace.py` decodes the
 stock stream into tokens, applies the edit and re-encodes only the tokens it touches:
 with no edit it reproduces the stock .syx **byte for byte** (so the token encoder, layout
 at 0x90, HMAC, checksums and framing are exact); the one-string image is +32 bytes.
