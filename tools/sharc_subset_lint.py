@@ -115,6 +115,7 @@ DEST_MATCH = frozenset(
     {
         "compute.py:_apply_compute",
         "compute.py:_apply_compute_pey",
+        "compute.py:_shift_immediate_pey",
     }
 )
 DEST_TYPES = frozenset({"int", "str", "tuple"})

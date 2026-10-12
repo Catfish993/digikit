@@ -1,6 +1,6 @@
 /** Dev-server-only private inputs (`/__digi-local/`); production has no such route. */
 export interface LocalInputs { image: Uint8Array; state: Uint8Array; snapshot?: Uint8Array }
-export interface LocalManifest { dspImage: boolean; dspState: boolean; cfSnapshot: boolean }
+export interface LocalManifest { dspImage: boolean; dspState: boolean; cfSnapshot: boolean; firmware?: boolean }
 
 export async function localManifest(): Promise<LocalManifest | undefined> {
   try {
@@ -25,6 +25,9 @@ export async function fetchLocalInputs(): Promise<LocalInputs | undefined> {
   const [image, state, snapshot] = await Promise.all([fetchBytes('dsp-image'), fetchBytes('dsp-state'), manifest.cfSnapshot ? fetchBytes('cf-snapshot') : Promise.resolve(undefined)]);
   return image && state ? { image, state, snapshot } : undefined;
 }
+
+/** The firmware .syx named by DIGI_EMU_SYX (bench only; normal use picks the file in the page). */
+export const fetchLocalFirmware = () => fetchBytes('firmware');
 
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes.slice());

@@ -97,7 +97,7 @@ def _type_18a(
         # independently. Preserve that uncertainty unless MODE1 is known
         # SIMD; _astatx_bit_test then decides from whatever bits of the
         # complementary source (possibly a PartialConst) are known.
-        if sreg in (6, 7, 8, 9) and simd is not False:
+        if sreg in (0, 1, 6, 7, 8, 9, 14, 15) and simd is not False:
             complement = sreg ^ 1  # USTAT/STKY pair: 6<->7, 8<->9
             complement_source = _ureg_raw(
                 state.uregs, UREG_CODES["USTAT1"] + complement

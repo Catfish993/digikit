@@ -1,27 +1,22 @@
 [project]
 name = "digitakt2"
 version = "0.1.0"
-description = "Digitakt II OS 1.15C: container tooling, ColdFire disassembly, and a Unicorn emulator"
-# GPL because patches/ carries a diff against QEMU source vendored inside
-# Unicorn, and emu.unicorn_compat refuses to run without it. See README.
-license = "GPL-2.0-or-later"
+description = "Digitakt II / Digitone II firmware tooling: container, ColdFire and SHARC+ analysis, and the build tools for the native emulator"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "unicorn==2.1.4",
     "capstone==5.0.7",
     "pypcode==4.0.0",
     "networkx==3.4.2",
 ]
 
-# Pinned to 3.12 deliberately. On 3.14 (the Homebrew default here) binary
-# wheels are still thin -- pygame, for one, resolves to an sdist and has to
-# compile -- and Homebrew's python@3.14 has no tkinter at all. uv's managed
-# CPython builds bundle tkinter, so the GUI in emu/gui.py works with no
-# system packages installed.
+# Pinned to 3.12 deliberately: on 3.14 binary wheels are still thin.
 
 [dependency-groups]
 dev = [
+    "matplotlib>=3.11.2",
     "mypy==2.3.1",
+    "numpy>=2.5.3",
     "pytest>=8",
     "ruff==0.16.9",
 ]
@@ -55,3 +50,8 @@ ignore_missing_imports = true
 check_untyped_defs = true
 follow_imports = "silent"
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*", "matplotlib", "matplotlib.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true

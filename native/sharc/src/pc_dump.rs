@@ -1,4 +1,4 @@
-//! Interpreter register dump (diagnostic). `SHARC_PCDUMP=pc[,pc...]` (hex
+//! Interpreter register dump (diagnostic). `SHARC_PCDUMP=pc[,pc...]|all` (hex
 //! software PCs), `SHARC_PCDUMP_OUT=path.csv`, optional
 //! `SHARC_PCDUMP_ICOUNT=lo:hi` (decimal engine icount window, inclusive; default
 //! all) and `SHARC_PCDUMP_LIMIT=n` (max rows, default 10000).
@@ -35,6 +35,10 @@ impl PcDump {
         let path = crate::diag::out_path("SHARC_PCDUMP_OUT", "pcdump.csv")?;
         let mut pcs = Vec::new();
         for item in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            if item == "all" {
+                pcs.push(u64::MAX);
+                continue;
+            }
             let Ok(a) = u64::from_str_radix(item.trim_start_matches("0x"), 16) else {
                 eprintln!("SHARC_PCDUMP: bad item {item:?}; pc dump disabled");
                 return None;
@@ -100,7 +104,7 @@ impl PcDump {
     /// Dump a row for this step if PC and icount match. UREG codes: R 0, I 16,
     /// M 32, S 80, MODE2 116, ASTATX 118, ASTATY 119, STKYX 120, MODE1 114.
     pub fn hit(&mut self, s: &crate::rt::St, pc: u64, icount: u64) {
-        if self.left == 0 || icount < self.lo || icount > self.hi || !self.pcs.contains(&pc) {
+        if self.left == 0 || icount < self.lo || icount > self.hi || !(self.pcs[0] == u64::MAX || self.pcs.contains(&pc)) {
             return;
         }
         self.left -= 1;

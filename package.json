@@ -1,6 +1,7 @@
 {
   "name": "digitakt2",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@12.8.2",
   "scripts": {
     "dev": "pnpm --filter @digi/web dev",

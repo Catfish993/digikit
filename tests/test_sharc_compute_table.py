@@ -188,7 +188,7 @@ def test_dispatch_tables_have_no_duplicate_or_shadowed_keys():
     # undocumented 0x10 (1) + 64-bit float (Table 18-8, opcodes 0x31-0x33,
     # lane F1) (3) = 161.
     assert len(MULT_ALL) == 161
-    assert len(SHIFT_OPS) == 13
+    assert len(SHIFT_OPS) == 27  # +14 register forms (fext, fdep, rot, exp, ...)
     assert len(CU3_OPS) == 2  # lane F1: 0xd6 (pre-existing) and 0xe0
     assert len(SHORT_OPS) == 16
     assert len(MULTIFN_MUL_ALU_OPS) == 7

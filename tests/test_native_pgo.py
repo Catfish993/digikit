@@ -37,7 +37,9 @@ def tree(tmp_path, monkeypatch):
     toolchain = tmp_path / "toolchain"
     toolchain.mkdir()
     monkeypatch.setattr(native_pgo, "ROOT", tmp_path)
-    monkeypatch.setattr(native_pgo, "state_dir", lambda triple=None: state)
+    monkeypatch.setattr(
+        native_pgo, "state_dir", lambda triple=None, device="dn2": state
+    )
     monkeypatch.setattr(native_pgo, "toolchain_dir", lambda: toolchain)
     monkeypatch.setattr(native_pgo, "rustc_version", lambda: "rustc 1.98.1")
     profdata = state / "p.profdata"
@@ -78,10 +80,23 @@ def test_desktop_files_in_a_listed_package_list_are_ignored(tree):
     assert state(tree)[0] == "ok"
 
 
-def test_emulation_crate_change_is_stale(tree):
+def test_emulation_crate_change_is_partly_stale(tree):
     (tree / "native/sharc/lib.rs").write_text("a changed")
     status, detail, _ = state(tree)
-    assert (status, detail) == ("stale", "changed: sources")
+    assert (status, detail) == ("partial", "changed: sources")
+
+
+def test_rustc_change_is_stale(tree, monkeypatch):
+    monkeypatch.setattr(native_pgo, "rustc_version", lambda: "rustc 1.99.0")
+    assert state(tree)[:2] == ("stale", "changed: rustc")
+
+
+def test_sources_plus_generated_change_is_stale(tree):
+    (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "gen/core.rs").write_text("new core")
+    status, detail, _ = state(tree)
+    assert status == "stale"
+    assert "sources" in detail and "generated" in detail
 
 
 def test_generated_core_change_is_stale_but_fast_regions_are_not(tree):
@@ -113,6 +128,7 @@ def test_blocktrans_roots_follow_env_then_table(monkeypatch, tmp_path):
 
 def test_current_profile_returns_the_file_even_when_stale(tree):
     (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "gen/core.rs").write_text("new core")
     assert state(tree)[0] == "stale"
     assert native_pgo.current_profile() == str(tree / "state" / "p.profdata")
     (tree / "state" / "p.profdata").unlink()
@@ -145,7 +161,7 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
             {"source": None, "manifest_path": str(ROOT / name / "Cargo.toml")}
             for name in (
                 "native/sharc",
-                "native/coldfire/cfabi",
+                "native/coldfire",
                 "packages/desktop/src-tauri",
             )
         ]
@@ -156,19 +172,73 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
         "run",
         lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(metadata), ""),
     )
-    assert native_pgo.local_package_dirs() == ["native/coldfire/cfabi", "native/sharc"]
+    assert native_pgo.local_package_dirs() == ["native/coldfire", "native/sharc"]
 
 
-def test_launch_plan_uses_a_stale_profile_with_a_warning(tree, monkeypatch):
+def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):
     monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
     monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
     monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
+    (tree / "gen/core.rs").write_text("new core")
+    plan, notice = native_pgo.launch_plan({})
+    assert plan is None
+    assert "stale for this core; building without PGO" in notice
+    assert "mise run pgo" in notice
+    assert "-no-pgo-warn-mismatch" in native_pgo.profile_use_flags("p")
+
+
+def test_launch_plan_uses_a_partly_stale_profile(tree, monkeypatch):
+    monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
+    monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
+    monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
+    monkeypatch.setattr(
+        native_pgo,
+        "native_target",
+        lambda: type("T", (), {"target_dir": lambda *a, **k: tree / "target"}),
+    )
     (tree / "native/sharc/lib.rs").write_text("a changed")
     plan, notice = native_pgo.launch_plan({})
     assert plan is not None
-    assert plan.env["RUSTC"] == "/fake/rustc"
-    assert "profile stale" in notice
-    assert "mise run pgo" in notice
+    assert "-no-pgo-warn-mismatch" in plan.env["RUSTFLAGS"]
+    assert str(tree / "state" / "p.profdata") in plan.env["RUSTFLAGS"]
+    assert notice == (
+        "PGO profile partly stale (sources changed since training); using it. "
+        "Retrain at milestones with `mise run pgo`."
+    )
+
+
+def test_dt2_state_reads_the_dt2_manifest(tree, monkeypatch):
+    dt2 = tree / "state-dt2"
+    dt2.mkdir()
+    monkeypatch.setattr(
+        native_pgo,
+        "state_dir",
+        lambda triple=None, device="dn2": tree / "state" if device == "dn2" else dt2,
+    )
+    assert native_pgo.check_state(tree / "gen", "", "", "dt2")[0] == "missing"
+    manifest = json.loads((tree / "state" / "manifest.json").read_text())
+    # The DT2 key carries the DT2 workload name, so a DN2 manifest is stale.
+    (dt2 / "manifest.json").write_text(json.dumps(manifest))
+    assert native_pgo.check_state(tree / "gen", "", "", "dt2")[1] == "changed: workload"
+    manifest["components"]["workload"] = native_pgo.DT2_WORKLOAD_NAME
+    (dt2 / "manifest.json").write_text(json.dumps(manifest))
+    assert native_pgo.check_state(tree / "gen", "", "", "dt2")[0] == "ok"
+    assert native_pgo.current_profile("dt2") == str(tree / "state" / "p.profdata")
+
+
+def test_dt2_notices_name_the_dt2_train_command():
+    assert "train --device dt2" in native_pgo.fallback_notice("missing", "x", "dt2")
+    assert "train --device dt2" in native_pgo.fallback_notice("stale", "x", "dt2")
+    assert "train --device dt2" in native_pgo.stale_notice("x", "dt2")
+    assert "--device" not in native_pgo.fallback_notice("stale", "x")
+    assert "mise run pgo" in native_pgo.stale_notice("x")
+
+
+def test_pgo_variant_can_be_redirected_for_a_scratch_build():
+    assert native_pgo.pgo_variant({}) == "pgo-use"
+    assert (
+        native_pgo.pgo_variant({"DIGI_EMU_PGO_VARIANT": "pgo-scratch"}) == "pgo-scratch"
+    )
 
 
 def test_fallback_notice_is_prefixed_with_warning():
@@ -230,6 +300,16 @@ def test_binary_crates_reads_nm_output(monkeypatch):
         "sharc_native": {"ZZZ999"},
         "sharc_rt": {"ZZZ999"},
     }
+
+
+def test_dt2_app_ignores_its_own_boot_crate():
+    profile = {"sharc_native": {"A"}, "elektron_native_boot": {"B"}}
+    binary = {"sharc_native": {"A"}, "elektron_native_boot": {"C"}}
+    assert native_pgo.crate_mismatches(profile, binary)
+    ignore = native_pgo.DT2_APP_UNPROFILED
+    assert native_pgo.crate_mismatches(profile, binary, ignore) == []
+    binary["sharc_native"] = {"Z"}
+    assert native_pgo.crate_mismatches(profile, binary, ignore)
 
 
 def test_crate_mismatches_reports_only_disjoint_crates():

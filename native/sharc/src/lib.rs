@@ -269,6 +269,8 @@ pub struct Engine {
     pub trans: Option<std::collections::HashMap<(u32, u32), u64>>,
     /// The PC the last interpreted instruction left (to tell a run's start).
     last_interp_next: Int,
+    /// The first PC of the interpreter run in progress (profile only).
+    run_start: Option<Int>,
     /// Opt-in idle-loop skip (option 23): the loop head PC, and the PC range
     /// every instruction of the loop must lie in (options 24, 25).
     pub idle_head: Option<u32>,
@@ -298,11 +300,6 @@ pub struct Engine {
     fast_auto_dispatch: bool,
     /// SHARC_FAST_HIST: interpreted instructions per PC (diagnostics).
     hist: Option<Box<std::collections::HashMap<u32, u64>>>,
-    /// SHARC_CONCRETISE_ON_BAIL (diagnostic): a block entry that bails with
-    /// no progress gets its unknown register bits set to zero, then retries.
-    concretise_on_bail: bool,
-    /// Bails concretised under `concretise_on_bail`.
-    concretised: u64,
     /// Opt-in raw generated-block call snapshots.  It is configured wholly
     /// through the environment and is absent in ordinary execution.
     live_capture: Option<live_capture::LiveCapture>,
@@ -438,7 +435,7 @@ struct IdleSnap {
 const R_EMUCLK: usize = 105;
 const R_EMUCLK2: usize = 106;
 const R_TPERIOD: usize = 110;
-const R_TCOUNT: usize = 111;
+pub(crate) const R_TCOUNT: usize = 111;
 const R_MODE2: usize = 116;
 /// Longest loop (instructions) the idle skip will watch for a return to head.
 const IDLE_MAX_LOOP: u64 = 512;
@@ -534,6 +531,11 @@ fn image_blocks() -> &'static [(u32, BlockFn)] {
     }
 }
 
+/// The number of AOT blocks in the linked generated core (0: the generic core).
+pub fn aot_block_count() -> usize {
+    image_blocks().len()
+}
+
 fn image_model_safe() -> &'static [u32] {
     #[cfg(all(sharc_gen, sharc_image))]
     {
@@ -599,9 +601,6 @@ impl Drop for Engine {
                 self.stats.block_instructions,
             );
             eprintln!("{line}");
-            if self.concretise_on_bail {
-                eprintln!("concretise: {} bails concretised", self.concretised);
-            }
             let m = &self.model_stats;
             eprintln!(
                 "fast engine: models gated {} unsafe {} irq_deferred {} timer_gated {} mmr_exits {} code_mismatch {}; idle skipped {}",
@@ -651,6 +650,7 @@ impl Engine {
             #[cfg(feature = "region-profile")]
             region_profile: None,
             last_interp_next: -1,
+            run_start: None,
             idle_head: None,
             idle_lo: 0,
             idle_hi: 0x00ff_ffff,
@@ -666,8 +666,6 @@ impl Engine {
             fast_auto_dispatch: false,
             hist: std::env::var_os("SHARC_FAST_HIST")
                 .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
-            concretise_on_bail: std::env::var_os("SHARC_CONCRETISE_ON_BAIL").is_some(),
-            concretised: 0,
             live_capture: live_capture::LiveCapture::from_env(),
             wwatch: write_watch::WriteWatch::from_env(),
             pcdump: pc_dump::PcDump::from_env(),
@@ -1427,10 +1425,7 @@ impl Engine {
     /// settings, the latent interrupt, the code check. A region that declines
     /// leaves the state untouched and is dispatched normally.
     fn fast_continue(&mut self, limit: u64, mut code: Option<u32>) -> Option<u32> {
-        // `SHARC_FAST_NOCONT=1`: every kernel exit returns to the dispatch loop.
-        static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        if *OFF.get_or_init(|| std::env::var_os("SHARC_FAST_NOCONT").is_some())
-            || self.one_dispatch
+        if self.one_dispatch
             || self.stop_pc.is_some()
             || self.stop_software_interrupt
             || self.s.probe.is_some()
@@ -1476,18 +1471,6 @@ impl Engine {
     }
 
     fn trapped(&mut self, t: Trap) {
-        if std::env::var_os("SHARC_TRAP_REGS").is_some() {
-            let unknown: Vec<String> = (0..NUREG)
-                .filter(|&c| self.s.r[c].m != u32::MAX)
-                .map(|c| format!("r{c}={:#x}/{:#x}", self.s.r[c].b, self.s.r[c].m))
-                .collect();
-            eprintln!(
-                "trap at {:#x}: icount {}, registers not fully known: {}",
-                self.s.pc_sw,
-                self.s.icount,
-                unknown.join(" ")
-            );
-        }
         self.stats.traps += 1;
         self.last_trap = Some(t);
         self.halt = Some(format!(
@@ -1504,10 +1487,23 @@ impl Engine {
         if let Some(cov) = &mut self.cov {
             let m = self.s.r[MODE1];
             *cov.entry((self.s.pc_sw as u32, m.b, m.is_c())).or_default() += 1;
-            if let Some(en) = &mut self.entries
-                && self.s.pc_sw != self.last_interp_next
-            {
-                *en.entry(self.s.pc_sw as u32).or_default() += 1;
+            if let Some(en) = &mut self.entries {
+                let pc = self.s.pc_sw;
+                if pc != self.last_interp_next {
+                    *en.entry(pc as u32).or_default() += 1;
+                    self.run_start = Some(pc);
+                } else if let Some(start) = self.run_start.take()
+                    && self.use_blocks
+                    && self.dispatch.get_entry(start).is_some()
+                    && self.dispatch.get_entry(pc).is_none()
+                {
+                    // A block entry the model gate sent to the interpreter
+                    // (a pending bank swap, a timer about to tick): the
+                    // interpreter then runs on through the block's body,
+                    // which has no entry at the next instruction. That PC is
+                    // an entry candidate for the generator.
+                    *en.entry(pc as u32).or_default() += 1;
+                }
             }
         }
         if let Some(h) = &mut self.hist {
@@ -1531,7 +1527,15 @@ impl Engine {
     }
 
     /// Re-read the watched words for the pending unit and log changes.
+    #[inline(always)]
     fn ww_flush(&mut self) {
+        if self.wwatch.is_some() {
+            self.ww_flush_pending();
+        }
+    }
+
+    #[inline(never)]
+    fn ww_flush_pending(&mut self) {
         if let Some(mut w) = self.wwatch.take() {
             if w.pending.is_some() {
                 let now: Vec<Option<u32>> = w
@@ -1691,7 +1695,8 @@ impl Engine {
                     }
                     self.s.in_block = plan.models;
                     let mut code = None;
-                    if let Some(f) = self.fast.as_mut().filter(|_| !plan.stop_loop_empty) {
+                    if let Some(f) = self.fast.as_mut().filter(|_| !plan.stop_loop_empty)
+                    {
                         #[cfg(feature = "region-profile")]
                         {
                             let profile_start =
@@ -1884,22 +1889,6 @@ impl Engine {
                             }
                             if self.s.icount > before {
                                 continue 'steploop;
-                            }
-                            if self.concretise_on_bail {
-                                // PCSTK (100) and MODE1STK (125) mirror the
-                                // stacks; they stay as the stack model left them.
-                                let mut changed = false;
-                                for (c, v) in self.s.r.iter_mut().enumerate() {
-                                    if c != 100 && c != 125 && v.m != u32::MAX {
-                                        v.b &= v.m;
-                                        v.m = u32::MAX;
-                                        changed = true;
-                                    }
-                                }
-                                if changed {
-                                    self.concretised += 1;
-                                    continue 'steploop;
-                                }
                             }
                         }
                     }

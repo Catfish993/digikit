@@ -78,10 +78,66 @@ def generated_dir(
     environ = os.environ if environ is None else environ
     configured = environ.get("SHARC_GEN_DIR")
     if configured:
-        return pathlib.Path(configured)
+        # Relative to the repo root (mise runs tasks there); build scripts run in their crate dir.
+        path = pathlib.Path(configured)
+        return path if path.is_absolute() else ROOT / path
     if image is not None and (registered := gen_for_image(image)) is not None:
         return registered
     return DEFAULT_GENERATED
+
+
+CORE_FINGERPRINT_FILE = "CORE_FINGERPRINT"
+
+
+def core_fingerprint(root: pathlib.Path | None = None) -> str:
+    """SHA-256 over the paths and contents of the sources a generated core is
+    made from: tools/sharc_core/**/*.py, sharc_transpile.py and sharc_rsgen.py."""
+    root = ROOT if root is None else pathlib.Path(root)
+    tools = root / "tools"
+    files = [
+        *tools.joinpath("sharc_core").rglob("*.py"),
+        tools / "sharc_transpile.py",
+        tools / "sharc_rsgen.py",
+    ]
+    digest = hashlib.sha256()
+    for path in sorted(files, key=lambda f: f.relative_to(root).as_posix()):
+        digest.update(path.relative_to(root).as_posix().encode() + b"\0")
+        digest.update(path.read_bytes() + b"\0")
+    return digest.hexdigest()
+
+
+def write_core_fingerprint(gen: pathlib.Path | str) -> None:
+    """Stamp a gen dir with the fingerprint of the current sharc_core."""
+    (pathlib.Path(gen) / CORE_FINGERPRINT_FILE).write_text(core_fingerprint() + "\n")
+
+
+def check_generated(gen: pathlib.Path, environ: Environ | None = None) -> None:
+    """Refuse a generated core not made from the current tools/sharc_core
+    (DIGI_ALLOW_STALE_GEN=1 turns the error into a warning)."""
+    environ = os.environ if environ is None else environ
+    gen = pathlib.Path(gen)
+    try:
+        have = (gen / CORE_FINGERPRINT_FILE).read_text().strip()
+    except OSError:
+        have = "missing"
+    want = core_fingerprint()
+    if have == want:
+        return
+    message = (
+        f"generated core {gen} is stale: its {CORE_FINGERPRINT_FILE} is {have}, "
+        f"tools/sharc_core is {want}.\n"
+        "Regenerate it: DT2: mise run aot-gen -- dt2 --card-image IMG; "
+        "DN2: tools/sharc_dn2_aot.py (recipe in gen/PROVENANCE.txt); "
+        "shared core: mise run gen:core.\n"
+        "Or set DIGI_ALLOW_STALE_GEN=1 to use it anyway."
+    )
+    if environ.get("DIGI_ALLOW_STALE_GEN") == "1":
+        print(
+            f"warning: {message.splitlines()[0]} (DIGI_ALLOW_STALE_GEN=1)",
+            file=sys.stderr,
+        )
+        return
+    raise SystemExit(message)
 
 
 def firmware(environ: Environ | None = None) -> pathlib.Path:
@@ -216,6 +272,9 @@ def rust_env(environ: Environ | None = None) -> dict[str, str]:
     """A copy of the environment with RUSTC/RUSTDOC pinned to the toolchain."""
     environ = os.environ if environ is None else environ
     env = dict(environ)
+    if env.get("SHARC_GEN_DIR"):
+        # Cargo build scripts run in their crate directory, so pass the generated core as an absolute path.
+        env["SHARC_GEN_DIR"] = str(generated_dir(env))
     rustc = toolchain_rustc()
     if rustc:
         env["RUSTC"] = rustc

@@ -12,15 +12,21 @@ from collections.abc import Mapping
 from sharc_disasm import Instruction
 
 from .compute import (
+    Result,
     _apply_compute,
     _apply_compute_pey,
     _apply_compute_simd,
     _compute,
     _compute_simd,
-    _shift_immediate,
+    _shift_immediate_simd,
 )
 from .encoding import (
     _field,
+)
+from .forms_move import (
+    _companion_transfer,
+    _pm_companion_transfer,
+    _type_nw_companion,
 )
 from .memory import (
     _access_modifier_scale,
@@ -49,32 +55,63 @@ from .values import (
 )
 
 
+def _type6_predicates(
+    state: State, cond: int, simd: bool | None
+) -> tuple[bool | None, bool | None]:
+    """The (PEx, PEy) execution of a Type 6 instruction with condition COND.
+
+    SHARC+ PRM p.13-43 (Type 6a, SIMD Mode): "The instruction is executed
+    in a processing element if the specified condition tests true in that
+    element independent of the condition result for the other element."
+    In SISD mode only PEx runs (PEy is False)."""
+    if cond == 0x1F:
+        return True, simd is True
+    if simd is True:
+        return _predicate_pe(state, cond, "x"), _predicate_pe(state, cond, "y")
+    return _predicate(state, cond), False
+
+
+def _apply_shift_pes(
+    state: State,
+    insn: Instruction,
+    result_x: Result,
+    result_y: Result | None,
+    run_x: bool,
+    run_y: bool,
+) -> None:
+    if run_x:
+        _apply_compute(state, insn, result_x)
+    if run_y and result_y is not None:
+        _apply_compute_pey(state, insn, result_y)
+
+
 def _type_6b_shiftimm(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
     """6b_shiftimm."""
     cond = _field(f, "cond")
-    if cond != 0x1F:
-        # Same SISD-only policy as the conditional Type6a below.
-        if _simd_active(state) is not False:
-            return [_stop(state, insn, "unsupported conditional SIMD Type6b")]
-        predicate = _predicate(state, cond)
-        if predicate is None:
-            return [_stop(state, insn, "unknown conditional Type6b predicate")]
-        if predicate is False:
-            _event(
-                state,
-                insn,
-                "type6b-skipped",
-                condition=cond,
-                predicate_assumption=False,
-            )
-            return _advance(state, insn)
+    simd = _simd_active(state)
+    if cond != 0x1F and simd is None:
+        return [_stop(state, insn, "unsupported conditional SIMD Type6b")]
+    run_x, run_y = _type6_predicates(state, cond, simd)
+    if run_x is None or run_y is None:
+        return [_stop(state, insn, "unknown conditional Type6b predicate")]
+    if not run_x and not run_y:
+        _event(
+            state,
+            insn,
+            "type6b-skipped",
+            condition=cond,
+            predicate_assumption=False,
+        )
+        return _advance(state, insn)
     try:
-        result = _shift_immediate(f, _snapshot_uregs(state.uregs), state.special)
+        result_x, result_y = _shift_immediate_simd(
+            state, f, _snapshot_uregs(state.uregs), state.special
+        )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
-    _apply_compute(state, insn, result)
+    _apply_shift_pes(state, insn, result_x, result_y, run_x, run_y)
     return _advance(state, insn)
 
 
@@ -82,30 +119,33 @@ def _type_6a_mem(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
     """6a_mem."""
-    # PRM Type 6a performs a ShiftImm and a normal-word memory transfer
-    # in parallel, then post-modifies the selected I register by M.
+    # PRM p.13-42..13-44 Type 6a: a ShiftImm and a normal-word memory
+    # transfer in parallel, then post-modify the selected I register by M.
+    # In SIMD mode the shift runs in both PEs (R and S registers) and PEy
+    # transfers its complementary register at Ia+k (k=1 normal word; k=0 in
+    # broadcast load mode); only PEx post-modifies I.
     cond = _field(f, "cond")
-    if cond != 0x1F:
-        # The recovered conditional Type6a sighting is SISD only. Do not
-        # infer PEy's parallel memory/shift behavior or fork an unknown
-        # MODE1; both remain deliberately unsupported.
-        if _simd_active(state) is not False:
-            return [_stop(state, insn, "unsupported conditional SIMD Type6a")]
-        predicate = _predicate(state, cond)
-        if predicate is None:
-            return [_stop(state, insn, "unknown conditional Type6a predicate")]
-        if predicate is False:
-            _event(
-                state,
-                insn,
-                "type6a-skipped",
-                condition=cond,
-                predicate_assumption=False,
-            )
-            return _advance(state, insn)
+    simd = _simd_active(state)
+    if cond != 0x1F and simd is None:
+        return [_stop(state, insn, "unsupported conditional SIMD Type6a")]
+    run_x, run_y = _type6_predicates(state, cond, simd)
+    if run_x is None or run_y is None:
+        return [_stop(state, insn, "unknown conditional Type6a predicate")]
+    if not run_x and not run_y:
+        _event(
+            state,
+            insn,
+            "type6a-skipped",
+            condition=cond,
+            predicate_assumption=False,
+        )
+        return _advance(state, insn)
+    if run_x != run_y and simd is True:
+        # The memory half and the index modify are not split per element.
+        return [_stop(state, insn, "mixed-PE conditional SIMD Type6a")]
     old = _snapshot_uregs(state.uregs)
     try:
-        result = _shift_immediate(f, old, state.special)
+        result_x, result_y = _shift_immediate_simd(state, f, old, state.special)
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     bank = 8 if _field(f, "g") else 0
@@ -115,7 +155,9 @@ def _type_6a_mem(
     scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
     space = "PM" if bank else "DM"
     dreg = _field(f, "dreg")
-    if _field(f, "d"):
+    store = bool(_field(f, "d"))
+    companion = _type_nw_companion(old, index, dreg, iv, store, scale)
+    if store:
         value = _ureg(old, dreg)
         wrote = _dm_write(state, iv, 4, value, normal_word=True)
         _event(
@@ -145,6 +187,13 @@ def _type_6a_mem(
             addressing_mode="post-modify",
             access_width="normal-word",
         )
+    if companion is not None and (run_y or (run_x and _simd_active(state) is not True)):
+        if space == "DM":
+            _companion_transfer(
+                state, insn, companion, store, "normal-word", old, "post-modify"
+            )
+        else:
+            _pm_companion_transfer(state, insn, companion, store, old, "post-modify")
     state.uregs[16 + index] = _post_modify_index(
         state,
         index,
@@ -153,7 +202,7 @@ def _type_6a_mem(
         scale,
         "I%d + M%d * %d" % (index, modifier, scale),
     )
-    _apply_compute(state, insn, result)
+    _apply_shift_pes(state, insn, result_x, result_y, run_x, run_y)
     return _advance(state, insn)
 
 

@@ -75,6 +75,30 @@ pub const FN_OP_ANDNOT: FnId = 3;
 pub struct Trap(pub u32);
 pub type R<T> = Result<T, Trap>;
 
+/// Block code's `?` on an `R`: the Err arm is marked unlikely, so LLVM lays
+/// the trap path out of line (hot-code density, docs/design/aot-mask-free.md
+/// section 7). Generated variants write `x.ce()?`.
+pub trait ColdErr {
+    fn ce(self) -> Self;
+}
+
+impl<T, E> ColdErr for Result<T, E> {
+    #[inline(always)]
+    fn ce(self) -> Self {
+        if self.is_err() {
+            core::hint::cold_path();
+        }
+        self
+    }
+}
+
+/// `return Err(t)` of a generated variant, with the path marked unlikely.
+#[inline(always)]
+pub fn cold_err<T>(t: Trap) -> R<T> {
+    core::hint::cold_path();
+    Err(t)
+}
+
 pub const TRAP_RT_BASE: u32 = 0x8000_0000;
 pub const TRAP_UNMODELED_MMR: Trap = Trap(TRAP_RT_BASE + 1);
 pub const TRAP_SYMBOLIC: Trap = Trap(TRAP_RT_BASE + 2);
@@ -305,7 +329,7 @@ pub struct Loop {
 /// One decoded field: KEY (e.g. "data[31:16]"), its STEM (the key up to
 /// the first '[': `_field`'s prefix match), the bit range HI:LO the key
 /// names (-1 when it names none) and the value.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FieldEntry(pub Sym, pub Sym, pub i8, pub i8, pub i64);
 
 pub const MAX_INSN_FIELDS: usize = 12;
@@ -333,32 +357,138 @@ impl std::hash::Hasher for PcHasher {
 }
 pub type PcHash = std::hash::BuildHasherDefault<PcHasher>;
 
-/// Decoded fields of one instruction, in decode order (a Python dict's
-/// insertion order).
-#[derive(Clone, Copy, Debug)]
+/// The decoded fields of one instruction, interned and immutable: the
+/// entries in decode order (a Python dict's insertion order) and a perfect
+/// hash from a field name (Sym) to its entry, built once at decode time.
+/// `Fields` is a Copy handle of one pointer: the generated core passes it and
+/// `Insn` by value at every instruction, so the 12-entry array it replaces cost
+/// two 200-byte copies per instruction, and a name lookup is one load instead
+/// of a scan.
+pub struct FieldBlock {
+    kv: [FieldEntry; MAX_INSN_FIELDS],
+    n: u8,
+    /// Hash salt (`NO_SALT`: no collision-free salt; scan instead).
+    salt: u8,
+    /// Slot -> entry index, `NO_SLOT` when empty.
+    tab: [u8; HASH_SLOTS],
+}
+
+const HASH_SLOTS: usize = 64;
+const NO_SLOT: u8 = 0xFF;
+const NO_SALT: u8 = 0xFF;
+
+#[inline(always)]
+fn slot_of(k: Sym, salt: u8) -> usize {
+    (((k as u32) ^ ((salt as u32) << 12)).wrapping_mul(0x9E37_79B1) >> 26) as usize
+}
+
+impl FieldBlock {
+    const EMPTY_ENTRY: FieldEntry = FieldEntry(S_EMPTY, S_EMPTY, -1, -1, 0);
+
+    const fn none() -> FieldBlock {
+        FieldBlock {
+            kv: [Self::EMPTY_ENTRY; MAX_INSN_FIELDS],
+            n: 0,
+            salt: 0,
+            tab: [NO_SLOT; HASH_SLOTS],
+        }
+    }
+
+    /// `_field`'s result per name: the first entry whose key is the name, else
+    /// the first whose stem is the name (and whose key is not).
+    fn build(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> FieldBlock {
+        let mut names: Vec<(Sym, u8)> = Vec::new();
+        for (i, e) in kv[..n as usize].iter().enumerate() {
+            if !names.iter().any(|x| x.0 == e.0) {
+                names.push((e.0, i as u8));
+            }
+        }
+        for (i, e) in kv[..n as usize].iter().enumerate() {
+            if e.0 != e.1 && !names.iter().any(|x| x.0 == e.1) {
+                names.push((e.1, i as u8));
+            }
+        }
+        let mut b = FieldBlock { kv, n, salt: NO_SALT, tab: [NO_SLOT; HASH_SLOTS] };
+        'salts: for salt in 0..NO_SALT {
+            let mut tab = [NO_SLOT; HASH_SLOTS];
+            for &(name, idx) in &names {
+                let h = slot_of(name, salt);
+                if tab[h] != NO_SLOT {
+                    continue 'salts;
+                }
+                tab[h] = idx;
+            }
+            b.salt = salt;
+            b.tab = tab;
+            break;
+        }
+        b
+    }
+}
+
+static NO_FIELDS: FieldBlock = FieldBlock::none();
+
+/// Handle to an interned `FieldBlock` (leaked: one block per distinct field set).
+#[derive(Clone, Copy)]
 pub struct Fields {
-    pub kv: [FieldEntry; MAX_INSN_FIELDS],
-    pub n: u8,
+    b: &'static FieldBlock,
+}
+
+impl std::fmt::Debug for Fields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.entries()).finish()
+    }
+}
+
+fn intern_fields(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> &'static FieldBlock {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static POOL: OnceLock<Mutex<HashMap<Box<[FieldEntry]>, &'static FieldBlock>>> =
+        OnceLock::new();
+    let pool = POOL.get_or_init(Default::default);
+    let key: Box<[FieldEntry]> = kv[..n as usize].into();
+    let mut pool = pool.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(&b) = pool.get(&key) {
+        return b;
+    }
+    let b: &'static FieldBlock = Box::leak(Box::new(FieldBlock::build(kv, n)));
+    pool.insert(key, b);
+    b
 }
 
 impl Fields {
-    #[inline(always)]
-    pub const fn from_entries(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> Fields {
+    pub fn from_entries(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> Fields {
         assert!((n as usize) <= MAX_INSN_FIELDS);
-        Fields { kv, n }
+        Fields { b: intern_fields(kv, n) }
     }
     #[inline(always)]
     pub fn entries(&self) -> &[FieldEntry] {
-        &self.kv[..self.n as usize]
+        &self.b.kv[..self.b.n as usize]
+    }
+    /// The entry `_field` finds for `k` (exact key, else stem), if any.
+    #[inline(always)]
+    pub fn lookup(&self, k: Sym) -> Option<&FieldEntry> {
+        let b = self.b;
+        if b.salt == NO_SALT {
+            return b
+                .kv[..b.n as usize]
+                .iter()
+                .find(|e| e.0 == k)
+                .or_else(|| b.kv[..b.n as usize].iter().find(|e| e.1 == k && e.0 != e.1));
+        }
+        let i = b.tab[slot_of(k, b.salt)];
+        if i == NO_SLOT {
+            return None;
+        }
+        let e = &b.kv[i as usize];
+        if e.0 == k || e.1 == k { Some(e) } else { None }
     }
     #[inline(always)]
     pub fn get(&self, k: Sym) -> Option<Int> {
-        for e in self.entries() {
-            if e.0 == k {
-                return Some(e.4 as Int);
-            }
+        match self.lookup(k) {
+            Some(e) if e.0 == k => Some(e.4 as Int),
+            _ => None,
         }
-        None
     }
     #[inline(always)]
     pub fn key(&self, k: Sym) -> R<Int> {
@@ -370,10 +500,7 @@ impl Fields {
     }
 }
 
-pub const FIELDS_NONE: Fields = Fields {
-    kv: [FieldEntry(S_EMPTY, S_EMPTY, -1, -1, 0); MAX_INSN_FIELDS],
-    n: 0,
-};
+pub static FIELDS_NONE: Fields = Fields { b: &NO_FIELDS };
 
 impl Default for Fields {
     fn default() -> Self {
@@ -609,6 +736,59 @@ pub struct CachedInsn {
     pub seen: u64,
 }
 
+/// The runtime decode cache: PC -> `CachedInsn`, a two-level table for PCs
+/// below 2^24 (a page of 4096 indexes into `entries`) and a hash map above.
+#[derive(Default)]
+pub struct DecodeCache {
+    pages: Vec<Option<Box<[u32; 4096]>>>,
+    entries: Vec<CachedInsn>,
+    high: std::collections::HashMap<u32, CachedInsn, PcHash>,
+}
+
+impl DecodeCache {
+    #[inline(always)]
+    pub fn get_mut(&mut self, pc: u32) -> Option<&mut CachedInsn> {
+        if pc >= 1 << 24 {
+            return self.high.get_mut(&pc);
+        }
+        let page = self.pages.get((pc >> 12) as usize)?.as_ref()?;
+        let i = page[(pc & 0xFFF) as usize];
+        if i == 0 {
+            return None;
+        }
+        Some(&mut self.entries[i as usize - 1])
+    }
+    pub fn insert(&mut self, pc: u32, c: CachedInsn) {
+        if pc >= 1 << 24 {
+            self.high.insert(pc, c);
+            return;
+        }
+        let p = (pc >> 12) as usize;
+        if self.pages.len() <= p {
+            self.pages.resize_with(p + 1, || None);
+        }
+        let page = self.pages[p].get_or_insert_with(|| Box::new([0; 4096]));
+        let slot = &mut page[(pc & 0xFFF) as usize];
+        if *slot != 0 {
+            self.entries[*slot as usize - 1] = c;
+        } else {
+            self.entries.push(c);
+            *slot = self.entries.len() as u32;
+        }
+    }
+    pub fn len(&self) -> usize {
+        self.entries.len() + self.high.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    pub fn clear(&mut self) {
+        self.pages.clear();
+        self.entries.clear();
+        self.high.clear();
+    }
+}
+
 /// Run configuration (State fields that do not change during a run).
 #[derive(Clone, Debug)]
 pub struct Cfg {
@@ -810,7 +990,7 @@ pub struct St {
     /// `read_sw` is `Mem::read_sw`, so `Mem::watch_sw` knows the bytes it
     /// reads and a cached decode stays valid while `Mem::dec_gen` does.
     pub dec_watch: bool,
-    pub decode_cache: std::collections::HashMap<u32, CachedInsn, PcHash>,
+    pub decode_cache: DecodeCache,
     /// Addresses named by sharcimm.name_address: exact addresses and
     /// [lo, hi) ranges, from the image blob.
     pub named_mmrs: Vec<u32>,
@@ -1438,6 +1618,7 @@ pub fn rf_set(rf: &mut Rf, code: Int, v: V) -> R<()> {
         return Ok(());
     }
     if v.m != u32::MAX {
+        core::hint::cold_path();
         return Err(TRAP_BLOCK_UNKNOWN);
     }
     rf.r[code as usize] = V {

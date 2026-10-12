@@ -40,11 +40,8 @@ impl Rng {
 /// `JUMP` to itself (48 bits), the spin after the instruction under test.
 const SPIN: [u16; 3] = [0x073e, 0, 0];
 
-fn engine(parcels: &[u16], mode1: u32, seed: u64, fast: bool) -> crate::Engine {
-    engine_cfg(parcels, mode1, seed, fast, 0)
-}
-
-/// CFG 1: the runtime's own configuration (bank, stack and timer models).
+/// CFG 1: the runtime's own configuration (bank and stack models, and the
+/// explicit_memory_model setting of the generated image, if any).
 fn engine_cfg(parcels: &[u16], mode1: u32, seed: u64, fast: bool, cfg: u8) -> crate::Engine {
     let mut bytes = Vec::new();
     for p in parcels.iter().chain(SPIN.iter()) {
@@ -56,6 +53,11 @@ fn engine_cfg(parcels: &[u16], mode1: u32, seed: u64, fast: bool, cfg: u8) -> cr
     let mut e = crate::Engine::new(mem);
     assert_eq!(e.set_option(4, 1), 0);
     if cfg == 1 {
+        // Setting a model refreshes `block_base_ok`, which also compares
+        // explicit_memory_model with the one the generated image was built
+        // for (false for the DN2/DT2 images); a mismatch gates the fast tier
+        // off as well. The runtime sets the image's value, so do the same.
+        assert_eq!(e.set_option(10, crate::gen_explicit_memory_model() as i64), 0);
         for key in [19, 20] {
             assert_eq!(e.set_option(key, 1), 0);
         }

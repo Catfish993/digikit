@@ -393,6 +393,16 @@ pub struct PlaybackStats {
     pub sink_capture: Option<String>,
 }
 
+/// The audio queue as the feeder last published it (for the spike log).
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+pub struct QueueState {
+    pub queued_device_frames: u64,
+    pub feeder_pending_source_frames: u64,
+    pub device_rate: u32,
+    pub underrun_events: u64,
+    pub rebuffering: bool,
+}
+
 pub struct PcmPlayer {
     tx: Option<mpsc::Sender<Vec<f32>>>,
     worker: Option<thread::JoinHandle<()>>,
@@ -508,6 +518,18 @@ impl PcmPlayer {
             stats.error = Some("feeder thread stopped".into());
         }
         stats
+    }
+
+    /// The queue fields of [`Self::stats`] without cloning the event list.
+    pub fn queue_state(&self) -> QueueState {
+        let stats = self.stats.lock().expect("playback stats mutex");
+        QueueState {
+            queued_device_frames: stats.queued_device_frames,
+            feeder_pending_source_frames: stats.feeder_pending_source_frames,
+            device_rate: self.device_rate,
+            underrun_events: stats.underrun_events,
+            rebuffering: stats.rebuffering,
+        }
     }
 
     /// No more audio: play what is queued (even below the buffer threshold)

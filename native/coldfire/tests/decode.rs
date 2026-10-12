@@ -1,6 +1,6 @@
 //! Decoder checks on hand-assembled encodings (field layouts from the CFPRM
 //! pages cited in tools/cfisa/coldfire.json). The whole-image comparison with
-//! Ghidra, SLEIGH and Unicorn is tools/cfisa/oracle.py.
+//! Ghidra, SLEIGH and Unicorn (removed; see tag unicorn-reference-final) is tools/cfisa/oracle.py.
 
 use coldfire::decode::FORM_COUNT;
 use coldfire::{Ea, Form, Operand, Size, decode};

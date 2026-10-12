@@ -561,3 +561,355 @@ Folded from a lane notebook; not re-checked by a second agent.
   interpreter 37.7, one cycle 3.07, two 1.83, three 1.76, same PCM. **[O]** There is no DT2
   entry in `tools/fast_regions.json`: the hot DT2 loops are SIMD-mode code that the fast
   tier did not lower.
+
+## DT2 runs through coupled.py used the DN2 generated core (2026-10-08) **[V][C]**
+
+`tools/coupled.py` resolved its generated core with
+`digi_env.generated_dir()` and no image argument. It therefore built every
+DT2 run, including `tools/dt2_sample_check.py`, against the DN2 core
+`out/native/dn2-audio/gen`. That core was generated on 10-06, before the SIMD
+fix above. Only `tools/native_emu.py` looked the core up in `gen-index.json`
+by the image.
+
+Results of `dt2_sample_check` with each core:
+
+| Core | peak_share | L vs R | Status |
+|---|---|---|---|
+| Old DN2 core (interpreter, or the generated blocks off) | 0.50 | L louder than R | fails |
+| DN2 core regenerated 2026-10-08 | 0.9986 | identical | passes |
+| DT2 core | 0.9986 | identical | passes, in about 9 s instead of 86 s |
+
+The DT2 core was already current. Regenerating it changed only its report.
+After regenerating the DN2 core, every DN2 scenario pin still matches, so the
+DN2 default-patch output is unchanged.
+
+Fixes:
+
+- `coupled.py` now picks the core by the device's DSP image.
+- Every generated core carries `CORE_FINGERPRINT`, a hash of
+  `tools/sharc_core`, `sharc_transpile.py` and `sharc_rsgen.py`.
+  `digi_env.check_generated` refuses a missing or different fingerprint
+  before `coupled.py`, `native_emu.py` and `native_pgo.py` build.
+  `DIGI_ALLOW_STALE_GEN=1` turns the error into a warning.
+
+Measured on the clean DT2 output of the test card's kit: the 1 kHz sample
+plays at 840.4 Hz (-3.01 semitones, presumably the kit's tune). The
+harmonics are odd only: 3rd -34 dB, 5th -50 dB, 7th -59 dB, and every even
+harmonic below -127 dB. That is symmetric saturation, consistent with the
+kit's master overdrive at 0x7f00. It has not been checked by setting the
+overdrive to 0. **[O]**
+
+## SIMD Type 6 and BIT TST ran in PEx only (DN2 delay send had no effect) **[V][C]**
+
+On DN2 1.11 the delay send did nothing. `FUN_b84099` (a saturator over
+two 32-word blocks) sets MODE1.PEYEN at 0xb840d2, loads `R2 = DM(I6-4)`
+(0x10), runs `btst` bit 0 at 0xb84225 and then `JUMP IF SZ` to 0xb84240 at
+0xb84228. Our core ran the `btst` (Type 6b) in PEx only: ASTATX.SZ was set,
+ASTATY stayed stale (0x400) although S2 = 0x10 too. A SIMD conditional jump
+needs both elements, so the jump was not taken. The odd-pair epilogue
+0xb8422b..0xb8423e ran past the buffers and doubled the delay write position
+at 0x80459234 every frame. Forcing the jump with `--dsp-patch` made the delay
+audible.
+
+Manual (SHARC+ Core Programming Reference, `out/refs/sharc-plus-prm`):
+
+- p.3-39 (Compute Instructions in SIMD Mode): `R5 = LSHIFT R6 by <data8>`
+  has the implicit `S5 = LSHIFT S6 by <data8>`; "the immediate data are valid
+  for both PEx and PEy units".
+- p.13-43 (Type 6a, SIMD Mode): the Type 6 shift runs "simultaneously for the
+  X and Y processing elements"; the memory access is "performed
+  simultaneously on the X and Y processing elements"; X uses Ia and
+  post-modifies it, Y uses Ia+k (k = 1 normal word, 0 in broadcast load
+  mode) with no modify; a condition is evaluated per element ("independent
+  of the condition result for the other element"). The same text is in the
+  Type 6a (no memory) description, p.13-44.
+- p.4-54 and p.4-57 (Conditional Branches, Table 4-32): a conditional
+  JUMP/CALL "occurs only when the condition is true in PEx and PEy" (AND).
+  This is why the stale ASTATY mattered.
+- p.4-55 (Bit Test Flag in SIMD Mode, with Table 2-3 on p.2-12): in SIMD mode
+  `BIT TST USTAT1` makes two independent tests, USTAT1 into ASTATX.BTF and
+  USTAT2 into ASTATY.BTF. The pairs are USTAT1/2, USTAT3/4, ASTATx/y and
+  STKYx/y.
+
+Forms fixed in `tools/sharc_core`:
+
+- `6b_shiftimm`: the shift (including BTST) runs on PEx and PEy
+  (`compute._shift_immediate_simd`, `_shift_immediate_pey`); a conditional
+  one is gated per element.
+- `6a_mem`: the same, plus the PEy memory transfer at Ia+k (DM through
+  `_companion_transfer`, PM through `_pm_companion_transfer`, broadcast
+  loads included). A SIMD condition that differs between the elements stops
+  the trace (`mixed-PE conditional SIMD Type6a`); it is not modelled.
+- `18a` BIT TST: the PEy BTF update now also covers USTAT1/2 and USTAT3/4
+  (it covered ASTAT/STKY only). BIT SET/CLEAR/TOGGLE on a SIMD-paired system
+  register is still unmodelled (it stops). **[O]**
+- A bit-FIFO shift in SIMD mode raises (the manual says SIMD must be off for
+  bit FIFO operations).
+
+Other compute-bearing forms already ran both PEs (2a, 2a_short, 2b, 2c, 1a, 3a,
+4a, 5a/5b move, 5a swap, 7a, 9a, 11a); 4a with a SIMD condition still stops.
+Forms without a compute or flag write need no change.
+
+Tests: `tests/test_sharc_simd_shift.py` (R and S results, ASTATX/ASTATY SZ, the
+firmware pattern `btst` then `JUMP IF SZ`, 6a store/load with the companion,
+per-element conditions, USTAT BIT TST). The golden hashes did not change.
+
+Regenerated 2026-10-08 (same block sets as before: DN2 1751 blocks, DT2 1202):
+the shared core, then the DN2 and DT2 per-firmware cores (previous cores in
+`gen-pre-6b-20261008`). `dt2_sample_check` still reports a clean tone.
+
+Measured with `scenarios/dn2-fx.json` (`fx-dry-tap` is the reference), 48 kHz,
+note held 0.30..0.60 s: the delay is audible now. `fx-del-127` is identical to
+dry while the note plays (the dry path is untouched) and the first echo arrives
+at +0.96 s (onset 1.26 s) at about the dry level (-29 dB). Later repeats start
+at 2.02, 2.40, 2.78 and 3.14 s: -55, -61, -67 and -74 dB, a factor of about
+0.5 per 0.38 s repeat. The spacing before the second echo (0.76 s) differs
+from the later 0.38 s, so the repeat pattern is not yet explained. **[O]**
+`fx-del-turnmore` rms 0.0162 (dry 0.0099), `fx-del-hold` rms 0.0538 (dry hold
+0.0180). `fx-rev-127` differs from dry as before.
+
+DN2 scenario pins after the fix: only the two scenarios that hit the fixed forms
+moved. `trig1-taps` `d60ad339` -> `e0e6c8af` (rms 0.01038 -> 0.01007, -3 %),
+`kb-chord16` (unpinned) `e0964600` -> `6d97fd57` (rms 0.10607 -> 0.10178,
+-4 %). The `trig1-taps` pin in `scenarios/dn2.json` is not updated yet.
+
+Second check, 2026-10-08: an independent agent confirmed the manual
+statements in the SHARC+ Core Programming Reference:
+
+- shift immediates are valid for both PEs (p.3-39);
+- Type 6a runs in both PEs, each under its own condition, with the PEy
+  access at Ia+k and no modify (p.13-43); the no-memory form follows on the
+  next page;
+- a SIMD branch is taken only when the condition is true in PEx and PEy
+  (p.4-62);
+- BIT TST tests both registers of a complementary pair (p.4-55).
+
+It also matched the implementation against them, and decoded 0xb840d2,
+0xb84225 and 0xb84228 from the DN2 1.11 image as stated above. The
+track-FX sweep (`scenarios/dn2-trackfx.json`, `tools/fxcheck.py`) then
+measured the delay with the fix: echoes 0.375 s apart, each about 6 dB
+quieter than the one before.
+
+Three limits remain, all conservative stops that never give a wrong result:
+
+- a 6a memory form whose condition differs between the PEs stops;
+- a SIMD bit-FIFO shift raises an error, because the manual requires SIMD
+  off for it;
+- PX1/2 is not reachable through 18a.
+
+`test_native_conditional_shift_matches_reference` fails with
+`dlsym sharc_native_profile`. The native library it loads is stale; the
+failure does not come from this change.
+
+
+## DN2 1.11 send FX pages swept against expected behaviour (2026-10-08)
+
+Scenarios `scenarios/dn2-sendfx.json` (`tools/gen_sendfx.py`), measures
+`tools/fxcheck.py` (`sf-*`), runs `out/runs/sendfx/run1..run3`. All **[D]**:
+one run, not yet compared with a device.
+
+- Navigation **[V]** (read-back of the kit Fx array): FUNC + FX opens Delay;
+  each further FUNC + FX chord steps Delay -> Reverb -> Chorus -> Delay
+  (DOWN from Delay also reaches Reverb). FUNC need not be held while turning.
+  Encoders A..H = 1..8, LEVEL = 9 (Mix Volume on every send FX page).
+  Delay: A Time, B Pingpong, C Width, D Feedback Gain, E Feedback HPF,
+  F Feedback LPF, G -, H Reverb Send. Reverb: A Pre-delay, B Decay, C Shelving
+  Freq, D Shelving Gain, E Input HPF, F Input LPF, G/H -. Chorus: A Depth,
+  B Speed, C High-pass, D Width, E/F -, G Delay Send, H Reverb Send. The
+  routing parameters (Fx[40], Fx[48]) did not move with any encoder turn.
+  FUNC + MOD opens the Master compressor (A Threshold, B Attack, C Release,
+  D Makeup, E Ratio, F Sidechain Src, G Sidechain Filter, H Dry/Wet, LEVEL
+  Pattern Volume); a second and third FUNC + MOD show the track mixer banks.
+  Master Overdrive (Fx[68]) was not reached.
+- Delay time **[D]**: echo spacing = (value/256 + 1) x 15.625 ms (UI 23: 0.375 s,
+  32.5: 0.525, 80.2: 1.27, 127: 2.00). Feedback loop gain = value/64 (UI 33.5:
+  -5.7 dB/repeat, 41.5: -3.8, 58.7: -0.9, 89.2: +2.8; 0: one echo, no second).
+  Above 64 the repeats grow until the output saturates at 0.693 (-3.2 dBFS)
+  and sustains. **[O]** whether hardware reaches unity at 127 instead of 64.
+- Mix Volume (delay, reverb, chorus) and the track sends follow (value/110)^2
+  in level (UI 25: -25.8 dB, 127: +2.5 dB). **[O]** taper or double multiply.
+- Reverb decay **[D]**: RT60 0.71 s (0), 1.53 (31), 1.99 (40.5), 5.49 (88),
+  no decay within 4 s at 127; about 0.71 x exp(0.0245 x UI). Pre-delay: wet
+  onset 0 up to UI 36, 0.14 s at 73, 0.21 at 95, 0.34 at 127 (about
+  4.5 ms/step above UI 42).
+- Chorus speed **[D]**: 0.89 Hz (32), 1.45 (52), 2.86 (117), 3.13 (127),
+  about 0.1 + 0.0245 x UI Hz. Depth 0 gives no modulation.
+- Delay Width without Pingpong behaves like a balance control (0: left only,
+  64: both, 127: right only); with Pingpong on, echoes alternate L/R and the
+  alternation depth grows with |Width - 64|. Pingpong at Width 64 is
+  inaudible. **[O]** against hardware.
+- Master compressor: Dry/Wet 127 with default settings +4.0 dB on the held
+  sine; Threshold 0 -7.3 dB; Ratio 7 -12.5 dB; Makeup 127 +15.9 dB.
+
+Against the Digitone II manual (OS 1.12, section 12.2, p.65-66; the
+manual says "Digitone II", the emulated firmware is 1.11):
+
+- Delay TIME is in 128th notes at the current BPM. 24 = 1/8. (dotted) and
+  128 = one bar. The measured spacing, (value/256 + 1) x 15.625 ms at 120
+  BPM, matches the manual exactly. **[V]**
+- With X (ping-pong) OFF, WID sets the stereo position of the delay
+  signal. The emulator puts it hard left at the minimum and hard right at
+  the maximum, which is correct. With X ON the delay alternates left and
+  right, and WID sets how far. **[V]**
+- FDBK: "with higher parameter settings, infinite and/or swelling delays
+  are possible". The emulator swells above about 64 and saturates near
+  -3 dBFS. On the desktop app (2026-10-08), Em heard it run away above
+  about 100 and stall before it swells again. The offline render shows the
+  same steps. The manual gives no threshold. **[O]**
+- The manual says nothing about the taper of the mix volume or the sends.
+  They measure as value squared. **[O]**
+
+## Denormal flush: the core and the fast tier now follow the manual **[V]**
+
+Done 2026-10-09 on `work/scenario-oracles` (e8353a8); second-checked the same day (see the end of this section).
+Before this, `tools/sharc_core/floats.py` said flush-to-zero "is not modeled": a decayed filter or
+envelope state stuck at a 1-3 ulp denormal, the fast tier left its kernel at every denormal product,
+and the run got slower after a sound had decayed (finding 18, "Late-run slowdown"). The core now
+reads and returns denormals as the SHARC+ does. PCM did not change in any scenario we have (below).
+
+### Specification
+
+Page numbers are PDF pages of `out/refs/sharc-plus-prm` ("PRM", printed page in brackets),
+`out/refs/50836807228561adsp2106xsharcprocessorusersmanual_revision2_1` ("2106x") and
+`out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4` ("PGR"). "Said" means the entry itself says it;
+"general" means only the general rule applies (the entry is silent), which we take as the
+rule for every computational unit **[D]**.
+
+| # | Rule | Source |
+|---|---|---|
+| 1 | A denormal input to a computational unit is read as a zero of the same sign; no underflow exception | PRM p.100 [3-38] (IEEE single and 40-bit alike); 2106x p.45 [2-3] |
+| 2 | Said per op for add, subtract, abs(add), abs(sub), average (`+-zero`; abs forms `+zero`), neg, pass, abs (`+zero`), rnd, scalb, mant, logb, copysign, min, max, clip | PRM pp.453-456 [19-1..19-4], 458-462 [19-6..19-10], 471-473 [19-19..19-21] |
+| 3 | General only: comp, fix/trunc (and BY RY), recips, rsqrts | PRM pp.457, 463-466, 468-470 are silent; rule 1 |
+| 4 | Float multiply: denormal operands are zeros and "never cause underflows"; infinity times a denormal is infinity times zero (MI) | PRM p.571 [28-6] (MU); 2106x p.58-59 [2-16/2-17] (MU, MI) |
+| 5 | A post-rounded denormal result is returned as a zero of its sign: add, subtract, average (`+-zero`; abs forms `+zero`), scalb, FLOAT RX BY RY (underflow `+-zero`) | PRM pp.453-456, 461, 467-468 |
+| 6 | General only for the float multiplier result (the entry says nothing about the value): "any denormal or underflow result from an arithmetic operation is flushed to zero" | 2106x p.45 [2-3]; PRM p.500 [22-1] silent |
+| 7 | ALU flags: AZ is set for a zero result and, for add, subtract, average, scalb, FLOAT BY RY, "if the post-rounded result is a denormal (unbiased exponent < -126) or zero"; the flushed result is zero, so AZ is set; AN is the sign of the returned zero; AV and AI are not set by a denormal input | PRM pp.453-461, 467 |
+| 8 | Multiplier flags: MU is set when the unbiased exponent of the result is < -126, never by a denormal operand; MN is the sign of the (flushed) result; MUS is the sticky copy | PRM p.500 [22-1], p.571 |
+| 9 | ALU sticky: AUS is "sticky indicator for AZ bit set" on the ops of rule 5. **Not modelled**: the core keeps no ALU stickies (AUS, AVS, AOS, AIS) at all, before and after | PRM pp.453-461 |
+| 10 | comp: two denormals compare equal and equal to zero (rule 3) | general |
+| 11 | Float to fixed of a denormal gives 0, AZ set; fixed to float cannot give a denormal | general; PRM p.467 |
+| 12 | A data move (register, memory, DAG) is not a computation: denormal bits pass unchanged | PRM p.100 ("when input to a computational unit") **[D]** |
+| 13 | PEy is the same unit on the S registers; ASTATY and STKYY take the flags | PRM p.101 (SIMD Mode), p.571 |
+| 14 | Rounding boundary: the exponent threshold (< -126) is the same for RND32 = 0 (40-bit) and 1. The core stores 32-bit results for both, so it models the IEEE single case only | PRM p.100; `floats.py` header |
+| 15 | 64-bit (double) ops carry the same wording with exponent < -1022 | PRM pp.474-490. **Not implemented** (none of dt2 1.16, dt2 1.15C, dn2 1.11, dn2 1.10E executes one: lane F1 census) |
+
+"Post-rounded" is taken as: round to 24 significant bits with an unbounded exponent (nearest even),
+then test the exponent. A magnitude in [2^-126 - 2^-151, 2^-126) rounds up to the smallest normal
+and is returned as it; below that it is a flushed zero. The multiplier's "exact zero" (a zero
+operand) is not an underflow; whether the device sets MU for 0 x x is not stated **[O]**.
+
+### Audit of `tools/sharc_core` (before -> after)
+
+| Where | Before | After |
+|---|---|---|
+| `floats._float32` (every float input: add/sub/avg/comp/neg/pass/abs/rnd/min/max/clip/copysign/scalb/fix/trunc BY RY/multiply, multifunction halves, short ops) | raw bits, denormals kept | `_flush_denormal_bits` first |
+| `_float_binary`, `_float_unary` result (`_float32_bits`) | denormal results returned as denormals, AZ clear | `_float32_result`: zero of the sign, AZ set from the result bits |
+| `_float_scalb`, `_fixed_to_float_scaled` | already flushed results | same rule through `_float32_result` |
+| `_float_copysign`, `_float_round32` | explicit denormal checks | removed (the input flush covers them) |
+| `_float_mantissa`, `_float_logb`, `_approx_recips`, `_alu_recip_seed_impl` | already read exponent 0 as zero | unchanged |
+| float multiply (`compute_mult.mult_float`, `compute_multi._float_multiply_parts`) | MU read from a denormal result; a product that underflowed fully to 0 did not set MU | new `floats._float_multiply` (4th value: underflowed); `_astatx_mult_float(result, overflowed, underflowed, invalid)`; MU = underflowed |
+| `_double_*`, `_double_alu_updates`, `_astatx_mult_double` | keep denormals | unchanged (rule 15) |
+| ALU stickies AUS AVS AOS AIS | not modelled | unchanged (rule 9) |
+
+### Runtime and fast tier
+
+- `native/sharc-rt/src/rt/bnd.rs`: hand-written fast paths for add, subtract (`float_binary_fast!`)
+  and the new `_float_multiply` flush operands and results (a zero-exponent f32 result is a flushed
+  zero; the smallest-normal result is the one value that can come from either side of the cut, so
+  it and NaN take the slow path), `_float32_result`, `_astatx_mult_float` with the underflow
+  argument. `sharc_transpile.py` maps `_float_multiply` to it and drops the old multiply entry and the
+  dead `_multifn_fm_value`. The differential test (`float_binary_fast_paths_match_reference`,
+  30M comparisons, operands near the smallest-normal cut) passes.
+- Fast tier (`native/sharc/src/fast/lower`): float ops read their operands through `rd_f_op`, which
+  exits to the interpreter at a nonzero denormal (`guard_not_denormal`, 4 IR ops, once per value per
+  block: `ftz_ok`); add and subtract results are flushed in the kernel (exact, so the native result
+  is the exact one: `flush_denormal_result`); a multiply whose product is below the smallest normal
+  while both operands are nonzero exits (`result_no_underflow`; the interpreter sets MU and the
+  sticky MUS). `fix`, `trunc`, `scalb`, `logb`, `recips` kept their exit at a denormal operand.
+  Removed: `SHARC_FAST_DENORM`, `Req::StkyMus`, `Env::mus_set`; the Fmul flag replay no longer
+  derives MU from the result bits (a kernel result never underflows).
+
+### Results
+
+- `tests/test_sharc_denormal.py` (22 tests, also under PyPy): one test per rule above (inputs to
+  add/sub/avg, compare, pass/neg/abs, min/max/clip/copysign/rnd/scalb, fix/trunc, mant/logb, multiply
+  and infinity x denormal; underflowing results, sign of the zero, AZ/AN/MU/MUS, the cut at
+  2^-126 - 2^-151, exact zero is no underflow, the decayed filter reaches 0, a register move keeps the
+  bits, PEy with ASTATY/STKYY). Existing core tests, `tests/test_sharc_golden.py` (six hashes) pass
+  **unchanged**: no output of the golden runs touches a denormal.
+- Python core vs the native core built from it: `tools/sharc_transpile_run.py corpus --cases-per-op
+  200` 57,400 cases, 0 diverged (edge values now include 1.5 x 2^-126, 2^-100, 2^-63).
+- `native/sharc` `cargo test --lib --tests` (shared core): 65 passed, with the new
+  `fast_denormal_float_ops_match_the_interpreter` (add, subtract, multiply with denormal operands,
+  denormal and underflowing results, a negative one, a flag-reading `IF MS`, 8 chunk sizes);
+  `native/sharc-rt` 12 passed.
+- PCM in the three tiers is identical and also equal to the hashes before the change:
+  `trig1-taps` 1.5 s `3bf3ba3026953c22` (interpreter only, default AOT, no-AOT
+  `static-insns+follow`), 14 s `18e5204f2015f2eb` (AOT, no-AOT), `sf-del-fb-d127`
+  `c973b17a35b3c85c`, `sf-rev-decay-u20` `0e88d4528b389f15`, `tf-br-127` `16f3d0a81e686049`
+  (interpreter only, AOT, no-AOT). `scenarios`: all seven DN2 scenarios, the four pins hold
+  (`trig1-taps` `e0e6c8af7a84c443`, `trig1-tap-release` `883476213933...`, the two instruction-count
+  ones). The denormal state was below the 24-bit output, so the flush shows only in time.
+- Oracle suite (`tests/scenarios --slow`): 61 passed in the default and in the no-AOT config.
+  The 23 scenarios it renders have the same PCM hash as in the runs before the change, in both
+  configs. Not caused by this change (**[C]** fixed later: finding 18, "Tier mismatch: MODE1 read at entry"): `sf-del-time-u20` differs between the two configs in the
+  old runs and the new (AOT `67e0ea5c3f9a7166`, no-AOT `c4688d57f9ef9aa9`, rms 0.0127184 vs 0.0127187).
+  DT2 `tools/dt2_sample_check.py`: clean tone, 1007.8 Hz, peak share 0.99995, rms 0.01572 as before.
+- Late-run step, no `SHARC_FAST_DENORM`, exclusive lock, `trig1-taps` 14 s, run time per audio s
+  (DSP CPU minus compile and build) 3-8.5 s / 10-13.7 s, region calls per audio s; the machine was
+  busy with other processes, so only the pairs are comparable:
+
+  | config | run pre / post | calls pre / post | before (finding 18, no fix) |
+  |---|---|---|---|
+  | default AOT | 2.187 / 2.171 | 0.50M / 0.50M | 1.84 post, 0.5M -> 0.9M |
+  | no-AOT `static-insns+follow` | 2.695 / 2.697 | 11.73M / 11.61M | 4.9-5.1 post, 17.2M -> 26.2M |
+
+  The step is gone in both. `SHARC_FAST_DENORM` is not needed and was removed.
+
+### Open
+
+- ALU sticky bits (AUS, AVS, AIS, AOS) are not modelled by the core at all **[O]**; a firmware that reads
+  STKYX after a denormal result sees no AUS.
+- Whether MU is set for an exact-zero product, and the exact post-rounding cut in 40-bit mode **[O]**.
+- Rule 12 and the rules marked "general" are inferences from the manuals, not read from hardware
+  **[O]**.
+- The 64-bit ops keep denormals (rule 15).
+
+Second check 2026-10-09: every spec row re-read in the manuals and confirmed (row 12 and the "general" rows remain inferences, as marked; the exact 2^-126 - 2^-151 cut is derived from "post-rounded" plus nearest-even, the manuals do not state the number; row 14's threshold is stated in the ALU "32-bit and 40-bit" entries, PRM pp.453-473, not on p.100); `_float32`, `_float32_result`, `_float_multiply`, `_astatx_mult_float` and `compute_multi._float_multiply_parts` match the rules including the cut and the zero sign; `tests/test_sharc_denormal.py` and `tests/test_sharc_golden.py`: 28 passed. Not modelled: MODE1.TRUNCATE=1 float results (the core rounds to nearest only, so the truncating cut, exactly 2^-126, is absent).
+
+## Register-form shifter ops: FEXT in the DT2 64/64 divide halted the DSP (2026-10-12) **[D]**
+
+Em's DT2 1.16 app stopped with `sharc_peer: DSP halted: native-trap: sharc_core.compute._compute:359:
+raise ValueError at 0xb88e8b`. 0xb88e8b is `R13 = fext(R13, R4)` (form 2a_short, cu=2, shifter opcode
+0x40, bit6 = Ry[5:0], len6 = Ry[11:6]). The core's shifter table (`SHIFT_OPS` in
+`tools/sharc_core/compute_shift.py`) held only lshift/ashift/OR-lshift, leftz/lefto, the bit set/clear/
+toggle/test group, the BFFWRP pair and two undocumented opcodes; every other register-form opcode of
+PRM Table 18-9 raised "unsupported full compute". The ShiftImm (Type 6) twins existed, which hid the gap.
+
+- **Where.** 0xb88e4e is an unsigned 64/64 divide (dividend R13:R12, divisor R15:R14, remainder in
+  R15:R14, quotient returned in R13:R12 after the delay slots). When the dividend's high word R13 is
+  not zero and the divisor is below 2^31 (R15 = 0) it takes the 64/32 path that ends in the FEXT at
+  0xb88e8b; a divisor of 33 or more bits ends in the FEXT at 0xb88edb (same routine). The
+  routine is reached once a per-voice 64-bit counter passes 2^48, so it ran fine for the first part of
+  a session and stopped the DSP after the counter grew. `sw 0xb88e8b` and `0xb88edb` were the only two
+  coverage gaps of `sharc_coverage dt2-1.16 --all-roots` (golden `cov_all`); both close with this change.
+- **Added** (register forms, PRM Table 18-9 pp.431-433 and the instruction pages 23-3..23-19): 0x40
+  fext, 0x48 fext (se), 0x44 fdep, 0x4c fdep (se), 0x64 / 0x6c OR-fdep (se), 0x08 rot, 0x24 OR-ashift,
+  0x80 exp, 0x84 exp (ex), 0x94 funpack, 0x50 / 0x58 bitext (nu), 0x74 bitdep. Flags follow the
+  immediate twins (SZ = result zero; SV = len6 + bit6 > 32 for the field ops). BITEXT and BITDEP are
+  now shared helpers (`_bitext`, `_bitdep`) between the immediate and register forms.
+- **Left out: 0x90 FPACK.** The PRM gives the exponent ranges but not the rounding rule of "the rounded
+  upper 11 bits", so it cannot be written from the manual. In the DT2 1.16 program database the only
+  register-form shifter ops other than the immediates are the two FEXTs above (query on mnemonics without
+  `pos=`); DN2 1.11 shows fdep/or_fdep/funpack/exp_ex only in 0xb8f4xx-0xb96dxx, conditional forms in
+  odd places, which look like data decoded as code **[O]**.
+- **Assumptions.** FUNPACK of an all-zero exponent and fraction returns signed zero (the manual's
+  leading-zero rule has no leading one to find). The register BITEXT takes its count from Rx[5:0] and
+  BITDEP from Ry[5:0] as the manual says ("lower 6 bits"). ROT uses Ry[4:0] as the left-rotate count.
+  OR-ashift leaves SS unknown, as the immediate OR-ashift does (its manual entry has no SS line).
+- **Check.** `tests/test_sharc_udiv64.py` runs the routine in the concrete runner against Python's
+  `divmod` (40 + 80 random cases on the two FEXT paths): it fails with the ValueError on the old core and
+  passes now. `tests/test_sharc_shift_register_forms.py` holds the per-op cases worked by hand
+  (`fext(0x1234abcd, bit6 = 4, len6 = 8)` = 0xbc, len6 = 0, bit6 >= 32, flags).
+- **Generated cores.** The change alters `CORE_FINGERPRINT`: the generated DN2, DT2 and shared cores must
+  be regenerated (`gen-fext` next to each `gen`).

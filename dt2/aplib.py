@@ -225,8 +225,7 @@ USAGE = """usage: uv run python -m dt2.aplib [sections_dir]
 
 Runs the offline self-test, then -- if a sections/ directory (as produced by
 emu/extract.py) is given or found via DT2_SECTIONS -- round-trips every
-section through pack_section() and the device's own depacker
-(emu.oracle.depack), the real authority this module was built against."""
+section through pack_section() and dt2/elz.py's depack_section."""
 
 
 if __name__ == '__main__':
@@ -243,12 +242,10 @@ if __name__ == '__main__':
     import time
 
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from emu import config, oracle
+    from dt2.elz import depack_section
+    from emu import config
 
     sections_dir = sys.argv[1] if len(sys.argv) > 1 else config.sections_dir()
-    boot_path = config.bootstrap()
-    boot = open(boot_path, 'rb').read()
-    print('bootstrap: %s' % boot_path)
 
     paths = sorted(glob.glob(os.path.join(sections_dir, 'section_*.bin')))
     if not paths:
@@ -262,7 +259,7 @@ if __name__ == '__main__':
         data = open(path, 'rb').read()
         t0 = time.time()
         stream = pack_section(data)
-        got = oracle.depack(boot, stream, out_cap=max(len(data) + 0x10000, 0x100000))
+        got = depack_section(stream)
         ok = got == data
         failures += not ok
         print('%-26s %10d %10d %6.3fx  %-4s  %6.2fs'

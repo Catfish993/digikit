@@ -31,6 +31,7 @@ PYPY_TESTS = [
     "tests/test_sharc_trace_alu.py",
     "tests/test_sharc_trace_forms.py",
     "tests/test_sharc_trace_simd.py",
+    "tests/test_sharc_denormal.py",
     "tests/test_sharc_run.py",
     "tests/test_sharc_contract.py",
 ]

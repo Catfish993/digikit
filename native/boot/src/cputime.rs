@@ -48,8 +48,15 @@ mod tests {
         let start = super::thread_cpu_ns();
         let t = std::time::Instant::now();
         let mut x = 0u64;
-        while t.elapsed() < std::time::Duration::from_millis(30) {
+        // Spin until the thread itself has used 30 ms of CPU (capped by wall time), so a loaded machine
+        // (parallel verify) cannot starve the loop below the 20 ms bound.
+        while (start == 0 || super::thread_cpu_ns() - start < 30_000_000)
+            && t.elapsed() < std::time::Duration::from_secs(5)
+        {
             x = x.wrapping_add(std::hint::black_box(1));
+            if start == 0 && t.elapsed() >= std::time::Duration::from_millis(30) {
+                break;
+            }
         }
         let busy = super::thread_cpu_ns() - start;
         std::thread::sleep(std::time::Duration::from_millis(60));

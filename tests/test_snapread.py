@@ -125,3 +125,22 @@ def test_name_for_known_cf_names_address():
     some_name, (addr, *_rest) = next(iter(cf_names.ADDRS.items()))
     assert name_for(addr) == some_name
     assert name_for(0xFFFFFFFF) is None
+
+
+def test_rust_dt2snp01_memory(tmp_path):
+    page = bytearray(PAGE)
+    page[0x10:0x14] = b"\x80\x00\x47\x04"
+    blob = bytearray(b"DT2SNP01" + b"\0" * 8 + b"junk")
+    blob += b"BORD" + struct.pack("<Q", 1) + struct.pack("<I", 0x800)
+    for b in range(256):
+        chunk = bytes(page[b * 4096 : (b + 1) * 4096])
+        if any(chunk):
+            blob += b"\x01" + chunk
+        else:
+            blob += b"\x00"
+    path = tmp_path / "t.snap"
+    path.write_bytes(bytes(blob))
+    s = Snapshot(str(path))
+    assert s.u32(0x80000010) == 0x80004704
+    assert s.read(0x80000FFC, 8) == bytes(8)
+    assert s.u32(0x90000000) is None

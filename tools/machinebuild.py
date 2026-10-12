@@ -5,7 +5,7 @@ Wraps the steps `tools/machinepatch.py`'s `plan_b` already does for a
 *static* image, plus the two things a flash-time build additionally needs
 that `plan_b` documents but does not do itself:
 
-  1. capture the ENTRY6 descriptor fields live, from a resumed post-boot
+  1. capture the ENTRY6 descriptor fields live, from a post-boot
      snapshot -- the descriptor array is bss, so it cannot be read from the
      static MAIN OS image, and this tool refuses to guess it for an image
      other than the one `machinepatch.ENTRY6_FIELDS` was pinned against;
@@ -70,20 +70,19 @@ def sha256_file(path):
         return sha256_bytes(fh.read())
 
 
-def capture_fields_live(syx, snapshot, profile, entry, sdgate, esdhc):
+def capture_fields_live(snapshot, profile, entry):
     """-> 9-tuple of the descriptor's ID fields for `entry`, read from a
-    resumed snapshot. The descriptor array is bss and only exists once the
-    firmware has run its startup init, so this needs a live guest, not the
-    static image (see plan_b's docstring)."""
-    sys.path.insert(0, REPO_ROOT)
-    from emu.longrun import build
+    post-boot snapshot (tools/snapread.py reads Rust and pickled snapshots).
+    The descriptor array is bss and only exists once the firmware has run its
+    startup init, so this needs a snapshot, not the static image (see
+    plan_b's docstring)."""
+    sys.path.insert(0, os.path.join(REPO_ROOT, 'tools'))
+    from snapread import Snapshot
 
-    m, ev, st, pc, inq, at = build(
-        snapshot, syx=syx, unblock=True, softfloat=True, bitmap=True,
-        dsp=True, slc=True, sdgate=sdgate, esdhc=esdhc)
     addr = profile['descriptor_base'] + entry * profile['descriptor_stride'] + 8
-    raw = bytes(m.uc.mem_read(addr, 36))
-    m.close()
+    raw = Snapshot(snapshot).read(addr, 36)
+    if raw is None:
+        raise SystemExit('machinebuild: descriptor at %#x is not mapped in %s' % (addr, snapshot))
     return struct.unpack('>9I', raw)
 
 
@@ -265,8 +264,8 @@ def main(argv=None):
     ap.add_argument('--profile', required=True, choices=sorted(PROFILE_BY_NAME),
                      help='which machineprofile.py entry to plan against')
     ap.add_argument('--fields-from', metavar='SNAPSHOT',
-                     help='resume this snapshot to capture the live ENTRY6 '
-                          'descriptor fields (required unless --fields is given '
+                     help='read the ENTRY6 descriptor '
+                          'fields from this post-boot snapshot (required unless --fields is given '
                           'and --clone-of is 6 on Digitakt II 1.15C, whose '
                           'fields machinepatch.py already pins)')
     ap.add_argument('--fields', help='9 comma-separated ints, overriding '
@@ -288,8 +287,6 @@ def main(argv=None):
     ap.add_argument('--out', required=True, help='rebuilt .syx path')
     ap.add_argument('--extract-dir', help='where to re-extract the rebuilt .syx '
                     'for the post-build check (default: alongside --out)')
-    ap.add_argument('--no-sdgate', dest='sdgate', action='store_false', default=True)
-    ap.add_argument('--no-esdhc', dest='esdhc', action='store_false', default=True)
     args = ap.parse_args(argv)
 
     profile = PROFILE_BY_NAME[args.profile]
@@ -298,9 +295,8 @@ def main(argv=None):
     if args.fields:
         fields = tuple(int(x, 0) for x in args.fields.split(','))
     elif args.fields_from:
-        print('capturing ENTRY%d fields live from %s ...' % (args.clone_of, args.fields_from))
-        fields = capture_fields_live(args.syx, args.fields_from, profile,
-                                      args.clone_of, args.sdgate, args.esdhc)
+        print('reading ENTRY%d fields from %s ...' % (args.clone_of, args.fields_from))
+        fields = capture_fields_live(args.fields_from, profile, args.clone_of)
         print('  fields: %s' % (fields,))
     elif args.clone_of == 6 and profile is mprof.DT2_115C:
         fields = mp.ENTRY6_FIELDS

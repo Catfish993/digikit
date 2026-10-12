@@ -18,6 +18,8 @@ use std::{
 
 /// Largest number of ColdFire instructions a host runs per `step_chunk`.
 pub const STEP_CHUNK: u32 = 250_000;
+#[cfg(feature = "coupled-audio")]
+pub mod cold;
 pub mod scenario;
 /// Most inputs kept for replay.
 const INPUT_LOG_LIMIT: usize = 100_000;
@@ -185,6 +187,16 @@ impl CoupledRuntime {
             false
         }
     }
+
+    /// True when the queued output audio has reached the pace target; the
+    /// controller's free running waits then. False without playback.
+    pub fn audio_ahead(&self) -> bool {
+        #[cfg(feature = "coupled-audio")]
+        if let Some(audio) = &self.audio {
+            return audio.queue_ahead();
+        }
+        false
+    }
     /// Overlay a DSP patch onto the running DSP between two frames and drop
     /// every cached decode and generated block that touched the patched code
     /// (the engine re-verifies code identity on its own). Returns the frame
@@ -230,6 +242,11 @@ impl CoupledRuntime {
             .as_ref()
             .is_some_and(coupled::AudioSession::link_timing_enabled)
             .then(Instant::now);
+        #[cfg(feature = "coupled-audio")]
+        let spike_start = self
+            .audio
+            .as_mut()
+            .and_then(coupled::AudioSession::spike_step_start);
         let snapshot = self.emulator.step_chunk(budget);
         #[cfg(feature = "coupled-audio")]
         if let Some(audio) = &mut self.audio {
@@ -237,6 +254,9 @@ impl CoupledRuntime {
                 audio.record_cf_step(start.elapsed().as_nanos());
             }
             audio.poll();
+            if let Some(start) = spike_start {
+                audio.spike_step_end(start);
+            }
         }
         snapshot
     }
@@ -245,6 +265,12 @@ impl CoupledRuntime {
         if let Some(audio) = &mut self.audio {
             audio.sync();
         }
+        self.emulator.snapshot()
+    }
+
+    /// The guest status and any new screen frame without waiting for the DSP
+    /// frames in flight (for the webview's poll while the controller steps).
+    pub fn peek(&mut self) -> Snapshot {
         self.emulator.snapshot()
     }
     pub fn diagnostics(&mut self) -> Value {
@@ -373,9 +399,21 @@ impl CoupledRuntime {
     pub fn execution_profile(&self) -> Option<ExecutionProfile> {
         self.audio.as_ref()?.handle.execution_profile()
     }
+    /// The DSP's canonical state blob (`SHRD`, every overlay byte as a range)
+    /// and its instruction count, after every frame sent so far.
+    pub fn dsp_export(&self) -> Option<(Vec<u8>, u64)> {
+        let (blob, icount) = self.audio.as_ref()?.handle.export();
+        (!blob.is_empty()).then_some((blob, icount))
+    }
     /// The native audio health report (includes link timing when enabled).
     pub fn audio_report(&self) -> Option<Value> {
         self.audio.as_ref().map(coupled::AudioSession::report)
+    }
+    /// Stop the PCM capture (the file is complete after this returns).
+    pub fn stop_pcm_capture(&mut self) {
+        if let Some(audio) = self.audio.as_mut() {
+            audio.stop_capture();
+        }
     }
     /// Capture the emulator's own PCM (before the output buffer) to `path`:
     /// a float WAV when it ends in .wav, else raw f32le. No length limit.
@@ -393,8 +431,7 @@ mod coupled {
     use elektron_native_boot::{
         pcm_play::{Mode, PcmPlayer, Recovery, SOURCE_RATE},
         sharc_peer::{
-            DEFAULT_PERIOD, NativeDsp, Shared, ThreadedHandle, ThreadedPeer,
-            ThreadedTimingProfile,
+            DEFAULT_PERIOD, NativeDsp, Shared, ThreadedHandle, ThreadedPeer, ThreadedTimingProfile,
         },
         wav::WavWriter,
     };
@@ -612,6 +649,9 @@ mod coupled {
             &data[24..],
         ))
     }
+    /// The free-running pace target without prefill (`--audio-buffer 0`).
+    const PACE_MIN_SECONDS: f64 = 0.05;
+
     pub(super) struct AudioSession {
         pub(super) handle: ThreadedHandle,
         pub(super) shared: Rc<RefCell<Shared>>,
@@ -633,6 +673,10 @@ mod coupled {
         /// When the tier counters were last printed (every 10 s, link timing only).
         tiers_printed: std::cell::Cell<Option<Instant>>,
         audio_mode: crate::AudioMode,
+        spike: Option<elektron_native_boot::spikelog::CfWindow>,
+        /// Queued audio at which free running waits: the prefill, at least
+        /// `PACE_MIN_SECONDS`.
+        pace_seconds: f64,
     }
     impl AudioSession {
         fn new_with_player(
@@ -671,8 +715,10 @@ mod coupled {
             let state = state.to_vec();
             let snapshot =
                 std::fs::read(&options.snapshot).map_err(|e| format!("CF snapshot: {e}"))?;
-            let link_timing =
-                options.link_timing || std::env::var("DN2_PROFILE_LINK").as_deref() == Ok("1");
+            // The spike log needs the per-period DSP times and the reply waits.
+            let link_timing = options.link_timing
+                || std::env::var("DN2_PROFILE_LINK").as_deref() == Ok("1")
+                || elektron_native_boot::spikelog::enabled();
             emulator.enable_ssi_diagnostic(96_000)?;
             emulator.load_state(&snapshot)?;
             // The fast tier's Cranelift backend; the engine uses it only when
@@ -705,6 +751,7 @@ mod coupled {
             };
             // The refill threshold must fit the ~1 s output ring.
             let refill = options.buffer_seconds.clamp(0.2, 0.9);
+            let pace_seconds = options.buffer_seconds.max(PACE_MIN_SECONDS);
             let recovery = match options.audio_mode {
                 crate::AudioMode::Rebuffer => Recovery::Rebuffer(refill),
                 crate::AudioMode::Stretch => Recovery::Stretch(refill),
@@ -739,10 +786,17 @@ mod coupled {
                 pcm_tap: None,
                 tiers_printed: std::cell::Cell::new(None),
                 audio_mode: options.audio_mode,
+                spike: elektron_native_boot::spikelog::CfWindow::open(),
+                pace_seconds,
             })
         }
         pub(super) fn new(emulator: &mut Emulator, options: &AudioOptions) -> Result<Self, String> {
             Self::new_with_player(emulator, options, PcmPlayer::spawn_with_recovery)
+        }
+        /// Close the PCM capture, if any, after the samples produced so far.
+        pub(super) fn stop_capture(&mut self) {
+            self.sync();
+            self.pcm_capture = None;
         }
         /// Replace the PCM capture with one for `path` (no length limit).
         pub(super) fn capture_pcm(&mut self, path: &std::path::Path) -> Result<(), String> {
@@ -798,6 +852,46 @@ mod coupled {
                     .audio_poll_wall_ns
                     .saturating_add(start.elapsed().as_nanos().min(u64::MAX as u128) as u64);
             }
+        }
+
+        /// Starts timing a `step_chunk` call for the spike log.
+        pub(super) fn spike_step_start(&mut self) -> Option<Instant> {
+            self.spike
+                .as_mut()
+                .map(elektron_native_boot::spikelog::CfWindow::step_start)
+        }
+
+        /// Ends a `step_chunk` call and writes the spike-log window when it is
+        /// full.
+        pub(super) fn spike_step_end(&mut self, start: Instant) {
+            let Some(spike) = &mut self.spike else {
+                return;
+            };
+            if !spike.step_end(start) {
+                return;
+            }
+            let reply_wait_ns = self
+                .handle
+                .timing_profile()
+                .map_or(0, |t| t.host_reply_wait_ns);
+            let queue = self.player.as_ref().map_or(serde_json::Value::Null, |p| {
+                let mut queue = serde_json::json!(p.queue_state());
+                queue["pace_seconds"] = self.pace_seconds.into();
+                queue
+            });
+            spike.flush(reply_wait_ns, self.handle.frames_sent(), queue);
+        }
+
+        /// True when the device ring plus the feeder's pending input holds
+        /// at least `pace_seconds`. False without a player.
+        pub(super) fn queue_ahead(&self) -> bool {
+            self.player.as_ref().is_some_and(|p| {
+                let q = p.queue_state();
+                // Pending frames are at the 48 kHz source rate (pcm_play::SOURCE_RATE).
+                let queued = q.queued_device_frames as f64 / f64::from(q.device_rate.max(1))
+                    + q.feeder_pending_source_frames as f64 / 48_000.0;
+                queued >= self.pace_seconds
+            })
         }
         pub(super) fn sync(&mut self) {
             let wall_start = self.link_timing.then(Instant::now);
@@ -1130,9 +1224,10 @@ mod coupled {
             // Updated 2026-10-06 for the Type 17 SIMD Cureg fix (docs/findings/16); the CF digest covers the DSPI RX buffer filled with DSP replies.
             // Updated again 2026-10-06 for the dn2-audio-ready-2026-10-06 snapshot (pSLC 32 GB card, no SLC dialog; docs/findings/14): the CF state changed, the PCM and the DSP export did not.
             // Updated 2026-10-07: reference state rebuilt from cold start (`mise run emu:ready -- dn2`, tools/ready.py: DSP state from the .syx alone) with the DSPI1 eDMA ch14 board fix. The old state had the DC-blocker coefficient (DM 0x24f378) corrupted by the pre-ed02999 SIMD Type 17 bug. CF digest, PCM and DSP export are all new.
+            // re-pinned 2026-10-13: forced IRQ delivery on by default (Em approved)
             assert_eq!(
                 runtime.emulator.state_digest().unwrap(),
-                "55dc699e233f37735b83ce886a6fe8951a6c5984abf21057462501d73227e4e0"
+                "8914ba7b7ba8f00fa544c21193df64fed614ed72c51f10f0de39c88695fa1561"
             );
             let audio = runtime.audio.as_ref().unwrap();
             let pcm: Vec<u8> = captured(audio)
@@ -1145,7 +1240,7 @@ mod coupled {
             assert_eq!(captured(audio).len(), 72_896);
             assert_eq!(
                 format!("{:x}", Sha256::digest(&pcm)),
-                "b3f5230f6c266bb1b77a28bcb4191f8be409e632dfac6a73a77e39eac724d03f"
+                "826db0d1de8f7738ac5d0c4579198439bb5a0102b4b9d8bc36d93fa07ce15843"
             );
             if let Some(path) = std::env::var_os("DIGI_COUPLED_DSP_EXPORT") {
                 std::fs::write(path, audio.handle.export().0).unwrap();
@@ -1153,7 +1248,7 @@ mod coupled {
             // Cold-start snapshot: the export is the DSP state after the 100M-instruction workload from the rebuilt ready state.
             assert_eq!(
                 format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "4dc48019eb2672fad747992301d0e417bf4a9d8b376b7181f1e803a9dcce389b"
+                "5cf54eba4b404acfae2e15eae5ef26a12459c171e1a6440a27cc2aa48a692fc6"
             );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());

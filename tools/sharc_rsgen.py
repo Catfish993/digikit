@@ -446,16 +446,21 @@ def route(
     write-back), else the dispatcher."""
     arms = []
     starts = sorted(by_start)
+    # Chained successors (blocks of other regions) are one out-of-line
+    # function per distinct set, called for every PC that is not a body of
+    # this region: the compare tree is not repeated at every exit site.
+    fallback = "break 'r crate::EXIT_NEXT,"
     if succ is not None:
         starts = [p for p in starts if p in succ or p == body.block.start]
         if chain is not None:
+            ks = []
             for pc in sorted(succ):
                 if pc in by_start:
                     continue
-                k = chain.setdefault(pc, len(chain))
-                arms.append(
-                    "%s    %#x => break 'r crate::EXIT_CHAIN + %d," % (indent, pc, k)
-                )
+                ks.append((pc, chain.setdefault(pc, len(chain))))
+            if ks:
+                fn = TAIL.chain_fn(tuple(ks))
+                fallback = "break 'r %s(rf.pc as u32)," % fn
     for pc in starts:
         targets = by_start[pc]  # [Body]
         if pc == body.block.start and (body.mode1 is None or body.mode1 == mode1_after):
@@ -481,17 +486,62 @@ def route(
             % (indent, pc, MODE1, sel)
         )
     if not arms:
-        return [indent + "break 'r crate::EXIT_NEXT;"]
+        return [indent + fallback.replace(",", ";")]
     return (
         [indent + "match rf.pc as u32 {"]
         + arms
-        + [indent + "    _ => break 'r crate::EXIT_NEXT,", indent + "}"]
+        + [indent + "    _ => " + fallback, indent + "}"]
     )
+
+
+class Tail:
+    """What the region function being generated shares between its exit
+    sites: the out-of-line chain functions and whether any site traps (one
+    trap tail per region: the sites only record the PC, the trap and the
+    pending transfer)."""
+
+    def __init__(self) -> None:
+        self.name = ""
+        self.trap = False
+        self.fns: dict[tuple, str] = {}
+
+    def reset(self, name: str) -> None:
+        self.name = name
+        self.trap = False
+        self.fns = {}
+
+    def chain_fn(self, ks: tuple) -> str:
+        if ks not in self.fns:
+            self.fns[ks] = "%s_c%d" % (self.name, len(self.fns))
+        return self.fns[ks]
+
+    def chain_fn_text(self) -> str:
+        out = []
+        for ks, name in self.fns.items():
+            out.append("#[inline(never)]")
+            out.append("fn %s(pc: u32) -> u32 {" % name)
+            out.append("    match pc {")
+            for pc, k in ks:
+                out.append("        %#x => crate::EXIT_CHAIN + %d," % (pc, k))
+            out.append("        _ => crate::EXIT_NEXT,")
+            out.append("    }")
+            out.append("}")
+            out.append("")
+        return "\n".join(out)
+
+
+TAIL = Tail()
 
 
 # --split-budget: two copies of each body (one without per-step budget checks);
 # about 2% faster, about twice the generated source and compile time. Off by default.
 SPLIT_BUDGET = False
+# --step-budget: with the models on, check the budget before every instruction
+# (the pre-2026-10-10 form). Off: a body is entered only when it fits under the
+# limit, else the call ends at once with no progress and the interpreter runs
+# up to the limit (exact state; every early exit edge costs about 80 bytes of
+# register fix-up, so the per-instruction form was 12% of the AOT code).
+STEP_BUDGET = False
 TR = None  # the translator of the current generation (tr_logs)
 
 
@@ -542,11 +592,10 @@ def body_lines(
     *,
     allow_unknown: bool = False,
 ) -> list[str]:
-    import sharc_transpile as tp
 
     ind = "            "
     n = len(body.steps)
-    known = [] if allow_unknown else sorted(body.read_any - tp.PARTIAL_REGS)
+    known = [] if allow_unknown else sorted(body.read_any)
     lines = [
         "        %d => {" % body.idx,
         "            // %#x%s"
@@ -561,6 +610,7 @@ def body_lines(
             "            if (%s) != u32::MAX {"
             % " & ".join("rf.r[%d].m" % c for c in known)
         )
+        lines.append("                core::hint::cold_path();")
         lines.append("                break 'r crate::EXIT_BUDGET;")
         lines.append("            }")
     lines += [
@@ -568,13 +618,14 @@ def body_lines(
         "            // Entered at the start with no delayed transfer pending (the",
         "            // dispatcher single-steps otherwise).",
     ]
-    if MODEL_SAFE_ONLY:
+    if MODEL_SAFE_ONLY and STEP_BUDGET:
         # With the models on, the limit is often the core timer's (the
         # instruction before its expiry), which a whole body would often
         # overshoot: then check before each instruction and stop there, so
         # the interpreter only runs from the limit on.
         lines += [
             "            if rf.pending.is_some() {",
+            "                core::hint::cold_path();",
             "                break 'r crate::EXIT_BUDGET;",
             "            }",
             "            let short = s.icount + ic + %d > s.limit;" % n,
@@ -582,6 +633,7 @@ def body_lines(
     else:
         lines += [
             "            if s.icount + ic + %d > s.limit || rf.pending.is_some() {" % n,
+            "                core::hint::cold_path();",
             "                break 'r crate::EXIT_BUDGET;",
             "            }",
         ]
@@ -592,9 +644,14 @@ def body_lines(
             body.steps
         ):
             lines.append(ind + "// %#x %s" % (pc, insn.type_name))
-            if MODEL_SAFE_ONLY and checked:
-                lines.append(ind + "if short && s.icount + ic >= s.limit {")
-                lines.append(ind + "    break 'r crate::EXIT_BUDGET;")
+            if MODEL_SAFE_ONLY and STEP_BUDGET and checked:
+                # `short` (the limit falls inside this body) is rare: the
+                # exact stop test is out of line.
+                lines.append(ind + "if short {")
+                lines.append(ind + "    core::hint::cold_path();")
+                lines.append(ind + "    if s.icount + ic >= s.limit {")
+                lines.append(ind + "        break 'r crate::EXIT_BUDGET;")
+                lines.append(ind + "    }")
                 lines.append(ind + "}")
             for c in sorted(o):
                 lines.append(ind + "rf.o[%d] = rf.r[%d];" % (c, c))
@@ -635,17 +692,20 @@ def body_lines(
                 lines.append(ind + "    let t = Trap(0);")
             else:
                 lines.append(ind + "if let Err(t) = %s(s, &mut rf) {" % path)
+                lines.append(ind + "    core::hint::cold_path();")
             for c in sorted(w):
                 lines.append(ind + "    rf.r[%d] = sv%d;" % (c, c))
             if loopy:
                 lines.append(ind + "    s.loop_depth = ld%d;" % i)
             if banky:
                 lines.append(ind + "    s.bank_requested_mask = bk%d;" % i)
-            lines.append(ind + "    rf.pc = %#x;" % pc)
-            lines.append(
-                ind + "    rf.pending = %s;" % ("None" if no_pending else "pd0")
-            )
-            lines.append(ind + "    s.trap = Some(t);")
+            # One trap tail per region (region_text): the site records the
+            # PC, the trap and the pending transfer.
+            TAIL.trap = True
+            lines.append(ind + "    tp = %#x;" % pc)
+            if not no_pending:
+                lines.append(ind + "    tpd = pd0;")
+            lines.append(ind + "    tt = t;")
             lines.append(ind + "    break 'r crate::EXIT_TRAP;")
             lines.append(ind + "}")
             if tr_logs(path):
@@ -657,7 +717,7 @@ def body_lines(
             )
         return lines
 
-    if MODEL_SAFE_ONLY and SPLIT_BUDGET:
+    if MODEL_SAFE_ONLY and STEP_BUDGET and SPLIT_BUDGET:
         # Two copies of the steps: when the body fits under the limit (the
         # usual case) the copy without per-step budget checks runs; a body
         # that would cross the limit runs the checked copy, which stops
@@ -705,11 +765,19 @@ def region_text(
                 else set(range(128))
             )
 
-    known = (
-        []
-        if allow_unknown
-        else sorted(set().union(*(b.read_any for b in bodies)) - tp.PARTIAL_REGS)
-    )
+    # The flag registers (ASTATX, ASTATY, STKYX, STKYY) are required fully
+    # known at entry like every other register read, so their known-bit
+    # logic folds; an update that would leave a bit unknown is rf_set's
+    # cold exit (docs/design/aot-mask-free.md section 7).
+    known = [] if allow_unknown else sorted(set().union(*(b.read_any for b in bodies)))
+    TAIL.reset(name)
+    chain: dict[int, int] | None = {} if CHAINING else None
+    body_chunks: list[str] = []
+    for b in bodies:
+        succ = None if succ_of is None else succ_of.get(b.block.start, set())
+        body_chunks.extend(
+            body_lines(b, by_start, succ, chain, allow_unknown=allow_unknown)
+        )
     lines = [
         "#[inline(never)]",
         "pub fn %s(s: &mut St, mut at: u32) -> u32 {" % name,
@@ -721,6 +789,7 @@ def region_text(
         lines.append(
             "    if (%s) != u32::MAX {" % " & ".join("s.r[%d].m" % c for c in known)
         )
+        lines.append("        core::hint::cold_path();")
         lines.append(
             "        return %s_unknown(s, at);" % name
             if unknown_fallback
@@ -729,6 +798,7 @@ def region_text(
         lines.append("    }")
     # Bodies start with no delayed transfer pending: so does the region.
     lines.append("    if s.pending.is_some() {")
+    lines.append("        core::hint::cold_path();")
     lines.append("        return crate::EXIT_BUDGET;")
     lines.append("    }")
     # Registers that are PartialConst in practice: their usual known-bit
@@ -756,17 +826,33 @@ def region_text(
     lines += [
         "    // Instructions completed in this call (s.icount at the exit).",
         "    let mut ic: u64 = 0;",
+    ]
+    if TAIL.trap:
+        lines += [
+            "    // The trap that ended the call (the one trap tail below).",
+            "    let mut tp: Int = 0;",
+            "    let mut tt = Trap(0);",
+            "    let mut tpd: Option<Pending> = None;",
+        ]
+    lines += [
         "    let exit: u32 = 'r: loop {",
         "        match at {",
     ]
-    chain: dict[int, int] | None = {} if CHAINING else None
-    for b in bodies:
-        succ = None if succ_of is None else succ_of.get(b.block.start, set())
-        lines.extend(body_lines(b, by_start, succ, chain, allow_unknown=allow_unknown))
+    lines.extend(body_chunks)
     lines += [
         "            _ => break 'r crate::EXIT_BUDGET,",
         "        }",
         "    };",
+    ]
+    if TAIL.trap:
+        lines += [
+            "    if exit == crate::EXIT_TRAP {",
+            "        rf.pc = tp;",
+            "        rf.pending = tpd;",
+            "        s.trap = Some(tt);",
+            "    }",
+        ]
+    lines += [
         "    s.icount += ic;",
         "    s.pc_sw = rf.pc;",
         "    s.pending = rf.pending;",
@@ -785,25 +871,35 @@ def region_text(
     if chain:
         # A block of another region follows: call it directly (a tail call)
         # unless its PC is in the engine's run-time stop set; the chain length
-        # is bounded in case it is not one.
+        # is bounded in case it is not one. The links are two tables, so the
+        # stop test and the call are code once, not once per link.
+        links = sorted(chain.items(), key=lambda kv: kv[1])
         lines += [
             "    if exit >= crate::EXIT_CHAIN {",
             "        if s.chain >= crate::CHAIN_MAX {",
             "            return crate::EXIT_NEXT;",
             "        }",
             "        s.chain += 1;",
-            "        return match exit - crate::EXIT_CHAIN {",
-        ]
-        for pc, k in sorted(chain.items(), key=lambda kv: kv[1]):
+            "        static PCS: [u32; %d] = [%s];"
+            % (
+                len(links),
+                ", ".join("%#x" % pc for pc, _k in links),
+            ),
+            "        static FNS: [fn(&mut St) -> u32; %d] = [%s];"
+            % (
+                len(links),
+                ", ".join("@@B_%X@@" % pc for pc, _k in links),
+            ),
+            "        let k = (exit - crate::EXIT_CHAIN) as usize;",
+            "        if k >= PCS.len() {",
+            "            return crate::EXIT_NEXT;",
+            "        }",
             # The engine's stop set holds every PC the fast tier wants control
             # at: a link into one ends the chain (the PC is already written back).
-            lines.append(
-                "            %d => if s.chain_stops_at(%#x) { crate::EXIT_NEXT } else { @@B_%X@@(s) },"
-                % (k, pc, pc)
-            )
-        lines += [
-            "            _ => crate::EXIT_NEXT,",
-            "        };",
+            "        if s.chain_stops_at(PCS[k]) {",
+            "            return crate::EXIT_NEXT;",
+            "        }",
+            "        return FNS[k](s);",
             "    }",
         ]
     lines += [
@@ -811,6 +907,8 @@ def region_text(
         "}",
     ]
     text = "\n".join(lines)
+    if TAIL.fns:
+        text += "\n\n" + TAIL.chain_fn_text()
     if unknown_fallback and known:
         # Keep the usual known-mask path; only a rejected entry uses the
         # same instruction bodies with runtime masks and full writeback.
@@ -982,8 +1080,8 @@ MODEL_SAFE_STARTS: set[int] = set()
 UNSAFE_REASONS: dict[int, str] = {}
 # Regions may span program-db functions (a call and its callee's blocks).
 CROSS_FUNCTIONS = True
-# Partial registers whose usual mask block code requires at entry (none:
-# the masks vary too much between entries to be worth a bail).
+# Partial registers whose usual mask block code requires at entry (none: the
+# flag registers are required fully known at entry, see region_text).
 REQUIRE_MASKS: set[int] = set()
 # Direct calls between regions (--chain; slower on the drive3 frames:
 # the dispatcher's indirect call predicts well).
@@ -1489,6 +1587,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--no-chain", action="store_true", help=argparse.SUPPRESS)
     p.add_argument(
+        "--step-budget",
+        action="store_true",
+        help="check the budget before every instruction of a body (default: once "
+        "per body or loop iteration)",
+    )
+    p.add_argument(
         "--split-budget",
         action="store_true",
         help="two copies of each block body, one without per-step budget checks "
@@ -1582,7 +1686,9 @@ def main(argv: list[str] | None = None) -> int:
         starts = [st for st in starts if not lo <= st < hi]
     starts = sorted(set(starts))
     global CHAINING, MODEL_SAFE_ONLY, GEN_EXPLICIT_MEMORY_MODEL, SPLIT_BUDGET
+    global STEP_BUDGET
     SPLIT_BUDGET = args.split_budget
+    STEP_BUDGET = args.step_budget
     GEN_EXPLICIT_MEMORY_MODEL = bool(args.explicit_memory_model)
     CHAINING = args.chain and not args.no_chain
     MODEL_SAFE_ONLY = args.model_safe

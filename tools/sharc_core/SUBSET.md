@@ -90,7 +90,7 @@ call is allowed only inside an observability call.
 result's destination is a tagged union (`ComputeDest`: register number,
 special-register name, or a tuple of those; a Rust enum), and only
 `compute._apply_compute` and `compute._apply_compute_pey` match on it
-with `isinstance(rn, str | tuple | int)` (`DEST_MATCH`).
+with `isinstance(rn, str | tuple | int)` (`DEST_MATCH`); `_shift_immediate_pey` matches the same way to refuse bit FIFO destinations in SIMD.
 
 **Records.** Fixed-shape data is a `NamedTuple` (`FlagUpdate`,
 `MultSpec`, `MultifnOperands`) or a frozen dataclass of the lattice. A
@@ -151,14 +151,20 @@ translation reproduces rather than fixes:
   host's default NaN and on how the Python version packs a NaN into
   float32. A translation should pick one pattern and the core should
   then name it; until then such results are not bit-exact across hosts.
-- Denormals are not flushed, except where an operation's page documents
-  it and the helper does it: `scalb` and `float ... by`, `copysign`,
-  `rnd`, `mant`, `logb`, the recips/rsqrts seeds. The 40-bit extended
-  format and MODE1.RND32 are not modelled.
+- Denormals follow the manuals (docs/findings/15, "Denormal flush"): every
+  float input is read through `_float32`, which turns a denormal into a zero
+  of the same sign; every float result goes through `_float32_result`, which
+  returns a zero of the sign for a post-rounded denormal (magnitude below
+  2**-126 - 2**-151) and reports it as underflowed (the multiplier's MU).
+  `_flush_denormal_bits` and `_float32_result` are plain subset code; a
+  translation may replace a whole operation by a fast path only if it flushes
+  the same way (`bnd.rs` `float_binary_fast!`, `_float_multiply`). The 40-bit
+  extended format and MODE1.RND32 are not modelled.
 - `fix` rounds to nearest even unless MODE1.TRUNCATE; `trunc` truncates;
   out-of-range results saturate or give all ones according to
   MODE1.ALUSAT; an unknown mode bit gives an Unknown result.
-- 64-bit operations compute in double directly, with no flush.
+- 64-bit operations compute in double directly, with no flush (a known gap: no
+  analysed firmware executes one).
 
 **Flags.** A compute returns its ASTATX/ASTATY effect as a `FlagUpdate`
 (define mask and bits, forget mask, and the CACC bit of a known compare),

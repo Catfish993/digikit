@@ -43,6 +43,16 @@ struct Joins {
 }
 
 impl Joins {
+    /// A loop's back edge enters the loop head with MODE1 as the body leaves
+    /// it. The head was lowered under the MODE1 its other edges saw, so a
+    /// body that changes MODE1 (a SET or CLEAR of an enable or rounding bit,
+    /// PEYEN) would run its next iteration under different bits.
+    fn back_edge_mode1(&mut self, head: u32, mode1: u32) {
+        if self.mode1.get(&head).is_some_and(|&m| m != mode1) {
+            self.mode1_conflict = true;
+        }
+    }
+
     fn edge(&mut self, pc: u32, abs: &[Option<Abs>], fm: u32, fg: u32, mode1: u32) {
         match self.mode1.get(&pc) {
             Some(&m) if m != mode1 => self.mode1_conflict = true,
@@ -135,6 +145,7 @@ impl Lower {
             self.written_iter[c] = false;
         }
         self.conv.clear();
+        self.ftz_ok.clear();
         self.exit_id = None;
         self.lw = [None; 3];
         self.cfg_x().nblock = 0;
@@ -197,6 +208,8 @@ impl Lower {
         self.var_abs = (0..NREGS as usize).map(|c| self.init_abs_pub(c)).collect();
         self.loop_stride_out = vec![[None; NREGS as usize]; st.loops.len()];
         self.loop_back_seen_out = vec![false; st.loops.len()];
+        self.reg_lit = vec![None; st.loops.len()];
+        self.has_call_targets = !st.call_targets.is_empty();
         self.loop_in = vec![Vec::new(); st.loops.len()];
         self.loop_head = vec![Vec::new(); st.loops.len()];
         let budget = self.new_val(Ty::I32, None);
@@ -330,6 +343,9 @@ impl Lower {
         if joins.mode1_conflict {
             return refuse("MODE1 differs where paths join");
         }
+        if self.pass >= 2 && self.plan.reg_sym != self.reg_sym {
+            return refuse("register loop count source not stable");
+        }
         for &pc in &st.call_targets {
             if let Some(a) = joins.abs.get(&pc) {
                 self.entry_abs_out.insert(pc, a.clone());
@@ -392,6 +408,7 @@ impl Lower {
                 self.note_written(st, pc);
                 self.cfg_x().nblock += 1;
                 if let Some((i, l)) = st.loops.iter().enumerate().find(|(_, l)| l.end == pc) {
+                    joins.back_edge_mode1(l.start, self.mode1_cur);
                     self.loop_back(st, i, l, v, label_of, stubs, &active)?;
                     if l.dormant {
                         *open = false;
@@ -405,6 +422,7 @@ impl Lower {
                     LoopCount::Lit(n) => self.ci(n),
                     LoopCount::Reg(code) => {
                         let c = self.rd_i(code)?;
+                        self.note_reg_count(st, *li as usize, c);
                         let z = self.ci(0);
                         let ok = self.bin(Bin::Ne, c, z);
                         self.guard(ok);
@@ -530,12 +548,6 @@ impl Lower {
                 } else {
                     let cur = self.var_abs.clone();
                     let (fm, fg) = (self.fm_static, self.fg_static);
-                    if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-                        eprintln!(
-                            "abs: pass {} edge {pc:#x} -> {target:#x}: I6 {:?} I7 {:?}",
-                            self.pass, cur[22], cur[23]
-                        );
-                    }
                     joins.edge(*target, &cur, fm, fg, self.mode1_cur);
                     label_of[target]
                 };
@@ -586,7 +598,45 @@ impl Lower {
         match st.loops[i].count {
             LoopCount::Lit(n) => Count::Lit(n as i64),
             LoopCount::Entry if i + 1 == n_entry => Count::Entry,
+            LoopCount::Reg(_) => match (self.reg_lit.get(i).copied().flatten(), self.reg_sym) {
+                (Some(n), _) => Count::Lit(n),
+                (_, Some((j, _, _))) if j == i => Count::Entry,
+                _ => Count::Unknown,
+            },
             _ => Count::Unknown,
+        }
+    }
+
+    /// At the DO of loop I with the count in C: when the abstract value says
+    /// the count exactly (a constant, or `R[c] + k` at region entry), the
+    /// loop has a known trip count. A region with no entry loop has one
+    /// symbolic count (its N): the first loop of that kind.
+    fn note_reg_count(&mut self, st: &Structure, i: usize, c: Val) {
+        // SHARC_FAST_NOREGN: register counts stay unknown (A/B).
+        static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *OFF.get_or_init(|| std::env::var_os("SHARC_FAST_NOREGN").is_some()) {
+            return;
+        }
+        // A region with call targets placed before their callers measures
+        // the ranges flowing into them over several passes; a count source
+        // that appears in a later pass would keep them from settling.
+        if !st.call_targets.is_empty() {
+            return;
+        }
+        let Some(a) = self.abs[c as usize] else {
+            return;
+        };
+        if a.lo != a.hi || a.ts != 0 || a.nf != 0 {
+            return;
+        }
+        match a.base {
+            Base::None if (1..=u32::MAX as i64).contains(&a.lo) => self.reg_lit[i] = Some(a.lo),
+            Base::Reg(r)
+                if self.reg_sym.is_none() && st.loops.iter().all(|l| !l.entry()) =>
+            {
+                self.reg_sym = Some((i, r, a.lo));
+            }
+            _ => {}
         }
     }
 
@@ -620,19 +670,6 @@ impl Lower {
                 }
             };
         }
-        if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-            for c in 0..NREGS as usize {
-                if w >> c & 1 == 1 {
-                    eprintln!(
-                        "abs: pass {} loop {i} enter r{c}: in {:?} stride {:?} -> head {:?}",
-                        self.pass,
-                        in_abs[c],
-                        self.plan.loop_stride.get(i).and_then(|a| a[c]),
-                        self.var_abs[c]
-                    );
-                }
-            }
-        }
         self.loop_in[i] = in_abs;
         self.loop_head[i] = self.var_abs.clone();
     }
@@ -664,14 +701,6 @@ impl Lower {
                 (Some(e), Some(h)) => e.step_from(h),
                 _ => None,
             };
-            if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-                eprintln!(
-                    "abs: pass {} loop {i} back r{c}: end {:?} head {:?} -> step {measured:?}",
-                    self.pass,
-                    self.var_abs[c],
-                    self.loop_head[i].get(c)
-                );
-            }
             self.loop_stride_out[i][c] = measured;
             if self.pass >= 2 && self.plan.loop_stride.get(i).map(|a| a[c]) != Some(measured) {
                 return refuse(format!("loop at {:#x}: register step not stable", l.start));

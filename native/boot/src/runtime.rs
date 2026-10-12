@@ -17,8 +17,8 @@ use crate::telemetry::{DiagnosticReport, Mark, Position, Recorder};
 use coldfire::fused::Loop;
 
 const CHUNK_MAX: u32 = 250_000;
-const CAPTURE_BUS_TRACE: bool = cfg!(feature = "diagnostic-trace");
-const ACCELERATE_RAM_CLEAR: bool = !CAPTURE_BUS_TRACE && !cfg!(feature = "reference-ram-clear");
+const CAPTURE_BUS_TRACE: bool = false;
+const ACCELERATE_RAM_CLEAR: bool = true;
 const SET_PIXEL_SIG: &str = "2f032f02206f000c222f0010202f00144a816d4c4a806d48b2a800046c42b0a800086c3c43e8000c761f4c1118002400ea82c680202f001820680010d282e589";
 const TCD34_BASE: u32 = 0xfc04_5440;
 const TCD34_DADDR: u32 = TCD34_BASE + 0x10;
@@ -35,6 +35,8 @@ pub struct Status {
     pub error: Option<String>,
     pub frame_revision: u64,
     pub frame_source: Option<String>,
+    /// Front-panel LED revision (see `panel_leds`); `Snapshot::leds` follows it.
+    pub led_revision: u32,
     pub main_ui_reached: bool,
     pub filesystem_verified: Option<bool>,
     pub input_ready: bool,
@@ -58,6 +60,18 @@ pub struct Status {
 pub struct Snapshot {
     pub status: Status,
     pub frame: Option<Vec<u8>>,
+    /// The 64 panel LED values as 128 hex digits, only when `status.led_revision` changed since the
+    /// last snapshot that carried them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leds: Option<String>,
+    /// The 64 RGB LED values (r, g, b each) as 384 hex digits, sent with `leds` once any is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rgb: Option<String>,
+    /// Set when `emu_step` only reported because something else steps the
+    /// guest (free running, paused, a job); the webview then polls once per
+    /// display frame instead of at once.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub polled: bool,
 }
 
 /// Persistent, bounded Oracle diagnostic state. It has no host I/O and does
@@ -111,6 +125,8 @@ pub struct Emulator {
     frame_source: Option<String>,
     frame_revision: u64,
     emitted_revision: Option<u64>,
+    panel_leds: crate::panel_leds::PanelLeds,
+    emitted_led_revision: u32,
     // A restore has a new host observer. This is intentionally not saved:
     // serializing it would change a load/save state digest.
     replay_restored_frame: bool,
@@ -434,6 +450,8 @@ impl Emulator {
             frame_source: None,
             frame_revision: 0,
             emitted_revision: None,
+            panel_leds: Default::default(),
+            emitted_led_revision: 0,
             replay_restored_frame: false,
             delivery_counts: [0; 256],
             deliveries: Vec::new(),
@@ -556,7 +574,17 @@ impl Emulator {
             self.emitted_revision = Some(self.frame_revision);
             self.replay_restored_frame = false;
         }
-        Snapshot { status, frame }
+        let led_changed = self.emitted_led_revision != self.panel_leds.revision;
+        if led_changed {
+            self.emitted_led_revision = self.panel_leds.revision;
+        }
+        Snapshot {
+            status,
+            frame,
+            leds: led_changed.then(|| self.panel_leds.leds_hex()),
+            rgb: led_changed.then(|| self.panel_leds.rgb_hex()).flatten(),
+            polled: false,
+        }
     }
 
     /// The latest OLED frame and its revision, without consuming it: unlike
@@ -663,6 +691,10 @@ impl Emulator {
             return Ok(());
         }
         self.queue_packet(0x20 | channel, next)?;
+        panel_tx_write(
+            self.cpu.icount,
+            &format!("@button {code} {}", if down { 'd' } else { 'u' }),
+        );
         self.held_masks[channel as usize] = next;
         #[cfg(feature = "diagnostic-events")]
         self.event(EventKind::Input, (u64::from(code) << 1) | u64::from(down));
@@ -728,6 +760,7 @@ impl Emulator {
             "booting"
         };
         Status {
+            led_revision: self.panel_leds.revision,
             device: self.device.clone(),
             version: self.version.clone(),
             icount: self.cpu.icount,
@@ -1486,7 +1519,12 @@ impl Emulator {
                 (u64::from(address) << 32) | bytes as u64,
             );
         }
-        let uart_bytes = self.bus.board.take_uart_tx().len() as u64;
+        let uart = self.bus.board.take_uart_tx();
+        let uart_bytes = uart.len() as u64;
+        if uart_bytes != 0 {
+            panel_tx_log(self.cpu.icount, &uart);
+            self.panel_leds.feed(&uart);
+        }
         self.uart_bytes += uart_bytes;
         if uart_bytes != 0 {
             self.mark(Mark::UartTx, "after_instruction");
@@ -2516,7 +2554,6 @@ mod tests {
         assert_eq!(runtime.delivery_counts[timer_vector as usize], 1);
     }
 
-    #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
     #[test]
     fn ram_clear_batches_match_interpreter_across_chunks_pages_and_final_flags() {
         for file in ["Digitakt_II_OS1.16.syx", "Digitone_II_OS1.11.syx"] {
@@ -2589,7 +2626,6 @@ mod tests {
         }
     }
 
-    #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
     #[test]
     fn ram_clear_declines_modified_code_inputs_active_timers_and_invalid_state() {
         let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
@@ -2907,4 +2943,29 @@ mod tests {
         assert!(runtime.turn(1, i32::MAX).is_err());
         assert_eq!(runtime.input_packets, before);
     }
+}
+
+/// `DIGI_PANEL_TX_LOG=<path>`: append one line `<icount> <hex bytes>` per UART8 drain
+/// (front-panel LED stream), and `<icount> @button <code> <d|u>` when a panel button is injected.
+/// The path is read once; unset costs one atomic load per drain.
+fn panel_tx_write(icount: u64, text: &str) {
+    use std::io::Write;
+    use std::sync::{Mutex, OnceLock};
+    static SINK: OnceLock<Option<Mutex<std::io::BufWriter<std::fs::File>>>> = OnceLock::new();
+    let sink = SINK.get_or_init(|| {
+        let path = std::env::var_os("DIGI_PANEL_TX_LOG")?;
+        std::fs::File::create(path)
+            .ok()
+            .map(|f| Mutex::new(std::io::BufWriter::new(f)))
+    });
+    if let Some(sink) = sink {
+        let mut w = sink.lock().unwrap();
+        let _ = writeln!(w, "{icount} {text}");
+        let _ = w.flush();
+    }
+}
+
+fn panel_tx_log(icount: u64, bytes: &[u8]) {
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    panel_tx_write(icount, &hex);
 }

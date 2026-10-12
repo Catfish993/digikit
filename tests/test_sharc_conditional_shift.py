@@ -117,10 +117,9 @@ def test_parallel_store_reads_old_shift_destination_value():
     assert result.uregs[st.UREG_CODES["R7"]] == st.Const(0x24466880)
 
 
-@pytest.mark.parametrize("mode", [st.Const(1 << 21), st.Unknown("MODE1 unknown")])
-def test_conditional_simd_or_unknown_mode_stays_fail_closed(mode):
+def test_conditional_unknown_mode_stays_fail_closed():
     initial = state(st.PartialConst(0x00FFFFFF, 0x00041801))
-    initial.uregs[st.UREG_CODES["MODE1"]] = mode
+    initial.uregs[st.UREG_CODES["MODE1"]] = st.Unknown("MODE1 unknown")
     before = dict(initial.uregs)
     result = execute(initial, synthetic_fields())
     assert result.stopped == "unsupported conditional SIMD Type6a"
@@ -199,8 +198,8 @@ def test_conditional_type6b_unknown_or_simd_predicate_stops_unchanged():
     result = execute_6b(initial, synthetic_6b_fields(0))
     assert result.stopped == "unknown conditional Type6b predicate"
     assert result.uregs == before
-    simd = state(st.Const(0))
-    simd.uregs[st.UREG_CODES["MODE1"]] = st.Const(1 << 21)
-    assert execute_6b(simd, synthetic_6b_fields(0)).stopped == (
+    unknown_mode = state(st.Const(0))
+    unknown_mode.uregs[st.UREG_CODES["MODE1"]] = st.Unknown("MODE1 unknown")
+    assert execute_6b(unknown_mode, synthetic_6b_fields(0)).stopped == (
         "unsupported conditional SIMD Type6b"
     )

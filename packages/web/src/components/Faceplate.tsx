@@ -1,10 +1,13 @@
-import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { panels } from '../data/faceplates';
 import { localReadyFirmwareSha256 } from '../data/device-profiles';
 import { browserRuntime, drawFrame, nativeRuntime, type EmulatorRuntime, type NativeAudioStatus, type RuntimeUpdate } from '../runtime/runtime';
+import { LED_COUNT, defaultLedColor, ledLight, parseLeds, WARM_WHITE } from '../runtime/leds';
 import { PcmSink, resumeOnNextGesture } from '../runtime/audio';
 import { fetchLocalInputs, localManifest, sha256Hex } from '../runtime/local-inputs';
 import CoupledAudio, { startCoupled } from './CoupledAudio';
+import { benchRequested, runBench } from '../runtime/bench';
+import { cardLine, startCard, topLevelWavs, type CardStatus } from '../runtime/cards';
 import './faceplate.css';
 
 const iconPaths: Record<string, string> = {
@@ -19,8 +22,12 @@ const iconPaths: Record<string, string> = {
 function Icon(props: { name: string }) { return <g class="icon" aria-hidden="true"><path class="icon-stroke" d={iconPaths[props.name] ?? ''} /><Show when={props.name === 'settings'}><circle class="icon-stroke" cx="12" cy="12" r="3" /></Show><Show when={props.name === 'perform'}><circle class="icon-fill" cx="5.5" cy="17.5" r="2.6" /></Show><Show when={props.name === 'arp'}><circle class="icon-fill" cx="6" cy="18.5" r="2.6"/><circle class="icon-fill" cx="16" cy="16.5" r="2.6"/><path class="icon-fill" d="M8.4 5.8 L18.4 3.8 V7 L8.4 9 Z" /></Show><Show when={props.name === 'noteedit'}><circle class="icon-fill" cx="11.8" cy="19" r="2.5"/><circle class="icon-fill" cx="11.8" cy="13" r="1.5"/><circle class="icon-fill" cx="11.8" cy="9" r="1.5"/><circle class="icon-fill" cx="11.8" cy="5" r="1.5"/></Show><Show when={props.name === 'unison'}><circle class="icon-stroke" cx="5" cy="5" r="2.2"/><circle class="icon-stroke" cx="12" cy="4" r="2.2"/><circle class="icon-stroke" cx="19" cy="5" r="2.2"/><circle class="icon-fill" cx="12" cy="19" r="2.6"/></Show><Show when={props.name === 'keyboard'}><rect class="icon-fill" x="6" y="3" width="3" height="11"/><rect class="icon-fill" x="10.5" y="3" width="3" height="11"/><rect class="icon-fill" x="15" y="3" width="3" height="11"/></Show><Show when={props.name === 'headphones'}><rect class="icon-fill" x="3" y="13.5" width="4.5" height="7.5"/><rect class="icon-fill" x="16.5" y="13.5" width="4.5" height="7.5"/></Show></g>; }
 
 export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
+  if (benchRequested()) { onMount(() => { void runBench(); }); return <output id="bench-status">bench mode: see window.__bench</output>; }
   const [device, setDevice] = createSignal<'dt2' | 'dn2'>('dt2');
   const [pressed, setPressed] = createSignal(new Set<number>());
+  const [leds, setLeds] = createSignal(new Uint8Array(LED_COUNT));
+  // `?leds=<128 hex digits>` shows a fixed LED state without a running emulator (a styling aid; a loaded firmware replaces it).
+  onMount(() => { const preview = new URLSearchParams(location.search).get('leds'); if (preview) setLeds(parseLeds(preview)); });
   const [status, setStatus] = createSignal('Choose a firmware image to start the diagnostic runtime.');
   const [reportAvailable, setReportAvailable] = createSignal(false);
   const [paused, setPaused] = createSignal(true);
@@ -31,29 +38,48 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   const [adopted, setAdopted] = createSignal<{ sink: PcmSink; note: string }>();
   const [nativeAudio, setNativeAudio] = createSignal<NativeAudioStatus>();
   const [recentRate, setRecentRate] = createSignal<number>();
+  // Samples for the Digitakt II: desktop only, where the controller builds the card (runtime/cards.ts).
+  const [cardStatus, setCardStatus] = createSignal<CardStatus>();
+  const [cardBusy, setCardBusy] = createSignal(false);
+  const [cardNote, setCardNote] = createSignal('');
+  const [runtimeSignal, setRuntimeSignal] = createSignal<EmulatorRuntime | undefined>(undefined);
+  let cardTimer: number | undefined;
+  let cardInput: HTMLInputElement | undefined;
   let lastAudio: { produced: number; wall: number } | undefined;
-  const runtime = () => activeRuntime ?? props.runtime;
+  const runtime = () => runtimeSignal() ?? activeRuntime ?? props.runtime;
   let activeRuntime: EmulatorRuntime | undefined;
   let runtimeReady: Promise<EmulatorRuntime | undefined> | undefined;
   let canvas: HTMLCanvasElement | undefined;
   const pointers = new Map<number, { code?: number; encoder?: number; y: number; pushed?: number; moved: boolean; target?: SVGGElement }>();
   const owners = new Map<number, number>();
+  // Encoders are endless and the firmware reports no angle: the notch angle is UI-only (24 detents per turn).
+  const [angles, setAngles] = createSignal<Record<number, number>>({});
+  const angle = (encoder: number | undefined) => (encoder ? angles()[encoder] ?? 0 : 0);
+  const spin = (encoder: number, detents: number) => setAngles((old) => ({ ...old, [encoder]: (((old[encoder] ?? 0) + detents * 15) % 360 + 360) % 360 }));
+  // A mouse cannot hold FUNC while clicking another key, and the firmware only sees a chord when FUNC
+  // stays down across the other key's press and release (docs/findings/03-ui-and-panel.md). A click
+  // on FUNC latches it; the next key's release (or a second click on FUNC) releases it.
+  const FUNC = 17;
+  let funcLatched = false;
   let suppressedKnob: SVGGElement | undefined;
   let clearSuppression: number | undefined;
   let audioTimer: number | undefined;
   let firmwareFile: File | undefined;
   const panel = () => panels[device()];
-  const clearCanvas = () => { if (canvas) canvas.getContext('2d')?.clearRect(0, 0, 128, 64); };
-  const update = (event: RuntimeUpdate) => { if (event.type === 'error') { setPaused(true); setLoaded(false); setStatus(event.error); return; } const snapshot = event.snapshot; setReportAvailable(true); if (snapshot.frame && canvas) drawFrame(canvas, snapshot.frame); const s = snapshot.status; if (s.error) { setPaused(true); setLoaded(false); } else if (!loaded()) { setLoaded(true); setPaused(false); } if (s.device === 'dt2' || s.device === 'dn2') setDevice(s.device); const display = s.frame_revision === 0 ? 'Booting — waiting for display' : s.frame_source === 'intro' ? 'Booting — startup display' : s.phase; setStatus(`${s.device} ${s.version} — ${display}, ${s.icount.toLocaleString()} instructions${s.error ? `: ${s.error}` : ''}`); };
+  const clearCanvas = () => { if (canvas) canvas.getContext('2d')?.clearRect(0, 0, 128, 64); setLeds(new Uint8Array(LED_COUNT)); };
+  // A key's lit state: the legend glows (the real keys are backlit through the print). Trig keys default to idx = code.
+  const keyLight = (key: { code: number; style?: string; icon?: string; led?: number; led_color?: string }) => { const idx = key.led; if (idx === undefined) return undefined; const light = ledLight(leds()[idx] ?? 0); return light.on ? { '--lit': String(light.intensity), '--lit-color': light.color ?? key.led_color ?? defaultLedColor(key.icon) } : undefined; };
+  const indicatorLight = (i: number) => { const idx = panel().leds.idx?.[i]; if (idx === undefined) return undefined; const light = ledLight(leds()[idx] ?? 0); return light.on ? { '--lit': String(light.intensity), '--lit-color': light.color ?? panel().leds.color ?? WARM_WHITE } : undefined; };
+  const update = (event: RuntimeUpdate) => { if (event.type === 'error') { setPaused(true); setLoaded(false); setStatus(event.error); return; } const snapshot = event.snapshot; setReportAvailable(true); if (snapshot.frame && canvas) drawFrame(canvas, snapshot.frame); if (snapshot.leds !== undefined) setLeds(parseLeds(snapshot.leds)); const s = snapshot.status; if (s.error) { setPaused(true); setLoaded(false); } else if (!loaded()) { setLoaded(true); setPaused(false); } if (s.device === 'dt2' || s.device === 'dn2') setDevice(s.device); const display = s.frame_revision === 0 ? 'Booting — waiting for display' : s.frame_source === 'intro' ? 'Booting — startup display' : s.phase; setStatus(`${s.device} ${s.version} — ${display}, ${s.icount.toLocaleString()} instructions${s.error ? `: ${s.error}` : ''}`); };
   const emit = (code: number, down: boolean) => { const count = owners.get(code) ?? 0; const nextCount = down ? count + 1 : Math.max(0, count - 1); if (nextCount) owners.set(code, nextCount); else owners.delete(code); if ((down && count === 0) || (!down && count === 1)) { setPressed((old) => { const next = new Set(old); if (down) next.add(code); else next.delete(code); return next; }); const result = down ? runtime()?.press(code) : runtime()?.release(code); void result?.catch((error) => update({ type: 'error', error: String(error) })); } };
   // Knob drags listen on window, not on the SVG with pointer capture: WebKit (the Tauri webview, Safari)
   // can retarget or drop captured pointer events and fire lostpointercapture early, which ended the drag
   // before the first detent. Deltas come from clientY differences (movementY is not reliable in WebKit).
-  const dragMove = (e: PointerEvent) => { const drag = pointers.get(e.pointerId); if (!drag?.encoder) return; const detents = Math.trunc((drag.y - e.clientY) / 8); if (Math.abs(e.clientY - drag.y) > 3) drag.moved = true; if (detents) { void runtime()?.turn(drag.encoder, detents)?.catch((error) => update({ type: 'error', error: String(error) })); drag.y -= detents * 8; } };
+  const dragMove = (e: PointerEvent) => { const drag = pointers.get(e.pointerId); if (!drag?.encoder) return; const detents = Math.trunc((drag.y - e.clientY) / 8); if (Math.abs(e.clientY - drag.y) > 3) drag.moved = true; if (detents) { spin(drag.encoder, detents); void runtime()?.turn(drag.encoder, detents)?.catch((error) => update({ type: 'error', error: String(error) })); drag.y -= detents * 8; } };
   const dragEnd = (e: PointerEvent) => { releasePointer(e.pointerId); };
   const detachDrag = () => { window.removeEventListener('pointermove', dragMove); window.removeEventListener('pointerup', dragEnd); window.removeEventListener('pointercancel', dragEnd); };
-  const releasePointer = (id: number) => { const state = pointers.get(id); if (!state) return; if (state.target && (state.moved || state.pushed)) { suppressedKnob = state.target; if (clearSuppression) window.clearTimeout(clearSuppression); clearSuppression = window.setTimeout(() => { suppressedKnob = undefined; }, 0); } if (state.code) emit(state.code, false); if (state.pushed) emit(state.pushed, false); pointers.delete(id); if (![...pointers.values()].some((p) => p.encoder)) detachDrag(); };
-  const releaseAll = () => { for (const code of pressed()) runtime()?.release(code); owners.clear(); setPressed(new Set<number>()); pointers.clear(); detachDrag(); suppressedKnob = undefined; };
+  const releasePointer = (id: number) => { const state = pointers.get(id); if (!state) return; if (state.target && (state.moved || state.pushed)) { suppressedKnob = state.target; if (clearSuppression) window.clearTimeout(clearSuppression); clearSuppression = window.setTimeout(() => { suppressedKnob = undefined; }, 0); } if (state.code) emit(state.code, false); if (state.pushed) emit(state.pushed, false); if (funcLatched && (state.code || state.pushed)) { funcLatched = false; emit(FUNC, false); } pointers.delete(id); if (![...pointers.values()].some((p) => p.encoder)) detachDrag(); };
+  const releaseAll = () => { funcLatched = false; for (const code of pressed()) runtime()?.release(code); owners.clear(); setPressed(new Set<number>()); pointers.clear(); detachDrag(); suppressedKnob = undefined; };
   onMount(() => window.addEventListener('blur', releaseAll));
   let disposed = false;
   const refreshNativeAudio = async () => {
@@ -80,7 +106,7 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
     parts.push(`produced ${audio.source_audio_seconds.toFixed(2)} s`);
     return parts.join(' · ');
   };
-  onMount(() => { runtimeReady = Promise.resolve(props.runtime ?? nativeRuntime(update)).then((runtime) => { const selected = runtime ?? browserRuntime(update); if (disposed) { selected.dispose(); return undefined; } activeRuntime = selected; setBrowserAudioSetup(!runtime); void refreshNativeAudio(); audioTimer = window.setInterval(() => { void refreshNativeAudio(); }, 1000); return selected; }); });
+  onMount(() => { runtimeReady = Promise.resolve(props.runtime ?? nativeRuntime(update)).then((runtime) => { const selected = runtime ?? browserRuntime(update); if (disposed) { selected.dispose(); return undefined; } activeRuntime = selected; setRuntimeSignal(selected); setBrowserAudioSetup(!runtime); void refreshNativeAudio(); audioTimer = window.setInterval(() => { void refreshNativeAudio(); }, 1000); return selected; }); });
   onCleanup(() => { disposed = true; window.removeEventListener('blur', releaseAll); if (clearSuppression) window.clearTimeout(clearSuppression); if (audioTimer) window.clearInterval(audioTimer); releaseAll(); void activeRuntime?.stop().catch((error) => update({ type: 'error', error: String(error) })); activeRuntime?.dispose(); });
   const choose = async (file?: File) => {
     if (!file) return;
@@ -114,6 +140,35 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
     } catch (error) { if (firmwareFile === file) { setPaused(true); setLoaded(false); setStatus(String(error)); } }
     finally { if (!kept) coupledSink?.close(); }
   };
+  const pollCard = () => {
+    const cards = runtime()?.cards; if (!cards) return;
+    cardTimer = window.setTimeout(async () => {
+      try {
+        const status = await cards.status(); setCardStatus(status);
+        if (status.state === 'working') { pollCard(); return; }
+        setCardBusy(false);
+        if (status.state === 'ready') { setPaused(false); setLoaded(true); }
+      } catch (error) { setCardBusy(false); setCardNote(`Card status failed: ${String(error)}`); }
+    }, 400);
+  };
+  const chooseSamples = async (list?: FileList | null) => {
+    const cards = runtime()?.cards; if (!cards || !list) return;
+    const files = topLevelWavs(Array.from(list));
+    if (cardInput) cardInput.value = '';
+    if (files.length === 0) { setCardNote('No .wav files directly in that folder.'); return; }
+    setCardBusy(true); setCardNote(''); setCardStatus({ state: 'working', message: `Sending ${files.length} sample${files.length === 1 ? '' : 's'} to the emulator`, fraction: 0 });
+    try {
+      await startCard(cards, files, (done, total) => setCardStatus({ state: 'working', message: `Sending samples (${done}/${total})`, fraction: 0 }));
+      pollCard();
+    } catch (error) { setCardBusy(false); setCardStatus({ state: 'error', message: String(error) }); }
+  };
+  // A DT2 that has just started may have mounted the last card on its own: show it, or the hint.
+  createEffect(() => {
+    const cards = runtime()?.cards;
+    if (!cards || !loaded() || device() !== 'dt2' || cardBusy()) return;
+    cards.status().then((status) => { if (!cardBusy()) setCardStatus(status); }, () => undefined);
+  });
+  onCleanup(() => { if (cardTimer) window.clearTimeout(cardTimer); });
   const exportDiagnostics = async () => {
     try {
       const report = await runtime()?.diagnostics();
@@ -128,18 +183,19 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   };
   const restart = async () => { try { const snapshot = await runtime()?.restart(); if (snapshot) update({ type: 'snapshot', snapshot }); setPaused(false); } catch (error) { setPaused(true); setLoaded(false); setStatus(String(error)); } };
   return <main style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}>
-    <header class="toolbar"><label class="file">Choose firmware<input type="file" accept=".syx,application/octet-stream" onChange={(e) => choose(e.currentTarget.files?.[0])} /></label><select aria-label="Device" value={device()} onChange={(e) => { releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); firmwareFile = undefined; const input = document.querySelector<HTMLInputElement>('.file input'); if (input) input.value = ''; setReportAvailable(false); setDevice(e.currentTarget.value as 'dt2' | 'dn2'); setPaused(true); setLoaded(false); setStatus('Choose a firmware image to start.'); }}><option value="dt2">Digitakt II</option><option value="dn2">Digitone II</option></select><button disabled={!loaded()} onClick={() => { if (paused()) { runtime()?.resume(); setPaused(false); } else { runtime()?.pause(); setPaused(true); } }}>{paused() ? 'Resume' : 'Pause'}</button><button disabled={!loaded()} onClick={() => void restart()}>Restart</button><button disabled={!reportAvailable()} onClick={() => void exportDiagnostics()}>Export diagnostics</button><output>{status()}</output></header>
+    <header class="toolbar"><label class="file">Choose firmware<input type="file" accept=".syx,application/octet-stream" onChange={(e) => choose(e.currentTarget.files?.[0])} /></label><select aria-label="Device" value={device()} onChange={(e) => { releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); firmwareFile = undefined; const input = document.querySelector<HTMLInputElement>('.file input'); if (input) input.value = ''; setReportAvailable(false); setDevice(e.currentTarget.value as 'dt2' | 'dn2'); setPaused(true); setLoaded(false); setStatus('Choose a firmware image to start.'); }}><option value="dt2">Digitakt II</option><option value="dn2">Digitone II</option></select><button disabled={!loaded()} onClick={() => { if (paused()) { runtime()?.resume(); setPaused(false); } else { runtime()?.pause(); setPaused(true); } }}>{paused() ? 'Resume' : 'Pause'}</button><button disabled={!loaded()} onClick={() => void restart()}>Restart</button><Show when={device() === 'dt2'}><button class="samples" disabled={!runtime()?.cards || !loaded() || cardBusy()} title={runtime()?.cards ? 'Pick a folder of .wav files: track N plays file N (sorted by name)' : 'Sample cards need the desktop app for now'} onClick={() => cardInput?.click()}>Choose samples</button><input ref={(el) => { cardInput = el; el.setAttribute('webkitdirectory', ''); }} type="file" multiple hidden onChange={(e) => void chooseSamples(e.currentTarget.files)} /><Show when={!runtime()?.cards}><small class="samples-note">desktop only for now</small></Show></Show><button disabled={!reportAvailable()} onClick={() => void exportDiagnostics()}>Export diagnostics</button><output>{status()}</output><Show when={cardNote() || cardLine(cardStatus())}><output class="card-status" aria-live="polite">{cardNote() || cardLine(cardStatus())}</output></Show></header>
     <Show when={browserAudioSetup()}><CoupledAudio reset={browserAudioReset()} firmware={chosenFirmware} adopted={adopted} runtime={() => runtimeReady ?? Promise.resolve(undefined)} onStarted={(snapshot) => { releaseAll(); clearCanvas(); update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true); }} onError={(error) => setStatus(error)} /></Show>
     <Show when={nativeAudio()}>{(audio) => <div class="coupled" style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '0.5rem', 'align-items': 'center', padding: '0.4rem 0' }}><output>{audio().setup_needed ? 'Audio setup is unavailable for this firmware.' : !audio().playback_requested ? 'Audio output muted.' : audio().device_error ?? audio().sink?.error ?? (audio().sink_connected ? (audio().sink?.stream_started ? audioLine(audio()) : 'Audio output ready; buffering.') : 'Audio output is unavailable.')}</output><button disabled={!loaded() || audio().setup_needed || !audio().flow_started} onClick={() => void runtime()?.tap?.(25).catch((error) => update({ type: 'error', error: String(error) }))}>Audition Trig 1</button></div>}</Show>
     <section class="panel-wrap" aria-label={`${panel().name} front panel`}><div class="panel-surface"><svg class="panel" viewBox="0 0 215 176" onPointerUp={(e) => releasePointer(e.pointerId)} onPointerCancel={(e) => releasePointer(e.pointerId)} onLostPointerCapture={(e) => { if (pointers.get(e.pointerId)?.code) releasePointer(e.pointerId); }}>
       <defs><linearGradient id="chassis" x2="0" y2="1"><stop stop-color="#34363a"/><stop offset=".5" stop-color="#2c2e31"/><stop offset="1" stop-color="#242528"/></linearGradient><radialGradient id="knob"><stop stop-color="#44464b"/><stop offset=".68" stop-color="#2a2c2f"/><stop offset=".72" stop-color="#111214"/></radialGradient></defs>
       <rect class="chassis" x="1" y="1" width="213" height="174" rx="3"/><For each={panel().screws}>{(s) => <g class="screw"><circle cx={s.x} cy={s.y} r="2"/><path d={`M${s.x-1.1} ${s.y}h2.2`}/></g>}</For>
-      <For each={panel().leds.y}>{(y) => <For each={panel().leds.x}>{(x) => <circle class="led" cx={x} cy={y} r={panel().leds.r}/>}</For>}</For>
+      <For each={panel().leds.y}>{(y, row) => <For each={panel().leds.x}>{(x, col) => { const style = () => indicatorLight(row() * panel().leds.x.length + col()); return <circle class={`led ${style() ? 'lit' : ''}`} style={style()} cx={x} cy={y} r={panel().leds.r}/>; }}</For>}</For>
       <For each={panel().texts}>{(t) => t.style === 'icon' ? <g class="panel-icon" transform={`translate(${t.x-1.7} ${t.y-1.7}) scale(.142)`}><Icon name="headphones"/></g> : <text class={`silk ${t.style}`} x={t.x} y={t.y}>{t.text}</text>}</For>
       <rect class="bezel" x={panel().bezel[0]} y={panel().bezel[1]} width={panel().bezel[2]-panel().bezel[0]} height={panel().bezel[3]-panel().bezel[1]} rx="1.5"/><rect class="glass" x={panel().glass[0]} y={panel().glass[1]} width={panel().glass[2]-panel().glass[0]} height={panel().glass[3]-panel().glass[1]} rx=".5"/>
-      <text class="wordmark" x={panel().wordmark[0]} y={panel().wordmark[1]}>Digiemu</text>
-      <For each={panel().knobs}>{(knob) => <g class="knob" onPointerDown={(e) => { if (!knob.encoder) return; e.preventDefault(); const pushed = e.shiftKey ? knob.push : undefined; if (pushed) emit(pushed, true); pointers.set(e.pointerId, { encoder: knob.encoder, y: e.clientY, pushed, moved: false, target: e.currentTarget }); detachDrag(); window.addEventListener('pointermove', dragMove); window.addEventListener('pointerup', dragEnd); window.addEventListener('pointercancel', dragEnd); }} onClick={(e) => { if (suppressedKnob === e.currentTarget) { suppressedKnob = undefined; return; } if (knob.push) { emit(knob.push, true); queueMicrotask(() => emit(knob.push!, false)); } }} onWheel={(e) => { if (!knob.encoder) return; e.preventDefault(); runtime()?.turn(knob.encoder, e.shiftKey ? Math.sign(-e.deltaY) * 10 : Math.sign(-e.deltaY)); }}><circle cx={knob.x+.65} cy={knob.y+1} r={knob.r} class="knob-shadow"/><circle cx={knob.x} cy={knob.y} r={knob.r} class="knob-face"/><circle cx={knob.x} cy={knob.y} r={knob.r*.84} class="knob-top"/><Show when={knob.marker === 'dot'}><circle class="knob-dot" cx={knob.x+knob.r*.58} cy={knob.y} r={knob.r*.12}/></Show><Show when={knob.marker !== 'dot'}><path d={`M${knob.x} ${knob.y-knob.r*.78}v${knob.r*.33}`} /></Show><text x={knob.x} y={knob.label_y ?? knob.y + knob.r + 3.1}>{knob.label}</text><Show when={knob.sub}><text class="knob-sub" x={knob.x} y={(knob.label_y ?? knob.y + knob.r + 3.1) + 2.4}>{knob.sub}</text></Show></g>}</For>
-      <For each={panel().keys}>{(key) => <g class={`key ${key.style ?? ''} ${key.icon ? `icon-${key.icon}` : ''} ${pressed().has(key.code) ? 'down' : ''}`} onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { code: key.code, y: e.clientY, moved: false }); emit(key.code, true); }}><rect x={key.x-key.w/2+.8} y={key.y-key.h/2+1.2} width={key.w-1.6} height={key.h-1.2} rx="1.5" class="key-shadow"/><rect x={key.x-key.w/2} y={key.y-key.h/2} width={key.w} height={key.h} rx="1.5" class="key-body"/><rect x={key.x-key.w/2+.7} y={key.y-key.h/2+.56} width={key.w-1.4} height={key.h-1.68} rx="1.1" class="key-face"/><Show when={key.legend}><text class="key-legend" x={key.x} y={key.y+.4}>{key.legend}</text></Show><Show when={key.style === 'trig'}><rect class="trig-underline" x={key.x-2.4} y={key.y+2.9} width="4.8" height=".7" rx=".15"/></Show><Show when={key.icon}><g transform={`translate(${key.x-3} ${key.y-3}) scale(.25)`}><Icon name={key.icon!}/></g></Show><Show when={key.sub}><text class="key-sub" x={key.x} y={key.sub_y ?? key.y + key.h/2 + 3.5}>{key.sub}</text></Show></g>}</For>
+      <text class="wordmark" x={panel().wordmark[0]} y={panel().wordmark[1]}>digikit</text>
+      <For each={panel().knobs}>{(knob) => <g class="knob" onPointerDown={(e) => { if (!knob.encoder) return; e.preventDefault(); const pushed = e.shiftKey ? knob.push : undefined; if (pushed) emit(pushed, true); pointers.set(e.pointerId, { encoder: knob.encoder, y: e.clientY, pushed, moved: false, target: e.currentTarget }); detachDrag(); window.addEventListener('pointermove', dragMove); window.addEventListener('pointerup', dragEnd); window.addEventListener('pointercancel', dragEnd); }} onClick={(e) => { if (suppressedKnob === e.currentTarget) { suppressedKnob = undefined; return; } if (knob.push) { emit(knob.push, true); queueMicrotask(() => emit(knob.push!, false)); } }} onWheel={(e) => { if (!knob.encoder) return; e.preventDefault(); const detents = e.shiftKey ? Math.sign(-e.deltaY) * 10 : Math.sign(-e.deltaY); if (detents) spin(knob.encoder, detents); runtime()?.turn(knob.encoder, detents); }}><circle cx={knob.x+.65} cy={knob.y+1} r={knob.r} class="knob-shadow"/><circle cx={knob.x} cy={knob.y} r={knob.r} class="knob-face"/><circle cx={knob.x} cy={knob.y} r={knob.r*.84} class="knob-top"/><g transform={`rotate(${angle(knob.encoder)} ${knob.x} ${knob.y})`}><Show when={knob.marker === 'dot'}><circle class="knob-dot" cx={knob.x+knob.r*.58} cy={knob.y} r={knob.r*.12}/></Show><Show when={knob.marker !== 'dot'}><path d={`M${knob.x} ${knob.y-knob.r*.78}v${knob.r*.33}`} /></Show></g><text x={knob.x} y={knob.label_y ?? knob.y + knob.r + 3.1}>{knob.label}</text><Show when={knob.sub}><text class="knob-sub" x={knob.x} y={(knob.label_y ?? knob.y + knob.r + 3.1) + 2.4}>{knob.sub}</text></Show></g>}</For>
+      <For each={panel().keys}>{(key) => <g class={`key ${key.style ?? ''} ${key.icon ? `icon-${key.icon}` : ''} ${pressed().has(key.code) ? 'down' : ''} ${keyLight(key) ? 'lit' : ''}`} style={keyLight(key)} onPointerDown={(e) => { if (key.code === FUNC) { funcLatched = !funcLatched; emit(FUNC, funcLatched); return; } e.currentTarget.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { code: key.code, y: e.clientY, moved: false }); emit(key.code, true); }}><rect x={key.x-key.w/2+.8} y={key.y-key.h/2+1.2} width={key.w-1.6} height={key.h-1.2} rx="1.5" class="key-shadow"/><rect x={key.x-key.w/2} y={key.y-key.h/2} width={key.w} height={key.h} rx="1.5" class="key-body"/><rect x={key.x-key.w/2+.7} y={key.y-key.h/2+.56} width={key.w-1.4} height={key.h-1.68} rx="1.1" class="key-face"/><Show when={key.legend}><text class="key-legend" x={key.x} y={key.y+.4}>{key.legend}</text></Show><Show when={key.style === 'trig'}><rect class="trig-underline" x={key.x-2.4} y={key.y+2.9} width="4.8" height=".7" rx=".15"/></Show><Show when={key.icon}><g transform={`translate(${key.x-3} ${key.y-3}) scale(.25)`}><Icon name={key.icon!}/></g></Show><Show when={key.sub}><text class="key-sub" x={key.x} y={key.sub_y ?? key.y + key.h/2 + 3.5}>{key.sub}</text></Show></g>}</For>
     </svg><canvas ref={canvas} class="oled" width="128" height="64" aria-label="128 by 64 OLED display" style={{ left: `${panel().glass[0] / 215 * 100}%`, top: `${panel().glass[1] / 176 * 100}%`, width: `${(panel().glass[2] - panel().glass[0]) / 215 * 100}%`, height: `${(panel().glass[3] - panel().glass[1]) / 176 * 100}%` }} /></div></section>
+    <footer class="legal">digikit by Em D — AGPL-3.0-or-later — source: <a href="https://github.com/m-dwyer/digikit" target="_blank" rel="noopener noreferrer">https://github.com/m-dwyer/digikit</a></footer>
   </main>;
 }

@@ -1,11 +1,12 @@
 [package]
 name = "digiemu-desktop"
+license.workspace = true
+repository.workspace = true
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [features]
-diagnostics = ["elektron-native-boot/diagnostic-profile", "elektron-native-boot/diagnostic-events"]
 # Local-only DN2 coupling: generated DSP code must never be distributed.
 coupled-audio = ["digi-coupled/coupled-audio", "digi-control/coupled-audio"]
 

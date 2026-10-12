@@ -9,7 +9,7 @@ Use mise (`mise tasks` lists every task). Cargo needs the generated SHARC+ core;
 the tools set `SHARC_GEN_DIR` and the target dir for you (see "Target dirs").
 
 ```
-mise run emu:build         # build the desktop emulator
+mise run emu -- --build-only   # build the desktop emulator without launching it
 mise run emu               # build and run it (DN2 audio when the ready inputs exist)
 mise run scenario:build    # build the headless runner coupled-run
 mise run scenarios         # run every DN2 scenario against its pinned PCM hash
@@ -29,7 +29,6 @@ root). The directory name is not always the package name; use the package name w
 | directory | package | role |
 |---|---|---|
 | `native/coldfire` | `coldfire` | ColdFire V4e core (ISA_C, EMAC); decoder generated from `tools/cfisa/coldfire.json`. Pure, builds for wasm32. |
-| `native/coldfire/cfabi` | `cfabi` | C ABI over `coldfire::Cpu` for `tools/cf_lockstep.py` (lockstep against Unicorn). Desktop only. |
 | `native/periph` | `periph` | MCF5441x timer, interrupt controller, eDMA, DSPI and SSI models. |
 | `native/card` | `emmc-card` | Minimal eMMC card identity and media model (sparse write overlay). |
 | `native/machine` | `machine` | The board seam: guest RAM, MMIO, eMMC DMA, timers. |
@@ -152,11 +151,11 @@ inputs. `qa_script` also plays the shared QA sequence of
 | `trig1-hold` | QA prelude, then Audition Trig 1 (button 25) pressed at +60M and held to the end. One voice. |
 | `kb-chord16` | QA prelude, keyboard mode on (button 18 tapped at +50M), then all 16 trig keys (25..40) pressed at +60M and held: a chromatic chord of several voices. |
 | `exactness-100m` | Validation: the `coupled_ready_exactness` workload (QA, Trig 1 down at +60M, up at +100M, 100M instructions). Its PCM hash must be `b3f5230f...4d03f` (cold-start reference state, 2026-10-07; was `3b600f6d...7f267` on the old state and `38d2a322...3ff1f8` before the Type 17 SIMD fix). |
-| `trig1-noqa-40m` | Validation: `desktop_trig1_capture_without_qa_script` (Trig 1 from ready, 40M instructions, silent). Hash `2861ce03...c6f21` (cold-start reference state; `a50586e8...b75a` on the pre-2026-10-06 state). |
+| `trig1-noqa-40m` | Validation: `desktop_trig1_capture_without_qa_script` (Trig 1 from ready, 40M instructions, no prelude; it sounds, rms 0.032). Hash `2861ce03...c6f21` (cold-start reference state; `a50586e8...b75a` on the pre-2026-10-06 state). |
 
-The QA prelude matters: from the ready snapshot, Trig 1 pressed with no prelude
-gives exact silence (the second validation scenario); the first NO presses
-dismiss what swallows the key. `kb-chord16` is the heavy best effort. It is
+The QA prelude is no longer needed: on the current ready state Trig 1 sounds
+with no prelude (the second validation scenario). It was needed only with the
+2026-10-03 snapshot, whose card opened an SLC dialog that swallowed the key. `kb-chord16` is the heavy best effort. It is
 heavier in audio (distinct pitches 277, 311, 370, 415, 466 Hz ... against one
 262 Hz tone; PCM RMS 1.3-1.5x `trig1-hold`) but only slightly heavier in DSP
 CPU: the DSP cost is dominated by a constant background (the idle-skipped RTOS
@@ -212,10 +211,13 @@ under load, because benchlock only excludes work that also takes it.
 
 ### Browser core tiers
 
-The browser core (wasm32) runs AOT blocks and the interpreter only, with no fast
-tier. `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables,
-which wasm32-unknown-unknown does not have, and the fast tier's Cranelift backend
-emits host code. `node tools/wasm_parity.mjs --scenario NAME` (or
+The coupled browser core (wasm32) has a fast tier too (feature `fast-wasm`): its
+kernels are wasm modules the page compiles (`native/sharc-fast-wasm`, `packages/web/src/core-host.ts`).
+`SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables, which
+wasm32-unknown-unknown does not have, so the page passes the regions in
+(`digi_sharc_fast_regions`). With no `?fast=` query it uses the `desktop` regions
+of `tools/fast_regions.json` for a listed firmware (AOT blocks present), or
+run-time selection `4,2,1` on the generic core. `node tools/wasm_parity.mjs --scenario NAME` (or
 `mise run web:parity NAME`) checks that the browser PCM is byte-identical to
 the native `expect_sha256`.
 

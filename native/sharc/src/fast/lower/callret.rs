@@ -51,13 +51,28 @@ impl Lower {
         let m = d.field("m").ok_or(Refuse("16a m".into()))? as u32;
         let value = d.wide("data").ok_or(Refuse("16a data".into()))?;
         let (ic, mc) = (16 + i, 32 + m);
+        // A normal-word store of a constant with a post-modify: the ordinary
+        // transfer, so an index register with no static range (I7, the
+        // software stack pointer) gets a guarded dynamic window anchored on
+        // its entry value (`xfer_at`), and a store outside the window leaves
+        // the kernel before the instruction.
+        let v = self.ci(value);
+        // SHARC_FAST_NOPUSHDYN: the static-window-only lowering (A/B).
+        static OLD: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        // Not in a region with call targets placed before their callers: the
+        // ranges flowing into them must settle over the passes, and a push
+        // without a range keeps them from doing so (the region is refused).
+        if !self.has_call_targets
+            && !*OLD.get_or_init(|| std::env::var_os("SHARC_FAST_NOPUSHDYN").is_some())
+        {
+            return self.dm_transfer(ic, mc, true, Xfer::StoreV(v));
+        }
         let iv = self.rd_i(ic)?;
         let mv = self.rd_i(mc)?;
         let four = self.ci(4);
         let scaled = self.bin(Bin::Mul, mv, four);
         let modified = self.bin(Bin::Add, iv, scaled);
         self.require_plain(iv, 4)?;
-        let v = self.ci(value);
         let (p, o) = self.window_access(iv, 4, true)?;
         self.pend_store(p, o, v);
         self.post_update(ic, iv, scaled, modified)

@@ -23,3 +23,12 @@ main > .coupled { flex-shrink: 0; }
 .key-legend { fill: #d2d4d8; font-size: 3px; text-anchor: middle; dominant-baseline: middle; } .trig .key-legend { fill: #c9cbcf; font-size: 4.3px; transform: translateY(-1px); } .trig-underline { fill: #a0a2a6; } .key-sub { fill: var(--accent); font-size: 1.55px; text-anchor: middle; pointer-events: none; }
 .panel-icon { color: #e4e5e7; } .icon { color: inherit; } .icon-stroke { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; } .icon-fill { fill: currentColor; stroke: none; } .icon-record { color: #e2463f; } .icon-play { color: #46d160; } .icon-stop { color: #e6e6e6; }
 @media (max-width: 650px) { .toolbar { flex-wrap: wrap; } output { flex-basis: 100%; } .panel-wrap { place-items: start start; padding: .4rem; } .panel-surface { width: max(680px, 100%); max-width: none; } }
+.samples-note { color: #8a8e94; white-space: nowrap; } .card-status { color: #f3b52c; }
+.legal { flex-shrink: 0; padding: .35rem 1rem; border-top: 1px solid #36383c; background: #191a1d; color: #8a8e94; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .68rem; text-align: center; } .legal a { color: #aeb2b8; }
+
+/* Lit keys: the legend or icon glows in --lit-color, intensity --lit (0..1), from the firmware's panel LED records. */
+.key.lit { color: var(--lit-color); }
+.key.lit .key-legend { fill: var(--lit-color); }
+.key.lit .key-legend, .key.lit .icon { filter: drop-shadow(0 0 calc(.2px + var(--lit) * 1.1px) var(--lit-color)) drop-shadow(0 0 calc(var(--lit) * .5px) var(--lit-color)); opacity: calc(.55 + var(--lit) * .45); }
+.key.trig.lit .trig-underline { fill: var(--lit-color); }
+.led.lit { fill: var(--lit-color); filter: drop-shadow(0 0 calc(var(--lit) * 1px) var(--lit-color)); }

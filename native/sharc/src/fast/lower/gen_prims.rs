@@ -17,6 +17,9 @@ use super::*;
 /// MODE1's register-bank selection bits (`state._BANK_MASK`).
 const BANK_BITS: u32 = 0x4F8;
 
+/// MODE1.IRPTEN (bit 12) and MODE1.NESTM (bit 11): interrupt delivery and nesting.
+const IRQ_ENABLE_BITS: u32 = 0x1800;
+
 /// Where a value came from, for anchors and moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tag {
@@ -150,6 +153,14 @@ impl Lower {
             Some(k) => k as u32,
             None => self.entry_value_of(v, "MODE1 written with a run-time value")?,
         };
+        if k & !self.mode1_cur & IRQ_ENABLE_BITS != 0 {
+            // A write that turns interrupt delivery on (IRPTEN, NESTM) makes a
+            // source that is latched and unmasked deliverable at the next
+            // instruction boundary. The region's entry check saw none (it was
+            // off), so the kernel must not run on past the write: the
+            // interpreter enters the interrupt after it.
+            return refuse("MODE1 write enables interrupts");
+        }
         if self.env.bank_model && (k ^ self.mode1_cur) & BANK_BITS != 0 {
             // A write that changes the bank selection starts a delayed one.
             return refuse("MODE1 write changes the register bank selection");

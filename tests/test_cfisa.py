@@ -1,6 +1,6 @@
 """The ColdFire instruction table (tools/cfisa/coldfire.json), its generated
 decoder (native/coldfire/src/decode_gen.rs) and the decoder's agreement with
-Ghidra, SLEIGH and Unicorn on the firmware images (tools/cfisa/oracle.py)."""
+Ghidra and SLEIGH on the firmware images (tools/cfisa/oracle.py)."""
 
 from __future__ import annotations
 

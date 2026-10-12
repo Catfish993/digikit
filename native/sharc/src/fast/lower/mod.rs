@@ -122,6 +122,22 @@ impl Abs {
     }
     /// Range over all iterations t in [0, n-1] of the value at a fixed point
     /// of the body.
+    /// The range as byte addresses: a constant range that lies below zero
+    /// is the 32-bit address a `ci` constant above 2^31 stands for
+    /// (`ci` sign-extends); the sum is taken modulo 2^32.
+    pub fn as_addr(self) -> Abs {
+        let constant = self.base == Base::None && self.ts == 0 && self.nf == 0;
+        if constant && self.hi < 0 && self.lo >= -(1 << 32) {
+            Abs {
+                lo: self.lo + (1 << 32),
+                hi: self.hi + (1 << 32),
+                ..self
+            }
+        } else {
+            self
+        }
+    }
+
     pub fn span(&self, n: i64) -> (i64, i64) {
         let d = self.ts * (n - 1);
         let f = self.nf * n;
@@ -209,6 +225,9 @@ pub struct Plan {
     /// lies before its caller (see `Structure::call_targets`), as the
     /// previous pass saw them.
     pub entry_abs: std::collections::HashMap<u32, Vec<Option<Abs>>>,
+    /// CFG kernels: the in-region register-count loop whose trip count is the
+    /// region's symbolic N, with its count source (`Lower::reg_sym`).
+    pub reg_sym: Option<(usize, u8, i64)>,
 }
 
 impl Default for Plan {
@@ -224,6 +243,7 @@ impl Default for Plan {
             flag_kinds: [0; NGROUPS as usize],
             plain: 0,
             entry_abs: Default::default(),
+            reg_sym: None,
         }
     }
 }
@@ -237,9 +257,6 @@ pub struct Env {
     /// circular-buffer length and base, `circ_range`).
     pub dag_l: [Option<u32>; 16],
     pub dag_b: [Option<u32>; 16],
-    /// `SHARC_FAST_NOCIRC` set: circular post-modifies are not lowered (an
-    /// index register with L != 0 declines, as before the wrap was added).
-    pub circ_off: bool,
     pub assume_nw32: bool,
     /// MODE1 at build time (the region is made for these rounding and
     /// saturation bits, see `Req::Mode1`).
@@ -263,6 +280,9 @@ pub struct Env {
     /// otherwise the kernel is made for unknown history bits
     /// (`Req::CaccUnknown`), which the generic core's compare forgets.
     pub cacc_known: bool,
+    /// Every window access of the region is a flat guarded access
+    /// (`cfg::flat_auto`): the static windows kept declining at run time.
+    pub flat_windows: bool,
 }
 
 /// `SHARC_FAST_GEN`: `0` lowers with the hand-written forms only, a comma list
@@ -322,6 +342,10 @@ pub struct Lower {
     /// A circular index register was found written outside its buffer in a
     /// pass that should have emitted the kernel: lower again with it plain.
     pub retry: bool,
+    /// Addresses of the instructions lowered with a guarded dynamic window
+    /// (`dyn_xfer`): one that fails its guard on most calls is lowered flat
+    /// instead (`SHARC_FAST_DYNFLAT`, `FastEngine::run_inner`).
+    pub dyn_pcs: Vec<u32>,
     /// The instruction being lowered is followed in the kernel by nothing
     /// that reads the registers it writes (RFRAME before the exit of a
     /// return): its plain writes of index registers need no circular range.
@@ -369,6 +393,11 @@ pub struct Lower {
     /// defines (they must be known at entry), the bits known so far, and the
     /// bits some writer forgets or a condition reads (checked at the end).
     pub need_flags_known: u32,
+    /// Float values the kernel has shown not to be a nonzero denormal (a
+    /// guard in this block, or a result built to be normal or zero): the
+    /// device reads a denormal operand as zero, which the kernel does not
+    /// do, so such an operand leaves (`guard_not_denormal`).
+    ftz_ok: std::collections::HashSet<Val>,
     pub fm_static: u32,
     forget_mask: u32,
     read_mask: u32,
@@ -385,6 +414,16 @@ pub struct Lower {
     pub node_written: std::collections::BTreeMap<u32, u128>,
     pub loop_stride_out: Vec<[Option<i64>; NREGS as usize]>,
     pub loop_back_seen_out: Vec<bool>,
+    /// CFG kernels, per loop: the exact constant a register trip count has
+    /// at its DO (the loop is then a literal-count loop).
+    pub reg_lit: Vec<Option<i64>>,
+    /// CFG kernels: the region has call targets placed before their callers
+    /// (`Structure::call_targets`).
+    pub has_call_targets: bool,
+    /// The one register-count loop whose count is exactly `R[code] + k` at
+    /// region entry (loop index, code, k): the region's symbolic N when it
+    /// has no entry loop. The glue evaluates it at entry.
+    pub reg_sym: Option<(usize, u8, i64)>,
     pub loop_in: Vec<Vec<Option<Abs>>>,
     pub loop_head: Vec<Vec<Option<Abs>>>,
     /// The abstract value of each register's variable at the current point
@@ -423,10 +462,10 @@ pub struct Lower {
     pub mode1_cur: u32,
     /// 80 while a compute of PEy runs (R/F codes 0..15 mean S/SF), else 0.
     pub pe_off: u32,
-    /// The instruction being lowered is one the helper stub runs: a guarded
-    /// dynamic window that would end the region on every miss is refused, so
-    /// that the instruction becomes a helper call (`lower::helper`).
-    pub helper_form: bool,
+    /// The instruction being lowered gets a flat access when it has no address range.
+    pub flat_cur: bool,
+    /// As `flat_cur`, for an instruction whose dynamic window kept failing.
+    pub flat_dyn_cur: bool,
     /// The address of the instruction being lowered in a loop or straight
     /// kernel (a CFG kernel has it in `cfgx`).
     pub cur_pc: Option<u32>,
@@ -469,6 +508,7 @@ impl Lower {
             flag_kinds_out: [0; NGROUPS as usize],
             plain_out: 0,
             retry: false,
+            dyn_pcs: Vec::new(),
             tail_write: false,
             entry_abs_out: Default::default(),
             val_ty: Vec::new(),
@@ -497,6 +537,7 @@ impl Lower {
             ncond: None,
             nlabels: 0,
             need_flags_known: 0,
+            ftz_ok: std::collections::HashSet::new(),
             fm_static: 0,
             forget_mask: 0,
             read_mask: 0,
@@ -507,6 +548,9 @@ impl Lower {
             node_written: Default::default(),
             loop_stride_out: Vec::new(),
             loop_back_seen_out: Vec::new(),
+            reg_lit: Vec::new(),
+            has_call_targets: false,
+            reg_sym: None,
             loop_in: Vec::new(),
             loop_head: Vec::new(),
             var_abs: Vec::new(),
@@ -525,7 +569,8 @@ impl Lower {
             gtag: Vec::new(),
             mode1_cur: 0,
             pe_off: 0,
-            helper_form: false,
+            flat_cur: false,
+            flat_dyn_cur: false,
             cur_pc: None,
         };
         l.mode1_cur = l.env.mode1;
@@ -699,6 +744,22 @@ impl Lower {
     /// The record `k` of a guard in the current instruction: the instruction
     /// index in a loop kernel, an exit site of the CFG in a CFG kernel.
     pub fn site_k(&mut self) -> u32 {
+        self.site_k_for("insn")
+    }
+
+    /// `site_k` for a guard: with coverage on, the site is told apart by the
+    /// source line that emitted the guard (the report names which guard fails).
+    fn site_k_guard(&mut self, at: &'static std::panic::Location<'static>) -> u32 {
+        let kind = if super::glue::cov_on() {
+            let file = at.file().rsplit('/').next().unwrap_or("");
+            Box::leak(format!("g@{file}@{}", at.line()).into_boxed_str())
+        } else {
+            "insn"
+        };
+        self.site_k_for(kind)
+    }
+
+    fn site_k_for(&mut self, kind: &'static str) -> u32 {
         let Some(x) = self.cfgx.as_mut() else {
             return self.idx;
         };
@@ -710,6 +771,7 @@ impl Lower {
             pending: x.pending,
             ret: 0,
             tail: Default::default(),
+            kind,
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -745,6 +807,12 @@ impl Lower {
             pending: None,
             ret,
             tail,
+            kind: match tail {
+                crate::fast::cfg::Tail::Call(_) => "call",
+                crate::fast::cfg::Tail::Rts => "ret",
+                crate::fast::cfg::Tail::None if pc == crate::fast::cfg::DYN_PC => "ret",
+                crate::fast::cfg::Tail::None => "edge",
+            },
         };
         if let Some(i) = x.sites.iter().position(|s| *s == site) {
             return i as u32;
@@ -777,6 +845,7 @@ impl Lower {
             self.written_iter[c] = false;
         }
         self.conv.clear();
+        self.ftz_ok.clear();
         self.exit_id = None;
         self.lw = [None; 3];
     }
@@ -801,17 +870,19 @@ impl Lower {
         e
     }
 
+    #[track_caller]
     pub fn guard(&mut self, ok: Val) {
         let ok = self.weaken(ok);
         let exit = self.exit_for_insn();
-        let k = self.site_k();
+        let k = self.site_k_guard(std::panic::Location::caller());
         self.body.push(Inst::Guard { ok, k, exit });
     }
 
+    #[track_caller]
     pub fn guard_any(&mut self, a: Val, b: Val) {
         let a = self.weaken(a);
         let exit = self.exit_for_insn();
-        let k = self.site_k();
+        let k = self.site_k_guard(std::panic::Location::caller());
         self.body.push(Inst::GuardAny { a, b, k, exit });
     }
 
@@ -912,8 +983,7 @@ impl Lower {
     /// of it in the body must be a wrapped update (`commit` refuses others),
     /// and `Req::Within` makes it so at entry.
     pub fn circ_range(&self, c: usize) -> Option<(u32, u32)> {
-        if self.env.circ_off
-            || self.pass == 0
+        if self.pass == 0
             || !(16..32).contains(&c)
             || !self.plan.written[c]
             || (self.plan.plain >> c) & 1 != 0
@@ -1045,10 +1115,6 @@ impl Lower {
         scale: i64,
     ) -> LR<Val> {
         self.self_update.push(ic as u8);
-        if self.env.circ_off {
-            self.require_linear(ic)?;
-            return Ok(modified);
-        }
         let n = (ic - 16) as usize;
         if self.lb_stale(n) {
             return refuse("L/B of the index register written in the region");
@@ -1061,7 +1127,7 @@ impl Lower {
             self.require_eq(48 + n as u32, 0);
             return Ok(modified);
         }
-        if self.env.mode1 & MODE1_CBUFEN == 0 {
+        if self.mode1_cur & MODE1_CBUFEN == 0 {
             return refuse("MODE1.CBUFEN clear with L != 0");
         }
         if self.pass == 0 {
@@ -1097,11 +1163,6 @@ impl Lower {
     ) -> LR<()> {
         self.note_modify(src, dst);
         self.no_plain_circ(src)?;
-        if self.env.circ_off {
-            self.require_linear(src)?;
-            self.require_linear(dst)?;
-            return self.wr_i(dst, plain);
-        }
         let n = (src - 16) as usize;
         if self.lb_stale(n) {
             return refuse("L/B of the index register written in the region");
@@ -1140,7 +1201,6 @@ impl Lower {
     /// register has a circular buffer at all.
     fn no_plain_circ(&self, ic: u32) -> LR<()> {
         if ((self.plan.plain | self.plain_out) >> ic) & 1 != 0
-            && !self.env.circ_off
             && self.env.dag_l[(ic - 16) as usize] != Some(0)
         {
             return refuse("circular update of an index register that is also written plainly");
@@ -1211,6 +1271,53 @@ impl Lower {
         Ok(self.to_f(v))
     }
 
+    /// `rd_f` for a computational float op: a nonzero denormal operand reads
+    /// as a zero on the device (`floats._float32`), which the kernel does
+    /// not model, so the kernel leaves at one.
+    pub fn rd_f_op(&mut self, code: u32) -> LR<Val> {
+        let x = self.rd_f(code)?;
+        self.guard_not_denormal(x);
+        Ok(x)
+    }
+
+    /// Guard that the f32 value X is not a nonzero denormal.
+    pub fn guard_not_denormal(&mut self, x: Val) {
+        if self.ftz_ok.contains(&x) {
+            return;
+        }
+        // The magnitude shifted left by one, minus 2, is below 0xfffffd
+        // exactly for the exponent field 0 with a nonzero mantissa.
+        let xb = self.to_i(x);
+        let k1 = self.ci(1);
+        let mag2 = self.bin(Bin::Shl, xb, k1);
+        let k2 = self.ci(2);
+        let m = self.bin(Bin::Sub, mag2, k2);
+        let lim = self.ci(0x00ff_fffd);
+        let ok = self.bin(Bin::GeU, m, lim);
+        self.guard(ok);
+        if self.cond.is_none() {
+            self.ftz_ok.insert(x);
+        }
+    }
+
+    /// The f32 sum or difference R of two operands that are normal or zero,
+    /// with a denormal result returned as the zero of its sign (the device
+    /// returns post-rounded denormals as zeros; add and subtract of floats
+    /// are exact there, so the native result is the exact one).
+    pub fn flush_denormal_result(&mut self, r: Val) -> Val {
+        let rb = self.to_i(r);
+        let me = self.ci(0x7f80_0000);
+        let e = self.bin(Bin::And, rb, me);
+        let z = self.ci(0);
+        let tiny = self.bin(Bin::Eq, e, z);
+        let sg = self.ci(0x8000_0000);
+        let zero = self.bin(Bin::And, rb, sg);
+        let bits = self.select(tiny, zero, rb);
+        let out = self.to_f(bits);
+        self.ftz_ok.insert(out);
+        out
+    }
+
     /// Typeless read (moves, stores).
     pub fn rd_bits(&mut self, code: u32) -> LR<Val> {
         let code = self.pe_code(code);
@@ -1276,10 +1383,15 @@ impl Lower {
 
     // -- memory windows ----------------------------------------------------
 
+    /// Whether an access with no window may be a flat guarded access here.
+    fn flat_ok(&self) -> bool {
+        self.flat_cur || self.flat_dyn_cur || self.env.flat_windows
+    }
+
     /// The access at ADDR through the engine's page table when no window can
     /// serve it (`mem_addr::flat_access`), else the refusal WHY.
     fn flat_window(&mut self, addr: Val, bytes: i64, write: bool, why: &str) -> LR<(Val, Val)> {
-        if !mem_addr::flat_xfers() {
+        if !self.flat_ok() {
             return refuse(why);
         }
         if bytes == 4 {
@@ -1290,8 +1402,11 @@ impl Lower {
 
     /// Byte address in range `a` is a window access of `bytes` bytes.
     pub fn window_access(&mut self, addr: Val, bytes: i64, write: bool) -> LR<(Val, Val)> {
+        if self.env.flat_windows && self.strict() {
+            return self.flat_access(addr, bytes as u8, write);
+        }
         let abs = match self.abs[addr as usize] {
-            Some(a) => a,
+            Some(a) => a.as_addr(),
             None if !self.strict() => Abs::konst(0),
             None => return self.flat_window(addr, bytes, write, "address range unknown"),
         };
@@ -1351,8 +1466,10 @@ impl Lower {
     /// span before the access, so an address outside it leaves the kernel
     /// before the instruction. One slot per anchor serves both directions.
     pub fn dynamic_window(&mut self, addr: Val, anchor: u8, write: bool) -> LR<(Val, Val, u32)> {
-        if self.helper_form {
-            return refuse("address range unknown (no dynamic window under the helper stub)");
+        if let Some(pc) = self.cfgx.as_ref().map(|x| x.pc).or(self.cur_pc)
+            && !self.dyn_pcs.contains(&pc)
+        {
+            self.dyn_pcs.push(pc);
         }
         let w = match self
             .wins
@@ -1393,7 +1510,7 @@ impl Lower {
     /// the range where normal-word accesses are plain byte addresses scaled
     /// by 4 (no normal-word mapping).
     pub fn require_plain(&mut self, addr: Val, bytes: i64) -> LR<()> {
-        match self.abs[addr as usize] {
+        match self.abs[addr as usize].map(Abs::as_addr) {
             Some(a) => {
                 let r = Req::NwPlain {
                     base: a.base,
@@ -1409,21 +1526,11 @@ impl Lower {
             }
             None if !self.strict() => Ok(()),
             // No range to require: guard each access instead (flat accesses).
-            None if mem_addr::flat_xfers() => {
+            None if self.flat_ok() => {
                 self.guard_plain(addr);
                 Ok(())
             }
             None => {
-                if std::env::var_os("SHARC_FAST_DEBUG_ABS").is_some() {
-                    eprintln!(
-                        "abs: require_plain pass {} idx {} var_abs I6 {:?} I7 {:?} cur {:?}",
-                        self.pass,
-                        self.idx,
-                        self.var_abs[22],
-                        self.var_abs[23],
-                        (self.cur[22], self.cur[23])
-                    );
-                }
                 refuse("address range unknown")
             }
         }
@@ -1596,14 +1703,10 @@ impl Lower {
     fn lower_insn_inner(&mut self, idx: u32, d: &Dec) -> LR<()> {
         self.begin_insn(idx);
         let at = self.cfgx.as_ref().map(|x| x.pc).or(self.cur_pc);
+        self.flat_cur = at.is_some_and(super::cfg::is_flat_pc);
+        self.flat_dyn_cur = at.is_some_and(super::cfg::is_flat_dyn);
         // Only an instruction that cannot be lowered becomes a helper (region.rs
-        // `deny`); one with a guarded dynamic window keeps it. With
-        // SHARC_FAST_HELPER_NODYN=1 (lane B's stub) every helper-capable
-        // instruction in range gives up its dynamic window instead.
-        static NODYN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let nodyn = *NODYN.get_or_init(|| std::env::var_os("SHARC_FAST_HELPER_NODYN").is_some());
-        self.helper_form =
-            nodyn && at.is_some_and(super::cfg::helper_at) && super::cfg::helper_ok(d);
+        // `deny`); one with a guarded dynamic window keeps it.
         // An execution condition is handled here, for every form: the form
         // code sees the unconditional instruction.
         let plain;
@@ -1843,6 +1946,7 @@ impl Lower {
             flag_kinds: self.flag_kinds_out,
             plain: self.plain_out | self.plan.plain,
             entry_abs: std::mem::take(&mut self.entry_abs_out),
+            reg_sym: self.reg_sym,
             ..Plan::default()
         };
         for c in 0..NREGS as usize {
@@ -1877,7 +1981,9 @@ impl Lower {
             flags: self.flags,
             stored,
             next,
+            reg_n: self.reg_sym.map(|(_, c, k)| (c, k)),
             retry: self.retry,
+            dyn_pcs: self.dyn_pcs,
         })
     }
 }
@@ -1900,8 +2006,13 @@ pub struct Lowered {
     /// (CFG kernels); the others are not touched.
     pub stored: Vec<u32>,
     pub next: Plan,
+    /// The symbolic trip count of a CFG kernel without an entry loop: the
+    /// register and the constant added to it (`Lower::reg_sym`).
+    pub reg_n: Option<(u8, i64)>,
     /// See `Lower::retry`.
     pub retry: bool,
+    /// See `Lower::dyn_pcs`.
+    pub dyn_pcs: Vec<u32>,
 }
 
 /// The f32 result must be finite (not a NaN or an infinity): those make the
@@ -1915,18 +2026,28 @@ pub fn result_finite(l: &mut Lower, r: Val) {
     l.guard(ok);
 }
 
-/// The f32 result of a multiply must be a finite normal number or zero: a
-/// denormal result sets MU (and the sticky MUS) in the interpreter.
-pub fn result_normal_or_zero(l: &mut Lower, r: Val) {
-    let abs = l.un(Un::FAbs, r);
+/// The f32 result M of the multiply X * Y must be a finite normal number, or
+/// zero because an operand is zero. A product below the smallest normal
+/// (a denormal, or a zero made by underflow) is returned as a zero by the
+/// device and sets MU and the sticky MUS, which the kernel does not do, so
+/// it leaves (the interpreter runs `floats._float_multiply`). The operands
+/// are normal or zero (`guard_not_denormal`), so a zero result with a
+/// nonzero operand is an underflow.
+pub fn result_no_underflow(l: &mut Lower, x: Val, y: Val, m: Val) {
+    let abs = l.un(Un::FAbs, m);
     let inf = l.cf(0x7f80_0000);
     let min = l.cf(0x0080_0000);
     let zero = l.cf(0);
     let fin = l.bin(Bin::FLt, abs, inf);
     l.guard(fin);
     let big = l.bin(Bin::FGe, abs, min);
-    let z = l.bin(Bin::FEq, abs, zero);
-    l.guard_any(big, z);
+    let xz = l.bin(Bin::FEq, x, zero);
+    let yz = l.bin(Bin::FEq, y, zero);
+    let either = l.bin(Bin::Or, xz, yz);
+    l.guard_any(big, either);
+    if l.cond.is_none() {
+        l.ftz_ok.insert(m);
+    }
 }
 
 #[cfg(test)]
@@ -1938,7 +2059,6 @@ mod tests {
             regs: [None; NREGS as usize],
             dag_l: [None; 16],
             dag_b: [None; 16],
-            circ_off: false,
             assume_nw32: true,
             mode1: 0,
             flag_v: false,
@@ -1946,6 +2066,7 @@ mod tests {
             guarded_dyn: false,
             bank_model: false,
             cacc_known: true,
+            flat_windows: false,
         }
     }
 
@@ -1975,5 +2096,28 @@ mod tests {
         // Another anchor gets its own slot.
         l.dynamic_window(addr, 19, true).unwrap();
         assert_eq!(l.wins.len(), 2);
+    }
+    #[test]
+    fn flat_windows_make_no_window_slot() {
+        let mut e = env();
+        e.flat_windows = true;
+        let mut l = Lower::new(e, Plan::default(), 2);
+        let addr = l.ci(0x20_0000);
+        l.window_access(addr, 4, true).unwrap();
+        l.window_access(addr, 4, false).unwrap();
+        assert!(l.wins.is_empty());
+    }
+
+    #[test]
+    fn a_negative_constant_range_is_a_high_address() {
+        // `ci` sign-extends: 0x8052d790 is the range -2142053488, the address
+        // 0x8052d790 modulo 2^32.
+        let a = Abs::konst(0x8052_d790u32 as i32 as i64).as_addr();
+        assert_eq!((a.lo, a.hi), (0x8052_d790, 0x8052_d790));
+        // A range that crosses zero, or has a base, stays as it is.
+        let b = Abs { lo: -4, hi: 4, ..Abs::konst(0) };
+        assert_eq!(b.as_addr(), b);
+        let c = Abs { base: Base::Reg(2), ..Abs::konst(-8) };
+        assert_eq!(c.as_addr(), c);
     }
 }

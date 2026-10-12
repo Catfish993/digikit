@@ -244,10 +244,15 @@ impl Emit<'_> {
                 self.get(c);
                 self.i(I::Select);
             }
-            Op::Helper(_) => {
-                // Helper calls name host records; the browser core would need
-                // an imported function and a record table in its memory.
-                unimplemented!("helper calls in wasm kernels")
+            Op::Helper(rec) => {
+                // `helper_exec(st, rec)`: the imported function 0 (`env.helper`,
+                // the core's `digi_helper_exec` export). On wasm32 the record
+                // is a leaked pointer into the core's own memory, so the low
+                // 32 bits are the whole address (`emit_function` refuses
+                // anything wider).
+                self.i(I::LocalGet(self.l.st));
+                self.i(I::I32Const(rec as u32 as i32));
+                self.i(I::Call(0));
             }
             Op::Load32 { base, off } => {
                 self.addr(base, off);
@@ -413,9 +418,21 @@ impl Emit<'_> {
     }
 }
 
+/// Whether K has a helper call (`wide`: only one whose record needs more than
+/// 32 bits).
+fn uses_helper(k: &Kernel, wide: bool) -> bool {
+    [&k.pre, &k.body, &k.post]
+        .into_iter()
+        .flatten()
+        .any(|i| matches!(i, Inst::Def(_, Op::Helper(r)) if !wide || *r > u32::MAX as u64))
+}
+
 /// The wasm function body of kernel K.
 fn emit_function(k: &Kernel) -> Result<Function, String> {
     k.validate()?;
+    if uses_helper(k, true) {
+        return Err("a helper record above 4 GiB (kernels with helper calls need a wasm32 core)".into());
+    }
     let l = layout(k);
     let f = Function::new(l.decl.clone());
     let mut e = Emit {
@@ -492,13 +509,19 @@ pub fn emit_module(kernels: &[&Kernel], min_pages: u64) -> Result<Vec<u8>, Strin
             page_size_log2: None,
         }),
     );
+    // `env.helper(st, rec) -> status`, imported only when a kernel calls it
+    // (function index 0, so the kernels are `k<i>` at index `helper + i`).
+    let helper = kernels.iter().any(|k| uses_helper(k, false)) as u32;
+    if helper != 0 {
+        imports.import("env", "helper", EntityType::Function(0));
+    }
     m.section(&imports);
     let mut funcs = FunctionSection::new();
     let mut exports = ExportSection::new();
     let mut code = CodeSection::new();
     for (i, k) in kernels.iter().enumerate() {
         funcs.function(0);
-        exports.export(&format!("k{i}"), ExportKind::Func, i as u32);
+        exports.export(&format!("k{i}"), ExportKind::Func, helper + i as u32);
         code.function(&emit_function(k).map_err(|e| format!("kernel {i}: {e}"))?);
     }
     m.section(&funcs);
@@ -536,5 +559,120 @@ impl KernelBackend for WasmBackend {
         Ok(Box::new(WasmKernel {
             bytes: emit_kernel(k)?,
         }))
+    }
+}
+
+/// The backend of the browser core (wasm32): kernels are emitted here and
+/// instantiated by the page over this module's memory, which is the same
+/// memory the kernels address (a host pointer of this core is a linear-memory
+/// address). The page provides three imports from module `env`:
+///
+/// * `host_wasm_compile(ptr, len) -> i32`: compile the module at `ptr..ptr+len`
+///   and return a kernel id (>= 0), or < 0 on failure;
+/// * `host_wasm_run(id, ctx, st) -> u32`: run kernel `id`;
+/// * `host_wasm_free(id)`: drop it.
+#[cfg(target_arch = "wasm32")]
+pub mod host {
+    use super::*;
+
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
+        fn host_wasm_compile(ptr: *const u8, len: usize) -> i32;
+        fn host_wasm_run(id: i32, ctx: *mut u8, st: *mut u8) -> u32;
+        fn host_wasm_free(id: i32);
+    }
+
+    pub struct HostBackend;
+
+    struct HostKernel(i32);
+
+    impl CompiledKernel for HostKernel {
+        unsafe fn run(&self, ctx: *mut u8, st: *mut u8) -> u32 {
+            unsafe { host_wasm_run(self.0, ctx, st) }
+        }
+    }
+
+    impl Drop for HostKernel {
+        fn drop(&mut self) {
+            unsafe { host_wasm_free(self.0) }
+        }
+    }
+
+    impl KernelBackend for HostBackend {
+        fn name(&self) -> &'static str {
+            "wasm-host"
+        }
+        fn compile(&mut self, k: &Kernel) -> Result<Box<dyn CompiledKernel>, String> {
+            let bytes = emit_kernel(k)?;
+            // SAFETY: the page reads the bytes during the call only.
+            let id = unsafe { host_wasm_compile(bytes.as_ptr(), bytes.len()) };
+            if id < 0 {
+                return Err(format!("the host refused the kernel module ({id})"));
+            }
+            Ok(Box::new(HostKernel(id)))
+        }
+    }
+
+    /// Make `FastEngine`s use the host backend.
+    pub fn register() {
+        sharc_native::fast::register_backend(|| Box::new(HostBackend));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One kernel: `ok = helper(st, rec)`; a zero status ends the kernel with exit 3.
+    fn helper_kernel(rec: u64) -> Kernel {
+        Kernel {
+            val_ty: vec![Ty::I32],
+            body: vec![
+                Inst::Def(0, Op::Helper(rec)),
+                Inst::Guard {
+                    ok: 0,
+                    k: 3,
+                    exit: 0,
+                },
+            ],
+            exits: vec![Vec::new()],
+            ..Kernel::default()
+        }
+    }
+
+    /// A helper call imports `env.helper` (function 0, so the kernel is function 1
+    /// and still exported as `k0`); a kernel without one imports nothing extra.
+    /// `WASM_HELPER_OUT=FILE` also writes the module for
+    /// `native/sharc-fast-wasm/helper_check.mjs`.
+    #[test]
+    fn helper_call_imports_the_host_function() {
+        let k = helper_kernel(0x1234);
+        let bytes = emit_module(&[&k], 1).unwrap();
+        assert!(bytes.windows(6).any(|w| w == b"helper"));
+        if let Some(out) = std::env::var_os("WASM_HELPER_OUT") {
+            std::fs::write(out, &bytes).unwrap();
+        }
+        let plain = Kernel {
+            val_ty: vec![Ty::I32],
+            body: vec![
+                Inst::Def(0, Op::CI32(1)),
+                Inst::Guard {
+                    ok: 0,
+                    k: 3,
+                    exit: 0,
+                },
+            ],
+            exits: vec![Vec::new()],
+            ..Kernel::default()
+        };
+        let bytes = emit_module(&[&plain], 1).unwrap();
+        assert!(!bytes.windows(6).any(|w| w == b"helper"));
+    }
+
+    /// A record that does not fit in a wasm32 address is refused, not truncated.
+    #[test]
+    fn wide_helper_record_is_refused() {
+        let err = emit_module(&[&helper_kernel(1 << 40)], 1).unwrap_err();
+        assert!(err.contains("wasm32"), "{err}");
     }
 }

@@ -1,6 +1,6 @@
 //! Processor state, the bus interface, exception entry and a first handful
 //! of instruction semantics (enough to fix the shape of the interpreter; the
-//! rest lands with the per-instruction lockstep against Unicorn).
+//! rest lands with the per-instruction lockstep against Unicorn (removed; see tag unicorn-reference-final)).
 //!
 //! References: CFPRM (ColdFire Family Programmer's Reference Manual, Rev. 2)
 //! and the MCF5441x Reference Manual (RM); page numbers are PDF pages.
@@ -310,7 +310,7 @@ pub struct Cpu {
     /// Instructions completed (including ones that took an exception).
     pub icount: u64,
     /// The vector taken by the most recent `step`, if any; cleared at the
-    /// start of each `step`. Exists for callers (the lockstep harness) that
+    /// start of each `step`. Exists for callers (the former lockstep harness (removed; see tag unicorn-reference-final)) that
     /// need to know an exception was taken, since `step`'s own `Ok(())`
     /// covers both a straight-line instruction and one that faulted into a
     /// handler.

@@ -3,7 +3,7 @@
 //!
 //! `oracle`-prefixed tests check [`IntcBank::read`]/[`write`]/
 //! [`level_for_vector`], the behaviour the replay harness uses (matches the
-//! Python emulator: every register here is plain RAM except the masking
+//! Python emulator (removed; see tag unicorn-reference-final): every register here is plain RAM except the masking
 //! computation -- see `intc.rs`'s module docs). `hw_`-prefixed tests check
 //! the hardware-accurate extras the frozen oracle does not implement
 //! (INTFRC, SIMR/CIMR, IACK) -- not used by the replay, per the plan's
@@ -21,7 +21,7 @@ fn vector_numbering_section_17_3_1_3() {
 
 #[test]
 fn oracle_registers_round_trip_as_plain_ram() {
-    // The Python emulator never intercepts a guest access here (see
+    // The Python emulator (removed; see tag unicorn-reference-final) never intercepts a guest access here (see
     // `emu.pit.interrupt_level`, which only *reads* IMR/ICR); IPR, INTFRC,
     // SIMR and CIMR all round-trip exactly like any other unmodelled
     // register.

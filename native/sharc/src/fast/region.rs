@@ -92,14 +92,13 @@ pub struct Region {
     /// `Mem::dec_gen` moves).
     pub code_words: Vec<(u32, u16)>,
     pub verified_gen: u64,
+    /// Instructions with a guarded dynamic window (`Lower::dyn_pcs`).
+    pub dyn_pcs: Vec<u32>,
     /// Form names, for reports.
     pub forms: Vec<&'static str>,
     /// `Some` for a CFG region (see `cfg`): `lp` is None, the kernel counts
     /// its own instructions and loop iterations.
     pub cfg: Option<CfgMeta>,
-    /// The lean entry contract (`lean`), for CFG regions when
-    /// `SHARC_FAST_LEAN=1`.
-    pub lean: Option<super::lean::Lean>,
 }
 
 impl Region {
@@ -170,7 +169,6 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         regs,
         dag_l,
         dag_b,
-        circ_off: std::env::var_os("SHARC_FAST_NOCIRC").is_some(),
         assume_nw32: s.cfg.assume_nw32,
         mode1: s.r[MODE1].b,
         flag_v,
@@ -178,6 +176,7 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         guarded_dyn: false,
         bank_model: s.cfg.bank_model,
         cacc_known: s.r[118].m & 0xff00_0000 == 0xff00_0000,
+        flat_windows: false,
     }
 }
 
@@ -242,6 +241,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         .any(|(_, d)| d.field("cond").is_some_and(|c| c != 0x1f));
     let mut env = env_of(s, flag_v);
     apply_volatile(&mut env, pc);
+    env.flat_windows = cfg::is_flat_win(pc);
     let mut plan = Plan::default();
     let mut last = None;
     for pass in 0..MAX_PASSES {
@@ -363,9 +363,9 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         kernel: out.kernel,
         code_words,
         verified_gen: s.mem.dec_gen,
+        dyn_pcs: out.dyn_pcs.clone(),
         forms: decs.iter().map(|(_, d)| d.form).collect(),
         cfg: None,
-        lean: None,
     })
 }
 
@@ -387,6 +387,7 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
     }
     let mut env = env_of(s, true);
     apply_volatile(&mut env, pc);
+    env.flat_windows = cfg::is_flat_win(pc);
     env.guarded_dyn = cluster;
     // An instruction that cannot be lowered where it stands (an address that
     // has no range, too many windows) becomes the end of the region.
@@ -405,6 +406,16 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
                     eprintln!("cov helper root={pc:#x} at={at:#x} why={}", e.0);
                 }
                 helpers.insert(at);
+            }
+            Err((e, Some(at)))
+                if cfg::flat_auto()
+                    && e.0.contains("address range unknown")
+                    && !deny.contains(&at)
+                    && cfg::mark_flat_pc(at) =>
+            {
+                if std::env::var_os("SHARC_FAST_COV").is_some() {
+                    eprintln!("cov flat root={pc:#x} at={at:#x} why={}", e.0);
+                }
             }
             Err((e, Some(at))) if at != pc && !deny.contains(&at) => {
                 if std::env::var_os("SHARC_FAST_LOG").is_some() {
@@ -575,6 +586,7 @@ fn assemble_cfg(
         sites,
         loops: st.loops.clone(),
         n_entry,
+        reg_n: out.reg_n,
         jumps,
         jump_tail,
         has_rts,
@@ -598,7 +610,6 @@ fn assemble_cfg(
     let nw_hull = nw_hulls(&reqs);
     let wcache = vec![std::cell::Cell::new(WinCache::NONE); out.wins.len()];
     let chk = reg_checks(&reqs);
-    let (chk_l, reqs_l, wins_l) = (chk.clone(), reqs.clone(), out.wins.clone());
     Ok(Region {
         entry_pc: pc,
         lp: None,
@@ -656,9 +667,9 @@ fn assemble_cfg(
         kernel: out.kernel,
         code_words,
         verified_gen: s.mem.dec_gen,
+        dyn_pcs: out.dyn_pcs.clone(),
         insns,
         forms,
         cfg: Some(meta),
-        lean: super::lean::enabled().then(|| super::lean::Lean::new(&chk_l, &reqs_l, &wins_l)),
     })
 }

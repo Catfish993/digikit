@@ -94,6 +94,16 @@ def _alive(path: str) -> bool:
         probe.close()
 
 
+class _KeptDir:
+    """A run directory that outlives the daemon (same surface as a TemporaryDirectory)."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def cleanup(self) -> None:
+        pass
+
+
 class Emu:
     """One connection to an emulator. Calls are synchronous; a job method
     (`step`, `run_until`, a cold-boot load) returns when the job ends."""
@@ -106,7 +116,7 @@ class Emu:
         self._events: list[dict[str, Any]] = []
         self.path = path
         self._proc: subprocess.Popen[bytes] | None = None
-        self._run_dir: tempfile.TemporaryDirectory[str] | None = None
+        self._run_dir: tempfile.TemporaryDirectory[str] | _KeptDir | None = None
 
     # ----- connecting -------------------------------------------------------
 
@@ -131,16 +141,30 @@ class Emu:
         *args: str,
         binary: str | os.PathLike[str] | None = None,
         timeout: float = 120.0,
+        run_dir: str | os.PathLike[str] | None = None,
     ) -> Emu:
-        """Start a private `digi-emud` (paused) with ARGS and connect to it."""
+        """Start a private `digi-emud` (paused) with ARGS and connect to it.
+
+        RUN_DIR keeps the daemon's run directory (and the card caches under
+        it) between runs; the default is a temporary directory."""
         exe = str(binary or os.environ.get("DIGI_EMUD") or "")
         if not exe:
             raise FileNotFoundError(
                 "set DIGI_EMUD to the digi-emud binary (`mise run emu:serve -- --build-only` builds it)"
             )
-        run_dir = tempfile.TemporaryDirectory(prefix="digi-run-")
+        if run_dir is not None:
+            keep = pathlib.Path(run_dir)
+            keep.mkdir(parents=True, exist_ok=True)
+            for stale in keep.glob("*.sock"):
+                stale.unlink(missing_ok=True)
+            (keep / "current.json").unlink(missing_ok=True)
+        run_dir_obj: _KeptDir | tempfile.TemporaryDirectory[str] = (
+            _KeptDir(str(run_dir))
+            if run_dir is not None
+            else tempfile.TemporaryDirectory(prefix="digi-run-")
+        )
         proc = subprocess.Popen(
-            [exe, "--run-dir", run_dir.name, *args],
+            [exe, "--run-dir", run_dir_obj.name, *args],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=ROOT,
@@ -149,21 +173,21 @@ class Emu:
         while time.monotonic() < deadline:
             if proc.poll() is not None:
                 err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
-                run_dir.cleanup()
+                run_dir_obj.cleanup()
                 raise RuntimeError(
                     f"digi-emud exited {proc.returncode}: {err.strip()[-400:]}"
                 )
             try:
-                path = discover(run_dir.name)
+                path = discover(run_dir_obj.name)
                 break
             except FileNotFoundError:
                 time.sleep(0.1)
         else:
             proc.kill()
-            run_dir.cleanup()
+            run_dir_obj.cleanup()
             raise TimeoutError("digi-emud did not open its socket")
         emu = cls.connect(path)
-        emu._proc, emu._run_dir = proc, run_dir
+        emu._proc, emu._run_dir = proc, run_dir_obj
         return emu
 
     def close(self) -> None:

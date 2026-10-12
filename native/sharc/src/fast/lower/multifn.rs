@@ -15,7 +15,8 @@
 //! multiplier half sets MN from the product's sign and clears MV MU MI (`Fmul`;
 //! the core computes them exactly since 2a), so a product that is not finite
 //! normal or zero exits and the sticky bits do not change. The ALU results must be finite, as for the single-function float
-//! ops.
+//! ops; denormal operands exit and denormal results are returned as zeros, as
+//! there (`float_alu.rs`).
 //!
 //! Other MUL/ALU categories (convert, average, abs, min, max) are refused.
 
@@ -33,8 +34,8 @@ impl Lower {
         let rya = 12 + (field & 3);
         match category {
             0x18 | 0x19 => {
-                let (xm, ym) = (self.rd_f(rxm)?, self.rd_f(rym)?);
-                let (xa, ya) = (self.rd_f(rxa)?, self.rd_f(rya)?);
+                let (xm, ym) = (self.rd_f_op(rxm)?, self.rd_f_op(rym)?);
+                let (xa, ya) = (self.rd_f_op(rxa)?, self.rd_f_op(rya)?);
                 let m = self.bin(Bin::FMul, xm, ym);
                 let b = if category == 0x18 {
                     Bin::FAdd
@@ -42,7 +43,8 @@ impl Lower {
                     Bin::FSub
                 };
                 let a = self.bin(b, xa, ya);
-                result_normal_or_zero(self, m);
+                result_no_underflow(self, xm, ym, m);
+                let a = self.flush_denormal_result(a);
                 result_finite(self, a);
                 self.wr_f(rm, m)?;
                 self.wr_f(ra, a)?;
@@ -52,12 +54,14 @@ impl Lower {
             }
             0x30..=0x3f => {
                 let rs = category & 0xf;
-                let (xm, ym) = (self.rd_f(rxm)?, self.rd_f(rym)?);
-                let (xa, ya) = (self.rd_f(rxa)?, self.rd_f(rya)?);
+                let (xm, ym) = (self.rd_f_op(rxm)?, self.rd_f_op(rym)?);
+                let (xa, ya) = (self.rd_f_op(rxa)?, self.rd_f_op(rya)?);
                 let m = self.bin(Bin::FMul, xm, ym);
                 let sum = self.bin(Bin::FAdd, xa, ya);
                 let dif = self.bin(Bin::FSub, xa, ya);
-                result_normal_or_zero(self, m);
+                result_no_underflow(self, xm, ym, m);
+                let sum = self.flush_denormal_result(sum);
+                let dif = self.flush_denormal_result(dif);
                 result_finite(self, sum);
                 result_finite(self, dif);
                 self.wr_f(rm, m)?;
@@ -79,9 +83,11 @@ impl Lower {
         let ry = field & 0xf;
         let rs = opcode & 0xf;
         if opcode >> 4 == 0xf {
-            let (x, y) = (self.rd_f(rx)?, self.rd_f(ry)?);
+            let (x, y) = (self.rd_f_op(rx)?, self.rd_f_op(ry)?);
             let sum = self.bin(Bin::FAdd, x, y);
             let dif = self.bin(Bin::FSub, x, y);
+            let sum = self.flush_denormal_result(sum);
+            let dif = self.flush_denormal_result(dif);
             result_finite(self, sum);
             result_finite(self, dif);
             self.wr_f(rn, sum)?;

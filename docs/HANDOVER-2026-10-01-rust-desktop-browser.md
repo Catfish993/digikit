@@ -92,6 +92,28 @@ desktop/browser runtime still needs coupled DSP/audio integration. See
 **Fresh DSP traffic, native startup frontier and speaker proof** in findings 07
 for commands, evidence and limits.
 
+Current DN2 oscillator follow-up (2026-10-02): checkpoint `76da22f` adds
+guest-driven SSI command production and runtime DSP decoding; `2d6d914` fixes
+a late instruction-width ambiguity that had masqueraded as an undocumented
+ALU opcode. The working tree adds opt-in SHARC register banks and independent physical
+PC/status stacks (canonical v3), correct guest MODE1STK access, L1 ISA vector
+decoding and functional software IRQ entry/RTI. Native options 19/20 enable
+banks/stacks; option 9 delivers software IRQs. AOT is disabled with these
+models. Correcting task restoration demonstrably reaches eligible SFT3 at
+instruction 561,597,320. The vector now enters the real handler, and fixing
+W2B identity for already-byte-space pointers allows interrupt/task restoration
+to complete and another ten million instructions to run without a trap.
+Focused Python/native checks and native unit tests pass; existing goldens are
+unchanged. See **Physical task stacks, ISA vectors and software IRQ delivery**
+in findings 07 for evidence and current verification limits.
+
+The flattened-entry diagnostic remains unqualified: INIT/ROM handoff,
+complete interrupt/peripheral behavior and coupled PCM playback are not
+established. The selected first sound target is the DN2 oscillator. The shared
+board's DSPI2 ZeroPeer is the genuine coupling seam; native/live's existing
+captured-state renderer is not a fresh DN2 sound proof. There is still no fresh
+DN2 oscillator audio output.
+
 **The goal is synchronized ColdFire + SHARC execution close enough to device
 real time to sustain audio. Boot/UI speed is secondary.** The user stopped the
 boot-focused work and explicitly requested committing all current source/docs

@@ -478,6 +478,9 @@ for _n in [
     BOUNDARY["sharc_core.periph." + _n] = Bnd()
 for _n in ["_concrete_address", "_byte_present"]:
     BOUNDARY["sharc_core.memory." + _n] = Bnd()
+# The address table: one out-of-line range walk in the runtime instead of a
+# copy at every use (native/sharc-rt/src/addressing.rs).
+BOUNDARY["sharc_core.addressing.normal_word_to_byte"] = Bnd()
 for _n in [
     "_canonical_dm_address",
     "dm_write_range",
@@ -501,8 +504,13 @@ for _n in [
     "_round_even_int",
     "_float32_bits",
     "_double_pair_bits",
+    "_float32",
+    "_float32_result",
 ]:
     BOUNDARY["sharc_core.floats." + _n] = Bnd()
+# The multifunction multiply: one native body, a fast path for the usual
+# operands and the original sequence for the rest (bnd.rs).
+BOUNDARY["sharc_core.compute_multi._float_multiply_parts"] = Bnd()
 
 # Boundary functions that touch the register file: block mode calls their
 # ``_rf`` forms over the block's register file (rt.rs Rf, bnd.rs).
@@ -545,23 +553,24 @@ SETTING_FACTS = ("nolog",)
 LOOP_SYNC = "sharc_core.state._sync_empty_loop_registers"
 LOOP_SYNCED_FACT = "loop_synced"
 
-# Registers that are PartialConst in practice (ASTATX, ASTATY: the CACC bits
-# are not known; STKYX, STKYY: once a status restore or move brings in an
-# unknown value, until the guest rewrites them, which in the coupled DN2 run
-# is for long stretches): block code keeps their known-bit masks at run time
-# instead of requiring them known at entry.
+# The flag registers (ASTATX, ASTATY, STKYX, STKYY) were PartialConst in the
+# early cores (the CACC bits, and STKY once a status restore brought in an
+# unknown value), so block code kept their known-bit masks at run time. In the
+# coupled DN2 runs they are fully known at every region entry (measured on
+# trig1-taps, kb-chord16 and FX scenarios, docs/design/aot-mask-free.md
+# section 7), so block code now requires them known at entry like any other
+# register it reads, and a flag update that would leave a bit unknown is
+# rf_set's cold exit. PARTIAL_MASKS and tools/sharc_rsgen.py REQUIRE_MASKS
+# remain for an image whose flags are known to carry a usual partial mask.
 PARTIAL_REGS = frozenset({118, 119, 120, 121})
-# Their usual known-bit masks (the CACC compare history, ASTATX bits 24-31,
-# is never known): block code requires these at entry, so they fold.
 PARTIAL_MASKS = {118: 0x00FFFFFF, 119: 0xFFFFFFFF, 120: 0xFFFFFFFF, 121: 0xFFFFFFFF}
 
-# floats._float_binary called with one of these operations is replaced by a
-# hand-written fast path in native/sharc-rt/src/rt/bnd.rs (Transpiler.
-# fast_float_call).
+# floats._float_binary called with one of these operations (and
+# floats._float_multiply) is replaced by a hand-written fast path in
+# native/sharc-rt/src/rt/bnd.rs (Transpiler.fast_float_call).
 FAST_FLOAT_BINARY = {
     "sharc_core.floats._f_add": "_float_binary_add",
     "sharc_core.floats._f_sub": "_float_binary_sub",
-    "sharc_core.floats._f_mul": "_float_binary_mul",
 }
 
 # Function values the runtime knows by number (rt.rs FN_OP_*).
@@ -1125,7 +1134,8 @@ class Translator:
             name = "%s__v%d" % (rust_ident(fullname.rpartition(".")[2]), index)
             path = "crate::generated::image::spec_%02d::%s" % (module, name)
             self.variant_by_text[digest] = path
-            self.variant_texts.append((module, text.replace("__VARIANT__", name)))
+            text = text.replace("__VARIANT__", name)
+            self.variant_texts.append((module, _cold_paths(text) if self.blk else text))
         self.variant_effects[path] = set(fnt.effects)
         self.variant_facts_out[path] = facts_out
         self.variant_memreads[path] = fnt.memreads
@@ -3247,10 +3257,20 @@ class FnT:
             return E(
                 self.call_code("bnd::" + helper, codes, False), sig.ret, True, _NOCONST
             )
+        if fullname == "sharc_core.floats._float_multiply":
+            codes = [
+                self.coerce(bound[n][1], bound[n][0], e) for n in ("left", "right")
+            ]
+            return E(
+                self.call_code("bnd::_float_multiply", codes, False),
+                sig.ret,
+                True,
+                _NOCONST,
+            )
         if fullname == "sharc_core.compute_mult._astatx_mult_float":
             codes = [
                 self.coerce(bound[n][1], bound[n][0], e)
-                for n in ("result", "overflowed", "invalid")
+                for n in ("result", "overflowed", "underflowed", "invalid")
             ]
             return E(
                 self.call_code("bnd::_astatx_mult_float", codes, False),
@@ -3258,14 +3278,6 @@ class FnT:
                 True,
                 _NOCONST,
             )
-        if fullname == "sharc_core.compute_multi._multifn_fm_value":
-            v = self.fresh("o")
-            op_t, op_e = bound["op"]
-            call = self.call_code(
-                "bnd::_multifn_fm_value", ["%s.fxm" % v, "%s.fym" % v], False
-            )
-            code = "{ let %s = %s; %s }" % (v, self.coerce(op_e, op_t, e), call)
-            return E(code, sig.ret, True, _NOCONST)
         return None
 
     def blk_boundary(
@@ -4246,11 +4258,10 @@ class FnT:
                     self.wregs.add(reg)
                     self.reg_written(reg, v)
                     vcode = self.coerce(v, VAL, node)
-                    fn = (
-                        "rf_put"
-                        if vcode.strip() == "V::UNK" or reg in PARTIAL_REGS
-                        else "rf_set"
-                    )
+                    # The flag registers are required known at region entry
+                    # (tools/sharc_rsgen.py), so a flag update that would leave
+                    # a bit unknown is rf_set's cold exit like any register.
+                    fn = "rf_put" if vcode.strip() == "V::UNK" else "rf_set"
                     if fn == "rf_put":
                         self.putregs.add(reg)
                     return [
@@ -4920,6 +4931,26 @@ def _can_trap(body: str, traps: dict[str, bool]) -> bool:
     return q > 0
 
 
+_STRING_OR_Q = re.compile(r'"(?:[^"\\]|\\.)*"|\?|return Err\(')
+
+
+def _cold_paths(text: str) -> str:
+    """Block-mode variant text with every trap path marked unlikely: `x?` is
+    `x.ce()?` and `return Err(t)` is `return cold_err(t)` (rt.rs ColdErr,
+    cold_err), so LLVM places the trap paths out of line and the hot path of
+    a block stays dense. Same values and control flow."""
+
+    def sub(m: re.Match) -> str:
+        t = m.group(0)
+        if t == "?":
+            return ".ce()?"
+        if t.startswith("return Err("):
+            return "return cold_err("
+        return t
+
+    return _STRING_OR_Q.sub(sub, text)
+
+
 # Runtime calls that write the undo log (rt.rs St::log).
 _LOGS_RE = re.compile(r"stk_(?:push|pop|set)_|s_set_special|bnd::_dm_write\(")
 _USES_S = re.compile(r"(?<![A-Za-z0-9_:.])s(?![A-Za-z0-9_])")
@@ -5267,6 +5298,9 @@ def write(out: Output, directory: str) -> None:
             fh.write(text)
     with open(os.path.join(directory, "transpile-report.json"), "w") as fh:
         json.dump(out.report, fh, indent=1, sort_keys=True)
+    import digi_env
+
+    digi_env.write_core_fingerprint(directory)
 
 
 def main(argv: list[str] | None = None) -> int:

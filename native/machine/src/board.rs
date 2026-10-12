@@ -172,7 +172,6 @@ impl Board {
     }
 
     /// Device-register accesses so far; see the field docs.
-    #[inline]
     #[inline(always)]
     fn in_dsp_port(addr: u32) -> bool {
         addr.wrapping_sub(periph::dsp::BASE) < SLOT_SIZE as u32

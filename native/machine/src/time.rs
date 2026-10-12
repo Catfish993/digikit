@@ -35,6 +35,9 @@ pub enum TimeError {
     DeviceInterruptDeliveryUnsupported,
 }
 
+/// INTC1 source 63: forced by the guest too, but delivered by the SSI model.
+const SSI_VECTOR191: u16 = 191;
+
 /// PIT/DTIM/INTC register facade and guest-clock timing composition.
 pub struct Time {
     pit: PitBank,
@@ -51,6 +54,11 @@ pub struct Time {
     /// nothing until a deadline, an IPL below `level`, or any register write
     /// or load (which clears this). Host-only cache, not checkpointed.
     blocked: Option<(f64, u8)>,
+    /// Deliver guest-forced INTC sources (INTFRCH/INTFRCL). On by default
+    /// since 2026-10-13 (finding 19, sequencer step ISR). Native
+    /// `DIGI_INTC_FORCE=0` turns it off at construction for A/B; on wasm32 it
+    /// is always on. `restore_timer_component` does not touch it.
+    force_irq: bool,
 }
 
 impl Time {
@@ -82,6 +90,33 @@ impl Time {
             host_writes: Vec::new(),
             service_not_before: None,
             blocked: None,
+            force_irq: Self::default_force_irq(),
+        }
+    }
+
+    fn default_force_irq() -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            true
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::env::var_os("DIGI_INTC_FORCE").is_none_or(|v| v != "0")
+        }
+    }
+
+    /// Software-forced INTC delivery (see `force_irq`).
+    pub fn set_force_irq(&mut self, on: bool) {
+        self.force_irq = on;
+        self.service_not_before = None;
+        self.blocked = None;
+    }
+
+    fn forced_candidate(&self) -> Option<(u16, u8)> {
+        if self.force_irq {
+            self.intc.forced_candidate(SSI_VECTOR191)
+        } else {
+            None
         }
     }
 
@@ -199,6 +234,7 @@ impl Time {
     /// Pending IRQs must still be offered at every interpreted boundary.
     pub fn has_pending_interrupts(&self) -> bool {
         (0..4).any(|channel| self.pit.pending(channel) || self.dtim.pending(channel))
+            || self.forced_candidate().is_some()
     }
 
     /// Same boundary cache as service_with, including queued host writes.
@@ -276,10 +312,21 @@ impl Time {
         let mut raised = self
             .pit
             .service_with(done, &self.intc, &mut self.sr, &mut offer);
-        let (dtim_raised, writes) = self
-            .dtim
-            .service_with(done, &self.intc, &mut self.sr, offer);
+        let (dtim_raised, writes) =
+            self.dtim
+                .service_with(done, &self.intc, &mut self.sr, &mut offer);
         raised.extend(dtim_raised);
+        // Software-forced INTC sources (guest writes to INTFRCH/INTFRCL, e.g.
+        // the sequencer step countdown): level-triggered until the guest
+        // clears the bit, so offered only above the live IPL.
+        let forced = self.forced_candidate();
+        if let Some((vector, level)) = forced
+            && self.sr.ipl() < level
+            && offer(vector, level)
+        {
+            self.sr.on_taken(Some(level), 0);
+            raised.push((vector, level));
+        }
         self.host_writes.extend(
             writes
                 .into_iter()
@@ -289,12 +336,14 @@ impl Time {
         // can unmask it even before the next timer tick. MMIO writes, page
         // loads, checkpoint restores and deadline arming invalidate this
         // cache. With no pending IRQ, only the earliest tick can do work.
-        let any_pending = (0..4).any(|i| self.pit.pending(i) || self.dtim.pending(i));
+        let any_pending =
+            (0..4).any(|i| self.pit.pending(i) || self.dtim.pending(i)) || forced.is_some();
         self.blocked = if any_pending && !self.pit.is_held() && !self.dtim.is_held() {
             let level = self
                 .pit
                 .max_pending_level(&self.intc)
-                .max(self.dtim.max_pending_level(&self.intc));
+                .max(self.dtim.max_pending_level(&self.intc))
+                .max(forced.map_or(0, |(_, level)| level));
             // Pending channels that were just declined by IPL stay declined
             // while IPL >= every pending level; one declined by the offer
             // callback (IPL below its level) must be retried at each boundary.

@@ -8,6 +8,9 @@ activate_aggressive = true
 [tools]
 rust = "1.98.1"
 pnpm = "12.8.2"
+"aqua:WebAssembly/binaryen" = "version_133"
+wasm-tools = "1.261.0"
+"github:mstange/samply" = "samply-v0.13.1"
 
 # --- setup ---
 
@@ -15,22 +18,17 @@ pnpm = "12.8.2"
 run = [
   "uv sync",
   "pnpm install --frozen-lockfile",
-  "uv run python -m emu.unicorn_compat || tools/install-patched-unicorn.sh",
 ]
-description = "Install the Python and web dependencies; build the patched Unicorn when the installed one lacks the patches"
+description = "Install the Python and web dependencies"
 
 # --- desktop emulator ---
 
 [tasks.emu]
-run = "tools/native_emu.py"
-description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready)"
-
-[tasks."emu:build"]
-run = "tools/native_emu.py --build-only"
-description = "Build the desktop emulator exactly as `mise run emu` does, without launching it"
+run = "uv run python tools/native_emu.py"
+description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready); `-- --build-only` builds without launching"
 
 [tasks."emu:serve"]
-run = "tools/native_emu.py --daemon"
+run = "uv run python tools/native_emu.py --daemon"
 description = "Run the emulator without a window, paused, serving the control socket (out/native/run/current.json); drive it with tools/digi_client.py. --free runs it live."
 
 [tasks."emu:ctl"]
@@ -56,21 +54,19 @@ description = "Build the browser core (WASM) and the static web panel (astro bui
 run = "pnpm check"
 description = "Type-check the web panel (astro check)"
 
-[tasks."web:lint"]
-run = "pnpm lint"
-description = "Lint the web panel (oxlint with eslint-plugin-solid)"
-
 [tasks."web:test"]
 run = "pnpm test"
 description = "Run the web panel's audio-health tests (node --test)"
 
 [tasks."web:wasm"]
-alias = "wasm"
 run = "tools/native_wasm.py"
-description = "Build only the browser emulator core (WASM)"
+description = "Build only the browser emulator core (WASM); the coupled core goes through wasm-opt -O3 (--wasm-opt= turns it off)"
+
+[tasks."web:bench"]
+run = "uv run python tools/benchlock.py run --exclusive -- node tools/browser_bench.mjs"
+description = "Headless Chrome throughput bench of the coupled browser core (needs local inputs): mise run web:bench -- --seconds 10 --runs 3 [--js-flags=--no-liftoff] [--profile]"
 
 [tasks."web:parity"]
-alias = "wasm:parity"
 run = "node tools/wasm_parity.mjs --scenario"
 description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run web:parity trig1-tap-release"
 
@@ -85,6 +81,26 @@ depends = ["scenario:build"]
 run = "uv run python tools/coupled.py scenario --all --no-build"
 description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python tools/coupled.py scenario --all --device dt2"
 
+[tasks."scenarios:check"]
+run = "uv run python -m pytest tests/scenarios --slow -q"
+description = "Oracle tests: render the DN2 FX scenarios headless and assert measured relationships (fast subset, about 3 min)"
+
+[tasks."scenarios:dt2"]
+run = "uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow --sweep -q"
+description = "Oracle tests for the DT2 FX scenarios on the one-sample card (about 2 min)"
+
+[tasks."scenarios:sweep"]
+run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
+description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
+
+[tasks.verify]
+run = "uv run python tools/verify.py"
+description = "Exactness gate for what changed (tools/verify.py; --base BRANCH in a lane, --only STEPS); one PASS/FAIL line per step, logs in out/runs/verify/"
+
+[tasks."verify:full"]
+run = "uv run python tools/verify.py --full"
+description = "Exactness gate, every step with the full 134-scenario tier sweep (about 45 min): before merging to main"
+
 [tasks.scenario]
 run = "uv run python tools/coupled.py scenario"
 description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"
@@ -95,7 +111,6 @@ run = "uv run python tools/coupled.py replay"
 description = "Replay inputs recorded by the desktop app (Export diagnostics file) headless"
 
 [tasks."scenario:bisect"]
-alias = "bisect"
 run = "uv run python tools/coupled.py bisect"
 description = "Find the DSP tier (fast region, cluster root, AOT) that changes a scenario's PCM"
 
@@ -157,10 +172,22 @@ alias = "fastcov"
 run = "uv run python tools/fastcov.py"
 description = "DSP CPU, tier split and fast-tier refusals/exits per tier config: mise run perf:cov -- --config default --config fast-auto"
 
+[tasks."pgo:dn2"]
+run = "uv run python tools/native_pgo.py train"
+description = "Retrain the DN2 PGO profile against the current code and generated core"
+
+[tasks."pgo:dt2"]
+run = "uv run python tools/native_pgo.py train --device dt2"
+description = "Retrain the DT2 PGO profile against the current code and generated core"
+
 [tasks."perf:pgo"]
 alias = "pgo"
-run = "uv run python tools/native_pgo.py train"
-description = "Retrain the desktop PGO profile (~6 min); do it at milestones, not per edit"
+run = [
+  "uv run python tools/native_pgo.py train",
+  "uv run python tools/native_pgo.py train --device dt2",
+  "uv run python tools/native_emu.py --build-only",
+]
+description = "Retrain DN2 and DT2 PGO profiles, then rebuild the launcher with PGO. Run after core or engine changes, when `mise run emu` reports a stale profile."
 
 [tasks."perf:aot"]
 alias = "aot-gen"
@@ -188,5 +215,5 @@ description = "Run the bounded native Oracle boot diagnostic"
 
 [tasks."dev:plusdrive"]
 alias = "plusdrive"
-run = "tools/native_plusdrive.py"
+run = "cargo run --release --locked --offline -p plusdrive-format --bin plusdrive --"
 description = "Build or inspect a standalone +Drive image"

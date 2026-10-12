@@ -30,7 +30,6 @@ finally:
     sys.path.pop(0)
 
 CLEAN_CRATES = [
-    "cfabi",
     "coldfire",
     "device-profile",
     "digiemu-desktop",
@@ -69,6 +68,7 @@ def main(argv: list[str]) -> int:
     gen = digi_env.generated_dir()
     if not gen.is_dir():
         raise SystemExit(f"rust_ws: generated core dir is missing: {gen}")
+    digi_env.check_generated(gen)
     env["SHARC_GEN_DIR"] = str(gen)
     target = ["--target-dir", str(native_target.target_dir(gen)), "--locked"]
     if mode == "gates":

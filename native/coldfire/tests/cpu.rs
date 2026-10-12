@@ -189,7 +189,7 @@ fn illegal_takes_vector_4_with_a_format_4_frame() {
 fn user_mode_privilege_and_stack_swap() {
     // move.w #0x2700,sr in user mode: privilege violation on the SSP.
     // Requires CACR[EUSP] set (RM p.169 Table 6-3): confirmed against
-    // Unicorn that with the reset default (EUSP=0) A7 does not swap at all
+    // Unicorn (removed; see tag unicorn-reference-final) that with the reset default (EUSP=0) A7 does not swap at all
     // on an SR[S] change (see no_swap_without_eusp below), which the
     // firmware relies on implicitly by never executing MOVE to/from USP
     // (P3 stage-1 census: that ISA_B form is unused in both images).
@@ -210,7 +210,7 @@ fn user_mode_privilege_and_stack_swap() {
 
 #[test]
 fn no_stack_swap_without_eusp() {
-    // Confirmed against Unicorn (CFV4E, CACR reset to 0): dropping to user
+    // Confirmed against Unicorn (removed; see tag unicorn-reference-final) (CFV4E, CACR reset to 0): dropping to user
     // mode (S: 1 -> 0) with CACR[EUSP]=0 leaves A7 exactly where it was --
     // no swap with OTHER_A7 -- unlike full 68k's unconditional SSP/USP
     // split (RM p.169: "0 USP disabled, core uses a single stack pointer").

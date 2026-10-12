@@ -62,16 +62,6 @@ class TestLibraryDiscovery:
                 rendered_inputs_max=0,
             )
 
-    def test_gui_rendered_inputs_reject_outside_ignored_lane(self):
-        from tools.live_gui_check import run
-
-        with pytest.raises(ValueError, match="ignored sharc-integrated-lane"):
-            run(
-                "/tmp/not-used.snap",
-                "/tmp/not-used.img",
-                rendered_inputs_out="/tmp/escape.ndjson",
-            )
-
 
 @needs_device
 class TestOpenPlayStatsClose:

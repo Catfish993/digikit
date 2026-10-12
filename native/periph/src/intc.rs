@@ -24,7 +24,7 @@
 //! section 17.3.1.3).
 //!
 //! **Oracle-compatible mode** (used by the replay harness, [`IntcBank::read`]
-//! / [`IntcBank::write`]): the Python emulator never intercepts a guest
+//! / [`IntcBank::write`]): the Python emulator (removed; see tag unicorn-reference-final) never intercepts a guest
 //! access to any of these registers -- `emu.pit.interrupt_level` only reads
 //! IMR/ICR bytes it did not write, so from the guest's side every register
 //! here, including IPR, INTFRC, SIMR and CIMR, is plain RAM (last write
@@ -125,7 +125,7 @@ impl IntcBank {
         }
     }
 
-    // -- oracle-compatible passthrough (matches the Python emulator) --------
+    // -- oracle-compatible passthrough (matched the Python emulator (removed; see tag unicorn-reference-final)) --------
 
     pub fn read(&self, addr: u32, size: u8) -> Option<u32> {
         let (i, off) = Self::locate(addr)?;
@@ -222,6 +222,43 @@ impl IntcBank {
         let iprl = asserted_low | c.u32_at(INTFRCL);
         let iprh = asserted_high | c.u32_at(INTFRCH);
         (iprl, iprh)
+    }
+
+    /// The software-forced source (INTFRCH/INTFRCL) that would be offered
+    /// next, ignoring the CPU IPL: the highest (level, vector) among forced,
+    /// unmasked sources with a nonzero ICR level. `skip_vector` is a source
+    /// another model already delivers (INTC1 source 63, vector 191, is the
+    /// SSI model's). A forced source stays asserted until the guest clears
+    /// its bit, so the caller offers it only above the live IPL.
+    pub fn forced_candidate(&self, skip_vector: u16) -> Option<(u16, u8)> {
+        let mut best: Option<(u16, u8)> = None;
+        for (i, c) in self.ctrl.iter().enumerate() {
+            let (lo, hi) = (c.u32_at(INTFRCL), c.u32_at(INTFRCH));
+            if lo == 0 && hi == 0 {
+                continue;
+            }
+            for src in 1u32..64 {
+                let bit = if src < 32 {
+                    lo >> src
+                } else {
+                    hi >> (src - 32)
+                } & 1;
+                if bit == 0 {
+                    continue;
+                }
+                let vector = VECTOR_BASE[i] + src as u16;
+                if vector == skip_vector {
+                    continue;
+                }
+                let Some(level) = self.level_for_vector(vector) else {
+                    continue;
+                };
+                if best.is_none_or(|(bv, bl)| (level, vector) > (bl, bv)) {
+                    best = Some((vector, level));
+                }
+            }
+        }
+        best
     }
 
     pub fn hw_intfrc_bit(&self, ctrl_idx: usize, src: u32) -> bool {

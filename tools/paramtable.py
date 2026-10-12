@@ -75,32 +75,40 @@ Usage:
     uv run python tools/paramtable.py --codes 0,0xa,0xdd,0xf8
     uv run python tools/paramtable.py --all --json out/paramtable.json
 """
+
+from __future__ import annotations
+
 import argparse
 import json
 import os
+import re
 import struct
 import sys
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import machineprofile  # noqa: E402
 
-TABLE_ADDR = 0x4020f18c
-STRIDE = 0x3c
+TABLE_ADDR = 0x4020F18C
+STRIDE = 0x3C
 COUNT = 0x113
 
 DEFAULT_IMAGE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    'out', 'sections', 'dt2-1.16', 'section_3_MAIN_OS.bin')
+    "out",
+    "sections",
+    "dt2-1.16",
+    "section_3_MAIN_OS.bin",
+)
 
-KNOWN_IMAGE_SHA256 = (
-    '57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d')
+KNOWN_IMAGE_SHA256 = "57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d"
 
 
 def _cstring(read, addr, limit=64):
     """-> ASCII string at guest address `addr`, or None if not printable."""
-    if addr < 0x40000000 or addr > 0x40ffffff:
+    if addr < 0x40000000 or addr > 0x40FFFFFF:
         return None
     out = bytearray()
     while len(out) < limit:
@@ -108,13 +116,13 @@ def _cstring(read, addr, limit=64):
             b = read(addr + len(out), 1)
         except SystemExit:
             return None
-        if b == b'\x00':
+        if b == b"\x00":
             break
         out += b
     if not out:
         return None
     try:
-        s = out.decode('ascii')
+        s = out.decode("ascii")
     except UnicodeDecodeError:
         return None
     if not all(32 <= ord(c) < 127 for c in s):
@@ -124,40 +132,40 @@ def _cstring(read, addr, limit=64):
 
 # Named 32-bit fields, in entry order. `word` is the byte offset.
 FIELDS = (
-    ('owner_type', 0x00),
-    ('mirror_index', 0x04),
-    ('min', 0x08),
-    ('max', 0x0c),
-    ('default', 0x10),
-    ('flag_0x14', 0x14),
-    ('kind_0x1c', 0x1c),
-    ('w20', 0x20),
-    ('w24', 0x24),
-    ('long_name_ptr', 0x28),
-    ('owner_name_ptr', 0x2c),
-    ('short_name_ptr', 0x30),
-    ('w34_fnptr', 0x34),
-    ('w38', 0x38),
+    ("owner_type", 0x00),
+    ("mirror_index", 0x04),
+    ("min", 0x08),
+    ("max", 0x0C),
+    ("default", 0x10),
+    ("flag_0x14", 0x14),
+    ("kind_0x1c", 0x1C),
+    ("w20", 0x20),
+    ("w24", 0x24),
+    ("long_name_ptr", 0x28),
+    ("owner_name_ptr", 0x2C),
+    ("short_name_ptr", 0x30),
+    ("w34_fnptr", 0x34),
+    ("w38", 0x38),
 )
 
 # i32 fields (signed); everything else in FIELDS is read as u32.
-SIGNED_FIELDS = {'mirror_index'}
+SIGNED_FIELDS = {"mirror_index"}
 
-STR_FIELDS = ('long_name_ptr', 'owner_name_ptr', 'short_name_ptr')
+STR_FIELDS = ("long_name_ptr", "owner_name_ptr", "short_name_ptr")
 
 
-def decode_entry(read, param_code):
-    """-> dict decoding one 0x3c-byte entry for `param_code` (0..COUNT-1)."""
-    idx = param_code if param_code < COUNT else 0  # clamp, per FUN_400d9ed8
-    base = TABLE_ADDR + idx * STRIDE
+def decode_entry(read, param_code, table_addr=TABLE_ADDR, count=COUNT):
+    """-> dict decoding one 0x3c-byte entry for `param_code` (0..count-1)."""
+    idx = param_code if param_code < count else 0  # clamp, per FUN_400d9ed8
+    base = table_addr + idx * STRIDE
     raw = read(base, STRIDE)
-    words = struct.unpack('>15I', raw)
+    words = struct.unpack(">15I", raw)
 
     entry = {
-        'param_code': param_code,
-        'clamped_index': idx,
-        'addr': '%#010x' % base,
-        'raw': raw.hex(),
+        "param_code": param_code,
+        "clamped_index": idx,
+        "addr": "%#010x" % base,
+        "raw": raw.hex(),
     }
     for name, off in FIELDS:
         u32 = words[off // 4]
@@ -168,82 +176,186 @@ def decode_entry(read, param_code):
     # +0x18 / +0x1a: two separate signed 16-bit fields (FUN_400da4b8 /
     # FUN_400da4dc), packed inside the same 32-bit word as +0x18 in FIELDS
     # would suggest if read as one u32 -- they are NOT one u32.
-    w18 = raw[0x18:0x1c]
-    hi16, lo16 = struct.unpack('>hh', w18)
-    entry['i16_0x18'] = hi16
-    entry['i16_0x1a'] = lo16
+    w18 = raw[0x18:0x1C]
+    hi16, lo16 = struct.unpack(">hh", w18)
+    entry["i16_0x18"] = hi16
+    entry["i16_0x1a"] = lo16
 
     for name in STR_FIELDS:
-        entry[name + '_hex'] = '%#010x' % entry[name]
-        entry[name.replace('_ptr', '')] = _cstring(read, entry[name])
+        entry[name + "_hex"] = "%#010x" % entry[name]
+        entry[name.replace("_ptr", "")] = _cstring(read, entry[name])
         del entry[name]
 
     return entry
 
 
-def scan_all(read):
-    return [decode_entry(read, i) for i in range(COUNT)]
+def scan_all(read, table_addr=TABLE_ADDR, count=COUNT):
+    return [decode_entry(read, i, table_addr, count) for i in range(count)]
+
+
+# The table's reader is a 36-byte function that occurs once in each MAIN OS
+# image (finding 02). Wildcards: CC CC = entry count, BB BB BB BB = base.
+_READER = re.compile(
+    rb"\x20\x2f\x00\x04\x0c\x80\x00\x00(..)\x55\xc1\x41\xf9(....)"
+    rb"\x73\x01\xc0\x81\x22\x00\xe5\x89\xed\x88\x90\x81\x20\x30\x08\x04"
+    rb"\x4e\x75",
+    re.DOTALL,
+)
+
+
+def find_table(image):
+    """-> (table_addr, count) found by the reader's signature in `image` (the
+    bytes of a MAIN OS file); SystemExit if it is not present exactly once."""
+    hits = list(_READER.finditer(image))
+    if len(hits) != 1:
+        raise SystemExit("descriptor table reader: %d signature hits" % len(hits))
+    m = hits[0]
+    return struct.unpack(">I", m.group(2))[0], struct.unpack(">H", m.group(1))[0]
+
+
+class Descriptor(NamedTuple):
+    code: int
+    long_name: str | None
+    short_name: str | None
+    owner_name: str | None
+    mirror_index: int
+    min: int
+    max: int
+    default: int
+
+
+def descriptors(image_path, load_addr=machineprofile.LOAD_ADDR):
+    """-> list of Descriptor for every entry of the table of a MAIN OS image,
+    found by signature (DT2 and DN2, any version)."""
+    with open(image_path, "rb") as f:
+        image = f.read()
+    addr, count = find_table(image)
+    read = machineprofile.image_reader(image_path, load_addr)
+    return [
+        Descriptor(
+            e["param_code"],
+            e["long_name"],
+            e["short_name"],
+            e["owner_name"],
+            e["mirror_index"],
+            e["min"],
+            e["max"],
+            e["default"],
+        )
+        for e in scan_all(read, addr, count)
+    ]
 
 
 def format_entry(e):
     lines = []
-    lines.append('param_code %#04x (%d)  addr %s%s' % (
-        e['param_code'], e['param_code'], e['addr'],
-        '  [CLAMPED to 0]' if e['clamped_index'] != e['param_code'] else ''))
-    lines.append('  long_name=%r  short_name=%r  owner_name=%r' % (
-        e['long_name'], e['short_name'], e['owner_name']))
-    lines.append('  owner_type=%#x  mirror_index=%d' % (
-        e['owner_type'], e['mirror_index']))
-    lines.append('  min=%#x  max=%#x  default=%#x  flag_0x14=%#x' % (
-        e['min'], e['max'], e['default'], e['flag_0x14']))
-    lines.append('  i16@0x18=%d  i16@0x1a=%d  kind_0x1c=%#x' % (
-        e['i16_0x18'], e['i16_0x1a'], e['kind_0x1c']))
-    lines.append('  w20=%#x  w24=%#x  w34_fnptr=%#x  w38=%#x' % (
-        e['w20'], e['w24'], e['w34_fnptr'], e['w38']))
-    return '\n'.join(lines)
+    lines.append(
+        "param_code %#04x (%d)  addr %s%s"
+        % (
+            e["param_code"],
+            e["param_code"],
+            e["addr"],
+            "  [CLAMPED to 0]" if e["clamped_index"] != e["param_code"] else "",
+        )
+    )
+    lines.append(
+        "  long_name=%r  short_name=%r  owner_name=%r"
+        % (e["long_name"], e["short_name"], e["owner_name"])
+    )
+    lines.append(
+        "  owner_type=%#x  mirror_index=%d" % (e["owner_type"], e["mirror_index"])
+    )
+    lines.append(
+        "  min=%#x  max=%#x  default=%#x  flag_0x14=%#x"
+        % (e["min"], e["max"], e["default"], e["flag_0x14"])
+    )
+    lines.append(
+        "  i16@0x18=%d  i16@0x1a=%d  kind_0x1c=%#x"
+        % (e["i16_0x18"], e["i16_0x1a"], e["kind_0x1c"])
+    )
+    lines.append(
+        "  w20=%#x  w24=%#x  w34_fnptr=%#x  w38=%#x"
+        % (e["w20"], e["w24"], e["w34_fnptr"], e["w38"])
+    )
+    return "\n".join(lines)
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    p.add_argument('image', nargs='?', default=DEFAULT_IMAGE,
-                    help='MAIN OS image (default: %s)' % DEFAULT_IMAGE)
-    p.add_argument('--load-addr', type=lambda s: int(s, 0),
-                    default=machineprofile.LOAD_ADDR,
-                    help='guest load address of image[0] (default %#x)'
-                    % machineprofile.LOAD_ADDR)
-    p.add_argument('--codes', help='comma-separated param_codes (hex or '
-                    'decimal) to print in full; default: the codes used by '
-                    'the known machine descriptors')
-    p.add_argument('--all', action='store_true',
-                    help='print all %d entries in full (verbose)' % COUNT)
-    p.add_argument('--json', metavar='PATH',
-                    help='write the full decoded table (all entries) as JSON')
-    p.add_argument('--no-sha-check', action='store_true',
-                    help='skip the known-image sha256 check')
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    p.add_argument(
+        "image",
+        nargs="?",
+        default=DEFAULT_IMAGE,
+        help="MAIN OS image (default: %s)" % DEFAULT_IMAGE,
+    )
+    p.add_argument(
+        "--load-addr",
+        type=lambda s: int(s, 0),
+        default=machineprofile.LOAD_ADDR,
+        help="guest load address of image[0] (default %#x)" % machineprofile.LOAD_ADDR,
+    )
+    p.add_argument(
+        "--codes",
+        help="comma-separated param_codes (hex or "
+        "decimal) to print in full; default: the codes used by "
+        "the known machine descriptors",
+    )
+    p.add_argument(
+        "--all",
+        action="store_true",
+        help="print all %d entries in full (verbose)" % COUNT,
+    )
+    p.add_argument(
+        "--json",
+        metavar="PATH",
+        help="write the full decoded table (all entries) as JSON",
+    )
+    p.add_argument(
+        "--no-sha-check", action="store_true", help="skip the known-image sha256 check"
+    )
     args = p.parse_args(argv)
 
     if not os.path.exists(args.image):
-        raise SystemExit('%s: not found' % args.image)
+        raise SystemExit("%s: not found" % args.image)
 
     if not args.no_sha_check:
         sha = machineprofile.sha256_file(args.image)
         if sha != KNOWN_IMAGE_SHA256:
-            print('warning: %s sha256 %s does not match the known DT2 1.16 '
-                  'MAIN OS (%s) -- addresses below may not apply'
-                  % (args.image, sha, KNOWN_IMAGE_SHA256), file=sys.stderr)
+            print(
+                "warning: %s sha256 %s does not match the known DT2 1.16 "
+                "MAIN OS (%s) -- addresses below may not apply"
+                % (args.image, sha, KNOWN_IMAGE_SHA256),
+                file=sys.stderr,
+            )
 
     read = machineprofile.image_reader(args.image, args.load_addr)
 
-    default_codes = (0x00, 0x0a, 0xdd, 0xdf, 0xe0, 0xe2, 0xe3, 0xf2, 0xf4,
-                      0xf8, 0xf9, 0xfb, 0xfc, 0xfd, 0xfe)
+    default_codes = (
+        0x00,
+        0x0A,
+        0xDD,
+        0xDF,
+        0xE0,
+        0xE2,
+        0xE3,
+        0xF2,
+        0xF4,
+        0xF8,
+        0xF9,
+        0xFB,
+        0xFC,
+        0xFD,
+        0xFE,
+    )
     if args.codes:
-        codes = [int(c, 0) for c in args.codes.split(',')]
+        codes = [int(c, 0) for c in args.codes.split(",")]
     else:
         codes = list(default_codes)
 
-    print('table @ %#010x, stride %#x, %d entries (%#x)'
-          % (TABLE_ADDR, STRIDE, COUNT, COUNT))
-    print('image %s, load_addr %#x' % (args.image, args.load_addr))
+    print(
+        "table @ %#010x, stride %#x, %d entries (%#x)"
+        % (TABLE_ADDR, STRIDE, COUNT, COUNT)
+    )
+    print("image %s, load_addr %#x" % (args.image, args.load_addr))
     print()
 
     if args.all:
@@ -259,24 +371,27 @@ def main(argv=None):
 
     if args.json:
         entries = all_entries if all_entries is not None else scan_all(read)
-        with open(args.json, 'w') as f:
-            json.dump({
-                'table_addr': TABLE_ADDR,
-                'stride': STRIDE,
-                'count': COUNT,
-                'image': args.image,
-                'load_addr': args.load_addr,
-                'entries': entries,
-            }, f, indent=1)
-        print('wrote %s (%d entries)' % (args.json, len(entries)))
+        with open(args.json, "w") as f:
+            json.dump(
+                {
+                    "table_addr": TABLE_ADDR,
+                    "stride": STRIDE,
+                    "count": COUNT,
+                    "image": args.image,
+                    "load_addr": args.load_addr,
+                    "entries": entries,
+                },
+                f,
+                indent=1,
+            )
+        print("wrote %s (%d entries)" % (args.json, len(entries)))
 
     # Summary: named entries only (has a resolved long_name).
     all_entries = all_entries if all_entries is not None else scan_all(read)
-    named = [e for e in all_entries if e['long_name']]
-    print('summary: %d/%d entries resolve a long display name'
-          % (len(named), COUNT))
+    named = [e for e in all_entries if e["long_name"]]
+    print("summary: %d/%d entries resolve a long display name" % (len(named), COUNT))
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())

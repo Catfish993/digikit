@@ -517,7 +517,11 @@ pub fn build_sample_image_with_options(
         let sequence = ROOT_ID
             .checked_add(1 + files.len() as u32)
             .ok_or(ImageError::CapacityOverflow)?;
-        let (record, report) = crate::build_project_record(seed, files[0].reference, sequence)?;
+        let (record, report) = crate::build_project_record(
+            seed,
+            &files.iter().map(|file| file.reference).collect::<Vec<_>>(),
+            sequence,
+        )?;
         image.replace_at(bytes_at_sector(BOOT_CONFIG_SECTOR)?, &record)?;
         image.replace_at(bytes_at_sector(BOOT_CONFIG_SECTOR_2)?, &record)?;
         Some(report)

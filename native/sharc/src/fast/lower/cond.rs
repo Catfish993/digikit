@@ -239,7 +239,7 @@ impl Lower {
             let af = self.read_bit(AF);
             let an = self.read_bit(AN);
             let az = self.read_bit(AZ);
-            let term = if self.env.mode1 & ALUSAT != 0 {
+            let term = if self.mode1_cur & ALUSAT != 0 {
                 an
             } else {
                 // ALUSAT clear: the AV term applies.

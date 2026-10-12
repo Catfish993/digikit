@@ -111,6 +111,8 @@ __all__ = [
     "_compute_pey",
     "_compute_pey_values",
     "_compute_simd",
+    "_shift_immediate_pey",
+    "_shift_immediate_simd",
     "_field_deposit_or",
     "_mr_data_move",
     "_shift_immediate",
@@ -573,6 +575,49 @@ def _compute_simd(
         return result_x, None
     result_y = _compute_pey(f, short, values, special, approx_recips=approx_recips)
     return result_x, result_y
+
+
+def _shift_immediate_pey(
+    f: Mapping[str, int],
+    values: Mapping[int, Value],
+    special: Mapping[str, Operand | MR] | None = None,
+) -> Result:
+    """PEy's half of a Type 6 ShiftImm: the same bits decoded against the
+    S register file.  The bit FIFO is PEx only (PRM: SIMD must be disabled
+    during bit FIFO operations), so a result naming any special register
+    other than the multiplier accumulators raises ValueError."""
+    result = _shift_immediate(f, _pey_view(values), _pey_special(special))
+    dest = result[0]
+    if isinstance(dest, str):
+        if dest not in ("MRF", "MRB"):
+            raise ValueError("bit FIFO shift in SIMD mode")
+    elif isinstance(dest, tuple):
+        for name in dest:
+            if isinstance(name, str):
+                raise ValueError("bit FIFO shift in SIMD mode")
+    return result
+
+
+def _shift_immediate_simd(
+    state: State,
+    f: Mapping[str, int],
+    values: Mapping[int, Value],
+    special: Mapping[str, Operand | MR] | None = None,
+) -> tuple[Result, Result | None]:
+    """A Type 6 ShiftImm for PEx and, with MODE1.PEYEN concretely set, PEy.
+
+    SHARC+ PRM p.13-43 (Type 6a, SIMD Mode): "the Type 6 instruction
+    provides the same immediate shift operation as is available in SISD
+    mode, but provides this operation simultaneously for the X and Y
+    processing elements" (p.3-39: the immediate is valid for both PEs, the
+    operands are the complementary S registers).  The bit FIFO is PEx
+    only (PRM: SIMD must be disabled during bit FIFO operations), so a
+    PEy result that names a special register raises ValueError.
+    """
+    result_x = _shift_immediate(f, values, special)
+    if _simd_active(state) is not True:
+        return result_x, None
+    return result_x, _shift_immediate_pey(f, values, special)
 
 
 def _apply_compute_simd(

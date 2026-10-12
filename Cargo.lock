@@ -327,13 +327,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 
 [[package]]
-name = "cfabi"
-version = "0.0.1"
-dependencies = [
- "coldfire",
-]
-
-[[package]]
 name = "cfb"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -861,6 +854,7 @@ dependencies = [
  "dt2-firmware-loader",
  "elektron-native-boot",
  "emmc-card",
+ "plusdrive-format",
  "serde_json",
  "sha2",
 ]
@@ -1044,6 +1038,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sharc-fast-wasm",
  "sharc-native",
 ]
 

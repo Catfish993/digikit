@@ -776,3 +776,73 @@ hand). Whether CFADE is audible is also open. `SoundParameterSet::vfunc_21`
 (`0x4003ae02`) compares a parameter's owner (6) with the track type (7); its
 callers are the modulation-destination views, so XSLICE's parameters may be
 missing from modulation pickers. **[O]**
+
+## The parameter descriptor table by signature, and where FX values live **[V]**
+
+Checked 2026-10-08 against the image bytes by a second agent, and by the
+Ghidra dumps `dt2-1.16-emac` and `dn2-1.11-emac`.
+
+**Finding the table.** The table's reader is a 36-byte function that occurs
+exactly once in each image:
+
+```
+20 2f 00 04  0c 80 00 00 CC CC  55 c1  41 f9 BB BB BB BB
+73 01 c0 81  22 00 e5 89 ed 88 90 81  20 30 08 04  4e 75
+```
+
+`CC CC` is the entry count and `BB BB BB BB` the table base. Stride 0x3c.
+Entry 0 is "Error"/"ERR" with owner and mirror index 0xffffffff, and entry 6
+is "Machine Type".
+
+| Image | Reader | Entries | Base |
+|---|---|---|---|
+| DT2 1.16 | `0x400d9ed8` | 0x113 (275) | `0x4020f18c` |
+| DT2 1.15C | `0x400dc5e0` | 0x113 | `0x401fc274` |
+| DN2 1.11 | `0x400dbcc4` | 0x141 (321) | `0x401f7f94` |
+| DN2 1.10E | `0x400de12c` | 0x141 | `0x401e29a0` |
+
+**FX parameters.** Codes 0x43..0x9f have the same long names on DT2 1.16 and
+DN2 1.11. Owner type ids differ between the images (FX is 0x11 on DT2 and 0xf
+on DN2), so tools should match parameters by name, never by owner id. All
+values are s16 in 0..0x7f00, and the UI value is the high byte.
+
+| Parameter | DT2 1.16 code / mirror | DN2 1.11 code / mirror |
+|---|---|---|
+| Delay Send, Reverb Send, Chorus Send | 0x44, 0x45, 0x43 / 55, 56, 57 | same codes / 86, 87, 88 |
+| Delay Time (default 0x1700) | 0x71 / 32 | 0x71 / 32 |
+| Feedback Gain (default 0x2000) | 0x74 / 35 | 0x74 / 35 |
+| Reverb Decay Time (default 0x1f00) | 0x7c / 42 | 0x7c / 42 |
+| Bit Reduction, Sample-Rate Redux, SRR Routing (max 0x100), Overdrive | 0xff..0x102 / 64..67 | 0x12d..0x130 / 95..98 |
+
+**Value storage.** `mirror_index` indexes an s16 array: 71 entries on DT2
+(`SoundParameterSet`/`FxParameterSet::vfunc_10` bound it with `< 0x47`), 101
+on DN2 (`< 0x65`). The arrays live in the live kit blob `kit_t`. Each track
+has its own Sound array, which holds the track-level owners: machine,
+filter, amp, and the track FX (sends, BR, SRR, overdrive). The kit has one Fx
+array, which holds chorus, delay, reverb, master, input and the LFOs. The
+pointer chains below were read from the 2026-10-07 ready snapshots. Who
+writes the globals has not been traced. **[V at ready]**
+
+| | DT2 1.16 | DN2 1.11 |
+|---|---|---|
+| `kit_t` | `*0x80004704` | `*0x800052a0` |
+| Fx array | `*0x80004708` (= kit_t + 0x4534) | `*0x800052a4` (= kit_t + 0x48e4) |
+| Sound array, track j | `*(0x8000470c + 4j) + 0x14` (= kit_t + 0x34 + j*0x450 + 0x14) | kit_t + 0x34 + j*0x48b + 0x14 (odd stride; the 0x800052a8 slots all hold track 0) |
+
+The DT2 per-track UI mirror at `0x80003362 + t*0x8e` is a copy:
+`FUN_4002d438` memcpys 0x8e bytes from `Sound + 0x14` into it. Read values
+through the chain above, not the mirror. **[C]** The odd DT2 card kit was
+the firmware's factory demo kit. `tools/plusdrive.py` copies the built-in v3
+project (ELZ stream at 0x4025F1D8), and kit 0 of that project is "KIT 1",
+with edited FX: master overdrive 0x7f00, compressor on, reverb decay 0, and
+a detuned track. Both writers now copy kit 32 ("PRESET 1") over kit 0 and
+keep the sample references. With that fix the card kit matches a card-less
+boot in the FX block, and the 1 kHz test sample plays at 999.94 Hz with
+harmonics below -89 dB. Fx idx 0..24 still differ from a card-less boot:
+the v3 kit does not carry them. **[V]**
+
+`tools/cf_names.py` labels `0x8000470C` as `track_sync_cache`. At ready it
+holds the 16 Sound pointers. **[O]**
+
+The ready snapshots are Rust `DT2SNP01` files. `tools/snapread.py` reads
+their memory, but not their registers or tasks.

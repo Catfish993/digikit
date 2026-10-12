@@ -10362,7 +10362,6 @@ impl Lower {
         let mut v2: Val = 0;
         let mut v3: Val = 0;
         let mut v4: Val = 0;
-        let mut v5: Val = 0;
         let mut v6: Val = 0;
         let mut v7: Val = 0;
         let mut v8: Val = 0;
@@ -10372,26 +10371,92 @@ impl Lower {
         let mut v12: Val = 0;
         let mut v13: Val = 0;
         let mut v14: Val = 0;
-        if (f0 != 31i128) {
-            if ((self.m1(0x200000) as i128) != 0i128) {
-                return refuse("unsupported conditional SIMD Type6a");
-            } else {
-                self.g_cond(f0 as u32, false)?;
+        let mut v15: Val = 0;
+        let mut v16: Val = 0;
+        let mut v17: Val = 0;
+        let mut v18: Val = 0;
+        let mut v19: Val = 0;
+        let mut v20: Val = 0;
+        let mut v21: Val = 0;
+        let mut v22: Val = 0;
+        if ((self.m1(0x200000) as i128) != 0i128) {
+            if (f0 != 31i128) {
                 if (f3 != 0i128) {
-                    v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
-                    v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
-                    v3 = self.ci(4i128 as u32);
-                    v4 = self.g_bin(Bin::Mul, v2, v3);
                     if (f1 != 0i128) {
-                        v5 = self.g_rd(f2 as u32)?;
-                        self.g_store(v0, v5, 4i128 as u8)?;
-                        v6 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
-                        self.g_wr((16i128 + (f4 + 8i128)) as u32, v6)?;
-                    } else {
-                        v7 = self.g_load(v0, 4i128 as u8, false)?;
-                        self.g_wr(f2 as u32, v7)?;
+                        self.g_cond(f0 as u32, false)?;
+                        self.g_cond(f0 as u32, true)?;
+                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                        v3 = self.ci(4i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v0, v6, 4i128 as u8)?;
                         v8 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v8)?;
+                        self.g_apply(d, "shiftimm", false, false)?;
+                        self.g_apply(d, "shiftimm", true, false)?;
+                    } else {
+                        return refuse("write of a non-constant value: Unknown(reason='program-memory <expr>')");
+                    }
+                } else {
+                    self.g_cond(f0 as u32, false)?;
+                    self.g_cond(f0 as u32, true)?;
+                    v9 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                    v10 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+                    v3 = self.ci(4i128 as u32);
+                    v11 = self.g_bin(Bin::Mul, v10, v3);
+                    if (f1 != 0i128) {
+                        v12 = self.g_bin(Bin::Add, v9, v3);
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v9, v6, 4i128 as u8)?;
+                        v7 = self.g_rd((f2 + 80i128) as u32)?;
+                        self.g_store(v12, v7, 4i128 as u8)?;
+                        v13 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v13)?;
+                    } else {
+                        if ((f4 + 0i128) == 1i128) {
+                            if ((self.m1(0x800000) as i128) != 0i128) {
+                                v14 = self.ci(0i128 as u32);
+                                v15 = self.g_bin(Bin::Add, v9, v14);
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v17 = self.g_load(v15, 4i128 as u8, false)?;
+                                self.g_wr((f2 + 80i128) as u32, v17)?;
+                            } else {
+                                v12 = self.g_bin(Bin::Add, v9, v3);
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v19 = self.g_load(v12, 4i128 as u8, false)?;
+                                self.g_wr((f2 + 80i128) as u32, v19)?;
+                            }
+                        } else {
+                            v12 = self.g_bin(Bin::Add, v9, v3);
+                            v16 = self.g_load(v9, 4i128 as u8, false)?;
+                            self.g_wr(f2 as u32, v16)?;
+                            v19 = self.g_load(v12, 4i128 as u8, false)?;
+                            self.g_wr((f2 + 80i128) as u32, v19)?;
+                        }
+                        v18 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v18)?;
+                    }
+                    self.g_apply(d, "shiftimm", false, false)?;
+                    self.g_apply(d, "shiftimm", true, false)?;
+                }
+            } else {
+                if (f3 != 0i128) {
+                    if (f1 != 0i128) {
+                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                        v3 = self.ci(4i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v0, v6, 4i128 as u8)?;
+                        v8 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 8i128)) as u32, v8)?;
+                        self.g_apply(d, "shiftimm", false, false)?;
+                        self.g_apply(d, "shiftimm", true, false)?;
+                    } else {
+                        return refuse("write of a non-constant value: Unknown(reason='program-memory <expr>')");
                     }
                 } else {
                     v9 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -10399,54 +10464,199 @@ impl Lower {
                     v3 = self.ci(4i128 as u32);
                     v11 = self.g_bin(Bin::Mul, v10, v3);
                     if (f1 != 0i128) {
-                        v5 = self.g_rd(f2 as u32)?;
-                        self.g_store(v9, v5, 4i128 as u8)?;
-                        v12 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
-                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v12)?;
+                        v12 = self.g_bin(Bin::Add, v9, v3);
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v9, v6, 4i128 as u8)?;
+                        v7 = self.g_rd((f2 + 80i128) as u32)?;
+                        self.g_store(v12, v7, 4i128 as u8)?;
+                        v13 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v13)?;
                     } else {
-                        v13 = self.g_load(v9, 4i128 as u8, false)?;
-                        self.g_wr(f2 as u32, v13)?;
-                        v14 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
-                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v14)?;
+                        if ((f4 + 0i128) == 1i128) {
+                            if ((self.m1(0x800000) as i128) != 0i128) {
+                                v14 = self.ci(0i128 as u32);
+                                v15 = self.g_bin(Bin::Add, v9, v14);
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v17 = self.g_load(v15, 4i128 as u8, false)?;
+                                self.g_wr((f2 + 80i128) as u32, v17)?;
+                            } else {
+                                v12 = self.g_bin(Bin::Add, v9, v3);
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v19 = self.g_load(v12, 4i128 as u8, false)?;
+                                self.g_wr((f2 + 80i128) as u32, v19)?;
+                            }
+                        } else {
+                            v12 = self.g_bin(Bin::Add, v9, v3);
+                            v16 = self.g_load(v9, 4i128 as u8, false)?;
+                            self.g_wr(f2 as u32, v16)?;
+                            v19 = self.g_load(v12, 4i128 as u8, false)?;
+                            self.g_wr((f2 + 80i128) as u32, v19)?;
+                        }
+                        v18 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v18)?;
                     }
+                    self.g_apply(d, "shiftimm", false, false)?;
+                    self.g_apply(d, "shiftimm", true, false)?;
                 }
-                self.g_apply(d, "shiftimm", false, false)?;
             }
         } else {
-            if (f3 != 0i128) {
-                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
-                v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
-                v3 = self.ci(4i128 as u32);
-                v4 = self.g_bin(Bin::Mul, v2, v3);
-                if (f1 != 0i128) {
-                    v5 = self.g_rd(f2 as u32)?;
-                    self.g_store(v0, v5, 4i128 as u8)?;
-                    v6 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
-                    self.g_wr((16i128 + (f4 + 8i128)) as u32, v6)?;
+            if (f0 != 31i128) {
+                if (f3 != 0i128) {
+                    if (f1 != 0i128) {
+                        self.g_cond(f0 as u32, false)?;
+                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                        v3 = self.ci(4i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v0, v6, 4i128 as u8)?;
+                        v8 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 8i128)) as u32, v8)?;
+                        self.g_apply(d, "shiftimm", false, false)?;
+                    } else {
+                        if ((f4 + 8i128) == 9i128) {
+                            if ((self.m1(0x400000) as i128) != 0i128) {
+                                return refuse("write of a non-constant value: Unknown(reason='program-memory <expr>')");
+                            } else {
+                                self.g_cond(f0 as u32, false)?;
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                                v3 = self.ci(4i128 as u32);
+                                v4 = self.g_bin(Bin::Mul, v2, v3);
+                                v20 = self.g_load(v0, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v20)?;
+                                v21 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
+                                self.g_wr((16i128 + (f4 + 8i128)) as u32, v21)?;
+                                self.g_apply(d, "shiftimm", false, false)?;
+                            }
+                        } else {
+                            self.g_cond(f0 as u32, false)?;
+                            v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                            v3 = self.ci(4i128 as u32);
+                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                            v20 = self.g_load(v0, 4i128 as u8, false)?;
+                            self.g_wr(f2 as u32, v20)?;
+                            v21 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
+                            self.g_wr((16i128 + (f4 + 8i128)) as u32, v21)?;
+                            self.g_apply(d, "shiftimm", false, false)?;
+                        }
+                    }
                 } else {
-                    v7 = self.g_load(v0, 4i128 as u8, false)?;
-                    self.g_wr(f2 as u32, v7)?;
-                    v8 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
-                    self.g_wr((16i128 + (f4 + 8i128)) as u32, v8)?;
+                    self.g_cond(f0 as u32, false)?;
+                    v9 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                    v10 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+                    v3 = self.ci(4i128 as u32);
+                    v11 = self.g_bin(Bin::Mul, v10, v3);
+                    if (f1 != 0i128) {
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v9, v6, 4i128 as u8)?;
+                        v13 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v13)?;
+                    } else {
+                        if ((f4 + 0i128) == 1i128) {
+                            if ((self.m1(0x800000) as i128) != 0i128) {
+                                v14 = self.ci(0i128 as u32);
+                                v15 = self.g_bin(Bin::Add, v9, v14);
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v17 = self.g_load(v15, 4i128 as u8, false)?;
+                                self.g_wr((f2 + 80i128) as u32, v17)?;
+                                v18 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                                self.g_wr((16i128 + (f4 + 0i128)) as u32, v18)?;
+                            } else {
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v22 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                                self.g_wr((16i128 + (f4 + 0i128)) as u32, v22)?;
+                            }
+                        } else {
+                            v16 = self.g_load(v9, 4i128 as u8, false)?;
+                            self.g_wr(f2 as u32, v16)?;
+                            v22 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                            self.g_wr((16i128 + (f4 + 0i128)) as u32, v22)?;
+                        }
+                    }
+                    self.g_apply(d, "shiftimm", false, false)?;
                 }
             } else {
-                v9 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
-                v10 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
-                v3 = self.ci(4i128 as u32);
-                v11 = self.g_bin(Bin::Mul, v10, v3);
-                if (f1 != 0i128) {
-                    v5 = self.g_rd(f2 as u32)?;
-                    self.g_store(v9, v5, 4i128 as u8)?;
-                    v12 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
-                    self.g_wr((16i128 + (f4 + 0i128)) as u32, v12)?;
+                if (f3 != 0i128) {
+                    if (f1 != 0i128) {
+                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                        v3 = self.ci(4i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v0, v6, 4i128 as u8)?;
+                        v8 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 8i128)) as u32, v8)?;
+                        self.g_apply(d, "shiftimm", false, false)?;
+                    } else {
+                        if ((f4 + 8i128) == 9i128) {
+                            if ((self.m1(0x400000) as i128) != 0i128) {
+                                return refuse("write of a non-constant value: Unknown(reason='program-memory <expr>')");
+                            } else {
+                                v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                                v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                                v3 = self.ci(4i128 as u32);
+                                v4 = self.g_bin(Bin::Mul, v2, v3);
+                                v20 = self.g_load(v0, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v20)?;
+                                v21 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
+                                self.g_wr((16i128 + (f4 + 8i128)) as u32, v21)?;
+                                self.g_apply(d, "shiftimm", false, false)?;
+                            }
+                        } else {
+                            v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                            v3 = self.ci(4i128 as u32);
+                            v4 = self.g_bin(Bin::Mul, v2, v3);
+                            v20 = self.g_load(v0, 4i128 as u8, false)?;
+                            self.g_wr(f2 as u32, v20)?;
+                            v21 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
+                            self.g_wr((16i128 + (f4 + 8i128)) as u32, v21)?;
+                            self.g_apply(d, "shiftimm", false, false)?;
+                        }
+                    }
                 } else {
-                    v13 = self.g_load(v9, 4i128 as u8, false)?;
-                    self.g_wr(f2 as u32, v13)?;
-                    v14 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
-                    self.g_wr((16i128 + (f4 + 0i128)) as u32, v14)?;
+                    v9 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                    v10 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+                    v3 = self.ci(4i128 as u32);
+                    v11 = self.g_bin(Bin::Mul, v10, v3);
+                    if (f1 != 0i128) {
+                        v6 = self.g_rd(f2 as u32)?;
+                        self.g_store(v9, v6, 4i128 as u8)?;
+                        v13 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v13)?;
+                    } else {
+                        if ((f4 + 0i128) == 1i128) {
+                            if ((self.m1(0x800000) as i128) != 0i128) {
+                                v14 = self.ci(0i128 as u32);
+                                v15 = self.g_bin(Bin::Add, v9, v14);
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v17 = self.g_load(v15, 4i128 as u8, false)?;
+                                self.g_wr((f2 + 80i128) as u32, v17)?;
+                                v18 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                                self.g_wr((16i128 + (f4 + 0i128)) as u32, v18)?;
+                            } else {
+                                v16 = self.g_load(v9, 4i128 as u8, false)?;
+                                self.g_wr(f2 as u32, v16)?;
+                                v22 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                                self.g_wr((16i128 + (f4 + 0i128)) as u32, v22)?;
+                            }
+                        } else {
+                            v16 = self.g_load(v9, 4i128 as u8, false)?;
+                            self.g_wr(f2 as u32, v16)?;
+                            v22 = self.g_postmod(((f4 + 0i128) + 16) as u32, v9, v11, 4i128 as i64)?;
+                            self.g_wr((16i128 + (f4 + 0i128)) as u32, v22)?;
+                        }
+                    }
+                    self.g_apply(d, "shiftimm", false, false)?;
                 }
             }
-            self.g_apply(d, "shiftimm", false, false)?;
         }
         Ok(())
     }
@@ -10455,14 +10665,17 @@ impl Lower {
             return refuse("assume_nw32 off");
         }
         let f0 = d.get("cond[4:0]").ok_or(Refuse("missing field cond[4:0]".into()))? as i128;
-        if (f0 != 31i128) {
-            if ((self.m1(0x200000) as i128) != 0i128) {
-                return refuse("unsupported conditional SIMD Type6b");
-            } else {
+        if ((self.m1(0x200000) as i128) != 0i128) {
+            if (f0 != 31i128) {
                 self.g_cond(f0 as u32, false)?;
-                self.g_apply(d, "shiftimm", false, false)?;
+                self.g_cond(f0 as u32, true)?;
             }
+            self.g_apply(d, "shiftimm", false, false)?;
+            self.g_apply(d, "shiftimm", true, false)?;
         } else {
+            if (f0 != 31i128) {
+                self.g_cond(f0 as u32, false)?;
+            }
             self.g_apply(d, "shiftimm", false, false)?;
         }
         Ok(())
@@ -13876,29 +14089,57 @@ impl Lower {
                                                                                                                                             v6 = self.g_bin(Bin::Or, v4, v5);
                                                                                                                                             self.g_wr(118i128 as u32, v6)?;
                                                                                                                                             if ((self.m1(0x200000) as i128) != 0i128) {
-                                                                                                                                                if (f3 == 6i128) {
+                                                                                                                                                if (f3 == 0i128) {
                                                                                                                                                     v8 = self.g_rd(119i128 as u32)?;
                                                                                                                                                     v9 = self.g_bin(Bin::And, v8, v3);
                                                                                                                                                     v10 = self.g_bin(Bin::Or, v9, v5);
                                                                                                                                                     self.g_wr(119i128 as u32, v10)?;
                                                                                                                                                 } else {
-                                                                                                                                                    if (f3 == 7i128) {
+                                                                                                                                                    if (f3 == 1i128) {
                                                                                                                                                         v8 = self.g_rd(119i128 as u32)?;
                                                                                                                                                         v9 = self.g_bin(Bin::And, v8, v3);
                                                                                                                                                         v10 = self.g_bin(Bin::Or, v9, v5);
                                                                                                                                                         self.g_wr(119i128 as u32, v10)?;
                                                                                                                                                     } else {
-                                                                                                                                                        if (f3 == 8i128) {
+                                                                                                                                                        if (f3 == 6i128) {
                                                                                                                                                             v8 = self.g_rd(119i128 as u32)?;
                                                                                                                                                             v9 = self.g_bin(Bin::And, v8, v3);
                                                                                                                                                             v10 = self.g_bin(Bin::Or, v9, v5);
                                                                                                                                                             self.g_wr(119i128 as u32, v10)?;
                                                                                                                                                         } else {
-                                                                                                                                                            if (f3 == 9i128) {
+                                                                                                                                                            if (f3 == 7i128) {
                                                                                                                                                                 v8 = self.g_rd(119i128 as u32)?;
                                                                                                                                                                 v9 = self.g_bin(Bin::And, v8, v3);
                                                                                                                                                                 v10 = self.g_bin(Bin::Or, v9, v5);
                                                                                                                                                                 self.g_wr(119i128 as u32, v10)?;
+                                                                                                                                                            } else {
+                                                                                                                                                                if (f3 == 8i128) {
+                                                                                                                                                                    v8 = self.g_rd(119i128 as u32)?;
+                                                                                                                                                                    v9 = self.g_bin(Bin::And, v8, v3);
+                                                                                                                                                                    v10 = self.g_bin(Bin::Or, v9, v5);
+                                                                                                                                                                    self.g_wr(119i128 as u32, v10)?;
+                                                                                                                                                                } else {
+                                                                                                                                                                    if (f3 == 9i128) {
+                                                                                                                                                                        v8 = self.g_rd(119i128 as u32)?;
+                                                                                                                                                                        v9 = self.g_bin(Bin::And, v8, v3);
+                                                                                                                                                                        v10 = self.g_bin(Bin::Or, v9, v5);
+                                                                                                                                                                        self.g_wr(119i128 as u32, v10)?;
+                                                                                                                                                                    } else {
+                                                                                                                                                                        if (f3 == 14i128) {
+                                                                                                                                                                            v8 = self.g_rd(119i128 as u32)?;
+                                                                                                                                                                            v9 = self.g_bin(Bin::And, v8, v3);
+                                                                                                                                                                            v10 = self.g_bin(Bin::Or, v9, v5);
+                                                                                                                                                                            self.g_wr(119i128 as u32, v10)?;
+                                                                                                                                                                        } else {
+                                                                                                                                                                            if (f3 == 15i128) {
+                                                                                                                                                                                v8 = self.g_rd(119i128 as u32)?;
+                                                                                                                                                                                v9 = self.g_bin(Bin::And, v8, v3);
+                                                                                                                                                                                v10 = self.g_bin(Bin::Or, v9, v5);
+                                                                                                                                                                                self.g_wr(119i128 as u32, v10)?;
+                                                                                                                                                                            }
+                                                                                                                                                                        }
+                                                                                                                                                                    }
+                                                                                                                                                                }
                                                                                                                                                             }
                                                                                                                                                         }
                                                                                                                                                     }

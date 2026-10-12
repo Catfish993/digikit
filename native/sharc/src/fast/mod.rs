@@ -18,15 +18,37 @@
 //! `SHARC_FAST_REGIONS` environment variable (comma separated hex PCs) read
 //! by `Engine::from_image`. Off by default.
 
+/// `Instant` for the tier's build timings. `wasm32-unknown-unknown` has no
+/// clock (`std::time::Instant::now` panics), so there the timings read zero.
+mod clock {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use std::time::Instant;
+
+    #[cfg(target_arch = "wasm32")]
+    #[derive(Clone, Copy)]
+    pub struct Instant;
+
+    #[cfg(target_arch = "wasm32")]
+    impl Instant {
+        pub fn now() -> Self {
+            Instant
+        }
+
+        pub fn elapsed(&self) -> std::time::Duration {
+            std::time::Duration::ZERO
+        }
+    }
+}
+
 pub mod cfg;
 pub mod decode_view;
 pub mod dump;
+#[allow(unreachable_code)]
 pub mod gen_helpers;
 pub mod glue;
 pub mod helper;
 pub mod interp;
 pub mod ir;
-pub mod lean;
 pub mod lower;
 pub mod plugin;
 pub mod region;
@@ -301,6 +323,8 @@ pub struct FastStats {
     /// dropped as unprofitable, refusals by normalized reason.
     pub armed: u64,
     pub unprofitable: u64,
+    /// Regions rebuilt with flat accesses after their dynamic windows kept failing.
+    pub dyn_flat: u64,
     pub cached_refusals: u64,
     pub reasons: std::collections::BTreeMap<String, u64>,
 }
@@ -407,7 +431,18 @@ struct Slot {
     last_eq: u64,
     /// Calls whose first instruction left the kernel before completing.
     exit0: u32,
+    /// Calls declined for want of a resolvable window (`cfg::flat_auto`).
+    win_fails: u32,
+    /// Calls that left the kernel at an instruction with a guarded dynamic
+    /// window (`dynflat_range`).
+    dyn_exits: u32,
     transient: u32,
+    /// `SHARC_FAST_DEFER`: calls still to be interpreted before the freshly
+    /// built kernel is used (simulates a background compile that has not
+    /// finished). Measurement only.
+    defer: u32,
+    /// `SHARC_FAST_TL`: why the next build of this slot happens.
+    tl_why: &'static str,
     /// Selected by `Auto` (dropped again on refusal or low yield).
     auto: bool,
     calls: u64,
@@ -434,6 +469,8 @@ const BLOOM_WORDS: usize = 1024;
 const MAX_VARIANTS: usize = 4;
 const REBUILD_BUDGET: u32 = 16;
 const WIN_BACKOFF_MAX: u8 = 8;
+/// Window declines of one entry before it is rebuilt with flat accesses.
+const WIN_FLAT_AFTER: u32 = 3;
 /// After the build budget is spent, the alternatives are no longer tried
 /// once this many calls in a row were declined by every variant.
 const ALT_GIVE_UP: u32 = 64;
@@ -499,6 +536,50 @@ pub struct FastEngine {
     /// The last kernel exit awaiting the gap to the next fast-tier call:
     /// (slot, exit pc, exit kind, icount at exit).
     cov_last: Option<(usize, u32, &'static str, u64)>,
+    /// `SHARC_FAST_TL=1`: a timeline of builds and compiles on stderr
+    /// (`tl build ...`, `tl tick ...`); measurement only.
+    tl: Option<Tl>,
+    /// `SHARC_FAST_DEFER=N`: interpret the first N..4N calls of a freshly built
+    /// kernel before using it (N scaled by the entry PC); measurement only.
+    defer_n: u32,
+}
+
+/// State of the `SHARC_FAST_TL` timeline.
+struct Tl {
+    t0: clock::Instant,
+    next_tick: u64,
+    seen: std::collections::HashSet<u64>,
+    dup: u64,
+    builds: u64,
+}
+
+/// Instructions per timeline tick (1/4 audio second at ~1G insns/s counting idle skip).
+const TL_TICK: u64 = 250_000_000;
+
+#[cfg(unix)]
+fn thread_cpu_ns() -> u64 {
+    #[repr(C)]
+    struct Ts {
+        sec: i64,
+        nsec: i64,
+    }
+    unsafe extern "C" {
+        fn clock_gettime(clock: i32, ts: *mut Ts) -> i32;
+    }
+    #[cfg(target_os = "macos")]
+    const CLK: i32 = 16;
+    #[cfg(not(target_os = "macos"))]
+    const CLK: i32 = 3;
+    let mut ts = Ts { sec: 0, nsec: 0 };
+    // SAFETY: valid out pointer.
+    if unsafe { clock_gettime(CLK, &mut ts) } != 0 {
+        return 0;
+    }
+    ts.sec as u64 * 1_000_000_000 + ts.nsec as u64
+}
+#[cfg(not(unix))]
+fn thread_cpu_ns() -> u64 {
+    0
 }
 
 // SAFETY: a FastEngine is owned by one Engine and used from one thread at a
@@ -580,10 +661,28 @@ impl FastEngine {
                 on
             },
             cov_last: None,
+            tl: std::env::var_os("SHARC_FAST_TL").map(|_| Tl {
+                t0: clock::Instant::now(),
+                next_tick: TL_TICK,
+                seen: Default::default(),
+                dup: 0,
+                builds: 0,
+            }),
+            defer_n: std::env::var("SHARC_FAST_DEFER")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
         };
         fe.stops_new = fe.pcs.clone();
         fe.rebuild_bloom();
         fe
+    }
+
+    /// Make the instruction after each stop instruction an entry
+    /// (`SHARC_FAST_FOLLOW=1` without an environment).
+    pub fn with_follow(mut self, on: bool) -> FastEngine {
+        self.follow = on;
+        self
     }
 
     /// Make the entries ROOTS block-translator clusters (adding them as
@@ -689,7 +788,85 @@ impl FastEngine {
     }
 
     fn build(&mut self, s: &mut St, pc: u32) -> Option<()> {
-        let t0 = std::time::Instant::now();
+        if self.tl.is_none() && self.defer_n == 0 {
+            return self.build_inner(s, pc);
+        }
+        let (b0, c0) = (self.stats.build_ns, self.stats.compile_ns);
+        let t = clock::Instant::now();
+        let ix = self.lookup.get(&pc).copied();
+        let why = ix.map_or("", |i| std::mem::take(&mut self.slots[i].tl_why));
+        let kind = if !why.is_empty() {
+            why
+        } else if ix.is_some_and(|i| self.slots[i].rebuilds > 0) {
+            "rebuild"
+        } else if ix.is_some_and(|i| self.slots[i].transient > 0) {
+            "retry"
+        } else {
+            "first"
+        };
+        let (sc, si) = ix.map_or((0, 0), |i| (self.slots[i].calls, self.slots[i].insns));
+        let r = self.build_inner(s, pc);
+        let wall_us = t.elapsed().as_micros();
+        if let Some(i) = ix
+            && r.is_some()
+            && self.defer_n > 0
+        {
+            self.slots[i].defer = self.defer_n * (1 + ((pc >> 2) & 3));
+        }
+        if let Some(tl) = &mut self.tl {
+            tl.builds += 1;
+            let (ops, helpers, words, hash) = match ix.and_then(|i| self.slots[i].region.as_ref()) {
+                Some(reg) if r.is_some() => {
+                    let mut w = reg.kernel.encode();
+                    let helpers = reg
+                        .kernel
+                        .pre
+                        .iter()
+                        .chain(&reg.kernel.body)
+                        .chain(&reg.kernel.post)
+                        .filter(|i| matches!(i, ir::Inst::Def(_, ir::Op::Helper(_))))
+                        .count();
+                    let n = w.len();
+                    // Helper records are host pointers: not part of the identity.
+                    let mut h = 0xcbf2_9ce4_8422_2325u64;
+                    let mut i = 0;
+                    while i < w.len() {
+                        h = (h ^ w[i] as u64).wrapping_mul(0x100_0000_01b3);
+                        i += 1;
+                    }
+                    if helpers == 0 && !tl.seen.insert(h) {
+                        tl.dup += 1;
+                    } else if helpers == 0
+                        && let Some(dir) = std::env::var_os("SHARC_FAST_TL_DUMP")
+                    {
+                        // Measurement: the pointer-free kernels, for the wasm backend.
+                        let bytes: Vec<u8> = w.iter().flat_map(|x| x.to_le_bytes()).collect();
+                        let _ = std::fs::create_dir_all(&dir);
+                        let _ = std::fs::write(
+                            std::path::Path::new(&dir).join(format!("kernel-{h:016x}.bin")),
+                            bytes,
+                        );
+                    }
+                    w.clear();
+                    (reg.kernel.inst_count(), helpers, n, h)
+                }
+                _ => (0, 0, 0, 0),
+            };
+            eprintln!(
+                "tl build t_ms={:.3} ic={} pc={pc:#x} kind={kind} ok={} build_us={} compile_us={} wall_us={wall_us} scalls={sc} sinsns={si} ops={ops} helpers={helpers} words={words} hash={hash:016x} dup={}",
+                tl.t0.elapsed().as_secs_f64() * 1e3,
+                s.icount,
+                r.is_some() as u8,
+                (self.stats.build_ns - b0) / 1000,
+                (self.stats.compile_ns - c0) / 1000,
+                tl.dup,
+            );
+        }
+        r
+    }
+
+    fn build_inner(&mut self, s: &mut St, pc: u32) -> Option<()> {
+        let t0 = clock::Instant::now();
         // The remaining iterations of the active DO loop that starts here,
         // else (or when that is refused) the CFG shape from this pc.
         // SHARC_FAST_SHAPE=cfg skips the loop shape (tests, comparisons).
@@ -744,11 +921,8 @@ impl FastEngine {
                 None
             }
             Ok(mut r) => {
-                let t1 = std::time::Instant::now();
-                let k = match &r.lean {
-                    Some(l) => self.backend.compile_checked(&r.kernel, &l.entry),
-                    None => self.backend.compile(&r.kernel),
-                };
+                let t1 = clock::Instant::now();
+                let k = self.backend.compile(&r.kernel);
                 self.stats.compile_ns += t1.elapsed().as_nanos() as u64;
                 match k {
                     Err(e) => {
@@ -838,6 +1012,25 @@ impl FastEngine {
     }
 }
 
+/// On by default (`SHARC_FAST_DYNFLAT=0` turns it off; `LO-HI`, hex PCs, limits it to a range): a region whose calls mostly
+/// leave the kernel at an instruction with a guarded dynamic window (the span
+/// anchored on an index register cannot hold an address that is a loaded
+/// offset from it, so the guard fails on every call) is rebuilt with that
+/// instruction as a flat guarded access (`cfg::mark_flat_pc`). Exact: a flat
+/// access guards every access and leaves before the instruction.
+fn dynflat_range() -> Option<(u32, u32)> {
+    static R: std::sync::OnceLock<Option<(u32, u32)>> = std::sync::OnceLock::new();
+    *R.get_or_init(|| {
+        let v = std::env::var("SHARC_FAST_DYNFLAT").unwrap_or_else(|_| "1".into());
+        let hex = |t: &str| u32::from_str_radix(t.trim().trim_start_matches("0x"), 16).ok();
+        match v.as_str() {
+            "" | "0" => None,
+            "1" => Some((0, u32::MAX)),
+            r => r.split_once('-').and_then(|(a, b)| Some((hex(a)?, hex(b)?))),
+        }
+    })
+}
+
 /// Cap on the gap (instructions) recorded after one kernel exit.
 const COV_GAP_CAP: u64 = 4096;
 
@@ -910,51 +1103,6 @@ fn req_failure(s: &St, r: &region::Region) -> String {
         }
     }
     "misc (mode1/flags)".into()
-}
-
-/// `SHARC_FAST_KEYS=1` (with `SHARC_FAST_COV`): print the entry state each
-/// declined call saw (diagnostic, to pick what a variant has to key on).
-fn keys_log() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_KEYS").is_some())
-}
-
-fn state_key(s: &mut St, r: &region::Region) -> String {
-    let m1 = s.r[crate::rt::MODE1];
-    let a = s.r[118];
-    let mut out = format!("mode1={:#x}/{:#x} astatx_known={:#x}", m1.b, m1.m, a.m);
-    for q in &r.misc {
-        out += &format!(" {q:?}");
-    }
-    for &c in &r.known {
-        let v = s.r[c as usize];
-        if v.m != u32::MAX {
-            out += &format!(" known-fail r{c}={:#x}/{:#x}", v.b, v.m);
-        }
-    }
-    for &(c, k) in &r.eqs {
-        let v = s.r[c as usize];
-        if v.m != u32::MAX || v.b != k {
-            out += &format!(" eq-fail r{c} want {k:#x} have {:#x}/{:#x}", v.b, v.m);
-        }
-    }
-    // Windows at one iteration: the span and whether it resolves for the
-    // read / write it asks (diagnostic; the probe is `Mem::window`).
-        for (w, spec) in r.wins.iter().enumerate() {
-        let b = match spec.base {
-            Base::None => 0,
-            Base::Reg(c) => s.r[c as usize].b as i64,
-        };
-        let (lo, hi) = (b + spec.lo + spec.nf, b + spec.hi + spec.nf);
-        let len = (hi - lo).max(0) as u32;
-        let rd = s.mem.window(lo as u32, len, true, false).is_some();
-        let wr = s.mem.window(lo as u32, len, false, true).is_some();
-        out += &format!(
-            " win{w} {lo:#x}..{hi:#x} spec r={} w={} dyn={:?} probe r={rd} w={wr}",
-            spec.read, spec.write, spec.dynamic_anchor
-        );
-    }
-    out
 }
 
 /// Are the code words R was made from still the ones in memory? (Cached
@@ -1040,17 +1188,6 @@ impl FastEngine {
 
 impl Drop for FastEngine {
     fn drop(&mut self) {
-        #[cfg(feature = "fast-prof")]
-        if self.summary {
-            let (ticks, _) = glue::prof::take(0);
-            let f = glue::prof::freq() as f64;
-            let calls = self.stats.calls.max(1) as f64;
-            let mut line = format!("fast-prof: {} calls;", self.stats.calls);
-            for (n, t) in glue::prof::PHASES.iter().zip(&ticks) {
-                line += &format!(" {n} {:.1} ns;", *t as f64 / f * 1e9 / calls);
-            }
-            eprintln!("{line}");
-        }
         if dump::enabled() {
             let rows: Vec<(u32, u64, u64)> = self
                 .pcs
@@ -1090,23 +1227,28 @@ impl Drop for FastEngine {
                 );
             }
         }
-        if std::env::var_os("SHARC_FAST_LEAN_STATS").is_some() {
-            for (pc, s) in self.pcs.iter().zip(&self.slots) {
-                if let Some(l) = s.region.as_ref().and_then(|r| r.lean.as_ref()) {
-                    eprintln!(
-                        "lean {pc:#x}: calls {} window hit/miss {}/{}",
-                        s.calls,
-                        l.win_hit.get(),
-                        l.win_miss.get(),
-                    );
-                }
-            }
-        }
     }
 }
 
 impl FastEngine {
     fn run_inner(&mut self, s: &mut St, pc: u32, chained: bool) -> Option<u32> {
+        if let Some(tl) = &mut self.tl
+            && s.icount >= tl.next_tick
+        {
+            tl.next_tick = s.icount - s.icount % TL_TICK + TL_TICK;
+            eprintln!(
+                "tl tick t_ms={:.1} ic={} cpu_ms={:.1} compile_ms={:.1} build_ms={:.1} builds={} calls={} runs={} insns={}",
+                tl.t0.elapsed().as_secs_f64() * 1e3,
+                s.icount,
+                thread_cpu_ns() as f64 / 1e6,
+                self.stats.compile_ns as f64 / 1e6,
+                self.stats.build_ns as f64 / 1e6,
+                tl.builds,
+                self.stats.calls,
+                self.stats.runs,
+                self.stats.insns,
+            );
+        }
         while let Some(next) = self.follow_queue.pop() {
             self.add_entry(next);
         }
@@ -1118,6 +1260,7 @@ impl FastEngine {
             let region = slot.region.as_ref()?;
             if slot.refused.is_some()
                 || slot.kernel.is_none()
+                || slot.defer > 0
                 || region.cfg.is_none()
                 || s.mem.dec_gen != region.verified_gen
             {
@@ -1159,6 +1302,10 @@ impl FastEngine {
             }
         }
         let slot = &mut self.slots[ix];
+        if slot.defer > 0 {
+            slot.defer -= 1;
+            return None;
+        }
         if slot.win_skip > 0 && self.win_backoff {
             slot.win_skip -= 1;
             return None;
@@ -1167,6 +1314,7 @@ impl FastEngine {
         if !verify_code(s, region) {
             slot.region = None;
             slot.kernel = None;
+            slot.tl_why = "code";
             return None;
         }
         self.stats.calls += 1;
@@ -1246,12 +1394,21 @@ impl FastEngine {
                             .cfg
                             .as_ref()
                             .is_some_and(|c| c.stops.iter().any(|(p, _)| *p == x));
-                    let kind = if at_stop {
-                        "stop"
-                    } else if s.icount >= s.limit {
+                    let site_kind = region
+                        .cfg
+                        .as_ref()
+                        .map(|c| c.sites[self.ctx.get32(CTX_EXIT_K) as usize].kind);
+                    let kind = if s.icount >= s.limit {
                         "budget"
                     } else {
-                        "exit"
+                        match site_kind {
+                            Some("insn") if at_stop => "stop",
+                            Some("insn") => "guard",
+                            Some(k) if k.starts_with("g@") => k,
+                            Some(k) => k,
+                            None if at_stop => "stop",
+                            None => "exit",
+                        }
                     };
                     let e = slot.cov.exits.entry((x, kind)).or_default();
                     e[0] += 1;
@@ -1260,9 +1417,6 @@ impl FastEngine {
                 }
                 Err(d) => {
                     slot.cov.declined[*d as usize] += 1;
-                    if keys_log() {
-                        eprintln!("key root={pc:#x} {d:?} {}", state_key(s, region));
-                    }
                     let why = match d {
                         glue::Decline::Req => format!("req: {}", req_failure(s, region)),
                         glue::Decline::Shape | glue::Decline::Window => glue::take_cov_why(),
@@ -1298,6 +1452,12 @@ impl FastEngine {
                 self.stats.runs += 1;
                 self.stats.insns += s.icount - before;
                 dump::finish(pc, s.icount - before);
+                if self.auto.is_some() && s.pc_sw as u32 != pc {
+                    // The kernel left at another PC (a call it performed, a
+                    // stop): the interpreter never saw a branch to it, so
+                    // `note` was not called. A candidate region start.
+                    self.note(s.pc_sw as u32);
+                }
                 Some(code)
             }
             Err(d) => {
@@ -1310,7 +1470,7 @@ impl FastEngine {
                         .entry(format!("decline req: {why}"))
                         .or_default() += 1;
                 }
-                if d == glue::Decline::Req && std::env::var_os("SHARC_FAST_NOVOLATILE").is_none() {
+                if d == glue::Decline::Req {
                     // An M register that differs from its baked value twice in
                     // a row is data, not a constant: do not bake it near here.
                     let mut fails = 0u64;
@@ -1329,7 +1489,7 @@ impl FastEngine {
                     }
                 }
                 let mut exit0_rebuild = false;
-                if d == glue::Decline::Exit0 && std::env::var_os("SHARC_FAST_NOEXIT0").is_none() {
+                if d == glue::Decline::Exit0 {
                     slot.exit0 += 1;
                     if slot.exit0 == 4
                         && slot.rebuilds < REBUILD_BUDGET
@@ -1344,16 +1504,38 @@ impl FastEngine {
                 } else if !matches!(d, glue::Decline::Exit0) {
                     slot.exit0 = 0;
                 }
+                let mut win_rebuild = false;
+                if d == glue::Decline::Window && cfg::flat_auto() {
+                    slot.win_fails += 1;
+                    if slot.win_fails == WIN_FLAT_AFTER
+                        && slot.rebuilds < REBUILD_BUDGET
+                        && cfg::mark_flat_win(pc)
+                    {
+                        // The static windows keep failing (an unwritten byte
+                        // in a hull): guard each access instead.
+                        win_rebuild = true;
+                        slot.win_back = 0;
+                        slot.win_skip = 0;
+                    }
+                }
                 if (d == glue::Decline::Req
                     && slot.rebuilds < REBUILD_BUDGET
                     && !req_is_within(s, region))
                     || exit0_rebuild
+                    || win_rebuild
                 {
                     // No variant fits the state (a baked constant, MODE1 or
                     // the CACC history differs): make another from this
                     // state, a bounded number of times. The variants that
                     // exist stay (most recent first, at most MAX_VARIANTS).
                     slot.rebuilds += 1;
+                    slot.tl_why = if win_rebuild {
+                        "rebuild-win"
+                    } else if exit0_rebuild {
+                        "rebuild-exit0"
+                    } else {
+                        "rebuild-req"
+                    };
                     let n = slot.rebuilds;
                     let old = (slot.region.take(), slot.kernel.take());
                     if self.build(s, pc).is_some() {
@@ -1380,6 +1562,41 @@ impl FastEngine {
                 None
             }
         };
+        let mut dyn_flat: Option<Vec<u32>> = None;
+        if let Some((lo, hi)) = dynflat_range()
+            && res.is_ok()
+        {
+            let at = s.pc_sw as u32;
+            let sl = &mut self.slots[ix];
+            if let Some(r) = sl.region.as_ref()
+                && !r.dyn_pcs.is_empty()
+            {
+                sl.dyn_exits += r.dyn_pcs.contains(&at) as u32;
+                if sl.calls >= 64 && sl.calls.is_power_of_two() && sl.dyn_exits as u64 * 2 >= sl.calls {
+                    let pcs: Vec<u32> = r
+                        .dyn_pcs
+                        .iter()
+                        .copied()
+                        .filter(|p| (lo..=hi).contains(p))
+                        .collect();
+                    if !pcs.is_empty() {
+                        dyn_flat = Some(pcs);
+                    }
+                }
+            }
+        }
+        if let Some(pcs) = dyn_flat {
+            for p in pcs {
+                cfg::mark_flat_dyn(p);
+            }
+            // Built again from the next call's state, with the flat accesses.
+            self.slots[ix].region = None;
+            self.slots[ix].kernel = None;
+            self.slots[ix].tl_why = "dynflat";
+            self.slots[ix].alts.clear();
+            self.slots[ix].dyn_exits = 0;
+            self.stats.dyn_flat += 1;
+        }
         if drop_after {
             self.drop_slot(pc);
         }

@@ -11,6 +11,7 @@
 //! - [`firmware`], [`events`], [`cli`]: section/DSP diffs, event fan-out and
 //!   the shared command line.
 
+pub mod cards;
 pub mod cli;
 pub mod controller;
 pub mod dispatch;

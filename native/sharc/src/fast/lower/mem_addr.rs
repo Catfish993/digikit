@@ -73,16 +73,6 @@ pub(super) fn guarded_xfers() -> bool {
     *ON.get_or_init(|| std::env::var_os("SHARC_FAST_NOGUARD").is_none())
 }
 
-/// Flat guarded accesses (`flat_access`) for transfers with no static range
-/// and no anchor register (a pointer loaded from memory): the kernel reads
-/// the engine's page table itself and guards every access. Off unless
-/// `SHARC_FAST_FLAT` is set: PCM-exact, but the kernels are large (compile
-/// time) and the DN2 hot loops still stop elsewhere (docs/findings/18-dsp-performance.md).
-pub(super) fn flat_xfers() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("SHARC_FAST_FLAT").is_some())
-}
-
 impl Lower {
     /// A normal-word transfer through index register IC with modifier MC.
     pub fn dm_transfer(&mut self, ic: u32, mc: u32, post: bool, x: Xfer) -> LR<()> {
@@ -136,13 +126,16 @@ impl Lower {
             None => self.hint[ic as usize],
         };
         // Earlier passes only collect facts: no windows are made for them.
-        let dynamic =
-            guarded && self.strict() && self.abs[addr as usize].is_none() && anchor.is_some();
+        let dynamic = guarded
+            && self.strict()
+            && self.abs[addr as usize].is_none()
+            && anchor.is_some()
+            && !self.flat_dyn_cur;
         let iv_ranged = self.abs[iv as usize].is_some();
         // No range and no anchor: access the engine's memory through its page
         // table, guarding every access (`flat_access`).
         if !dynamic
-            && flat_xfers()
+            && self.flat_ok()
             && self.strict()
             && !iv_ranged
             && self.abs[addr as usize].is_none()
@@ -321,6 +314,7 @@ impl Lower {
     /// access is plain (`glue::NW_PLAIN`, a subset of the addresses
     /// `addressing::normal_word_to_byte` leaves alone): leave before the
     /// instruction otherwise.
+    #[track_caller]
     pub fn guard_plain(&mut self, v: Val) {
         let mut any: Option<Val> = None;
         for &(lo, hi) in super::super::glue::NW_PLAIN.iter() {
@@ -373,7 +367,12 @@ impl Lower {
         if !(16..32).contains(&ic) {
             return refuse("require_linear: not an index register");
         }
-        if !self.env.circ_off && self.env.dag_l[(ic - 16) as usize].is_some_and(|l| l != 0) {
+        if self.lb_stale((ic - 16) as usize) {
+            // The entry L is not the L the update sees: a write of L or B
+            // earlier in the region can turn on the wrap.
+            return refuse("L/B of the index register written in the region");
+        }
+        if self.env.dag_l[(ic - 16) as usize].is_some_and(|l| l != 0) {
             // MODIFY wraps on B/L whatever MODE1.CBUFEN says; not lowered.
             return refuse("MODIFY on an index register with L != 0");
         }

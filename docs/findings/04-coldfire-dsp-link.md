@@ -2993,3 +2993,49 @@ halfword. Both are host calibration and are recorded in the capture header.
 `0x47db4560[]`) is the same in `running.snap` and `loaded.snap`.
 `tools/sharc_replay.py IMAGE CAP --fields` lists the frames with a trig or
 release bit and the per-track fields (no SHARC run).
+
+## DN2 1.11 TX frame: track blocks and the FX sends (2026-10-08) **[D]**
+
+Measured from `--diag dspi` logs on the `scenarios/dn2-fx.json` scenarios.
+This has not been second-checked.
+
+**Sending.** The DN2 vector-191 handler (`0x40025e36`) sends the frame with
+`FUN_400cf7be(0xa80, &DAT_80005e60, 0xabc, 0x800053a4)`. The buffer is
+0x80005e60; DT2 uses 0x80005348. The logged frame is 2748 bytes.
+
+**Track blocks.** Each track has a 0x92-byte block, 16 tracks. Per track the
+handler copies four mirror ranges out of the 0xca-stride mirror row:
+
+| Frame offset | Length | Mirror row offset |
+|---|---|---|
+| 0xda | 0x52 | +0x54 |
+| 0x12c | 0x1c | +0xa6 |
+| 0x148 | 0x1a | +0xc2 |
+| 0x162 | 0x0a | +0xe0 |
+
+**FX sends**, track 0, with stride 0x92 per track:
+
+| Send | Mirror idx | Frame offset |
+|---|---|---|
+| Delay | 86 | 0x154 |
+| Reverb | 87 | 0x156 |
+| Chorus | 88 | 0x158 |
+
+**What was measured:**
+
+- A delay send of 0x7f00 appears at 0x154 with the CF smoothing ramp. A
+  reverb send of 0x1b00 appears at 0x156.
+- On the DSP the frame lands in the ring at 0x2c29d0 or 0x2c39d0. The
+  delay/reverb word is ring + 0x154, written by DMA.
+- `0x1c2712`'s 672-word loop (at 0x1c287a, with a twin at 0x1c302d) copies
+  the ring to 0x25c48c.
+- The per-track unpack loads the delay send at `0x1c2c4a` (`IF SZ R7 =
+  DM(I0,M5)`, I0 = 0x25c5e0 + 0x92*t) and turns it into a float (F9 =
+  32512.0). Its destination is open. **[O]**
+- In the coupled run, B/L-loading functions in 0xb80000-0xb98000 do execute
+  (0xb8ac4c, 0xb8afca, 0xb8afd7, 0xb8afe4). Finding 06's "not reached" holds
+  only for the Python cold start.
+
+Audio: the delay send changes nothing in the DN2 output, while the reverb
+send, chorus send, overdrive and SRR do (`scenarios/dn2-fx.json`,
+`tools/fxcheck.py`). **[V]**

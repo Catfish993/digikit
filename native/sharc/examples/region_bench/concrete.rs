@@ -89,13 +89,19 @@ impl Compute {
         };
         let (value, flags) = match self.kind {
             Kind::Add | Kind::Sub | Kind::Mul => {
-                let (v, overflow, invalid) = match self.kind {
-                    Kind::Add => bnd::_float_binary_add(s, a, b),
-                    Kind::Sub => bnd::_float_binary_sub(s, a, b),
-                    _ => bnd::_float_binary_mul(s, a, b),
+                let (v, overflow, underflow, invalid) = match self.kind {
+                    Kind::Add => {
+                        let (v, o, i) = bnd::_float_binary_add(s, a, b);
+                        (v, o, None, i)
+                    }
+                    Kind::Sub => {
+                        let (v, o, i) = bnd::_float_binary_sub(s, a, b);
+                        (v, o, None, i)
+                    }
+                    _ => bnd::_float_multiply(s, a, b),
                 };
                 let f = if matches!(self.kind, Kind::Mul) {
-                    bnd::_astatx_mult_float(s, v, overflow, invalid)
+                    bnd::_astatx_mult_float(s, v, overflow, underflow, invalid)
                 } else {
                     core::flags::_float_alu_updates(s, v, overflow, false, None, invalid)
                         .map_err(err)?

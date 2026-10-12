@@ -1234,3 +1234,58 @@ Folded from a lane notebook; measured on DT2 1.16, not re-checked by a second ag
   (`service_dspi1`) delivers vector 86, then vector 65. With it the seeded card calls
   `load_sample` 297 times and the SRC and FLTR pages draw. **[O]** The peer's identity;
   zero responses are enough.
+
+## Track N plays file N: per-track project seeding (2026-10-12) **[D]**
+
+`native/plusdrive` (`project.rs`) no longer points all 297 slot references at the first file.
+`point_refs_at(container, refs)` gives each of the 16 tracks of the active kit (kit 0) its own
+table slot and its own file, `refs[t % n]` with the files in sorted-name order:
+
+- A track keeps the slot it has if no lower track uses it. The built-in kit 0 shares slots (v3
+  slots by track: 7, 1, 3, 7, 8, 9, 12, 1, 9, 4, 2, 2, 10, 6, 5, 11), and a shared slot has one
+  reference, so a track whose slot is taken moves to the lowest unclaimed slot that already holds
+  a reference (then to any free one). The slot int16 at `+0x3C + t*0x155 + 0x64` and the reference
+  copy at `+0x129` are rewritten; `reset_active_kit` keeps both.
+- The table slot of track t gets `refs[t % n]`; every other used slot and every other copy of an
+  old reference in the container (other kits, tracks) becomes `refs[0]`. A kit other than kit 0
+  therefore plays the first file wherever its slot was reassigned.
+- The table still has 297 used entries (the claimed slots were all used already), so the firmware
+  makes the same 297 `load_sample` calls. With one file the table equals the old seeding.
+
+Checked with three generated 48 kHz mono files (220 Hz sine, 880 Hz sine, noise), card built in
+process (`tools/card_check.py`, `native/control/src/cards.rs`): the boot project's table slots and
+track copies read back from the image as designed; at ready the DSP slot table (DM `0x257810`)
+holds `{0x40, 0x18040, 0x30040}` for slots 7, 1, 3 and the SDRAM bytes at those starts are the
+220 Hz sine, the 880 Hz sine and the noise (checked with `coupled-run --dump-dsp`); the UI shows
+SAMP `A 7` for track 1 and `A 1` for track 2. **A panel TRIG n press plays track n, not the
+selected track**: TRIG 1 after TRK+TRIG 2 still sounds track 1. With the TRIG n keys 25..27 the
+captured PCM peaks at 222.7 Hz, 878.9 Hz and is broadband (peak share 0.02): track 1 plays file
+1, track 2 file 2, track 3 file 3. **[O]** Whether a second agent reproduces this against the
+image bytes; the bytes of kit 0 after the v3 -> v5 upgrade were not read back, only the UI and
+the DSP.
+
+### In-process card and ready boot **[D]**
+
+`native/control/src/cards.rs` builds the card (no Python); `native/coupled/src/cold.rs` is the
+`sharc_live` cold boot (ColdFire plus the DSP from `cold-idle.dsp` on the DSPI2 link, snapshot at
+ready once link port 0 has been quiet for 400 frames, `digi-audio-m5.snap` and `.snap.dsp`). The
+controller's `card.load` runs both on a worker thread while the running guest waits, then
+restores the pair and presses NO (button 12). Cached under `<run dir>/cards/<key12>/`; the key
+hashes the firmware, the format tag `dt2-card-v2-track-n-file-n` and every file name and content.
+Measured on this machine (loaded, load average about 5): three 1 s files, card build 1.2 s,
+cold boot to ready 11.6 s (fast tier on; `tools/ready.py` takes about 2 min with the interpreter),
+cached restore 0.3 s. **[O]** The in-app snapshot is made with the fast tier where `ready.py`
+sets `SHARC_FAST_REGIONS=`; the exactness of the two ready states was not compared.
+
+### Last card is mounted again at the next start **[D]**
+
+After a successful `card.load` the controller writes `<run dir>/cards/last.json` (`key`, `name`,
+`samples`, `firmware_sha256`; `name` is the chosen folder, `card.load {name}` or the directory name).
+When the desktop app loads a DT2 firmware without `--card-image` (and without `--scenario`:
+`Config::remember_card`), `last.json` names a card whose firmware hash matches, and the cached
+image exists (with audio, the cached ready state too: a cold boot is never started at launch),
+the controller mounts it before the first frame (the cached restore, about 0.3 s). `card.status`
+then reports `state ready, auto true, name, samples`, and the toolbar shows "Samples: NAME (N
+files)"; with nothing cached it shows "Choose samples to load a folder of WAVs". DN2 is
+unchanged. Test: `native/control/tests/card_load.rs`
+(`the_last_card_is_mounted_again_when_the_dt2_starts`).

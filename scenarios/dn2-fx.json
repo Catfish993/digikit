@@ -1,0 +1,9590 @@
+{
+  "scenarios": [
+    {
+      "name": "fx-dry-tap",
+      "description": "DN2: open the track FX page (button 5), no turns, one Trig 1 tap (0.3 s hold). Reference for the FX scenarios. The ColdFire runs about 132M instructions per audio second.",
+      "seconds": 3.6,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 40000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 79600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-br-32",
+      "description": "DN2: open the track FX page, turn encoder 1 (A = Bit Reduction) by +1 detent 32 times (1M instructions apart), then hold Trig 1 for 1.5 s and record 1.5 s of release.",
+      "seconds": 3.55,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 270000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-br-64",
+      "description": "DN2: open the track FX page, turn encoder 1 (A = Bit Reduction) by +1 detent 64 times (1M instructions apart), then hold Trig 1 for 1.5 s and record 1.5 s of release.",
+      "seconds": 3.79,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 302000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-br-127",
+      "description": "DN2: open the track FX page, turn encoder 1 (A = Bit Reduction) by +1 detent 127 times (1M instructions apart), then hold Trig 1 for 1.5 s and record 1.5 s of release.",
+      "seconds": 4.27,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 1,
+          "detents": 1
+        },
+        {
+          "at_instr": 167000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 365000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-del-64",
+      "description": "DN2: open the track FX page, turn encoder 5 (E = Delay send) by +1 detent 64 times (1M instructions apart), then one Trig 1 tap (0.3 s hold) and 3 s of tail.",
+      "seconds": 4.09,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 143600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-del-127",
+      "description": "DN2: open the track FX page, turn encoder 5 (E = Delay send) by +1 detent 127 times (1M instructions apart), then one Trig 1 tap (0.3 s hold) and 3 s of tail.",
+      "seconds": 4.57,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 5,
+          "detents": 1
+        },
+        {
+          "at_instr": 167000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 206600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-rev-127",
+      "description": "DN2: open the track FX page, turn encoder 6 (F = Reverb send) by +1 detent 127 times (1M instructions apart), then one Trig 1 tap (0.3 s hold) and 3 s of tail.",
+      "seconds": 4.57,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 6,
+          "detents": 1
+        },
+        {
+          "at_instr": 167000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 206600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-chr-127",
+      "description": "DN2: open the track FX page, turn encoder 7 (G = Chorus send) by +1 detent 127 times (1M instructions apart), then one Trig 1 tap (0.3 s hold) and 3 s of tail.",
+      "seconds": 4.57,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 7,
+          "detents": 1
+        },
+        {
+          "at_instr": 167000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 206600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-over-127",
+      "description": "DN2: open the track FX page, turn encoder 2 (OVER = Overdrive) by +1 detent 127 times (1M instructions apart), then one Trig 1 tap (0.3 s hold) and 3 s of tail.",
+      "seconds": 4.57,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 2,
+          "detents": 1
+        },
+        {
+          "at_instr": 167000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 206600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-srr-127",
+      "description": "DN2: open the track FX page, turn encoder 3 (SRR) by +1 detent 127 times (1M instructions apart), then one Trig 1 tap (0.3 s hold) and 3 s of tail.",
+      "seconds": 4.57,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 3,
+          "detents": 1
+        },
+        {
+          "at_instr": 167000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 206600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-del-turnmore",
+      "description": "DN2: open the track FX page, turn encoder 5 (Delay send) by +4 detents 150 times (600 detents, 1M instructions apart) to reach its maximum, then one Trig 1 tap (0.3 s hold) and 4 s of tail.",
+      "seconds": 5.74,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 147000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 148000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 149000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 150000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 151000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 152000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 153000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 154000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 155000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 156000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 157000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 158000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 159000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 160000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 161000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 162000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 163000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 164000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 165000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 166000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 167000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 168000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 169000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 190000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 229600000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-del-hold",
+      "description": "DN2: open the track FX page, turn encoder 5 (Delay send) by +4 detents 150 times to its maximum, then hold Trig 1 for 2 s and record 2 s of tail.",
+      "seconds": 5.44,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 147000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 148000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 149000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 150000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 151000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 152000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 153000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 154000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 155000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 156000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 157000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 158000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 159000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 160000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 161000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 162000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 163000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 164000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 165000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 166000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 167000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 168000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 169000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 190000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 454000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-dry-hold",
+      "description": "DN2: open the track FX page, no turns, hold Trig 1 for 2 s and record 2 s of tail. Reference for fx-del-hold.",
+      "seconds": 5.44,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 190000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 454000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-dmp-del",
+      "description": "DN2: open the track FX page, turn encoder 5 (Delay send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "seconds": 2.44,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 147000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 148000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 149000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 150000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 151000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 152000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 153000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 154000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 155000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 156000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 157000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 158000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 159000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 160000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 161000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 162000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 163000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 164000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 165000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 166000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 167000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 168000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 169000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 190000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 454000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-dmp-rev",
+      "description": "DN2: open the track FX page, turn encoder 6 (Reverb send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "seconds": 2.44,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 147000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 148000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 149000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 150000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 151000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 152000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 153000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 154000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 155000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 156000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 157000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 158000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 159000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 160000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 161000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 162000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 163000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 164000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 165000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 166000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 167000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 168000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 169000000,
+          "turn": 6,
+          "detents": 4
+        },
+        {
+          "at_instr": 190000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 454000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-dmp-dry",
+      "description": "DN2: open the track FX page, turn encoder 5 +4 detents 75 times then -4 detents 75 times (ends at 0), then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "seconds": 2.44,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 5,
+          "detents": 4
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 147000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 148000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 149000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 150000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 151000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 152000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 153000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 154000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 155000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 156000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 157000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 158000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 159000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 160000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 161000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 162000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 163000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 164000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 165000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 166000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 167000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 168000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 169000000,
+          "turn": 5,
+          "detents": -4
+        },
+        {
+          "at_instr": 190000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 454000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "fx-dmp-chr",
+      "description": "DN2: open the track FX page, turn encoder 7 (Chorus send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -chr, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "seconds": 2.44,
+      "exact_events": true,
+      "events": [
+        {
+          "at_instr": 1000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 3000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 20000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 21000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 22000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 23000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 24000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 25000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 26000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 27000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 28000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 29000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 30000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 31000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 32000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 33000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 34000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 35000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 36000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 37000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 38000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 39000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 40000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 41000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 42000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 43000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 44000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 45000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 46000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 47000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 48000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 49000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 50000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 51000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 52000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 53000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 54000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 55000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 56000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 57000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 58000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 59000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 60000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 61000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 62000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 63000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 64000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 65000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 66000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 67000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 68000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 69000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 70000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 71000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 72000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 73000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 74000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 75000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 76000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 77000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 78000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 79000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 80000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 81000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 82000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 83000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 84000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 85000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 86000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 87000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 88000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 89000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 90000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 91000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 92000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 93000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 94000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 95000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 96000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 97000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 98000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 99000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 100000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 101000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 102000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 103000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 104000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 105000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 106000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 107000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 108000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 109000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 110000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 111000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 112000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 113000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 114000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 115000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 116000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 117000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 118000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 119000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 120000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 121000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 122000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 123000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 124000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 125000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 126000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 127000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 128000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 129000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 130000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 131000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 132000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 133000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 134000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 135000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 136000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 137000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 138000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 139000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 140000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 141000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 142000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 143000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 144000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 145000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 146000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 147000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 148000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 149000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 150000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 151000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 152000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 153000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 154000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 155000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 156000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 157000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 158000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 159000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 160000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 161000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 162000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 163000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 164000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 165000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 166000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 167000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 168000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 169000000,
+          "turn": 7,
+          "detents": 4
+        },
+        {
+          "at_instr": 190000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 454000000,
+          "button": 25,
+          "down": false
+        }
+      ]
+    }
+  ]
+}

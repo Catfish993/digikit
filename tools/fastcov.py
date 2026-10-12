@@ -24,6 +24,10 @@ Configurations (``--config``, repeatable; default ``default fast-auto``):
     fast-verified       SHARC_AOT=0, only the verified regions and cluster roots
     fast-auto[:T,M[,1]] SHARC_AOT=0, no verified regions, SHARC_FAST_AUTO=T,M[,blocks]
                         (fast tier only: the firmware-free case; default 256,64)
+    <config>+flat       SHARC_FAST_FLATAUTO=1 over any config (the default now; explicit)
+    env:SHARC_FAST_FLATAUTO=0   turns the flat fallback off for an A/B
+    env:SHARC_FAST_DYNFLAT=0    turns the dynamic-window flat rebuild off (on by default)
+    env:SHARC_FAST_CL_OPT=speed Cranelift opt level of the fast tier back to `speed` (default `none`)
     static-funcs[:IMAGE] / static-blocks[:IMAGE]   SHARC_AOT=0, region entries = every function
                         entry / basic-block start of the program database, chosen at load
     fast-auto+verified[:T,M[,1]]   the same plus the verified regions
@@ -118,6 +122,11 @@ def parse_config(spec: str) -> tuple[str, dict[str, str]]:
         # The generated lowering of tools/sharc_lowergen (lane F) for every form it has.
         _, env = parse_config(spec.removesuffix("+gen"))
         return spec, {**env, "SHARC_FAST_GEN": "all"}
+    if spec.endswith("+flat"):
+        # Accesses with no address range, and regions whose static windows keep
+        # declining, are lowered as flat guarded accesses (cfg::flat_auto).
+        _, env = parse_config(spec.removesuffix("+flat"))
+        return spec, {**env, "SHARC_FAST_FLATAUTO": "1"}
     if spec.endswith("+follow"):
         # Also make the instruction after each stop instruction an entry.
         _, env = parse_config(spec.removesuffix("+follow"))
@@ -209,7 +218,7 @@ class Diag:
     def parse_run(line: str) -> dict:
         fields = dict(re.findall(r"(\w+)=(\S+)", line))
         exits = []
-        for item in (fields.get("exits") or "").split(","):
+        for item in (fields.get("exits") or "").split(";"):
             parts = item.split(":")
             if len(parts) == 5:
                 exits.append(

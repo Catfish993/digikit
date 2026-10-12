@@ -4,8 +4,12 @@
 //! which for add, subtract and multiply equals the binary32 operation. The
 //! fast path implements only finite results; a NaN or an infinity (which the
 //! interpreter reports through AV or AI and the sticky bits) exits before the
-//! instruction. A denormal result is exact and shows only in its bit pattern. Flags: AZ and AN from the result bit pattern, AC AV AS AI
-//! cleared, AF set (`flags.py _float_alu_updates`).
+//! instruction. The device reads a denormal operand as a zero and returns a
+//! denormal result as a zero (`floats.py`, "Denormal flush"): an operand that
+//! is a nonzero denormal leaves (`rd_f_op`), and the sum or difference of
+//! two other operands is exact, so a denormal result is replaced by the zero
+//! of its sign (`flush_denormal_result`). Flags: AZ and AN from the result bit
+//! pattern, AC AV AS AI cleared, AF set (`flags.py _float_alu_updates`).
 
 use super::*;
 use crate::fast::FlagKind;
@@ -13,14 +17,15 @@ use crate::fast::FlagKind;
 impl Lower {
     /// RN = FX op FY (floats), the result checked to be in the fast domain.
     pub fn falu_binary(&mut self, b: Bin, rn: u32, rx: u32, ry: u32) -> LR<()> {
-        let x = self.rd_f(rx)?;
-        let y = self.rd_f(ry)?;
+        let x = self.rd_f_op(rx)?;
+        let y = self.rd_f_op(ry)?;
         let r = self.bin(b, x, y);
+        let r = self.flush_denormal_result(r);
         self.float_result(rn, r)
     }
 
     pub fn falu_neg(&mut self, rn: u32, rx: u32) -> LR<()> {
-        let x = self.rd_f(rx)?;
+        let x = self.rd_f_op(rx)?;
         let r = self.un(Un::FNeg, x);
         self.float_result(rn, r)
     }
@@ -65,7 +70,7 @@ impl Lower {
 
     /// RN = abs FX; AS carries the input's sign, AN is always clear.
     pub fn falu_abs(&mut self, rn: u32, rx: u32) -> LR<()> {
-        let x = self.rd_f(rx)?;
+        let x = self.rd_f_op(rx)?;
         self.guard_not_nan(x);
         let r = self.un(Un::FAbs, x);
         self.wr_f(rn, r)?;
@@ -75,15 +80,15 @@ impl Lower {
 
     /// RN = pass FX (finite inputs).
     pub fn falu_pass(&mut self, rn: u32, rx: u32) -> LR<()> {
-        let x = self.rd_f(rx)?;
+        let x = self.rd_f_op(rx)?;
         self.float_result(rn, x)
     }
 
     /// RN = clip FX by FY: FX if |FX| < |FY|, else FY's magnitude with FX's
     /// sign. A NaN operand and an infinite result exit.
     pub fn falu_clip(&mut self, rn: u32, rx: u32, ry: u32) -> LR<()> {
-        let a = self.rd_f(rx)?;
-        let b = self.rd_f(ry)?;
+        let a = self.rd_f_op(rx)?;
+        let b = self.rd_f_op(ry)?;
         self.guard_not_nan(a);
         self.guard_not_nan(b);
         let aa = self.un(Un::FAbs, a);
@@ -105,12 +110,12 @@ impl Lower {
     /// when it is strictly larger (smaller) than FY, else FY; both zero
     /// (either sign) gives +0 for max and -0 for min. The operands are bit
     /// patterns the core compares as binary64, which orders every f32 value
-    /// (denormals and infinities included) as the f32 compare does; the
+    /// (infinities included) as the f32 compare does; the
     /// result is one of the operands or the signed zero, so it needs no
-    /// finite check. A NaN operand (all-ones result, AI) exits.
+    /// finite check. A NaN or denormal operand exits.
     pub fn falu_minmax(&mut self, rn: u32, rx: u32, ry: u32, max: bool) -> LR<()> {
-        let a = self.rd_f(rx)?;
-        let b = self.rd_f(ry)?;
+        let a = self.rd_f_op(rx)?;
+        let b = self.rd_f_op(ry)?;
         self.guard_not_nan(a);
         self.guard_not_nan(b);
         let pick_a = if max {
@@ -134,10 +139,10 @@ impl Lower {
         Ok(())
     }
 
-    /// comp(FX, FY): flags only; a NaN operand exits.
+    /// comp(FX, FY): flags only; a NaN or denormal operand exits.
     pub fn falu_compare(&mut self, rx: u32, ry: u32) -> LR<()> {
-        let a = self.rd_f(rx)?;
-        let b = self.rd_f(ry)?;
+        let a = self.rd_f_op(rx)?;
+        let b = self.rd_f_op(ry)?;
         self.guard_not_nan(a);
         self.guard_not_nan(b);
         let eq = self.bin(Bin::FEq, a, b);
@@ -265,9 +270,11 @@ impl Lower {
     /// rounds to nearest, or toward zero when MODE1.TRUNCATE is set.
     pub fn falu_fix(&mut self, rn: u32, rx: u32, by: Option<u32>, trunc: bool) -> LR<()> {
         // `fix` follows MODE1.TRUNCATE (`floats._float_to_fixed`): the bit is
-        // a translation-time constant (`Env::mode1`) that every region
-        // requires at entry (`finish`).
-        let truncate = trunc || self.env.mode1 & (1 << 15) != 0;
+        // a translation-time constant, MODE1 as the kernel has it here
+        // (`mode1_cur`: a MODE1 write earlier in the region counts); the
+        // entry value is required at entry (`finish`, and in full after any
+        // MODE1 write).
+        let truncate = trunc || self.mode1_cur & (1 << 15) != 0;
         let x = self.rd_f(rx)?;
         let xb = self.to_i(x);
         let sh = match by {

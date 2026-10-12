@@ -16,6 +16,37 @@ builds differ by RUSTFLAGS and use ``pgo-instrument/`` and ``pgo-use/`` below it
 Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
 ``bench-bins A B --pairs N`` (two prebuilt workload test binaries).
 
+DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
+has no DT2 workload (its gate restores the DN2 ready snapshot), so the profile is
+trained on an instrumented ``coupled-run`` (native/coupled) on the one-sample
+card's ready state (tools/dt2_sample_check.py): ``dt2-sample-trig`` plus the FX
+scenarios of :data:`DT2_WORKLOAD` (bit reduction, delay send, reverb send, master
+compressor). State lives in ``out/native/pgo/dt2/<triple>/`` (own manifest and
+profiles). The generated core is SHARC_GEN_DIR, else the one registered for the
+DT2 DSP image. The profile applies to ``coupled-run`` only; ``coupled-build
+--profile PATH|current`` builds it (any profile, e.g. the DN2 one for a
+cross-device check) and tools/coupled_ab.py times it::
+
+    tools/native_pgo.py train --device dt2 [--runs 3] [--variant NAME]
+    tools/native_pgo.py check --device dt2
+    tools/native_pgo.py coupled-build --device dt2 [--profile PATH|current] [--variant NAME]
+
+DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
+has no DT2 workload (the gate restores the DN2 ready snapshot), so the profile is
+trained on an instrumented ``coupled-run`` (native/coupled) on the one-sample
+card's ready state (tools/dt2_sample_check.py): ``dt2-sample-trig`` plus the FX
+scenarios of :data:`DT2_WORKLOAD` (bit reduction, delay send, reverb send,
+master compressor), a few seconds each. State lives in
+``out/native/pgo/dt2/<triple>/`` (own manifest and profiles). The generated core
+is SHARC_GEN_DIR, else the one registered for the DT2 DSP image. The profile
+applies to ``coupled-run`` (``coupled-build``, then tools/coupled_ab.py); the
+desktop app's DT2 build is not trained here. ``coupled-build --profile PATH``
+applies any profile, e.g. the DN2 one (a cross-device check)::
+
+    tools/native_pgo.py train --device dt2 [--runs 3]
+    tools/native_pgo.py check --device dt2
+    tools/native_pgo.py coupled-build --device dt2 [--profile PATH] --variant NAME
+
 The training workload is the ``coupled_ready_exactness`` gate, run from the
 instrumented desktop APP binary with ``--pgo-train`` (not the test binary:
 cargo gives the test target's dependencies other crate hashes than the app's,
@@ -93,8 +124,8 @@ def supported_host() -> bool:
     return sys.platform == "darwin" and platform.machine() == "arm64"
 
 
-def state_dir(triple: str = TRIPLE) -> pathlib.Path:
-    return ROOT / "out" / "native" / "pgo" / "dn2" / triple
+def state_dir(triple: str = TRIPLE, device: str = "dn2") -> pathlib.Path:
+    return ROOT / "out" / "native" / "pgo" / device / triple
 
 
 def toolchain_dir() -> pathlib.Path:
@@ -304,19 +335,36 @@ def key_of(components: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(components, sort_keys=True).encode()).hexdigest()
 
 
-def read_manifest() -> dict[str, object] | None:
+def device_state(device: str = "dn2") -> pathlib.Path:
+    """The profile state directory of a device (DN2: the original location)."""
+    return state_dir() if device == "dn2" else state_dir(device=device)
+
+
+def read_manifest(device: str = "dn2") -> dict[str, object] | None:
     try:
-        return json.loads((state_dir() / "manifest.json").read_text())
+        return json.loads((device_state(device) / "manifest.json").read_text())
     except (OSError, ValueError):
         return None
 
 
-def current_profile() -> str | None:
+def profdata_path(manifest: dict[str, object], device: str = "dn2") -> pathlib.Path:
+    """The manifest's profile file, preferring this tree's copy.
+
+    A profile trained in a linked worktree records that tree's absolute path;
+    the file itself is in the shared out/ directory, so the same name under
+    this tree's state directory is used when it exists.
+    """
+    path = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    local = device_state(device) / "profiles" / path.name
+    return local if local.is_file() else path
+
+
+def current_profile(device: str = "dn2") -> str | None:
     """The manifest's profile file if it still exists (even when stale)."""
-    manifest = read_manifest()
+    manifest = read_manifest(device)
     if not manifest:
         return None
-    path = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    path = profdata_path(manifest, device)
     return str(path) if path.is_file() else None
 
 
@@ -326,40 +374,61 @@ def desktop_digest(hasher: FileHasher) -> str:
 
 
 def check_state(
-    gen: pathlib.Path | None = None, fast: str = "", blocktrans: str = ""
+    gen: pathlib.Path | None = None,
+    fast: str = "",
+    blocktrans: str = "",
+    device: str = "dn2",
 ) -> tuple[str, str, bool]:
-    """Return (status, detail, desktop_changed); status is ok, stale or missing."""
-    manifest = read_manifest()
+    """Return (status, detail, desktop_changed); status is ok, partial, stale or missing.
+
+    partial: only the sources digest differs (the profile is still used);
+    stale: the rustc or generated core (or any other component) differs.
+
+    DEVICE selects the profile (``train --device``); a DT2 profile's key also
+    carries the DT2 workload name.
+    """
+    manifest = read_manifest(device)
     if manifest is None:
         return "missing", "no manifest", False
-    profdata = pathlib.Path(str(manifest["profdata"]["path"]))  # type: ignore[index]
+    profdata = profdata_path(manifest, device)
     if not profdata.is_file():
         return "missing", f"profile file {profdata} is gone", False
     if not toolchain_dir().is_dir():
         return "stale", f"rustup toolchain {TOOLCHAIN} is not installed", False
-    hasher = FileHasher(state_dir() / "hash-cache.json")
+    hasher = FileHasher(device_state(device) / "hash-cache.json")
     components, _ = compute_components(
         list(manifest["packages"]), gen or generated_dir(), hasher, fast, blocktrans
     )  # type: ignore[call-overload]
+    if device == "dt2":
+        components["workload"] = DT2_WORKLOAD_NAME
     desktop = desktop_digest(hasher)
     hasher.save()
     old = manifest["components"]
     changed = [name for name, value in components.items() if old.get(name) != value]  # type: ignore[attr-defined]
+    if changed == ["sources"]:
+        # Engine or tool edits only: LLVM skips profile data of changed functions.
+        return "partial", "changed: sources", False
     if changed:
         return "stale", "changed: " + ", ".join(changed), False
     return "ok", str(profdata), manifest.get("desktop_sha256") != desktop
 
 
 def check(
-    gen: pathlib.Path | None = None, fast: str = "", blocktrans: str = ""
+    gen: pathlib.Path | None = None,
+    fast: str = "",
+    blocktrans: str = "",
+    device: str = "dn2",
 ) -> tuple[str, str]:
-    """Return (status, detail): status is ok, stale or missing."""
-    status, detail, _ = check_state(gen, fast, blocktrans)
+    """Return (status, detail): status is ok, partial, stale or missing."""
+    status, detail, _ = check_state(gen, fast, blocktrans, device)
     return status, detail
 
 
 def profile_use_flags(profdata: str) -> str:
-    return FLAGS_TEMPLATE.format(profdata=profdata)
+    # Not part of the profile key: it only silences partial-mismatch warnings.
+    return (
+        FLAGS_TEMPLATE.format(profdata=profdata) + " -Cllvm-args=-no-pgo-warn-mismatch"
+    )
 
 
 @dataclasses.dataclass
@@ -371,6 +440,7 @@ class LaunchPlan:
 
 def pgo_state(
     environ: dict[str, str] | os._Environ[str] | None = None,
+    device: str = "dn2",
 ) -> tuple[str, str]:
     """The launcher's view of the profile: (status, detail).
 
@@ -386,7 +456,18 @@ def pgo_state(
         generated_dir(environ),
         environ.get("SHARC_FAST_REGIONS", ""),
         environ.get("SHARC_BLOCKTRANS", ""),
+        device,
     )
+
+
+def pgo_variant(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
+    """Target-dir variant of the launcher's profile-use build.
+
+    DIGI_EMU_PGO_VARIANT builds somewhere else (a scratch copy for a
+    measurement); the default ``pgo-use`` belongs to the launcher.
+    """
+    environ = os.environ if environ is None else environ
+    return environ.get("DIGI_EMU_PGO_VARIANT") or "pgo-use"
 
 
 def plan_for(
@@ -399,20 +480,30 @@ def plan_for(
             "--target",
             TRIPLE,
             "--target-dir",
-            str(native_target().target_dir(generated_dir(environ), "pgo-use")),
+            str(
+                native_target().target_dir(generated_dir(environ), pgo_variant(environ))
+            ),
         ],
         env={"RUSTFLAGS": profile_use_flags(profdata), "RUSTC": toolchain_rustc()},
     )
 
 
-def fallback_notice(status: str, detail: str) -> str:
+def train_hint(device: str = "dn2") -> str:
+    return (
+        "tools/native_pgo.py train --device dt2"
+        if device == "dt2"
+        else "tools/native_pgo.py train"
+    )
+
+
+def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
     if status == "skipped":
         return f"WARNING: native PGO: skipped ({detail}); building without PGO"
     what = detail if status == "failed" else f"profile {status} ({detail})"
     hint = (
-        "(mise run pgo to train)"
+        f"({'mise run pgo' if device == 'dn2' else train_hint(device)} to train)"
         if status == "missing"
-        else ("Run tools/native_pgo.py train")
+        else f"Run {train_hint(device)}"
     )
     return (
         f"WARNING: native PGO: {what}; building without PGO "
@@ -420,18 +511,30 @@ def fallback_notice(status: str, detail: str) -> str:
     )
 
 
-def stale_notice(detail: str) -> str:
+def stale_notice(detail: str = "", device: str = "dn2") -> str:
+    """The one line printed when a stale profile is not used."""
     return (
-        f"WARNING: native PGO: profile stale ({detail}); using it anyway "
-        "(unchanged functions keep their profile). Retrain at a milestone: "
-        "mise run pgo"
+        "PGO profile is stale for this core; building without PGO. Retrain with "
+        "`mise run pgo` (both devices), `mise run pgo:dn2` or `mise run pgo:dt2` "
+        "(`uv run python tools/native_pgo.py train --device dt2`)."
     )
 
 
-def training_blocker(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
+PARTIAL_NOTICE = (
+    "PGO profile partly stale (sources changed since training); using it. "
+    "Retrain at milestones with `mise run pgo`."
+)
+
+
+def training_blocker(
+    environ: dict[str, str] | os._Environ[str] | None = None, device: str = "dn2"
+) -> str:
     """Why `train` cannot run here ("" when it can)."""
     try:
-        require_inputs(generated_dir(environ))
+        if device == "dt2":
+            digi_env.check_generated(dt2_generated(), environ)
+        else:
+            require_inputs(generated_dir(environ))
     except SystemExit as exc:
         return str(exc)
     return ""
@@ -439,23 +542,28 @@ def training_blocker(environ: dict[str, str] | os._Environ[str] | None = None) -
 
 def launch_plan(
     environ: dict[str, str] | os._Environ[str] | None = None,
+    device: str = "dn2",
 ) -> tuple[LaunchPlan | None, str]:
     """Decide whether the launcher can use the PGO build; returns (plan, notice).
 
-    A stale profile is used anyway (with a warning notice) when its file still
-    exists; a missing or unusable one gives (None, fallback notice). An empty
-    notice means stay silent (opted out or unsupported host).
+    A stale, missing or unusable profile gives (None, notice): the build runs
+    without PGO. A partly stale profile (only the sources digest differs) is
+    used, with the PARTIAL_NOTICE line. An empty notice means stay silent
+    (opted out or unsupported host).
     """
     environ = os.environ if environ is None else environ
-    status, detail = pgo_state(environ)
+    status, detail = pgo_state(environ, device)
     if status == "off":
         return None, ""
     if status == "stale":
-        profile = current_profile()
+        return None, stale_notice(detail, device)
+    if status == "partial":
+        profile = current_profile(device)
         if profile:
-            return plan_for(profile, environ), stale_notice(detail)
+            return plan_for(profile, environ), PARTIAL_NOTICE
+        return None, fallback_notice("missing", "profile file is gone", device)
     if status != "ok":
-        return None, fallback_notice(status, detail)
+        return None, fallback_notice(status, detail, device)
     return plan_for(detail, environ), "native PGO: using profile " + pathlib.Path(
         detail
     ).name
@@ -512,12 +620,21 @@ def binary_crates(path: str | os.PathLike[str]) -> dict[str, set[str]]:
     return crates_in(shown)
 
 
+# A DT2 profile is trained on coupled-run, not on the desktop app, so the
+# app's own boot crate never matches it; the engine crates carry the DSP cost.
+DT2_APP_UNPROFILED = ("elektron_native_boot",)
+
+
 def crate_mismatches(
-    profile: dict[str, set[str]], binary: dict[str, set[str]]
+    profile: dict[str, set[str]],
+    binary: dict[str, set[str]],
+    ignore: tuple[str, ...] = (),
 ) -> list[str]:
     """One "MISMATCH crate X: ..." line per crate whose hashes do not overlap."""
     lines = []
     for name in GUARDED_CRATES:
+        if name in ignore:
+            continue
         want, have = profile.get(name, set()), binary.get(name, set())
         if want and have and not want & have:
             lines.append(
@@ -530,13 +647,22 @@ def pgo_binary(
     environ: dict[str, str] | os._Environ[str] | None = None,
 ) -> pathlib.Path:
     """The app binary the launcher's PGO build produces."""
-    target = native_target().target_dir(generated_dir(environ), "pgo-use")
+    target = native_target().target_dir(generated_dir(environ), pgo_variant(environ))
     return pathlib.Path(target) / TRIPLE / "release" / "digiemu-desktop"
 
 
-def verify_binary(binary: pathlib.Path, profdata: str | os.PathLike[str]) -> list[str]:
-    """Mismatch lines for `binary` against `profdata` (empty when they match)."""
-    return crate_mismatches(profile_crates(profdata), binary_crates(binary))
+def verify_binary(
+    binary: pathlib.Path, profdata: str | os.PathLike[str], device: str = "dn2"
+) -> list[str]:
+    """Mismatch lines for `binary` against `profdata` (empty when they match).
+
+    For DT2 the app's boot crate is expected to differ (see DT2_APP_UNPROFILED).
+    """
+    return crate_mismatches(
+        profile_crates(profdata),
+        binary_crates(binary),
+        DT2_APP_UNPROFILED if device == "dt2" else (),
+    )
 
 
 # --- training and benchmarking -------------------------------------------------
@@ -714,6 +840,7 @@ def require_inputs(gen: pathlib.Path) -> None:
         raise SystemExit(f"missing rustup toolchain {toolchain_dir()}")
     if not gen.is_dir():
         raise SystemExit(f"generated DN2 core not found: {gen} (set SHARC_GEN_DIR)")
+    digi_env.check_generated(gen)
     for path in (
         run_env(pathlib.Path("."))["DIGI_COUPLED_FIXTURES"],
         run_env(pathlib.Path("."))["DIGI_COUPLED_SYX"],
@@ -841,6 +968,8 @@ def cmd_check(_: argparse.Namespace) -> int:
             "ok (fast regions changed since training; the profile still applies, "
             "retrain at a milestone)"
         )
+    elif status == "partial":
+        print(f"partly stale ({detail}); the launcher still uses the profile")
     else:
         print(f"{status} {detail}" if status != "missing" else f"missing ({detail})")
     print(f"check took {time.monotonic() - began:.3f} s", file=sys.stderr)
@@ -848,8 +977,8 @@ def cmd_check(_: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    manifest = read_manifest()
-    profdata = pathlib.Path(str(manifest["profdata"]["path"])) if manifest else None  # type: ignore[index]
+    manifest = read_manifest(args.device)
+    profdata = profdata_path(manifest, args.device) if manifest else None
     if profdata is None or not profdata.is_file():
         print("no trained profile to verify against")
         return 1
@@ -857,19 +986,20 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if not binary.is_file():
         print(f"no binary at {binary}")
         return 1
-    lines = verify_binary(binary, profdata)
+    lines = verify_binary(binary, profdata, args.device)
     print("\n".join(lines) if lines else "ok")
     return 1 if lines else 0
 
 
-def cmd_plan(_: argparse.Namespace) -> int:
-    plan, notice = launch_plan(
-        {
-            **os.environ,
-            "SHARC_FAST_REGIONS": fast_regions(),
-            "SHARC_BLOCKTRANS": blocktrans_roots(),
-        }
-    )
+def cmd_plan(args: argparse.Namespace) -> int:
+    environ = {
+        **os.environ,
+        "SHARC_FAST_REGIONS": fast_regions(),
+        "SHARC_BLOCKTRANS": blocktrans_roots(),
+    }
+    if args.device == "dt2" and not environ.get("SHARC_GEN_DIR"):
+        environ["SHARC_GEN_DIR"] = str(dt2_generated())
+    plan, notice = launch_plan(environ, args.device)
     print(notice or "native PGO: not used")
     if plan:
         print(
@@ -879,6 +1009,233 @@ def cmd_plan(_: argparse.Namespace) -> int:
             )
         )
     return 0 if plan else 1
+
+
+# --- DT2: instrumented coupled-run on the one-sample card -----------------------
+
+COUPLED_MANIFEST = "native/coupled/Cargo.toml"
+# (scenario file, scenario names): 3 s trig of the card's sample, then FX.
+DT2_WORKLOAD: list[tuple[str, list[str]]] = [
+    ("scenarios/dt2.json", ["dt2-sample-trig"]),
+    ("scenarios/dt2-trackfx.json", ["tf-br-127"]),
+    (
+        "scenarios/dt2-sendfx.json",
+        ["sf-del-ppwidth-u50", "sf-rev-decay-u50", "sf-mst-thr0"],
+    ),
+]
+DT2_WORKLOAD_NAME = "coupled-run-dt2:" + ",".join(
+    f"{f}={'+'.join(n)}" for f, n in DT2_WORKLOAD
+)
+
+
+def coupled_module():
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    try:
+        import coupled as module
+    finally:
+        sys.path.pop(0)
+    return module
+
+
+def dt2_generated() -> pathlib.Path:
+    """SHARC_GEN_DIR, else the core registered for the DT2 DSP image."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    try:
+        import dt2_sample_check
+    finally:
+        sys.path.pop(0)
+    _, _, ready, _ = dt2_sample_check.prepare()
+    return coupled_module().generated("dt2", ready / "digi-audio-dn2-image.bin")
+
+
+def build_coupled(
+    target_dir: pathlib.Path,
+    rustflags: str | None,
+    gen: pathlib.Path,
+    log: pathlib.Path,
+) -> pathlib.Path:
+    """Build native/coupled's ``coupled-run`` (RUSTFLAGS builds use --target)."""
+    env = base_env(gen)
+    if rustflags:
+        env["RUSTFLAGS"] = rustflags
+    command = [
+        "rustup", "run", TOOLCHAIN, "cargo", "build", "--release", "--locked",
+        "--manifest-path", COUPLED_MANIFEST,
+        "--features", coupled_module().FEATURES,
+        "--bin", coupled_module().BINARY_NAME,
+        *(["--target", TRIPLE] if rustflags else []),
+        "--target-dir", str(target_dir),
+    ]  # fmt: skip
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with benchlock("shared", "pgo coupled-run build"), log.open("w") as handle:
+        done = subprocess.run(command, cwd=ROOT, env=env, stderr=handle)
+    if done.returncode:
+        tail = "".join(log.read_text().splitlines(keepends=True)[-30:])
+        raise SystemExit(f"coupled-run build failed (see {log}):\n{tail}")
+    binary = (
+        target_dir
+        / (TRIPLE if rustflags else "")
+        / "release"
+        / coupled_module().BINARY_NAME
+    )
+    if not binary.is_file():
+        raise SystemExit(f"build left no binary at {binary}")
+    return binary
+
+
+def run_dt2_workload(
+    binary: pathlib.Path, outdir: pathlib.Path, extra_env: dict[str, str]
+) -> float:
+    """Run :data:`DT2_WORKLOAD` once (one process per scenario file); seconds."""
+    coupled = coupled_module()
+    coupled.enable_dt2_card()
+    started = time.monotonic()
+    for file, names in DT2_WORKLOAD:
+        report = outdir / (pathlib.Path(file).stem + ".json")
+        extra = [
+            "--scenarios", str(ROOT / file),
+            *(x for n in names for x in ("--scenario", n)),
+            "--out", str(report),
+        ]  # fmt: skip
+        argv = coupled.run_args(binary, coupled.inputs("dt2"), extra)
+        done = subprocess.run(
+            argv,
+            cwd=ROOT,
+            env=coupled.run_env(extra_env),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if done.returncode or not report.is_file():
+            raise SystemExit(
+                f"DT2 workload {file} failed (exit {done.returncode}):\n"
+                + done.stderr[-1500:]
+            )
+        for sc in json.loads(report.read_text())["scenarios"]:
+            if (sc.get("gates") or {}).get("ok") is False:
+                raise SystemExit(f"DT2 workload gate failed: {sc['name']}")
+    return time.monotonic() - started
+
+
+def cmd_train_dt2(args: argparse.Namespace) -> None:
+    gen = dt2_generated()
+    digi_env.check_generated(gen)
+    state = state_dir(device="dt2")
+    started = time.monotonic()
+    packages = local_package_dirs()
+    hasher = FileHasher(state / "hash-cache.json")
+    components, nfiles = compute_components(packages, gen, hasher)
+    components["workload"] = DT2_WORKLOAD_NAME
+    hasher.save()
+    key = key_of(components)
+    raw = state / f"raw-{key[:16]}"
+    shutil.rmtree(raw, ignore_errors=True)
+    raw.mkdir(parents=True)
+    variant = args.variant or "pgo-dt2-instrument"
+    binary = build_coupled(
+        native_target().target_dir(gen, variant),
+        f"-Cprofile-generate={raw}",
+        gen,
+        state / "instrument-build.log",
+    )
+    print(f"instrumented build {time.monotonic() - started:.1f} s", flush=True)
+    seconds = []
+    for number in range(1, args.runs + 1):
+        outdir = state / f"train-{number}"
+        outdir.mkdir(exist_ok=True)
+        with benchlock("shared", "pgo train dt2"):
+            seconds.append(
+                run_dt2_workload(
+                    binary,
+                    outdir,
+                    {"LLVM_PROFILE_FILE": str(raw / f"train-{number}-%m.profraw")},
+                )
+            )
+        print(f"train run {number}: {seconds[-1]:.1f} s", flush=True)
+    raws = sorted(str(p) for p in raw.glob("*.profraw"))
+    if not raws:
+        raise SystemExit("training produced no .profraw files")
+    merged = raw / "merged.profdata"
+    merge = [str(llvm_profdata()), "merge", "-o", str(merged), *raws]
+    subprocess.run(merge, check=True)
+    digest = sha256_file(merged)
+    (state / "profiles").mkdir(parents=True, exist_ok=True)
+    final = state / "profiles" / f"{digest}.profdata"
+    shutil.move(str(merged), final)
+    shutil.rmtree(raw, ignore_errors=True)
+    manifest = {
+        "key": key,
+        "components": components,
+        "packages": packages,
+        "generated_dir": str(gen),
+        "file_count": nfiles,
+        "rustc_vV": rustc_version(),
+        "triple": TRIPLE,
+        "profdata": {
+            "path": str(final),
+            "sha256": digest,
+            "size": final.stat().st_size,
+        },
+        "train_commands": {
+            "build_rustflags": f"-Cprofile-generate={raw}",
+            "runs": args.runs,
+            "workload": DT2_WORKLOAD,
+        },
+        "run_seconds": seconds,
+        "created": datetime.datetime.now(datetime.UTC).isoformat(),
+    }
+    (state / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    print(
+        f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} "
+        f"in {time.monotonic() - started:.1f} s"
+    )
+
+
+def cmd_check_dt2() -> int:
+    manifest = read_manifest("dt2")
+    if manifest is None:
+        print("missing (no manifest)")
+        return 1
+    profdata = profdata_path(manifest, "dt2")
+    if not profdata.is_file():
+        print(f"missing (profile file {profdata} is gone)")
+        return 1
+    hasher = FileHasher(state_dir(device="dt2") / "hash-cache.json")
+    components, _ = compute_components(
+        list(manifest["packages"]),  # type: ignore[call-overload]
+        dt2_generated(),
+        hasher,
+    )
+    components["workload"] = DT2_WORKLOAD_NAME
+    hasher.save()
+    old = manifest["components"]
+    changed = [n for n, v in components.items() if old.get(n) != v]  # type: ignore[attr-defined]
+    print(f"stale changed: {', '.join(changed)}" if changed else f"ok {profdata}")
+    return 1 if changed else 0
+
+
+def cmd_coupled_build(args: argparse.Namespace) -> None:
+    """Build ``coupled-run`` for a device's core, plain or with a profile."""
+    gen = dt2_generated() if args.device == "dt2" else coupled_module().generated("dn2")
+    digi_env.check_generated(gen)
+    flags = None
+    profile = args.profile
+    if profile == "current":
+        manifest = read_manifest(args.device)
+        if manifest is None:
+            raise SystemExit(f"no {args.device} manifest")
+        profile = str(profdata_path(manifest, args.device))
+    if profile:
+        profile = str(pathlib.Path(profile).resolve())
+        flags = profile_use_flags(profile)
+    target = native_target().target_dir(
+        gen, args.variant or ("pgo-cr-" + args.device if flags else "")
+    )
+    binary = build_coupled(target, flags, gen, target / "build.log")
+    print(binary)
+    if profile:
+        lines = crate_mismatches(profile_crates(profile), binary_crates(binary))
+        print("\n".join(lines) if lines else "crate hashes: ok")
 
 
 def median(values: list[float]) -> float:
@@ -1097,6 +1454,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 def cmd_build(args: argparse.Namespace) -> None:
     """Plain release coupled test binary for a generated core (SHARC_GEN_DIR)."""
     gen = pathlib.Path(args.gen).resolve()
+    digi_env.check_generated(gen)
     target = (
         pathlib.Path(args.target_dir).resolve()
         if args.target_dir
@@ -1113,12 +1471,27 @@ def main(argv: list[str] | None = None) -> int:
         "train", help="build instrumented, run the workload, merge a profile"
     )
     train.add_argument("--runs", type=int, default=TRAIN_RUNS)
-    sub.add_parser("check", help="print ok/stale/missing for the current profile")
+    train.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    train.add_argument(
+        "--variant", help="dt2: target-dir variant of the instrumented build"
+    )
+    check = sub.add_parser(
+        "check", help="print ok/stale/missing for the current profile"
+    )
+    check.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    cb = sub.add_parser(
+        "coupled-build", help="build coupled-run (plain, or with --profile)"
+    )
+    cb.add_argument("--device", choices=["dn2", "dt2"], default="dt2")
+    cb.add_argument("--profile", help="profdata path, or 'current' for the device's")
+    cb.add_argument("--variant", help="target-dir variant (default pgo-cr-<device>)")
     verify = sub.add_parser(
         "verify", help="check the profile's crate hashes against the app binary"
     )
     verify.add_argument("--binary", help="default: the launcher's pgo-use app binary")
-    sub.add_parser("plan", help="show what the launcher would do")
+    verify.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    plan = sub.add_parser("plan", help="show what the launcher would do")
+    plan.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
     bench = sub.add_parser("bench", help="paired control vs profile-use benchmark")
     bench.add_argument("--pairs", type=int, default=5)
     build = sub.add_parser(
@@ -1159,7 +1532,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run":
         cmd_run(args)
     elif args.command == "train":
-        cmd_train(args)
+        if args.device == "dt2":
+            cmd_train_dt2(args)
+        else:
+            cmd_train(args)
+    elif args.command == "coupled-build":
+        cmd_coupled_build(args)
     elif args.command == "bench":
         cmd_bench(args)
     elif args.command == "build":
@@ -1167,7 +1545,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "bench-bins":
         cmd_bench_bins(args)
     elif args.command == "check":
-        return cmd_check(args)
+        return cmd_check_dt2() if args.device == "dt2" else cmd_check(args)
     elif args.command == "verify":
         return cmd_verify(args)
     else:

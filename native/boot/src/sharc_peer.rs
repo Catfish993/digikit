@@ -929,6 +929,63 @@ impl<E: DspEngine> Peer for SharcPeer<E> {
     }
 }
 
+/// The DSP half of a two-instance session (the browser's DSP worker). Like
+/// the native [`ThreadedPeer`] worker it answers frame N as soon as the SPI
+/// exchange is done (`reply`, which first finishes rendering frame N-1) and
+/// renders the period afterwards (`render`), so the ColdFire side runs
+/// ahead of the DSP by up to one frame while every reply and DSP state is
+/// exactly the synchronous peer's.
+pub struct RemoteDsp<E: DspEngine> {
+    core: Core<E>,
+    shared: Rc<RefCell<Shared>>,
+    pending: Option<Exchanged>,
+    sample_link: bool,
+}
+
+impl<E: DspEngine> RemoteDsp<E> {
+    pub fn new(engine: E, period: u32) -> (Self, Rc<RefCell<Shared>>) {
+        let shared = Rc::new(RefCell::new(Shared {
+            attached: true,
+            ..Shared::default()
+        }));
+        let remote = Self {
+            core: Core::new(engine, period),
+            shared: shared.clone(),
+            pending: None,
+            sample_link: false,
+        };
+        (remote, shared)
+    }
+
+    pub fn enable_sample_link(&mut self) {
+        self.sample_link = true;
+    }
+
+    /// First half of a frame: the reply. Renders the previous frame first if
+    /// the caller has not.
+    pub fn reply(&mut self, tx: &[u8]) -> Vec<u8> {
+        self.render();
+        let attached = self.shared.borrow().attached;
+        let (reply, ex) = self.core.exchange(tx, attached, None);
+        self.pending = Some(ex);
+        reply
+    }
+
+    /// Second half: run the DSP for the period and record the audio block.
+    pub fn render(&mut self) {
+        if let Some(ex) = self.pending.take() {
+            let done = self.core.render(ex, None);
+            commit(&mut self.shared.borrow_mut(), done);
+        }
+    }
+
+    pub fn link_bytes(&mut self, bytes: &[u8]) {
+        if self.sample_link {
+            self.core.push_link(bytes);
+        }
+    }
+}
+
 enum Msg {
     Frame {
         tx: Vec<u8>,
@@ -1142,6 +1199,7 @@ impl ThreadedPeer {
                 let mut period_ns: Vec<u32> = Vec::new();
                 let mut periods = 0u64;
                 let mut frames_done = 0u64;
+                let mut spike = crate::spikelog::DspWindow::open(crate::cputime::thread_cpu_ns());
                 while let Ok(msg) = rx.recv() {
                     match msg {
                         Msg::Frame {
@@ -1150,6 +1208,9 @@ impl ThreadedPeer {
                             attached,
                             enqueued,
                         } => {
+                            if let Some(w) = &mut spike {
+                                w.frame_start();
+                            }
                             if attached {
                                 core.push_link(&link);
                             }
@@ -1175,6 +1236,11 @@ impl ThreadedPeer {
                                     period_ns.push(busy.min(u32::MAX as u64) as u32);
                                 }
                             }
+                            if let Some(w) = &mut spike {
+                                w.frame_end(done.timing.as_ref().map(|t| {
+                                    t.spi_ns.saturating_add(t.dsp_ns).saturating_add(t.sport_ns)
+                                }));
+                            }
                             if done_tx.send(done).is_err() {
                                 return;
                             }
@@ -1187,6 +1253,13 @@ impl ThreadedPeer {
                                     periods: frames_done,
                                     ..WorkerReport::default()
                                 };
+                                if let Some(w) = &mut spike {
+                                    let (compile, build, built) =
+                                        report.tiers.as_ref().map_or((0, 0, 0), |t| {
+                                            (t.fast_compile_ns, t.fast_build_ns, t.fast_built)
+                                        });
+                                    w.flush(frames_done, report.cpu_ns, compile, build, built);
+                                }
                                 if let Ok(mut slot) = live_worker.lock() {
                                     *slot = Some(report);
                                 }
@@ -1617,7 +1690,7 @@ impl DspEngine for SharedDsp {
 
 /// Remove two sources of unknown ("taint") state from a freshly imported DN2
 /// state so that code reading them stays on the fast tiers. Both are
-/// modelling choices; `SHARC_IMPORT_RAW=1` skips them.
+/// modelling choices.
 ///
 /// 1. Special registers (MRF, MRB, MSF, MSB, BFFWRP, BFF_HI, BFF_LO) that are
 ///    only partly known in the snapshot become fully known: known bits are
@@ -1782,9 +1855,7 @@ pub fn open_engine_patched(
     }
     // After the options: the explicit memory model (10) decides whether an
     // absent byte reads as unknown.
-    if std::env::var("SHARC_IMPORT_RAW").as_deref() != Ok("1") {
-        concretise_import(&mut e);
-    }
+    concretise_import(&mut e);
     if let Some(patch) = patch {
         apply_dsp_patch(&mut e, patch)?;
     }

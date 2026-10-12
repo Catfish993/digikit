@@ -459,6 +459,9 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("lshift_or_r", 2, 0x20),
     ("leftz", 2, 0x88),
     ("btst", 2, 0xcc),
+    ("bset_r", 2, 0xc0),
+    ("bclr_r", 2, 0xc4),
+    ("btgl_r", 2, 0xc8),
 ];
 
 const SHORT_OPS: &[(&str, u32)] = &[
@@ -636,6 +639,8 @@ fn units() -> Vec<Unit> {
                     0x8 => Check::FAdd(rn, rx),
                     0x9 => Check::FSub(rn, rx),
                     0xf => Check::FMul(rn, rx),
+                    // RN = RN * RX (ssi): a product beyond 32 bits sets MV.
+                    0x7 => Check::MulSsi(rn, rx),
                     0xb => Check::FComp(rn, rx),
                     _ => Check::None,
                 };
@@ -1135,6 +1140,10 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
         };
         s.r[c] = V::c(v as Int);
     }
+    if REGLOOP.load(std::sync::atomic::Ordering::Relaxed) && !r.chance(12) {
+        // A count a loop can run (0 and 1 give the empty and one-trip loops).
+        s.r[R_SRC as usize] = V::c(r.below(8) as Int);
+    }
     for c in 16..32 {
         // Index registers: word aligned inside the data window (mostly).
         let mut a = DATA_LO + 0x400 + 4 * r.below(0x100);
@@ -1219,32 +1228,50 @@ fn not_finite(bits: u32) -> bool {
     !f32::from_bits(bits).is_finite()
 }
 
+/// A nonzero denormal. The device reads it as a zero; the kernel does not
+/// model that, so every computational float op leaves on one (`rd_f_op`,
+/// docs/findings/15-sharc-sample-path.md "Denormal flush").
+fn is_denormal(bits: u32) -> bool {
+    bits & 0x7f80_0000 == 0 && bits & 0x007f_ffff != 0
+}
+
+/// The multiply `x * y` leaves: a NaN or infinity, a product below the
+/// smallest normal, or a zero made by underflow (`result_no_underflow`).
+fn mul_leaves(x: f32, y: f32) -> bool {
+    let p = x * y;
+    is_special(p.to_bits()) || (p == 0.0 && x != 0.0 && y != 0.0)
+}
+
 fn expect_special(c: Check, s: &St) -> bool {
     let f = |code: u32| f32::from_bits(s.r[code as usize].b);
+    let dn = |code: u32| is_denormal(s.r[code as usize].b);
     match c {
         Check::None => false,
-        Check::FAdd(x, y) => not_finite((f(x) + f(y)).to_bits()),
-        Check::FSub(x, y) => not_finite((f(x) - f(y)).to_bits()),
-        Check::FMul(x, y) => is_special((f(x) * f(y)).to_bits()),
-        Check::FNeg(x) => not_finite((-f(x)).to_bits()),
+        Check::FAdd(x, y) => dn(x) || dn(y) || not_finite((f(x) + f(y)).to_bits()),
+        Check::FSub(x, y) => dn(x) || dn(y) || not_finite((f(x) - f(y)).to_bits()),
+        Check::FMul(x, y) => dn(x) || dn(y) || mul_leaves(f(x), f(y)),
+        Check::FNeg(x) => dn(x) || not_finite((-f(x)).to_bits()),
         Check::Trunc(x) => s.r[x as usize].b & 0x7fff_ffff >= 0x4f00_0000,
         Check::MfAdd([xm, ym, xa, ya], sub) => {
             let a = if sub { f(xa) - f(ya) } else { f(xa) + f(ya) };
-            not_finite((f(xm) * f(ym)).to_bits()) || not_finite(a.to_bits())
+            [xm, ym, xa, ya].into_iter().any(dn)
+                || mul_leaves(f(xm), f(ym))
+                || not_finite(a.to_bits())
         }
         Check::MfDual([xm, ym, xa, ya]) => {
-            not_finite((f(xm) * f(ym)).to_bits())
+            [xm, ym, xa, ya].into_iter().any(dn)
+                || mul_leaves(f(xm), f(ym))
                 || not_finite((f(xa) + f(ya)).to_bits())
                 || not_finite((f(xa) - f(ya)).to_bits())
         }
         Check::DualF(x, y) => {
-            not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
+            dn(x) || dn(y) || not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
         }
-        Check::FAbs(x) => f(x).is_nan(),
-        Check::FPass(x) => not_finite(s.r[x as usize].b),
+        Check::FAbs(x) => dn(x) || f(x).is_nan(),
+        Check::FPass(x) => dn(x) || not_finite(s.r[x as usize].b),
         Check::FClip(x, y) => {
             let (a, b) = (f(x), f(y));
-            if a.is_nan() || b.is_nan() {
+            if dn(x) || dn(y) || a.is_nan() || b.is_nan() {
                 true
             } else {
                 let r = if a.abs() < b.abs() {
@@ -1255,7 +1282,9 @@ fn expect_special(c: Check, s: &St) -> bool {
                 !r.is_finite()
             }
         }
-        Check::FComp(x, y) | Check::FMinMax(x, y) => f(x).is_nan() || f(y).is_nan(),
+        Check::FComp(x, y) | Check::FMinMax(x, y) => {
+            dn(x) || dn(y) || f(x).is_nan() || f(y).is_nan()
+        }
         Check::Logb(x) => !(1..=254).contains(&((s.r[x as usize].b >> 23) & 0xff)),
         Check::Scalb(x, y) => {
             let sh = s.r[y as usize].b as i32 as i64;
@@ -2291,6 +2320,13 @@ fn _unused(_: usize) -> usize {
 const R_COUNT: u32 = 15; // DO counts
 const R_TRIPS: u32 = 13; // back-loop counter
 const R_MINUS1: u32 = 14; // constant -1
+const R_SRC: u32 = 12; // `--regloop`: the entry value a DO count is relative to
+
+/// `--regloop`: DO loops whose count is `R12 -/+ 1` (exact relative to the
+/// entry value, the region's symbolic trip count), with R12 small at entry.
+static REGLOOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// `--pushcall`: delayed CALLs whose first slot is a 16a push through I0-I5.
+static PUSHCALL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn words_of(raw: u64, n: usize) -> Vec<u16> {
     [(raw >> 32) as u16, (raw >> 16) as u16, raw as u16][..n].to_vec()
@@ -2325,6 +2361,25 @@ fn i_jump(cond: u32, delayed: bool, rel: i32) -> Vec<u16> {
     raw.set(37, 33, cond as u64);
     raw.set(26, 26, delayed as u64);
     raw.set(23, 0, (rel as u32 & 0xff_ffff) as u64);
+    words_of(raw.0, 3)
+}
+
+/// CALL (DB) with a relative offset in short words from the call.
+fn i_call_db(rel: i32) -> Vec<u16> {
+    let mut raw = Raw(0x07 << 40);
+    raw.set(39, 39, 1);
+    raw.set(37, 33, 0x1f);
+    raw.set(26, 26, 1);
+    raw.set(23, 0, (rel as u32 & 0xff_ffff) as u64);
+    words_of(raw.0, 3)
+}
+
+/// `DM(Ii, Mm) = data32` with a post-modify (Type 16a).
+fn i_16a(i: u32, m: u32, data: u32) -> Vec<u16> {
+    let mut raw = Raw(0x9000_0000_0000);
+    raw.set(43, 41, i as u64);
+    raw.set(40, 38, m as u64);
+    raw.set(31, 0, data as u64);
     words_of(raw.0, 3)
 }
 
@@ -2581,6 +2636,20 @@ enum Item {
         count: u32,
         body: Vec<Item>,
     },
+    /// A DO loop counting `R_SRC + 1` (`sub`) or `R_SRC - 1` times, computed
+    /// just before it.
+    DoRel {
+        sub: bool,
+        body: Vec<Item>,
+    },
+    /// A delayed CALL to the instruction after its slots, whose first slot
+    /// is `DM(Ii, Mm) = data` (the return-address push, Type 16a).
+    Push {
+        i: u32,
+        m: u32,
+        data: u32,
+        slot: Vec<u16>,
+    },
     /// A counted loop closed by a backward JUMP IF NE.
     Back {
         trips: u32,
@@ -2620,10 +2689,17 @@ fn gen_items(r: &mut Rng, depth: u32, in_back: bool, n: u32) -> Vec<Item> {
                 let n = 1 + r.below(4);
                 let mut body = gen_items(r, depth + 1, in_back, n);
                 body.push(Item::Insn(gen_insn(r, true)));
-                Item::Do {
-                    by_reg: r.chance(3),
-                    count: 1 + r.below(4),
-                    body,
+                if REGLOOP.load(std::sync::atomic::Ordering::Relaxed) && r.chance(2) {
+                    Item::DoRel {
+                        sub: r.chance(2),
+                        body,
+                    }
+                } else {
+                    Item::Do {
+                        by_reg: r.chance(3),
+                        count: 1 + r.below(4),
+                        body,
+                    }
                 }
             }
             15 if !in_back => {
@@ -2637,6 +2713,13 @@ fn gen_items(r: &mut Rng, depth: u32, in_back: bool, n: u32) -> Vec<Item> {
                 }
             }
             16 => Item::Exit { cond: real_cond(r) },
+            17 if PUSHCALL.load(std::sync::atomic::Ordering::Relaxed) => Item::Push {
+                // I0-I5: the registers the random instructions step.
+                i: r.below(6),
+                m: r.below(8),
+                data: r.u32(),
+                slot: gen_insn(r, true),
+            },
             _ => Item::Insn(gen_insn(r, true)),
         });
     }
@@ -2693,6 +2776,16 @@ impl Asm {
                     let rel = (end - d) as i32;
                     self.patch(d, i_do(by_reg.then_some(R_COUNT), *count, rel));
                 }
+                Item::DoRel { sub, body } => {
+                    let opc = if *sub { 0x02 } else { 0x01 };
+                    self.insn(i_2a(0x1f, compute_field(0, opc, R_COUNT, R_SRC, R_MINUS1)));
+                    let d = self.words.len();
+                    self.insn(i_do(Some(R_COUNT), 0, 0));
+                    self.items(body);
+                    let end = *self.starts.last().unwrap() as usize;
+                    let rel = (end - d) as i32;
+                    self.patch(d, i_do(Some(R_COUNT), 0, rel));
+                }
                 Item::Back {
                     trips,
                     delayed,
@@ -2716,6 +2809,16 @@ impl Asm {
                 }
                 Item::Exit { cond } => {
                     self.insn(i_jump(*cond, false, 0x2000));
+                }
+                Item::Push { i, m, data, slot } => {
+                    // CALL to the next instruction after its two slots; the
+                    // first slot is the return-address push (16a).
+                    let c = self.words.len();
+                    self.insn(i_call_db(0));
+                    self.insn(i_16a(*i, *m, *data));
+                    self.insn(slot.clone());
+                    let rel = (self.words.len() - c) as i32;
+                    self.patch(c, i_call_db(rel));
                 }
             }
         }
@@ -2776,6 +2879,15 @@ fn cfgprog(args: &[String]) {
     // --simple: a few instructions, then a DO loop with a straight body
     // (the loop shape), entered at every instruction.
     let simple = args.iter().any(|a| a == "--simple");
+    // --regloop: DO loops counting R12 +- 1 (see `REGLOOP`).
+    REGLOOP.store(
+        args.iter().any(|a| a == "--regloop"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    PUSHCALL.store(
+        args.iter().any(|a| a == "--pushcall"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     KNOWN_FLAGS.store(true, std::sync::atomic::Ordering::Relaxed);
     ASTAT_MIX.store(
         args.iter().any(|a| a == "--astat-mix"),
@@ -2795,6 +2907,7 @@ fn cfgprog(args: &[String]) {
     let mut runs_total = 0u64;
     let mut built = 0u64;
     let (mut cacc_total, mut cacc_unknown_total) = (0u64, 0u64);
+    let mut regn_total = 0u64;
     let mut declined = [0u64; 5];
     let mut refusals: BTreeMap<String, u64> = BTreeMap::new();
     let t0 = std::time::Instant::now();
@@ -2982,10 +3095,26 @@ fn cfgprog(args: &[String]) {
                 let (m_hi, _) = pair(&mut ei, &mut ef, st_seed, mode1, hi);
                 let (_, pc_lo) = pair(&mut ei, &mut ef, st_seed, mode1, lo);
                 println!(
+                    "      state before it: interp ASTATx {:?} STKYx {:?}, fast ASTATx {:?} STKYx {:?}",
+                    ei.s.r[118], ei.s.r[119], ef.s.r[118], ef.s.r[119]
+                );
+                println!(
                     "      at budget {lo}: pc interp {:#x} fast {:#x}, icount {} {}",
                     ei.s.pc_sw, ef.s.pc_sw, ei.s.icount, ef.s.icount
                 );
+                if std::env::var_os("FD_REQS").is_some() {
+                    for pc in &entries {
+                        if let Some(r) = fe.borrow().region(*pc) {
+                            println!("      region {pc:#x}: forms {:?} reqs {:?}", r.forms, r.reqs);
+                        }
+                    }
+                }
                 let _ = pair(&mut ei, &mut ef, st_seed, mode1, hi);
+                println!(
+                    "      after it: MODE1 interp {:#x} fast {:#x}, ASTATx {:#x} {:#x}, ASTATy {:#x} {:#x}",
+                    ei.s.r[114].b, ef.s.r[114].b, ei.s.r[118].b, ef.s.r[118].b,
+                    ei.s.r[119].b, ef.s.r[119].b
+                );
                 println!(
                     "      at budget {hi}: pc interp {:#x} fast {:#x}, icount {} {}, fast pending {:?} loops {:?}",
                     ei.s.pc_sw,
@@ -3008,6 +3137,7 @@ fn cfgprog(args: &[String]) {
             if let Some(r) = fb.region(*pc) {
                 cacc_total += r.cacc as u64;
                 cacc_unknown_total += r.cacc_unknown as u64;
+                regn_total += r.cfg.as_ref().is_some_and(|m| m.reg_n.is_some()) as u64;
             }
         }
         built += fb.stats.built;
@@ -3040,6 +3170,7 @@ fn cfgprog(args: &[String]) {
     );
     println!("declined shape/req/window/budget/exit0 = {declined:?}");
     println!("final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}");
+    println!("final regions with a register trip count: {regn_total}");
     for (why, n) in &refusals {
         println!("{n:>5} x refused: {why}");
     }

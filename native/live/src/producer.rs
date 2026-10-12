@@ -30,22 +30,13 @@ pub type SharedSource = Arc<Mutex<Box<dyn FrameSource>>>;
 const PARK_SAFETY_NET: Duration = Duration::from_millis(20);
 
 /// The producer's time-constraint policy, ns: (period, computation,
-/// constraint); all 0 leaves the thread timeshare. `LIVE_RT=P,C,K` (µs)
-/// overrides it, `LIVE_RT=0` turns it off.
+/// constraint); all 0 leaves the thread timeshare.
 fn rt_policy() -> (u64, u64, u64) {
-    const DEFAULT: (u64, u64, u64) = (
+    (
         RT_PERIOD_US * 1000,
         RT_COMPUTATION_US * 1000,
         RT_CONSTRAINT_US * 1000,
-    );
-    let Ok(v) = std::env::var("LIVE_RT") else {
-        return DEFAULT;
-    };
-    let f: Vec<u64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-    match f.as_slice() {
-        [p, c, k] => (p * 1000, c * 1000, k * 1000),
-        _ => (0, 0, 0),
-    }
+    )
 }
 
 // The producer's own rhythm: the device takes up to 512 frames per

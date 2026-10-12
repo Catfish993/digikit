@@ -9,6 +9,10 @@ function from that state (native/sharc/examples/region_bench.rs).
     sharc_regionbench.py gen [--variant base] [--tools-dir DIR] [-- RSGEN ARGS]
     sharc_regionbench.py capture [--variant base]
     sharc_regionbench.py bench [--variant base] [--regions PC,..] [--reps 5]
+        [--engine native|node|bun] [--agg] [--prod-gen]
+        [--engine-args "--liftoff-only"] [--engine-bin PATH]
+        [--rustflags "-C target-feature=+tail-call"] [--wasm-opt "-O3"]
+    sharc_regionbench.py ratio A.jsonl B.jsonl
     sharc_regionbench.py compare A B [--rounds 5]
     sharc_regionbench.py check [--variant base]
     sharc_regionbench.py fast-bench [--variant base] [--regions PC,..] [--reps 5]
@@ -29,8 +33,10 @@ import argparse
 import hashlib
 import json
 import os
+import pathlib
 import re
 import shlex
+import shutil
 import statistics
 import subprocess
 import sys
@@ -64,6 +70,8 @@ SOL = os.path.join(BENCH, "sol", "sol.rs")
 DEFAULT_REGIONS = "1C399A,1C3862,1C364F,1C2484,1C5765,B823DB"
 TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
+WASM_TRIPLE = "wasm32-wasip1"
+WASM_RUNNER = os.path.join(ROOT, "tools", "wasm_regionbench.mjs")
 RSGEN_BASE = [
     "--model-safe",
     "--explicit-memory-model",
@@ -236,6 +244,7 @@ def cmd_build(args) -> str:
     gen = PROD_GEN if getattr(args, "prod_gen", False) else os.path.join(vdir, "gen")
     if not os.path.isdir(gen):
         sys.exit("no gen for variant %s: run gen first" % args.variant)
+    digi_env.check_generated(pathlib.Path(gen))
     src = tree_files(os.path.join(ROOT, "native", "sharc", "src"), (".rs",))
     src += [
         os.path.join(ROOT, "native", "sharc", "examples", "region_bench.rs"),
@@ -263,19 +272,40 @@ def cmd_build(args) -> str:
         if n != "rsgen-report.json" and not n.startswith("transpile-report")
     ]
     pgo = getattr(args, "pgo", None)
+    # Cargo features of sharc-native: --features, else the variant's FEATURES file.
+    features = getattr(args, "features", None)
+    if not features and os.path.isfile(os.path.join(vdir, "FEATURES")):
+        with open(os.path.join(vdir, "FEATURES")) as fh:
+            features = fh.read().strip() or None
     prod_gen = getattr(args, "prod_gen", False)
+    wasm = getattr(args, "wasm", False)
+    rustflags = getattr(args, "rustflags", "") if wasm else ""
     # Production reuses the app cache only with its explicit profile.  Mini
     # variants retain the historical benchmark profile overrides.
-    profile_env = {} if prod_gen else PROFILE_ENV
+    profile_env = {} if prod_gen else dict(PROFILE_ENV)
+    if os.environ.get("REGIONBENCH_DEBUG") and not prod_gen:
+        # Line tables for tools/aot_attrib.py (code size and executed bytes
+        # per inlined helper).
+        profile_env["CARGO_PROFILE_RELEASE_DEBUG"] = "line-tables-only"
+        profile_env["CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO"] = "packed"
     key = hashlib.sha256(
         (
             sha256_files(src + gen_files)
             + repr(pgo)
+            + repr(features)
             + repr(sorted(profile_env.items()))
+            + repr(rustflags)
         ).encode()
     ).hexdigest()
-    exe = os.path.join(vdir, "region_bench")
-    stamp = os.path.join(vdir, "build.json")
+    if wasm and pgo:
+        sys.exit("--wasm and --pgo do not combine")
+    exe = os.path.join(vdir, "region_bench.wasm" if wasm else "region_bench")
+    stamp = os.path.join(vdir, "build-wasm.json" if wasm else "build.json")
+    flags_tag = ""
+    if wasm and rustflags:
+        flags_tag = hashlib.sha256(rustflags.encode()).hexdigest()[:8]
+        exe = os.path.join(vdir, "region_bench-%s.wasm" % flags_tag)
+        stamp = os.path.join(vdir, "build-wasm-%s.json" % flags_tag)
     # A variant with a FROZEN file keeps its binary whatever the sources do
     # (an A/B against a build of older sources).
     if os.path.exists(exe) and os.path.exists(os.path.join(vdir, "FROZEN")):
@@ -316,6 +346,14 @@ def cmd_build(args) -> str:
             target = str(nt.target_dir(gen, "pgo-" + tag))
         target_args = ["--target", TRIPLE]
         built_dir = os.path.join(target, TRIPLE, "release", "examples")
+    elif wasm:
+        if rustflags:
+            env["RUSTFLAGS"] = rustflags
+            target = str(nt.target_dir(gen, "wasm-" + flags_tag))
+        else:
+            target = str(nt.target_dir(gen))
+        target_args = ["--target", WASM_TRIPLE]
+        built_dir = os.path.join(target, WASM_TRIPLE, "release", "examples")
     else:
         target = str(nt.target_dir(gen))
         target_args = []
@@ -324,28 +362,30 @@ def cmd_build(args) -> str:
         secs = run(
             ["rustup", "run", TOOLCHAIN, "cargo", "build", "--release", "--locked"]
             + ["--example", "region_bench"]
+            + (["--features", features] if features else [])
             + target_args
             + ["--manifest-path", os.path.join(ROOT, "native", "sharc", "Cargo.toml")]
             + ["--target-dir", target],
             env=env,
         )
-    built = os.path.join(built_dir, "region_bench")
+    built = os.path.join(built_dir, "region_bench.wasm" if wasm else "region_bench")
     with open(built, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
     subprocess.run(["cp", built, exe], check=True)
     with open(exe + ".sha256", "w") as fh:
-        fh.write("%s  region_bench\n" % digest)
+        fh.write("%s  %s\n" % (digest, os.path.basename(exe)))
+    stamp_data = {
+        "key": key,
+        "build_seconds": round(secs, 1),
+        "pgo": pgo,
+        "profile_env": profile_env,
+        "sha256": digest,
+    }
+    if wasm:
+        stamp_data["target"] = WASM_TRIPLE
+        stamp_data["rustflags"] = rustflags
     with open(stamp, "w") as fh:
-        json.dump(
-            {
-                "key": key,
-                "build_seconds": round(secs, 1),
-                "pgo": pgo,
-                "profile_env": profile_env,
-                "sha256": digest,
-            },
-            fh,
-        )
+        json.dump(stamp_data, fh)
     print("build %s: %.1fs sha256 %s" % (args.variant, secs, digest[:12]))
     return exe
 
@@ -394,22 +434,44 @@ def pick_entries(names: list[str]) -> dict[str, str]:
     return picked
 
 
-def run_bench(exe: str, names: list[str], reps: int, calls: int) -> list[dict]:
+def run_bench(
+    exe: str,
+    names: list[str],
+    reps: int,
+    calls: int,
+    engine: str = "native",
+    agg: bool = False,
+    engine_args: str = "",
+    engine_bin: str | None = None,
+) -> list[dict]:
     """Rows keyed by region name (entry in row['entry'])."""
     entries = pick_entries(names)
     back = {e: n for n, e in entries.items()}
-    out = subprocess.run(
-        [exe, "bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
-        + ["--reps", str(reps), "--calls", str(calls)],
-        check=True,
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    ).stdout
+    # node/bun run the wasm build of the example through tools/wasm_regionbench.mjs.
+    if engine == "native":
+        prefix = [exe]
+    else:
+        prefix = [engine_bin or engine, *shlex.split(engine_args)]
+        prefix += [WASM_RUNNER, exe]
+    command = (
+        prefix
+        + ["bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
+        + ["--reps", str(reps), "--calls", str(calls)]
+        + (["--agg"] if agg else [])
+    )
+    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    if done.returncode != 0:
+        print("command: %s" % shlex.join(command), file=sys.stderr)
+        print("\n".join(done.stderr.splitlines()[-40:]), file=sys.stderr)
+        sys.exit("bench failed with exit code %d" % done.returncode)
+    out = done.stdout
     rows = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
     for r in rows:
         r["entry"] = r["region"]
         r["region"] = back[r["entry"]]
+        r["engine"] = engine
+        if engine != "native":
+            r["engine_args"] = engine_args
     return rows
 
 
@@ -452,18 +514,95 @@ def print_table(table: list[tuple]) -> None:
         )
 
 
+def run_wasm_opt(exe: str, opt: str) -> str:
+    """Optimize the built wasm with binaryen's wasm-opt; returns the new path."""
+    if shutil.which("wasm-opt") is None:
+        sys.exit("wasm-opt not on PATH: run `mise install`")
+    tag = hashlib.sha256(opt.encode()).hexdigest()[:8]
+    base, ext = os.path.splitext(exe)
+    out = "%s.opt-%s%s" % (base, tag, ext)
+    run(
+        ["wasm-opt", *shlex.split(opt)]
+        + ["--enable-bulk-memory", "--enable-sign-ext", "--enable-mutable-globals"]
+        + ["--enable-nontrapping-float-to-int", "--enable-multivalue"]
+        + ["--enable-reference-types", exe, "-o", out]
+    )
+    print(
+        "wasm-opt %s: %d -> %d bytes"
+        % (opt, os.path.getsize(exe), os.path.getsize(out))
+    )
+    return out
+
+
 def cmd_bench(args) -> None:
+    args.wasm = args.engine != "native"
+    if args.prod_gen and args.variant == "base":
+        # Keep the production-gen binary apart from the mini-gen variant.
+        args.variant = "prod-bench"
+    os.makedirs(variant_dir(args.variant), exist_ok=True)
     exe = cmd_build(args)
+    if args.wasm_opt:
+        exe = run_wasm_opt(exe, args.wasm_opt)
     names = args.regions.split(",")
     t = time.perf_counter()
     with benchlock("exclusive", "regionbench bench"):
-        rows = run_bench(exe, names, args.reps, args.calls)
+        rows = run_bench(
+            exe,
+            names,
+            args.reps,
+            args.calls,
+            args.engine,
+            args.agg,
+            args.engine_args,
+            args.engine_bin,
+        )
     secs = time.perf_counter() - t
-    path = os.path.join(variant_dir(args.variant), "bench-%d.jsonl" % int(time.time()))
+    if args.engine != "native":
+        for r in rows:
+            r["rustflags"] = args.rustflags
+            r["wasm_opt"] = args.wasm_opt
+        parts = [args.engine_args, args.rustflags, args.wasm_opt]
+        slug = re.sub(r"[^A-Za-z0-9_]+", "_", " ".join(p for p in parts if p))[:60]
+        stem = "bench-%s%s-%d.jsonl" % (
+            args.engine,
+            "-" + slug if slug else "",
+            int(time.time()),
+        )
+    elif args.agg:
+        stem = "bench-agg-%d.jsonl" % int(time.time())
+    else:
+        stem = "bench-%d.jsonl" % int(time.time())
+    path = os.path.join(variant_dir(args.variant), stem)
     with open(path, "w") as fh:
         fh.write("".join(json.dumps(r) + "\n" for r in rows))
     print_table(summarize(rows))
     print("bench run: %.1fs -> %s" % (secs, path))
+
+
+def read_rows(path: str) -> list[dict]:
+    with open(path) as fh:
+        return [json.loads(line) for line in fh if line.startswith("{")]
+
+
+def cmd_ratio(args) -> None:
+    """Per-region B/A of the median trimmed ns/call of two bench-*.jsonl files."""
+    a = {t[0]: t for t in summarize(read_rows(args.a))}
+    b = {t[0]: t for t in summarize(read_rows(args.b))}
+    common = [k for k in a if k in b]
+    both = [k for k in common if a[k][2] > 0 and b[k][2] > 0]
+    skipped = [k for k in common if k not in both]
+    lines = sorted(both, key=lambda k: b[k][2] / a[k][2], reverse=True)
+    print("region/entry    insns/call   A ns/call   B ns/call     B/A")
+    for k in lines:
+        print(
+            "%-15s %10.1f %11.1f %11.1f %7.3f"
+            % (k, a[k][1], a[k][2], b[k][2], b[k][2] / a[k][2])
+        )
+    if skipped:
+        print("skipped (<= 0 ns after restore subtraction): " + ", ".join(skipped))
+    sum_a = sum(a[k][2] for k in both)
+    sum_b = sum(b[k][2] for k in both)
+    print("overall B/A (weighted by A ns/call): %.3f" % (sum_b / sum_a))
 
 
 def cmd_fast_bench(args) -> None:
@@ -711,6 +850,10 @@ def main(argv: list[str] | None = None) -> int:
             sp.add_argument("--variant", default="base")
         sp.add_argument("--regions", default=DEFAULT_REGIONS)
         sp.add_argument("--pgo", help="profdata for -Cprofile-use (default: none)")
+        sp.add_argument(
+            "--features",
+            help="cargo features of sharc-native (experiments: docs/design/aot-mask-free.md)",
+        )
         sp.add_argument("--calls", type=int, default=4000)
         return sp
 
@@ -721,6 +864,24 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--min-frame", type=int, default=4620)
     b = common(sub.add_parser("bench", help="build and time one variant"))
     b.add_argument("--reps", type=int, default=5)
+    b.add_argument("--engine", choices=["native", "node", "bun"], default="native")
+    b.add_argument("--agg", action="store_true", help="one clock around all calls")
+    b.add_argument(
+        "--prod-gen",
+        action="store_true",
+        help="use the production DN2 core (variant prod-bench unless --variant)",
+    )
+    b.add_argument("--engine-args", default="", help="node/bun flags, shlex-split")
+    b.add_argument("--engine-bin", help="node/bun executable (default: on PATH)")
+    b.add_argument(
+        "--rustflags", default="", help="RUSTFLAGS of the wasm build (wasm engines)"
+    )
+    b.add_argument(
+        "--wasm-opt", default="", help="wasm-opt flags, shlex-split (wasm engines)"
+    )
+    r = sub.add_parser("ratio", help="per-region B/A of two bench jsonl files")
+    r.add_argument("a")
+    r.add_argument("b")
     k = common(sub.add_parser("compare", help="alternating A/B"), variant=False)
     k.add_argument("a")
     k.add_argument("b")
@@ -748,6 +909,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd_bench(args)
     elif args.cmd == "compare":
         cmd_compare(args)
+    elif args.cmd == "ratio":
+        cmd_ratio(args)
     elif args.cmd == "fast-bench":
         cmd_fast_bench(args)
     elif args.cmd == "fresh-fast":
