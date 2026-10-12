@@ -401,6 +401,8 @@ struct Actor {
     schedule: Vec<Scheduled>,
     /// A frame a control chunk produced that the webview has not seen yet.
     held_frame: Option<Vec<u8>>,
+    /// Panel LED values (and RGB) a control chunk consumed that the webview has not seen yet.
+    held_leds: Option<(String, Option<String>)>,
     /// A card being built and booted on a worker thread.
     card_job: Option<CardJob>,
     /// The last card job's outcome, for `card.status`.
@@ -448,6 +450,7 @@ impl Actor {
             job: None,
             schedule: Vec::new(),
             held_frame: None,
+            held_leds: None,
             card_job: None,
             card_last: json!({"state": "idle"}),
             auto_no: false,
@@ -545,6 +548,14 @@ impl Actor {
         } else {
             self.held_frame = None;
         }
+        if snapshot.leds.is_none() {
+            if let Some((leds, rgb)) = self.held_leds.take() {
+                snapshot.leds = Some(leds);
+                snapshot.rgb = rgb;
+            }
+        } else {
+            self.held_leds = None;
+        }
         snapshot
     }
 
@@ -559,6 +570,7 @@ impl Actor {
         self.read_error = error;
         self.schedule.clear();
         self.held_frame = None;
+        self.held_leds = None;
         self.epoch += 1;
     }
 
@@ -812,12 +824,16 @@ impl Actor {
         let start = initial.status.icount;
         let mut status = initial.status;
         let mut frame = initial.frame;
+        let mut leds = initial.leds;
+        let mut rgb = initial.rgb;
         let result = loop {
             let remaining = held.saturating_sub(status.icount.saturating_sub(start));
             if remaining == 0 {
                 break Ok(Snapshot {
                     status,
                     frame,
+                    leds,
+                    rgb,
                     polled: false,
                 });
             }
@@ -828,6 +844,10 @@ impl Actor {
             status = snapshot.status;
             if snapshot.frame.is_some() {
                 frame = snapshot.frame;
+            }
+            if snapshot.leds.is_some() {
+                leds = snapshot.leds;
+                rgb = snapshot.rgb;
             }
         };
         let released = runtime.button(code, false);
@@ -982,6 +1002,9 @@ impl Actor {
         let snapshot = runtime.step_chunk(budget.max(1) as u32);
         if snapshot.frame.is_some() {
             self.held_frame = snapshot.frame.clone();
+        }
+        if let Some(leds) = &snapshot.leds {
+            self.held_leds = Some((leds.clone(), snapshot.rgb.clone()));
         }
         if let Some(error) = snapshot.status.error.clone() {
             self.finish_job(Err(RpcError::new(code::GUEST_FAULT, error)));
@@ -2106,7 +2129,9 @@ impl Actor {
         self.install(runtime, error);
         // The webview's pump never sees the restore; hand it the first frame.
         if let Some(runtime) = self.runtime.as_mut() {
-            self.held_frame = runtime.snapshot().frame;
+            let first = runtime.snapshot();
+            self.held_frame = first.frame;
+            self.held_leds = first.leds.map(|leds| (leds, first.rgb));
         }
         self.emit("session.changed", json!({"reason": "card"}));
         if self.remember_card {

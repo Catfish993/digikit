@@ -33,9 +33,10 @@ export interface RuntimeStatus {
   device: string; version: string; icount: number; pc: number; ready: boolean; phase: string;
   error: string | null; frame_revision: number; frame_source: string | null;
   main_ui_reached: boolean; filesystem_verified: boolean | null; input_ready: boolean;
-  input_pending: number; input_irqs: number;
+  input_pending: number; input_irqs: number; led_revision?: number;
 }
-export interface RuntimeSnapshot { status: RuntimeStatus; frame?: Uint8Array; polled?: boolean }
+/** `leds`: 64 panel LED values as 128 hex digits; `rgb`: 64 x (r,g,b) as 384 hex digits. Both only when `status.led_revision` changed. */
+export interface RuntimeSnapshot { status: RuntimeStatus; frame?: Uint8Array; leds?: string; rgb?: string; polled?: boolean }
 export interface RuntimeDiagnostics {
   schema_version: number; device: string; version: string;
   sharc_execution_connected: boolean; pcm_output_connected: boolean;

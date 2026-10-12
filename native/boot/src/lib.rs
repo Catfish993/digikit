@@ -10,6 +10,7 @@ mod common;
 mod cputime;
 pub mod dsp_patch;
 pub mod dsp_stream;
+pub mod panel_leds;
 #[cfg(feature = "play")]
 pub mod pcm_play;
 mod ram_clear;

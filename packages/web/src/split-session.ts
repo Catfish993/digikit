@@ -150,6 +150,8 @@ export interface CfSide {
   loaded: { status: { ready: boolean; icount: number } };
   /** One `digi_step(budget)`; returns the status of the snapshot. */
   step(budget?: number): { icount: number; error?: string };
+  /** The latest panel LED hex string (see `RuntimeSnapshot.leds`), or undefined before the first change. */
+  leds(): string | undefined;
   stats(): { steps: number; stepMs: number; waitedMs: number; requests: number; frames: number };
 }
 
@@ -172,12 +174,16 @@ export async function createCfSide(o: CfSideOptions): Promise<CfSide> {
   core.free(snap, o.snapshot.length);
   let steps = 0;
   let stepMs = 0;
+  let lastLeds: string | undefined;
   return {
     core,
+    leds: () => lastLeds,
     loaded,
     step(budget = 250_000) {
       const t = performance.now();
-      const status = core.call('digi_step', budget).status;
+      const snapshot = core.call('digi_step', budget);
+      if (snapshot.leds !== undefined) lastLeds = snapshot.leds;
+      const status = snapshot.status;
       stepMs += performance.now() - t;
       steps++;
       return status;
