@@ -1587,7 +1587,15 @@ impl Engine {
     }
 
     /// Re-read the watched words for the pending unit and log changes.
+    #[inline(always)]
     fn ww_flush(&mut self) {
+        if self.wwatch.is_some() {
+            self.ww_flush_pending();
+        }
+    }
+
+    #[inline(never)]
+    fn ww_flush_pending(&mut self) {
         if let Some(mut w) = self.wwatch.take() {
             if w.pending.is_some() {
                 let now: Vec<Option<u32>> = w

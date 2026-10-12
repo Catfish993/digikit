@@ -40,6 +40,10 @@ finally:
 
 # Set by --dt2-card: the sample card's ready inputs and its `--card-image` argument.
 CARD: tuple[dict[str, pathlib.Path], list[str]] | None = None
+# Set by --seconds: cut every run to this many audio seconds.
+SECONDS: str | None = None
+# Set by --env: extra environment for the runs (interpreter-only: SHARC_AOT=0 ...).
+ENV: dict[str, str] = {}
 
 
 def one_run(binary: str, scenario: str, scenarios: str | None, device: str) -> dict:
@@ -47,13 +51,15 @@ def one_run(binary: str, scenario: str, scenarios: str | None, device: str) -> d
     with tempfile.TemporaryDirectory() as tmp:
         out = pathlib.Path(tmp) / "report.json"
         extra = ["--scenario", scenario, "--out", str(out)]
+        if SECONDS:
+            extra += ["--seconds", SECONDS]
         if scenarios:
             extra = ["--scenarios", str(pathlib.Path(scenarios).resolve())] + extra
         ins, card = CARD or (coupled.inputs(device), [])
         argv = coupled.run_args(binary, ins, [*card, *extra])
         load = os.getloadavg()[0]
         done = subprocess.run(
-            argv, cwd=ROOT, env=coupled.run_env(), capture_output=True, text=True
+            argv, cwd=ROOT, env=coupled.run_env(ENV), capture_output=True, text=True
         )
         if not out.is_file():
             sys.exit("no report from %s:\n%s" % (binary, done.stderr[-2000:]))
@@ -73,6 +79,7 @@ def one_run(binary: str, scenario: str, scenarios: str | None, device: str) -> d
         "block_traps": d.get("block_traps"),
         "aot_block": d.get("aot_block"),
         "interpreter": d.get("interpreter"),
+        "audio_s": d.get("audio_s") or sc.get("audio_seconds"),
         "exit_code": done.returncode,
     }
 
@@ -96,8 +103,15 @@ def main() -> None:
         help="DT2: run on the one-sample card of tools/dt2_sample_check.py",
     )
     ap.add_argument("--pairs", type=int, default=6)
+    ap.add_argument("--seconds", help="audio seconds per run (default: the scenario's)")
+    ap.add_argument(
+        "--env", action="append", default=[], metavar="K=V", help="run environment"
+    )
     ap.add_argument("--out")
     args = ap.parse_args()
+    global SECONDS
+    SECONDS = args.seconds
+    ENV.update(e.partition("=")[::2] for e in args.env)
     if args.dt2_card:
         import dt2_sample_check
 
@@ -136,6 +150,16 @@ def main() -> None:
             rs = runs[(scenario, label)]
             d = [r["dsp_cpu"] for r in rs]
             pcms = sorted({(r["pcm"] or "-")[:16] for r in rs})
+            ns = [
+                r["dsp_cpu"] * r["audio_s"] * 1e9 / r["interpreter"]
+                for r in rs
+                if r.get("interpreter") and r.get("audio_s")
+            ]
+            if ns:
+                print(
+                    "%-12s %-3s ns per DSP instruction  median %.1f  min %.1f  max %.1f"
+                    % (scenario, label, statistics.median(ns), min(ns), max(ns))
+                )
             print(
                 "%-12s %-3s dsp cpu/audio s  median %.3f  IQR %.3f  min %.3f  max %.3f  n=%d  pcm %s"
                 % (
