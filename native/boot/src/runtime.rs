@@ -672,6 +672,10 @@ impl Emulator {
             return Ok(());
         }
         self.queue_packet(0x20 | channel, next)?;
+        panel_tx_write(
+            self.cpu.icount,
+            &format!("@button {code} {}", if down { 'd' } else { 'u' }),
+        );
         self.held_masks[channel as usize] = next;
         #[cfg(feature = "diagnostic-events")]
         self.event(EventKind::Input, (u64::from(code) << 1) | u64::from(down));
@@ -2921,8 +2925,9 @@ mod tests {
 }
 
 /// `DIGI_PANEL_TX_LOG=<path>`: append one line `<icount> <hex bytes>` per UART8 drain
-/// (front-panel LED stream). The path is read once; unset costs one atomic load per drain.
-fn panel_tx_log(icount: u64, bytes: &[u8]) {
+/// (front-panel LED stream), and `<icount> @button <code> <d|u>` when a panel button is injected.
+/// The path is read once; unset costs one atomic load per drain.
+fn panel_tx_write(icount: u64, text: &str) {
     use std::io::Write;
     use std::sync::{Mutex, OnceLock};
     static SINK: OnceLock<Option<Mutex<std::io::BufWriter<std::fs::File>>>> = OnceLock::new();
@@ -2934,8 +2939,12 @@ fn panel_tx_log(icount: u64, bytes: &[u8]) {
     });
     if let Some(sink) = sink {
         let mut w = sink.lock().unwrap();
-        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        let _ = writeln!(w, "{icount} {hex}");
+        let _ = writeln!(w, "{icount} {text}");
         let _ = w.flush();
     }
+}
+
+fn panel_tx_log(icount: u64, bytes: &[u8]) {
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    panel_tx_write(icount, &hex);
 }

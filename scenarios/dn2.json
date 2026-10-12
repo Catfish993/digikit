@@ -400,6 +400,565 @@
           "down": false
         }
       ]
+    },
+    {
+      "name": "dn2-led-sweep",
+      "description": "Probe: NO, then buttons 1..54 pressed one at a time, 12M apart, for the LED index map. Not a pin.",
+      "instructions": 700000000,
+      "exact_events": true,
+      "clip_last_chunk": true,
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 40000000,
+          "button": 1,
+          "down": true
+        },
+        {
+          "at_instr": 46000000,
+          "button": 1,
+          "down": false
+        },
+        {
+          "at_instr": 52000000,
+          "button": 2,
+          "down": true
+        },
+        {
+          "at_instr": 58000000,
+          "button": 2,
+          "down": false
+        },
+        {
+          "at_instr": 64000000,
+          "button": 3,
+          "down": true
+        },
+        {
+          "at_instr": 70000000,
+          "button": 3,
+          "down": false
+        },
+        {
+          "at_instr": 76000000,
+          "button": 4,
+          "down": true
+        },
+        {
+          "at_instr": 82000000,
+          "button": 4,
+          "down": false
+        },
+        {
+          "at_instr": 88000000,
+          "button": 5,
+          "down": true
+        },
+        {
+          "at_instr": 94000000,
+          "button": 5,
+          "down": false
+        },
+        {
+          "at_instr": 100000000,
+          "button": 6,
+          "down": true
+        },
+        {
+          "at_instr": 106000000,
+          "button": 6,
+          "down": false
+        },
+        {
+          "at_instr": 112000000,
+          "button": 7,
+          "down": true
+        },
+        {
+          "at_instr": 118000000,
+          "button": 7,
+          "down": false
+        },
+        {
+          "at_instr": 124000000,
+          "button": 8,
+          "down": true
+        },
+        {
+          "at_instr": 130000000,
+          "button": 8,
+          "down": false
+        },
+        {
+          "at_instr": 136000000,
+          "button": 9,
+          "down": true
+        },
+        {
+          "at_instr": 142000000,
+          "button": 9,
+          "down": false
+        },
+        {
+          "at_instr": 148000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 154000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 160000000,
+          "button": 11,
+          "down": true
+        },
+        {
+          "at_instr": 166000000,
+          "button": 11,
+          "down": false
+        },
+        {
+          "at_instr": 172000000,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 178000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 184000000,
+          "button": 13,
+          "down": true
+        },
+        {
+          "at_instr": 190000000,
+          "button": 13,
+          "down": false
+        },
+        {
+          "at_instr": 196000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 202000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 208000000,
+          "button": 15,
+          "down": true
+        },
+        {
+          "at_instr": 214000000,
+          "button": 15,
+          "down": false
+        },
+        {
+          "at_instr": 220000000,
+          "button": 16,
+          "down": true
+        },
+        {
+          "at_instr": 226000000,
+          "button": 16,
+          "down": false
+        },
+        {
+          "at_instr": 232000000,
+          "button": 17,
+          "down": true
+        },
+        {
+          "at_instr": 238000000,
+          "button": 17,
+          "down": false
+        },
+        {
+          "at_instr": 244000000,
+          "button": 18,
+          "down": true
+        },
+        {
+          "at_instr": 250000000,
+          "button": 18,
+          "down": false
+        },
+        {
+          "at_instr": 256000000,
+          "button": 19,
+          "down": true
+        },
+        {
+          "at_instr": 262000000,
+          "button": 19,
+          "down": false
+        },
+        {
+          "at_instr": 268000000,
+          "button": 20,
+          "down": true
+        },
+        {
+          "at_instr": 274000000,
+          "button": 20,
+          "down": false
+        },
+        {
+          "at_instr": 280000000,
+          "button": 21,
+          "down": true
+        },
+        {
+          "at_instr": 286000000,
+          "button": 21,
+          "down": false
+        },
+        {
+          "at_instr": 292000000,
+          "button": 22,
+          "down": true
+        },
+        {
+          "at_instr": 298000000,
+          "button": 22,
+          "down": false
+        },
+        {
+          "at_instr": 304000000,
+          "button": 23,
+          "down": true
+        },
+        {
+          "at_instr": 310000000,
+          "button": 23,
+          "down": false
+        },
+        {
+          "at_instr": 316000000,
+          "button": 24,
+          "down": true
+        },
+        {
+          "at_instr": 322000000,
+          "button": 24,
+          "down": false
+        },
+        {
+          "at_instr": 328000000,
+          "button": 25,
+          "down": true
+        },
+        {
+          "at_instr": 334000000,
+          "button": 25,
+          "down": false
+        },
+        {
+          "at_instr": 340000000,
+          "button": 26,
+          "down": true
+        },
+        {
+          "at_instr": 346000000,
+          "button": 26,
+          "down": false
+        },
+        {
+          "at_instr": 352000000,
+          "button": 27,
+          "down": true
+        },
+        {
+          "at_instr": 358000000,
+          "button": 27,
+          "down": false
+        },
+        {
+          "at_instr": 364000000,
+          "button": 28,
+          "down": true
+        },
+        {
+          "at_instr": 370000000,
+          "button": 28,
+          "down": false
+        },
+        {
+          "at_instr": 376000000,
+          "button": 29,
+          "down": true
+        },
+        {
+          "at_instr": 382000000,
+          "button": 29,
+          "down": false
+        },
+        {
+          "at_instr": 388000000,
+          "button": 30,
+          "down": true
+        },
+        {
+          "at_instr": 394000000,
+          "button": 30,
+          "down": false
+        },
+        {
+          "at_instr": 400000000,
+          "button": 31,
+          "down": true
+        },
+        {
+          "at_instr": 406000000,
+          "button": 31,
+          "down": false
+        },
+        {
+          "at_instr": 412000000,
+          "button": 32,
+          "down": true
+        },
+        {
+          "at_instr": 418000000,
+          "button": 32,
+          "down": false
+        },
+        {
+          "at_instr": 424000000,
+          "button": 33,
+          "down": true
+        },
+        {
+          "at_instr": 430000000,
+          "button": 33,
+          "down": false
+        },
+        {
+          "at_instr": 436000000,
+          "button": 34,
+          "down": true
+        },
+        {
+          "at_instr": 442000000,
+          "button": 34,
+          "down": false
+        },
+        {
+          "at_instr": 448000000,
+          "button": 35,
+          "down": true
+        },
+        {
+          "at_instr": 454000000,
+          "button": 35,
+          "down": false
+        },
+        {
+          "at_instr": 460000000,
+          "button": 36,
+          "down": true
+        },
+        {
+          "at_instr": 466000000,
+          "button": 36,
+          "down": false
+        },
+        {
+          "at_instr": 472000000,
+          "button": 37,
+          "down": true
+        },
+        {
+          "at_instr": 478000000,
+          "button": 37,
+          "down": false
+        },
+        {
+          "at_instr": 484000000,
+          "button": 38,
+          "down": true
+        },
+        {
+          "at_instr": 490000000,
+          "button": 38,
+          "down": false
+        },
+        {
+          "at_instr": 496000000,
+          "button": 39,
+          "down": true
+        },
+        {
+          "at_instr": 502000000,
+          "button": 39,
+          "down": false
+        },
+        {
+          "at_instr": 508000000,
+          "button": 40,
+          "down": true
+        },
+        {
+          "at_instr": 514000000,
+          "button": 40,
+          "down": false
+        },
+        {
+          "at_instr": 520000000,
+          "button": 41,
+          "down": true
+        },
+        {
+          "at_instr": 526000000,
+          "button": 41,
+          "down": false
+        },
+        {
+          "at_instr": 532000000,
+          "button": 42,
+          "down": true
+        },
+        {
+          "at_instr": 538000000,
+          "button": 42,
+          "down": false
+        },
+        {
+          "at_instr": 544000000,
+          "button": 43,
+          "down": true
+        },
+        {
+          "at_instr": 550000000,
+          "button": 43,
+          "down": false
+        },
+        {
+          "at_instr": 556000000,
+          "button": 44,
+          "down": true
+        },
+        {
+          "at_instr": 562000000,
+          "button": 44,
+          "down": false
+        },
+        {
+          "at_instr": 568000000,
+          "button": 45,
+          "down": true
+        },
+        {
+          "at_instr": 574000000,
+          "button": 45,
+          "down": false
+        },
+        {
+          "at_instr": 580000000,
+          "button": 46,
+          "down": true
+        },
+        {
+          "at_instr": 586000000,
+          "button": 46,
+          "down": false
+        },
+        {
+          "at_instr": 592000000,
+          "button": 47,
+          "down": true
+        },
+        {
+          "at_instr": 598000000,
+          "button": 47,
+          "down": false
+        },
+        {
+          "at_instr": 604000000,
+          "button": 48,
+          "down": true
+        },
+        {
+          "at_instr": 610000000,
+          "button": 48,
+          "down": false
+        },
+        {
+          "at_instr": 616000000,
+          "button": 49,
+          "down": true
+        },
+        {
+          "at_instr": 622000000,
+          "button": 49,
+          "down": false
+        },
+        {
+          "at_instr": 628000000,
+          "button": 50,
+          "down": true
+        },
+        {
+          "at_instr": 634000000,
+          "button": 50,
+          "down": false
+        },
+        {
+          "at_instr": 640000000,
+          "button": 51,
+          "down": true
+        },
+        {
+          "at_instr": 646000000,
+          "button": 51,
+          "down": false
+        },
+        {
+          "at_instr": 652000000,
+          "button": 52,
+          "down": true
+        },
+        {
+          "at_instr": 658000000,
+          "button": 52,
+          "down": false
+        },
+        {
+          "at_instr": 664000000,
+          "button": 53,
+          "down": true
+        },
+        {
+          "at_instr": 670000000,
+          "button": 53,
+          "down": false
+        },
+        {
+          "at_instr": 676000000,
+          "button": 54,
+          "down": true
+        },
+        {
+          "at_instr": 682000000,
+          "button": 54,
+          "down": false
+        }
+      ]
     }
   ]
 }

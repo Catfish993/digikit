@@ -1,0 +1,467 @@
+# Digitone II OS 1.11: panel key code -> LED index (the `idx` of a `b9 idx val` front-panel record, UART8).
+#
+# Source: scenario `dn2-led-sweep` (every control code pressed 6M instructions, released, 12M apart), captured with
+# DIGI_PANEL_TX_LOG and read with tools/led_map.py, on the emulated Digitone II OS 1.11, 2026-10-13. The LED index is
+# (firmware LED logical id - 1); the names are the firmware's LED-name table. Regenerate with
+# tools/gen_led_toml.py. Analysis and caveats: docs/findings/19-sequencer-and-leds.md.
+#
+# `seen` is how the LED was observed: own = the key's own press lights it or changes it; radio = pressing the key
+# selects it and the previous group member goes out; context = the index comes from the firmware table but a plain
+# press did not change it (a view lights it); none = the firmware has no LED for the key.
+# `on` is the value byte written while the LED is lit by the key (see [value]); the idle value is 0x01.
+#
+# Each LED record is `b9 idx val`. Records are written twice back to back by the firmware's UART queue.
+
+[value]
+# Inference from the observed values (no panel-MCU firmware to read): the byte is a colour mask in bits 4-7 plus a
+# 4-bit mode in bits 0-3. [O]
+#   0x01            LED off (the idle value of every LED)
+#   0x11 0x21 0x41  one colour channel at mode 1: bit 4 = red (RECORD armed, held or playhead trig key),
+#                   bit 5 = green (PLAY), bit 6 = blue [D]
+#   0x71            bits 4, 5 and 6 together at mode 1: white (page keys, TRK, STOP, a programmed trig)
+#   0x81            bit 7 channel at mode 1 (a constant in the LED code; not seen on the wire here)
+#   0x1a 0x5a 0x6a  colour mask with mode 0xa (FUNC held lights the trig keys 0x1a; TRK held: 0x6a; both are
+#                   the firmware's pulse/blink values); 0x66 0x86 mode 6 (DN2 STACK mode: PLUS/MINUS 0x66, stacked
+#                   steps 0x86)
+#   0x02 0x06 0x0a  no colour bits, modes 2, 6 and 0xa: the dim levels of the PAGE1..8 indicator LEDs (0x0a = the
+#                   current page, 0x02 = the other pages) and of the selected track's key (0x06)
+bit0_idle = 1
+colour_mask = 0xf0
+mode_mask = 0x0f
+red = 0x10
+green = 0x20
+blue = 0x40
+other = 0x80
+
+[[key]]
+code = 1
+label = "TRIG"
+led = 19
+led_name = "PAGE TRIG"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 2
+label = "SRC"
+led = 20
+led_name = "PAGE SRC"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 3
+label = "FLTR"
+led = 21
+led_name = "PAGE FILTER"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 4
+label = "AMP"
+led = 22
+led_name = "PAGE AMP"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 5
+label = "FX"
+led = 23
+led_name = "PAGE FX"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 6
+label = "MOD"
+led = 24
+led_name = "PAGE MOD"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 7
+label = "PRESET"
+led = 5
+led_name = "PRESET MENU"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 8
+label = "SETTINGS"
+led = 6
+led_name = "GLOBAL"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 9
+label = "TEMPO"
+led = 8
+led_name = "TEMPO"
+seen = "radio"
+on = 0x71
+
+[[key]]
+code = 10
+label = "YES"
+led = 12
+led_name = "YES"
+seen = "context"
+
+[[key]]
+code = 11
+label = "UP"
+led = 14
+led_name = "UP"
+seen = "context"
+
+[[key]]
+code = 12
+label = "NO"
+led = 13
+led_name = "NO"
+seen = "context"
+
+[[key]]
+code = 13
+label = "LEFT"
+led = 16
+led_name = "LEFT"
+seen = "context"
+on = 0x71
+
+[[key]]
+code = 14
+label = "DOWN"
+led = 15
+led_name = "DOWN"
+seen = "context"
+
+[[key]]
+code = 15
+label = "RIGHT"
+led = 17
+led_name = "RIGHT"
+seen = "context"
+on = 0x71
+
+[[key]]
+code = 16
+label = "TRK"
+led = 0
+led_name = "TRACK"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 17
+label = "FUNC"
+led = 2
+led_name = "FUNCTION"
+seen = "context"
+
+[[key]]
+code = 18
+label = "KEYBOARD"
+led = 1
+led_name = "KEYBOARD"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 19
+label = "RECORD"
+led = 9
+led_name = "RECORD"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 20
+label = "PLAY"
+led = 10
+led_name = "PLAY"
+seen = "own"
+on = 0x21
+
+[[key]]
+code = 21
+label = "STOP"
+led = 11
+led_name = "STOP"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 22
+label = "PAGE"
+led = 18
+led_name = "PAGE"
+seen = "context"
+
+[[key]]
+code = 23
+label = "PTN"
+led = 3
+led_name = "PATTERN"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 24
+label = "SONG"
+led = 4
+led_name = "SONG"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 25
+label = "TRIG 1"
+led = 25
+led_name = "GRID01"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 26
+label = "TRIG 2"
+led = 26
+led_name = "GRID02"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 27
+label = "TRIG 3"
+led = 27
+led_name = "GRID03"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 28
+label = "TRIG 4"
+led = 28
+led_name = "GRID04"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 29
+label = "TRIG 5"
+led = 29
+led_name = "GRID05"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 30
+label = "TRIG 6"
+led = 30
+led_name = "GRID06"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 31
+label = "TRIG 7"
+led = 31
+led_name = "GRID07"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 32
+label = "TRIG 8"
+led = 32
+led_name = "GRID08"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 33
+label = "TRIG 9"
+led = 33
+led_name = "GRID09"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 34
+label = "TRIG 10"
+led = 34
+led_name = "GRID10"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 35
+label = "TRIG 11"
+led = 35
+led_name = "GRID11"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 36
+label = "TRIG 12"
+led = 36
+led_name = "GRID12"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 37
+label = "TRIG 13"
+led = 37
+led_name = "GRID13"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 38
+label = "TRIG 14"
+led = 38
+led_name = "GRID14"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 39
+label = "TRIG 15"
+led = 39
+led_name = "GRID15"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 40
+label = "TRIG 16"
+led = 40
+led_name = "GRID16"
+seen = "own"
+on = 0x11
+
+[[key]]
+code = 41
+label = "ENCODER A push"
+seen = "none"
+
+[[key]]
+code = 42
+label = "ENCODER B push"
+seen = "none"
+
+[[key]]
+code = 43
+label = "ENCODER C push"
+seen = "none"
+
+[[key]]
+code = 44
+label = "ENCODER D push"
+seen = "none"
+
+[[key]]
+code = 45
+label = "ENCODER E push"
+seen = "none"
+
+[[key]]
+code = 46
+label = "ENCODER F push"
+seen = "none"
+
+[[key]]
+code = 47
+label = "ENCODER G push"
+seen = "none"
+
+[[key]]
+code = 48
+label = "ENCODER H push"
+seen = "none"
+
+[[key]]
+code = 49
+label = "LEVEL push"
+seen = "none"
+
+[[key]]
+code = 50
+label = "VOICE"
+led = 7
+led_name = "VOICE"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 51
+label = "ARP"
+led = 49
+led_name = "ARP"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 52
+label = "PLUS"
+led = 50
+led_name = "PLUS"
+seen = "context"
+on = 0x66
+
+[[key]]
+code = 53
+label = "STACK"
+led = 51
+led_name = "STACK"
+seen = "own"
+on = 0x71
+
+[[key]]
+code = 54
+label = "MINUS"
+led = 52
+led_name = "MINUS"
+seen = "context"
+on = 0x66
+
+# LEDs that no key drives: the step playhead is a trig key's own LED, the page indicators below
+# are the pattern-page LEDs.
+[[indicator]]
+led = 41
+name = "PAGE1"
+
+[[indicator]]
+led = 42
+name = "PAGE2"
+
+[[indicator]]
+led = 43
+name = "PAGE3"
+
+[[indicator]]
+led = 44
+name = "PAGE4"
+
+[[indicator]]
+led = 45
+name = "PAGE5"
+
+[[indicator]]
+led = 46
+name = "PAGE6"
+
+[[indicator]]
+led = 47
+name = "PAGE7"
+
+[[indicator]]
+led = 48
+name = "PAGE8"
