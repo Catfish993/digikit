@@ -74,7 +74,7 @@ The files go to `snapshots/<device>-audio-ready-cold-*`. Git ignores them.
 ## Desktop emulator
 
 ```sh
-mise run emu                      # build once and run (emu:build builds only)
+mise run emu                      # build once and run (`mise run emu -- --build-only` builds only)
 mise run emu -- --cf-only --samples DIR Digitakt_II_OS1.16.syx   # your .wav files on the DT2 +Drive
 mise run emu -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
 mise run emu -- --cf-only         # ColdFire only: no DSP, no audio

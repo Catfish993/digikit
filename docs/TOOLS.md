@@ -287,11 +287,11 @@ each has a module docstring with its full command line.
 
 | Tool | Purpose |
 | --- | --- |
-| `tools/native_emu.py` | `mise run emu`, `emu:build`, `emu:serve`: build the desktop emulator once and run it (`--samples DIR`, `--dsp-patch FILE`, `--cf-only`, `--daemon`). |
+| `tools/native_emu.py` | `mise run emu` (`-- --build-only` builds only), `emu:serve`: build the desktop emulator once and run it (`--samples DIR`, `--dsp-patch FILE`, `--cf-only`, `--daemon`). |
 | `tools/native_target.py` | Pick the cargo target dir for a generated core (`prod`, `nogen`, `generic`, `g-<hash>`). |
 | `tools/native_pgo.py` | Profile-guided optimisation of the desktop build (`mise run perf:pgo`; `bench-bins`). |
 | `tools/native_wasm.py` | `mise run web:wasm`: build the browser cores. |
-| `tools/native_boot.py` / `tools/native_plusdrive.py` | `mise run dev:boot` and `dev:plusdrive`: the bounded native boot diagnostic and the standalone +Drive CLI. |
+| `tools/native_boot.py` | `mise run dev:boot`: the bounded native boot diagnostic. `mise run dev:plusdrive` runs the standalone +Drive CLI (`cargo run`, no wrapper script). |
 | `tools/ready.py` | `mise run emu:ready -- dn2\|dt2`: build the ready snapshots from the `.syx` alone (cold DSP start). |
 | `tools/coupled.py` | `mise run scenario`, `scenarios`, `scenario:replay`, `scenario:bisect`: build and run `coupled-run`, bisect DSP tiers. |
 | `tools/coupled_matrix.py` | Run scenarios across DSP configurations, repeated, under the benchmark lock. |

@@ -58,7 +58,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 
 ## Build and run
 
-- mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app), `emu:build`, `emu:ctl`, `web` (browser dev page),
+- mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
   `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo`, `gen:core`.
 - Paths, toolchain and fast-region tables: tools/digi_env.py, tools/fast_regions.json.
 - SHARC crates: native/sharc-rt (runtime), native/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative

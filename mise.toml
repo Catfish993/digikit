@@ -26,11 +26,7 @@ description = "Install the Python and web dependencies; build the patched Unicor
 
 [tasks.emu]
 run = "uv run python tools/native_emu.py"
-description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready)"
-
-[tasks."emu:build"]
-run = "uv run python tools/native_emu.py --build-only"
-description = "Build the desktop emulator exactly as `mise run emu` does, without launching it"
+description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready); `-- --build-only` builds without launching"
 
 [tasks."emu:serve"]
 run = "uv run python tools/native_emu.py --daemon"
@@ -59,25 +55,19 @@ description = "Build the browser core (WASM) and the static web panel (astro bui
 run = "pnpm check"
 description = "Type-check the web panel (astro check)"
 
-[tasks."web:lint"]
-run = "pnpm lint"
-description = "Lint the web panel (oxlint with eslint-plugin-solid)"
-
 [tasks."web:test"]
 run = "pnpm test"
 description = "Run the web panel's audio-health tests (node --test)"
 
 [tasks."web:wasm"]
-alias = "wasm"
-run = "tools/native_wasm.py --wasm-opt=-O3"
-description = "Build only the browser emulator core (WASM), with wasm-opt -O3 on the coupled core (--wasm-opt= turns it off)"
+run = "tools/native_wasm.py"
+description = "Build only the browser emulator core (WASM); the coupled core goes through wasm-opt -O3 (--wasm-opt= turns it off)"
 
 [tasks."web:bench"]
 run = "uv run python tools/benchlock.py run --exclusive -- node tools/browser_bench.mjs"
 description = "Headless Chrome throughput bench of the coupled browser core (needs local inputs): mise run web:bench -- --seconds 10 --runs 3 [--js-flags=--no-liftoff] [--profile]"
 
 [tasks."web:parity"]
-alias = "wasm:parity"
 run = "node tools/wasm_parity.mjs --scenario"
 description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run web:parity trig1-tap-release"
 
@@ -122,7 +112,6 @@ run = "uv run python tools/coupled.py replay"
 description = "Replay inputs recorded by the desktop app (Export diagnostics file) headless"
 
 [tasks."scenario:bisect"]
-alias = "bisect"
 run = "uv run python tools/coupled.py bisect"
 description = "Find the DSP tier (fast region, cluster root, AOT) that changes a scenario's PCM"
 
@@ -215,5 +204,5 @@ description = "Run the bounded native Oracle boot diagnostic"
 
 [tasks."dev:plusdrive"]
 alias = "plusdrive"
-run = "tools/native_plusdrive.py"
+run = "cargo run --release --locked --offline -p plusdrive-format --bin plusdrive --"
 description = "Build or inspect a standalone +Drive image"
