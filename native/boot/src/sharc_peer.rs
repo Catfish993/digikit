@@ -1750,6 +1750,15 @@ pub fn apply_dsp_patch(
             .collect()
     }
     fn write(e: &mut sharc_native::Engine, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        // New code or data in L2 that nothing loaded: `poke` on an absent
+        // address would store it at the short-word alias, where neither the
+        // fetch nor a plain data read looks (spike 0.7).
+        if (0x2000_0000..0x2010_0000).contains(&addr)
+            && !matches!(e.peek(u64::from(addr), 1), Ok(Some(_)))
+        {
+            e.poke_raw(addr, bytes);
+            return Ok(());
+        }
         if e.poke(u64::from(addr), bytes, 1) as usize != bytes.len() {
             return Err(format!("DSP patch: write at {addr:#x} refused"));
         }

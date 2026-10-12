@@ -14,6 +14,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
     "tools/cffacts.py",
+    "tools/sharc_asm.py",
+    "tools/dsp_master_hook.py",
+    "tools/hook_ab.py",
+    "tests/test_sharc_asm.py",
     "tools/cfmatch.py",
     "tests/test_cfmatch.py",
     "tools/bootstrap_run.py",

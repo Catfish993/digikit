@@ -820,6 +820,18 @@ impl Engine {
         ok
     }
 
+    /// Host write of raw bytes at ADDRESS exactly (no short-word alias
+    /// redirection, unlike `poke` on an absent address), making them present.
+    /// For new code or data in L2 that nothing loaded: `read_sw` and plain
+    /// data reads both look at the bytes at their own address. The decode
+    /// cache is dropped.
+    pub fn poke_raw(&mut self, address: u32, data: &[u8]) {
+        for (k, &b) in data.iter().enumerate() {
+            self.s.mem.write_byte(address.wrapping_add(k as u32), b);
+        }
+        self.invalidate_runtime_decode();
+    }
+
     /// memory._dm_read(ADDRESS, WIDTH): Ok(None) when unknown, Err on an
     /// unmodelled MMR.
     pub fn peek(&self, address: u64, width: u32) -> Result<Option<u32>, Trap> {
