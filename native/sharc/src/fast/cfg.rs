@@ -616,6 +616,10 @@ pub fn build_structure(
                         }
                     }
                 }
+                if ok && delayed && jump_idx as u32 >= super::ir::MAX_CFG_JUMPS {
+                    ok = false;
+                    why = "too many delayed branches".into();
+                }
                 if ok {
                     node.kind = NodeKind::Return {
                         jump_idx: if delayed { jump_idx } else { NO_JUMP },
@@ -671,10 +675,9 @@ pub fn build_structure(
                         }
                     }
                 }
-                if ok && delayed && tail != Tail::None && jump_idx as u32 >= super::ir::MAX_CFG_JUMPS
-                {
-                    // A call or return ends the region here instead of
-                    // refusing the whole region (as a plain jump does).
+                if ok && delayed && jump_idx as u32 >= super::ir::MAX_CFG_JUMPS {
+                    // Past the delayed-branch budget a jump or call ends the
+                    // region here instead of refusing the whole region.
                     ok = false;
                     why = "too many delayed branches".into();
                 }
