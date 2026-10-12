@@ -151,6 +151,12 @@ def compare_listing(text: str, isa: InstructionSet | None = None) -> Comparison:
     return Comparison(tuple(_compared(row, instruction_set) for row in parse_listing(text)))
 
 
+def compare_rows(rows: "tuple[ExternalInstruction, ...] | list[ExternalInstruction]", isa: InstructionSet | None = None) -> Comparison:
+    """Compare externally selected instruction extents (raw bytes in Selache's parcel order) with native decode."""
+    instruction_set = isa or load_instruction_set()
+    return Comparison(tuple(_compared(row, instruction_set) for row in rows))
+
+
 def compare_external_bytes(data: bytes, isa: InstructionSet | None = None) -> Comparison:
     """Decode an external byte stream using native extents after parcel swapping.
 

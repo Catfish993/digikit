@@ -16,6 +16,9 @@ use crate::telemetry::EventKind;
 use crate::telemetry::{DiagnosticReport, Mark, Position, Recorder};
 use coldfire::fused::Loop;
 
+mod call;
+pub use call::{CallResult, CallSpec};
+
 const CHUNK_MAX: u32 = 250_000;
 const CAPTURE_BUS_TRACE: bool = false;
 const ACCELERATE_RAM_CLEAR: bool = true;
