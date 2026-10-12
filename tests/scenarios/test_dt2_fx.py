@@ -148,7 +148,8 @@ INTENT: dict[str, dict[str, int]] = {
     "sf-del-mix-u50": {'fx[39]': 127},
     "sf-rev-pre-u50": {'fx[41]': 127},
     "sf-rev-decay-d50": {'fx[42]': 0},
-    "sf-rev-decay-u20": {'fx[42]': 37},
+    # accelerated encoder value; timing-dependent. 37 was a phase boundary. 38 is stable across turn shifts of 0-400k instructions with forced IRQ delivery on (2026-10-13)
+    "sf-rev-decay-u20": {'fx[42]': 38},
     "sf-rev-decay-u50": {'fx[42]': 108},
     "sf-rev-lpf-d50": {'fx[46]': 0},
     "sf-rev-mix-d50": {'fx[47]': 0},
