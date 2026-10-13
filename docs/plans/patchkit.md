@@ -733,6 +733,21 @@ cost of a PLUCK proof. The engine slots of a PLUCK track read 0 until the first 
 - Integration rule: the coordinator checks a merge with verify plus the smoke matrix (`--jobs`), not every proof tool;
   full-tier proofs only before a merge to `main` (AGENTS.md).
 
+Patched DSP speed in the emulator (2026-10-14, lane b, findings 18): a ringing PLUCK cost 42 DSP s per audio s.
+Cause: code-watch false sharing (module stores on the 64 KiB page of stock L2 code re-hashed all code ranges up to
+49 times per block), fixed by watching exact code spans: 4.5 s, PCM bit-identical, stock +0.7% (coupled_ab). What
+remains (about 3 s on PLUCK; stock non-PGO is 1.31): the patch bars whole stock AOT regions around a changed word
+(the voice hook in the sample renderer, the selector-table literal in the hot per-frame function); appended module
+code itself is interpreted but small (0.1-0.25 s).
+
+- [ ] Exact barring: per-region code extents in `tools/sharc_rsgen.py` so only regions containing a changed word are
+      barred; regenerate the DT2/DN2/shared cores (about half a day + verify; measured ceiling PLUCK 4.5 -> 2.76,
+      dsp-voice 2.0 -> 1.52; about 70%).
+- [ ] Avoid patching hot functions where a cold site does the same job (e.g. the selector-table literal).
+- [ ] Real-time play of patched DSP modules in the desktop app (stock is about 1.0 with PGO): needs the above plus
+      compiled appended code (fast tier for L2 module code, or an AOT core regenerated for a patched image in dev).
+- [ ] DN2: put module data on its own 64 KiB page (fast-tier kernels decline stores into code-watched pages).
+
 After wave 7: DN2 parameter pages and PLUCK on DN2 (as modules), Phase 7 docs, PGO retrain at the wave end,
 browser DSP audio (separate sharc-jit plan) when chosen.
 
