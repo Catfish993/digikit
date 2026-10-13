@@ -1288,3 +1288,124 @@ raised to `6 + N`; the sound record's type byte is at `+0xf4`, saved by `FUN_400
   in stock firmware either (the type posted by the UI thread is consumed once); every proof starts from `restart`.
   Cause not found; the UI and the saved project follow the second change **[O]**.
 - Hardware: never flashed; the shims run from the flash cave (212 bytes + 40 per added type).
+
+## DN2 parameter pages: what an added machine's own SYN pages need (wave 7, lane fastweb) **[D]**
+
+Digitone II 1.12 (1.11 by function hash and by the table scan). One agent, static reading plus emulator probes
+(`tools/dn2_probe.py`, `tools/dn2_pages.py`, `tools/cf_wordscan.py`, `tools/pk_params_rules_dn2.py`); not checked by a
+second agent. Nothing flashed. **[C]** to "core.machines on Digitone II 1.12" above where stated.
+
+### The layers, from the knob to the engine word
+
+| layer | Digitone II 1.12 | evidence |
+|---|---|---|
+| T1, the parameter descriptor table | rodata `0x401f83a4`, **321 rows** of `0x3c` bytes: the Digitakt's layout (`+0` owner, `+4` sound-array slot, `+8/+0xc/+0x10` min/max/default, `+0x14` flag, `+0x18` hi i16 = MIDI CC (40..77 on FM TONE) or -1, `+0x1c` a per-owner key, `+0x28` long name, `+0x2c` owner name, `+0x30` short name, `+0x34` formatter, `+0x38` constant); `tools/dn2_pages.py --params` dumps it | rows read from a snapshot, 5 machines |
+| page table | bss `0x42433ad4`, rows of 16 bytes `{count, begin, end, cap}` for types 0..4 (FM TONE 4 pages, WAVETONE 3, FM DRUM 4, SWARMER 1, MIDI 1); the heap vectors hold **page descriptors of `0x2c` bytes**: two `std::string` pointers (`SYN1` / `FM Tone`, the second is the title shown) and **nine parameter codes** (T1 row indices; `10` = Track Level ends a page; `0` = no knob) | snapshot dump; page 1 of FM TONE: `0xd4 .. 0xdb` |
+| the slot to code table | bss `0x42c65d18`: **5 x 40 words**, `[type * 40 + slot - 25]` = the code whose T1 row has that owner and slot (FM TONE uses all 40 slots 25..64, WAVETONE 25..49, FM DRUM 25..54, SWARMER 25..32); `0x42c65cd0` is the filter table (6 types x 3, slots `0x42..0x44`), `0x42c65b3c` the global one | `FUN_400dc18e(slot, type, sub)` disassembly; `0x42c65d18` is read only there and in its builder |
+| T2, the value-class objects | bss `0x4243425c`, stride `0x44`, one per code; accessor `FUN_400c257c(code)` (`cmpi.l #0x141,D0`, 15 callers); `FUN_400c25a0(code, ..)` calls the row's formatter | disassembly |
+| the sound array | per track, slots 25..64 (FM TONE: all 40); persisted by the stock permutation | unchanged from the Digitakt layer |
+
+**Who builds them.** `FUN_400c2c4e` (35,712 bytes, no caller: a static initialiser) builds the page vectors, the machine
+descriptors (`0x42433b24 ..`, `0x2c` bytes, nine IDs `0 .. 0 10`), the filter pages and T2 in bss/heap at start-up;
+`FUN_400dc634` (called from `FUN_400bb3c0`) clears six bss tables and fills the slot tables from T1 by one loop over
+`0x141` rows (the owner and slot of each row: owner `< 5` = machine, `5..10` = filter). The page table is read only by
+`FUN_400c2636(type)` (page count; callers `MultiSourcePageView::vfunc_32/33`, `FUN_400173ca`) and
+`FUN_400c2652(type, page)` (descriptor; callers `MultiSourcePageView::vfunc_47/19`, `FUN_40045c82`, `FUN_4004610a`,
+`FUN_4005c4de`, `FUN_40064e76`); both bound the type by 4 and fall back to MIDI's descriptor. The slot table is read only
+by `FUN_400dc18e` (callers `SoundParameterSet::vfunc_20`, `FUN_4003f6a0`, `SoundParamChangedInfo` x2, `FUN_400e7eb0`,
+`FUN_40011f66`; `cf_wordscan.py` over the image finds no other absolute reference to either table).
+
+**How a page slot binds to a descriptor [D, emulator].** The page descriptor's field n is a T1 row index; the row gives
+the sound-array slot, range, name and formatter. Proof: the heap descriptor of FM TONE's second page was edited in the
+running emulator (`dn2_probe.py pagepoke --page 1`: field 0 `0xd4` (`A Env Attack`, slot 35) -> `0xe3` (`Pitch All`, slot 50)):
+the page shows "Pitch All=10" on knob A and 30 x +4 detents move the TX frame halfword `0x10c` (slot 50), not `0xee`.
+Nothing else is keyed by the page.
+
+**What the widgets are.** `MultiSourcePageView::vfunc_4` (the draw) switches on the type reader and the page index: type 0
+(FM TONE: algorithm and envelope views), 1 (WAVETONE: special cases keyed by the hard-coded codes `0xf7 0xef 0xfb 0xf3`),
+2 (FM DRUM: pages 8 and 10), 3 (SWARMER: codes `0x126 0x127`); **every other value, and every unmatched page, goes to
+`FUN_40017428`, the generic eight-knob page** (name, value from the row's formatter). So an added machine gets the
+generic look when the draw functions see its own type (>= 5), or the clone's widgets when they see the clone's.
+Screens: `out/runs/dn2-shots/` (`dn2_probe.py shots`).
+
+### What a framework must add for own pages (the delta to core.machines and core.params)
+
+1. **Rows (core.params on DN2).** One 60-byte T1 row per new parameter (code `321 + k`, owner = the clone's type, slot in
+   25..64 (40 slots per machine, the frame carries 25..65), name/short/formatter/range; copy a template row of the same
+   value class), the table copied to the expansion region, **56 references repointed and 55 clamp bounds raised**
+   (`cmpi.l #0x141` followed by `scs/scc/bhi/bls`; compares that end a loop with `bne` stay at 321, as on the Digitakt:
+   `FUN_400dc634` at `0x400dc954`, `FUN_400394be` at `0x4003950a`, `FUN_4004b0b4` at `0x4004b17a`; the scan skips them). The Digitakt scan (`params::scan`, `port_resolve.py cf_params_t1` / `cf_params_sites`)
+   gives **the same numbers on the Digitone II (321 rows, 56 + 55 sites; 1.11 identical)** and needs no change but the
+   device filter. T2: the accessor `FUN_400c257c` needs the Digitakt's shim (an added code answers with its template's
+   object; same caveat: [O] that the shared object is constant after boot). MIDI CC / NRPN maps (`0x42c67a84 ..` keyed
+   through `FUN_401af0c8`) ignore added rows as on the Digitakt.
+2. **A slot table row per added type**, 40 words (`slot - 25 -> code`, 0 for unused), read by the existing shim at
+   `FUN_400dc18e` (`cf.machines.typemap.2`, `0x400dc196`, 8 bytes): for a raw type >= `machines.first` and a slot
+   `0x19..0x40` return the row's word instead of mapping the type to the clone. Defaults on selection come from this
+   path (`SoundParameterSet::vfunc_20` reads the raw type byte `+0xde`).
+3. **A page record per added type**: `{count, begin}` and `count` page descriptors (`0x2c` bytes: two `std::string`
+   pointers to representations with refcount -1, nine codes), read by the shims at `FUN_400c2636` / `FUN_400c2652`
+   (`typemap.0` at `0x400c2636`, `typemap.1` at `0x400c2656`): for a type >= first return the own count / descriptor
+   (bounds as the stock: a page outside the count falls back to MIDI's row `0x42433bd4`). All data is constant: no
+   heap, no builder hook.
+4. **The type the page callers see.** Today the reader (`FUN_4004b7f2`, 41 callers) returns the clone's original to
+   every caller but a list of identity ones, so the page functions would receive the clone's type. For own pages the
+   callers of the page functions must get the **own** type: `MultiSourcePageView::vfunc_47` (return addresses
+   `0x4001688a`, `0x400168ac`), `vfunc_32` (`0x4001690a`, `0x40016926`), `vfunc_33` (`0x40016996`, `0x400169b6`),
+   `FUN_400173ca` (`0x400173fe`, `0x40017414`), `vfunc_19` (`0x400177dc`); `FUN_40064e76` already reaches the identity tail
+   `FUN_4003134e`; `FUN_40045c82`, `FUN_4004610a` and `FUN_4005c4de` get their type from elsewhere (check each: **[O]**).
+   For the **generic** look the draw callers get the own type too: `vfunc_4` (`0x4001815c`, `0x40018176`), `vfunc_45`
+   (`0x40016a3e`, `0x40016a5c`), `vfunc_17` (`0x40017086`, `0x400170a0`), `FUN_40015f90` (`0x40015fb6`), `FUN_40015fec`
+   (`0x40016012`): about 17 more identity sites in the same list as `cf.machines.reader_call.*`.
+5. **Not needed:** the machine descriptor (nine zeros), the persistence immediate (already raised), any change to the sound
+   array, the DSP frame (slots 25..65 are carried as they are).
+
+Anchors (proposed; `tools/pk_params_rules_dn2.py` prints and `--check dn2-1.11` verifies them; the page, slot and reader
+sites above are the existing `cf.machines.typemap.*` anchors plus new `cf.machines.reader_call.9..` byte-shape ones):
+
+```toml
+[[claim]]
+resource = "cf.params.sites"
+
+[[anchor_rule]]            # T1: 0x401f83a4, 321 rows (1.11: 0x401f7f94)
+name = "cf.params.t1"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_params_t1"
+mark = "D"
+
+[[anchor_rule]]            # 56 references + 55 clamp bounds, digest 463d362c04d4050c (1.12), 4efbd2b0facd4ab0 (1.11)
+name = "cf.params.sites"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_params_sites"
+mark = "D"
+
+[[anchor_rule]]            # FUN_400c257c: move.l 4(sp),D0; cmpi.l #0x141,D0 (T2 accessor)
+name = "cf.params.t2"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "ad9a012d7c22efe3de4430746f3ad4cf"
+offset = 0x0
+len = 10
+mark = "D"
+```
+
+`cf.params.fmt` (`FUN_400c25a0`, hash `7fe71c352cb62e7f7f486c40226d021e`) and `cf.params.slotbuild` (`FUN_400dc634`, hash
+`2ecb4ffb3045ee944fc97fd5a593b0f9`) are informational rules (a bound user and the start-up builder); a module that
+only adds rows does not need them. Estimate for own pages on DN2 as modules: **1 to 2 days** (the params part is the
+Digitakt's, the page and slot shims are about 120 bytes of ColdFire, the identity-site list is mechanical); confidence
+about 70 % that every page shows own names, values and defaults, about 50 % that the generic look has no seam (a
+view that keys on the type elsewhere).
+
+### Where the engine parameter words are, and what reaches the DSP **[C]**
+
+The TX frame (`0x80005e60`, sent by the vector-191 handler `0x40025e36`) has, for **voice slot v** (not track), a block of
+`0x92` bytes at `0xda + 0x92 v`; the halfword of sound-array slot `s` (25..65) is at `0xda + 0x92 v + 2 (s - 25)`
+(`dn2_probe.py knobs`: SYN pages 1..4, encoders A..H, 30 x +4 detents at 2 ms: SYN1 knob A moves frame `0xda` (slot 25),
+SYN2 `0xee` (35), SYN3 `0xfe` (43), SYN4 `0x11c` (58), the others in order; values lag by the smoother).
+The DSP's copy at `0x25c48c` is byte-for-byte the same (73 of 73 halfwords equal for slots 0 .. 9, `dn2_probe.py dspblock`).
+**[C]** finding 04 and the plan said "per track": the block belongs to the voice slot; the ColdFire writes it from the
+track that owns the voice at the note-on and keeps updating it while the voice lives (a knob turned while the key is held
+moves the slot's word; before any note no block changes). See finding 06, "DN2 voice slots", for the slot to track map.

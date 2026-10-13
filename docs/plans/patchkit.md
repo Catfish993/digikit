@@ -469,6 +469,29 @@ Emulator only; nothing flashed; one agent.
   confidence about 50 % for a string that retriggers reliably; payoff: the same module on a second device.
 - Open: hardware; own parameter pages for a DN2 machine (3 start-up built RAM tables, est. 1 to 2 days); DN2 1.11 not run.
 
+### DN2 research (wave 7, lane `fastweb`)
+
+Findings: 02 ("DN2 parameter pages") and 06 ("DN2 voice slots"). Static plus emulator, one agent, [D]. No framework code
+was touched; new: `tools/dn2_probe.py`, `tools/dn2_pages.py`, `tools/cf_wordscan.py`, `tools/pk_params_rules_dn2.py`,
+`modules/test/dn2-edge` (a research machine).
+
+- **Own SYN pages for a DN2 machine** need no new builder hook: constant data plus shims at three existing sites. T1 has
+  321 rows and the Digitakt's `cf_params_t1` / `cf_params_sites` rules resolve unchanged (56 refs + 55 bounds, 1.11 and
+  1.12); the slot table (5 x 40, `0x42c65d18`) and the page table (`0x42433ad4`, rows `{count, begin}`, pages of 0x2c bytes
+  with nine parameter codes) are read by only three functions, which `core/machines` already shims for the clone map
+  (`cf.machines.typemap.0..2`). The page and draw callers (about 17 reader call sites) must see the own type; the generic
+  eight-knob page is the draw function's default for any type but 0..3. Estimate 1 to 2 days, confidence 70 %.
+- **Voice slot to track:** slots are voices (16-voice polyphony, round robin); the map is the ColdFire table
+  `0x40288306 + 0x14 v`, and the DSP does not need it: slot v's engine words are the frame block `0xda + 0x92 v` (written at
+  the note-on from the owning track, updated while the voice lives). **[C]** per voice, not per track.
+- **Note-on edge exists:** frame halfwords `0x11` (and `0x13`) bit v = trig, `0x12` / `0x14` bit v = release, one frame
+  long; proven with `test/dn2-edge` (24 of 24 and 40 of 40 notes, also past 16 slots, also on track 6). The earlier "no
+  edge available" is **[C]**.
+- **For PLUCK on DN2:** `_dv_frame_hw` reads only halfwords below 512, so slots 0..5 can reach their knob words: widen it
+  (mask `0xffe`); then PLUCK needs the edge (above), the pitch and velocity words (as the sine), 4 knob words through
+  the clone's pages (own pages later), `pluck.s` for a 32-float buffer with per-slot state, `devices` filters, and the
+  engine's amplitude envelope as the string's gate. Estimate 1 to 2 days, confidence 60 %.
+
 ### Phase 3b: frameworks as modules (refactor, decided 2026-10-14)
 
 Problem: `core/machines` and `core/params` were built as Rust generators inside patchkit (`machines.rs`,
