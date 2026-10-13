@@ -81,8 +81,14 @@ def build_example() -> Path:
 
 class CfMachine:
     def __init__(
-        self, syx: str | Path, state: str | Path | None = None, timeout: int = 600
+        self,
+        syx: str | Path,
+        state: str | Path | None = None,
+        timeout: int = 600,
+        base_sha256: str | None = None,
     ):
+        """``base_sha256``: the stock firmware a patched ``syx`` was made from (patchkit's plan.json ``base``)."""
+        self.base_sha256 = base_sha256
         self.syx = Path(syx)
         if not self.syx.is_absolute():
             self.syx = ROOT / self.syx
@@ -123,6 +129,7 @@ class CfMachine:
                     f.name,
                     "--state",
                     str(self.state),
+                    *(["--base-sha", self.base_sha256] if self.base_sha256 else []),
                 ],
                 capture_output=True,
                 text=True,

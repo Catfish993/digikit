@@ -42,6 +42,8 @@ PY_TESTS = (
     "tests/test_sharc_rsgen_density.py",
     "tests/test_lint.py",
     "tests/test_types.py",
+    "tests/test_patchkit.py",
+    "tests/test_patchkit_expansion.py",
 )
 STEPS = (
     "build",
@@ -104,6 +106,18 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "rust-tests",
             "dt2-tone",
         ),
+    ),
+    (
+        (
+            "native/patchkit/",
+            "modules/",
+            "devices/ports/",
+            "tools/pk_",
+            "tools/port_resolve.py",
+            "tools/patchkit.py",
+            "tests/test_patchkit",
+        ),
+        ("rust-tests", "python-tests", "web"),
     ),
     (("native/control/",), ("desktop", "rust-tests", "card")),
     (
@@ -288,6 +302,7 @@ def desktop_check(gate: Gate) -> None:
 
 def web_check(gate: Gate) -> None:
     web = ROOT / "packages" / "web"
+    gate.run("patchkit-wasm", [*PY, "tools/native_wasm.py", "--patchkit-only"])
     gate.run("web-tests", ["node", "--test", "tests/*.test.mjs"], cwd=web)
     gate.run("web-types", ["npx", "astro", "check"], cwd=web)
 

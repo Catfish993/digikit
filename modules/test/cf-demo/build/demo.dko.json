@@ -1,0 +1,123 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 32,
+   "offset": 16,
+   "section": ".text.pk_demo_sum",
+   "symbol": ".sec..data.pk_demo_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 64,
+   "offset": 32,
+   "section": ".text.pk_demo_sum",
+   "symbol": ".sec..bss.pk_demo_bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 2,
+   "section": ".text.pk_demo_sum",
+   "symbol": ".sec..data.pk_demo_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 24,
+   "section": ".text.pk_demo_sum",
+   "symbol": ".sec..bss.pk_demo_bss",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 2,
+   "hex": "202f0008068000001234d0af00044e75",
+   "kind": "text",
+   "name": ".text.pk_demo_add",
+   "size": 16
+  },
+  {
+   "align": 2,
+   "hex": "41f900000000203c00001234d098b1fc0000000066f641f900000000d098b1fc0000000066f64e75",
+   "kind": "text",
+   "name": ".text.pk_demo_sum",
+   "size": 40
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.pk_demo_bss",
+   "size": 64
+  },
+  {
+   "align": 2,
+   "hex": "0000000100000002000000030000000400000005000000060000000700000008",
+   "kind": "data",
+   "name": ".data.pk_demo_table",
+   "size": 32
+  },
+  {
+   "align": 2,
+   "hex": "00001234",
+   "kind": "data",
+   "name": ".rodata.pk_demo_k",
+   "size": 4
+  }
+ ],
+ "source_sha256": "48a2845ff600414f57c4e5510eeb4ae4ad46125392b7b2194baeb28d6467db4d",
+ "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss.pk_demo_bss",
+   "section": ".bss.pk_demo_bss",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..data.pk_demo_table",
+   "section": ".data.pk_demo_table",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_demo_add",
+   "section": ".text.pk_demo_add",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_demo_bss",
+   "section": ".bss.pk_demo_bss",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_demo_k",
+   "section": ".rodata.pk_demo_k",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_demo_sum",
+   "section": ".text.pk_demo_sum",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_demo_table",
+   "section": ".data.pk_demo_table",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "14",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

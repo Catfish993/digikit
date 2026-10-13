@@ -1,6 +1,6 @@
 # patchkit: firmware modules for Digitakt II and Digitone II
 
-Status: design agreed 2026-10-13, not started. Branch `work/patchkit`.
+Status: design agreed 2026-10-13; Phase 0 and Phase 1 done (lane `a`, 2026-10-13). Branch `work/patchkit`.
 
 ## Goal
 
@@ -271,16 +271,41 @@ Spec (decided 2026-10-13):
 
 Slice first (one agent), then coverage:
 
-- [ ] Slice: codec + port lockfile + `write`/`retarget` + `dsp.l2` placement + record + verify, proven by the
+- [x] Slice: codec + port lockfile + `write`/`retarget` + `dsp.l2` placement + record + verify, proven by the
       master-gain module (spike 0.7 routine as SHARC source, one module for both devices) on DT2 1.17 and DN2 1.12:
       -6.02 dB at gain 0.5, bit-identical at 1.0, through `firmware.load`.
-- [ ] Oracle: DN2 master-half as a one-`write` module: decoded section 7 equals `dsp_patch.py syx`.
-- [ ] Oracle: XSLICE as a pinned raw-writes module (converted from `machinebuild` plan, dt2-1.16 only): section 3
+- [x] Oracle: DN2 master-half as a one-`write` module: decoded section 7 equals `dsp_patch.py syx`.
+- [x] Oracle: XSLICE as a pinned raw-writes module (converted from `machinebuild` plan, dt2-1.16 only): section 3
       sha `cdbd7726...`.
-- [ ] `core.expansion` and a CF module in `cf.expansion`: boots to ready, function callable (pk_cfcall), region
+- [x] `core.expansion` and a CF module in `cf.expansion`: boots to ready, function callable (pk_cfcall), region
       content intact.
-- [ ] Conflicts, canonical order, `plan.json`, `explain`; aPLib byte-equality with Python on all 16 sections.
-- [ ] wasm build in `tools/native_wasm.py` (`public/patchkit.wasm`); CLI and wasm outputs byte-identical.
+- [x] Conflicts, canonical order, `plan.json`, `explain`; aPLib byte-equality with Python on all 16 sections.
+- [x] wasm build in `tools/native_wasm.py` (`public/patchkit.wasm`); CLI and wasm outputs byte-identical.
+
+### Phase 1 results (2026-10-13, lane `a`)
+
+Details and numbers: `docs/findings/21-patchkit-core.md`. Built: `native/patchkit` (lib, `patchkit` binary, wasm
+C ABI), `tools/pk_build.py`, `tools/port_resolve.py`, `tools/patchkit.py`, ports for dt2-1.16, dt2-1.17,
+dn2-1.11 and dn2-1.12, modules `core/expansion`, `fx/master-gain`, `test/cf-demo`; the generated (uncommitted, `out/modules/`) oracle modules
+`oracle/dn2-master-half` and `oracle/xslice-dt2-1-16`; mise tasks `patch`, `patch:build`, `patch:explain`, `port:resolve`,
+`inject`.
+
+- The codec rebuilds all four stock images byte for byte; the Rust aPLib packer equals the Python one on all 16
+  packed sections (and is 25 times faster). Stock payloads start at container offset 0x90, not 0x80 as
+  `dt2/build.py` writes [C].
+- `fx/master-gain` on DT2 1.17 and DN2 1.12, injected through `firmware.load`: bit-identical at gain 1.0,
+  -6.0206 dB at 0.5, from the same ready state.
+- Oracles: DN2 master half (all decoded sections equal `dsp_patch.py syx`), XSLICE (section 3 sha256
+  `cdbd7726...ecb86a`).
+- `core/expansion`: the loader (54 bytes) boots to ready on both devices with DSP audio (DN2 6.4 s, DT2 13.6 s,
+  PCM equal to stock); a C module with code, data and bss runs in place.
+- Deviations from the spec, all small: `hmac` is a 20-line function over `sha2` instead of a crate; module ids
+  are paths (`core/expansion`, `fx/master-gain`), not dotted; the segment header is `[len][dest][bss]` (the loader
+  zeroes bss) with a `0xffffffff` terminator; `anchor` kinds `code`, `data` and `value` (a number read from an
+  instruction, for the converter's buffer address); a manifest `ports = [...]` field pins a module to firmware
+  (XSLICE); an `--no-record` switch exists for the oracles only; stock containers keep their own first payload
+  offset; SHARC `retarget` supports the direct CALL only, and the SHARC listing of `explain` lives in the Python
+  front end.
 
 ### Phase 2: developer loop and harness (about 3 days, high)
 

@@ -226,3 +226,25 @@ run = [
   "uv run python tools/pk_toolchains.py selache",
 ]
 description = "Build the pinned m68k-elf binutils/gcc (about 15 min) and Selache into out/tools"
+
+# --- patchkit: firmware modules (docs/plans/patchkit.md) ---
+
+[tasks."patch"]
+run = "uv run python tools/patchkit.py patch"
+description = "Apply modules to a stock firmware: mise run patch -- --firmware X.syx --modules a,b [-o OUT.syx] (writes out/patch/ and plan.json)"
+
+[tasks."patch:build"]
+run = "uv run python tools/pk_build.py"
+description = "Compile module sources to build/*.dko.json: mise run patch:build [-- modules/fx/NAME] [--check]"
+
+[tasks."patch:explain"]
+run = "uv run python tools/patchkit.py explain"
+description = "Site-by-site account of a patch (disassembly before and after, allocation map): mise run patch:explain -- --firmware X.syx --modules a,b"
+
+[tasks."port:resolve"]
+run = "uv run python tools/port_resolve.py"
+description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run port:resolve [-- X.syx] (no argument: the four supported firmwares)"
+
+[tasks."inject"]
+run = "uv run python tools/patchkit.py inject"
+description = "Load a patched image into the running emulator (emu:ctl inject): mise run inject [-- OUT.syx] [--hot]"
