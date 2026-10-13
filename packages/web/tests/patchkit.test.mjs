@@ -97,6 +97,34 @@ test('wasm and CLI produce byte-identical output for the machine framework (two 
   assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible/);
 });
 
+test('wasm and CLI produce byte-identical output for core/params and PLUCK', { skip: !need }, async () => {
+  const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
+  const bundlePath = join(work, 'bundle.json');
+  py('tools/patchkit.py', 'bundle', '-o', bundlePath);
+  const bundle = readFileSync(bundlePath);
+  const { x, put, get, text } = await load();
+  const mods = 'core/dsp-voice,core/machines,core/params,machines/pluck';
+  const fw = readFileSync(images.dt2);
+  const out = join(work, 'dt2-pluck.syx');
+  const plan = join(work, 'dt2-pluck.plan.json');
+  py('tools/patchkit.py', 'patch', '--firmware', images.dt2, '--modules', mods, '-o', out, '--plan', plan);
+  const [fp, fl] = put(fw);
+  const [bp, bl] = put(bundle);
+  const [ip, il] = put(Buffer.from(mods));
+  assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
+  assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
+  const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
+  assert.deepEqual(report.machines.map((m) => [m[0], m[1]]), [['pluck', 7]]);
+  assert.deepEqual(report.params.map((m) => [m[0], m[1]]), [
+    ['pluck_decay', 275], ['pluck_pick', 276], ['pluck_bright', 277], ['pluck_color', 278],
+  ]);
+  // Digitone II has neither framework
+  const [dp, dl] = put(readFileSync(images.dn2));
+  const [mp, ml] = put(Buffer.from(mods));
+  assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
+  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible/);
+});
+
 test('wasm refuses what the CLI refuses', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');

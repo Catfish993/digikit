@@ -70,13 +70,11 @@ expect_no_fault = true
 [[step]]
 turn = "ENC E"
 by = 4
+events = 30
 [[step]]
-turn = "ENC E"
-by = 4
+wait_ms = 100
 [[step]]
-wait_ms = 300
-[[step]]
-expect_frame = "bright_touched"
+expect_frame = "bright_moved"
 differs_from = "src_page"
 [[step]]
 expect_no_fault = true

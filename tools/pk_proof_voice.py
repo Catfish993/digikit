@@ -68,9 +68,9 @@ def panel(page: int, encoder: int, events: int, detents: int) -> list[dict]:
     return ev
 
 
-# type 9, DECAY (slot 1, 0xdc) 0x4000, PICK (slot 2, 0xde) 0, BRIGHT (slot 4, 0xe6) max, COLOR (slot 5, 0xe8) 0x1000
-PLUCK_POKE = "0x94=9,0xdc=0x4000,0xde=0,0xe6=0x7f00,0xe8=0x1000"
-PLUCK_CASES = {"pluck60": 60, "pluck72": 72, "pluck-color": 60}
+# machines/pluck is a real machine now (core/machines gives it its type, core/params its knobs): its proof is
+# tools/pk_proof_pluck.py. `analyse_pluck` stays here for it.
+PLUCK_CASES: dict[str, int] = {}
 
 # name -> (patched?, DSP_FRAME_POKE, panel events)
 CASES: dict[str, tuple[bool, str, list[dict]]] = {
@@ -82,9 +82,6 @@ CASES: dict[str, tuple[bool, str, list[dict]]] = {
     "lev-half": (True, "0x94=8,0xec=0x3200", []),
     "lev-full": (True, "0x94=8", []),
     "stock-lev-half": (False, "0xec=0x3200", []),
-    "pluck60": (True, PLUCK_POKE, []),
-    "pluck72": (True, PLUCK_POKE + ",0x02=0x4800", []),
-    "pluck-color": (True, PLUCK_POKE + ",0xe8=0x7f00", []),
     "rev-dry": (True, "0x94=8", panel(FX_PAGE, ENC_REV, 0, 0)),
     "rev-send": (True, "0x94=8", panel(FX_PAGE, ENC_REV, 52, 4)),
     "flt-open": (True, "0x94=8,0x02=0x6000", panel(FLT_PAGE, ENC_FLT, 0, 0)),

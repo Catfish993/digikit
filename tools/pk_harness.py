@@ -25,7 +25,9 @@ Step format (TOML `[[segment.step]]` / `[[step]]`, exactly one action key each; 
     tap = "TRIG 1"                 press and release (hold_ms, default 20)
     tap = ["TRK", "TRIG 2"]        chord: the first key is held while the others are tapped
     hold = "PLAY"  ms = 500        press, run ms, release
-    turn = "ENC A"  by = 2         encoder rotation (ENC A..H, LEVEL); negative = left
+    turn = "ENC A"  by = 2         encoder rotation (ENC A..H, LEVEL); negative = left; `events = 30` sends a burst of
+                                   30 events 2 ms apart (the encoder accelerates by event spacing: one slow event
+                                   moves a value by about nothing)
     wait_ms = 300                  run that many emulated milliseconds
     expect_frame = "name"          hash of the OLED frame against the golden (PNG to out/); `differs_from = "other"`
     expect_pcm_db = {min = -60, max = -3}   peak 100 ms-window RMS (dBFS) since the last input started
@@ -579,7 +581,9 @@ class Session:
         """The word of engine slot IDX in the TX frame the DSP reads (valid after the next frame that follows a change)."""
         return self._u16(self.TX_FRAME + 0xDA + 0x60 * track + 2 * (idx - 25))
 
-    def turn_burst(self, enc: str | int, detents: int, events: int, gap_ms: float = 2) -> None:
+    def turn_burst(
+        self, enc: str | int, detents: int, events: int, gap_ms: float = 2
+    ) -> None:
         """EVENTS encoder events of DETENTS each, GAP_MS apart. The encoder accelerates by the time between events and
         a value moves about one raw step per slow event (finding 03): a slow single event can change nothing."""
         emu = self.emu
@@ -726,7 +730,14 @@ class Session:
             elif "hold" in step:
                 self.do_hold(step["hold"], step.get("ms", 500))
             elif "turn" in step:
-                self.do_turn(step["turn"], step.get("by", 1))
+                if (
+                    "events" in step
+                ):  # a burst: EVENTS events 2 ms apart (one slow event changes nothing)
+                    self.turn_burst(
+                        step["turn"], step.get("by", 1), int(step["events"])
+                    )
+                else:
+                    self.do_turn(step["turn"], step.get("by", 1))
             elif "wait_ms" in step:
                 self.run_ms(step["wait_ms"])
                 self.health(f"wait {step['wait_ms']} ms")
