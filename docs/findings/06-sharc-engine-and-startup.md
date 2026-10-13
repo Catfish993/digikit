@@ -5699,3 +5699,59 @@ sends and the master apply. The 96 kHz block also needs the phase increment halv
 of a machine with its own parameter page (the machine slot words of the DN2 frame block `0xda + 0x92 v` were not mapped
 to knobs). The wrapper calls the routine for every slot with a registered type each block, also for slots whose voice
 is idle (the engine's envelope silences them).
+
+## DN2 voice slots: slot to track, parameter words, the note-on edge (wave 7, lane fastweb) **[D]**
+
+Digitone II 1.12 (DSP blob shared with 1.11), emulator and static; one agent, not second-checked. Tools:
+`tools/dn2_probe.py` (`edge`, `slotmap`, `knobs`, `dspblock`, `edgepcm`), module `modules/test/dn2-edge`. Output under
+`out/runs/` (never committed). **[C]** to "Per-voice hook on DN2 built" above in three points (marked).
+
+**Slots are voices, allocated by the ColdFire; a slot is not a track [C].** The Digitone II has 16-voice polyphony shared
+by the tracks (manual, VOICE STEAL / LOCKED VOICES). The ColdFire keeps a voice table at `0x40288300 + 0x14 v`
+(`FUN_4002b1f4(v)` = the signed byte at `+6` = the track, -1 when free; `FUN_4002b22e`, `+7` = the note, `FUN_4002b06e`
+frees a voice). **Slot to track map:** `0x40288306 + 0x14 v`. Measured (`dn2_probe.py slotmap --track 6 --notes 3`): TRK + TRIG 6
+then TRIG 6 three times gives the table rows `(slot 0, track 5, note 60)`, then `(1, 5, 60)`, then `(2, 5, 60)`: round
+robin from slot 0, the track index is not the slot. **The DSP never needs the map**: everything the engine reads for slot v is
+in the frame at index v (below), and the machine type of the slot is the type of the track that owns the voice
+(`test/dn2-edge` selected on track 6 sounds in slot 0: 20 of 20 notes, `edgepcm --trig 6`). The earlier remark "a second
+TRIG goes to slot 1" meant the key of track 2, and "slot v = track v" must not be assumed (the proofs so far only played
+track 1).
+
+**The slot's parameter words [C: per voice, not per track].** The TX frame block of slot v is at `0xda + 0x92 v`; the word of
+sound-array slot s (25..65) is the halfword at `0xda + 0x92 v + 2 (s - 25)` (finding 02, "DN2 parameter pages");
+the DSP copy at `0x25c48c` is identical (73 of 73 halfwords for slots 0 .. 9). The ColdFire fills the block from the owning
+track's sound at the note-on and updates it while the voice lives: a knob turned while the key is held moved the held
+slot's word (`slotmap --live`: SYN2 knob B, `0x2000 -> 0x3000`); before any note no block changes, and a slot's block keeps
+the last values after its release. Frame halfword index of slot v, sound slot s: `k = 0x6d + 0x49 v + (s - 25)`.
+**Limit of `_dv_frame_hw` / `_dv_frame_sw` (core/dsp-voice, DN2 object): they mask `k` to 9 bits (`0x1fe`), so only
+slots 0..5 can read their parameter words (`k <= 511`); slots 6..15 have `k` from `0x223` to `0x4b8`.** A routine that reads
+its machine's knobs needs a wider helper (mask `0xffe`: the frame copy is 2,700 bytes, about 1,350 halfwords).
+
+**The note-on edge [C: the frame does carry one].** The frame header has four 16-bit **slot masks**, halfwords `0x11 .. 0x14`
+(bytes `0x22 .. 0x28`; written by the vector-191 handler at `0x400265..`: `_DAT_80005e82 .. e88`), bit v = slot v:
+`0x11` and `0x13` are set at a note-on, `0x12` and `0x14` at the voice's release; each lasts **one frame (one DSP block,
+about 0.67 ms)** and is then cleared (`dn2_probe.py edge`, sampled every 0.35 ms on the ColdFire side and in the DSP
+copy: `t=2.10 DSP hw0x11: 0 -> 1, hw0x13: 0 -> 1` with pitch word `hw1: 0 -> 0x3c00`, velocity `hw0x1a: 0x6400`; release
+`hw0x12, hw0x14: 0 -> 1` 6.65 ms after the key-up; the retrig of the same note goes to the next slot: masks `0x1, 0x2, 0x4,
+0x8, 0x10, 0x20` for six notes, while the pitch and velocity words of the earlier slots are never cleared). The two
+mask pairs were identical for plain trigs (the difference, probably retrig without envelope reset or legato, is **[O]**).
+**Proof with a routine** (`modules/test/dn2-edge`, a machine of type 5 whose routine keeps the previous bit per
+(slot, mask) and writes a click of 0.5 at sample 8k of the voice buffer on a rising edge, no branch on the state):
+24 notes of one key at 100 ms (hold 40 ms) give **24 note-on clicks**, 100.0 ms apart; 40 notes at 16 ms (hold 6 ms)
+give 40 note-on clicks, 16.0 ms apart, also past the 16 slots (in the 40-note run the first 16 notes show no release
+click and the later ones do, 6 ms after their trig; the cause is not found **[O]**, so start a state on the trig edge and let
+the engine's envelope end it). Edge rule for a routine: `trig(v) = (hw[0x11] >> v) & 1`,
+rising edge = `trig & ~prev(v)` with `prev` kept per slot; the pulse is one frame long, so a routine called once per frame
+(the hook is) sees it once.
+
+**SHARC assembler/decoder notes found on the way [D].** `Rn = Rn + Rm` with a high register (for example `R1 = R1 + R9`,
+`R0 = R0 + R9`) assembles to a 16-bit form whose bytes our decoder reads as a 48-bit one (`pk_build` stops with "Selache
+lists c019, our decoder c019083f"): write `R0 = R9 + R0` or a distinct destination. `R3 = R0 AND NOT R3` is not accepted
+(`R3 = NOT R3; R3 = R0 AND R3`). A conditional branch on module state that the emulator does not know yet (`.PKDATA` in
+bss) halts the DSP ("native-trap ... fork") when the state is read before it is written: make the first use
+branch-free.
+
+**Open [O].** The semantics of `0x13` / `0x14` against `0x11` / `0x12`; whether a stolen voice (17th note while 16 sound)
+pulses `0x11` in the same slot (the proof's 40 notes wrap the slots after their release, not before); the hook's call
+for idle slots (the wrapper runs for every slot with a registered type each block); a second agent's check of all of
+the above against the image.

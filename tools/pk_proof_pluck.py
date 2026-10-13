@@ -186,12 +186,17 @@ class PluckProof(M.Proof):
 
     def descriptor_names(self, s: H.Session) -> list[tuple[str, str]]:
         """(long name, short name) of the nine fields of PLUCK's descriptor, read from the running firmware: the
-        descriptor array and the relocated table are found through the plan's symbols, each field is a row of the
+        machines registry row and the relocated table are found through the plan's symbols, each field is a row of the
         table, its name pointers are C strings."""
         assert s.emu is not None and s.image is not None
         plan = json.loads(Path(str(s.image)[: -len(".syx")] + ".plan.json").read_text())
         sym = {k.split(":", 1)[1]: v for k, v in plan["symbols"].items()}
-        desc, t1 = sym["machfw_desc"], sym["parfw_t1"]
+        row = (
+            sym["machines.rows"]
+            + (sym["machines.pluck.index"] - sym["machines.first"])
+            * sym["machines.row_size"]
+        )
+        desc, t1 = row, sym["pf_table"]
         peek = s.emu.peek32
 
         def cstr(addr: int) -> str:

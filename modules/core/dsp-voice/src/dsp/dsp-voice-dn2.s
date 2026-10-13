@@ -83,7 +83,7 @@ _dv_entry:
     DM(_dv_buf) = R12;
     R0 = 74;
     R0 = R1 + R0;                         // halfword 74 + v of the frame copy: the slot's machine type
-    R1 = 0x1fe;
+    R1 = 0xffe;
     R1 = R0 AND R1;
     R1 = LSHIFT R1 BY 1;
     R2 = _fw_frame;
@@ -176,12 +176,12 @@ _dv_exp2:
     F0 = SCALB F2 BY R1;
     RTS;
 
-// R0 = the unsigned 16-bit word k of the DSP's frame copy (R0 = k, 0..511); _dv_frame_sw sign-extends.
+// R0 = the unsigned 16-bit word k of the DSP's frame copy (R0 = k, 0..4095; the frame copy is about 1,350 halfwords); _dv_frame_sw sign-extends.
 // Clobbers R0-R2, I4.
 .GLOBAL _dv_frame_hw;
 .GLOBAL _dv_frame_sw;
 _dv_frame_hw:
-    R1 = 0x1fe;
+    R1 = 0xffe;
     R1 = R0 AND R1;
     R1 = LSHIFT R1 BY 1;
     R2 = _fw_frame;
@@ -195,7 +195,7 @@ _dv_frame_hw:
     R0 = FEXT R1 BY R2;
     RTS;
 _dv_frame_sw:
-    R1 = 0x1fe;
+    R1 = 0xffe;
     R1 = R0 AND R1;
     R1 = LSHIFT R1 BY 1;
     R2 = _fw_frame;

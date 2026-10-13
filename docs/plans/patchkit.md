@@ -469,6 +469,29 @@ Emulator only; nothing flashed; one agent.
   confidence about 50 % for a string that retriggers reliably; payoff: the same module on a second device.
 - Open: hardware; own parameter pages for a DN2 machine (3 start-up built RAM tables, est. 1 to 2 days); DN2 1.11 not run.
 
+### DN2 research (wave 7, lane `fastweb`)
+
+Findings: 02 ("DN2 parameter pages") and 06 ("DN2 voice slots"). Static plus emulator, one agent, [D]. No framework code
+was touched; new: `tools/dn2_probe.py`, `tools/dn2_pages.py`, `tools/cf_wordscan.py`, `tools/pk_params_rules_dn2.py`,
+`modules/test/dn2-edge` (a research machine).
+
+- **Own SYN pages for a DN2 machine** need no new builder hook: constant data plus shims at three existing sites. T1 has
+  321 rows and the Digitakt's `cf_params_t1` / `cf_params_sites` rules resolve unchanged (56 refs + 55 bounds, 1.11 and
+  1.12); the slot table (5 x 40, `0x42c65d18`) and the page table (`0x42433ad4`, rows `{count, begin}`, pages of 0x2c bytes
+  with nine parameter codes) are read by only three functions, which `core/machines` already shims for the clone map
+  (`cf.machines.typemap.0..2`). The page and draw callers (about 17 reader call sites) must see the own type; the generic
+  eight-knob page is the draw function's default for any type but 0..3. Estimate 1 to 2 days, confidence 70 %.
+- **Voice slot to track:** slots are voices (16-voice polyphony, round robin); the map is the ColdFire table
+  `0x40288306 + 0x14 v`, and the DSP does not need it: slot v's engine words are the frame block `0xda + 0x92 v` (written at
+  the note-on from the owning track, updated while the voice lives). **[C]** per voice, not per track.
+- **Note-on edge exists:** frame halfwords `0x11` (and `0x13`) bit v = trig, `0x12` / `0x14` bit v = release, one frame
+  long; proven with `test/dn2-edge` (24 of 24 and 40 of 40 notes, also past 16 slots, also on track 6). The earlier "no
+  edge available" is **[C]**.
+- **For PLUCK on DN2:** `_dv_frame_hw` reads only halfwords below 512, so slots 0..5 can reach their knob words: widen it
+  (mask `0xffe`); then PLUCK needs the edge (above), the pitch and velocity words (as the sine), 4 knob words through
+  the clone's pages (own pages later), `pluck.s` for a 32-float buffer with per-slot state, `devices` filters, and the
+  engine's amplitude envelope as the string's gate. Estimate 1 to 2 days, confidence 60 %.
+
 ### Phase 3b: frameworks as modules (refactor, decided 2026-10-14)
 
 Problem: `core/machines` and `core/params` were built as Rust generators inside patchkit (`machines.rs`,
@@ -514,8 +537,8 @@ P1 copy of the DSP selector table with appended words), `modules/core/params/` (
 tables with appended rows, bound writes via P3, reader hooks), `modules/core/dsp-voice/` (registry `voices`).
 Content modules use `[[entry]]` only.
 
-- [ ] 3b.1 Primitives P1-P6 in patchkit with unit tests and wasm parity (lane a). Old generator path keeps working
-      until 3b.3.
+- [x] 3b.1 Primitives P1-P6 in patchkit with unit tests and wasm parity (lane a, 2026-10-14; results below). Old
+      generator path keeps working until 3b.3.
 - [x] 3b.2 Frameworks rewritten as modules against this spec; routines unit-tested on the ColdFire call harness with
       hand-built tables (lane b), then content modules migrated to `[[entry]]`. Done 2026-10-14 (lane `b`); results below.
 - [ ] 3b.3 Integration: every proof passes on the module version (pk_proof_machines DT2 1.16/1.17, pk_proof_pluck
@@ -536,6 +559,74 @@ argument in place. Tests: `tools/pk_cfunit.py` (hook routine on the native core 
 case; stubs for tails and exits), `tests/test_pk_machines_fw.py`, `_dn2_fw.py`, `test_pk_params_fw.py` (19 tests; the
 manifest's row expressions are checked against the Rust row builders with `tools/pk_expr.py`). Waits for lane a: linking,
 apply, every proof (3b.3).
+
+### Phase 3b.1 results (2026-10-14, lane `a`)
+
+Built: `native/patchkit/src/expr.rs` (P3), `prim.rs` (manifest checks, registry and section builders, ColdFire site
+decoding and tail re-encoding, plan records), wiring in `apply.rs` and `module.rs`, `explain` sections for registries,
+copied sections and hooks, `cf_params_refs` / `cf_params_bounds` in `tools/port_resolve.py`. Tests: 7 unit tests
+(`expr`, `prim`), `tests/prims.rs` (18 integration tests over the real ports and stock images: typed writes and their
+errors, multi-site writes, registry rows/symbols/strings, canonical order, entry errors, sections on ColdFire and SHARC,
+hook on ColdFire and SHARC, non-boundary, re-encoded PC-relative instructions, device filters, explain, plan.json),
+`tests/test_pk_prims.py` and `modules/test/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the
+ColdFire core, the hooked stock setter `Kit::vfunc_12` is called three times and behaves as stock while the hook counts,
+the registry rows and the copied section read back, and `packages/web/tests/patchkit.test.mjs` (wasm = CLI, plan.json
+included). The old `[[machine]]`/`[[param]]`/`[[table]]`/`register` path is untouched; its tests still pass.
+
+Manifest syntax (all expressions are strings or integers; symbols are `[A-Za-z_.][A-Za-z0-9_.]*`):
+
+```toml
+[[registry]]                      # P2 (framework)
+name = "machines"; first = "image.u8(cf.x + 1) + 7"; max = 16; region = "cf.expansion"; devices = ["dt2"]
+[[registry.field]]
+name = "routine"; kind = "sym"    # u8 | u16 | u32 | cstr (max_len?) | sym ; default?
+[[entry]]                         # P2 (content module)
+registry = "machines"; id = "pluck"; routine = "pluck_render"; devices = ["dt2"]
+[[section]]                       # P1
+name = "sel"; region = "cf.expansion"
+from = { anchor = "cf.x", offset = 0, len = "image.u32(cf.x) * 4", expect_sha256 = "..." }   # len, expect optional
+append = { registry = "machines", row = ["$selector", "u16:$index", "machines.first"] }
+[[op]]                            # P3 + P6
+op = "write"; anchors = "cf.params.bound.*"; offset = 2; value = "image.u32(this + 2) + params.count"; width = 4
+[[op]]                            # P4
+op = "hook"; anchor = "cf.x"; offset = 0; to = "my_routine"; displaced = "run"; kind = "jump"   # kind = call: jsr.l
+```
+
+Symbols: `<reg>.first .count .rows .row_size`, `<reg>.<id>.index`, `<section>` and `<section>.size`,
+`hook.<anchor>.tail` and `hook.<anchor>.return` (`hook.<anchor>.<offset>.*` when offset is not 0). All are visible to
+objects as undefined symbols (the usual `[object.externs]` maps a name like `hook.cf.x.tail`) and to expressions.
+
+Deviations and readings of the spec (simplest consistent choice):
+
+- **Registry rows** use natural field alignment, row size rounded to the widest field (u8/u16/u32/cstr pointer/sym
+  are 1/2/4/4/4 bytes). Endianness is the region's CPU (ColdFire big, SHARC stream little). The table is rows, then the
+  strings, in the registry's region; an empty registry still takes 4 bytes so `<reg>.rows` is valid.
+- **Section row words** refer to the entry as `$field` and `$index`; a word is `EXPR`, `u8:EXPR`, `u16:EXPR` or
+  `u32:EXPR`. A cstr field's `$name` is the string's address.
+- **Stock reads are verified reads:** `image.uN(anchor + off)` must lie inside the anchor (covered by the port's
+  sha256) and its cpu decides the byte order. `from` ranges beyond the anchor need `expect_sha256`, as a write does.
+  `first`, `len` and table sizes are static: anchors and image reads only, no module symbols.
+- **Hook sites** are decoded from the anchor's first byte so an offset inside an instruction is refused. A site past
+  the anchor needs `expect_sha256`. `jmp.l` is 6 bytes; the site grows by whole instructions and is NOP-padded.
+  Re-encoding in the tail: `(d16,PC)` operands become `abs.l` with the same target (opcode mode 7/2 -> 7/1), `bra/bsr/
+  bcc` become the 32-bit form; `(d8,PC,Xn)` and any other PC-relative form are refused. A displaced `jsr` pushes the
+  tail address instead of the site address (a callee that reads its return address would see the difference).
+- **`kind = "call"` defaults to `displaced = "drop"` and refuses `run`:** the routine returns to the end of the site,
+  where the displaced instructions no longer exist. SHARC hooks are jumps only. The SHARC site is one 48-bit
+  instruction at a parcel-aligned offset; patchkit does not decode it, so a displaced control-flow instruction or the
+  last instruction of a loop is the author's problem (the existing `jump` op had the same limit and stays).
+- **P5:** `devices` is accepted on object, section, registry, entry, op, claim and anchor_rule; unknown device names
+  are refused at load (`dt2`, `dn2`). A registry with the same name may be declared once per device.
+- **P6:** `tools/port_resolve.py` rules `cf_params_refs` and `cf_params_bounds` (optional `exclude_anchors`) emit
+  `<name>.0 .. <name>.N-1` (DT2 1.17: 56 references as 4-byte data anchors, 54 bounds as 7-byte code anchors, the
+  numbers of the old scan). A `write` with `anchors = "PREFIX.*"` visits each in numeric order, `this` names the
+  current one. `params::scan` and the `cf.params.sites` anchor stay until 3b.3 deletes the old path; lane b adds the
+  two rules to `modules/core/params` and drops the old one then.
+- **Plan:** new keys `registries`, `sections`, `hooks` (absent when empty, so old plans are byte-identical);
+  registry/section/hook symbols appear in `symbols` as `module@version:name`.
+- `patchkit.wasm` grew from 638 KB to 1.05 MB (the ColdFire decoder tables now link in); still under the 2 MB check.
+- Not done: the `explain` SHARC listing of a hook tail (bytes only), moving `jump` on the new `hook` op (dsp-voice
+  keeps `jump`; lane b may switch it).
 
 ### Wave 7 (2026-10-14): parallel lanes
 

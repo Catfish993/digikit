@@ -8,6 +8,7 @@ use crate::firmware::Firmware;
 use crate::link;
 use crate::module::{Library, Module, Op};
 use crate::port::{Anchor, Port, Registry};
+use crate::prim::{self, on};
 use crate::record::Record;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,10 +42,15 @@ pub struct Plan {
     /// region name -> bytes used / capacity
     pub regions: BTreeMap<String, (u64, u64)>,
     pub symbols: BTreeMap<String, u64>,
-    /// Machine types the framework assigned: (id, type number, declaring module)
-    pub machines: Vec<(String, u32, String)>,
-    /// (parameter id, assigned code, declaring module)
-    pub params: Vec<(String, u32, String)>,
+    /// P2: registries and their entries with the assigned indices
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub registries: Vec<prim::PlanRegistry>,
+    /// P1: sections copied from the image
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sections: Vec<prim::PlanSection>,
+    /// P4: hooks
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hooks: Vec<prim::PlanHook>,
     pub record: Record,
     pub output: Option<PlanOutput>,
 }
@@ -67,11 +73,6 @@ pub struct PlanOutput {
 pub struct Applied {
     pub syx: Vec<u8>,
     pub plan: Plan,
-}
-
-/// Active on this device?
-fn on(devices: &[String], dev: &str) -> bool {
-    devices.is_empty() || devices.iter().any(|d| d == dev)
 }
 
 fn anchor_value(a: &Anchor) -> u64 {
@@ -228,36 +229,41 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         }
     }
     for op in &m.manifest.op {
-        if op.op != "register" && on(&op.devices, dev) && port.anchor(&op.anchor).is_none() {
-            missing.push(format!("anchor {}", op.anchor));
+        if !on(&op.devices, dev) {
+            continue;
         }
-    }
-    if m.id() == crate::machines::FRAMEWORK || !m.manifest.machine.is_empty() {
-        for d in &m.manifest.machine {
-            if let Err(e) = crate::machines::validate(d) {
-                return Err(err!("{}: {e}", m.id()));
+        match &op.anchors {
+            Some(g) => {
+                if glob_anchors(port, g).is_empty() {
+                    missing.push(format!("anchors {g}"));
+                }
+            }
+            None if port.anchor(&op.anchor).is_none() => {
+                missing.push(format!("anchor {}", op.anchor));
+            }
+            None => {}
+        }
+        if op.op == "hook" {
+            let place = hook_place(port, op);
+            let drops = op.displaced.as_deref() == Some("drop")
+                || (op.displaced.is_none() && op.kind.as_deref() == Some("call"));
+            if port.region(&place).is_none() && !drops {
+                missing.push(format!("region {place}"));
             }
         }
-        missing.extend(
-            crate::machines::missing_anchors(port)
-                .into_iter()
-                .map(|n| format!("anchor {n}")),
-        );
     }
-    if m.id() == crate::params::FRAMEWORK || !m.manifest.param.is_empty() {
-        if !m.manifest.param.is_empty() && !on(&[String::from("dt2")], dev) {
-            missing.push("parameter framework (Digitakt II only)".into());
+    for s in m.manifest.section.iter().filter(|s| on(&s.devices, dev)) {
+        if port.anchor(&s.from.anchor).is_none() {
+            missing.push(format!("anchor {}", s.from.anchor));
         }
-        for d in &m.manifest.param {
-            if let Err(e) = crate::params::validate(d, None) {
-                return Err(err!("{}: {e}", m.id()));
-            }
+        if port.region(&s.region).is_none() {
+            missing.push(format!("region {}", s.region));
         }
-        missing.extend(
-            crate::params::missing_anchors(port)
-                .into_iter()
-                .map(|n| format!("anchor {n}")),
-        );
+    }
+    for r in m.manifest.registry.iter().filter(|r| on(&r.devices, dev)) {
+        if port.region(&r.region).is_none() {
+            missing.push(format!("region {}", r.region));
+        }
     }
     missing.sort();
     missing.dedup();
@@ -271,6 +277,33 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
             missing.join(", ")
         ))
     }
+}
+
+/// The anchors `PREFIX.<number>` of a `PREFIX.*` pattern, in numeric order.
+fn glob_anchors<'a>(port: &'a Port, pattern: &str) -> Vec<&'a Anchor> {
+    let prefix = pattern.strip_suffix('*').unwrap_or(pattern);
+    let mut v: Vec<(u64, &Anchor)> = port
+        .anchor
+        .iter()
+        .filter_map(|a| {
+            let n = a.name.strip_prefix(prefix)?;
+            (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| n.parse::<u64>().ok().map(|n| (n, a)))
+                .flatten()
+        })
+        .collect();
+    v.sort_by_key(|(n, _)| *n);
+    v.into_iter().map(|(_, a)| a).collect()
+}
+
+/// Region of a hook's tail: `place`, else the CPU's code region.
+fn hook_place(port: &Port, op: &Op) -> String {
+    op.place
+        .clone()
+        .unwrap_or_else(|| match port.anchor(&op.anchor).map(|a| a.cpu.as_str()) {
+            Some(SHARC) => "dsp.l2".into(),
+            _ => "cf.expansion".into(),
+        })
 }
 
 fn verify_anchor(mem: &Mem, a: &Anchor) -> Result<()> {
@@ -321,6 +354,8 @@ struct Chunk {
     code: Vec<(u64, u64)>,
     /// ColdFire bss that follows the image (zeroed by the loader)
     bss: u64,
+    /// plan text: `object in <region>`, `section <name>`, ...
+    what: String,
 }
 
 /// An in-place change of firmware bytes.
@@ -337,15 +372,298 @@ struct Patch {
 const SEGMENTS: &str = "pk.segments";
 const EXPANSION: &str = "core/expansion";
 
-fn uses_expansion(lib: &Library, ids: &[String], dev: &str) -> bool {
+fn uses_expansion(lib: &Library, ids: &[String], dev: &str, port: &Port) -> bool {
+    let exp = "cf.expansion";
     ids.iter().filter_map(|i| lib.get(i)).any(|m| {
-        !m.manifest.machine.is_empty()
-            || !m.manifest.param.is_empty()
-            || m.manifest
-                .object
+        let mf = &m.manifest;
+        mf.object
+            .iter()
+            .any(|o| o.place == exp && on(&o.devices, dev))
+            || mf
+                .section
                 .iter()
-                .any(|o| o.place == "cf.expansion" && on(&o.devices, dev))
+                .any(|s| s.region == exp && on(&s.devices, dev))
+            || mf
+                .registry
+                .iter()
+                .any(|r| r.region == exp && on(&r.devices, dev))
+            || mf.op.iter().any(|o| {
+                o.op == "hook"
+                    && on(&o.devices, dev)
+                    && o.displaced.as_deref() != Some("drop")
+                    && !(o.displaced.is_none() && o.kind.as_deref() == Some("call"))
+                    && hook_place(port, o) == exp
+            })
     })
+}
+
+/// A value of the stock image inside a verified anchor (`image.u8|u16|u32(anchor + off)`).
+fn image_read(mem: &Mem, port: &Port, name: &str, off: i64, w: u8) -> Result<i64> {
+    let a = port
+        .anchor(name)
+        .ok_or_else(|| err!("image.u{}(): no anchor {name}", w as u32 * 8))?;
+    if a.kind == "value" || a.kind == "sites" {
+        return Err(err!(
+            "image.u{}({name}): a {} anchor holds no bytes to read",
+            w as u32 * 8,
+            a.kind
+        ));
+    }
+    let at = a.addr as i64 + off;
+    if at < a.addr as i64 || at + w as i64 > (a.addr + a.len) as i64 {
+        return Err(err!(
+            "image.u{}({name} {off:+}) lies outside the anchor ({} bytes), so its value is not covered by the port's hash",
+            w as u32 * 8,
+            a.len
+        ));
+    }
+    let b = mem.read(&a.cpu, at as u64, w as u64)?;
+    let mut v = 0u64;
+    if a.cpu == SHARC {
+        for x in b.iter().rev() {
+            v = v << 8 | *x as u64;
+        }
+    } else {
+        for x in &b {
+            v = v << 8 | *x as u64;
+        }
+    }
+    Ok(v as i64)
+}
+
+/// First-fit allocation in a named region; returns the address and the CPU of the region.
+fn take_region(
+    allocs: &mut BTreeMap<String, Alloc>,
+    port: &Port,
+    region: &str,
+    size: usize,
+    align: u64,
+    who: &str,
+) -> Result<(u64, &'static str)> {
+    let r = port
+        .region(region)
+        .ok_or_else(|| err!("port {} has no {region} region", port.id()))?;
+    let al = allocs.get_mut(region).unwrap();
+    let base = al.take((size as u64).max(4), align.max(4)).ok_or_else(|| {
+        err!(
+            "{who}: {size} bytes do not fit in {region} ({} of {} bytes used)",
+            al.used,
+            al.cap
+        )
+    })?;
+    Ok((base, if r.cpu == SHARC { SHARC } else { CF }))
+}
+
+/// A copied section, sized.
+struct SecStage {
+    copied: Vec<u8>,
+    from_addr: u64,
+    total: usize,
+}
+
+/// A `hook` op, decoded.
+struct HookStage<'a> {
+    module: &'a Module,
+    op_idx: usize,
+    op: &'a Op,
+    anchor: &'a Anchor,
+    cpu: &'static str,
+    site: u64,
+    site_len: usize,
+    old: Vec<u8>,
+    cf: Option<prim::CfSite>,
+    call: bool,
+    run: bool,
+    tail_len: usize,
+    place: String,
+    /// `hook.<anchor>` (with `.<offset>` when not 0)
+    base_name: String,
+}
+
+#[derive(Default)]
+struct Stage<'a> {
+    reg_first: Vec<i64>,
+    reg_size: Vec<usize>,
+    secs: Vec<SecStage>,
+    hooks: Vec<HookStage<'a>>,
+}
+
+/// Everything about the primitives that needs the stock image but no addresses yet: registry `first`, table and
+/// section sizes (expressions with anchors and image reads only), and the decoded hook sites.
+fn stage<'a>(
+    mem: &Mem,
+    port: &'a Port,
+    lib: &'a Library,
+    order: &[String],
+    dev: &str,
+    active: &prim::Active,
+) -> Result<Stage<'a>> {
+    let anchor_fn = |n: &str| port.anchor(n).map(|a| anchor_value(a) as i64);
+    let image_fn = |n: &str, off: i64, w: u8| image_read(mem, port, n, off, w);
+    let empty: BTreeMap<String, u64> = BTreeMap::new();
+    let sc = prim::Scope {
+        syms: &empty,
+        anchor: &anchor_fn,
+        image: &image_fn,
+        this: None,
+        fields: None,
+    };
+    let mut st = Stage::default();
+    for r in &active.regs {
+        let first = crate::expr::eval_str(&r.def.first.text(), &sc)
+            .map_err(|e| err!("{}: registry {} first: {e}", r.owner.id(), r.def.name))?;
+        if first < 0 || first + r.def.max as i64 > u32::MAX as i64 {
+            return Err(err!(
+                "{}: registry {}: first {first} with max {} leaves 32 bits",
+                r.owner.id(),
+                r.def.name,
+                r.def.max
+            ));
+        }
+        st.reg_first.push(first);
+        st.reg_size.push(r.size()?);
+    }
+    for s in &active.sections {
+        let who = format!("{}: section {}", s.owner.id(), s.def.name);
+        let a = port.anchor(&s.def.from.anchor).unwrap();
+        if a.kind == "value" || a.kind == "sites" {
+            return Err(err!("{who}: anchor {} holds no bytes", a.name));
+        }
+        let off = s.def.from.offset;
+        let len = match &s.def.from.len {
+            Some(l) => crate::expr::eval_str(&l.text(), &sc).map_err(|e| err!("{who} len: {e}"))?,
+            None => a.len as i64 - off,
+        };
+        if off < 0 || len < 0 {
+            return Err(err!("{who}: from offset {off} len {len}"));
+        }
+        let copied = mem.read(&a.cpu, a.addr + off as u64, len as u64)?;
+        if off + len > a.len as i64 {
+            match &s.def.from.expect_sha256 {
+                Some(e) if *e == sha256_hex(&copied) => {}
+                Some(_) => {
+                    return Err(err!(
+                        "{who}: the bytes copied beyond the anchor do not hash to expect_sha256"
+                    ));
+                }
+                None => {
+                    return Err(err!(
+                        "{who}: copies {} bytes from {} +{off}, past the anchor's {} bytes, and has no expect_sha256",
+                        len,
+                        a.name,
+                        a.len
+                    ));
+                }
+            }
+        }
+        let rows = match &s.def.append {
+            Some(ap) => {
+                let n = active
+                    .regs
+                    .iter()
+                    .find(|r| r.def.name == ap.registry)
+                    .map_or(0, |r| r.entries.len());
+                let mut w = 0;
+                for x in &ap.row {
+                    w += prim::word_spec(&x.text())?.0;
+                }
+                n * w
+            }
+            None => 0,
+        };
+        st.secs.push(SecStage {
+            from_addr: a.addr + off as u64,
+            total: copied.len() + rows,
+            copied,
+        });
+    }
+    for id in order {
+        let m = lib.get(id).unwrap();
+        for (oi, op) in m.manifest.op.iter().enumerate() {
+            if op.op != "hook" || !on(&op.devices, dev) {
+                continue;
+            }
+            let who = format!("{}: hook {} {:+}", m.id(), op.anchor, op.offset);
+            let a = port.anchor(&op.anchor).unwrap();
+            let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
+            if op.cpu.as_deref().is_some_and(|c| c != a.cpu) {
+                return Err(err!("{who}: cpu {:?} but the anchor is {}", op.cpu, a.cpu));
+            }
+            if a.kind != "code" {
+                return Err(err!("{who}: needs a code anchor, {} is {}", a.name, a.kind));
+            }
+            if op.offset < 0 {
+                return Err(err!("{who}: negative offset"));
+            }
+            let call = op.kind.as_deref() == Some("call");
+            let run = match op.displaced.as_deref() {
+                Some(d) => d == "run",
+                None => !call,
+            };
+            if cpu == SHARC && call {
+                return Err(err!("{who}: a SHARC hook is a jump, not a call"));
+            }
+            if call && run {
+                return Err(err!(
+                    "{who}: kind = call replaces the site and returns after it, so the displaced instructions cannot run: use displaced = \"drop\" (or kind = jump)"
+                ));
+            }
+            let site = a.addr + op.offset as u64;
+            let (site_len, cf) = if cpu == SHARC {
+                if op.offset % 2 != 0 {
+                    return Err(err!("{who}: a SHARC site is parcel aligned"));
+                }
+                (6usize, None)
+            } else {
+                let s = prim::cf_site(&mem.main, mem.main_base, a.addr, site)
+                    .map_err(|e| err!("{who}: {e}"))?;
+                (s.len, Some(s))
+            };
+            let old = mem.read(cpu, site, site_len as u64)?;
+            if op.offset as u64 + site_len as u64 > a.len {
+                match &op.expect_sha256 {
+                    Some(e) if *e == sha256_hex(&old) => {}
+                    Some(_) => {
+                        return Err(err!("{who}: the site bytes do not hash to expect_sha256"));
+                    }
+                    None => {
+                        return Err(err!(
+                            "{who}: the {site_len}-byte site reaches past the anchor's {} bytes and has no expect_sha256",
+                            a.len
+                        ));
+                    }
+                }
+            }
+            let tail_len = match (&cf, run) {
+                (_, false) => 0,
+                (Some(s), true) => prim::cf_tail(s, 0, 0)
+                    .map_err(|e| err!("{who}: {e}"))?
+                    .len(),
+                (None, true) => 12,
+            };
+            st.hooks.push(HookStage {
+                module: m,
+                op_idx: oi,
+                op,
+                anchor: a,
+                cpu,
+                site,
+                site_len,
+                old,
+                cf,
+                call,
+                run,
+                tail_len,
+                place: hook_place(port, op),
+                base_name: if op.offset == 0 {
+                    format!("hook.{}", a.name)
+                } else {
+                    format!("hook.{}.{}", a.name, op.offset)
+                },
+            });
+        }
+    }
+    Ok(st)
 }
 
 pub fn apply_with(
@@ -386,7 +704,7 @@ pub fn apply_with(
 
     // The module set: the selection, plus core/expansion when anything is placed in the expansion region.
     let mut selected: Vec<String> = ids.to_vec();
-    if uses_expansion(lib, &selected, &dev) && !selected.iter().any(|i| i == EXPANSION) {
+    if uses_expansion(lib, &selected, &dev, port) && !selected.iter().any(|i| i == EXPANSION) {
         if lib.get(EXPANSION).is_none() {
             return Err(err!(
                 "a module needs cf.expansion but {EXPANSION} is not in the library"
@@ -400,55 +718,36 @@ pub fn apply_with(
     }
     let in_expansion = order.iter().any(|i| i == EXPANSION);
 
-    // Claims: one owner per resource.
+    // Registries, entries and sections of the primitives (P1, P2), for this device.
+    let active = prim::collect(lib, &order, &dev)?;
+
+    // Claims: one owner per resource; every registry entry claims `<registry>.<id>`.
     let mut claims: BTreeMap<String, String> = BTreeMap::new();
     for id in &order {
-        for c in &lib.get(id).unwrap().manifest.claim {
+        for c in lib
+            .get(id)
+            .unwrap()
+            .manifest
+            .claim
+            .iter()
+            .filter(|c| on(&c.devices, &dev))
+        {
             if let Some(prev) = claims.insert(c.resource.clone(), id.clone()) {
                 return Err(err!("{id} and {prev} both claim {}", c.resource));
             }
         }
     }
-
-    // Machine types: assigned in canonical order; the framework generates its object and patches after the anchors
-    // are verified.
-    let params = crate::params::declared(lib, &order)?;
-    if !params.is_empty() && !order.iter().any(|i| i == crate::params::FRAMEWORK) {
-        return Err(err!(
-            "{} adds parameters but {} is not selected (add it to `requires`)",
-            params[0].module,
-            crate::params::FRAMEWORK
-        ));
-    }
-    let param_codes = if params.is_empty() {
-        BTreeMap::new()
-    } else {
-        let t1 = port.anchor(crate::params::T1_ANCHOR).ok_or_else(|| {
-            err!(
-                "port {} has no anchor {}",
-                port.id(),
-                crate::params::T1_ANCHOR
-            )
-        })?;
-        crate::params::assign(&params, (t1.len / crate::params::ROW as u64) as u32)
-    };
-    let machines = crate::machines::declared(lib, &order, &param_codes, &port.port.device)?;
-    if !machines.is_empty() && !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
-        return Err(err!(
-            "{} adds machines but {} is not selected (add it to `requires`)",
-            machines[0].module,
-            crate::machines::FRAMEWORK
-        ));
+    for r in &active.regs {
+        for e in &r.entries {
+            let res = format!("{}.{}", r.def.name, e.def.id);
+            if let Some(prev) = claims.insert(res.clone(), e.owner.id().to_string()) {
+                return Err(err!("{} and {prev} both claim {res}", e.owner.id()));
+            }
+        }
     }
 
     // Every anchor a selected module uses must hold the bytes the port recorded.
     let mut used: BTreeSet<String> = BTreeSet::new();
-    if !machines.is_empty() {
-        used.extend(crate::machines::anchor_names_for(&port.port.device));
-    }
-    if !params.is_empty() {
-        used.extend(crate::params::anchor_names());
-    }
     for id in &order {
         let m = lib.get(id).unwrap();
         for (o, dko) in m.manifest.object.iter().zip(&m.objects) {
@@ -461,13 +760,63 @@ pub fn apply_with(
                 }
             }
         }
-        for op in m
-            .manifest
-            .op
-            .iter()
-            .filter(|o| o.op != "register" && on(&o.devices, &dev))
-        {
-            used.insert(op.anchor.clone());
+        for op in m.manifest.op.iter().filter(|o| on(&o.devices, &dev)) {
+            match &op.anchors {
+                Some(g) => used.extend(glob_anchors(port, g).iter().map(|a| a.name.clone())),
+                None => {
+                    used.insert(op.anchor.clone());
+                }
+            }
+        }
+    }
+    // anchors the primitives and expressions name (an anchor is verified before anything is read from it)
+    {
+        let mut names: Vec<String> = vec![];
+        fn add(names: &mut Vec<String>, t: &str) -> Result<()> {
+            crate::expr::parse(t)?.names(names);
+            Ok(())
+        }
+        for id in &order {
+            let m = lib.get(id).unwrap();
+            for op in m.manifest.op.iter().filter(|o| on(&o.devices, &dev)) {
+                if let Some(v) = &op.value {
+                    add(&mut names, &v.text())?;
+                }
+                if op.op == "hook" {
+                    add(&mut names, op.to.as_deref().unwrap())?;
+                }
+            }
+        }
+        for s in &active.sections {
+            names.push(s.def.from.anchor.clone());
+            if let Some(l) = &s.def.from.len {
+                add(&mut names, &l.text())?;
+            }
+            for w in s.def.append.iter().flat_map(|a| a.row.iter()) {
+                let t = w.text();
+                add(&mut names, prim::word_spec(&t)?.1)?;
+            }
+        }
+        for r in &active.regs {
+            add(&mut names, &r.def.first.text())?;
+            for (fi, f) in r.def.field.iter().enumerate() {
+                if r.kinds[fi] != prim::FKind::Cstr {
+                    for e in &r.entries {
+                        if let Some(v) = e.def.fields.get(&f.name).or(f.default.as_ref()) {
+                            match v {
+                                toml::Value::String(t) => add(&mut names, t)?,
+                                toml::Value::Integer(i) => add(&mut names, &i.to_string())?,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for n in names {
+            if port.anchor(&n).is_some() {
+                used.insert(n);
+            }
         }
     }
     for name in &used {
@@ -477,44 +826,11 @@ pub fn apply_with(
         }
         verify_anchor(&mem, a)?;
     }
-    let generated = if machines.is_empty() {
-        None
-    } else {
-        let read = |addr: u64, len: u64| mem.read(CF, addr, len);
-        let read_sharc = |addr: u64, len: u64| mem.read(SHARC, addr, len);
-        Some(crate::machines::generate(
-            port,
-            &read,
-            &read_sharc,
-            &machines,
-        )?)
-    };
-    let generated_params = if params.is_empty() {
-        None
-    } else {
-        let read = |addr: u64, len: u64| mem.read(CF, addr, len);
-        Some(crate::params::generate(port, &read, &params)?)
-    };
-    for (id, code, module) in generated_params.iter().flat_map(|g| g.codes.iter()) {
-        for res in [format!("param.id.{id}"), format!("param.code.{code}")] {
-            if let Some(prev) = claims.insert(res.clone(), module.clone()) {
-                return Err(err!("{module} and {prev} both claim {res}"));
-            }
-        }
-    }
-    // One claim per machine id and per assigned type number.
-    for (id, ty, module) in generated.iter().flat_map(|g| g.types.iter()) {
-        for res in [format!("machine.id.{id}"), format!("machine.type.{ty}")] {
-            if let Some(prev) = claims.insert(res.clone(), module.clone()) {
-                return Err(err!("{module} and {prev} both claim {res}"));
-            }
-        }
-    }
-    let machine_types: BTreeMap<String, u64> = generated
-        .iter()
-        .flat_map(|g| g.types.iter())
-        .map(|(id, ty, _)| (format!("machines.{id}.type"), *ty as u64))
-        .collect();
+    // Sizes of the primitives' sections and tables, and the decoded hook sites.
+    let stg = stage(&mem, port, lib, &order, &dev, &active)?;
+    let mut sec_at: Vec<(u64, &'static str)> = vec![(0, CF); active.sections.len()];
+    let mut reg_at: Vec<(u64, &'static str)> = vec![(0, CF); active.regs.len()];
+    let mut tail_at: Vec<Option<(u64, &'static str)>> = vec![None; stg.hooks.len()];
 
     // Allocate every object first-fit in its region, then link with everyone's exports visible.
     let mut allocs: BTreeMap<String, Alloc> = BTreeMap::new();
@@ -533,13 +849,7 @@ pub fn apply_with(
     let mut placed: Vec<Placed> = vec![];
     for id in &order {
         let m = lib.get(id).unwrap();
-        let fw_objects: &[(Dko, &'static str)] = if id == crate::machines::FRAMEWORK {
-            generated.as_ref().map_or(&[], |g| &g.objects[..])
-        } else if id == crate::params::FRAMEWORK {
-            generated_params.as_ref().map_or(&[], |g| &g.objects[..])
-        } else {
-            &[]
-        };
+        let fw_objects: &[(Dko, &'static str)] = &[];
         {
             for (dko, region) in fw_objects {
                 let (size, align) = link::footprint(dko);
@@ -596,6 +906,40 @@ pub fn apply_with(
                 cpu,
             });
         }
+        // sections, registry tables and hook tails of this module
+        for (si, s) in active.sections.iter().enumerate() {
+            if s.owner.id() == id {
+                let who = format!("{id}: section {}", s.def.name);
+                sec_at[si] = take_region(
+                    &mut allocs,
+                    port,
+                    &s.def.region,
+                    stg.secs[si].total,
+                    s.def.align.unwrap_or(4),
+                    &who,
+                )?;
+            }
+        }
+        for (ri, r) in active.regs.iter().enumerate() {
+            if r.owner.id() == id {
+                let who = format!("{id}: registry {}", r.def.name);
+                reg_at[ri] =
+                    take_region(&mut allocs, port, &r.def.region, stg.reg_size[ri], 4, &who)?;
+            }
+        }
+        for (hi, h) in stg.hooks.iter().enumerate() {
+            if h.module.id() == id && h.run {
+                let who = format!("{id}: hook {} tail", h.anchor.name);
+                tail_at[hi] = Some(take_region(
+                    &mut allocs,
+                    port,
+                    &h.place,
+                    h.tail_len,
+                    if h.cpu == SHARC { 8 } else { 4 },
+                    &who,
+                )?);
+            }
+        }
     }
     let mut globals: BTreeMap<String, u64> = BTreeMap::new();
     for p in &placed {
@@ -606,8 +950,68 @@ pub fn apply_with(
             }
         }
     }
+    // Symbols of the primitives: sections, registries (rows, count, indices), hook tails and returns.
+    let mut prim_syms: BTreeMap<String, u64> = BTreeMap::new();
+    let mut prim_owner: Vec<(String, String, u64)> = vec![];
+    {
+        let mut add = |owner: &Module, name: String, v: u64| -> Result<()> {
+            if globals.contains_key(&name) || prim_syms.insert(name.clone(), v).is_some() {
+                return Err(err!("symbol {name} is defined twice"));
+            }
+            prim_owner.push((owner.tag(), name, v));
+            Ok(())
+        };
+        for (si, s) in active.sections.iter().enumerate() {
+            add(s.owner, s.def.name.clone(), sec_at[si].0)?;
+            add(
+                s.owner,
+                format!("{}.size", s.def.name),
+                stg.secs[si].total as u64,
+            )?;
+        }
+        for (ri, r) in active.regs.iter().enumerate() {
+            let n = &r.def.name;
+            add(r.owner, format!("{n}.first"), stg.reg_first[ri] as u64)?;
+            add(r.owner, format!("{n}.count"), r.entries.len() as u64)?;
+            add(r.owner, format!("{n}.rows"), reg_at[ri].0)?;
+            add(r.owner, format!("{n}.row_size"), r.row_size as u64)?;
+            for (k, e) in r.entries.iter().enumerate() {
+                add(
+                    e.owner,
+                    format!("{n}.{}.index", e.def.id),
+                    (stg.reg_first[ri] + k as i64) as u64,
+                )?;
+            }
+        }
+        for (hi, h) in stg.hooks.iter().enumerate() {
+            let ret = if h.cpu == SHARC {
+                h.anchor.pm.map_or_else(
+                    || crate::dsp::l2_byte_to_pc(h.site as u32) as u64,
+                    |pm| pm + h.op.offset as u64 / 2,
+                ) + 3
+            } else {
+                h.site + h.site_len as u64
+            };
+            add(h.module, format!("{}.return", h.base_name), ret)?;
+            if let Some((addr, _)) = tail_at[hi] {
+                let v = if h.cpu == SHARC {
+                    crate::dsp::l2_byte_to_pc(addr as u32) as u64
+                } else {
+                    addr
+                };
+                add(h.module, format!("{}.tail", h.base_name), v)?;
+            }
+        }
+    }
+    // every symbol a manifest expression can name
+    let mut all_syms: BTreeMap<String, u64> = globals.clone();
+    all_syms.extend(prim_syms.iter().map(|(k, v)| (k.clone(), *v)));
+
     let mut writes: Vec<PlanWrite> = vec![];
     let mut all_symbols: BTreeMap<String, u64> = BTreeMap::new();
+    for (owner, name, v) in &prim_owner {
+        all_symbols.insert(format!("{owner}:{name}"), *v);
+    }
     let mut chunks: Vec<Chunk> = vec![];
     for p in &placed {
         let mut ext: BTreeMap<String, u64> = globals.clone();
@@ -619,7 +1023,7 @@ pub fn apply_with(
                 .unwrap_or_else(|| sy.name.clone());
             if aname == SEGMENTS {
                 ext.insert(sy.name.clone(), segments_addr);
-            } else if let Some(v) = machine_types.get(&aname) {
+            } else if let Some(v) = prim_syms.get(&aname) {
                 ext.insert(sy.name.clone(), *v);
             } else if let Some(a) = port.anchor(&aname) {
                 ext.insert(sy.name.clone(), anchor_value(a));
@@ -637,107 +1041,275 @@ pub fn apply_with(
             image: l.image,
             code: l.text_ranges,
             bss: l.bss_size.div_ceil(4) * 4,
+            what: format!("object in {}", p.place),
         });
     }
 
-    // Registrations: rows written into the tables other modules export (before the chunks are hashed and placed).
-    register_rows(lib, &order, &dev, &globals, &machine_types, &mut chunks)?;
-
-    // Operations.
-    let mut patches: Vec<Patch> = vec![];
-    for id in &order {
-        let m = lib.get(id).unwrap();
-        for op in m
-            .manifest
-            .op
-            .iter()
-            .filter(|o| o.op != "register" && on(&o.devices, &dev))
-        {
-            let a = port.anchor(&op.anchor).unwrap();
-            let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
-            let addr = (a.addr as i64 + op.offset) as u64;
-            let new = match op.op.as_str() {
-                "retarget" => retarget(&mem, a, op, &globals)?,
-                "jump" => jump_insn(a, op, &globals)?,
-                "write" => write_bytes(a, op, addr, &globals)?,
-                _ => unreachable!(),
-            };
-            let old = mem.read(cpu, addr, new.len() as u64)?;
-            if op.op == "write" {
-                match &op.expect_sha256 {
-                    Some(e) if *e != sha256_hex(&old) => {
-                        return Err(err!(
-                            "{id}: write at {} +{}: old bytes hash {} but the module expects {e}",
-                            op.anchor,
-                            op.offset,
-                            sha256_hex(&old)
-                        ));
-                    }
-                    None if op.offset < 0 || (op.offset as u64 + new.len() as u64) > a.len => {
-                        return Err(err!(
-                            "{id}: write at {} +{} lies outside the anchor and has no expect_sha256",
-                            op.anchor,
-                            op.offset
-                        ));
-                    }
-                    _ => {}
-                }
-            }
-            patches.push(Patch {
-                owner: m.tag(),
-                cpu,
+    // Bytes of the primitives' memory: registry tables, copied sections with appended rows, hook tails.
+    let mut plan_regs: Vec<prim::PlanRegistry> = vec![];
+    let mut plan_secs: Vec<prim::PlanSection> = vec![];
+    {
+        let anchor_fn = |n: &str| port.anchor(n).map(|a| anchor_value(a) as i64);
+        let image_fn = |n: &str, off: i64, w: u8| image_read(&mem, port, n, off, w);
+        let scope = prim::Scope {
+            syms: &all_syms,
+            anchor: &anchor_fn,
+            image: &image_fn,
+            this: None,
+            fields: None,
+        };
+        let pad = |mut v: Vec<u8>, cpu: &str| {
+            v.resize(v.len().max(4).div_ceil(4) * 4, 0);
+            let _ = cpu;
+            v
+        };
+        let mut built: Vec<Vec<BTreeMap<String, i64>>> = vec![];
+        for (ri, r) in active.regs.iter().enumerate() {
+            let (addr, cpu) = reg_at[ri];
+            let (bytes, vals) =
+                prim::build_registry(r, addr, cpu == CF, stg.reg_first[ri], &scope)?;
+            plan_regs.push(prim::PlanRegistry {
+                name: r.def.name.clone(),
+                module: r.owner.tag(),
+                region: r.def.region.clone(),
                 addr,
-                bytes: new,
-                old_sha256: sha256_hex(&old),
-                what: format!("{} {}{:+}", op.op, op.anchor, op.offset),
+                bytes: bytes.len() as u64,
+                first: stg.reg_first[ri] as u64,
+                count: r.entries.len() as u64,
+                max: r.def.max as u64,
+                row_size: r.row_size as u64,
+                fields: r
+                    .def
+                    .field
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| (f.name.clone(), f.kind.clone(), r.offsets[i] as u64))
+                    .collect(),
+                entries: r
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .map(|(k, e)| prim::PlanEntry {
+                        id: e.def.id.clone(),
+                        module: e.owner.tag(),
+                        index: (stg.reg_first[ri] + k as i64) as u64,
+                    })
+                    .collect(),
+            });
+            chunks.push(Chunk {
+                owner: r.owner.tag(),
+                cpu,
+                region: r.def.region.clone(),
+                addr,
+                image: pad(bytes, cpu),
+                code: vec![],
+                bss: 0,
+                what: format!("registry {} ({} entries)", r.def.name, r.entries.len()),
+            });
+            built.push(vals);
+        }
+        for (si, s) in active.sections.iter().enumerate() {
+            let (addr, cpu) = sec_at[si];
+            let sp = &stg.secs[si];
+            let mut bytes = sp.copied.clone();
+            let mut rows = 0u64;
+            if let Some(ap) = &s.def.append {
+                let ri = active
+                    .regs
+                    .iter()
+                    .position(|r| r.def.name == ap.registry)
+                    .unwrap();
+                bytes.extend(prim::build_rows(s, &built[ri], cpu == CF, &scope)?);
+                rows = built[ri].len() as u64;
+            }
+            debug_assert_eq!(bytes.len(), sp.total);
+            plan_secs.push(prim::PlanSection {
+                name: s.def.name.clone(),
+                module: s.owner.tag(),
+                region: s.def.region.clone(),
+                addr,
+                bytes: bytes.len() as u64,
+                from_anchor: s.def.from.anchor.clone(),
+                from_addr: sp.from_addr,
+                copied: sp.copied.len() as u64,
+                appended_rows: rows,
+            });
+            chunks.push(Chunk {
+                owner: s.owner.tag(),
+                cpu,
+                region: s.def.region.clone(),
+                addr,
+                image: pad(bytes, cpu),
+                code: vec![],
+                bss: 0,
+                what: format!("section {}", s.def.name),
+            });
+        }
+        for (hi, h) in stg.hooks.iter().enumerate() {
+            let Some((addr, cpu)) = tail_at[hi] else {
+                continue;
+            };
+            let who = format!(
+                "{}: hook {} {:+}",
+                h.module.id(),
+                h.anchor.name,
+                h.op.offset
+            );
+            let ret = prim_syms[&format!("{}.return", h.base_name)];
+            let bytes = match &h.cf {
+                Some(site) => prim::cf_tail(site, addr, ret).map_err(|e| err!("{who}: {e}"))?,
+                None => {
+                    let mut b = h.old.clone();
+                    b.extend(prim::sharc_jump(ret).map_err(|e| err!("{who}: {e}"))?);
+                    b
+                }
+            };
+            debug_assert_eq!(bytes.len(), h.tail_len);
+            chunks.push(Chunk {
+                owner: h.module.tag(),
+                cpu,
+                region: h.place.clone(),
+                addr,
+                code: vec![(addr, addr + bytes.len() as u64)],
+                image: pad(bytes, cpu),
+                bss: 0,
+                what: format!("hook tail {}", h.base_name),
             });
         }
     }
 
-    // The frameworks' patches (relocations against the generated objects).
-    let framework_patches = [
-        (
-            crate::machines::FRAMEWORK,
-            generated.as_ref().map(|g| &g.patches),
-        ),
-        (
-            crate::params::FRAMEWORK,
-            generated_params.as_ref().map(|g| &g.patches),
-        ),
-    ];
-    for (fw_id, gps) in framework_patches {
-        let Some(gps) = gps else { continue };
-        let owner = lib
-            .get(fw_id)
-            .map(|m| m.tag())
-            .unwrap_or_else(|| fw_id.into());
-        for gp in gps {
-            let a = port.anchor(&gp.anchor).unwrap();
-            if gp.at + gp.bytes.len() as u64 > a.len {
-                return Err(err!(
-                    "{fw_id}: patch at {} +{} lies outside the anchor",
-                    gp.anchor,
-                    gp.at
-                ));
+    // Operations.
+    let mut patches: Vec<Patch> = vec![];
+    let mut plan_hooks: Vec<prim::PlanHook> = vec![];
+    {
+        let anchor_fn = |n: &str| port.anchor(n).map(|a| anchor_value(a) as i64);
+        let image_fn = |n: &str, off: i64, w: u8| image_read(&mem, port, n, off, w);
+        let scope = prim::Scope {
+            syms: &all_syms,
+            anchor: &anchor_fn,
+            image: &image_fn,
+            this: None,
+            fields: None,
+        };
+        for id in &order {
+            let m = lib.get(id).unwrap();
+            for (oi, op) in m
+                .manifest
+                .op
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| on(&o.devices, &dev))
+            {
+                if op.op == "hook" {
+                    let hi = stg
+                        .hooks
+                        .iter()
+                        .position(|h| h.module.id() == id && h.op_idx == oi)
+                        .unwrap();
+                    let h = &stg.hooks[hi];
+                    let who = format!("{id}: hook {} {:+}", h.anchor.name, op.offset);
+                    let to = crate::expr::eval_str(op.to.as_deref().unwrap(), &scope)
+                        .map_err(|e| err!("{who}: to: {e}"))?;
+                    let to =
+                        u64::try_from(to).map_err(|_| err!("{who}: target {to} is negative"))?;
+                    let new = match &h.cf {
+                        Some(site) => {
+                            prim::cf_site_bytes(h.call, site, to).map_err(|e| err!("{who}: {e}"))?
+                        }
+                        None => prim::sharc_jump(to).map_err(|e| err!("{who}: {e}"))?,
+                    };
+                    patches.push(Patch {
+                        owner: m.tag(),
+                        cpu: h.cpu,
+                        addr: h.site,
+                        old_sha256: sha256_hex(&h.old),
+                        what: format!("hook {}{:+}", h.anchor.name, op.offset),
+                        bytes: new,
+                    });
+                    plan_hooks.push(prim::PlanHook {
+                        module: m.tag(),
+                        anchor: h.anchor.name.clone(),
+                        offset: op.offset,
+                        cpu: h.anchor.cpu.clone(),
+                        addr: h.site,
+                        site_len: h.site_len as u64,
+                        kind: if h.call { "call" } else { "jump" }.into(),
+                        displaced: if h.run { "run" } else { "drop" }.into(),
+                        to,
+                        tail: prim_syms.get(&format!("{}.tail", h.base_name)).copied(),
+                        ret: prim_syms[&format!("{}.return", h.base_name)],
+                        displaced_insns: h
+                            .cf
+                            .iter()
+                            .flat_map(|s| s.insns.iter())
+                            .map(|d| format!("{:#010x}  {}  {}", d.addr, hex(&d.raw), d.insn))
+                            .collect(),
+                    });
+                    continue;
+                }
+                let anchors: Vec<&Anchor> = match &op.anchors {
+                    Some(g) => glob_anchors(port, g),
+                    None => vec![port.anchor(&op.anchor).unwrap()],
+                };
+                for a in anchors {
+                    let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
+                    // a value anchor names its instruction by `src` (its `addr` is the number the instruction holds)
+                    let site = if a.kind == "value" {
+                        a.src.unwrap_or(a.addr)
+                    } else {
+                        a.addr
+                    };
+                    let addr = (site as i64 + op.offset) as u64;
+                    let new = match op.op.as_str() {
+                        "retarget" => retarget(&mem, a, op, &all_syms)?,
+                        "write" => match &op.value {
+                            Some(v) => {
+                                let sc = prim::Scope {
+                                    this: Some(&a.name),
+                                    ..scope
+                                };
+                                let what = format!("{id}: write {} {:+}", a.name, op.offset);
+                                let x = crate::expr::eval_str(&v.text(), &sc)
+                                    .map_err(|e| err!("{what}: {e}"))?;
+                                prim::pack(x, op.width.unwrap() as usize, cpu == CF, &what)?
+                            }
+                            None => write_bytes(a, op, addr, &all_syms)?,
+                        },
+                        _ => unreachable!(),
+                    };
+                    let old = mem.read(cpu, addr, new.len() as u64)?;
+                    if op.op == "write" {
+                        match &op.expect_sha256 {
+                            Some(e) if *e != sha256_hex(&old) => {
+                                return Err(err!(
+                                    "{id}: write at {} +{}: old bytes hash {} but the module expects {e}",
+                                    a.name,
+                                    op.offset,
+                                    sha256_hex(&old)
+                                ));
+                            }
+                            None if op.offset < 0
+                                || (op.offset as u64 + new.len() as u64) > a.len =>
+                            {
+                                return Err(err!(
+                                    "{id}: write at {} +{} lies outside the anchor and has no expect_sha256",
+                                    a.name,
+                                    op.offset
+                                ));
+                            }
+                            _ => {}
+                        }
+                    }
+                    patches.push(Patch {
+                        owner: m.tag(),
+                        cpu,
+                        addr,
+                        bytes: new,
+                        old_sha256: sha256_hex(&old),
+                        what: format!("{} {}{:+}", op.op, a.name, op.offset),
+                    });
+                }
             }
-            // a value anchor names the instruction by `src`, its `addr` is the number the instruction holds
-            let site = if a.kind == "value" {
-                a.src.unwrap_or(a.addr)
-            } else {
-                a.addr
-            };
-            let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
-            let addr = site + gp.at;
-            let new = apply_relocs(gp.bytes.clone(), &gp.relocs, addr, &globals)?;
-            let old = mem.read(cpu, addr, new.len() as u64)?;
-            patches.push(Patch {
-                owner: owner.clone(),
-                cpu,
-                addr,
-                bytes: new,
-                old_sha256: sha256_hex(&old),
-                what: format!("{} {}{:+}", gp.what, gp.anchor, gp.at),
-            });
         }
     }
 
@@ -853,7 +1425,7 @@ pub fn apply_with(
             len: c.image.len() as u64 + c.bss,
             kind: "place".into(),
             owner: c.owner.clone(),
-            what: format!("object in {}", c.region),
+            what: c.what.clone(),
             old_sha256: None,
             new_sha256: sha256_hex(&c.image),
             new_hex: None,
@@ -940,8 +1512,9 @@ pub fn apply_with(
         writes,
         regions,
         symbols: all_symbols,
-        machines: generated.map(|g| g.types).unwrap_or_default(),
-        params: generated_params.map(|g| g.codes).unwrap_or_default(),
+        registries: plan_regs,
+        sections: plan_secs,
+        hooks: plan_hooks,
         record: rec,
         output: None,
     };
@@ -1102,106 +1675,4 @@ fn apply_relocs(
         bytes[at..at + size].copy_from_slice(&(v as u64).to_be_bytes()[8 - size..]);
     }
     Ok(bytes)
-}
-
-/// Replace the 48-bit instruction at an anchor by an unconditional, non-delayed `JUMP` to a module symbol (SHARC+).
-/// The displaced instruction is the module's job: it executes it (or its equivalent) before it continues.
-fn jump_insn(a: &Anchor, op: &Op, globals: &BTreeMap<String, u64>) -> Result<Vec<u8>> {
-    let to = op.to.as_deref().unwrap();
-    let target = *globals
-        .get(to)
-        .ok_or_else(|| err!("jump: module symbol {to} is not defined"))?;
-    if a.cpu != SHARC || a.len != 6 || op.offset != 0 {
-        return Err(err!(
-            "jump {}: needs a 6-byte SHARC anchor and offset 0",
-            a.name
-        ));
-    }
-    if target >= 1 << 24 {
-        return Err(err!(
-            "jump: {to} = {target:#x} does not fit a 24-bit target"
-        ));
-    }
-    let mut out = vec![];
-    out.extend_from_slice(&0x063eu16.to_le_bytes());
-    out.extend_from_slice(&(((target >> 16) & 0xff) as u16).to_le_bytes());
-    out.extend_from_slice(&((target & 0xffff) as u16).to_le_bytes());
-    Ok(out)
-}
-
-fn register_rows(
-    lib: &Library,
-    order: &[String],
-    dev: &str,
-    globals: &BTreeMap<String, u64>,
-    machine_types: &BTreeMap<String, u64>,
-    chunks: &mut [Chunk],
-) -> Result<()> {
-    let mut next: BTreeMap<String, u64> = BTreeMap::new();
-    for id in order {
-        let m = lib.get(id).unwrap();
-        for op in m
-            .manifest
-            .op
-            .iter()
-            .filter(|o| o.op == "register" && on(&o.devices, dev))
-        {
-            let tsym = op.table.as_deref().unwrap();
-            let decl = order
-                .iter()
-                .filter_map(|i| lib.get(i))
-                .flat_map(|m| m.manifest.table.iter())
-                .find(|t| t.symbol == tsym)
-                .ok_or_else(|| err!("{id}: no selected module declares the table {tsym}"))?;
-            if op.row.len() as u64 != decl.row_words {
-                return Err(err!(
-                    "{id}: row of {} words for table {tsym} of {}-word rows",
-                    op.row.len(),
-                    decl.row_words
-                ));
-            }
-            let base = *globals
-                .get(tsym)
-                .ok_or_else(|| err!("{id}: table symbol {tsym} is not defined"))?;
-            let k = next.entry(tsym.to_string()).or_insert(0);
-            if *k >= decl.rows {
-                return Err(err!("{id}: table {tsym} is full ({} rows)", decl.rows));
-            }
-            let at = base + *k * decl.row_words * 4;
-            let end = at + decl.row_words * 4;
-            let c = chunks
-                .iter_mut()
-                .find(|c| c.cpu == SHARC && c.addr <= at && end <= c.addr + c.image.len() as u64)
-                .ok_or_else(|| err!("{id}: table {tsym} row {k} lies outside any placed object"))?;
-            let off = (at - c.addr) as usize;
-            for (i, tok) in op.row.iter().enumerate() {
-                let v = match tok.strip_prefix("0x") {
-                    Some(h) => u64::from_str_radix(h, 16).ok(),
-                    None => tok.parse::<u64>().ok(),
-                }
-                .or_else(|| globals.get(tok).copied())
-                .or_else(|| machine_types.get(tok).copied())
-                .ok_or_else(|| {
-                    err!("{id}: register row word {tok:?} is neither a number nor a symbol")
-                })?;
-                if i == 0 && v == 0 {
-                    return Err(err!(
-                        "{id}: the first word of a registered row must be non-zero"
-                    ));
-                }
-                if v >= 1 << 32 {
-                    return Err(err!(
-                        "{id}: register row word {tok:?} = {v:#x} does not fit 32 bits"
-                    ));
-                }
-                let o = off + 4 * i;
-                if c.image[o..o + 4] != [0, 0, 0, 0] {
-                    return Err(err!("{id}: table {tsym} row {k} is not empty"));
-                }
-                c.image[o..o + 4].copy_from_slice(&(v as u32).to_le_bytes());
-            }
-            *k += 1;
-        }
-    }
-    Ok(())
 }

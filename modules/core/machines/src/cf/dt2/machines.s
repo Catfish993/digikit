@@ -172,18 +172,21 @@ mf_row:
     move.l  (%sp)+,%d1
     rts
 
-| ---- clone tests. `type == SLICE` must also be true for an added type whose clone_of is SLICE. These hooks sit on
-| the compare and the branch after it: the flags decide. When the compare found "not equal" and register treg
-| holds an added type whose clone_of is SLICE, the Z flag is set; in every other case the flags come out as
-| Z = the stock Z, N = V = C = 0 (nothing after these branches reads them: every site was read). Saves d0-d2, a0.
-    .macro CLONE_EQ name, treg, tail
-    .globl \name
-\name:
+| ---- clone tests. `type == SLICE` must also be true for an added type whose clone_of is SLICE. Each site is the
+| whole stock test (a prefix, `cmp`, a conditional branch); the hook replaces it (displaced = "drop"): the routine
+| runs the stock prefix and compare, and takes the branch itself: equal -> `eq`, otherwise it asks whether the type
+| register holds an added type whose clone_of is SLICE (then equal) and goes to `eq` or `neq`. The two destinations
+| are the end of the site and the branch target (an anchor `cf.machines.clone.N.alt`). Registers and the stack come
+| out as the stock test leaves them (d0-d2 and a0 are saved around the lookup); the flags are not preserved on
+| the paths after the branch (every site was read: none reads them).
+    .macro CLONE_BODY treg, eq, neq
+    beq.w   6f
+    cmpi.l  #_mf_first,%d\treg
+    bcc.s   4f
+    jmp     \neq                        | a stock type other than SLICE: the stock answer
+4:
     lea     -16(%sp),%sp
     movem.l %d0-%d2/%a0,(%sp)
-    seq     %d2                     | d2.b = 0xff when the stock compare found "equal"
-    tst.b   %d2
-    bne.s   9f
     .if \treg < 3
     move.l  (\treg * 4,%sp),%d0
     .else
@@ -191,26 +194,56 @@ mf_row:
     .endif
     subi.l  #_mf_first,%d0
     cmpi.l  #_mf_count,%d0
-    bcc.s   8f
+    bcc.s   5f
     bsr.w   mf_row
     move.l  O_CLONE(%a0),%d1
     cmpi.l  #SLICE,%d1
-    seq     %d2
-    bra.s   9f
-8:  moveq   #0,%d2
-9:  andi.l  #4,%d2
-    move.w  %d2,%ccr
+    bne.s   5f
     movem.l (%sp),%d0-%d2/%a0
     lea     16(%sp),%sp
-    jmp     \tail
+6:  jmp     \eq
+5:  movem.l (%sp),%d0-%d2/%a0
+    lea     16(%sp),%sp
+    jmp     \neq
     .endm
 
-    CLONE_EQ mf_clone0, 0, _mf_t_clone0
-    CLONE_EQ mf_clone1, 0, _mf_t_clone1
-    CLONE_EQ mf_clone2, 0, _mf_t_clone2
-    CLONE_EQ mf_clone3, 0, _mf_t_clone3
-    CLONE_EQ mf_clone4, 2, _mf_t_clone4
-    CLONE_EQ mf_clone6, 0, _mf_t_clone6
+| clone.0: moveq #6,D1; cmp.l D0,D1; beq.w T (equal -> T)
+    .globl mf_clone0
+mf_clone0:
+    moveq   #6,%d1
+    cmp.l   %d0,%d1
+    CLONE_BODY 0, _mf_c0a, _mf_c0 + 8
+| clone.1: moveq #6,D1; cmp.l D0,D1; bne.b U
+    .globl mf_clone1
+mf_clone1:
+    moveq   #6,%d1
+    cmp.l   %d0,%d1
+    CLONE_BODY 0, _mf_c1 + 6, _mf_c1a
+| clone.2: moveq #6,D1; cmp.l D0,D1; bne.w U
+    .globl mf_clone2
+mf_clone2:
+    moveq   #6,%d1
+    cmp.l   %d0,%d1
+    CLONE_BODY 0, _mf_c2 + 8, _mf_c2a
+| clone.3: addq.l #4,SP; cmp.l D0,D6; bne.b U (d6 holds SLICE)
+    .globl mf_clone3
+mf_clone3:
+    addq.l  #4,%sp
+    cmp.l   %d0,%d6
+    CLONE_BODY 0, _mf_c3 + 6, _mf_c3a
+| clone.4: moveq #6,D0; cmp.l D2,D0; bne.b U (the type is in d2)
+    .globl mf_clone4
+mf_clone4:
+    moveq   #6,%d0
+    cmp.l   %d2,%d0
+    CLONE_BODY 2, _mf_c4 + 6, _mf_c4a
+| clone.6: moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w U
+    .globl mf_clone6
+mf_clone6:
+    moveq   #6,%d1
+    mvs.b   0x990(%a0),%d0
+    cmp.l   %d0,%d1
+    CLONE_BODY 0, _mf_c6 + 12, _mf_c6a
 
 | clone.5 is the masked test `(type & ~2) == 4` (types 4 and 6): d0 becomes the clone_of of an added type before the
 | stock mask. Site: the first four instructions of the test (d1 is set by them).

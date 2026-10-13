@@ -49,12 +49,32 @@ mark = "D"
 rule = "core/machines:cf_func"
 
 [[anchor]]
+name = "cf.machines.clone.0.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x4005fcd4
+len = 2
+sha256 = "599debdf7811ff51e24d085a6211297f7fcb9186469160f1faa84e6f07965b9e"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
 name = "cf.machines.clone.1"
 cpu = "cf"
 kind = "code"
 addr = 0x4005f8f8
-len = 8
-sha256 = "5784811dc534888c9687e0caa7a0e9451e4e3798bd892a35b9ef639712ef1886"
+len = 6
+sha256 = "79c9245c0bcd2f36da3681a6dfb09637cc19d395561125c390cb749209fd93b1"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.1.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x4005f920
+len = 2
+sha256 = "0687bc351e655add9b30c9ec4275af19b0bd195202543f61820e0568760ae0c1"
 mark = "D"
 rule = "core/machines:cf_func"
 
@@ -69,12 +89,32 @@ mark = "D"
 rule = "core/machines:cf_func"
 
 [[anchor]]
+name = "cf.machines.clone.2.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x40030f90
+len = 2
+sha256 = "9d26521ee1c472c774c62140595d153d6f827a820b852dafbfba2bc620b2a1eb"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
 name = "cf.machines.clone.3"
 cpu = "cf"
 kind = "code"
 addr = 0x4004923e
-len = 10
-sha256 = "15ad7de2558e85d35ef49ee2b755337edf28d1c4edb80e031bdf0b31d90afa79"
+len = 6
+sha256 = "5292b911cf0deaba185812ccd2eecdfa10085b29823e8bedde84ae69db5d9cd8"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.3.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x40049266
+len = 2
+sha256 = "a5e260e5a708e9bc7beceb8338f3705e6249bccb6c5df38f624e9ae58ea118de"
 mark = "D"
 rule = "core/machines:cf_func"
 
@@ -83,8 +123,18 @@ name = "cf.machines.clone.4"
 cpu = "cf"
 kind = "code"
 addr = 0x4005c936
-len = 8
-sha256 = "765142b88cf6633996c5700159d5e876d903b15149994f340a55f0182ac24b16"
+len = 6
+sha256 = "5fa6eb2badf7467be4963c0591deb2d20266f53a6ec0721df1a6813785c1b176"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.4.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x4005c950
+len = 2
+sha256 = "1f2e6d00279b4659b6d6f1ad57e12568e4a50f80908af50d1e861001b2be2a3b"
 mark = "D"
 rule = "core/machines:cf_func"
 
@@ -105,6 +155,16 @@ kind = "code"
 addr = 0x4002ec18
 len = 12
 sha256 = "374f947abc19fe049b7ac5eca4b32fc6063ef3e8b28e624b5de98b02f1a65d62"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.6.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x4002ecd8
+len = 2
+sha256 = "1fc1c0ebcf867bc2675aff5ec81e7d2b43c1916e9baa8546dd937e5b9aa803b9"
 mark = "D"
 rule = "core/machines:cf_func"
 
@@ -1526,6 +1586,17 @@ mark = "D"
 rule = "fx/master-drive:sharc_mem_addr"
 
 [[anchor]]
+name = "dsp.machines.selector_data"
+cpu = "sharc"
+kind = "data"
+addr = 0x282567c0
+src = 0x28384e62
+len = 28
+sha256 = "649a095a0c9914cce25113158448435698f18ee0c6b06db571574218d0f746b8"
+mark = "D"
+rule = "core/machines:sharc_table"
+
+[[anchor]]
 name = "dsp.machines.selector_table"
 cpu = "sharc"
 kind = "value"
@@ -1612,3 +1683,13 @@ len = 6
 sha256 = "aa85dee071b926c095ed94ee8bad29cc5add87caf86276bf2c85bd0e565feee4"
 mark = "D"
 rule = "core/dsp-voice:sharc_literal"
+
+[[anchor]]
+name = "test.demo.kit_setter"
+cpu = "cf"
+kind = "code"
+addr = 0x40035260
+len = 14
+sha256 = "edf0c43e5e5151ab9431443cbfde43e61e9174eee9a1da59d50b36e0bbd6931a"
+mark = "D"
+rule = "test/registry-demo:cf_func"

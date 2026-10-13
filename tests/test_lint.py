@@ -77,6 +77,7 @@ CLEAN = [
     "tests/test_pk_machines_dn2_fw.py",
     "tests/test_pk_params_fw.py",
     "tests/test_pk_params.py",
+    "tests/test_pk_prims.py",
     "tools/pk_aplib_eq.py",
     "tools/pk_proof_gain.py",
     "tools/pk_oracle_xslice.py",

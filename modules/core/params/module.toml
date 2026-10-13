@@ -69,7 +69,7 @@ kind = "u32"
 name = "pf_table"
 region = "cf.expansion"
 devices = ["dt2"]
-from = { anchor = "cf.params.t1", len = "params.first * 60" }
+from = { anchor = "cf.params.t1", len = "image.u32(cf.params.t2 + 6) * 60" }
 append = { registry = "params", row = [
   "image.u32(cf.params.t1 + 60 * $template + 0x00)",
   "25 + $slot + ($slot >> 2) * 2",
@@ -99,7 +99,7 @@ _pf_first = "params.first"
 _pf_count = "params.count"
 _pf_rows = "params.rows"
 _pf_rowsize = "params.row_size"
-_pf_t_t2 = "hook.cf.params.t2.tail"
+_pf_t_t2 = "hook.cf.params.t2.4.tail"
 
 # the second per-code table's accessor: `move.l 4(sp),D0; cmpi.l #count,D0`; hook the compare
 [[op]]
@@ -114,18 +114,18 @@ devices = ["dt2"]
 # every absolute reference into the stock table now points into the copy (same offset)
 [[op]]
 op = "write"
-anchor_glob = "cf.params.ref.*"
+anchors = "cf.params.ref.*"
 offset = 0
-value = "pf_table + (image.u32(@) - cf.params.t1)"
+value = "pf_table + (image.u32(this) - cf.params.t1)"
 width = 4
 devices = ["dt2"]
 
 # every clamp bound `cmpi.l #N,Dn` (N = the stock count or one less) grows by the number of added rows
 [[op]]
 op = "write"
-anchor_glob = "cf.params.bound.*"
+anchors = "cf.params.bound.*"
 offset = 2
-value = "image.u32(@ + 2) + params.count"
+value = "image.u32(this + 2) + params.count"
 width = 4
 devices = ["dt2"]
 
@@ -142,8 +142,20 @@ cpu = "cf"
 kind = "cf_params_t1"
 mark = "D"
 
+# the accessor of the second per-code table (0x44-byte value-class objects built at boot): `move.l 4(sp),D0;
+# cmpi.l #0x113,D0`
+[[anchor_rule]]
+name = "cf.params.t2"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "254d9fca9141d9a4f7f2308730fafa3a"
+offset = 0x0
+len = 10
+mark = "D"
+
 # every absolute reference into the table (a 32-bit word) and every clamp bound of its readers (7 bytes, the
-# immediate at +2), in address order
+# immediate at +2), in address order; the bounds inside the accessor above are left out (the hook handles it)
 [[anchor_rule]]
 name = "cf.params.ref"
 devices = ["dt2"]
@@ -157,16 +169,5 @@ devices = ["dt2"]
 cpu = "cf"
 kind = "cf_params_bounds"
 mark = "D"
-except = { hash = "254d9fca9141d9a4f7f2308730fafa3a", offset = 0, len = 10 }
+exclude_anchors = ["cf.params.t2"]
 
-# the accessor of the second per-code table (0x44-byte value-class objects built at boot): `move.l 4(sp),D0;
-# cmpi.l #0x113,D0`
-[[anchor_rule]]
-name = "cf.params.t2"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "254d9fca9141d9a4f7f2308730fafa3a"
-offset = 0x0
-len = 10
-mark = "D"

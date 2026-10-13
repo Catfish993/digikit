@@ -170,9 +170,11 @@ mf_group:
     .macro TYPEMAP name, off, tail
     .globl \name
 \name:
+    move.l  \off(%sp),%d0              | d0 is loaded again by the stock code
+    cmpi.l  #_mf_first,%d0
+    bcs.s   2f                          | a stock type (or a negative one: the range check below refuses it)
     lea     -12(%sp),%sp
     movem.l %d0-%d1/%a0,(%sp)
-    move.l  (12 + \off,%sp),%d0
     subi.l  #_mf_first,%d0
     cmpi.l  #_mf_count,%d0
     bcc.s   1f
@@ -181,7 +183,7 @@ mf_group:
     move.l  %d0,(12 + \off,%sp)
 1:  movem.l (%sp),%d0-%d1/%a0
     lea     12(%sp),%sp
-    jmp     \tail
+2:  jmp     \tail
     .endm
 
     TYPEMAP mf_typemap0, 4, _mf_t_typemap0
@@ -194,11 +196,12 @@ mf_group:
 | `move.b (0xd8c,A0),D0b; ext.w D0w` (6 bytes), a0 = the track; d0 is the result.
     .globl mf_frametype
 mf_frametype:
-    move.b  0xd8c(%a0),%d0
+    mvs.b   0xd8c(%a0),%d0              | the stock move.b and ext.w in one (the upper word of d0 is dead)
+    cmpi.l  #_mf_first,%d0
+    blt.s   9f
     lea     -12(%sp),%sp
     movem.l %d1-%d2/%a1,(%sp)
-    moveq   #0,%d1
-    move.b  %d0,%d1
+    move.l  %d0,%d1
     subi.l  #_mf_first,%d1
     cmpi.l  #_mf_count,%d1
     bcc.s   1f
@@ -211,8 +214,7 @@ mf_frametype:
     move.l  O_CLONE(%a1),%d0
 1:  movem.l (%sp),%d1-%d2/%a1
     lea     12(%sp),%sp
-    ext.w   %d0
-    jmp     _mf_ft + 6
+9:  jmp     _mf_ft + 6
 
 | ---- type reader: `FUN_4004b7f2` returns the machine type of a sound (`mvs.b (0xde,A0),D0`, then a bra.b to the
 | epilogue). Its callers are pages and parameter code that test the type against FM TONE's and so on, so a clone
@@ -223,6 +225,8 @@ mf_frametype:
     .globl mf_reader
 mf_reader:
     mvs.b   0xde(%a0),%d0
+    cmpi.l  #_mf_first,%d0
+    blt.s   9f
     move.l  %d0,%d1
     subi.l  #_mf_first,%d1
     cmpi.l  #_mf_count,%d1
@@ -265,6 +269,8 @@ mf_reader:
     .globl mf_owner
 mf_owner:
     mvs.b   0xde(%a0),%d3
+    cmpi.l  #_mf_first,%d3
+    blt.s   9f
     lea     -8(%sp),%sp
     movem.l %d0/%a1,(%sp)
     move.l  %d3,%d0
@@ -276,9 +282,12 @@ mf_owner:
     addi.l  #_mf_rows,%d0
     movea.l %d0,%a1
     move.l  O_CLONE(%a1),%d3
-1:  movem.l (%sp),%d0/%a1
+    bra.s   2f
+1:  move.l  %d0,%d3
+    addi.l  #_mf_first,%d3
+2:  movem.l (%sp),%d0/%a1
     lea     8(%sp),%sp
-    move.l  %d2,-(%sp)
+9:  move.l  %d2,-(%sp)
     jmp     _mf_ow + 6
 
     .bss

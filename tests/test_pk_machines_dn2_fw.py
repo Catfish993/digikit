@@ -147,7 +147,7 @@ def test_type_maps_replace_the_argument_by_clone_of(unit, name, off):
         want = ENTRIES[t - FIRST][2] if FIRST <= t < FIRST + COUNT else t
         assert r.stub == "_mf_t_" + name[3:]
         assert r.stack[off // 4] == want
-        assert r.d[:2] == [7, 8] and r.a[0] == 9
+        assert r.d[1] == 8 and r.a[0] == 9  # d0 is free at the sites
         assert [x for i, x in enumerate(r.stack[:8]) if i != off // 4] == [0xAAAA] * 7
 
 

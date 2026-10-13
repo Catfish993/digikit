@@ -65,16 +65,20 @@ modules/<category>/<name>/
   hosted libc; bss is zeroed by the loader.
 - Toolchains: `mise run toolchains` once (pinned m68k-elf binutils/gcc and the SHARC+ assembler under `out/tools`).
 
-## Machine modules (Digitakt II, `core/machines`)
+## Machine modules (`core/machines`, `core/params`, `core/dsp-voice`)
 
+The frameworks are ordinary modules (assembly + manifest) built on patchkit's primitives: registries (`[[registry]]` in the
+framework, `[[entry]]` in a content module), copies of stock tables (`[[section]]`), typed writes with expressions, hooks.
 A module that adds a machine type needs no code for the ColdFire side: `requires = ["core/machines"]` and one
-`[[machine]]` entry (`id`, `name`, `short`, `clone_of`, `position`, `fields` = the nine descriptor IDs, optional
-`selector`). patchkit assigns the type numbers `7, 8, ...` in canonical module order and generates the tables and
-patches from the image (`native/patchkit/src/machines.rs`); `modules/machines/xslice` is the worked example. A DSP
-object binds to its type with `[object.externs] _x = "machines.<id>.type"`. Contract, evidence and limits: finding 02,
-"core.machines". Proof: `uv run python tools/pk_proof_machines.py` (about 15 minutes). The emulator runs ColdFire code only
-from the MAIN image, so framework code is in the flash cave; keep module ColdFire code in `cf.expansion` data-only
-until the model fetches from RAM.
+`[[entry]] registry = "machines"` (`id`, `name`, `short`, `clone_of`, `position`, `f0` .. `f8` = the nine descriptor IDs,
+optional `own_dsp`). patchkit assigns the type numbers `7, 8, ...` (Digitone II `5, ...`) in canonical module order;
+`machines.<id>.index` is the type number. Parameters: `requires = ["core/params"]` and `[[entry]] registry = "params"`
+(`name`, `short`, `template`, `slot`, `min`, `max`, `default`); a machine names one as `fN = "params.<id>.index"`. A DSP
+object registers its routine with `[[entry]] registry = "voices"` (`type = "machines.<id>.index"`, `pc = "<symbol>"`).
+`modules/machines/pluck` is the worked example (machine, four parameters, voice). The sites, the routines and their tests:
+`modules/core/machines/src/cf/*/machines.s`, finding 02 ("core.machines ... as modules"), `tools/pk_cfunit.py`. Proofs:
+`tools/pk_proof_machines.py`, `pk_proof_pluck.py`, `pk_proof_machines_dn2.py`, `pk_proof_voice*.py` (about 15 minutes each).
+The emulator runs ColdFire code only from the MAIN image or the expansion region; framework code is in `cf.expansion`.
 
 ## Tests (tools/pk_harness.py)
 

@@ -29,7 +29,19 @@ STUBS = [
     "_mf_t_rank",
     "_mf_t_typearg",
     "_mf_x_typearg",
-    *[f"_mf_t_clone{i}" for i in range(7)],
+    "_mf_t_clone5",
+    "_mf_c0a",
+    ("_mf_c0", 8),
+    ("_mf_c1", 6),
+    "_mf_c1a",
+    ("_mf_c2", 8),
+    "_mf_c2a",
+    ("_mf_c3", 6),
+    "_mf_c3a",
+    ("_mf_c4", 6),
+    "_mf_c4a",
+    ("_mf_c6", 12),
+    "_mf_c6a",
 ]
 
 pytestmark = [
@@ -107,7 +119,7 @@ def unit():
             "mf_rank",
             "mf_typearg",
             "mf_clone5",
-            *[f"mf_clone{i}" for i in (0, 1, 2, 3, 4, 6)],
+            *CLONE_SITES,
         ],
     )
 
@@ -213,52 +225,61 @@ def test_list_and_rank_tables(unit):
         ] == be32(i)
 
 
-def test_clone_tests_set_z_only_for_added_clones_of_slice(unit):
+# site -> (type register, stub that stands for "equal", for "not equal"); stubs named `_mf_cN` are the site address,
+# so `_mf_cN + k` is the end of the site
+CLONE_SITES = {
+    "mf_clone0": (0, "_mf_c0a", "_mf_c0"),
+    "mf_clone1": (0, "_mf_c1", "_mf_c1a"),
+    "mf_clone2": (0, "_mf_c2", "_mf_c2a"),
+    "mf_clone3": (0, "_mf_c3", "_mf_c3a"),
+    "mf_clone4": (2, "_mf_c4", "_mf_c4a"),
+    "mf_clone6": (0, "_mf_c6", "_mf_c6a"),
+}
+OBJ6 = 0x47EC5000
+
+
+def test_clone_tests_take_the_stock_branch_and_also_for_added_clones_of_slice(unit):
     mem = tables()
     types_added = [FIRST + k for k in range(COUNT)]
-    sites = {  # routine -> (type register, tail stub)
-        "mf_clone0": 0,
-        "mf_clone1": 0,
-        "mf_clone2": 0,
-        "mf_clone3": 0,
-        "mf_clone4": 2,
-        "mf_clone6": 0,
-    }
-    cases = []
-    want = []
-    for name, reg in sites.items():
-        for t, z_in in [
-            (6, 1),  # stock SLICE: compare equal, stays equal
-            (5, 0),  # another stock type: stays not equal
-            *[(a, 0) for a in types_added],
-            (FIRST + COUNT, 0),
-            (255, 0),
-        ]:
+    cases, want = [], []
+    for name, (reg, eq, neq) in CLONE_SITES.items():
+        for t in [6, 5, *types_added, FIRST + COUNT, 255]:
             d = {i: 0x1000 + i for i in range(8)}
             d[reg] = t
-            cases.append(
-                {
-                    "routine": name,
-                    "d": d,
-                    "a": {i: 0x2000 + i for i in range(7)},
-                    "ccr": 4 * z_in,
-                }
+            if name == "mf_clone4":
+                d[0] = 0x77  # the stock prefix loads 6 into d0
+            if name == "mf_clone3":
+                d[6] = 6
+            a = {i: 0x2000 + i for i in range(7)}
+            m = dict(mem)
+            if name == "mf_clone6":
+                a[0] = OBJ6 - 0x990
+                m[OBJ6] = bytes([t])
+            clone = (
+                ENTRIES[t - FIRST]["clone_of"] if FIRST <= t < FIRST + COUNT else None
             )
-            clone = None
-            if FIRST <= t < FIRST + COUNT:
-                clone = ENTRIES[t - FIRST]["clone_of"]
-            want.append((name, t, z_in or int(clone == 6), d))
-    res = unit.run_cases(mem, cases)
-    for (name, t, z, d), r in zip(want, res, strict=True):
-        assert r.stub == "_mf_t_clone" + name[-1], (name, t)
-        assert r.z == z, (name, t)
-        assert (r.n, r.v, r.c) == (0, 0, 0)
-        assert r.d == [d[i] for i in range(8)], (
-            name,
-            t,
-            r.d,
-        )  # every register preserved
-        assert r.a[:7] == [0x2000 + i for i in range(7)]
+            equal = t == 6 or clone == 6
+            cases.append((m, {"routine": name, "d": d, "a": a, "stack": [0x11, 0x22]}))
+            want.append((name, t, eq if equal else neq, d))
+    for (m, case), (name, t, stub, _d) in zip(cases, want, strict=True):
+        r = unit.run_cases(m, [case])[0]
+        assert r.stub == stub, (name, t)
+        exp = dict(enumerate(case["d"][i] for i in range(8)))
+        if name in ("mf_clone0", "mf_clone1", "mf_clone2"):
+            exp[1] = 6
+        if name == "mf_clone4":
+            exp[0] = 6
+        if name == "mf_clone6":
+            exp[1] = 6
+            exp[0] = t if t < 128 else t - 256
+            exp[0] &= 0xFFFFFFFF
+        assert r.d == [exp[i] for i in range(8)], (name, t, r.d)
+        assert r.a[1:7] == [0x2000 + i for i in range(1, 7)]
+        assert r.a[0] == case["a"][0]
+        if (
+            name == "mf_clone3"
+        ):  # addq.l #4,sp ran: the stack words are seen from 4 bytes up
+            assert r.stack[:1] == [0x22]
 
 
 def test_masked_clone_test_maps_added_types_to_their_clone(unit):
@@ -332,7 +353,8 @@ def test_stock_table_copies_append_the_clones_row():
         "cf.machines.tab.names": 0x1000,
         "cf.machines.tab.permit": 0x2000,
         "cf.machines.tab.pertype": 0x3000,
-        "dsp.machines.selector_table": 0x4000,
+        "dsp.machines.selector_data": 0x4000,
+        "cf.machines.dispatch": 0x9000,
     }
     img = {}
     for t in range(FIRST):
@@ -340,6 +362,8 @@ def test_stock_table_copies_append_the_clones_row():
         img[0x2000 + 4 * t] = be32(0xB0 + t)
         img[0x3000 + t] = bytes([0xC0 + t])
         img[0x4000 + 4 * t] = be32(0xD0 + t)
+
+    img[0x9001] = bytes([FIRST - 1])  # the dispatch's `moveq #last,D1`
 
     def image(a, n):
         base = max(k for k in img if k <= a)
@@ -362,4 +386,20 @@ def test_stock_table_copies_append_the_clones_row():
             evaluate(secs["mf_selector"]["append"]["row"][0], syms, f, image)
             == 0xD0 + c
         )
-    assert evaluate(secs["mf_names"]["from"]["len"], syms) == FIRST * 12
+    assert evaluate(secs["mf_names"]["from"]["len"], syms, image=image) == FIRST * 12
+
+
+def test_row_size_of_the_manifest_matches_the_assembly():
+    """Every registry field is one 32-bit word (u32 or cstr pointer): the asm hardcodes the offsets."""
+    import tomllib
+
+    m = tomllib.loads(
+        (ROOT / "modules" / "core" / "machines" / "module.toml").read_text()
+    )
+    fields = m["registry"][0]["field"]
+    assert all(f["kind"] in ("u32", "cstr") for f in fields)
+    assert len(fields) * 4 == ROWSIZE
+    names = [f["name"] for f in fields]
+    assert names.index("clone_of") * 4 == 44 and names.index("position") * 4 == 48
+    assert names.index("own_dsp") * 4 == 52 and names.index("name") * 4 == 56
+    assert names.index("short") * 4 == 60 and names.index("f0") * 4 == 8
