@@ -13,6 +13,9 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/fw.py",
+    "tools/atlas.py",
+    "tests/test_fw.py",
     "tools/cffacts.py",
     "tools/sharc_asm.py",
     "tools/dsp_master_hook.py",

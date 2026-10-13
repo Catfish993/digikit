@@ -13,6 +13,9 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TYPED = [
+    "tools/fw.py",
+    "tools/atlas.py",
+    "tests/test_fw.py",
     "tools/audiocheck.py",
     "tools/fxcheck.py",
     "tools/paramtable.py",

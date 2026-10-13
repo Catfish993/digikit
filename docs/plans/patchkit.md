@@ -316,8 +316,8 @@ Slice first (one agent), then coverage:
 
 ### Phase 6: agent tooling (about 2-3 days, parallel with Phases 1-3)
 
-- [ ] `tools/fw.py`: compact query CLI with `batch` mode and cached graphs; skill file.
-- [ ] Atlas `out/atlas/<image>.sqlite`: machines, parameters, FX, page views, strings, sequencer structures; FTS5
+- [x] `tools/fw.py`: compact query CLI with `batch` mode and cached graphs; skill file.
+- [x] Atlas `out/atlas/<image>.sqlite`: machines, parameters, FX, page views, strings, sequencer structures; FTS5
       over strings and decompiled C; glossary from the manuals in `out/refs/`. Extractor rules committed, data
       derived.
 
