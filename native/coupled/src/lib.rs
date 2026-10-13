@@ -156,6 +156,28 @@ impl CoupledRuntime {
         runtime.input_base = runtime.emulator.icount();
         Ok(runtime)
     }
+    /// A runtime for a patched build of the firmware `base_sha256` with DSP
+    /// audio: the ColdFire state comes from `options.snapshot` and the DSP
+    /// state from `options.state`, both made for this MAIN by
+    /// [`cold::boot_patched_to_ready`]. The `automatic` profile check is not
+    /// applied (the options name this build's own files).
+    pub fn new_patched_audio(
+        syx: &[u8],
+        card: Option<Card>,
+        base_sha256: &str,
+        options: &AudioOptions,
+    ) -> Result<Self, String> {
+        let mut runtime = Self {
+            emulator: Emulator::new_patched(syx, card, base_sha256)?,
+            #[cfg(feature = "coupled-audio")]
+            audio: None,
+            inputs: Vec::new(),
+            input_base: 0,
+        };
+        runtime.attach(Some(options))?;
+        runtime.input_base = runtime.emulator.icount();
+        Ok(runtime)
+    }
     /// Load a ColdFire snapshot into this fresh runtime and restart the
     /// scenario clock there (`elapsed_instructions` counts from the restored
     /// state, as after a coupled restore).
@@ -216,6 +238,21 @@ impl CoupledRuntime {
         #[cfg(not(feature = "coupled-audio"))]
         {
             let _ = patch;
+            Err("no DSP audio session".into())
+        }
+    }
+    /// DSP memory bytes (`None` where the engine does not know the byte), read
+    /// between two frames.
+    pub fn peek_dsp(&mut self, addr: u32, len: usize) -> Result<Vec<Option<u8>>, String> {
+        #[cfg(feature = "coupled-audio")]
+        {
+            let audio = self.audio.as_mut().ok_or("no DSP audio session")?;
+            audio.sync();
+            audio.handle.peek_bytes(addr, len)
+        }
+        #[cfg(not(feature = "coupled-audio"))]
+        {
+            let _ = (addr, len);
             Err("no DSP audio session".into())
         }
     }

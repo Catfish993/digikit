@@ -5213,3 +5213,86 @@ post-modifies, all on I7 (the software stack, B/L `0x2d08c0/0x3e2`,
 `0x26f000/0x1fd`, `0x269170/0xc2`), and none wraps
 (`tools/sharc_circstats.py`). The L7 values read earlier as delay lines are
 stack buffers; the coupled hashes and PCM are unchanged by the fix.
+
+## Appending to the SHARC boot stream, and what free L2 is (patchkit spikes 0.4 and 0.2, 2026-10-13)
+
+**How the ColdFire sends section 7.** The routine is `FUN_400ccf74` in DT2 1.16 (828 bytes, called from the boot init
+chain `FUN_400cc864` at `0x400ccaee`); its equivalents, found by `tools/cfmatch.py` and by the only function that
+writes DSPI0 PUSHR (`0xec038034`), are `FUN_400cd0d8` (DT2 1.17), `FUN_400cf34c` (DN2 1.11) and `FUN_400cf4b0`
+(DN2 1.12), 828 bytes each with the same constants. In 1.16: two 1 MiB buffers are allocated (`0x400cd19c`,
+`0x400cd1a6`, size `0x100000`); section 7 is looked up (`FUN_401361b6(7, &info)`); a stored size over `0x100000` ends
+with status 2 (`0x400cd1d4`, `cmpi.l #0x100000 / bhi`); the stored bytes are copied from flash (`info.offset +
+0x80000`) into the first buffer; a `0x03` byte (the SPI flash READ command the SHARC boot ROM expects) is written at
+the start of the second buffer and the section is depacked after it (`FUN_4013815c`); a depacked size over `0xfffff`
+(`len + 1 > 0x100000`, `0x400cd20c`) ends with status 3; then every byte is pushed through DSPI0 one at a time, each
+after the SHARC's handshake line (GPIO bit 4) goes low (`0x400cd22a` to `0x400cd262`), and a final frame
+`0x18000000` ends the transfer. There is no length field and no per-block check on the ColdFire side: the whole
+depacked section is sent, whatever the block list, **as long as stored <= `0x100000` and depacked <= `0xfffff` bytes**.
+Verified by disassembly of all four images (same comparisons, same `pea 7`, same `move.b #3,(A0)+`); the failure
+statuses were not run. **[D]**
+
+**Stream limits, therefore.** DT2 section 7 is `0x4e5f8` bytes: room for 727,540 payload bytes (`0xfffff` less the stream
+and one 16-byte header); DN2 1.11/1.12 is `0xcc55c`: room for 211,600. The stored (packed) size counts too: an
+incompressible 727,540-byte block gave a stored section of `0xf56da` bytes on DT2 and `0xd0725` on DN2 (both under
+`0x100000`); the container then is 2.92 MB (DT2) and 2.71 MB (DN2), under the 3 MiB flash cap. Hence the usable
+appended payload is bounded by the stream, not by free L2: DT2 727,540 of 939,140 free bytes, DN2 211,600 of 491,972.
+**[D]**
+
+**What an append is.** A boot stream is a chain of blocks, each a 16-byte little-endian header (block code, target
+address, byte count, argument) and a payload; the top byte of the block code is `0xad` (core 0) and byte 2 is chosen so
+the XOR of all 16 header bytes is zero; a plain data block has flags `0x0001`, FIRST `0x4001`, FINAL `0x8001`. The
+stream's own data blocks are multiples of 4 bytes long and follow each other without padding. `tools/dsp_patch.py`
+`Stream.append_block(addr, data)` inserts one such block immediately before the FINAL block (word aligned, padded to 4,
+refused over loaded memory, outside L2 `0x20000000..0x20100000`, or past the stream cap); the patch-file form is
+`APPEND <addr> <hex>` (the Rust parser treats it as `BYTES`, so the same file also injects hot), and
+`dsp_patch.py syx` rebuilds the container with the aPLib packer. The Rust `dsp_stream::diff` is address based, so a
+stream with another block list diffs to plain `BYTES` runs (unit test added). **[D]**
+
+**Arrival, intactness, PCM.** `tools/l2canary.py build` appends an address-dependent pattern block
+(`((addr * 0x9E3779B1) ^ seed)`) filling the usable free range; the ready inputs of that .syx are built with
+`tools/ready.py --syx STOCK --dsp-syx CANARY` (the loader image in the emulator is the flattened block list, so
+arrival is "the block's bytes are at its address in the engine"; the SHARC boot ROM itself is not emulated, see the
+open point below). **[D]**
+
+| | DT2 1.16 (one-sample card) | DN2 1.11 |
+|---|---|---|
+| appended block | 727,540 bytes at `0x2001ab7c` | 211,600 bytes at `0x2008823c` |
+| present at the ready state | yes, byte exact (`dsp.peek`; DN2 checked at ready) | yes |
+| scenarios run with it | 5 (`scenarios/dt2.json`) | 10 (`scenarios/dn2.json`) |
+| canary after each scenario | intact (SHA-256 of the range equal) | intact |
+| PCM against the same ready built without the block | equal in all 5 | equal in all 10 |
+
+Pins: with the stock ColdFire boot, the DN2 PCM pins `exactness-100m`, `trig1-taps` and `trig1-tap-release` hold on a
+freshly built ready (as on the committed 2026-10-07 ready); `trig1-noqa-40m` is `37dd4b0b..` against the pinned
+`d56d8f4b..` on a freshly built ready with or without the canary (a ready-rebuild effect: the committed ready gives
+the pin). The first attempt, with the ColdFire booted from the canary .syx, changed the PCM of seven scenarios: that was
+the one-frame ready shift described in finding 17, not the block. **[D]**
+
+**Free L2, runtime evidence.** Static map of what the boot stream writes: DT2 1.16/1.17 loads L2 up to `0x2001ab7c`,
+leaving `0x2001ab7c..0x20100000` = 939,140 bytes (`0xe5484`); DN2 1.11/1.12 loads up to `0x2008823c` with an
+8-byte gap at `0x2001e880`, leaving `0x2008823c..0x20100000` = **491,972** bytes (`0x77dc4`; the text above says 490,948,
+which is 1,024 short: **[C]**). Canary pattern laid over the whole range after the ready state is restored
+(`coupled-run --dsp-patch` from `l2canary.py patchfile`), read back by block hash after every scenario
+(`--dsp-peek canary=ADDR:LEN:4096`), and the PCM compared with the run without the patch: **[D]**
+
+| | scenarios | audio | canary | PCM vs no canary |
+|---|---:|---:|---|---|
+| DT2 1.16, card: `dt2-trackfx`, `dt2-sendfx` (the `dt2` set is in the table above) | 60 | 201 s | all 939,140 bytes intact | all equal |
+| DN2 1.11: `dn2-fx`, `dn2-trackfx`, `dn2-sendfx` | 151 | 779 s | all 491,972 bytes intact | all equal |
+| a 35 s tour (PLAY, every trig, RECORD, every page and mode, encoders, PLAY again) | 1 per device | 35 s each | intact | equal |
+
+Nothing in these runs writes or reads (in a way that changes the PCM) any byte of the unloaded L2 of either device,
+including the DT2 16 KB at `0x200fa000..0x200fe000` that two functions reference as literals: those functions did not
+run (or did not matter) in 66 DT2 and 162 DN2 scenario runs with the canary (this table plus the table above). The control run is positive: a canary over
+`0x2825c000..0x28260000` (loaded L1 data of DN2) was damaged in ranges `0x2825c000..0x2825d300` and `0x2825d600..0x2825d700`
+by one `trig1-taps` run, and the PCM changed. Conclusion: the unloaded L2 is free for the code paths these suites
+exercise; keep `0x200fa000..0x200fe000` out of the allocator on DT2 until a path that uses it is found, which leaves
+922,756 bytes (DT2) and 491,972 bytes (DN2), of which the stream can carry 727,540 and 211,600. Static references and
+the unexercised paths (sample recording to RAM, sample load beyond one file, MIDI) remain **[O]**.
+
+**Open.** (1) Whether the real SHARC boot ROM accepts the extra block is an expectation from the ADI block format
+(every header validates, the block precedes FINAL), not a test: **[O]**, hardware. (2) L1: the sizes of the L1 blocks are
+in the datasheet, which is not under `out/refs/`; the emulator accepts writes anywhere, so a run cannot show that the
+gaps between the loaded L1 windows (`0x2826f000..0x282c0000`, `0x282d8000..0x28380000` on DT2) are RAM. L1 PM room stays
+**[O]**; `append_block` refuses L1. (3) The append lengths above assume nothing else raises the stored size past
+`0x100000`; a patchkit build must check the packed size of section 7 as well as the depacked size.

@@ -32,7 +32,11 @@ HWR = Path(__file__).resolve().parent.parent / "out/refs/adsp-2156x-hwr/all.txt"
 
 
 def cold_blob(image: str) -> tuple[bytes, int]:
-    data = sr._load_image_memory(image)
+    return cold_blob_for_memory(sr._load_image_memory(image))
+
+
+def cold_blob_for_memory(data: sharcldr.LoadedMemory) -> tuple[bytes, int]:
+    """`cold_blob` for a loader image already in memory (for example a .syx's section 7)."""
     entries = sharcldr.entry_points(data.blocks)
     if not entries:
         raise SystemExit("loader has no FIRST entry")

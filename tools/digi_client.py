@@ -142,6 +142,7 @@ class Emu:
         binary: str | os.PathLike[str] | None = None,
         timeout: float = 120.0,
         run_dir: str | os.PathLike[str] | None = None,
+        env: dict[str, str] | None = None,
     ) -> Emu:
         """Start a private `digi-emud` (paused) with ARGS and connect to it.
 
@@ -168,6 +169,7 @@ class Emu:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             cwd=ROOT,
+            env=None if env is None else {**os.environ, **env},
         )
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -189,6 +191,46 @@ class Emu:
         emu = cls.connect(path)
         emu._proc, emu._run_dir = proc, run_dir_obj
         return emu
+
+    @classmethod
+    def spawn_coupled(
+        cls,
+        syx: str | os.PathLike[str],
+        ready_dir: str | os.PathLike[str],
+        *args: str,
+        **kwargs: Any,
+    ) -> Emu:
+        """`spawn` a daemon with DSP audio (no sound card): SYX is loaded, READY_DIR holds the ready inputs
+        (`tools/ready.py`: digi-audio-dn2-image.bin, digi-audio-m5.snap, digi-audio-m5.snap.dsp). The fast tier
+        is on as in the launcher."""
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        try:
+            import digi_env
+        finally:
+            sys.path.pop(0)
+        syx = pathlib.Path(syx).resolve()
+        ready = pathlib.Path(ready_dir).resolve()
+        env = {}
+        if regions := digi_env.fast_regions_for(syx):
+            env["SHARC_FAST_REGIONS"] = regions
+        if roots := digi_env.blocktrans_roots_for(syx):
+            env["SHARC_BLOCKTRANS"] = roots
+        return cls.spawn(
+            str(syx),
+            "--auto-coupled",
+            "--audio-profile-syx",
+            str(syx),
+            "--dsp-image",
+            str(ready / "digi-audio-dn2-image.bin"),
+            "--dsp-state",
+            str(ready / "digi-audio-m5.snap.dsp"),
+            "--cf-snapshot",
+            str(ready / "digi-audio-m5.snap"),
+            "--no-audio",
+            *args,
+            env={**env, **kwargs.pop("env", {})},
+            **kwargs,
+        )
 
     def close(self) -> None:
         try:
@@ -302,8 +344,9 @@ class Emu:
 
     inject = load
 
-    def restart(self) -> dict[str, Any]:
-        return self.call("restart")
+    def restart(self, auto_no: bool = False) -> dict[str, Any]:
+        """Back to the ready state of the running firmware; AUTO_NO presses NO there (DT2 FILE SYSTEM OK)."""
+        return self.call("restart", **({"auto_no": True} if auto_no else {}))
 
     def step(self, instructions: int, **params: Any) -> dict[str, Any]:
         return self.call("step", instructions=instructions, **params)
@@ -351,6 +394,10 @@ class Emu:
 
     def patch(self, text: str | None = None, file: str | None = None) -> dict[str, Any]:
         return self.call("dsp.patch", **_opt(text=text, file=file))
+
+    def dsp_peek(self, addr: int, length: int) -> dict[str, Any]:
+        """DSP memory: `hex` holds `??` for bytes the engine does not know."""
+        return self.call("dsp.peek", addr=addr, len=length)
 
     def frame(self) -> tuple[int, bytes]:
         """(revision, 1024 raw OLED bytes)."""

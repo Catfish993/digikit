@@ -6,6 +6,7 @@ native/boot/src/dsp_patch.rs for the format, which the Rust side also parses).
     SW <pc> <hex16> [<hex16> ...]  raw short words
     DM <addr> <hex32> [was <hex32>]
     BYTES <addr> <hex>
+    APPEND <addr> <hex>            a new boot-stream block (memory the stream does not load)
 
 Commands (the image is the packed loader image, `tools/sharc_pack_image.py`):
 
@@ -28,7 +29,9 @@ checksums and HMAC trailer. Every other section keeps its decoded bytes, so the
 MAIN OS digest is unchanged. The emulator's `firmware.load` (and
 `tools/digi_client.py inject OUT.syx`) takes such a file and hot-injects the
 changed DSP words into the running emulator. A patch can only change bytes the
-boot stream stores (not FILL blocks).
+boot stream stores (not FILL blocks); `APPEND` adds a block before the stream's FINAL block
+(`Stream.append_block`: free L2 only, depacked section 7 at most 0xfffff bytes, see
+docs/findings/06-sharc-engine-and-startup.md "Appending to the boot stream").
 """
 
 from __future__ import annotations
@@ -53,6 +56,7 @@ class Op:
     new: bytes
     was: bytes | None
     text: str
+    append: bool = False
 
 
 @dataclass
@@ -127,9 +131,11 @@ def parse(text: str, present=lambda a: True) -> Patch:
                         line,
                     )
                 )
-            elif key == "BYTES" and len(t) == 3:
+            elif key in ("BYTES", "APPEND") and len(t) == 3:
                 s = t[2].removeprefix("0x")
-                patch.ops.append(Op(_hex(t[1]), bytes.fromhex(s), None, line))
+                patch.ops.append(
+                    Op(_hex(t[1]), bytes.fromhex(s), None, line, key == "APPEND")
+                )
             else:
                 raise ValueError("cannot parse")
         except ValueError as e:
@@ -179,10 +185,43 @@ def check(img: Image, patch: Patch, syx: Path | None) -> None:
         if have != patch.base_sha256:
             raise SystemExit(f"BASE {patch.base_sha256} but {syx} is {have}")
     for op in patch.ops:
+        if op.append:
+            continue
         if op.was is not None and img.read(op.addr, len(op.was)) != op.was:
             raise SystemExit(
                 f"{op.text!r}: image holds {img.read(op.addr, len(op.was)).hex()}"
             )
+
+
+# Where an appended block may go: the L2 byte window past the stock loader (an append never overlaps loaded
+# bytes, so this only keeps blocks out of L1, the SDRAM window and the MMR space).
+L2_BYTE_BASE = 0x2000_0000
+L2_BYTE_LIMIT = 0x2010_0000
+APPEND_WINDOWS = ((L2_BYTE_BASE, L2_BYTE_LIMIT),)
+# The ColdFire boot routine (FUN_400ccf74 on DT2 1.16) refuses a depacked section 7 over 0xfffff bytes.
+MAX_STREAM = 0xFFFFF
+
+
+def block_header(target: int, count: int, flags: int = 1, argument: int = 0) -> bytes:
+    """A boot-stream block header for core 0: little-endian block code, target address, byte count
+    and argument; byte 2 of the block code makes the XOR of all 16 bytes zero."""
+    raw = bytearray(
+        struct.pack("<IIII", 0xAD00_0000 | (flags & 0xFFFF), target, count, argument)
+    )
+    check = 0
+    for b in raw:
+        check ^= b
+    raw[2] = check
+    return bytes(raw)
+
+
+def _loaded_memory(blob: bytes):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import sharcldr
+    finally:
+        sys.path.pop(0)
+    return sharcldr.LoadedMemory.from_stream(blob)
 
 
 class Stream:
@@ -193,13 +232,8 @@ class Stream:
     """
 
     def __init__(self, blob: bytes):
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        try:
-            import sharcldr
-        finally:
-            sys.path.pop(0)
         self.blob = bytearray(blob)
-        self.mem = sharcldr.LoadedMemory.from_stream(blob)
+        self.mem = _loaded_memory(blob)
 
     def _offset(self, addr: int) -> int:
         found = self.mem._segment(addr)
@@ -224,6 +258,68 @@ class Stream:
     def write(self, addr: int, data: bytes) -> None:
         for k, byte in enumerate(data):
             self.blob[self._offset(addr + k)] = byte
+
+    def append_block(
+        self,
+        addr: int,
+        data: bytes,
+        windows: tuple[tuple[int, int], ...] = APPEND_WINDOWS,
+    ) -> int:
+        """Insert a data block of DATA at byte address ADDR before the FINAL block.
+
+        The block is plain (flag word 1, argument 0, like the stream's own data blocks) and its
+        payload is padded with zeros to a multiple of 4. Refused: a range outside WINDOWS, a range
+        any block already writes (an append never changes loaded memory), an ADDR that is not a
+        multiple of 4, and a stream whose size would pass MAX_STREAM (the ColdFire boot routine
+        sends at most that many depacked bytes). Returns the new stream length."""
+        if not data:
+            raise SystemExit("APPEND: empty block")
+        if addr % 4:
+            raise SystemExit(f"APPEND {addr:#x}: the address is not a multiple of 4")
+        payload = data + b"\0" * (-len(data) % 4)
+        end = addr + len(payload)
+        if not any(lo <= addr and end <= hi for lo, hi in windows):
+            raise SystemExit(
+                f"APPEND {addr:#x}..{end:#x}: outside the allowed windows "
+                + ", ".join(f"{lo:#x}..{hi:#x}" for lo, hi in windows)
+            )
+        for a in range(addr, end, 4):
+            if self.present(a) or self.present(a + 3):
+                raise SystemExit(
+                    f"APPEND {a:#x}: the boot stream already loads this address"
+                )
+        final = next(
+            (b for b in reversed(self.mem.blocks) if "FINAL" in b["flags"]), None
+        )
+        if final is None:
+            raise SystemExit("the boot stream has no FINAL block")
+        block = block_header(addr, len(payload)) + payload
+        if len(self.blob) + len(block) > MAX_STREAM:
+            raise SystemExit(
+                f"APPEND: the stream would be {len(self.blob) + len(block):#x} bytes, "
+                f"more than the {MAX_STREAM:#x} the ColdFire boot routine sends"
+            )
+        at = int(final["offset"])
+        self.blob[at:at] = block
+        self.mem = _loaded_memory(bytes(self.blob))
+        return len(self.blob)
+
+    def free_ranges(
+        self, window: tuple[int, int] = (L2_BYTE_BASE, L2_BYTE_LIMIT), align: int = 4
+    ) -> list[tuple[int, int]]:
+        """Maximal ranges of WINDOW that no block of the stream writes (ALIGN-granular)."""
+        out: list[tuple[int, int]] = []
+        start = None
+        for a in range(window[0], window[1], align):
+            free = not self.present(a)
+            if free and start is None:
+                start = a
+            elif not free and start is not None:
+                out.append((start, a))
+                start = None
+        if start is not None:
+            out.append((start, window[1]))
+        return out
 
 
 def section_blob(syx: Path, section: int) -> bytes:
@@ -256,7 +352,12 @@ def write_syx(base: Path, patch: Patch, out: Path) -> tuple[int, int]:
         raise SystemExit(f"BASE {patch.base_sha256} but {base} is {have}")
     stream = Stream(section_blob(base, 7))
     changed = 0
-    for op in patch.ops:
+    # In-place edits first, then the new blocks (an append never touches loaded bytes).
+    for op in sorted(patch.ops, key=lambda o: o.append):
+        if op.append:
+            stream.append_block(op.addr, op.new)
+            changed += len(op.new)
+            continue
         if op.was is not None and stream.read(op.addr, len(op.was)) != op.was:
             raise SystemExit(
                 f"{op.text!r}: the stream holds {stream.read(op.addr, len(op.was)).hex()}"
@@ -269,7 +370,14 @@ def write_syx(base: Path, patch: Patch, out: Path) -> tuple[int, int]:
         from dt2.build import FLASH_CONTAINER_MAX, rebuild
     finally:
         sys.path.pop(0)
-    out.write_bytes(rebuild(str(base), {7: bytes(stream.blob)}, max_container=FLASH_CONTAINER_MAX))
+    out.write_bytes(
+        rebuild(
+            str(base),
+            {7: bytes(stream.blob)},
+            pack="aplib",
+            max_container=FLASH_CONTAINER_MAX,
+        )
+    )
     return len(patch.ops), changed
 
 
@@ -300,6 +408,8 @@ def main(argv: list[str]) -> int:
     img = Image(a.image.read_bytes())
     patch = parse(a.patch.read_text(), img.present)
     check(img, patch, a.syx)
+    if any(op.append for op in patch.ops):
+        raise SystemExit("APPEND adds boot-stream blocks: use the `syx` command")
     for op in patch.ops:
         before = img.read(op.addr, len(op.new))
         if a.command == "show":

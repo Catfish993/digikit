@@ -152,6 +152,26 @@ pub trait DspEngine {
     /// One 32-bit word of DSP data memory at `addr`, a byte address as the
     /// findings write them (e.g. 0x25f180; consecutive words are 4 apart).
     /// None: unknown or unmodeled, or not supported by the engine.
+    /// Memory bytes from `addr` (`None`: unknown to the engine), read through
+    /// the aligned words of `peek_word`.
+    fn peek_bytes(&self, addr: u32, n: usize) -> Vec<Option<u8>> {
+        let mut word: Option<(u32, Option<u32>)> = None;
+        (0..n as u32)
+            .map(|k| {
+                let a = addr.wrapping_add(k);
+                let base = a & !3;
+                let w = match word {
+                    Some((b, w)) if b == base => w,
+                    _ => {
+                        let w = self.peek_word(base);
+                        word = Some((base, w));
+                        w
+                    }
+                };
+                w.map(|w| (w >> (8 * (a & 3))) as u8)
+            })
+            .collect()
+    }
     fn peek_word(&self, _addr: u32) -> Option<u32> {
         None
     }
@@ -1008,6 +1028,12 @@ enum Msg {
         patch: crate::dsp_patch::DspPatch,
         ack: mpsc::Sender<Result<u64, String>>,
     },
+    /// Read DSP memory between frames.
+    Peek {
+        addr: u32,
+        len: usize,
+        ack: mpsc::Sender<Vec<Option<u8>>>,
+    },
 }
 
 /// Most per-period records the worker keeps (about 22 minutes of audio).
@@ -1285,6 +1311,9 @@ impl ThreadedPeer {
                         Msg::ExecutionProfileReport => {
                             let _ = execution_profile_tx.send(core.engine.execution_profile());
                         }
+                        Msg::Peek { addr, len, ack } => {
+                            let _ = ack.send(core.engine.peek_bytes(addr, len));
+                        }
                         Msg::Patch { patch, ack } => {
                             let result = core
                                 .engine
@@ -1428,6 +1457,24 @@ impl ThreadedHandle {
         ack_rx
             .recv()
             .map_err(|_| "DSP worker stopped while patching".to_string())?
+    }
+
+    /// Read `len` bytes of DSP memory at `addr` between two frames (`None`
+    /// for a byte the engine does not know).
+    pub fn peek_bytes(&self, addr: u32, len: usize) -> Result<Vec<Option<u8>>, String> {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        let sent = self
+            .link
+            .borrow()
+            .tx
+            .as_ref()
+            .is_some_and(|c| c.send(Msg::Peek { addr, len, ack: ack_tx }).is_ok());
+        if !sent {
+            return Err("DSP worker has stopped".into());
+        }
+        ack_rx
+            .recv()
+            .map_err(|_| "DSP worker stopped while reading".to_string())
     }
 
     /// Commit completed frames without waiting; streaming hosts use this between steps.

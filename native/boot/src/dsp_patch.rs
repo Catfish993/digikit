@@ -9,6 +9,7 @@
 //! SW <pc> <hex16> [<hex16>..]  raw short words at <pc>, in address order
 //! DM <addr> <hex32> [was <hex32>]   one 32-bit word at DM byte address <addr>
 //! BYTES <addr> <hex>           raw bytes at DM byte address <addr>
+//! APPEND <addr> <hex>          like BYTES; in a .syx it is a new boot-stream block
 //! ```
 //!
 //! Numbers are hex (an optional `0x`). `was` is a guard: the patch is refused
@@ -144,7 +145,9 @@ impl DspPatch {
                         was: old,
                     });
                 }
-                "BYTES" if t.len() == 3 => {
+                // APPEND: a new boot-stream block. Applied to a running engine it is
+                // the same write as BYTES; `tools/dsp_patch.py syx` makes the block.
+                "BYTES" | "APPEND" if t.len() == 3 => {
                     patch.ops.push(PatchOp::Bytes {
                         addr: hex_u32(t[1]).map_err(&err)?,
                         bytes: hex_bytes(t[2]).map_err(&err)?,
@@ -202,6 +205,15 @@ mod tests {
                 bytes: vec![0xef, 0xbe, 0xad, 0xde],
                 was: None
             }
+        );
+        let a = DspPatch::parse("APPEND 20030000 0a0b0c0d").unwrap();
+        assert_eq!(
+            a.ops,
+            vec![PatchOp::Bytes {
+                addr: 0x2003_0000,
+                bytes: vec![10, 11, 12, 13],
+                was: None
+            }]
         );
         assert!(DspPatch::parse("PM 1 123").is_err());
         assert!(DspPatch::parse("PM 1 0f82 was 0f82001f").is_err());
