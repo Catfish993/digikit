@@ -290,6 +290,9 @@ pub struct Engine {
     /// a code range that no longer matches (sorted), or None for every entry.
     /// Other blocks keep running.
     code_barred: Option<Vec<u32>>,
+    /// The first PC past the generated image's code ranges: code at or above
+    /// it was appended by a patch (counted in `model_stats.interp_appended`).
+    appended_from: u32,
     /// Optional fast tier (src/fast): tried at its entry PCs before the
     /// generated block. None by default; behaviour is unchanged without it.
     pub fast: Option<Box<dyn fast::FastTier>>,
@@ -330,6 +333,12 @@ pub struct ModelStats {
     /// Attempts refused because the loaded code differs from the code the
     /// blocks were generated from.
     pub code_mismatch: u64,
+    /// `verify_code` runs (a write to a code-watched page since the last
+    /// check), the wall time they took, and the interpreted instructions at
+    /// or above the end of the generated image's code (appended module code).
+    pub code_verifies: u64,
+    pub code_verify_ns: u64,
+    pub interp_appended: u64,
     /// Interrupts the engine actually entered (`_enter_interrupt` succeeded).
     pub irq_taken: u64,
     /// `irq_taken` by source, indexed by the IRPTL/IMASK bit number
@@ -346,6 +355,9 @@ impl Default for ModelStats {
             timer_gated: 0,
             mmr_exits: 0,
             code_mismatch: 0,
+            code_verifies: 0,
+            code_verify_ns: 0,
+            interp_appended: 0,
             irq_taken: 0,
             irq_by_vector: [0; 64],
         }
@@ -395,6 +407,14 @@ pub struct TierCounters {
     pub fast_compile_ns: u64,
     pub fast_build_ns: u64,
     pub fast_declined: [u64; 5],
+    /// Code-identity checks (see `ModelStats`): `Mem::code_gen`, the checks
+    /// that ran, their wall time, the dispatches they refused, and the
+    /// interpreted instructions in appended code.
+    pub code_gen: u64,
+    pub code_verifies: u64,
+    pub code_verify_ns: u64,
+    pub code_mismatch: u64,
+    pub interp_appended: u64,
 }
 
 /// Idle-skip counters (diagnostic).
@@ -661,6 +681,7 @@ impl Engine {
             code_known: false,
             code_ok: false,
             code_barred: None,
+            appended_from: u32::MAX,
             fast: None,
             fast_auto: false,
             fast_auto_dispatch: false,
@@ -694,6 +715,11 @@ impl Engine {
             block_instructions: self.stats.block_instructions,
             block_traps: self.stats.block_traps,
             traps: self.stats.traps,
+            code_gen: self.s.mem.code_gen,
+            code_verifies: self.model_stats.code_verifies,
+            code_verify_ns: self.model_stats.code_verify_ns,
+            code_mismatch: self.model_stats.code_mismatch,
+            interp_appended: self.model_stats.interp_appended,
             ..TierCounters::default()
         };
         if let Some(f) = self.fast.as_ref().and_then(|f| f.fast_stats()) {
@@ -1135,7 +1161,10 @@ impl Engine {
         }
         self.code_checked = self.s.mem.code_gen;
         self.code_known = true;
+        let started = std::time::Instant::now();
         self.code_ok = self.verify_code();
+        self.model_stats.code_verifies += 1;
+        self.model_stats.code_verify_ns += started.elapsed().as_nanos() as u64;
         self.code_ok
     }
 
@@ -1146,6 +1175,7 @@ impl Engine {
         #[cfg(all(sharc_gen, sharc_image))]
         {
             let ranges = generated::image::CODE_RANGES;
+            self.appended_from = ranges.iter().map(|r| r.0 + r.1).max().unwrap_or(u32::MAX);
             let mut bad = Vec::new();
             for (i, &(start, len, want)) in ranges.iter().enumerate() {
                 let mut bytes = Vec::with_capacity(len as usize * 2);
@@ -1922,6 +1952,7 @@ impl Engine {
                 break;
             };
             self.stats.single_steps += 1;
+            self.model_stats.interp_appended += (self.s.pc_sw as u32 >= self.appended_from) as u64;
             let loops_before = self.s.loops.n;
             let pc_before = self.s.pc_sw;
             if self.diag_on {
