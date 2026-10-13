@@ -155,3 +155,37 @@ Not covered: a card other than the one-sample card, and the DSP side of patched 
   come from the .syx's own section 7, byte-identical to the `out/sections` route for the stock files). A .syx of a
   known MAIN with another DSP stream is now identified by its MAIN digest (`Registry::boot_by_main`).
 
+
+## Health events, heartbeat and the watchdog (patchkit Phase 2, 2026-10-13) **[D]**
+
+Code: `native/control/src/health.rs` (pure logic, 5 unit tests), `controller.rs` (`Actor::watch`), `tools/digi_client.py`
+(`subscribe`, `drain_events`, `peek32`, `poke32`, `watchdog`).
+
+- **`fault`** event (once per runtime): the ColdFire step error (`Status.error`, phase `fault`), with `error`, `pc`,
+  `cpu_state`; `GUEST_FAULT` (error 6) is still the reply of the step that hit it. **`halt`** event (once): the DSP's
+  `halted` reason, read every 16th chunk (it needs the audio session). **`stall`** event: the heartbeat stood still
+  for `stall_ms` of emulated time (default 1000, `DIGI_STALL_MS`, `watchdog.config {stall_ms}`; 0 disables) while the
+  CPU is `running` and the firmware is past the main panel; `stall.end` when it beats again. `underrun` is still not
+  emitted. Events are written by a socket thread, so a reply can arrive before the event it follows: a client that must
+  be sure calls `status` once more, or reads the latched state (`status.cf.error`, `status.audio.halted`,
+  `status.heartbeat.stall_count`).
+- **Heartbeat** = `Status.mainloop_hits`, the passes through the resolved main-loop PC (the PC the readiness contract
+  already counts; fused loops and the fast path stop at it, so the count is exact). New fields: `mainloop_hits`,
+  `mainloop_pc`, `cpu_state`; `status.heartbeat {mainloop_hits, mainloop_pc, stalled, stall_count, stall_ms}`.
+  Measured, DT2 1.17 at ready: 1 pass per about 4.0 M instructions (30 ms emulated, 33 Hz), DN2 1.12 similar, so the
+  1000 ms default is about 33 missed beats. A `bra.s .` written after the loop's call gives a `stall` at exactly
+  1000 ms (132.25 M instructions); an illegal instruction at the loop head gives `fault: exception vector 11`.
+- **`mem.cf.peek {addr}` / `mem.cf.poke {addr, value}`** (SDRAM longwords, side-effect free, not recorded for replay)
+  exist so tests can break the guest on purpose.
+- **Watchdog**: the MCF5441x core watchdog is the SCM's CWCR (`0xFC040016`) and CWSR (`0xFC04001B`). No word in MAIN OS
+  (1.16, 1.17, 1.11, 1.12) or in the bootstrap carries those addresses (the literal search for `fc040016` and
+  `fc04001b` is empty; the only SCM literals are `fc04002d`/`fc04002f`, PPMCR, and one `fc040024`), and the bus models no
+  SCM register except the write-only PPMCR (`ppmcr_contract`). So the firmware does not configure the watchdog as far
+  as a static read shows (computed addresses are not excluded), and the emulator would not model it. A hang
+  therefore shows only as a `stall` here; on hardware the unconfigured CWT is off after reset (CWCR[CWE] cleared). **[D]**
+- **DSP halt in a stock run** **[D]** **[O]**: DT2 1.17 stock, ready state with the one-sample card: pattern 3 or 4
+  (`PTN` + `TRIG 3`/`4`) then PLAY halts the DSP: `native-trap: sharc_core.forms_dag._type_7a:63: stop: unsupported
+  Type7a predicate at 0x1cbc93` (`IF EQ modify(I4, M4)`, a conditional MODIFY inside function `0x1cbc44`). Patterns 1
+  and 2 and every other tour step run clean. The generated cores stop at the first conditional Type 7a; fixing it
+  changes `tools/sharc_core` and so `CORE_FINGERPRINT` (all cores regenerate). The smoke tour avoids it; a pytest
+  (`test_a_dsp_halt_is_a_failure`) keeps the detector honest and skips when the halt is gone.

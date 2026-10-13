@@ -1,0 +1,143 @@
+# The standard patchkit smoke tour (tools/pk_harness.py). Every segment starts from `restart` (the ready state).
+# Pattern 2, not 3 or 4: on DT2 1.17 PLAY in pattern 3 or 4 halts the stock DSP core (finding 17, "DSP halt").
+
+[[segment]]
+name = "boot"
+[[segment.step]]
+expect_frame = "main"
+[[segment.step]]
+wait_ms = 1000
+[[segment.step]]
+expect_no_fault = true
+
+[[segment]]
+name = "track"
+[[segment.step]]
+tap = ["TRK", "TRIG 2"]
+[[segment.step]]
+wait_ms = 100
+[[segment.step]]
+expect_frame = "track2"
+[[segment.step]]
+tap = ["TRK", "TRIG 1"]
+[[segment.step]]
+wait_ms = 100
+[[segment.step]]
+expect_frame = "track1"
+
+[[segment]]
+name = "pattern"
+[[segment.step]]
+tap = ["PTN", "TRIG 2"]
+[[segment.step]]
+wait_ms = 100
+[[segment.step]]
+expect_frame = "pattern2"
+[[segment.step]]
+tap = ["PTN", "TRIG 1"]
+[[segment.step]]
+wait_ms = 100
+[[segment.step]]
+expect_frame = "pattern1"
+
+[[segment]]
+name = "audition"
+[[segment.step]]
+tap = "TRIG 1"
+[[segment.step]]
+wait_ms = 400
+[[segment.step]]
+expect_pcm_db = { min = -60, max = -3 }
+
+[[segment]]
+name = "play_stop"
+# TRIG 1 auditions and (DT2) sets step 1; PLAY then runs the sequencer over it. DN2's audition is checked in
+# `audition`; its sequencer run sounds nothing here, so only DT2 has a PCM expectation.
+[[segment.step]]
+tap = "TRIG 1"
+[[segment.step]]
+wait_ms = 300
+[[segment.step]]
+tap = "PLAY"
+[[segment.step]]
+wait_ms = 2200
+[[segment.step]]
+device = "dt2"
+expect_pcm_db = { min = -60, max = -3 }
+[[segment.step]]
+expect_frame = "playing"
+[[segment.step]]
+tap = "STOP"
+[[segment.step]]
+wait_ms = 300
+[[segment.step]]
+expect_frame = "stopped"
+
+[[segment]]
+name = "machine_menu"
+[[segment.step]]
+tap = ["FUNC", "SRC"]
+[[segment.step]]
+wait_ms = 150
+[[segment.step]]
+expect_frame = "open"
+[[segment.step]]
+tap = "DOWN"
+[[segment.step]]
+wait_ms = 100
+[[segment.step]]
+expect_frame = "down"
+[[segment.step]]
+tap = "NO"
+[[segment.step]]
+wait_ms = 150
+[[segment.step]]
+expect_frame = "closed"
+
+[[segment]]
+name = "save_reload"
+[[segment.step]]
+tap = ["FUNC", "SETTINGS"]
+[[segment.step]]
+wait_ms = 300
+[[segment.step]]
+expect_frame = "save_prompt"
+[[segment.step]]
+tap = "YES"
+[[segment.step]]
+wait_ms = 3000
+[[segment.step]]
+expect_frame = "saved"
+[[segment.step]]
+tap = "SETTINGS"
+[[segment.step]]
+wait_ms = 200
+[[segment.step]]
+tap = "YES"
+[[segment.step]]
+wait_ms = 200
+[[segment.step]]
+expect_frame = "project_menu"
+[[segment.step]]
+tap = "YES"
+[[segment.step]]
+wait_ms = 500
+[[segment.step]]
+expect_frame = "project_list"
+[[segment.step]]
+tap = "YES"
+[[segment.step]]
+wait_ms = 5000
+[[segment.step]]
+expect_frame = "reloaded"
+[[segment.step]]
+expect_no_fault = true
+
+[[segment]]
+name = "stress"
+[[segment.step]]
+stress = { seed = 1, actions = 40 }
+[[segment.step]]
+wait_ms = 500
+[[segment.step]]
+expect_frame = "end"
