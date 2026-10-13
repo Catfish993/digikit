@@ -622,6 +622,15 @@ Deviations and readings of the spec (simplest consistent choice):
 | fastweb | DN2 research: RAM tables behind DN2 parameter pages, a note-on edge for DN2 voice routines, voice slot to track map, per-track parameter words; findings and anchor rules only |
 | read-only checkers | second-agent checks of [D] results in findings 01, 02, 06, 17 (promote to [V] or correct) |
 
+Proof speed (added 2026-10-14): the pk_proof_* tools take up to an hour each (one emulator process per part, a
+cold boot per part, seconds of rendered audio per check, single-core, non-PGO lane builds, parts run in sequence).
+
+- [ ] Quick tier: `--quick` on every pk_proof_* tool (fewer notes, short renders, the checks that catch breakage);
+      full tier only at integration. Target: a few minutes per tool.
+- [ ] Snapshot restore between parts instead of a cold boot per part (one coupled cold boot per image, cached).
+- [ ] Independent parts in parallel processes (`--jobs`), bounded to the free cores.
+- [ ] Proof runs use a PGO build of digi-emud when one exists for the device.
+
 After wave 7: DN2 parameter pages and PLUCK on DN2 (as modules), Phase 7 docs, PGO retrain at the wave end,
 browser DSP audio (separate sharc-jit plan) when chosen.
 

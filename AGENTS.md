@@ -37,6 +37,9 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   conflict: resolve them with `git merge-file --union`.
 - Lanes log progress, one line per step, to `out/runs/lanes/NAME.log` (`date  step  result  elapsed`), and check
   in after about an hour.
+- Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
+  with a bound (`sleep N; tail -n 5 FILE`) or use a monitor. Iterate on quick proof tiers; run full emulator proofs
+  once, at integration.
 - Each lane runs its own dev server (own port; `tools/browser_bench.mjs --url`). Do not change Python dependencies
   in a lane (the virtualenv is shared).
 
