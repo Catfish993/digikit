@@ -283,6 +283,45 @@ def params_sites_digest(refs: list[int], bounds: list[tuple[int, int]]) -> str:
     return sha(b)
 
 
+# Multi-site rules: one rule, many anchors `<name>.0 .. <name>.N-1` (patchkit reads them from the lockfile and a
+# `write` op with `anchors = "<name>.*"` visits each; no scan runs at patch time).
+MULTI_KINDS = ("cf_params_refs", "cf_params_bounds")
+
+
+def resolve_cf_multi(cf: CfFacts, rule: dict, known: dict[str, dict]) -> list[dict]:
+    """The sites of `params::scan`, one anchor each, in address order.
+
+    `cf_params_refs`: every 2-aligned big-endian word that points into the first parameter table (4-byte data
+    anchors; the operand of the instruction or the table word itself). `cf_params_bounds`: every compare of the
+    row count that clamps an index (7-byte code anchors: opcode, immediate, next opcode byte; the immediate is
+    `image.u32(this + 2)`). `exclude_anchors = [...]` drops sites inside those (already resolved) anchors, for
+    code the module replaces whole.
+    """
+    t1, count = param_table(cf, rule)
+    refs, bounds = scan_param_sites(cf.main, cf.base, t1, count)
+    skip = []
+    for n in rule.get("exclude_anchors", []):
+        if n not in known:
+            raise ResolveError(
+                f"{rule['name']}: exclude_anchors names {n}, which no earlier rule resolves"
+            )
+        skip.append((known[n]["addr"], known[n]["addr"] + known[n]["len"]))
+
+    def kept(addr: int) -> bool:
+        return not any(lo <= addr < hi for lo, hi in skip)
+
+    if rule["kind"] == "cf_params_refs":
+        sites = [(r, 4) for r in refs if kept(r)]
+        kind = "data"
+    else:
+        sites = [(a, 7) for a, _ in bounds if kept(a)]
+        kind = "code"
+    return [
+        {"kind": kind, "addr": a, "len": n, "sha256": sha(cf.bytes_at(a, n))}
+        for a, n in sorted(sites)
+    ]
+
+
 def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
     if kind == "cf_params_t1":
@@ -471,8 +510,12 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
     dsp = Dsp(secs[7], prof["dsp"])
     cf = CfFacts(f"{device}-{version}", secs[3])
     anchors = []
+    pending = []
     for rule in module_rules(root):
         if rule.get("devices") and device not in rule["devices"]:
+            continue
+        if rule.get("kind") in MULTI_KINDS:
+            pending.append(rule)  # after the single anchors they may exclude
             continue
         a = (
             resolve_cf_anchor(cf, rule)
@@ -488,6 +531,18 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
                 **a,
             }
         )
+    known = {a["name"]: a for a in anchors}
+    for rule in pending:
+        for i, a in enumerate(resolve_cf_multi(cf, rule, known)):
+            anchors.append(
+                {
+                    "name": f"{rule['name']}.{i}",
+                    "cpu": "cf",
+                    "mark": rule.get("mark", "D"),
+                    "rule": f"{rule['_module']}:{rule['kind']}",
+                    **a,
+                }
+            )
     # one anchor name may be declared by several modules; they must agree
     seen: dict[str, dict] = {}
     unique = []

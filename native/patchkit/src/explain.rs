@@ -145,9 +145,65 @@ pub fn explain(base: &[u8], out: &Applied) -> Result<String> {
             );
         }
     }
-    let _ = writeln!(
-        s,
-        "\nregistry entries: none (this release has no registry frameworks)"
-    );
+    if plan.registries.is_empty() {
+        let _ = writeln!(s, "\nregistries: none");
+    }
+    for r in &plan.registries {
+        let _ = writeln!(
+            s,
+            "\nregistry {}  [{}]  {} {:#010x}  {} bytes  rows of {} bytes, first index {}, {} of at most {} entries",
+            r.name, r.module, r.region, r.addr, r.bytes, r.row_size, r.first, r.count, r.max
+        );
+        let fields: Vec<String> = r
+            .fields
+            .iter()
+            .map(|(n, k, o)| format!("{n}:{k}@{o}"))
+            .collect();
+        let _ = writeln!(s, "  row: {}", fields.join(" "));
+        for e in &r.entries {
+            let _ = writeln!(s, "  {:>4}  {}  [{}]", e.index, e.id, e.module);
+        }
+    }
+    if !plan.sections.is_empty() {
+        let _ = writeln!(s, "\ncopied sections:");
+    }
+    for c in &plan.sections {
+        let _ = writeln!(
+            s,
+            "  {}  [{}]  {} {:#010x}  {} bytes = {} copied from {} ({:#010x}) + {} appended row(s)",
+            c.name,
+            c.module,
+            c.region,
+            c.addr,
+            c.bytes,
+            c.copied,
+            c.from_anchor,
+            c.from_addr,
+            c.appended_rows
+        );
+    }
+    if !plan.hooks.is_empty() {
+        let _ = writeln!(s, "\nhooks:");
+    }
+    for h in &plan.hooks {
+        let _ = writeln!(
+            s,
+            "  [{}] {} {:+} ({}) at {:#010x}: {} to {:#x}, {} site byte(s), displaced {}, return {:#x}{}",
+            h.module,
+            h.anchor,
+            h.offset,
+            h.cpu,
+            h.addr,
+            h.kind,
+            h.to,
+            h.site_len,
+            h.displaced,
+            h.ret,
+            h.tail.map(|t| format!(", tail {t:#x}")).unwrap_or_default()
+        );
+        for d in &h.displaced_insns {
+            let _ = writeln!(s, "      displaced {d}");
+        }
+    }
     Ok(s)
 }
