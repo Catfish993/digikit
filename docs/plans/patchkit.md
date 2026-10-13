@@ -370,11 +370,37 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 
 ### Phase 5: web (about 4-5 days, can start after Phase 2)
 
-- [ ] `patchkit.wasm` worker; `modules/index.json` build step.
-- [ ] Browser cold boot from `.syx` and in-page extraction; load the COI service worker.
-- [ ] `/patch` gallery (categories, status and compatibility badges, dependency and conflict explanations),
+- [x] `patchkit.wasm` worker; `modules/index.json` build step.
+- [ ] Browser cold boot from `.syx` and in-page extraction (open: the patched image boots in the plain core, with
+      screen and controls but no DSP audio).
+- [x] Load the COI service worker (both pages, through the shared layout).
+- [x] `/patch` gallery (categories, status and compatibility badges, dependency and conflict explanations),
       patch, verify, boot, download.
-- [ ] UI cleanup: dev-only controls behind a flag, device follows the uploaded firmware.
+- [x] UI cleanup: dev-only controls behind a flag, device follows the uploaded firmware.
+
+### Phase 5 results (2026-10-13, lane `b`)
+
+- Build step `packages/web/scripts/gen-modules.mjs` (run by `predev` and `prebuild`) writes
+  `public/modules/index.json` (cards: id, name, category, status, summary, targets, requires, conflicts, claims,
+  `gallery/README.md` as data blocks, never HTML) and `public/modules/bundle.json` (ports and modules as texts, equal
+  to `tools/patchkit.py bundle`). Committed `modules/` and `devices/ports/` only; both outputs are gitignored. The
+  build guard now also rejects `.syx`, `.snap` and `.mstate` files.
+- `patchkit.wasm` gained one export, `pk_check` (per-module compatibility with an image, `wasm.rs`). The worker
+  (`src/patch/patch-worker.ts`, wrapper `patchkit-core.ts` shared with the node tests) checks, applies in
+  canonical order and verifies against the stock image; it fetches only the site's own wasm and bundle.
+- `/patch` (`src/components/PatchGallery.tsx`): drop zone, identification against the device profiles and ports,
+  category filter, status and per-firmware badges, automatic `requires`, conflicts and shared claims explained,
+  patchkit's own error text for incompatibility, result panel, download (`Digitakt_II_OS1.17+fx-master-gain.syx`),
+  "Boot in emulator" through IndexedDB (`src/patch/handoff.ts`, `/?handoff=1`), safety notes.
+- Emulator page: shared layout with a top nav and theme tokens (`styles/site.css`, light and dark); dev-only
+  controls (device select, export diagnostics, DSP image/state/snapshot pickers, bench, `?leds=`) show on the dev
+  server or with `?dev=1` (`src/dev.ts`); the device follows the firmware's hash. The one pre-existing oxlint
+  error (early return in `Faceplate`) is fixed.
+- Checked with `tools/web_shots.mjs` (headless Chrome): on the dev server and on `astro preview` (no headers), DT2
+  1.17 and DN2 1.12 patched with `fx/master-gain` in the page are byte-identical to the command line, and "Boot in
+  emulator" boots the patched image in the plain core to the startup display.
+- Open: no DSP audio and no cold boot in the browser; the gallery has one real module; hardware untested; the
+  emulator page's own `fetch('/emulator-core.wasm')` is root-absolute (breaks under a Pages sub-path, as before).
 
 ### Phase 6: agent tooling (about 2-3 days, parallel with Phases 1-3)
 

@@ -1,12 +1,8 @@
 ---
+import Base from '../layouts/Base.astro';
 import Faceplate from '../components/Faceplate';
 ---
 
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width" />
-    <title>digikit panel</title>
-  </head>
-  <body><Faceplate client:only="solid-js" /></body>
-</html>
+<Base title="digikit emulator" active="emulator">
+  <Faceplate client:only="solid-js" />
+</Base>
