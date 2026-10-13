@@ -1,0 +1,142 @@
+{
+ "arch": "sharc",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": "seg_pmco",
+   "symbol": "_sv_idle",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 18,
+   "section": "seg_pmco",
+   "symbol": "_sv_state",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 28,
+   "section": "seg_pmco",
+   "symbol": "_sv_running",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 57,
+   "section": "seg_pmco",
+   "symbol": "_sv_stop",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 61,
+   "section": "seg_pmco",
+   "symbol": "_dv_frame_hw",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 78,
+   "section": "seg_pmco",
+   "symbol": "_dv_frame_hw",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 93,
+   "section": "seg_pmco",
+   "symbol": "_dv_exp2",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 105,
+   "section": "seg_pmco",
+   "symbol": "_dv_frame_hw",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 231,
+   "section": "seg_pmco",
+   "symbol": "_sv_zero",
+   "type": "sharc.abs24"
+  }
+ ],
+ "sections": [
+  {
+   "align": 8,
+   "hex": "52c278c27e70bf0801160000b8015993800fff00840190000006000000003e0200000502010f0000000080011016000f000000ff84019000200600000000800f005a90cd79937f703f09800f000008950000089510007f703f0908941005800f200080010a1a08951005000f01000077a0c322060000000005c5be06000000008c0100aa3e02000005053e020000150480011010810f6d0080011010be06000000008c0100ab010f80460000b1c9abc8010faa39abaa9301a100be0600000000010f3239629a9301010c810f1a0080011510be06000000008c0100a0010f0138040201cf010f003f0000930101097f703f09089480067f703f880e0f003f00000f0f803e00000b0f803f0000000c00204b003e010800de203e010e000f313e01080011123e01080020203e0113000001020f28421a3c3e0113002102030f99c266693e01080023123e0113002102030fa342e3353e01080023123e0113002102030f25c2e75d3e01080023123e0113002102030fc940db0f3e01080023123e01130020023e01130029023e010a0020223e010800dc1d3e010800db2322010a00301dbe51008100007f703f09089580063f083f68800f00ff90cc000fffffff0090cc7993000f000000ff84019000000600000000000fffffff0090cc7993be703f08800f0000000c00200300be51008000003f083f68",
+   "kind": "text",
+   "name": "seg_pmco",
+   "size": 502
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__sv_state",
+   "size": 128
+  }
+ ],
+ "source_sha256": "41f91a675e6b98b6a20770d6544f1d1a8881288a3e52319211c3a918a7827a05",
+ "symbols": [
+  {
+   "global": false,
+   "name": "_sv_idle",
+   "section": "seg_pmco",
+   "value": 226
+  },
+  {
+   "global": true,
+   "name": "_sv_render",
+   "section": "seg_pmco",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "_sv_running",
+   "section": "seg_pmco",
+   "value": 43
+  },
+  {
+   "global": false,
+   "name": "_sv_stop",
+   "section": "seg_pmco",
+   "value": 218
+  },
+  {
+   "global": false,
+   "name": "_sv_zero",
+   "section": "seg_pmco",
+   "value": 239
+  },
+  {
+   "global": true,
+   "name": "_sv_state",
+   "section": "pkdata__sv_state",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_exp2",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_frame_hw",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "instructions_redecoded": "106",
+  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
+  "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
+  "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"
+ }
+}

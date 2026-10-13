@@ -224,7 +224,7 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         }
     }
     for op in &m.manifest.op {
-        if on(&op.devices, dev) && port.anchor(&op.anchor).is_none() {
+        if op.op != "register" && on(&op.devices, dev) && port.anchor(&op.anchor).is_none() {
             missing.push(format!("anchor {}", op.anchor));
         }
     }
@@ -391,7 +391,7 @@ pub fn apply_with(
                 }
             }
         }
-        for op in m.manifest.op.iter().filter(|o| on(&o.devices, &dev)) {
+        for op in m.manifest.op.iter().filter(|o| o.op != "register" && on(&o.devices, &dev)) {
             used.insert(op.anchor.clone());
         }
     }
@@ -490,16 +490,25 @@ pub fn apply_with(
         });
     }
 
+    // Registrations: rows written into the tables other modules export (before the chunks are hashed and placed).
+    register_rows(lib, &order, &dev, &globals, &mut chunks)?;
+
     // Operations.
     let mut patches: Vec<Patch> = vec![];
     for id in &order {
         let m = lib.get(id).unwrap();
-        for op in m.manifest.op.iter().filter(|o| on(&o.devices, &dev)) {
+        for op in m
+            .manifest
+            .op
+            .iter()
+            .filter(|o| o.op != "register" && on(&o.devices, &dev))
+        {
             let a = port.anchor(&op.anchor).unwrap();
             let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
             let addr = (a.addr as i64 + op.offset) as u64;
             let new = match op.op.as_str() {
                 "retarget" => retarget(&mem, a, op, &globals)?,
+                "jump" => jump_insn(a, op, &globals)?,
                 "write" => write_bytes(a, op, addr, &globals)?,
                 _ => unreachable!(),
             };
@@ -869,4 +878,96 @@ fn write_bytes(a: &Anchor, op: &Op, addr: u64, globals: &BTreeMap<String, u64>) 
         bytes[at..at + size].copy_from_slice(&(v as u64).to_be_bytes()[8 - size..]);
     }
     Ok(bytes)
+}
+
+/// Replace the 48-bit instruction at an anchor by an unconditional, non-delayed `JUMP` to a module symbol (SHARC+).
+/// The displaced instruction is the module's job: it executes it (or its equivalent) before it continues.
+fn jump_insn(a: &Anchor, op: &Op, globals: &BTreeMap<String, u64>) -> Result<Vec<u8>> {
+    let to = op.to.as_deref().unwrap();
+    let target = *globals
+        .get(to)
+        .ok_or_else(|| err!("jump: module symbol {to} is not defined"))?;
+    if a.cpu != SHARC || a.len != 6 || op.offset != 0 {
+        return Err(err!(
+            "jump {}: needs a 6-byte SHARC anchor and offset 0",
+            a.name
+        ));
+    }
+    if target >= 1 << 24 {
+        return Err(err!("jump: {to} = {target:#x} does not fit a 24-bit target"));
+    }
+    let mut out = vec![];
+    out.extend_from_slice(&0x063eu16.to_le_bytes());
+    out.extend_from_slice(&(((target >> 16) & 0xff) as u16).to_le_bytes());
+    out.extend_from_slice(&((target & 0xffff) as u16).to_le_bytes());
+    Ok(out)
+}
+
+fn register_rows(
+    lib: &Library,
+    order: &[String],
+    dev: &str,
+    globals: &BTreeMap<String, u64>,
+    chunks: &mut [Chunk],
+) -> Result<()> {
+    let mut next: BTreeMap<String, u64> = BTreeMap::new();
+    for id in order {
+        let m = lib.get(id).unwrap();
+        for op in m
+            .manifest
+            .op
+            .iter()
+            .filter(|o| o.op == "register" && on(&o.devices, dev))
+        {
+            let tsym = op.table.as_deref().unwrap();
+            let decl = order
+                .iter()
+                .filter_map(|i| lib.get(i))
+                .flat_map(|m| m.manifest.table.iter())
+                .find(|t| t.symbol == tsym)
+                .ok_or_else(|| err!("{id}: no selected module declares the table {tsym}"))?;
+            if op.row.len() as u64 != decl.row_words {
+                return Err(err!(
+                    "{id}: row of {} words for table {tsym} of {}-word rows",
+                    op.row.len(),
+                    decl.row_words
+                ));
+            }
+            let base = *globals
+                .get(tsym)
+                .ok_or_else(|| err!("{id}: table symbol {tsym} is not defined"))?;
+            let k = next.entry(tsym.to_string()).or_insert(0);
+            if *k >= decl.rows {
+                return Err(err!("{id}: table {tsym} is full ({} rows)", decl.rows));
+            }
+            let at = base + *k * decl.row_words * 4;
+            let end = at + decl.row_words * 4;
+            let c = chunks
+                .iter_mut()
+                .find(|c| c.cpu == SHARC && c.addr <= at && end <= c.addr + c.image.len() as u64)
+                .ok_or_else(|| err!("{id}: table {tsym} row {k} lies outside any placed object"))?;
+            let off = (at - c.addr) as usize;
+            for (i, tok) in op.row.iter().enumerate() {
+                let v = match tok.strip_prefix("0x") {
+                    Some(h) => u64::from_str_radix(h, 16).ok(),
+                    None => tok.parse::<u64>().ok(),
+                }
+                .or_else(|| globals.get(tok).copied())
+                .ok_or_else(|| err!("{id}: register row word {tok:?} is neither a number nor a symbol"))?;
+                if i == 0 && v == 0 {
+                    return Err(err!("{id}: the first word of a registered row must be non-zero"));
+                }
+                if v >= 1 << 32 {
+                    return Err(err!("{id}: register row word {tok:?} = {v:#x} does not fit 32 bits"));
+                }
+                let o = off + 4 * i;
+                if c.image[o..o + 4] != [0, 0, 0, 0] {
+                    return Err(err!("{id}: table {tsym} row {k} is not empty"));
+                }
+                c.image[o..o + 4].copy_from_slice(&(v as u32).to_le_bytes());
+            }
+            *k += 1;
+        }
+    }
+    Ok(())
 }
