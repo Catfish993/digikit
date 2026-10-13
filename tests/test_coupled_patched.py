@@ -19,6 +19,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 try:
+    import l2canary
     import patched_audio_check as pac
     from digi_client import Emu, EmuError
 finally:
@@ -89,3 +90,27 @@ def test_start_snapshot_needs_a_cached_pair_and_start_cold_rebuilds_it(monkeypat
         rebuilt = emu.call("firmware.load", syx=str(patched), start="cold")
         assert rebuilt["start_used"] == "cold" and rebuilt["cache_hit"] is False
         assert emu.status()["cf"]["ready"] is True
+
+
+@pytest.mark.slow
+def test_hot_inject_of_an_appended_stream_block_lands_at_its_address(
+    monkeypatch, tmp_path
+):
+    """A .syx whose DSP stream has an extra block is applied hot (a diff of the loaded memory); the old stream
+    cannot take the block back (dropped bytes), and the PCM is unchanged."""
+    syx, ready = inputs("dn2", monkeypatch)
+    meta = l2canary.build(
+        syx, tmp_path / "canary.syx", (0x2008_823C, 0x1000), l2canary.DEFAULT_SEED
+    )
+    addr, length, seed = 0x2008_823C, 0x1000, l2canary.DEFAULT_SEED
+    assert meta["length"] == length
+    with Emu.spawn_coupled(syx, ready, timeout=300) as emu:
+        assert l2canary.verify(emu, addr, length, seed)["unknown_bytes"] == length
+        report = emu.load(tmp_path / "canary.syx")
+        assert (
+            report["start_used"] == "hot-dsp"
+            and report["dsp"]["changed_bytes"] == length
+        )
+        assert l2canary.verify(emu, addr, length, seed)["intact"]
+        back = emu.load(syx)
+        assert back["dsp"]["dropped_bytes"] == length

@@ -297,7 +297,10 @@ impl Emulator {
         let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
         let (device, profile, _) = match base_sha256 {
             Some(base) => registry.boot_for_base(base),
-            None => registry.boot_for_main(&digest(syx), &main),
+            None => registry
+                .boot_for_main(&digest(syx), &main)
+                // A .syx of a known MAIN with another DSP stream has no known file digest.
+                .or_else(|e| registry.boot_by_main(&main).ok_or(e)),
         }
         .map_err(|e| e.to_string())?;
         let contract = profile

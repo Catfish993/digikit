@@ -379,6 +379,22 @@ impl Registry {
         Ok((device, firmware, boot))
     }
 
+    /// The boot profile of the known firmware whose MAIN OS is `main`, for a
+    /// .syx whose other sections differ from every known firmware (a changed
+    /// DSP stream): the file's own SHA-256 is unknown, its MAIN is not.
+    pub fn boot_by_main(
+        &self,
+        main: &[u8],
+    ) -> Option<(&DeviceProfile, &FirmwareProfile, &BootProfile)> {
+        let actual = hex_digest(main);
+        self.devices.iter().find_map(|device| {
+            device.firmwares.iter().find_map(|firmware| {
+                let boot = firmware.boot.as_ref()?;
+                (boot.main_sha256 == actual).then_some((device, firmware, boot))
+            })
+        })
+    }
+
     /// Looks up a firmware and verifies its MAIN bytes before returning the
     /// supported explicit Oracle diagnostic contract.
     pub fn boot_for_main(

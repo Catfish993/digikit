@@ -19,7 +19,7 @@
 //!   [--replay FILE.json] [--wav PATH] [--dump-dsp PATH] [--audio-mode rebuffer|stretch|gap]
 //! ```
 //!
-//! `--dsp-peek NAME=ADDR:LEN` (repeatable) puts the SHA-256 of a DSP memory range into each
+//! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
 //! scenario's report (`dsp_peek`), read after the scenario ends; `tools/l2canary.py` uses it.
 //!
 //! `--replay FILE` runs only the scenario in FILE (a scenario object, or a desktop
@@ -89,7 +89,7 @@ struct Args {
     audio_mode: AudioMode,
     peeks: Vec<(String, Peek)>,
     /// `--dsp-peek NAME=ADDR:LEN`: DSP memory ranges hashed at the end of each scenario.
-    dsp_peeks: Vec<(String, u32, usize)>,
+    dsp_peeks: Vec<(String, u32, usize, usize)>,
 }
 
 /// A guest read taken at the end of a run: `ADDR:LEN` or `*ADDR+OFF:LEN`
@@ -111,29 +111,54 @@ fn parse_num(t: &str) -> Result<u32, String> {
     r.map_err(|_| format!("bad number {t:?}"))
 }
 
-fn parse_dsp_peek(spec: &str) -> Result<(String, u32, usize), String> {
-    let (name, rest) = spec.split_once('=').ok_or("--dsp-peek needs NAME=ADDR:LEN")?;
-    let (addr, len) = rest.rsplit_once(':').ok_or("--dsp-peek needs ADDR:LEN")?;
-    let len = parse_num(len)? as usize;
+/// `NAME=ADDR:LEN[:BLOCK]`: BLOCK (a power of two, at most LEN) also lists a hash of every
+/// BLOCK-byte block, to find which blocks changed.
+fn parse_dsp_peek(spec: &str) -> Result<(String, u32, usize, usize), String> {
+    let (name, rest) = spec
+        .split_once('=')
+        .ok_or("--dsp-peek needs NAME=ADDR:LEN[:BLOCK]")?;
+    let mut parts = rest.split(':');
+    let addr = parse_num(parts.next().unwrap_or(""))?;
+    let len = parse_num(parts.next().ok_or("--dsp-peek needs ADDR:LEN")?)? as usize;
+    let block = match parts.next() {
+        Some(b) => parse_num(b)? as usize,
+        None => 0,
+    };
     if len == 0 || len > 0x40_0000 {
         return Err("--dsp-peek LEN must be 1..0x400000".into());
     }
-    Ok((name.to_string(), parse_num(addr)?, len))
+    if block != 0 && (!block.is_power_of_two() || block > len) {
+        return Err("--dsp-peek BLOCK must be a power of two, at most LEN".into());
+    }
+    Ok((name.to_string(), addr, len, block))
 }
 
 /// SHA-256 of DSP memory bytes (an unknown byte hashes as 0) and how many were unknown.
-fn do_dsp_peeks(rt: &mut CoupledRuntime, peeks: &[(String, u32, usize)]) -> Value {
+fn do_dsp_peeks(rt: &mut CoupledRuntime, peeks: &[(String, u32, usize, usize)]) -> Value {
     use sha2::{Digest, Sha256};
     let mut m = serde_json::Map::new();
-    for (name, addr, len) in peeks {
+    for (name, addr, len, block) in peeks {
         let value = match rt.peek_dsp(*addr, *len) {
             Ok(bytes) => {
                 let flat: Vec<u8> = bytes.iter().map(|b| b.unwrap_or(0)).collect();
-                json!({
+                let mut value = json!({
                     "sha256": format!("{:x}", Sha256::digest(&flat)),
                     "unknown": bytes.iter().filter(|b| b.is_none()).count(),
                     "head": flat.iter().take(16).map(|b| format!("{b:02x}")).collect::<String>(),
-                })
+                });
+                if *block != 0 {
+                    // 16 hex digits of each block's SHA-256, and each block's unknown bytes.
+                    value["blocks"] = flat
+                        .chunks(*block)
+                        .map(|c| format!("{:x}", Sha256::digest(c))[..16].to_string())
+                        .collect();
+                    value["block"] = (*block).into();
+                    value["unknown_blocks"] = bytes
+                        .chunks(*block)
+                        .map(|c| c.iter().filter(|b| b.is_none()).count())
+                        .collect();
+                }
+                value
             }
             Err(e) => json!({"error": e}),
         };

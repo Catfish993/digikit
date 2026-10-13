@@ -5,7 +5,7 @@ Replaces the lost tools/cavefind.py. Per image (out/sections/IMAGE/section_3_MAI
 
     uv run python tools/regions.py report [IMAGE ...] [--json]
     uv run python tools/regions.py confirm IMAGE [--region flash_cave|expansion|START:LEN]
-                                         [--scenario boot,nav,play] [--extra N]
+                                         [--scenario boot,nav,play] [--extra N] [--dsp READY_DIR]
 
 `report` reads the reset path by signature and prints what the firmware itself
 says about its RAM:
@@ -33,6 +33,13 @@ longer hold the pattern, and compares the final state digest against a
 baseline run that filled zeros: equal digests mean the firmware never read the
 region either. A pass is evidence for the scenarios run, not a proof; the
 static report and the canary together are the claim, as in docs/PATCHING.md.
+
+`--dsp READY_DIR` runs the probe coupled: the DSP of that ready directory
+(`tools/ready.py`: digi-audio-dn2-image.bin and cold-idle.dsp) is attached to
+the ColdFire's DSPI2 link from reset, so the sequencer, the DSP frames and the
+sample loader run as on a device. The probe is then built with the `sharc`
+feature against the generated core of that image (a local, firmware-derived
+build; SHARC_GEN_DIR overrides it).
 
     uv run python tools/regions.py loader-test IMAGE [--kib 256] [--pack store|aplib]
 
@@ -511,12 +518,22 @@ def scenario_args(name: str) -> list[str]:
     return args
 
 
-def probe_binary() -> pathlib.Path:
+def probe_binary(dsp_dir: pathlib.Path | None = None) -> pathlib.Path:
+    import digi_env
     import native_target
 
-    target = pathlib.Path(native_target.target_dir(None))
-    binary = target / "release" / "examples" / "regions_probe"
     env = {k: v for k, v in os.environ.items() if k != "SHARC_GEN_DIR"}
+    features: list[str] = []
+    if dsp_dir is None:
+        target = pathlib.Path(native_target.target_dir(None))
+    else:
+        gen = digi_env.generated_dir(image=dsp_dir / "digi-audio-dn2-image.bin")
+        digi_env.check_generated(gen)
+        env["SHARC_GEN_DIR"] = str(gen)
+        env = digi_env.rust_env(env)
+        target = pathlib.Path(native_target.target_dir(gen))
+        features = ["--features", "sharc"]
+    binary = target / "release" / "examples" / "regions_probe"
     subprocess.run(
         [
             sys.executable,
@@ -534,6 +551,7 @@ def probe_binary() -> pathlib.Path:
             "elektron-native-boot",
             "--example",
             "regions_probe",
+            *features,
         ],
         cwd=ROOT,
         env=env,
@@ -549,6 +567,7 @@ def run_probe(
     scenario: str,
     pattern: str,
     extra: list[str],
+    dsp_dir: pathlib.Path | None = None,
 ):
     _, syx_name, base = IMAGES[image]
     syx = ROOT / syx_name
@@ -560,6 +579,11 @@ def run_probe(
         ]
     for start, length in fills:
         cmd += ["--fill", "0x%x:0x%x" % (start, length)]
+    if dsp_dir is not None:
+        cmd += [
+            "--dsp", str(dsp_dir / "digi-audio-dn2-image.bin"),
+            "--dsp-idle", str(dsp_dir / "cold-idle.dsp"),
+        ]  # fmt: skip
     cmd += ["--pattern", pattern, "--zero-digest"] + scenario_args(scenario) + extra
     lines = subprocess.run(
         cmd, cwd=ROOT, check=True, capture_output=True, text=True
@@ -568,7 +592,13 @@ def run_probe(
     return reports
 
 
-def confirm(image: str, region: str, scenarios: list[str], extra: list[str]) -> int:
+def confirm(
+    image: str,
+    region: str,
+    scenarios: list[str],
+    extra: list[str],
+    dsp_dir: pathlib.Path | None = None,
+) -> int:
     a = analyse(image)
     if region == "expansion":
         start, size = a["expansion"]["start"], a["expansion"]["size"]
@@ -586,20 +616,24 @@ def confirm(image: str, region: str, scenarios: list[str], extra: list[str]) -> 
         fills.append(
             (start + ALIAS, size)
         )  # the uncached view is separate memory in the emulator
-    binary = probe_binary()
+    binary = probe_binary(dsp_dir)
     failed = 0
     for name in scenarios:
-        canary = run_probe(binary, image, fills, name, "canary", extra)
-        zero = run_probe(binary, image, fills, name, "zero", extra)
+        canary = run_probe(binary, image, fills, name, "canary", extra, dsp_dir)
+        zero = run_probe(binary, image, fills, name, "zero", extra, dsp_dir)
         final = next(r for r in canary if r.get("report") == "final")
         bad = sum(r["bad_words"] for r in final["regions"])
         digest_c = next(r["digest"] for r in canary if "digest" in r)
         digest_z = next(r["digest"] for r in zero if "digest" in r)
         errors = [r for r in canary if "error" in r and r["error"]]
-        ok = bad == 0 and digest_c == digest_z and not errors
+        dsp = next((r["dsp"] for r in canary if "dsp" in r), None)
+        dsp_ok = dsp_dir is None or (
+            dsp is not None and dsp["halted"] is None and dsp["frames"] > 0
+        )
+        ok = bad == 0 and digest_c == digest_z and not errors and dsp_ok
         failed += not ok
         print(
-            "%-8s %s %s: bad_words=%d digest_equal=%s icount=%s %s"
+            "%-8s %s %s: bad_words=%d digest_equal=%s icount=%s%s %s"
             % (
                 name,
                 image,
@@ -607,6 +641,9 @@ def confirm(image: str, region: str, scenarios: list[str], extra: list[str]) -> 
                 bad,
                 digest_c == digest_z,
                 final["icount"],
+                ""
+                if dsp is None
+                else " dsp_frames=%d halted=%s" % (dsp["frames"], dsp["halted"]),
                 "PASS" if ok else "FAIL",
             )
         )
@@ -728,6 +765,11 @@ def main(argv=None) -> int:
     )
     c.add_argument("--scenario", default="boot,nav,play")
     c.add_argument(
+        "--dsp",
+        type=pathlib.Path,
+        help="ready directory whose DSP runs coupled with the probe",
+    )
+    c.add_argument(
         "--probe-args",
         nargs=argparse.REMAINDER,
         default=[],
@@ -748,7 +790,9 @@ def main(argv=None) -> int:
             for rep in reports:
                 print_report(rep)
         return 0
-    return confirm(args.image, args.region, args.scenario.split(","), args.probe_args)
+    return confirm(
+        args.image, args.region, args.scenario.split(","), args.probe_args, args.dsp
+    )
 
 
 if __name__ == "__main__":

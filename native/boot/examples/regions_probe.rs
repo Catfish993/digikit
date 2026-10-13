@@ -4,7 +4,10 @@
 //!        [--extra N] [--report-every N] [--event T:CODE:down|up]... [--turn T:ENC:DETENTS]...
 //!        [--zero-digest] [--pattern canary|zero] [--expect ADDR:FILE]...
 //!
-//! Boots SYX with the ColdFire emulator (no DSP). Every --fill region is
+//! Boots SYX with the ColdFire emulator (no DSP, unless built with the `sharc`
+//! feature and given --dsp IMAGE --dsp-idle COLD_IDLE: then the DSP of
+//! `tools/ready.py` runs on the DSPI2 link as in `coupled::cold`, and the
+//! final report gains a `dsp` line). Every --fill region is
 //! filled with an address-dependent nonzero pattern just after the reset
 //! clear returns (pc 0x40000546 on the images we know), so the firmware sees
 //! it from the first instruction after the clear on. After ready, --event and
@@ -24,6 +27,75 @@ use std::{
 };
 
 const AFTER_CLEAR_PC: u32 = 0x4000_0546;
+
+/// The DSP of a ready directory on the DSPI2 link (the cold boot of
+/// `coupled::cold::boot_to_ready`, without the snapshot).
+#[cfg(feature = "sharc")]
+mod dsp {
+    use elektron_native_boot::{
+        Emulator,
+        sharc_peer::{IdleLoop, NativeDsp, Shared, ThreadedHandle, ThreadedPeer, open_engine_patched, period_from_env},
+    };
+    use std::{cell::RefCell, rc::Rc};
+
+    pub struct Dsp {
+        handle: ThreadedHandle,
+        shared: Rc<RefCell<Shared>>,
+        drained: std::cell::Cell<usize>,
+    }
+
+    pub fn attach(emu: &mut Emulator, image: &str, cold_idle: &str) -> Dsp {
+        let image = std::fs::read(image).expect("DSP image");
+        let sidecar = std::fs::read(cold_idle).expect("cold-idle.dsp");
+        assert_eq!(&sidecar[..8], b"DT2DSP01", "cold-idle.dsp is not a DT2DSP01 file");
+        let base = u64::from_le_bytes(sidecar[8..16].try_into().unwrap());
+        let state = sidecar[24..].to_vec();
+        let profile = emu.diagnostics();
+        let registry = device_profile::Registry::load().unwrap();
+        let dsp = registry
+            .dsp_for(&profile.device, &profile.version)
+            .cloned()
+            .expect("DSP profile");
+        let idle = IdleLoop { range: (dsp.idle_start, dsp.idle_end), head: dsp.idle_head };
+        emu.enable_ssi_diagnostic(96_000).unwrap();
+        let (peer, handle, shared) = ThreadedPeer::spawn(
+            move || open_engine_patched(&image, &state, base, None, idle).map(NativeDsp),
+            period_from_env(),
+            idle.range,
+        )
+        .expect("DSP worker");
+        if dsp.sample_link == Some(device_profile::SampleLink::Lp0) {
+            peer.enable_sample_link();
+        }
+        {
+            let mut shared = shared.borrow_mut();
+            shared.attached = true;
+            shared.dsp_instructions = 0;
+        }
+        emu.set_dspi2_peer(peer.boxed());
+        Dsp { handle, shared, drained: std::cell::Cell::new(0) }
+    }
+
+    impl Dsp {
+        /// Commit every frame sent so far; the halt reason, if the DSP stopped.
+        pub fn sync(&self) -> Option<String> {
+            self.handle.sync();
+            let mut shared = self.shared.borrow_mut();
+            // Nobody listens to the output: keep the host buffers small.
+            self.drained.set(self.drained.get() + shared.frames.len());
+            shared.frames.clear();
+            shared.pcm.clear();
+            shared.raw.clear();
+            shared.halted.clone()
+        }
+        pub fn frames(&self) -> usize {
+            self.drained.get()
+        }
+        pub fn frames_sent(&self) -> u64 {
+            self.handle.frames_sent()
+        }
+    }
+}
 
 struct Backing {
     file: Mutex<fs::File>,
@@ -118,6 +190,7 @@ fn main() {
     let mut zero_digest = false;
     let mut inputs: Vec<(u64, Input)> = Vec::new();
     let mut expects: Vec<(u32, String)> = Vec::new();
+    let (mut dsp_image, mut dsp_idle): (Option<String>, Option<String>) = (None, None);
     while let Some(arg) = args.next() {
         let mut value = || {
             args.next()
@@ -141,6 +214,8 @@ fn main() {
                 let (a, f) = v.split_once(':').expect("--expect ADDR:FILE");
                 expects.push((num(a), f.to_string()));
             }
+            "--dsp" => dsp_image = Some(value()),
+            "--dsp-idle" => dsp_idle = Some(value()),
             "--pattern" => ZERO.store(value() == "zero", std::sync::atomic::Ordering::Relaxed),
             "--event" => {
                 let v = value();
@@ -179,6 +254,17 @@ fn main() {
         Some(sha) => Emulator::new_patched(&syx, card, sha).unwrap(),
         None => Emulator::new(&syx, card).unwrap(),
     };
+    #[cfg(feature = "sharc")]
+    let dsp = match (&dsp_image, &dsp_idle) {
+        (Some(image), Some(idle)) => Some(dsp::attach(&mut emu, image, idle)),
+        (None, None) => None,
+        _ => panic!("--dsp and --dsp-idle go together"),
+    };
+    #[cfg(not(feature = "sharc"))]
+    assert!(
+        dsp_image.is_none() && dsp_idle.is_none(),
+        "--dsp needs a build with --features sharc"
+    );
     if !emu.run_until_pc(AFTER_CLEAR_PC, 100_000_000) {
         eprintln!("reset clear did not return to {AFTER_CLEAR_PC:#x}");
         std::process::exit(3);
@@ -201,6 +287,11 @@ fn main() {
     loop {
         let snap = emu.step_chunk(250_000);
         let s = &snap.status;
+        #[cfg(feature = "sharc")]
+        if let Some(halt) = dsp.as_ref().and_then(dsp::Dsp::sync) {
+            println!("{{\"error\":\"DSP halted: {halt}\",\"icount\":{}}}", s.icount);
+            break;
+        }
         if s.ready && ready_at.is_none() {
             ready_at = Some(s.icount);
             println!("{{\"ready_at\":{}}}", s.icount);
@@ -233,6 +324,16 @@ fn main() {
         }
     }
     report(&mut emu, &regions, "final");
+    #[cfg(feature = "sharc")]
+    if let Some(dsp) = &dsp {
+        let halted = dsp.sync();
+        println!(
+            "{{\"dsp\":{{\"frames\":{},\"frames_sent\":{},\"halted\":{}}}}}",
+            dsp.frames(),
+            dsp.frames_sent(),
+            halted.map_or("null".to_string(), |h| format!("{h:?}"))
+        );
+    }
     for (addr, path) in &expects {
         let bytes = fs::read(path).unwrap();
         let mut bad = 0u64;
