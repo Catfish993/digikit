@@ -81,7 +81,9 @@ class Proof(K.Proof):
             mods, f"{'p' if mods else 's'}-{poke or 'none'}", env=env
         ) as s:
             s.reset()
-            s.run_ms(1500)
+            s.run_ms(
+                800 if self.quick else 1500
+            )  # quick: the machine menu needs no sample to load
             if downs:
                 s.do_tap(["FUNC", "SRC"])
                 s.run_ms(300)
@@ -145,15 +147,20 @@ class Proof(K.Proof):
     def part_c(
         self, sections: tuple[str, ...] = ("level", "filter", "overdrive", "reverb")
     ) -> None:
+        # quick tier: the level part renders 1.5 s (the release check needs the tail), the filter part 0.7 s and
+        # compares 8000..30000 samples (the note is steady from 8000 on)
+        run = (1500 if "level" in sections else 700) if self.quick else 2600
+        hold = 500 if self.quick and "level" not in sections else 1000
+        end = 30000 if self.quick and "level" not in sections else 50000
         base = (
-            self.render("c-base", MODS, downs=SINE_DOWNS, run_ms=2600)
+            self.render("c-base", MODS, downs=SINE_DOWNS, run_ms=run)
             if {"level", "overdrive", "reverb"} & set(sections)
             else None
         )
-        rms = lambda x, a=8000, b=50000: float(np.sqrt(np.mean(x[a:b] ** 2)))  # noqa: E731
+        rms = lambda x, a=8000, b=end: float(np.sqrt(np.mean(x[a:b] ** 2)))  # noqa: E731
         if "level" in sections:
             lev = self.render(
-                "c-level", MODS, downs=SINE_DOWNS, turns=(("LEVEL", -300),), run_ms=2600
+                "c-level", MODS, downs=SINE_DOWNS, turns=(("LEVEL", -300),), run_ms=run
             )
             db = 20 * math.log10(max(rms(lev), 1e-9) / rms(base))
             self.check("the LEVEL knob lowers the sine", db < -10, f"{db:+.1f} dB")
@@ -166,7 +173,14 @@ class Proof(K.Proof):
             )
         if "filter" in sections:
             hi = "0x02=0x6000"  # note 96, 2093 Hz
-            open_ = self.render("c-flt-open", MODS, downs=SINE_DOWNS, poke=hi)
+            open_ = self.render(
+                "c-flt-open",
+                MODS,
+                downs=SINE_DOWNS,
+                poke=hi,
+                hold_ms=hold,
+                run_ms=700 if self.quick else 1300,
+            )
             closed = self.render(
                 "c-flt-closed",
                 MODS,
@@ -174,6 +188,8 @@ class Proof(K.Proof):
                 poke=hi,
                 page="FLTR",
                 turns=(("ENC E", -300),),
+                hold_ms=hold,
+                run_ms=700 if self.quick else 1300,
             )
             db = 20 * math.log10(max(rms(closed), 1e-9) / rms(open_))
             self.check(

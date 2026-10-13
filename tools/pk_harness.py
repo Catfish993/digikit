@@ -80,6 +80,7 @@ SHARED_CACHE = (
     ROOT / "out" / "runs" / ".cache"
 )  # boot pairs and cards shared by the daemons of all proof runs
 MAX_JOBS = 6
+MIN_JOBS = 4
 
 
 def performance_cores() -> int:
@@ -98,9 +99,12 @@ def performance_cores() -> int:
 
 def default_jobs(n: int) -> int:
     """Processes to run side by side: the free performance cores / 2 (a coupled daemon keeps two threads busy: the
-    ColdFire and the DSP worker), at most MAX_JOBS."""
-    free = performance_cores() - os.getloadavg()[0]
-    return max(1, min(n, int(free // 2), MAX_JOBS))
+    ColdFire and the DSP worker), at most MAX_JOBS, and never fewer than MIN_JOBS (bounded by the cores / 2) when
+    there are two or more parts: a busy machine slows the parts down, but running them in sequence is slower."""
+    cores = performance_cores()
+    free = cores - os.getloadavg()[0]
+    floor = min(MIN_JOBS, max(1, cores // 2))
+    return max(1, min(n, max(int(free // 2), floor), MAX_JOBS))
 
 
 # firmware: (device, version) -> base .syx and the ready directory (override: DIGI_PK_READY_<DEV>_<VER>)

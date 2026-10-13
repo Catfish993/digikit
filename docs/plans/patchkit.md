@@ -672,9 +672,64 @@ cold boot per part, seconds of rendered audio per check, single-core, non-PGO la
 - [ ] Independent parts in parallel processes (`--jobs`), bounded to the free cores.
 - [ ] Proof runs use a PGO build of digi-emud when one exists for the device.
 
-- [ ] Quick tier budget (added 2026-10-14): about 60 s wall per proof tool on a busy machine. Measured on the merged
-      branch: DT2 machines 200-515 s and PLUCK 346 s miss it; DT2 voice 30 s and the DN2 tools 44-75 s are close.
-      Fix: one short note per check, shorter measurement windows, parts in parallel by default even under load.
+- [x] Quick tier budget (done 2026-10-14, lane `a`): about 60 s wall per proof tool. Wall seconds before -> after
+      (default `--jobs`; "before" from the merged branch, DN2 tools measured on the same machine at the start):
+
+      | tool | before | after |
+      |---|---|---|
+      | gain (dt2 / dn2) | not measured (positional arguments only) | 11 / 16 |
+      | drive dt2 | not measured | 35 |
+      | voice dt2 | 25-30 | 24 |
+      | machines dt2 | 200-515 (63 with 4 jobs on a quiet machine) | 45 |
+      | pluck dt2 | 346-362 (227 with 4 jobs) | 76 |
+      | voice dn2 | 74 | 50 |
+      | machines dn2 | 60 | 57 |
+      | pages dn2 | 39 (in sequence) | 18 |
+      | pluck dn2 | 231-236 (in sequence) | 55 |
+
+      What made the difference: (1) a sounding PLUCK note costs about 35 s of wall per emulated second (the patched DSP
+      runs interpreted; an idle second costs 3 s), so the quick parts turn DECAY down right after the first trig, play
+      0.33 s notes, measure windows of 0.1-0.2 s and compare the decay *slope* at two settings instead of T60 over seconds;
+      (2) the PICK comb check resets the excitation noise (`_pk_rng`) before each note, so two notes differ only by
+      the parameter (the single-note comb statistic scattered by +-5 dB between noise states); (3) `default_jobs` never
+      runs fewer than 4 parts side by side (bounded by cores / 2), even under load; (4) pages_dn2 and pluck_dn2 moved
+      onto `tools/pk_proofkit.py` (parts in parallel, `--jobs`, `--out`); (5) the persistence part polls (the save
+      until the card writes stop growing, the patched reload until the type is back) and waits 3 s instead of 6 s for
+      the stock load; (6) gain and drive take no positional arguments (DT2 1.17, stock inputs of the harness, the
+      patch built on the fly). Merged or dropped in the quick tier of PLUCK DT2: the separate select, knob, tuning
+      parts (a, bq, cq) are one part `aq`; PICK is one deterministic pair of notes; the full tier is unchanged.
+      `mise run patch:proofs` runs every tool's quick tier in sequence (`tools/pk_proofs.py`): see "Quick tier
+      results" below.
+Quick tier results (2026-10-14, lane `a`): `mise run patch:proofs`, ten tools in sequence, all PASS, total 387 s
+(gain dt2 11, gain dn2 16, drive dt2 35, voice dt2 24, machines dt2 45, pluck dt2 76, voice dn2 50, machines dn2 57,
+pages dn2 18, pluck dn2 55). PLUCK DT2 is above 60 s (four parts in parallel; the slowest, the persistence part, is
+bound by a 3 s save, two project loads and a second daemon for the stock firmware, about 17 emulated seconds at 3 s of
+wall each); nothing is above 90 s.
+
+Teeth (broken images from `tools/pk_break.py`, loaded with `PK_PROOF_IMAGE=IMAGE`; built from a copy of the module
+sources under out/broken/, never committed):
+
+| tool, broken input | result | the failing checks |
+|---|---|---|
+| machines dt2, core/machines persistence immediate left at the stock value | FAIL, 43 s | project reload brings type 7 back: 0 |
+| pluck dt2, the same break | FAIL, 81 s | project reload brings type 7 back: 0 after 6.25 s |
+| pluck dt2, machines/pluck lists DECAY and PICK in each other's descriptor fields | FAIL, 82 s | descriptor names, engine defaults (slot 26 and 27 exchanged), TX frame, and dq1/dq2 cannot set DECAY (encoder 2 moves the PICK slot) |
+
+The real images pass (the table above). Margins of the quick thresholds, measured on the real image:
+
+| check | measured | limit | broken or ignored |
+|---|---|---|---|
+| tuning, TRIG 1 and keyboard TRIG 5 (0.1 s windows) | +0.20 and -0.02 cents | 3 cents (the full tier's) | an off-pitch voice moves it by tens of cents |
+| DECAY slope, 0x2800 against 0x1800 | ratio 0.44 | below 0.75 | ratio 1.0 when DECAY does nothing |
+| PICK comb, same noise state, half against none | +10.5 dB (8.3 .. 10.9 over three seeds) | above 4 dB | 0 dB: the two notes are bit-identical |
+| DN2 DECAY slope ratio | 0.42 | below 0.75 | 1.0 |
+| DN2 BRIGHT, HF/LF bright against dark (0.125 s in) | +15.3 dB | above 6 dB | 0 dB |
+| DN2 PICK excitation against the numpy model | max difference 0 | 0 | any difference |
+
+Findings on the way: a sounding PLUCK note costs 35 s of wall per emulated second only while the voice rings (the
+voice ends after 8 blocks below 2^-16; DECAY 0x1000 notes cost about 1.5 s), so ring time, not emulated time, sets the
+cost of a PLUCK proof. The engine slots of a PLUCK track read 0 until the first trig.
+
 - Integration rule: the coordinator checks a merge with verify plus the smoke matrix (`--jobs`), not every proof tool;
   full-tier proofs only before a merge to `main` (AGENTS.md).
 

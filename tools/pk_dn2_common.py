@@ -16,9 +16,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -29,6 +29,7 @@ if str(HERE) not in sys.path:
 
 import hook_ab  # noqa: E402
 import pk_harness as H  # noqa: E402
+import pk_proofkit as K  # noqa: E402
 import pluck_ref  # noqa: E402
 
 READY = ROOT / "out" / "ready-fastweb-dn2"  # Digitone II 1.12 (intc_force false)
@@ -53,8 +54,22 @@ def onset(left: np.ndarray, thresh: float = 1e-4) -> int:
     return int(act[0]) if len(act) else -1
 
 
-def f0_of(left: np.ndarray, start: int, want_hz: float) -> float:
-    return pluck_ref.f0_from_crossings(left[start + 300 : start + 300 + 30000], want_hz)
+def f0_of(left: np.ndarray, start: int, want_hz: float, n: int = 30000) -> float:
+    return pluck_ref.f0_from_crossings(left[start + 300 : start + 300 + n], want_hz)
+
+
+def db_slope(left: np.ndarray, start: int, a: float = 0.03, b: float = 0.15) -> float:
+    """Decay rate (dB/s, positive) of the 512-sample RMS from A to B seconds after the onset."""
+    k0, k1 = int(a * 48000 // 512), int(b * 48000 // 512)
+    rms = np.array(
+        [
+            np.sqrt(np.mean(left[start + 512 * k : start + 512 * (k + 1)] ** 2))
+            for k in range(k0, k1 + 1)
+        ]
+    )
+    db = 20 * np.log10(np.maximum(rms, 1e-9))
+    t = (np.arange(k0, k1 + 1) * 512 + 256) / 48000.0
+    return -float(np.polyfit(t, db, 1)[0])
 
 
 def t60_of(left: np.ndarray, start: int, drop_db: float = 30.0) -> float | None:
@@ -111,31 +126,17 @@ def onsets(left: np.ndarray) -> list[int]:
 # ----- the proof base --------------------------------------------------------------------------------------------
 
 
-class Dn2Proof:
-    def __init__(self, out: Path):
-        self.out = out
-        out.mkdir(parents=True, exist_ok=True)
-        self.failed: list[str] = []
+class Dn2Proof(K.Proof):
+    """The DN2 1.12 proofs on the shared library (tools/pk_proofkit.py): sessions come from `Proof.session` (pooled,
+    shared boot cache), parts run in parallel processes."""
+
+    device = "dn2"
+    fw = "1.12"
+    ready_env = {"DIGI_PK_READY_DN2_112": str(READY)}
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
         self.slot = 0  # the voice slot the next note will use (round robin from 0 after a restart)
-
-    def check(self, name: str, ok: bool, detail: object = "") -> bool:
-        d = str(detail)
-        print(f"  {'ok  ' if ok else 'FAIL'} {name}{': ' + d if d else ''}", flush=True)
-        if not ok:
-            self.failed.append(name)
-        return ok
-
-    def session(self, mods: list[str], tag: str) -> H.Session:
-        if "DIGI_PK_READY_DN2_112" not in os.environ and READY.is_dir():
-            os.environ["DIGI_PK_READY_DN2_112"] = str(READY)
-        s = H.Session(
-            H.Cell("dn2", "1.12", list(mods)),
-            H.Goldens(),
-            log=None,
-            run_name=f"{self.__class__.__name__.lower()}-{tag}",
-        )
-        s.open()
-        return s
 
     def fresh(self, s: H.Session) -> None:
         s.reset()

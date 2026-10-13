@@ -2,7 +2,7 @@
 """patchkit: the PLUCK machine on Digitone II 1.12 (core/dsp-voice DN2 object + core/machines + core/params +
 machines/pluck), in the emulator, through the panel.
 
-    uv run python tools/pk_proof_pluck_dn2.py [--quick] [--only a,b,c,d,e] [--out DIR]
+    uv run python tools/pk_proof_pluck_dn2.py [--quick] [--only a,b,c,d,e] [--out DIR] [--jobs N]
 
 PLUCK is a machine of type 5 (listed before MIDI) with one SYN page of its own: knobs A..D = DECAY, PICK, BRIGHT, COLOR
 (sound-array slots 25..28, UI 0..127 as words 0..0x7f00; defaults 0x4000, 0x2000, 0x5000, 0x2800). The DSP routine runs
@@ -43,6 +43,7 @@ import card_overlay  # noqa: E402
 import hook_ab  # noqa: E402
 import pk_dn2_common as C  # noqa: E402
 import pk_harness as H  # noqa: E402
+import pk_proofkit as K  # noqa: E402
 import pluck_ref  # noqa: E402
 
 MODS = ["core/machines", "core/params", "core/dsp-voice", "machines/pluck"]
@@ -63,6 +64,13 @@ class PluckProof(C.Dn2Proof):
 
     def setp(self, s: H.Session, slot: int, value: int) -> int:
         return self.turn_held(s, ENC[slot], slot, value)
+
+    QUICK_DECAY = 0x1800  # a ringing note costs ~35 s of wall per emulated second (interpreted DSP): short notes only
+
+    def quick_decay(self, s: H.Session, value: int | None = None) -> None:
+        """Quick tier: DECAY to the bottom with no key held (no voice rings), then up to VALUE."""
+        s.turn_burst(ENC[DECAY], -4, 60)
+        self.setp(s, DECAY, self.QUICK_DECAY if value is None else value)
 
     def cents(self, f: float, note: float) -> float:
         return 1200 * math.log2(f / C.semitone_hz(note))
@@ -106,14 +114,24 @@ class PluckProof(C.Dn2Proof):
                 self.wire_type(s) == PLUCK_TYPE and got == DEFAULTS,
                 {k: hex(x) for k, x in got.items()},
             )
-            left, pitch, _ = self.play(s, "a-trig1", "TRIG 1")
+            if quick:
+                self.quick_decay(s)
+            left, pitch, _ = self.play(
+                s,
+                "a-trig1",
+                "TRIG 1",
+                hold=100 if quick else 300,
+                total=330 if quick else 2200,
+            )
             st = C.onset(left)
             self.check(
                 "TRIG 1 plays note 60", pitch == 0x3C00, f"pitch word {pitch:#06x}"
             )
             self.check("the note sounds", st >= 0, st)
             if st >= 0:
-                f = C.f0_of(left, st, C.semitone_hz(pitch / 256))
+                f = C.f0_of(
+                    left, st, C.semitone_hz(pitch / 256), 4000 if quick else 30000
+                )
                 c = self.cents(f, pitch / 256)
                 self.check(
                     f"note {pitch / 256:g}: f0 {f:.3f} Hz",
@@ -128,7 +146,13 @@ class PluckProof(C.Dn2Proof):
                 else ("TRIG 2", "TRIG 3", "TRIG 5", "TRIG 13", "TRIG 16")
             )
             for key in keys:
-                left, pitch, _ = self.play(s, f"a-{key.replace(' ', '').lower()}", key)
+                left, pitch, _ = self.play(
+                    s,
+                    f"a-{key.replace(' ', '').lower()}",
+                    key,
+                    hold=100 if quick else 300,
+                    total=330 if quick else 2200,
+                )
                 st = C.onset(left)
                 if st < 0:
                     self.check(
@@ -136,7 +160,7 @@ class PluckProof(C.Dn2Proof):
                     )
                     continue
                 note = pitch / 256
-                f = C.f0_of(left, st, C.semitone_hz(note))
+                f = C.f0_of(left, st, C.semitone_hz(note), 4000 if quick else 30000)
                 c = self.cents(f, note)
                 self.check(
                     f"{key}: note {note:g}, f0 {f:.3f} Hz",
@@ -144,6 +168,40 @@ class PluckProof(C.Dn2Proof):
                     f"{c:+.4f} cents",
                 )
             s.health("end of a")
+
+    def part_b_quick(self, s: H.Session, note) -> None:  # noqa: ANN001
+        """DECAY (slope of the first 0.15 s at two settings), BRIGHT (HF/LF 0.125 s in, dark against bright) and the
+        PICK excitation against the model (bit for bit), on short notes."""
+        self.quick_decay(s, 0x1800)
+        reached = self.setp(s, BRIGHT, 0x7F00)
+        self.check("BRIGHT set to its top", reached >= 0x7C00, f"{reached:#x}")
+        slope = {}
+        for label, value in (("short", 0x1800), ("mid", 0x2800)):
+            self.setp(s, DECAY, value)
+            left, st = note(f"b-decay-{label}", 330)
+            slope[label] = C.db_slope(left, st)
+            print(f"     DECAY {value:#x}: {slope[label]:.1f} dB/s")
+        self.check(
+            "DECAY lengthens the note (slope at 0x2800 < 0.75 x slope at 0x1800)",
+            slope["mid"] < 0.75 * slope["short"],
+            f"{slope['short']:.1f} dB/s -> {slope['mid']:.1f} dB/s, ratio {slope['mid'] / slope['short']:.2f}",
+        )
+        hf = {}  # DECAY stays at 0x2800: the damping filter acts once per pass, the effect shows late in the note
+        for label, value in (("dark", 0x0800), ("bright", 0x7F00)):
+            self.setp(s, BRIGHT, value)
+            left, st = note(f"b-bright-{label}", 330)
+            hf[label] = C.band_db(left, st + 6000, 2048, 3000, 12000) - C.band_db(
+                left, st + 6000, 2048, 100, 1000
+            )
+            print(f"     BRIGHT {value:#x}: HF/LF {hf[label]:.1f} dB")
+        self.check(
+            "BRIGHT raises the high frequencies",
+            hf["bright"] - hf["dark"] > 6,
+            f"{hf['bright'] - hf['dark']:.1f} dB",
+        )
+        self.setp(s, PICK, 0x3F80)
+        self.excitation_equals_model(s, "PICK 1/2")
+        s.health("end of b (quick)")
 
     # -- b
     def part_b(self, quick: bool) -> None:
@@ -153,9 +211,18 @@ class PluckProof(C.Dn2Proof):
 
             def note(name: str, total: int = 2200) -> tuple[np.ndarray, int]:
                 # the key stays down: the engine's gate must not cut the string
-                left, _, _ = self.play(s, name, "TRIG 1", hold=total - 200, total=total)
+                left, _, _ = self.play(
+                    s,
+                    name,
+                    "TRIG 1",
+                    hold=total - 200 if not quick else 200,
+                    total=total,
+                )
                 return left, C.onset(left)
 
+            if quick:
+                self.part_b_quick(s, note)
+                return
             reached = self.setp(s, BRIGHT, 0x7F00)
             self.check("BRIGHT set to its top", reached >= 0x7C00, f"{reached:#x}")
             res = {}
@@ -264,10 +331,14 @@ class PluckProof(C.Dn2Proof):
     def part_c(self, quick: bool) -> None:
         print("c  repeated notes of one key (the edge) and more than 16 in a row")
         cases = [("20 notes, 150 ms", 20, 150, 60)]
+        if quick:
+            cases = [("18 notes, 150 ms", 18, 150, 60)]  # more than the 16 voice slots
         if not quick:
             cases.append(("40 notes, 110 ms", 40, 110, 40))
         with self.session(MODS, "c") as s:
             self.pluck(s)
+            if quick:
+                self.quick_decay(s)
             for label, n, gap, hold in cases:
                 left = self.burst(s, f"c-{n}", n, gap, hold)
                 on = C.onsets(left)
@@ -293,7 +364,7 @@ class PluckProof(C.Dn2Proof):
                     )
                 # let every string ring out, then a note must still work (slots idle, state kept)
                 s.run_ms(500)
-            left, _, _ = self.play(s, "c-after", "TRIG 1")
+            left, _, _ = self.play(s, "c-after", "TRIG 1", total=330 if quick else 2200)
             self.check("a note after the burst sounds", C.onset(left) >= 0)
             s.health("end of c")
 
@@ -406,22 +477,24 @@ class PluckProof(C.Dn2Proof):
             s.health("stock after loading the patched project")
 
 
+P = PluckProof
+PARTS = [
+    K.Part("a", "tuning", lambda p: p.part_a(p.quick), True, 80),
+    K.Part(
+        "b", "parameters through the encoders", lambda p: p.part_b(p.quick), True, 100
+    ),
+    K.Part("c", "repeated notes", lambda p: p.part_c(p.quick), True, 80),
+    K.Part("d", "sequencer", lambda p: p.part_d(p.quick), False, 80),
+    K.Part("e", "persistence", lambda p: p.part_e(p.quick), False, 120),
+]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument(
-        "--out", type=Path, default=ROOT / "out" / "runs" / "pluck-dn2-proof"
-    )
-    ap.add_argument("--only", default="a,b,c,d,e")
-    ap.add_argument("--quick", action="store_true")
+    K.add_args(ap, PARTS)
     a = ap.parse_args()
-    proof = PluckProof(a.out)
-    only = a.only.split(",")
-    if a.quick:
-        only = [p for p in only if p in ("a", "b", "c")]
-    for p in only:
-        getattr(proof, f"part_{p}")(a.quick)
-    print("PASS" if not proof.failed else f"FAIL: {', '.join(proof.failed)}")
-    return 1 if proof.failed else 0
+    a.out = a.out or ROOT / "out" / "runs" / "pluck-dn2-proof"
+    return K.run_tool(__file__, PluckProof, PARTS, a)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 """patchkit: own parameter pages for an added machine on Digitone II 1.12 (core/machines `pages` registry, core/params
 on the Digitone II, test/dn2-pages), in the emulator, through the panel.
 
-    uv run python tools/pk_proof_pages_dn2.py [--quick] [--only a,b,c,d,e] [--out DIR]
+    uv run python tools/pk_proof_pages_dn2.py [--quick] [--only a,b,c,d,e] [--out DIR] [--jobs N]
 
 test/dn2-pages is a machine of type 5 with two SYN pages of its own: page 1 knobs A..D = ALPH, BETA, GAMA, DELT (sound-array
 slots 25, 26, 27, 30; ranges 0..0x7f00, 0..0x3f00, 0x100..0x7f00, 0..0x7f00; defaults 0x2000, 0x1000, 0x7000, 0x4000),
@@ -40,6 +40,7 @@ if str(HERE) not in sys.path:
 import card_overlay  # noqa: E402
 import pk_dn2_common as C  # noqa: E402
 import pk_harness as H  # noqa: E402
+import pk_proofkit as K  # noqa: E402
 
 MODS = ["core/machines", "core/params", "test/dn2-pages"]
 PAGES_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, PAGES (before MIDI)
@@ -342,22 +343,21 @@ class PagesProof(C.Dn2Proof):
         )
 
 
+PARTS = [
+    K.Part("a", "descriptor and pages", lambda p: p.part_a(p.quick), True, 60),
+    K.Part("b", "page knobs", lambda p: p.part_b(p.quick), True, 60),
+    K.Part("c", "page 2 and more", lambda p: p.part_c(p.quick), True, 60),
+    K.Part("d", "d", lambda p: p.part_d(p.quick), False, 80),
+    K.Part("e", "persistence and stock", lambda p: p.part_e(p.quick), False, 120),
+]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument(
-        "--out", type=Path, default=ROOT / "out" / "runs" / "pages-dn2-proof"
-    )
-    ap.add_argument("--only", default="a,b,c,d,e")
-    ap.add_argument("--quick", action="store_true")
+    K.add_args(ap, PARTS)
     a = ap.parse_args()
-    proof = PagesProof(a.out)
-    only = a.only.split(",")
-    if a.quick:
-        only = [p for p in only if p in ("a", "b", "c")]
-    for p in only:
-        getattr(proof, f"part_{p}")(a.quick)
-    print("PASS" if not proof.failed else f"FAIL: {', '.join(proof.failed)}")
-    return 1 if proof.failed else 0
+    a.out = a.out or ROOT / "out" / "runs" / "pages-dn2-proof"
+    return K.run_tool(__file__, PagesProof, PARTS, a)
 
 
 if __name__ == "__main__":

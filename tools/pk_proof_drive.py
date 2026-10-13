@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """patchkit Phase 4.1 proof: fx/master-drive on a running coupled emulator (DT2 1.17 or DN2 1.12).
 
-    uv run python tools/pk_proof_drive.py dt2|dn2 [--stock STOCK.syx] [--patched PATCHED.syx] [--ready DIR]
-        [--out DIR] [--run-dir DIR]
+    uv run python tools/pk_proof_drive.py [dt2|dn2] [--stock STOCK.syx] [--patched PATCHED.syx] [--ready DIR]
+        [--out DIR] [--run-dir DIR] [--quick] [--jobs N]
+
+With no arguments: DT2 1.17 (DN2: 1.12), the stock firmware and ready state of tools/pk_harness.py and the patch of
+fx/master-drive built on the fly (out/patch/).
 
 One coupled daemon starts on the stock firmware (ready inputs of `tools/ready.py ... --force`), the DT2 loads the
 one-sample card, and the same panel script (master page via FUNC+6, encoder 7 turned, TRIG 1 held) is rendered with
@@ -45,7 +48,7 @@ try:
 finally:
     sys.path.pop(0)
 
-STOCK = {"dt2": "Digitakt_II_OS1.17.syx", "dn2": "Digitone_II_OS1.12.syx"}
+FW = {"dt2": "1.17", "dn2": "1.12"}
 TRIG1, FUNC = 25, 17
 # The master page: FUNC + button 6 (scenarios/*-sendfx.json "sf-mst-mix"); DT2 first leaves the FILE SYSTEM modal.
 PRELUDE = {
@@ -186,11 +189,11 @@ class DriveProof(K.Proof):
     def part_run(self) -> None:
         a = self.args
         dev = a.device
-        stock = pathlib.Path(a.stock or ROOT / STOCK[dev]).resolve()
-        patched = pathlib.Path(
-            a.patched or ROOT / "out" / "patch" / f"md-{dev}.syx"
-        ).resolve()
-        ready = pathlib.Path(a.ready or ROOT / "out" / f"ready-md-{dev}")
+        cell = H.Cell(dev, FW[dev], ["fx/master-drive"])
+        base_syx, base_ready = H.firmware_inputs(cell)
+        stock = pathlib.Path(a.stock or base_syx).resolve()
+        patched = pathlib.Path(a.patched or H.patched_image(cell, stock)).resolve()
+        ready = pathlib.Path(a.ready or base_ready)
         out = self.out
         quick = self.quick
         report: dict = {"device": dev, "stock": stock.name, "patched": patched.name}
@@ -301,9 +304,11 @@ PARTS = [K.Part("run", "stock and patched renders", DriveProof.part_run, True, 1
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("device", choices=("dt2", "dn2"))
+    ap.add_argument("device", nargs="?", default="dt2", choices=("dt2", "dn2"))
     ap.add_argument("--stock")
-    ap.add_argument("--patched")
+    ap.add_argument(
+        "--patched", help="default: the patch of fx/master-drive, built here"
+    )
     ap.add_argument("--ready")
     ap.add_argument(
         "--run-dir",
