@@ -497,6 +497,20 @@ class Session:
         if any(e["kind"] == "lagged" for e in self.events):
             raise Failure(f"event queue lagged at {where}")
 
+    def wait_event(self, kind: str, timeout_s: float = 3.0) -> bool:
+        """Events are written by a socket thread and can follow their reply: poll `status` until one of KIND is
+        in `events` (True) or TIMEOUT_S passes."""
+        emu = self.emu
+        assert emu is not None
+        end = time.monotonic() + timeout_s
+        while time.monotonic() < end:
+            if any(e["kind"] == kind for e in self.events):
+                return True
+            emu.status()
+            self.events.extend(e for e in emu.drain_events() if e["kind"] != "frame")
+            time.sleep(0.05)
+        return any(e["kind"] == kind for e in self.events)
+
     def check(self, name: str, ok: bool, detail: str = "") -> None:
         self.checks.append(
             Check(f"{self.segment}/{name}" if self.segment else name, ok, detail)

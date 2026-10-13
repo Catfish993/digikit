@@ -46,7 +46,7 @@ def test_a_stalled_main_loop_is_a_failure(stock_session):
 
     detail = _fails_with(stock_session, [{"_call": hang}, {"wait_ms": 1500}], "stall")
     assert "mainloop_hits" in detail
-    assert any(e["kind"] == "stall" for e in stock_session.events)
+    assert stock_session.wait_event("stall")
     stock_session.events.clear()
 
 
@@ -56,7 +56,7 @@ def test_a_guest_fault_is_a_failure(stock_session):
         s.emu.poke32(s.emu.status()["cf"]["mainloop_pc"], 0xFFFFFFFF)
 
     _fails_with(stock_session, [{"_call": crash}, {"wait_ms": 200}], "fault")
-    assert any(e["kind"] == "fault" for e in stock_session.events)
+    assert stock_session.wait_event("fault")
     stock_session.events.clear()
 
 
@@ -72,4 +72,4 @@ def test_a_dsp_halt_is_a_failure(stock_session):
         pytest.skip("the known DSP halt is gone (conditional Type 7a): drop this test")
     bad = [c for c in stock_session.checks if not c.ok]
     assert "DSP halt" in bad[-1].detail, bad[-1].detail
-    assert any(e["kind"] == "halt" for e in stock_session.events)
+    assert stock_session.wait_event("halt")
