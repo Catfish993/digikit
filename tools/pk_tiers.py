@@ -100,24 +100,39 @@ def measure(name: str, fw: str, seconds: float, hist: bool, pcm: bool = False) -
         emu.call("pcm.tap", action="capture_stop")
         pcm_hash = hashlib.sha256(wav.read_bytes()).hexdigest()[:16]
     audio = t1["audio_s"] - t0["audio_s"]
-    d = {k: t1[k] - t0[k] for k in ("instructions", "idle_skip", "interpreter", "fast_tier", "block_instructions")}
+    d = {
+        k: t1[k] - t0[k]
+        for k in (
+            "instructions",
+            "idle_skip",
+            "interpreter",
+            "fast_tier",
+            "block_instructions",
+        )
+    }
     d["aot"] = d["block_instructions"] - d["fast_tier"]
     busy = d["instructions"] - d["idle_skip"]
     out = {
         "config": name,
         "pcm": pcm_hash,
         "wall_per_emu_s": (w1 - w0) / seconds,
-        "dsp_cpu_per_audio_s": (t1["worker_cpu_s"] - t0["worker_cpu_s"]) / audio if audio else None,
+        "dsp_cpu_per_audio_s": (t1["worker_cpu_s"] - t0["worker_cpu_s"]) / audio
+        if audio
+        else None,
         "audio_s": audio,
         "insn_per_audio_s": {k: v / audio for k, v in d.items()} if audio else None,
-        "tier_share": {
-            k: d[k] / busy for k in ("interpreter", "fast_tier", "aot")
-        }
+        "tier_share": {k: d[k] / busy for k in ("interpreter", "fast_tier", "aot")}
         if busy
         else None,
         "code": {
             k: t1.get(k, 0) - t0.get(k, 0)
-            for k in ("code_gen", "code_verifies", "code_verify_ns", "code_mismatch", "interp_appended")
+            for k in (
+                "code_gen",
+                "code_verifies",
+                "code_verify_ns",
+                "code_mismatch",
+                "interp_appended",
+            )
         },
         "fast_built": t1["fast_built"],
         "fast_refused": t1["fast_refused"],
@@ -136,7 +151,10 @@ def measure(name: str, fw: str, seconds: float, hist: bool, pcm: bool = False) -
 
 
 def parse_hist(text: str, plan: dict | None) -> dict:
-    pcs = [(int(m.group(1), 16), int(m.group(2))) for m in re.finditer(r"hist: (0x[0-9a-f]+) (\d+)", text)]
+    pcs = [
+        (int(m.group(1), 16), int(m.group(2)))
+        for m in re.finditer(r"hist: (0x[0-9a-f]+) (\d+)", text)
+    ]
     cm = re.search(r"code_mismatch (\d+)", text)
     tot = re.search(r"hist: (\d+) interpreted insns over (\d+) PCs", text)
     out: dict = {
@@ -148,12 +166,18 @@ def parse_hist(text: str, plan: dict | None) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--config", action="append", choices=sorted(CONFIGS))
     ap.add_argument("--seconds", type=float, default=1.0)
     ap.add_argument("--fw", default="1.17")
     ap.add_argument("--hist", action="store_true")
-    ap.add_argument("--pcm", action="store_true", help="hash the PCM of the window (bit-identity between binaries)")
+    ap.add_argument(
+        "--pcm",
+        action="store_true",
+        help="hash the PCM of the window (bit-identity between binaries)",
+    )
     ap.add_argument("--out")
     a = ap.parse_args()
     rows = []

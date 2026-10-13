@@ -28,8 +28,8 @@ noise state the earlier notes leave); e plays its two runs side by side.
 
 `--quick` (about 60-80 s wall, 4 parts in parallel): aq (select, descriptor, defaults, the DECAY encoder moves its slot
 only, tuning of two notes), dq1 (DECAY: decay slope at two settings), dq2 (PICK: comb against a reset noise state) and
-f (persistence). A sounding note costs about 35 s of wall per emulated second (the patched DSP runs interpreted; an idle
-second costs 3 s), so the quick parts turn DECAY down right after the first trig, play 0.33 s notes and measure windows of
+f (persistence). A sounding note costs about 6 s of wall per emulated second (before the code-watch fix of
+findings 18: 35 s; the patch bars stock AOT regions), an idle second about 3 s, so the quick parts turn DECAY down right after the first trig, play 0.33 s notes and measure windows of
 0.1-0.2 s. dq1 and dq2 reset the excitation noise (`_pk_rng`) before each note: the notes then differ only by the
 parameter under test (with the parameter ignored they would be bit-identical). Teeth: tools/pk_break.py makes broken
 images (`PK_PROOF_IMAGE`); the limits and the margins are in the checks.
@@ -235,14 +235,14 @@ class PluckProof(M.Proof):
         addr = next(v for k, v in plan["symbols"].items() if k.endswith(":_pk_rng"))
         s.emu.patch(text=f"DM {addr:x} {seed:08x}")
 
-    # -- quick tier. A sounding PLUCK note costs ~35 s of wall per emulated second while it rings (the patched DSP
-    # runs interpreted), an idle second ~3 s: every quick part turns DECAY down right after the first trig (that
+    # -- quick tier. A sounding PLUCK note costs ~6 s of wall per emulated second while it rings (35 s before the
+    # code-watch fix, findings 18), an idle second ~3 s: every quick part turns DECAY down right after the first trig (that
     # shortens the ringing note too) and measures windows of 0.15-0.2 s.
     QUICK_DECAY = 0x1800  # T60 well under 0.26 s (0x2000 is 0.26 s in the full tier); a note costs ~3 s of wall
 
     def quick_start(self, s: H.Session, decay: int | None = None) -> None:
         """PLUCK selected on track 1, the SRC page open, one trig (the engine slots get their defaults) and DECAY
-        turned down at once: the first note rings at the default 1 s T60 otherwise (about 35 s of wall)."""
+        turned down at once: the first note rings at the default 1 s T60 otherwise (several seconds of wall)."""
         self.fresh(s, 600)
         self.select(s, PLUCK_DOWNS)
         s.do_tap("SRC")

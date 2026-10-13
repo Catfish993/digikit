@@ -19,6 +19,7 @@ CLEAN = [
     "tools/pk_proof_voice.py",
     "tools/pk_proofs.py",
     "tools/pk_break.py",
+    "tools/pk_tiers.py",
     "tools/fw.py",
     "tools/atlas.py",
     "tests/test_fw.py",
