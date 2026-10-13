@@ -49,6 +49,16 @@ mark = "V"
 rule = "builtin"
 
 [[anchor]]
+name = "cf.param.master_sidechain_filter"
+cpu = "cf"
+kind = "data"
+addr = 0x40211a68
+len = 60
+sha256 = "f103497eeac02712980d73744c3e5e437e4708713cda144b48cf3998827240db"
+mark = "D"
+rule = "fx/master-drive:cf_words"
+
+[[anchor]]
 name = "cf.reset.clear_helper"
 cpu = "cf"
 kind = "value"
@@ -81,6 +91,17 @@ mark = "D"
 rule = "core/expansion:cf_reset_init_calls"
 
 [[anchor]]
+name = "dsp.fx.sidechain_filter_word"
+cpu = "sharc"
+kind = "value"
+addr = 0x256008
+src = 0x28385efa
+len = 6
+sha256 = "ae63d81c7590510eecbe4b07ca65a9d9ad423a26ba301415a978a351fc4003d6"
+mark = "D"
+rule = "fx/master-drive:sharc_mem_addr"
+
+[[anchor]]
 name = "dsp.master.float_buf"
 cpu = "sharc"
 kind = "value"
@@ -89,7 +110,7 @@ src = 0x2838e960
 len = 6
 sha256 = "24fc44e6e39c01b59e4658ac666b121ae8250b489bae8f259b906cdbb29b64a6"
 mark = "D"
-rule = "fx/master-gain:sharc_literal"
+rule = "fx/master-drive:sharc_literal"
 
 [[anchor]]
 name = "dsp.master.q31_call"
@@ -100,7 +121,7 @@ pm = 0x1c7734
 len = 6
 sha256 = "2159b22ced3ca5cc9e2baf379f927383b4b508e18965da2cf8df7dd41b1b96d1"
 mark = "D"
-rule = "fx/master-gain:sharc_func"
+rule = "fx/master-drive:sharc_func"
 
 [[anchor]]
 name = "dsp.master.q31_converter"
@@ -111,4 +132,4 @@ pm = 0x1c74a1
 len = 6
 sha256 = "cfc6c05db50b7bdc5c7f98ab7f784044cba07bce6869dbef544f229902072dd2"
 mark = "D"
-rule = "fx/master-gain:sharc_func"
+rule = "fx/master-drive:sharc_func"

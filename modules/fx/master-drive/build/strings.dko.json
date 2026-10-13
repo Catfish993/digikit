@@ -1,0 +1,43 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [],
+ "sections": [
+  {
+   "align": 1,
+   "hex": "44525600",
+   "kind": "data",
+   "name": ".rodata.md_name_short",
+   "size": 4
+  },
+  {
+   "align": 1,
+   "hex": "4d617374657220447269766500",
+   "kind": "data",
+   "name": ".rodata.md_name_long",
+   "size": 13
+  }
+ ],
+ "source_sha256": "dc9830ff5eb9e08173002aa21770b84abeda7adfada809ffe8f6f08af8726f7d",
+ "symbols": [
+  {
+   "global": true,
+   "name": "md_name_long",
+   "section": ".rodata.md_name_long",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "md_name_short",
+   "section": ".rodata.md_name_short",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "0",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

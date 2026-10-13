@@ -284,6 +284,10 @@ def link(obj: dict, base: int, symmap: dict[str, int] | None = None) -> Linked:
 
 def check_isa(linked: Linked) -> dict[str, int]:
     """Decode every instruction of the executable sections with our decoder; return the form histogram."""
+    if (
+        not linked.text_ranges
+    ):  # a data-only object (strings, tables): nothing to decode
+        return {}
     cfdis = ROOT / "target" / "release" / "cfdis"
     if not cfdis.exists():
         r = subprocess.run(

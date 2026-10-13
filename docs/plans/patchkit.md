@@ -307,6 +307,20 @@ dn2-1.11 and dn2-1.12, modules `core/expansion`, `fx/master-gain`, `test/cf-demo
   offset; SHARC `retarget` supports the direct CALL only, and the SHARC listing of `explain` lives in the Python
   front end.
 
+### Phase 4.1 results (2026-10-13, lane `fastweb`)
+
+Details: `docs/findings/22-patchkit-master-drive.md`. `modules/fx/master-drive` patches DT2 1.17 and DN2 1.12 from one
+source: a soft-clip saturator at the Q31 converter call and the master page's encoder 7 (the compressor's Sidechain
+Filter, fx[66]) relabelled `DRV`, by two strings in `cf.expansion` and the descriptor row's name pointers. Both devices
+pass `tools/pk_proof_drive.py`: bit-identical to stock at the neutral value, harmonics and level rise with drive, no
+clicks while the knob moves, no fault. 20 to 968 DSP instructions per block.
+
+- **Neutral is 0x5000 (UI 80), not 0:** kits do not start from the descriptor default [C]; the module keeps the default.
+- New: anchor rule kinds `sharc_mem_addr` and `cf_words` (port_resolve), `(SW)`/`(SWSE)` direct loads in `pk_sharc`
+  (Selache ignores the suffix), `run_call(approx_recips=...)`, data-only ColdFire objects.
+- Open: hardware; whether R5-R13 are dead at the hook (saved anyway); DT2 1.16 and DN2 1.11 not run; the module's
+  emulator test is slow and skips without inputs.
+
 ### Phase 2: developer loop and harness (about 3 days, high)
 
 - [x] mise tasks above (`patch:new`, `patch:dev`, `patch:test`); module template; agent skill
@@ -346,8 +360,9 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 
 ### Phase 4: proof-of-concept modules
 
-- [ ] 4.1 `fx/master-drive` (or compressor), DT2 and DN2: a new parameter carried in a frame word the DSP
-      discards today, DSP code at the master hook. First module that changes both CPUs.
+- [x] 4.1 `fx/master-drive` (or compressor), DT2 and DN2: a new parameter carried in a frame word the DSP
+      discards today, DSP code at the master hook. First module that changes both CPUs. Done 2026-10-13 (lane
+      fastweb), see "Phase 4.1 results".
 - [ ] 4.2 Simple voice (sine or noise) on DT2 through `core.dsp-voice`.
 - [ ] 4.3 `machines/granular` DT2 (grains from sample memory), 3-5 days after 4.2.
 - [ ] 4.4 `machines/granular` DN2. **Open decision:** grain source (track oscillator or wavetable, audio input, or
