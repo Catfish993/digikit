@@ -174,6 +174,11 @@ def main(argv: list[str]) -> int:
         raw.write_bytes(sidecar[24:])
         live_env = {
             **env,
+            # Ready states are booted without software-forced interrupt delivery
+            # (INTC INTFRC, default on since 2026-10-13): the DN2 PCM pins and the
+            # DT2 FX oracle intents (encoder acceleration is phase-sensitive) were
+            # calibrated on such states. Scenarios still run with it on.
+            "DIGI_INTC_FORCE": "0",
             "DSP_CLOCK_BASE": str(clock),
             "CF_SNAPSHOT": str(snap),
             "NOTE_EVENTS": "trig",
@@ -205,6 +210,7 @@ def main(argv: list[str]) -> int:
                 else None,
                 "dsp_idle_clock": clock,
                 "image": image_name,
+                "intc_force": False,
                 "card_image": str(a.card_image) if a.card_image else None,
             },
             indent=1,

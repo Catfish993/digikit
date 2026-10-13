@@ -113,7 +113,13 @@ def prepare() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
     write_sine(samples / "test-sine-1khz.wav")
     syx = digi_env.firmware_for("dt2")
     ne = native_emu()
-    card = ne.plusdrive_card(samples, syx, digi_env.rust_env(dict(os.environ)))
+    pinned = os.environ.get("DIGI_DT2_CARD")
+    if pinned:
+        # a card image kept from an earlier builder: the oracle values of
+        # tests/scenarios/test_dt2_fx.py are tied to the ready state it boots to
+        card = pathlib.Path(pinned).resolve()
+    else:
+        card = ne.plusdrive_card(samples, syx, digi_env.rust_env(dict(os.environ)))
     ready = subprocess.run(
         [sys.executable, str(ROOT / "tools" / "ready.py"), "dt2", "--syx", str(syx),
          "--card-image", str(card)],

@@ -290,8 +290,37 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   (`cfmatch.py port`) go into the `ported` table of the destination cfdb. `pyghidra` is not in the
   venv: run the dump and apply tools with `uv run --with <ghidra>/Ghidra/Features/PyGhidra/pypkg/dist/pyghidra-3.1.0-py3-none-any.whl
   --with .../jpype1-1.5.2-cp312-cp312-macosx_10_9_universal2.whl python tools/ghidradump.py ...`. **[D]**
-- Open: what 1.17 changes in encoder-turn behaviour (the 36 FX oracle failures); the new
-  `BreakOutBoxOutputRoutingMenuView` has not been read. **[O]**
+- **[C] The 36 DT2 FX oracle failures are not a 1.17 change** (lane fastweb, 2026-10-13). DT2 1.16 fails the
+  same 36 tests when its ready state is rebuilt today, and for 1.16 and 1.17 all 60 FX scenarios give identical
+  decoded Sound/Fx read-backs and identical PCM hashes on the same recipe (`tools/dt2fx_compare.py`). **[V]**
+  The cause is the ready state. The oracle intents (encoder-turn counts, `UPS` in `tools/gen_dt2fx.py`) were
+  calibrated on a DT2 ready snapshot booted before software-forced INTC delivery became the default
+  (b8d45a7, 2026-10-13 07:27). A snapshot booted with it on has a different CPU phase at ready; the encoder
+  acceleration depends on the phase (ladder for `lad-N`, Bit Reduction after N events of +4, N = 12, 14, ...
+  on the old and the new snapshot: `11 11 16 16 32 32 22 38 38 54 54 87 ...` against `7 12 12 20 20 37 37 26 43 43
+  59 59 93 ...`, the same curve shifted by one slot), so `tf-br-22` ends at 37 instead of 22. Each snapshot is
+  used by the 1.16 and 1.17 tests only through `snapshots/<ready>/by-card/<card sha>[-<syx sha>]`; since f75da50
+  keys 1.16 snapshots by firmware too, every fresh 1.16 snapshot was a new, forced-IRQ boot. **[V]**
+  Evidence: the old 1.16 snapshot (`by-card/1c1fed346ea9`, 90,114,376 bytes, 2026-10-08) gives 22 for `tf-br-22`
+  and 272,149,997 guest instructions, a fresh one gives 37 and 271,899,997. A DT2 ready state booted with
+  `DIGI_INTC_FORCE=0` and run with the default (forced delivery on) passes all 146 tests of
+  `test_dt2_fx.py --device dt2 --slow --sweep` on 1.16 and on 1.17. **[V]**
+  Fix: `tools/ready.py` boots ready states with `DIGI_INTC_FORCE=0` (recorded as `intc_force: false` in
+  SOURCE.json). The DN2 1.12 ready state built that way also keeps all four pins of 1.11
+  (`exactness-100m 826db0d1`, `trig1-noqa-40m d56d8f4b`, `trig1-taps 8b26c70c`, `trig1-tap-release f4f6d19f`), so
+  the "3 of 4 pins" above had the same cause. **[V]** Existing ready directories built before the fix
+  (`snapshots/dt2-117-ready`, `dn2-112-ready`, the 1.16 `by-card/*-278541e4`) must be rebuilt
+  (`tools/ready.py ... --force`) to pass; a rebuilt 1.17 DT2 set is in `out/ready-fix-117`. No oracle or pin was
+  changed. `tools/dt2_sample_check.py` takes `DIGI_DT2_CARD` to pin a card image. The mislabelled
+  `by-card/1c1fed346ea9/SOURCE.json` (says 1.17, holds the 1.16 Oct-8 snapshot) comes from `ready.py` rewriting
+  SOURCE.json when it reuses an existing snapshot. **[D]**
+- **`dt2-sample-trig-noqa` had an empty PCM hash** on a ready state booted without forced delivery and run with
+  it: `step_error: unexpected interrupt before idle advance deadline` after 15,171 instructions. The idle
+  fast-forward (`advance_idle`) crossed a software-forced interrupt that the CPU could take; it now declines when
+  `Time::forced_deliverable()`. With the fix the scenario runs to 237,749,990 instructions (172,864 PCM values).
+  **[V]** The run is silent (0 non-zero samples, hash 892660e6...): without the NO prelude the boot modal is
+  still open and takes the trig. That is the scenario's purpose, not a fault; it is not pinned. **[D]**
+- Open: the new `BreakOutBoxOutputRoutingMenuView` has not been read. **[O]**
 
 ## What we were overlooking about ColdFire: eDMA **[V]**
 

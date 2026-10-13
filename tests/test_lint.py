@@ -19,6 +19,7 @@ CLEAN = [
     "tools/hook_ab.py",
     "tests/test_sharc_asm.py",
     "tools/cfmatch.py",
+    "tools/dt2fx_compare.py",
     "tests/test_cfmatch.py",
     "tools/bootstrap_run.py",
     "tools/patched_image.py",
