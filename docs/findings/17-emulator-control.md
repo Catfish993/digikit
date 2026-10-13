@@ -158,7 +158,7 @@ Not covered: a card other than the one-sample card, and the DSP side of patched 
 
 ## Health events, heartbeat and the watchdog (patchkit Phase 2, 2026-10-13) **[D]**
 
-Code: `native/control/src/health.rs` (pure logic, 5 unit tests), `controller.rs` (`Actor::watch`), `tools/digi_client.py`
+Code: `native/control/src/health.rs` (pure logic, 6 unit tests), `controller.rs` (`Actor::watch`), `tools/digi_client.py`
 (`subscribe`, `drain_events`, `peek32`, `poke32`, `watchdog`).
 
 - **`fault`** event (once per runtime): the ColdFire step error (`Status.error`, phase `fault`), with `error`, `pc`,
@@ -187,7 +187,7 @@ Code: `native/control/src/health.rs` (pure logic, 5 unit tests), `controller.rs`
   exist so tests can break the guest on purpose.
 - **Watchdog**: the MCF5441x core watchdog is the SCM's CWCR (`0xFC040016`) and CWSR (`0xFC04001B`). No word in MAIN OS
   (1.16, 1.17, 1.11, 1.12) or in the bootstrap carries those addresses (the literal search for `fc040016` and
-  `fc04001b` is empty; the only SCM literals are `fc04002d`/`fc04002f`, PPMCR, and one `fc040024`), and the bus models no
+  `fc04001b` is empty **[V]**; the only SCM literals are `fc04002d`/`fc04002f`, PPMCR, and one `fc040024`), and the bus models no
   SCM register except the write-only PPMCR (`ppmcr_contract`). So the firmware does not configure the watchdog as far
   as a static read shows (computed addresses are not excluded), and the emulator would not model it. A hang
   therefore shows only as a `stall` here; on hardware the unconfigured CWT is off after reset (CWCR[CWE] cleared). **[D]**

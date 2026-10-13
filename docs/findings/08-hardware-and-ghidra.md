@@ -443,7 +443,7 @@ exact fingerprint:
 
 Both come out of the firmware's own code; neither needs a datasheet or a probe.
 
-DDR is **128 MiB** **[C]** (an earlier version of this section said 64 MiB),
+DDR is **128 MiB** **[C]** **[V]** (an earlier version of this section said 64 MiB),
 from the bootstrap's own DDRMC writes and the OS's own use of RAM:
 
 ```
@@ -456,9 +456,9 @@ with the controller's fixed 1 chip select and x8 datapath: `2^(14+10+3) * 1 =
 134,217,728`, the geometry of a standard 1 Gbit x8 DDR2 part (14 row, 10 column
 bits, 8 banks). The register values and the single x8 component are as before;
 the correction is the row limit. The reference manual contradicts itself: the
-DDR_CR15 field table (Table 21-20) gives the maximum as 16 address pins, and the
-text of 21.5.2.2 says 15 rows. With 15 the result is 64 MiB, which the firmware
-rules out **[D]**:
+MAXROW field reads 0x10 (16 row pins), while 21.5.2.2 lists 15 rows. With 15 the
+result is 64 MiB, which the firmware rules out (a 123.09 MiB clear and the reset
+stack at 0x48000000 would wrap) **[V]**:
 
 - the reset entry sets the stack pointer to `0x48000000` (`movea.l
   #0x48000000,a7` at `0x400004f2`) and the bss clear runs to `0x47e28470`; on

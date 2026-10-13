@@ -5219,8 +5219,8 @@ stack buffers; the coupled hashes and PCM are unchanged by the fix.
 **How the ColdFire sends section 7.** The routine is `FUN_400ccf74` in DT2 1.16 (828 bytes, called from the boot init
 chain `FUN_400cc864` at `0x400ccaee`); its equivalents, found by `tools/cfmatch.py` and by the only function that
 writes DSPI0 PUSHR (`0xec038034`), are `FUN_400cd0d8` (DT2 1.17), `FUN_400cf34c` (DN2 1.11) and `FUN_400cf4b0`
-(DN2 1.12), 828 bytes each with the same constants. In 1.16: two 1 MiB buffers are allocated (`0x400cd19c`,
-`0x400cd1a6`, size `0x100000`); section 7 is looked up (`FUN_401361b6(7, &info)`); a stored size over `0x100000` ends
+(DN2 1.12), 828 bytes each with the same constants. In 1.16: two 1 MiB buffers are allocated (`0x400cd174`,
+`0x400cd19e`, size `0x100000`); section 7 is looked up (`FUN_401361b6(7, &info)`); a stored size over `0x100000` ends
 with status 2 (`0x400cd1d4`, `cmpi.l #0x100000 / bhi`); the stored bytes are copied from flash (`info.offset +
 0x80000`) into the first buffer; a `0x03` byte (the SPI flash READ command the SHARC boot ROM expects) is written at
 the start of the second buffer and the section is depacked after it (`FUN_4013815c`); a depacked size over `0xfffff`
@@ -5229,14 +5229,15 @@ after the SHARC's handshake line (GPIO bit 4) goes low (`0x400cd22a` to `0x400cd
 `0x18000000` ends the transfer. There is no length field and no per-block check on the ColdFire side: the whole
 depacked section is sent, whatever the block list, **as long as stored <= `0x100000` and depacked <= `0xfffff` bytes**.
 Verified by disassembly of all four images (same comparisons, same `pea 7`, same `move.b #3,(A0)+`); the failure
-statuses were not run. **[D]**
+statuses were not run. The sender constants are **[V]**; the failure statuses stay **[D]**.
 
 **Stream limits, therefore.** DT2 section 7 is `0x4e5f8` bytes: room for 727,540 payload bytes (`0xfffff` less the stream
 and one 16-byte header); DN2 1.11/1.12 is `0xcc55c`: room for 211,600. The stored (packed) size counts too: an
 incompressible 727,540-byte block gave a stored section of `0xf56da` bytes on DT2 and `0xd0725` on DN2 (both under
 `0x100000`); the container then is 2.92 MB (DT2) and 2.71 MB (DN2), under the 3 MiB flash cap. Hence the usable
 appended payload is bounded by the stream, not by free L2: DT2 727,540 of 939,140 free bytes, DN2 211,600 of 491,972.
-**[D]**
+Section sizes, payload limits, the loaded L2 ends (`0x2001ab7c`, `0x2008823c`) and the free ranges are **[V]**; the
+stored-size runs are **[D]**.
 
 **What an append is.** A boot stream is a chain of blocks, each a 16-byte little-endian header (block code, target
 address, byte count, argument) and a payload; the top byte of the block code is `0xad` (core 0) and byte 2 is chosen so
@@ -5299,7 +5300,9 @@ gaps between the loaded L1 windows (`0x2826f000..0x282c0000`, `0x282d8000..0x283
 ## Master hook: a routine in free L2 scales the final block before the Q31 conversion (spike 0.7) **[D]**
 
 Measured in the coupled emulator on DT2 1.16 and DN2 1.11 (the DSP blobs of DT2 1.17 and DN2 1.12 are
-byte-identical, so the addresses hold there). One agent; not yet checked by a second.
+byte-identical, so the addresses hold there). A second agent verified **[V]** the hook site and converter (DT2
+`0x1c7734` `1804 001c 74a1`, DN2 `0x1c9fd2` `1804 001c 9d3f`, one caller each) and the converter buffers (`0x25f180`,
+`0x268438`); PCM results and register liveness stay **[D]**.
 
 **Site.** The block handler's render command ends with one call of the Q31 converter: DT2 `CALL 0x1c74a1`
 at `0x1c7734` (`1804001c74a1`, Type 25a direct, delayed), DN2 `CALL 0x1c9d3f` at `0x1c9fd2` (`1804001c9d3f`).
@@ -5446,7 +5449,8 @@ The emulator flattens the block list (`sharcldr.LoadedMemory`, `dsp_stream.rs`) 
 parsers stop silently at the first bad header. Rules below come from the public ADSP-2156x Hardware Reference
 (`out/refs/adsp-2156x-hwr`, chapter 40, printed pages "HWR 40-nn"); `tools/sharc_bootcheck.py` applies them to a
 stream (rule ids H1 to H13, S1 in its docstring), `native/patchkit/src/bootrom.rs` is the Rust port of the error
-rules. Marks: ROM = stated by the manual, CONV = not stated as a ROM check but true of every stock stream.
+rules. Marks: ROM = stated by the manual, CONV = not stated as a ROM check but true of every stock stream. A second agent
+verified **[V]** rules H1, H2, H3, H4/H5, H8, H9 and H12.
 
 | Rule | Source | Check |
 |---|---|---|
@@ -5468,7 +5472,7 @@ Results.
   `0x2964`, then an INIT block that calls it) and the main one (FIRST|IGNORE at `0x2974`, ARGUMENT = bytes to the end
   of the stream, FINAL last, its TARGET_ADDRESS equal to the entry `0x1c1338` / `0x1c12e2`). Every BCODE is 1.
   The INIT block runs the initcode (clock and DDR set-up) before the DDR FILL blocks, so DDR is not an emulator
-  question. **[D]**
+  question. Block counts and sizes **[V]**; the rest **[D]**.
 - **Patchkit outputs with appended blocks pass** against their stock stream (`check_against_stock`: inserted blocks only
   before FINAL, stock headers unchanged, FIRST pointer grown, inserted blocks in bootable L2, no overlap, BCODE 1,
   no flags): `fx/master-gain` and `fx/master-drive` on DT2 1.17 and DN2 1.12 (gain: 2 blocks, 148 bytes; drive: 1
@@ -5503,7 +5507,10 @@ Results.
 ## Per-voice render hook: built (patchkit Phase 4.2, DT2 1.16/1.17) **[D]**
 
 Lane fastweb, 2026-10-13/14. One agent, emulator and concrete core only, not checked by a second agent. The DSP blobs
-of DT2 1.16 and 1.17 are byte-identical, so every address below holds on both; nothing ran on a device. Modules:
+of DT2 1.16 and 1.17 are byte-identical, so every address below holds on both; nothing ran on a device. A second agent
+verified **[V]** the voice hook entry (`1587 ffff ffe6` at `0x1c4ecf`, next instruction `0x1c4ed2`), the DN2
+`FUN_b8251b` entry (`1587 ffff ffee`) and the selector words 0..13, 14/15 = 0 and 16..21 pointers; PCM, headroom, register
+liveness and note-on contracts stay **[D]**. Modules:
 `core/dsp-voice`, `test/sine-voice`, `machines/pluck`. Tests: `tests/test_dsp_voice.py`, `tests/test_pluck.py`;
 proof: `tools/pk_proof_voice.py`.
 
@@ -5539,7 +5546,7 @@ registered type costs +1,120 DSP instructions per block (+0.5 %) and its PCM is 
   `+0x4c`. Words 0..6 are `0 1 2 3 4 0 5`; word 7 is `0x2567dc`, the copy-gate flag (1 in the loader image, cleared
   by `0x1c2c8b` in the first frame: type 7 then selects 0, SAMPLE); words 8 to 13 are `0x254478 ...` pointers (>= 6:
   stage A of `FUN_1c642a` is skipped, `compu(R6, 6)` at `0x1c6553`); words 14 and 15 are 0 (SAMPLE again), 16 to
-  21 pointers, 22 and 23 zero. A new type therefore never selects the STRETCH path (selector 2), and a type whose
+  21 pointers, 22 and 23 pointers `0x254878` and `0x2548f8` (**[C]**, earlier text said zero). A new type therefore never selects the STRETCH path (selector 2), and a type whose
   entry is 0 or 1 runs the sample stage A (`0x1c4afe` ...) on its records, which is harmless because a registered
   routine does not read what stage A writes and the stock empty-slot voices run it anyway. No selector table entry
   has to be added. **[O]** the selector words of types above 23 were not read.
@@ -5654,13 +5661,13 @@ holds the cleared data and the voice's later stages (amplitude envelope, gate) r
 **The hook: `FUN_b8251b`** (55 instructions, leaf), called by the engine once per voice buffer after the synthesis
 (`0x1c9459`, a loop with R15 = 16 .. 1, so v = 16 - R15; R8 = R12 = the buffer, R4 = a control block whose first word is
 0 for every FM note; another path reaches it by a tail jump from `FUN_b8258f` with R8 != R12). patchkit overwrites its first
-instruction (48 bits, `I7 = MODIFY(I7, -18)`) with `JUMP _dv_entry` (same op as on the Digitakt); the wrapper
+instruction (48 bits, `1587 ffff ffee`, `I7 = MODIFY(I7, -18)`) with `JUMP _dv_entry` (same op as on the Digitakt); the wrapper
 saves everything it touches in a DM area (the function's callers keep live registers), runs the registered routine
 for the slot's type and continues in the stock helper at its second instruction. A patched image with no registered type
 is **bit-identical** to stock (FM TONE, 62,176 active samples; the boot lands a DSP block away as on every patched
 image). Cost: 16 calls per block, about 70 instructions each when no type is registered, by count.
 Anchors (rules in `modules/core/dsp-voice/module.toml`): `dsp.voice.render_entry` / `render_next` (`reloc_hash` of
-`FUN_b8251b`, offsets 0 and 3), `dsp.voice.frame_base` (the literal `I4 = 0x25c48c` of `FUN_1c2712`, offset `0x165`).
+`FUN_b8251b`, offsets 0 and 3), `dsp.voice.frame_base` (the literal `I5 = 0x25c48c` at `0x1c2877` of `FUN_1c2712`, offset `0x165`; the second literal, at `0x1c301a`, is `I4` **[C]**).
 
 **Routine ABI on the Digitone II** (the registration contract is the Digitakt's: a `register` row `{type, routine}` in
 `_dv_table`; the routine is entered with `JUMP (M13, I12)`, I13 = return pc, ends with `JUMP (M13, I13)`):

@@ -3043,7 +3043,10 @@ send, chorus send, overdrive and SRR do (`scenarios/dn2-fx.json`,
 ## Parameter path from a UI knob to a frame word the stock DSP ignores (spike 0.7 follow-up) **[D]**
 
 Lane fastweb, 2026-10-13, DT2 1.16 and DN2 1.11 (1.17 and 1.12 have the same DSP blob; the ColdFire side is a
-relink, `tools/cfport.py` ports the addresses). One agent; a second agent has not checked it against the image bytes.
+relink, `tools/cfport.py` ports the addresses). A second agent verified **[V]** against the image bytes: the frame copy bases (`0x2558dc`, DN2 `0x25c48c`), the fx[66]
+readers (`DM(0x256008)` at `0x1c2f7d`, `DM(0x25ced8)` at `0x1c2f8f`), descriptor row `0x9d` (owner `0x16`, max `0x7f00`,
+default `0x5000`, "Sidechain Filter"/"SCF") and the formulas `0x6da + 2(k-25)` / `0x9fa + 2(k-25)` as address arithmetic.
+The per-parameter measured offsets stay **[D]**.
 Tools: `tools/frame_diff.py` (TX frame at the end of a scenario, diff against a reference), `tools/frame_poke_ab.py`
 (`DSP_FRAME_POKE` A/B of the PCM hash), `tools/sharcdb.py` tables `mem_access` and `ptr`.
 

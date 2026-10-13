@@ -847,12 +847,15 @@ holds the 16 Sound pointers. **[O]**
 The ready snapshots are Rust `DT2SNP01` files. `tools/snapread.py` reads
 their memory, but not their registers or tasks.
 
-## Persistence of machine types and parameter values (static)
+## Persistence of machine types and parameter values (static) (loader immediate, record offsets, tables, kit constants [V]; emulator round-trip steps [D])
 
 Question: does a new machine type (id 7 on DT2) and a new parameter value survive save and load, and what does a
 stock firmware do with a file from a patched one? Read from the Ghidra 1.16 dump (`dt2-1.16-emac`) and the 1.11
 dump (`dn2-1.11-emac`); image bytes read for the immediates below. Nothing was run. All marks are **[D]** unless
-stated. Addresses are 1.16 unless stated.
+stated. Addresses are 1.16 unless stated. A second agent verified **[V]**: the loader immediate and its four
+addresses (DT2 1.16 `0x400db2eb` = 08, 1.17 `0x400db44f` = 08, DN2 1.11 `0x400dd287` = 06, DN2 1.12 `0x400dd3eb` =
+06), the record offsets (`+0xd2` -> `+0xa2` on DT2, `+0xf4` -> `+0xde` on DN2), both permutation tables with their
+bounds `0x8a` and `0x9a`, the kit constants, and the type `0xff` / 7..254 behaviour.
 
 **[C] Address base of the sections above.** The dispatch and permission addresses in the earlier sections of this file
 (`0x400caf48`, `0x400dcab8`, `0x401fbda6` and so on) are DT2 **1.15C** addresses: the 8-byte pattern
@@ -930,7 +933,7 @@ The one load function for a sound record is `FUN_400db24e` (1114 bytes). Every p
 |---|---|---|
 | sound version field != 3 | `FUN_400db24e` returns 0 (no magic check at sound level); caller resets that one slot to a default sound (`FUN_400e6494` for kit tracks, `FUN_400e6378` for pool, `FUN_400e6494(...,i)` in `FUN_400db6cc`) | `cmpi #3` at entry |
 | **machine type byte** | `runtime[0xa2] = b & mask`, mask = 0xff when `(u8)(b+1) < 8` else 0: **0xff and 0..6 are kept, 7..254 become 0** (SAMPLE). Not rejected, not clamped to the top, not used as an index | `move.b (0xd2,A3)`, `addq #1`, `moveq #8,D2` at `0x400db2ea` (immediate byte `0x400db2eb` = 08), `cmp.l D1,D2; shi D1b; and.l D1,D0` |
-| second byte (+0xd3) | kept if `(u8)(b+1) < 7` (0xff, 0..5) else 0 | `moveq #7,D2` at `0x400db320` |
+| second byte (+0xd3) | kept if `(u8)(b+1) < 7` (0xff, 0..5) else 0 | `move.b #7,D2b` (`143c 0007`) at `0x400db320` |
 | other enum bytes (+0xd4..+0x128) | clamped or defaulted per field (for example `>4 -> 4`, `>100 -> 100`, `>0x3c -> 2`, `>0x16 -> 0xd`) | `FUN_400db24e` body |
 | parameter slots | **copied raw, no range check** (s16, any value, negative too) | the copy loop at `0x400db2cc` |
 | kit-level 16 x s16 at kit +0x1c | unsigned `> 0x7f00` -> `0x6400` | `FUN_400db734` |
@@ -999,7 +1002,10 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 Plan: `docs/plans/patchkit.md` (Phase 3). Code: `native/patchkit/src/machines.rs`, `modules/core/machines`,
 `modules/machines/xslice`, `modules/test/machine-clone`, `tools/pk_machine_rules.py`, `tools/pk_proof_machines.py`,
 `tools/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
-stated. Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) and passed the same proof run
+stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
+`lea 0x1c(A0)` on DT2; `pea 0x14` on DN2 at `0x4004d8e0`), `FUN_400da23e` (typearg), the vector-191 type store, the 7th
+clone site (`0x4002ec18`), the DN2 site bytes and the **[C]** about the rank shim; run-time results stay **[D]**.
+Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) and passed the same proof run
 (`tools/pk_proof_machines.py --fw 1.16`, 34 checks) and the harness cell with the smoke tour.
 
 ### What the framework does
@@ -1042,7 +1048,7 @@ cave capped the number of types), `cf.expansion` 744 B (code and tables). Eviden
 
 ### Corrections to the earlier XSLICE work **[C]**
 
-1. `machinepatch.build_rank_shim` writes `move.l #imm,(8,A7)` (`2f7c imm 0008`). That instruction is **8 bytes; ColdFire
+1. **[V]** `machinepatch.build_rank_shim` writes `move.l #imm,(8,A7)` (`2f7c imm 0008`). That instruction is **8 bytes; ColdFire
    instructions are at most 6**, our decoder says illegal and the core faults with exception vector 4 at the first
    `FUN_40052a08`. The old Unicorn-era runs accepted it (a generic m68k core). Any image made by `tools/machinebuild.py`
    with the rank part (including the XSLICE `cdbd7726...` oracle) faults on a real ColdFire. The framework loads D0 first.
@@ -1066,7 +1072,8 @@ cave capped the number of types), `cf.expansion` 744 B (code and tables). Eviden
   (TRIG 1 or PLAY; before it the cache is 0). The DSP uses it only as a change detector and through the selector table.
 - **The DSP indexes the selector table `0x2567c0` with the type** (`FUN_001c24e9`: `S2 = DM(I3, M2)`), stores the word as
   the per-track selector (`track_base + 0x4c`) that picks the render path (entries of `0x8055c840`). Stock: words 0..6 =
-  `0 1 2 3 4 0 5`; **word 7 is 0 (the SAMPLE selector) and words 8 and up are loader data pointers**, so an added type
+  `0 1 2 3 4 0 5`; **word 7 is the copy-gate flag at `0x2567dc`, 1 in the loader image and 0 after the first frame
+(finding 06) [C], and words 8 and up are loader data pointers**, so an added type
   would read a pointer as its selector. The framework therefore relocates the table into `dsp.l2` (stream block, SHARC
   data) with one word per added type: the clone's selector by default (a MANUAL SLICE clone gets 5 and sounds exactly like
   it), or `selector = n` in the manifest for a new render path (the DSP lane maps `n` to its code).
@@ -1125,7 +1132,10 @@ the eMMC as sparse sectors) so a card with a patched firmware's project can be m
 Plan: `docs/plans/patchkit.md` (Phase 3 and 4.2 results). Code: `native/patchkit/src/params.rs` (with `tests/params.rs`, 5
 integration tests on the real ports and images, 3 unit tests), `[[param]]` in `module.rs`, `modules/core/params`,
 `tools/port_resolve.py` (three rule kinds), `modules/machines/pluck`, `tools/pk_proof_pluck.py`. One agent, emulator only,
-nothing flashed, not checked by a second agent: **[D]** unless stated. Addresses are 1.17 (1.16 resolves the same rules).
+nothing flashed, not checked by a second agent: **[D]** unless stated. A second agent verified **[V]** the static site
+counts (56 reference + 55 bound sites; the 3 `bne` and 1 `beq` compares are left alone) and the T1/T2 shapes (the T2
+accessor `0x400c892e` begins `move.l 4(sp),D0; cmpi.l #0x113,D0`); the coverage tables stay **[D]**. Addresses are 1.17
+(1.16 resolves the same rules).
 
 ### What a parameter code indexes
 
