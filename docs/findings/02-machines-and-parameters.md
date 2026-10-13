@@ -1000,7 +1000,7 @@ Plan: `docs/plans/patchkit.md` (Phase 3). Code: `native/patchkit/src/machines.rs
 `modules/machines/xslice`, `modules/test/machine-clone`, `tools/pk_machine_rules.py`, `tools/pk_proof_machines.py`,
 `tools/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) and passed the same proof run
-(`tools/pk_proof_machines.py --fw 1.16`, 40 checks) and the harness cell with the smoke tour.
+(`tools/pk_proof_machines.py --fw 1.16`, 34 checks) and the harness cell with the smoke tour.
 
 ### What the framework does
 
