@@ -223,11 +223,64 @@ Estimates are agent time. Phase 0 spikes run in parallel lanes (`tools/lane.sh`)
 
 ### Phase 1: patchkit core (about 3 days, high)
 
-- [ ] Crate, CLI, wasm target; `.syx` codec with verbatim untouched sections and safety rules.
-- [ ] Port format and resolver; `devices/ports/` for dt2-1.16, dt2-1.17, dn2-1.11, dn2-1.12.
-- [ ] `.dko` format, linker, operations, trampoline generation.
-- [ ] Conflicts, canonical order, patch record, `plan.json`, `explain`.
-- [ ] Oracles: DN2 master-half and XSLICE byte-identical; CLI and wasm byte-identical.
+Spec (decided 2026-10-13):
+
+- **Split.** Rust `native/patchkit` (lib + `patchkit` binary + wasm32 cdylib, the native/boot pattern; deps:
+  `loader`, `coldfire` (std-only), sha2, hmac, serde, serde_json, toml) does everything at patch time: `.syx`
+  decode (via `loader`) and encode, aPLib pack, HMAC seal, checksums, 8-in-7 framing with the per-device packet
+  constant, port load and verify, link, apply, conflicts, record, plan, explain. Python does everything at
+  module-build and port-resolve time (toolchains, cfdb/sharcdb queries): `tools/pk_build.py` (src -> `.dko`),
+  `tools/port_resolve.py` (rules -> port lockfile). `tools/patchkit.py` wraps the Rust CLI for mise.
+- **Codec.** Untouched sections keep their stored bytes verbatim; changed sections are packed with an aPLib packer
+  ported from `dt2/aplibpack.py` that produces the **same bytes** as the Python packer (test on all 16 stock
+  sections). Hard limits from the port (`container_max` 0x300000, section 7 stored <= 0x100000 and depacked <=
+  0xfffff, MAIN staged image <= 0x3ffc00); sections 2, 4, 8 can never change. Every output is re-decoded and
+  checked (checksum, HMAC, packet checksums, limits, record).
+- **Port lockfile** `devices/ports/<short>-<version>.toml`:
+  - `[port]`: device, version, `syx_sha256`, `main_sha256`, `dsp_sha256`, `resolved_by` (tool + version).
+  - `[limits]`: container and section limits above.
+  - `[[region]]`: name (`cf.flash_cave`, `cf.expansion`, `dsp.l2`), cpu, start, end, excludes, mark.
+  - `[[anchor]]`: name (`cf.reset.init_calls`, `dsp.master.q31_call`, ...), cpu, addr (byte address; SHARC also
+    gives the PM word address), len, `sha256` of the bytes, mark, source rule.
+  Anchors are declared with resolution rules by the modules and frameworks that need them
+  (`[[anchor_rule]]` in module.toml: masked signature, `cfmatch` from a reference port plus offset, or SHARC
+  `reloc_hash` function match plus offset). `port:resolve` resolves every declared rule for one firmware and
+  rewrites its lockfile. patchkit only reads lockfiles and verifies anchor hashes; a firmware without a lockfile
+  has no compatible modules.
+- **Objects** `.dko.json`: canonical JSON (sorted keys, no floats) from the `tools/pk_link.py` prototype: header
+  (arch `cf` | `sharc`, format version, source sha256, toolchain), sections (name, kind text|data|bss, align,
+  hex), symbols (native units: bytes, or 16-bit parcels for SHARC), relocs `{section, offset, type, symbol,
+  addend}` with explicit addends; types `cf.32`, `cf.pc32`, `cf.pc16`, `cf.pc8`, `sharc.abs24`, `sharc.abs32`.
+  The ISA check (our decoders) runs in `pk_build.py`, not at patch time.
+- **Module manifest** `module.toml`: `[module]` id, version, name, category, status, summary, `requires`,
+  `conflicts`; `[targets]` (`dt2-1.17 = "tested"` ...); `[[object]]` paths; `[[anchor_rule]]`; ops; `[[claim]]`
+  resources. v1 ops: `place` (objects into a named region, implied by `[[object]]`), `write` (bytes at an anchor
+  plus offset, may carry relocs to module symbols), `retarget` (rewrite the target of a CF `jsr/bsr/jmp` or SHARC
+  `CALL/JUMP` at an anchor to a module symbol). Displaced-instruction trampolines wait for Phase 3.
+- **Built-in `core.expansion`**: whenever a module places into `cf.expansion`, patchkit appends
+  `[len][dest][payload]` to MAIN OS, writes the loader (its own `.dko`, `modules/core/expansion/`) into
+  `cf.flash_cave`, and redirects `cf.reset.init_calls`; the loader also zeroes module bss. `dsp.l2` placement uses
+  boot-stream `APPEND` blocks.
+- **Apply order and conflicts**: dependency topology then id; refuse overlapping bytes after linking, colliding
+  claims, unmet requires/conflicts, a region over capacity, or an anchor hash mismatch.
+- **Patch record** `DKPR` (format version, base `syx_sha256`, `id@version` list) in `cf.expansion` when the patch
+  uses it, else in an appended `dsp.l2` block. patchkit refuses inputs that already carry a record.
+- **CLI**: `patchkit inspect X.syx` (device, version, port, record), `check` and `apply --firmware X.syx
+  --modules a,b [-o OUT] [--plan plan.json]`, `explain --plan`, `verify OUT.syx`. Modules are found under
+  `modules/` by id.
+
+Slice first (one agent), then coverage:
+
+- [ ] Slice: codec + port lockfile + `write`/`retarget` + `dsp.l2` placement + record + verify, proven by the
+      master-gain module (spike 0.7 routine as SHARC source, one module for both devices) on DT2 1.17 and DN2 1.12:
+      -6.02 dB at gain 0.5, bit-identical at 1.0, through `firmware.load`.
+- [ ] Oracle: DN2 master-half as a one-`write` module: decoded section 7 equals `dsp_patch.py syx`.
+- [ ] Oracle: XSLICE as a pinned raw-writes module (converted from `machinebuild` plan, dt2-1.16 only): section 3
+      sha `cdbd7726...`.
+- [ ] `core.expansion` and a CF module in `cf.expansion`: boots to ready, function callable (pk_cfcall), region
+      content intact.
+- [ ] Conflicts, canonical order, `plan.json`, `explain`; aPLib byte-equality with Python on all 16 sections.
+- [ ] wasm build in `tools/native_wasm.py` (`public/patchkit.wasm`); CLI and wasm outputs byte-identical.
 
 ### Phase 2: developer loop and harness (about 3 days, high)
 
