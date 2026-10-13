@@ -217,3 +217,12 @@ description = "Run the bounded native Oracle boot diagnostic"
 alias = "plusdrive"
 run = "cargo run --release --locked --offline -p plusdrive-format --bin plusdrive --"
 description = "Build or inspect a standalone +Drive image"
+
+# --- patchkit toolchains (installed under out/tools, never global) ---
+
+[tasks."toolchains"]
+run = [
+  "uv run python tools/pk_toolchains.py m68k",
+  "uv run python tools/pk_toolchains.py selache",
+]
+description = "Build the pinned m68k-elf binutils/gcc (about 15 min) and Selache into out/tools"
