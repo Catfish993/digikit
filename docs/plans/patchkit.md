@@ -364,7 +364,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 
 Details, evidence and the DSP binding contract: `docs/findings/02-machines-and-parameters.md` ("core.machines").
 Built: `native/patchkit/src/machines.rs` (the generator, 4 unit tests, `tests/machines.rs` with 6 integration tests on the
-real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (22 ColdFire anchor rules of the new kind
+real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (24 ColdFire anchor rules of the new kind
 `cf_func`, one DSP rule), `modules/machines/xslice`, `modules/test/machine-clone`, `tools/pk_machine_rules.py`,
 `tools/pk_proof_machines.py`, `tools/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
 and `expect_dsp`; two new matrix cells.

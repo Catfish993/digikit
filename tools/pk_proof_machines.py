@@ -44,12 +44,13 @@ TRACK_OBJ_WORD = 0x4265338C  # the type byte is the third byte of this word (0x4
 TX_TYPE = (
     0x800053DC  # TX frame 0x80005348 + 0x94: big-endian word, track 1 in the high half
 )
-DSP_CACHE = 0x255970  # DSP DM: the type per track
+DSP_CACHE = 0x255970  # DSP DM: a 16-bit type per track at +2t
 SLICE_DOWNS = (
     4  # presses of DOWN from the top of the machine list to SLICE, XSLICE, XClone
 )
 XSLICE_DOWNS = 7
 XCLONE_DOWNS = 8
+FW = "1.17"  # --fw
 MODS_ONE = ["core/machines", "machines/xslice"]
 MODS_TWO = ["core/machines", "machines/xslice", "test/machine-clone"]
 
@@ -71,7 +72,7 @@ class Proof:
 
     # -- one daemon
     def session(self, mods: list[str]) -> H.Session:
-        cell = H.Cell("dt2", "1.17", list(mods))
+        cell = H.Cell("dt2", FW, list(mods))
         s = H.Session(
             cell,
             H.Goldens(),
@@ -123,7 +124,7 @@ class Proof:
         """(TX frame machine word of track 1, DSP cache word of track 1): meaningful after an audition."""
         tx = ((s.emu.peek32(TX_TYPE) or 0) >> 16) & 0xFFFF
         dsp = int.from_bytes(
-            bytes.fromhex(s.emu.dsp_peek(DSP_CACHE, 4)["hex"]), "little"
+            bytes.fromhex(s.emu.dsp_peek(DSP_CACHE, 2)["hex"]), "little"
         )
         return tx, dsp
 
@@ -175,7 +176,7 @@ class Proof:
 
     # -- the parts
     def part_a(self) -> dict[str, np.ndarray]:
-        print("a  select (stock, then machines/xslice on 1.17)")
+        print(f"a  select (stock, then machines/xslice on {FW})")
         pcm: dict[str, np.ndarray] = {}
         with self.session([]) as s:
             self.fresh(s)
@@ -283,14 +284,16 @@ class Proof:
         import port_resolve as pr
         from dt2 import build as dbuild
 
-        src = ROOT / "out" / "patch" / "proof-xslice.syx"
+        src = ROOT / "out" / "patch" / f"proof-xslice-{FW}.syx"
         r = subprocess.run(
-            [sys.executable, str(HERE / "patchkit.py"), "patch", "--firmware", str(ROOT / "Digitakt_II_OS1.17.syx"),
+            [sys.executable, str(HERE / "patchkit.py"), "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
              "--modules", ",".join(MODS_ONE), "-o", str(src)],
             capture_output=True, text=True, cwd=ROOT,
         )  # fmt: skip
         self.check("patch for the control", r.returncode == 0)
-        port = tomllib.loads((ROOT / "devices" / "ports" / "dt2-1.17.toml").read_text())
+        port = tomllib.loads(
+            (ROOT / "devices" / "ports" / f"dt2-{FW}.toml").read_text()
+        )
         site = next(a for a in port["anchor"] if a["name"] == "cf.machines.persist")[
             "addr"
         ]
@@ -309,7 +312,7 @@ class Proof:
                 max_container=dbuild.FLASH_CONTAINER_MAX,
             )
         )
-        cell = H.Cell("dt2", "1.17", list(MODS_ONE))
+        cell = H.Cell("dt2", FW, list(MODS_ONE))
         s = H.Session(cell, H.Goldens(), log=None, run_name="machines-nopersist")
         with s:
             s.open(image=img)
@@ -353,9 +356,9 @@ class Proof:
             ("sorted", MODS_TWO),
             ("reversed", list(reversed(MODS_TWO))),
         ):
-            img = ROOT / "out" / "patch" / f"proof-two-{name}.syx"
+            img = ROOT / "out" / "patch" / f"proof-two-{name}-{FW}.syx"
             r = subprocess.run(
-                [sys.executable, str(HERE / "patchkit.py"), "patch", "--firmware", str(ROOT / "Digitakt_II_OS1.17.syx"),
+                [sys.executable, str(HERE / "patchkit.py"), "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
                  "--modules", ",".join(mods), "-o", str(img)],
                 capture_output=True, text=True, cwd=ROOT,
             )  # fmt: skip
@@ -423,8 +426,17 @@ def main() -> int:
         "--out", type=Path, default=ROOT / "out" / "runs" / "machines-proof"
     )
     ap.add_argument("--only", default="a,b,b2,c,d,e")
+    ap.add_argument("--fw", default="1.17", choices=("1.16", "1.17"))
     a = ap.parse_args()
-    proof = Proof(a.out)
+    global FW
+    FW = a.fw
+    proof = Proof(
+        a.out
+        or ROOT
+        / "out"
+        / "runs"
+        / ("machines-proof" if FW == "1.17" else f"machines-proof-{FW}")
+    )
     only = set(a.only.split(","))
     pcm = proof.part_a() if "a" in only else {}
     if "b" in only:

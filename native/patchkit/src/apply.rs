@@ -398,24 +398,12 @@ pub fn apply_with(
     // Machine types: assigned in canonical order; the framework generates its object and patches after the anchors
     // are verified.
     let machines = crate::machines::declared(lib, &order)?;
-    if !machines.is_empty() {
-        if !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
-            return Err(err!(
-                "{} adds machines but {} is not selected (add it to `requires`)",
-                machines[0].module,
-                crate::machines::FRAMEWORK
-            ));
-        }
-        for (i, d) in machines.iter().enumerate() {
-            for (res, owner) in [
-                (format!("machine.id.{}", d.def.id), &d.module),
-                (format!("machine.type.{i}"), &d.module),
-            ] {
-                if let Some(prev) = claims.insert(res.clone(), owner.clone()) {
-                    return Err(err!("{owner} and {prev} both claim {res}"));
-                }
-            }
-        }
+    if !machines.is_empty() && !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
+        return Err(err!(
+            "{} adds machines but {} is not selected (add it to `requires`)",
+            machines[0].module,
+            crate::machines::FRAMEWORK
+        ));
     }
 
     // Every anchor a selected module uses must hold the bytes the port recorded.
@@ -454,6 +442,14 @@ pub fn apply_with(
             &machines,
         )?)
     };
+    // One claim per machine id and per assigned type number.
+    for (id, ty, module) in generated.iter().flat_map(|g| g.types.iter()) {
+        for res in [format!("machine.id.{id}"), format!("machine.type.{ty}")] {
+            if let Some(prev) = claims.insert(res.clone(), module.clone()) {
+                return Err(err!("{module} and {prev} both claim {res}"));
+            }
+        }
+    }
     let machine_types: BTreeMap<String, u64> = generated
         .iter()
         .flat_map(|g| g.types.iter())

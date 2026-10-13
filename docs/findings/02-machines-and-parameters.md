@@ -1021,7 +1021,7 @@ generates, from the image being patched and from nothing stored in the repo:
 | persist | the sound loader's `(u8)(type + 1) < imm`: `imm = 8 + N` | `persist` |
 | DSP | the machine type -> selector table (DM `0x2567c0`, words `0 1 2 3 4 0 5`) is copied into `dsp.l2` with one word per type (the clone's, or `selector`), and the literal `I3 = 0x2567c0` of `FUN_001c24e9` is repointed | `dsp.machines.selector_table` |
 
-All 22 ColdFire sites are `[[anchor_rule]]` entries of `kind = "cf_func"` (new rule kind of `tools/port_resolve.py`): the
+All 24 ColdFire sites are `[[anchor_rule]]` entries of `kind = "cf_func"` (new rule kind of `tools/port_resolve.py`): the
 cfdb `h_strict` hash of the containing function (address operands masked: no firmware bytes), the ordinal among
 functions with that hash (two of the three name accessors share one), the offset and the length. `tools/pk_machine_rules.py`
 writes them from the 1.16 profile and checks them against 1.17 (every function matches by hash, one each). Each
@@ -1057,7 +1057,7 @@ should execute from RAM, then the code can move.
 
 - **The type number reaches the DSP as the ColdFire's TX frame word `0x94 + 2t`** (finding 04), written from the track's
   type byte; measured on 1.17 with an XSLICE track: TX word `0x0007` (SRAM `0x800053dc`, high half of the long), and the
-  DSP's copy `DM 0x255970` (one 32-bit word per track, 16 of them) holds 7 **after the first frame that follows a trig**
+  DSP's copy `DM 0x255970 + 2t` (one 16-bit word per track; measured with XSLICE on track 2 and XClone on track 3: shorts `0 7 8`) holds 7 **after the first frame that follows a trig**
   (TRIG 1 or PLAY; before it the cache is 0). The DSP uses it only as a change detector and through the selector table.
 - **The DSP indexes the selector table `0x2567c0` with the type** (`FUN_001c24e9`: `S2 = DM(I3, M2)`), stores the word as
   the per-track selector (`track_base + 0x4c`) that picks the render path (entries of `0x8055c840`). Stock: words 0..6 =
@@ -1073,7 +1073,7 @@ should execute from RAM, then the code can move.
   type it did not declare needs a `[[machine]]` entry too (it may be the whole module).
 - For a **new render path** (not a clone): choose `selector = n` for an entry the DSP lane adds to its own dispatch
   (the array `0x8055c840` holds 15 entries; `n >= 6` is unused by stock types, finding 06), read the type from
-  `DM 0x255970 + 4t` in its voice hook, and leave `clone_of` at the stock type whose descriptor and per-type rows the
+  `DM 0x255970 + 2t` in its voice hook, and leave `clone_of` at the stock type whose descriptor and per-type rows the
   ColdFire side should copy.
 
 ### Evidence (`tools/pk_proof_machines.py`, DT2 1.17, one daemon per image, health asserted after every input)
