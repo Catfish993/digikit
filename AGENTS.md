@@ -38,8 +38,12 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Lanes log progress, one line per step, to `out/runs/lanes/NAME.log` (`date  step  result  elapsed`), and check
   in after about an hour.
 - Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
-  with a bound (`sleep N; tail -n 5 FILE`) or use a monitor. Iterate on quick proof tiers; run full emulator proofs
-  once, at integration.
+  with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
+- Lane agents iterate and finish on the quick proof tier (`--quick`, about a minute). Full-tier emulator proofs run
+  once, at integration, by the coordinator; do not re-run old full proofs to measure a baseline that is already
+  recorded.
+- Stop only processes you started (by PID or run directory). Never `pkill`/`killall` emulator processes: other lanes
+  and Em run them on the same machine.
 - Each lane runs its own dev server (own port; `tools/browser_bench.mjs --url`). Do not change Python dependencies
   in a lane (the virtualenv is shared).
 
