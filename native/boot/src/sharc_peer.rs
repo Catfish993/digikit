@@ -738,7 +738,8 @@ impl<E: DspEngine> Core<E> {
         self.deliver_lp0();
         self.pc_at_rx = self.engine.pc();
         let spi_start = timing.as_ref().map(|_| Instant::now());
-        let exchange = self.engine.spi2_exchange(tx);
+        let poked = frame_poke(tx);
+        let exchange = self.engine.spi2_exchange(poked.as_deref().unwrap_or(tx));
         if let (Some(timing), Some(start)) = (timing, spi_start) {
             timing.spi_ns = timing.spi_ns.saturating_add(elapsed_ns(start));
         }
@@ -1766,6 +1767,47 @@ fn concretise_import(e: &mut sharc_native::Engine) {
     }
 }
 
+/// Diagnostic frame override (spike 0.7): `DSP_FRAME_POKE=OFF=VAL[/TRACKS][,...]`
+/// sets the big-endian 16-bit wire word at byte OFF of every frame sent to the
+/// DSP (hex or decimal; with `/N`, at OFF + 0x60 * t for t in 0..N). It lets a
+/// run drive a per-track frame word that no stock UI control reaches (the
+/// ColdFire side of a real parameter is a later patch). Unset: no effect.
+fn frame_poke(tx: &[u8]) -> Option<Vec<u8>> {
+    static SPEC: std::sync::OnceLock<Vec<(usize, u16, usize)>> = std::sync::OnceLock::new();
+    let spec = SPEC.get_or_init(|| {
+        let Ok(text) = std::env::var("DSP_FRAME_POKE") else {
+            return Vec::new();
+        };
+        let num = |s: &str| {
+            let s = s.trim();
+            match s.strip_prefix("0x") {
+                Some(h) => usize::from_str_radix(h, 16).ok(),
+                None => s.parse().ok(),
+            }
+        };
+        text.split(',')
+            .filter_map(|item| {
+                let (off, rest) = item.split_once('=')?;
+                let (val, tracks) = rest.split_once('/').unwrap_or((rest, "1"));
+                Some((num(off)?, num(val)? as u16, num(tracks)?))
+            })
+            .collect()
+    });
+    if spec.is_empty() {
+        return None;
+    }
+    let mut out = tx.to_vec();
+    for &(off, val, tracks) in spec {
+        for t in 0..tracks {
+            let at = off + 0x60 * t;
+            if at + 2 <= out.len() {
+                out[at..at + 2].copy_from_slice(&val.to_be_bytes());
+            }
+        }
+    }
+    Some(out)
+}
+
 /// Build the DN2 continuation engine from a packed image blob
 /// (`tools/sharc_pack_image.py`) and a canonical state blob, with the option
 /// set the audio runs use. `clock_base` seeds the diagnostic instruction
@@ -1797,6 +1839,15 @@ pub fn apply_dsp_patch(
             .collect()
     }
     fn write(e: &mut sharc_native::Engine, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        // New code or data in L2 that nothing loaded: `poke` on an absent
+        // address would store it at the short-word alias, where neither the
+        // fetch nor a plain data read looks (spike 0.7).
+        if (0x2000_0000..0x2010_0000).contains(&addr)
+            && !matches!(e.peek(u64::from(addr), 1), Ok(Some(_)))
+        {
+            e.poke_raw(addr, bytes);
+            return Ok(());
+        }
         if e.poke(u64::from(addr), bytes, 1) as usize != bytes.len() {
             return Err(format!("DSP patch: write at {addr:#x} refused"));
         }
