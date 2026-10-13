@@ -8,6 +8,7 @@ words in a running or finished emulator.
     uv run python tools/l2canary.py patchfile --range ADDR:LEN OUT.patch        # coupled-run --dsp-patch
     uv run python tools/l2canary.py check-report REPORT.json --range ADDR:LEN [--seed N]
     uv run python tools/l2canary.py compare REPORT.json OTHER.json              # PCM hashes per scenario
+    uv run python tools/l2canary.py tour OUT.json [--seconds 60]                # a long panel-tour scenario file
     uv run python tools/l2canary.py poke  --range ADDR:LEN [--seed N]    # control socket: write the pattern now
     uv run python tools/l2canary.py verify --range ADDR:LEN [--seed N]   # control socket: read it back
 
@@ -188,6 +189,48 @@ def connect(args: argparse.Namespace):
     return digi_client.Emu.connect(args.socket, args.run_dir)
 
 
+def tour_scenario(seconds: float) -> dict:
+    """A coupled-run scenario file (one scenario, `tour`) that plays the panel tours of `tools/regions.py`
+    (PLAY, every trig, RECORD; every page, mode and encoder) back to back for SECONDS of audio. Events are
+    ColdFire instruction counts after ready; the QA prelude is on."""
+    import regions
+
+    events: list[dict] = []
+    offset = 0
+    for name in ("play", "nav", "play"):
+        args = regions.scenario_args(name)
+        end = int(args[args.index("--extra") + 1])
+        for flag, spec in zip(args[2::2], args[3::2], strict=True):
+            parts = spec.split(":")
+            at = offset + int(parts[0])
+            if flag == "--event":
+                events.append(
+                    {
+                        "at_instr": at,
+                        "button": int(parts[1]),
+                        "down": parts[2] == "down",
+                    }
+                )
+            else:
+                events.append(
+                    {"at_instr": at, "turn": int(parts[1]), "detents": int(parts[2])}
+                )
+        offset += end
+    events.sort(key=lambda e: e["at_instr"])
+    return {
+        "scenarios": [
+            {
+                "name": "tour",
+                "description": "play, nav and play tours of tools/regions.py",
+                "seconds": seconds,
+                "qa_script": True,
+                "exact_events": True,
+                "events": events,
+            }
+        ]
+    }
+
+
 def report_rows(path: Path) -> list[dict]:
     report = json.loads(path.read_text())
     rows = report.get("scenarios", report)
@@ -247,6 +290,9 @@ def main(argv: list[str]) -> int:
         if name in ("poke", "verify"):
             c.add_argument("--socket")
             c.add_argument("--run-dir")
+    c = sub.add_parser("tour")
+    c.add_argument("out", type=Path)
+    c.add_argument("--seconds", type=float, default=60.0)
     c = sub.add_parser("compare")
     c.add_argument("report", type=Path)
     c.add_argument("other", type=Path)
@@ -268,6 +314,8 @@ def main(argv: list[str]) -> int:
         print(f"--dsp-peek canary={addr:#x}:{length:#x}{block}")
     elif a.cmd == "patchfile":
         a.out.write_text(patch_text(*a.rng, a.seed))
+    elif a.cmd == "tour":
+        a.out.write_text(json.dumps(tour_scenario(a.seconds)))
     elif a.cmd == "check-report":
         return check_report(a)
     elif a.cmd == "compare":

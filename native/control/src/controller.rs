@@ -1831,7 +1831,14 @@ impl Actor {
         // With coupled audio inputs for the base: boot the ColdFire and the
         // DSP together (or restore the cached pair).
         match self.load_patched_coupled(
-            &bytes, &card, &new, &base_sha, &base_bytes, report, start, reply,
+            &bytes,
+            &card,
+            &new,
+            &base_sha,
+            &base_bytes,
+            report,
+            start,
+            reply,
         )? {
             CoupledLoad::Done => return Ok(false),
             CoupledLoad::Started => return Ok(true),
@@ -1979,7 +1986,11 @@ fn patched_pair_key(
         hash.update(format!("{}:{}:{modified}", card.display(), meta.len()).as_bytes());
     }
     let key = format!("{:x}", hash.finalize());
-    Ok(format!("{}-{}", &main_sha[..16.min(main_sha.len())], &key[..16]))
+    Ok(format!(
+        "{}-{}",
+        &main_sha[..16.min(main_sha.len())],
+        &key[..16]
+    ))
 }
 
 impl Actor {
@@ -2034,8 +2045,8 @@ impl Actor {
         let main_sha = new
             .main_sha256()
             .ok_or_else(|| rejected("the firmware has no MAIN section".into()))?;
-        let stem = patched_pair_key(main_sha, &image, &cold_idle, card.as_deref())
-            .map_err(&rejected)?;
+        let stem =
+            patched_pair_key(main_sha, &image, &cold_idle, card.as_deref()).map_err(&rejected)?;
         let pair = self.run_dir.join("patched").join(stem);
         let (snapshot, dsp_state) = (
             pair.join("digi-audio-m5.snap"),
@@ -2161,8 +2172,8 @@ impl Actor {
             mut report,
         } = install;
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
-        let runtime = Runtime::new_patched_audio(&bytes, card_obj, &base_sha, &audio)
-            .map_err(&rejected)?;
+        let runtime =
+            Runtime::new_patched_audio(&bytes, card_obj, &base_sha, &audio).map_err(&rejected)?;
         report["audio"] = runtime.has_audio().into();
         let base_analysis = match &base_bytes {
             Some(base) => Some(Analysis::of(base).map_err(&rejected)?),
@@ -2184,7 +2195,9 @@ impl Actor {
                 let diff = firmware::dsp_diff(&base, &new_dsp).map_err(&rejected)?;
                 self.inject_diff(diff)?
             }
-            (Some(_), Some(_)) => json!({"applied": false, "reason": "the DSP section is the base's"}),
+            (Some(_), Some(_)) => {
+                json!({"applied": false, "reason": "the DSP section is the base's"})
+            }
             _ => json!({
                 "applied": false,
                 "reason": "the base .syx is not known, so the DSP difference cannot be computed",

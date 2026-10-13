@@ -34,7 +34,10 @@ const AFTER_CLEAR_PC: u32 = 0x4000_0546;
 mod dsp {
     use elektron_native_boot::{
         Emulator,
-        sharc_peer::{IdleLoop, NativeDsp, Shared, ThreadedHandle, ThreadedPeer, open_engine_patched, period_from_env},
+        sharc_peer::{
+            IdleLoop, NativeDsp, Shared, ThreadedHandle, ThreadedPeer, open_engine_patched,
+            period_from_env,
+        },
     };
     use std::{cell::RefCell, rc::Rc};
 
@@ -47,7 +50,11 @@ mod dsp {
     pub fn attach(emu: &mut Emulator, image: &str, cold_idle: &str) -> Dsp {
         let image = std::fs::read(image).expect("DSP image");
         let sidecar = std::fs::read(cold_idle).expect("cold-idle.dsp");
-        assert_eq!(&sidecar[..8], b"DT2DSP01", "cold-idle.dsp is not a DT2DSP01 file");
+        assert_eq!(
+            &sidecar[..8],
+            b"DT2DSP01",
+            "cold-idle.dsp is not a DT2DSP01 file"
+        );
         let base = u64::from_le_bytes(sidecar[8..16].try_into().unwrap());
         let state = sidecar[24..].to_vec();
         let profile = emu.diagnostics();
@@ -56,7 +63,10 @@ mod dsp {
             .dsp_for(&profile.device, &profile.version)
             .cloned()
             .expect("DSP profile");
-        let idle = IdleLoop { range: (dsp.idle_start, dsp.idle_end), head: dsp.idle_head };
+        let idle = IdleLoop {
+            range: (dsp.idle_start, dsp.idle_end),
+            head: dsp.idle_head,
+        };
         emu.enable_ssi_diagnostic(96_000).unwrap();
         let (peer, handle, shared) = ThreadedPeer::spawn(
             move || open_engine_patched(&image, &state, base, None, idle).map(NativeDsp),
@@ -73,7 +83,11 @@ mod dsp {
             shared.dsp_instructions = 0;
         }
         emu.set_dspi2_peer(peer.boxed());
-        Dsp { handle, shared, drained: std::cell::Cell::new(0) }
+        Dsp {
+            handle,
+            shared,
+            drained: std::cell::Cell::new(0),
+        }
     }
 
     impl Dsp {
@@ -289,7 +303,10 @@ fn main() {
         let s = &snap.status;
         #[cfg(feature = "sharc")]
         if let Some(halt) = dsp.as_ref().and_then(dsp::Dsp::sync) {
-            println!("{{\"error\":\"DSP halted: {halt}\",\"icount\":{}}}", s.icount);
+            println!(
+                "{{\"error\":\"DSP halted: {halt}\",\"icount\":{}}}",
+                s.icount
+            );
             break;
         }
         if s.ready && ready_at.is_none() {
