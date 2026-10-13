@@ -120,11 +120,13 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
   assert.deepEqual(entries('params'), [
     ['pluck_decay', 275], ['pluck_pick', 276], ['pluck_bright', 277], ['pluck_color', 278],
   ]);
-  // Digitone II has core/machines but PLUCK clones a Digitakt machine: refused either way
+  // PLUCK builds for Digitone II too (device-filtered entries and objects): the same parity there
+  const outDn2 = join(work, 'dn2-pluck.syx');
+  py('tools/patchkit.py', 'patch', '--firmware', images.dn2, '--modules', mods, '-o', outDn2);
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from(mods));
-  assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
-  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|outside the anchor|no registry/);
+  assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 0, text(x.pk_err_ptr, x.pk_err_len));
+  assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(outDn2)), 'DN2: wasm and CLI output differ');
 });
 
 test('wasm and CLI produce byte-identical output for the primitives (registry, section, hook)', { skip: !need }, async () => {
