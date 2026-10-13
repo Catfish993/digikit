@@ -3039,3 +3039,79 @@ handler copies four mirror ranges out of the 0xca-stride mirror row:
 Audio: the delay send changes nothing in the DN2 output, while the reverb
 send, chorus send, overdrive and SRR do (`scenarios/dn2-fx.json`,
 `tools/fxcheck.py`). **[V]**
+
+## Parameter path from a UI knob to a frame word the stock DSP ignores (spike 0.7 follow-up) **[D]**
+
+Lane fastweb, 2026-10-13, DT2 1.16 and DN2 1.11 (1.17 and 1.12 have the same DSP blob; the ColdFire side is a
+relink, `tools/cfport.py` ports the addresses). One agent; a second agent has not checked it against the image bytes.
+Tools: `tools/frame_diff.py` (TX frame at the end of a scenario, diff against a reference), `tools/frame_poke_ab.py`
+(`DSP_FRAME_POKE` A/B of the PCM hash), `tools/sharcdb.py` tables `mem_access` and `ptr`.
+
+**The Fx array reaches the frame as one block.** The kit's Fx array (`*0x80004708` on DT2, `*0x800052a4` on DN2) is
+the mirror tail. `vector_191_handler` (`0x4002dd0c`) copies it with five `memcpy`s from the smoothed mirror
+(`FUN_400d92a2` returns `0x80005b50`): `+0x49a`, `+0x4a1`, `+0x4aa`, `+0x4b2`, `+0x4bd` (mirror-word units from the row
+base) to `0x80005a22`, `0x80005a30`, `0x80005a42`, `0x80005a52`, `0x80005a68`, then 4 bytes to `0x80005a78`. Measured
+by `frame_diff.py` (scenarios of finding 18, one parameter each) the rule is **[D on the 16 DT2 and 14 DN2 parameters
+below, by measurement]**:
+
+| device | Fx array index `k` | TX frame offset | DSP address of the frame copy |
+|---|---|---|---|
+| DT2 | 25 .. 69 | `0x6da + 2*(k-25)` | `0x2558dc + offset` |
+| DN2 | 25 .. 100 (to be checked past 69) | `0x9fa + 2*(k-25)` | `0x25c48c + offset` |
+
+Checked offsets, DT2: fx[26] `0x6dc`, fx[35] `0x6ee`, fx[36] `0x6f0`, fx[39] `0x6f6`, fx[42] `0x6fc`, fx[43] `0x6fe`,
+fx[44] `0x700`, fx[45] `0x702`, fx[60] `0x720`, fx[61] `0x722`, fx[62] `0x724`, fx[63] `0x726`, fx[64] `0x728`,
+fx[65] `0x72a`, fx[66] `0x72c`, fx[67] `0x72e`. DN2: fx[25..27] `0x9fa..0x9fe`, fx[32] `0xa08`, fx[35] `0xa0e`, fx[36]
+`0xa10`, fx[37] `0xa12`, fx[39] `0xa16`, fx[41] `0xa1a`, fx[42] `0xa1c`, fx[47] `0xa26`, fx[61] `0xa42`, fx[62] `0xa44`,
+fx[65] `0xa4a`, fx[66] `0xa4c`. The DN2 DSP base `0x25c48c` is the `i_reg_base` literal at `0x1c2877` and `0x1c301a` (the
+DT2 pair is `0x2558dc` at `0x1c2c71` and `0x1c305a`); the reads of the Fx words in DN2 then sit at `0x25ce86 + 2*(k-25)`
+(`mem_access`), which fixes it. The mirror index of a UI parameter is the `mirror_index` field of its descriptor row
+(finding 02), so Fx index = mirror index for the chorus/delay/reverb/input/master pages (`tools/paramtable.py`:
+chorus 25-31, delay 32-40, reverb 41-48, input 49-59, master compressor 60-67, master overdrive 68, pattern volume 69).
+
+**Who reads the Fx words in the DSP.** Absolute loads in `0x1c2d69 .. 0x1c2f7d` (DT2) and `0x1c2daa .. 0x1c3000` (DN2),
+all statically resolved (`mem_access`, `ptr`). Many are 32-bit loads of two neighbouring s16 words (for example DT2
+`0x255fca` takes fx[35] and fx[36]). Statically unread in the Fx block: DT2 `0x6f8` = fx[40] (Delay FX Routing, param
+code `0x7a`) and DN2 `0xa18` (the same parameter); the frame words `0x734`-`0x738` (DT2) are not Fx words. **[D]**
+
+**Poke test.** `DSP_FRAME_POKE` sets the wire word in every frame; PCM hash against the unpatched run, scenarios
+`sf-del-ref`, `sf-rev-ref`, `sf-chr-ref`, `sf-mst-mix` (DT2, each of the 49 words `0x6da..0x73a` at 0 and 0x7f00):
+
+- Inert in all four scenarios at both values: `0x6ea`, `0x6f8`, `0x708`, `0x70a`-`0x71e` (audio inputs, not
+  exercised), `0x734`-`0x73a`. Of these only `0x6f8` is also statically unread; the others have static readers and
+  need their own stage exercised. Controls: pokes of `0x6ee`, `0x6f2`, `0x6f4`, `0x72e` change the PCM. **[D]**
+- DN2: `0xa18` inert in `sf-dry-hold`, `sf-del-ref`, `sf-mst-mix`; control `0xa16` changes `sf-del-ref`. **[D]**
+
+**The candidate for the Phase 4.1 master effect parameter: the master compressor's Sidechain Filter, `fx[66]`.**
+
+| | DT2 | DN2 |
+|---|---|---|
+| UI | FUNC+MOD master page, encoder 7 (probe: `fx[66]` 0x5000 -> 0x7f00) | same (probe) |
+| descriptor | param code `0x9d`, owner `0x16`, default `0x5000`, max `0x7f00` | same code in the DN2 table (names match) |
+| mirror / TX frame offset | 66 / `0x72c` | 66 / `0xa4c` |
+| DSP address, stock reader | `0x256008`, `0x1c2f7d` (short word, sign-extended) | `0x25ced8`, `0x1c2f8f` |
+| persistence | stored in the kit's Fx array (stock slot, in range) | same |
+
+Evidence: with the master compressor Dry/Wet Mix at its default 0, poking `0x72c` (DT2) or `0xa4c` (DN2) at 0 and at
+0x7f00 leaves the PCM bit-identical in `sf-dry-hold` and `sf-del-ref`; with the compressor mixed in (`sf-mst-mix`,
+`sf-mst-thr0`) it changes the PCM. So a hook that reads this word is a free parameter as long as the compressor stays
+unmixed; when it is mixed in, the module's value also moves the compressor's sidechain filter (a displaced stock
+use). **[D]** Minimal ColdFire patch: none. The knob, the kit storage and the frame copy exist; the hook reads the DSP
+copy directly (`R0 = DM(0x256008)` short word, DT2; `0x25ced8`, DN2). Optional data patch: the descriptor row `0x9d`
+(`0x4020f18c + 0x3c*0x9d` on DT2 1.16: name pointers at `+0x28` and `+0x30`, default at `+0x10`) to rename the knob and
+make the neutral value 0 instead of `0x5000` (UI 80); without it the module treats `0x5000` as neutral.
+
+**Second candidate, truly unread but not reachable:** Delay FX Routing, `fx[40]` (DT2 `0x6f8`, DN2 `0xa18`). No encoder
+of the Delay page drives it (probe: encoder 7 of the Delay page changes nothing on either device), its descriptor range
+is 0..0x100, and no page slot was found that holds code `0x7a`. It would need a page-table patch; not recommended.
+**[D][O]**
+
+**DN2's per-track unpack.** There is no separate function: DN2 `FUN_1c2712` (1081 instructions, one caller of the
+per-track part inlined) holds the frame copy (`i_reg_base 0x25c48c` at `0x1c2877`) and the track stages that DT2
+splits into `FUN_1c2b24` (766) and `FUN_1c24e9` (396, called twice from `0x1c2c9a`/`0x1c2ca9`). DN2 per-track blocks
+repeat every `0x92` bytes (frame diffs at `0x158`, `0x1ea`, ... for the Sound array's FX sends), DT2 every `0x60`
+from `0xda`. The per-track CFADE word on DN2 was not examined; a master-bus module does not need it. **[D][O]**
+
+**Not done:** the per-track blocks of either device were not swept for unread words (machine-dependent reads); the
+audio-input words of the Fx block (`0x70a..0x71e` DT2) need a scenario with an input; DN2 Fx indices 70-100 not
+mapped; the hook itself reading a knob end to end needs the patched MAIN of Phase 3 (the poke is the same wire word).

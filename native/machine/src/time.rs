@@ -237,6 +237,14 @@ impl Time {
             || self.forced_candidate().is_some()
     }
 
+    /// A software-forced INTC source the CPU could take at its current IPL.
+    /// Idle fast-forward must not cross it: service_with would deliver it at
+    /// the end of the skipped interval.
+    pub fn forced_deliverable(&self) -> bool {
+        self.forced_candidate()
+            .is_some_and(|(_, level)| self.sr.ipl() < level)
+    }
+
     /// Same boundary cache as service_with, including queued host writes.
     /// Owners may avoid transferring the timer facade when it has no work.
     pub fn can_skip_service(&self, done: u64) -> bool {

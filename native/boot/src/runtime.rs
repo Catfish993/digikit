@@ -959,7 +959,7 @@ impl Emulator {
         let Some(time) = self.bus.board.time_mut() else {
             return 0;
         };
-        if time.policy() != TimerPolicy::Oracle {
+        if time.policy() != TimerPolicy::Oracle || time.forced_deliverable() {
             return 0;
         }
         let timer_deadline = time.deadline(now);
