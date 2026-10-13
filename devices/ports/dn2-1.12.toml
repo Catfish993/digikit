@@ -362,6 +362,1126 @@ mark = "D"
 rule = "fx/master-drive:cf_words"
 
 [[anchor]]
+name = "cf.params.bound.0"
+cpu = "cf"
+kind = "code"
+addr = 0x400174d6
+len = 7
+sha256 = "3debf18bdd314d37d118f94066b5abbbc993e6f7ce3b9f703160a8777a2d9021"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.1"
+cpu = "cf"
+kind = "code"
+addr = 0x400365d0
+len = 7
+sha256 = "18afeba69e4151b976cdcb03f243dd6c81b5fec02b9e08b2950a4b80a70f4b78"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.10"
+cpu = "cf"
+kind = "code"
+addr = 0x400379ec
+len = 7
+sha256 = "bd0498a80dc8c8cd1a3e53c3696d4e66cfe65547f0b7b4bd05cffeb205d118cf"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.11"
+cpu = "cf"
+kind = "code"
+addr = 0x40038c10
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.12"
+cpu = "cf"
+kind = "code"
+addr = 0x40038cb2
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.13"
+cpu = "cf"
+kind = "code"
+addr = 0x40038d5e
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.14"
+cpu = "cf"
+kind = "code"
+addr = 0x40038e2e
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.15"
+cpu = "cf"
+kind = "code"
+addr = 0x400397a6
+len = 7
+sha256 = "bd0498a80dc8c8cd1a3e53c3696d4e66cfe65547f0b7b4bd05cffeb205d118cf"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.16"
+cpu = "cf"
+kind = "code"
+addr = 0x40044828
+len = 7
+sha256 = "040213565a07f6414d0ebea939c63a3e81395a1f4de41fc8676de36085aa8f45"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.17"
+cpu = "cf"
+kind = "code"
+addr = 0x40062be8
+len = 7
+sha256 = "599b62e5a66c3cc51320983915900c67acbda59a4c3e488d44ed50d620a40cff"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.18"
+cpu = "cf"
+kind = "code"
+addr = 0x40065ab8
+len = 7
+sha256 = "3debf18bdd314d37d118f94066b5abbbc993e6f7ce3b9f703160a8777a2d9021"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.19"
+cpu = "cf"
+kind = "code"
+addr = 0x400672de
+len = 7
+sha256 = "171705505d973bf53c07446cdf73d08cca63003c682f1817f901d4769ce80d3d"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.2"
+cpu = "cf"
+kind = "code"
+addr = 0x400366aa
+len = 7
+sha256 = "9189e9adae935a2fcfbff62d6771a1262ba0c18b3e6aaaf3bce7dfac318e286b"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.20"
+cpu = "cf"
+kind = "code"
+addr = 0x400674d4
+len = 7
+sha256 = "131726436647d57af930015ff175f87f9d0a777f0e5238d60e1537f739eddf69"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.21"
+cpu = "cf"
+kind = "code"
+addr = 0x400676cc
+len = 7
+sha256 = "bd0498a80dc8c8cd1a3e53c3696d4e66cfe65547f0b7b4bd05cffeb205d118cf"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.22"
+cpu = "cf"
+kind = "code"
+addr = 0x400679c8
+len = 7
+sha256 = "171705505d973bf53c07446cdf73d08cca63003c682f1817f901d4769ce80d3d"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.23"
+cpu = "cf"
+kind = "code"
+addr = 0x40068290
+len = 7
+sha256 = "131726436647d57af930015ff175f87f9d0a777f0e5238d60e1537f739eddf69"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.24"
+cpu = "cf"
+kind = "code"
+addr = 0x4006831e
+len = 7
+sha256 = "3debf18bdd314d37d118f94066b5abbbc993e6f7ce3b9f703160a8777a2d9021"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.25"
+cpu = "cf"
+kind = "code"
+addr = 0x4006e88a
+len = 7
+sha256 = "3debf18bdd314d37d118f94066b5abbbc993e6f7ce3b9f703160a8777a2d9021"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.26"
+cpu = "cf"
+kind = "code"
+addr = 0x4006eb9e
+len = 7
+sha256 = "d794b0c470686d709f7dab6fe665c7fd6677e61a8314f440b6f96c63a3dd7d5c"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.27"
+cpu = "cf"
+kind = "code"
+addr = 0x4006f6a6
+len = 7
+sha256 = "599b62e5a66c3cc51320983915900c67acbda59a4c3e488d44ed50d620a40cff"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.28"
+cpu = "cf"
+kind = "code"
+addr = 0x400bd582
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.29"
+cpu = "cf"
+kind = "code"
+addr = 0x400c25a4
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.3"
+cpu = "cf"
+kind = "code"
+addr = 0x40036af4
+len = 7
+sha256 = "a03e3e72c69ae5e8ee305d79162a270cad4b54f0e6b9a885cda18332af79f29c"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.30"
+cpu = "cf"
+kind = "code"
+addr = 0x400c27c6
+len = 7
+sha256 = "3debf18bdd314d37d118f94066b5abbbc993e6f7ce3b9f703160a8777a2d9021"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.31"
+cpu = "cf"
+kind = "code"
+addr = 0x400d5a8a
+len = 7
+sha256 = "3debf18bdd314d37d118f94066b5abbbc993e6f7ce3b9f703160a8777a2d9021"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.32"
+cpu = "cf"
+kind = "code"
+addr = 0x400dbe2c
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.33"
+cpu = "cf"
+kind = "code"
+addr = 0x400dbe50
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.34"
+cpu = "cf"
+kind = "code"
+addr = 0x400dbe76
+len = 7
+sha256 = "9189e9adae935a2fcfbff62d6771a1262ba0c18b3e6aaaf3bce7dfac318e286b"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.35"
+cpu = "cf"
+kind = "code"
+addr = 0x400dbee6
+len = 7
+sha256 = "9189e9adae935a2fcfbff62d6771a1262ba0c18b3e6aaaf3bce7dfac318e286b"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.36"
+cpu = "cf"
+kind = "code"
+addr = 0x400dbf54
+len = 7
+sha256 = "9189e9adae935a2fcfbff62d6771a1262ba0c18b3e6aaaf3bce7dfac318e286b"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.37"
+cpu = "cf"
+kind = "code"
+addr = 0x400dbfc6
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.38"
+cpu = "cf"
+kind = "code"
+addr = 0x400dbff2
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.39"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc01e
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.4"
+cpu = "cf"
+kind = "code"
+addr = 0x40036bbc
+len = 7
+sha256 = "ff61850b413efdaaf360f254cc3c1345ce0fbdf58c41dda2c01f2208c7ff429e"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.40"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc052
+len = 7
+sha256 = "bd0498a80dc8c8cd1a3e53c3696d4e66cfe65547f0b7b4bd05cffeb205d118cf"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.41"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc0b6
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.42"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc0ea
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.43"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc124
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.44"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc15a
+len = 7
+sha256 = "18afeba69e4151b976cdcb03f243dd6c81b5fec02b9e08b2950a4b80a70f4b78"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.45"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc282
+len = 7
+sha256 = "9189e9adae935a2fcfbff62d6771a1262ba0c18b3e6aaaf3bce7dfac318e286b"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.46"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc380
+len = 7
+sha256 = "9189e9adae935a2fcfbff62d6771a1262ba0c18b3e6aaaf3bce7dfac318e286b"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.47"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc3e0
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.48"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc40a
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.49"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc42e
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.5"
+cpu = "cf"
+kind = "code"
+addr = 0x400372de
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.50"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc452
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.51"
+cpu = "cf"
+kind = "code"
+addr = 0x400dc476
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.52"
+cpu = "cf"
+kind = "code"
+addr = 0x40105e38
+len = 7
+sha256 = "3debf18bdd314d37d118f94066b5abbbc993e6f7ce3b9f703160a8777a2d9021"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.53"
+cpu = "cf"
+kind = "code"
+addr = 0x4010784e
+len = 7
+sha256 = "199700c8e2991ce0beba184afd850b30c0426c7b9bd9dcd0ebeed044cb7f046b"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.6"
+cpu = "cf"
+kind = "code"
+addr = 0x40037540
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.7"
+cpu = "cf"
+kind = "code"
+addr = 0x400375e2
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.8"
+cpu = "cf"
+kind = "code"
+addr = 0x40037696
+len = 7
+sha256 = "cb393b940485cb011aca6f8f9fa9c11c33816f22175989ce312f6658553bf0c8"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.bound.9"
+cpu = "cf"
+kind = "code"
+addr = 0x40037736
+len = 7
+sha256 = "131726436647d57af930015ff175f87f9d0a777f0e5238d60e1537f739eddf69"
+mark = "D"
+rule = "core/params:cf_params_bounds"
+
+[[anchor]]
+name = "cf.params.ref.0"
+cpu = "cf"
+kind = "data"
+addr = 0x400174e0
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.1"
+cpu = "cf"
+kind = "data"
+addr = 0x400365e2
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.10"
+cpu = "cf"
+kind = "data"
+addr = 0x40038d5a
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.11"
+cpu = "cf"
+kind = "data"
+addr = 0x40038e2a
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.12"
+cpu = "cf"
+kind = "data"
+addr = 0x400397c0
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.13"
+cpu = "cf"
+kind = "data"
+addr = 0x40039aca
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.14"
+cpu = "cf"
+kind = "data"
+addr = 0x40039cec
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.15"
+cpu = "cf"
+kind = "data"
+addr = 0x40039eea
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.16"
+cpu = "cf"
+kind = "data"
+addr = 0x4004483e
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.17"
+cpu = "cf"
+kind = "data"
+addr = 0x4004b0cc
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.18"
+cpu = "cf"
+kind = "data"
+addr = 0x40062bf2
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.19"
+cpu = "cf"
+kind = "data"
+addr = 0x40065ac2
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.2"
+cpu = "cf"
+kind = "data"
+addr = 0x400366c4
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.20"
+cpu = "cf"
+kind = "data"
+addr = 0x400672f4
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.21"
+cpu = "cf"
+kind = "data"
+addr = 0x400674e8
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.22"
+cpu = "cf"
+kind = "data"
+addr = 0x400679dc
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.23"
+cpu = "cf"
+kind = "data"
+addr = 0x40068256
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.24"
+cpu = "cf"
+kind = "data"
+addr = 0x40068332
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.25"
+cpu = "cf"
+kind = "data"
+addr = 0x4006e894
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.26"
+cpu = "cf"
+kind = "data"
+addr = 0x4006ebaa
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.27"
+cpu = "cf"
+kind = "data"
+addr = 0x4006f6b0
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.28"
+cpu = "cf"
+kind = "data"
+addr = 0x400bd57e
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.29"
+cpu = "cf"
+kind = "data"
+addr = 0x400c25b8
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.3"
+cpu = "cf"
+kind = "data"
+addr = 0x400372e8
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.30"
+cpu = "cf"
+kind = "data"
+addr = 0x400c27d0
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.31"
+cpu = "cf"
+kind = "data"
+addr = 0x400d5a94
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.32"
+cpu = "cf"
+kind = "data"
+addr = 0x400dbe36
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.33"
+cpu = "cf"
+kind = "data"
+addr = 0x400dbe5a
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.34"
+cpu = "cf"
+kind = "data"
+addr = 0x400dbe8c
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.35"
+cpu = "cf"
+kind = "data"
+addr = 0x400dbefc
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.36"
+cpu = "cf"
+kind = "data"
+addr = 0x400dbf6a
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.37"
+cpu = "cf"
+kind = "data"
+addr = 0x400dbfd0
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.38"
+cpu = "cf"
+kind = "data"
+addr = 0x400dbffc
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.39"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc028
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.4"
+cpu = "cf"
+kind = "data"
+addr = 0x4003753c
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.40"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc068
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.41"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc0c0
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.42"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc0f4
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.43"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc12e
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.44"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc176
+len = 4
+sha256 = "6960c5f7a34123d5c9c9a1d534eb078dd670df732bc61b0d83761065cf7482a3"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.45"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc294
+len = 4
+sha256 = "21c0e22a3e59240d38eb0c285edb8f26cef2aeedb9110df573e979a2999bbc9d"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.46"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc2a0
+len = 4
+sha256 = "21c0e22a3e59240d38eb0c285edb8f26cef2aeedb9110df573e979a2999bbc9d"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.47"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc390
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.48"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc3ea
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.49"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc414
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.5"
+cpu = "cf"
+kind = "data"
+addr = 0x400375de
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.50"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc438
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.51"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc45c
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.52"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc480
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.53"
+cpu = "cf"
+kind = "data"
+addr = 0x400dc6a4
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.54"
+cpu = "cf"
+kind = "data"
+addr = 0x40105e42
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.55"
+cpu = "cf"
+kind = "data"
+addr = 0x40107864
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.6"
+cpu = "cf"
+kind = "data"
+addr = 0x40037692
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.7"
+cpu = "cf"
+kind = "data"
+addr = 0x40037748
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.8"
+cpu = "cf"
+kind = "data"
+addr = 0x40038c0c
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.ref.9"
+cpu = "cf"
+kind = "data"
+addr = 0x40038cae
+len = 4
+sha256 = "42775336268b26d1be34f9adc3ec3f8aae185b3913f849feaccc8e2742238a69"
+mark = "D"
+rule = "core/params:cf_params_refs"
+
+[[anchor]]
+name = "cf.params.t1"
+cpu = "cf"
+kind = "data"
+addr = 0x401f83a4
+len = 19260
+sha256 = "fa9dda9cd263cca9d28679c424d57e42cd1771b84dd726ec923365e0296c36d6"
+mark = "D"
+rule = "core/params:cf_params_t1"
+
+[[anchor]]
+name = "cf.params.t2"
+cpu = "cf"
+kind = "code"
+addr = 0x400c257c
+len = 10
+sha256 = "985e38128f6c0b9da22aeb94574389289e7f05fb8f16c60ff2f159a465e07ec7"
+mark = "D"
+rule = "core/params:cf_func"
+
+[[anchor]]
 name = "cf.reset.clear_helper"
 cpu = "cf"
 kind = "value"

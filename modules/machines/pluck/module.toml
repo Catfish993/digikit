@@ -4,8 +4,8 @@ version = "0.1.0"
 name = "Pluck"
 category = "machines"
 status = "experimental"
-summary = "PLUCK machine: a Karplus-Strong plucked string, one per track, tuned to the note, with decay, pick position, brightness and colour knobs on the SRC page"
-ports = ["dt2-1.16", "dt2-1.17"]
+summary = "PLUCK machine: a Karplus-Strong plucked string, one per track (Digitakt II) or per voice (Digitone II), tuned to the note, with decay, pick position, brightness and colour knobs on the SRC / SYN page"
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
 requires = ["core/dsp-voice", "core/machines", "core/params"]
 conflicts = []
 
@@ -13,7 +13,7 @@ conflicts = []
 "dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
 "dn2-1.11" = "untested"
-"dn2-1.12" = "untested"
+"dn2-1.12" = "experimental"
 
 [[object]]
 path = "build/pluck-dsp.dko.json"
@@ -60,6 +60,7 @@ slot = 1
 min = 0
 max = 0x7f00
 default = 0x4000
+devices = ["dt2"]
 
 [[entry]]
 registry = "params"
@@ -71,6 +72,7 @@ slot = 2
 min = 0
 max = 0x7f00
 default = 0x2000
+devices = ["dt2"]
 
 [[entry]]
 registry = "params"
@@ -82,6 +84,7 @@ slot = 4
 min = 0
 max = 0x7f00
 default = 0x5000
+devices = ["dt2"]
 
 [[entry]]
 registry = "params"
@@ -93,3 +96,96 @@ slot = 5
 min = 0
 max = 0x7f00
 default = 0x2800
+devices = ["dt2"]
+
+# ---- Digitone II ------------------------------------------------------------------------------------------------
+
+# The DN2 routine on the voice hook's ABI (one buffer per voice slot, the note-on from the frame's trig mask); a machine
+# of its own type (the FM engine renders nothing for it: `own_dsp`) with its own SYN page: DECAY, PICK, BRIGHT, COLOR on
+# knobs A .. D (sound-array slots 25 .. 28), the engine's level on the last knob.
+[[object]]
+path = "build/pluck-dn2-dsp.dko.json"
+sources = ["src/dsp/pluck_dn2.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[[entry]]
+registry = "voices"
+id = "pluck"
+type = "machines.pluck.index"
+pc = "_pk_render"
+devices = ["dn2"]
+
+[[entry]]
+registry = "machines"
+id = "pluck"
+name = "Pluck"
+short = "PLK"
+clone_of = 0
+position = 4
+own_dsp = 1
+devices = ["dn2"]
+
+[[entry]]
+registry = "params"
+id = "pluck_decay"
+name = "Decay"
+short = "DECAY"
+template = 0xd5
+slot = 25
+min = 0
+max = 0x7f00
+default = 0x4000
+devices = ["dn2"]
+
+[[entry]]
+registry = "params"
+id = "pluck_pick"
+name = "Pick position"
+short = "PICK"
+template = 0xd5
+slot = 26
+min = 0
+max = 0x7f00
+default = 0x2000
+devices = ["dn2"]
+
+[[entry]]
+registry = "params"
+id = "pluck_bright"
+name = "Brightness"
+short = "BRIGHT"
+template = 0xd5
+slot = 27
+min = 0
+max = 0x7f00
+default = 0x5000
+devices = ["dn2"]
+
+[[entry]]
+registry = "params"
+id = "pluck_color"
+name = "Excitation colour"
+short = "COLOR"
+template = 0xd5
+slot = 28
+min = 0
+max = 0x7f00
+default = 0x2800
+devices = ["dn2"]
+
+[[entry]]
+registry = "pages"
+id = "pluck_syn"
+machine = "machines.pluck.index"
+name = "PLUCK"
+title = "Pluck"
+c0 = "params.pluck_decay.index"
+c1 = "params.pluck_pick.index"
+c2 = "params.pluck_bright.index"
+c3 = "params.pluck_color.index"
+s0 = 25
+s1 = 26
+s2 = 27
+s3 = 28
+devices = ["dn2"]

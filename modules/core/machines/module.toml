@@ -107,6 +107,114 @@ max_len = 23
 [[claim]]
 resource = "cf.machines.sites"
 
+# ---- own parameter pages (Digitone II) ---------------------------------------------------------------------------
+
+# One row per page of a machine with its own parameter pages (the page table of the firmware has a page descriptor of 44
+# bytes per page: two std::string characters pointers and nine parameter codes, the last one 10 = the track level).
+# Content modules add pages with
+#
+#     [[entry]]
+#     registry = "pages"
+#     machine = "machines.pluck.index"   # the type the page belongs to (pages are numbered in entry order)
+#     name = "PLUCK"                     # the short page name (SYN1 ...), at most 23 characters
+#     title = "Pluck"                    # the title shown on the page
+#     c0 = "params.pluck_decay.index"    # knob A .. H: a parameter code (a core/params code, or a stock code); 0 = no knob
+#     s0 = 25                            # the sound-array slot (25 .. 64) of that code's row: slot -> code for the defaults
+#     ...                                # c8 = 10 (track level) by default
+#
+# A machine with at least one page gets: its own page count and descriptors, its own slot -> code mapping, and the page
+# and draw functions see its own type (not the clone's). A machine without a page row behaves as a clone.
+[[registry]]
+name = "pages"
+devices = ["dn2"]
+first = "0"
+max = 32
+region = "cf.expansion"
+
+[[registry.field]]
+name = "name"
+kind = "cstr"
+max_len = 23
+[[registry.field]]
+name = "title"
+kind = "cstr"
+max_len = 23
+[[registry.field]]
+name = "c0"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c1"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c2"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c3"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c4"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c5"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c6"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c7"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "c8"
+kind = "u32"
+default = 10
+[[registry.field]]
+name = "machine"
+kind = "u32"
+[[registry.field]]
+name = "s0"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s1"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s2"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s3"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s4"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s5"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s6"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s7"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "s8"
+kind = "u32"
+default = 0
+
 # ---- copies of the stock tables, one row appended per machine (the clone's row; names are ours) -------------------------
 
 # the displayed order of the stock list (the run-time builder inserts the machines at their positions)
@@ -213,6 +321,8 @@ _mf_rc5 = "cf.machines.reader_call.5"
 _mf_rc6 = "cf.machines.reader_call.6"
 _mf_rc7 = "cf.machines.reader_call.7"
 _mf_rc8 = "cf.machines.reader_call.8"
+_mf_pgrows = "pages.rows"
+_mf_pgn = "pages.count"
 
 # ---- patches: hooks (code in the objects above), bound writes and repointed table references ------------------------
 
