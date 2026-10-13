@@ -1,0 +1,22 @@
+# The patchkit test matrix: device x firmware x module set (tools/pk_harness.py). An empty set is the stock firmware.
+# Ready inputs for each firmware must be fresh (tools/ready.py, SOURCE.json intc_force false): see the harness doc.
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = []
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["fx/master-gain", "test/cf-demo"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = []
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["fx/master-gain", "test/cf-demo"]

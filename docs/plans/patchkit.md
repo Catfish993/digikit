@@ -1,6 +1,6 @@
 # patchkit: firmware modules for Digitakt II and Digitone II
 
-Status: design agreed 2026-10-13; Phase 0 and Phase 1 done (lane `a`, 2026-10-13). Branch `work/patchkit`.
+Status: design agreed 2026-10-13; Phase 0 and Phase 1 done (lane `a`, 2026-10-13); Phase 2 done (lane `a`, 2026-10-13). Branch `work/patchkit`.
 
 ## Goal
 
@@ -309,10 +309,32 @@ dn2-1.11 and dn2-1.12, modules `core/expansion`, `fx/master-gain`, `test/cf-demo
 
 ### Phase 2: developer loop and harness (about 3 days, high)
 
-- [ ] mise tasks above; module template; agent skill `.claude/skills/digikit-module/`.
-- [ ] Emulator: emit `fault` and `halt` events; main-loop heartbeat; check whether the MCF5441x watchdog is
-      modelled.
-- [ ] Harness: smoke tour, goldens, stress, matrix; `patch:dev` watch loop.
+- [x] mise tasks above (`patch:new`, `patch:dev`, `patch:test`); module template; agent skill
+      `.claude/skills/digikit-module/`.
+- [x] Emulator: emit `fault` and `halt` events; main-loop heartbeat (+ `stall` event); check whether the MCF5441x
+      watchdog is modelled (no: and the firmware never configures it, finding 17).
+- [x] Harness: smoke tour, goldens, stress, matrix; `patch:dev` watch loop.
+
+### Phase 2 results (2026-10-13, lane `a`)
+
+Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_harness.py` (module docstring).
+
+- Emulator: `fault`, `halt`, `stall`/`stall.end` events, `status.heartbeat`, `mem.cf.peek/poke`, `watchdog.config`
+  (`native/control/src/health.rs`, 5 unit tests; end to end on DT2 1.17 and DN2 1.12 through `tests/patchkit_smoke`).
+  The first real run already caught a DSP halt in stock DT2 1.17 (pattern 3 or 4 plus PLAY, a conditional Type 7a in
+  the generated core, finding 17), now a test and a documented limit.
+- Harness: `tools/pk_harness.py`, `tests/patchkit_smoke/` (tour `tours/smoke.toml`, `matrix.toml`, `goldens.json` with
+  SHA-256 only, 9 pytest tests plus 4 slow matrix cells), module tests from `modules/*/*/tests/*.toml`. Tour: boot to
+  the readiness contract, track change, pattern change, audition (PCM), play/stop with the sequencer running,
+  machine menu open and close, save project and reload, a seeded 40-input stress; every segment starts from `restart`.
+  Matrix (device x firmware x module set), one PASS/FAIL line per cell, logs under `out/runs/patchkit/`.
+- Matrix result: DT2 1.17 and DN2 1.12, stock and `fx/master-gain` + `test/cf-demo`: 4 of 4 PASS against the
+  recorded goldens, 28 to 35 checks and 28 to 52 s per cell. Frames are deterministic across runs, and the patched
+  cells produce the same frame hashes as stock.
+- Dev loop: `patch:new` (template builds), `patch:dev`. Edit to running on DT2 1.17: DSP change 2.9 s (cached MAIN),
+  ColdFire change 12.6 s (cold boot); edit to quick tests done 4.8 s and 14.5 s.
+- Open: ready inputs of 1.16 and 1.11 are not in the matrix (`snapshots/*-ready` built before the INTC-force fix; the
+  harness refuses stale ready inputs); `underrun` is not emitted; the conditional Type 7a halt.
 
 ### Phase 3: frameworks
 

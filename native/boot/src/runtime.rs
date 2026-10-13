@@ -45,6 +45,12 @@ pub struct Status {
     pub input_ready: bool,
     pub input_pending: usize,
     pub input_irqs: u64,
+    /// Passes through the resolved main-loop PC since boot: the guest's heartbeat.
+    pub mainloop_hits: u64,
+    /// The resolved main-loop PC (the address counted by `mainloop_hits`).
+    pub mainloop_pc: u32,
+    /// `running`, `stopped` (waiting in STOP for an interrupt) or `halted`.
+    pub cpu_state: &'static str,
     /// Actual CPU steps, excluding analytic idle and reset-clear batches.
     pub interpreted_instructions: u64,
     pub idle_fast_forwarded_instructions: u64,
@@ -818,6 +824,13 @@ impl Emulator {
             input_ready: self.input_ready,
             input_pending: self.input_packets.len() + usize::from(self.rx_pending),
             input_irqs: self.input_irqs,
+            mainloop_hits: self.mainloop_hits,
+            mainloop_pc: self.mainloop,
+            cpu_state: match self.cpu.state {
+                coldfire::RunState::Running => "running",
+                coldfire::RunState::Stopped => "stopped",
+                coldfire::RunState::Halted => "halted",
+            },
             interpreted_instructions: self.interpreted_instructions,
             idle_fast_forwarded_instructions: self.idle_fast_forwarded_instructions,
             ram_clear_fast_forwarded_instructions: self.ram_clear_fast_forwarded_instructions,

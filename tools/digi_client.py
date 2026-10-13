@@ -315,6 +315,15 @@ class Emu:
             with contextlib.suppress(OSError):
                 self._sock.settimeout(None)
 
+    def subscribe(self, *kinds: str) -> None:
+        """Start event delivery on this connection; `call()` keeps what arrives for `drain_events()`."""
+        self.call("events.subscribe", **({"kinds": list(kinds)} if kinds else {}))
+
+    def drain_events(self) -> list[dict[str, Any]]:
+        """The events kept so far (after `subscribe`), oldest first; empties the list."""
+        out, self._events = self._events, []
+        return out
+
     # ----- wrappers ---------------------------------------------------------
 
     def status(self) -> dict[str, Any]:
@@ -406,6 +415,19 @@ class Emu:
 
     def frame_png(self) -> bytes:
         return oled_png(self.frame()[1])
+
+    def peek32(self, addr: int) -> int | None:
+        """One guest longword (None when unmapped), read without side effects."""
+        value = self.call("mem.cf.peek", addr=addr)["value"]
+        return None if value is None else int(value)
+
+    def poke32(self, addr: int, value: int) -> dict[str, Any]:
+        """Write one SDRAM longword (a test aid; not recorded for replay)."""
+        return self.call("mem.cf.poke", addr=addr, value=value)
+
+    def watchdog(self, stall_ms: int | None = None) -> dict[str, Any]:
+        """The heartbeat; STALL_MS sets the stall threshold in emulated ms (0 disables)."""
+        return self.call("watchdog.config", **_opt(stall_ms=stall_ms))
 
     def quit(self) -> dict[str, Any]:
         return self.call("quit")

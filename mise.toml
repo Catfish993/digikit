@@ -241,6 +241,18 @@ description = "Compile module sources to build/*.dko.json: mise run patch:build 
 run = "uv run python tools/patchkit.py explain"
 description = "Site-by-site account of a patch (disassembly before and after, allocation map): mise run patch:explain -- --firmware X.syx --modules a,b"
 
+[tasks."patch:new"]
+run = "uv run python tools/pk_new.py"
+description = "Create a module from a template: mise run patch:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, gallery/README.md; builds it)"
+
+[tasks."patch:dev"]
+run = "uv run python tools/pk_dev.py"
+description = "Developer loop: mise run patch:dev -- --modules a,b [--device dt2|dn2] [--once]; watches src/ and module.toml, rebuilds, patches, injects into a running emulator, runs the quick tests, one summary line per edit"
+
+[tasks."patch:test"]
+run = "uv run python tools/pk_harness.py run"
+description = "Smoke tour and module tests over the matrix (tests/patchkit_smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:fx/master-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
+
 [tasks."port:resolve"]
 run = "uv run python tools/port_resolve.py"
 description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run port:resolve [-- X.syx] (no argument: the four supported firmwares)"
