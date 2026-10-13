@@ -5762,3 +5762,22 @@ branch-free.
 pulses `0x11` in the same slot (the proof's 40 notes wrap the slots after their release, not before); the hook's call
 for idle slots (the wrapper runs for every slot with a registered type each block); a second agent's check of all of
 the above against the image.
+
+## DN2 voice routine: PLUCK (patchkit, lane b) **[D]**
+
+Emulator only, one agent, not second-checked. `modules/machines/pluck/src/dsp/pluck_dn2.s` on the DN2 ABI of `core/dsp-voice` (R4 = the slot's
+32-float buffer, R2 = slot v). What the build showed about the contract above:
+
+- **The note-on edge works as an arming signal for a stateful voice.** The routine reads bit v of frame halfword `0x11` every block
+  (`_dv_frame_hw`, whose mask is already `0xffe`, 16 slots reach their words: slot v's knob word s is halfword `0x6d + 0x49 v + (s - 25)`),
+  keeps the previous bit per slot, and on a rising edge writes zeros and arms (phase 1); the **next** block reads the pitch, velocity and
+  knob words and excites the string (phase 2), so it does not matter in which order the ColdFire writes them within the frame. The
+  engine's envelope runs from the edge; the 0.67 ms of silence is not audible. 40 notes of one key 110 ms apart (16 strings overlapping,
+  voices stolen) gave 40 plucks.
+- **Per-slot state in unloaded L2 starts unknown**: the row has a magic word, the phase and the previous trig bit are forced to zero by
+  conditional instructions (`IF NE`) while the magic differs, and the first branch is on a value derived that way (a branch on a raw
+  bss word is the emulator limit noted above); no halt occurred.
+- **The routine is called for idle slots too** (every slot whose type is PLUCK, every block): phase 0 writes 32 zeros and returns; a
+  string whose peak stayed below 2^-16 for 8 blocks returns to phase 0.
+- State is 2 KiB (16 rows of 32 words) plus 16 delay lines of 4,096 samples (256 KiB of reserved L2, the same as the Digitakt
+  routine); the excitation written at a note-on equals `tools/pluck_ref.py` bit for bit (finding 02, "PLUCK on Digitone II").

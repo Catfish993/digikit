@@ -362,6 +362,9 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 - [ ] `core.master-fx` (with 0.7 master hook).
 - [x] `core.machines` DN2 (lane `fastweb`, 2026-10-13/14): a clone of FM TONE lists, commits, shows FM TONE's pages, sounds
       bit-identical, persists and loads on stock; own parameter pages not built. See "DN2 results" below.
+- [x] `core.machines` / `core.params` DN2 own parameter pages (lane `b`, 2026-10-14): a machine with page rows has its own SYN pages
+      (names, titles, ranges, defaults), content proof `test/dn2-pages`; see "DN2 pages and PLUCK" below.
+- [x] PLUCK on DN2 (lane `b`, 2026-10-14): `machines/pluck` builds for the Digitone II (DN2 routine on the voice hook, own SYN page).
 - [x] Persistence check: project saved on a patched image, loaded on stock (emulator): the track loads as SAMPLE.
 
 ### Phase 3 results (2026-10-13, lane `b`)
@@ -462,12 +465,12 @@ Emulator only; nothing flashed; one agent.
   harmonics, reverb tail; no registered type: bit-identical to stock. Routine ABI: R4 = buffer, R0 = type, R2 = slot,
   R12 = 32 (finding 06). **No note-on edge or gate is available to a routine** and the machine parameters of a slot's
   track were not mapped (they are per track at frame `0xda + 0x92 t`; the slot to track map is unknown).
-- **PLUCK on DN2: not built.** Needs the slot to track map and the parameter words (DECAY, PICK, BRIGHT, COLOR would use
+- **PLUCK on DN2: not built** (**[C]** built later the same day, see "DN2 pages and PLUCK"). Needs the slot to track map and the parameter words (DECAY, PICK, BRIGHT, COLOR would use
   FM TONE's knobs through the clone's pages, labelled as FM TONE's), a note-on edge (a change of the slot's pitch or
   velocity word works for 16 notes, then fails for a repeated note), `pluck.s` rewritten for a 32-float buffer without
   a voice record, and per-device `requires` in the manifest (core/machines only on the Digitone). Estimate 1 to 2 days,
   confidence about 50 % for a string that retriggers reliably; payoff: the same module on a second device.
-- Open: hardware; own parameter pages for a DN2 machine (3 start-up built RAM tables, est. 1 to 2 days); DN2 1.11 not run.
+- Open: hardware; own parameter pages for a DN2 machine (**[C]** built, see "DN2 pages and PLUCK"); DN2 1.11 not run.
 
 ### DN2 research (wave 7, lane `fastweb`)
 
@@ -491,6 +494,27 @@ was touched; new: `tools/dn2_probe.py`, `tools/dn2_pages.py`, `tools/cf_wordscan
   (mask `0xffe`); then PLUCK needs the edge (above), the pitch and velocity words (as the sine), 4 knob words through
   the clone's pages (own pages later), `pluck.s` for a 32-float buffer with per-slot state, `devices` filters, and the
   engine's amplitude envelope as the string's gate. Estimate 1 to 2 days, confidence 60 %.
+
+### DN2 pages and PLUCK (2026-10-14, lane `b`)
+
+Details and evidence: findings 02 ("DN2 own parameter pages: built", "PLUCK on Digitone II") and 06 ("DN2 voice routine: PLUCK").
+Emulator only; nothing flashed; one agent; no change in `native/patchkit` (no primitive was missing).
+
+- **Own pages**: `core/machines` gets a registry `pages` (a row is a page descriptor plus its machine and the sound slots of
+  its knobs) and the DN2 hooks `typemap.0/1/2` answer page count, descriptor and slot to code from it; `core/params` now has
+  the Digitone II side (the same table copy, 56 references and 55 bounds, T2 shim). A machine with page rows is its own type for
+  every caller of the type reader (the research's list of about 17 sites was incomplete: the defaults on selection call the reader
+  too). `test/dn2-pages` + `tools/pk_proof_pages_dn2.py` (quick about 1 min, full about 6 min): own names and titles on screen, the
+  knobs move exactly the mapped slots (A..D on 25 26 27 30, page 2 on 40 41), ranges clamp, defaults are its own, save and reload keep
+  type and values, stock loads the project, stock machines' pages equal the stock firmware's. The clone (`test/dn2-clone`) is unchanged.
+- **PLUCK on DN2**: `pluck_dn2.s` (per-slot state, note-on = rising edge of frame halfword 0x11 bit v, one zero block then the
+  excitation, slot words at `0x6d + 0x49 v + (s - 25)`), own page DECAY PICK BRIGHT COLOR (slots 25..28). The `dsp-voice` DN2 frame
+  helpers already had the 16-slot mask (0xffe). `tools/pk_proof_pluck_dn2.py` (quick about 6 min, full about 15 min): pitch within
+  0.005 cents on six notes, T60 0.23 / 0.96 / 2.16 s at DECAY 0x2000 / 0x4000 / 0x5000, BRIGHT +25 dB HF/LF, COLOR -22.6 dB, the
+  excitation (PICK comb, COLOR, amplitude) bit-identical to `tools/pluck_ref.py`, 20 and 40 repeated notes of one key give 20 and
+  40 plucks (past 16 slots), the sequencer plays both passes, save and reload keep type and the four values, stock loads the project.
+  Matrix cells `dn2-1.12` PLUCK set and PAGES set added (goldens recorded).
+- **Not done:** MIDI CC/NRPN and p-lock for these machines (not tried); hardware; DN2 1.11 not run (rules resolve there).
 
 ### Phase 3b: frameworks as modules (refactor, decided 2026-10-14)
 
