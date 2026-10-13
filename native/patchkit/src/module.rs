@@ -19,6 +19,37 @@ pub struct Manifest {
     pub op: Vec<Op>,
     #[serde(default)]
     pub claim: Vec<Claim>,
+    /// Machine types this module adds (core/machines assigns the type numbers).
+    #[serde(default)]
+    pub machine: Vec<MachineDef>,
+}
+
+/// One machine type a content module adds. The framework (`core/machines`, `machines.rs`) gives it the next
+/// free type number in canonical module order and exports it as the symbol `machines.<id>.type`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct MachineDef {
+    /// Symbol-safe name (`[a-z][a-z0-9_]*`), unique across the selection.
+    pub id: String,
+    /// Display name of the machine list (the UI upper-cases it).
+    pub name: String,
+    /// Short label (the SRC page header).
+    pub short: String,
+    /// Stock machine type whose per-type rows (permission, per-type byte, name hint) the new type copies, and
+    /// whose `type == 6` tests it also matches when that is MANUAL SLICE.
+    pub clone_of: u32,
+    /// Index in the displayed list (0 = first); default: the end.
+    #[serde(default)]
+    pub position: Option<usize>,
+    /// The nine descriptor ID fields (parameter descriptor IDs of the SRC page), in descriptor order.
+    pub fields: Vec<u32>,
+    /// DSP selector word for this type (the table at `dsp.machines.selector_table`); default: the clone's.
+    #[serde(default)]
+    pub selector: Option<u32>,
+    /// Names stored in the descriptor (default: `name` and `short` upper-cased).
+    #[serde(default)]
+    pub desc_name: Option<String>,
+    #[serde(default)]
+    pub desc_short: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

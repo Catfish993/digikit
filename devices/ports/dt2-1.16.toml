@@ -39,6 +39,246 @@ excludes = [[0x200fa000, 0x200fe000]]
 mark = "D"
 
 [[anchor]]
+name = "cf.machines.clone.0"
+cpu = "cf"
+kind = "code"
+addr = 0x4005fbec
+len = 8
+sha256 = "4b1eeee281fd6e7363193c4ca9da513e4bd2d1fe067ff9cb508bf1826d67be1c"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.1"
+cpu = "cf"
+kind = "code"
+addr = 0x4005f8f8
+len = 6
+sha256 = "79c9245c0bcd2f36da3681a6dfb09637cc19d395561125c390cb749209fd93b1"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.2"
+cpu = "cf"
+kind = "code"
+addr = 0x40030e1e
+len = 8
+sha256 = "a7679cac66bb9ff5abd1b24e94d5810c8131c19e0d8d6e7a110ee0b2db3f8d5f"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.3"
+cpu = "cf"
+kind = "code"
+addr = 0x4004923e
+len = 6
+sha256 = "5292b911cf0deaba185812ccd2eecdfa10085b29823e8bedde84ae69db5d9cd8"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.4"
+cpu = "cf"
+kind = "code"
+addr = 0x4005c936
+len = 6
+sha256 = "5fa6eb2badf7467be4963c0591deb2d20266f53a6ec0721df1a6813785c1b176"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.5"
+cpu = "cf"
+kind = "code"
+addr = 0x4005da60
+len = 12
+sha256 = "14a5231a576e0b9862872870072bff94904a0ef0cfbdad41fb9329635d91d836"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.clone.6"
+cpu = "cf"
+kind = "code"
+addr = 0x4002ec18
+len = 12
+sha256 = "374f947abc19fe049b7ac5eca4b32fc6063ef3e8b28e624b5de98b02f1a65d62"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.dispatch"
+cpu = "cf"
+kind = "code"
+addr = 0x400c8840
+len = 6
+sha256 = "90d4add99e5a31399efe8b6d7879deb65375e21f97ebcdfd761b45d0fa6f5b13"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.group"
+cpu = "cf"
+kind = "code"
+addr = 0x4005e216
+len = 6
+sha256 = "6408f5a9d85554d11a4662c5ba9c4c00b7a6cf6ff10118268dd8945118d4055f"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.list"
+cpu = "cf"
+kind = "code"
+addr = 0x40052a4c
+len = 16
+sha256 = "35b6dd775a99b82422de3089ca2f7c23a5622ecc9672b71c87884db281e02ff2"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.list_alloc"
+cpu = "cf"
+kind = "code"
+addr = 0x40052a2c
+len = 4
+sha256 = "b89d1c8d155ce34ada53dfd7602d68760d2b506b1e9f7f8cf005bf65154ff58b"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.name.0"
+cpu = "cf"
+kind = "code"
+addr = 0x400da548
+len = 24
+sha256 = "613f50bb80d584b6241239f4eca2242dd507ec70f8e0064bd335e402b3703de4"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.name.1"
+cpu = "cf"
+kind = "code"
+addr = 0x400da56e
+len = 24
+sha256 = "3d9843f2159524d82b406d981e4a6cb1669532ce1fc82f92bfec00afb20c702a"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.name.2"
+cpu = "cf"
+kind = "code"
+addr = 0x400da594
+len = 24
+sha256 = "aa1e0c7545775ca305527e793381c9875f0e06b815334928c10168e6fabdc69a"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.permit"
+cpu = "cf"
+kind = "code"
+addr = 0x400da3b0
+len = 30
+sha256 = "d0a5a4ca33ad3646c343d7ff1e74ddace12c90d082564bf6229f9511cf890d7d"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.persist"
+cpu = "cf"
+kind = "code"
+addr = 0x400db2ea
+len = 2
+sha256 = "ce7b207f44bdfcb4050755ac2969bf23f44a92ef9c1139df06caf97b9b3aedd1"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.pertype.0"
+cpu = "cf"
+kind = "code"
+addr = 0x40016da4
+len = 12
+sha256 = "7c9cde62373bf655f6f043b70d8bec4a6190c3e0da01afed4f0cd55215283c57"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.pertype.1"
+cpu = "cf"
+kind = "code"
+addr = 0x40017f6e
+len = 16
+sha256 = "ee3c72d5d91077eaea160a1cee920fcdd202e1675f5a7a9ffcffeb59ec573639"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.pertype.2"
+cpu = "cf"
+kind = "code"
+addr = 0x400183ee
+len = 16
+sha256 = "d18b888d8cd5c6d928979f9ade2f0e0b13089d181678c5e135ed38d79437812c"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.pertype.3"
+cpu = "cf"
+kind = "code"
+addr = 0x40018442
+len = 20
+sha256 = "0207581f219c3954567812397c1e33736a28cdbd2dc54c4b042fcfb2ce56a8ef"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.pertype.4"
+cpu = "cf"
+kind = "code"
+addr = 0x40017746
+len = 12
+sha256 = "f0bc2080212b4f275c5eaffb7aa785e68278a77ab64a58c620336f6e6fdf496c"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.pertype.5"
+cpu = "cf"
+kind = "code"
+addr = 0x40016cd0
+len = 38
+sha256 = "f8abfe7ace6618758363cd384fe1626385eb5a7845c497ae81c2d7e01015d5e1"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.rank"
+cpu = "cf"
+kind = "code"
+addr = 0x400522be
+len = 6
+sha256 = "9bae6559766a978a14a7800440a10853b061d901a2256737774aa7b9f4fa686d"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.typearg.0"
+cpu = "cf"
+kind = "code"
+addr = 0x400da248
+len = 8
+sha256 = "619ff3d560aa3491dff42d15c08d7f372349325eb1ddd7056b8f0570e8758bf7"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
 name = "cf.main"
 cpu = "cf"
 kind = "code"
@@ -100,6 +340,17 @@ len = 6
 sha256 = "ae63d81c7590510eecbe4b07ca65a9d9ad423a26ba301415a978a351fc4003d6"
 mark = "D"
 rule = "fx/master-drive:sharc_mem_addr"
+
+[[anchor]]
+name = "dsp.machines.selector_table"
+cpu = "sharc"
+kind = "value"
+addr = 0x2567c0
+src = 0x28384e62
+len = 6
+sha256 = "6b6ef0ae1d21cc3860bb1fd860658c94652341826da44eeec9227d59be29c3af"
+mark = "D"
+rule = "core/machines:sharc_literal"
 
 [[anchor]]
 name = "dsp.master.float_buf"
