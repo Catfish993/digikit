@@ -13,9 +13,18 @@ conflicts = []
 "dt2-1.17" = "experimental"
 
 # An unmodified clone of MANUAL SLICE (the stock descriptor's ID fields).
-[[machine]]
+[[entry]]
+registry = "machines"
 id = "xclone"
 name = "XClone"
 short = "XCL"
 clone_of = 6
-fields = [0xf8, 0xf9, 0, 0xfb, 0xfc, 0xfd, 0, 0xfe, 0x0a]
+f0 = 0xf8
+f1 = 0xf9
+f2 = 0
+f3 = 0xfb
+f4 = 0xfc
+f5 = 0xfd
+f6 = 0
+f7 = 0xfe
+f8 = 0x0a

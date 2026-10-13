@@ -65,9 +65,21 @@ def test_framework_rules_are_declared_once_per_site():
     # a site may have one rule per device (the Digitone II rules reuse the names)
     keys = [(r["name"], tuple(r.get("devices", []))) for r in m["anchor_rule"]]
     assert len(keys) == len(set(keys))
-    dt2 = [n for n, d in keys if n.startswith("cf.machines.") and d == ("dt2",)]
-    # dispatch, list, list_alloc, group, rank, permit, persist + 3 names + 6 per-type + 7 clone + 1 type argument
-    assert len(dt2) == 7 + 3 + 6 + 7 + 1
+    # every anchor a hook, write, section or extern of the manifest names has a rule for each device it is active on
+    rules = {(n, dev) for n, d in keys for dev in d}
+    named = set()
+    for op in m["op"]:
+        named.add((op.get("anchor"), tuple(op.get("devices", ["dt2", "dn2"]))))
+    for sec in m["section"]:
+        named.add((sec["from"]["anchor"], tuple(sec.get("devices", ["dt2", "dn2"]))))
+    for obj in m["object"]:
+        for anchor in obj.get("externs", {}).values():
+            if anchor.startswith(("cf.", "dsp.")):
+                named.add((anchor, tuple(obj["devices"])))
+    for name, devs in named:
+        if name:
+            for dev in devs:
+                assert (name, dev) in rules, (name, dev)
     for r in m["anchor_rule"]:
         if r["kind"] == "cf_func":
             assert len(r["hash"]) == 32 and r["len"] > 0

@@ -539,11 +539,26 @@ Content modules use `[[entry]]` only.
 
 - [x] 3b.1 Primitives P1-P6 in patchkit with unit tests and wasm parity (lane a, 2026-10-14; results below). Old
       generator path keeps working until 3b.3.
-- [ ] 3b.2 Frameworks rewritten as modules against this spec; routines unit-tested on the ColdFire call harness with
-      hand-built tables (lane b), then content modules migrated to `[[entry]]`.
+- [x] 3b.2 Frameworks rewritten as modules against this spec; routines unit-tested on the ColdFire call harness with
+      hand-built tables (lane b), then content modules migrated to `[[entry]]`. Done 2026-10-14 (lane `b`); results below.
 - [ ] 3b.3 Integration: every proof passes on the module version (pk_proof_machines DT2 1.16/1.17, pk_proof_pluck
       DT2 1.16/1.17, DN2 machine and voice proofs, smoke matrix, wasm = CLI); then delete `machines.rs`,
       `machines/dn2.rs`, `params.rs` and the old manifest keys.
+
+### Phase 3b.2 results (2026-10-14, lane `b`)
+
+Written: `modules/core/machines/` (`src/cf/dt2/machines.s`, `src/cf/dn2/machines.s`, manifest with registry `machines`, six
+`[[section]]` copies of stock tables, hook and bound-write ops), `modules/core/params/` (`src/cf/dt2/params.s`, registry
+`params`, `pf_table` section, glob writes for the 56 references and 54 bounds), `modules/core/dsp-voice/` (registry
+`voices`, hook op, `_dv_table = voices.rows`); content modules (xslice, machine-clone, pluck, dn2-clone, sine-voice,
+dn2-sine) on `[[entry]]`. New anchors in `tools/port_resolve.py`: rule kind `cf_ptr` (a table behind an address literal),
+`cf_params_refs` and `cf_params_bounds` (many anchors per rule, `<name>.N`); ports re-resolved. Run-time tables (displayed
+list, rank pairs, std::string descriptors) are built once in bss by `mf_ensure`; the clone tests hook the compare and set
+the Z flag (hooks cannot restore a register after the stock branch); the Digitone II type maps change the stack
+argument in place. Tests: `tools/pk_cfunit.py` (hook routine on the native core with registers, flags and stack set by the
+case; stubs for tails and exits), `tests/test_pk_machines_fw.py`, `_dn2_fw.py`, `test_pk_params_fw.py` (19 tests; the
+manifest's row expressions are checked against the Rust row builders with `tools/pk_expr.py`). Waits for lane a: linking,
+apply, every proof (3b.3).
 
 ### Phase 3b.1 results (2026-10-14, lane `a`)
 

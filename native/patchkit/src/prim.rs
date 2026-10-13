@@ -95,14 +95,9 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
                     None => {}
                 }
             }
-            "retarget" | "jump" => {
+            "retarget" => {
                 if op.to.is_none() {
                     return Err(err!("{id}: {} needs to", op.op));
-                }
-            }
-            "register" => {
-                if op.table.is_none() || op.row.is_empty() {
-                    return Err(err!("{id}: register needs table and row"));
                 }
             }
             "hook" => {
@@ -304,7 +299,7 @@ impl ActiveReg<'_> {
 
     /// Bytes of the table: the rows, then the strings.
     pub fn size(&self) -> Result<usize> {
-        let mut n = self.entries.len() * self.row_size;
+        let mut n = (self.entries.len() + usize::from(self.def.terminator)) * self.row_size;
         for e in &self.entries {
             for (fi, k) in self.kinds.iter().enumerate() {
                 if *k == FKind::Cstr {
@@ -536,7 +531,7 @@ pub fn build_registry(
     first: i64,
     scope: &Scope,
 ) -> Result<(Vec<u8>, Vec<EntryValues>)> {
-    let rows = r.entries.len() * r.row_size;
+    let rows = (r.entries.len() + usize::from(r.def.terminator)) * r.row_size;
     let mut out = vec![0u8; rows];
     let mut pool: Vec<u8> = vec![];
     let mut all = vec![];

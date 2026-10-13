@@ -89,12 +89,13 @@ test('wasm and CLI produce byte-identical output for the machine framework (two 
   assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
   assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
   const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
-  assert.deepEqual(report.machines.map((m) => [m[0], m[1]]), [['xslice', 7], ['xclone', 8]]);
+  const entries = (name) => report.registries.find((r) => r.name === name).entries.map((e) => [e.id, e.index]);
+  assert.deepEqual(entries('machines'), [['xslice', 7], ['xclone', 8]]);
   // Digitone II has core/machines, but XSLICE clones a Digitakt machine (MANUAL SLICE, type 6)
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from('core/machines,machines/xslice'));
   assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
-  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|is not a stock type/);
+  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|outside the anchor|no registry/);
 });
 
 test('wasm and CLI produce byte-identical output for core/params and PLUCK', { skip: !need }, async () => {
@@ -114,15 +115,16 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
   assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
   assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
   const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
-  assert.deepEqual(report.machines.map((m) => [m[0], m[1]]), [['pluck', 7]]);
-  assert.deepEqual(report.params.map((m) => [m[0], m[1]]), [
+  const entries = (name) => report.registries.find((r) => r.name === name).entries.map((e) => [e.id, e.index]);
+  assert.deepEqual(entries('machines'), [['pluck', 7]]);
+  assert.deepEqual(entries('params'), [
     ['pluck_decay', 275], ['pluck_pick', 276], ['pluck_bright', 277], ['pluck_color', 278],
   ]);
   // Digitone II has core/machines but PLUCK clones a Digitakt machine: refused either way
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from(mods));
   assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
-  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|is not a stock type/);
+  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|outside the anchor|no registry/);
 });
 
 test('wasm and CLI produce byte-identical output for the primitives (registry, section, hook)', { skip: !need }, async () => {

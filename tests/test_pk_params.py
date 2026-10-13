@@ -30,9 +30,15 @@ def test_rules_are_declared_for_the_three_anchors():
     ) as f:
         m = tomllib.load(f)
     rules = {r["name"]: r for r in m["anchor_rule"]}
-    assert set(rules) == {"cf.params.t1", "cf.params.sites", "cf.params.t2"}
+    assert set(rules) == {
+        "cf.params.t1",
+        "cf.params.ref",
+        "cf.params.bound",
+        "cf.params.t2",
+    }
     assert rules["cf.params.t1"]["kind"] == "cf_params_t1"
-    assert rules["cf.params.sites"]["kind"] == "cf_params_sites"
+    assert rules["cf.params.ref"]["kind"] == "cf_params_refs"
+    assert rules["cf.params.bound"]["kind"] == "cf_params_bounds"
     assert (
         len(rules["cf.params.t2"]["hash"]) == 32 and rules["cf.params.t2"]["len"] == 10
     )
@@ -50,9 +56,12 @@ def test_the_scan_reproduces_the_recorded_port(version):
     main = pr.sections_of(type(pr.ROOT)(syx))[3]
     t1 = anchors["cf.params.t1"]
     refs, bounds = pr.scan_param_sites(main, 0x40000400, t1["addr"], t1["len"] // 60)
-    sites = anchors["cf.params.sites"]
-    assert len(refs) + len(bounds) == sites["len"] == 111
-    assert pr.params_sites_digest(refs, bounds) == sites["sha256"]
+    ref_names = [n for n in anchors if n.startswith("cf.params.ref.")]
+    bound_names = [n for n in anchors if n.startswith("cf.params.bound.")]
+    # the accessor of the second table (cf.params.t2) holds one bound the module replaces
+    assert len(refs) == len(ref_names) == 56
+    assert len(bounds) - 1 == len(bound_names) == 54
+    assert sorted(anchors[n]["addr"] for n in ref_names) == refs
 
 
 READER = bytes.fromhex(

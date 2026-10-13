@@ -3,7 +3,7 @@
 
     uv run python tools/cf_wordscan.py IMAGE --range LO HI [--range LO HI ...] [--bound N ...] [--base 0x40000400]
 
-IMAGE is a section_3_MAIN_OS.bin (out/sections/<image>/). The word scan is the one native/patchkit/src/params.rs uses
+IMAGE is a section_3_MAIN_OS.bin (out/sections/<image>/). The word scan is the one tools/port_resolve.py scan_param_sites uses
 (a hit is any aligned long inside [LO, HI), instruction operand or data); `--bound N` lists `cmpi.l #N,Dn` / `cmpa.l #N,An`
 followed by a clamp-shaped branch or Scc (bcs/bcc/bhi/bls/scs/scc), the shape of the bounds checks on a table of N rows.
 A hit is a candidate, not proof: confirm with tools/fw.py. The containing function is printed when the cfdb has one.

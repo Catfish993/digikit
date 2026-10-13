@@ -42,10 +42,6 @@ pub struct Plan {
     /// region name -> bytes used / capacity
     pub regions: BTreeMap<String, (u64, u64)>,
     pub symbols: BTreeMap<String, u64>,
-    /// Machine types the framework assigned: (id, type number, declaring module)
-    pub machines: Vec<(String, u32, String)>,
-    /// (parameter id, assigned code, declaring module)
-    pub params: Vec<(String, u32, String)>,
     /// P2: registries and their entries with the assigned indices
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub registries: Vec<prim::PlanRegistry>,
@@ -233,7 +229,7 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         }
     }
     for op in &m.manifest.op {
-        if op.op == "register" || !on(&op.devices, dev) {
+        if !on(&op.devices, dev) {
             continue;
         }
         match &op.anchors {
@@ -268,33 +264,6 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         if port.region(&r.region).is_none() {
             missing.push(format!("region {}", r.region));
         }
-    }
-    if m.id() == crate::machines::FRAMEWORK || !m.manifest.machine.is_empty() {
-        for d in &m.manifest.machine {
-            if let Err(e) = crate::machines::validate(d) {
-                return Err(err!("{}: {e}", m.id()));
-            }
-        }
-        missing.extend(
-            crate::machines::missing_anchors(port)
-                .into_iter()
-                .map(|n| format!("anchor {n}")),
-        );
-    }
-    if m.id() == crate::params::FRAMEWORK || !m.manifest.param.is_empty() {
-        if !m.manifest.param.is_empty() && !on(&[String::from("dt2")], dev) {
-            missing.push("parameter framework (Digitakt II only)".into());
-        }
-        for d in &m.manifest.param {
-            if let Err(e) = crate::params::validate(d, None) {
-                return Err(err!("{}: {e}", m.id()));
-            }
-        }
-        missing.extend(
-            crate::params::missing_anchors(port)
-                .into_iter()
-                .map(|n| format!("anchor {n}")),
-        );
     }
     missing.sort();
     missing.dedup();
@@ -407,12 +376,9 @@ fn uses_expansion(lib: &Library, ids: &[String], dev: &str, port: &Port) -> bool
     let exp = "cf.expansion";
     ids.iter().filter_map(|i| lib.get(i)).any(|m| {
         let mf = &m.manifest;
-        !mf.machine.is_empty()
-            || !mf.param.is_empty()
-            || mf
-                .object
-                .iter()
-                .any(|o| o.place == exp && on(&o.devices, dev))
+        mf.object
+            .iter()
+            .any(|o| o.place == exp && on(&o.devices, dev))
             || mf
                 .section
                 .iter()
@@ -780,45 +746,8 @@ pub fn apply_with(
         }
     }
 
-    // Machine types: assigned in canonical order; the framework generates its object and patches after the anchors
-    // are verified.
-    let params = crate::params::declared(lib, &order)?;
-    if !params.is_empty() && !order.iter().any(|i| i == crate::params::FRAMEWORK) {
-        return Err(err!(
-            "{} adds parameters but {} is not selected (add it to `requires`)",
-            params[0].module,
-            crate::params::FRAMEWORK
-        ));
-    }
-    let param_codes = if params.is_empty() {
-        BTreeMap::new()
-    } else {
-        let t1 = port.anchor(crate::params::T1_ANCHOR).ok_or_else(|| {
-            err!(
-                "port {} has no anchor {}",
-                port.id(),
-                crate::params::T1_ANCHOR
-            )
-        })?;
-        crate::params::assign(&params, (t1.len / crate::params::ROW as u64) as u32)
-    };
-    let machines = crate::machines::declared(lib, &order, &param_codes, &port.port.device)?;
-    if !machines.is_empty() && !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
-        return Err(err!(
-            "{} adds machines but {} is not selected (add it to `requires`)",
-            machines[0].module,
-            crate::machines::FRAMEWORK
-        ));
-    }
-
     // Every anchor a selected module uses must hold the bytes the port recorded.
     let mut used: BTreeSet<String> = BTreeSet::new();
-    if !machines.is_empty() {
-        used.extend(crate::machines::anchor_names_for(&port.port.device));
-    }
-    if !params.is_empty() {
-        used.extend(crate::params::anchor_names());
-    }
     for id in &order {
         let m = lib.get(id).unwrap();
         for (o, dko) in m.manifest.object.iter().zip(&m.objects) {
@@ -831,12 +760,7 @@ pub fn apply_with(
                 }
             }
         }
-        for op in m
-            .manifest
-            .op
-            .iter()
-            .filter(|o| o.op != "register" && on(&o.devices, &dev))
-        {
+        for op in m.manifest.op.iter().filter(|o| on(&o.devices, &dev)) {
             match &op.anchors {
                 Some(g) => used.extend(glob_anchors(port, g).iter().map(|a| a.name.clone())),
                 None => {
@@ -902,45 +826,6 @@ pub fn apply_with(
         }
         verify_anchor(&mem, a)?;
     }
-    let generated = if machines.is_empty() {
-        None
-    } else {
-        let read = |addr: u64, len: u64| mem.read(CF, addr, len);
-        let read_sharc = |addr: u64, len: u64| mem.read(SHARC, addr, len);
-        Some(crate::machines::generate(
-            port,
-            &read,
-            &read_sharc,
-            &machines,
-        )?)
-    };
-    let generated_params = if params.is_empty() {
-        None
-    } else {
-        let read = |addr: u64, len: u64| mem.read(CF, addr, len);
-        Some(crate::params::generate(port, &read, &params)?)
-    };
-    for (id, code, module) in generated_params.iter().flat_map(|g| g.codes.iter()) {
-        for res in [format!("param.id.{id}"), format!("param.code.{code}")] {
-            if let Some(prev) = claims.insert(res.clone(), module.clone()) {
-                return Err(err!("{module} and {prev} both claim {res}"));
-            }
-        }
-    }
-    // One claim per machine id and per assigned type number.
-    for (id, ty, module) in generated.iter().flat_map(|g| g.types.iter()) {
-        for res in [format!("machine.id.{id}"), format!("machine.type.{ty}")] {
-            if let Some(prev) = claims.insert(res.clone(), module.clone()) {
-                return Err(err!("{module} and {prev} both claim {res}"));
-            }
-        }
-    }
-    let machine_types: BTreeMap<String, u64> = generated
-        .iter()
-        .flat_map(|g| g.types.iter())
-        .map(|(id, ty, _)| (format!("machines.{id}.type"), *ty as u64))
-        .collect();
-
     // Sizes of the primitives' sections and tables, and the decoded hook sites.
     let stg = stage(&mem, port, lib, &order, &dev, &active)?;
     let mut sec_at: Vec<(u64, &'static str)> = vec![(0, CF); active.sections.len()];
@@ -964,13 +849,7 @@ pub fn apply_with(
     let mut placed: Vec<Placed> = vec![];
     for id in &order {
         let m = lib.get(id).unwrap();
-        let fw_objects: &[(Dko, &'static str)] = if id == crate::machines::FRAMEWORK {
-            generated.as_ref().map_or(&[], |g| &g.objects[..])
-        } else if id == crate::params::FRAMEWORK {
-            generated_params.as_ref().map_or(&[], |g| &g.objects[..])
-        } else {
-            &[]
-        };
+        let fw_objects: &[(Dko, &'static str)] = &[];
         {
             for (dko, region) in fw_objects {
                 let (size, align) = link::footprint(dko);
@@ -1127,7 +1006,6 @@ pub fn apply_with(
     // every symbol a manifest expression can name
     let mut all_syms: BTreeMap<String, u64> = globals.clone();
     all_syms.extend(prim_syms.iter().map(|(k, v)| (k.clone(), *v)));
-    all_syms.extend(machine_types.iter().map(|(k, v)| (k.clone(), *v)));
 
     let mut writes: Vec<PlanWrite> = vec![];
     let mut all_symbols: BTreeMap<String, u64> = BTreeMap::new();
@@ -1145,8 +1023,6 @@ pub fn apply_with(
                 .unwrap_or_else(|| sy.name.clone());
             if aname == SEGMENTS {
                 ext.insert(sy.name.clone(), segments_addr);
-            } else if let Some(v) = machine_types.get(&aname) {
-                ext.insert(sy.name.clone(), *v);
             } else if let Some(v) = prim_syms.get(&aname) {
                 ext.insert(sy.name.clone(), *v);
             } else if let Some(a) = port.anchor(&aname) {
@@ -1302,9 +1178,6 @@ pub fn apply_with(
         }
     }
 
-    // Registrations: rows written into the tables other modules export (before the chunks are hashed and placed).
-    register_rows(lib, &order, &dev, &globals, &machine_types, &mut chunks)?;
-
     // Operations.
     let mut patches: Vec<Patch> = vec![];
     let mut plan_hooks: Vec<prim::PlanHook> = vec![];
@@ -1325,7 +1198,7 @@ pub fn apply_with(
                 .op
                 .iter()
                 .enumerate()
-                .filter(|(_, o)| o.op != "register" && on(&o.devices, &dev))
+                .filter(|(_, o)| on(&o.devices, &dev))
             {
                 if op.op == "hook" {
                     let hi = stg
@@ -1380,10 +1253,15 @@ pub fn apply_with(
                 };
                 for a in anchors {
                     let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
-                    let addr = (a.addr as i64 + op.offset) as u64;
+                    // a value anchor names its instruction by `src` (its `addr` is the number the instruction holds)
+                    let site = if a.kind == "value" {
+                        a.src.unwrap_or(a.addr)
+                    } else {
+                        a.addr
+                    };
+                    let addr = (site as i64 + op.offset) as u64;
                     let new = match op.op.as_str() {
                         "retarget" => retarget(&mem, a, op, &all_syms)?,
-                        "jump" => jump_insn(a, op, &all_syms)?,
                         "write" => match &op.value {
                             Some(v) => {
                                 let sc = prim::Scope {
@@ -1432,53 +1310,6 @@ pub fn apply_with(
                     });
                 }
             }
-        }
-    }
-
-    // The frameworks' patches (relocations against the generated objects).
-    let framework_patches = [
-        (
-            crate::machines::FRAMEWORK,
-            generated.as_ref().map(|g| &g.patches),
-        ),
-        (
-            crate::params::FRAMEWORK,
-            generated_params.as_ref().map(|g| &g.patches),
-        ),
-    ];
-    for (fw_id, gps) in framework_patches {
-        let Some(gps) = gps else { continue };
-        let owner = lib
-            .get(fw_id)
-            .map(|m| m.tag())
-            .unwrap_or_else(|| fw_id.into());
-        for gp in gps {
-            let a = port.anchor(&gp.anchor).unwrap();
-            if gp.at + gp.bytes.len() as u64 > a.len {
-                return Err(err!(
-                    "{fw_id}: patch at {} +{} lies outside the anchor",
-                    gp.anchor,
-                    gp.at
-                ));
-            }
-            // a value anchor names the instruction by `src`, its `addr` is the number the instruction holds
-            let site = if a.kind == "value" {
-                a.src.unwrap_or(a.addr)
-            } else {
-                a.addr
-            };
-            let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
-            let addr = site + gp.at;
-            let new = apply_relocs(gp.bytes.clone(), &gp.relocs, addr, &globals)?;
-            let old = mem.read(cpu, addr, new.len() as u64)?;
-            patches.push(Patch {
-                owner: owner.clone(),
-                cpu,
-                addr,
-                bytes: new,
-                old_sha256: sha256_hex(&old),
-                what: format!("{} {}{:+}", gp.what, gp.anchor, gp.at),
-            });
         }
     }
 
@@ -1681,8 +1512,6 @@ pub fn apply_with(
         writes,
         regions,
         symbols: all_symbols,
-        machines: generated.map(|g| g.types).unwrap_or_default(),
-        params: generated_params.map(|g| g.codes).unwrap_or_default(),
         registries: plan_regs,
         sections: plan_secs,
         hooks: plan_hooks,
@@ -1846,97 +1675,4 @@ fn apply_relocs(
         bytes[at..at + size].copy_from_slice(&(v as u64).to_be_bytes()[8 - size..]);
     }
     Ok(bytes)
-}
-
-/// Replace the 48-bit instruction at an anchor by an unconditional, non-delayed `JUMP` to a module symbol (SHARC+).
-/// The displaced instruction is the module's job: it executes it (or its equivalent) before it continues.
-fn jump_insn(a: &Anchor, op: &Op, globals: &BTreeMap<String, u64>) -> Result<Vec<u8>> {
-    let to = op.to.as_deref().unwrap();
-    let target = *globals
-        .get(to)
-        .ok_or_else(|| err!("jump: module symbol {to} is not defined"))?;
-    if a.cpu != SHARC || a.len != 6 || op.offset != 0 {
-        return Err(err!(
-            "jump {}: needs a 6-byte SHARC anchor and offset 0",
-            a.name
-        ));
-    }
-    prim::sharc_jump(target).map_err(|e| err!("jump: {to}: {e}"))
-}
-
-fn register_rows(
-    lib: &Library,
-    order: &[String],
-    dev: &str,
-    globals: &BTreeMap<String, u64>,
-    machine_types: &BTreeMap<String, u64>,
-    chunks: &mut [Chunk],
-) -> Result<()> {
-    let mut next: BTreeMap<String, u64> = BTreeMap::new();
-    for id in order {
-        let m = lib.get(id).unwrap();
-        for op in m
-            .manifest
-            .op
-            .iter()
-            .filter(|o| o.op == "register" && on(&o.devices, dev))
-        {
-            let tsym = op.table.as_deref().unwrap();
-            let decl = order
-                .iter()
-                .filter_map(|i| lib.get(i))
-                .flat_map(|m| m.manifest.table.iter())
-                .find(|t| t.symbol == tsym)
-                .ok_or_else(|| err!("{id}: no selected module declares the table {tsym}"))?;
-            if op.row.len() as u64 != decl.row_words {
-                return Err(err!(
-                    "{id}: row of {} words for table {tsym} of {}-word rows",
-                    op.row.len(),
-                    decl.row_words
-                ));
-            }
-            let base = *globals
-                .get(tsym)
-                .ok_or_else(|| err!("{id}: table symbol {tsym} is not defined"))?;
-            let k = next.entry(tsym.to_string()).or_insert(0);
-            if *k >= decl.rows {
-                return Err(err!("{id}: table {tsym} is full ({} rows)", decl.rows));
-            }
-            let at = base + *k * decl.row_words * 4;
-            let end = at + decl.row_words * 4;
-            let c = chunks
-                .iter_mut()
-                .find(|c| c.cpu == SHARC && c.addr <= at && end <= c.addr + c.image.len() as u64)
-                .ok_or_else(|| err!("{id}: table {tsym} row {k} lies outside any placed object"))?;
-            let off = (at - c.addr) as usize;
-            for (i, tok) in op.row.iter().enumerate() {
-                let v = match tok.strip_prefix("0x") {
-                    Some(h) => u64::from_str_radix(h, 16).ok(),
-                    None => tok.parse::<u64>().ok(),
-                }
-                .or_else(|| globals.get(tok).copied())
-                .or_else(|| machine_types.get(tok).copied())
-                .ok_or_else(|| {
-                    err!("{id}: register row word {tok:?} is neither a number nor a symbol")
-                })?;
-                if i == 0 && v == 0 {
-                    return Err(err!(
-                        "{id}: the first word of a registered row must be non-zero"
-                    ));
-                }
-                if v >= 1 << 32 {
-                    return Err(err!(
-                        "{id}: register row word {tok:?} = {v:#x} does not fit 32 bits"
-                    ));
-                }
-                let o = off + 4 * i;
-                if c.image[o..o + 4] != [0, 0, 0, 0] {
-                    return Err(err!("{id}: table {tsym} row {k} is not empty"));
-                }
-                c.image[o..o + 4].copy_from_slice(&(v as u32).to_le_bytes());
-            }
-            *k += 1;
-        }
-    }
-    Ok(())
 }

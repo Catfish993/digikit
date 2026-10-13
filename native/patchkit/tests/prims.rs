@@ -188,6 +188,42 @@ fn a_typed_write_evaluates_an_expression_with_image_reads() {
 }
 
 #[test]
+fn a_typed_write_to_a_value_anchor_lands_in_its_instruction() {
+    need_image!(DT2);
+    // `dsp.machines.selector_table` is a SHARC literal: addr = the number the instruction loads, src = the instruction
+    let body = "[[op]]\nop = \"write\"\nanchor = \"dsp.machines.selector_table\"\noffset = 2\nvalue = \"0x1234\"\nwidth = 2\n\
+                [[op]]\nop = \"write\"\nanchor = \"dsp.machines.selector_table\"\noffset = 4\nvalue = \"0x5678\"\nwidth = 2\n";
+    let lib = library(vec![module("t/v", "", body, None)]);
+    let out = run(&lib, &["t/v"]).unwrap();
+    let base = Firmware::parse(&image(DT2).unwrap()).unwrap();
+    let reg = registry();
+    let a = reg
+        .ports
+        .iter()
+        .find(|p| p.port.syx_sha256 == base.syx_sha256)
+        .unwrap()
+        .anchor("dsp.machines.selector_table")
+        .unwrap()
+        .clone();
+    let src = a.src.unwrap() as u32;
+    let sb = Stream::parse(base.section(7).unwrap().data.clone()).unwrap();
+    let so = Stream::parse(
+        Firmware::parse(&out.syx)
+            .unwrap()
+            .section(7)
+            .unwrap()
+            .data
+            .clone(),
+    )
+    .unwrap();
+    let (old, new) = (sb.read(src, 6).unwrap(), so.read(src, 6).unwrap());
+    assert_eq!(&new[..2], &old[..2], "the opcode parcel is untouched");
+    assert_eq!(&new[2..4], &0x1234u16.to_le_bytes());
+    assert_eq!(&new[4..6], &0x5678u16.to_le_bytes());
+    assert_ne!(&old[2..6], &new[2..6]);
+}
+
+#[test]
 fn typed_writes_check_width_range_and_symbols() {
     need_image!(DT2);
     // a width of 3, a missing value/hex, both at once: refused when the manifest loads
@@ -407,6 +443,33 @@ fn registry_rows_symbols_indices_and_strings() {
     assert_eq!(r["fields"][2], json!(["label", "cstr", 4]));
     // the owner-qualified symbols are in the plan as well
     assert_eq!(sym(&out, "t/a", "toys.alpha.index"), first);
+}
+
+#[test]
+fn a_terminator_registry_has_a_zero_row_behind_the_entries() {
+    need_image!(DT2);
+    let fw = FW.replace("max = 3\n", "max = 3\nterminator = true\n");
+    let lib = library(vec![
+        module("t/fw", "", &fw, Some(cf_obj())),
+        module(
+            "t/a",
+            "requires = [\"t/fw\"]",
+            &entry("alpha", "label = \"AB\"\nfn = \"_f\"\nkind = 7"),
+            None,
+        ),
+    ]);
+    let out = run(&lib, &["t/a", "t/fw"]).unwrap();
+    let rows = sym(&out, "t/fw", "toys.rows");
+    assert_eq!(sym(&out, "t/fw", "toys.count"), 1);
+    let t = read_cf(&out, rows, 32 + 3);
+    assert_eq!(t[0], 7);
+    assert!(
+        t[16..32].iter().all(|b| *b == 0),
+        "the terminator row is zero"
+    );
+    // the strings follow the terminator row
+    assert_eq!(be32(&t[4..]) as u64, rows + 32);
+    assert_eq!(&t[32..35], b"AB\0");
 }
 
 #[test]

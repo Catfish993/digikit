@@ -89,6 +89,16 @@ mark = "D"
 rule = "core/machines:cf_func"
 
 [[anchor]]
+name = "cf.machines.list_entry"
+cpu = "cf"
+kind = "code"
+addr = 0x4004d8b6
+len = 8
+sha256 = "7c6d66d691f9f6af7a3a8f3f31d35c8bdaf38f4ed587f0908c1e95894640ffd6"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
 name = "cf.machines.name.0"
 cpu = "cf"
 kind = "code"
@@ -267,6 +277,39 @@ len = 6
 sha256 = "85f36d8186a3d11eb4230369fd22cda0d55fbcb61657d6004aeff8afdf9a6020"
 mark = "D"
 rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.tab.list"
+cpu = "cf"
+kind = "data"
+addr = 0x401ddd58
+src = 0x4004d90c
+len = 20
+sha256 = "bb4c88749ee4f3d07c8b6a3aecad2aca46766bc3bba938c1d07b86c7630da157"
+mark = "D"
+rule = "core/machines:cf_ptr"
+
+[[anchor]]
+name = "cf.machines.tab.names"
+cpu = "cf"
+kind = "data"
+addr = 0x401f77f4
+src = 0x400dc344
+len = 60
+sha256 = "d081a0f227adc1795572f730d0ae5bd704c314ee1d491cf559962006e4ea9c90"
+mark = "D"
+rule = "core/machines:cf_ptr"
+
+[[anchor]]
+name = "cf.machines.tab.permit"
+cpu = "cf"
+kind = "data"
+addr = 0x401f7932
+src = 0x400dc1b4
+len = 20
+sha256 = "05ef11acdda86c640c318f2dfb410ba246d970f4f1ec5fa363f9403617020015"
+mark = "D"
+rule = "core/machines:cf_ptr"
 
 [[anchor]]
 name = "cf.machines.typemap.0"

@@ -38,7 +38,11 @@ def test_cell_names_and_keys():
 
 def test_the_default_matrix_and_tour_parse():
     cells = h.load_matrix(h.DEFAULT_MATRIX)
-    assert {(c.device, c.firmware) for c in cells} == {("dt2", "1.17"), ("dt2", "1.16"), ("dn2", "1.12")}
+    assert {(c.device, c.firmware) for c in cells} == {
+        ("dt2", "1.17"),
+        ("dt2", "1.16"),
+        ("dn2", "1.12"),
+    }
     assert any(c.modules for c in cells) and any(not c.modules for c in cells)
     segments = h.smoke_segments()
     names = [n for n, _ in segments]

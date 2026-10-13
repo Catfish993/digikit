@@ -25,6 +25,9 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc.py):
   sharc_literal  as sharc_func, but the instruction at entry + offset loads a constant (a literal in the
                  sharcdb): the anchor's value is that constant (a data address); `src` is the instruction.
 
+  sharc_table    as sharc_literal, but the anchor is the table the literal points to: a data anchor of `len` bytes at the
+                 software alias 0x28000000 + the literal (`src` = the instruction).
+
   sharc_mem_addr as sharc_literal, but the instruction at entry + offset is a direct DM access (Type 14d): the
                  anchor's value is its absolute address (a frame word or other fixed data), `src` the instruction.
 
@@ -40,8 +43,12 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc.py):
                  exactly one match): a data anchor over all rows (the row count is the length / 60).
   cf_params_sites  the sites of the code that depend on that table, for core/params: the 2-aligned words that point
                  into it and the clamp bounds (`cmpi.l #N,Dn` / `cmpa.l #N,An` with N the row count or one less,
-                 followed by scs/scc/bhi/bls), found by the same scan as native/patchkit/src/params.rs. An anchor of
+                 followed by scs/scc/bhi/bls), found by the scan of scan_param_sites below. An anchor of
                  kind "sites": addr = the table, len = number of sites, sha256 = their digest.
+
+  cf_ptr         as cf_func (hash, ordinal, offset), but the 4 bytes at entry + offset are an absolute address literal
+                 (a `lea table,An`, a `pea`, an `addi.l #table,Dn`): the anchor is the table the literal points to
+                 (kind data, `src` = the literal, `len` bytes of the table hashed).
 
   cf_reset_init_calls   the two reset-path calls (copy helper, clear helper) at the start of the reset code, found by
                  tools/regions.py `reset_facts` (a masked signature of the clear helper plus the call sites):
@@ -322,6 +329,21 @@ def resolve_cf_multi(cf: CfFacts, rule: dict, known: dict[str, dict]) -> list[di
     ]
 
 
+def cf_func_addr(cf: CfFacts, rule: dict) -> int:
+    """Address `offset` bytes into the function whose cfdb h_strict hash is `hash` (`ordinal` among equals)."""
+    hits = cf.funcs_by_hash(rule["hash"])
+    ordinal = int(rule.get("ordinal", 0))
+    if ordinal >= len(hits):
+        raise ResolveError(
+            f"{rule['name']}: {len(hits)} function(s) have hash {rule['hash'][:12]}.. (ordinal {ordinal})"
+        )
+    if "ordinal" not in rule and len(hits) != 1:
+        raise ResolveError(
+            f"{rule['name']}: {len(hits)} functions share hash {rule['hash'][:12]}.. and the rule gives no ordinal"
+        )
+    return hits[ordinal] + int(rule["offset"])
+
+
 def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
     if kind == "cf_params_t1":
@@ -339,18 +361,25 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
         }
     if kind == "cf_words":
         return resolve_cf_words(cf, rule)
+    if kind == "cf_ptr":
+        # a table the code reaches through an absolute 32-bit literal: the anchor is the table (`len` bytes of it are
+        # hashed), `src` the literal at entry + offset of the function `hash`
+        src = cf_func_addr(cf, rule)
+        target = int.from_bytes(cf.bytes_at(src, 4), "big")
+        n = int(rule["len"])
+        if not cf.base <= target < cf.base + len(cf.main) - n:
+            raise ResolveError(
+                f"{rule['name']}: the literal {target:#x} is not an address in the MAIN OS image"
+            )
+        return {
+            "kind": "data",
+            "addr": target,
+            "len": n,
+            "src": src,
+            "sha256": sha(cf.bytes_at(target, n)),
+        }
     if kind == "cf_func":
-        hits = cf.funcs_by_hash(rule["hash"])
-        ordinal = int(rule.get("ordinal", 0))
-        if ordinal >= len(hits):
-            raise ResolveError(
-                f"{rule['name']}: {len(hits)} function(s) have hash {rule['hash'][:12]}.. (ordinal {ordinal})"
-            )
-        if "ordinal" not in rule and len(hits) != 1:
-            raise ResolveError(
-                f"{rule['name']}: {len(hits)} functions share hash {rule['hash'][:12]}.. and the rule gives no ordinal"
-            )
-        addr = hits[ordinal] + int(rule["offset"])
+        addr = cf_func_addr(cf, rule)
         n = int(rule["len"])
         return {
             "kind": "code",
@@ -411,6 +440,27 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
             "src": addr,
             "len": int(width),
             "sha256": sha(data),
+        }
+    if kind == "sharc_table":
+        # a table the code reaches through a literal: the instruction at entry + offset loads its address; the anchor is
+        # the table in the DSP stream (`len` bytes, at the software alias 0x28000000 + the literal)
+        entry = dsp.func_by_hash(rule["reloc_hash"])
+        pc = entry + int(rule.get("offset", 0))
+        rows = dsp.db.sql(
+            "SELECT value FROM literals WHERE image=? AND sw=?", dsp.image, pc
+        )
+        if len(rows) != 1:
+            raise ResolveError(
+                f"{rule['name']}: {len(rows)} literals at pc {pc:#x} in {dsp.image}"
+            )
+        addr = 0x2800_0000 + int(rows[0][0])
+        n = int(rule["len"])
+        return {
+            "kind": "data",
+            "addr": addr,
+            "len": n,
+            "src": dsp.byte_addr(pc),
+            "sha256": sha(dsp.stream.read(addr, n)),
         }
     if kind == "sharc_mem_addr":
         entry = dsp.func_by_hash(rule["reloc_hash"])

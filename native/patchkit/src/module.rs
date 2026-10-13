@@ -19,15 +19,6 @@ pub struct Manifest {
     pub op: Vec<Op>,
     #[serde(default)]
     pub claim: Vec<Claim>,
-    /// Machine types this module adds (core/machines assigns the type numbers).
-    #[serde(default)]
-    pub machine: Vec<MachineDef>,
-    /// Tables of rows that other modules fill with `register` ops.
-    #[serde(default)]
-    pub table: Vec<TableDecl>,
-    /// Parameter descriptors this module adds (core/params assigns the codes).
-    #[serde(default)]
-    pub param: Vec<ParamDef>,
     /// P1: sections copied from the user's image (and extended) at apply time.
     #[serde(default)]
     pub section: Vec<SectionDef>,
@@ -106,6 +97,9 @@ pub struct RegistryDef {
     pub region: String,
     #[serde(default)]
     pub devices: Vec<String>,
+    /// One all-zero row behind the entries (not counted in `<reg>.count`): a table a routine scans until a zero row.
+    #[serde(default)]
+    pub terminator: bool,
     #[serde(default)]
     pub field: Vec<FieldDef>,
 }
@@ -131,84 +125,6 @@ pub struct EntryDef {
     pub devices: Vec<String>,
     #[serde(flatten)]
     pub fields: BTreeMap<String, toml::Value>,
-}
-
-/// One of a machine's nine descriptor ID fields: a stock parameter code, or a parameter a selected module adds.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum FieldRef {
-    Code(u32),
-    /// `id` of a `[[param]]` of any selected module
-    Param(String),
-}
-
-/// One parameter descriptor a content module adds: a row of the firmware's parameter table (60 bytes, finding 02)
-/// copied from a stock row, with its own names, range and default. `core/params` (`params.rs`) gives it the next
-/// free parameter code in canonical module order (a machine's `fields` may name it) and relocates the table.
-#[derive(Clone, Debug, Deserialize)]
-pub struct ParamDef {
-    /// Symbol-safe name (`[a-z][a-z0-9_]*`), unique across the selection.
-    pub id: String,
-    /// Long name (the page header when the knob is touched).
-    pub name: String,
-    /// Short name (the label under the knob).
-    pub short: String,
-    /// Stock parameter code whose row is copied: owner, flag, kind, mask, formatter and the value-class object
-    /// the UI keeps for the code (a template of the same class: plain 0..127 values copy a level row).
-    pub template: u32,
-    /// Descriptor field (engine slot) 0..7 the parameter is used in: it fixes the mirror index (25, 26, 27, 28,
-    /// 31, 32, 33, 34, finding 02) and the slot-bound numbers of the row.
-    pub slot: u32,
-    pub min: u32,
-    pub max: u32,
-    pub default: u32,
-    /// Stock parameter code whose value formatter this row uses (default: the template's).
-    #[serde(default)]
-    pub formatter_from: Option<u32>,
-}
-
-/// One machine type a content module adds. The framework (`core/machines`, `machines.rs`) gives it the next
-/// free type number in canonical module order and exports it as the symbol `machines.<id>.type`.
-#[derive(Clone, Debug, Deserialize)]
-pub struct MachineDef {
-    /// Symbol-safe name (`[a-z][a-z0-9_]*`), unique across the selection.
-    pub id: String,
-    /// Display name of the machine list (the UI upper-cases it).
-    pub name: String,
-    /// Short label (the SRC page header).
-    pub short: String,
-    /// Stock machine type whose per-type rows (permission, per-type byte, name hint) the new type copies, and
-    /// whose `type == 6` tests it also matches when that is MANUAL SLICE.
-    pub clone_of: u32,
-    /// Index in the displayed list (0 = first); default: the end.
-    #[serde(default)]
-    pub position: Option<usize>,
-    /// The nine descriptor ID fields (parameter descriptor IDs of the SRC page), in descriptor order.
-    pub fields: Vec<FieldRef>,
-    /// DSP selector word for this type (the table at `dsp.machines.selector_table`); default: the clone's.
-    #[serde(default)]
-    pub selector: Option<u32>,
-    /// Names stored in the descriptor (default: `name` and `short` upper-cased).
-    #[serde(default)]
-    pub desc_name: Option<String>,
-    #[serde(default)]
-    pub desc_short: Option<String>,
-    /// Digitone II: the DSP is told this machine's own type number (a registered voice routine renders it; finding
-    /// 06). Default: the ColdFire sends the clone's type, so the FM engine renders the clone like its original.
-    #[serde(default)]
-    pub own_dsp: bool,
-    /// Restrict to these devices (`dt2`, `dn2`); empty = all.
-    #[serde(default)]
-    pub devices: Vec<String>,
-}
-
-/// A table a module exports: a data symbol of `rows` rows of `row_words` 32-bit words each, all zero, in which
-/// other modules register rows (`op = "register"`). A row whose first word is zero is free.
-#[derive(Clone, Debug, Deserialize)]
-pub struct TableDecl {
-    pub symbol: String,
-    pub row_words: u64,
-    pub rows: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -244,7 +160,7 @@ pub struct ObjectRef {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Op {
-    /// `write`, `retarget`, `jump`, `hook` or `register`
+    /// `write`, `retarget` or `hook`
     pub op: String,
     #[serde(default)]
     pub anchor: String,
@@ -282,12 +198,6 @@ pub struct Op {
     pub expect_sha256: Option<String>,
     #[serde(default)]
     pub reloc: Vec<OpReloc>,
-    /// register: the exported table symbol the row goes into
-    pub table: Option<String>,
-    /// register: the row's words, each an integer (`7`, `0x10`) or a symbol (a module export: the pc of a code
-    /// symbol, the byte address of a data symbol); the first word must be non-zero
-    #[serde(default)]
-    pub row: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

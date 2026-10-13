@@ -21,12 +21,13 @@ sources = ["src/dsp/sine_voice.s"]
 place = "dsp.l2"
 devices = ["dt2"]
 
-# The machine type this routine renders. A literal until core.machines assigns type numbers (then
-# "machines.<id>.type"); 8 is a type whose stock selector entry is not a sample selector (findings 06).
-[[op]]
-op = "register"
-table = "_dv_table"
-row = ["8", "_sv_render"]
+# The machine type this routine renders: a literal (8, a type whose stock selector entry is not a sample selector,
+# findings 06) because this module adds no machine.
+[[entry]]
+registry = "voices"
+id = "sine"
+type = "8"
+pc = "_sv_render"
 devices = ["dt2"]
 
 [[claim]]

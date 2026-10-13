@@ -1409,3 +1409,36 @@ The DSP's copy at `0x25c48c` is byte-for-byte the same (73 of 73 halfwords equal
 **[C]** finding 04 and the plan said "per track": the block belongs to the voice slot; the ColdFire writes it from the
 track that owns the voice at the note-on and keeps updating it while the voice lives (a knob turned while the key is held
 moves the slot's word; before any note no block changes). See finding 06, "DN2 voice slots", for the slot to track map.
+
+## core.machines, core.params and core.dsp-voice as modules (patchkit 3b.2/3b.3, lane b) **[D]**
+
+**[C]** to the code references above: `native/patchkit/src/machines.rs`, `machines/dn2.rs`, `params.rs`, their tests, and the
+manifest keys `[[machine]]`, `[[param]]`, `[[table]]`, `op = "register"` and `op = "jump"` were deleted. The frameworks are
+ordinary modules now: ColdFire assembly (`modules/core/machines/src/cf/dt2/machines.s`, `.../dn2/machines.s`,
+`modules/core/params/src/cf/dt2/params.s`), a manifest with registries (`machines`, `params`, `voices`), P1 copies of the
+stock tables (`[[section]]` with one appended row per entry), bound and reference writes (P3, P6) and hooks (P4). The sites,
+the behaviour and the evidence above stand; what changed is who builds the tables and how a site is reached.
+
+- **Tables at run time vs patch time.** Name table, permission masks, per-type bytes and the DSP selector are P1 copies of the
+  image's tables with the clone's row appended (`image.u32(table + 4 * $clone_of)`; nothing of the firmware is stored). The
+  displayed list (stock order with every machine inserted at its `position`), the rank pairs of the sort comparator and the
+  std::string descriptors (upper-cased names) are built once in bss by `mf_ensure`, the first time a routine needs them.
+- **Clone tests** (`type == MANUAL SLICE`, 6 sites) are hooks that replace the whole stock test (prefix, compare, branch):
+  the routine takes the stock branch itself and answers "equal" also for an added clone of SLICE. This needs the branch
+  target of each test as an anchor (`cf.machines.clone.N.alt`). A first version hooked the compare and set the Z flag: wrong,
+  the displaced compare ran after the routine and undid it (XSLICE sounded like SAMPLE); the unit harness could not see it
+  because it stubs the tails. The proofs did.
+- **Type argument** of the parameter mapping (slots 29, 30) and the Digitone II type maps change the function's own stack
+  argument in place instead of a register after the load (a hook runs before the displaced load).
+- **Group helper, Digitakt II [D]:** the site `moveq #6,D1; cmp.l D0,D1; bne` is only reached for a type above 5 (the
+  function answers 2 for type 5 and 1 for 0..4 before it), so `bcs` with the raised bound changes the answer for added types
+  only; no stock type changes.
+- **Unit tests:** `tools/pk_cfunit.py` runs one hook routine on the native core with chosen registers, flags and stack (tails and
+  exits are stubs that report where the routine left); `tests/test_pk_machines_fw.py`, `test_pk_machines_dn2_fw.py`,
+  `test_pk_params_fw.py`; the manifest row expressions are evaluated by `tools/pk_expr.py` and compared with the old Rust
+  row builders' formulas. Integration: `native/patchkit/tests/frameworks.rs` (real modules on the real images).
+- **Hot-path cost matters to the proofs [D]:** the Digitone II hooks on the frame builder (vector 191), the type reader and the
+  type maps run for every audio block or parameter access. A first version saved registers before it knew the type was a
+  stock one; the patched image then cold-booted half a DSP block (32 frames) off the stock timeline and the exact
+  PCM comparison of `pk_proof_voice_dn2.py` part a failed by -55 dB (envelope block quantisation, not content). The routines
+  now test `type < machines.first` first and touch no register on that path; the comparison is exact again (shift -64).
