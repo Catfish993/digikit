@@ -21,25 +21,37 @@ sources = ["src/dsp/pluck.s"]
 place = "dsp.l2"
 devices = ["dt2"]
 
-# The DSP routine renders the type core/machines assigns to this machine (`machines.pluck.type`).
-[[op]]
-op = "register"
-table = "_dv_table"
-row = ["machines.pluck.type", "_pk_render"]
+# The DSP routine renders the type core/machines assigns to this machine (`machines.pluck.index`).
+[[entry]]
+registry = "voices"
+id = "pluck"
+type = "machines.pluck.index"
+pc = "_pk_render"
 devices = ["dt2"]
 
 # The machine clones SAMPLE (type 0: its permission, per-type byte and DSP selector, so the track plays through the
 # sample renderer where the voice hook takes over). The SRC page: engine slots 0 TUNE and 7 LEV are SAMPLE's own
 # rows, 1 DECAY, 2 PICK, 4 BRIGHT, 5 COLOR are rows this module adds (core/params); slots 3 and 6 stay empty.
 # Values are 0 .. 0x7f00 (UI 0 .. 127); the defaults give a medium-length, slightly damped, lightly combed pluck.
-[[machine]]
+[[entry]]
+registry = "machines"
 id = "pluck"
 name = "Pluck"
 short = "PLK"
 clone_of = 0
-fields = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1, 0x0a]
+f0 = 0xca
+f1 = "params.pluck_decay.index"
+f2 = "params.pluck_pick.index"
+f3 = 0
+f4 = "params.pluck_bright.index"
+f5 = "params.pluck_color.index"
+f6 = 0
+f7 = 0xd1
+f8 = 0x0a
+devices = ["dt2"]
 
-[[param]]
+[[entry]]
+registry = "params"
 id = "pluck_decay"
 name = "Decay"
 short = "DECAY"
@@ -49,7 +61,8 @@ min = 0
 max = 0x7f00
 default = 0x4000
 
-[[param]]
+[[entry]]
+registry = "params"
 id = "pluck_pick"
 name = "Pick position"
 short = "PICK"
@@ -59,7 +72,8 @@ min = 0
 max = 0x7f00
 default = 0x2000
 
-[[param]]
+[[entry]]
+registry = "params"
 id = "pluck_bright"
 name = "Brightness"
 short = "BRIGHT"
@@ -69,7 +83,8 @@ min = 0
 max = 0x7f00
 default = 0x5000
 
-[[param]]
+[[entry]]
+registry = "params"
 id = "pluck_color"
 name = "Excitation colour"
 short = "COLOR"

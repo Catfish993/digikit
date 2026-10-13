@@ -11,7 +11,7 @@
 // delay-slot stores are done. The track is (32 - R14) >> 1; its machine type is the short word cache[t] at
 // _fw_type_cache (the DSP's copy of frame word 0x94 + 2t), read as one 32-bit word that holds two tracks.
 //
-// A registered type (a row {type, pc} in _dv_table, filled by `register` ops of the machine modules) is rendered by
+// A registered type (a row {type, pc} of the registry `voices` = _dv_table, filled by `[[entry]]` rows of the machine modules) is rendered by
 // calling its routine once per track, on the even voice; the odd voice receives a copy of the even voice's block
 // (a synthesised machine is mono; the engine's later stages pan and mix both voices as for a mono sample).
 //
@@ -38,6 +38,7 @@
 .EXTERN _fw_type_cache;
 .EXTERN _fw_render_next;
 .EXTERN _fw_frame;
+.EXTERN _dv_table;
 
 _dv_entry:
     R0 = 32;
@@ -206,4 +207,3 @@ _dv_frame_sw:
     RTS;
 
 .SECTION/DM seg_dmda;
-.PKDATA _dv_table, 136;                    // 16 rows {type, pc} and one empty row that ends the scan

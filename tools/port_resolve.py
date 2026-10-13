@@ -43,6 +43,14 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc.py):
                  followed by scs/scc/bhi/bls), found by the same scan as native/patchkit/src/params.rs. An anchor of
                  kind "sites": addr = the table, len = number of sites, sha256 = their digest.
 
+  cf_ptr         as cf_func (hash, ordinal, offset), but the 4 bytes at entry + offset are an absolute address literal
+                 (a `lea table,An`, a `pea`, an `addi.l #table,Dn`): the anchor is the table the literal points to
+                 (kind data, addr = the table, `src` = the literal, `len` bytes of the table hashed).
+  cf_params_refs, cf_params_bounds   the same scan as cf_params_sites, as many anchors named `<name>.0`, `<name>.1`, ...
+                 in address order: every 32-bit word that points into the parameter table (data, len 4), and every
+                 clamp bound of its readers (code, len 7, the 32-bit immediate at +2), minus the bounds inside
+                 `except = { hash, offset, len }` (the accessor core/params replaces).
+
   cf_reset_init_calls   the two reset-path calls (copy helper, clear helper) at the start of the reset code, found by
                  tools/regions.py `reset_facts` (a masked signature of the clear helper plus the call sites):
                  an 8-byte code anchor.
@@ -283,6 +291,54 @@ def params_sites_digest(refs: list[int], bounds: list[tuple[int, int]]) -> str:
     return sha(b)
 
 
+def cf_func_addr(cf: CfFacts, rule: dict) -> int:
+    """Address of `offset` bytes into the function whose cfdb h_strict hash is `hash` (`ordinal` among equals)."""
+    hits = cf.funcs_by_hash(rule["hash"])
+    ordinal = int(rule.get("ordinal", 0))
+    if ordinal >= len(hits):
+        raise ResolveError(
+            f"{rule['name']}: {len(hits)} function(s) have hash {rule['hash'][:12]}.. (ordinal {ordinal})"
+        )
+    if "ordinal" not in rule and len(hits) != 1:
+        raise ResolveError(
+            f"{rule['name']}: {len(hits)} functions share hash {rule['hash'][:12]}.. and the rule gives no ordinal"
+        )
+    return hits[ordinal] + int(rule["offset"])
+
+
+MULTI_KINDS = ("cf_params_refs", "cf_params_bounds")
+
+
+def resolve_cf_multi(cf: CfFacts, rule: dict) -> list[dict]:
+    """Rules that stand for many anchors, named `<name>.0`, `<name>.1`, ... in address order:
+
+    cf_params_refs    every absolute reference (a 32-bit word) into the parameter table: kind `data`, len 4.
+    cf_params_bounds  every clamp bound of the table's readers (`cmpi.l #N,Dn` and its next byte, 7 bytes): kind
+                      `code`, len 7; the 32-bit immediate is at +2. Bounds inside the code range
+                      `except = { hash, offset, len }` (the accessor the framework replaces) are left out.
+    """
+    t1, count = param_table(cf, rule)
+    refs, bounds = scan_param_sites(cf.main, cf.base, t1, count)
+    if rule["kind"] == "cf_params_refs":
+        return [
+            {"kind": "data", "addr": r, "len": 4, "sha256": sha(cf.bytes_at(r, 4))}
+            for r in refs
+        ]
+    skip = None
+    if "except" in rule:
+        ex = {"name": rule["name"], **rule["except"]}
+        lo = cf_func_addr(cf, ex)
+        skip = (lo, lo + int(ex["len"]))
+    out = []
+    for a, _imm in bounds:
+        if skip and skip[0] <= a < skip[1]:
+            continue
+        out.append(
+            {"kind": "code", "addr": a, "len": 7, "sha256": sha(cf.bytes_at(a, 7))}
+        )
+    return out
+
+
 def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
     if kind == "cf_params_t1":
@@ -301,23 +357,30 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     if kind == "cf_words":
         return resolve_cf_words(cf, rule)
     if kind == "cf_func":
-        hits = cf.funcs_by_hash(rule["hash"])
-        ordinal = int(rule.get("ordinal", 0))
-        if ordinal >= len(hits):
-            raise ResolveError(
-                f"{rule['name']}: {len(hits)} function(s) have hash {rule['hash'][:12]}.. (ordinal {ordinal})"
-            )
-        if "ordinal" not in rule and len(hits) != 1:
-            raise ResolveError(
-                f"{rule['name']}: {len(hits)} functions share hash {rule['hash'][:12]}.. and the rule gives no ordinal"
-            )
-        addr = hits[ordinal] + int(rule["offset"])
+        addr = cf_func_addr(cf, rule)
         n = int(rule["len"])
         return {
             "kind": "code",
             "addr": addr,
             "len": n,
             "sha256": sha(cf.bytes_at(addr, n)),
+        }
+    if kind == "cf_ptr":
+        # a table the code reaches through an absolute 32-bit literal: the anchor is the table (`len` bytes of it
+        # are hashed), `src` the literal
+        src = cf_func_addr(cf, rule)
+        target = int.from_bytes(cf.bytes_at(src, 4), "big")
+        n = int(rule["len"])
+        if not cf.base <= target < cf.base + len(cf.main) - n:
+            raise ResolveError(
+                f"{rule['name']}: the literal {target:#x} is not an address in the MAIN OS image"
+            )
+        return {
+            "kind": "data",
+            "addr": target,
+            "len": n,
+            "src": src,
+            "sha256": sha(cf.bytes_at(target, n)),
         }
     hook = cf.reset["calls"]["copy"]
     if cf.reset["calls"]["clear"] != hook + 4:
@@ -474,20 +537,30 @@ def resolve(syx: Path, root: Path = ROOT) -> tuple[str, str]:
     for rule in module_rules(root):
         if rule.get("devices") and device not in rule["devices"]:
             continue
-        a = (
-            resolve_cf_anchor(cf, rule)
-            if rule.get("cpu") == "cf"
-            else resolve_anchor(dsp, rule)
-        )
-        anchors.append(
-            {
-                "name": rule["name"],
-                "cpu": rule.get("cpu", "sharc"),
-                "mark": rule.get("mark", "D"),
-                "rule": f"{rule['_module']}:{rule['kind']}",
-                **a,
-            }
-        )
+        if rule.get("kind") in MULTI_KINDS:
+            resolved = [
+                (f"{rule['name']}.{i}", a)
+                for i, a in enumerate(resolve_cf_multi(cf, rule))
+            ]
+        else:
+            resolved = [
+                (
+                    rule["name"],
+                    resolve_cf_anchor(cf, rule)
+                    if rule.get("cpu") == "cf"
+                    else resolve_anchor(dsp, rule),
+                )
+            ]
+        for name, a in resolved:
+            anchors.append(
+                {
+                    "name": name,
+                    "cpu": rule.get("cpu", "sharc"),
+                    "mark": rule.get("mark", "D"),
+                    "rule": f"{rule['_module']}:{rule['kind']}",
+                    **a,
+                }
+            )
     # one anchor name may be declared by several modules; they must agree
     seen: dict[str, dict] = {}
     unique = []

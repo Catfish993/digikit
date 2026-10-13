@@ -32,6 +32,7 @@
 .GLOBAL _dv_entry;
 .EXTERN _fw_frame;
 .EXTERN _fw_render_next;
+.EXTERN _dv_table;
 
 _dv_entry:
     DM(_dv_s_r0) = R0;
@@ -212,7 +213,6 @@ _dv_frame_sw:
     RTS;
 
 .SECTION/DM seg_dmda;
-.PKDATA _dv_table, 136;                    // 16 rows {type, pc} and one empty row that ends the scan
 .PKDATA _dv_save, 128;                     // R1-R15, I0-I3, I5, I12, I13, M1-M4
 .PKDATA _dv_s_r0, 4;
 .PKDATA _dv_s_i4, 4;

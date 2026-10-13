@@ -1,24 +1,650 @@
 [module]
 id = "core/machines"
-version = "0.1.0"
+version = "0.2.0"
 name = "Machine types"
 category = "core"
 status = "experimental"
-summary = "Framework that adds machine types to the Digitakt II MAIN OS: relocates the machine tables, patches the dispatch bounds and raises the persistence immediate"
+summary = "Framework that adds machine types to the Digitakt II and Digitone II MAIN OS: ordinary ColdFire assembly that looks the registry up at run time, hooks at the firmware's machine sites, and copies of the stock tables with one row appended per machine"
 requires = []
 conflicts = []
 
-# Content modules list `core/machines` in `requires` and declare `[[machine]]` entries; this module has no objects of
-# its own: patchkit (native/patchkit/src/machines.rs) generates the object and the patches from the declarations and
-# the image (finding 02, "core.machines"). The sites below are the anchors it reads.
+# Content modules list `core/machines` in `requires` and add machines with
+#
+#     [[entry]]
+#     registry = "machines"
+#     id = "pluck"
+#     name = "Pluck"           # the machine list (the UI upper-cases it)
+#     short = "PLK"            # the SRC page header
+#     clone_of = 0             # stock type whose permission, per-type byte, name hint and DSP selector it copies
+#     position = 2             # index in the displayed list (default: the end)
+#     f0 = 0xca ... f8 = 0x0a  # the nine descriptor ID fields; a parameter of core/params as "params.<id>.index"
+#     own_dsp = 1              # Digitone II: the DSP is told the machine's own type
+#
+# patchkit assigns the types `machines.first + k` in canonical module order (symbols machines.first, .count, .rows,
+# .row_size, machines.<id>.index; machines.<id>.index is the type number a DSP object or a voice entry names).
+# Row layout (offsets in src/cf/*/machines.s): the order of the fields below, every field one 32-bit word.
+# Contract, evidence and limits: finding 02, "core.machines".
+
 [targets]
 "dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 "dn2-1.11" = "experimental"
 "dn2-1.12" = "experimental"
 
+# ---- the registry --------------------------------------------------------------------------------------------------
+
+[[registry]]
+name = "machines"
+first = "image.u8(cf.machines.dispatch + 1) + 1"   # `moveq #last,D1` of the dispatch: the stock type count
+max = 32
+region = "cf.expansion"
+
+# 0, 1: the dispatch descriptor's long and short name (std::string characters), built at run time from name and short
+[[registry.field]]
+name = "d_long"
+kind = "u32"
+[[registry.field]]
+name = "d_short"
+kind = "u32"
+[[registry.field]]
+name = "f0"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f1"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f2"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f3"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f4"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f5"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f6"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f7"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "f8"
+kind = "u32"
+default = 10
+[[registry.field]]
+name = "clone_of"
+kind = "u32"
+[[registry.field]]
+name = "position"
+kind = "u32"
+default = 255
+[[registry.field]]
+name = "own_dsp"
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "name"
+kind = "cstr"
+max_len = 23
+[[registry.field]]
+name = "short"
+kind = "cstr"
+max_len = 23
+
 [[claim]]
 resource = "cf.machines.sites"
+
+# ---- copies of the stock tables, one row appended per machine (the clone's row; names are ours) -------------------------
+
+# the displayed order of the stock list (the run-time builder inserts the machines at their positions)
+[[section]]
+name = "mf_list_stock"
+region = "cf.expansion"
+from = { anchor = "cf.machines.tab.list", len = "machines.first * 4" }
+
+# name table: {long, short, header hint} per type
+[[section]]
+name = "mf_names"
+region = "cf.expansion"
+from = { anchor = "cf.machines.tab.names", len = "machines.first * 12" }
+append = { registry = "machines", row = ["$name", "$short", "image.u32(cf.machines.tab.names + 12 * $clone_of + 8)"] }
+
+# permission mask per type
+[[section]]
+name = "mf_permit"
+region = "cf.expansion"
+from = { anchor = "cf.machines.tab.permit", len = "machines.first * 4" }
+append = { registry = "machines", row = ["image.u32(cf.machines.tab.permit + 4 * $clone_of)"] }
+
+# one byte per type (Digitakt II only)
+[[section]]
+name = "mf_pertype"
+region = "cf.expansion"
+devices = ["dt2"]
+from = { anchor = "cf.machines.tab.pertype", len = "machines.first" }
+append = { registry = "machines", row = ["u8(image.u8(cf.machines.tab.pertype + $clone_of))"] }
+
+# the type -> selector word table of the DSP's sample renderer chooser (Digitakt II only)
+[[section]]
+name = "mf_selector"
+region = "dsp.l2"
+devices = ["dt2"]
+from = { anchor = "dsp.machines.selector_table", len = "machines.first * 4" }
+append = { registry = "machines", row = ["image.u32(dsp.machines.selector_table + 4 * $clone_of)"] }
+
+# the type reader of the Digitone II, copied: its callers that want the real type call this copy
+[[section]]
+name = "mf_reader_real"
+region = "cf.expansion"
+devices = ["dn2"]
+from = { anchor = "cf.machines.reader_fn", len = 48 }
+
+# ---- code -----------------------------------------------------------------------------------------------------------
+
+[[object]]
+path = "build/machines-dt2.dko.json"
+sources = ["src/cf/dt2/machines.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[object.externs]
+_mf_first = "machines.first"
+_mf_count = "machines.count"
+_mf_rows = "machines.rows"
+_mf_list_stock = "mf_list_stock"
+_mf_t_dispatch = "hook.cf.machines.dispatch.tail"
+_mf_t_list = "hook.cf.machines.list_entry.tail"
+_mf_t_rank = "hook.cf.machines.rank.tail"
+_mf_t_typearg = "hook.cf.machines.typearg.0.tail"
+_mf_x_typearg = "cf.machines.typearg.exit"
+_mf_t_clone0 = "hook.cf.machines.clone.0.tail"
+_mf_t_clone1 = "hook.cf.machines.clone.1.tail"
+_mf_t_clone2 = "hook.cf.machines.clone.2.tail"
+_mf_t_clone3 = "hook.cf.machines.clone.3.tail"
+_mf_t_clone4 = "hook.cf.machines.clone.4.tail"
+_mf_t_clone5 = "hook.cf.machines.clone.5.tail"
+_mf_t_clone6 = "hook.cf.machines.clone.6.tail"
+
+[[object]]
+path = "build/machines-dn2.dko.json"
+sources = ["src/cf/dn2/machines.s"]
+place = "cf.expansion"
+devices = ["dn2"]
+
+[object.externs]
+_mf_first = "machines.first"
+_mf_count = "machines.count"
+_mf_rows = "machines.rows"
+_mf_list_stock = "mf_list_stock"
+_mf_t_dispatch = "hook.cf.machines.dispatch.tail"
+_mf_t_list = "hook.cf.machines.list_entry.tail"
+_mf_t_group = "hook.cf.machines.group.tail"
+_mf_t_typemap0 = "hook.cf.machines.typemap.0.tail"
+_mf_t_typemap1 = "hook.cf.machines.typemap.1.tail"
+_mf_t_typemap2 = "hook.cf.machines.typemap.2.tail"
+_mf_ft = "cf.machines.frametype"
+_mf_rd = "cf.machines.reader"
+_mf_ow = "cf.machines.owner"
+_mf_rc0 = "cf.machines.reader_call.0"
+_mf_rc1 = "cf.machines.reader_call.1"
+_mf_rc2 = "cf.machines.reader_call.2"
+_mf_rc3 = "cf.machines.reader_call.3"
+_mf_rc4 = "cf.machines.reader_call.4"
+_mf_rc5 = "cf.machines.reader_call.5"
+_mf_rc6 = "cf.machines.reader_call.6"
+_mf_rc7 = "cf.machines.reader_call.7"
+_mf_rc8 = "cf.machines.reader_call.8"
+
+# ---- patches: hooks (code in the objects above), bound writes and repointed table references ------------------------
+
+# dispatch: the descriptor of an added type is its registry row
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.dispatch"
+offset = 0
+to = "mf_dispatch"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.dispatch"
+offset = 0
+to = "mf_dispatch"
+displaced = "run"
+devices = ["dn2"]
+
+# list builder: the tables exist before it runs; it copies mf_list_buf (stock order plus the machines at their positions)
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.list_entry"
+offset = 0
+to = "mf_list_entry"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.list_entry"
+offset = 0
+to = "mf_list_entry"
+displaced = "run"
+devices = ["dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.list_alloc"
+offset = 0x2
+value = "(machines.first + machines.count) * 4"
+width = 2
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.list"
+offset = 0x8
+value = "(machines.first + machines.count) * 4"
+width = 2
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.list"
+offset = 0x2
+value = "mf_list_buf + (machines.first + machines.count) * 4"
+width = 4
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.list"
+offset = 0xc
+value = "mf_list_buf"
+width = 4
+devices = ["dt2", "dn2"]
+
+# rank (Digitakt II): the sort comparator's std::map gets (type, display position) pairs
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.rank"
+offset = 0
+to = "mf_rank"
+displaced = "run"
+devices = ["dt2"]
+
+# group (Digitakt II): SLICE and its clones; (Digitone II: a hook, below). Bound = the last type, branch `bne` -> `bcs`
+
+[[op]]
+op = "write"
+anchor = "cf.machines.group"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.group"
+offset = 0x4
+value = "0x65"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.group"
+offset = 0
+to = "mf_group"
+displaced = "run"
+devices = ["dn2"]
+
+# names: three accessors (long, short, header hint), each bounded by `moveq #last,D1`, each reading a column of the table
+
+[[op]]
+op = "write"
+anchor = "cf.machines.name.0"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.name.0"
+offset = 0x12
+value = "mf_names + 0"
+width = 4
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.name.1"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.name.1"
+offset = 0x14
+value = "mf_names + 4"
+width = 4
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.name.2"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.name.2"
+offset = 0x14
+value = "mf_names + 8"
+width = 4
+devices = ["dt2", "dn2"]
+
+# permission mask table (bound `moveq #last,D2`)
+
+[[op]]
+op = "write"
+anchor = "cf.machines.permit"
+offset = 0x3
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2", "dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.permit"
+offset = 0x1a
+value = "mf_permit"
+width = 4
+devices = ["dt2", "dn2"]
+
+# persistence: the sound loader keeps a stored machine type when (u8)(type + 1) < the immediate
+
+[[op]]
+op = "write"
+anchor = "cf.machines.persist"
+offset = 0x1
+value = "image.u8(cf.machines.persist + 1) + machines.count"
+width = 1
+devices = ["dt2", "dn2"]
+
+# per-type byte (Digitakt II): six bounds and six table references
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.0"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.0"
+offset = 0x8
+value = "mf_pertype"
+width = 4
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.1"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.1"
+offset = 0xc
+value = "mf_pertype"
+width = 4
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.2"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.2"
+offset = 0xc
+value = "mf_pertype"
+width = 4
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.3"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.3"
+offset = 0x10
+value = "mf_pertype"
+width = 4
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.4"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.4"
+offset = 0x8
+value = "mf_pertype"
+width = 4
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.5"
+offset = 0x1
+value = "machines.first + machines.count - 1"
+width = 1
+devices = ["dt2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.pertype.5"
+offset = 0x22
+value = "mf_pertype"
+width = 4
+devices = ["dt2"]
+
+# clone tests (Digitakt II): `type == MANUAL SLICE` also holds for an added clone of it
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.clone.0"
+offset = 2
+to = "mf_clone0"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.clone.1"
+offset = 2
+to = "mf_clone1"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.clone.2"
+offset = 2
+to = "mf_clone2"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.clone.3"
+offset = 2
+to = "mf_clone3"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.clone.4"
+offset = 2
+to = "mf_clone4"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.clone.5"
+offset = 0
+to = "mf_clone5"
+displaced = "run"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.clone.6"
+offset = 6
+to = "mf_clone6"
+displaced = "run"
+devices = ["dt2"]
+
+# type argument of the parameter mapping (Digitakt II)
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.typearg.0"
+offset = 0
+to = "mf_typearg"
+displaced = "run"
+devices = ["dt2"]
+
+# DSP (Digitakt II): the selector table moves to mf_selector; the literal that loads its address follows
+
+[[op]]
+op = "write"
+cpu = "sharc"
+anchor = "dsp.machines.selector_table"
+value = "mf_selector"
+width = 4
+devices = ["dt2"]
+
+# Digitone II: type maps, frame type, type reader (a hook that drops the load and does it itself), owner test
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.typemap.0"
+offset = 0
+to = "mf_typemap0"
+displaced = "run"
+devices = ["dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.typemap.1"
+offset = 0
+to = "mf_typemap1"
+displaced = "run"
+devices = ["dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.typemap.2"
+offset = 0
+to = "mf_typemap2"
+displaced = "run"
+devices = ["dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.frametype"
+offset = 0
+to = "mf_frametype"
+displaced = "drop"
+devices = ["dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.reader"
+offset = 0
+to = "mf_reader"
+displaced = "drop"
+devices = ["dn2"]
+
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.machines.owner"
+offset = 0
+to = "mf_owner"
+displaced = "drop"
+devices = ["dn2"]
+
+[[op]]
+op = "write"
+anchor = "cf.machines.reader_tail"
+offset = 0x2
+value = "mf_reader_real"
+width = 4
+devices = ["dn2"]
+
+# ---- anchor rules ---------------------------------------------------------------------------------------------------
 
 [[anchor_rule]]
 name = "cf.machines.dispatch"
@@ -189,7 +815,7 @@ cpu = "cf"
 kind = "cf_func"
 hash = "294532983de6494ff0bf7999b150febf"
 offset = 0xd6
-len = 6
+len = 8
 mark = "D"
 
 [[anchor_rule]]
@@ -209,7 +835,7 @@ cpu = "cf"
 kind = "cf_func"
 hash = "352d15c2c4edd7717e1afa1924e2754a"
 offset = 0x28c
-len = 6
+len = 10
 mark = "D"
 
 [[anchor_rule]]
@@ -219,7 +845,7 @@ cpu = "cf"
 kind = "cf_func"
 hash = "7e07c7cb054799ae481616fec559037b"
 offset = 0x56
-len = 6
+len = 8
 mark = "D"
 
 [[anchor_rule]]
@@ -535,3 +1161,105 @@ offset = 0xe48
 len = 6
 mark = "D"
 
+
+# ---- sites added for the module version (3b.2): hooks that need a longer window, run-time table pointers and exits
+
+[[anchor_rule]]
+name = "cf.machines.list_entry"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "7c680e4200eed1964a22109ee2d43932"
+offset = 0x0
+len = 8
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.tab.list"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "7c680e4200eed1964a22109ee2d43932"
+offset = 0x50
+len = 28
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.tab.names"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "5fd4ff30eda1da21d9c57e4c68b890fe"
+offset = 0x12
+len = 84
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.tab.permit"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "33592e80678e363e0e66fad4f5d07083"
+offset = 0x1a
+len = 28
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.tab.pertype"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "d5ac854dcaa12d112a91bb9bac8650c5"
+offset = 0x4c
+len = 7
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.typearg.exit"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "810f1ffd5d04a9c50bfc5d261c714ea7"
+offset = 0x82
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.list_entry"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "69828342bcd67f7587f7d51d4c4a6575"
+offset = 0x0
+len = 8
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.tab.list"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "69828342bcd67f7587f7d51d4c4a6575"
+offset = 0x56
+len = 20
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.tab.names"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "feed4ccea8848444496f10f25c10b1bc"
+offset = 0x12
+len = 60
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.tab.permit"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_ptr"
+hash = "36780fb9834dbd3942e3c1be04ae5e07"
+offset = 0x1a
+len = 20
+mark = "D"
