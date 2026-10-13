@@ -67,6 +67,9 @@ class SharcObject:
     relocs: list[SharcReloc]
     rows: list[tuple[int, str]]  # Selache instruction extents: (parcel offset, raw hex)
     toolchain: dict[str, str] = field(default_factory=dict)
+    # Data sections (DM): name -> (bytes in memory order, alignment, is_bss); data symbols: name -> (section, byte offset, global)
+    data: dict[str, tuple[bytes, int, bool]] = field(default_factory=dict)
+    data_symbols: dict[str, tuple[str, int, bool]] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -144,14 +147,66 @@ def _object(obj: Path, source_sha: str, section: str | None) -> SharcObject:
     tc = {"selache_rev": sel.PINNED_REVISION}
     for n in ("selas", "seldump"):
         tc[n + "_sha256"] = hashlib.sha256(_tool(n).read_bytes()).hexdigest()
+    data: dict[str, tuple[bytes, int, bool]] = {}
+    for x in elf.sections:
+        if (
+            x.flags & pk_elf.SHF_ALLOC
+            and not x.flags & pk_elf.SHF_EXECINSTR
+            and x.name != section
+            and x.size
+        ):
+            data[x.name] = (
+                b"" if x.type == pk_elf.SHT_NOBITS else x.data,
+                max(x.align, 4),
+                x.type == pk_elf.SHT_NOBITS,
+            )
+    data_symbols = {
+        s.name: (elf.sections[s.shndx].name, s.value, s.bind != "local")
+        for s in elf.symbols
+        if s.name and 0 < s.shndx < 0xFF00 and elf.sections[s.shndx].name in data
+    }
     return SharcObject(
         source_sha,
         sec.data,
         symbols,
         relocs,
-        [(r.parcel_address, r.raw.hex()) for r in rows],
+        _native_rows([(r.parcel_address, r.raw.hex()) for r in rows], relocs, sec.data),
         tc,
+        data,
+        data_symbols,
     )
+
+
+def _native_rows(
+    selache_rows: list[tuple[int, str]], relocs: list[SharcReloc], section: bytes
+) -> list[tuple[int, str]]:
+    """The instruction rows of the section by our decoder's extents, cross-checked against Selache's listing.
+
+    seldump lists the unrelocated object and splits some 48-bit forms early (Type 3a `DM(I,M) = Ureg` is
+    listed as 4 bytes plus a separate `0000` row), so Selache's rows cannot be the extents. Ours are; the
+    check against Selache is that every row it lists either starts where ours does with the same length, or
+    is a shorter listing of ours whose missing parcels are zero, and that each relocation Selache emitted
+    sits on the start of one of our instructions."""
+    cmp = sel.compare_external_bytes(section)
+    native = [
+        (i.external.parcel_address, i.external.raw.hex()) for i in cmp.instructions
+    ]
+    nat = dict(native)
+    for parcel, raw in selache_rows:
+        if parcel in nat:
+            mine = nat[parcel]
+            if mine != raw and not (
+                mine.startswith(raw) and set(mine[len(raw) :]) <= {"0"}
+            ):
+                raise PkSharcError(
+                    f"parcel {parcel:#x}: Selache lists {raw}, our decoder {mine}"
+                )
+    for r in relocs:
+        if r.parcel not in nat:
+            raise PkSharcError(
+                f"relocation at parcel {r.parcel:#x} is not on one of our instruction starts"
+            )
+    return native
 
 
 # Selache encode bugs found against the firmware image (docs/findings/05-sharc-isa-and-decoding.md): the

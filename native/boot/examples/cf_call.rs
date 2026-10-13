@@ -1,6 +1,8 @@
 //! Call functions on the ColdFire core (the patchkit unit-test harness).
 //!
-//! usage: cf_call SYX REQUEST.json [--state FILE]
+//! usage: cf_call SYX REQUEST.json [--state FILE] [--base-sha HEX]
+//!
+//! `--base-sha` names the stock firmware SYX was made from (a patched image), as `Emulator::new_patched`.
 //!
 //! Boots SYX to ready (or loads `--state`, a save_state blob; written when
 //! missing), then runs the request:
@@ -33,7 +35,11 @@ fn main() {
     let syx = fs::read(&args[1]).unwrap();
     let req: Value = serde_json::from_slice(&fs::read(&args[2]).unwrap()).unwrap();
     let state = args.iter().position(|a| a == "--state").map(|i| args[i + 1].clone());
-    let mut emu = Emulator::new(&syx, None).unwrap();
+    let base_sha = args.iter().position(|a| a == "--base-sha").map(|i| args[i + 1].clone());
+    let mut emu = match &base_sha {
+        Some(b) => Emulator::new_patched(&syx, None, b).unwrap(),
+        None => Emulator::new(&syx, None).unwrap(),
+    };
     let loaded = match &state {
         Some(p) if fs::metadata(p).is_ok() => {
             emu.load_state(&fs::read(p).unwrap()).unwrap();

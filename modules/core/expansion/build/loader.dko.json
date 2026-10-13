@@ -1,0 +1,70 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 2,
+   "section": ".text",
+   "symbol": "pk_segs",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 42,
+   "section": ".text",
+   "symbol": "pk_copy_helper",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 48,
+   "section": ".text",
+   "symbol": "pk_clear_helper",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 4,
+   "hex": "41f90000000020185280671c538022582218e488670622d8538066fae48967e64299538166fa60de4eb9000000004eb9000000004e75",
+   "kind": "text",
+   "name": ".text",
+   "size": 54
+  }
+ ],
+ "source_sha256": "78761c3a5fdffa3436ce30547c314a3d42c6306d253500e07aab823a689c96a1",
+ "symbols": [
+  {
+   "global": true,
+   "name": "pk_clear_helper",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_copy_helper",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_loader",
+   "section": ".text",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "pk_segs",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "21",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}
