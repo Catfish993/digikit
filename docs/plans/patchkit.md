@@ -672,6 +672,12 @@ cold boot per part, seconds of rendered audio per check, single-core, non-PGO la
 - [ ] Independent parts in parallel processes (`--jobs`), bounded to the free cores.
 - [ ] Proof runs use a PGO build of digi-emud when one exists for the device.
 
+- [ ] Quick tier budget (added 2026-10-14): about 60 s wall per proof tool on a busy machine. Measured on the merged
+      branch: DT2 machines 200-515 s and PLUCK 346 s miss it; DT2 voice 30 s and the DN2 tools 44-75 s are close.
+      Fix: one short note per check, shorter measurement windows, parts in parallel by default even under load.
+- Integration rule: the coordinator checks a merge with verify plus the smoke matrix (`--jobs`), not every proof tool;
+  full-tier proofs only before a merge to `main` (AGENTS.md).
+
 After wave 7: DN2 parameter pages and PLUCK on DN2 (as modules), Phase 7 docs, PGO retrain at the wave end,
 browser DSP audio (separate sharc-jit plan) when chosen.
 
