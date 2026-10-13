@@ -53,3 +53,48 @@ def test_the_scan_reproduces_the_recorded_port(version):
     sites = anchors["cf.params.sites"]
     assert len(refs) + len(bounds) == sites["len"] == 111
     assert pr.params_sites_digest(refs, bounds) == sites["sha256"]
+
+
+READER = bytes.fromhex(
+    "202f00040c800000000555c141f9000020007301c0812200e589ed889081203008044e75"
+)
+
+
+def _synthetic_main():
+    """The reader of the row count (a bound; its `lea` holds a reference to the table), a word pointing into the
+    table, and a second bound after it. Loaded at 0x1000; the table is at 0x2000 with 5 rows."""
+    ref = (0x2004).to_bytes(4, "big")
+    other = bytes.fromhex("0c8200000004620400000000")
+    return READER + ref + other
+
+
+def test_multi_site_rules_give_one_anchor_per_site_and_honour_exclusions():
+    from types import SimpleNamespace
+
+    main = _synthetic_main()
+    n = len(READER)
+    cf = SimpleNamespace(
+        main=main,
+        base=0x1000,
+        bytes_at=lambda a, k: main[a - 0x1000 : a - 0x1000 + k],
+    )
+    refs = {"name": "r", "kind": "cf_params_refs"}
+    got = pr.resolve_cf_multi(cf, refs, {})
+    # the `lea` operand in the reader and the standalone word
+    assert [(a["addr"], a["len"], a["kind"]) for a in got] == [
+        (0x1000 + 14, 4, "data"),
+        (0x1000 + n, 4, "data"),
+    ]
+    assert got[1]["sha256"] == pr.sha(main[n : n + 4])
+    bounds = {"name": "b", "kind": "cf_params_bounds"}
+    got = pr.resolve_cf_multi(cf, bounds, {})
+    # the compare in the reader (count) and the one after it (count - 1, next byte 0x62)
+    assert [a["addr"] for a in got] == [0x1000 + 4, 0x1000 + n + 4]
+    assert all(a["len"] == 7 and a["kind"] == "code" for a in got)
+    assert got[0]["sha256"] == pr.sha(main[4:11])
+    # exclude_anchors drops the sites inside an anchor resolved earlier; an unknown name is an error
+    ex = {**bounds, "exclude_anchors": ["fn"]}
+    fn = {"fn": {"addr": 0x1000 + n + 4, "len": 12}}
+    assert [a["addr"] for a in pr.resolve_cf_multi(cf, ex, fn)] == [0x1000 + 4]
+    with pytest.raises(pr.ResolveError):
+        pr.resolve_cf_multi(cf, ex, {})

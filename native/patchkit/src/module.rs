@@ -28,6 +28,109 @@ pub struct Manifest {
     /// Parameter descriptors this module adds (core/params assigns the codes).
     #[serde(default)]
     pub param: Vec<ParamDef>,
+    /// P1: sections copied from the user's image (and extended) at apply time.
+    #[serde(default)]
+    pub section: Vec<SectionDef>,
+    /// P2: registries this module declares (a framework) ...
+    #[serde(default)]
+    pub registry: Vec<RegistryDef>,
+    /// ... and entries it adds to registries (a content module).
+    #[serde(default)]
+    pub entry: Vec<EntryDef>,
+}
+
+/// A number or an expression (`crate::expr`) written either as a TOML integer or as a string.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ExprSrc {
+    Int(i64),
+    Text(String),
+}
+
+impl ExprSrc {
+    pub fn text(&self) -> String {
+        match self {
+            ExprSrc::Int(i) => i.to_string(),
+            ExprSrc::Text(t) => t.clone(),
+        }
+    }
+}
+
+/// P1. `[[section]] name, region, from = { anchor, offset, len, expect_sha256 }, append = { registry, row }`.
+/// The section's bytes are copied from the user's image when the patch is applied (firmware is never stored in the
+/// repository), one row per entry of the registry is appended, and the section is placed in `region`. The symbol
+/// `<name>` is its address and `<name>.size` its length in bytes.
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionDef {
+    pub name: String,
+    pub region: String,
+    #[serde(default)]
+    pub devices: Vec<String>,
+    /// Alignment of the placed section in bytes (default 4).
+    #[serde(default)]
+    pub align: Option<u64>,
+    pub from: SectionFrom,
+    #[serde(default)]
+    pub append: Option<SectionAppend>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionFrom {
+    pub anchor: String,
+    #[serde(default)]
+    pub offset: i64,
+    /// Bytes to copy (expression, static: anchors and image reads only). Default: the rest of the anchor.
+    #[serde(default)]
+    pub len: Option<ExprSrc>,
+    /// sha256 of the copied bytes, needed when the range reaches outside the anchor.
+    #[serde(default)]
+    pub expect_sha256: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionAppend {
+    pub registry: String,
+    /// One expression per word of the row; `u8:EXPR` and `u16:EXPR` emit narrower values (default `u32`). The
+    /// fields of the entry are `$name`, its index is `$index`.
+    pub row: Vec<ExprSrc>,
+}
+
+/// P2. A framework declares a registry; patchkit builds its row table.
+#[derive(Clone, Debug, Deserialize)]
+pub struct RegistryDef {
+    pub name: String,
+    /// Index of the first entry (expression, static).
+    pub first: ExprSrc,
+    /// Most entries the framework can take.
+    pub max: u32,
+    pub region: String,
+    #[serde(default)]
+    pub devices: Vec<String>,
+    #[serde(default)]
+    pub field: Vec<FieldDef>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct FieldDef {
+    pub name: String,
+    /// `u8`, `u16`, `u32`, `cstr` (a pointer to a string placed behind the rows) or `sym` (an expression; a symbol
+    /// of any module, or `<registry>.<id>.index`)
+    pub kind: String,
+    #[serde(default)]
+    pub max_len: Option<usize>,
+    #[serde(default)]
+    pub default: Option<toml::Value>,
+}
+
+/// P2. A content module adds an entry: `[[entry]] registry = "machines", id = "pluck", <field> = value ...`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct EntryDef {
+    pub registry: String,
+    pub id: String,
+    #[serde(default)]
+    pub devices: Vec<String>,
+    #[serde(flatten)]
+    pub fields: BTreeMap<String, toml::Value>,
 }
 
 /// One of a machine's nine descriptor ID fields: a stock parameter code, or a parameter a selected module adds.
@@ -141,10 +244,31 @@ pub struct ObjectRef {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Op {
-    /// `write`, `retarget`, `jump` or `register`
+    /// `write`, `retarget`, `jump`, `hook` or `register`
     pub op: String,
     #[serde(default)]
     pub anchor: String,
+    /// write: `PREFIX.*` repeats the op for every anchor named `PREFIX.<number>` (a multi-site rule of
+    /// `tools/port_resolve.py`), in numeric order; `this` names the current anchor in expressions.
+    #[serde(default)]
+    pub anchors: Option<String>,
+    /// write: the new value (expression) and its width in bytes (1, 2 or 4), range checked
+    #[serde(default)]
+    pub value: Option<ExprSrc>,
+    #[serde(default)]
+    pub width: Option<u32>,
+    /// hook: `jump` (default) or `call` (ColdFire `jsr.l`; the hook returns to the end of the site)
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// hook: `run` (default; the displaced instructions run in `hook.<anchor>.tail`) or `drop`
+    #[serde(default)]
+    pub displaced: Option<String>,
+    /// hook: `cf` or `sharc`; optional, must agree with the anchor
+    #[serde(default)]
+    pub cpu: Option<String>,
+    /// hook: region of the tail (default `cf.expansion` / `dsp.l2`)
+    #[serde(default)]
+    pub place: Option<String>,
     #[serde(default)]
     pub devices: Vec<String>,
     /// byte offset from the anchor address
@@ -179,6 +303,8 @@ pub struct OpReloc {
 #[derive(Clone, Debug, Deserialize)]
 pub struct Claim {
     pub resource: String,
+    #[serde(default)]
+    pub devices: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -203,21 +329,7 @@ impl Module {
             all.push_str(&t);
             objects.push(Dko::parse(&t).map_err(|e| err!("{}: {e}", o.path))?);
         }
-        for op in &manifest.op {
-            match op.op.as_str() {
-                "write" if op.hex.is_none() => {
-                    return Err(err!("{}: write needs hex", manifest.module.id));
-                }
-                "retarget" | "jump" if op.to.is_none() => {
-                    return Err(err!("{}: {} needs to", manifest.module.id, op.op));
-                }
-                "register" if op.table.is_none() || op.row.is_empty() => {
-                    return Err(err!("{}: register needs table and row", manifest.module.id));
-                }
-                "write" | "retarget" | "jump" | "register" => {}
-                o => return Err(err!("{}: unknown op {o}", manifest.module.id)),
-            }
-        }
+        crate::prim::validate_manifest(&manifest)?;
         Ok(Module {
             manifest,
             objects,
