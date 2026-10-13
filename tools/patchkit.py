@@ -5,7 +5,7 @@
     uv run python tools/patchkit.py patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/
     uv run python tools/patchkit.py explain --firmware X.syx --modules a,b              site-by-site account
     uv run python tools/patchkit.py list|inspect|check|verify ...                       passed through
-    uv run python tools/patchkit.py bundle [-o FILE]          ports + modules as one JSON (what patchkit.wasm reads)
+    uv run python tools/patchkit.py bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
     uv run python tools/patchkit.py inject [OUT.syx] [--hot]  load a patched image into the running emulator
 
 `patch` defaults the output to out/patch/<firmware stem>+<modules>.syx and writes plan.json next to it. `explain`
@@ -76,11 +76,16 @@ def flag(args: list[str], name: str) -> str | None:
     )
 
 
-def bundle() -> dict:
-    """Ports and modules as texts: the input of `pk_apply` in patchkit.wasm."""
+def bundle(extra: list[Path] | None = None) -> dict:
+    """Ports and modules as texts: the input of `pk_apply` in patchkit.wasm.
+
+    Only committed modules/ by default; `extra` roots (e.g. out/modules for generated
+    oracles) are for tests, never for the published page.
+    """
     ports = [p.read_text() for p in sorted((ROOT / "devices" / "ports").glob("*.toml"))]
     modules = []
-    for m in sorted((ROOT / "modules").rglob("module.toml")):
+    roots = [ROOT / "modules", *(extra or [])]
+    for m in (m for r in roots for m in sorted(r.rglob("module.toml"))):
         d = tomllib.loads(m.read_text())
         files = {
             o["path"]: (m.parent / o["path"]).read_text() for o in d.get("object", [])
@@ -217,7 +222,10 @@ def main(argv: list[str]) -> int:
     if cmd == "bundle":
         out = Path(flag(args, "-o") or ROOT / "out" / "patch" / "bundle.json")
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(bundle(), sort_keys=True))
+        extra = flag(args, "--modules-dir")
+        out.write_text(
+            json.dumps(bundle([Path(extra)] if extra else None), sort_keys=True)
+        )
         print(out)
         return 0
     if cmd == "patch":

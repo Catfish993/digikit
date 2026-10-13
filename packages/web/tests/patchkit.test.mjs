@@ -75,7 +75,9 @@ test('wasm and CLI produce byte-identical output for fx/master-gain', { skip: !n
 test('wasm refuses what the CLI refuses', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
-  py('tools/patchkit.py', 'bundle', '-o', bundlePath);
+  // the DN2-only oracle is generated under out/modules (it holds a firmware word, so it is not committed)
+  py('tools/pk_oracle_dn2_half.py');
+  py('tools/patchkit.py', 'bundle', '-o', bundlePath, '--modules-dir', join(root, 'out', 'modules'));
   const { x, put, text } = await load();
   const [fp, fl] = put(readFileSync(images.dt2));
   const [bp, bl] = put(readFileSync(bundlePath));
