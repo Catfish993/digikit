@@ -7,7 +7,8 @@ description: Use when creating, building, patching, injecting, testing or explai
 
 A module is our own code (ColdFire C, SHARC+ assembly) plus a manifest. patchkit links it into a stock `.syx`
 (`native/patchkit`), places it in a port region, hooks a firmware site and writes a patched image under `out/patch/`.
-Plan and state: `docs/plans/patchkit.md`; the facts behind it: `docs/findings/21-patchkit-core.md`.
+Plan and state: `docs/plans/patchkit.md`; usage and how it works: `docs/PATCHING.md`; the manifest reference and two
+worked examples: `modules/README.md`; the facts behind it: `docs/findings/21-patchkit-core.md`.
 Run everything from the repo root. Work in a lane only for long or parallel runs (`tools/lane.sh`).
 
 ## Rules (not optional)
@@ -33,12 +34,13 @@ Run everything from the repo root. Work in a lane only for long or parallel runs
 |---|---|
 | New module | `mise run patch:new -- fx/my-drive` (`--cf`, `--dsp`; builds the stubs so the template is known to compile) |
 | Build objects | `mise run patch:build -- modules/fx/my-drive` (`--check` fails when a committed `.dko.json` is stale) |
-| Patch | `mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/my-drive -o out/patch/x.syx` (writes `x.plan.json`) |
+| Patch | `mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/my-drive -o out/patch/x.syx` (writes `x.plan.json`; list required modules too, the command line does not add them) |
 | Explain | `mise run patch:explain -- --firmware ... --modules ...` (before/after listing of each site, allocation map) |
 | Verify | `uv run python tools/patchkit.py verify out/patch/x.syx` (also run by `patch`) |
 | Inject | `mise run inject -- out/patch/x.syx` (into a running daemon; DSP-only change hot, MAIN change by cached coupled cold boot) |
 | Edit loop | `mise run patch:dev -- --modules fx/my-drive [--device dt2\|dn2]`: watches `src/` and `module.toml`; per edit builds, patches, injects, runs the quick tests, prints one line with `edit->running` and `edit->tested` |
-| Test | `mise run patch:test` (matrix in `tests/patchkit_smoke/matrix.toml`; `-- --cell dt2-1.17:fx/my-drive`; `-- --update` records frame goldens) |
+| Test | `mise run patch:test` (matrix in `tests/patchkit_smoke/matrix.toml`; `-- --cell "dt2-1.17:fx/my-drive,test/cf-demo"` with the exact module set of a cell, joined by commas; a new set needs `-- --update` once to record frame goldens) |
+| Port | `mise run port:resolve [-- X.syx]` rewrites `devices/ports/*.toml` from the `[[anchor_rule]]`s (deterministic) |
 | pytest | `uv run python -m pytest tests/patchkit_smoke --slow` |
 
 Measured edit to running (DT2 1.17): DSP-only change about 3 s; a ColdFire (MAIN) change about 13 s (cold boot with DSP;
@@ -48,7 +50,7 @@ DN2 about 6 s; cached by MAIN hash, so an unchanged MAIN restores in under 1 s).
 
 ```
 modules/<category>/<name>/
-  module.toml          id, version, status, [targets], [[object]], [[op]], [[claim]], [[anchor_rule]]
+  module.toml          [module], [targets], [[object]], [[op]], [[claim]], [[anchor_rule]], [[section]], [[registry]], [[entry]]
   src/cf/*.c|*.s       ColdFire (m68k-elf gcc, -mcpu=54418, freestanding, relocatable)
   src/dsp/*.s          SHARC+ (algebraic syntax; every assembled word is re-decoded by our decoder)
   build/*.dko.json     committed objects (patch:build; patch:build --check keeps them current)
@@ -59,7 +61,13 @@ modules/<category>/<name>/
 - `[[object]]`: `path`, `sources`, `place = "dsp.l2" | "cf.expansion"`, optional `devices`, `[object.externs]` (undefined
   symbol -> anchor name).
 - `[[op]]`: `retarget` (rewrite the target of a ColdFire `jsr/bsr/jmp` or a SHARC direct `CALL` at an anchor to a
-  module symbol) and `write` (bytes at anchor + offset with `expect_sha256`; may carry relocs to module symbols).
+  module symbol), `write` (`hex` at anchor + offset with `expect_sha256`, or a typed `value` + `width`, or
+  `anchors = "PREFIX.*"` over many sites; may carry relocs to module symbols) and `hook` (a jump or call to a module
+  routine, with the displaced instructions kept in `hook.<anchor>.tail`). Numbers may be expressions, including
+  `image.u32(anchor + off)` reads of the user's image. `devices = [...]` filters any table by device.
+- `[[section]]` copies a stock table from the user's image at patch time (never stored) and may append a row per
+  registry entry; `[[registry]]` (framework) and `[[entry]]` (content module) are the shared tables. Full reference
+  with an example for every key: `modules/README.md`.
 - A ColdFire object makes patchkit add the built-in `core/expansion` (loader in the flash cave, segment chain behind
   the MAIN OS, DKPR record); code, data and bss are in place before the reset clear. Module code must not assume a
   hosted libc; bss is zeroed by the loader.
@@ -110,5 +118,7 @@ use is justified in the file header (docs/findings/06). Gain 1.0 is bit-identica
     mise run patch:test -- --cell dt2-1.17:fx/master-gain,test/cf-demo
 
 To change the gain in a running emulator without rebuilding: `dsp.patch` (`DM <gain addr> 3f000000`), see finding 17.
-A new module starts from `mise run patch:new -- fx/name --dsp`, which copies these anchor rules and a pass-through hook.
+A new module starts from `mise run patch:new -- fx/name --dsp`, which copies these anchor rules and a pass-through hook
+(it claims `dsp.master.hook`, so it cannot be combined with `fx/master-gain` or `fx/master-drive`).
+The gallery card text is `gallery/README.md` (headings, paragraphs, lists, code; no tables or links).
 Document the result in `docs/findings/` (one file per topic) with marks, not in a handover.

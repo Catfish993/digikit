@@ -48,7 +48,7 @@ earlier claim.
 
 | document | holds |
 | --- | --- |
-| [`PATCHING.md`](PATCHING.md) | How MAIN OS patches work, the rules, and what was verified in the emulator |
+| [`PATCHING.md`](PATCHING.md) | patchkit: usage, how it works, safety and recovery (the pre-patchkit notes are in `archive/PATCHING-pre-patchkit.md`) |
 | [`DIGITONE.md`](DIGITONE.md) | Digitone II 1.10E bring-up in the emulator (older text) |
 | [`CONTRACTS.md`](CONTRACTS.md), [`contracts/`](contracts/) | The early-init and MCF5441x reference contracts (hand-authored evidence, JSON) |
 | [`MIDI-SYSEX-RPC.md`](MIDI-SYSEX-RPC.md) | The live MIDI SysEx / MidiRpc protocol of MAIN OS 1.16 |
