@@ -3051,7 +3051,7 @@ Tools: `tools/frame_diff.py` (TX frame at the end of a scenario, diff against a 
 the mirror tail. `vector_191_handler` (`0x4002dd0c`) copies it with five `memcpy`s from the smoothed mirror
 (`FUN_400d92a2` returns `0x80005b50`): `+0x49a`, `+0x4a1`, `+0x4aa`, `+0x4b2`, `+0x4bd` (mirror-word units from the row
 base) to `0x80005a22`, `0x80005a30`, `0x80005a42`, `0x80005a52`, `0x80005a68`, then 4 bytes to `0x80005a78`. Measured
-by `frame_diff.py` (scenarios of finding 18, one parameter each) the rule is **[V on the 12 DT2 and 11 DN2 parameters
+by `frame_diff.py` (scenarios of finding 18, one parameter each) the rule is **[D on the 16 DT2 and 14 DN2 parameters
 below, by measurement]**:
 
 | device | Fx array index `k` | TX frame offset | DSP address of the frame copy |

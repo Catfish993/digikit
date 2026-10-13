@@ -76,7 +76,11 @@ def main(argv: list[str] | None = None) -> int:
     for n in a.names:
         fr, vals = res[n]
         d = diff(ref_frame, fr)
-        ch = {k.split(" ")[0]: (ref_vals.get(k, 0) & 0xFFFF, v & 0xFFFF) for k, v in vals.items() if ref_vals.get(k) != v}
+        ch = {
+            k.split(" ")[0]: (ref_vals.get(k, 0) & 0xFFFF, v & 0xFFFF)
+            for k, v in vals.items()
+            if ref_vals.get(k) != v
+        }
         print(f"{n}: params {ch}")
         for o, x, y in d:
             print(f"   +{o:#05x}: {x:#06x} -> {y:#06x}")

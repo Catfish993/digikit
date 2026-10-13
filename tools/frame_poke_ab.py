@@ -29,7 +29,11 @@ finally:
 
 
 def run(
-    device: str, file: pathlib.Path, names: list[str], out: pathlib.Path, poke: str | None
+    device: str,
+    file: pathlib.Path,
+    names: list[str],
+    out: pathlib.Path,
+    poke: str | None,
 ) -> dict[str, str]:
     old = os.environ.pop("DSP_FRAME_POKE", None)
     if poke:
@@ -60,7 +64,9 @@ def main(argv: list[str] | None = None) -> int:
         got = run(a.device, a.file, a.scenario, base_dir / f"poke{i}", poke)
         for n in a.scenario:
             same = got[n] == base[n]
-            print(f"{poke:24s} {n:20s} {'identical' if same else 'CHANGED  ' + got[n][:12]}")
+            print(
+                f"{poke:24s} {n:20s} {'identical' if same else 'CHANGED  ' + got[n][:12]}"
+            )
     return 0
 
 
