@@ -15,14 +15,14 @@ import pk_harness  # noqa: E402
 
 @pytest.fixture(scope="module")
 def stock_session(request):
-    """A daemon on the stock firmware of a device (parametrise indirectly with the device)."""
-    device = getattr(request, "param", "dt2")
-    version = {"dt2": "1.17", "dn2": "1.12"}[device]
+    """A daemon on the stock firmware of a device (parametrise indirectly with the device, or "device:version")."""
+    device, _, version = getattr(request, "param", "dt2").partition(":")
+    version = version or {"dt2": "1.17", "dn2": "1.12"}[device]
     cell = pk_harness.Cell(device, version, [])
     session = None
     try:
         session = pk_harness.Session(
-            cell, pk_harness.Goldens(), run_name=f"pytest-{device}"
+            cell, pk_harness.Goldens(), run_name=f"pytest-{device}-{version}"
         )
         session.open()
     except pk_harness.HarnessError as e:

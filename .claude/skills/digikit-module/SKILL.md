@@ -75,8 +75,7 @@ step. Every input asserts no fault, no DSP halt, no main-loop stall (controller 
 `DEV-FW/<module set>/<segment>/<checkpoint>`. A patched firmware that changes nothing visible must equal the stock
 frames. Ready inputs must be fresh (`tools/ready.py`, SOURCE.json `intc_force: false`); the harness refuses stale ones.
 
-Known emulator limit: DT2 1.17 stock halts the DSP (generated core, conditional MODIFY) when PLAY runs in pattern 3 or 4;
-the tour uses pattern 2.
+Known emulator limit: none for the DSP halt in patterns 3 and 4 any more (conditional Type 7a is modelled; finding 05). The generated cores must be regenerated after a `tools/sharc_core` change (`CORE_FINGERPRINT`).
 
 ## Worked example: fx/master-gain (SHARC, both devices)
 

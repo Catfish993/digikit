@@ -151,16 +151,23 @@ def test_append_refuses_the_rom_workspace():
     st.append_block(0x200F_DFFC, bytes(4))
 
 
-def test_against_stock_detects_changed_blocks():
+def test_against_stock_allows_payload_edits_and_detects_header_changes():
     stock = stock_like()
     st = dsp_patch.Stream(stock)
     st.append_block(0x2001_0000, bytes(8))
     patched = bytearray(st.blob)
     patched[HDR + HDR + 3] ^= 1  # inside stock block 1's payload
+    found = bc.check_against_stock(stock, bytes(patched))
+    assert not [f for f in found if f.level == "error"]
+    assert any(f.rule == "P6" for f in found)
+    head = bytearray(st.blob[HDR : 2 * HDR])  # stock block 1's header: move its target
+    head[4] ^= 0x10
+    head[2] = 0
+    for x in bytes(head):
+        head[2] ^= x
+    patched = bytes(st.blob[:HDR]) + bytes(head) + bytes(st.blob[2 * HDR :])
     errors = [
-        f.rule
-        for f in bc.check_against_stock(stock, bytes(patched))
-        if f.level == "error"
+        f.rule for f in bc.check_against_stock(stock, patched) if f.level == "error"
     ]
     assert "P2" in errors
 

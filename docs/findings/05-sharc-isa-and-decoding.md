@@ -1366,3 +1366,67 @@ the five sites' 48-bit words by the PRM's bit positions alone reproduces the
 execution needs for the sample pointer (2-byte int16 steps) and the
 coefficient-table pointer (24-byte row steps) to land where the "One voice
 renders correctly" section shows they must. **[V]**
+
+## Conditional Type 7a: the refusal, the fix and the audit (2026-10-13) **[D]** **[C]**
+
+Stock DT2 1.17 halted the DSP on `PTN` + `TRIG 3`/`4` then PLAY: `native-trap: sharc_core.forms_dag._type_7a:63: stop:
+unsupported Type7a predicate at 0x1cbc93` (finding 17). The instruction is `IF EQ modify(I4, M4)`, cond 0, the only
+conditional Type 7a with a condition other than `NOT SV` (0x17) in the audio code.
+
+- **Cause.** `_type_7a` accepted cond `0x1F` (always) and `0x17` only, and refused any compute in a conditional
+  form. The generated cores are transpiled from this function, so every core stopped at the first other condition.
+- **Rule (PRM p.14-47, "Type 7a ISA/VISA (cond + comp + index modify)").** "If a condition is specified, it affects the
+  entire instruction": compute and index modify alike. SISD tests PEx's condition. In SIMD the compute runs in each
+  PE whose own condition is true; "the index register modify ... occurs based on the logical ORing of the outcome of
+  the conditions tested on both PEs". Implemented in `tools/sharc_core/forms_dag.py` for every condition the core
+  evaluates (`_predicate`, `_predicate_pe`): a modify whose condition is false in every active PE is skipped (no
+  circular wrap, no compute); PEx unresolved with SIMD unresolved keeps the old behaviour (Unknown outcome); a
+  conditional compute with SIMD unresolved is refused (`unresolved SIMD conditional Type7a compute`). Tests:
+  `tests/test_sharc_type7a_cond.py` (SISD true/false, `NE`, SIMD OR of the two PEs, per-PE compute, unconditional SIMD
+  compute) and the changed fail-closed cases in `tests/test_sharc_trace.py`. Golden hashes
+  (`tests/test_sharc_golden.py`) did not change.
+- **Audit of the other refusals reachable in the images.** `forms_dag` and the sibling forms refuse conditions the
+  core cannot evaluate (`_predicate` has no FLAGx_IN, BM or LCE codes: cond 9 to 12, 14, 15, 25 to 28, 30). The
+  sharcdb instruction table (`insn`, aligned, inside a function) for dt2-1.16, dt2-1.17, dn2-1.11 and dn2-1.12 holds
+  no instruction with any of those conditions, in any form: the codes that occur outside `0x1F` are 0 to 4, 6 to 8,
+  13, 16 to 18, 20, 23, 24 and 29, all evaluated by `_predicate`/`_predicate_pe`. Conditional Type 7a in the four
+  images: one `IF EQ` (`0x1cbc93`) and `NOT SV` eleven times (DT2) or twice (DN2); none carries a compute.
+  The refusals "unsupported Type7a circular modify" (L nonzero and B, I or M not concrete) and "unsupported Type6a
+  conditional SIMD" (SIMD unresolved) remain; they are reachable only from a symbolic trace, not from the concrete
+  driver. **[D]**
+- **Proof.** Cores regenerated into `gen-next` dirs (DT2 `out/native/dt2-audio/gen-next`, DN2
+  `out/native/dn2-audio/gen-next`, shared `out/native/shared-core/gen-next`, each with PROVENANCE.txt); the generated
+  lowering `native/sharc/src/fast/lower/gen_forms.rs` regenerated (`g_7a` only), and the workspace Rust tests pass
+  (they run the fast tier against the interpreter on random encodings of every generated form, conditions included).
+  `tests/patchkit_smoke` `test_play_in_patterns_3_and_4_runs_clean`: DT2 1.17 and 1.16, PLAY after `PTN` + `TRIG 3`
+  and `TRIG 4`, no halt. Control run with the old core: the same test fails with the old message. A deliberately
+  undecodable word at `0x1cbc93` (`dsp.patch`) still halts, so the detector keeps its teeth
+  (`test_a_dsp_halt_is_a_failure`). DN2 pins, 61 scenario oracles, no-AOT oracles, tier-quick (20 of 20 equal) and the
+  DT2 tone, oracles and tier-quick (9 of 9 equal) all pass against the `gen-next` cores (`SHARC_GEN_DIR=...
+  tools/verify.py --only ...`, one device per run because `SHARC_GEN_DIR` is global). PyPy is not installed on this
+  machine, so `tests/test_pypy.py` (which includes `test_sharc_trace.py`) could not run here **[O]**; the change uses
+  only constructs the transpiler already accepts (it transpiled with 0 untranslated functions).
+
+## A normal-word access through a byte-address pointer matches the manual **[D]**
+
+Question from finding 20 (selcc): a default (no `bw`/`sw`/`lw`) `DM` access with an index register in byte space
+(`0x2xxxxxxx` and the other byte aliases) is a normal-word access in our core, and a post-modify by M adds `M * 4`.
+Does silicon do the same? Public programming reference (`sc58x-2158x-prm`, printed pages):
+
+- Table 6-12 "Accesses Causing Illegal Address Space Interrupt" (pp.6-31, 6-32): the normal-word access row is Legal
+  in long-word, normal-word, short-word and byte space, and footnote 1 says: "Normal word is the default access size.
+  No interrupt will be raised for any address space. Normal word sized access would be done in byte address space."
+- Table 6-2 "Legal and Illegal Accesses to Byte Space With or Without Address Scaling" (pp.6-10 to 6-12), rows
+  `Rm = dm(In, mod)` and `Rm = dm(mod, In)`: with the I register in byte space, the access is at `In` and the
+  modifier is `scaled_mod = mod << 2` (and `scaled_len = Ln << 2` for a circular buffer); in non-byte space it is
+  unscaled. The text on p.6-9: "Scaling occurs automatically for pointers in the byte-addressed space."
+- Table 6-13 (p.6-33): a SISD normal-word access has no alignment restriction; in SIMD it needs a normal-word
+  boundary.
+- Our core: `_access_modifier_scale` returns 4 for a normal-word access when the address is concrete and not in a
+  normal-word alias (`tools/sharc_core/addressing.py`, from the product datasheet tables) and `assume_nw32` holds (it
+  is true in `tools/sharc_run.py` and the generated cores), 1 for an address inside a normal-word alias; the circular
+  length is scaled alike (`_post_modify_index`). That is the manual's rule. selcc's `0x2xxxxxxx` pointers with index
+  steps of 4 therefore address the same words on silicon.
+- Not covered: banks with the IMDW (40-bit) bit set scale by 6 (PRM p.7-7); no DT2/DN2 code path in this work sets it
+  (the voice and master code runs on 32-bit blocks), but the register is not read by anything we emulate **[O]**.
+  Misaligned long-word accesses are forced to the lower aligned address on silicon (p.6-32) and are not modelled.

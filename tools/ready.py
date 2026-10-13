@@ -143,6 +143,15 @@ def main(argv: list[str]) -> int:
         import sharcldr
 
         stream = dsp_patch.section_blob(a.dsp_syx or syx, 7)
+        # The emulator flattens the block list and never runs the SHARC boot ROM: refuse what the ROM would.
+        import sharc_bootcheck
+
+        bad = sharc_bootcheck.check(stream).errors
+        if bad:
+            raise SystemExit(
+                "the SHARC boot ROM would reject this DSP stream:\n  "
+                + "\n  ".join(str(f) for f in bad)
+            )
         memory = sharcldr.LoadedMemory.from_stream(
             stream, sharcldr.parse_blocks(stream)
         )

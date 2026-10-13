@@ -364,9 +364,10 @@ def check(blob: bytes, core_sign: int = CORE0_SIGN) -> Report:
 
 
 def check_against_stock(stock: bytes, patched: bytes) -> list[Finding]:
-    """The patched stream must be STOCK with whole blocks inserted before its FINAL block, the
-    stock blocks otherwise byte-identical except for the FIRST ARGUMENT growth (H12) and
-    HDRCHK recomputed with it."""
+    """The patched stream must be STOCK with whole blocks inserted before its FINAL block. Stock
+    block headers are unchanged (a FIRST block's ARGUMENT grows with the insertion, H12, and its
+    HDRCHK with it); payload bytes may be edited in place (reported, P6); the FINAL block is
+    untouched."""
     out: list[Finding] = []
     a, b = check(stock), check(patched)
     if not a.ok:
@@ -420,8 +421,20 @@ def check_against_stock(stock: bytes, patched: bytes) -> list[Finding]:
                         f"FIRST block {i} changed beyond its next pointer (grew {grew:#x})",
                     )
                 )
+        elif sraw[:HEADER] != praw[:HEADER]:
+            out.append(
+                Finding("error", "P2", s.offset, f"stock block {i}: header changed")
+            )
         elif sraw != praw:
-            out.append(Finding("error", "P2", s.offset, f"stock block {i} changed"))
+            n = sum(x != y for x, y in zip(sraw[HEADER:], praw[HEADER:], strict=True))
+            out.append(
+                Finding(
+                    "info",
+                    "P6",
+                    s.offset,
+                    f"stock block {i} {s.target:#x}+{s.count:#x}: {n} payload bytes edited in place",
+                )
+            )
     if patched[pb[final_at + extra].offset :] != stock[sb[final_at].offset :]:
         out.append(
             Finding("error", "P2", pb[final_at + extra].offset, "FINAL block changed")
