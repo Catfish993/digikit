@@ -17,6 +17,7 @@ pub mod controller;
 pub mod dispatch;
 pub mod events;
 pub mod firmware;
+pub mod health;
 pub mod proto;
 #[cfg(all(feature = "server", unix))]
 pub mod server;

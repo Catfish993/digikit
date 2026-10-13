@@ -34,6 +34,7 @@ use crate::{
     cards::{self, CardPaths},
     events::Events,
     firmware::{self, Analysis},
+    health::{self, Alert, Health},
     proto::{Params, RpcError, RpcResult, base64, code},
 };
 
@@ -415,6 +416,9 @@ struct Actor {
     want_auto_no: bool,
     remember_card: bool,
     quit: bool,
+    /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
+    health: Health,
+    health_tick: u32,
 }
 
 fn no_firmware<T>() -> Result<T, RpcError> {
@@ -428,6 +432,15 @@ fn frames(runtime: &Runtime) -> u64 {
 #[cfg(not(feature = "coupled-audio"))]
 fn frames(_runtime: &Runtime) -> u64 {
     0
+}
+
+#[cfg(feature = "coupled-audio")]
+fn dsp_halted(runtime: &Runtime) -> Option<String> {
+    runtime.dsp_halted()
+}
+#[cfg(not(feature = "coupled-audio"))]
+fn dsp_halted(_runtime: &Runtime) -> Option<String> {
+    None
 }
 
 impl Actor {
@@ -462,6 +475,13 @@ impl Actor {
             want_auto_no: false,
             remember_card: config.remember_card,
             quit: false,
+            health: Health::new(
+                std::env::var("DIGI_STALL_MS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(health::DEFAULT_STALL_MS),
+            ),
+            health_tick: 0,
         }
     }
 
@@ -521,6 +541,44 @@ impl Actor {
     }
 
     // ----- shared helpers -------------------------------------------------
+
+    /// Feed one chunk's status to the health watcher and emit its alerts.
+    /// The DSP halt flag is read every 16th call (it needs the audio session).
+    fn watch(&mut self, status: &elektron_native_boot::Status) {
+        self.health_tick = self.health_tick.wrapping_add(1);
+        let dsp_halted = if self.health_tick % 16 == 1 {
+            self.runtime.as_ref().and_then(dsp_halted)
+        } else {
+            None
+        };
+        let elapsed = self
+            .runtime
+            .as_ref()
+            .map_or(0, Runtime::elapsed_instructions);
+        let obs = health::Observation {
+            elapsed,
+            hits: status.mainloop_hits,
+            main_ui: status.main_ui_reached,
+            cpu_running: status.cpu_state == "running",
+            error: status.error.clone(),
+            dsp_halted,
+        };
+        for alert in self.health.observe(self.epoch, &obs) {
+            match alert {
+                Alert::Fault(error) => self.emit(
+                    "fault",
+                    json!({"error": error, "pc": status.pc, "cpu_state": status.cpu_state}),
+                ),
+                Alert::Halt(reason) => self.emit("halt", json!({"reason": reason})),
+                Alert::Stall { hits, stalled_ms } => self.emit(
+                    "stall",
+                    json!({"mainloop_hits": hits, "stalled_ms": stalled_ms, "pc": status.pc,
+                           "cpu_state": status.cpu_state}),
+                ),
+                Alert::StallEnd { hits } => self.emit("stall.end", json!({"mainloop_hits": hits})),
+            }
+        }
+    }
 
     fn emit(&self, kind: &str, data: Value) {
         let (icount, elapsed) = self
@@ -900,6 +958,7 @@ impl Actor {
         }
         let runtime = self.runtime.as_mut().expect("runtime");
         let snapshot = runtime.step_chunk(budget.min(STEP_CHUNK));
+        self.watch(&snapshot.status);
         if let Some(error) = self.card_error() {
             Err(format!("card image read: {error}"))
         } else {
@@ -1017,6 +1076,7 @@ impl Actor {
             budget = budget.min(next.at.saturating_sub(elapsed));
         }
         let snapshot = runtime.step_chunk(budget.max(1) as u32);
+        self.watch(&snapshot.status);
         if snapshot.frame.is_some() {
             self.held_frame = snapshot.frame.clone();
         }
@@ -1114,6 +1174,9 @@ impl Actor {
             "input.schedule" => self.rpc_schedule(&p).map(Some),
             "inputs.recorded" => self.rpc_recorded().map(Some),
             "framebuffer.get" => self.rpc_framebuffer().map(Some),
+            "mem.cf.peek" => self.rpc_mem_peek(&p).map(Some),
+            "mem.cf.poke" => self.rpc_mem_poke(&p).map(Some),
+            "watchdog.config" => self.rpc_watchdog(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
             "audio.report" => self
                 .with_runtime(|r| Ok(r.audio_status().unwrap_or(Value::Null)))
@@ -1230,8 +1293,42 @@ impl Actor {
             "controller_cpu_ns": elektron_native_boot::thread_cpu_ns(),
             "firmware": loaded, "cf": cf, "audio": audio, "job": job,
             "scheduled_inputs": scheduled, "frame_revision": frame,
+            "heartbeat": {"mainloop_hits": cf["mainloop_hits"], "stalled": self.health.stalled(),
+                          "stall_count": self.health.stall_count, "stall_ms": self.health.stall_ms,
+                          "mainloop_pc": cf["mainloop_pc"]},
             "dsp_frames": frames(runtime),
         }))
+    }
+
+    /// `watchdog.config {stall_ms}`: set the stall threshold in emulated ms (0 disables) and
+    /// report the heartbeat.
+    fn rpc_watchdog(&mut self, p: &Params) -> RpcResult {
+        if let Ok(ms) = p.u64("stall_ms") {
+            self.health.stall_ms = ms;
+        }
+        let hits = self.runtime.as_mut().map(|r| r.status().mainloop_hits);
+        Ok(json!({"stall_ms": self.health.stall_ms, "stalled": self.health.stalled(),
+                  "stall_count": self.health.stall_count,
+                  "mainloop_hits": hits}))
+    }
+
+    /// `mem.cf.peek {addr}`: one guest longword, read without side effects.
+    fn rpc_mem_peek(&mut self, p: &Params) -> RpcResult {
+        let addr = u32::try_from(p.u64("addr")?)
+            .map_err(|_| RpcError::bad_params("addr is a 32-bit byte address"))?;
+        let value = self.with_runtime(|r| Ok(r.peek32(addr)))?;
+        Ok(json!({"addr": addr, "value": value}))
+    }
+
+    /// `mem.cf.poke {addr, value}`: write one longword of SDRAM (a test aid: break the guest on
+    /// purpose to exercise `fault`/`stall`). Not part of the replay record.
+    fn rpc_mem_poke(&mut self, p: &Params) -> RpcResult {
+        let addr = u32::try_from(p.u64("addr")?)
+            .map_err(|_| RpcError::bad_params("addr is a 32-bit byte address"))?;
+        let value = u32::try_from(p.u64("value")?)
+            .map_err(|_| RpcError::bad_params("value is a 32-bit word"))?;
+        self.with_runtime(|r| r.poke32(addr, value).map_err(RpcError::bad_params))?;
+        Ok(json!({"addr": addr, "value": value}))
     }
 
     fn rpc_run_mode(&mut self, p: &Params) -> RpcResult {

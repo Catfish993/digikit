@@ -409,6 +409,10 @@ impl CoupledRuntime {
     pub fn pcm_tap(&self) -> Option<&PcmTap> {
         self.audio.as_ref()?.pcm_tap.as_ref()
     }
+    /// Why the DSP stopped, once it has (set when a frame exchange fails).
+    pub fn dsp_halted(&self) -> Option<String> {
+        self.audio.as_ref().and_then(|a| a.halted())
+    }
     /// DSPI2 frames handed to the DSP worker (one per 0.667 ms of audio).
     pub fn frames_sent(&self) -> u64 {
         self.audio.as_ref().map_or(0, |a| a.handle.frames_sent())
@@ -921,6 +925,9 @@ mod coupled {
 
         /// True when the device ring plus the feeder's pending input holds
         /// at least `pace_seconds`. False without a player.
+        pub(super) fn halted(&self) -> Option<String> {
+            self.shared.borrow().halted.clone()
+        }
         pub(super) fn queue_ahead(&self) -> bool {
             self.player.as_ref().is_some_and(|p| {
                 let q = p.queue_state();
