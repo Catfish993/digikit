@@ -541,9 +541,11 @@ Content modules use `[[entry]]` only.
       generator path keeps working until 3b.3.
 - [x] 3b.2 Frameworks rewritten as modules against this spec; routines unit-tested on the ColdFire call harness with
       hand-built tables (lane b), then content modules migrated to `[[entry]]`. Done 2026-10-14 (lane `b`); results below.
-- [ ] 3b.3 Integration: every proof passes on the module version (pk_proof_machines DT2 1.16/1.17, pk_proof_pluck
+- [x] 3b.3 Integration: every proof passes on the module version (pk_proof_machines DT2 1.16/1.17, pk_proof_pluck
       DT2 1.16/1.17, DN2 machine and voice proofs, smoke matrix, wasm = CLI); then delete `machines.rs`,
-      `machines/dn2.rs`, `params.rs` and the old manifest keys.
+      `machines/dn2.rs`, `params.rs` and the old manifest keys. Done 2026-10-14 (lane b `a1cf1df`, merged): all seven
+      proofs PASS, the smoke matrix passes 13 of 13 cells (DT2 1.17 and 1.16, DN2 1.12), verify passes. patchkit
+      has no framework-specific code left (6,257 lines, of which the primitives are `expr.rs` and `prim.rs`).
 
 ### Phase 3b.2 results (2026-10-14, lane `b`)
 
