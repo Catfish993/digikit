@@ -442,6 +442,14 @@ fn dsp_halted(runtime: &Runtime) -> Option<String> {
 fn dsp_halted(_runtime: &Runtime) -> Option<String> {
     None
 }
+#[cfg(feature = "coupled-audio")]
+fn sink_underruns(runtime: &Runtime) -> Option<u64> {
+    runtime.sink_underruns()
+}
+#[cfg(not(feature = "coupled-audio"))]
+fn sink_underruns(_runtime: &Runtime) -> Option<u64> {
+    None
+}
 
 impl Actor {
     fn new(rx: mpsc::Receiver<Command>, config: Config) -> Self {
@@ -546,8 +554,14 @@ impl Actor {
     /// The DSP halt flag is read every 16th call (it needs the audio session).
     fn watch(&mut self, status: &elektron_native_boot::Status) {
         self.health_tick = self.health_tick.wrapping_add(1);
-        let dsp_halted = if self.health_tick % 16 == 1 {
+        let sample = self.health_tick % 16 == 1;
+        let dsp_halted = if sample {
             self.runtime.as_ref().and_then(dsp_halted)
+        } else {
+            None
+        };
+        let sink_underruns = if sample {
+            self.runtime.as_ref().and_then(sink_underruns)
         } else {
             None
         };
@@ -562,6 +576,7 @@ impl Actor {
             cpu_running: status.cpu_state == "running",
             error: status.error.clone(),
             dsp_halted,
+            sink_underruns,
         };
         for alert in self.health.observe(self.epoch, &obs) {
             match alert {
@@ -576,6 +591,9 @@ impl Actor {
                            "cpu_state": status.cpu_state}),
                 ),
                 Alert::StallEnd { hits } => self.emit("stall.end", json!({"mainloop_hits": hits})),
+                Alert::Underrun { new, total } => {
+                    self.emit("underrun", json!({"new": new, "total": total}))
+                }
             }
         }
     }
@@ -1296,6 +1314,7 @@ impl Actor {
             "scheduled_inputs": scheduled, "frame_revision": frame,
             "heartbeat": {"mainloop_hits": cf["mainloop_hits"], "stalled": self.health.stalled(),
                           "stall_count": self.health.stall_count, "stall_ms": self.health.stall_ms,
+                          "underrun_count": self.health.underrun_count,
                           "mainloop_pc": cf["mainloop_pc"]},
             "dsp_frames": frames(runtime),
         }))

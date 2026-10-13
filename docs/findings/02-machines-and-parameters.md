@@ -1030,11 +1030,15 @@ generated patch checks the shape of the bytes it replaces (`moveq #6,D1; cmp.l .
 otherwise. No patchkit op was added: the generator creates the objects and the patches itself; the "relocate a table"
 need is `relocated_table`-style copying inside `generate()`.
 
-Placement: **the shims go to `cf.flash_cave`, the tables and strings to `cf.expansion`.** The emulator fetches ColdFire
-instructions only from the MAIN OS image (`runtime.rs step_once`: a PC outside `[0x40000400, +len)` is
-`UnsupportedGuestPc`), so code in `cf.expansion` cannot run there. The cave holds 2,108 bytes: core/machines costs about
-316 B of code for one type and about 80 B more per added type (372 and 452 B used, loader included). **[O]** The model
-should execute from RAM, then the code can move.
+Placement: **the shims and the tables both go to `cf.expansion`; `cf.flash_cave` holds the expansion loader only** (2026-10-13,
+**[C]** the first version put the shims in the cave because the emulator fetched ColdFire instructions from the MAIN OS image
+only, `UnsupportedGuestPc`; the native runtime executes from DDR and SRAM now, finding 07 "ColdFire code outside the MAIN
+image"). Hardware executes from DDR (ACR0 covers it); the loader copies the code before the caches are on. Region use on
+DT2 1.17 with `core/machines` + `machines/xslice` + `test/machine-clone`: `cf.flash_cave` 56 of 2,108 bytes (the loader;
+before: about 316 B of shim code for one type and about 80 B more per added type, 372 and 452 B with the loader, and the
+cave capped the number of types), `cf.expansion` 744 B (code and tables). Evidence **[D]**: `tools/pk_proof_machines.py` on
+1.17 and on 1.16 passes 33 of 34 checks each (the one failure is below), the smoke goldens of the XSLICE and XClone cells on 1.17 and 1.16 are unchanged
+(frame hashes equal to the cave version), `tests/test_patchkit_expansion.py` asserts the placement.
 
 ### Corrections to the earlier XSLICE work **[C]**
 
@@ -1096,9 +1100,14 @@ should execute from RAM, then the code can move.
 The proof needed one emulator addition: `card.overlay {path}` (native/{card,machine,boot,control}: the guest's writes to
 the eMMC as sparse sectors) so a card with a patched firmware's project can be mounted by another firmware.
 
+- **[O]** Part d of the proof, `XClone`'s MOD destination frames equal to MANUAL SLICE's, **fails on 1.17 and 1.16 (and on 1.17 with the cave
+  placement and the old runtime too** (checked at `ff5a1a5`: same 14-frame comparison, XSLICE passes, XClone differs; PCM,
+  type, persistence and sequencer checks of XClone pass). Not caused by the placement or the runtime change; which frame
+  differs was not examined.
+
 ### Open **[O]**
 
-- Hardware: never flashed. Executing the shims from the flash cave is the same as the old flash design; the DSP selector
+- Hardware: never flashed. The shims now run from DDR (`cf.expansion`), where the loader copies them at reset; the DSP selector
   block lies in a region the real SHARC boot ROM has not been shown to accept (finding 06).
 - DN2: no support (below).
 - Other tests of the clone's type may exist that no run exercised (p-lock edits of the machine's own parameters,

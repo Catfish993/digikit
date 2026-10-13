@@ -982,8 +982,8 @@ pub fn generate(
         what: "DSP selector table".into(),
     });
 
-    // ---- the objects: the shims go to the flash cave (the emulator fetches instructions from the MAIN OS image
-    // only), the tables and strings to the expansion region
+    // ---- the objects: the shims and the tables both go to the expansion region (the native core executes from DDR);
+    // the flash cave keeps the expansion loader only
     let obj = |sections: Vec<DkoSection>, symbols: Vec<DkoSymbol>, relocs: Vec<DkoReloc>| Dko {
         format: FORMAT,
         arch: "cf".into(),
@@ -1037,7 +1037,7 @@ pub fn generate(
     );
     Ok(Generated {
         objects: vec![
-            (code, "cf.flash_cave"),
+            (code, "cf.expansion"),
             (tables, "cf.expansion"),
             (selector, "dsp.l2"),
         ],

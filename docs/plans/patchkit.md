@@ -348,7 +348,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 - Dev loop: `patch:new` (template builds), `patch:dev`. Edit to running on DT2 1.17: DSP change 2.9 s (cached MAIN),
   ColdFire change 12.6 s (cold boot); edit to quick tests done 4.8 s and 14.5 s.
 - Open: ready inputs of 1.16 and 1.11 are not in the matrix (`snapshots/*-ready` built before the INTC-force fix; the
-  harness refuses stale ready inputs); `underrun` is not emitted; the conditional Type 7a halt.
+  harness refuses stale ready inputs; DT2 1.16 cells were added 2026-10-13, see "Phase 5 follow-ups"); the `underrun` event was added later (finding 17); the conditional Type 7a halt.
 
 ### Phase 3: frameworks
 
@@ -377,8 +377,9 @@ and `expect_dsp`; two new matrix cells.
 - Corrections to the old XSLICE: an illegal 8-byte ColdFire instruction in `machinepatch.build_rank_shim` (images from
   `tools/machinebuild.py` fault on a real ColdFire), the list builder's fixed seven-entry allocation, a missing
   `type == 6` site in the frame builder.
-- Constraint found: the emulator fetches ColdFire code only from the MAIN OS image, so framework code lives in the
-  2,108-byte flash cave (about 80 B per added type, 452 B for two). Open: execute from RAM in the model.
+- Constraint found and **lifted** (lane `a`, 2026-10-13): the emulator fetched ColdFire code only from the MAIN OS image,
+  so the framework code lived in the flash cave. The native runtime executes from DDR and SRAM now (finding 07); the shims
+  are in `cf.expansion` and the cave holds the 56-byte loader only (was 372 to 452 B).
 - DSP binding: extern symbol `machines.<id>.type`; the DSP's selector table is relocated (word per added type, `selector`
   in the manifest picks the render path).
 - Not done: DN2, hardware, p-lock and parameter-effect checks of a new machine, types above 8.
@@ -460,6 +461,19 @@ the same, but DN2's machines are FM engines, so new DN2 machines need the DSP vo
 - Open: no DSP audio and no cold boot in the browser; the gallery has one real module; hardware untested; the
   emulator page's own `fetch('/emulator-core.wasm')` is root-absolute (breaks under a Pages sub-path, as before).
 
+### Fidelity follow-ups (2026-10-13, lane `a`)
+
+- ColdFire code outside the MAIN image runs in the native runtime (DDR and SRAM, decode cache evicted by CPU stores and
+  by DMA ranges; fused loops, HLE and watch bits stay MAIN-only). Unit test with run-time-written and self-modified code;
+  paired A/B on the DN2 image: ColdFire thread CPU 0.5221 vs 0.5204 s per audio second, PCM identical. Finding 07.
+- `core/machines` shims moved to `cf.expansion`: the cave holds the 56-byte loader only (was 372 to 452 B). The XSLICE
+  and XClone goldens on 1.17 and 1.16 are unchanged. One pre-existing failure of the proof (XClone MOD destination
+  frames), finding 02.
+- `underrun` event and `status.heartbeat.underrun_count` (finding 17).
+- DT2 1.16 in the matrix (stock, `fx/master-gain` + `test/cf-demo`, `fx/master-drive`, `core/machines` + `machines/xslice`),
+  fresh ready inputs (`tools/ready.py dt2 --syx Digitakt_II_OS1.16.syx --out out/ready-pk-dt2-116 --force`), goldens
+  recorded: 4 of 4 PASS (29 to 36 checks, 45 to 98 s per cell). This closes the pre-flash item 11 for the emulator side.
+
 ### Phase 6: agent tooling (about 2-3 days, parallel with Phases 1-3)
 
 - [x] `tools/fw.py`: compact query CLI with `batch` mode and cached graphs; skill file.
@@ -498,7 +512,7 @@ best mitigation available. Ranked by what a failure costs.
 | # | Risk | Evidence now | Mitigation |
 |---|---|---|---|
 | 1 | The boot ROM rejects the patched DSP stream (it applies a rule the manual does not state) | All stated rules checked on stock, gain, drive and canary streams (finding 06). A rejected stream is a **boot hang**: the ColdFire polls the SHARC handshake with no timeout | First hardware step is the image that changes nothing (`tools/patched_image.py`), then a DSP change with no appended block (`fx/master-gain` is a 3-byte in-place edit plus a 148-byte record block: take the smallest first), then the append. Keep the stock `.syx` and the STARTUP-menu recovery (0.2) at hand |
-| 2 | Cycle cost: the emulator counts instructions, silicon counts cycles (L2 fetch and data wait states, cache misses on first execution, bank conflicts, SIMD memory pairs) | `fx/master-drive`: 20 to 968 DSP instructions per block; idle share 50 % (DN2), 68 % (DT2) measured in instructions (finding 22, 0.7) | Budget a module at no more than a quarter of the measured idle instructions per block; keep the hot loop short enough to stay in the cache; the neutral setting bypasses the heavy path where the module allows it. Listen for clicks at the first run; there is no `underrun` event in the emulator |
+| 2 | Cycle cost: the emulator counts instructions, silicon counts cycles (L2 fetch and data wait states, cache misses on first execution, bank conflicts, SIMD memory pairs) | `fx/master-drive`: 20 to 968 DSP instructions per block; idle share 50 % (DN2), 68 % (DT2) measured in instructions (finding 22, 0.7) | Budget a module at no more than a quarter of the measured idle instructions per block; keep the hot loop short enough to stay in the cache; the neutral setting bypasses the heavy path where the module allows it. Listen for clicks at the first run; the `underrun` event (finding 17) reports the host audio sink only, not the hardware's DSP load |
 | 3 | Real DDR contents and timing: the emulator fills DDR from the stream's FILL blocks and skips the initcode's clock and DMC calibration | No patch writes DDR; sample RAM use is stock | None needed while modules stay out of DDR; keep it that way in v1 |
 | 4 | Boot time grows with the stream: the ColdFire sends one byte per DSPI frame and handshake poll; the canary doubles the section | Gain +148 B, drive +620 B on 321 KB; the transfer time per byte was not measured against hardware | Ship modules small; use the canary only on the emulator |
 | 5 | SPI slave boot expects multiples of 1024 bytes (HWR 40-21); the stock section is not | Stock boots with a short tail; patched tails differ (finding 06 (d)) | If the first appended image hangs while the in-place-only image boots, pad the appended block so that the section length keeps the stock value mod 1024 (505 including the command byte); a one-line change in `append_block` |
@@ -507,7 +521,7 @@ best mitigation available. Ranked by what a failure costs.
 | 8 | Float behaviour on silicon against the core: denormal flush, saturation mode, reciprocal approximation (`approx_recips`) in module code | Seven DN2 PCM pins and 61 oracles exact against the core; module code unit-run and PCM-proved in the emulator only | Prefer plain add, multiply and compare in module code; check a module's output against its emulator render by ear and by the harness PCM test before trusting a new operation |
 | 9 | Interrupts, DMA and ColdFire timing under real load (the DSPI frame cadence, SSI underruns, hot sample loading): the emulator is deterministic | Coupled runs and 35 s tours pass; 40-input stress in the harness | Hardware soak after the first success |
 | 10 | The MAIN OS image validator (`0x400d9e4c`) and the real flash writer were not run; flash cap 3 MiB and the HMAC trailer are checked by the emulated bootstrap | 0.2 [V] for the bootstrap; patched containers rebuild stock byte for byte | The harmless image first; the updater's own checks reject a bad container before it writes (the bootstrap runs from section 2, which patchkit never touches) |
-| 11 | Firmware version: the device runs 1.16; most proofs ran on 1.17 (and DN2 1.12). 1.16 has the same DSP section; its MAIN differs, `fx/master-drive` was not run on 1.16, and 36 of 135 DT2 FX oracles differ on 1.17 | Port files for 1.16 exist; 1.16 PLAY in patterns 3 and 4 passes | Run the module test tour on 1.16 in the emulator before the first flash (`DIGI_PK_READY_DT2_116`, `tests/patchkit_smoke`), and flash the 1.16 port |
+| 11 | Firmware version: the device runs 1.16; most proofs ran on 1.17 (and DN2 1.12). 1.16 has the same DSP section; its MAIN differs, `fx/master-drive` now passes the 1.16 smoke cell, and 36 of 135 DT2 FX oracles differ on 1.17 | Port files for 1.16 exist; 1.16 PLAY in patterns 3 and 4 passes | Done in the emulator for `fx/master-gain`, `fx/master-drive`, `core/machines` + `machines/xslice` on 1.16 (matrix cells, "Fidelity follow-ups"); flash the 1.16 port |
 | 12 | DN2 patches cannot be tested on hardware at all (no device on the desk) | Emulator only | Say so on the gallery page: DN2 modules are emulator-tested only |
 | 13 | Saved projects and kits made on patched firmware read back on stock firmware (Phase 3 not done) | Not tested | Do not save over a stock project while testing; back up the card |
 | 14 | Analog level: a drive or gain module can raise the output above the converter's range | Q31 clip in the emulator, neutral default is bit-exact | Start at the neutral setting with the monitor volume low |

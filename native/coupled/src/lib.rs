@@ -413,6 +413,11 @@ impl CoupledRuntime {
     pub fn dsp_halted(&self) -> Option<String> {
         self.audio.as_ref().and_then(|a| a.halted())
     }
+    /// Underrun events of the audio sink since the session began (`None`
+    /// without a player: no device, no sink capture).
+    pub fn sink_underruns(&self) -> Option<u64> {
+        self.audio.as_ref().and_then(|a| a.sink_underruns())
+    }
     /// DSPI2 frames handed to the DSP worker (one per 0.667 ms of audio).
     pub fn frames_sent(&self) -> u64 {
         self.audio.as_ref().map_or(0, |a| a.handle.frames_sent())
@@ -927,6 +932,9 @@ mod coupled {
         /// at least `pace_seconds`. False without a player.
         pub(super) fn halted(&self) -> Option<String> {
             self.shared.borrow().halted.clone()
+        }
+        pub(super) fn sink_underruns(&self) -> Option<u64> {
+            self.player.as_ref().map(|p| p.queue_state().underrun_events)
         }
         pub(super) fn queue_ahead(&self) -> bool {
             self.player.as_ref().is_some_and(|p| {
