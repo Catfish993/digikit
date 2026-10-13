@@ -1110,3 +1110,64 @@ the eMMC as sparse sectors) so a card with a patched firmware's project can be m
 - Types above 8 (a third module) are untested; the framework allows 32.
 - Kits saved on patched firmware and loaded on stock lose the type (they become SAMPLE; re-saving erases it): said in the
   gallery text of the module.
+
+## core.machines on Digitone II 1.12 (patchkit, lane fastweb) **[D]**
+
+Emulator only, nothing flashed, one agent, not checked by a second one: **[D]** unless marked. Code:
+`native/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
+per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rules `tools/pk_machine_rules_dn2.py`
+(`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `modules/test/dn2-clone` (a clone of FM TONE as
+type 5), proof `tools/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `native/patchkit/tests/machines.rs`
+(DN2 1.12 and 1.11 patch; the Digitakt output is byte-identical to the previous patchkit for `core/machines` +
+`machines/xslice` + `test/machine-clone` on 1.16 and 1.17). Addresses are 1.12; 1.11 is the same by function hash.
+
+**What is shared with the Digitakt framework, unchanged** (sites verified by byte shape): descriptor dispatch
+(`0x400c25f2`, `moveq #4,D1; move.l 4(sp),D0`; our descriptors carry the nine IDs `0 0 0 0 0 0 0 0 10`: the stock DN2
+descriptors of all five machines are exactly that, built at start-up by `FUN_400c2c4e`), list builder (`pea 0x14.w`
+allocation, `lea 0x14(A0)`, the two `pea` of the list source), the three name accessors (`0x400dc496`, `0x400dc4bc`,
+`0x400dc4e2`; the last two are not Ghidra functions; the table `0x401f7c00` is read in the shifted layout
+`{name, abbrev, hint}` from `+4`, hints null on every row), the permission check (`0x400dc2fe`, bound 4, table
+`0x401f7d42`), the persistence immediate (`moveq #6,D2` at `0x400dd3ea` in the sound loader `0x400dd34e`: `(u8)(type+1) < 6`;
+raised to `6 + N`; the sound record's type byte is at `+0xf4`, saved by `FUN_400dd80a` raw).
+
+**What is different on the Digitone II**
+
+| part | Digitone II 1.12 |
+|---|---|
+| group helper (`0x40059274`) | types 0..3 group 1, 4 group 2, else 0 (no `type == 6` form): a shim at `0x4005927a` sends types 5..4+N to group 1, so a clone is listed with the synth machines (put it at `position = 4`, before MIDI) |
+| sort comparator, per-type byte table, clone tests, DSP selector table | none exist: skipped |
+| per-type page tables | `FUN_400c2636(type)` (page count) and `FUN_400c2652(type, page)` (the page descriptor, stride 0x2c, table at `0x42433ad4` stride 0x10) bound the type by 4 and fall back to MIDI's row; `FUN_400dc18e(param, type, sub)` maps (parameter slot 25..64, type) to a parameter code through a 5 x 40 table at `0x42c65d18`. A shim at each maps an added type to its `clone_of` right after the stack argument is loaded (`cf.machines.typemap.0..2`) |
+| the type reader `FUN_4004b7f2` | 41 callers (pages, parameter code, clipboard) test its result against FM TONE's number 0 and so on (the SYN page 2 of FM TONE draws the algorithm diagram and the envelope views only for type 0). A shim at its `mvs.b (0xde,A0),D0` returns the clone's original for every caller except the identity code: list stepping (`0x4004d9a8`, `0x4004da90`), preset receive, name of the machine, clear track, sound snapshots, kit events and the callers of `FUN_4003134e` (`(project, track) -> type`, a tail jump into the reader: the machine list and selection views, names, kit events); those get the own type by return address or by a verbatim copy of the reader |
+| `SoundParameterSet::vfunc_21` (`0x40036bfa`) | `type == the parameter's owner machine`: the type loaded at `0x40036c24` is mapped too |
+| the DSP | the track's type reaches the DSP as TX frame word `0x94 + 2t`, as on the Digitakt (`0x20000` for FM DRUM after a TRIG, high half = track 1); written by the vector-191 handler at `0x4002757c` (`move.b (0xd8c,A0),D0b` from the SRAM copy `0x8000487c + 0x99 t` of the sound at `+0xde`). The FM engine knows types 0..4 and treats a type above 4 like MIDI (nothing rendered), so a clone without a voice of its own is **sent as its original** (shim at that load; `own_dsp = true` in the manifest keeps the own number for a machine a registered voice routine renders) |
+
+**Evidence** (`tools/pk_proof_machines_dn2.py`; FM CLONE = test/dn2-clone):
+
+| check | result |
+|---|---|
+| FUNC+SRC lists FM CLONE (5th, before MIDI, synth group); YES commits; the reopened menu marks it as the track's machine | row 4 |
+| audio mirror after a TRIG / TX frame type word | 5 / 0 |
+| audition of FM CLONE vs stock FM TONE | **bit-identical** (48,033 active samples) |
+| SYN, FLTR, AMP pages | frame hashes equal to FM TONE's (title "FM Tone", the algorithm diagram, the envelope views) |
+| the same encoder turns (ENC A +20, B -15, E +25) | PCM equal to stock FM TONE with the same turns; the turns change the sound |
+| save project, set the track to FM TONE, load the project | FM CLONE is current again; PCM equal to the turned stock sound; the card writes hold type 5 in 2 sound records (byte `0xf4`) |
+| the stock firmware loads the same project (same daemon, `firmware.load` of the stock image) | no fault; track 1 is FM TONE; PCM equal to stock FM TONE with the same turns (the parameters persisted, the unknown type became 0) |
+| control: the persistence immediate put back to 6 | the loaded track is FM TONE |
+| sequencer (RECORD, PLAY, TRIG 1 held; stop; play back) | PCM equal to stock FM TONE |
+| harness smoke tour (boot, track, pattern, play/stop, machine menu, save/reload, stress) with the module set | 33 checks pass |
+
+**Limits and open [O]**
+
+- The clone has FM TONE's page layout, parameters, names of pages and sound; its own name is shown in the machine list
+  and menus only. The page title reads "FM Tone" (it comes from the page descriptors, which the clone shares).
+- A new machine with its **own parameter pages** (not FM TONE's) needs its own rows in the three per-type tables
+  (`0x42433ad4`, `0x42433b24...`, `0x42c65d18`, built at start-up in bss by `FUN_400c2c4e` and a neighbour): the
+  descriptor rows are 9 parameter slot IDs (10 ends a list) and the 5 x 40 table maps slots to parameter codes. Not
+  built: the tables are RAM structures made by code, so growing them means a shim after their builders (as the Digitakt
+  list builder shim) or relocating them with their eight readers; est. 1 to 2 days, **[O]**.
+- The reader's callers that were not classified (about 25) get the clone's original; a behaviour that needs the own
+  type there (copy and paste of a sound between tracks keeps the type through the snapshot; not run) is open.
+- Changing the machine twice in one emulator session does not update the audio mirror (`0x8000487c`) the second time
+  in stock firmware either (the type posted by the UI thread is consumed once); every proof starts from `restart`.
+  Cause not found; the UI and the saved project follow the second change **[O]**.
+- Hardware: never flashed; the shims run from the flash cave (212 bytes + 40 per added type).

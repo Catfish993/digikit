@@ -53,6 +53,10 @@ pub struct MachineDef {
     pub desc_name: Option<String>,
     #[serde(default)]
     pub desc_short: Option<String>,
+    /// Digitone II: the DSP is told this machine's own type number (a registered voice routine renders it; finding
+    /// 06). Default: the ColdFire sends the clone's type, so the FM engine renders the clone like its original.
+    #[serde(default)]
+    pub own_dsp: bool,
 }
 
 /// A table a module exports: a data symbol of `rows` rows of `row_words` 32-bit words each, all zero, in which

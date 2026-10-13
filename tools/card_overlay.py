@@ -36,12 +36,13 @@ def records(blob: bytes):
 SOUND_HEAD = bytes.fromhex(
     "beefbace00000003"
 )  # soundStorage_v3: magic, version 3 (finding 02, "Persistence")
-SOUND_TYPE_AT = 0xD2  # DT2: the machine type byte of a sound record
+SOUND_TYPE_AT = 0xD2  # DT2: the machine type byte of a sound record (DN2: 0xf4)
 
 
-def sound_types(blob: bytes) -> dict[int, int]:
-    """Machine type -> number of DT2 sound records of that type among the written sectors (runs of adjacent sectors
-    are joined, so records that cross a sector boundary are found)."""
+def sound_types(blob: bytes, type_at: int = SOUND_TYPE_AT) -> dict[int, int]:
+    """Machine type -> number of sound records of that type among the written sectors (runs of adjacent sectors
+    are joined, so records that cross a sector boundary are found). `type_at`: the type byte's offset in the record
+    (DT2 0xd2, DN2 0xf4)."""
     secs = {sector: data for sector, _mask, data in records(blob)}
     out: dict[int, int] = {}
     run: list[int] = []
@@ -50,8 +51,8 @@ def sound_types(blob: bytes) -> dict[int, int]:
             data = b"".join(secs[k] for k in run)
             at = data.find(SOUND_HEAD)
             while at >= 0:
-                if at + SOUND_TYPE_AT < len(data):
-                    t = data[at + SOUND_TYPE_AT]
+                if at + type_at < len(data):
+                    t = data[at + type_at]
                     out[t] = out.get(t, 0) + 1
                 at = data.find(SOUND_HEAD, at + 1)
             run = []

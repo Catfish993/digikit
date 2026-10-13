@@ -231,9 +231,6 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         }
     }
     if m.id() == crate::machines::FRAMEWORK || !m.manifest.machine.is_empty() {
-        if !m.manifest.machine.is_empty() && !on(&[String::from("dt2")], dev) {
-            missing.push("machine framework (Digitakt II only)".into());
-        }
         for d in &m.manifest.machine {
             if let Err(e) = crate::machines::validate(d) {
                 return Err(err!("{}: {e}", m.id()));
@@ -409,7 +406,7 @@ pub fn apply_with(
     // Every anchor a selected module uses must hold the bytes the port recorded.
     let mut used: BTreeSet<String> = BTreeSet::new();
     if !machines.is_empty() {
-        used.extend(crate::machines::anchor_names());
+        used.extend(crate::machines::anchor_names_for(&port.port.device));
     }
     for id in &order {
         let m = lib.get(id).unwrap();

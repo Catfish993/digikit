@@ -370,13 +370,104 @@ fn refusals() {
     if let Some(r) = run(DT2_117, &lib, &["core/machines", "test/a"]) {
         assert!(err_of(r).contains("clone_of 9"));
     }
-    // Digitone II has none of the sites
+    // a Digitakt II clone (of type 6) is not a Digitone II type: it has five stock machines
     let lib = library(vec![]);
     if let Some(r) = run(DN2_112, &lib, &["core/machines", "machines/xslice"]) {
-        let e = err_of(r);
-        assert!(
-            e.contains("not compatible") && e.contains("cf.machines.dispatch"),
-            "{e}"
-        );
+        assert!(err_of(r).contains("clone_of 6"));
     }
+}
+
+fn dn2_clone(id: &str, name: &str, position: Option<usize>, own_dsp: bool) -> String {
+    let mut s = format!(
+        "[[machine]]\nid = \"{id}\"\nname = \"{name}\"\nshort = \"{}\"\nclone_of = 0\nfields = [0, 0, 0, 0, 0, 0, 0, 0, 10]\n",
+        &name[..3.min(name.len())]
+    );
+    if let Some(p) = position {
+        s += &format!("position = {p}\n");
+    }
+    if own_dsp {
+        s += "own_dsp = true\n";
+    }
+    s
+}
+
+#[test]
+fn digitone_ii_clone_gets_type_5_and_the_tables_grow() {
+    let lib = library(vec![machine_module(
+        "test/a",
+        "[\"core/machines\"]",
+        &dn2_clone("fmc", "FM Clone", Some(4), false),
+    )]);
+    let Some(r) = run(DN2_112, &lib, &["core/machines", "test/a"]) else {
+        return;
+    };
+    let a = r.unwrap();
+    assert_eq!(
+        a.plan.machines,
+        vec![("fmc".to_string(), 5, "test/a".to_string())]
+    );
+    let m = Main::new(&a.syx, stock_len(DN2_112));
+    // the list: the stock order (0 1 2 3 4) with the new type before MIDI
+    let list = m.u32s(symbol(&a, "machfw_list"), 6);
+    assert_eq!(list.len(), 6);
+    let mut sorted = list.clone();
+    sorted.sort();
+    assert_eq!(sorted, vec![0, 1, 2, 3, 4, 5]);
+    assert_eq!(list[4], 5);
+    // the name table: five stock rows then the clone's, in the shifted {name, abbrev, hint} layout of the accessors
+    let rows = m.u32s(symbol(&a, "machfw_name_table"), 18);
+    assert_eq!(m.cstr(rows[15]), "FM Clone");
+    assert_eq!(m.cstr(rows[16]), "FM ");
+    // the persistence immediate: `moveq #6,D2` became `moveq #7,D2`
+    let w = a
+        .plan
+        .writes
+        .iter()
+        .find(|w| w.what.contains("persistence bound"))
+        .unwrap();
+    assert_eq!(w.new_hex.as_deref(), Some("07"));
+}
+
+#[test]
+fn digitone_ii_own_dsp_machines_skip_the_frame_type_map() {
+    let lib = library(vec![
+        machine_module(
+            "test/a",
+            "[\"core/machines\"]",
+            &dn2_clone("fma", "FM A", None, false),
+        ),
+        machine_module(
+            "test/b",
+            "[\"core/machines\"]",
+            &dn2_clone("fmb", "FM B", None, true),
+        ),
+    ]);
+    let Some(r) = run(DN2_112, &lib, &["core/machines", "test/a", "test/b"]) else {
+        return;
+    };
+    let a = r.unwrap();
+    assert_eq!(a.plan.machines.len(), 2);
+    assert_eq!((a.plan.machines[0].1, a.plan.machines[1].1), (5, 6));
+    // the frame shim maps type 5 only: one `cmpi.b #5,D0b` and no `cmpi.b #6,D0b`
+    let m = Main::new(&a.syx, stock_len(DN2_112));
+    let shim = m.read(symbol(&a, "machfw_frametype"), 24);
+    assert_eq!(&shim[0..4], &[0x10, 0x28, 0x0d, 0x8c]);
+    assert_eq!(&shim[4..8], &[0x0c, 0x00, 0x00, 0x05]);
+    assert_eq!(&shim[8..10], &[0x66, 0x04]);
+    assert_eq!(&shim[14..16], &[0x48, 0x80]); // ext.w D0w follows directly
+}
+
+#[test]
+fn digitone_ii_1_11_resolves_the_same_sites() {
+    let lib = library(vec![machine_module(
+        "test/a",
+        "[\"core/machines\"]",
+        &dn2_clone("fmc", "FM Clone", None, false),
+    )]);
+    let Some(raw) = image("Digitone_II_OS1.11.syx") else {
+        return;
+    };
+    let ids = vec!["core/machines".to_string(), "test/a".to_string()];
+    let r = apply::apply_with(&raw, &registry(), &lib, &ids, Options::default());
+    assert!(r.is_ok(), "{:?}", r.err());
 }

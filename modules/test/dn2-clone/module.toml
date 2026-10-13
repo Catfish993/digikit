@@ -1,0 +1,22 @@
+[module]
+id = "test/dn2-clone"
+version = "0.1.0"
+name = "FM TONE clone (test, Digitone II)"
+category = "test"
+status = "experimental"
+summary = "A clone of FM TONE with its own name, to test core/machines on the Digitone II"
+requires = ["core/machines"]
+conflicts = []
+
+[targets]
+"dn2-1.12" = "experimental"
+
+# An unmodified clone of FM TONE (type 0): its descriptor has no parameter IDs of its own (the nine fields are 0, the
+# last one 10 as for every stock Digitone II machine); the pages and parameter codes are FM TONE's.
+[[machine]]
+id = "fmclone"
+name = "FM Clone"
+short = "FMC"
+clone_of = 0
+position = 4
+fields = [0, 0, 0, 0, 0, 0, 0, 0, 10]

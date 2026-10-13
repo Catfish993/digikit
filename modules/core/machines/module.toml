@@ -14,6 +14,8 @@ conflicts = []
 [targets]
 "dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
 
 [[claim]]
 resource = "cf.machines.sites"
@@ -271,3 +273,265 @@ kind = "sharc_literal"
 reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00"
 offset = 0x248
 mark = "D"
+
+# Digitone II: the same framework with the sites of tools/pk_machine_rules_dn2.py (finding 02, "core.machines on Digitone II")
+[[anchor_rule]]
+name = "cf.machines.dispatch"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "b3931880ae258f0623f20d8045645f98"
+offset = 0x0
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.list"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "69828342bcd67f7587f7d51d4c4a6575"
+offset = 0x4a
+len = 16
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.list_alloc"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "69828342bcd67f7587f7d51d4c4a6575"
+offset = 0x2a
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.group"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "7f5f7446948bca2ab9bbdd15984287be"
+offset = 0x6
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.name.0"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "feed4ccea8848444496f10f25c10b1bc"
+offset = 0x0
+len = 24
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.name.1"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "feed4ccea8848444496f10f25c10b1bc"
+offset = 0x26
+len = 24
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.name.2"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "feed4ccea8848444496f10f25c10b1bc"
+offset = 0x4c
+len = 24
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.permit"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "36780fb9834dbd3942e3c1be04ae5e07"
+offset = 0x0
+len = 30
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.persist"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f766c42c6be0674aadb1177f3f536367"
+offset = 0x9c
+len = 2
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.frametype"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f44b8037b4b199d47efc3899eb659b74"
+offset = 0x1746
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.typemap.0"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "bb7ea4b4ffdbc9a265444fc127b1fe32"
+offset = 0x0
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.typemap.1"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "bc430516afda815e7d3171c08bb89d7a"
+offset = 0x4
+len = 8
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.typemap.2"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "bb697208cd65a5f73453587214728899"
+offset = 0x8
+len = 8
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "a7a6201a589e7e386aa0e948dc221cd9"
+offset = 0x24
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_fn"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "a7a6201a589e7e386aa0e948dc221cd9"
+offset = 0x0
+len = 48
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_tail"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "7f68bc71629aaed41f2ffa075e03c222"
+offset = 0x46
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.owner"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "611122a695e36329f7759bda6a048352"
+offset = 0x2a
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.0"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "644c3ff2522cc84bc9f8df67f4382fbd"
+offset = 0x30
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.1"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "e47218b1266498370e28ee4276faec48"
+offset = 0x16
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.2"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "a367853313630d9dede2edeb6084aef4"
+offset = 0x27a
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.3"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "63d23fd083e0fe51fed7fb79e9f0bfa1"
+offset = 0x11a
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.4"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "4939f0cc9176ced67b08dc9cb03e34dc"
+offset = 0x3c
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.5"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f538ba5ebebb9adc67aab6af15c0705a"
+offset = 0x20e
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.6"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "c05fe1eaa6a7ee820420abaa12e079da"
+offset = 0x9e
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.7"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "5d42addd8bdc36762ad7a3e983a6f9c1"
+offset = 0x3fe
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.machines.reader_call.8"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "5d42addd8bdc36762ad7a3e983a6f9c1"
+offset = 0xe48
+len = 6
+mark = "D"
+
