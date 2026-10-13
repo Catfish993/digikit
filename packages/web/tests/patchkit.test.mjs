@@ -90,11 +90,11 @@ test('wasm and CLI produce byte-identical output for the machine framework (two 
   assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
   const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
   assert.deepEqual(report.machines.map((m) => [m[0], m[1]]), [['xslice', 7], ['xclone', 8]]);
-  // Digitone II has none of the sites
+  // Digitone II has core/machines, but XSLICE clones a Digitakt machine (MANUAL SLICE, type 6)
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from('core/machines,machines/xslice'));
   assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
-  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible/);
+  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|is not a stock type/);
 });
 
 test('wasm and CLI produce byte-identical output for core/params and PLUCK', { skip: !need }, async () => {
@@ -118,11 +118,11 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
   assert.deepEqual(report.params.map((m) => [m[0], m[1]]), [
     ['pluck_decay', 275], ['pluck_pick', 276], ['pluck_bright', 277], ['pluck_color', 278],
   ]);
-  // Digitone II has neither framework
+  // Digitone II has core/machines but PLUCK clones a Digitakt machine: refused either way
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from(mods));
   assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
-  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible/);
+  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|is not a stock type/);
 });
 
 test('wasm refuses what the CLI refuses', { skip: !need }, async () => {
