@@ -1,7 +1,7 @@
 # machines/pluck: with no machine type registered on the panel, the module must leave the stock voice untouched: audible, no fault.
 [test]
 name = "audible"
-devices = ["dt2"]
+devices = ["dt2", "dn2"]
 quick = true
 
 [[step]]

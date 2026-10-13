@@ -23,7 +23,9 @@ conflicts = []
 # patchkit assigns the types `machines.first + k` in canonical module order (symbols machines.first, .count, .rows,
 # .row_size, machines.<id>.index; machines.<id>.index is the type number a DSP object or a voice entry names).
 # Row layout (offsets in src/cf/*/machines.s): the order of the fields below, every field one 32-bit word.
-# Contract, evidence and limits: finding 02, "core.machines".
+# Digitone II: a machine with own parameter pages adds `[[entry]] registry = "pages"` rows (documented at the registry
+# below) and, for its knobs, `registry = "params"` rows of core/params; without page rows it is a clone of `clone_of`.
+# Contract, evidence and limits: finding 02, "core.machines" and "DN2 own parameter pages: built".
 
 [targets]
 "dt2-1.16" = "experimental"

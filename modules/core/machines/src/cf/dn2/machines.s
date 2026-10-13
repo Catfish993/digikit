@@ -249,7 +249,7 @@ mf_typemap1:
     CLONEMAP 8
 9:  jmp     _mf_t_typemap1
 
-| FUN(slot, type, sub) -> the parameter code (D2 saved by the stock code; a0 = the slot is loaded already)
+| FUN(slot, type, sub) -> the parameter code (D2 saved by the stock code; a0 = the slot and d1 = 0x64 are loaded already; both are kept)
     .globl mf_typemap2
 mf_typemap2:
     move.l  0xc(%sp),%d0
@@ -264,11 +264,14 @@ mf_typemap2:
     move.l  %a0,%d1
     subi.l  #0x19,%d1
     cmpi.l  #0x27,%d1
-    bhi.s   9f                          | not a machine slot: the stock code does not look at the type
-    move.l  (%sp)+,%d2
+    bls.s   2f
+    moveq   #0x64,%d1                   | not a machine slot: the stock code does not look at the type
+    bra.s   9f
+2:  move.l  (%sp)+,%d2
     rts
 1:  move.l  %a1,%d0
     CLONEMAP 0xc
+    moveq   #0x64,%d1                   | the stock code set d1 before the site and reads it again
 9:  jmp     _mf_t_typemap2
 
 | ---- page rows. mf_pg_count: d0 = type -> d0 = the number of its pages (builds the tables first); clobbers d1, a0.
