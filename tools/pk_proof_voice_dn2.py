@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """patchkit core/dsp-voice on Digitone II 1.12: test/dn2-sine renders through the FM engine's later stages.
 
-    uv run python tools/pk_proof_voice_dn2.py [--out DIR] [--only a,b,c]
+    uv run python tools/pk_proof_voice_dn2.py [--out DIR] [--only a,b,c] [--quick] [--jobs N]
 
 Emulator only (finding 06, "Per-voice hook on DN2"). SINE is the machine type 5 that test/dn2-sine adds (selected in the
 machine menu; the track's frame words are forced with DSP_FRAME_POKE where a case needs another note):
@@ -12,6 +12,9 @@ machine menu; the track's frame words are forced with DSP_FRAME_POKE where a cas
   c  stages  the level knob (LEVEL encoder), the filter frequency, the overdrive and the reverb send change the sine:
              the engine's per-track processing, FX and mix see the registered voice
 
+Parts are independent and run in parallel processes (`--jobs`, tools/pk_proofkit.py). `--quick`: a, b (note 60) and c
+without the overdrive and reverb cases.
+
 Output goes under OUT (default out/runs/voice-proof-dn2), never committed. Exit 0 only when every check passes.
 """
 
@@ -19,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import sys
 from pathlib import Path
 
@@ -32,6 +34,7 @@ if str(HERE) not in sys.path:
 
 import hook_ab  # noqa: E402
 import pk_harness as H  # noqa: E402
+import pk_proofkit as K  # noqa: E402
 from pk_proof_drive import aligned_equal, analyse  # noqa: E402
 
 MODS = ["core/machines", "core/dsp-voice", "test/dn2-sine"]
@@ -54,20 +57,11 @@ def semitone_hz(note: float) -> float:
     return 440.0 * 2 ** ((note - 69) / 12)
 
 
-class Proof:
-    def __init__(self, out: Path):
-        self.out = out
-        out.mkdir(parents=True, exist_ok=True)
-        self.failed: list[str] = []
-
-    def check(self, name: str, ok: bool, detail: str = "") -> bool:
-        print(
-            f"  {'ok  ' if ok else 'FAIL'} {name}{': ' + detail if detail else ''}",
-            flush=True,
-        )
-        if not ok:
-            self.failed.append(name)
-        return ok
+class Proof(K.Proof):
+    tool = "voice-dn2"
+    device = "dn2"
+    fw = "1.12"
+    ready_env = {"DIGI_PK_READY_DN2_112": str(READY)}
 
     def render(
         self,
@@ -82,20 +76,10 @@ class Proof:
         run_ms: int = 1300,
     ) -> np.ndarray:
         """One fresh daemon: select the machine, set the knobs, hold TRIG 1, capture the left channel."""
-        if "DIGI_PK_READY_DN2_112" not in os.environ and READY.is_dir():
-            os.environ["DIGI_PK_READY_DN2_112"] = str(READY)
-        if poke:
-            os.environ["DSP_FRAME_POKE"] = poke
-        else:
-            os.environ.pop("DSP_FRAME_POKE", None)
-        s = H.Session(
-            H.Cell("dn2", "1.12", list(mods)),
-            H.Goldens(),
-            log=None,
-            run_name=f"voice-dn2-{name}",
-        )
-        s.open()
-        with s:
+        env = {"DSP_FRAME_POKE": poke} if poke else None
+        with self.session(
+            mods, f"{'p' if mods else 's'}-{poke or 'none'}", env=env
+        ) as s:
             s.reset()
             s.run_ms(1500)
             if downs:
@@ -122,11 +106,9 @@ class Proof:
             s.run_ms(run_ms)
             s.emu.call("pcm.tap", action="capture_stop")
             s.health(f"render {name}")
-        os.environ.pop("DSP_FRAME_POKE", None)
         return hook_ab.read_wav(wav)[0::2].astype(np.float64)
 
     def part_a(self) -> None:
-        print("a  stock (hook patched in, FM TONE selected)")
         ref = self.render("stock", [])
         got = self.render("patched-fmtone", MODS)
         full = np.stack([ref, ref])  # aligned_equal takes interleaved stereo
@@ -145,8 +127,7 @@ class Proof:
         )
 
     def part_b(self) -> None:
-        print("b  pitch")
-        for note, poke in ((60, ""), (72, "0x02=0x4800")):
+        for note, poke in ((60, ""), (72, "0x02=0x4800"))[: 1 if self.quick else 2]:
             x = self.render(f"sine{note}", MODS, downs=SINE_DOWNS, poke=poke)
             act = np.flatnonzero(np.abs(x) > 1e-5)
             seg = x[act[0] + 2000 : act[0] + 26000] if len(act) > 30000 else x[:0]
@@ -160,9 +141,6 @@ class Proof:
             )
 
     def part_c(self) -> None:
-        print(
-            "c  the engine's later stages see the voice (stock FM TONE with the same knobs: level -28.8 dB)"
-        )
         base = self.render("c-base", MODS, downs=SINE_DOWNS, run_ms=2600)
         rms = lambda x, a=8000, b=50000: float(np.sqrt(np.mean(x[a:b] ** 2)))  # noqa: E731
         lev = self.render(
@@ -189,6 +167,8 @@ class Proof:
         )
         db = 20 * math.log10(max(rms(closed), 1e-9) / rms(open_))
         self.check("the filter frequency closes on the sine", db < -6, f"{db:+.1f} dB")
+        if self.quick:  # the quick tier ends here
+            return
         od = self.render(
             "c-overdrive", MODS, downs=SINE_DOWNS, page="FX", turns=(("ENC B", 300),)
         )
@@ -219,23 +199,19 @@ class Proof:
         )
 
 
+PARTS = [
+    K.Part("a", "stock (hook patched in, FM TONE selected)", Proof.part_a, True, 80),
+    K.Part("b", "pitch", Proof.part_b, True, 100),
+    K.Part("c", "the engine's later stages see the voice", Proof.part_c, True, 400),
+]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument(
-        "--out", type=Path, default=ROOT / "out" / "runs" / "voice-proof-dn2"
-    )
-    ap.add_argument("--only", default="a,b,c")
+    K.add_args(ap, PARTS)
     a = ap.parse_args()
-    proof = Proof(a.out)
-    only = set(a.only.split(","))
-    if "a" in only:
-        proof.part_a()
-    if "b" in only:
-        proof.part_b()
-    if "c" in only:
-        proof.part_c()
-    print("PASS" if not proof.failed else f"FAIL: {', '.join(proof.failed)}")
-    return 1 if proof.failed else 0
+    a.out = a.out or ROOT / "out" / "runs" / "voice-proof-dn2"
+    return K.run_tool(__file__, Proof, PARTS, a)
 
 
 if __name__ == "__main__":

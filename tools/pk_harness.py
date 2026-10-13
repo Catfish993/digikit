@@ -46,6 +46,7 @@ machine through benchlock). Ready inputs must be fresh: SOURCE.json must say `in
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
@@ -75,6 +76,18 @@ GOLDENS = ROOT / "tests" / "patchkit_smoke" / "goldens.json"
 TOURS = ROOT / "tests" / "patchkit_smoke" / "tours"
 DEFAULT_MATRIX = ROOT / "tests" / "patchkit_smoke" / "matrix.toml"
 DEFAULT_STALL_MS = 1000
+SHARED_CACHE = (
+    ROOT / "out" / "runs" / ".cache"
+)  # boot pairs and cards shared by the daemons of all proof runs
+MAX_JOBS = 6
+
+
+def default_jobs(n: int) -> int:
+    """Processes to run side by side: the free cores / 2 (a coupled daemon uses about two), at most MAX_JOBS."""
+    cpus = os.cpu_count() or 2
+    free = cpus - os.getloadavg()[0]
+    return max(1, min(n, int(free // 2), MAX_JOBS))
+
 
 # firmware: (device, version) -> base .syx and the ready directory (override: DIGI_PK_READY_<DEV>_<VER>)
 FIRMWARE: dict[tuple[str, str], dict[str, str]] = {
@@ -249,17 +262,40 @@ def firmware_inputs(cell: Cell) -> tuple[Path, Path]:
     return syx, ready
 
 
-_BINARIES: dict[str, Path] = {}
+_BINARIES: dict[tuple[str, bool], Path] = {}
 
 
-def daemon_binary(device: str, syx: Path) -> Path:
-    """The `digi-emud` for the device's generated core (built when stale; the build holds benchlock)."""
+def daemon_binary(device: str, syx: Path, pgo: bool | None = None) -> Path:
+    """The `digi-emud` for the device's generated core (built when stale; the build holds benchlock).
+
+    The profile-guided build of tools/pk_emud_pgo.py is used when it exists (PGO None); DIGI_PK_PGO=0 or `pgo=False`
+    picks the plain build. DIGI_EMUD_<DEV> / DIGI_EMUD name a binary outright."""
     override = os.environ.get(f"DIGI_EMUD_{device.upper()}") or os.environ.get(
         "DIGI_EMUD"
     )
     if override:
         return Path(override)
-    if device not in _BINARIES:
+    if pgo is None:
+        pgo = os.environ.get("DIGI_PK_PGO") != "0"
+    if pgo and (device, True) not in _BINARIES:
+        try:
+            import pk_emud_pgo
+
+            path = pk_emud_pgo.binary_path(device)
+            if path.is_file():
+                # cargo is a no-op when the sources have not changed since the build
+                path = pk_emud_pgo.build(device)
+                _BINARIES[(device, True)] = path
+        except (SystemExit, Exception) as e:  # noqa: BLE001  a PGO problem must not stop a proof
+            print(
+                f"note: no PGO daemon for {device} ({e}); using the plain build",
+                file=sys.stderr,
+            )
+        if (device, True) not in _BINARIES:
+            _BINARIES[(device, True)] = daemon_binary(device, syx, pgo=False)
+    if pgo:
+        return _BINARIES[(device, True)]
+    if (device, False) not in _BINARIES:
         r = subprocess.run(
             [
                 sys.executable,
@@ -277,15 +313,16 @@ def daemon_binary(device: str, syx: Path) -> Path:
             raise HarnessError(
                 f"cannot build digi-emud for {device}:\n{(r.stderr or r.stdout)[-1500:]}"
             )
-        _BINARIES[device] = Path(lines[-1])
-    return _BINARIES[device]
+        _BINARIES[(device, False)] = Path(lines[-1])
+    return _BINARIES[(device, False)]
 
 
-def patched_image(cell: Cell, syx: Path) -> Path:
-    """The stock .syx, or the patch of the cell's modules (out/patch/pk-*.syx)."""
+def patched_image(cell: Cell, syx: Path, dest: Path | None = None) -> Path:
+    """The stock .syx, or the patch of the cell's modules (out/patch/pk-*.syx; DEST is a private directory for
+    processes that run side by side, so none reads an image another is writing)."""
     if not cell.modules:
         return syx
-    out = ROOT / "out" / "patch" / f"pk-{cell.slug}.syx"
+    out = (dest or ROOT / "out" / "patch") / f"pk-{cell.slug}.syx"
     out.parent.mkdir(parents=True, exist_ok=True)
     r = subprocess.run(
         [
@@ -310,6 +347,71 @@ def patched_image(cell: Cell, syx: Path) -> Path:
     return out
 
 
+# ----- shared boot cache ----------------------------------------------------------------------------------------
+
+
+def link_shared(run_dir: Path, cache_dir: Path) -> None:
+    """Make RUN_DIR/patched and RUN_DIR/cards the shared `cache_dir/patched` and `cache_dir/cards-store`. The daemon
+    caches the coupled cold boot of a patched MAIN under `patched` (a pair of snapshots keyed by the MAIN, the DSP
+    inputs and the card path), so every daemon of a proof run restores it (0.3 s) instead of booting cold (13 s);
+    `cards` holds the sample card built from the sample folder (about 15 s) and its ready state, content-keyed."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for name, shared_name in (("patched", "patched"), ("cards", "cards-store")):
+        shared = cache_dir / shared_name
+        shared.mkdir(parents=True, exist_ok=True)
+        link = run_dir / name
+        if link.is_symlink() and link.resolve() == shared.resolve():
+            continue
+        if link.is_symlink() or link.is_file():
+            link.unlink()
+        elif link.is_dir():  # an older private cache: keep it aside
+            link.rename(run_dir / f"{name}.private-{int(time.time())}")
+        link.symlink_to(shared.resolve())
+
+
+def canonical_card(cache_dir: Path, card: str) -> str:
+    """The card path the pair key hashes is the card file's path: give every daemon the same path (a symlink in
+    CACHE_DIR to the first daemon's image; the card is read-only, the guest's writes live in an overlay)."""
+    d = cache_dir / "cards"
+    d.mkdir(parents=True, exist_ok=True)
+    real = Path(card)
+    link = d / (real.parent.name + "-" + real.name)
+    for _ in range(3):
+        if (
+            link.is_symlink() and not link.exists()
+        ):  # the first daemon's run dir is gone
+            link.unlink(missing_ok=True)
+        if not link.is_symlink():
+            tmp = d / f".{link.name}.{os.getpid()}"
+            tmp.unlink(missing_ok=True)
+            tmp.symlink_to(real.resolve())
+            os.replace(
+                tmp, link
+            )  # atomic: concurrent first daemons both end with a valid link
+        if link.exists():
+            return str(link)
+    return card
+
+
+@contextlib.contextmanager
+def boot_lock(cache_dir: Path | None, image: Path) -> Iterator[None]:
+    """One process at a time loads a given image: the first boots cold and caches the pair, the others wait and
+    restore it. Without a cache dir: no lock."""
+    if cache_dir is None:
+        yield
+        return
+    import fcntl
+
+    lock_dir = cache_dir / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    with (lock_dir / f"{image.name}.lock").open("w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 # ----- goldens --------------------------------------------------------------------------------------------------
 
 
@@ -318,11 +420,15 @@ class Goldens:
 
     def __init__(self, path: Path = GOLDENS):
         self.path = path
-        try:
-            self.data: dict[str, str] = json.loads(path.read_text())
-        except (OSError, ValueError):
-            self.data = {}
+        self.data: dict[str, str] = self._read()
+        self.changes: dict[str, str] = {}
         self.dirty = False
+
+    def _read(self) -> dict[str, str]:
+        try:
+            return json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            return {}
 
     def get(self, key: str) -> str | None:
         return self.data.get(key)
@@ -330,13 +436,27 @@ class Goldens:
     def set(self, key: str, value: str) -> None:
         if self.data.get(key) != value:
             self.data[key] = value
+            self.changes[key] = value
             self.dirty = True
 
     def save(self) -> None:
-        if self.dirty:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.data, indent=1, sort_keys=True) + "\n")
-            self.dirty = False
+        """Write our changes into the file as it is now (cells recorded by other processes meanwhile are kept)."""
+        if not self.dirty:
+            return
+        import fcntl
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        OUT.mkdir(parents=True, exist_ok=True)
+        with (OUT / "goldens.lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            merged = self._read()
+            merged.update(self.changes)
+            tmp = self.path.with_suffix(f".tmp{os.getpid()}")
+            tmp.write_text(json.dumps(merged, indent=1, sort_keys=True) + "\n")
+            os.replace(tmp, self.path)
+        self.data = merged
+        self.changes.clear()
+        self.dirty = False
 
 
 # ----- the session ----------------------------------------------------------------------------------------------
@@ -363,8 +483,12 @@ class Session:
         update: bool = False,
         log: Path | None = None,
         run_name: str | None = None,
+        env: dict[str, str] | None = None,
+        cache_dir: Path | None = None,
     ):
         self.cell, self.goldens, self.update = cell, goldens, update
+        self.env = dict(env or {})
+        self.cache_dir = cache_dir  # shared by the processes of one proof run: patched-boot pairs and the card
         self.syx, self.ready = firmware_inputs(cell)
         self.log_path = log
         self.run_name = run_name or cell.slug
@@ -375,6 +499,7 @@ class Session:
         self.pcm_mark = 0
         self.frames: dict[str, str] = {}
         self.load_report: dict[str, Any] = {}
+        # wall seconds by kind (spawn_s, load_s, reset_s, run_s) and the emulated milliseconds run (emu_ms)
         self.timings: dict[str, float] = {}
         self.card: str | None = None
         self.image: Path | None = None
@@ -393,8 +518,15 @@ class Session:
         started = time.monotonic()
         exe = daemon_binary(cell.device, self.syx)
         run_dir = OUT / f"run-{self.run_name}"
+        if self.cache_dir is not None:
+            link_shared(run_dir, self.cache_dir)
         self.emu = Emu.spawn_coupled(
-            self.syx, self.ready, timeout=300, binary=exe, run_dir=run_dir
+            self.syx,
+            self.ready,
+            timeout=300,
+            binary=exe,
+            run_dir=run_dir,
+            env=self.env,
         )
         emu = self.emu
         if emu.status().get("audio") is None:
@@ -403,9 +535,17 @@ class Session:
         if cell.device == "dt2":
             samples = OUT / "samples"
             card_check.make_samples(samples)
-            self.card = emu.call("card.load", dir=str(samples))["card"]
+            with boot_lock(self.cache_dir, Path(f"card-{self.cell.device}")):
+                self.card = emu.call("card.load", dir=str(samples))["card"]
+            if self.cache_dir is not None:
+                self.card = canonical_card(self.cache_dir, self.card)
         self.timings["spawn_s"] = time.monotonic() - started
-        self.load(image or patched_image(cell, self.syx))
+        private = (
+            self.cache_dir / "images" / str(os.getpid())
+            if self.cache_dir is not None
+            else None
+        )
+        self.load(image or patched_image(cell, self.syx, private))
 
     def load(self, image: Path, settle: bool = False) -> dict[str, Any]:
         """`firmware.load` the image (hot DSP, or the cached coupled cold boot); LoadFailure when it does not
@@ -422,7 +562,8 @@ class Session:
         if self.card:
             params["card"] = self.card
         try:
-            report = emu.call("firmware.load", **params)
+            with boot_lock(self.cache_dir, image):
+                report = emu.call("firmware.load", **params)
         except EmuError as e:
             raise LoadFailure(f"firmware.load {image.name}: {e}") from e
         self.image = image
@@ -451,7 +592,11 @@ class Session:
         """Back to the ready state, modal closed, PCM tap fresh: the start of every segment."""
         emu = self.emu
         assert emu is not None
+        started = time.monotonic()
         emu.restart(auto_no=True)
+        self.timings["reset_s"] = self.timings.get("reset_s", 0.0) + (
+            time.monotonic() - started
+        )
         emu.drain_events()
         self.run_ms(300)
         emu.pcm_start()
@@ -471,16 +616,23 @@ class Session:
         emu = self.emu
         assert emu is not None
         n = int(ms * MS)
-        while n > 0:
-            chunk = min(n, 200_000_000)
-            try:
-                emu.step(chunk, timeout_wall_s=300)
-            except EmuError as e:
-                if e.code == 6:
-                    self.events.extend(emu.drain_events())
-                    raise Failure(f"fault: {e}") from e
-                raise
-            n -= chunk
+        self.timings["emu_ms"] = self.timings.get("emu_ms", 0.0) + ms
+        started = time.monotonic()
+        try:
+            while n > 0:
+                chunk = min(n, 200_000_000)
+                try:
+                    emu.step(chunk, timeout_wall_s=300)
+                except EmuError as e:
+                    if e.code == 6:
+                        self.events.extend(emu.drain_events())
+                        raise Failure(f"fault: {e}") from e
+                    raise
+                n -= chunk
+        finally:
+            self.timings["run_s"] = self.timings.get("run_s", 0.0) + (
+                time.monotonic() - started
+            )
 
     def health(self, where: str) -> None:
         """Fault, DSP halt and stall now? Raises Failure (the segment stops)."""
@@ -821,7 +973,7 @@ def run_cell(
     stamp = time.strftime("%Y%m%d-%H%M%S")
     log = log_dir / f"{stamp}-{cell.slug}.jsonl"
     started = time.monotonic()
-    session = Session(cell, goldens, update=update, log=log)
+    session = Session(cell, goldens, update=update, log=log, cache_dir=SHARED_CACHE)
     failed: list[str] = []
     try:
         with session:
@@ -878,6 +1030,91 @@ def run_cell(
     )
 
 
+def _run_one(
+    cell: Cell, goldens: Goldens, a: argparse.Namespace
+) -> tuple[bool, str, list[str]]:
+    """A cell in this process; (passed, summary line, failed check lines)."""
+    ok, line, session = run_cell(
+        cell, goldens, a.update, a.tests, a.seed, a.stress_actions
+    )
+    bad = [f"{c.name}: {c.detail}" for c in session.checks if not c.ok]
+    return ok, line, bad
+
+
+def _run_cells_parallel(
+    cells: list[Cell], a: argparse.Namespace, argv: list[str], jobs: int
+) -> list[tuple[bool, str, list[str]]]:
+    """One child process per cell, JOBS at a time (each has its own daemons; the boot cache and card are shared and
+    a lock lets the first process boot a given image cold while the others wait for the cached pair). Results come
+    back in matrix order."""
+    base = []
+    skip = False
+    for x in argv:
+        if skip:
+            skip = False
+            continue
+        if x in ("--jobs", "--cell", "--matrix", "--result"):
+            skip = True
+            continue
+        if x.startswith(("--jobs=", "--cell=", "--matrix=", "--result=")):
+            continue
+        base.append(x)
+    results: list[tuple[bool, str, list[str]] | None] = [None] * len(cells)
+    running: dict[int, tuple[subprocess.Popen[bytes], Path, Path, float]] = {}
+    queue = list(range(len(cells)))
+    work = OUT / "cells"
+    work.mkdir(parents=True, exist_ok=True)
+    print(f"{len(cells)} cells, {jobs} at a time", flush=True)
+    while queue or running:
+        while queue and len(running) < jobs:
+            i = queue.pop(0)
+            res = work / f"{os.getpid()}-{i}.json"
+            res.unlink(missing_ok=True)
+            log = work / f"{os.getpid()}-{i}.log"
+            with log.open("wb") as f:
+                p = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-u",
+                        str(Path(__file__).resolve()),
+                        "run",
+                        *base,
+                        "--cell",
+                        cells[i].name,
+                        "--jobs",
+                        "1",
+                        "--result",
+                        str(res),
+                    ],
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    cwd=ROOT,
+                )
+            running[i] = (p, res, log, time.monotonic())
+        time.sleep(0.5)
+        for i, (p, res, log, t0) in list(running.items()):
+            rc = p.poll()
+            if rc is None:
+                continue
+            del running[i]
+            try:
+                rec = json.loads(res.read_text())
+                results[i] = (rec["ok"], rec["line"], rec["bad"])
+            except (OSError, ValueError, KeyError):
+                tail = " | ".join(
+                    log.read_text(errors="replace").strip().splitlines()[-3:]
+                )
+                how = f"signal {-rc}" if rc < 0 else f"exit {rc}"
+                results[i] = (
+                    False,
+                    f"FAIL {cells[i].name}: the cell process ended with no result ({how}) after "
+                    f"{time.monotonic() - t0:.0f} s; last output: {tail} [{log.relative_to(ROOT)}]",
+                    [],
+                )
+            print(results[i][1], flush=True)  # type: ignore[index]
+    return [r for r in results if r is not None]
+
+
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -897,6 +1134,13 @@ def main(argv: list[str]) -> int:
     r.add_argument("--tests", choices=("smoke", "quick", "all"), default="all")
     r.add_argument("--seed", type=int)
     r.add_argument("--stress-actions", type=int)
+    r.add_argument(
+        "--jobs",
+        type=int,
+        default=0,
+        help="cells in parallel processes (default: free cores / 2, at most 6; 1 runs them here, in order)",
+    )
+    r.add_argument("--result", type=Path, help=argparse.SUPPRESS)
     sub.add_parser("list").add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
     a = p.parse_args(argv)
     cells = [parse_cell(c) for c in getattr(a, "cell", [])] or load_matrix(a.matrix)
@@ -904,15 +1148,58 @@ def main(argv: list[str]) -> int:
         for c in cells:
             print(c.name)
         return 0
-    goldens = Goldens()
-    rc = 0
-    for cell in cells:
-        ok, line, _ = run_cell(
-            cell, goldens, a.update, a.tests, a.seed, a.stress_actions
-        )
+    started = time.monotonic()
+    done: list[str] = []
+    _announce_signals(cells, done)
+    if (
+        a.result is not None
+    ):  # a child of a parallel run: one cell, the record goes to a file
+        ok, line, bad = _run_one(cells[0], Goldens(), a)
         print(line, flush=True)
-        rc |= not ok
-    return rc
+        a.result.write_text(json.dumps({"ok": ok, "line": line, "bad": bad}))
+        return 0 if ok else 1
+    jobs = a.jobs or default_jobs(len(cells))
+    if jobs > 1 and len(cells) > 1:
+        results = _run_cells_parallel(cells, a, argv, jobs)
+    else:
+        goldens = Goldens()
+        results = []
+        for cell in cells:
+            res = _run_one(cell, goldens, a)
+            print(res[1], flush=True)
+            done.append(cell.name)
+            results.append(res)
+    passed = sum(1 for ok, _, _ in results if ok)
+    for ok, line, bad in results:
+        if not ok:
+            print(f"  {line.split(':', 1)[0]}: {len(bad)} failed check(s)")
+            for b in bad[:6]:
+                print(f"    {b}")
+    complete = len(results) == len(cells)
+    print(
+        f"{'PASS' if passed == len(cells) and complete else 'FAIL'}: {passed} of {len(cells)} cells passed"
+        f"{'' if complete else f' ({len(cells) - len(results)} did not run)'}, wall {time.monotonic() - started:.0f} s",
+        flush=True,
+    )
+    return 0 if passed == len(cells) and complete else 1
+
+
+def _announce_signals(cells: list[Cell], done: list[str]) -> None:
+    """A signal (the shell's timeout, a closed terminal) used to end the run silently: say so, with the progress."""
+    import signal
+
+    def handler(signum: int, _frame: object) -> None:
+        name = signal.Signals(signum).name
+        print(
+            f"INTERRUPTED by {name} after {len(done)} of {len(cells)} cells; not finished: "
+            f"{[c.name for c in cells if c.name not in done][:6]}",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(128 + signum)
+
+    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        signal.signal(sig, handler)
 
 
 if __name__ == "__main__":
