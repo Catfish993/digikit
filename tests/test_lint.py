@@ -20,6 +20,7 @@ CLEAN = [
     "tests/test_sharc_asm.py",
     "tools/cfmatch.py",
     "tools/dt2fx_compare.py",
+    "tools/cfport.py",
     "tests/test_cfmatch.py",
     "tools/bootstrap_run.py",
     "tools/patched_image.py",

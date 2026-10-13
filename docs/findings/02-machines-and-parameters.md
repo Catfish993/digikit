@@ -846,3 +846,150 @@ holds the 16 Sound pointers. **[O]**
 
 The ready snapshots are Rust `DT2SNP01` files. `tools/snapread.py` reads
 their memory, but not their registers or tasks.
+
+## Persistence of machine types and parameter values (static)
+
+Question: does a new machine type (id 7 on DT2) and a new parameter value survive save and load, and what does a
+stock firmware do with a file from a patched one? Read from the Ghidra 1.16 dump (`dt2-1.16-emac`) and the 1.11
+dump (`dn2-1.11-emac`); image bytes read for the immediates below. Nothing was run. All marks are **[D]** unless
+stated. Addresses are 1.16 unless stated.
+
+**[C] Address base of the sections above.** The dispatch and permission addresses in the earlier sections of this file
+(`0x400caf48`, `0x400dcab8`, `0x401fbda6` and so on) are DT2 **1.15C** addresses: the 8-byte pattern
+`7206 202f 0004 b280` is at `0x400caf48` in the 1.15C image and at `0x400c8840` in 1.16 (`0x400da372`-group is
+shifted by -0x2708 there). The 1.16 names are:
+
+| role | 1.15C | 1.16 | 1.17 | DN2 1.11 |
+|---|---|---|---|---|
+| descriptor dispatch (bound `moveq #N,D1` at entry) | `0x400caf48` | `FUN_400c8840` (N=6) | `0x400c89a4` | `FUN_400c248e` (N=4, stride 0x2c) |
+| machine permission (`moveq #N,D2` at entry+2) | `0x400dcab8` | `FUN_400da3b0` (N=6, table `0x4020ecbe`) | `0x400da514` | `FUN_400dc19a` (N=4) |
+
+DN2 1.11 has five machine types (0..4) at both gates. Matches come from `tools/cfport.py` (new; wraps
+`tools/cfmatch.py`): 1.17 matches are all `strict`; the DN2 1.11 ones are `loose` or `callee` and were confirmed by
+reading the decompile and disassembly of each.
+
+### Storage records
+
+The files and the in-memory record share one versioned family, the shared-library classes
+`Digisharc::*Storage_vN_t` (RTTI `ValueWithMirror<runtime_t, storage_t>`: the runtime object is the master, the
+storage struct is a mirror that `Sound::updateMirror` and the other `updateMirror` functions fill). The
+`Digitakt::*Storage_vN_t` names (`projectStorage_v1..v16`, `kitStorage_v1..v10`, `soundStorage_v1..v3`,
+`patternStorage_v1..v10`, `fxSetupStorage_v1..v3`, `projectSettingsStorage_v1..v8`, `songStorage_v1`) are a
+different, older family: sound 0xa0 bytes, kit with 8 tracks, magic `0xbeefbace`/`0xbacef00c`, and it is only the
+**import** path for old projects (`FUN_4001504e` project v16 -> current, `FUN_40014d20` kit, `FUN_4001498a` sound,
+`FUN_40015a3e` sound container; error strings "Failed to upgrade source project! Version = %d, expected %d").
+The native DT2 and DN2 format is `Digisharc::projectStorage_v5_t` (version **5**) with these parts:
+
+| part | DT2 1.16 | DN2 1.11 |
+|---|---|---|
+| project | version 5, head magic `0xbeefbace` at +0, version at +4, tail magic `0xbacef00c` at word `0x376580` (+0xDD9600), size 0xDD9604 | same version, tail at word `0x312c00`, size 0xC4B004 |
+| pattern | 128 x 0x15c00 at +0x200; 16 tracks x 0x4a0 | 16 tracks x 0x4a3 |
+| kit | 129 x 0x5800 (storage), runtime stride 0x5574; version 4 at +4, tail `0xbacef00c` at +0x573a | same layout, different fx block |
+| sound pool | 130 x 0x455 | |
+| **sound** | **0x455 bytes**, version 3 | **0x167 bytes**, version 3 |
+
+Kit sounds are 16 x 0x455 (DT2) inside the kit at +0x3c, stride 0x455; the sound pool uses the same record.
+
+**Sound record (DT2 `soundStorage_v3`, 0x455 bytes) [D].** +0 `0xbeefbace`, +4 version (3), +8 u32 id, +0xc name[16],
+**+0x1c .. +0xd2 parameter slots (s16, big endian; 91 slots, 77 used)**, **+0xd2 machine type (u8)**, +0xd3 a second u8
+(stored 0xff or 0..5), +0xd4.. small enums, +0x139 64 x 12 bytes sample-slot data, tail `0xbacef00c` at +0x451.
+DN2: params at +0x1c .. +0xf4 (108 slots, 107 used), **machine type at +0xf4**, tail at +0x163.
+
+**Where the machine type lives.** In the sound record only (runtime `Sound + 0xa2` on DT2, `+0xde` on DN2; kit
+track j is `kit_t + 0x34 + j*0x450` on DT2). Kits hold 16 such records and the sound pool 130, so the type is
+persisted per kit track and per pool sound. Pattern tracks (`FUN_400dbf66`, 0x4a0 per track) hold trig and
+parameter-lock data and no machine field. `trackStorage_v2` (`Track::updateMirror`) was not traced **[O]**.
+
+**Parameter values.** Raw s16 in the slot array. The runtime array is `Sound + 0x14`, 71 entries (0x8e bytes) on
+DT2, 101 on DN2. Two permutation tables map runtime index and storage slot:
+
+- save, `FUN_400db930` (runtime -> storage, called from the background worker `FUN_4004fd74` and the `FUN_400dbc66`
+  kit saver): loops 0x8a bytes = 69 entries over the table at `0x40213640` (values 0..76), `storage[(tbl[i]+0xe)*2]`.
+  Runtime indices 69 and 70 are not in the table: **never saved** **[D]**. The save zero-fills the 0xb4 byte block
+  first, so unused slots are 0.
+- load, `FUN_400db24e` (storage -> runtime): loops 0x9a bytes = 77 slots over the table at `0x40213754`
+  (values 0..68), `runtime[tbl[j]] = slot[j]`. Slots whose entry is 0 are padding (0, 4, 8 ... 32); runtime index 0
+  is overwritten by them and is a dummy.
+- 3 of the values (runtime indices 4, 12, 20, the same set `Sound::updateMirror` re-maps) are parameter ids, not
+  levels: both directions translate them through the table (`tbl[(signed char)(v>>8)] << 8`), unchecked, so a
+  value outside 0..76 reads past the table in rodata (bounded, no fault) **[D]**.
+- pattern parameter locks (`FUN_400dc4a6` load, `FUN_400dc6a0`/`FUN_400dc7ea` save): a lock entry is 0x102 bytes
+  (id, track, 128 x s16). On load an entry with id >= 0x4d (77) or track >= 0x10 is skipped; the id goes through
+  `FUN_400dad24`, which returns 0 for an id out of range (tables `0x40213754` for tracks, `0x40213588` for the FX
+  track, bound 0x2e). Values below 0 mean "no lock". Locks are kept in `lock[track*0x47 + runtime_idx]` (0x47 =
+  71 per track), so a runtime index must be below 71 to be lockable.
+
+### What load does with an unknown machine type or value
+
+The one load function for a sound record is `FUN_400db24e` (1114 bytes). Every path ends in it: project load
+(`FUN_400df7f6` -> sound pool at +0xda5a04), kit load (`FUN_400db734`, 16 sounds), kit/sound container and bank load
+(`FUN_400db6cc` for 130 sounds, `FUN_400dfd68` after the sound v1/v2 -> v3 upgrade `FUN_400dfc8e`), and the
+`MmcFs::vfunc_12` file path. **[D]**
+
+| input | result | evidence |
+|---|---|---|
+| sound version field != 3 | `FUN_400db24e` returns 0 (no magic check at sound level); caller resets that one slot to a default sound (`FUN_400e6494` for kit tracks, `FUN_400e6378` for pool, `FUN_400e6494(...,i)` in `FUN_400db6cc`) | `cmpi #3` at entry |
+| **machine type byte** | `runtime[0xa2] = b & mask`, mask = 0xff when `(u8)(b+1) < 8` else 0: **0xff and 0..6 are kept, 7..254 become 0** (SAMPLE). Not rejected, not clamped to the top, not used as an index | `move.b (0xd2,A3)`, `addq #1`, `moveq #8,D2` at `0x400db2ea` (immediate byte `0x400db2eb` = 08), `cmp.l D1,D2; shi D1b; and.l D1,D0` |
+| second byte (+0xd3) | kept if `(u8)(b+1) < 7` (0xff, 0..5) else 0 | `moveq #7,D2` at `0x400db320` |
+| other enum bytes (+0xd4..+0x128) | clamped or defaulted per field (for example `>4 -> 4`, `>100 -> 100`, `>0x3c -> 2`, `>0x16 -> 0xd`) | `FUN_400db24e` body |
+| parameter slots | **copied raw, no range check** (s16, any value, negative too) | the copy loop at `0x400db2cc` |
+| kit-level 16 x s16 at kit +0x1c | unsigned `> 0x7f00` -> `0x6400` | `FUN_400db734` |
+| kit version != 4 or tail magic != `0xbacef00c` | kit rejected, replaced by default kit (`FUN_400e559c`), project continues | `FUN_400db734` entry |
+| project head/tail magic or version != 5 | load fails (`FUN_400df7f6` returns 0); versions 1..4 are upgraded in place first by `FUN_400e0c26` (`FUN_400de3f0` v4 -> v5 is a plain copy) | `FUN_400df7f6`, `FUN_400e0c26` |
+| file header gate (before the payload is read) | file type +0xd (project 1, bank 2, sound 3, kit 5), version +0x11 (project <= 5, bank <= 3, sound <= 3, kit <= 4, -1 invalid), payload size +0x19 <= buffer; else "Project/Sound/Kit version is newer than what the device supports" | `FUN_400e9922`, `FUN_400eb500`, `FUN_400ecaac`, `FUN_4002fa4e`, `FUN_4002faf0` |
+
+So an unknown type or value never reaches a table index from a file, with one exception: the 0xff type is kept, and
+what the dispatch (`FUN_400c8840`: `type > 6` -> entry 6, MANUAL SLICE, if the byte is passed as an unsigned long) and
+other per-type tables do with 0xff was not traced **[O]**. The dispatch clamp and the `map::at` break described above
+are therefore reachable only from the UI or from a patched loader, not from a stock file.
+
+The permission gate `FUN_400da3b0(type, ?)` (bound 6, 7 x 4-byte table at `0x4020ecbe`) is **not** called by the
+loader; it guards the UI paths (assign a machine, paste a sound, sound locks). Its callers in 1.16: `FUN_4002d438`,
+`FUN_4003633c`, `KitActive::vfunc_30`, `FUN_4005066e`, `FUN_40051712`, `FUN_40051e42`, `FUN_400d681e` **[D]**.
+
+**No integrity check over the file payload was found [D].** The CRC-32 routines (`FUN_4013e06c` poly `0xedb88320`,
+`FUN_4013d858`) are used for the flash package header (`FUN_4002ccd0`, magic `MaGj`) and per packet by the MIDI file
+transfer (`FUN_40126956`, "Invalid package checksum"); the Lz4 stream (de)compressor only reports stream errors.
+The only validation in the record itself is the magic words and the version field. A project that a patched
+firmware wrote is therefore not rejected by checksum **[O]** for the SysEx/RPC upload path beyond the packet CRC,
+which the host computes.
+
+### Round trip: patched -> stock
+
+A patched firmware stores type 7 (and new parameter values in existing slots) with `FUN_400db930`, which copies the
+type byte raw. A stock firmware loading that project, kit or sound:
+
+1. file header and record versions are unchanged, so the file is accepted (**no "newer" error**) **[D]**;
+2. every sound with type 7 loads as **type 0 (SAMPLE)**, silently, with its parameter slots copied raw into the SAMPLE
+   machine's layout (so the SAMPLE parameters get whatever the new machine stored in the same slots) **[D]**;
+3. other sounds, patterns, locks and the project are unaffected **[D]**;
+4. if the stock firmware then saves, it writes type 0: **the type-7 information is lost** **[D]**;
+5. parameter values outside the stock range load raw; whether the DSP or the UI clamps them on first use was not
+   traced **[O]**.
+
+### Consequences for patchkit
+
+1. **One immediate decides whether the type survives load.** To keep type N-1 (the new highest id): raise the
+   `moveq #8,D2` immediate to `N+1` (DT2 stock N = 7, new type 7 -> N = 8 -> byte `09`). Addresses of the immediate
+   byte: DT2 1.16 `0x400db2eb` (function `FUN_400db24e`), 1.17 `0x400db44f` (function `0x400db3b2`); DN2 1.11
+   `0x400dd287` (`FUN_400dd1ea`, stock `moveq #6`, 5 types), DN2 1.12 `0x400dd3eb` (function `0x400dd34e`). One patch
+   covers project, kit, pool, bank and sound-file loads. Save needs no patch (raw byte copy). **[D]**
+2. The same value is the whole persistence story for the type: no table, name list or version needs to change for
+   storage, and the storage version must **not** be bumped (the header gates refuse newer versions on stock).
+3. New parameter values persist only in an existing runtime index below 69 (it is in both permutation tables) and
+   in a storage slot below 77. Anything beyond that (runtime 69/70, or a new index) needs both tables extended and
+   both loop bounds changed (`0x8a` in `FUN_400db930`, `0x9a` in `FUN_400db24e`), the lock id bound `0x4d` and the
+   `0x47` lock stride checked, and the 14 spare slots (77..90) used; the record size does not change. **[D]**
+   DN2: 101 runtime entries, 107 slots, table at `0x401fd0b0`.
+4. Parameter values are stored raw, so a new machine may use any s16 range, but kit-level values (16 x s16 at kit
+   +0x1c) clamp at `0x7f00`. Do not put a new machine's values there.
+5. The load does not call the permission gate. A patched build also needs the UI gate (`FUN_400da3b0` bound, table
+   `0x4020ecbe` extended) so the user can assign the type; that is the `permit` part already described above, at the
+   1.16 address.
+6. On stock, a project saved by a patched firmware loads and plays with the new machine's tracks as SAMPLE; re-saving
+   it on stock erases the type. A patchkit that wants stock-safe files has to say so in its notes (mark the project
+   or keep type 0 on export).
+
+Open **[O]**: the meaning of the byte at +0xd3; behaviour of type 0xff downstream; whether the DSP or UI clamps
+out-of-range raw parameter values; `trackStorage_v2`; the project-level load error UI ("LOAD ERROR", "Reload Error");
+a bounded emulator confirmation (load a hand-edited project with type 7 on stock, expect SAMPLE) was not run.
