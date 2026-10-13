@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """patchkit core/machines on Digitone II 1.12 (test/dn2-clone: a clone of FM TONE under its own name).
 
-    uv run python tools/pk_proof_machines_dn2.py [--out DIR] [--only a,b,c,d]
+    uv run python tools/pk_proof_machines_dn2.py [--out DIR] [--only a,b,c,c2,d] [--quick] [--jobs N]
 
 Drives patched images on coupled daemons through the harness (`tools/pk_harness.py` Session: panel inputs, health
 asserted after every input), emulator only:
@@ -15,6 +15,9 @@ asserted after every input), emulator only:
                in the sound records (byte 0xf4); the stock firmware loads the saved project and plays FM TONE
   d  sequence  the sequencer plays the step: PCM equals stock FM TONE
 
+Parts are independent and run in parallel processes (`--jobs`, tools/pk_proofkit.py). `--quick` runs a, b and c; the
+control c2 and the sequencer d are full-tier only.
+
 Output (PNG frames, WAV, overlays) goes under OUT (default out/runs/machines-proof-dn2), never committed.
 Exit 0 only when every check passes. Addresses: finding 02, "core.machines on Digitone II".
 """
@@ -22,8 +25,6 @@ Exit 0 only when every check passes. Addresses: finding 02, "core.machines on Di
 from __future__ import annotations
 
 import argparse
-import hashlib
-import os
 import sys
 from pathlib import Path
 
@@ -37,6 +38,7 @@ if str(HERE) not in sys.path:
 import card_overlay  # noqa: E402
 import hook_ab  # noqa: E402
 import pk_harness as H  # noqa: E402
+import pk_proofkit as K  # noqa: E402
 from pk_proof_drive import aligned_equal, analyse  # noqa: E402
 
 MIRROR = 0x8000487C  # the audio side's copy of track 1's sound at +0xde: the type is the first byte
@@ -46,44 +48,19 @@ MODS = ["core/machines", "test/dn2-clone"]
 READY = ROOT / "out" / "ready-fastweb-dn2"
 
 
-class Proof:
-    def __init__(self, out: Path):
-        self.out = out
-        out.mkdir(parents=True, exist_ok=True)
-        self.failed: list[str] = []
+class Proof(K.Proof):
+    tool = "machines-dn2"
+    device = "dn2"
+    fw = "1.12"
+    ready_env = {"DIGI_PK_READY_DN2_112": str(READY)}
 
-    def check(self, name: str, ok: bool, detail: str = "") -> bool:
-        print(
-            f"  {'ok  ' if ok else 'FAIL'} {name}{': ' + detail if detail else ''}",
-            flush=True,
-        )
-        if not ok:
-            self.failed.append(name)
-        return ok
-
-    def session(self, mods: list[str], tag: str) -> H.Session:
-        if "DIGI_PK_READY_DN2_112" not in os.environ and READY.is_dir():
-            os.environ["DIGI_PK_READY_DN2_112"] = str(READY)
-        s = H.Session(
-            H.Cell("dn2", "1.12", list(mods)),
-            H.Goldens(),
-            log=None,
-            run_name=f"machines-dn2-{tag}",
-        )
-        s.open()
-        return s
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._turned: np.ndarray | None = None
 
     def fresh(self, s: H.Session) -> None:
         s.reset()
         s.run_ms(1500)
-
-    def snap(self, s: H.Session, name: str) -> str:
-        """Save the frame as PNG; return its hash."""
-        from digi_client import oled_png
-
-        _, raw = s.emu.frame()
-        (self.out / f"{name}.png").write_bytes(oled_png(raw))
-        return hashlib.sha256(raw).hexdigest()[:12]
 
     def select(self, s: H.Session, downs: int) -> None:
         """FUNC+SRC, DOWN x downs (the cursor starts on the track's machine), YES (commits), YES (closes)."""
@@ -166,8 +143,7 @@ class Proof:
         return out
 
     # -- the parts
-    def part_a(self) -> dict[str, np.ndarray]:
-        print("a  select (stock FM TONE, then test/dn2-clone)")
+    def part_a(self) -> None:
         pcm: dict[str, np.ndarray] = {}
         with self.session([], "stock") as s:
             self.fresh(s)
@@ -216,7 +192,6 @@ class Proof:
                 f"{got[:3]} {stock_pages[:3]}",
             )
             s.health("end of a")
-        return pcm
 
     def turned(self, s: H.Session, name: str, downs: int) -> np.ndarray:
         self.fresh(s)
@@ -229,11 +204,15 @@ class Proof:
             s.run_ms(100)
         return self.audition(s, name)
 
-    def part_b(self, pcm: dict[str, np.ndarray]) -> None:
-        print("b  parameters (SYN page encoders turned)")
-        with self.session([], "stock-turn") as s:
-            ref = self.turned(s, "turn-stock", 0)
-        pcm["turned"] = ref
+    def turned_ref(self) -> np.ndarray:
+        """Stock FM TONE with the SYN page turns (memoized per process): the reference of b and c."""
+        if self._turned is None:
+            with self.session([], "stock-turn") as s:
+                self._turned = self.turned(s, "turn-stock", 0)
+        return self._turned
+
+    def part_b(self) -> None:
+        ref = self.turned_ref()
         with self.session(MODS, "clone-turn") as s:
             got = self.turned(s, "turn-clone", CLONE_DOWNS)
             plain = self.audition(s, "turn-clone-plain")
@@ -265,10 +244,12 @@ class Proof:
         s.run_ms(5000)
         s.health("project loaded")
 
-    def part_c(self, pcm: dict[str, np.ndarray]) -> None:
-        print("c  persistence")
+    def part_c(self) -> None:
+        turned = self.turned_ref()
         overlay = self.out / "card.overlay"
-        with self.session(MODS, "persist") as s:
+        with self.session(
+            MODS, "persist", pool=False
+        ) as s:  # saves a project: own daemon
             self.fresh(s)
             self.select(s, CLONE_DOWNS)
             self.check(
@@ -314,7 +295,7 @@ class Proof:
             )
             self.same_sound(
                 "the loaded project",
-                pcm["turned"],
+                turned,
                 self.audition(s, "persist-loaded"),
                 "stock FM TONE with the same turns",
             )
@@ -338,7 +319,7 @@ class Proof:
             )
             self.same_sound(
                 "STOCK with the loaded project",
-                pcm["turned"],
+                turned,
                 p,
                 "stock FM TONE with the same turns",
             )
@@ -346,7 +327,6 @@ class Proof:
 
     def part_c_control(self) -> None:
         """Control: the same image with the persistence immediate put back (one byte): the type must NOT survive."""
-        print("c2 control (persistence immediate left at the stock value)")
         import subprocess
         import tomllib
 
@@ -374,9 +354,7 @@ class Proof:
         img.write_bytes(
             dbuild.rebuild(str(src), replacements={3: bytes(main)}, pack="aplib", max_container=dbuild.FLASH_CONTAINER_MAX)
         )  # fmt: skip
-        s = self.session(MODS, "nopersist")
-        with s:
-            s.load(img)
+        with self.session(MODS, "nopersist", image=img, pool=False) as s:
             self.fresh(s)
             self.select(s, CLONE_DOWNS)
             self.check(
@@ -401,8 +379,7 @@ class Proof:
                 f"row {row}",
             )
 
-    def part_d(self, pcm: dict[str, np.ndarray]) -> None:
-        print("d  sequencer")
+    def part_d(self) -> None:
 
         def seq(s: H.Session, name: str, downs: int) -> np.ndarray:
             """Live-record a trig on track 1 (RECORD, PLAY, TRIG 1 held), stop, then play the pattern back."""
@@ -440,26 +417,27 @@ class Proof:
         self.same_sound("FM CLONE (sequencer)", ref, got, "stock FM TONE")
 
 
+PARTS = [
+    K.Part("a", "select (stock FM TONE, then test/dn2-clone)", Proof.part_a, True, 150),
+    K.Part("b", "parameters (SYN page encoders turned)", Proof.part_b, True, 120),
+    K.Part("c", "persistence", Proof.part_c, True, 260),
+    K.Part(
+        "c2",
+        "control (persistence immediate left at the stock value)",
+        Proof.part_c_control,
+        False,
+        120,
+    ),
+    K.Part("d", "sequencer", Proof.part_d, False, 120),
+]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument(
-        "--out", type=Path, default=ROOT / "out" / "runs" / "machines-proof-dn2"
-    )
-    ap.add_argument("--only", default="a,b,c,c2,d")
+    K.add_args(ap, PARTS)
     a = ap.parse_args()
-    proof = Proof(a.out)
-    only = set(a.only.split(","))
-    pcm = proof.part_a() if "a" in only else {}
-    if "b" in only or "c" in only:
-        proof.part_b(pcm)
-    if "c" in only:
-        proof.part_c(pcm)
-    if "c2" in only:
-        proof.part_c_control()
-    if "d" in only:
-        proof.part_d(pcm)
-    print("PASS" if not proof.failed else f"FAIL: {', '.join(proof.failed)}")
-    return 1 if proof.failed else 0
+    a.out = a.out or ROOT / "out" / "runs" / "machines-proof-dn2"
+    return K.run_tool(__file__, Proof, PARTS, a)
 
 
 if __name__ == "__main__":

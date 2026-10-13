@@ -164,17 +164,21 @@ class Emu:
             if run_dir is not None
             else tempfile.TemporaryDirectory(prefix="digi-run-")
         )
-        proc = subprocess.Popen(
-            [exe, "--run-dir", run_dir_obj.name, *args],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            cwd=ROOT,
-            env=None if env is None else {**os.environ, **env},
-        )
+        # stderr goes to a file in the run directory: an undrained pipe blocks the daemon once it fills, and the
+        # file keeps the reason when the daemon dies.
+        errlog = pathlib.Path(run_dir_obj.name) / "daemon.stderr"
+        with errlog.open("wb") as err_file:
+            proc = subprocess.Popen(
+                [exe, "--run-dir", run_dir_obj.name, *args],
+                stdout=subprocess.DEVNULL,
+                stderr=err_file,
+                cwd=ROOT,
+                env=None if env is None else {**os.environ, **env},
+            )
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if proc.poll() is not None:
-                err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
+                err = errlog.read_bytes().decode(errors="replace")
                 run_dir_obj.cleanup()
                 raise RuntimeError(
                     f"digi-emud exited {proc.returncode}: {err.strip()[-400:]}"

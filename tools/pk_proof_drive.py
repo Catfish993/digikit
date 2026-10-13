@@ -19,7 +19,9 @@ PCM capture:
 Frames of the master page (stock and patched, knob at rest and at the top) go to OUT as PNG: the patched label must
 read DRV. The DSP word of the knob is read back with `dsp.peek`. Output files and the report stay under out/ (never
 committed: they derive from firmware). Needs DIGI_EMUD (the digi-emud binary of `mise run emu:serve -- --build-only`).
-Exit 0 only when every check passes.
+Exit 0 only when every check passes. `--quick` renders stock-rest, patched-rest and patched-full only (no knob-sweep,
+no middle setting, no stock-turned control): the checks that need them are dropped or reduced. The daemon's run directory
+persists (`--run-dir`, default out/runs/patchkit/run-drive-DEV), so the cold boot of the patched MAIN is cached.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ import argparse
 import json
 import pathlib
 import sys
+import time
 
 import numpy as np
 
@@ -36,6 +39,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 try:
     import card_check
     import hook_ab
+    import pk_harness as H
+    import pk_proofkit as K
     from digi_client import Emu
 finally:
     sys.path.pop(0)
@@ -174,96 +179,148 @@ class Proof:
         return pcm
 
 
+class DriveProof(K.Proof):
+    tool = "drive"
+    args: argparse.Namespace
+
+    def part_run(self) -> None:
+        a = self.args
+        dev = a.device
+        stock = pathlib.Path(a.stock or ROOT / STOCK[dev]).resolve()
+        patched = pathlib.Path(
+            a.patched or ROOT / "out" / "patch" / f"md-{dev}.syx"
+        ).resolve()
+        ready = pathlib.Path(a.ready or ROOT / "out" / f"ready-md-{dev}")
+        out = self.out
+        quick = self.quick
+        report: dict = {"device": dev, "stock": stock.name, "patched": patched.name}
+        run_dir = a.run_dir or ROOT / "out" / "runs" / "patchkit" / f"run-drive-{dev}"
+        t0 = time.monotonic()
+        with Emu.spawn_coupled(
+            stock,
+            ready,
+            timeout=300,
+            run_dir=run_dir,
+            binary=H.daemon_binary(dev, stock),
+        ) as emu:
+            card = None
+            if dev == "dt2":
+                samples = out / "samples"
+                card_check.make_samples(samples)
+                card = emu.call("card.load", dir=str(samples))["card"]
+            pr = Proof(emu, dev, out)
+            stock_rest = pr.render("stock-rest", [])
+            stock_turned = (
+                None if quick else pr.render("stock-turned", turns(dev, a.full_events))
+            )
+            params = {
+                "syx": str(patched),
+                "start": "auto",
+                "force": True,
+                "auto_no": True,
+            }
+            if card:
+                params["card"] = card
+            rep = emu.call("firmware.load", **params)
+            report["load"] = {
+                k: rep.get(k)
+                for k in (
+                    "start_used",
+                    "main_changed",
+                    "audio",
+                    "coupled_note",
+                    "cache_hit",
+                )
+            }
+            p_rest = pr.render("patched-rest", [])
+            if not quick:
+                pr.render("patched-mid", turns(dev, a.mid_events))
+            pr.render("patched-full", turns(dev, a.full_events))
+            if (
+                not quick
+            ):  # sweep: one knob event every 3M instructions while the note sounds
+                pr.render(
+                    "patched-sweep",
+                    turns(
+                        dev,
+                        a.full_events,
+                        start=TRIG_DOWN[dev] + 5_000_000,
+                        every=3_000_000,
+                    ),
+                )
+        self.timings["run_s"] = time.monotonic() - t0
+        self.timings["emu_ms"] = 1000 * 2.6 * len(pr.runs)
+        r = pr.runs
+        n = min(len(stock_rest), len(p_rest))
+        rest_equal, rest_shift = aligned_equal(stock_rest, p_rest)
+        report["patched_rest_shift_samples"] = rest_shift
+        full = r["patched-full"]
+        checks = {
+            "stock_audible": not r["stock-rest"]["silent"],
+            "patched_rest_bit_identical": rest_equal,
+            "pcm_changes_with_drive": full["rms"] != r["stock-rest"]["rms"],
+            "no_fault": all(
+                x["cf_error"] is None and x["dsp_halted"] is None for x in r.values()
+            ),
+        }
+        if quick:
+            checks |= {
+                "knob_reached_top": full["word_end"] > 0x5000,
+                "harmonic_content_rises": r["patched-rest"]["non_fundamental"]
+                < full["non_fundamental"],
+                "level_follows_drive": r["patched-rest"]["rms"] < full["rms"],
+            }
+        else:
+            assert stock_turned is not None
+            mid = r["patched-mid"]
+            checks |= {
+                "stock_unaffected_by_knob": bool(
+                    len(stock_rest) == len(stock_turned)
+                    and np.array_equal(stock_rest[:n], stock_turned[:n])
+                ),
+                "knob_reached_top": full["word_end"] > mid["word_end"] > 0x5000,
+                "harmonic_content_rises": r["patched-rest"]["non_fundamental"]
+                < mid["non_fundamental"]
+                < full["non_fundamental"],
+                "level_follows_drive": r["patched-rest"]["rms"]
+                < mid["rms"]
+                < full["rms"],
+                "no_clicks": r["patched-sweep"]["max_step"]
+                <= 1.10 * max(r["stock-rest"]["max_step"], full["max_step"]),
+            }
+        report["runs"] = r
+        report["checks"] = checks
+        report["pass"] = all(checks.values())
+        (out / "report.json").write_text(json.dumps(report, indent=1, default=float))
+        for name, ok in checks.items():
+            self.check(name, bool(ok))
+
+
+PARTS = [K.Part("run", "stock and patched renders", DriveProof.part_run, True, 120)]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("device", choices=("dt2", "dn2"))
     ap.add_argument("--stock")
     ap.add_argument("--patched")
     ap.add_argument("--ready")
-    ap.add_argument("--out")
-    ap.add_argument("--run-dir")
+    ap.add_argument(
+        "--run-dir",
+        type=pathlib.Path,
+        help="daemon run dir (default out/runs/patchkit/run-drive-DEV: keeps the patched boot cache)",
+    )
     ap.add_argument(
         "--full-events", type=int, default=60, help="knob events of the top setting"
     )
     ap.add_argument(
         "--mid-events", type=int, default=13, help="knob events of the middle setting"
     )
+    K.add_args(ap, PARTS)
     a = ap.parse_args()
-    dev = a.device
-    stock = pathlib.Path(a.stock or ROOT / STOCK[dev]).resolve()
-    patched = pathlib.Path(
-        a.patched or ROOT / "out" / "patch" / f"md-{dev}.syx"
-    ).resolve()
-    ready = pathlib.Path(a.ready or ROOT / "out" / f"ready-md-{dev}")
-    out = pathlib.Path(a.out or ROOT / "out" / "runs" / "md-proof" / dev)
-    out.mkdir(parents=True, exist_ok=True)
-    report: dict = {"device": dev, "stock": stock.name, "patched": patched.name}
-    with Emu.spawn_coupled(stock, ready, timeout=300, run_dir=a.run_dir) as emu:
-        card = None
-        if dev == "dt2":
-            samples = out / "samples"
-            card_check.make_samples(samples)
-            card = emu.call("card.load", dir=str(samples))["card"]
-        pr = Proof(emu, dev, out)
-        stock_rest = pr.render("stock-rest", [])
-        stock_turned = pr.render("stock-turned", turns(dev, a.full_events))
-        params = {"syx": str(patched), "start": "auto", "force": True, "auto_no": True}
-        if card:
-            params["card"] = card
-        rep = emu.call("firmware.load", **params)
-        report["load"] = {
-            k: rep.get(k)
-            for k in (
-                "start_used",
-                "main_changed",
-                "audio",
-                "coupled_note",
-                "cache_hit",
-            )
-        }
-        p_rest = pr.render("patched-rest", [])
-        pr.render("patched-mid", turns(dev, a.mid_events))
-        pr.render("patched-full", turns(dev, a.full_events))
-        # sweep: one knob event every 3M instructions while the note sounds
-        pr.render(
-            "patched-sweep",
-            turns(
-                dev, a.full_events, start=TRIG_DOWN[dev] + 5_000_000, every=3_000_000
-            ),
-        )
-    r = pr.runs
-    n = min(len(stock_rest), len(p_rest))
-    rest_equal, rest_shift = aligned_equal(stock_rest, p_rest)
-    report["patched_rest_shift_samples"] = rest_shift
-    checks = {
-        "stock_audible": not r["stock-rest"]["silent"],
-        "patched_rest_bit_identical": rest_equal,
-        "stock_unaffected_by_knob": bool(
-            len(stock_rest) == len(stock_turned)
-            and np.array_equal(stock_rest[:n], stock_turned[:n])
-        ),
-        "knob_reached_top": r["patched-full"]["word_end"]
-        > r["patched-mid"]["word_end"]
-        > 0x5000,
-        "pcm_changes_with_drive": r["patched-full"]["rms"] != r["stock-rest"]["rms"],
-        "harmonic_content_rises": r["patched-rest"]["non_fundamental"]
-        < r["patched-mid"]["non_fundamental"]
-        < r["patched-full"]["non_fundamental"],
-        "level_follows_drive": r["patched-rest"]["rms"]
-        < r["patched-mid"]["rms"]
-        < r["patched-full"]["rms"],
-        "no_clicks": r["patched-sweep"]["max_step"]
-        <= 1.10 * max(r["stock-rest"]["max_step"], r["patched-full"]["max_step"]),
-        "no_fault": all(
-            x["cf_error"] is None and x["dsp_halted"] is None for x in r.values()
-        ),
-    }
-    report["runs"] = r
-    report["checks"] = checks
-    report["pass"] = all(checks.values())
-    (out / "report.json").write_text(json.dumps(report, indent=1, default=float))
-    print(json.dumps(report, indent=1, default=float))
-    return 0 if report["pass"] else 1
+    a.out = a.out or ROOT / "out" / "runs" / "md-proof" / a.device
+    DriveProof.args = a
+    return K.run_tool(__file__, DriveProof, PARTS, a)
 
 
 if __name__ == "__main__":

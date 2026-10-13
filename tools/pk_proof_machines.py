@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """patchkit Phase 3 proof: core/machines on Digitakt II 1.17 (machines/xslice and a second clone).
 
-    uv run python tools/pk_proof_machines.py [--out DIR] [--only a,b,c] [--keep]
+    uv run python tools/pk_proof_machines.py [--fw 1.16|1.17] [--out DIR] [--only a,b,c] [--quick] [--jobs N]
 
 Drives patched images on coupled daemons through the harness (`tools/pk_harness.py` Session: panel inputs, health
 asserted after every input) and reads back:
@@ -15,6 +15,13 @@ asserted after every input) and reads back:
                  the same project is loaded on the STOCK firmware: the track loads as SAMPLE, no fault.
   c  two         XSLICE (7) and a second clone (8): both select, both read back their type, both sound like MANUAL
                  SLICE; the same image is built whichever order the modules are named.
+
+  d  mod picker  the MOD page DEST list of XSLICE and the clone equals MANUAL SLICE's            (full tier only)
+  e  sequencer   PLAY: a step of the machine sounds like MANUAL SLICE
+  b2 control     the persistence immediate put back: the type must not survive                  (full tier only)
+
+Parts are independent (each builds its own references) and run in parallel processes (`--jobs`, tools/pk_proofkit.py).
+`--quick` runs a, b, c (the clone only) and e (the clone only): select and type, sound, persistence, the sequencer.
 
 Output (PNG frames, WAV, card images) goes under OUT (default out/runs/machines-proof) and is never committed.
 Exit 0 only when every check passes. Addresses are the DT2 1.16/1.17 ones of finding 02 and 04.
@@ -38,6 +45,7 @@ if str(HERE) not in sys.path:
 import card_overlay  # noqa: E402
 import hook_ab  # noqa: E402
 import pk_harness as H  # noqa: E402
+import pk_proofkit as K  # noqa: E402
 from pk_proof_drive import aligned_equal, analyse  # noqa: E402
 
 TRACK_OBJ_WORD = 0x4265338C  # the type byte is the third byte of this word (0x4265338e)
@@ -55,43 +63,19 @@ MODS_ONE = ["core/machines", "machines/xslice"]
 MODS_TWO = ["core/machines", "machines/xslice", "test/machine-clone"]
 
 
-class Proof:
-    def __init__(self, out: Path):
-        self.out = out
-        out.mkdir(parents=True, exist_ok=True)
-        self.failed: list[str] = []
+class Proof(K.Proof):
+    tool = "machines"
+    device = "dt2"
 
-    def check(self, name: str, ok: bool, detail: str = "") -> bool:
-        print(
-            f"  {'ok  ' if ok else 'FAIL'} {name}{': ' + detail if detail else ''}",
-            flush=True,
-        )
-        if not ok:
-            self.failed.append(name)
-        return ok
-
-    # -- one daemon
-    def session(self, mods: list[str]) -> H.Session:
-        cell = H.Cell("dt2", FW, list(mods))
-        s = H.Session(
-            cell,
-            H.Goldens(),
-            log=None,
-            run_name="machines-" + "-".join(m.rsplit("/", 1)[-1] for m in mods),
-        )
-        s.open()
-        return s
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fw = FW
+        self._ref: dict[str, np.ndarray] = {}
 
     def fresh(self, s: H.Session) -> None:
         """Back to the ready state, with time for the sample slot to finish loading."""
         s.reset()
         s.run_ms(1500)
-
-    def snap(self, s: H.Session, name: str) -> None:
-        _, raw = s.emu.frame()
-        from digi_client import oled_png
-
-        (self.out / f"{name}.png").write_bytes(oled_png(raw))
 
     def select(self, s: H.Session, downs: int, ups: int = 0) -> None:
         """FUNC+SRC, DOWN x downs (the cursor starts on the track's machine; UP x ups first), YES (commits, the
@@ -177,8 +161,16 @@ class Proof:
         return out
 
     # -- the parts
-    def part_a(self) -> dict[str, np.ndarray]:
-        print(f"a  select (stock, then machines/xslice on {FW})")
+    def stock_slice(self) -> np.ndarray:
+        """The reference every part compares with: stock MANUAL SLICE, audition of TRIG 1 (memoized per process)."""
+        if "stock_slice" not in self._ref:
+            with self.session([]) as s:
+                self.fresh(s)
+                self.select(s, SLICE_DOWNS)
+                self._ref["stock_slice"] = self.audition(s, "stock-slice")
+        return self._ref["stock_slice"]
+
+    def part_a(self) -> None:
         pcm: dict[str, np.ndarray] = {}
         with self.session([]) as s:
             self.fresh(s)
@@ -186,7 +178,9 @@ class Proof:
             self.check(
                 "stock: SLICE is type 6", self.type_now(s) == 6, f"{self.type_now(s)}"
             )
-            pcm["stock_slice"] = self.audition(s, "stock-slice")
+            pcm["stock_slice"] = self._ref["stock_slice"] = self.audition(
+                s, "stock-slice"
+            )
             self.check(
                 "stock: SLICE sounds",
                 not analyse(pcm["stock_slice"]).get("silent", True),
@@ -222,12 +216,12 @@ class Proof:
             self.check("DSP type cache (DM 0x255970) is 7", dsp == 7, f"{dsp}")
             self.same_sound("XSLICE", pcm["stock_slice"], pcm["xslice"], "stock SLICE")
             s.health("end of a")
-        return pcm
 
     def part_b(self) -> None:
-        print("b  persistence (patched save and load, then stock load)")
         overlay = self.out / "card.overlay"
-        with self.session(MODS_ONE) as s:
+        with self.session(
+            MODS_ONE, "persist", pool=False
+        ) as s:  # saves a project: the card is dirty afterwards
             self.fresh(s)
             self.select(s, XSLICE_DOWNS)
             self.check("XSLICE selected before the save", self.type_now(s) == 7)
@@ -258,7 +252,7 @@ class Proof:
             return
         n = card_overlay.apply(base, overlay, out_img)
         self.check("card image with the saved project written", n > 0, f"{n} sectors")
-        with self.session([]) as s:
+        with self.session([], "saved-card", pool=False) as s:
             s.card = str(out_img)
             s.load(s.syx, settle=False)
             s.emu.drain_events()
@@ -280,7 +274,6 @@ class Proof:
 
     def part_b_control(self) -> None:
         """Control: the same image with the persistence immediate put back (one byte): the type must NOT survive."""
-        print("b2 control (persistence immediate left at the stock value)")
         import tomllib
 
         import port_resolve as pr
@@ -314,10 +307,7 @@ class Proof:
                 max_container=dbuild.FLASH_CONTAINER_MAX,
             )
         )
-        cell = H.Cell("dt2", FW, list(MODS_ONE))
-        s = H.Session(cell, H.Goldens(), log=None, run_name="machines-nopersist")
-        with s:
-            s.open(image=img)
+        with self.session(MODS_ONE, "nopersist", image=img, pool=False) as s:
             self.fresh(s)
             self.select(s, XSLICE_DOWNS)
             self.check("control: XSLICE selected", self.type_now(s) == 7)
@@ -351,8 +341,8 @@ class Proof:
         s.do_tap("YES")
         s.run_ms(6000)
 
-    def part_c(self, pcm: dict[str, np.ndarray]) -> None:
-        print("c  two machine modules")
+    def part_c(self) -> None:
+        stock = self.stock_slice()
         sets = {}
         for name, mods in (
             ("sorted", MODS_TWO),
@@ -379,7 +369,7 @@ class Proof:
             for label, downs, want in (
                 ("XSLICE", XSLICE_DOWNS, 7),
                 ("XClone", XCLONE_DOWNS, 8),
-            ):
+            )[1 if self.quick else 0 :]:
                 self.fresh(s)
                 self.select(s, downs)
                 t = self.type_now(s)
@@ -391,71 +381,82 @@ class Proof:
                     f"{label}: TX {tx} and DSP cache {dsp} carry {want}",
                     tx == want and dsp == want,
                 )
-                self.same_sound(label, pcm["stock_slice"], p, "stock SLICE")
+                self.same_sound(label, stock, p, "stock SLICE")
             s.health("end of c")
 
+    def part_d(self) -> None:
+        with self.session([]) as s:
+            stock = self.dest_frames(s, SLICE_DOWNS)
+        with self.session(MODS_TWO) as s:
+            for label, downs in (("XSLICE", XSLICE_DOWNS), ("XClone", XCLONE_DOWNS)):
+                got = self.dest_frames(s, downs)
+                self.check(
+                    f"{label}: the destination lists (with the SRC group) equal MANUAL SLICE's",
+                    got == stock,
+                    f"{len(got)} frames",
+                )
 
-def part_d(proof: Proof) -> None:
-    print("d  modulation destination picker (MOD page, DEST knob)")
-    with proof.session([]) as s:
-        stock = proof.dest_frames(s, SLICE_DOWNS)
-    with proof.session(MODS_TWO) as s:
-        for label, downs in (("XSLICE", XSLICE_DOWNS), ("XClone", XCLONE_DOWNS)):
-            got = proof.dest_frames(s, downs)
-            proof.check(
-                f"{label}: the destination lists (with the SRC group) equal MANUAL SLICE's",
-                got == stock,
-                f"{len(got)} frames",
-            )
+    def part_e(self) -> None:
+        stock = self.sequence_stock()
+        with self.session(MODS_TWO) as s:
+            for label, downs in (("XSLICE", XSLICE_DOWNS), ("XClone", XCLONE_DOWNS))[
+                1 if self.quick else 0 :
+            ]:
+                got = self.sequence(s, downs, f"seq-{label.lower()}")
+                self.same_sound(f"{label} (sequencer)", stock, got, "stock SLICE")
+
+    def sequence_stock(self) -> np.ndarray:
+        with self.session([]) as s:
+            stock = self.sequence(s, SLICE_DOWNS, "seq-stock-slice")
+        self.check(
+            "stock: SLICE plays from the sequencer",
+            not analyse(stock).get("silent", True),
+        )
+        return stock
 
 
-def part_e(proof: Proof) -> None:
-    print("e  sequencer: the step plays")
-    with proof.session([]) as s:
-        stock = proof.sequence(s, SLICE_DOWNS, "seq-stock-slice")
-    proof.check(
-        "stock: SLICE plays from the sequencer", not analyse(stock).get("silent", True)
-    )
-    with proof.session(MODS_TWO) as s:
-        for label, downs in (("XSLICE", XSLICE_DOWNS), ("XClone", XCLONE_DOWNS)):
-            got = proof.sequence(s, downs, f"seq-{label.lower()}")
-            proof.same_sound(f"{label} (sequencer)", stock, got, "stock SLICE")
+PARTS = [
+    K.Part("a", "select (stock, then machines/xslice)", Proof.part_a, True, 90),
+    K.Part(
+        "b",
+        "persistence (patched save and load, then stock load)",
+        Proof.part_b,
+        True,
+        150,
+    ),
+    K.Part(
+        "b2",
+        "control (persistence immediate left at the stock value)",
+        Proof.part_b_control,
+        False,
+        90,
+    ),
+    K.Part("c", "two machine modules", Proof.part_c, True, 100),
+    K.Part(
+        "d",
+        "modulation destination picker (MOD page, DEST knob)",
+        Proof.part_d,
+        False,
+        130,
+    ),
+    K.Part("e", "sequencer: the step plays", Proof.part_e, True, 70),
+]
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument(
-        "--out", type=Path, default=ROOT / "out" / "runs" / "machines-proof"
-    )
-    ap.add_argument("--only", default="a,b,b2,c,d,e")
-    ap.add_argument("--fw", default="1.17", choices=("1.16", "1.17"))
-    a = ap.parse_args()
     global FW
-    FW = a.fw
-    proof = Proof(
-        a.out
-        or ROOT
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--fw", default="1.17", choices=("1.16", "1.17"))
+    K.add_args(ap, PARTS)
+    a = ap.parse_args()
+    a.out = a.out or (
+        ROOT
         / "out"
         / "runs"
-        / ("machines-proof" if FW == "1.17" else f"machines-proof-{FW}")
+        / ("machines-proof" if a.fw == "1.17" else f"machines-proof-{a.fw}")
     )
-    only = set(a.only.split(","))
-    pcm = proof.part_a() if "a" in only else {}
-    if "b" in only:
-        proof.part_b()
-    if "b2" in only:
-        proof.part_b_control()
-    if "d" in only:
-        part_d(proof)
-    if "e" in only:
-        part_e(proof)
-    if "c" in only:
-        if not pcm:
-            print("c needs the PCM of a: run with --only a,c")
-            return 2
-        proof.part_c(pcm)
-    print("PASS" if not proof.failed else f"FAIL: {', '.join(proof.failed)}")
-    return 1 if proof.failed else 0
+    FW = a.fw
+    return K.run_tool(__file__, Proof, PARTS, a)
 
 
 if __name__ == "__main__":

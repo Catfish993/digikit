@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """patchkit Phase 4.2 proof: a registered machine type renders through the per-voice hook (DT2 1.17).
 
-    uv run python tools/pk_proof_voice.py [--patched OUT.syx] [--ready DIR] [--out DIR] [--case NAME ...]
+    uv run python tools/pk_proof_voice.py [--patched OUT.syx] [--ready DIR] [--out DIR] [--only basic,level,reverb,filter]
+        [--quick] [--jobs N]
 
 Each case starts a coupled daemon on the stock firmware and the one-sample card, optionally loads the patched image
 (`firmware.load`, hot DSP), forces frame words with DSP_FRAME_POKE (core.machines does not exist yet, so the type is
@@ -16,8 +17,11 @@ forced on the wire: word 0x94 is the machine type of track 0) and renders TRIG 1
                     stages see the voice (amp / level stage)
   stock-lev-half    the same on the stock sample (reference for the level stage)
 
-The tool prints one JSON report and exits 1 unless every case passes. Output stays under out/ (derived from firmware).
-Needs DIGI_EMUD (the digi-emud binary built with SHARC_GEN_DIR=out/native/dt2-audio/gen).
+Parts (independent, in parallel processes with `--jobs`, tools/pk_proofkit.py): basic = type0 (stock, patched-type0),
+sine60, sine72, tune (tune+1); level (lev-half, lev-full, stock, stock-lev-half); reverb (rev-dry, rev-send); filter
+(flt-open, flt-closed). `--quick` runs type0, sine60, level and filter; the full tier runs every case.
+The patched image is built from core/dsp-voice and test/sine-voice unless
+`--patched` names one. Output stays under out/ (derived from firmware).
 """
 
 from __future__ import annotations
@@ -25,21 +29,22 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import pathlib
 import sys
-import tempfile
 
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 try:
-    import card_check
     import hook_ab
+    import pk_proofkit as K
     import pluck_ref
-    from digi_client import Emu
 finally:
     sys.path.pop(0)
+
+PATCH_MODS = ["core/dsp-voice", "test/sine-voice"]
 
 TRIG1 = 25
 NOTE_HZ = {60: 261.6256, 72: 523.2511}
@@ -150,102 +155,96 @@ def analyse(pcm: np.ndarray) -> dict:
     }
 
 
-def render(
-    syx: pathlib.Path,
-    ready: pathlib.Path,
-    patched: pathlib.Path | None,
-    poke: str,
-    events: list[dict],
-    wav: pathlib.Path,
-    work: pathlib.Path,
-) -> dict:
-    env = {"DSP_FRAME_POKE": poke} if poke else {}
-    busy = None
-    with Emu.spawn_coupled(syx, ready, timeout=300, env=env) as emu:
-        samples = work / "samples"
-        card_check.make_samples(samples)
-        emu.call("card.load", dir=str(samples))
-        if patched is not None:
-            emu.call("firmware.load", syx=str(patched), auto_no=True)
-        if events:
-            emu.restart(auto_no=True)
-            emu.call("pcm.tap", action="capture", path=str(wav))
-            emu.schedule(
-                [
-                    *events,
-                    {"at_instr": NOTE_DOWN, "button": TRIG1, "down": True},
-                    {"at_instr": NOTE_UP, "button": TRIG1, "down": False},
-                ]
-            )
-            emu.step(RUN_END)
-        else:
-            emu.restart(auto_no=True)
-            emu.step(20_000_000)
-            emu.call("pcm.tap", action="capture", path=str(wav))
-            emu.call("input.button", code=TRIG1, down=True)
-            emu.step(40_000_000)
-            t0 = (emu.status().get("audio") or {}).get("dsp_tiers") or {}
-            frames = emu.status()["dsp_frames"]
-            emu.call("run_until", frames=frames + 1500)
-            t1 = (emu.status().get("audio") or {}).get("dsp_tiers") or {}
-            if t0 and t1:
-                busy = (
-                    (t1["instructions"] - t1["idle_skip"])
-                    - (t0["instructions"] - t0["idle_skip"])
-                ) / 1500
-            emu.call("input.button", code=TRIG1, down=False)
-            frames = emu.status()["dsp_frames"]
-            emu.call("run_until", frames=frames + 300)
-        emu.call("pcm.tap", action="capture_stop")
-        st = emu.status()
-    return {
-        "dsp_halted": (st.get("audio") or {}).get("halted"),
-        "frames": st["dsp_frames"],
-        "busy_per_block": busy,
-    }
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--stock", default=str(ROOT / "Digitakt_II_OS1.17.syx"))
-    ap.add_argument("--patched", default=str(ROOT / "out" / "patch" / "vp.syx"))
-    ap.add_argument("--ready", default=str(ROOT / "out" / "ready-fw-dt2"))
-    ap.add_argument("--out", default=str(ROOT / "out" / "runs" / "voice-proof"))
-    ap.add_argument("--case", action="append", choices=list(CASES))
-    a = ap.parse_args()
-    out = pathlib.Path(a.out)
-    out.mkdir(parents=True, exist_ok=True)
-    work = pathlib.Path(tempfile.mkdtemp(prefix="pk-voice-"))
-    stock, patched, ready = (
-        pathlib.Path(a.stock).resolve(),
-        pathlib.Path(a.patched).resolve(),
-        pathlib.Path(a.ready).resolve(),
+class VoiceProof(K.Proof):
+    tool = "voice"
+    device = "dt2"
+    fw = "1.17"
+    patched: pathlib.Path | None = (
+        None  # --patched: an image to load instead of building PATCH_MODS
     )
-    names = a.case or list(CASES)
-    report: dict = {"patched": patched.name}
-    pcm: dict[str, np.ndarray] = {}
-    for name in names:
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.report: dict = {}
+        self.pcm: dict[str, np.ndarray] = {}
+
+    def render(self, name: str) -> dict:
+        """One case from `restart` on its own daemon (the poke is part of the daemon's environment)."""
+        if name in self.report:
+            return self.report[name]
         use_patch, poke, events = CASES[name]
-        wav = out / f"{name}.wav"
-        info = render(
-            stock, ready, patched if use_patch else None, poke, events, wav, work
-        )
-        pcm[name] = hook_ab.read_wav(wav)
-        info.update(analyse(pcm[name]))
+        wav = self.out / f"{name}.wav"
+        env = {"DSP_FRAME_POKE": poke} if poke else None
+        busy = None
+        mods = PATCH_MODS if use_patch else []
+        image = self.patched if use_patch else None
+        with self.session(
+            mods,
+            f"case-{'p' if use_patch else 's'}-{poke or 'none'}",
+            env=env,
+            image=image,
+        ) as s:
+            emu = s.emu
+            if events:
+                emu.restart(auto_no=True)
+                emu.call("pcm.tap", action="capture", path=str(wav))
+                emu.schedule(
+                    [
+                        *events,
+                        {"at_instr": NOTE_DOWN, "button": TRIG1, "down": True},
+                        {"at_instr": NOTE_UP, "button": TRIG1, "down": False},
+                    ]
+                )
+                emu.step(RUN_END)
+                s.timings["emu_ms"] = s.timings.get("emu_ms", 0.0) + RUN_END / 132_000
+            else:
+                emu.restart(auto_no=True)
+                emu.step(20_000_000)
+                emu.call("pcm.tap", action="capture", path=str(wav))
+                emu.call("input.button", code=TRIG1, down=True)
+                emu.step(40_000_000)
+                t0 = (emu.status().get("audio") or {}).get("dsp_tiers") or {}
+                frames = emu.status()["dsp_frames"]
+                emu.call("run_until", frames=frames + 1500)
+                t1 = (emu.status().get("audio") or {}).get("dsp_tiers") or {}
+                if t0 and t1:
+                    busy = (
+                        (t1["instructions"] - t1["idle_skip"])
+                        - (t0["instructions"] - t0["idle_skip"])
+                    ) / 1500
+                emu.call("input.button", code=TRIG1, down=False)
+                frames = emu.status()["dsp_frames"]
+                emu.call("run_until", frames=frames + 300)
+                s.timings["emu_ms"] = s.timings.get("emu_ms", 0.0) + (
+                    60_000_000 / 132_000 + 1800 / 1.5
+                )
+            emu.call("pcm.tap", action="capture_stop")
+            st = emu.status()
+        info = {
+            "dsp_halted": (st.get("audio") or {}).get("halted"),
+            "frames": st["dsp_frames"],
+            "busy_per_block": busy,
+        }
+        self.pcm[name] = hook_ab.read_wav(wav)
+        info.update(analyse(self.pcm[name]))
         if name in PLUCK_CASES and not info["silent"]:
-            info.update(analyse_pluck(pcm[name], PLUCK_CASES[name], info["start"]))
-        report[name] = info
+            info.update(analyse_pluck(self.pcm[name], PLUCK_CASES[name], info["start"]))
+        self.report[name] = info
         print(name, json.dumps(info), flush=True)
-    ok = True
-    checks: dict[str, bool] = {}
-    for name in names:
-        r = report[name]
-        ok_run = r.get("dsp_halted") is None
-        if name == "patched-type0" and "stock" in pcm:
-            n = min(len(pcm["stock"]), len(pcm[name]))
-            same = bool(np.array_equal(pcm["stock"][:n], pcm[name][:n]))
+        return info
+
+    def case_ok(self, name: str) -> bool:
+        """The per-case verdict of the original tool: no DSP halt, plus the case's own condition."""
+        r = self.render(name)
+        ok = r.get("dsp_halted") is None
+        detail = ""
+        if name == "patched-type0":
+            self.render("stock")
+            n = min(len(self.pcm["stock"]), len(self.pcm[name]))
+            same = bool(np.array_equal(self.pcm["stock"][:n], self.pcm[name][:n]))
             r["equal_to_stock"] = same
-            ok_run &= same and not r["silent"]
+            ok &= same and not r["silent"]
+            detail = f"equal to stock: {same}"
         want = {
             "sine60": semitone_hz(60),
             "sine72": semitone_hz(72),
@@ -254,39 +253,113 @@ def main() -> int:
         if want is not None:
             cents = 1200 * math.log2(r["hz"] / want) if not r["silent"] else None
             r["cents_error"] = cents
-            ok_run &= cents is not None and abs(cents) < 5
-        if name in PLUCK_CASES:
-            ok_run &= not r["silent"] and abs(r["cents"]) < 2.0
-            if name == "pluck60":
-                ok_run &= r["t60_s"] is not None and abs(r["t60_s"] / 1.02 - 1) < 0.15
-        checks[name] = bool(ok_run)
-        ok &= ok_run
-    if all(k in report for k in ("lev-half", "lev-full", "stock", "stock-lev-half")):
-        sine_db = 20 * math.log10(report["lev-half"]["rms"] / report["lev-full"]["rms"])
-        stock_db = 20 * math.log10(
-            report["stock-lev-half"]["rms"] / report["stock"]["rms"]
+            ok &= cents is not None and abs(cents) < 5
+            detail = f"{r.get('hz', 0):.2f} Hz, {cents if cents is None else round(cents, 2)} cents"
+        return self.check(f"case {name}", bool(ok), detail)
+
+    def finish(self) -> None:
+        (self.out / "report.json").write_text(
+            json.dumps(self.report, indent=1, default=float)
         )
-        report["level_stage_db"] = {"sine": sine_db, "stock": stock_db}
-        good = abs(sine_db - stock_db) < 0.3
-        checks["level-stage"] = good
-        ok &= good
-    if "rev-dry" in report and "rev-send" in report:
-        tails = {k: tail_energy(pcm[k]) for k in ("rev-dry", "rev-send")}
-        report["reverb_tail"] = tails
-        good = tails["rev-send"] > 30 * max(tails["rev-dry"], 1e-12)
-        checks["reverb-send"] = good
-        ok &= good
-    if "flt-open" in report and "flt-closed" in report:
-        drop = 20 * math.log10(report["flt-closed"]["rms"] / report["flt-open"]["rms"])
-        report["filter_drop_db"] = drop
-        good = drop < -6
-        checks["filter"] = good
-        ok &= good
-    report["checks"] = checks
-    report["pass"] = bool(ok)
-    (out / "report.json").write_text(json.dumps(report, indent=1, default=float))
-    print(json.dumps({"checks": checks, "pass": ok}))
-    return 0 if ok else 1
+
+    def part_cases(self, names: tuple[str, ...]) -> None:
+        for name in names:
+            self.case_ok(name)
+        self.finish()
+
+    def part_level(self) -> None:
+        for name in ("lev-half", "lev-full", "stock", "stock-lev-half"):
+            self.render(name)
+        for name in ("lev-half", "lev-full", "stock", "stock-lev-half"):
+            self.case_ok(name)
+        r = self.report
+        sine_db = 20 * math.log10(r["lev-half"]["rms"] / r["lev-full"]["rms"])
+        stock_db = 20 * math.log10(r["stock-lev-half"]["rms"] / r["stock"]["rms"])
+        self.check(
+            "level stage: the sine and the stock sample drop by the same dB",
+            abs(sine_db - stock_db) < 0.3,
+            f"sine {sine_db:.2f} dB, stock {stock_db:.2f} dB",
+        )
+        self.finish()
+
+    def part_reverb(self) -> None:
+        for name in ("rev-dry", "rev-send"):
+            self.case_ok(name)
+        tails = {k: tail_energy(self.pcm[k]) for k in ("rev-dry", "rev-send")}
+        self.check(
+            "reverb send adds a tail",
+            tails["rev-send"] > 30 * max(tails["rev-dry"], 1e-12),
+            str(tails),
+        )
+        self.finish()
+
+    def part_filter(self) -> None:
+        for name in ("flt-open", "flt-closed"):
+            self.case_ok(name)
+        drop = 20 * math.log10(
+            self.report["flt-closed"]["rms"] / self.report["flt-open"]["rms"]
+        )
+        self.check("the filter closes on the sine", drop < -6, f"{drop:.1f} dB")
+        self.finish()
+
+
+P = VoiceProof
+PARTS = [
+    K.Part(
+        "type0",
+        "stock, and the patched image with no type poked equals it",
+        lambda p: p.part_cases(("stock", "patched-type0")),
+        True,
+        60,
+        group="basic",
+    ),
+    K.Part(
+        "sine60",
+        "the sine voice at note 60",
+        lambda p: p.part_cases(("sine60",)),
+        True,
+        40,
+        group="basic",
+    ),
+    K.Part(
+        "sine72",
+        "the sine voice at note 72",
+        lambda p: p.part_cases(("sine72",)),
+        False,
+        40,
+        group="basic",
+    ),
+    K.Part(
+        "tune",
+        "the sine voice tuned +1 semitone",
+        lambda p: p.part_cases(("tune+1",)),
+        False,
+        40,
+        group="basic",
+    ),
+    K.Part("level", "the level stage sees the voice", P.part_level, True, 90),
+    K.Part("reverb", "the reverb send", P.part_reverb, False, 60),
+    K.Part("filter", "the filter", P.part_filter, True, 60),
+]
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--patched",
+        type=pathlib.Path,
+        help="an image to load instead of the patch of PATCH_MODS",
+    )
+    ap.add_argument(
+        "--ready", type=pathlib.Path, help="ready inputs (DIGI_PK_READY_DT2_117)"
+    )
+    K.add_args(ap, PARTS)
+    a = ap.parse_args()
+    a.out = a.out or ROOT / "out" / "runs" / "voice-proof"
+    if a.ready:
+        os.environ["DIGI_PK_READY_DT2_117"] = str(a.ready.resolve())
+    VoiceProof.patched = a.patched.resolve() if a.patched else None
+    return K.run_tool(__file__, VoiceProof, PARTS, a)
 
 
 if __name__ == "__main__":

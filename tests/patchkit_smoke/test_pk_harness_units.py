@@ -106,3 +106,91 @@ def test_stale_or_foreign_ready_inputs_are_refused(tmp_path, monkeypatch):
     )
     with pytest.raises(h.HarnessError, match="is missing"):
         h.firmware_inputs(cell)
+
+
+def test_goldens_save_merges_with_other_processes(tmp_path, monkeypatch):
+    """Two processes recording different cells must not overwrite each other (`--update` with `--jobs`)."""
+    monkeypatch.setattr(h, "OUT", tmp_path)
+    path = tmp_path / "goldens.json"
+    a, b = h.Goldens(path), h.Goldens(path)
+    a.set("dt2-1.17/stock/boot/ready", "aa")
+    b.set("dn2-1.12/stock/boot/ready", "bb")
+    a.save()
+    b.save()
+    assert json.loads(path.read_text()) == {
+        "dt2-1.17/stock/boot/ready": "aa",
+        "dn2-1.12/stock/boot/ready": "bb",
+    }
+
+
+def test_shared_boot_cache_links(tmp_path):
+    """Every daemon sees the same `patched` and `cards` directories and the same card path."""
+    cache = tmp_path / "cache"
+    run1, run2 = tmp_path / "run1", tmp_path / "run2"
+    for run in (run1, run2):
+        h.link_shared(run, cache)
+    assert (run1 / "patched").resolve() == (run2 / "patched").resolve()
+    assert (run1 / "cards").resolve() == (run2 / "cards").resolve()
+    (
+        run1 / "cards" / "abc123"
+    ).mkdir()  # the daemon builds the card through its run dir
+    (run1 / "cards" / "abc123" / "dt2.img").write_bytes(b"card")
+    c1 = h.canonical_card(cache, str(run1 / "cards" / "abc123" / "dt2.img"))
+    c2 = h.canonical_card(cache, str(run2 / "cards" / "abc123" / "dt2.img"))
+    assert c1 == c2 and Path(c1).read_bytes() == b"card"
+    # a private cache dir from an earlier run is kept aside
+    run3 = tmp_path / "run3"
+    (run3 / "patched").mkdir(parents=True)
+    h.link_shared(run3, cache)
+    assert (run3 / "patched").is_symlink() and list(run3.glob("patched.private-*"))
+
+
+def test_default_jobs_is_bounded():
+    assert 1 <= h.default_jobs(100) <= h.MAX_JOBS
+    assert h.default_jobs(1) == 1
+
+
+def test_proofkit_child_command_strips_job_options():
+    import pk_proofkit as k
+
+    argv = ["--quick", "--only", "a,b", "--jobs=4", "--out", "x", "--result", "r"]
+    assert k._strip_options(argv, ("--only", "--jobs", "--result")) == [
+        "--quick",
+        "--out",
+        "x",
+    ]
+
+
+def test_proofkit_runs_parts_and_reports(tmp_path, capsys):
+    """Parts in one process: a crash is a failed check, not the end of the run; the verdict and exit code follow."""
+    import argparse
+
+    import pk_proofkit as k
+
+    def good(p):
+        p.check("fine", True, 1)
+
+    def bad(p):
+        p.check("broken", False, "detail")
+
+    def crash(p):
+        raise RuntimeError("boom")
+
+    parts = [
+        k.Part("g", "good", good),
+        k.Part("b", "bad", bad, quick=False),
+        k.Part("c", "crash", crash, quick=False),
+    ]
+    ap = argparse.ArgumentParser()
+    k.add_args(ap, parts)
+    a = ap.parse_args(["--out", str(tmp_path / "o"), "--jobs", "1"])
+    assert k.run_tool("x.py", k.Proof, parts, a, argv=[]) == 1
+    text = capsys.readouterr().out
+    assert "part g" in text and "PASS" in text
+    assert (
+        "part b" in text
+        and "part c crashed" in text
+        and text.rstrip().splitlines()[-1].startswith("FAIL: parts b, c")
+    )
+    q = ap.parse_args(["--out", str(tmp_path / "q"), "--jobs", "1", "--quick"])
+    assert k.run_tool("x.py", k.Proof, parts, q, argv=[]) == 0
