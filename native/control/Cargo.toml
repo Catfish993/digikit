@@ -10,6 +10,9 @@ description = "Host-agnostic emulator controller and control protocol (JSON-RPC 
 
 [lib]
 name = "digi_control"
+# No doctests here (only text blocks). Compiling them links digi_coupled from the shared
+# target dir, which a parallel verify step may be rebuilding with other features (E0463).
+doctest = false
 
 [features]
 default = ["server"]
