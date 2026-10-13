@@ -1100,7 +1100,7 @@ cave capped the number of types), `cf.expansion` 744 B (code and tables). Eviden
 The proof needed one emulator addition: `card.overlay {path}` (native/{card,machine,boot,control}: the guest's writes to
 the eMMC as sparse sectors) so a card with a patched firmware's project can be mounted by another firmware.
 
-- **[O]** Part d of the proof, `XClone`'s MOD destination frames equal to MANUAL SLICE's, **fails on 1.17 and 1.16 (and on 1.17 with the cave
+- **[O]** Part d of the proof, `XClone`'s MOD destination frames equal to MANUAL SLICE's, **fails on 1.17 and 1.16, and on 1.17 with the cave
   placement and the old runtime too** (checked at `ff5a1a5`: same 14-frame comparison, XSLICE passes, XClone differs; PCM,
   type, persistence and sequencer checks of XClone pass). Not caused by the placement or the runtime change; which frame
   differs was not examined.
