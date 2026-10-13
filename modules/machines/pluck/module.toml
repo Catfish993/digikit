@@ -4,9 +4,9 @@ version = "0.1.0"
 name = "Pluck"
 category = "machines"
 status = "experimental"
-summary = "Karplus-Strong plucked string machine (DSP side): one string per track, tuned to the note, with decay, pick position, brightness and colour"
+summary = "PLUCK machine: a Karplus-Strong plucked string, one per track, tuned to the note, with decay, pick position, brightness and colour knobs on the SRC page"
 ports = ["dt2-1.16", "dt2-1.17"]
-requires = ["core/dsp-voice"]
+requires = ["core/dsp-voice", "core/machines", "core/params"]
 conflicts = []
 
 [targets]
@@ -21,13 +21,60 @@ sources = ["src/dsp/pluck.s"]
 place = "dsp.l2"
 devices = ["dt2"]
 
-# The machine type this routine renders: a literal until core.machines assigns type numbers (then
-# "machines.pluck.type").
+# The DSP routine renders the type core/machines assigns to this machine (`machines.pluck.type`).
 [[op]]
 op = "register"
 table = "_dv_table"
-row = ["9", "_pk_render"]
+row = ["machines.pluck.type", "_pk_render"]
 devices = ["dt2"]
 
-[[claim]]
-resource = "machine.type.9"
+# The machine clones SAMPLE (type 0: its permission, per-type byte and DSP selector, so the track plays through the
+# sample renderer where the voice hook takes over). The SRC page: engine slots 0 TUNE and 7 LEV are SAMPLE's own
+# rows, 1 DECAY, 2 PICK, 4 BRIGHT, 5 COLOR are rows this module adds (core/params); slots 3 and 6 stay empty.
+# Values are 0 .. 0x7f00 (UI 0 .. 127); the defaults give a medium-length, slightly damped, lightly combed pluck.
+[[machine]]
+id = "pluck"
+name = "Pluck"
+short = "PLK"
+clone_of = 0
+fields = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1, 0x0a]
+
+[[param]]
+id = "pluck_decay"
+name = "Decay"
+short = "DECAY"
+template = 0xd1
+slot = 1
+min = 0
+max = 0x7f00
+default = 0x4000
+
+[[param]]
+id = "pluck_pick"
+name = "Pick position"
+short = "PICK"
+template = 0xd1
+slot = 2
+min = 0
+max = 0x7f00
+default = 0x2000
+
+[[param]]
+id = "pluck_bright"
+name = "Brightness"
+short = "BRIGHT"
+template = 0xd1
+slot = 4
+min = 0
+max = 0x7f00
+default = 0x5000
+
+[[param]]
+id = "pluck_color"
+name = "Excitation colour"
+short = "COLOR"
+template = 0xd1
+slot = 5
+min = 0
+max = 0x7f00
+default = 0x2800

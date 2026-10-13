@@ -1,0 +1,48 @@
+[module]
+id = "core/params"
+version = "0.1.0"
+name = "Parameter descriptors"
+category = "core"
+status = "experimental"
+summary = "Framework that adds parameter descriptors (names, range, default, formatter) to the Digitakt II MAIN OS: relocates the parameter table and raises every reader's bound"
+requires = []
+conflicts = []
+
+# Content modules list `core/params` in `requires` and declare `[[param]]` entries; a machine's `fields` may name them.
+# This module has no objects of its own: patchkit (native/patchkit/src/params.rs) generates the relocated table, the
+# repointing of every reference to it, the raised clamp bounds and the shim of the second per-code table from the
+# image (finding 02, "core.params"). The anchors below are what it reads.
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+
+[[claim]]
+resource = "cf.params.sites"
+
+# the parameter table (60-byte rows), by the signature of its reader
+[[anchor_rule]]
+name = "cf.params.t1"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_params_t1"
+mark = "D"
+
+# every absolute reference to the table and every clamp bound of its readers (a count and a hash of the sites)
+[[anchor_rule]]
+name = "cf.params.sites"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_params_sites"
+mark = "D"
+
+# the accessor of the second per-code table (0x44-byte value-class objects built at boot): `move.l 4(sp),D0;
+# cmpi.l #0x113,D0`
+[[anchor_rule]]
+name = "cf.params.t2"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "254d9fca9141d9a4f7f2308730fafa3a"
+offset = 0x0
+len = 10
+mark = "D"

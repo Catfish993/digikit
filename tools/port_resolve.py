@@ -36,6 +36,13 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc.py):
                  anchor. The hash masks address operands, so one rule serves relinked builds; a hash with fewer
                  functions than the ordinal needs is an error. Needs the image's cfdb (out/cfdb/<image>-emac).
 
+  cf_params_t1   the parameter descriptor table (60-byte rows), found by the 36-byte signature of its reader (finding 02,
+                 exactly one match): a data anchor over all rows (the row count is the length / 60).
+  cf_params_sites  the sites of the code that depend on that table, for core/params: the 2-aligned words that point
+                 into it and the clamp bounds (`cmpi.l #N,Dn` / `cmpa.l #N,An` with N the row count or one less,
+                 followed by scs/scc/bhi/bls), found by the same scan as native/patchkit/src/params.rs. An anchor of
+                 kind "sites": addr = the table, len = number of sites, sha256 = their digest.
+
   cf_reset_init_calls   the two reset-path calls (copy helper, clear helper) at the start of the reset code, found by
                  tools/regions.py `reset_facts` (a masked signature of the clear helper plus the call sites):
                  an 8-byte code anchor.
@@ -53,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -223,8 +231,73 @@ def resolve_cf_words(cf: CfFacts, rule: dict) -> dict:
     }
 
 
+PARAM_ROW = 60
+# `move.l 4(sp),D0; cmpi.l #count,D0; scs D1b; lea table,A0; mvs.b D1b,D1; and.l D1,D0; move.l D0,D1; lsl.l #2,D1;
+# lsl.l #6,D0; sub.l D1,D0; move.l (4,A0,D0*1),D0 ...`: the reader of the mirror index (finding 02)
+_PARAM_READER = re.compile(
+    rb"\x20\x2f\x00\x04\x0c\x80\x00\x00(..)\x55\xc1\x41\xf9(....)\x73\x01\xc0\x81\x22\x00\xe5\x89"
+    rb"\xed\x88\x90\x81\x20\x30\x08\x04\x4e\x75",
+    re.S,
+)
+
+
+def param_table(cf: CfFacts, rule: dict) -> tuple[int, int]:
+    """(table address, row count) from the reader's signature."""
+    hits = list(_PARAM_READER.finditer(cf.main))
+    if len(hits) != 1:
+        raise ResolveError(f"{rule['name']}: {len(hits)} parameter table readers match")
+    m = hits[0]
+    return int.from_bytes(m.group(2), "big"), int.from_bytes(m.group(1), "big")
+
+
+def scan_param_sites(
+    main: bytes, main_base: int, t1: int, count: int
+) -> tuple[list[int], list[tuple[int, int]]]:
+    """The same scan as `params::scan` in native/patchkit: references into the table and clamp bounds."""
+    import numpy as np
+
+    end = min(t1 - main_base, len(main))
+    hi = t1 + count * PARAM_ROW
+    refs: list[int] = []
+    bounds: list[tuple[int, int]] = []
+    for start in (0, 2):  # 2-aligned words: two 4-aligned passes
+        n = (end - start) // 4
+        w = np.frombuffer(main, dtype=">u4", count=n, offset=start)
+        for i in np.nonzero((w >= t1) & (w < hi))[0]:
+            refs.append(main_base + start + 4 * int(i))
+    refs.sort()
+    ops = np.frombuffer(main, dtype=">u2", count=end // 2)
+    for i in np.nonzero(((ops & 0xFFF8) == 0x0C80) | ((ops & 0xF1FF) == 0xB1FC))[0]:
+        o = 2 * int(i)
+        if o + 7 > end:
+            continue
+        imm = int.from_bytes(main[o + 2 : o + 6], "big")
+        if imm in (count, count - 1) and main[o + 6] in (0x54, 0x55, 0x62, 0x63):
+            bounds.append((main_base + o, imm))
+    return refs, bounds
+
+
+def params_sites_digest(refs: list[int], bounds: list[tuple[int, int]]) -> str:
+    b = b"".join(r.to_bytes(4, "big") for r in refs) + b"\xff" * 4
+    b += b"".join(a.to_bytes(4, "big") + i.to_bytes(4, "big") for a, i in bounds)
+    return sha(b)
+
+
 def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
+    if kind == "cf_params_t1":
+        t1, count = param_table(cf, rule)
+        n = count * PARAM_ROW
+        return {"kind": "data", "addr": t1, "len": n, "sha256": sha(cf.bytes_at(t1, n))}
+    if kind == "cf_params_sites":
+        t1, count = param_table(cf, rule)
+        refs, bounds = scan_param_sites(cf.main, cf.base, t1, count)
+        return {
+            "kind": "sites",
+            "addr": t1,
+            "len": len(refs) + len(bounds),
+            "sha256": params_sites_digest(refs, bounds),
+        }
     if kind == "cf_words":
         return resolve_cf_words(cf, rule)
     if kind == "cf_func":

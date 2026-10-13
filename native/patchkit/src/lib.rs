@@ -19,6 +19,7 @@ pub mod explain;
 pub mod link;
 pub mod machines;
 pub mod module;
+pub mod params;
 pub mod port;
 pub mod record;
 pub mod verify;

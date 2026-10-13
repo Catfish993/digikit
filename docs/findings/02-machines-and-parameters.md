@@ -1018,7 +1018,7 @@ generates, from the image being patched and from nothing stored in the repo:
 | name, hint | the 12-byte display-name table copied with one row per type (long, short, hint = the clone's); three accessors repointed and their bound raised | `name.0..2` |
 | permit, pertype | the permission longs and the per-type byte table copied with the clone's row appended; 1 + 6 bounds and table pointers | `permit`, `pertype.0..5` |
 | clone | every `type == 6` test (MANUAL SLICE) also accepts added clones of type 6; the `(type & ~2) == 4` test maps added types to their `clone_of` first | `clone.0..6` |
-| typearg | `FUN_400da23e` (parameter mapping, a 7 x 10 table in bss, `type < 7`): the type argument is mapped to `clone_of` on entry | `typearg.0` |
+| typearg | `FUN_400da23e` (1.17 `0x400da3a2`: parameter mapping (mirror index, type, filter) -> code, a 7 x 10 table in bss, `type < 7`): an added type answers with **its own descriptor's field** for the engine slots 25..28 and 31..34 (0 where the field is empty: no MOD destination), and as its clone for the two slots without a field (29, 30: MANUAL SLICE's `Sample Bank` and `Sample Slot` rows, owner 6, mirror 29 and 30, listed first in its MOD destination list); **[C]** the first version mapped the type to `clone_of` and so gave an added machine the clone's defaults and rows, see "core.params" | `typearg.0` |
 | persist | the sound loader's `(u8)(type + 1) < imm`: `imm = 8 + N` | `persist` |
 | DSP | the machine type -> selector table (DM `0x2567c0`, words `0 1 2 3 4 0 5`) is copied into `dsp.l2` with one word per type (the clone's, or `selector`), and the literal `I3 = 0x2567c0` of `FUN_001c24e9` is repointed | `dsp.machines.selector_table` |
 
@@ -1110,3 +1110,111 @@ the eMMC as sparse sectors) so a card with a patched firmware's project can be m
 - Types above 8 (a third module) are untested; the framework allows 32.
 - Kits saved on patched firmware and loaded on stock lose the type (they become SAMPLE; re-saving erases it): said in the
   gallery text of the module.
+
+## core.params: parameter descriptors for added machines (patchkit) **[D]**
+
+Plan: `docs/plans/patchkit.md` (Phase 3 and 4.2 results). Code: `native/patchkit/src/params.rs` (with `tests/params.rs`, 5
+integration tests on the real ports and images, 3 unit tests), `[[param]]` in `module.rs`, `modules/core/params`,
+`tools/port_resolve.py` (three rule kinds), `modules/machines/pluck`, `tools/pk_proof_pluck.py`. One agent, emulator only,
+nothing flashed, not checked by a second agent: **[D]** unless stated. Addresses are 1.17 (1.16 resolves the same rules).
+
+### What a parameter code indexes
+
+A parameter code (the nine ID fields of a machine descriptor, `0 .. 0x112`) is used as an index into several structures,
+each behind its own inlined clamp `code < 0x113 ? code : 0` **[D]**:
+
+| structure | where | readers |
+|---|---|---|
+| parameter table T1: 275 rows of 60 bytes (finding 02 above) | rodata `0x4020f59c` (1.16 `0x4020f18c`) | about 50 functions (small accessors from `0x400da03c`, the page views, the `ParameterSet` virtuals): **56 absolute references** to the table, **55 clamp bounds** (`cmpi.l #0x113,Dn` followed by `scs`/`scc`, `cmpi.l #0x112,Dn` followed by `bhi`/`bls`; also `cmpa.l`) |
+| value-class objects T2: 275 objects of 0x44 bytes (the type class, two numbers, three `std::function`s; heap pointers) | bss `0x4293c040`, filled at boot by the static initialiser `0x401be1be` | one accessor `0x400c892e`, 15 callers; rows of one value class are equal except for heap addresses (SAMPLE `STRT` and `LEN` equal, `TUNE`, `PLAY` and `LEV` differ in class) |
+| owner-keyed lookup maps built from T1 at boot by `0x400da84e` | bss: `[owner*10 + mirror - 25]` array, `std::map`s keyed by the row's CC number (`+0x18`) and by `+0x1c` | `0x400da3a2` (index, type, filter) -> code; `0x400dab9e` (CC -> code) and `0x400dac80` (the `+0x1c` key -> code) |
+
+Three loops visit **every** code and end on `bne`, not on a clamp: the defaults refresh `0x4004fefc` (for each code it writes the
+formatted default into the sound array at the row's mirror index, so for aliased mirror indexes the **last row in table order
+wins**), the map builder `0x400da84e`, and an owner enumeration `0x4003d942`. They are the reason a new row must not simply be
+appended and counted everywhere: raised, the defaults refresh would overwrite the stock defaults of the SRC slots with the new
+rows' values for every sound. The framework raises only the clamps.
+
+Row fields learned here (T1): `+0x18` high i16 = `0x10 + n` and `+0x1c` = `0x80 + n` for descriptor field `n` (TUNE 0x10/0x80
+... LEV 0x17/0x87; SAMP has -1 and 0x83): the MIDI CC number (CC 16..23 on the Digitakt) and a per-machine key; `+0x20` and `+0x24` as
+before **[O]**. A row is a complete description for the SRC page: the page shows `+0x28` while the knob is touched
+("Brightness=88") and `+0x30` as the label.
+
+### What the framework does
+
+Content modules declare `[[param]] id, name, short, template, slot, min, max, default, formatter_from?` and
+`requires = ["core/params"]`; a machine's `fields` may name them (`"pluck_decay"`). patchkit assigns the codes `275, 276, ...` in
+canonical module order (selection order does not change the bytes: tested) and generates **at patch time, from the image**:
+
+| part | what is generated |
+|---|---|
+| table | T1 copied to `cf.expansion` (16,500 bytes) with one 60-byte row per added parameter: the template row (owner, flag, kind, masks, formatter, +0x38 kept), then the mirror index of `slot` (25, 26, 27, 28, 31, 32, 33, 34), `min/max/default`, `+0x18` high i16 `0x10 + slot`, `+0x1c = 0x80 + slot`, the long and short name pointers into strings placed after the table, and optionally another row's formatter pointer |
+| references | every 2-aligned big-endian word of the code below the table that points into `[T1, T1 + 275 * 60)` is repointed (56 on both firmwares); the table's end address is not one (another table follows it) |
+| bounds | every clamp of the shapes above is raised by the number of added rows (54: the 55th lies in the accessor below). Compares that end loops (`bne`/`beq`) are left alone |
+| T2 | the accessor `0x400c892e` begins `move.l 4(sp),D0; cmpi.l #0x113,D0`; a 10-byte `jmp` to a 54-byte shim in the flash cave maps an added code to its **template's** code (a `u32` map in `cf.expansion`), so it answers with the template's object. Sharing is safe only if the object is constant after boot: **[O]** not shown in general; the four rows of PLUCK use the level class (`LEV`'s object) and behave |
+| maps | not touched: the owner maps and the CC/NRPN lookups never see the new rows |
+
+The scan is part of the port: `tools/port_resolve.py` records the **count and a sha256 of the site list** in the anchor
+`cf.params.sites` (kind `sites`), the table in `cf.params.t1` (found by the 36-byte signature of its reader, finding 02 above) and
+the accessor in `cf.params.t2` (`cf_func`); patchkit runs the same scan and refuses an image whose sites differ. Both firmwares: 111
+sites (56 + 55). Cost: 16,832 bytes of expansion for four rows (16,500 + 60 K + names + the `u32` map), 54 bytes of flash cave (the cave holds 2,108; core/machines
+(216 B), core/params and the loader use 328 together).
+
+### Corrections to core.machines **[C]**
+
+1. The type-argument shim of `FUN_400da3a2` (above) now returns the machine's **own** descriptor field instead of the clone's code (and the clone's for slots 29 and 30; a first version that returned 0 there dropped `Sample Slot` and `Sample Bank` from XSLICE's MOD list, caught by `tools/pk_proof_machines.py` part d).
+   With the old mapping a new machine got the clone's defaults when selected: selecting PLUCK gave TUNE 0x4000, PLAY 0x300 in slot 1
+   (DECAY would be 0.02: a click), BRIGHT 0, COLOR 0x7800. Measured before and after (`tools/pk_proof_pluck.py`, part a).
+2. After YES in the machine list the track's sound array reads **zero** in the engine slots until the next trig; the values (the
+   defaults) appear at the first trig or sync. Stock SLICE and SAMPLE behave the same. A read back needs a trig first.
+3. The knob problem of the machine proof (no turn changed a value): not a bug. `input.turn` numbers encoders from 1 (A..H) as the
+   harness does. The firmware's encoder accelerates by the time between events: **one or two slow events change nothing** (a
+   value moves about one raw step per slow event), 30 events of +4 detents 2 ms apart move TUNE `0x4000 -> 0x401e`, STRT
+   `0 -> 0x1e`, LEV `0x6400 -> 0x6e00`. The harness now has `Session.turn_burst`, `turn_to` (turn until a slot reads a value) and
+   `mirror`/`tx_word` read-backs. Proven on stock SAMPLE: encoders A, E, F, G, H change slots 25, 31, 32, 33, 34 in the Sound object
+   (`*(0x8000470c + 4t) + 0x14 + 2 * idx`) **and** in the TX frame words `0x80005348 + 0xda + 0x60 t + 2 (idx - 25)`; B (PLAY), C (no row)
+   and D (SAMP, a mode) do not change a value.
+4. On the SRC page the TRIG keys select the sample slot (a trig key tapped there showed `Oneshot:PRESET 5`), not steps: place
+   steps on the main page first.
+
+### Coverage of a new machine's parameters
+
+| subject | result |
+|---|---|
+| SRC page names, values, ranges | works: the page shows the row's long name while the knob is touched and the value 0..127 from `min/max` ([D], frames `out/runs/pluck-proof/`); the descriptor chain was also read back from the running firmware (field -> row -> name pointers) |
+| defaults on selection | works (needs the typearg change above) |
+| persistence (project save and load) | works **positionally**: the engine slots are the stock mirror indexes 25..34, persisted by the stock permutation tables; no storage change. Measured: DECAY and BRIGHT edited, project saved, track set to SAMPLE, project loaded: type 7 and all six slot values back; the card's sound records carry type 7 (2 records); the card laid over the **stock** firmware's: the track loads as SAMPLE, no fault. A new row's `slot` must be one of the eight fields (a new mirror index would need the permutation tables and bounds extended, finding 02 "Persistence") |
+| modulation destination picker (MOD page, DEST) | works: the SRC group lists the machine's own names (`Tune, Sample Level, Decay, Pick position, Brightness ...` for PLUCK) |
+| p-lock | **not shown in the emulator** [O]. Locks are stored by mirror index (lock id <= 76, `lock[track * 0x47 + idx]`, finding 02), so a new row in an existing slot should lock like the stock one; the hold-trig-and-turn gesture shows `Sample Level=90` on stock but no effect was seen in the TX frame or the audio even for stock SAMPLE, so the gesture is not harnessed |
+| MIDI CC and NRPN | **ignored on added types** (static): `0x400dab9e` and `0x400dac80` take the machine map only for `type < 7` (an added type falls to the filter and common arrays, no overrun), so CC 16..23 do nothing on a PLUCK track. To fix it needs a wrapper around the two lookups that maps the type to `clone_of` for the lookup and translates the returned code to the machine's own row (return address kept across the call), or the maps extended. Not built |
+| kit save/load, copy and paste of a sound | the persistence immediate and the permission rows are core/machines'; not exercised separately |
+
+### PLUCK on DT2 (`tools/pk_proof_pluck.py`, 1.17 and 1.16)
+
+`machines/pluck` clones SAMPLE (so its permission, per-type byte and DSP selector are SAMPLE's and the voice hook takes over in the
+sample renderer) with descriptor fields `[TUNE 0xca, DECAY, PICK, 0, BRIGHT, COLOR, 0, LEV 0xd1, 0x0a]`; DECAY, PICK, BRIGHT, COLOR are
+rows copied from `LEV` (a plain 0..127 value class and formatter) with range 0..0x7f00 and defaults 0x4000, 0x2000, 0x5000, 0x2800. The
+DSP routine registers `machines.pluck.type` (the same symbol mechanism as the extern) in the `core/dsp-voice` table. Evidence on the
+emulator (health asserted after every input; the numbers below are 1.17):
+
+| check | result |
+|---|---|
+| FUNC+SRC lists PLUCK as the 8th entry; YES commits type 7 | track object type 7, TX frame word and DSP cache 7 |
+| defaults after the first trig | slots 25, 26, 27, 31, 32, 34 = `0x4000 0x4000 0x2000 0x5000 0x2800 0x6400`, equal in the TX frame |
+| encoders A, B, C, E, F, H change slots 25, 26, 27, 31, 32, 34; D and G nothing | 6 of 6, in the Sound object and the TX frame |
+| fundamental against the pitch word sent by the ColdFire (TRIG 1 = note 60, keyboard keys 61, 63, 66, 67, 72) | 0.0000 to -0.0020 cents (261.626, 277.182, 311.127, 369.994, 391.995, 523.251 Hz) |
+| DECAY (BRIGHT at the top) | T60 0.26 s at 0x2000, 1.00 s at 0x4000 (requested 1.02 s), 1.53 s at 0x5000 |
+| BRIGHT | energy above 3 kHz relative to the body 0.2 s into the note: -26.4 dB at 0x0800, +6.7 dB at the top (+33 dB) |
+| COLOR | excitation HF/LF 12.1 dB at 0, -5.1 dB at the top (17 dB lower) |
+| PICK | see the evidence file: the notch at the 4th and 8th harmonic at PICK = 1/2 |
+| sequencer | four plucks in 2.3 s (onsets by the energy above the second difference), first at note 60 |
+| save and load | type 7, DECAY 0x2200 and BRIGHT 0x5e00 back; stock loads the project as SAMPLE |
+| MOD destination list | the SRC group shows the five PLUCK names |
+
+### Open **[O]**
+
+- Hardware: never flashed (as core.machines). The new table lives in `cf.expansion`, read like any RAM data.
+- MIDI CC/NRPN and p-lock as above; kit and sound copy between tracks and between PLUCK and other machines not exercised.
+- A fourth row class for T2 sharing and rows whose class differs from the template's (a discrete knob as a new row) were not tried.
+- The new rows are outside the owner maps: the picker and CC/NRPN logic that enumerate by owner will not list them on any type but through the descriptor.
+- DN2: not supported (a different table, 321 rows, an FM engine; the parameter-page layer is unexplored, see the assessment above).

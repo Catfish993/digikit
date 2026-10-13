@@ -30,3 +30,8 @@ modules = ["core/machines", "machines/xslice"]
 device = "dt2"
 firmware = "1.17"
 modules = ["core/machines", "test/machine-clone"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]

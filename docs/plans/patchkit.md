@@ -356,6 +356,9 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 - [x] `core.machines` DT2 1.17 (lane `b`, 2026-10-13): generalises machinepatch's nine parts to N types, plus the
       persistence immediate, the list allocation, a seventh clone site, the type argument of the parameter mapping and
       the DSP selector table; XSLICE and a second clone as content modules. See "Phase 3 results".
+- [x] `core.params` DT2 1.16 and 1.17 (lane `b`, 2026-10-14): parameter descriptors a content module adds (names, range, default,
+      formatter and value class copied from a template row), the table relocated at patch time, every reader repointed
+      and bounded. See "Phase 3 results (wave 6)" and finding 02, "core.params".
 - [ ] `core.master-fx` (with 0.7 master hook).
 - [ ] `core.machines` DN2 (3-5 days): parameter-page layer. Assessment in "Phase 3 results"; not started.
 - [x] Persistence check: project saved on a patched image, loaded on stock (emulator): the track loads as SAMPLE.
@@ -415,13 +418,34 @@ the same, but DN2's machines are FM engines, so new DN2 machines need the DSP vo
   4 BRIGHT (31), 5 COLOR (32), 6 unused (33), 7 LEV (34).
 - Open: DN2 (a different, FM voice engine; see the assessment in findings 06), hardware, DT2 1.16 not run.
 
+### Phase 3 results (wave 6, 2026-10-14, lane `b`): core.params and PLUCK end to end
+
+Built: `native/patchkit/src/params.rs` (3 unit tests, `tests/params.rs` 5 integration tests), `[[param]]` and `fields` that
+name parameters in the manifest, `modules/core/params`, three port rule kinds in `tools/port_resolve.py` (`cf_params_t1`,
+`cf_params_sites`: count and hash of 111 sites, plus a `cf_func` for the second table), `modules/machines/pluck` (machine,
+four parameters, the DSP row now registers `machines.pluck.type`), `tools/pk_proof_pluck.py`, harness helpers
+(`Session.mirror`, `tx_word`, `turn_burst`, `turn_to`), two matrix cells.
+
+- **Knob problem solved:** not a bug. Slow single events change nothing (the encoder accelerates by event spacing);
+  bursts of events 2 ms apart move values. Proven on stock SAMPLE: encoders A, E, F, G, H change slots 25, 31, 32, 33, 34
+  in the Sound object and in the TX frame words. Details in finding 02, "Corrections to core.machines".
+- **core.params:** table relocated (rows copied from the image), 56 references repointed, 54 clamp bounds raised, the
+  second per-code table's accessor answers added codes with a template's object. Loops that visit every code are left
+  at the stock count on purpose. A correction to core.machines came with it: the type-argument shim now answers an added
+  type with its own descriptor fields (defaults, ranges and names of the machine's own rows).
+- **PLUCK on DT2 1.17 and 1.16:** selectable, SRC page with its own names, defaults, fundamental within 0.002 cents of the
+  note, DECAY/BRIGHT/COLOR/PICK act on the sound, sequencer plays it, project save and reload keep type and values, stock
+  loads the project as SAMPLE. Numbers in finding 02, "PLUCK on DT2".
+- **Not done:** MIDI CC/NRPN for added types (ignored, no fault), p-lock in the emulator (gesture not harnessed even for
+  stock), a row of a different value class than its template, DN2.
+
 ### Phase 4: proof-of-concept modules
 
 - [x] 4.1 `fx/master-drive` (or compressor), DT2 and DN2: a new parameter carried in a frame word the DSP
       discards today, DSP code at the master hook. First module that changes both CPUs. Done 2026-10-13 (lane
       fastweb), see "Phase 4.1 results".
 - [x] 4.2 Simple voice (sine or noise) on DT2 through `core.dsp-voice`. Done 2026-10-14 (lane fastweb), see
-      "Phase 4.2 results". The Pluck DSP side (`machines/pluck`) is done too; its ColdFire entry waits for `core.machines`.
+      "Phase 4.2 results". The Pluck DSP side (`machines/pluck`) is done too; its ColdFire entry is in, see "Phase 3 results (wave 6)".
 - [ ] 4.3 `machines/granular` DT2 (grains from sample memory), 3-5 days after 4.2.
 - [ ] 4.4 `machines/granular` DN2. **Open decision:** grain source (track oscillator or wavetable, audio input, or
       a resample buffer).

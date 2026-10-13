@@ -25,7 +25,9 @@ Step format (TOML `[[segment.step]]` / `[[step]]`, exactly one action key each; 
     tap = "TRIG 1"                 press and release (hold_ms, default 20)
     tap = ["TRK", "TRIG 2"]        chord: the first key is held while the others are tapped
     hold = "PLAY"  ms = 500        press, run ms, release
-    turn = "ENC A"  by = 2         encoder rotation (ENC A..H, LEVEL); negative = left
+    turn = "ENC A"  by = 2         encoder rotation (ENC A..H, LEVEL); negative = left; `events = 30` sends a burst of
+                                   30 events 2 ms apart (the encoder accelerates by event spacing: one slow event
+                                   moves a value by about nothing)
     wait_ms = 300                  run that many emulated milliseconds
     expect_frame = "name"          hash of the OLED frame against the golden (PNG to out/); `differs_from = "other"`
     expect_pcm_db = {min = -60, max = -3}   peak 100 ms-window RMS (dBFS) since the last input started
@@ -560,6 +562,59 @@ class Session:
         self.run_ms(10)
         self.health(f"turn {enc} {by}")
 
+    # -- parameter read-back and knob helpers (DT2: finding 02, "A machine is eight fixed engine slots")
+    SOUND_PTRS = 0x8000470C  # 16 pointers to the tracks' Sound objects; the parameter array is at +0x14
+    TX_FRAME = 0x80005348  # the ColdFire -> DSP frame; machine parameter words at 0xda + 0x60 * track + 2 * (idx - 25)
+
+    def _u16(self, addr: int) -> int:
+        assert self.emu is not None
+        word = self.emu.peek32(addr & ~3) or 0
+        return ((word >> 16) if addr % 4 == 0 else word) & 0xFFFF
+
+    def mirror(self, idx: int, track: int = 0) -> int:
+        """The s16 of parameter slot IDX (25..34: the machine's engine slots) of TRACK's Sound object, as unsigned."""
+        assert self.emu is not None
+        sound = self.emu.peek32(self.SOUND_PTRS + 4 * track) or 0
+        return self._u16(sound + 0x14 + 2 * idx)
+
+    def tx_word(self, idx: int, track: int = 0) -> int:
+        """The word of engine slot IDX in the TX frame the DSP reads (valid after the next frame that follows a change)."""
+        return self._u16(self.TX_FRAME + 0xDA + 0x60 * track + 2 * (idx - 25))
+
+    def turn_burst(
+        self, enc: str | int, detents: int, events: int, gap_ms: float = 2
+    ) -> None:
+        """EVENTS encoder events of DETENTS each, GAP_MS apart. The encoder accelerates by the time between events and
+        a value moves about one raw step per slow event (finding 03): a slow single event can change nothing."""
+        emu = self.emu
+        assert emu is not None
+        self.mark_pcm()
+        for _ in range(events):
+            emu.turn(encoder(enc), detents)
+            self.run_ms(gap_ms)
+        self.run_ms(100)
+        self.health(f"burst {enc} {detents}x{events}")
+
+    def turn_to(
+        self,
+        enc: str | int,
+        idx: int,
+        target: int,
+        tol: int = 0x300,
+        track: int = 0,
+        rounds: int = 80,
+    ) -> int:
+        """Turn ENC until slot IDX reads within TOL of TARGET (bursts of 3 events, sign by the error); returns the
+        value reached. Raises Failure when ROUNDS bursts do not get there."""
+        for _ in range(rounds):
+            v = self.mirror(idx, track)
+            err = target - v
+            if abs(err) <= tol:
+                return v
+            self.turn_burst(enc, 4 if err > 0 else -4, 3 if abs(err) < 0x1000 else 8)
+        v = self.mirror(idx, track)
+        raise Failure(f"turn_to {enc}: slot {idx} is {v:#x}, wanted {target:#x}")
+
     def frame(self) -> tuple[str, bytes]:
         assert self.emu is not None
         _, raw = self.emu.frame()
@@ -675,7 +730,14 @@ class Session:
             elif "hold" in step:
                 self.do_hold(step["hold"], step.get("ms", 500))
             elif "turn" in step:
-                self.do_turn(step["turn"], step.get("by", 1))
+                if (
+                    "events" in step
+                ):  # a burst: EVENTS events 2 ms apart (one slow event changes nothing)
+                    self.turn_burst(
+                        step["turn"], step.get("by", 1), int(step["events"])
+                    )
+                else:
+                    self.do_turn(step["turn"], step.get("by", 1))
             elif "wait_ms" in step:
                 self.run_ms(step["wait_ms"])
                 self.health(f"wait {step['wait_ms']} ms")
