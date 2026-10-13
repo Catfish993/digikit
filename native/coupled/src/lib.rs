@@ -982,6 +982,9 @@ mod coupled {
                             "fast_runs": t.fast_runs, "fast_calls": t.fast_calls,
                             "fast_built": t.fast_built, "fast_refused": t.fast_refused,
                             "fast_armed": t.fast_armed,
+                            "code_gen": t.code_gen, "code_verifies": t.code_verifies,
+                            "code_verify_ns": t.code_verify_ns, "code_mismatch": t.code_mismatch,
+                            "interp_appended": t.interp_appended,
                         })
                     })
                 })

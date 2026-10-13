@@ -59,6 +59,13 @@ pub struct Mem {
     /// engine re-verifies the code the blocks were generated for), to a
     /// bit-1 page `dec_gen` (cached decodes are re-checked word by word).
     watch: Box<[u8; NPAGES]>,
+    /// The exact byte spans [lo, hi) of the watched code (sorted, merged, with
+    /// the short-word alias form of each). A bit-0 page is a 64 KiB unit: a
+    /// store into it that touches none of these spans (module data placed
+    /// after the last code of the image) does not bump `code_gen`, so the
+    /// engine does not hash the code again for it. Window writes (no exact
+    /// extent at the note) still count for the whole page.
+    code_spans: Vec<(u32, u32)>,
     pub code_gen: u64,
     pub dec_gen: u64,
     /// Changes whenever a host pointer into a page or the present/dirty
@@ -111,6 +118,7 @@ impl Mem {
                 .into_boxed_slice()
                 .try_into()
                 .expect("NPAGES entries"),
+            code_spans: Vec::new(),
             code_gen: 0,
             dec_gen: 0,
             layout_gen: NEXT_LAYOUT_GEN.fetch_add(1 << 40, std::sync::atomic::Ordering::Relaxed),
@@ -126,9 +134,24 @@ impl Mem {
         for idx in (lo >> PAGE_BITS)..=((hi - 1) >> PAGE_BITS) {
             self.watch_page(idx as usize, WATCH_CODE);
         }
+        const ALIAS: u32 = (ALIAS_PAGES as u32) << PAGE_BITS;
+        self.code_spans.push((lo, hi));
+        if lo >= ALIAS {
+            self.code_spans.push((lo - ALIAS, hi - ALIAS));
+        }
+        self.code_spans.sort_unstable();
+        let mut merged: Vec<(u32, u32)> = Vec::with_capacity(self.code_spans.len());
+        for &(l, h) in &self.code_spans {
+            match merged.last_mut() {
+                Some(last) if l <= last.1 => last.1 = last.1.max(h),
+                _ => merged.push((l, h)),
+            }
+        }
+        self.code_spans = merged;
     }
 
     pub fn unwatch_code(&mut self) {
+        self.code_spans.clear();
         for w in self.watch.iter_mut() {
             *w &= !WATCH_CODE;
         }
@@ -164,6 +187,30 @@ impl Mem {
             self.watch_page((b >> PAGE_BITS) as usize, WATCH_DECODE);
             self.watch_page(((b + 1) >> PAGE_BITS) as usize, WATCH_DECODE);
         }
+    }
+
+    /// A store of LEN bytes at A: `note_write` when it overlaps watched code
+    /// or its page has no code watch.
+    #[inline(always)]
+    fn note_write_n(&mut self, a: u32, len: u32) {
+        let w = self.watch[(a >> PAGE_BITS) as usize];
+        if w != 0 {
+            self.note_watched_n(w, a, len);
+        }
+    }
+
+    /// The store is on a watched page: only the spans themselves count for
+    /// the code watch (`code_spans`), the decode watch stays per page.
+    #[inline(never)]
+    fn note_watched_n(&mut self, w: u8, a: u32, len: u32) {
+        if w & WATCH_CODE != 0 {
+            let end = a as u64 + len as u64;
+            let i = self.code_spans.partition_point(|s| s.1 <= a);
+            if i < self.code_spans.len() && (self.code_spans[i].0 as u64) < end {
+                self.code_gen += 1;
+            }
+        }
+        self.dec_gen += ((w & WATCH_DECODE) >> 1) as u64;
     }
 
     #[inline(always)]
@@ -274,7 +321,7 @@ impl Mem {
         if p.is_null() {
             return None;
         }
-        self.note_write(a);
+        self.note_write_n(a, width);
         // SAFETY: eff holds null or a page `pages` owns (kept in step).
         let p = unsafe { &mut *p };
         let off = (a as usize) & (PAGE_SIZE - 1);
@@ -355,7 +402,7 @@ impl Mem {
         if p.is_null() || a & 3 != 0 {
             return None;
         }
-        self.note_write(a);
+        self.note_write_n(a, 4);
         // SAFETY: eff holds null or a page `pages` owns (kept in step).
         let p = unsafe { &mut *p };
         let off = (a as usize) & (PAGE_SIZE - 1);
@@ -589,7 +636,7 @@ impl Mem {
     /// present/dirty bits (bit 0, bit 1) for the undo journal.
     #[inline(always)]
     pub fn write_byte(&mut self, a: u32, v: u8) -> (u8, u8) {
-        self.note_write(a);
+        self.note_write_n(a, 1);
         let idx = (a >> PAGE_BITS) as usize;
         if self.pages[idx].is_none() {
             self.layout_gen += 1;
@@ -672,7 +719,7 @@ impl Mem {
     /// on one page already (nothing else changes); false otherwise.
     #[inline(always)]
     pub fn write_dirty(&mut self, a: u32, width: u32, v: u32) -> bool {
-        self.note_write(a);
+        self.note_write_n(a, width);
         let off = (a as usize) & (PAGE_SIZE - 1);
         let Some(p) = self.pages[(a >> PAGE_BITS) as usize].as_deref_mut() else {
             return false;
@@ -694,7 +741,7 @@ impl Mem {
     /// Undo a write_byte.
     pub fn restore(&mut self, a: u32, byte: u8, flags: u8) {
         self.layout_gen += 1;
-        self.note_write(a);
+        self.note_write_n(a, 1);
         if let Some(p) = self.pages[(a >> PAGE_BITS) as usize].as_deref_mut() {
             let off = (a as usize) & (PAGE_SIZE - 1);
             let (w, bit) = (off >> 6, 1u64 << (off & 63));
@@ -815,5 +862,60 @@ mod word_path_tests {
         // An absent page and an MMR page decline.
         assert_eq!(a.fast_read_word(0x7000_0000), None);
         assert_eq!(a.fast_write_word(0x7000_0000, 1), None);
+    }
+}
+
+#[cfg(test)]
+mod code_watch_tests {
+    use super::*;
+
+    /// A store on a code-watched page bumps `code_gen` only when it touches
+    /// a watched span (module data after the last code stays quiet); a store
+    /// that straddles a span edge, one through the short-word alias, and a
+    /// window write (no exact extent) still count.
+    #[test]
+    fn code_gen_bumps_only_for_watched_spans() {
+        let mut m = Mem::new();
+        let (lo, hi) = (0x2000_1000u32, 0x2000_1100u32);
+        m.watch_code(lo, hi);
+        let cg = |m: &Mem| m.code_gen;
+        // Same 64 KiB page, outside the span (before and after).
+        let g = cg(&m);
+        m.write_byte(lo - 1, 1);
+        m.write_byte(hi, 2);
+        m.write_dirty(hi + 0x100, 4, 0x1122_3344);
+        m.fast_write(hi + 0x200, 4, 7);
+        m.fast_write_word(hi + 0x300, 7);
+        assert_eq!(cg(&m), g, "stores beside the code do not bump");
+        // Inside, and straddling either edge.
+        for (a, w) in [(lo, 1u32), (hi - 1, 1), (lo - 2, 4), (hi - 2, 4)] {
+            let g = cg(&m);
+            if w == 1 {
+                m.write_byte(a, 9);
+            } else {
+                m.write_dirty(a, w, 0x0102_0304);
+                m.fast_write(a, w, 0x0102_0304);
+            }
+            assert!(cg(&m) > g, "store of {w} at {a:#x} bumps");
+        }
+        // A window write counts for the whole page.
+        let g = cg(&m);
+        m.write_byte(hi + 0x400, 1); // makes the page exist
+        assert!(m.window(hi + 0x400, 1, false, true).is_some());
+        assert!(cg(&m) > g, "a write window bumps");
+        // The short-word alias form of a high span.
+        let mut m = Mem::new();
+        let (lo, hi) = (0x2800_0000u32 + 0x2000, 0x2800_0000u32 + 0x2100);
+        m.watch_code(lo, hi);
+        let g = cg(&m);
+        m.write_byte(lo - 0x2800_0000 + 0x10, 1);
+        assert!(cg(&m) > g, "alias store inside the span bumps");
+        let g = cg(&m);
+        m.write_byte(hi - 0x2800_0000 + 0x10, 1);
+        m.write_byte(hi + 0x10, 1);
+        assert_eq!(cg(&m), g);
+        m.unwatch_code();
+        m.write_byte(lo, 1);
+        assert_eq!(cg(&m), g, "unwatched");
     }
 }
