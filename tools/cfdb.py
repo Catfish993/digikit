@@ -443,6 +443,136 @@ def cmd_build(args):
     return 0
 
 
+FTS_VERSION = 2
+
+
+def fts_path(db_path):
+    """The full-text sidecar for a database: <name>.fts.sqlite beside it. It is
+    a separate file so adding or rebuilding it never touches DB_VERSION or the
+    main database (other lanes share out/cfdb)."""
+    return db_path[: -len(".sqlite")] + ".fts.sqlite"
+
+
+def build_fts(db_path, force=False):
+    """Build the FTS5 sidecar for one cfdb database and return its path.
+
+    Tables (all FTS5; the rowid is the function entry or string address):
+      fts_names   (name, cf_name, klass)   trigram; function, cf_names and RTTI names
+      fts_strings (text)                   trigram, so substrings match
+      fts_decomp  (body)                   decompiled C, contentless; hits are
+                                           located again by reading the dump
+    Rebuilt when the main database's image sha256 or FTS_VERSION moves on."""
+    out = fts_path(db_path)
+    meta = read_meta(db_path)
+    stamp = "%s/%s/%s" % (meta.get("image_sha256"), meta.get("build_time"), FTS_VERSION)
+    if os.path.exists(out) and not force:
+        try:
+            con = sqlite3.connect(out)
+            row = con.execute("SELECT value FROM fts_meta WHERE key='stamp'").fetchone()
+            con.close()
+            if row and row[0] == stamp:
+                return out
+        except sqlite3.Error:
+            pass
+    tmp = out + ".tmp.%d" % os.getpid()
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    src = sqlite3.connect(db_path)
+    name = meta["image"]
+    dump = meta.get("ghidra_dump_dir")
+    con = sqlite3.connect(tmp)
+    con.executescript(
+        "CREATE TABLE fts_meta (key TEXT PRIMARY KEY, value TEXT);"
+        "CREATE VIRTUAL TABLE fts_names USING fts5(name, cf_name, klass, "
+        "tokenize='trigram');"
+        "CREATE VIRTUAL TABLE fts_strings USING fts5(text, tokenize='trigram');"
+        "CREATE VIRTUAL TABLE fts_decomp USING fts5(body, content='', detail=column, "
+        "tokenize=\"unicode61 tokenchars '_'\");"
+    )
+    klass_of: dict[int, str] = {}
+    for target, cls in src.execute(
+        "SELECT target, class FROM vtables WHERE image=? ORDER BY addr, slot", (name,)
+    ):
+        klass_of.setdefault(target, cls)
+    names = _image_names(name)
+    rows = []
+    for entry, fname in src.execute(
+        "SELECT entry, name FROM functions WHERE image=?", (name,)
+    ):
+        rows.append((entry, fname, names.get(entry, ""), klass_of.get(entry, "")))
+    con.executemany(
+        "INSERT INTO fts_names(rowid, name, cf_name, klass) VALUES (?,?,?,?)", rows
+    )
+    con.executemany(
+        "INSERT INTO fts_strings(rowid, text) VALUES (?,?)",
+        [
+            (i, t)
+            for i, (_a, t) in enumerate(
+                src.execute("SELECT addr, text FROM strings WHERE image=?", (name,))
+            )
+        ],
+    )
+    con.execute("CREATE TABLE string_rows (id INTEGER PRIMARY KEY, addr INTEGER)")
+    con.executemany(
+        "INSERT INTO string_rows VALUES (?,?)",
+        [
+            (i, a)
+            for i, (a,) in enumerate(
+                src.execute("SELECT addr FROM strings WHERE image=?", (name,))
+            )
+        ],
+    )
+    n = 0
+    if dump:
+        batch = []
+        for entry, path in src.execute(
+            "SELECT entry, decomp_path FROM functions WHERE image=? AND decomp_path IS NOT NULL",
+            (name,),
+        ):
+            fp = os.path.join(dump, path)
+            if not os.path.exists(fp):
+                continue
+            with open(fp, errors="replace") as fh:
+                batch.append((entry, fh.read()))
+            n += 1
+            if len(batch) >= 500:
+                con.executemany(
+                    "INSERT INTO fts_decomp(rowid, body) VALUES (?,?)", batch
+                )
+                batch = []
+        if batch:
+            con.executemany("INSERT INTO fts_decomp(rowid, body) VALUES (?,?)", batch)
+    con.execute("INSERT INTO fts_meta VALUES ('stamp', ?)", (stamp,))
+    con.execute("INSERT INTO fts_meta VALUES ('decomp_files', ?)", (str(n),))
+    con.commit()
+    con.close()
+    src.close()
+    os.replace(tmp, out)
+    return out
+
+
+def _image_names(name):
+    """tools/cf_names*.py names for an image name like dt2-1.17-emac."""
+    import importlib
+
+    short = name[: -len("-emac")] if name.endswith("-emac") else name
+    mod = {"dt2-1.16": "cf_names", "dt2-1.17": "cf_names_dt2_1_17"}.get(short)
+    if mod is None:
+        return {}
+    try:
+        return dict(importlib.import_module(mod).NAME_BY_ADDR)
+    except ImportError:
+        return {}
+
+
+def cmd_fts(args):
+    path = args.db or os.path.join(args.db_dir, args.name + ".sqlite")
+    t = time.time()
+    out = build_fts(path, force=args.force)
+    print("%s (%.1f s, %.1f MB)" % (out, time.time() - t, os.path.getsize(out) / 1e6))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -464,9 +594,17 @@ def main(argv=None):
         help="rebuild even if sha256+DB_VERSION already match",
     )
 
+    f = sub.add_parser("fts", help="build the FTS5 sidecar for a database")
+    f.add_argument("name", help="e.g. dt2-1.17-emac")
+    f.add_argument("--db")
+    f.add_argument("--db-dir", default=DEFAULT_DB_DIR)
+    f.add_argument("--force", action="store_true")
+
     args = ap.parse_args(argv)
     if args.cmd == "build":
         return cmd_build(args)
+    if args.cmd == "fts":
+        return cmd_fts(args)
     return 1
 
 
