@@ -352,11 +352,48 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 
 ### Phase 3: frameworks
 
-- [ ] `core.expansion` (loader, region) (about 1 day).
-- [ ] `core.machines` DT2 (about 2 days): generalises machinepatch's nine parts with room for N machines.
+- [x] `core.expansion` (loader, region): done in Phase 1 (finding 21).
+- [x] `core.machines` DT2 1.17 (lane `b`, 2026-10-13): generalises machinepatch's nine parts to N types, plus the
+      persistence immediate, the list allocation, a seventh clone site, the type argument of the parameter mapping and
+      the DSP selector table; XSLICE and a second clone as content modules. See "Phase 3 results".
 - [ ] `core.master-fx` (with 0.7 master hook).
-- [ ] `core.machines` DN2 (3-5 days): parameter-page layer.
-- [ ] Persistence check: project saved on a patched image, loaded on stock (emulator).
+- [ ] `core.machines` DN2 (3-5 days): parameter-page layer. Assessment in "Phase 3 results"; not started.
+- [x] Persistence check: project saved on a patched image, loaded on stock (emulator): the track loads as SAMPLE.
+
+### Phase 3 results (2026-10-13, lane `b`)
+
+Details, evidence and the DSP binding contract: `docs/findings/02-machines-and-parameters.md` ("core.machines").
+Built: `native/patchkit/src/machines.rs` (the generator, 4 unit tests, `tests/machines.rs` with 6 integration tests on the
+real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (22 ColdFire anchor rules of the new kind
+`cf_func`, one DSP rule), `modules/machines/xslice`, `modules/test/machine-clone`, `tools/pk_machine_rules.py`,
+`tools/pk_proof_machines.py`, `tools/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
+and `expect_dsp`; two new matrix cells.
+
+- DT2 1.17: XSLICE is selectable (type 7), its SRC page shows the CFADE knob, the type reaches the DSP (TX frame word,
+  DSP cache), the sound is bit-identical to stock MANUAL SLICE (audition and sequencer), the MOD destination picker lists
+  its parameters, a saved project keeps type 7 (control: without the persistence immediate it falls to SAMPLE) and
+  loads as SAMPLE on stock firmware without a fault. XSLICE and a second clone together get types 7 and 8 in any
+  selection order (same `.syx` bytes) and both sound like MANUAL SLICE.
+- Corrections to the old XSLICE: an illegal 8-byte ColdFire instruction in `machinepatch.build_rank_shim` (images from
+  `tools/machinebuild.py` fault on a real ColdFire), the list builder's fixed seven-entry allocation, a missing
+  `type == 6` site in the frame builder.
+- Constraint found: the emulator fetches ColdFire code only from the MAIN OS image, so framework code lives in the
+  2,108-byte flash cave (about 80 B per added type, 452 B for two). Open: execute from RAM in the model.
+- DSP binding: extern symbol `machines.<id>.type`; the DSP's selector table is relocated (word per added type, `selector`
+  in the manifest picks the render path).
+- Not done: DN2, 1.16 runs, hardware, p-lock and parameter-effect checks of a new machine, types above 8.
+
+**DN2 1.12 assessment (not built).** The dispatch, list, name table, permission check, persistence immediate and the group
+helper exist (finding 02, "Digitone II 1.11 has the same machine machinery"): five types, type byte at `+0xde`, name
+rows ordered `{hint, name, abbrev}`, no sort comparator and no per-type table, list builder allocation of five. Missing
+for a framework port: anchors for the permit bound, the group bound and the clone sites (`type == k` tests of the
+machine cloned: to be searched), the DN2 DSP selector table (a different function, same idea) and, the large unknown,
+the parameter-page layer (`MachineParameterPageView`, `SrcMachineParamPageCopy`) that gives each synthesis engine its
+own pages. Steps: (1) per-device layouts in `machines.rs` and anchors on 1.11 and 1.12 for a clone of FM Tone (1 day);
+(2) read how a type picks its page layout and whether a descriptor row is enough (1 to 1.5 days, the risk); (3) DSP selector
+and proof tool on the ready inputs (1 day). Estimate 3 to 4 days of agent time, confidence about 50 % for a clone that
+shows its own name and sounds like its original, lower for a new parameter page. Payoff is moderate: the framework is
+the same, but DN2's machines are FM engines, so new DN2 machines need the DSP voice lane first.
 
 ### Phase 4: proof-of-concept modules
 

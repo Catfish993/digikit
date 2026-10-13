@@ -65,11 +65,22 @@ modules/<category>/<name>/
   hosted libc; bss is zeroed by the loader.
 - Toolchains: `mise run toolchains` once (pinned m68k-elf binutils/gcc and the SHARC+ assembler under `out/tools`).
 
+## Machine modules (Digitakt II, `core/machines`)
+
+A module that adds a machine type needs no code for the ColdFire side: `requires = ["core/machines"]` and one
+`[[machine]]` entry (`id`, `name`, `short`, `clone_of`, `position`, `fields` = the nine descriptor IDs, optional
+`selector`). patchkit assigns the type numbers `7, 8, ...` in canonical module order and generates the tables and
+patches from the image (`native/patchkit/src/machines.rs`); `modules/machines/xslice` is the worked example. A DSP
+object binds to its type with `[object.externs] _x = "machines.<id>.type"`. Contract, evidence and limits: finding 02,
+"core.machines". Proof: `uv run python tools/pk_proof_machines.py` (about 15 minutes). The emulator runs ColdFire code only
+from the MAIN image, so framework code is in the flash cave; keep module ColdFire code in `cf.expansion` data-only
+until the model fetches from RAM.
+
 ## Tests (tools/pk_harness.py)
 
 Steps, one action key each: `tap = "TRIG 1"`, `tap = ["TRK", "TRIG 2"]` (chord), `hold = "PLAY"` + `ms`,
 `turn = "ENC A"` + `by`, `wait_ms`, `expect_frame = "name"` (golden hash; `differs_from`), `expect_pcm_db = {min, max}`
-(peak 100 ms-window RMS since the last input), `expect_no_fault`, `stress = {seed, actions}`; `device = "dt2"` limits a
+(peak 100 ms-window RMS since the last input), `expect_no_fault`, `expect_mem = {addr, mask, eq}` (a ColdFire word), `expect_dsp = {addr, hex}`, `stress = {seed, actions}`; `device = "dt2"` limits a
 step. Every input asserts no fault, no DSP halt, no main-loop stall (controller events `fault`, `halt`, `stall`;
 `status.heartbeat`). Module tests join the smoke tour for the module set; goldens are keyed
 `DEV-FW/<module set>/<segment>/<checkpoint>`. A patched firmware that changes nothing visible must equal the stock

@@ -668,6 +668,11 @@ impl Emulator {
         self.probe_rets.iter().map(|(k, v)| (*k, *v)).collect()
     }
 
+    /// The guest's writes to the eMMC card, per touched sector (for `card.overlay`).
+    pub fn card_overlay(&self) -> Vec<emmc_card::CardOverlaySector> {
+        self.bus.board.card_overlay_sectors()
+    }
+
     /// Read a guest longword without side effects (None when unmapped or
     /// device-owned). For headless diagnosis only.
     pub fn peek32(&mut self, addr: u32) -> Option<u32> {

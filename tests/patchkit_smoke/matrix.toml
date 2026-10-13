@@ -20,3 +20,13 @@ modules = []
 device = "dn2"
 firmware = "1.12"
 modules = ["fx/master-gain", "test/cf-demo"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["core/machines", "machines/xslice"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["core/machines", "test/machine-clone"]

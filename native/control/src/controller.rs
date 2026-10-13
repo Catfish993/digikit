@@ -1176,6 +1176,7 @@ impl Actor {
             "framebuffer.get" => self.rpc_framebuffer().map(Some),
             "mem.cf.peek" => self.rpc_mem_peek(&p).map(Some),
             "mem.cf.poke" => self.rpc_mem_poke(&p).map(Some),
+            "card.overlay" => self.rpc_card_overlay(&p).map(Some),
             "watchdog.config" => self.rpc_watchdog(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
             "audio.report" => self
@@ -1322,6 +1323,22 @@ impl Actor {
 
     /// `mem.cf.poke {addr, value}`: write one longword of SDRAM (a test aid: break the guest on
     /// purpose to exercise `fault`/`stall`). Not part of the replay record.
+    /// `card.overlay {path}`: write the guest's writes to the card as a sparse file: per touched sector
+    /// `u64 le sector, [u8; 64] mask (bit i of byte i/8 names data byte i), [u8; 512] data`. Applied over the card's
+    /// base image it gives the card the guest sees (`tools/card_overlay.py`).
+    fn rpc_card_overlay(&mut self, p: &Params) -> RpcResult {
+        let path = p.str("path")?.to_string();
+        let sectors = self.with_runtime(|r| Ok(r.card_overlay()))?;
+        let mut out = Vec::with_capacity(sectors.len() * (8 + 64 + 512));
+        for s in &sectors {
+            out.extend_from_slice(&s.sector.to_le_bytes());
+            out.extend_from_slice(&s.written);
+            out.extend_from_slice(&s.data);
+        }
+        std::fs::write(&path, &out).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
+        Ok(json!({"path": path, "sectors": sectors.len()}))
+    }
+
     fn rpc_mem_poke(&mut self, p: &Params) -> RpcResult {
         let addr = u32::try_from(p.u64("addr")?)
             .map_err(|_| RpcError::bad_params("addr is a 32-bit byte address"))?;
