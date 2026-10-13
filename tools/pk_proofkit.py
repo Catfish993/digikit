@@ -14,6 +14,7 @@ gives it
     effect, persistence, no fault/halt/stall), the full tier unchanged;
   * per-part summary lines with the wall time split (open, restart, run, rest = analysis and panel waits) and a final
     PASS/FAIL, and `out/summary.json`;
+  * `PK_PROOF_IMAGE=IMAGE` (tools/pk_break.py): sessions with modules load that image, to show that a proof fails;
   * `verify-restore`: the boot cache gives the same state digest and PCM as a cold boot.
 
     uv run python tools/pk_proofkit.py verify-restore --device dt2 --fw 1.17 --mods core/machines,machines/xslice
@@ -202,6 +203,9 @@ class Proof:
         image: Path | None,
     ) -> Lease:
         device, fw = device or self.device, fw or self.fw
+        if image is None and mods and os.environ.get("PK_PROOF_IMAGE"):
+            # teeth tests (tools/pk_break.py): every session with modules loads this broken image instead
+            image = Path(os.environ["PK_PROOF_IMAGE"])
         key = (
             device,
             fw,

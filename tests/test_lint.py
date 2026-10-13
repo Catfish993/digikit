@@ -17,6 +17,8 @@ CLEAN = [
     "tests/test_dsp_voice.py",
     "tools/pluck_ref.py",
     "tools/pk_proof_voice.py",
+    "tools/pk_proofs.py",
+    "tools/pk_break.py",
     "tools/fw.py",
     "tools/atlas.py",
     "tests/test_fw.py",

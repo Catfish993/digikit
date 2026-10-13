@@ -253,6 +253,10 @@ description = "Developer loop: mise run patch:dev -- --modules a,b [--device dt2
 run = "uv run python tools/pk_harness.py run"
 description = "Smoke tour and module tests over the matrix (tests/patchkit_smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:fx/master-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
 
+[tasks."patch:proofs"]
+run = "uv run python tools/pk_proofs.py"
+description = "Every emulator proof on its quick tier, in sequence (gain, drive, voice, machines, pluck on DT2 and DN2): mise run patch:proofs [-- --only pluck,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
+
 [tasks."port:resolve"]
 run = "uv run python tools/port_resolve.py"
 description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run port:resolve [-- X.syx] (no argument: the four supported firmwares)"

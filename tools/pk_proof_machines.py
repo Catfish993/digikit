@@ -21,7 +21,9 @@ asserted after every input) and reads back:
   b2 control     the persistence immediate put back: the type must not survive                  (full tier only)
 
 Parts are independent (each builds its own references) and run in parallel processes (`--jobs`, tools/pk_proofkit.py).
-`--quick` runs a, b, c (the clone only) and e (the clone only): select and type, sound, persistence, the sequencer.
+`--quick` runs a, b, c (the clone only) and e (the clone only): select and type, sound, persistence, the sequencer. In
+b the quick tier polls instead of waiting (the save until the card writes stop growing, the patched reload until the type
+is back) and waits 3 s instead of 6 s for the stock load.
 
 Output (PNG frames, WAV, card images) goes under OUT (default out/runs/machines-proof) and is never committed.
 Exit 0 only when every check passes. Addresses are the DT2 1.16/1.17 ones of finding 02 and 04.

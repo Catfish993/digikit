@@ -24,8 +24,15 @@ health asserted after every input) and reads back:
 
 Parts are independent and run in parallel processes (`--jobs`, tools/pk_proofkit.py; `--only b` names a group). The
 full tier splits b (b1, b2, b3) and c (c1, c2) over several daemons and keeps d whole (its PICK measure depends on the
-noise state the earlier notes leave); e plays its two runs side by side. `--quick` runs a, bq (DECAY and an empty field),
-cq (two notes), dq1 (DECAY) and dq2 (PICK, difference only), f; e and g are full-tier only.
+noise state the earlier notes leave); e plays its two runs side by side.
+
+`--quick` (about 60-80 s wall, 4 parts in parallel): aq (select, descriptor, defaults, the DECAY encoder moves its slot
+only, tuning of two notes), dq1 (DECAY: decay slope at two settings), dq2 (PICK: comb against a reset noise state) and
+f (persistence). A sounding note costs about 35 s of wall per emulated second (the patched DSP runs interpreted; an idle
+second costs 3 s), so the quick parts turn DECAY down right after the first trig, play 0.33 s notes and measure windows of
+0.1-0.2 s. dq1 and dq2 reset the excitation noise (`_pk_rng`) before each note: the notes then differ only by the
+parameter under test (with the parameter ignored they would be bit-identical). Teeth: tools/pk_break.py makes broken
+images (`PK_PROOF_IMAGE`); the limits and the margins are in the checks.
 
 Output (PNG frames, WAV, card images) goes under OUT (default out/runs/pluck-proof) and is never committed. Exit 0 only
 when every check passes. Addresses are the DT2 1.16/1.17 ones of findings 02 and 04.
