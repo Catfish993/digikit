@@ -5629,3 +5629,73 @@ Same session; DN2 1.11 and 1.12 share one DSP blob. What is known, from the shar
   loaded). Confidence of a sounding DN2 string: about 30 %; of finding the type test and a safe skip: about 60 %.
   Recommendation: finish `core.machines` DT2 first; DN2 is a 3 to 5 day item; its payoff is the same module on a second device,
   so it is worth doing only after a DT2 machine has been heard on hardware.
+
+## Per-voice hook on DN2 1.11/1.12: built (patchkit, lane fastweb) **[D]**
+
+Emulator only, not checked by a second agent; one DSP blob for 1.11 and 1.12. Modules: `core/dsp-voice` (the DN2 object
+`dsp-voice-dn2.s`), `test/dn2-sine` (a machine of type 5 that renders a sine); `tools/pk_proof_voice_dn2.py` (a, b, c all
+pass). **[C] This replaces the "Per-voice hook on DN2: assessment" above where they differ.**
+
+**What the Digitone II engine is.** `FUN_1c8ef1` (R4 = `0x241298`, R8 = `0x2554b8`, R12 = `0x257e6c`, called once per
+block from `FUN_1c2712` at `0x1c3044`) is not a per-track function: it is a pipeline of stages over 16 **voice slots**,
+each stage a loop over the slots (`0x234`-byte per-slot parameter structs from `0x25569c`, the type word at `DM(I0 - 12)`).
+Slot v has the frame slot (halfword indices of the DSP's frame copy at `0x25c48c`, big-endian values: pitch `1 + v` = note << 8,
+velocity `26 + v` = velocity << 8, machine type `74 + v`, i.e. frame bytes `0x02 + 2v`, `0x34 + 2v`, `0x94 + 2v`: the
+Digitakt's layout; the ColdFire allocates the slots round robin, a second TRIG goes to slot 1, and writes the track's
+type into the slot's type word) and a **32-float voice buffer at `0x804acf90 + 0x80 v`** (48 kHz; external memory), which
+all stages work on in place. Measured with `SHARC_WWATCH` on voice buffer words, one block, in time order: clear
+(`0xb804e5`), FM synthesis (`0xb827b1`...; types 0..3 through the stage table `0x8052db90` at `0x1c90b0`), a gain
+(`0x1c949b`, x1.585), the amplitude stage and envelope (`FUN_b80c39` per slot, `0xb80c60`), the filter (`0xb813be`,
+`0xb823b3`), the track chain (overdrive, bit reduction...), then the final loop at `0x1c9aea` upsamples each buffer to
+the **64-float output block at `0x257ee8 + 0x100 v` (96 kHz)** that `FUN_1c1738` (per-slot sends and filters) and
+`FUN_1c1f1e` (pan and send mix) read, then the master. A type above 4 is skipped by the synthesis like MIDI: its buffer
+holds the cleared data and the voice's later stages (amplitude envelope, gate) run on it.
+
+**The hook: `FUN_b8251b`** (55 instructions, leaf), called by the engine once per voice buffer after the synthesis
+(`0x1c9459`, a loop with R15 = 16 .. 1, so v = 16 - R15; R8 = R12 = the buffer, R4 = a control block whose first word is
+0 for every FM note; another path reaches it by a tail jump from `FUN_b8258f` with R8 != R12). patchkit overwrites its first
+instruction (48 bits, `I7 = MODIFY(I7, -18)`) with `JUMP _dv_entry` (same op as on the Digitakt); the wrapper
+saves everything it touches in a DM area (the function's callers keep live registers), runs the registered routine
+for the slot's type and continues in the stock helper at its second instruction. A patched image with no registered type
+is **bit-identical** to stock (FM TONE, 62,176 active samples; the boot lands a DSP block away as on every patched
+image). Cost: 16 calls per block, about 70 instructions each when no type is registered, by count.
+Anchors (rules in `modules/core/dsp-voice/module.toml`): `dsp.voice.render_entry` / `render_next` (`reloc_hash` of
+`FUN_b8251b`, offsets 0 and 3), `dsp.voice.frame_base` (the literal `I4 = 0x25c48c` of `FUN_1c2712`, offset `0x165`).
+
+**Routine ABI on the Digitone II** (the registration contract is the Digitakt's: a `register` row `{type, routine}` in
+`_dv_table`; the routine is entered with `JUMP (M13, I12)`, I13 = return pc, ends with `JUMP (M13, I13)`):
+R4 = the slot's voice buffer (32 floats, written in full), R0 = type, R2 = slot v, R12 = 32. It may use R0-R15, I0-I5,
+I12, I13, M1-M4 (saved); it keeps I6-I11, I14, I15, M0, M5-M15, the L registers and MODE1; M5 = 0, M6 = 1, M7 = -1,
+M13 = 0, M14 = 1, M15 = -1 hold. There is no voice record: a routine keeps its own per-slot state. Helpers exported by
+the core: `_dv_exp2` and `_dv_frame_hw` / `_dv_frame_sw` (halfword k of the frame copy). What the routine writes is the
+signal **before** the engine's gain, amplitude envelope and gate, filter, overdrive and the rest of the track chain.
+Two consequences: the note's end is the engine's (the amplitude envelope releases the voice), and the routine sees no
+gate or note-on edge of its own (the frame carries none: pitch and velocity words are written at the trig and never
+cleared; the voice records at `0x241298 + ...` change at a trig but their flags stay set). A routine that needs the
+edge (a string) can use a change of the slot's pitch or velocity word (a second note goes to the next slot, so this
+works for 16 notes and then fails for a repeated note) **[O]**.
+The type words reach the DSP as the ColdFire sends them: `core/machines` on the Digitone II sends a clone of FM TONE as
+type 0 (the engine renders it), a machine with `own_dsp = true` with its own number (finding 02).
+
+**Evidence** (`tools/pk_proof_voice_dn2.py`; the proof starts every case from `restart`, TRIG 1 held for 1 s):
+
+| check | result |
+|---|---|
+| a. FM TONE with `core/dsp-voice` and `test/dn2-sine` patched in vs stock | bit-identical |
+| b. SINE note 60 / 72 (pitch word `0x4800` forced) | 261.626 / 523.252 Hz (0.00 cents) |
+| c. LEVEL knob down 300 detents (stock FM TONE with the same knob: -28.8 dB) | -31.8 dB |
+| c. the amplitude envelope releases the sine after the note | RMS per 100 ms 0.0176 .. 0.0133 held, then 0.0048, 0.0012, 0.0003, 0.0001 |
+| c. filter frequency down 300 detents on a 2093 Hz sine | -28.4 dB |
+| c. overdrive up on the sine | 3rd harmonic 1.2e-6 -> 0.156 of the fundamental |
+| c. reverb send up | a tail after the note (RMS 0 -> 0.00016) |
+| harness smoke tour (boot, track, pattern, play/stop, machine menu, save/reload, stress) with SINE in the set | 33 checks pass |
+
+**Seam I tried first and why it is worse [D].** Hooking the first instruction of `FUN_1c1738` (the function after the engine
+call) and writing the track's 64-float block `0x257ee8 + 0x100 v` directly works too (pitch exact) but skips everything the
+engine does to the voice buffer: no amplitude envelope (the sine never ended), no LEVEL, filter or overdrive; only the
+sends and the master apply. The 96 kHz block also needs the phase increment halved. Not used.
+
+**Open [O].** Hardware (never flashed; the DSP engine's L2 use is the stream's). The note-on edge and per-voice parameters
+of a machine with its own parameter page (the machine slot words of the DN2 frame block `0xda + 0x92 v` were not mapped
+to knobs). The wrapper calls the routine for every slot with a registered type each block, also for slots whose voice
+is idle (the engine's envelope silences them).

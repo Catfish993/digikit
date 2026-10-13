@@ -360,7 +360,8 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
       formatter and value class copied from a template row), the table relocated at patch time, every reader repointed
       and bounded. See "Phase 3 results (wave 6)" and finding 02, "core.params".
 - [ ] `core.master-fx` (with 0.7 master hook).
-- [ ] `core.machines` DN2 (3-5 days): parameter-page layer. Assessment in "Phase 3 results"; not started.
+- [x] `core.machines` DN2 (lane `fastweb`, 2026-10-13/14): a clone of FM TONE lists, commits, shows FM TONE's pages, sounds
+      bit-identical, persists and loads on stock; own parameter pages not built. See "DN2 results" below.
 - [x] Persistence check: project saved on a patched image, loaded on stock (emulator): the track loads as SAMPLE.
 
 ### Phase 3 results (2026-10-13, lane `b`)
@@ -439,6 +440,34 @@ four parameters, the DSP row now registers `machines.pluck.type`), `tools/pk_pro
   loads the project as SAMPLE. Numbers in finding 02, "PLUCK on DT2".
 - **Not done:** MIDI CC/NRPN for added types (ignored, no fault), p-lock in the emulator (gesture not harnessed even for
   stock), a row of a different value class than its template, DN2.
+
+### DN2 results (2026-10-14, lane `fastweb`)
+
+Details and evidence: findings 02 ("core.machines on Digitone II 1.12") and 06 ("Per-voice hook on DN2 1.11/1.12: built").
+Emulator only; nothing flashed; one agent.
+
+- **core.machines on DN2 1.12** (took about a day, not the assessed 3 to 4): `native/patchkit/src/machines/dn2.rs` is the
+  Digitone part of the generator (the Digitakt-only parts are skipped on `dn2`; the Digitakt output is byte-identical to
+  before for `core/machines` + `machines/xslice` + `test/machine-clone` on 1.16 and 1.17); 31 DN2 anchors by function hash
+  (`tools/pk_machine_rules_dn2.py`, 1.11 and 1.12 resolve). The parameter-page layer needs no table growth for a clone: three
+  per-type table functions get the type mapped to `clone_of` on entry, and the type reader (41 callers) returns the clone's
+  original except for the identity code. `test/dn2-clone` (type 5) passes `tools/pk_proof_machines_dn2.py` (select, pages,
+  PCM bit-identical to FM TONE, parameters, save/load, load on stock, control, sequencer) and the harness smoke tour.
+  Manifest additions: `own_dsp` (the DSP is told the machine's own type), `devices` on `[[machine]]`; a `register` row may
+  name `machines.<id>.type`.
+- **DN2 voice hook**: the Digitone II engine is a stage pipeline over 16 voice slots with a 32-float 48 kHz buffer per slot;
+  the hook is `FUN_b8251b` (called once per buffer after the FM synthesis), so a registered routine's signal passes the
+  engine's gain, amplitude envelope and gate, filter, overdrive, sends and master. `test/dn2-sine`: pitch exact
+  (261.626 / 523.252 Hz), LEVEL -31.8 dB (stock FM TONE -28.8), envelope release, filter -28 dB, overdrive adds
+  harmonics, reverb tail; no registered type: bit-identical to stock. Routine ABI: R4 = buffer, R0 = type, R2 = slot,
+  R12 = 32 (finding 06). **No note-on edge or gate is available to a routine** and the machine parameters of a slot's
+  track were not mapped (they are per track at frame `0xda + 0x92 t`; the slot to track map is unknown).
+- **PLUCK on DN2: not built.** Needs the slot to track map and the parameter words (DECAY, PICK, BRIGHT, COLOR would use
+  FM TONE's knobs through the clone's pages, labelled as FM TONE's), a note-on edge (a change of the slot's pitch or
+  velocity word works for 16 notes, then fails for a repeated note), `pluck.s` rewritten for a 32-float buffer without
+  a voice record, and per-device `requires` in the manifest (core/machines only on the Digitone). Estimate 1 to 2 days,
+  confidence about 50 % for a string that retriggers reliably; payoff: the same module on a second device.
+- Open: hardware; own parameter pages for a DN2 machine (3 start-up built RAM tables, est. 1 to 2 days); DN2 1.11 not run.
 
 ### Phase 4: proof-of-concept modules
 

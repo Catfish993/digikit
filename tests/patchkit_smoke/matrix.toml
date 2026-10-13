@@ -56,3 +56,13 @@ modules = ["fx/master-drive"]
 device = "dt2"
 firmware = "1.16"
 modules = ["core/machines", "machines/xslice"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/machines", "test/dn2-clone"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/machines", "core/dsp-voice", "test/dn2-sine"]

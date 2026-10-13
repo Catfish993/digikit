@@ -233,9 +233,6 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
         }
     }
     if m.id() == crate::machines::FRAMEWORK || !m.manifest.machine.is_empty() {
-        if !m.manifest.machine.is_empty() && !on(&[String::from("dt2")], dev) {
-            missing.push("machine framework (Digitakt II only)".into());
-        }
         for d in &m.manifest.machine {
             if let Err(e) = crate::machines::validate(d) {
                 return Err(err!("{}: {e}", m.id()));
@@ -435,7 +432,7 @@ pub fn apply_with(
         })?;
         crate::params::assign(&params, (t1.len / crate::params::ROW as u64) as u32)
     };
-    let machines = crate::machines::declared(lib, &order, &param_codes)?;
+    let machines = crate::machines::declared(lib, &order, &param_codes, &port.port.device)?;
     if !machines.is_empty() && !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
         return Err(err!(
             "{} adds machines but {} is not selected (add it to `requires`)",
@@ -447,7 +444,7 @@ pub fn apply_with(
     // Every anchor a selected module uses must hold the bytes the port recorded.
     let mut used: BTreeSet<String> = BTreeSet::new();
     if !machines.is_empty() {
-        used.extend(crate::machines::anchor_names());
+        used.extend(crate::machines::anchor_names_for(&port.port.device));
     }
     if !params.is_empty() {
         used.extend(crate::params::anchor_names());

@@ -40,7 +40,19 @@ const CLONE_SITES: usize = 7;
 /// Functions that take the machine type as a stack argument and index a 7-entry table with it.
 const TYPEARG_SITES: usize = 1;
 
-/// Every anchor the framework reads.
+pub mod dn2;
+
+/// The sites the Digitone II framework reads (`dn2::`): no sort comparator, per-type byte table, clone tests or DSP
+/// selector table; a group helper of another shape and functions that index per-type tables with the type.
+pub fn anchor_names_for(device: &str) -> Vec<String> {
+    if device == "dn2" {
+        dn2::anchor_names()
+    } else {
+        anchor_names()
+    }
+}
+
+/// Every anchor the DT2 framework reads.
 pub fn anchor_names() -> Vec<String> {
     let mut v: Vec<String> = [
         "dispatch",
@@ -64,7 +76,7 @@ pub fn anchor_names() -> Vec<String> {
 
 /// Anchors the port lacks (empty: the framework can run on it).
 pub fn missing_anchors(port: &Port) -> Vec<String> {
-    anchor_names()
+    anchor_names_for(&port.port.device)
         .into_iter()
         .filter(|n| port.anchor(n).is_none())
         .collect()
@@ -84,11 +96,17 @@ pub fn declared(
     lib: &Library,
     order: &[String],
     params: &BTreeMap<String, u32>,
+    device: &str,
 ) -> Result<Vec<Declared>> {
     let mut out: Vec<Declared> = vec![];
     for id in order {
         let m = lib.get(id).ok_or_else(|| err!("unknown module {id}"))?;
-        for d in &m.manifest.machine {
+        for d in m
+            .manifest
+            .machine
+            .iter()
+            .filter(|d| d.devices.is_empty() || d.devices.iter().any(|x| x == device))
+        {
             if let Some(prev) = out.iter().find(|p| p.def.id == d.id) {
                 return Err(err!(
                     "machine id {} is declared by both {} and {id}",
@@ -412,6 +430,7 @@ pub fn generate(
     if n == 0 {
         return Err(err!("machines: nothing to generate"));
     }
+    let dn2 = port.port.device == "dn2";
     if n > MAX_ADDED {
         return Err(err!("machines: {n} added types, at most {MAX_ADDED}"));
     }
@@ -457,7 +476,7 @@ pub fn generate(
     expect(
         "list builder",
         &list.bytes[6..12],
-        &[0x41, 0xe8, 0x00, 0x1c, 0x48, 0x79],
+        &[0x41, 0xe8, 0x00, count as u8 * 4, 0x48, 0x79],
     )?;
     let (list_end, list_start) = (be32(&list.bytes, 2) as u64, be32(&list.bytes, 12) as u64);
     if list_end < list_start || (list_end - list_start) / 4 != count as u64 {
@@ -523,51 +542,59 @@ pub fn generate(
         what: "list start".into(),
     });
 
-    // ---- rank: the sort comparator's std::map gets (type, display position) pairs
-    let rank = site(port, read, "cf.machines.rank")?;
-    expect("rank insert jsr", &rank.bytes[0..2], &[0x4e, 0xb9])?;
-    let rank_insert = be32(&rank.bytes, 2);
-    data.sym("machfw_rank_table");
-    for (i, t) in order.iter().enumerate() {
-        data.w32(*t);
-        data.w32(i as u32);
+    if !dn2 {
+        // ---- rank: the sort comparator's std::map gets (type, display position) pairs
+        let rank = site(port, read, "cf.machines.rank")?;
+        expect("rank insert jsr", &rank.bytes[0..2], &[0x4e, 0xb9])?;
+        let rank_insert = be32(&rank.bytes, 2);
+        data.sym("machfw_rank_table");
+        for (i, t) in order.iter().enumerate() {
+            data.w32(*t);
+            data.w32(i as u32);
+        }
+        asm.align(2);
+        asm.sym("machfw_rank_shim");
+        // entered by the repointed jsr: 4(sp) is the map, 8(sp) begin, 0xc(sp) end (the caller discards both afterwards).
+        // ColdFire instructions are at most 6 bytes, so `move.l #imm,d16(sp)` does not exist: go through D0, which a
+        // callee may clobber.
+        asm.w16(0x203c); // move.l #table,D0
+        asm.abs32("machfw_rank_table", 0);
+        asm.w16(0x2f40); // move.l D0,8(sp)
+        asm.w16(0x0008);
+        asm.w16(0x203c); // move.l #end,D0
+        asm.abs32("machfw_rank_table", 8 * total as i64);
+        asm.w16(0x2f40); // move.l D0,0xc(sp)
+        asm.w16(0x000c);
+        asm.jmp_const(rank_insert);
+        patches.push(GenPatch {
+            anchor: rank.name.clone(),
+            at: 2,
+            bytes: vec![0; 4],
+            relocs: vec![rel(0, "machfw_rank_shim", 0)],
+            what: "rank insert call".into(),
+        });
     }
-    asm.align(2);
-    asm.sym("machfw_rank_shim");
-    // entered by the repointed jsr: 4(sp) is the map, 8(sp) begin, 0xc(sp) end (the caller discards both afterwards).
-    // ColdFire instructions are at most 6 bytes, so `move.l #imm,d16(sp)` does not exist: go through D0, which a
-    // callee may clobber.
-    asm.w16(0x203c); // move.l #table,D0
-    asm.abs32("machfw_rank_table", 0);
-    asm.w16(0x2f40); // move.l D0,8(sp)
-    asm.w16(0x0008);
-    asm.w16(0x203c); // move.l #end,D0
-    asm.abs32("machfw_rank_table", 8 * total as i64);
-    asm.w16(0x2f40); // move.l D0,0xc(sp)
-    asm.w16(0x000c);
-    asm.jmp_const(rank_insert);
-    patches.push(GenPatch {
-        anchor: rank.name.clone(),
-        at: 2,
-        bytes: vec![0; 4],
-        relocs: vec![rel(0, "machfw_rank_shim", 0)],
-        what: "rank insert call".into(),
-    });
 
-    // ---- group: the UI group of a type (SLICE and its clones are group 1)
-    let group = site(port, read, "cf.machines.group")?;
-    expect(
-        "group bound",
-        &group.bytes,
-        &[0x72, last as u8, 0xb2, 0x80, 0x66, 0x04],
-    )?;
-    patches.push(GenPatch {
-        anchor: group.name.clone(),
-        at: 0,
-        bytes: vec![0x72, new_last, 0xb2, 0x80, 0x65, 0x04],
-        relocs: vec![],
-        what: "group bound".into(),
-    });
+    if !dn2 {
+        // ---- group: the UI group of a type (SLICE and its clones are group 1)
+        let group = site(port, read, "cf.machines.group")?;
+        expect(
+            "group bound",
+            &group.bytes,
+            &[0x72, last as u8, 0xb2, 0x80, 0x66, 0x04],
+        )?;
+        patches.push(GenPatch {
+            anchor: group.name.clone(),
+            at: 0,
+            bytes: vec![0x72, new_last, 0xb2, 0x80, 0x65, 0x04],
+            relocs: vec![],
+            what: "group bound".into(),
+        });
+    }
+
+    if dn2 {
+        dn2::group(port, read, new_last, &mut patches, &mut asm)?;
+    }
 
     // ---- dispatch: descriptors of the added types
     asm.align(2);
@@ -730,236 +757,246 @@ pub fn generate(
         what: "permit table".into(),
     });
 
-    // ---- pertype: a byte per type behind six bounds
-    let mut pertype_table: Option<u32> = None;
-    let mut pt_patches = vec![];
-    for i in 0..PERTYPE_SITES {
-        let s = site(port, read, &format!("cf.machines.pertype.{i}"))?;
-        if s.bytes[0] & 0xf1 != 0x70 || s.bytes[1] != last as u8 {
-            return Err(err!(
-                "machines: {}: expected moveq #{last},Dn, got {}",
-                s.name,
-                hex(&s.bytes[0..2])
-            ));
-        }
-        // candidate leas of an absolute table address
-        let cands: Vec<(usize, u32)> = (2..s.bytes.len().saturating_sub(5))
-            .step_by(2)
-            .filter(|&o| u16::from_be_bytes([s.bytes[o], s.bytes[o + 1]]) & 0xf1ff == 0x41f9)
-            .map(|o| (o, be32(&s.bytes, o + 2)))
-            .collect();
-        let pick = match pertype_table {
-            None if cands.len() == 1 => cands[0],
-            None => return Err(err!("machines: {}: {} lea candidates", s.name, cands.len())),
-            Some(t) => {
-                let m: Vec<_> = cands.iter().filter(|c| c.1 == t).collect();
-                if m.len() != 1 {
-                    return Err(err!(
-                        "machines: {}: no single lea of the per-type table",
-                        s.name
-                    ));
-                }
-                *m[0]
+    if !dn2 {
+        // ---- pertype: a byte per type behind six bounds
+        let mut pertype_table: Option<u32> = None;
+        let mut pt_patches = vec![];
+        for i in 0..PERTYPE_SITES {
+            let s = site(port, read, &format!("cf.machines.pertype.{i}"))?;
+            if s.bytes[0] & 0xf1 != 0x70 || s.bytes[1] != last as u8 {
+                return Err(err!(
+                    "machines: {}: expected moveq #{last},Dn, got {}",
+                    s.name,
+                    hex(&s.bytes[0..2])
+                ));
             }
-        };
-        pertype_table = Some(pick.1);
-        pt_patches.push((s.name.clone(), pick.0));
-    }
-    let pertype_table = pertype_table.unwrap() as u64;
-    let stock_pt = read(pertype_table, count as u64)?;
-    data.sym("machfw_pertype");
-    data.bytes(&stock_pt);
-    for d in defs {
-        data.bytes(&[stock_pt[d.def.clone_of as usize]]);
-    }
-    data.align(4);
-    for (name, lea) in pt_patches {
-        patches.push(GenPatch {
-            anchor: name.clone(),
-            at: 1,
-            bytes: vec![new_last],
-            relocs: vec![],
-            what: "per-type bound".into(),
-        });
-        patches.push(GenPatch {
-            anchor: name,
-            at: lea as u64 + 2,
-            bytes: vec![0; 4],
-            relocs: vec![rel(0, "machfw_pertype", 0)],
-            what: "per-type table".into(),
-        });
+            // candidate leas of an absolute table address
+            let cands: Vec<(usize, u32)> = (2..s.bytes.len().saturating_sub(5))
+                .step_by(2)
+                .filter(|&o| u16::from_be_bytes([s.bytes[o], s.bytes[o + 1]]) & 0xf1ff == 0x41f9)
+                .map(|o| (o, be32(&s.bytes, o + 2)))
+                .collect();
+            let pick = match pertype_table {
+                None if cands.len() == 1 => cands[0],
+                None => return Err(err!("machines: {}: {} lea candidates", s.name, cands.len())),
+                Some(t) => {
+                    let m: Vec<_> = cands.iter().filter(|c| c.1 == t).collect();
+                    if m.len() != 1 {
+                        return Err(err!(
+                            "machines: {}: no single lea of the per-type table",
+                            s.name
+                        ));
+                    }
+                    *m[0]
+                }
+            };
+            pertype_table = Some(pick.1);
+            pt_patches.push((s.name.clone(), pick.0));
+        }
+        let pertype_table = pertype_table.unwrap() as u64;
+        let stock_pt = read(pertype_table, count as u64)?;
+        data.sym("machfw_pertype");
+        data.bytes(&stock_pt);
+        for d in defs {
+            data.bytes(&[stock_pt[d.def.clone_of as usize]]);
+        }
+        data.align(4);
+        for (name, lea) in pt_patches {
+            patches.push(GenPatch {
+                anchor: name.clone(),
+                at: 1,
+                bytes: vec![new_last],
+                relocs: vec![],
+                what: "per-type bound".into(),
+            });
+            patches.push(GenPatch {
+                anchor: name,
+                at: lea as u64 + 2,
+                bytes: vec![0; 4],
+                relocs: vec![rel(0, "machfw_pertype", 0)],
+                what: "per-type table".into(),
+            });
+        }
     }
 
-    // ---- clone: every `type == SLICE` test also accepts the added clones of SLICE; the mask test maps added types to their
-    // clone_of first
-    let eq_types: Vec<u32> = types
-        .iter()
-        .zip(defs)
-        .filter(|(_, d)| d.def.clone_of == CLONE_SITES_OF)
-        .map(|((_, t, _), _)| *t)
-        .collect();
-    for i in 0..CLONE_SITES {
-        let s = site(port, read, &format!("cf.machines.clone.{i}"))?;
-        let c = decode_clone(&s)?;
-        let (len, label) = match c {
-            CloneTest::Eq {
-                prefix,
-                reg,
-                matched,
-                unmatched,
-                len,
-            } => {
-                if eq_types.is_empty() {
-                    continue;
-                }
-                asm.align(2);
-                asm.sym(&format!("machfw_clone_{i}"));
-                let m = format!("m{i}");
-                asm.bytes(&prefix);
-                asm.bcc_w(7, &m);
-                for t in &eq_types {
-                    asm.cmpi_l(reg, *t);
+    if !dn2 {
+        // ---- clone: every `type == SLICE` test also accepts the added clones of SLICE; the mask test maps added types to their
+        // clone_of first
+        let eq_types: Vec<u32> = types
+            .iter()
+            .zip(defs)
+            .filter(|(_, d)| d.def.clone_of == CLONE_SITES_OF)
+            .map(|((_, t, _), _)| *t)
+            .collect();
+        for i in 0..CLONE_SITES {
+            let s = site(port, read, &format!("cf.machines.clone.{i}"))?;
+            let c = decode_clone(&s)?;
+            let (len, label) = match c {
+                CloneTest::Eq {
+                    prefix,
+                    reg,
+                    matched,
+                    unmatched,
+                    len,
+                } => {
+                    if eq_types.is_empty() {
+                        continue;
+                    }
+                    asm.align(2);
+                    asm.sym(&format!("machfw_clone_{i}"));
+                    let m = format!("m{i}");
+                    asm.bytes(&prefix);
                     asm.bcc_w(7, &m);
+                    for t in &eq_types {
+                        asm.cmpi_l(reg, *t);
+                        asm.bcc_w(7, &m);
+                    }
+                    asm.jmp_const(unmatched);
+                    asm.label(&m);
+                    asm.jmp_const(matched);
+                    (len, format!("machfw_clone_{i}"))
                 }
-                asm.jmp_const(unmatched);
-                asm.label(&m);
-                asm.jmp_const(matched);
-                (len, format!("machfw_clone_{i}"))
-            }
-            CloneTest::Mask {
-                matched,
-                unmatched,
-                len,
-            } => {
-                asm.align(2);
-                asm.sym(&format!("machfw_clone_{i}"));
-                let m = format!("m{i}");
-                for (k, d) in defs.iter().enumerate() {
-                    asm.cmpi_l(0, count + k as u32);
-                    asm.w16(0x6602); // bne.b +2
-                    asm.moveq(0, d.def.clone_of as i8);
+                CloneTest::Mask {
+                    matched,
+                    unmatched,
+                    len,
+                } => {
+                    asm.align(2);
+                    asm.sym(&format!("machfw_clone_{i}"));
+                    let m = format!("m{i}");
+                    for (k, d) in defs.iter().enumerate() {
+                        asm.cmpi_l(0, count + k as u32);
+                        asm.w16(0x6602); // bne.b +2
+                        asm.moveq(0, d.def.clone_of as i8);
+                    }
+                    asm.bytes(&MASK_HEAD);
+                    asm.bcc_w(7, &m);
+                    asm.jmp_const(unmatched);
+                    asm.label(&m);
+                    asm.jmp_const(matched);
+                    (len, format!("machfw_clone_{i}"))
                 }
-                asm.bytes(&MASK_HEAD);
-                asm.bcc_w(7, &m);
-                asm.jmp_const(unmatched);
-                asm.label(&m);
-                asm.jmp_const(matched);
-                (len, format!("machfw_clone_{i}"))
+            };
+            let mut bytes = vec![0x4e, 0xf9, 0, 0, 0, 0];
+            bytes.resize(len, 0);
+            for k in (6..len).step_by(2) {
+                bytes[k] = 0x4e;
+                bytes[k + 1] = 0x71;
             }
-        };
-        let mut bytes = vec![0x4e, 0xf9, 0, 0, 0, 0];
-        bytes.resize(len, 0);
-        for k in (6..len).step_by(2) {
-            bytes[k] = 0x4e;
-            bytes[k + 1] = 0x71;
+            patches.push(GenPatch {
+                anchor: s.name.clone(),
+                at: 0,
+                bytes,
+                relocs: vec![rel(2, &label, 0)],
+                what: "clone test".into(),
+            });
         }
-        patches.push(GenPatch {
-            anchor: s.name.clone(),
-            at: 0,
-            bytes,
-            relocs: vec![rel(2, &label, 0)],
-            what: "clone test".into(),
-        });
+
+        // ---- typearg: `FUN_400da3a2(idx, type, filter)` answers which parameter code a (mirror index, machine type) pair
+        // stands for: the owner-keyed map built at boot from the parameter table (7 machine types x 10 mirror slots). It
+        // feeds the default values of a new sound and machine change, parameter change events and the parameter lookup
+        // of the engine slots. An added type answers with its own descriptor's field for the slot (0 where the field is
+        // empty), so the defaults, ranges and names of the machine's own rows apply (core/params); the two slots without
+        // a descriptor field (29, 30) answer as the clone does, and every other index falls through to the stock code.
+        // The shim runs between `movea.l 4(sp),A0` (idx) and `movea.l 0xc(sp),A1`.
+        for i in 0..TYPEARG_SITES {
+            let s = site(port, read, &format!("cf.machines.typearg.{i}"))?;
+            expect(
+                &format!("{} loads", s.name),
+                &[s.bytes[0], s.bytes[1], s.bytes[4], s.bytes[5]],
+                &[0x20, 0x2f, 0x22, 0x6f],
+            )?;
+            if s.bytes.len() != 8 {
+                return Err(err!(
+                    "machines: {} is {} bytes, need 8",
+                    s.name,
+                    s.bytes.len()
+                ));
+            }
+            let before = read(s.addr - 4, 4)?;
+            expect(
+                &format!("{} index load", s.name),
+                &[before[0], before[1]],
+                &[0x20, 0x6f],
+            )?;
+            // the epilogue `move.l (sp)+,D2; movea.l (sp)+,A2; rts` the function ends in
+            let tail = read(s.addr + 8, 0x80)?;
+            let hits: Vec<usize> = (0..tail.len() - 6)
+                .step_by(2)
+                .filter(|&k| tail[k..k + 6] == [0x24, 0x1f, 0x24, 0x5f, 0x4e, 0x75])
+                .collect();
+            if hits.len() != 1 {
+                return Err(err!(
+                    "machines: {}: {} function epilogues after the site",
+                    s.name,
+                    hits.len()
+                ));
+            }
+            let epilogue = (s.addr + 8 + hits[0] as u64) as u32;
+            asm.align(2);
+            asm.sym(&format!("machfw_typearg_{i}"));
+            asm.bytes(&s.bytes[0..4]); // move.l 8(sp),D0: the type
+            asm.cmpi_l(0, count);
+            asm.bcc_w(5, "ta_resume"); // a stock type
+            asm.cmpi_l(0, count + n as u32);
+            asm.bcc_w(4, "ta_resume"); // not one of ours
+            asm.w16(0x2408); // move.l A0,D2
+            asm.w16(0x0482);
+            asm.w32(25); // subi.l #25,D2
+            asm.w16(0x0c82);
+            asm.w32(9); // cmpi.l #9,D2
+            asm.bcc_w(2, "ta_resume"); // hi: not an engine slot
+            asm.w16(0xe58a); // lsl.l #2,D2
+            asm.w16(0x0682);
+            asm.abs32("machfw_slotmap", 0); // addi.l #slotmap,D2
+            asm.w16(0x2442); // movea.l D2,A2
+            asm.w16(0x2412); // move.l (A2),D2
+            asm.w16(0x4a82); // tst.l D2
+            asm.bcc_w(0xd, "ta_clone"); // lt: a slot without a descriptor field (29, 30)
+            asm.w16(0x0480);
+            asm.w32(count); // subi.l #count,D0
+            asm.moveq(1, 0x2c);
+            asm.w16(0x4c01);
+            asm.w16(0x0800); // muls.l D1,D0
+            asm.w16(0xd082); // add.l D2,D0
+            asm.w16(0x0680);
+            asm.abs32("machfw_desc", 0); // addi.l #desc,D0
+            asm.w16(0x2440); // movea.l D0,A2
+            asm.w16(0x2012); // move.l (A2),D0
+            asm.jmp_const(epilogue);
+            // the slots without a field (29 and 30: MANUAL SLICE's `Sample Bank` and `Sample Slot` rows, which the stock
+            // map holds for its owner but no descriptor lists) answer as the clone does: the type counts as its clone
+            asm.label("ta_clone");
+            for (j, d) in defs.iter().enumerate() {
+                asm.cmpi_l(0, count + j as u32);
+                asm.w16(0x6602); // bne.b +2
+                asm.moveq(0, d.def.clone_of as i8);
+            }
+            asm.label("ta_resume");
+            asm.bytes(&s.bytes[4..8]); // movea.l 0xc(sp),A1
+            asm.jmp_const((s.addr + 8) as u32);
+            let mut bytes = vec![0x4e, 0xf9, 0, 0, 0, 0, 0x4e, 0x71];
+            bytes.truncate(8);
+            patches.push(GenPatch {
+                anchor: s.name.clone(),
+                at: 0,
+                bytes,
+                relocs: vec![rel(2, &format!("machfw_typearg_{i}"), 0)],
+                what: "type argument".into(),
+            });
+        }
+        // engine slot of each mirror index 25..34 as the byte offset of its descriptor field (-1: none)
+        data.align(4);
+        data.sym("machfw_slotmap");
+        for off in [8i32, 12, 16, 20, -1, -1, 24, 28, 32, 36] {
+            data.w32(off as u32);
+        }
     }
 
-    // ---- typearg: `FUN_400da3a2(idx, type, filter)` answers which parameter code a (mirror index, machine type) pair
-    // stands for: the owner-keyed map built at boot from the parameter table (7 machine types x 10 mirror slots). It
-    // feeds the default values of a new sound and machine change, parameter change events and the parameter lookup
-    // of the engine slots. An added type answers with its own descriptor's field for the slot (0 where the field is
-    // empty), so the defaults, ranges and names of the machine's own rows apply (core/params); the two slots without
-    // a descriptor field (29, 30) answer as the clone does, and every other index falls through to the stock code.
-    // The shim runs between `movea.l 4(sp),A0` (idx) and `movea.l 0xc(sp),A1`.
-    for i in 0..TYPEARG_SITES {
-        let s = site(port, read, &format!("cf.machines.typearg.{i}"))?;
-        expect(
-            &format!("{} loads", s.name),
-            &[s.bytes[0], s.bytes[1], s.bytes[4], s.bytes[5]],
-            &[0x20, 0x2f, 0x22, 0x6f],
-        )?;
-        if s.bytes.len() != 8 {
-            return Err(err!(
-                "machines: {} is {} bytes, need 8",
-                s.name,
-                s.bytes.len()
-            ));
-        }
-        let before = read(s.addr - 4, 4)?;
-        expect(
-            &format!("{} index load", s.name),
-            &[before[0], before[1]],
-            &[0x20, 0x6f],
-        )?;
-        // the epilogue `move.l (sp)+,D2; movea.l (sp)+,A2; rts` the function ends in
-        let tail = read(s.addr + 8, 0x80)?;
-        let hits: Vec<usize> = (0..tail.len() - 6)
-            .step_by(2)
-            .filter(|&k| tail[k..k + 6] == [0x24, 0x1f, 0x24, 0x5f, 0x4e, 0x75])
-            .collect();
-        if hits.len() != 1 {
-            return Err(err!(
-                "machines: {}: {} function epilogues after the site",
-                s.name,
-                hits.len()
-            ));
-        }
-        let epilogue = (s.addr + 8 + hits[0] as u64) as u32;
-        asm.align(2);
-        asm.sym(&format!("machfw_typearg_{i}"));
-        asm.bytes(&s.bytes[0..4]); // move.l 8(sp),D0: the type
-        asm.cmpi_l(0, count);
-        asm.bcc_w(5, "ta_resume"); // a stock type
-        asm.cmpi_l(0, count + n as u32);
-        asm.bcc_w(4, "ta_resume"); // not one of ours
-        asm.w16(0x2408); // move.l A0,D2
-        asm.w16(0x0482);
-        asm.w32(25); // subi.l #25,D2
-        asm.w16(0x0c82);
-        asm.w32(9); // cmpi.l #9,D2
-        asm.bcc_w(2, "ta_resume"); // hi: not an engine slot
-        asm.w16(0xe58a); // lsl.l #2,D2
-        asm.w16(0x0682);
-        asm.abs32("machfw_slotmap", 0); // addi.l #slotmap,D2
-        asm.w16(0x2442); // movea.l D2,A2
-        asm.w16(0x2412); // move.l (A2),D2
-        asm.w16(0x4a82); // tst.l D2
-        asm.bcc_w(0xd, "ta_clone"); // lt: a slot without a descriptor field (29, 30)
-        asm.w16(0x0480);
-        asm.w32(count); // subi.l #count,D0
-        asm.moveq(1, 0x2c);
-        asm.w16(0x4c01);
-        asm.w16(0x0800); // muls.l D1,D0
-        asm.w16(0xd082); // add.l D2,D0
-        asm.w16(0x0680);
-        asm.abs32("machfw_desc", 0); // addi.l #desc,D0
-        asm.w16(0x2440); // movea.l D0,A2
-        asm.w16(0x2012); // move.l (A2),D0
-        asm.jmp_const(epilogue);
-        // the slots without a field (29 and 30: MANUAL SLICE's `Sample Bank` and `Sample Slot` rows, which the stock
-        // map holds for its owner but no descriptor lists) answer as the clone does: the type counts as its clone
-        asm.label("ta_clone");
-        for (j, d) in defs.iter().enumerate() {
-            asm.cmpi_l(0, count + j as u32);
-            asm.w16(0x6602); // bne.b +2
-            asm.moveq(0, d.def.clone_of as i8);
-        }
-        asm.label("ta_resume");
-        asm.bytes(&s.bytes[4..8]); // movea.l 0xc(sp),A1
-        asm.jmp_const((s.addr + 8) as u32);
-        let mut bytes = vec![0x4e, 0xf9, 0, 0, 0, 0, 0x4e, 0x71];
-        bytes.truncate(8);
-        patches.push(GenPatch {
-            anchor: s.name.clone(),
-            at: 0,
-            bytes,
-            relocs: vec![rel(2, &format!("machfw_typearg_{i}"), 0)],
-            what: "type argument".into(),
-        });
-    }
-    // engine slot of each mirror index 25..34 as the byte offset of its descriptor field (-1: none)
-    data.align(4);
-    data.sym("machfw_slotmap");
-    for off in [8i32, 12, 16, 20, -1, -1, 24, 28, 32, 36] {
-        data.w32(off as u32);
+    if dn2 {
+        dn2::typemaps(port, read, defs, count, &mut asm, &mut patches)?;
+        dn2::frametype(port, read, defs, count, &mut asm, &mut patches)?;
+        dn2::reader(port, read, defs, count, &mut asm, &mut patches)?;
     }
 
     // ---- persist: the sound loader keeps a stored machine type when (u8)(type + 1) < imm
@@ -983,66 +1020,72 @@ pub fn generate(
     // ---- DSP: the type -> selector table, relocated to L2 with one word per added type; the literal that loads its
     // address is repointed. The DSP indexes it with the type from the frame, so a type past the stock table would read
     // other data.
-    let sel = port
-        .anchor(SELECTOR_ANCHOR)
-        .ok_or_else(|| err!("port {} has no anchor {SELECTOR_ANCHOR}", port.id()))?;
-    let sel_src = sel
-        .src
-        .ok_or_else(|| err!("anchor {SELECTOR_ANCHOR} has no src"))?;
-    let sel_insn = read_sharc(sel_src, 6)?;
-    let sel_lit = ((u16::from_le_bytes([sel_insn[2], sel_insn[3]]) as u32) << 16)
-        | u16::from_le_bytes([sel_insn[4], sel_insn[5]]) as u32;
-    if sel_lit as u64 != sel.addr {
-        return Err(err!(
-            "machines: the selector literal reads {sel_lit:#x}, the anchor says {:#x}",
-            sel.addr
-        ));
-    }
-    let stock_sel = read_sharc(
-        crate::dsp::SW_ALIAS_BASE as u64 + sel.addr,
-        count as u64 * 4,
-    )?;
-    let stock_word = |i: usize| u32::from_le_bytes(stock_sel[i * 4..i * 4 + 4].try_into().unwrap());
-    let mut sel_words: Vec<u8> = stock_sel.clone();
-    for d in defs {
-        let w = d
-            .def
-            .selector
-            .unwrap_or_else(|| stock_word(d.def.clone_of as usize));
-        sel_words.extend_from_slice(&w.to_le_bytes());
-    }
-    let selector = Dko {
-        format: FORMAT,
-        arch: "sharc".into(),
-        source_sha256: sha256_hex(b"core/machines generated"),
-        toolchain: BTreeMap::from([("generator".into(), "patchkit machines.rs".into())]),
-        sections: vec![DkoSection {
-            name: "machfw.sel".into(),
-            kind: "data".into(),
-            align: 4,
-            size: sel_words.len() as u32,
-            hex: hex(&sel_words),
-        }],
-        symbols: vec![DkoSymbol {
-            name: "machfw_selector".into(),
-            section: Some("machfw.sel".into()),
-            value: 0,
-            global: true,
-        }],
-        relocs: vec![],
+    let selector: Option<Dko> = if dn2 {
+        None
+    } else {
+        let sel = port
+            .anchor(SELECTOR_ANCHOR)
+            .ok_or_else(|| err!("port {} has no anchor {SELECTOR_ANCHOR}", port.id()))?;
+        let sel_src = sel
+            .src
+            .ok_or_else(|| err!("anchor {SELECTOR_ANCHOR} has no src"))?;
+        let sel_insn = read_sharc(sel_src, 6)?;
+        let sel_lit = ((u16::from_le_bytes([sel_insn[2], sel_insn[3]]) as u32) << 16)
+            | u16::from_le_bytes([sel_insn[4], sel_insn[5]]) as u32;
+        if sel_lit as u64 != sel.addr {
+            return Err(err!(
+                "machines: the selector literal reads {sel_lit:#x}, the anchor says {:#x}",
+                sel.addr
+            ));
+        }
+        let stock_sel = read_sharc(
+            crate::dsp::SW_ALIAS_BASE as u64 + sel.addr,
+            count as u64 * 4,
+        )?;
+        let stock_word =
+            |i: usize| u32::from_le_bytes(stock_sel[i * 4..i * 4 + 4].try_into().unwrap());
+        let mut sel_words: Vec<u8> = stock_sel.clone();
+        for d in defs {
+            let w = d
+                .def
+                .selector
+                .unwrap_or_else(|| stock_word(d.def.clone_of as usize));
+            sel_words.extend_from_slice(&w.to_le_bytes());
+        }
+        let selector = Dko {
+            format: FORMAT,
+            arch: "sharc".into(),
+            source_sha256: sha256_hex(b"core/machines generated"),
+            toolchain: BTreeMap::from([("generator".into(), "patchkit machines.rs".into())]),
+            sections: vec![DkoSection {
+                name: "machfw.sel".into(),
+                kind: "data".into(),
+                align: 4,
+                size: sel_words.len() as u32,
+                hex: hex(&sel_words),
+            }],
+            symbols: vec![DkoSymbol {
+                name: "machfw_selector".into(),
+                section: Some("machfw.sel".into()),
+                value: 0,
+                global: true,
+            }],
+            relocs: vec![],
+        };
+        patches.push(GenPatch {
+            anchor: SELECTOR_ANCHOR.into(),
+            at: 0,
+            bytes: sel_insn,
+            relocs: vec![OpReloc {
+                offset: 0,
+                rtype: "sharc.abs32".into(),
+                symbol: "machfw_selector".into(),
+                addend: 0,
+            }],
+            what: "DSP selector table".into(),
+        });
+        Some(selector)
     };
-    patches.push(GenPatch {
-        anchor: SELECTOR_ANCHOR.into(),
-        at: 0,
-        bytes: sel_insn,
-        relocs: vec![OpReloc {
-            offset: 0,
-            rtype: "sharc.abs32".into(),
-            symbol: "machfw_selector".into(),
-            addend: 0,
-        }],
-        what: "DSP selector table".into(),
-    });
 
     // ---- the objects: the shims and the tables both go to the expansion region (the native core executes from DDR);
     // the flash cave keeps the expansion loader only
@@ -1098,11 +1141,10 @@ pub fn generate(
         data.relocs.clone(),
     );
     Ok(Generated {
-        objects: vec![
-            (code, "cf.expansion"),
-            (tables, "cf.expansion"),
-            (selector, "dsp.l2"),
-        ],
+        objects: vec![(code, "cf.expansion"), (tables, "cf.expansion")]
+            .into_iter()
+            .chain(selector.map(|d| (d, "dsp.l2")))
+            .collect(),
         patches,
         types,
     })
@@ -1201,6 +1243,8 @@ mod tests {
             selector: None,
             desc_name: None,
             desc_short: None,
+            own_dsp: false,
+            devices: vec![],
         };
         assert!(validate(&d).is_ok());
         d.id = "X-slice".into();
