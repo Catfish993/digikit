@@ -23,6 +23,7 @@ first L2 address of the patch plan).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import re
@@ -67,7 +68,7 @@ def select_pluck(s: H.Session) -> None:
     s.run_ms(300)
 
 
-def measure(name: str, fw: str, seconds: float, hist: bool) -> dict:
+def measure(name: str, fw: str, seconds: float, hist: bool, pcm: bool = False) -> dict:
     mods, poke, pluck, hold = CONFIGS[name]
     env: dict[str, str] = {}
     if poke:
@@ -84,6 +85,9 @@ def measure(name: str, fw: str, seconds: float, hist: bool) -> dict:
     s.run_ms(1500)
     if pluck:
         select_pluck(s)
+    wav = pathlib.Path(emu._run_dir.name) / "window.wav"  # type: ignore[union-attr]
+    if pcm:
+        emu.call("pcm.tap", action="capture", path=str(wav))
     if hold:
         emu.button(TRIG1, True)
         s.run_ms(100)  # the note-on settles
@@ -91,12 +95,17 @@ def measure(name: str, fw: str, seconds: float, hist: bool) -> dict:
     s.run_ms(seconds * 1000)
     t1, w1 = tiers(emu), time.monotonic()
     emu.button(TRIG1, False)
+    pcm_hash = None
+    if pcm:
+        emu.call("pcm.tap", action="capture_stop")
+        pcm_hash = hashlib.sha256(wav.read_bytes()).hexdigest()[:16]
     audio = t1["audio_s"] - t0["audio_s"]
     d = {k: t1[k] - t0[k] for k in ("instructions", "idle_skip", "interpreter", "fast_tier", "block_instructions")}
     d["aot"] = d["block_instructions"] - d["fast_tier"]
     busy = d["instructions"] - d["idle_skip"]
     out = {
         "config": name,
+        "pcm": pcm_hash,
         "wall_per_emu_s": (w1 - w0) / seconds,
         "dsp_cpu_per_audio_s": (t1["worker_cpu_s"] - t0["worker_cpu_s"]) / audio if audio else None,
         "audio_s": audio,
@@ -144,11 +153,12 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=1.0)
     ap.add_argument("--fw", default="1.17")
     ap.add_argument("--hist", action="store_true")
+    ap.add_argument("--pcm", action="store_true", help="hash the PCM of the window (bit-identity between binaries)")
     ap.add_argument("--out")
     a = ap.parse_args()
     rows = []
     for name in a.config or list(CONFIGS):
-        r = measure(name, a.fw, a.seconds, a.hist)
+        r = measure(name, a.fw, a.seconds, a.hist, a.pcm)
         print(json.dumps(r), flush=True)
         rows.append(r)
     if a.out:

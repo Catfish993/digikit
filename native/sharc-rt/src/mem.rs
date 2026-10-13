@@ -195,18 +195,22 @@ impl Mem {
     fn note_write_n(&mut self, a: u32, len: u32) {
         let w = self.watch[(a >> PAGE_BITS) as usize];
         if w != 0 {
-            if w & WATCH_CODE != 0 && self.code_hit(a, len) {
-                self.code_gen += 1;
-            }
-            self.dec_gen += ((w & WATCH_DECODE) >> 1) as u64;
+            self.note_watched_n(w, a, len);
         }
     }
 
-    #[inline]
-    fn code_hit(&self, a: u32, len: u32) -> bool {
-        let end = a as u64 + len as u64;
-        let i = self.code_spans.partition_point(|s| s.1 <= a);
-        i < self.code_spans.len() && (self.code_spans[i].0 as u64) < end
+    /// The store is on a watched page: only the spans themselves count for
+    /// the code watch (`code_spans`), the decode watch stays per page.
+    #[inline(never)]
+    fn note_watched_n(&mut self, w: u8, a: u32, len: u32) {
+        if w & WATCH_CODE != 0 {
+            let end = a as u64 + len as u64;
+            let i = self.code_spans.partition_point(|s| s.1 <= a);
+            if i < self.code_spans.len() && (self.code_spans[i].0 as u64) < end {
+                self.code_gen += 1;
+            }
+        }
+        self.dec_gen += ((w & WATCH_DECODE) >> 1) as u64;
     }
 
     #[inline(always)]
