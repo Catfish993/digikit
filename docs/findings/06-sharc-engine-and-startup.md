@@ -5296,6 +5296,7 @@ in the datasheet, which is not under `out/refs/`; the emulator accepts writes an
 gaps between the loaded L1 windows (`0x2826f000..0x282c0000`, `0x282d8000..0x28380000` on DT2) are RAM. L1 PM room stays
 **[O]**; `append_block` refuses L1. (3) The append lengths above assume nothing else raises the stored size past
 `0x100000`; a patchkit build must check the packed size of section 7 as well as the depacked size.
+
 ## Master hook: a routine in free L2 scales the final block before the Q31 conversion (spike 0.7) **[D]**
 
 Measured in the coupled emulator on DT2 1.16 and DN2 1.11 (the DSP blobs of DT2 1.17 and DN2 1.12 are
