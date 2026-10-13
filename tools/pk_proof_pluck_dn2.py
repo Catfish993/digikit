@@ -71,6 +71,7 @@ class PluckProof(C.Dn2Proof):
         """Press TRIG 1 and compare the excitation the DSP wrote into the slot's delay line (the last N + 1 samples, which
         the loop does not touch for 80 ms) with the numpy model of the routine (tools/pluck_ref.py) seeded with the DSP's
         noise state before the note: the pick comb, the colour filter, the amplitude, the mean removal and N."""
+        s.run_ms(500)  # the knob's words settle (a smoother follows the sound array)
         rng = int(self.dsp_words(s, self.dsp_sym(s, "_pk_rng"), 1)[0])
         buf = self.dsp_sym(s, "_pk_buf")
         v = self.hold(s, "TRIG 1")  # runs 80 ms
