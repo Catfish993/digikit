@@ -24,6 +24,8 @@ pub struct Observation {
     pub cpu_running: bool,
     pub error: Option<String>,
     pub dsp_halted: Option<String>,
+    /// Underrun events of the audio sink since the session began, when it was read this chunk.
+    pub sink_underruns: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +34,8 @@ pub enum Alert {
     Halt(String),
     Stall { hits: u64, stalled_ms: u64 },
     StallEnd { hits: u64 },
+    /// The audio sink ran dry `new` times since the last observation; `total` since the session began.
+    Underrun { new: u64, total: u64 },
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +47,8 @@ pub struct Health {
     stalled: bool,
     fault_sent: bool,
     halt_sent: bool,
+    /// Sink underruns since the runtime began.
+    pub underrun_count: u64,
     /// Stall episodes since the runtime began (events can arrive after a reply; this cannot).
     pub stall_count: u64,
 }
@@ -57,6 +63,7 @@ impl Health {
             stalled: false,
             fault_sent: false,
             halt_sent: false,
+            underrun_count: 0,
             stall_count: 0,
         }
     }
@@ -85,6 +92,15 @@ impl Health {
         {
             self.halt_sent = true;
             alerts.push(Alert::Halt(halt.clone()));
+        }
+        if let Some(total) = obs.sink_underruns {
+            if total > self.underrun_count {
+                alerts.push(Alert::Underrun {
+                    new: total - self.underrun_count,
+                    total,
+                });
+            }
+            self.underrun_count = total;
         }
         // A restore can move the clock back: re-anchor.
         if obs.elapsed < self.last_advance || obs.hits < self.last_hits {
@@ -190,6 +206,24 @@ mod tests {
         );
         assert!(h.observe(1, &o).is_empty());
         assert_eq!(h.observe(2, &o).len(), 2, "new epoch");
+    }
+
+    #[test]
+    fn underruns_are_reported_by_increase_and_a_new_runtime_rearms() {
+        let mut h = Health::new(100);
+        let mut o = obs(0, 1);
+        o.sink_underruns = Some(0);
+        assert!(h.observe(1, &o).is_empty());
+        o.sink_underruns = None; // not read this chunk
+        assert!(h.observe(1, &o).is_empty());
+        o.sink_underruns = Some(3);
+        assert_eq!(h.observe(1, &o), vec![Alert::Underrun { new: 3, total: 3 }]);
+        assert!(h.observe(1, &o).is_empty(), "no increase, no event");
+        o.sink_underruns = Some(4);
+        assert_eq!(h.observe(1, &o), vec![Alert::Underrun { new: 1, total: 4 }]);
+        // a new runtime starts counting from zero again
+        o.sink_underruns = Some(1);
+        assert_eq!(h.observe(2, &o), vec![Alert::Underrun { new: 1, total: 1 }]);
     }
 
     #[test]

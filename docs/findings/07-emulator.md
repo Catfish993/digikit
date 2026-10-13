@@ -6818,3 +6818,51 @@ From the first handover (DT2 1.15C; the addresses were not re-checked on 1.16):
   visited addresses; `uc.mem_write` does not fire write hooks; call `emu_stop()` only from
   a hook that advanced PC; a resumed run needs the same hook set; a branch that contradicts
   the memory it tested is our bug, not the firmware's.
+
+## ColdFire code outside the MAIN image: DDR and SRAM execution (patchkit, 2026-10-13) **[D]**
+
+Why: `Emulator::step_once` accepted a PC only inside `[0x40000400, +len)` (the MAIN image) and stopped with
+`UnsupportedGuestPc` anywhere else, so patch code placed in `cf.expansion` (DT2 `0x47e8b000..`, DN2 `0x46712000..`) could
+not run in the full emulator (the CF-only call harness `Emulator::call_function` already stepped the core directly, which
+is why `test/cf-demo` ran there). `core/machines` therefore squeezed its shims into the 2,108-byte `flash_cave`.
+Hardware executes from any DDR (ACR0 covers `0x40000000..0x47ffffff`, copyback cacheable).
+
+Change (`native/boot/src/runtime.rs`; the core `native/coldfire` needed none):
+
+- **Fetch window.** A PC is executable if the whole instruction lies in MAIN, or anywhere in the board's RAM window
+  (SDRAM and internal SRAM, `0x40000000..0x8c000000`, `RAM_EXEC_START/END`). Other PCs (MMIO, anything outside the window)
+  still stop with `UnsupportedGuestPc`; an unmapped page inside the window raises the core's
+  access-error exception as for data.
+- **Fast paths keep MAIN only.** The watch bitset, the fused loops (`ram_matches` re-checks their bytes), the softfloat
+  HLE, the flash-read HLE and the idle-spin detector compare PCs inside MAIN and are untouched. `run_fast` (the batched
+  loop) used to leave at the first PC outside MAIN; it now keeps stepping RAM code (`core.step_inline`, same per-instruction
+  bookkeeping) unless that PC is in `observed_pcs` (`observed_outside_main` guards the binary search: it is only done when a
+  probe or return-PC outside MAIN exists). `step_once` runs a RAM PC with `watched() == true`, so probes there still hit.
+- **Self-modifying code and DMA.** The core's decoded-instruction cache (4 KiB pages) is evicted by every CPU store (data
+  write, push, exception frame, MOVEM), by `invalidate_external_write` (poke, RAM clear, SSI DMA, bootstrap) and now also
+  by every range the board reports in `take_dma_written_ranges` (`drain_board`; before, only MAIN could be decoded, and MAIN
+  is never a DMA target). So code the expansion loader copies at reset, or that patchkit code rewrites at run time, is
+  executed as written. The model is **fully coherent**: hardware has a non-coherent I/D cache (code written while the
+  caches are on needs a flush; the loader copies before they are enabled), the emulator does not model that.
+- Test with teeth: `runtime::tests::code_in_ddr_runs_and_sees_its_own_writes` (needs the 1.16 `.syx`, skips without it)
+  runs code at `0x47e8b000`: `jsr` to a routine, a guest `move.w #imm,(A0)` rewrites its `moveq`, the second `jsr`
+  executes the new instruction; `step_once` x 60 and `step_chunk(60)` leave identical CPU state; PC `0xfc000000` still
+  gives `UnsupportedGuestPc`. Without the change the first `step_once` stops with that error.
+
+Performance (DN2 1.12 image, coupled-run, `tools/coupled_ab.py`, scenario `trig1-taps`, 10.5 audio s, 8 alternating
+pairs, machine load 4 to 7 from other lanes, binaries built with and without the change): ceiling first. The change adds
+one compare-and-branch on the `run_fast` per-instruction path that was already there (`outside` replaces the old
+`> last_pc_offset` test; `watched()` is skipped for RAM PCs) and nothing to the fused or HLE paths, so at the CF
+thread's ~0.52 s CPU per audio second (131 MIPS emulated) the ceiling is well under 1 %. Measured ColdFire thread CPU per
+audio second: A (before) median 0.5221 (0.4991 to 0.5366), B (after) median 0.5204 (0.5087 to 0.5327); DSP thread
+1.140 vs 1.119 (paired ratio 0.999, min 0.905, max 1.049: noise); PCM hash identical in all 16 runs
+(`8b26c70cee443b75`). No regression visible at that resolution.
+
+Proofs: see finding 02 "core.machines" (the patched image with its shims in `cf.expansion` selects the machine, plays
+and saves in the full emulator) and finding 17 for the health events.
+
+Open **[O]**: execution from SRAM is allowed but unused (no test); the emulator has no I/D-cache non-coherence, so a patch
+that forgets a cache flush after writing code at run time works here and could fail on hardware (the loader is safe:
+it runs before the caches are enabled; a module that writes code later must use the firmware's own flush or write it
+before enabling).
+

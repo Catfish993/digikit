@@ -35,3 +35,24 @@ modules = ["core/machines", "test/machine-clone"]
 device = "dt2"
 firmware = "1.17"
 modules = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]
+
+# The device on the desk runs DT2 1.16: the same sets there.
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = []
+
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["fx/master-gain", "test/cf-demo"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["fx/master-drive"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["core/machines", "machines/xslice"]

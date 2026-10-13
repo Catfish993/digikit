@@ -165,10 +165,18 @@ Code: `native/control/src/health.rs` (pure logic, 5 unit tests), `controller.rs`
   `cpu_state`; `GUEST_FAULT` (error 6) is still the reply of the step that hit it. **`halt`** event (once): the DSP's
   `halted` reason, read every 16th chunk (it needs the audio session). **`stall`** event: the heartbeat stood still
   for `stall_ms` of emulated time (default 1000, `DIGI_STALL_MS`, `watchdog.config {stall_ms}`; 0 disables) while the
-  CPU is `running` and the firmware is past the main panel; `stall.end` when it beats again. `underrun` is still not
-  emitted. Events are written by a socket thread, so a reply can arrive before the event it follows: a client that must
+  CPU is `running` and the firmware is past the main panel; `stall.end` when it beats again. **`underrun`** event
+  (2026-10-13, see below). Events are written by a socket thread, so a reply can arrive before the event it follows: a client that must
   be sure calls `status` once more, or reads the latched state (`status.cf.error`, `status.audio.halted`,
   `status.heartbeat.stall_count`).
+- **`underrun`** event **[D]**: `{new, total}` when the audio sink's underrun counter (`PlaybackStats.underrun_events`,
+  counted in the output callback when the ring runs dry; `Runtime::sink_underruns`, coupled-audio builds with a player
+  only) rose since the last look; `total` counts since the runtime began, `status.heartbeat.underrun_count` holds it. The
+  controller reads the counter every 16th chunk (like the DSP halt flag), so an event can follow its underrun by a few
+  chunks and `new` can sum several. No player (no device, no sink capture, CF-only) means no event. The pure logic
+  (`health.rs`, `underruns_are_reported_by_increase_and_a_new_runtime_rearms`) is unit tested; no test drives a real
+  device underrun (needs an audio device). It is a **host** real-time signal: in a headless harness run the
+  emulator is not paced, so it says nothing about the hardware's DSP load (finding 22 budget rule still applies).
 - **Heartbeat** = `Status.mainloop_hits`, the passes through the resolved main-loop PC (the PC the readiness contract
   already counts; fused loops and the fast path stop at it, so the count is exact). New fields: `mainloop_hits`,
   `mainloop_pc`, `cpu_state`; `status.heartbeat {mainloop_hits, mainloop_pc, stalled, stall_count, stall_ms}`.

@@ -26,6 +26,9 @@ const SET_PIXEL_SIG: &str = "2f032f02206f000c222f0010202f00144a816d4c4a806d48b2a
 const TCD34_BASE: u32 = 0xfc04_5440;
 const TCD34_DADDR: u32 = TCD34_BASE + 0x10;
 const RX_VECTOR: u8 = 154;
+/// Board RAM window the core may fetch from outside MAIN: SDRAM (DDR, ACR0) and internal SRAM.
+const RAM_EXEC_START: u32 = 0x4000_0000;
+const RAM_EXEC_END: u32 = 0x8c00_0000;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
@@ -170,6 +173,8 @@ pub struct Emulator {
     fused_clean: Vec<bool>,
     /// The watched PCs other than fused-loop heads, sorted.
     observed_pcs: Vec<u32>,
+    /// Whether `observed_pcs` holds a PC outside the MAIN image (RAM code).
+    observed_outside_main: bool,
     /// Host-requested PC hit counters (`probe_pcs`), for headless diagnosis.
     probe_hits: BTreeMap<u32, u64>,
     /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
@@ -488,6 +493,7 @@ impl Emulator {
             fused_loops,
             fused_clean: Vec::new(),
             observed_pcs: Vec::new(),
+            observed_outside_main: false,
             probe_hits: BTreeMap::new(),
             irq1_pending: false,
             probe_rets: BTreeMap::new(),
@@ -1061,6 +1067,7 @@ impl Emulator {
                     .all(|&o| observed.binary_search(&(head + o)).is_err())
             })
             .collect();
+        self.observed_outside_main = observed.iter().any(|&pc| !self.in_main(pc));
         self.observed_pcs = observed;
         pcs.extend(self.fused_loops.iter().map(|(head, _, _)| *head));
         for pc in pcs {
@@ -1072,6 +1079,21 @@ impl Emulator {
             }
         }
         self.watch = watch;
+    }
+
+    /// A whole instruction (6 bytes) lies inside the MAIN image.
+    #[inline]
+    fn in_main(&self, pc: u32) -> bool {
+        (pc.wrapping_sub(MAIN_LOAD) as usize) <= self.main.len().saturating_sub(6)
+    }
+
+    /// Whether the core may fetch at `pc` outside the MAIN image: anywhere in
+    /// SDRAM or internal SRAM (the board's RAM window). The hardware executes
+    /// from DDR (ACR0 covers it) and SRAM; the core's decode cache is evicted
+    /// by every write, so code written at run time is seen.
+    #[inline]
+    fn ram_exec(pc: u32) -> bool {
+        (RAM_EXEC_START..RAM_EXEC_END).contains(&pc)
     }
 
     #[inline]
@@ -1124,7 +1146,11 @@ impl Emulator {
         let (mut next_sample, mut last_n) = (0u32, 0u32);
         while n < budget {
             let pc = self.cpu.pc;
-            if pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset {
+            let outside = pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset;
+            if outside
+                && (!Self::ram_exec(pc)
+                    || (self.observed_outside_main && self.observed_pcs.binary_search(&pc).is_ok()))
+            {
                 #[cfg(feature = "cf-profile")]
                 self.prof.exit(1, pc);
                 break;
@@ -1135,7 +1161,7 @@ impl Emulator {
                 last_n = n;
                 next_sample = n + 64;
             }
-            if self.watched(pc) {
+            if !outside && self.watched(pc) {
                 // Only fused-loop heads are handled here (0: step the head
                 // like any other instruction); any other observed PC goes
                 // to `step_once`.
@@ -1284,11 +1310,7 @@ impl Emulator {
                 return;
             }
         }
-        let Some(offset) = pc.checked_sub(MAIN_LOAD).map(|value| value as usize) else {
-            self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
-            return;
-        };
-        if self.main.get(offset..offset + 6).is_none() {
+        if !self.in_main(pc) && !Self::ram_exec(pc) {
             self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
             return;
         }
@@ -1571,6 +1593,10 @@ impl Emulator {
             }
         }
         let ranges = self.bus.board.take_dma_written_ranges();
+        // DMA into a page with decoded instructions (code run from RAM).
+        for &(address, bytes) in &ranges {
+            self.cpu.invalidate_external_write(address, bytes);
+        }
         self.dma_ranges += ranges.len() as u64;
         self.dma_bytes += ranges.iter().map(|(_, bytes)| *bytes as u64).sum::<u64>();
         #[cfg(feature = "diagnostic-events")]
@@ -2839,6 +2865,64 @@ mod tests {
         assert_eq!(idle_advance_limit(20, 1, 100, Some(101)), 0);
         assert_eq!(idle_advance_limit(20, 1, 100, Some(99)), 0);
         assert_eq!(idle_advance_limit(3, 1, 100, None), 3);
+    }
+
+    /// Code in DDR (outside MAIN), written at run time and rewritten by the
+    /// guest itself, runs under `step_once` and under the batched `run_fast`
+    /// to the same machine; a PC outside RAM still stops with
+    /// `UnsupportedGuestPc`.
+    #[test]
+    fn code_in_ddr_runs_and_sees_its_own_writes() {
+        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let base = 0x47e8_b000u32;
+        let routine = base + 0x40;
+        let mut code: Vec<u8> = Vec::new();
+        let w16 = |c: &mut Vec<u8>, v: u16| c.extend_from_slice(&v.to_be_bytes());
+        let w32 = |c: &mut Vec<u8>, v: u32| c.extend_from_slice(&v.to_be_bytes());
+        w16(&mut code, 0x207c); // movea.l #routine,A0
+        w32(&mut code, routine);
+        w16(&mut code, 0x4eb9); // jsr routine
+        w32(&mut code, routine);
+        w16(&mut code, 0x2601); // move.l D1,D3
+        w16(&mut code, 0x30bc); // move.w #moveq #2,D1,(A0)
+        w16(&mut code, 0x7202);
+        w16(&mut code, 0x4eb9); // jsr routine (patched by the guest)
+        w32(&mut code, routine);
+        w16(&mut code, 0x60fe); // bra.s *
+        let mut emus = Vec::new();
+        for fast in [false, true] {
+            let mut emu = Emulator::new(&syx, None).unwrap();
+            emu.bus.board.map_zeroed_ram_page(base & !0xf_ffff).unwrap();
+            for (i, b) in code.iter().enumerate() {
+                emu.bus.board.write_guest(base + i as u32, 1, u32::from(*b)).unwrap();
+            }
+            for (i, b) in [0x72u8, 0x01, 0x4e, 0x75].iter().enumerate() {
+                emu.bus.board.write_guest(routine + i as u32, 1, u32::from(*b)).unwrap();
+            }
+            emu.cpu.pc = base;
+            emu.cpu.sr = 0x2700;
+            emu.cpu.a[7] = base + 0x800;
+            emu.rebuild_watch();
+            if fast {
+                emu.step_chunk(60);
+            } else {
+                for _ in 0..60 {
+                    emu.step_once();
+                }
+            }
+            assert_eq!(emu.error, None);
+            assert_eq!(emu.cpu.d[3], 1, "first call ran the original routine");
+            assert_eq!(emu.cpu.d[1], 2, "second call ran the rewritten routine");
+            assert_eq!(emu.cpu.pc, base + 0x18);
+            emus.push(emu);
+        }
+        assert_eq!(emus[0].cpu, emus[1].cpu);
+        let mut off = Emulator::new(&syx, None).unwrap();
+        off.cpu.pc = 0xfc00_0000;
+        off.step_once();
+        assert_eq!(off.error.as_deref(), Some("UnsupportedGuestPc(0xfc000000)"));
     }
 
     #[test]
