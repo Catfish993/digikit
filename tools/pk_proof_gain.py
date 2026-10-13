@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """patchkit slice proof: the master-gain module changes the emulated audio exactly as designed.
 
-    uv run python tools/pk_proof_gain.py dn2|dt2 [--stock STOCK.syx] [--patched PATCHED.syx] [--ready DIR]
-        [--run-dir DIR]
+    uv run python tools/pk_proof_gain.py [dt2|dn2] [--stock STOCK.syx] [--patched PATCHED.syx] [--ready DIR]
+        [--run-dir DIR] [--out DIR] [--quick] [--jobs N]
+
+With no arguments: DT2 1.17 (DN2: 1.12), the stock firmware and ready state of tools/pk_harness.py and the patch of
+fx/master-gain built on the fly (out/patch/).
 
 Starts a coupled daemon (tools/digi_client.py `Emu.spawn_coupled`) on the stock firmware, then in the same
 session and from the same ready state (`restart` each time):
@@ -29,7 +32,6 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 try:
     import card_check
-    import digi_env
     import hook_ab
     import pk_harness as H
     import pk_proofkit as K
@@ -37,6 +39,9 @@ try:
     from patched_audio_check import DN2_NOTE, TRIG1
 finally:
     sys.path.pop(0)
+
+
+FW = {"dt2": "1.17", "dn2": "1.12"}
 
 
 def f32_hex(x: float) -> str:
@@ -78,15 +83,15 @@ class GainProof(K.Proof):
     def part_run(self) -> None:
         a = self.args
         device = a.device
-        stock = pathlib.Path(a.stock or digi_env.firmware_for(device)).resolve()
-        patched = pathlib.Path(a.patched).resolve()
+        cell = H.Cell(device, FW[device], ["fx/master-gain"])
+        base_syx, base_ready = H.firmware_inputs(cell)
+        stock = pathlib.Path(a.stock or base_syx).resolve()
+        patched = pathlib.Path(a.patched or H.patched_image(cell, stock)).resolve()
         plan = json.loads(patched.with_suffix(".plan.json").read_text())
         gain_addr = next(
             v for k, v in plan["symbols"].items() if k.endswith(":_mg_gain")
         )
-        ready = pathlib.Path(
-            a.ready or digi_env.ready_inputs(device=device)["DSP image"].parent
-        )
+        ready = pathlib.Path(a.ready or base_ready)
         work = self.out
         out: dict = {
             "device": device,
@@ -148,9 +153,11 @@ PARTS = [K.Part("run", "stock, unity, half", GainProof.part_run, True, 60)]
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("device", choices=("dn2", "dt2"))
+    ap.add_argument("device", nargs="?", default="dt2", choices=("dn2", "dt2"))
     ap.add_argument("--stock")
-    ap.add_argument("--patched", required=True)
+    ap.add_argument(
+        "--patched", help="default: the patch of fx/master-gain, built here"
+    )
     ap.add_argument("--ready")
     ap.add_argument(
         "--run-dir",

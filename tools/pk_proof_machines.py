@@ -33,6 +33,7 @@ import argparse
 import hashlib
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -72,10 +73,11 @@ class Proof(K.Proof):
         self.fw = FW
         self._ref: dict[str, np.ndarray] = {}
 
-    def fresh(self, s: H.Session) -> None:
-        """Back to the ready state, with time for the sample slot to finish loading."""
+    def fresh(self, s: H.Session, settle_ms: int = 1500) -> None:
+        """Back to the ready state, with time for the sample slot to finish loading (SETTLE_MS: a synth machine needs
+        no sample)."""
         s.reset()
-        s.run_ms(1500)
+        s.run_ms(settle_ms)
 
     def select(self, s: H.Session, downs: int, ups: int = 0) -> None:
         """FUNC+SRC, DOWN x downs (the cursor starts on the track's machine; UP x ups first), YES (commits, the
@@ -325,9 +327,27 @@ class Proof(K.Proof):
         s.do_tap(["FUNC", "SETTINGS"])
         s.run_ms(300)
         s.do_tap("YES")
-        s.run_ms(3000)
+        if not self.quick:
+            s.run_ms(3000)
+            return
+        # quick tier: until the card writes (`card.overlay`) stop growing, at most 3 s; the full tier waits 3 s
+        prev, waited = -1, 0
+        while waited < 3000:
+            s.run_ms(500)
+            waited += 500
+            n = s.emu.call("card.overlay", path=str(self.out / "save-poll.overlay"))[
+                "sectors"
+            ]
+            if n > 0 and n == prev:
+                break
+            prev = n
+        self.save_s = waited / 1000
 
-    def load_project(self, s: H.Session) -> None:
+    def load_project(
+        self, s: H.Session, until: Callable[[], bool] | None = None
+    ) -> None:
+        """Load the saved project. Quick tier with UNTIL: poll every 250 ms (up to the 6 s of the full tier) until it
+        is true, then wait 250 ms more; the seconds waited are in `self.load_s`."""
         s.do_tap("SETTINGS")
         s.run_ms(200)
         s.do_tap("YES")
@@ -339,7 +359,19 @@ class Proof(K.Proof):
         )  # the list entry: "Any changes will be lost. Proceed with loading?"
         s.run_ms(500)
         s.do_tap("YES")
-        s.run_ms(6000)
+        if self.quick and until is not None:
+            waited = 0
+            while waited < 6000 and not until():
+                s.run_ms(250)
+                waited += 250
+            s.run_ms(250)
+            self.load_s = (waited + 250) / 1000
+        else:
+            # quick tier without a signal to poll (the stock firmware: the track is SAMPLE before and after): 3 s, the
+            # patched reload showed its type after 0.75 s
+            wait = 3000 if self.quick else 6000
+            s.run_ms(wait)
+            self.load_s = wait / 1000
 
     def part_c(self) -> None:
         stock = self.stock_slice()

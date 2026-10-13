@@ -48,6 +48,7 @@ if str(HERE) not in sys.path:
 
 import card_overlay  # noqa: E402
 import hook_ab  # noqa: E402
+import pk_dn2_common as C  # noqa: E402
 import pk_harness as H  # noqa: E402
 import pk_proof_machines as M  # noqa: E402
 import pk_proofkit as K  # noqa: E402
@@ -97,8 +98,8 @@ def onset(left: np.ndarray, thresh: float = 1e-4) -> int:
     return int(act[0]) if len(act) else -1
 
 
-def f0_of(left: np.ndarray, start: int, want_hz: float) -> float:
-    return pluck_ref.f0_from_crossings(left[start + 300 : start + 300 + 30000], want_hz)
+def f0_of(left: np.ndarray, start: int, want_hz: float, n: int = 30000) -> float:
+    return pluck_ref.f0_from_crossings(left[start + 300 : start + 300 + n], want_hz)
 
 
 def t60_of(left: np.ndarray, start: int, drop_db: float = 30.0) -> float | None:
@@ -219,6 +220,118 @@ class PluckProof(M.Proof):
             row = t1 + 60 * code
             out.append((cstr(peek(row + 0x28) or 0), cstr(peek(row + 0x30) or 0)))
         return out
+
+    def reseed(self, s: H.Session, seed: int = 0x2545F491) -> None:
+        """Quick tier: reset the pluck excitation's noise state (module word _pk_rng) so that notes are repeatable."""
+        assert s.image is not None and s.emu is not None
+        plan = json.loads(Path(str(s.image)[: -len(".syx")] + ".plan.json").read_text())
+        addr = next(v for k, v in plan["symbols"].items() if k.endswith(":_pk_rng"))
+        s.emu.patch(text=f"DM {addr:x} {seed:08x}")
+
+    # -- quick tier. A sounding PLUCK note costs ~35 s of wall per emulated second while it rings (the patched DSP
+    # runs interpreted), an idle second ~3 s: every quick part turns DECAY down right after the first trig (that
+    # shortens the ringing note too) and measures windows of 0.15-0.2 s.
+    QUICK_DECAY = 0x1800  # T60 well under 0.26 s (0x2000 is 0.26 s in the full tier); a note costs ~3 s of wall
+
+    def quick_start(self, s: H.Session, decay: int | None = None) -> None:
+        """PLUCK selected on track 1, the SRC page open, one trig (the engine slots get their defaults) and DECAY
+        turned down at once: the first note rings at the default 1 s T60 otherwise (about 35 s of wall)."""
+        self.fresh(s, 600)
+        self.select(s, PLUCK_DOWNS)
+        s.do_tap("SRC")
+        s.run_ms(200)
+        s.do_hold("TRIG 1", 40)
+        s.run_ms(60)
+        s.turn_burst(ENC[DECAY], -4, 60)  # to the bottom (T60 << 0.1 s) in 0.2 s
+        if decay is not None:
+            s.turn_to(ENC[DECAY], DECAY, decay)
+
+    def part_aq(self) -> None:
+        """Quick: select and type, descriptor rows, defaults, the DECAY encoder moves its slot only and an empty field
+        none, tuning of TRIG 1 and one keyboard key (0.2 s windows)."""
+        with self.session(MODS) as s:
+            self.fresh(s, 600)
+            self.select(s, PLUCK_DOWNS)
+            t = self.type_now(s)
+            self.check("PLUCK commits type 7", t == 7, f"track object type {t}")
+            names = self.descriptor_names(s)
+            self.check(
+                "the descriptor's rows carry the module's names",
+                [n[1] for n in names[1:3] + names[4:6]]
+                == ["DECAY", "PICK", "BRIGHT", "COLOR"]
+                and [n[0] for n in names[1:3] + names[4:6]]
+                == ["Decay", "Pick position", "Brightness", "Excitation colour"]
+                and names[3] == ("", "")
+                and names[6] == ("", ""),
+                str(names),
+            )
+            s.do_tap("SRC")
+            s.run_ms(200)
+            s.do_hold("TRIG 1", 40)
+            s.run_ms(60)
+            got = {i: s.mirror(i) for i in DEFAULTS}
+            self.check(
+                "engine slots hold the module's defaults",
+                got == DEFAULTS,
+                {i: hex(v) for i, v in got.items()},
+            )
+            tx = {i: s.tx_word(i) for i in DEFAULTS}
+            self.check("the TX frame carries them", tx == DEFAULTS, "")
+            # an empty field (encoder 4, field D) changes nothing; DECAY (encoder 2) changes its slot only
+            before = {i: s.mirror(i) for i, _ in SLOTS.values()}
+            s.turn_burst(
+                ENC[DECAY], -4, 60
+            )  # also ends the first note (default T60 1 s) early
+            s.turn_to(ENC[DECAY], DECAY, self.QUICK_DECAY)
+            after = {i: s.mirror(i) for i in before}
+            changed = sorted(i for i in before if after[i] != before[i])
+            self.check(
+                "encoder 2 moves slot [26] only",
+                changed == [DECAY],
+                f"changed {changed}",
+            )
+            # tuning: 0.2 s windows. 3 cents at 262 Hz over 0.2 s is a 1.6 ms drift over 52 cycles; the crossing
+            # estimator's error is printed (the full tier measures 0.6 s with the same limit)
+            before = {i: s.mirror(i) for i, _ in SLOTS.values()}
+            s.turn_burst(4, -4, 12)
+            s.turn_burst(4, 4, 12)
+            after = {i: s.mirror(i) for i in before}
+            self.check("encoder 4 (empty field) moves no slot", after == before, "")
+            for name, key, want in (
+                ("TRIG 1", "TRIG 1", 0x3C00),
+                ("keyboard TRIG 5", "TRIG 5", None),
+            ):
+                if key == "TRIG 5":
+                    s.do_tap("KEYBOARD")
+                    s.run_ms(300)
+                left, pitch = self.play(
+                    s, f"aq-{key.replace(' ', '').lower()}", key, hold=100, total=330
+                )
+                st = onset(left)
+                if want is not None:
+                    self.check(
+                        f"{name} plays note 60",
+                        pitch == want,
+                        f"pitch word {pitch:#06x}",
+                    )
+                if st < 0:
+                    self.check(f"{name}: sounds", False, f"pitch word {pitch:#06x}")
+                    continue
+                note = pitch / 256
+                f = f0_of(left, st, semitone_hz(note), 4000)
+                cents = 1200 * math.log2(f / semitone_hz(note))
+                self.check(
+                    f"{name}: note {note:g}, f0 {f:.3f} Hz",
+                    abs(cents) < 3,
+                    f"{cents:+.4f} cents",
+                )
+            tx_type, dsp_type = self.wire(s)
+            self.check(
+                "TX frame machine word and DSP type cache are 7",
+                tx_type == 7 and dsp_type == 7,
+                f"{tx_type} {dsp_type}",
+            )
+            s.health("end of aq")
 
     # -- a: select and defaults
     def part_a(self) -> None:
@@ -368,20 +481,48 @@ class PluckProof(M.Proof):
         quick: bool = False,
     ) -> None:
         with self.session(MODS) as s:
-            self.pluck(s)
-            s.do_tap("SRC")
-            s.run_ms(300)
+            if quick:
+                self.quick_start(s)
+            else:
+                self.pluck(s)
+                s.do_tap("SRC")
+                s.run_ms(300)
 
             def setp(idx: int, value: int) -> int:
                 return s.turn_to(ENC[idx], idx, value)
 
             def note(name: str, total: int = 2200) -> tuple[np.ndarray, int]:
-                left, _ = self.play(s, name, "TRIG 1", total=total)
+                if quick:
+                    self.reseed(
+                        s
+                    )  # the same excitation noise for every note: only the parameter differs
+                left, _ = self.play(
+                    s, name, "TRIG 1", hold=100 if quick else 300, total=total
+                )
                 return left, onset(left)
 
+            if quick:
+                setp(DECAY, self.QUICK_DECAY)  # shortens the ringing first note
             reached = setp(BRIGHT, 0x7F00)
             self.check("BRIGHT set to its top", reached >= 0x7C00, f"{reached:#x}")
-            if "decay" in sections:
+            if "decay" in sections and quick:
+                # quick: the slope of the decay (dB/s of the 512-sample RMS, 0.05 s after the peak to 0.25 s) at two
+                # DECAY settings. Full tier: T60 0.26 s and 1.02 s (0x2000, 0x4000), so the slopes differ by 3.9x;
+                # 0x3000 gives about 2x. The check wants the longer setting's slope to be less than 0.75 of the short's.
+                slope = {}
+                for label, value in (("short", 0x1800), ("mid", 0x2800)):
+                    setp(DECAY, value)
+                    left, st = note(f"d-decay-{label}", 330)
+                    slope[label] = C.db_slope(left, st)
+                    print(f"     DECAY {value:#x}: {slope[label]:.1f} dB/s")
+                ratio = slope["mid"] / slope["short"]
+                self.check(
+                    "DECAY lengthens the note (slope at 0x2800 < 0.75 x slope at 0x1800)",
+                    ratio < 0.75,
+                    f"{slope['short']:.1f} dB/s -> {slope['mid']:.1f} dB/s, ratio {ratio:.2f}",
+                )
+                setp(DECAY, self.QUICK_DECAY)
+            elif "decay" in sections:
                 res = {}
                 for label, value, total in (
                     ("short", 0x2000, 2200),
@@ -449,20 +590,30 @@ class PluckProof(M.Proof):
                 comb = {}
                 for label, value in (("none", 0x0000), ("half", 0x3F80)):
                     setp(PICK, value)
-                    left, st = note(f"d-pick-{label}", 1200 if quick else 2200)
-                    f0 = f0_of(left, st, semitone_hz(60))
+                    left, st = note(f"d-pick-{label}", 330 if quick else 2200)
+                    f0 = f0_of(left, st, semitone_hz(60), 4000 if quick else 30000)
+                    a, n = (0, 4096) if quick else (400, 8192)
                     lev = {
-                        m: 10 ** (harmonic_db(left, st + 400, 8192, f0, m) / 10)
-                        for m in (2, 4, 6, 8)
+                        m: 10 ** (harmonic_db(left, st + a, n, f0, m) / 10)
+                        for m in range(1, 13 if quick else 9)
                     }
-                    comb[label] = 10 * math.log10((lev[2] + lev[6]) / (lev[4] + lev[8]))
+                    if quick:
+                        comb[label] = 10 * math.log10(
+                            (lev[2] + lev[6] + lev[10]) / (lev[4] + lev[8] + lev[12])
+                        )
+                    else:
+                        comb[label] = 10 * math.log10(
+                            (lev[2] + lev[6]) / (lev[4] + lev[8])
+                        )
                     print(f"     PICK {value:#x}: (H2+H6)/(H4+H8) {comb[label]:.1f} dB")
                 self.check(
                     "PICK = 1/2 notches the 4th and 8th harmonics",
-                    # the absolute level depends on the noise excitation (the engine's noise state differs in the quick
-                    # tier, which plays fewer notes before this one): the quick tier checks the difference only, with
-                    # the 6 dB margin of the COLOR check (one noise realisation gave 7.5 dB; the full tier gives ~14 dB)
-                    (comb["half"] - comb["none"] > 6)
+                    # quick tier: the excitation noise is reset before each note (`reseed`), so the two notes differ
+                    # only by the comb (with PICK ignored they would be bit-identical: difference 0 dB). H2+H6+H10
+                    # against H4+H8+H12 in the first 4096 samples. Measured over three seeds 8.3 .. 10.9 dB;
+                    # the limit is 4 dB. The full tier (decay 1 s, 8192 samples at 400) has half > 10 dB and > 8 dB
+                    # over none, with the engine's own noise state.
+                    (comb["half"] - comb["none"] > 4)
                     if quick
                     else (comb["half"] > 10 and comb["half"] - comb["none"] > 8),
                     f"{comb['half']:.1f} dB against {comb['none']:.1f} dB without",
@@ -529,9 +680,12 @@ class PluckProof(M.Proof):
         with self.session(
             MODS, "persist", pool=False
         ) as s:  # saves a project: own daemon
-            self.pluck(s)
-            s.do_tap("SRC")
-            s.run_ms(300)
+            if self.quick:
+                self.quick_start(s)
+            else:
+                self.pluck(s)
+                s.do_tap("SRC")
+                s.run_ms(300)
             for idx, v in want.items():
                 s.turn_to(ENC[idx], idx, v)
             keep = {i: s.mirror(i) for i in DEFAULTS}
@@ -540,14 +694,22 @@ class PluckProof(M.Proof):
             self.check(
                 "track set to SAMPLE", self.type_now(s) == 0, f"{self.type_now(s)}"
             )
-            self.load_project(s)
+            self.load_project(s, lambda: self.type_now(s) == 7)
             self.check(
                 "project reload brings type 7 back",
                 self.type_now(s) == 7,
-                f"{self.type_now(s)}",
+                f"{self.type_now(s)} after {self.load_s:g} s",
             )
-            s.do_hold("TRIG 1", 200)
-            s.run_ms(300)
+            if self.quick:
+                # the project is still loading for a moment after the type is back: trig until the slots are
+                for _ in range(8):
+                    s.do_hold("TRIG 1", 40)
+                    s.run_ms(260)
+                    if {i: s.mirror(i) for i in DEFAULTS} == keep:
+                        break
+            else:
+                s.do_hold("TRIG 1", 200)
+                s.run_ms(300)
             back = {i: s.mirror(i) for i in DEFAULTS}
             self.check(
                 "and the engine slot values",
@@ -607,7 +769,7 @@ class PluckProof(M.Proof):
 
 P = PluckProof
 PARTS = [
-    K.Part("a", "select: type, descriptor rows, defaults", P.part_a, True, 60),
+    K.Part("a", "select: type, descriptor rows, defaults", P.part_a, False, 60),
     # b: the knobs. The full tier splits it in three daemons; the quick tier checks DECAY and an empty field
     K.Part(
         "b1",
@@ -634,13 +796,12 @@ PARTS = [
         group="b",
     ),
     K.Part(
-        "bq",
-        "knobs on the SRC page: DECAY and an empty field",
-        lambda p: p.part_b(("pluck",), (1, 3)),
+        "aq",
+        "quick: select, defaults, DECAY and an empty encoder, tuning of two notes",
+        P.part_aq,
         True,
-        40,
+        50,
         full=False,
-        group="b",
     ),
     # c: tuning
     K.Part(
@@ -657,15 +818,6 @@ PARTS = [
         lambda p: p.part_c(False, ("TRIG 5", "TRIG 13", "TRIG 16")),
         False,
         150,
-        group="c",
-    ),
-    K.Part(
-        "cq",
-        "tuning: TRIG 1 and keyboard TRIG 5",
-        lambda p: p.part_c(True, ("TRIG 5",), 1200),
-        True,
-        60,
-        full=False,
         group="c",
     ),
     # d: the whole chain in one daemon (the pick measure depends on the noise state the earlier notes leave)
