@@ -82,10 +82,24 @@ SHARED_CACHE = (
 MAX_JOBS = 6
 
 
+def performance_cores() -> int:
+    """Logical performance cores (Apple silicon: the efficiency cores run a coupled daemon several times slower)."""
+    try:
+        out = subprocess.run(
+            ["sysctl", "-n", "hw.perflevel0.logicalcpu"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        return max(int(out), 1)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return os.cpu_count() or 2
+
+
 def default_jobs(n: int) -> int:
-    """Processes to run side by side: the free cores / 2 (a coupled daemon uses about two), at most MAX_JOBS."""
-    cpus = os.cpu_count() or 2
-    free = cpus - os.getloadavg()[0]
+    """Processes to run side by side: the free performance cores / 2 (a coupled daemon keeps two threads busy: the
+    ColdFire and the DSP worker), at most MAX_JOBS."""
+    free = performance_cores() - os.getloadavg()[0]
     return max(1, min(n, int(free // 2), MAX_JOBS))
 
 
@@ -1053,12 +1067,13 @@ def _run_cells_parallel(
         if skip:
             skip = False
             continue
-        if x in ("--jobs", "--cell", "--matrix", "--result"):
+        if x in ("--jobs", "--index", "--result"):
             skip = True
             continue
-        if x.startswith(("--jobs=", "--cell=", "--matrix=", "--result=")):
+        if x.startswith(("--jobs=", "--index=", "--result=")):
             continue
-        base.append(x)
+        if x != "run":
+            base.append(x)
     results: list[tuple[bool, str, list[str]] | None] = [None] * len(cells)
     running: dict[int, tuple[subprocess.Popen[bytes], Path, Path, float]] = {}
     queue = list(range(len(cells)))
@@ -1079,8 +1094,8 @@ def _run_cells_parallel(
                         str(Path(__file__).resolve()),
                         "run",
                         *base,
-                        "--cell",
-                        cells[i].name,
+                        "--index",
+                        str(i),
                         "--jobs",
                         "1",
                         "--result",
@@ -1141,6 +1156,9 @@ def main(argv: list[str]) -> int:
         help="cells in parallel processes (default: free cores / 2, at most 6; 1 runs them here, in order)",
     )
     r.add_argument("--result", type=Path, help=argparse.SUPPRESS)
+    r.add_argument(
+        "--index", type=int, help=argparse.SUPPRESS
+    )  # a child: run cell N of the list
     sub.add_parser("list").add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
     a = p.parse_args(argv)
     cells = [parse_cell(c) for c in getattr(a, "cell", [])] or load_matrix(a.matrix)
@@ -1154,7 +1172,7 @@ def main(argv: list[str]) -> int:
     if (
         a.result is not None
     ):  # a child of a parallel run: one cell, the record goes to a file
-        ok, line, bad = _run_one(cells[0], Goldens(), a)
+        ok, line, bad = _run_one(cells[a.index], Goldens(), a)
         print(line, flush=True)
         a.result.write_text(json.dumps({"ok": ok, "line": line, "bad": bad}))
         return 0 if ok else 1
@@ -1172,7 +1190,7 @@ def main(argv: list[str]) -> int:
     passed = sum(1 for ok, _, _ in results if ok)
     for ok, line, bad in results:
         if not ok:
-            print(f"  {line.split(':', 1)[0]}: {len(bad)} failed check(s)")
+            print(f"  {line[:240]}")
             for b in bad[:6]:
                 print(f"    {b}")
     complete = len(results) == len(cells)

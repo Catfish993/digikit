@@ -17,9 +17,9 @@ forced on the wire: word 0x94 is the machine type of track 0) and renders TRIG 1
                     stages see the voice (amp / level stage)
   stock-lev-half    the same on the stock sample (reference for the level stage)
 
-Parts (independent, in parallel processes with `--jobs`, tools/pk_proofkit.py): basic (stock, patched-type0, sine60,
-sine72, tune+1), level (lev-half, lev-full, stock, stock-lev-half), reverb (rev-dry, rev-send), filter (flt-open,
-flt-closed). `--quick` runs basic with stock, patched-type0 and sine60, level and filter; the full tier is unchanged.
+Parts (independent, in parallel processes with `--jobs`, tools/pk_proofkit.py): basic = type0 (stock, patched-type0),
+sine60, sine72, tune (tune+1); level (lev-half, lev-full, stock, stock-lev-half); reverb (rev-dry, rev-send); filter
+(flt-open, flt-closed). `--quick` runs type0, sine60, level and filter; the full tier runs every case.
 The patched image is built from core/dsp-voice and test/sine-voice unless
 `--patched` names one. Output stays under out/ (derived from firmware).
 """
@@ -262,13 +262,8 @@ class VoiceProof(K.Proof):
             json.dumps(self.report, indent=1, default=float)
         )
 
-    def part_basic(self) -> None:
-        self.case_ok("stock")
-        for name in (
-            ("patched-type0", "sine60")
-            if self.quick
-            else ("patched-type0", "sine60", "sine72", "tune+1")
-        ):
+    def part_cases(self, names: tuple[str, ...]) -> None:
+        for name in names:
             self.case_ok(name)
         self.finish()
 
@@ -308,17 +303,43 @@ class VoiceProof(K.Proof):
         self.finish()
 
 
+P = VoiceProof
 PARTS = [
     K.Part(
-        "basic",
-        "stock, patched type 0, sine pitch, tune",
-        VoiceProof.part_basic,
+        "type0",
+        "stock, and the patched image with no type poked equals it",
+        lambda p: p.part_cases(("stock", "patched-type0")),
         True,
-        400,
+        60,
+        group="basic",
     ),
-    K.Part("level", "the level stage sees the voice", VoiceProof.part_level, True, 300),
-    K.Part("reverb", "the reverb send", VoiceProof.part_reverb, False, 150),
-    K.Part("filter", "the filter", VoiceProof.part_filter, True, 150),
+    K.Part(
+        "sine60",
+        "the sine voice at note 60",
+        lambda p: p.part_cases(("sine60",)),
+        True,
+        40,
+        group="basic",
+    ),
+    K.Part(
+        "sine72",
+        "the sine voice at note 72",
+        lambda p: p.part_cases(("sine72",)),
+        False,
+        40,
+        group="basic",
+    ),
+    K.Part(
+        "tune",
+        "the sine voice tuned +1 semitone",
+        lambda p: p.part_cases(("tune+1",)),
+        False,
+        40,
+        group="basic",
+    ),
+    K.Part("level", "the level stage sees the voice", P.part_level, True, 90),
+    K.Part("reverb", "the reverb send", P.part_reverb, False, 60),
+    K.Part("filter", "the filter", P.part_filter, True, 60),
 ]
 
 

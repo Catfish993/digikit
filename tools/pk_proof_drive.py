@@ -39,6 +39,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 try:
     import card_check
     import hook_ab
+    import pk_harness as H
     import pk_proofkit as K
     from digi_client import Emu
 finally:
@@ -195,7 +196,13 @@ class DriveProof(K.Proof):
         report: dict = {"device": dev, "stock": stock.name, "patched": patched.name}
         run_dir = a.run_dir or ROOT / "out" / "runs" / "patchkit" / f"run-drive-{dev}"
         t0 = time.monotonic()
-        with Emu.spawn_coupled(stock, ready, timeout=300, run_dir=run_dir) as emu:
+        with Emu.spawn_coupled(
+            stock,
+            ready,
+            timeout=300,
+            run_dir=run_dir,
+            binary=H.daemon_binary(dev, stock),
+        ) as emu:
             card = None
             if dev == "dt2":
                 samples = out / "samples"

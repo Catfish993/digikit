@@ -22,8 +22,10 @@ health asserted after every input) and reads back:
                are back. The card's writes are laid over the card of the STOCK firmware: the track loads as SAMPLE.
   g  mod       MOD page, DEST knob: the SRC group lists PLUCK's own names (frames differ from stock SAMPLE's).
 
-Parts are independent and run in parallel processes (`--jobs`, tools/pk_proofkit.py). `--quick` runs a, b (DECAY and an
-empty field), c (two notes), d (DECAY and PICK), f; e and g are full-tier only.
+Parts are independent and run in parallel processes (`--jobs`, tools/pk_proofkit.py; `--only b` names a group). The
+full tier splits b (b1, b2, b3) and c (c1, c2) over several daemons and keeps d whole (its PICK measure depends on the
+noise state the earlier notes leave); e plays its two runs side by side. `--quick` runs a, bq (DECAY and an empty field),
+cq (two notes), dq1 (DECAY) and dq2 (PICK, difference only), f; e and g are full-tier only.
 
 Output (PNG frames, WAV, card images) goes under OUT (default out/runs/pluck-proof) and is never committed. Exit 0 only
 when every check passes. Addresses are the DT2 1.16/1.17 ones of findings 02 and 04.
@@ -272,10 +274,14 @@ class PluckProof(M.Proof):
             s.health("end of a")
 
     # -- b: knobs
-    def part_b(self) -> None:
-        for label, mods, downs in (("pluck", MODS, PLUCK_DOWNS), ("sample", [], 0))[
-            : 1 if self.quick else 2
-        ]:
+    def part_b(
+        self,
+        labels: tuple[str, ...] = ("pluck", "sample"),
+        fields: tuple[int, ...] = tuple(SLOTS),
+    ) -> None:
+        for label, mods, downs in (("pluck", MODS, PLUCK_DOWNS), ("sample", [], 0)):
+            if label not in labels:
+                continue
             with self.session(mods) as s:
                 self.fresh(s)
                 if downs:
@@ -285,8 +291,8 @@ class PluckProof(M.Proof):
                 s.do_tap("SRC")
                 s.run_ms(500)
                 for field_n, (idx, enc) in SLOTS.items():
-                    if self.quick and field_n not in (1, 3):
-                        continue  # quick: DECAY (a knob) and the empty field D
+                    if field_n not in fields:
+                        continue
                     if label == "sample" and field_n in (1, 2, 3):
                         continue  # PLAY and SAMP are modes and CFADE is not on the stock SRC page
                     before = {i: s.mirror(i) for i, _ in SLOTS.values()}
@@ -312,34 +318,33 @@ class PluckProof(M.Proof):
                 s.health(f"end of b {label}")
 
     # -- c: tuning
-    def part_c(self) -> None:
+    def part_c(
+        self,
+        trig1: bool = True,
+        keys: tuple[str, ...] = ("TRIG 2", "TRIG 3", "TRIG 5", "TRIG 13", "TRIG 16"),
+        total: int = 2200,
+    ) -> None:
         with self.session(MODS) as s:
             self.pluck(s)
-            left, pitch = self.play(
-                s, "c-trig1", "TRIG 1", total=1200 if self.quick else 2200
-            )
-            st = onset(left)
-            note = pitch / 256
-            self.check(
-                "TRIG 1 plays note 60", pitch == 0x3C00, f"pitch word {pitch:#06x}"
-            )
-            f = f0_of(left, st, semitone_hz(note))
-            cents = 1200 * math.log2(f / semitone_hz(note))
-            self.check(
-                f"note {note:g}: f0 {f:.3f} Hz", abs(cents) < 3, f"{cents:+.4f} cents"
-            )
+            if trig1:
+                left, pitch = self.play(s, "c-trig1", "TRIG 1", total=total)
+                st = onset(left)
+                note = pitch / 256
+                self.check(
+                    "TRIG 1 plays note 60", pitch == 0x3C00, f"pitch word {pitch:#06x}"
+                )
+                f = f0_of(left, st, semitone_hz(note))
+                cents = 1200 * math.log2(f / semitone_hz(note))
+                self.check(
+                    f"note {note:g}: f0 {f:.3f} Hz",
+                    abs(cents) < 3,
+                    f"{cents:+.4f} cents",
+                )
             s.do_tap("KEYBOARD")
             s.run_ms(300)
-            for key in (
-                ("TRIG 5",)
-                if self.quick
-                else ("TRIG 2", "TRIG 3", "TRIG 5", "TRIG 13", "TRIG 16")
-            ):
+            for key in keys:
                 left, pitch = self.play(
-                    s,
-                    f"c-{key.replace(' ', '').lower()}",
-                    key,
-                    total=1200 if self.quick else 2200,
+                    s, f"c-{key.replace(' ', '').lower()}", key, total=total
                 )
                 st = onset(left)
                 if st < 0:
@@ -357,7 +362,11 @@ class PluckProof(M.Proof):
                 )
 
     # -- d: parameter effects
-    def part_d(self) -> None:
+    def part_d(
+        self,
+        sections: tuple[str, ...] = ("decay", "bright", "color", "pick"),
+        quick: bool = False,
+    ) -> None:
         with self.session(MODS) as s:
             self.pluck(s)
             s.do_tap("SRC")
@@ -372,35 +381,36 @@ class PluckProof(M.Proof):
 
             reached = setp(BRIGHT, 0x7F00)
             self.check("BRIGHT set to its top", reached >= 0x7C00, f"{reached:#x}")
-            res = {}
-            for label, value, total in (
-                ("short", 0x2000, 2200),
-                ("mid", 0x4000, 3200),
-                ("long", 0x5000, 6000),
-            )[: 2 if self.quick else 3]:
-                setp(DECAY, value)
-                left, st = note(f"d-decay-{label}", total)
-                res[label] = t60_of(left, st)
-                print(f"     DECAY {value:#x}: T60 {res[label]}")
-            self.check(
-                "DECAY lengthens the note (T60 short < mid < long)",
-                all(res.values())
-                and all(
-                    a < b
-                    for a, b in zip(
-                        list(res.values()), list(res.values())[1:], strict=False
-                    )
-                ),
-                str({k: round(v, 3) if v else v for k, v in res.items()}),
-            )
-            want_mid = 1.02
-            self.check(
-                "DECAY 0x4000 with BRIGHT at the top gives T60 about 1.02 s",
-                res["mid"] is not None and abs(res["mid"] / want_mid - 1) < 0.2,
-                f"{res['mid']}",
-            )
-            setp(DECAY, 0x4000)
-            if not self.quick:  # full tier: brightness and colour
+            if "decay" in sections:
+                res = {}
+                for label, value, total in (
+                    ("short", 0x2000, 2200),
+                    ("mid", 0x4000, 3200),
+                    ("long", 0x5000, 6000),
+                )[: 2 if quick else 3]:
+                    setp(DECAY, value)
+                    left, st = note(f"d-decay-{label}", total)
+                    res[label] = t60_of(left, st)
+                    print(f"     DECAY {value:#x}: T60 {res[label]}")
+                self.check(
+                    "DECAY lengthens the note (T60 short < mid < long)",
+                    all(res.values())
+                    and all(
+                        a < b
+                        for a, b in zip(
+                            list(res.values()), list(res.values())[1:], strict=False
+                        )
+                    ),
+                    str({k: round(v, 3) if v else v for k, v in res.items()}),
+                )
+                want_mid = 1.02
+                self.check(
+                    "DECAY 0x4000 with BRIGHT at the top gives T60 about 1.02 s",
+                    res["mid"] is not None and abs(res["mid"] / want_mid - 1) < 0.2,
+                    f"{res['mid']}",
+                )
+                setp(DECAY, 0x4000)
+            if "bright" in sections:
                 # brightness: energy above 3 kHz 0.2 s into the note, relative to the note's body
                 hf = {}
                 for label, value in (("dark", 0x0800), ("bright", 0x7F00)):
@@ -415,6 +425,7 @@ class PluckProof(M.Proof):
                     hf["bright"] - hf["dark"] > 6,
                     f"{hf['bright'] - hf['dark']:.1f} dB",
                 )
+            if "color" in sections:
                 # colour: the excitation's lowpass; the first 4096 samples after the onset
                 setp(BRIGHT, 0x7F00)
                 col = {}
@@ -430,28 +441,29 @@ class PluckProof(M.Proof):
                     col["white"] - col["soft"] > 6,
                     f"{col['white'] - col['soft']:.1f} dB",
                 )
-            # pick position: plucked at the fraction x = PICK / 4 of the string the harmonics m scale as |sin(pi m x)|
-            # (the comb y[k] - y[k - p], p = x N); at PICK = 1/2 (x = 1/4) the 2nd and 6th are at their peak, the 4th and
-            # 8th in a notch. The notch is as exact as p is an integer, so the measure sums two harmonics each.
-            setp(COLOR, 0x2800)
-            comb = {}
-            for label, value in (("none", 0x0000), ("half", 0x3F80)):
-                setp(PICK, value)
-                left, st = note(f"d-pick-{label}", 1200 if self.quick else 2200)
-                f0 = f0_of(left, st, semitone_hz(60))
-                lev = {
-                    m: 10 ** (harmonic_db(left, st + 400, 8192, f0, m) / 10)
-                    for m in (2, 4, 6, 8)
-                }
-                comb[label] = 10 * math.log10((lev[2] + lev[6]) / (lev[4] + lev[8]))
-                print(f"     PICK {value:#x}: (H2+H6)/(H4+H8) {comb[label]:.1f} dB")
-            self.check(
-                "PICK = 1/2 notches the 4th and 8th harmonics",
-                # the absolute level depends on the noise excitation (the engine's noise state differs in the quick
-                # tier, which plays fewer notes before this one): the quick tier checks the difference only
-                (self.quick or comb["half"] > 10) and comb["half"] - comb["none"] > 8,
-                f"{comb['half']:.1f} dB against {comb['none']:.1f} dB without",
-            )
+            if "pick" in sections:
+                # pick position: plucked at the fraction x = PICK / 4 of the string the harmonics m scale as |sin(pi m x)|
+                # (the comb y[k] - y[k - p], p = x N); at PICK = 1/2 (x = 1/4) the 2nd and 6th are at their peak, the 4th and
+                # 8th in a notch. The notch is as exact as p is an integer, so the measure sums two harmonics each.
+                setp(COLOR, 0x2800)
+                comb = {}
+                for label, value in (("none", 0x0000), ("half", 0x3F80)):
+                    setp(PICK, value)
+                    left, st = note(f"d-pick-{label}", 1200 if quick else 2200)
+                    f0 = f0_of(left, st, semitone_hz(60))
+                    lev = {
+                        m: 10 ** (harmonic_db(left, st + 400, 8192, f0, m) / 10)
+                        for m in (2, 4, 6, 8)
+                    }
+                    comb[label] = 10 * math.log10((lev[2] + lev[6]) / (lev[4] + lev[8]))
+                    print(f"     PICK {value:#x}: (H2+H6)/(H4+H8) {comb[label]:.1f} dB")
+                self.check(
+                    "PICK = 1/2 notches the 4th and 8th harmonics",
+                    # the absolute level depends on the noise excitation (the engine's noise state differs in the quick
+                    # tier, which plays fewer notes before this one): the quick tier checks the difference only
+                    (quick or comb["half"] > 10) and comb["half"] - comb["none"] > 8,
+                    f"{comb['half']:.1f} dB against {comb['none']:.1f} dB without",
+                )
             s.health("end of d")
 
     # -- e: sequencer
@@ -487,8 +499,10 @@ class PluckProof(M.Proof):
     def part_e(self) -> None:
         # the factory pattern plays the other tracks too: the same run without the trig is the baseline, the engine
         # is deterministic, so the difference is track 1
-        base = self.sequence_run("e-seq-base", place=False)
-        full = self.sequence_run("e-seq", place=True)
+        base, full = self.parallel(  # two daemons side by side
+            lambda: self.sequence_run("e-seq-base", place=False),
+            lambda: self.sequence_run("e-seq", place=True),
+        )
         n = min(len(base), len(full))
         diff = full[:n] - base[:n]
         on = onsets(diff)
@@ -588,44 +602,100 @@ class PluckProof(M.Proof):
         )
 
 
+P = PluckProof
 PARTS = [
-    K.Part("a", "select: type, descriptor rows, defaults", PluckProof.part_a, True, 60),
+    K.Part("a", "select: type, descriptor rows, defaults", P.part_a, True, 60),
+    # b: the knobs. The full tier splits it in three daemons; the quick tier checks DECAY and an empty field
     K.Part(
-        "b",
-        "knobs on the SRC page (PLUCK, then stock SAMPLE as the control)",
-        PluckProof.part_b,
-        True,
-        250,
+        "b1",
+        "knobs on the SRC page: PLUCK fields 0-3",
+        lambda p: p.part_b(("pluck",), (0, 1, 2, 3)),
+        False,
+        100,
+        group="b",
     ),
     K.Part(
-        "c",
-        "tuning: the fundamental against the pitch word",
-        PluckProof.part_c,
-        True,
-        120,
+        "b2",
+        "knobs on the SRC page: PLUCK fields 4-7",
+        lambda p: p.part_b(("pluck",), (4, 5, 6, 7)),
+        False,
+        100,
+        group="b",
     ),
+    K.Part(
+        "b3",
+        "knobs on the SRC page: stock SAMPLE as the control",
+        lambda p: p.part_b(("sample",)),
+        False,
+        100,
+        group="b",
+    ),
+    K.Part(
+        "bq",
+        "knobs on the SRC page: DECAY and an empty field",
+        lambda p: p.part_b(("pluck",), (1, 3)),
+        True,
+        40,
+        full=False,
+        group="b",
+    ),
+    # c: tuning
+    K.Part(
+        "c1",
+        "tuning: TRIG 1, keyboard TRIG 2 and 3",
+        lambda p: p.part_c(True, ("TRIG 2", "TRIG 3")),
+        False,
+        150,
+        group="c",
+    ),
+    K.Part(
+        "c2",
+        "tuning: keyboard TRIG 5, 13 and 16",
+        lambda p: p.part_c(False, ("TRIG 5", "TRIG 13", "TRIG 16")),
+        False,
+        150,
+        group="c",
+    ),
+    K.Part(
+        "cq",
+        "tuning: TRIG 1 and keyboard TRIG 5",
+        lambda p: p.part_c(True, ("TRIG 5",), 1200),
+        True,
+        60,
+        full=False,
+        group="c",
+    ),
+    # d: the whole chain in one daemon (the pick measure depends on the noise state the earlier notes leave)
     K.Part(
         "d",
         "parameters set through the encoders change the sound",
-        PluckProof.part_d,
-        True,
+        P.part_d,
+        False,
         450,
     ),
     K.Part(
-        "e",
-        "sequencer: a trig on step 1 plucks the string",
-        PluckProof.part_e,
-        False,
-        200,
+        "dq1",
+        "parameters: DECAY (two notes)",
+        lambda p: p.part_d(("decay",), True),
+        True,
+        100,
+        full=False,
+        group="d",
     ),
     K.Part(
-        "f",
-        "persistence (patched save and load, then stock load)",
-        PluckProof.part_f,
+        "dq2",
+        "parameters: PICK comb (two notes)",
+        lambda p: p.part_d(("pick",), True),
         True,
-        150,
+        100,
+        full=False,
+        group="d",
     ),
-    K.Part("g", "MOD page destination list", PluckProof.part_g, False, 120),
+    K.Part("e", "sequencer: a trig on step 1 plucks the string", P.part_e, False, 200),
+    K.Part(
+        "f", "persistence (patched save and load, then stock load)", P.part_f, True, 150
+    ),
+    K.Part("g", "MOD page destination list", P.part_g, False, 120),
 ]
 
 

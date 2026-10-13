@@ -12,8 +12,8 @@ machine menu; the track's frame words are forced with DSP_FRAME_POKE where a cas
   c  stages  the level knob (LEVEL encoder), the filter frequency, the overdrive and the reverb send change the sine:
              the engine's per-track processing, FX and mix see the registered voice
 
-Parts are independent and run in parallel processes (`--jobs`, tools/pk_proofkit.py). `--quick`: a, b (note 60) and c
-without the overdrive and reverb cases.
+Parts are independent and run in parallel processes (`--jobs`, tools/pk_proofkit.py): a; b60 and b72 (group b); c1 level,
+c2 filter, c3 overdrive, c4 reverb (group c; each renders the base note it compares with). `--quick`: a, b60, c1, c2.
 
 Output goes under OUT (default out/runs/voice-proof-dn2), never committed. Exit 0 only when every check passes.
 """
@@ -126,8 +126,10 @@ class Proof(K.Proof):
             f"{analyse(inter).get('active_samples')} active samples, shift {shift}",
         )
 
-    def part_b(self) -> None:
-        for note, poke in ((60, ""), (72, "0x02=0x4800"))[: 1 if self.quick else 2]:
+    def part_b(self, notes: tuple[int, ...] = (60, 72)) -> None:
+        for note, poke in ((60, ""), (72, "0x02=0x4800")):
+            if note not in notes:
+                continue
             x = self.render(f"sine{note}", MODS, downs=SINE_DOWNS, poke=poke)
             act = np.flatnonzero(np.abs(x) > 1e-5)
             seg = x[act[0] + 2000 : act[0] + 26000] if len(act) > 30000 else x[:0]
@@ -140,69 +142,124 @@ class Proof(K.Proof):
                 f"{f:.3f} Hz, {cents:+.2f} cents",
             )
 
-    def part_c(self) -> None:
-        base = self.render("c-base", MODS, downs=SINE_DOWNS, run_ms=2600)
+    def part_c(
+        self, sections: tuple[str, ...] = ("level", "filter", "overdrive", "reverb")
+    ) -> None:
+        base = (
+            self.render("c-base", MODS, downs=SINE_DOWNS, run_ms=2600)
+            if {"level", "overdrive", "reverb"} & set(sections)
+            else None
+        )
         rms = lambda x, a=8000, b=50000: float(np.sqrt(np.mean(x[a:b] ** 2)))  # noqa: E731
-        lev = self.render(
-            "c-level", MODS, downs=SINE_DOWNS, turns=(("LEVEL", -300),), run_ms=2600
-        )
-        db = 20 * math.log10(max(rms(lev), 1e-9) / rms(base))
-        self.check("the LEVEL knob lowers the sine", db < -10, f"{db:+.1f} dB")
-        env = [rms(base, k, k + 4800) for k in range(0, 40000, 4800)]
-        tail = rms(base, 60000, 66000) / max(rms(base, 8000, 14000), 1e-9)
-        self.check(
-            "the amplitude envelope releases the voice after the note (the engine's gate)",
-            tail < 0.01,
-            f"tail / body {tail:.4f}, rms per 100 ms {[round(e, 4) for e in env[:8]]}",
-        )
-        hi = "0x02=0x6000"  # note 96, 2093 Hz
-        open_ = self.render("c-flt-open", MODS, downs=SINE_DOWNS, poke=hi)
-        closed = self.render(
-            "c-flt-closed",
-            MODS,
-            downs=SINE_DOWNS,
-            poke=hi,
-            page="FLTR",
-            turns=(("ENC E", -300),),
-        )
-        db = 20 * math.log10(max(rms(closed), 1e-9) / rms(open_))
-        self.check("the filter frequency closes on the sine", db < -6, f"{db:+.1f} dB")
-        if self.quick:  # the quick tier ends here
-            return
-        od = self.render(
-            "c-overdrive", MODS, downs=SINE_DOWNS, page="FX", turns=(("ENC B", 300),)
-        )
-        spec = np.abs(np.fft.rfft(od[8000:40000] * np.hanning(32000)))
-        spec0 = np.abs(np.fft.rfft(base[8000:40000] * np.hanning(32000)))
-        k1 = int(261.63 / 48000 * 32000)
-        h3 = float(spec[3 * k1 - 4 : 3 * k1 + 5].max() / spec[k1 - 4 : k1 + 5].max())
-        h3b = float(spec0[3 * k1 - 4 : 3 * k1 + 5].max() / spec0[k1 - 4 : k1 + 5].max())
-        self.check(
-            "the overdrive adds harmonics to the sine",
-            h3 > 100 * max(h3b, 1e-6),
-            f"3rd harmonic {h3b:.2e} -> {h3:.2e} of the fundamental",
-        )
-        rev = self.render(
-            "c-reverb",
-            MODS,
-            downs=SINE_DOWNS,
-            page="FX",
-            turns=(("ENC F", 300),),
-            run_ms=2600,
-        )
-        a = rms(base, 70000, 100000)
-        b = rms(rev, 70000, 100000)
-        self.check(
-            "the reverb send adds a tail after the note",
-            b > 5 * max(a, 1e-9),
-            f"tail rms {a:.5f} -> {b:.5f}",
-        )
+        if "level" in sections:
+            lev = self.render(
+                "c-level", MODS, downs=SINE_DOWNS, turns=(("LEVEL", -300),), run_ms=2600
+            )
+            db = 20 * math.log10(max(rms(lev), 1e-9) / rms(base))
+            self.check("the LEVEL knob lowers the sine", db < -10, f"{db:+.1f} dB")
+            env = [rms(base, k, k + 4800) for k in range(0, 40000, 4800)]
+            tail = rms(base, 60000, 66000) / max(rms(base, 8000, 14000), 1e-9)
+            self.check(
+                "the amplitude envelope releases the voice after the note (the engine's gate)",
+                tail < 0.01,
+                f"tail / body {tail:.4f}, rms per 100 ms {[round(e, 4) for e in env[:8]]}",
+            )
+        if "filter" in sections:
+            hi = "0x02=0x6000"  # note 96, 2093 Hz
+            open_ = self.render("c-flt-open", MODS, downs=SINE_DOWNS, poke=hi)
+            closed = self.render(
+                "c-flt-closed",
+                MODS,
+                downs=SINE_DOWNS,
+                poke=hi,
+                page="FLTR",
+                turns=(("ENC E", -300),),
+            )
+            db = 20 * math.log10(max(rms(closed), 1e-9) / rms(open_))
+            self.check(
+                "the filter frequency closes on the sine", db < -6, f"{db:+.1f} dB"
+            )
+        if "overdrive" in sections:
+            od = self.render(
+                "c-overdrive",
+                MODS,
+                downs=SINE_DOWNS,
+                page="FX",
+                turns=(("ENC B", 300),),
+            )
+            spec = np.abs(np.fft.rfft(od[8000:40000] * np.hanning(32000)))
+            spec0 = np.abs(np.fft.rfft(base[8000:40000] * np.hanning(32000)))
+            k1 = int(261.63 / 48000 * 32000)
+            h3 = float(
+                spec[3 * k1 - 4 : 3 * k1 + 5].max() / spec[k1 - 4 : k1 + 5].max()
+            )
+            h3b = float(
+                spec0[3 * k1 - 4 : 3 * k1 + 5].max() / spec0[k1 - 4 : k1 + 5].max()
+            )
+            self.check(
+                "the overdrive adds harmonics to the sine",
+                h3 > 100 * max(h3b, 1e-6),
+                f"3rd harmonic {h3b:.2e} -> {h3:.2e} of the fundamental",
+            )
+        if "reverb" in sections:
+            rev = self.render(
+                "c-reverb",
+                MODS,
+                downs=SINE_DOWNS,
+                page="FX",
+                turns=(("ENC F", 300),),
+                run_ms=2600,
+            )
+            a = rms(base, 70000, 100000)
+            b = rms(rev, 70000, 100000)
+            self.check(
+                "the reverb send adds a tail after the note",
+                b > 5 * max(a, 1e-9),
+                f"tail rms {a:.5f} -> {b:.5f}",
+            )
 
 
+P = Proof
 PARTS = [
-    K.Part("a", "stock (hook patched in, FM TONE selected)", Proof.part_a, True, 80),
-    K.Part("b", "pitch", Proof.part_b, True, 100),
-    K.Part("c", "the engine's later stages see the voice", Proof.part_c, True, 400),
+    K.Part("a", "stock (hook patched in, FM TONE selected)", P.part_a, True, 80),
+    K.Part(
+        "b60", "pitch: SINE at note 60", lambda p: p.part_b((60,)), True, 50, group="b"
+    ),
+    K.Part(
+        "b72", "pitch: SINE at note 72", lambda p: p.part_b((72,)), False, 50, group="b"
+    ),
+    K.Part(
+        "c1",
+        "the LEVEL knob and the envelope see the voice",
+        lambda p: p.part_c(("level",)),
+        True,
+        60,
+        group="c",
+    ),
+    K.Part(
+        "c2",
+        "the filter sees the voice",
+        lambda p: p.part_c(("filter",)),
+        True,
+        60,
+        group="c",
+    ),
+    K.Part(
+        "c3",
+        "the overdrive sees the voice",
+        lambda p: p.part_c(("overdrive",)),
+        False,
+        60,
+        group="c",
+    ),
+    K.Part(
+        "c4",
+        "the reverb send sees the voice",
+        lambda p: p.part_c(("reverb",)),
+        False,
+        80,
+        group="c",
+    ),
 ]
 
 

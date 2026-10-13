@@ -38,6 +38,7 @@ import re
 import resource
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from collections.abc import Callable, Sequence
@@ -56,14 +57,18 @@ MAX_POOL = 3  # live daemons per process
 
 @dataclasses.dataclass
 class Part:
-    """One independent unit of a proof. `fn(proof)` runs it; `quick` parts run in the --quick tier (the part itself
-    reads `proof.quick` to shorten its renders); `weight` is a rough wall time in seconds, heaviest parts start first."""
+    """One independent unit of a proof. `fn(proof)` runs it. `quick` parts run in the --quick tier (the part itself
+    may read `proof.quick`); `full=False` marks a part that only the quick tier runs (a shortened variant of parts that
+    the full tier runs whole). `group` lets `--only b` name several parts (b1, b2, ...). `weight` is a rough wall time
+    in seconds: the heaviest parts start first."""
 
     name: str
     title: str
     fn: Callable[[Any], None]
     quick: bool = True
     weight: int = 60
+    full: bool = True
+    group: str = ""
 
 
 @dataclasses.dataclass
@@ -86,13 +91,18 @@ class Lease:
 
     def __init__(self, proof: Proof, key: tuple, session: H.Session, pooled: bool):
         self.proof, self.key, self.session, self.pooled = proof, key, session, pooled
+        proof.busy[key] = proof.busy.get(key, 0) + 1
 
     def __enter__(self) -> H.Session:
         return self.session
 
     def __exit__(self, exc_type: object, *exc: object) -> None:
-        if exc_type is not None or not self.pooled:
-            self.proof.drop(self.key)
+        with self.proof.lock:
+            self.proof.busy[self.key] -= 1
+            if self.proof.busy[self.key] <= 0:
+                del self.proof.busy[self.key]
+                if exc_type is not None or not self.pooled:
+                    self.proof.drop(self.key)
 
 
 class Proof:
@@ -121,6 +131,10 @@ class Proof:
         self.results: list[CheckResult] = []
         self.failed: list[str] = []
         self.pool: dict[tuple, H.Session] = {}
+        self.busy: dict[
+            tuple, int
+        ] = {}  # sessions inside a `with` block (never evicted)
+        self.lock = threading.RLock()  # the pool and the check list, for `parallel`
         self.timings: dict[str, float] = {}
         for k, v in self.ready_env.items():
             if k not in os.environ and Path(v).is_dir():
@@ -129,14 +143,36 @@ class Proof:
     # -- checks
     def check(self, name: str, ok: bool, detail: object = "") -> bool:
         text = str(detail)
-        print(
-            f"  {'ok  ' if ok else 'FAIL'} {name}{': ' + text if text else ''}",
-            flush=True,
-        )
-        self.results.append(CheckResult(name, bool(ok), text))
-        if not ok:
-            self.failed.append(name)
+        with self.lock:
+            print(
+                f"  {'ok  ' if ok else 'FAIL'} {name}{': ' + text if text else ''}",
+                flush=True,
+            )
+            self.results.append(CheckResult(name, bool(ok), text))
+            if not ok:
+                self.failed.append(name)
         return bool(ok)
+
+    def parallel(self, *calls: Callable[[], Any]) -> list[Any]:
+        """Run CALLS in threads (each on its own daemon: give each a distinct session tag) and return their results
+        in order; the first exception is raised after all have finished."""
+        out: list[Any] = [None] * len(calls)
+        errors: list[BaseException] = []
+
+        def run(i: int) -> None:
+            try:
+                out[i] = calls[i]()
+            except BaseException as e:  # noqa: BLE001
+                errors.append(e)
+
+        threads = [threading.Thread(target=run, args=(i,)) for i in range(len(calls))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        if errors:
+            raise errors[0]
+        return out
 
     # -- sessions
     def session(
@@ -152,6 +188,19 @@ class Proof:
     ) -> Lease:
         """A coupled daemon on the patch of MODS (stock when empty) for the part. Pooled sessions are reused by the
         next call with the same arguments; callers `restart` them (`fresh`) themselves."""
+        with self.lock:
+            return self._session(mods, tag, device, fw, env, pool, image)
+
+    def _session(
+        self,
+        mods: Sequence[str],
+        tag: str,
+        device: str | None,
+        fw: str | None,
+        env: dict[str, str] | None,
+        pool: bool,
+        image: Path | None,
+    ) -> Lease:
         device, fw = device or self.device, fw or self.fw
         key = (
             device,
@@ -165,7 +214,10 @@ class Proof:
             return Lease(self, key, self.pool[key], True)
         self.drop(key)
         while len(self.pool) >= MAX_POOL:
-            self.drop(next(iter(self.pool)))
+            idle = [k for k in self.pool if k not in self.busy]
+            if not idle:
+                break
+            self.drop(idle[0])
         cell = H.Cell(device, fw, list(mods))
         name = slug(f"{self.tool}-{self.part}-{tag or cell.modset}-{device}{fw}")
         s = H.Session(
@@ -348,13 +400,17 @@ def run_tool(
     out.mkdir(parents=True, exist_ok=True)
     by_name = {p.name: p for p in parts}
     if args.only:
-        names = args.only.split(",")
-        unknown = [n for n in names if n not in by_name]
-        if unknown:
-            print(f"unknown part(s) {unknown}; the parts are {list(by_name)}")
-            return 2
+        names = []
+        for n in args.only.split(","):
+            hit = [p.name for p in parts if n in (p.name, p.group)]
+            if not hit:
+                print(f"unknown part {n!r}; the parts are {list(by_name)}")
+                return 2
+            names += [h for h in hit if h not in names]
+    elif args.quick:
+        names = [p.name for p in parts if p.quick]
     else:
-        names = [p.name for p in parts if p.quick or not args.quick]
+        names = [p.name for p in parts if p.full]
     cache_dir = H.SHARED_CACHE
     label = label or Path(script).stem
     started = time.monotonic()
