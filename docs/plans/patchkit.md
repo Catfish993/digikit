@@ -718,9 +718,11 @@ browser DSP audio (separate sharc-jit plan) when chosen.
 
 ### Phase 7: documentation
 
-- [ ] Rewrite `docs/PATCHING.md`: quick usage first (create, build, patch, inject, test, flash and recover), then
+- [x] Rewrite `docs/PATCHING.md` (done 2026-10-14, lane `fastweb`): quick usage first (create, build, patch, inject, test, flash and recover), then
       how it works (ports, frameworks, linker, regions, conflicts, safety rules).
-- [ ] `modules/README.md`: authoring guide and manifest reference.
+- [x] `modules/README.md`: authoring guide and manifest reference (done 2026-10-14, lane `fastweb`; worked examples
+      `fx/master-gain` and `machines/pluck`). `README.md` has a "Patching" section; the old notes are in
+      `docs/archive/PATCHING-pre-patchkit.md`; the `digikit-module` skill is current.
 - [ ] Findings for every [V]/[D] result from Phase 0.
 
 ### Later
