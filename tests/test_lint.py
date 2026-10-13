@@ -72,6 +72,7 @@ CLEAN = [
     "tools/pk_machine_rules_dn2.py",
     "tests/test_pk_machines.py",
     "tests/test_pk_params.py",
+    "tests/test_pk_prims.py",
     "tools/pk_aplib_eq.py",
     "tools/pk_proof_gain.py",
     "tools/pk_oracle_xslice.py",

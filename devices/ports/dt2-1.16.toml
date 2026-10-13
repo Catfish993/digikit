@@ -458,3 +458,13 @@ len = 6
 sha256 = "aa85dee071b926c095ed94ee8bad29cc5add87caf86276bf2c85bd0e565feee4"
 mark = "D"
 rule = "core/dsp-voice:sharc_literal"
+
+[[anchor]]
+name = "test.demo.kit_setter"
+cpu = "cf"
+kind = "code"
+addr = 0x40035260
+len = 14
+sha256 = "edf0c43e5e5151ab9431443cbfde43e61e9174eee9a1da59d50b36e0bbd6931a"
+mark = "D"
+rule = "test/registry-demo:cf_func"
