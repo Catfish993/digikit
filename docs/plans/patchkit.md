@@ -533,7 +533,7 @@ hook on ColdFire and SHARC, non-boundary, re-encoded PC-relative instructions, d
 `tests/test_pk_prims.py` and `modules/test/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the
 ColdFire core, the hooked stock setter `Kit::vfunc_12` is called three times and behaves as stock while the hook counts,
 the registry rows and the copied section read back, and `packages/web/tests/patchkit.test.mjs` (wasm = CLI, plan.json
-included). The old `[[machine]]`/`[[param]]`/`[[table]]`/`register` path is untouched; its 62 tests still pass.
+included). The old `[[machine]]`/`[[param]]`/`[[table]]`/`register` path is untouched; its tests still pass.
 
 Manifest syntax (all expressions are strings or integers; symbols are `[A-Za-z_.][A-Za-z0-9_.]*`):
 
