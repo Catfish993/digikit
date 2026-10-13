@@ -29,6 +29,7 @@ pub const METHODS: &[&str] = &[
     "pcm.tap",
     "cf.profile",
     "dsp.patch",
+    "dsp.peek",
     "events.subscribe",
     "quit",
 ];

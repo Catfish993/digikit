@@ -312,6 +312,10 @@ def test_a_patched_main_cold_boots_once_then_hits_the_snapshot_cache():
         with Emu.spawn(str(SYX)) as emu:
             cold = emu.inject(patched)
             assert cold["start_used"] == "cold" and cold["main_changed"] is True
+            assert (
+                cold["audio"] is False
+                and cold["coupled_note"] == "no coupled audio inputs"
+            )
             assert emu.status()["cf"]["ready"] is True
             emu.step(1_000_000)
             digest = emu.state_digest()

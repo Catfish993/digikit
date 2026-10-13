@@ -1,0 +1,91 @@
+"""A MAIN-patched firmware cold-boots with DSP audio in the control daemon (spike 0.6, finding 17).
+
+Needs a `digi-emud` built with coupled audio for the device's generated core (DIGI_EMUD_DN2 / DIGI_EMUD_DT2, else
+DIGI_EMUD; `tools/native_emu.py --daemon --build-only <syx>` prints it), the firmware and its ready inputs; run with
+`--slow`. DN2 uses Digitone_II_OS1.12.syx and snapshots/dn2-112-ready, DT2 uses Digitakt_II_OS1.17.syx and
+snapshots/dt2-117-ready (override with DIGI_PATCHED_DN2_READY / DIGI_PATCHED_DT2_READY and the DIGI_PATCHED_*_SYX
+variables). Each test makes a harmless stock-size image (tools/patched_image.py).
+"""
+
+from __future__ import annotations
+
+import os
+import pathlib
+import sys
+import tempfile
+
+import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
+try:
+    import patched_audio_check as pac
+    from digi_client import Emu, EmuError
+finally:
+    sys.path.pop(0)
+
+CASES = {
+    "dn2": ("Digitone_II_OS1.12.syx", "snapshots/dn2-112-ready"),
+    "dt2": ("Digitakt_II_OS1.17.syx", "snapshots/dt2-117-ready"),
+}
+
+
+def inputs(device: str, monkeypatch: pytest.MonkeyPatch):
+    syx_name, ready = CASES[device]
+    up = device.upper()
+    syx = pathlib.Path(os.environ.get(f"DIGI_PATCHED_{up}_SYX") or ROOT / syx_name)
+    ready = pathlib.Path(os.environ.get(f"DIGI_PATCHED_{up}_READY") or ROOT / ready)
+    emud = os.environ.get(f"DIGI_EMUD_{up}") or os.environ.get("DIGI_EMUD")
+    if not (emud and pathlib.Path(emud).is_file() and syx.is_file()):
+        pytest.skip(
+            "needs a coupled digi-emud (DIGI_EMUD_DN2 / DIGI_EMUD_DT2) and the firmware"
+        )
+    if not (ready / "digi-audio-m5.snap").is_file():
+        pytest.skip(f"needs the ready inputs {ready} (mise run ready)")
+    monkeypatch.setenv("DIGI_EMUD", emud)
+    return syx, ready
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("device", ["dn2", "dt2"])
+def test_patched_main_boots_with_audio_and_is_cached(device, monkeypatch):
+    syx, ready = inputs(device, monkeypatch)
+    patched = pac.harmless_patched(syx, syx.stem)
+    args = pac.argparse.Namespace(
+        device=device, syx=str(syx), ready=str(ready), patched=str(patched),
+        run_dir=None, runs=1,
+    )  # fmt: skip
+    result = pac.run(args)
+    cold = result["cold"][0]
+    assert cold["start_used"] == "cold" and cold["audio"] is True
+    assert cold["boot"]["wall_seconds"] < 30, "uncached coupled boot target"
+    assert (
+        result["cached"]["start_used"] == "snapshot-cache"
+        and result["cached"]["cache_hit"]
+    )
+    assert result["cached"]["wall_seconds"] < 5
+    assert result["restart"]["cache_hit"] is True
+    assert result["all_audible"], result
+    if device == "dn2":
+        assert result["pcm_equal_to_stock"] is True
+
+
+@pytest.mark.slow
+def test_start_snapshot_needs_a_cached_pair_and_start_cold_rebuilds_it(monkeypatch):
+    syx, ready = inputs("dn2", monkeypatch)
+    patched = pac.harmless_patched(syx, syx.stem)
+    with (
+        tempfile.TemporaryDirectory(dir="/tmp", prefix="dgp") as run_dir,
+        Emu.spawn_coupled(syx, ready, timeout=300, run_dir=run_dir) as emu,
+    ):
+        with pytest.raises(EmuError, match="no cached pair"):
+            emu.call("firmware.load", syx=str(patched), start="snapshot")
+        first = emu.call("firmware.load", syx=str(patched), start="auto")
+        assert first["start_used"] == "cold" and first["audio"] is True
+        emu.load(syx)
+        second = emu.call("firmware.load", syx=str(patched), start="snapshot")
+        assert second["start_used"] == "snapshot-cache" and second["audio"] is True
+        emu.load(syx)
+        rebuilt = emu.call("firmware.load", syx=str(patched), start="cold")
+        assert rebuilt["start_used"] == "cold" and rebuilt["cache_hit"] is False
+        assert emu.status()["cf"]["ready"] is True
