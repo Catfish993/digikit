@@ -219,11 +219,53 @@ ENCODE_HAZARDS = [
 ]
 
 
+# Selache ignores the (SW)/(SWSE) suffix of a direct load (it emits the normal-word form), so
+# `Rn = DM(symbol) (SW|SWSE);` is assembled as the normal-word load and rewritten here to the short-word Type 14d
+# word (opcode 0x1a, bit 38 short word, bit 36 sign extension; the form tools/sharc_asm.py `load_sw_abs` emits).
+# The re-decode in `verify` then sees the short-word form and its relocated address.
+_SW_LOAD = re.compile(
+    r"^(\s*)R(\d{1,2})\s*=\s*DM\(\s*([A-Za-z_.$][\w.$]*)\s*\)\s*\((SWSE|SW)\)\s*;",
+    re.I | re.M,
+)
+
+
+def _sw_prepare(source: str) -> tuple[str, list[tuple[str, bool]]]:
+    marks: list[tuple[str, bool]] = []
+
+    def sub(m: re.Match) -> str:
+        label = f"_pk_sw{len(marks)}"
+        marks.append((label, m.group(4).upper() == "SWSE"))
+        return f"{m.group(1)}.GLOBAL {label};\n{m.group(1)}{label}:\n{m.group(1)}R{m.group(2)} = DM({m.group(3)});"
+
+    return _SW_LOAD.sub(sub, source), marks
+
+
+def _sw_apply(obj: SharcObject, marks: list[tuple[str, bool]]) -> None:
+    if not marks:
+        return
+    code = bytearray(obj.section)
+    at_reloc = {r.parcel: r for r in obj.relocs}
+    for label, signed in marks:
+        parcel = obj.symbols.pop(label)[0]
+        at = parcel * 2
+        if parcel not in at_reloc or at_reloc[parcel].rtype != R_ABS32:
+            raise PkSharcError(f"{label}: expected a 32-bit relocated load")
+        if code[at] != 0x10 or code[at + 1] & 0xF0:
+            raise PkSharcError(
+                f"{label}: not a normal-word direct load ({code[at : at + 2].hex()})"
+            )
+        code[at] = 0x1A
+        code[at + 1] |= 0x40 | (0x10 if signed else 0)
+    obj.section = bytes(code)
+
+
 def assemble(source: str, section: str | None = None) -> SharcObject:
     for pat, why in ENCODE_HAZARDS:
         m = pat.search(source)
         if m:
             raise PkSharcError(f"known Selache encode bug ({why}): {m.group(0)!r}")
+    original = source
+    source, sw_marks = _sw_prepare(source)
     with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
         src, obj = Path(d) / "m.s", Path(d) / "m.doj"
         src.write_text(source)
@@ -234,7 +276,9 @@ def assemble(source: str, section: str | None = None) -> SharcObject:
         )
         if r.returncode:
             raise PkSharcError(f"selas failed:\n{r.stdout}{r.stderr}")
-        return _object(obj, hashlib.sha256(source.encode()).hexdigest(), section)
+        result = _object(obj, hashlib.sha256(original.encode()).hexdigest(), section)
+        _sw_apply(result, sw_marks)
+        return result
 
 
 def compile_c(source: str, section: str | None = None) -> SharcObject:
@@ -368,6 +412,7 @@ def run_call(
     reads: dict[str, tuple[int, int]] | None = None,
     max_steps: int = 100000,
     return_sw: int = 0xB9F000,
+    approx_recips: bool = False,
 ) -> dict[str, object]:
     """Run ``entry`` (a symbol) to its RTS on the concrete core and return registers and memory reads.
 
@@ -388,7 +433,13 @@ def run_call(
         "index": 0,
     }
     mem = LoadedMemory(linked.code_boot, [blk])
-    runner = sharc_run.Runner(mem, start, regs=regs or {}, breakpoints=[return_sw])
+    runner = sharc_run.Runner(
+        mem,
+        start,
+        regs=regs or {},
+        breakpoints=[return_sw],
+        approx_recips=approx_recips,
+    )
     for addr, word in (dm_words or {}).items():
         if not st._dm_write(
             runner.state, addr, 4, st.Const(word & 0xFFFFFFFF), normal_word=True
@@ -409,7 +460,22 @@ def run_call(
         out[name] = vals
     out["regs"] = {
         n: getattr(runner.state.uregs.get(st.UREG_CODES[n]), "value", None)
-        for n in ("R0", "R1", "R2", "R4", "R8", "I0")
+        for n in (
+            "R0",
+            "R1",
+            "R2",
+            "R4",
+            "R5",
+            "R6",
+            "R7",
+            "R8",
+            "R9",
+            "R10",
+            "R11",
+            "R12",
+            "R13",
+            "I0",
+        )
     }
     return out
 

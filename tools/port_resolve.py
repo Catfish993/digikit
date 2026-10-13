@@ -25,6 +25,12 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc.py):
   sharc_literal  as sharc_func, but the instruction at entry + offset loads a constant (a literal in the
                  sharcdb): the anchor's value is that constant (a data address); `src` is the instruction.
 
+  sharc_mem_addr as sharc_literal, but the instruction at entry + offset is a direct DM access (Type 14d): the
+                 anchor's value is its absolute address (a frame word or other fixed data), `src` the instruction.
+
+  cf_words       words = [u32 or "*", ...]: a table row found by a masked signature (big-endian u32 words at 4-byte
+                 alignment, exactly one match in the MAIN OS image); a data anchor over the row.
+
   cf_reset_init_calls   the two reset-path calls (copy helper, clear helper) at the start of the reset code, found by
                  tools/regions.py `reset_facts` (a masked signature of the clear helper plus the call sites):
                  an 8-byte code anchor.
@@ -167,8 +173,40 @@ class CfFacts:
         )
 
 
+def resolve_cf_words(cf: CfFacts, rule: dict) -> dict:
+    """A table row found by a masked signature: `words` are big-endian u32 values (or "*" for any), matched
+    at 4-byte alignment over the whole MAIN OS image; exactly one match is required."""
+    import struct
+
+    words = rule["words"]
+    n = len(words)
+    want = [None if w == "*" else int(w) for w in words]
+    first = next(i for i, w in enumerate(want) if w is not None)
+    anchor_bytes = struct.pack(">I", want[first])
+    hits = []
+    i = cf.main.find(anchor_bytes)
+    while i >= 0:
+        row = i - 4 * first
+        if row >= 0 and row % 4 == 0 and row + 4 * n <= len(cf.main):
+            got = struct.unpack(f">{n}I", cf.main[row : row + 4 * n])
+            if all(w is None or w == g for w, g in zip(want, got, strict=True)):
+                hits.append(row)
+        i = cf.main.find(anchor_bytes, i + 1)
+    if len(hits) != 1:
+        raise ResolveError(f"{rule['name']}: {len(hits)} rows match the signature")
+    row = hits[0]
+    return {
+        "kind": "data",
+        "addr": cf.base + row,
+        "len": 4 * n,
+        "sha256": sha(cf.main[row : row + 4 * n]),
+    }
+
+
 def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
+    if kind == "cf_words":
+        return resolve_cf_words(cf, rule)
     hook = cf.reset["calls"]["copy"]
     if cf.reset["calls"]["clear"] != hook + 4:
         raise ResolveError("the reset calls are not adjacent")
@@ -215,6 +253,30 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
         width = dsp.db.sql(
             "SELECT width FROM insn WHERE image=? AND sw=?", dsp.image, pc
         )[0][0]
+        data = dsp.stream.read(addr, int(width))
+        return {
+            "kind": "value",
+            "addr": int(rows[0][0]),
+            "src": addr,
+            "len": int(width),
+            "sha256": sha(data),
+        }
+    if kind == "sharc_mem_addr":
+        entry = dsp.func_by_hash(rule["reloc_hash"])
+        pc = entry + int(rule.get("offset", 0))
+        rows = dsp.db.sql(
+            "SELECT abs_address FROM mem_access WHERE image=? AND sw=? AND abs_address IS NOT NULL",
+            dsp.image,
+            pc,
+        )
+        if len(rows) != 1:
+            raise ResolveError(
+                f"{rule['name']}: {len(rows)} direct DM accesses at pc {pc:#x} in {dsp.image}"
+            )
+        width = dsp.db.sql(
+            "SELECT width FROM insn WHERE image=? AND sw=?", dsp.image, pc
+        )[0][0]
+        addr = dsp.byte_addr(pc)
         data = dsp.stream.read(addr, int(width))
         return {
             "kind": "value",
