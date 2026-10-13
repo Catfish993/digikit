@@ -62,14 +62,16 @@ def test_framework_rules_are_declared_once_per_site():
         os.path.join(ROOT, "modules", "core", "machines", "module.toml"), "rb"
     ) as f:
         m = tomllib.load(f)
-    names = [r["name"] for r in m["anchor_rule"]]
-    assert len(names) == len(set(names))
-    cf = [n for n in names if n.startswith("cf.machines.")]
+    # a site may have one rule per device (the Digitone II rules reuse the names)
+    keys = [(r["name"], tuple(r.get("devices", []))) for r in m["anchor_rule"]]
+    assert len(keys) == len(set(keys))
+    dt2 = [n for n, d in keys if n.startswith("cf.machines.") and d == ("dt2",)]
     # dispatch, list, list_alloc, group, rank, permit, persist + 3 names + 6 per-type + 7 clone + 1 type argument
-    assert len(cf) == 7 + 3 + 6 + 7 + 1
+    assert len(dt2) == 7 + 3 + 6 + 7 + 1
     for r in m["anchor_rule"]:
         if r["kind"] == "cf_func":
-            assert len(r["hash"]) == 32 and r["len"] > 0 and r["devices"] == ["dt2"]
+            assert len(r["hash"]) == 32 and r["len"] > 0
+            assert r["devices"] in (["dt2"], ["dn2"])
 
 
 @pytest.mark.skipif(
