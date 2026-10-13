@@ -120,7 +120,10 @@ pub fn validate(d: &ParamDef, count: Option<u32>) -> Result<()> {
         ));
     }
     if let Some(n) = count {
-        for (what, c) in [("template", Some(d.template)), ("formatter_from", d.formatter_from)] {
+        for (what, c) in [
+            ("template", Some(d.template)),
+            ("formatter_from", d.formatter_from),
+        ] {
             if let Some(c) = c
                 && c >= n
             {
@@ -195,10 +198,12 @@ pub fn scan(main: &[u8], main_base: u64, t1: u64, count: u32) -> Sites {
         }
         if o + 7 <= end {
             let op = u16::from_be_bytes([main[o], main[o + 1]]);
-            if (op & 0xfff8 == 0x0c80 || op & 0xf1ff == 0xb1fc) && (be(o + 2) == count || be(o + 2) + 1 == count) {
-                if matches!(main[o + 6], 0x54 | 0x55 | 0x62 | 0x63) {
-                    s.bounds.push((main_base + o as u64, be(o + 2)));
-                }
+            let imm = be(o + 2);
+            if (op & 0xfff8 == 0x0c80 || op & 0xf1ff == 0xb1fc)
+                && (imm == count || imm + 1 == count)
+                && matches!(main[o + 6], 0x54 | 0x55 | 0x62 | 0x63)
+            {
+                s.bounds.push((main_base + o as u64, imm));
             }
         }
         o += 2;

@@ -170,8 +170,10 @@ class Proof:
         for i in range(upto):
             s.do_turn("ENC D", 1)
             s.run_ms(150)
-            if i >= 22:
-                out.append(s.frame()[0][:12])
+            if i >= 24:
+                # the title bar (the top 3 of 8 pages of the OLED: 3 * 128 bytes) animates and differs by timing, and
+                # the focus moves into the SRC group during the 23rd turn: compare the settled frames
+                out.append(hashlib.sha256(s.frame()[1][384:]).hexdigest()[:12])
         return out
 
     # -- the parts

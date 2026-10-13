@@ -39,7 +39,13 @@ fn machine_module(id: &str, requires: &str, machines: &str) -> Module {
 fn run(file: &str, lib: &Library, ids: &[&str]) -> Option<patchkit::Result<Applied>> {
     let raw = image(file)?;
     let ids: Vec<String> = ids.iter().map(|s| s.to_string()).collect();
-    Some(apply::apply_with(&raw, &registry(), lib, &ids, Options::default()))
+    Some(apply::apply_with(
+        &raw,
+        &registry(),
+        lib,
+        &ids,
+        Options::default(),
+    ))
 }
 
 /// Memory of the patched MAIN OS: the image plus the segment chain behind it.
@@ -124,7 +130,6 @@ fn stock_len(file: &str) -> usize {
         .len()
 }
 
-
 fn param_module(id: &str, requires: &str, params: &str) -> Module {
     machine_module(id, requires, params)
 }
@@ -146,8 +151,7 @@ fn two_params() -> Library {
         param_module(
             "test/pb",
             "[\"core/params\"]",
-            &(param("pb_y", "Yankee", 2, 0xd1)
-                + &param("pb_z", "Zulu", 4, 0xcc)),
+            &(param("pb_y", "Yankee", 2, 0xd1) + &param("pb_z", "Zulu", 4, 0xcc)),
         ),
     ])
 }
@@ -197,7 +201,11 @@ fn the_table_is_relocated_with_the_new_rows_and_every_reference_follows() {
         // the stock rows are copied byte for byte
         let sm = &stock.section(3).unwrap().data;
         let off = (old - 0x4000_0400) as usize;
-        assert_eq!(m.read(new, count as usize * 60), sm[off..off + count as usize * 60], "{file}");
+        assert_eq!(
+            m.read(new, count as usize * 60),
+            sm[off..off + count as usize * 60],
+            "{file}"
+        );
         // the new rows: template's owner and flag, our mirror (slot 1 -> 26, 2 -> 27, 4 -> 31), range and default
         let row = |code: u32| m.u32s(new + code * 60, 15);
         let (x, y, z) = (row(275), row(276), row(277));
@@ -216,9 +224,16 @@ fn the_table_is_relocated_with_the_new_rows_and_every_reference_follows() {
         let patched = Firmware::parse(p).unwrap();
         let pm = &patched.section(3).unwrap().data;
         let sites = patchkit::params::scan(sm, base as u64, old as u64, count);
-        assert_eq!(sites.len() as u64, port.anchor("cf.params.sites").unwrap().len);
+        assert_eq!(
+            sites.len() as u64,
+            port.anchor("cf.params.sites").unwrap().len
+        );
         let left = patchkit::params::scan(pm, base as u64, old as u64, count);
-        assert!(left.refs.is_empty(), "{file}: {} references to the stock table remain", left.refs.len());
+        assert!(
+            left.refs.is_empty(),
+            "{file}: {} references to the stock table remain",
+            left.refs.len()
+        );
         for r in &sites.refs {
             let o = (*r as u32 - base) as usize;
             let was = u32::from_be_bytes(sm[o..o + 4].try_into().unwrap());
@@ -251,9 +266,17 @@ fn the_second_table_accessor_shim_is_in_the_cave_and_decodes() {
     let m = Main::new(&a.syx, stock_len(DT2_117));
     let shim = symbol(&a, "parfw_t2_shim");
     let map = symbol(&a, "parfw_t2map");
-    assert_eq!(m.u32s(map, 3), vec![0xd1, 0xd1, 0xcc], "added codes answer with their template's object");
+    assert_eq!(
+        m.u32s(map, 3),
+        vec![0xd1, 0xd1, 0xcc],
+        "added codes answer with their template's object"
+    );
     let mut n = 0;
-    for w in a.plan.writes.iter().filter(|w| w.kind == "place" && w.owner.starts_with("core/params") && !w.code.is_empty()) {
+    for w in
+        a.plan.writes.iter().filter(|w| {
+            w.kind == "place" && w.owner.starts_with("core/params") && !w.code.is_empty()
+        })
+    {
         for &(lo, hi) in &w.code {
             let bytes = m.read(lo as u32, (hi - lo) as usize);
             let mut at = lo;
@@ -285,7 +308,12 @@ fn refusals() {
     ])
     .clone();
     let mut lib = lib;
-    lib.modules.extend(two_params().modules.into_iter().filter(|m| m.id() == "test/pa"));
+    lib.modules.extend(
+        two_params()
+            .modules
+            .into_iter()
+            .filter(|m| m.id() == "test/pa"),
+    );
     let err = |ids: &[&str]| run(DT2_117, &lib, ids).map(err_of);
     let Some(e) = err(&["test/orphan"]) else {
         return;
@@ -300,21 +328,21 @@ fn refusals() {
     let e = err(&["core/machines", "core/params", "test/ghost"]).unwrap();
     assert!(e.contains("not a parameter of any selected module"), "{e}");
     // Digitone II has no parameter framework
-    let e = run(DN2_112, &lib, &["core/params", "test/pa"]).map(err_of).unwrap();
+    let e = run(DN2_112, &lib, &["core/params", "test/pa"])
+        .map(err_of)
+        .unwrap();
     assert!(e.contains("not compatible"), "{e}");
 }
 
 #[test]
 fn a_machine_names_its_parameters_and_the_descriptor_gets_their_codes() {
-    let lib = library(vec![
-        param_module(
-            "test/pm",
-            "[\"core/machines\", \"core/params\"]",
-            &(param("pm_a", "Alpha", 1, 0xd1)
-                + &param("pm_b", "Beta", 4, 0xd1)
-                + "[[machine]]\nid = \"pmach\"\nname = \"Pm\"\nshort = \"PM\"\nclone_of = 0\nfields = [202, \"pm_a\", 0, 0, \"pm_b\", 0, 0, 209, 10]\n"),
-        ),
-    ]);
+    let lib = library(vec![param_module(
+        "test/pm",
+        "[\"core/machines\", \"core/params\"]",
+        &(param("pm_a", "Alpha", 1, 0xd1)
+            + &param("pm_b", "Beta", 4, 0xd1)
+            + "[[machine]]\nid = \"pmach\"\nname = \"Pm\"\nshort = \"PM\"\nclone_of = 0\nfields = [202, \"pm_a\", 0, 0, \"pm_b\", 0, 0, 209, 10]\n"),
+    )]);
     let Some(r) = run(DT2_117, &lib, &["core/machines", "core/params", "test/pm"]) else {
         return;
     };

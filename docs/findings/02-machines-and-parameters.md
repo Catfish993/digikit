@@ -1018,7 +1018,7 @@ generates, from the image being patched and from nothing stored in the repo:
 | name, hint | the 12-byte display-name table copied with one row per type (long, short, hint = the clone's); three accessors repointed and their bound raised | `name.0..2` |
 | permit, pertype | the permission longs and the per-type byte table copied with the clone's row appended; 1 + 6 bounds and table pointers | `permit`, `pertype.0..5` |
 | clone | every `type == 6` test (MANUAL SLICE) also accepts added clones of type 6; the `(type & ~2) == 4` test maps added types to their `clone_of` first | `clone.0..6` |
-| typearg | `FUN_400da23e` (1.17 `0x400da3a2`: parameter mapping (mirror index, type, filter) -> code, a 7 x 10 table in bss, `type < 7`): an added type answers with **its own descriptor's field** for the engine slot (0 where empty); **[C]** the first version mapped the type to `clone_of` and so gave an added machine the clone's defaults and rows, see "core.params" | `typearg.0` |
+| typearg | `FUN_400da23e` (1.17 `0x400da3a2`: parameter mapping (mirror index, type, filter) -> code, a 7 x 10 table in bss, `type < 7`): an added type answers with **its own descriptor's field** for the engine slots 25..28 and 31..34 (0 where the field is empty: no MOD destination), and as its clone for the two slots without a field (29, 30: MANUAL SLICE's `Sample Bank` and `Sample Slot` rows, owner 6, mirror 29 and 30, listed first in its MOD destination list); **[C]** the first version mapped the type to `clone_of` and so gave an added machine the clone's defaults and rows, see "core.params" | `typearg.0` |
 | persist | the sound loader's `(u8)(type + 1) < imm`: `imm = 8 + N` | `persist` |
 | DSP | the machine type -> selector table (DM `0x2567c0`, words `0 1 2 3 4 0 5`) is copied into `dsp.l2` with one word per type (the clone's, or `selector`), and the literal `I3 = 0x2567c0` of `FUN_001c24e9` is repointed | `dsp.machines.selector_table` |
 
@@ -1162,7 +1162,7 @@ sites (56 + 55). Cost: 16,832 bytes of expansion for four rows (16,500 + 60 K + 
 
 ### Corrections to core.machines **[C]**
 
-1. The type-argument shim of `FUN_400da3a2` (above) now returns the machine's **own** descriptor field instead of the clone's code.
+1. The type-argument shim of `FUN_400da3a2` (above) now returns the machine's **own** descriptor field instead of the clone's code (and the clone's for slots 29 and 30; a first version that returned 0 there dropped `Sample Slot` and `Sample Bank` from XSLICE's MOD list, caught by `tools/pk_proof_machines.py` part d).
    With the old mapping a new machine got the clone's defaults when selected: selecting PLUCK gave TUNE 0x4000, PLAY 0x300 in slot 1
    (DECAY would be 0.02: a click), BRIGHT 0, COLOR 0x7800. Measured before and after (`tools/pk_proof_pluck.py`, part a).
 2. After YES in the machine list the track's sound array reads **zero** in the engine slots until the next trig; the values (the

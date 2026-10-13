@@ -866,8 +866,9 @@ pub fn generate(
     // stands for: the owner-keyed map built at boot from the parameter table (7 machine types x 10 mirror slots). It
     // feeds the default values of a new sound and machine change, parameter change events and the parameter lookup
     // of the engine slots. An added type answers with its own descriptor's field for the slot (0 where the field is
-    // empty), so the defaults, ranges and names of the machine's own rows apply (core/params); every other index
-    // falls through to the stock code. The shim runs between `movea.l 4(sp),A0` (idx) and `movea.l 0xc(sp),A1`.
+    // empty), so the defaults, ranges and names of the machine's own rows apply (core/params); the two slots without
+    // a descriptor field (29, 30) answer as the clone does, and every other index falls through to the stock code.
+    // The shim runs between `movea.l 4(sp),A0` (idx) and `movea.l 0xc(sp),A1`.
     for i in 0..TYPEARG_SITES {
         let s = site(port, read, &format!("cf.machines.typearg.{i}"))?;
         expect(
@@ -876,7 +877,11 @@ pub fn generate(
             &[0x20, 0x2f, 0x22, 0x6f],
         )?;
         if s.bytes.len() != 8 {
-            return Err(err!("machines: {} is {} bytes, need 8", s.name, s.bytes.len()));
+            return Err(err!(
+                "machines: {} is {} bytes, need 8",
+                s.name,
+                s.bytes.len()
+            ));
         }
         let before = read(s.addr - 4, 4)?;
         expect(
@@ -917,7 +922,7 @@ pub fn generate(
         asm.w16(0x2442); // movea.l D2,A2
         asm.w16(0x2412); // move.l (A2),D2
         asm.w16(0x4a82); // tst.l D2
-        asm.bcc_w(0xd, "ta_none"); // lt
+        asm.bcc_w(0xd, "ta_clone"); // lt: a slot without a descriptor field (29, 30)
         asm.w16(0x0480);
         asm.w32(count); // subi.l #count,D0
         asm.moveq(1, 0x2c);
@@ -929,9 +934,14 @@ pub fn generate(
         asm.w16(0x2440); // movea.l D0,A2
         asm.w16(0x2012); // move.l (A2),D0
         asm.jmp_const(epilogue);
-        asm.label("ta_none");
-        asm.w16(0x4280); // clr.l D0
-        asm.jmp_const(epilogue);
+        // the slots without a field (29 and 30: MANUAL SLICE's `Sample Bank` and `Sample Slot` rows, which the stock
+        // map holds for its owner but no descriptor lists) answer as the clone does: the type counts as its clone
+        asm.label("ta_clone");
+        for (j, d) in defs.iter().enumerate() {
+            asm.cmpi_l(0, count + j as u32);
+            asm.w16(0x6602); // bne.b +2
+            asm.moveq(0, d.def.clone_of as i8);
+        }
         asm.label("ta_resume");
         asm.bytes(&s.bytes[4..8]); // movea.l 0xc(sp),A1
         asm.jmp_const((s.addr + 8) as u32);

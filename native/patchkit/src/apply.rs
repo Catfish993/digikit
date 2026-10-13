@@ -426,9 +426,13 @@ pub fn apply_with(
     let param_codes = if params.is_empty() {
         BTreeMap::new()
     } else {
-        let t1 = port
-            .anchor(crate::params::T1_ANCHOR)
-            .ok_or_else(|| err!("port {} has no anchor {}", port.id(), crate::params::T1_ANCHOR))?;
+        let t1 = port.anchor(crate::params::T1_ANCHOR).ok_or_else(|| {
+            err!(
+                "port {} has no anchor {}",
+                port.id(),
+                crate::params::T1_ANCHOR
+            )
+        })?;
         crate::params::assign(&params, (t1.len / crate::params::ROW as u64) as u32)
     };
     let machines = crate::machines::declared(lib, &order, &param_codes)?;
@@ -460,7 +464,12 @@ pub fn apply_with(
                 }
             }
         }
-        for op in m.manifest.op.iter().filter(|o| o.op != "register" && on(&o.devices, &dev)) {
+        for op in m
+            .manifest
+            .op
+            .iter()
+            .filter(|o| o.op != "register" && on(&o.devices, &dev))
+        {
             used.insert(op.anchor.clone());
         }
     }
@@ -690,8 +699,14 @@ pub fn apply_with(
 
     // The frameworks' patches (relocations against the generated objects).
     let framework_patches = [
-        (crate::machines::FRAMEWORK, generated.as_ref().map(|g| &g.patches)),
-        (crate::params::FRAMEWORK, generated_params.as_ref().map(|g| &g.patches)),
+        (
+            crate::machines::FRAMEWORK,
+            generated.as_ref().map(|g| &g.patches),
+        ),
+        (
+            crate::params::FRAMEWORK,
+            generated_params.as_ref().map(|g| &g.patches),
+        ),
     ];
     for (fw_id, gps) in framework_patches {
         let Some(gps) = gps else { continue };
@@ -1106,7 +1121,9 @@ fn jump_insn(a: &Anchor, op: &Op, globals: &BTreeMap<String, u64>) -> Result<Vec
         ));
     }
     if target >= 1 << 24 {
-        return Err(err!("jump: {to} = {target:#x} does not fit a 24-bit target"));
+        return Err(err!(
+            "jump: {to} = {target:#x} does not fit a 24-bit target"
+        ));
     }
     let mut out = vec![];
     out.extend_from_slice(&0x063eu16.to_le_bytes());
@@ -1167,12 +1184,18 @@ fn register_rows(
                 }
                 .or_else(|| globals.get(tok).copied())
                 .or_else(|| machine_types.get(tok).copied())
-                .ok_or_else(|| err!("{id}: register row word {tok:?} is neither a number nor a symbol"))?;
+                .ok_or_else(|| {
+                    err!("{id}: register row word {tok:?} is neither a number nor a symbol")
+                })?;
                 if i == 0 && v == 0 {
-                    return Err(err!("{id}: the first word of a registered row must be non-zero"));
+                    return Err(err!(
+                        "{id}: the first word of a registered row must be non-zero"
+                    ));
                 }
                 if v >= 1 << 32 {
-                    return Err(err!("{id}: register row word {tok:?} = {v:#x} does not fit 32 bits"));
+                    return Err(err!(
+                        "{id}: register row word {tok:?} = {v:#x} does not fit 32 bits"
+                    ));
                 }
                 let o = off + 4 * i;
                 if c.image[o..o + 4] != [0, 0, 0, 0] {
