@@ -299,6 +299,36 @@ mark = "D"
 rule = "fx/master-drive:cf_words"
 
 [[anchor]]
+name = "cf.params.sites"
+cpu = "cf"
+kind = "sites"
+addr = 0x4020f59c
+len = 111
+sha256 = "1f4f17deeb17acb8fcc09209f0e43e65d62364cc40ee0324242304e7857f1081"
+mark = "D"
+rule = "core/params:cf_params_sites"
+
+[[anchor]]
+name = "cf.params.t1"
+cpu = "cf"
+kind = "data"
+addr = 0x4020f59c
+len = 16500
+sha256 = "707eb8a904ab50e9d0006c5adb6cc6e35b689ea4719cf6667b907f6afd08b38c"
+mark = "D"
+rule = "core/params:cf_params_t1"
+
+[[anchor]]
+name = "cf.params.t2"
+cpu = "cf"
+kind = "code"
+addr = 0x400c892e
+len = 10
+sha256 = "12092c8f585bfbb2cb2fe79cc74bf53c603cf2823f8d49667cc0e42923ad010d"
+mark = "D"
+rule = "core/params:cf_func"
+
+[[anchor]]
 name = "cf.reset.clear_helper"
 cpu = "cf"
 kind = "value"

@@ -25,6 +25,43 @@ pub struct Manifest {
     /// Tables of rows that other modules fill with `register` ops.
     #[serde(default)]
     pub table: Vec<TableDecl>,
+    /// Parameter descriptors this module adds (core/params assigns the codes).
+    #[serde(default)]
+    pub param: Vec<ParamDef>,
+}
+
+/// One of a machine's nine descriptor ID fields: a stock parameter code, or a parameter a selected module adds.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum FieldRef {
+    Code(u32),
+    /// `id` of a `[[param]]` of any selected module
+    Param(String),
+}
+
+/// One parameter descriptor a content module adds: a row of the firmware's parameter table (60 bytes, finding 02)
+/// copied from a stock row, with its own names, range and default. `core/params` (`params.rs`) gives it the next
+/// free parameter code in canonical module order (a machine's `fields` may name it) and relocates the table.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ParamDef {
+    /// Symbol-safe name (`[a-z][a-z0-9_]*`), unique across the selection.
+    pub id: String,
+    /// Long name (the page header when the knob is touched).
+    pub name: String,
+    /// Short name (the label under the knob).
+    pub short: String,
+    /// Stock parameter code whose row is copied: owner, flag, kind, mask, formatter and the value-class object
+    /// the UI keeps for the code (a template of the same class: plain 0..127 values copy a level row).
+    pub template: u32,
+    /// Descriptor field (engine slot) 0..7 the parameter is used in: it fixes the mirror index (25, 26, 27, 28,
+    /// 31, 32, 33, 34, finding 02) and the slot-bound numbers of the row.
+    pub slot: u32,
+    pub min: u32,
+    pub max: u32,
+    pub default: u32,
+    /// Stock parameter code whose value formatter this row uses (default: the template's).
+    #[serde(default)]
+    pub formatter_from: Option<u32>,
 }
 
 /// One machine type a content module adds. The framework (`core/machines`, `machines.rs`) gives it the next
@@ -44,7 +81,7 @@ pub struct MachineDef {
     #[serde(default)]
     pub position: Option<usize>,
     /// The nine descriptor ID fields (parameter descriptor IDs of the SRC page), in descriptor order.
-    pub fields: Vec<u32>,
+    pub fields: Vec<FieldRef>,
     /// DSP selector word for this type (the table at `dsp.machines.selector_table`); default: the clone's.
     #[serde(default)]
     pub selector: Option<u32>,

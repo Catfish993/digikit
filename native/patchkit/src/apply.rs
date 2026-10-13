@@ -43,6 +43,8 @@ pub struct Plan {
     pub symbols: BTreeMap<String, u64>,
     /// Machine types the framework assigned: (id, type number, declaring module)
     pub machines: Vec<(String, u32, String)>,
+    /// (parameter id, assigned code, declaring module)
+    pub params: Vec<(String, u32, String)>,
     pub record: Record,
     pub output: Option<PlanOutput>,
 }
@@ -245,6 +247,21 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
                 .map(|n| format!("anchor {n}")),
         );
     }
+    if m.id() == crate::params::FRAMEWORK || !m.manifest.param.is_empty() {
+        if !m.manifest.param.is_empty() && !on(&[String::from("dt2")], dev) {
+            missing.push("parameter framework (Digitakt II only)".into());
+        }
+        for d in &m.manifest.param {
+            if let Err(e) = crate::params::validate(d, None) {
+                return Err(err!("{}: {e}", m.id()));
+            }
+        }
+        missing.extend(
+            crate::params::missing_anchors(port)
+                .into_iter()
+                .map(|n| format!("anchor {n}")),
+        );
+    }
     missing.sort();
     missing.dedup();
     if missing.is_empty() {
@@ -326,6 +343,7 @@ const EXPANSION: &str = "core/expansion";
 fn uses_expansion(lib: &Library, ids: &[String], dev: &str) -> bool {
     ids.iter().filter_map(|i| lib.get(i)).any(|m| {
         !m.manifest.machine.is_empty()
+            || !m.manifest.param.is_empty()
             || m.manifest
                 .object
                 .iter()
@@ -397,7 +415,23 @@ pub fn apply_with(
 
     // Machine types: assigned in canonical order; the framework generates its object and patches after the anchors
     // are verified.
-    let machines = crate::machines::declared(lib, &order)?;
+    let params = crate::params::declared(lib, &order)?;
+    if !params.is_empty() && !order.iter().any(|i| i == crate::params::FRAMEWORK) {
+        return Err(err!(
+            "{} adds parameters but {} is not selected (add it to `requires`)",
+            params[0].module,
+            crate::params::FRAMEWORK
+        ));
+    }
+    let param_codes = if params.is_empty() {
+        BTreeMap::new()
+    } else {
+        let t1 = port
+            .anchor(crate::params::T1_ANCHOR)
+            .ok_or_else(|| err!("port {} has no anchor {}", port.id(), crate::params::T1_ANCHOR))?;
+        crate::params::assign(&params, (t1.len / crate::params::ROW as u64) as u32)
+    };
+    let machines = crate::machines::declared(lib, &order, &param_codes)?;
     if !machines.is_empty() && !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
         return Err(err!(
             "{} adds machines but {} is not selected (add it to `requires`)",
@@ -410,6 +444,9 @@ pub fn apply_with(
     let mut used: BTreeSet<String> = BTreeSet::new();
     if !machines.is_empty() {
         used.extend(crate::machines::anchor_names());
+    }
+    if !params.is_empty() {
+        used.extend(crate::params::anchor_names());
     }
     for id in &order {
         let m = lib.get(id).unwrap();
@@ -428,7 +465,11 @@ pub fn apply_with(
         }
     }
     for name in &used {
-        verify_anchor(&mem, port.anchor(name).unwrap())?;
+        let a = port.anchor(name).unwrap();
+        if a.kind == "sites" {
+            continue; // checked by the parameter framework against its own scan
+        }
+        verify_anchor(&mem, a)?;
     }
     let generated = if machines.is_empty() {
         None
@@ -442,6 +483,19 @@ pub fn apply_with(
             &machines,
         )?)
     };
+    let generated_params = if params.is_empty() {
+        None
+    } else {
+        let read = |addr: u64, len: u64| mem.read(CF, addr, len);
+        Some(crate::params::generate(port, &read, &params)?)
+    };
+    for (id, code, module) in generated_params.iter().flat_map(|g| g.codes.iter()) {
+        for res in [format!("param.id.{id}"), format!("param.code.{code}")] {
+            if let Some(prev) = claims.insert(res.clone(), module.clone()) {
+                return Err(err!("{module} and {prev} both claim {res}"));
+            }
+        }
+    }
     // One claim per machine id and per assigned type number.
     for (id, ty, module) in generated.iter().flat_map(|g| g.types.iter()) {
         for res in [format!("machine.id.{id}"), format!("machine.type.{ty}")] {
@@ -473,8 +527,15 @@ pub fn apply_with(
     let mut placed: Vec<Placed> = vec![];
     for id in &order {
         let m = lib.get(id).unwrap();
-        if let (Some(g), true) = (&generated, id == crate::machines::FRAMEWORK) {
-            for (dko, region) in &g.objects {
+        let fw_objects: &[(Dko, &'static str)] = if id == crate::machines::FRAMEWORK {
+            generated.as_ref().map_or(&[], |g| &g.objects[..])
+        } else if id == crate::params::FRAMEWORK {
+            generated_params.as_ref().map_or(&[], |g| &g.objects[..])
+        } else {
+            &[]
+        };
+        {
+            for (dko, region) in fw_objects {
                 let (size, align) = link::footprint(dko);
                 let al = allocs
                     .get_mut(*region)
@@ -574,7 +635,7 @@ pub fn apply_with(
     }
 
     // Registrations: rows written into the tables other modules export (before the chunks are hashed and placed).
-    register_rows(lib, &order, &dev, &globals, &mut chunks)?;
+    register_rows(lib, &order, &dev, &globals, &machine_types, &mut chunks)?;
 
     // Operations.
     let mut patches: Vec<Patch> = vec![];
@@ -627,18 +688,22 @@ pub fn apply_with(
         }
     }
 
-    // The framework's patches (relocations against the generated object).
-    if let Some(g) = &generated {
+    // The frameworks' patches (relocations against the generated objects).
+    let framework_patches = [
+        (crate::machines::FRAMEWORK, generated.as_ref().map(|g| &g.patches)),
+        (crate::params::FRAMEWORK, generated_params.as_ref().map(|g| &g.patches)),
+    ];
+    for (fw_id, gps) in framework_patches {
+        let Some(gps) = gps else { continue };
         let owner = lib
-            .get(crate::machines::FRAMEWORK)
+            .get(fw_id)
             .map(|m| m.tag())
-            .unwrap_or_else(|| crate::machines::FRAMEWORK.into());
-        for gp in &g.patches {
+            .unwrap_or_else(|| fw_id.into());
+        for gp in gps {
             let a = port.anchor(&gp.anchor).unwrap();
             if gp.at + gp.bytes.len() as u64 > a.len {
                 return Err(err!(
-                    "{}: patch at {} +{} lies outside the anchor",
-                    crate::machines::FRAMEWORK,
+                    "{fw_id}: patch at {} +{} lies outside the anchor",
                     gp.anchor,
                     gp.at
                 ));
@@ -864,6 +929,7 @@ pub fn apply_with(
         regions,
         symbols: all_symbols,
         machines: generated.map(|g| g.types).unwrap_or_default(),
+        params: generated_params.map(|g| g.codes).unwrap_or_default(),
         record: rec,
         output: None,
     };
@@ -1054,6 +1120,7 @@ fn register_rows(
     order: &[String],
     dev: &str,
     globals: &BTreeMap<String, u64>,
+    machine_types: &BTreeMap<String, u64>,
     chunks: &mut [Chunk],
 ) -> Result<()> {
     let mut next: BTreeMap<String, u64> = BTreeMap::new();
@@ -1099,6 +1166,7 @@ fn register_rows(
                     None => tok.parse::<u64>().ok(),
                 }
                 .or_else(|| globals.get(tok).copied())
+                .or_else(|| machine_types.get(tok).copied())
                 .ok_or_else(|| err!("{id}: register row word {tok:?} is neither a number nor a symbol"))?;
                 if i == 0 && v == 0 {
                     return Err(err!("{id}: the first word of a registered row must be non-zero"));
