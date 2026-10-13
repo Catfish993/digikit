@@ -80,6 +80,32 @@ pub fn inspect_bundle(fw: &[u8], bundle: &[u8]) -> Result<String> {
     .to_string())
 }
 
+/// Which modules of the bundle are usable on this image: JSON `{device, sha256, port, modules: [{id, ok, error}]}`.
+/// `port` is null when no port has the image's hash (then every module is refused).
+pub fn check_bundle(fw: &[u8], bundle: &[u8]) -> Result<String> {
+    let (reg, lib) = load(bundle)?;
+    let f = crate::firmware::Firmware::parse(fw)?;
+    let port = reg.find(&f.syx_sha256);
+    let modules: Vec<_> = lib
+        .modules
+        .iter()
+        .map(|m| {
+            let r = match port {
+                Some(p) => apply::compatible(m, p),
+                None => Err(err!("no port for firmware {}", f.syx_sha256)),
+            };
+            serde_json::json!({"id": m.id(), "ok": r.is_ok(), "error": r.err().map(|e| e.0)})
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "device": f.device.short(),
+        "sha256": f.syx_sha256,
+        "port": port.map(|p| p.id()),
+        "modules": modules,
+    })
+    .to_string())
+}
+
 fn set(r: Result<(Vec<u8>, String)>) -> i32 {
     OUT.with(|o| {
         let mut o = o.borrow_mut();
@@ -165,6 +191,21 @@ pub unsafe extern "C" fn pk_inspect(
 ) -> i32 {
     let (fw, bundle) = unsafe { (slice(fw, fw_len), slice(bundle, bundle_len)) };
     set(inspect_bundle(fw, bundle).map(|j| (vec![], j)))
+}
+
+/// Per-module compatibility with an image; the JSON is in `pk_plan_*`.
+///
+/// # Safety
+/// The two ranges must be readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pk_check(
+    fw: *const u8,
+    fw_len: usize,
+    bundle: *const u8,
+    bundle_len: usize,
+) -> i32 {
+    let (fw, bundle) = unsafe { (slice(fw, fw_len), slice(bundle, bundle_len)) };
+    set(check_bundle(fw, bundle).map(|j| (vec![], j)))
 }
 
 /// Verify an image (and, if `base_len` is not 0, against that stock image); the report JSON is in `pk_plan_*`.
