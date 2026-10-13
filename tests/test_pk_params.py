@@ -29,20 +29,22 @@ def test_rules_are_declared_for_the_three_anchors():
         os.path.join(ROOT, "modules", "core", "params", "module.toml"), "rb"
     ) as f:
         m = tomllib.load(f)
-    rules = {r["name"]: r for r in m["anchor_rule"]}
-    assert set(rules) == {
-        "cf.params.t1",
-        "cf.params.ref",
-        "cf.params.bound",
-        "cf.params.t2",
-    }
-    assert rules["cf.params.t1"]["kind"] == "cf_params_t1"
-    assert rules["cf.params.ref"]["kind"] == "cf_params_refs"
-    assert rules["cf.params.bound"]["kind"] == "cf_params_bounds"
-    assert (
-        len(rules["cf.params.t2"]["hash"]) == 32 and rules["cf.params.t2"]["len"] == 10
-    )
-    assert all(r["devices"] == ["dt2"] for r in rules.values())
+    for device in ("dt2", "dn2"):
+        rules = {r["name"]: r for r in m["anchor_rule"] if r["devices"] == [device]}
+        assert set(rules) == {
+            "cf.params.t1",
+            "cf.params.ref",
+            "cf.params.bound",
+            "cf.params.t2",
+        }
+        assert rules["cf.params.t1"]["kind"] == "cf_params_t1"
+        assert rules["cf.params.ref"]["kind"] == "cf_params_refs"
+        assert rules["cf.params.bound"]["kind"] == "cf_params_bounds"
+        assert (
+            len(rules["cf.params.t2"]["hash"]) == 32
+            and rules["cf.params.t2"]["len"] == 10
+        )
+    assert all(r["devices"] in (["dt2"], ["dn2"]) for r in m["anchor_rule"])
 
 
 @pytest.mark.parametrize("version", ["1.16", "1.17"])

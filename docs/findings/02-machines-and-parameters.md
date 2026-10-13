@@ -1452,3 +1452,87 @@ the behaviour and the evidence above stand; what changed is who builds the table
   stock one; the patched image then cold-booted half a DSP block (32 frames) off the stock timeline and the exact
   PCM comparison of `pk_proof_voice_dn2.py` part a failed by -55 dB (envelope block quantisation, not content). The routines
   now test `type < machines.first` first and touch no register on that path; the comparison is exact again (shift -64).
+
+## DN2 own parameter pages: built (patchkit, lane b) **[D]**
+
+Emulator only, one agent, not checked by a second one: **[D]**. Realises "DN2 parameter pages" above as modules; the research
+there stands except where marked **[C]**. Code: `modules/core/machines` (DN2 assembly `src/cf/dn2/machines.s`, registry `pages`),
+`modules/core/params` (the Digitone II side: registry, `pf_table` section, hooks and writes for 321 rows, rules in
+`modules/core/params/module.toml`), `modules/test/dn2-pages` (the content proof), `tools/pk_proof_pages_dn2.py` (quick and full),
+`tests/test_pk_machines_dn2_fw.py` (the routines on the ColdFire call harness, 5 new tests). No change in `native/patchkit`.
+
+**What a content module writes.** Parameters as on the Digitakt (`registry = "params"`: `name`, `short`, `template` = a stock code
+of the same value class, `slot` = the **sound-array slot itself** 25..64, `min`, `max`, `default`) and one row per page:
+
+    [[entry]]
+    registry = "pages"
+    id = "pg1"
+    machine = "machines.pages.index"    # the type; pages are numbered in entry order
+    name = "PGA"; title = "Pages Test"  # the std::string pair of the page descriptor (the title is the screen header)
+    c0 = "params.pg_alpha.index"        # knob A .. H: a parameter code (own or stock), 0 = no knob; c8 = 10 (track level)
+    s0 = 25                             # the sound-array slot of that code's row
+
+`core/params` on the Digitone II appends T1 rows (60 bytes: the template's owner, flag, CC word, key and formatter; our slot, range,
+default and names) to a copy of the 321-row table, repoints the 56 references and raises the 55 bounds (the Digitakt rules
+resolve unchanged, `cf.params.ref.N`, `cf.params.bound.N`, `cf.params.t1/t2`), and the T2 accessor shim maps an added code to its
+template's value-class object (A Env Decay, `0xd5`, plain 0..0x7f00 words, for all of the proof's parameters).
+
+**What changed in the hooks, against the research.**
+
+| research said | built |
+|---|---|
+| a 40-word slot-table row per type | **no table**: `s0..s8` of the page rows are the slots of the page's knobs; `mf_pg_slot` scans the type's rows for the slot (about 9 compares per page), so authors write each (code, slot) once per page; the hook `typemap.2` answers the code for a machine slot 25..64 (0 for an unmapped slot) and otherwise runs the stock code (it ignores the type there) |
+| a `{count, begin}` page record per type | no record: `mf_pg_count` / `mf_pg_page` scan the registry; `typemap.0` answers the count, `typemap.1` returns **the registry row as the page descriptor** (it is laid out as one: two std::string character pointers, nine codes, then the machine and slots after it); a page outside the count falls to the stock code with the own type (> 4), which answers MIDI's row |
+| std::string pairs constant | built once at run time by `mf_ensure` (as the machine names): `{length, capacity, refcount -1, chars}` reps in bss, the row's two pointers rewritten in place |
+| ~17 reader call sites get the own type (`reader_call.9..`) | **[C] none**: a machine with page rows is its own type for **every** caller of the reader (one test in `mf_reader`: the type has pages). The list was incomplete: the defaults on selection (`SoundParamChangedInfo::ctor_dtor` at `0x4004c330` / `0x4004c48c`, which call the reader and then `FUN_400dc18e` per slot) also need the own type (with the clone's type the sound got FM TONE's defaults: first version), and so do the clipboard functions that feed `FUN_40045c82` / `FUN_4004610a`. Machines without page rows are unchanged (clones) |
+| T1 owner field | the template's owner (0 = FM TONE); the page layer never tests it for an added machine (the owner maps are built from stock rows only; **[O]** MIDI CC and NRPN and the owner-keyed lookups ignore added rows as on the Digitakt) |
+
+Register contracts found on the way **[D]**: the stock `FUN_400dc18e` sets `D1 = 0x64` **before** the shim site and reads it again, so
+`typemap.2` restores it (an early build clobbered D1; the unit test now pins it); `typemap.0/1` may use D0, D1, A0 (the stock code
+reloads or sets them after the site); A0 holds the slot at `typemap.2`. The reader (`FUN_4004b7f2`) calls virtuals itself, so D1,
+A0 and A1 are free there.
+
+**Evidence** (`tools/pk_proof_pages_dn2.py`, `test/dn2-pages`: type 5 `PAGES`, page 1 `ALPH BETA GAMA DELT` on slots 25, 26, 27, 30
+with ranges 0..0x7f00, 0..0x3f00, 0x100..0x7f00, 0..0x7f00 and defaults 0x2000, 0x1000, 0x7000, 0x4000, page 2 `EPSL ZETA` on 40, 41
+with defaults 0x800, 0x7f00; every input asserts no fault, halt or stall):
+
+| check | result |
+|---|---|
+| the machine list, YES | PAGES is the 5th entry (before MIDI); the reopened menu marks it; the audio mirror holds type 5 |
+| pages on screen | titled `Pages Test (1/2)` and `(2/2)`, knob labels `ALPH BETA GAMA DELT` and `EPSL ZETA`, two pages in the SYN cycle (frames 1, 2, 1) |
+| page rows read back from the running firmware | names `PGA`, `PGB`, title `Pages Test`, refcount `0xffffffff`, codes `0x141..0x144` (page 1), `0xa` last, machine 5 |
+| knobs (30 events of +4 detents 2 ms apart, TRIG 1 held) | A, B, C, D of page 1 move exactly the frame words of slots 25, 26, 27, 30 of the held voice (`0xda + 0x92 v + 2 (s - 25)`); E..H nothing; page 2 A and B move 40 and 41 (B turned down: its default is the maximum); empty knobs nothing |
+| ranges | BETA stops at `0x3f00`, GAMA at `0x100` (minimum) and `0x7f00` |
+| defaults after selection and a note | `0x2000 0x1000 0x7000 0x4000` and `0x800 0x7f00`: the machine's, not FM TONE's |
+| save, set FM TONE, load | PAGES is the track's machine again, the values are back (the words after the smoother settled); the card's sound records hold type 5; **stock** loads the same project (no fault, track 1 is FM TONE) |
+| stock machines | FM TONE SYN (4 pages), FLTR and AMP frames of the patched image equal the stock firmware's |
+| `test/dn2-clone` (a clone without page rows) | `tools/pk_proof_machines_dn2.py` still passes: see the results note of the plan |
+
+**Open [O].** MIDI CC / NRPN and p-lock for an own-pages machine (not tried); copy and paste of a sound between an own-pages machine
+and others (the clipboard callers get the own type; not run); the FLTR, AMP, FX and MOD pages of an own-pages machine were not compared
+frame by frame (they showed no seam in the PLUCK proof's runs); the widgets are the generic eight-knob page only (no algorithm or
+envelope views); hardware never flashed. Estimated the work at 1 to 2 days; it took one day of agent time.
+
+### PLUCK on Digitone II (`tools/pk_proof_pluck_dn2.py`, 1.12) **[D]**
+
+`machines/pluck` builds for the Digitone II (device-filtered entries and object): type 5 (`own_dsp`, so the FM engine renders nothing and the
+voice hook does; listed before MIDI), parameters `pluck_decay`, `pluck_pick`, `pluck_bright`, `pluck_color` (template `0xd5`, slots 25..28,
+range 0..0x7f00, defaults 0x4000, 0x2000, 0x5000, 0x2800), one page `PLUCK` / `Pluck` with those four on knobs A..D and the track level last.
+The routine and its contract: finding 06, "DN2 voice routine: PLUCK". Evidence (quick and full proof; the numbers are 1.12):
+
+| check | result |
+|---|---|
+| select, defaults | the audio mirror holds type 5; the held voice's words 25..28 are `0x4000 0x2000 0x5000 0x2800` |
+| tuning, TRIG 1 and keyboard keys (the pitch word of the voice slot against the fundamental of the rendered note) | notes 60, 61, 63, 66, 67, 72: +0.0037, -0.0045, +0.0001, +0.0019, -0.0016, -0.0002 cents |
+| DECAY (BRIGHT at the top, key held so the engine's gate stays open) | T60 0.23 s at 0x2000, 0.96 s at 0x4000 (formula 0.98 s), 2.16 s at 0x5000 (formula 2.16 s) |
+| BRIGHT | HF/LF 0.2 s into the note -13.3 dB at 0x800, +11.8 dB at 0x7f00 (+25.0 dB) |
+| COLOR | excitation HF/LF 16.7 dB at 0, -5.9 dB at the top (22.6 dB lower) |
+| PICK, COLOR, amplitude, N | the excitation the DSP writes into the slot's delay line (the last N + 1 samples, read from DSP memory 80 ms after the note-on) equals the numpy model `tools/pluck_ref.py` seeded with the DSP's noise state: **bit for bit** (max abs difference 0) at PICK 0, 0x2000, 0x3f80, 0x7f00 and COLOR 0, 0x7f00 (comb p = 0, 23, 44..46, 91). The audio statistic of the Digitakt proof (harmonics 4 and 8 down against 2, 3, 5, 6, 7, 9 at PICK = 1/2) is a weak test: the noise excitation scatters one pluck's harmonics by several dB (the model itself gives 8.5 dB over six plucks against -0.7 dB without the comb, the engine's filter adds a tilt), so the proof prints it and requires only +2.5 dB over six plucks |
+| the edge, repeated notes | 20 notes of TRIG 1 150 ms apart: 20 plucks of note 60 (sampled in tune); 40 notes 110 ms apart (past 16 voice slots, 16 strings overlapping): 40 plucks; a note after the burst sounds |
+| sequencer | a step recorded on track 1 plucks on both passes of the pattern (onsets at 2.0 s and 4.0 s, the first at note 60: +0.24 cents) |
+| save and load | DECAY and BRIGHT edited, project saved, track set to FM TONE, loaded: PLUCK (row 4) and all four values back; the card's sound records hold type 5; stock loads the project (track 1 is FM TONE), no fault |
+| harness | `tests/patchkit_smoke` cell `dn2-1.12: core/machines, core/params, core/dsp-voice, machines/pluck` (select, own page, trig sounds, BRIGHT knob moves the page) |
+
+**Differences from the Digitakt PLUCK [D].** No TUNE and no LEV rows (the engine's level is the last knob; pitch is the voice's pitch word);
+the note's end is the engine's amplitude envelope and gate, so a long DECAY is heard only while the key is held or the AMP release is long
+(the T60 measures hold the key); the amplitude of a note is the velocity word like the Digitakt's.

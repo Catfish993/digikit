@@ -30,6 +30,15 @@
     .equ O_SNAME,  60          | pointer to the short label (C string)
     .equ ROWSIZE,  64
     .equ MAXN,     32          | registry max
+| row layout of the `pages` registry (module.toml): name, title (std::string chars after mf_ensure), nine codes, the
+| machine's type, nine slots
+    .equ PG_NAME,  0
+    .equ PG_TITLE, 4
+    .equ PG_C,     8
+    .equ PG_MACH,  44
+    .equ PG_S,     48
+    .equ PG_SIZE,  84
+    .equ PGMAX,    32          | registry max of `pages`
     .equ REPSIZE,  48          | bytes per std::string representation in mf_strbuf
 
 | ---- mf_ensure: build the run-time tables once. Preserves every register (not the flags).
@@ -70,33 +79,52 @@ mf_ensure:
     subq.l  #1,%d4
     bne.s   2b
 5:    | descriptors: std::string representations of the upper-cased names
+    moveq   #1,%d6
     lea     _mf_rows,%a2
     lea     mf_strbuf,%a3
     move.l  #_mf_count,%d4
     tst.l   %d4
     beq.s   8f
 10: movea.l O_NAME(%a2),%a0
-    bsr.s   mf_rep
+    bsr.w   mf_rep
     move.l  %d0,O_LONG(%a2)
     movea.l O_SNAME(%a2),%a0
-    bsr.s   mf_rep
+    bsr.w   mf_rep
     move.l  %d0,O_SHORT(%a2)
     lea     ROWSIZE(%a2),%a2
     subq.l  #1,%d4
     bne.s   10b
-8:  moveq   #-1,%d0
+8:    | page descriptors: the names and titles as they are (the row is the descriptor)
+    moveq   #0,%d6
+    lea     _mf_pgrows,%a2
+    lea     mf_pgstr,%a3
+    move.l  #_mf_pgn,%d4
+    tst.l   %d4
+    beq.s   12f
+11: movea.l PG_NAME(%a2),%a0
+    bsr.w   mf_rep
+    move.l  %d0,PG_NAME(%a2)
+    movea.l PG_TITLE(%a2),%a0
+    bsr.w   mf_rep
+    move.l  %d0,PG_TITLE(%a2)
+    lea     PG_SIZE(%a2),%a2
+    subq.l  #1,%d4
+    bne.s   11b
+12: moveq   #-1,%d0
     move.b  %d0,mf_ready
     movem.l (%sp),%d0-%d7/%a0-%a6
     lea     60(%sp),%sp
 9:  rts
 
-| a0 = C string, a3 = destination; builds {length, capacity, refcount -1, upper-cased chars, 0} at a3, returns the
+| a0 = C string, a3 = destination, d6 = 1 to upper-case; builds {length, capacity, refcount -1, upper-cased chars, 0} at a3, returns the
 | address of the chars in d0 and advances a3 to the next 4-byte boundary. Clobbers d1, d2, a0, a1.
 mf_rep:
     moveq   #0,%d1
     lea     12(%a3),%a1
 1:  move.b  (%a0)+,%d2
     beq.s   2f
+    tst.l   %d6                     | d6 = 0: copy as it is
+    beq.s   3f
     cmpi.b  #'a',%d2
     blo.s   3f
     cmpi.b  #'z',%d2
@@ -164,15 +192,11 @@ mf_group:
 1:  jmp     _mf_t_group
 
 | ---- type maps: three functions index per-type tables built at start-up with the machine type they get as a stack
-| argument, and fall back to MIDI's row above type 4. An added type is replaced by its clone_of in the argument slot
-| before the stock code loads it (the slot is the function's own parameter). Site: function entry; off = the
-| argument's offset from the entry stack pointer.
-    .macro TYPEMAP name, off, tail
-    .globl \name
-\name:
-    move.l  \off(%sp),%d0              | d0 is loaded again by the stock code
-    cmpi.l  #_mf_first,%d0
-    bcs.s   2f                          | a stock type (or a negative one: the range check below refuses it)
+| argument, and fall back to MIDI's row above type 4. A machine with page rows (registry `pages`) answers them itself
+| (page count, page descriptor, slot -> code from its rows); any other added type is replaced by its clone_of in the
+| argument slot before the stock code loads it (the slot is the function's own parameter). Site: function entry; off
+| = the argument's offset from the entry stack pointer. d0, d1, a0, a1 are free (a0 holds the slot in mf_typemap2).
+    .macro CLONEMAP off                 | d0 = the type (>= first)
     lea     -12(%sp),%sp
     movem.l %d0-%d1/%a0,(%sp)
     subi.l  #_mf_first,%d0
@@ -183,12 +207,140 @@ mf_group:
     move.l  %d0,(12 + \off,%sp)
 1:  movem.l (%sp),%d0-%d1/%a0
     lea     12(%sp),%sp
-2:  jmp     \tail
     .endm
 
-    TYPEMAP mf_typemap0, 4, _mf_t_typemap0
-    TYPEMAP mf_typemap1, 8, _mf_t_typemap1
-    TYPEMAP mf_typemap2, 0xc, _mf_t_typemap2
+| FUN(type) -> the number of pages
+    .globl mf_typemap0
+mf_typemap0:
+    move.l  4(%sp),%d0
+    cmpi.l  #_mf_first,%d0
+    bcs.s   9f                          | a stock type (or a negative one: the range check below refuses it)
+    movea.l %d0,%a1
+    bsr.w   mf_pg_count
+    tst.l   %d0
+    beq.s   1f
+    rts                                 | the count of the machine's own pages
+1:  move.l  %a1,%d0
+    CLONEMAP 4
+9:  jmp     _mf_t_typemap0
+
+| FUN(type, page) -> the page descriptor (D2 is saved by the stock code before the site)
+    .globl mf_typemap1
+mf_typemap1:
+    move.l  8(%sp),%d0
+    cmpi.l  #_mf_first,%d0
+    bcs.s   9f
+    movea.l %d0,%a1
+    bsr.w   mf_pg_count
+    tst.l   %d0
+    beq.s   1f
+    move.l  %d0,%d1                     | count
+    move.l  0xc(%sp),%d0                | page
+    bmi.s   9f                          | out of range: the stock code answers MIDI's row (the type is above 4)
+    cmp.l   %d1,%d0
+    bcc.s   9f
+    move.l  %d0,%d1
+    move.l  %a1,%d0
+    bsr.w   mf_pg_page                  | a0 = the row (the descriptor)
+    move.l  %a0,%d0
+    move.l  (%sp)+,%d2
+    rts
+1:  move.l  %a1,%d0
+    CLONEMAP 8
+9:  jmp     _mf_t_typemap1
+
+| FUN(slot, type, sub) -> the parameter code (D2 saved by the stock code; a0 = the slot and d1 = 0x64 are loaded already; both are kept)
+    .globl mf_typemap2
+mf_typemap2:
+    move.l  0xc(%sp),%d0
+    cmpi.l  #_mf_first,%d0
+    bcs.s   9f
+    move.l  %a0,%d1
+    movea.l %d0,%a1
+    bsr.w   mf_pg_slot                  | d0 = the code, d1 = 1 when the type has pages; a0 is lost
+    movea.l 8(%sp),%a0
+    tst.l   %d1
+    beq.s   1f
+    move.l  %a0,%d1
+    subi.l  #0x19,%d1
+    cmpi.l  #0x27,%d1
+    bls.s   2f
+    moveq   #0x64,%d1                   | not a machine slot: the stock code does not look at the type
+    bra.s   9f
+2:  move.l  (%sp)+,%d2
+    rts
+1:  move.l  %a1,%d0
+    CLONEMAP 0xc
+    moveq   #0x64,%d1                   | the stock code set d1 before the site and reads it again
+9:  jmp     _mf_t_typemap2
+
+| ---- page rows. mf_pg_count: d0 = type -> d0 = the number of its pages (builds the tables first); clobbers d1, a0.
+mf_pg_count:
+    bsr.w   mf_ensure
+    move.l  %d2,-(%sp)
+    move.l  #_mf_pgn,%d2
+    lea     _mf_pgrows,%a0
+    moveq   #0,%d1
+    tst.l   %d2
+    beq.s   9f
+1:  cmp.l   PG_MACH(%a0),%d0
+    bne.s   2f
+    addq.l  #1,%d1
+2:  lea     PG_SIZE(%a0),%a0
+    subq.l  #1,%d2
+    bne.s   1b
+9:  move.l  %d1,%d0
+    move.l  (%sp)+,%d2
+    rts
+
+| mf_pg_page: d0 = type, d1 = page (< its count) -> a0 = the page's row; clobbers d1.
+mf_pg_page:
+    move.l  %d2,-(%sp)
+    move.l  #_mf_pgn,%d2
+    lea     _mf_pgrows,%a0
+    tst.l   %d2
+    beq.s   8f
+1:  cmp.l   PG_MACH(%a0),%d0
+    bne.s   2f
+    tst.l   %d1
+    beq.s   7f
+    subq.l  #1,%d1
+2:  lea     PG_SIZE(%a0),%a0
+    subq.l  #1,%d2
+    bne.s   1b
+8:  suba.l  %a0,%a0
+7:  move.l  (%sp)+,%d2
+    rts
+
+| mf_pg_slot: d0 = type, d1 = sound-array slot -> d0 = the code of the knob that has that slot on one of the type's
+| pages (0 if none), d1 = 1 when the type has pages at all; clobbers a0.
+mf_pg_slot:
+    lea     -12(%sp),%sp
+    movem.l %d2-%d4,(%sp)
+    move.l  #_mf_pgn,%d2
+    lea     _mf_pgrows,%a0
+    moveq   #0,%d3
+    moveq   #0,%d4
+    tst.l   %d2
+    beq.w   8f
+1:  cmp.l   PG_MACH(%a0),%d0
+    bne.w   6f
+    moveq   #1,%d3
+    .irp i,0,1,2,3,4,5,6,7,8
+    cmp.l   PG_S + 4 * \i(%a0),%d1
+    bne.s   5f
+    move.l  PG_C + 4 * \i(%a0),%d4
+    bra.w   8f
+5:
+    .endr
+6:  lea     PG_SIZE(%a0),%a0
+    subq.l  #1,%d2
+    bne.w   1b
+8:  move.l  %d4,%d0
+    move.l  %d3,%d1
+    movem.l (%sp),%d2-%d4
+    lea     12(%sp),%sp
+    rts
 
 | ---- frame type: the frame builder (the vector-191 handler) writes the track's machine type into TX frame word
 | 0x94 + 2t. The DSP's FM engine knows five types; a type above 4 is treated like MIDI (nothing rendered), so an
@@ -226,30 +378,38 @@ mf_frametype:
 mf_reader:
     mvs.b   0xde(%a0),%d0
     cmpi.l  #_mf_first,%d0
-    blt.s   9f
+    blt.w   9f
     move.l  %d0,%d1
     subi.l  #_mf_first,%d1
     cmpi.l  #_mf_count,%d1
-    bcc.s   9f
+    bcc.w   9f
     move.l  4(%sp),%d1
     cmpi.l  #_mf_rc0 + 4,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc1 + 4,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc2 + 6,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc3 + 6,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc4 + 6,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc5 + 6,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc6 + 6,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc7 + 6,%d1
-    beq.s   9f
+    beq.w   9f
     cmpi.l  #_mf_rc8 + 6,%d1
-    beq.s   9f
+    beq.w   9f
+    | a machine with own pages is its own type for every caller (the page, draw, defaults and clipboard code all index
+    | per-type structures that have its rows): the other added types look like their clone
+    move.l  %d0,-(%sp)
+    bsr.w   mf_pg_count
+    move.l  %d0,%d1
+    move.l  (%sp)+,%d0
+    tst.l   %d1
+    bne.w   9f
     move.l  %a1,-(%sp)
     subi.l  #_mf_first,%d0
     move.l  #ROWSIZE,%d1
@@ -290,9 +450,11 @@ mf_owner:
 9:  move.l  %d2,-(%sp)
     jmp     _mf_ow + 6
 
+
     .bss
     .balign 4
     .globl mf_list_buf
 mf_ready:    .space 4
 mf_list_buf: .space 4 * 64
 mf_strbuf:   .space REPSIZE * 2 * MAXN
+mf_pgstr:    .space REPSIZE * 2 * PGMAX
