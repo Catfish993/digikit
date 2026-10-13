@@ -35,3 +35,8 @@ modules = ["core/machines", "test/machine-clone"]
 device = "dn2"
 firmware = "1.12"
 modules = ["core/machines", "test/dn2-clone"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/machines", "core/dsp-voice", "test/dn2-sine"]

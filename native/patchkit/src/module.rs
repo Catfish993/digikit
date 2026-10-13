@@ -57,6 +57,9 @@ pub struct MachineDef {
     /// 06). Default: the ColdFire sends the clone's type, so the FM engine renders the clone like its original.
     #[serde(default)]
     pub own_dsp: bool,
+    /// Restrict to these devices (`dt2`, `dn2`); empty = all.
+    #[serde(default)]
+    pub devices: Vec<String>,
 }
 
 /// A table a module exports: a data symbol of `rows` rows of `row_words` 32-bit words each, all zero, in which

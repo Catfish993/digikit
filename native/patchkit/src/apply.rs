@@ -394,7 +394,7 @@ pub fn apply_with(
 
     // Machine types: assigned in canonical order; the framework generates its object and patches after the anchors
     // are verified.
-    let machines = crate::machines::declared(lib, &order)?;
+    let machines = crate::machines::declared(lib, &order, &port.port.device)?;
     if !machines.is_empty() && !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
         return Err(err!(
             "{} adds machines but {} is not selected (add it to `requires`)",
@@ -571,7 +571,10 @@ pub fn apply_with(
     }
 
     // Registrations: rows written into the tables other modules export (before the chunks are hashed and placed).
-    register_rows(lib, &order, &dev, &globals, &mut chunks)?;
+    // a register row may name an assigned machine type as `machines.<id>.type`
+    let mut row_symbols = globals.clone();
+    row_symbols.extend(machine_types.clone());
+    register_rows(lib, &order, &dev, &row_symbols, &mut chunks)?;
 
     // Operations.
     let mut patches: Vec<Patch> = vec![];

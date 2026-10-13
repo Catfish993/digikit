@@ -90,11 +90,16 @@ pub struct Declared {
 }
 
 /// The machines of the selected modules in canonical order (the order of `order`, then declaration order).
-pub fn declared(lib: &Library, order: &[String]) -> Result<Vec<Declared>> {
+pub fn declared(lib: &Library, order: &[String], device: &str) -> Result<Vec<Declared>> {
     let mut out: Vec<Declared> = vec![];
     for id in order {
         let m = lib.get(id).ok_or_else(|| err!("unknown module {id}"))?;
-        for d in &m.manifest.machine {
+        for d in m
+            .manifest
+            .machine
+            .iter()
+            .filter(|d| d.devices.is_empty() || d.devices.iter().any(|x| x == device))
+        {
             if let Some(prev) = out.iter().find(|p| p.def.id == d.id) {
                 return Err(err!(
                     "machine id {} is declared by both {} and {id}",
@@ -1176,6 +1181,7 @@ mod tests {
             desc_name: None,
             desc_short: None,
             own_dsp: false,
+            devices: vec![],
         };
         assert!(validate(&d).is_ok());
         d.id = "X-slice".into();

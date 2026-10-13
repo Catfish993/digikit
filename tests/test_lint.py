@@ -67,6 +67,7 @@ CLEAN = [
     "tools/card_overlay.py",
     "tools/pk_proof_machines.py",
     "tools/pk_proof_machines_dn2.py",
+    "tools/pk_proof_voice_dn2.py",
     "tools/pk_machine_rules_dn2.py",
     "tests/test_pk_machines.py",
     "tools/pk_aplib_eq.py",

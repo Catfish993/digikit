@@ -5,7 +5,7 @@ name = "DSP voice hook"
 category = "core"
 status = "experimental"
 summary = "Per-voice render hook of the SHARC engine: machine types registered by other modules render with their own DSP routine, every other type renders as stock"
-ports = ["dt2-1.16", "dt2-1.17"]
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
 requires = []
 conflicts = []
 
@@ -14,7 +14,7 @@ conflicts = []
 "dt2-1.16" = "untested"
 "dt2-1.17" = "experimental"
 "dn2-1.11" = "untested"
-"dn2-1.12" = "untested"
+"dn2-1.12" = "experimental"
 
 [[object]]
 path = "build/dsp-voice-dsp.dko.json"
@@ -26,6 +26,24 @@ devices = ["dt2"]
 _fw_type_cache = "dsp.voice.type_cache"
 _fw_render_next = "dsp.voice.render_next"
 _fw_frame = "dsp.voice.frame_base"
+
+# Digitone II: the render hook of the FM engine's host (docs/findings/06, "Per-voice hook on DN2"); another object, the
+# same registration table and claim.
+[[object]]
+path = "build/dsp-voice-dn2-dsp.dko.json"
+sources = ["src/dsp/dsp-voice-dn2.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[object.externs]
+_fw_frame = "dsp.voice.frame_base"
+_fw_render_next = "dsp.voice.render_next"
+
+[[op]]
+op = "jump"
+anchor = "dsp.voice.render_entry"
+to = "_dv_entry"
+devices = ["dn2"]
 
 # The first instruction of the stock sample renderer becomes JUMP _dv_entry; the wrapper executes it.
 [[op]]
@@ -81,4 +99,36 @@ cpu = "sharc"
 kind = "sharc_literal"
 reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780"
 offset = 0x14d
+mark = "D"
+
+# ---- Digitone II (FUN_b8251b: the helper the engine calls once per voice buffer after the FM synthesis, first
+# instruction `I7 = MODIFY(I7, -18)`, 48 bits, displaced; the DSP's frame copy is the literal `I4 = 0x25c48c` of the
+# per-block copy in FUN_1c2712).
+[[anchor_rule]]
+name = "dsp.voice.render_entry"
+devices = ["dn2"]
+cpu = "sharc"
+kind = "sharc_func"
+reloc_hash = "7cb2e56b587600a04d8d3876f254fa6fc326af68e6d6e8c7741517e316640dec"
+offset = 0x0
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "dsp.voice.render_next"
+devices = ["dn2"]
+cpu = "sharc"
+kind = "sharc_func"
+reloc_hash = "7cb2e56b587600a04d8d3876f254fa6fc326af68e6d6e8c7741517e316640dec"
+offset = 0x3
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "dsp.voice.frame_base"
+devices = ["dn2"]
+cpu = "sharc"
+kind = "sharc_literal"
+reloc_hash = "4cc8a46bca990a7bd883d1784307a9cd72aa828a1ae846977e337fbc5c54c010"
+offset = 0x165
 mark = "D"
