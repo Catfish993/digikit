@@ -183,9 +183,9 @@ Code: `native/control/src/health.rs` (pure logic, 5 unit tests), `controller.rs`
   SCM register except the write-only PPMCR (`ppmcr_contract`). So the firmware does not configure the watchdog as far
   as a static read shows (computed addresses are not excluded), and the emulator would not model it. A hang
   therefore shows only as a `stall` here; on hardware the unconfigured CWT is off after reset (CWCR[CWE] cleared). **[D]**
-- **DSP halt in a stock run** **[D]** **[O]**: DT2 1.17 stock, ready state with the one-sample card: pattern 3 or 4
-  (`PTN` + `TRIG 3`/`4`) then PLAY halts the DSP: `native-trap: sharc_core.forms_dag._type_7a:63: stop: unsupported
-  Type7a predicate at 0x1cbc93` (`IF EQ modify(I4, M4)`, a conditional MODIFY inside function `0x1cbc44`). Patterns 1
-  and 2 and every other tour step run clean. The generated cores stop at the first conditional Type 7a; fixing it
-  changes `tools/sharc_core` and so `CORE_FINGERPRINT` (all cores regenerate). The smoke tour avoids it; a pytest
-  (`test_a_dsp_halt_is_a_failure`) keeps the detector honest and skips when the halt is gone.
+- **DSP halt in a stock run** **[D]** **[C]**: DT2 1.17 stock, pattern 3 or 4 (`PTN` + `TRIG 3`/`4`) then PLAY halted the DSP
+  on a conditional Type 7a (`native-trap: sharc_core.forms_dag._type_7a:63: stop: unsupported Type7a predicate at
+  0x1cbc93`, `IF EQ modify(I4, M4)`). Fixed in `tools/sharc_core` (finding 05, "Conditional Type 7a"); with the
+  regenerated cores PLAY in patterns 3 and 4 runs clean on DT2 1.17 and 1.16
+  (`test_play_in_patterns_3_and_4_runs_clean`), and `test_a_dsp_halt_is_a_failure` now provokes the halt with an
+  undecodable word at that address (`dsp.patch`).

@@ -130,6 +130,7 @@ pub fn verify(syx_bytes: &[u8], reg: Option<&Registry>, base: Option<&[u8]>) -> 
     let port = reg.and_then(|r| r.find(&fw.syx_sha256).or(None));
     let dsp = fw.section(7).ok_or_else(|| err!("no DSP section"))?;
     let stream = Stream::parse(dsp.data.clone())?;
+    crate::bootrom::require(&stream.blob)?;
     let mut record = None;
     let mut segments: Vec<(u64, u64, u64)> = vec![];
     if let Some(main) = fw.section(3) {

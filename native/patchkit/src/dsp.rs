@@ -11,6 +11,8 @@ const FINAL_BIT: u32 = 1 << 15;
 pub const SW_ALIAS_BASE: u32 = 0x2800_0000;
 pub const L2_BYTE_BASE: u32 = 0x2000_0000;
 pub const L2_BYTE_LIMIT: u32 = 0x2010_0000;
+/// First byte of the boot ROM's own workspace (HWR 40-2): L2 up to here is bootable (`bootrom::ROM_WORKSPACE`).
+pub const L2_BOOT_LIMIT: u32 = crate::bootrom::ROM_WORKSPACE.0;
 /// L2 code is addressed by short-word pc from here (pc = this + (byte - L2_BYTE_BASE) / 2).
 pub const L2_SW_BASE: u32 = 0x00B8_0000;
 /// The ColdFire boot routine sends at most this many depacked bytes.
@@ -155,9 +157,9 @@ impl Stream {
         let mut payload = data.to_vec();
         payload.resize(data.len().div_ceil(4) * 4, 0);
         let end = addr as u64 + payload.len() as u64;
-        if addr < L2_BYTE_BASE || end > L2_BYTE_LIMIT as u64 {
+        if addr < L2_BYTE_BASE || end > L2_BOOT_LIMIT as u64 {
             return Err(err!(
-                "APPEND {addr:#x}..{end:#x}: outside L2 {L2_BYTE_BASE:#x}..{L2_BYTE_LIMIT:#x}"
+                "APPEND {addr:#x}..{end:#x}: outside bootable L2 {L2_BYTE_BASE:#x}..{L2_BOOT_LIMIT:#x}"
             ));
         }
         for a in (addr..end as u32).step_by(4) {
@@ -182,7 +184,22 @@ impl Stream {
                 self.blob.len() + block.len()
             ));
         }
+        let grown = block.len() as u32;
         self.blob.splice(fin..fin, block);
+        // Each FIRST block's ARGUMENT is the byte count to the next application (or the end of the stream;
+        // HWR 40-85 pNextDxe, bootrom rule H12): grow the ones that span the insertion point.
+        for b in &self.blocks {
+            if b.code & (1 << 14) != 0
+                && b.offset < fin
+                && fin <= b.offset + HEADER_LEN + b.argument as usize
+            {
+                let o = b.offset;
+                let h = &mut self.blob[o..o + HEADER_LEN];
+                h[12..16].copy_from_slice(&(b.argument + grown).to_le_bytes());
+                h[2] = 0;
+                h[2] = h.iter().fold(0u8, |a, &x| a ^ x);
+            }
+        }
         *self = Stream::parse(std::mem::take(&mut self.blob))?;
         Ok(())
     }

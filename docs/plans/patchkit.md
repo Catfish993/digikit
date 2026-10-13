@@ -421,6 +421,39 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_
 - Cross-porting between devices (for example DN2 FM Drum onto DT2): a module section sourced from the user's second
   firmware at patch time, so no vendor bytes are stored. Research only; the `.dko` format leaves room for it.
 
+## Emulator confidence, wave 3 (2026-10-13, lane `a`)
+
+- Conditional Type 7a is modelled (finding 05): DT2 1.17 and 1.16 PLAY in patterns 3 and 4 runs clean; DN2 pins and the
+  61 oracles, DT2 tone, oracles and tier-quick pass against regenerated cores (`gen-next` dirs, coordinator swaps them
+  in at merge).
+- Boot ROM rules (finding 06, "Boot ROM conformance"): `tools/sharc_bootcheck.py`, `native/patchkit/src/bootrom.rs`;
+  stock streams, `fx/master-gain`, `fx/master-drive` and the L2 canary pass. Two defects fixed: the FIRST block's
+  next-application pointer was not grown by `append_block`, and the append window included the ROM's 8 KB workspace.
+  The emulator now refuses such streams (`tools/ready.py`, `firmware.load`, `patchkit verify`).
+- selcc pointers: a normal-word access through a byte-address pointer matches the manual (finding 05).
+
+## Pre-flash review (what no emulator run or public manual closes)
+
+Em flashes nothing until everything works in the emulator; these are the risks that remain after that, each with the
+best mitigation available. Ranked by what a failure costs.
+
+| # | Risk | Evidence now | Mitigation |
+|---|---|---|---|
+| 1 | The boot ROM rejects the patched DSP stream (it applies a rule the manual does not state) | All stated rules checked on stock, gain, drive and canary streams (finding 06). A rejected stream is a **boot hang**: the ColdFire polls the SHARC handshake with no timeout | First hardware step is the image that changes nothing (`tools/patched_image.py`), then a DSP change with no appended block (`fx/master-gain` is a 3-byte in-place edit plus a 148-byte record block: take the smallest first), then the append. Keep the stock `.syx` and the STARTUP-menu recovery (0.2) at hand |
+| 2 | Cycle cost: the emulator counts instructions, silicon counts cycles (L2 fetch and data wait states, cache misses on first execution, bank conflicts, SIMD memory pairs) | `fx/master-drive`: 20 to 968 DSP instructions per block; idle share 50 % (DN2), 68 % (DT2) measured in instructions (finding 22, 0.7) | Budget a module at no more than a quarter of the measured idle instructions per block; keep the hot loop short enough to stay in the cache; the neutral setting bypasses the heavy path where the module allows it. Listen for clicks at the first run; there is no `underrun` event in the emulator |
+| 3 | Real DDR contents and timing: the emulator fills DDR from the stream's FILL blocks and skips the initcode's clock and DMC calibration | No patch writes DDR; sample RAM use is stock | None needed while modules stay out of DDR; keep it that way in v1 |
+| 4 | Boot time grows with the stream: the ColdFire sends one byte per DSPI frame and handshake poll; the canary doubles the section | Gain +148 B, drive +620 B on 321 KB; the transfer time per byte was not measured against hardware | Ship modules small; use the canary only on the emulator |
+| 5 | SPI slave boot expects multiples of 1024 bytes (HWR 40-21); the stock section is not | Stock boots with a short tail; patched tails differ (finding 06 (d)) | If the first appended image hangs while the in-place-only image boots, pad the appended block so that the section length keeps the stock value mod 1024 (505 including the command byte); a one-line change in `append_block` |
+| 6 | L1 targets and L1 PM room (appends refuse L1); the datasheet map is not in `out/refs` | No L1 appends | None; L2 only |
+| 7 | Rules and state of the ROM-prepared environment: L2 ECC initialised, caches off at handover, `RCU_BCODE` bits | Stock code already runs from L2 loaded this way (DT2: the 109 KB block at `0x20000000` holds functions at pc `0xb80000...`, 24,070 instructions in sharcdb) | Same path as stock; nothing to do |
+| 8 | Float behaviour on silicon against the core: denormal flush, saturation mode, reciprocal approximation (`approx_recips`) in module code | Seven DN2 PCM pins and 61 oracles exact against the core; module code unit-run and PCM-proved in the emulator only | Prefer plain add, multiply and compare in module code; check a module's output against its emulator render by ear and by the harness PCM test before trusting a new operation |
+| 9 | Interrupts, DMA and ColdFire timing under real load (the DSPI frame cadence, SSI underruns, hot sample loading): the emulator is deterministic | Coupled runs and 35 s tours pass; 40-input stress in the harness | Hardware soak after the first success |
+| 10 | The MAIN OS image validator (`0x400d9e4c`) and the real flash writer were not run; flash cap 3 MiB and the HMAC trailer are checked by the emulated bootstrap | 0.2 [V] for the bootstrap; patched containers rebuild stock byte for byte | The harmless image first; the updater's own checks reject a bad container before it writes (the bootstrap runs from section 2, which patchkit never touches) |
+| 11 | Firmware version: the device runs 1.16; most proofs ran on 1.17 (and DN2 1.12). 1.16 has the same DSP section; its MAIN differs, `fx/master-drive` was not run on 1.16, and 36 of 135 DT2 FX oracles differ on 1.17 | Port files for 1.16 exist; 1.16 PLAY in patterns 3 and 4 passes | Run the module test tour on 1.16 in the emulator before the first flash (`DIGI_PK_READY_DT2_116`, `tests/patchkit_smoke`), and flash the 1.16 port |
+| 12 | DN2 patches cannot be tested on hardware at all (no device on the desk) | Emulator only | Say so on the gallery page: DN2 modules are emulator-tested only |
+| 13 | Saved projects and kits made on patched firmware read back on stock firmware (Phase 3 not done) | Not tested | Do not save over a stock project while testing; back up the card |
+| 14 | Analog level: a drive or gain module can raise the output above the converter's range | Q31 clip in the emulator, neutral default is bit-exact | Start at the neutral setting with the monitor volume low |
+
 ## Rules
 
 - Never change sections 2, 4 or 8. patchkit enforces this with no override.

@@ -37,7 +37,9 @@ docs/findings/06-sharc-engine-and-startup.md "Appending to the boot stream").
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
+import operator
 import re
 import struct
 import sys
@@ -197,7 +199,10 @@ def check(img: Image, patch: Patch, syx: Path | None) -> None:
 # bytes, so this only keeps blocks out of L1, the SDRAM window and the MMR space).
 L2_BYTE_BASE = 0x2000_0000
 L2_BYTE_LIMIT = 0x2010_0000
-APPEND_WINDOWS = ((L2_BYTE_BASE, L2_BYTE_LIMIT),)
+# The boot ROM refuses a block aimed at its 8 KB workspace 0x200FE000..0x20100000 (HWR 40-2 Table 40-1 and
+# note; tools/sharc_bootcheck.py rule H9). That range is free at run time, but not bootable.
+ROM_WORKSPACE_BASE = 0x200F_E000
+APPEND_WINDOWS = ((L2_BYTE_BASE, ROM_WORKSPACE_BASE),)
 # The ColdFire boot routine (FUN_400ccf74 on DT2 1.16) refuses a depacked section 7 over 0xfffff bytes.
 MAX_STREAM = 0xFFFFF
 
@@ -301,6 +306,18 @@ class Stream:
             )
         at = int(final["offset"])
         self.blob[at:at] = block
+        # Each FIRST block's ARGUMENT is the byte count to the next application (or the end of the stream,
+        # HWR 40-85 pNextDxe; sharc_bootcheck H12): grow the ones that span the insertion point.
+        for b in self.mem.blocks:
+            if (
+                "FIRST" in b["flags"]
+                and b["offset"] < at <= b["offset"] + 16 + b["argument"]
+            ):
+                head = bytearray(self.blob[b["offset"] : b["offset"] + 16])
+                struct.pack_into("<I", head, 12, b["argument"] + len(block))
+                head[2] = 0
+                head[2] = functools.reduce(operator.xor, bytes(head))
+                self.blob[b["offset"] : b["offset"] + 16] = head
         self.mem = _loaded_memory(bytes(self.blob))
         return len(self.blob)
 

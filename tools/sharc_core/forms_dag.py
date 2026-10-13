@@ -27,12 +27,14 @@ from .memory import (
 from .sequencer import (
     _advance,
     _predicate,
+    _predicate_pe,
 )
 from .state import (
     State,
     _copy,
     _event,
     _json_value,
+    _simd_active,
     _snapshot_uregs,
     _stop,
     _ureg,
@@ -59,8 +61,6 @@ def _type_7a(
     # parallel with its optional compute.  The table now carries the M
     # register selector at bits 29-27, the same field Type7b uses.
     cond = _field(f, "cond")
-    if cond not in (0x1F, 0x17):
-        return [_stop(state, insn, "unsupported Type7a predicate")]
     bank = 8 if _field(f, "g") else 0
     source_low = _field(f, "is[2:2]") << 2 | _field(f, "is[1:0]")
     destination_low = source_low ^ _field(f, "idis")
@@ -83,11 +83,64 @@ def _type_7a(
         access_width = "normal-word"
     else:
         access_width = None
-    conditional = cond == 0x17
+    conditional = cond != 0x1F
     circular_wrap: Const | None = None
+    run_x: bool | None = True
+    run_y: bool | None = _simd_active(state) is True
     if conditional:
-        if _field(f, "compute[22:16]") or _field(f, "compute[15:0]"):
-            return [_stop(state, insn, "unsupported Type7a conditional compute")]
+        # PRM p.14-47: "If a condition is specified, it affects the entire
+        # instruction", compute and index modify alike.  SISD tests PEx's
+        # condition.  SIMD tests it in each PE for the compute; the modify
+        # happens when either PE's test is true (logical OR).
+        simd = _simd_active(state)
+        modify_runs: bool | None
+        if simd is True:
+            run_x = _predicate_pe(state, cond, "x")
+            run_y = _predicate_pe(state, cond, "y")
+            if run_x is True or run_y is True:
+                modify_runs = True
+            elif run_x is False and run_y is False:
+                modify_runs = False
+            else:
+                modify_runs = None
+        elif simd is False:
+            run_x = _predicate(state, cond)
+            run_y = False
+            modify_runs = run_x
+        else:
+            # SIMD unresolved: PEx true makes the modify happen either way
+            # (OR of both PEs); PEy's compute outcome is then unknown.
+            run_x = _predicate(state, cond)
+            run_y = False
+            modify_runs = True if run_x else None
+            if run_x and (_field(f, "compute[22:16]") or _field(f, "compute[15:0]")):
+                return [
+                    _stop(state, insn, "unresolved SIMD conditional Type7a compute")
+                ]
+        if modify_runs is False:
+            _event(
+                state,
+                insn,
+                "i-modify-skipped",
+                source="I%d" % source,
+                destination="I%d" % destination,
+                predicate="false in every active PE",
+            )
+            return _advance(state, insn)
+        if modify_runs is None:
+            state.uregs[16 + destination] = Unknown("conditional Type7a modify outcome")
+            _event(
+                state,
+                insn,
+                "i-modify-uncertain",
+                source="I%d" % source,
+                destination="I%d" % destination,
+                predicate="unresolved",
+                scale_assumption="assume_nw32"
+                if state.assume_nw32
+                else "unscaled normal-word",
+            )
+            return _advance(state, insn)
         length = _ureg(state.uregs, UREG_CODES["L%d" % source])
         if isinstance(length, Const) and length.value != 0:
             # The MODIFY instruction wraps whenever L is nonzero,
@@ -122,38 +175,6 @@ def _type_7a(
                 return [_stop(state, insn, "unsupported Type7a circular modify")]
         elif not isinstance(length, Const):
             return [_stop(state, insn, "unsupported Type7a circular modify")]
-        predicate = _predicate(state, cond)
-        mode1 = _ureg(state.uregs, UREG_CODES["MODE1"])
-        if (
-            predicate is False
-            and isinstance(mode1, Const)
-            and not (mode1.value & (1 << 21))
-        ):
-            _event(
-                state,
-                insn,
-                "i-modify-skipped",
-                source="I%d" % source,
-                destination="I%d" % destination,
-                predicate="PEx false, SISD",
-            )
-            return _advance(state, insn)
-        if predicate is not True:
-            state.uregs[16 + destination] = Unknown("conditional Type7a modify outcome")
-            _event(
-                state,
-                insn,
-                "i-modify-uncertain",
-                source="I%d" % source,
-                destination="I%d" % destination,
-                predicate="PEx unknown"
-                if predicate is None
-                else "PEx false, SIMD unknown",
-                scale_assumption="assume_nw32"
-                if state.assume_nw32
-                else "unscaled normal-word",
-            )
-            return _advance(state, insn)
     # SHARC+ PRM, SIMD mode: the compute of a Type 7a executes in both
     # processing elements (the index modify is shared).
     try:
@@ -203,8 +224,11 @@ def _type_7a(
                 else {}
             ),
         )
-    if compute is not None:
-        _apply_compute_simd(state, insn, compute, compute_y)
+    if not run_x:
+        compute = None
+    if not run_y:
+        compute_y = None
+    _apply_compute_simd(state, insn, compute, compute_y)
     return _advance(state, insn)
 
 

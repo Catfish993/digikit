@@ -5290,8 +5290,7 @@ exercise; keep `0x200fa000..0x200fe000` out of the allocator on DT2 until a path
 922,756 bytes (DT2) and 491,972 bytes (DN2), of which the stream can carry 727,540 and 211,600. Static references and
 the unexercised paths (sample recording to RAM, sample load beyond one file, MIDI) remain **[O]**.
 
-**Open.** (1) Whether the real SHARC boot ROM accepts the extra block is an expectation from the ADI block format
-(every header validates, the block precedes FINAL), not a test: **[O]**, hardware. (2) L1: the sizes of the L1 blocks are
+**Open.** (1) Whether the real SHARC boot ROM accepts the extra block: partly closed by the rule check in "Boot ROM conformance" below, which also corrects this section (**[C]**: the free range up to `0x20100000` includes the ROM's own 8 KB workspace, which a boot block may not target, and the append did not update the FIRST blocks' next-application pointer); the rest is hardware **[O]**. (2) L1: the sizes of the L1 blocks are
 in the datasheet, which is not under `out/refs/`; the emulator accepts writes anywhere, so a run cannot show that the
 gaps between the loaded L1 windows (`0x2826f000..0x282c0000`, `0x282d8000..0x28380000` on DT2) are RAM. L1 PM room stays
 **[O]**; `append_block` refuses L1. (3) The append lengths above assume nothing else raises the stored size past
@@ -5440,3 +5439,63 @@ code can be placed, run and verified; the rest is mapping.
   contract table above covers the sample path only); how a voice record is allocated at note-on (ColdFire
   trig -> `0x1c60a2`); whether `0x1c5576` is a second path that an added type must also cover; the
   decimator state at `+0x104`.
+
+## Boot ROM conformance of the SHARC boot stream (2026-10-13) **[D]** **[C]**
+
+The emulator flattens the block list (`sharcldr.LoadedMemory`, `dsp_stream.rs`) and never runs the boot ROM, and its
+parsers stop silently at the first bad header. Rules below come from the public ADSP-2156x Hardware Reference
+(`out/refs/adsp-2156x-hwr`, chapter 40, printed pages "HWR 40-nn"); `tools/sharc_bootcheck.py` applies them to a
+stream (rule ids H1 to H13, S1 in its docstring), `native/patchkit/src/bootrom.rs` is the Rust port of the error
+rules. Marks: ROM = stated by the manual, CONV = not stated as a ROM check but true of every stock stream.
+
+| Rule | Source | Check |
+|---|---|---|
+| H1 HDRSIGN | 40-39, 40-60 | byte 3 is `0xAD` for core 0 (`0xAC`, `0xAB` are other cores; error `HDRSGN` 0xA) |
+| H2 HDRCHK | 40-39, 40-60 | XOR of the 16 header bytes is 0 (error 0xC). Table 40-27 says "XOR of the other 24 bits"; only the whole-header reading holds on stock headers (the three-byte reading (byte 2 = byte 0 ^ byte 1 ^ byte 3) holds for 0 of the 104 DT2 headers, `tests/test_sharc_bootcheck.py`) |
+| H3 alignment | 40-39 | BYTE_COUNT and a load TARGET_ADDRESS are multiples of 4. FIRST/FINAL blocks carry the entry pc (DN2: `0x1c12e2`, 2-byte aligned) and boot on the real device, so the address rule is applied to blocks that load memory only |
+| H4/H5 FIRST | 40-40 | the first block of the stream has BFLAG_FIRST; FIRST cannot be a FILL block |
+| H6/H7 FILL, IGNORE | 40-42 | FILL: no payload, ARGUMENT is the word; IGNORE: payload present and skipped; INIT, CALLBACK, FINAL, AUX are cleared on an IGNORE block |
+| H8 FINAL | 40-41, 40-60 | the stream ends with FINAL (else `NOFINAL` 0xE); nothing is read after it. The ColdFire sends every byte (below), so bytes after FINAL would stall the handshake: error |
+| H9 workspace | 40-2 Table 40-1 and note | the 8 KB `0x200FE000..0x20100000` "is not a bootable region": a block aimed there ends the boot in the error handler |
+| H10 | 40-41, 40-44 | INDIRECT and CALLBACK blocks need ROM callback state: error (no stock block uses them); AUX/SAVE: warning |
+| H12 next pointer | 40-85 (`pNextDxe`) | a FIRST block's ARGUMENT is the byte count from the end of its header to the next application's header, or to the end of the stream (CONV: used by `adi_rom_Boot()` list walking, not by the slave boot) |
+| L1 | 8-1, 40-5 | L2 is 1 MB (`0x20000000..0x20100000`), initialised by the preboot before the first block; targets outside L2 (L1 aliases, DDR) are reported as info only |
+
+Results.
+
+- **Stock streams pass** (DT2 1.16 and 1.17: 104 blocks, 321,016 bytes; DN2 1.11 and 1.12: 95 blocks, 836,956 bytes).
+  Their layout is two applications: an initcode application (FIRST|IGNORE at offset 0, entry `0x120230`, ARGUMENT
+  `0x2964`, then an INIT block that calls it) and the main one (FIRST|IGNORE at `0x2974`, ARGUMENT = bytes to the end
+  of the stream, FINAL last, its TARGET_ADDRESS equal to the entry `0x1c1338` / `0x1c12e2`). Every BCODE is 1.
+  The INIT block runs the initcode (clock and DDR set-up) before the DDR FILL blocks, so DDR is not an emulator
+  question. **[D]**
+- **Patchkit outputs with appended blocks pass** against their stock stream (`check_against_stock`: inserted blocks only
+  before FINAL, stock headers unchanged, FIRST pointer grown, inserted blocks in bootable L2, no overlap, BCODE 1,
+  no flags): `fx/master-gain` and `fx/master-drive` on DT2 1.17 and DN2 1.12 (gain: 2 blocks, 148 bytes; drive: 1
+  block, 620 bytes; one in-place edit of 3 payload bytes in the stock block that holds the hook CALL), and the L2
+  canary at its maximum on both (727,556 and 211,616 bytes; both streams then are `0xFFFFC` bytes). **[D]**
+- **Defects found and fixed [C].** (1) `Stream.append_block` (Python and Rust) left the second FIRST block's
+  ARGUMENT at the old stream length, so every patchkit output from before this change fails H12 (`out/patch/combo.syx`
+  and `dev-dt2-1.17.syx` did). It is now grown with its checksum. (2) The append window and the canary's "free L2"
+  ran to `0x20100000`; the last 8 KB is the boot kernel's workspace, so a block there is refused by the ROM
+  (windows now end at `0x200FE000`; the free-L2 numbers above are runtime numbers and stay valid for code that is
+  written after boot, e.g. by `dsp.patch`; the usable boot payloads of 727,540 and 211,600 bytes end below it).
+- **What the ColdFire does** (read again on `FUN_400cd0d8`, DT2 1.17): the SHARC is released from reset, then the
+  routine sends `0x03` (SPICMD "keep single-bit mode", Table 40-18) and the depacked section one byte per DSPI frame,
+  each after the handshake line (GPIO `0xec094018` bit 4) goes low, then the frame `0x18000000`. It does not parse
+  blocks, and a rejected stream (the ROM enters its error handler and stops accepting) leaves the loop polling for
+  ever: there is no timeout. A bad stream is a boot hang, not a returned error. The bootstrap's STARTUP menu and
+  recovery do not depend on it (0.2). **[D]**
+- **Emulator enforcement.** The ROM rules now run where the emulator takes a stream: `tools/ready.py` (building a
+  ready state from a `.syx`), `firmware.load` (`Analysis::of` in `native/control/src/firmware.rs`, through
+  `patchkit::bootrom::require`) and `patchkit verify` (every `patch`). They refuse a stream with any H-rule error.
+- **Open [O], hardware or a datasheet.** (a) Rules the ROM applies and the manual does not state (the manual
+  documents `ROM_BOOT_ERR_NEXTDXE` 0x14 without saying when it fires; H12 keeps the stock invariant so that case
+  cannot arise). (b) "Valid memory" for L1 targets: the product datasheet map is not in `out/refs`, so L1 targets are
+  not checked (appends are L2 only). (c) The entry point is the last FIRST block's TARGET_ADDRESS (40-65 says the
+  first-block address is saved; with two FIRST blocks the stock FINAL carries the same address, so either reading
+  gives the stock entry; patchkit changes neither). (d) SPI slave boot asks hosts for multiples of 1024 bytes (40-21);
+  the stock section is `321017 mod 1024 = 505` bytes with the command byte, so the ROM copes with a short tail, but a
+  patched stream moves the tail length: gain +148 B, drive +620 B, canary to `0xFFFFC`. (e) What the initcode does to
+  L2 (it is stock code and the appended blocks come after it in the stream, so only a stock initcode side effect on
+  L2 could matter; no stock block writes the free range).

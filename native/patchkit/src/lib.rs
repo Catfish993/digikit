@@ -12,6 +12,7 @@ pub mod syx;
 
 pub use error::{Error, Result};
 pub mod apply;
+pub mod bootrom;
 pub mod dko;
 pub mod dsp;
 pub mod explain;

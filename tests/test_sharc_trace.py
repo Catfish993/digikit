@@ -850,18 +850,6 @@ class TraceTest(unittest.TestCase):
                 "unsupported Type7a circular modify",
             ),
             ("missing L", base, {}, "unsupported Type7a circular modify"),
-            (
-                "nonzero compute",
-                {**base, T.UREG_CODES["L12"]: T.Const(0)},
-                {"compute[15:0]": 1},
-                "unsupported Type7a conditional compute",
-            ),
-            (
-                "other condition",
-                {**base, T.UREG_CODES["L12"]: T.Const(0)},
-                {"cond[4:0]": 0x07},
-                "unsupported Type7a predicate",
-            ),
         ):
             with self.subTest(label=label):
                 state = self.run_one(
@@ -869,6 +857,32 @@ class TraceTest(unittest.TestCase):
                     insn("7a", {**fields, **altered}, 6),
                 )
                 self.assertEqual(state.stopped, reason)
+
+    def test_type7a_other_condition_is_evaluated_not_refused(self):
+        # Any cond is accepted (PRM p.14-47: the condition covers the whole
+        # instruction); SV is clear, so IF SV (0x07) skips the modify.
+        fields = {
+            "g": 1,
+            "cond[4:0]": 0x07,
+            "is[2:2]": 1,
+            "is[1:0]": 0,
+            "m[2:0]": 1,
+            "idis[2:0]": 0,
+            "compute[22:16]": 0,
+            "compute[15:0]": 0,
+        }
+        registers = {
+            T.UREG_CODES["I12"]: T.Const(0x100),
+            T.UREG_CODES["M9"]: T.Const(1),
+            T.UREG_CODES["L12"]: T.Const(0),
+            T.UREG_CODES["ASTATX"]: T.Const(0),
+            T.UREG_CODES["MODE1"]: T.Const(0),
+        }
+        state = self.run_one(
+            T.State(0x10, registers, assume_nw32=True), insn("7a", fields, 6)
+        )
+        self.assertIsNone(state.stopped)
+        self.assertEqual(state.uregs[T.UREG_CODES["I12"]], T.Const(0x100))
 
     def test_type14a_direct_load_and_store(self):
         fields = {
