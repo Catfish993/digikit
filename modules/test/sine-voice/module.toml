@@ -1,0 +1,33 @@
+[module]
+id = "test/sine-voice"
+version = "0.1.0"
+name = "Sine voice"
+category = "test"
+status = "experimental"
+summary = "Test machine type: a pitched sine rendered by the per-voice hook, to prove that a new type runs through the engine's amp envelope, filter and FX"
+ports = ["dt2-1.16", "dt2-1.17"]
+requires = ["core/dsp-voice"]
+conflicts = []
+
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "untested"
+"dn2-1.12" = "untested"
+
+[[object]]
+path = "build/sine-voice-dsp.dko.json"
+sources = ["src/dsp/sine_voice.s"]
+place = "dsp.l2"
+devices = ["dt2"]
+
+# The machine type this routine renders. A literal until core.machines assigns type numbers (then
+# "machines.<id>.type"); 8 is a type whose stock selector entry is not a sample selector (findings 06).
+[[op]]
+op = "register"
+table = "_dv_table"
+row = ["8", "_sv_render"]
+devices = ["dt2"]
+
+[[claim]]
+resource = "machine.type.8"

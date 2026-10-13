@@ -98,3 +98,32 @@ needed, so `.dko` can be that model with a binary container and a canonical enco
   `cf.pc16`, `cf.pc8`, `sharc.abs24`, `sharc.abs32`); the addend always explicit, never in the symbol name;
 - the linker is arch code of about 150 lines each, runs in Python today and ports to Rust/wasm directly; the
   ISA check (cfdis, SHARC re-decode) belongs in the module build, not at patch time.
+
+
+## Assembler facts found writing core/dsp-voice and machines/pluck (patchkit 4.2) **[D]**
+
+One agent; each item was met as a build failure or a wrong result and fixed in the source.
+
+- **Compact `ADD` collides with Type 2b in our decoder.** Selache emits `Rn = Rn + Rm` with `Rn`, `Rm` in R0-R7 as the
+  16-bit form `c0xy` (`R0 = R0 + R1` = `c001`); our decoder reads `c001 xxxx` as the 32-bit Type 2b, so the
+  extents disagree and `pk_sharc` stops with "Selache lists c001, our decoder c001703e". Registers R8-R15 and the
+  `c1xx` subtract form are fine. Commute the operands (`R0 = R1 + R0` assembles as the 32-bit form). Which side is
+  right on silicon is **[O]**; the firmware has no `c00x` word.
+- **`.VAR name[N]` is dropped and a multi-value `.VAR` produces a section-relative relocation.** `pk_sharc` takes
+  `.PKDATA name, bytes;` (zeros, loaded) and `.PKBSS name, bytes;` (reserved, not loaded) instead: the line is removed
+  before assembly, `name` becomes an extern, and the object gets a data or bss section and a global data symbol.
+  `.GLOBAL name;` for such a name makes the symbol exported twice.
+- **patchkit leaves a SHARC bss out of the boot stream** (it did copy it as zeros): the chunk image ends where the
+  bss begins, and the plan counts the bss against the region. A 262,144-byte delay area adds 0 bytes to the
+  container. The program must write reserved memory before it reads it.
+- **`(SW)`/`(BW)` are ignored on indirect loads too** (`R1 = DM(I4, M5) (SW);` assembles as the normal-word load);
+  only the direct form is rewritten by `pk_sharc`. Read a short word as a 32-bit word and extract it.
+- **`FEXT/FDEP Rx BY Ry`: `Ry` = `bit6 | len6 << 6`** (the PRM figure: `len6` at Ry[11:6]); the immediate form is
+  `BY pos:len`. `(SE)` is not parsed by this Selache (`unresolved symbol SE`): shift left and `ASHIFT` right by a
+  register holding -16 instead.
+- **Immediate arithmetic.** `Rn = Rx + 1` assembles; `Rn = Rx + 26` and `Rn = Rx - 64` do not (load the constant into
+  a register). `INC R5` is read as a symbol. `MODIFY(I7, -26) (NW);` assembles to the firmware's own
+  `1587 ffff ffe6`; without `(NW)` the immediate is in bytes (`1607 ...`).
+- **`CALL (M13, I12)` is not followed by the tracer** (`tools/sharc_core` ends the callee's `RTS` with "return
+  without followed call") and the firmware has no indirect call. core/dsp-voice enters a registered routine with
+  `JUMP (M13, I12)` and a return address in `I13`.

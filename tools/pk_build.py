@@ -73,7 +73,7 @@ def sharc_object(sources: list[Path]) -> dict:
                 "name": name,
                 "kind": "bss" if bss else "data",
                 "align": align,
-                "size": len(blob) if not bss else 0,
+                "size": len(blob),
                 "hex": blob.hex(),
             }
         )

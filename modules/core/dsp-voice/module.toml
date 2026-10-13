@@ -1,0 +1,84 @@
+[module]
+id = "core/dsp-voice"
+version = "0.1.0"
+name = "DSP voice hook"
+category = "core"
+status = "experimental"
+summary = "Per-voice render hook of the SHARC engine: machine types registered by other modules render with their own DSP routine, every other type renders as stock"
+ports = ["dt2-1.16", "dt2-1.17"]
+requires = []
+conflicts = []
+
+# Test status per firmware; patchkit does not read it.
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "untested"
+"dn2-1.12" = "untested"
+
+[[object]]
+path = "build/dsp-voice-dsp.dko.json"
+sources = ["src/dsp/dsp-voice.s"]
+place = "dsp.l2"
+devices = ["dt2"]
+
+[object.externs]
+_fw_type_cache = "dsp.voice.type_cache"
+_fw_render_next = "dsp.voice.render_next"
+_fw_frame = "dsp.voice.frame_base"
+
+# The first instruction of the stock sample renderer becomes JUMP _dv_entry; the wrapper executes it.
+[[op]]
+op = "jump"
+anchor = "dsp.voice.render_entry"
+to = "_dv_entry"
+devices = ["dt2"]
+
+# Machine modules add rows {type, routine pc} with `register` ops.
+[[table]]
+symbol = "_dv_table"
+row_words = 2
+rows = 16
+
+[[claim]]
+resource = "dsp.voice.hook"
+
+[[anchor_rule]]
+name = "dsp.voice.render_entry"
+devices = ["dt2"]
+cpu = "sharc"
+kind = "sharc_func"
+reloc_hash = "830c02524f18d34629acb569a92d052d66f23c9ab260ac27ef8e4a9869c22fd2"
+offset = 0x0
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "dsp.voice.render_next"
+devices = ["dt2"]
+cpu = "sharc"
+kind = "sharc_func"
+reloc_hash = "830c02524f18d34629acb569a92d052d66f23c9ab260ac27ef8e4a9869c22fd2"
+offset = 0x3
+len = 6
+mark = "D"
+
+# The DSP's per-track machine type cache: the literal `I4 = 0x255970` in the per-track unpack.
+[[anchor_rule]]
+name = "dsp.voice.type_cache"
+devices = ["dt2"]
+cpu = "sharc"
+kind = "sharc_literal"
+reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00"
+offset = 0x1e5
+mark = "D"
+
+# The DSP's copy of the ColdFire frame: the literal `I5 = 0x2558dc` of the per-block copy.
+[[anchor_rule]]
+name = "dsp.voice.frame_base"
+devices = ["dt2"]
+cpu = "sharc"
+kind = "sharc_literal"
+reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780"
+offset = 0x14d
+mark = "D"

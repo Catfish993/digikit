@@ -1,0 +1,33 @@
+[module]
+id = "machines/pluck"
+version = "0.1.0"
+name = "Pluck"
+category = "machines"
+status = "experimental"
+summary = "Karplus-Strong plucked string machine (DSP side): one string per track, tuned to the note, with decay, pick position, brightness and colour"
+ports = ["dt2-1.16", "dt2-1.17"]
+requires = ["core/dsp-voice"]
+conflicts = []
+
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "untested"
+"dn2-1.12" = "untested"
+
+[[object]]
+path = "build/pluck-dsp.dko.json"
+sources = ["src/dsp/pluck.s"]
+place = "dsp.l2"
+devices = ["dt2"]
+
+# The machine type this routine renders: a literal until core.machines assigns type numbers (then
+# "machines.pluck.type").
+[[op]]
+op = "register"
+table = "_dv_table"
+row = ["9", "_pk_render"]
+devices = ["dt2"]
+
+[[claim]]
+resource = "machine.type.9"

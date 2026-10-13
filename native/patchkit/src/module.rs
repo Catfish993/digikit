@@ -22,6 +22,9 @@ pub struct Manifest {
     /// Machine types this module adds (core/machines assigns the type numbers).
     #[serde(default)]
     pub machine: Vec<MachineDef>,
+    /// Tables of rows that other modules fill with `register` ops.
+    #[serde(default)]
+    pub table: Vec<TableDecl>,
 }
 
 /// One machine type a content module adds. The framework (`core/machines`, `machines.rs`) gives it the next
@@ -50,6 +53,15 @@ pub struct MachineDef {
     pub desc_name: Option<String>,
     #[serde(default)]
     pub desc_short: Option<String>,
+}
+
+/// A table a module exports: a data symbol of `rows` rows of `row_words` 32-bit words each, all zero, in which
+/// other modules register rows (`op = "register"`). A row whose first word is zero is free.
+#[derive(Clone, Debug, Deserialize)]
+pub struct TableDecl {
+    pub symbol: String,
+    pub row_words: u64,
+    pub rows: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -85,8 +97,9 @@ pub struct ObjectRef {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Op {
-    /// `write` or `retarget`
+    /// `write`, `retarget`, `jump` or `register`
     pub op: String,
+    #[serde(default)]
     pub anchor: String,
     #[serde(default)]
     pub devices: Vec<String>,
@@ -101,6 +114,12 @@ pub struct Op {
     pub expect_sha256: Option<String>,
     #[serde(default)]
     pub reloc: Vec<OpReloc>,
+    /// register: the exported table symbol the row goes into
+    pub table: Option<String>,
+    /// register: the row's words, each an integer (`7`, `0x10`) or a symbol (a module export: the pc of a code
+    /// symbol, the byte address of a data symbol); the first word must be non-zero
+    #[serde(default)]
+    pub row: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -145,10 +164,13 @@ impl Module {
                 "write" if op.hex.is_none() => {
                     return Err(err!("{}: write needs hex", manifest.module.id));
                 }
-                "retarget" if op.to.is_none() => {
-                    return Err(err!("{}: retarget needs to", manifest.module.id));
+                "retarget" | "jump" if op.to.is_none() => {
+                    return Err(err!("{}: {} needs to", manifest.module.id, op.op));
                 }
-                "write" | "retarget" => {}
+                "register" if op.table.is_none() || op.row.is_empty() => {
+                    return Err(err!("{}: register needs table and row", manifest.module.id));
+                }
+                "write" | "retarget" | "jump" | "register" => {}
                 o => return Err(err!("{}: unknown op {o}", manifest.module.id)),
             }
         }

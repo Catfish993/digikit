@@ -11,9 +11,9 @@ use std::collections::BTreeMap;
 pub struct Linked {
     pub cpu: String,
     pub base: u64,
-    /// Bytes from `base` (text, data; for SHARC also bss as zeros; for ColdFire bss is not included).
+    /// Bytes from `base` (text and data; the bss is not included).
     pub image: Vec<u8>,
-    /// ColdFire bss that follows `image` (its loader zeroes it); 0 for SHARC.
+    /// bss that follows `image`: reserved, zeroed by the ColdFire loader, not loaded by the SHARC boot stream.
     pub bss_size: u64,
     /// Natural-unit address per defined symbol (see dko.rs).
     pub symbols: BTreeMap<String, u64>,
@@ -95,16 +95,14 @@ fn link_impl(
             text_ranges.push((at, at + s.size as u64));
         }
         if s.kind == "bss" {
-            if sharc {
-                image.resize((at - base) as usize + s.size as usize, 0);
-            } else {
-                if bss_start.is_none() {
-                    // the payload ends where the bss begins (padding included)
-                    image.resize((at - base) as usize, 0);
-                }
-                bss_start.get_or_insert(at);
-                bss_size = at + s.size as u64 - bss_start.unwrap();
+            // reserved memory behind the payload: ColdFire's loader zeroes it, a SHARC boot stream does not load it
+            // (the program must write it before it reads it)
+            if bss_start.is_none() {
+                // the payload ends where the bss begins (padding included)
+                image.resize((at - base) as usize, 0);
             }
+            bss_start.get_or_insert(at);
+            bss_size = at + s.size as u64 - bss_start.unwrap();
         } else {
             image.resize((at - base) as usize, 0);
             image.extend_from_slice(&crate::error::unhex(&s.hex)?);

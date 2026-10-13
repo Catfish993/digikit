@@ -395,12 +395,33 @@ and proof tool on the ready inputs (1 day). Estimate 3 to 4 days of agent time, 
 shows its own name and sounds like its original, lower for a new parameter page. Payoff is moderate: the framework is
 the same, but DN2's machines are FM engines, so new DN2 machines need the DSP voice lane first.
 
+### Phase 4.2 results (2026-10-14, lane `fastweb`)
+
+- Hook: the first instruction of the sample renderer `0x1c4ecf` (DT2 1.16/1.17, one DSP blob) is overwritten with a
+  `JUMP` (new op `jump`); a call-site retarget of the voice loop would bar the AOT region of the engine's busiest
+  function (4 frames/s). Types register with the new op `register` (a row `{type, pc}` in a table another module
+  declares with `[[table]]`); an unregistered type falls through, PCM bit-identical to stock, +1,120 DSP
+  instructions per block. Spec and evidence: findings 06, "Per-voice render hook: built". Assembler facts: findings 20.
+- `test/sine-voice` (type 8 forced on the wire): 261.626 / 523.252 / 277.184 Hz for note 60 / 72 / tune +1, the
+  level, reverb-send and filter stages act on it. `machines/pluck` (type 9): Karplus-Strong, one string per track,
+  fundamental within 0.0003 cents at notes 60 and 72, T60 1.02 s for a requested 1.02 s; analytic tuning error
+  under 0.01 cents from note 7 to 95, 0.13 at 104, 0.42 at 108.
+- **Contract with `core.machines` (lane b):** a machine module gives `core.dsp-voice` its type number and routine
+  with `[[op]] op = "register", table = "_dv_table", row = ["<type>", "<routine symbol>"]`; today the type is a literal in the manifest
+  and should become the symbol `machines.<id>.type` that `core.machines` assigns (patchkit resolves a row word that
+  is not a number as a global symbol). The ColdFire side must put the type in frame word `0x94 + 2t` (finding 04),
+  keep types below 24 (the selector table was read to 23, findings 06), and map the descriptor fields to the
+  engine slots listed there; Pluck's table: slot 0 TUNE (25), 1 DECAY (26), 2 PICK (27), 3 unused (28 stays 0),
+  4 BRIGHT (31), 5 COLOR (32), 6 unused (33), 7 LEV (34).
+- Open: DN2 (a different, FM voice engine; see the assessment in findings 06), hardware, DT2 1.16 not run.
+
 ### Phase 4: proof-of-concept modules
 
 - [x] 4.1 `fx/master-drive` (or compressor), DT2 and DN2: a new parameter carried in a frame word the DSP
       discards today, DSP code at the master hook. First module that changes both CPUs. Done 2026-10-13 (lane
       fastweb), see "Phase 4.1 results".
-- [ ] 4.2 Simple voice (sine or noise) on DT2 through `core.dsp-voice`.
+- [x] 4.2 Simple voice (sine or noise) on DT2 through `core.dsp-voice`. Done 2026-10-14 (lane fastweb), see
+      "Phase 4.2 results". The Pluck DSP side (`machines/pluck`) is done too; its ColdFire entry waits for `core.machines`.
 - [ ] 4.3 `machines/granular` DT2 (grains from sample memory), 3-5 days after 4.2.
 - [ ] 4.4 `machines/granular` DN2. **Open decision:** grain source (track oscillator or wavetable, audio input, or
       a resample buffer).

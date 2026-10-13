@@ -259,12 +259,34 @@ def _sw_apply(obj: SharcObject, marks: list[tuple[str, bool]]) -> None:
     obj.section = bytes(code)
 
 
+# Selache drops `.VAR name[N];` and cannot emit a multi-value `.VAR`, so a zero-filled array is declared with
+# `.PKDATA name, bytes;` (loaded zeros, part of the boot-stream block) or `.PKBSS name, bytes;` (reserved memory the
+# stream does not load: the program must write it before it reads it) instead: the line is removed before
+# assembly, `name` becomes an extern of the source and the object gets a data or bss section of that size with a
+# global data symbol `name` (the linker allocates it).
+_PKBSS = re.compile(
+    r"^[ \t]*\.PK(BSS|DATA)[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*(0x[0-9a-fA-F]+|\d+)[ \t]*;[^\n]*$",
+    re.M,
+)
+
+
+def _bss_prepare(source: str) -> tuple[str, list[tuple[str, int, bool]]]:
+    found: list[tuple[str, int, bool]] = []
+
+    def sub(m: re.Match) -> str:
+        found.append((m.group(2), int(m.group(3), 0), m.group(1) == "BSS"))
+        return f".EXTERN {m.group(2)};"
+
+    return _PKBSS.sub(sub, source), found
+
+
 def assemble(source: str, section: str | None = None) -> SharcObject:
     for pat, why in ENCODE_HAZARDS:
         m = pat.search(source)
         if m:
             raise PkSharcError(f"known Selache encode bug ({why}): {m.group(0)!r}")
     original = source
+    source, bss_decls = _bss_prepare(source)
     source, sw_marks = _sw_prepare(source)
     with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
         src, obj = Path(d) / "m.s", Path(d) / "m.doj"
@@ -278,6 +300,14 @@ def assemble(source: str, section: str | None = None) -> SharcObject:
             raise PkSharcError(f"selas failed:\n{r.stdout}{r.stderr}")
         result = _object(obj, hashlib.sha256(original.encode()).hexdigest(), section)
         _sw_apply(result, sw_marks)
+        for name, size, is_bss in bss_decls:
+            if size <= 0 or size % 4:
+                raise PkSharcError(
+                    f".PKBSS/.PKDATA {name}: size {size} is not a positive multiple of 4"
+                )
+            sec = f"pkbss_{name}" if is_bss else f"pkdata_{name}"
+            result.data[sec] = (bytes(size), 4, is_bss)
+            result.data_symbols[name] = (sec, 0, True)
         return result
 
 
@@ -413,6 +443,9 @@ def run_call(
     max_steps: int = 100000,
     return_sw: int = 0xB9F000,
     approx_recips: bool = False,
+    others: tuple[Linked, ...] = (),
+    read_regs: tuple[str, ...] = (),
+    extra_breaks: tuple[int, ...] = (),
 ) -> dict[str, object]:
     """Run ``entry`` (a symbol) to its RTS on the concrete core and return registers and memory reads.
 
@@ -424,20 +457,25 @@ def run_call(
     from sharcldr import LoadedMemory
 
     start = linked.symbols[entry]
-    blk = {
-        "target_address": SW_ALIAS_BASE + 2 * linked.base_sw,
-        "byte_count": len(linked.code_boot),
-        "fill": False,
-        "payload_offset": 0,
-        "payload_len": len(linked.code_boot),
-        "index": 0,
-    }
-    mem = LoadedMemory(linked.code_boot, [blk])
+    blocks, data = [], b""
+    for i, obj in enumerate((linked, *others)):
+        blocks.append(
+            {
+                "target_address": SW_ALIAS_BASE + 2 * obj.base_sw,
+                "byte_count": len(obj.code_boot),
+                "fill": False,
+                "payload_offset": len(data),
+                "payload_len": len(obj.code_boot),
+                "index": i,
+            }
+        )
+        data += obj.code_boot
+    mem = LoadedMemory(data, blocks)
     runner = sharc_run.Runner(
         mem,
         start,
         regs=regs or {},
-        breakpoints=[return_sw],
+        breakpoints=[return_sw, *extra_breaks],
         approx_recips=approx_recips,
     )
     for addr, word in (dm_words or {}).items():
@@ -475,6 +513,7 @@ def run_call(
             "R12",
             "R13",
             "I0",
+            *read_regs,
         )
     }
     return out

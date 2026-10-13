@@ -1,0 +1,14 @@
+# machines/pluck: with no machine type registered on the panel, the module must leave the stock voice untouched: audible, no fault.
+[test]
+name = "audible"
+devices = ["dt2"]
+quick = true
+
+[[step]]
+tap = "TRIG 1"
+[[step]]
+wait_ms = 400
+[[step]]
+expect_pcm_db = { min = -60, max = -3 }
+[[step]]
+expect_no_fault = true

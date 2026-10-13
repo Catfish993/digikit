@@ -384,3 +384,47 @@ len = 6
 sha256 = "cfc6c05db50b7bdc5c7f98ab7f784044cba07bce6869dbef544f229902072dd2"
 mark = "D"
 rule = "fx/master-drive:sharc_func"
+
+[[anchor]]
+name = "dsp.voice.frame_base"
+cpu = "sharc"
+kind = "value"
+addr = 0x2558dc
+src = 0x283858e2
+len = 6
+sha256 = "a38cccbdf3151153d57924ae69b6dfc79d3ebdedc6e844e473f567ab30e73bda"
+mark = "D"
+rule = "core/dsp-voice:sharc_literal"
+
+[[anchor]]
+name = "dsp.voice.render_entry"
+cpu = "sharc"
+kind = "code"
+addr = 0x28389d9e
+pm = 0x1c4ecf
+len = 6
+sha256 = "ac4e4f137708405f60e984913940df7406874cbc718af72ff239e60f0861abf1"
+mark = "D"
+rule = "core/dsp-voice:sharc_func"
+
+[[anchor]]
+name = "dsp.voice.render_next"
+cpu = "sharc"
+kind = "code"
+addr = 0x28389da4
+pm = 0x1c4ed2
+len = 6
+sha256 = "c3e4c7155ea3c176085b8fd32ac0dcc3ab051c07f3758d8b32cbdce15ad8d344"
+mark = "D"
+rule = "core/dsp-voice:sharc_func"
+
+[[anchor]]
+name = "dsp.voice.type_cache"
+cpu = "sharc"
+kind = "value"
+addr = 0x255970
+src = 0x28384d9c
+len = 6
+sha256 = "aa85dee071b926c095ed94ee8bad29cc5add87caf86276bf2c85bd0e565feee4"
+mark = "D"
+rule = "core/dsp-voice:sharc_literal"
