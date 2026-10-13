@@ -172,6 +172,26 @@ enough, audio is an offline render.
   so a hook can use it as a parameter channel ([C]: the earlier "discarded" reading missed a flag). Open: the
   UI-knob leg (needs 0.6), DN2's parameter word, the flag's reader; voice hook only proposed.
 
+## Phase 0 results (wave 2, 2026-10-13)
+
+- 0.4: `Stream.append_block` and an `APPEND` patch op (Python and Rust); the ColdFire boot routine sends the whole
+  depacked section 7 (limits: stored <= 0x100000, depacked <= 0xfffff). Usable appended payload: 727,540 B (DT2),
+  211,600 B (DN2), limited by the stream, not by L2. Free L2 by canary over the scenario suites: 922,756 B (DT2,
+  keep 0x200fa000-0x200fe000 out), 491,972 B (DN2). Open: the real SHARC boot ROM with an extra block (hardware);
+  L1 PM room.
+- 0.5: pinned binutils 2.47 + GCC 16.2.0 for `-mcpu=54418` and selache 2b26d3b7 under out/tools
+  (`mise run toolchains`); `tools/pk_link.py` (JSON object prototype, R_68K_32/PC32/PC16/PC8); call harness on the
+  CF core (`Emulator::call_function`, `tools/pk_cfcall.py`); `tools/pk_sharc.py` assembles, links and re-decodes
+  SHARC code and runs it on the core. selcc: glue only. Open: libgcc helpers for 54418 (float, 64-bit).
+- 0.6: `firmware.load` of a patched MAIN cold-boots coupled with DSP audio: DN2 about 6-7 s, DT2 about 13 s
+  uncached, under 0.5 s cached. The ColdFire expansion canary also passes with the DSP running.
+- 0.7: master hook = retarget the single CALL into the Q31 converter (DT2 `PM 1c7734`, DN2 `PM 1c9fd2`); a
+  7-instruction routine in L2 gives exactly -6.02 dB, bit-identical at gain 1.0, on both devices. The +0xde
+  (CFADE) word is not discarded [C]: it sets a flag; poking it does not change Sample-machine PCM. Headroom: idle
+  share about 50% (DN2) and 68% (DT2). Per-voice hook proposal at 0x1c6b00, about 40%. Open: a UI knob that
+  reaches a free frame word; DN2's parameter word.
+- Hardware smoke test (0.2): ready (`tools/patched_image.py`), waiting for Em's decision.
+
 ## Phases
 
 Estimates are agent time. Phase 0 spikes run in parallel lanes (`tools/lane.sh`); each ends with a go/no-go.
@@ -191,14 +211,14 @@ Estimates are agent time. Phase 0 spikes run in parallel lanes (`tools/lane.sh`)
       the ColdFire expansion region through long runs; aPLib packer (round trip through our depacker and the
       firmware's); flash layout past the OS container, and the size cap patchkit enforces; rewrite cavefind as a
       port region resolver.
-- [ ] **0.4 SHARC append** (about 1 day, medium). Append a loader block into free L2; confirm the ColdFire boot
+- [x] **0.4 SHARC append** (about 1 day, medium). Append a loader block into free L2; confirm the ColdFire boot
       routine sends the whole section; canary through the scenario suite.
-- [ ] **0.5 Toolchains** (about 1-2 days, high for ColdFire, medium for SHARC). Assemble or compile, link and run
+- [x] **0.5 Toolchains** (about 1-2 days, high for ColdFire, medium for SHARC). Assemble or compile, link and run
       one function on each emulated core as a unit test. Every assembled SHARC word is re-decoded by our decoder.
       Pin selache (fetched by a mise task into `out/tools`, not vendored) and binutils/gcc versions.
-- [ ] **0.6 Coupled cold boot** (about 2 days, medium-high). Patched MAIN with DSP audio, in-process, cached by
+- [x] **0.6 Coupled cold boot** (about 2 days, medium-high). Patched MAIN with DSP audio, in-process, cached by
       (MAIN sha, DSP sha). Target under 30 s uncached. Also the base for the browser cold boot.
-- [ ] **0.7 DSP hook point** (3-10 days; master hook about 70%, voice path about 40%). Master-chain hook first
+- [x] **0.7 DSP hook point** (3-10 days; master hook about 70%, voice path about 40%). Master-chain hook first
       (`0x1c207b`), then a per-type voice render path. Gate for Phase 4.2 onward.
 
 ### Phase 1: patchkit core (about 3 days, high)
