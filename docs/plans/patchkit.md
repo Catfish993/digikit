@@ -469,6 +469,71 @@ Emulator only; nothing flashed; one agent.
   confidence about 50 % for a string that retriggers reliably; payoff: the same module on a second device.
 - Open: hardware; own parameter pages for a DN2 machine (3 start-up built RAM tables, est. 1 to 2 days); DN2 1.11 not run.
 
+### Phase 3b: frameworks as modules (refactor, decided 2026-10-14)
+
+Problem: `core/machines` and `core/params` were built as Rust generators inside patchkit (`machines.rs`,
+`machines/dn2.rs`, `params.rs`: about 2,070 of 6,520 lines). They emit ColdFire words by hand, copy firmware
+tables and unroll code per added type. That breaks the layer rule ("patchkit is generic; frameworks are modules")
+and means every framework change is a Rust and wasm rebuild. Fix: give patchkit the generic primitives the
+generators needed, then rewrite the frameworks as ordinary modules (manifest + assembly). The Rust generators stay
+as the reference until every proof passes on the module version, then they are deleted.
+
+Primitives (patchkit, Rust, wasm parity; every one usable by any module):
+
+- **P1 Image-copy sections.** `[[section]] name, region, from = { anchor, offset = 0, len = EXPR }, append = {
+  registry, row = [EXPR, ...] }` (append optional). At apply time the section's bytes are copied from the user's
+  image, then one row per registry entry is appended (each EXPR emits a 32-bit word unless typed `u8`/`u16`). The
+  section name is a symbol. Firmware bytes are never stored in the repo.
+- **P2 Registries.** A framework declares `[[registry]] name, first = EXPR, max, region` and
+  `[[registry.field]] name, kind = u8|u16|u32|cstr|sym, max_len?, default?`. Content modules add
+  `[[entry]] registry = "machines", id = "pluck", <field> = value`. patchkit validates fields, assigns indices in
+  canonical module order, emits a row table (cstr fields become pointers to strings placed in the same region) and
+  the symbols `<reg>.first`, `<reg>.count`, `<reg>.rows`, `<reg>.row_size`, `<reg>.<id>.index` (= first + k), plus
+  an automatic claim `<reg>.<id>`. This replaces `[[machine]]`, `[[param]]`, `[[table]]` and `op = "register"`.
+  Fields of kind `sym` hold another module's symbol or another registry's `<reg>.<id>.index` (e.g. a machine's
+  descriptor fields name `params.pluck_decay.index`).
+- **P3 Expressions.** Wherever a number or symbol is accepted (write bytes, relocs, section lengths, registry
+  `first`, row words): integers, symbols, `+ - * / & | << >>`, parentheses, and `image.u8|u16|u32(anchor [+ off])`
+  (a value read from the image at apply time, e.g. a stock bound). `write` gains typed fields:
+  `{ op = "write", anchor, offset, value = EXPR, width = 1|2|4 }` with range checks.
+- **P4 Hooks.** `{ op = "hook", anchor, offset = 0, to = SYMBOL, displaced = "run"|"drop", cpu = "cf"|"sharc" }`.
+  ColdFire: the site gets `jmp.l to` (or `jsr.l`, `kind = "call"`), NOP-padded to whole instructions using the
+  native decoder; with `displaced = "run"` patchkit emits `hook.<anchor>.tail` = the displaced instructions copied
+  from the image (PC-relative forms re-encoded or refused) + `jmp.l <site end>`, and `hook.<anchor>.return` = site
+  end. SHARC: same with a 48-bit JUMP (generalises the `jump` op of core/dsp-voice). Calling convention is the
+  module's business (documented per framework).
+- **P5 Device filters.** `devices = [...]` on `[[object]]`, `[[section]]`, `[[op]]`, `[[entry]]`,
+  `[[anchor_rule]]`, `[[registry]]`, so one framework holds DT2 and DN2 sources side by side
+  (`src/cf/dt2/*.s`, `src/cf/dn2/*.s`).
+- **P6 Sites as anchors.** Run-time scans in patchkit (e.g. `params::scan` for bound immediates) become anchor
+  rules resolved by `port_resolve` into the lockfile (`cf.params.bound.0..N`); patchkit only reads lockfiles.
+
+Frameworks after the refactor: `modules/core/machines/` (DT2 and DN2 asm: list/rank/group/dispatch/name/permit/
+pertype/clone/typearg/persist hooks that look up `machines.rows` at run time for `type >= machines.first`, plus a
+P1 copy of the DSP selector table with appended words), `modules/core/params/` (P1 copies of the two parameter
+tables with appended rows, bound writes via P3, reader hooks), `modules/core/dsp-voice/` (registry `voices`).
+Content modules use `[[entry]]` only.
+
+- [ ] 3b.1 Primitives P1-P6 in patchkit with unit tests and wasm parity (lane a). Old generator path keeps working
+      until 3b.3.
+- [ ] 3b.2 Frameworks rewritten as modules against this spec; routines unit-tested on the ColdFire call harness with
+      hand-built tables (lane b), then content modules migrated to `[[entry]]`.
+- [ ] 3b.3 Integration: every proof passes on the module version (pk_proof_machines DT2 1.16/1.17, pk_proof_pluck
+      DT2 1.16/1.17, DN2 machine and voice proofs, smoke matrix, wasm = CLI); then delete `machines.rs`,
+      `machines/dn2.rs`, `params.rs` and the old manifest keys.
+
+### Wave 7 (2026-10-14): parallel lanes
+
+| Lane | Work |
+|---|---|
+| a | 3b.1 primitives |
+| b | 3b.2 framework modules, then 3b.3 with lane a's work merged in |
+| fastweb | DN2 research: RAM tables behind DN2 parameter pages, a note-on edge for DN2 voice routines, voice slot to track map, per-track parameter words; findings and anchor rules only |
+| read-only checkers | second-agent checks of [D] results in findings 01, 02, 06, 17 (promote to [V] or correct) |
+
+After wave 7: DN2 parameter pages and PLUCK on DN2 (as modules), Phase 7 docs, PGO retrain at the wave end,
+browser DSP audio (separate sharc-jit plan) when chosen.
+
 ### Phase 4: proof-of-concept modules
 
 - [x] 4.1 `fx/master-drive` (or compressor), DT2 and DN2: a new parameter carried in a frame word the DSP
