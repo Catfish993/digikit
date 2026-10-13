@@ -369,7 +369,7 @@ real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (
 `tools/pk_proof_machines.py`, `tools/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
 and `expect_dsp`; two new matrix cells.
 
-- DT2 1.17: XSLICE is selectable (type 7), its SRC page shows the CFADE knob, the type reaches the DSP (TX frame word,
+- DT2 1.17 and 1.16 (same proof, same results): XSLICE is selectable (type 7), its SRC page shows the CFADE knob, the type reaches the DSP (TX frame word,
   DSP cache), the sound is bit-identical to stock MANUAL SLICE (audition and sequencer), the MOD destination picker lists
   its parameters, a saved project keeps type 7 (control: without the persistence immediate it falls to SAMPLE) and
   loads as SAMPLE on stock firmware without a fault. XSLICE and a second clone together get types 7 and 8 in any
@@ -381,7 +381,7 @@ and `expect_dsp`; two new matrix cells.
   2,108-byte flash cave (about 80 B per added type, 452 B for two). Open: execute from RAM in the model.
 - DSP binding: extern symbol `machines.<id>.type`; the DSP's selector table is relocated (word per added type, `selector`
   in the manifest picks the render path).
-- Not done: DN2, 1.16 runs, hardware, p-lock and parameter-effect checks of a new machine, types above 8.
+- Not done: DN2, hardware, p-lock and parameter-effect checks of a new machine, types above 8.
 
 **DN2 1.12 assessment (not built).** The dispatch, list, name table, permission check, persistence immediate and the group
 helper exist (finding 02, "Digitone II 1.11 has the same machine machinery"): five types, type byte at `+0xde`, name

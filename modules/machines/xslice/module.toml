@@ -9,7 +9,7 @@ requires = ["core/machines"]
 conflicts = []
 
 [targets]
-"dt2-1.16" = "untested"
+"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 # The framework gives this machine the next free type number and exports it as `machines.xslice.type`.

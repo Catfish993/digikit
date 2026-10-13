@@ -9,7 +9,7 @@ requires = ["core/machines"]
 conflicts = []
 
 [targets]
-"dt2-1.16" = "untested"
+"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 # An unmodified clone of MANUAL SLICE (the stock descriptor's ID fields).

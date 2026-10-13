@@ -999,7 +999,8 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 Plan: `docs/plans/patchkit.md` (Phase 3). Code: `native/patchkit/src/machines.rs`, `modules/core/machines`,
 `modules/machines/xslice`, `modules/test/machine-clone`, `tools/pk_machine_rules.py`, `tools/pk_proof_machines.py`,
 `tools/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
-stated. Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) but was **not run**.
+stated. Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) and passed the same proof run
+(`tools/pk_proof_machines.py --fw 1.16`, 40 checks) and the harness cell with the smoke tour.
 
 ### What the framework does
 
@@ -1076,7 +1077,7 @@ should execute from RAM, then the code can move.
   `DM 0x255970 + 2t` in its voice hook, and leave `clone_of` at the stock type whose descriptor and per-type rows the
   ColdFire side should copy.
 
-### Evidence (`tools/pk_proof_machines.py`, DT2 1.17, one daemon per image, health asserted after every input)
+### Evidence (`tools/pk_proof_machines.py`, DT2 1.17 and 1.16 with the same results, one daemon per image, health asserted after every input)
 
 | check | result |
 |---|---|
@@ -1099,7 +1100,7 @@ the eMMC as sparse sectors) so a card with a patched firmware's project can be m
 
 - Hardware: never flashed. Executing the shims from the flash cave is the same as the old flash design; the DSP selector
   block lies in a region the real SHARC boot ROM has not been shown to accept (finding 06).
-- 1.16: the rules resolve and the patch applies, not run (the ready inputs are stale). DN2: no support (below).
+- DN2: no support (below).
 - Other tests of the clone's type may exist that no run exercised (p-lock edits of the machine's own parameters,
   copy/paste of a sound between tracks, kit load with mixed types). Parameter-knob effects on the DSP were not shown:
   the encoder turns on the SRC page moved the screen state (the SLICE/NOTE switch) but no turn changed a parameter value

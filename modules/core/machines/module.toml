@@ -12,7 +12,7 @@ conflicts = []
 # its own: patchkit (native/patchkit/src/machines.rs) generates the object and the patches from the declarations and
 # the image (finding 02, "core.machines"). The sites below are the anchors it reads.
 [targets]
-"dt2-1.16" = "untested"
+"dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
 [[claim]]
