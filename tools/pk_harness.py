@@ -30,6 +30,8 @@ Step format (TOML `[[segment.step]]` / `[[step]]`, exactly one action key each; 
     expect_frame = "name"          hash of the OLED frame against the golden (PNG to out/); `differs_from = "other"`
     expect_pcm_db = {min = -60, max = -3}   peak 100 ms-window RMS (dBFS) since the last input started
     expect_no_fault = true         assert the health now (it is also asserted after every input)
+    expect_mem = {addr = 0x4265338c, mask = 0xff00, eq = 0x0700}   a ColdFire word (mem.cf.peek) under a mask
+    expect_dsp = {addr = 0x255970, hex = "07"}                     DSP memory bytes (dsp.peek) from addr
     stress = {seed = 1, actions = 40}       seeded random inputs, health after each
 
 `device = "dt2"` on a step limits it to one device. A module test file has `[test]` (`name`, `devices`, `quick`) and
@@ -605,6 +607,29 @@ class Session:
             f"peak window {db:.1f} dBFS over {len(windows)} windows (want {lo}..{hi})",
         )
 
+    def expect_mem(self, want: dict[str, Any]) -> None:
+        emu = self.emu
+        assert emu is not None
+        addr, mask = int(want["addr"]), int(want.get("mask", 0xFFFFFFFF))
+        got = emu.peek32(addr)
+        ok = got is not None and got & mask == int(want["eq"])
+        self.check(
+            f"mem {addr:#x}",
+            ok,
+            f"got {'unmapped' if got is None else f'{got & mask:#x}'} want {int(want['eq']):#x} (mask {mask:#x})",
+        )
+
+    def expect_dsp(self, want: dict[str, Any]) -> None:
+        emu = self.emu
+        assert emu is not None
+        raw = bytes.fromhex(want["hex"])
+        got = emu.dsp_peek(int(want["addr"]), len(raw))["hex"]
+        self.check(
+            f"dsp {int(want['addr']):#x}",
+            got == raw.hex(),
+            f"got {got} want {raw.hex()}",
+        )
+
     def stress(self, seed: int, actions: int) -> None:
         rng = random.Random(seed)
         keys = (
@@ -659,6 +684,10 @@ class Session:
             elif "expect_pcm_db" in step:
                 want = step["expect_pcm_db"]
                 self.expect_pcm_db(want.get("min"), want.get("max"))
+            elif "expect_mem" in step:
+                self.expect_mem(step["expect_mem"])
+            elif "expect_dsp" in step:
+                self.expect_dsp(step["expect_dsp"])
             elif "expect_no_fault" in step:
                 self.health("expect_no_fault")
                 self.check("no fault/halt/stall", True)

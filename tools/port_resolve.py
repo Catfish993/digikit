@@ -31,6 +31,11 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc.py):
   cf_words       words = [u32 or "*", ...]: a table row found by a masked signature (big-endian u32 words at 4-byte
                  alignment, exactly one match in the MAIN OS image); a data anchor over the row.
 
+  cf_func        hash = <cfdb h_strict of the containing function>, ordinal = <index among the functions with that
+                 hash, in address order; default 0>, offset = <bytes from its entry>, len = <bytes>: a code
+                 anchor. The hash masks address operands, so one rule serves relinked builds; a hash with fewer
+                 functions than the ordinal needs is an error. Needs the image's cfdb (out/cfdb/<image>-emac).
+
   cf_reset_init_calls   the two reset-path calls (copy helper, clear helper) at the start of the reset code, found by
                  tools/regions.py `reset_facts` (a masked signature of the clear helper plus the call sites):
                  an 8-byte code anchor.
@@ -157,6 +162,7 @@ class CfFacts:
     def __init__(self, name: str, main: bytes):
         import regions
 
+        self.name = name
         self.analysis = regions.analyse(name)
         self.reset = self.analysis["reset"]
         self.main = main
@@ -164,6 +170,20 @@ class CfFacts:
 
     def bytes_at(self, addr: int, n: int) -> bytes:
         return self.main[addr - self.base : addr - self.base + n]
+
+    def funcs_by_hash(self, h: str) -> list[int]:
+        """Entries of the functions whose cfdb h_strict is H, in address order."""
+        import cf
+
+        image = f"{self.name}-emac"
+        db = cf.load(image).db
+        return [
+            r[0]
+            for r in db.execute(
+                "SELECT entry FROM func_hash WHERE image=? AND h_strict=? ORDER BY entry",
+                (image, h),
+            )
+        ]
 
     def cave(self) -> dict:
         return next(
@@ -207,6 +227,25 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
     kind = rule["kind"]
     if kind == "cf_words":
         return resolve_cf_words(cf, rule)
+    if kind == "cf_func":
+        hits = cf.funcs_by_hash(rule["hash"])
+        ordinal = int(rule.get("ordinal", 0))
+        if ordinal >= len(hits):
+            raise ResolveError(
+                f"{rule['name']}: {len(hits)} function(s) have hash {rule['hash'][:12]}.. (ordinal {ordinal})"
+            )
+        if "ordinal" not in rule and len(hits) != 1:
+            raise ResolveError(
+                f"{rule['name']}: {len(hits)} functions share hash {rule['hash'][:12]}.. and the rule gives no ordinal"
+            )
+        addr = hits[ordinal] + int(rule["offset"])
+        n = int(rule["len"])
+        return {
+            "kind": "code",
+            "addr": addr,
+            "len": n,
+            "sha256": sha(cf.bytes_at(addr, n)),
+        }
     hook = cf.reset["calls"]["copy"]
     if cf.reset["calls"]["clear"] != hook + 4:
         raise ResolveError("the reset calls are not adjacent")

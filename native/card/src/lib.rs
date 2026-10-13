@@ -327,6 +327,31 @@ impl Card {
     pub const fn selected(&self) -> bool {
         self.selected
     }
+    /// The guest's writes, one entry per touched sector in sector order (the same record a checkpoint holds):
+    /// base media plus these is the card the guest sees.
+    pub fn overlay_sectors(&self) -> Vec<CardOverlaySector> {
+        self.overlay
+            .iter()
+            .map(|(&sector, page)| {
+                let mut written = [0u8; 64];
+                for (i, word) in page.written.iter().enumerate() {
+                    written[i * 8..i * 8 + 8].copy_from_slice(&word.to_le_bytes());
+                }
+                let mut data = [0u8; 512];
+                for (i, b) in data.iter_mut().enumerate() {
+                    if page.written[i >> 6] & (1u64 << (i & 63)) != 0 {
+                        *b = page.data[i];
+                    }
+                }
+                CardOverlaySector {
+                    sector,
+                    written,
+                    data,
+                }
+            })
+            .collect()
+    }
+
     /// Number of bytes retained in the sparse write overlay.
     pub fn overlay_len(&self) -> usize {
         self.overlay_bytes

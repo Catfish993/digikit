@@ -41,6 +41,8 @@ pub struct Plan {
     /// region name -> bytes used / capacity
     pub regions: BTreeMap<String, (u64, u64)>,
     pub symbols: BTreeMap<String, u64>,
+    /// Machine types the framework assigned: (id, type number, declaring module)
+    pub machines: Vec<(String, u32, String)>,
     pub record: Record,
     pub output: Option<PlanOutput>,
 }
@@ -228,6 +230,21 @@ pub fn compatible(m: &Module, port: &Port) -> Result<()> {
             missing.push(format!("anchor {}", op.anchor));
         }
     }
+    if m.id() == crate::machines::FRAMEWORK || !m.manifest.machine.is_empty() {
+        if !m.manifest.machine.is_empty() && !on(&[String::from("dt2")], dev) {
+            missing.push("machine framework (Digitakt II only)".into());
+        }
+        for d in &m.manifest.machine {
+            if let Err(e) = crate::machines::validate(d) {
+                return Err(err!("{}: {e}", m.id()));
+            }
+        }
+        missing.extend(
+            crate::machines::missing_anchors(port)
+                .into_iter()
+                .map(|n| format!("anchor {n}")),
+        );
+    }
     missing.sort();
     missing.dedup();
     if missing.is_empty() {
@@ -308,10 +325,11 @@ const EXPANSION: &str = "core/expansion";
 
 fn uses_expansion(lib: &Library, ids: &[String], dev: &str) -> bool {
     ids.iter().filter_map(|i| lib.get(i)).any(|m| {
-        m.manifest
-            .object
-            .iter()
-            .any(|o| o.place == "cf.expansion" && on(&o.devices, dev))
+        !m.manifest.machine.is_empty()
+            || m.manifest
+                .object
+                .iter()
+                .any(|o| o.place == "cf.expansion" && on(&o.devices, dev))
     })
 }
 
@@ -377,8 +395,22 @@ pub fn apply_with(
         }
     }
 
+    // Machine types: assigned in canonical order; the framework generates its object and patches after the anchors
+    // are verified.
+    let machines = crate::machines::declared(lib, &order)?;
+    if !machines.is_empty() && !order.iter().any(|i| i == crate::machines::FRAMEWORK) {
+        return Err(err!(
+            "{} adds machines but {} is not selected (add it to `requires`)",
+            machines[0].module,
+            crate::machines::FRAMEWORK
+        ));
+    }
+
     // Every anchor a selected module uses must hold the bytes the port recorded.
     let mut used: BTreeSet<String> = BTreeSet::new();
+    if !machines.is_empty() {
+        used.extend(crate::machines::anchor_names());
+    }
     for id in &order {
         let m = lib.get(id).unwrap();
         for (o, dko) in m.manifest.object.iter().zip(&m.objects) {
@@ -398,6 +430,31 @@ pub fn apply_with(
     for name in &used {
         verify_anchor(&mem, port.anchor(name).unwrap())?;
     }
+    let generated = if machines.is_empty() {
+        None
+    } else {
+        let read = |addr: u64, len: u64| mem.read(CF, addr, len);
+        let read_sharc = |addr: u64, len: u64| mem.read(SHARC, addr, len);
+        Some(crate::machines::generate(
+            port,
+            &read,
+            &read_sharc,
+            &machines,
+        )?)
+    };
+    // One claim per machine id and per assigned type number.
+    for (id, ty, module) in generated.iter().flat_map(|g| g.types.iter()) {
+        for res in [format!("machine.id.{id}"), format!("machine.type.{ty}")] {
+            if let Some(prev) = claims.insert(res.clone(), module.clone()) {
+                return Err(err!("{module} and {prev} both claim {res}"));
+            }
+        }
+    }
+    let machine_types: BTreeMap<String, u64> = generated
+        .iter()
+        .flat_map(|g| g.types.iter())
+        .map(|(id, ty, _)| (format!("machines.{id}.type"), *ty as u64))
+        .collect();
 
     // Allocate every object first-fit in its region, then link with everyone's exports visible.
     let mut allocs: BTreeMap<String, Alloc> = BTreeMap::new();
@@ -412,9 +469,33 @@ pub fn apply_with(
         base: u64,
         cpu: &'static str,
     }
+    let no_externs: BTreeMap<String, String> = BTreeMap::new();
     let mut placed: Vec<Placed> = vec![];
     for id in &order {
         let m = lib.get(id).unwrap();
+        if let (Some(g), true) = (&generated, id == crate::machines::FRAMEWORK) {
+            for (dko, region) in &g.objects {
+                let (size, align) = link::footprint(dko);
+                let al = allocs
+                    .get_mut(*region)
+                    .ok_or_else(|| err!("port {} has no {region} region", port.id()))?;
+                let base = al.take(size.max(4), align.max(4)).ok_or_else(|| {
+                    err!(
+                        "{id}: {size} bytes do not fit in {region} ({} of {} bytes used)",
+                        al.used,
+                        al.cap
+                    )
+                })?;
+                placed.push(Placed {
+                    owner: m.tag(),
+                    dko,
+                    externs: &no_externs,
+                    place: (*region).into(),
+                    base,
+                    cpu: if dko.arch == "sharc" { SHARC } else { CF },
+                });
+            }
+        }
         for (o, dko) in m.manifest.object.iter().zip(&m.objects) {
             if !on(&o.devices, &dev) {
                 continue;
@@ -471,6 +552,8 @@ pub fn apply_with(
                 .unwrap_or_else(|| sy.name.clone());
             if aname == SEGMENTS {
                 ext.insert(sy.name.clone(), segments_addr);
+            } else if let Some(v) = machine_types.get(&aname) {
+                ext.insert(sy.name.clone(), *v);
             } else if let Some(a) = port.anchor(&aname) {
                 ext.insert(sy.name.clone(), anchor_value(a));
             }
@@ -531,6 +614,43 @@ pub fn apply_with(
                 bytes: new,
                 old_sha256: sha256_hex(&old),
                 what: format!("{} {}{:+}", op.op, op.anchor, op.offset),
+            });
+        }
+    }
+
+    // The framework's patches (relocations against the generated object).
+    if let Some(g) = &generated {
+        let owner = lib
+            .get(crate::machines::FRAMEWORK)
+            .map(|m| m.tag())
+            .unwrap_or_else(|| crate::machines::FRAMEWORK.into());
+        for gp in &g.patches {
+            let a = port.anchor(&gp.anchor).unwrap();
+            if gp.at + gp.bytes.len() as u64 > a.len {
+                return Err(err!(
+                    "{}: patch at {} +{} lies outside the anchor",
+                    crate::machines::FRAMEWORK,
+                    gp.anchor,
+                    gp.at
+                ));
+            }
+            // a value anchor names the instruction by `src`, its `addr` is the number the instruction holds
+            let site = if a.kind == "value" {
+                a.src.unwrap_or(a.addr)
+            } else {
+                a.addr
+            };
+            let cpu: &'static str = if a.cpu == SHARC { SHARC } else { CF };
+            let addr = site + gp.at;
+            let new = apply_relocs(gp.bytes.clone(), &gp.relocs, addr, &globals)?;
+            let old = mem.read(cpu, addr, new.len() as u64)?;
+            patches.push(Patch {
+                owner: owner.clone(),
+                cpu,
+                addr,
+                bytes: new,
+                old_sha256: sha256_hex(&old),
+                what: format!("{} {}{:+}", gp.what, gp.anchor, gp.at),
             });
         }
     }
@@ -734,6 +854,7 @@ pub fn apply_with(
         writes,
         regions,
         symbols: all_symbols,
+        machines: generated.map(|g| g.types).unwrap_or_default(),
         record: rec,
         output: None,
     };
@@ -831,8 +952,38 @@ fn retarget(mem: &Mem, a: &Anchor, op: &Op, globals: &BTreeMap<String, u64>) -> 
 }
 
 fn write_bytes(a: &Anchor, op: &Op, addr: u64, globals: &BTreeMap<String, u64>) -> Result<Vec<u8>> {
-    let mut bytes = unhex(op.hex.as_deref().unwrap())?;
-    for r in &op.reloc {
+    if a.cpu != CF && !op.reloc.is_empty() {
+        return Err(err!(
+            "write: relocations are only supported for ColdFire writes"
+        ));
+    }
+    apply_relocs(unhex(op.hex.as_deref().unwrap())?, &op.reloc, addr, globals)
+}
+
+/// ColdFire relocations of a write of `bytes` at `addr`.
+fn apply_relocs(
+    mut bytes: Vec<u8>,
+    relocs: &[crate::module::OpReloc],
+    addr: u64,
+    globals: &BTreeMap<String, u64>,
+) -> Result<Vec<u8>> {
+    for r in relocs {
+        if r.rtype == "sharc.abs32" {
+            // the low 32 bits of a 48-bit instruction (parcels little endian), as the linker writes them
+            let v = (*globals
+                .get(&r.symbol)
+                .ok_or_else(|| err!("write: symbol {} is not defined", r.symbol))?
+                as i64
+                + r.addend) as u64
+                & 0xffff_ffff;
+            let at = r.offset as usize;
+            if at + 6 > bytes.len() {
+                return Err(err!("write: relocation at {at} runs past the bytes"));
+            }
+            bytes[at + 2..at + 4].copy_from_slice(&((v >> 16) as u16).to_le_bytes());
+            bytes[at + 4..at + 6].copy_from_slice(&((v & 0xffff) as u16).to_le_bytes());
+            continue;
+        }
         let s = *globals
             .get(&r.symbol)
             .ok_or_else(|| err!("write: symbol {} is not defined", r.symbol))?
@@ -849,11 +1000,6 @@ fn write_bytes(a: &Anchor, op: &Op, addr: u64, globals: &BTreeMap<String, u64>) 
                 ));
             }
         };
-        if a.cpu != CF {
-            return Err(err!(
-                "write: relocations are only supported for ColdFire writes"
-            ));
-        }
         let v = if pcrel {
             s - (addr + r.offset) as i64
         } else {

@@ -17,6 +17,7 @@ pub mod dko;
 pub mod dsp;
 pub mod explain;
 pub mod link;
+pub mod machines;
 pub mod module;
 pub mod port;
 pub mod record;

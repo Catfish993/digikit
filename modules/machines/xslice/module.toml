@@ -1,0 +1,24 @@
+[module]
+id = "machines/xslice"
+version = "0.1.0"
+name = "XSLICE"
+category = "machines"
+status = "experimental"
+summary = "A MANUAL SLICE clone with its own name and a SRC page that also shows the orphaned CFADE row (an XSLICE machine, built on core/machines)"
+requires = ["core/machines"]
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+
+# The framework gives this machine the next free type number and exports it as `machines.xslice.type`.
+# `fields` are the nine descriptor ID fields: MANUAL SLICE's, with field 2 (an empty box on the SRC page) set to
+# 0xfa, SLICE's orphaned CFADE parameter row (finding 02, "XSLICE").
+[[machine]]
+id = "xslice"
+name = "XSlice"
+short = "XSL"
+clone_of = 6
+position = 7
+fields = [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0, 0xfe, 0x0a]

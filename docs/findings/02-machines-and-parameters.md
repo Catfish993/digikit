@@ -993,3 +993,120 @@ type byte raw. A stock firmware loading that project, kit or sound:
 Open **[O]**: the meaning of the byte at +0xd3; behaviour of type 0xff downstream; whether the DSP or UI clamps
 out-of-range raw parameter values; `trackStorage_v2`; the project-level load error UI ("LOAD ERROR", "Reload Error");
 a bounded emulator confirmation (load a hand-edited project with type 7 on stock, expect SAMPLE) was not run.
+
+## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
+
+Plan: `docs/plans/patchkit.md` (Phase 3). Code: `native/patchkit/src/machines.rs`, `modules/core/machines`,
+`modules/machines/xslice`, `modules/test/machine-clone`, `tools/pk_machine_rules.py`, `tools/pk_proof_machines.py`,
+`tools/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
+stated. Addresses are 1.17; 1.16 resolves the same rules (the function hashes are equal on both) and passed the same proof run
+(`tools/pk_proof_machines.py --fw 1.16`, 34 checks) and the harness cell with the smoke tour.
+
+### What the framework does
+
+Content modules declare `[[machine]] id, name, short, clone_of, position, fields (9 descriptor IDs), selector?` and
+`requires = ["core/machines"]`. patchkit (Rust, so the browser patcher has it too) assigns the types `7, 8, ...` in
+canonical module order (the order of `plan.modules`, so any selection order gives the same bytes: tested) and
+generates, from the image being patched and from nothing stored in the repo:
+
+| part | what is generated | sites |
+|---|---|---|
+| list | the 7 stock longs (copied) with the added types inserted at their `position`; the `pea` start and end operands repointed | `cf.machines.list` |
+| list (new) | **the list builder allocates `pea 0x1c.w` bytes for seven types and sets the vector end with `lea 0x1c(A0)`**: both raised to 4 x total | `cf.machines.list_alloc`, list |
+| dispatch | a shim at the entry of the descriptor dispatch: types above the stock ones index our descriptor array (stride 0x2c, name pointers to `std::string` reps with refcount -1, the nine IDs from the manifest); anything else falls into the stock code | `cf.machines.dispatch` |
+| group, rank | bound raised to `6 + N`; the sort comparator's `std::map` initialiser gets `(type, position)` pairs for the longer list | `group`, `rank` |
+| name, hint | the 12-byte display-name table copied with one row per type (long, short, hint = the clone's); three accessors repointed and their bound raised | `name.0..2` |
+| permit, pertype | the permission longs and the per-type byte table copied with the clone's row appended; 1 + 6 bounds and table pointers | `permit`, `pertype.0..5` |
+| clone | every `type == 6` test (MANUAL SLICE) also accepts added clones of type 6; the `(type & ~2) == 4` test maps added types to their `clone_of` first | `clone.0..6` |
+| typearg | `FUN_400da23e` (parameter mapping, a 7 x 10 table in bss, `type < 7`): the type argument is mapped to `clone_of` on entry | `typearg.0` |
+| persist | the sound loader's `(u8)(type + 1) < imm`: `imm = 8 + N` | `persist` |
+| DSP | the machine type -> selector table (DM `0x2567c0`, words `0 1 2 3 4 0 5`) is copied into `dsp.l2` with one word per type (the clone's, or `selector`), and the literal `I3 = 0x2567c0` of `FUN_001c24e9` is repointed | `dsp.machines.selector_table` |
+
+All 24 ColdFire sites are `[[anchor_rule]]` entries of `kind = "cf_func"` (new rule kind of `tools/port_resolve.py`): the
+cfdb `h_strict` hash of the containing function (address operands masked: no firmware bytes), the ordinal among
+functions with that hash (two of the three name accessors share one), the offset and the length. `tools/pk_machine_rules.py`
+writes them from the 1.16 profile and checks them against 1.17 (every function matches by hash, one each). Each
+generated patch checks the shape of the bytes it replaces (`moveq #6,D1; cmp.l ...` and so on) and fails with a message
+otherwise. No patchkit op was added: the generator creates the objects and the patches itself; the "relocate a table"
+need is `relocated_table`-style copying inside `generate()`.
+
+Placement: **the shims go to `cf.flash_cave`, the tables and strings to `cf.expansion`.** The emulator fetches ColdFire
+instructions only from the MAIN OS image (`runtime.rs step_once`: a PC outside `[0x40000400, +len)` is
+`UnsupportedGuestPc`), so code in `cf.expansion` cannot run there. The cave holds 2,108 bytes: core/machines costs about
+316 B of code for one type and about 80 B more per added type (372 and 452 B used, loader included). **[O]** The model
+should execute from RAM, then the code can move.
+
+### Corrections to the earlier XSLICE work **[C]**
+
+1. `machinepatch.build_rank_shim` writes `move.l #imm,(8,A7)` (`2f7c imm 0008`). That instruction is **8 bytes; ColdFire
+   instructions are at most 6**, our decoder says illegal and the core faults with exception vector 4 at the first
+   `FUN_40052a08`. The old Unicorn-era runs accepted it (a generic m68k core). Any image made by `tools/machinebuild.py`
+   with the rank part (including the XSLICE `cdbd7726...` oracle) faults on a real ColdFire. The framework loads D0 first.
+2. The list builder's `pea 0x1c.w` allocation (above): the old single added type overran it by four bytes (hidden by the
+   allocator's rounding); a second type overran by eight and showed up as wrong names (GRID replaced by the new name,
+   an `ERROR` entry) and corrupted lists.
+3. The vector-191 frame builder (`0x4002ec18`, a `moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w`) sends MANUAL
+   SLICE's slice table (frame words `+0xee..+0xf8` of the track page) **only for type 6**. Without this seventh clone
+   site an added clone sounds different from MANUAL SLICE (the audition ended after 0.5 s instead of playing the slice).
+   It is not in the machinepatch profile.
+4. The modulation destination picker (MOD page, DEST knob: "META, SRC, FLTR, ..." grouped by owner) lost the SRC group
+   for any type above 6 until `FUN_400da23e` mapped the type. `SoundParameterSet::vfunc_21` (`0x4003ae02`, compares the
+   track's type byte with a parameter's owner) is **not** on that path: restoring its original bytes in the patched image
+   leaves the picker equal to stock; it is left unpatched **[O]**.
+
+### The DSP side: binding contract
+
+- **The type number reaches the DSP as the ColdFire's TX frame word `0x94 + 2t`** (finding 04), written from the track's
+  type byte; measured on 1.17 with an XSLICE track: TX word `0x0007` (SRAM `0x800053dc`, high half of the long), and the
+  DSP's copy `DM 0x255970 + 2t` (one 16-bit word per track; measured with XSLICE on track 2 and XClone on track 3: shorts `0 7 8`) holds 7 **after the first frame that follows a trig**
+  (TRIG 1 or PLAY; before it the cache is 0). The DSP uses it only as a change detector and through the selector table.
+- **The DSP indexes the selector table `0x2567c0` with the type** (`FUN_001c24e9`: `S2 = DM(I3, M2)`), stores the word as
+  the per-track selector (`track_base + 0x4c`) that picks the render path (entries of `0x8055c840`). Stock: words 0..6 =
+  `0 1 2 3 4 0 5`; **word 7 is 0 (the SAMPLE selector) and words 8 and up are loader data pointers**, so an added type
+  would read a pointer as its selector. The framework therefore relocates the table into `dsp.l2` (stream block, SHARC
+  data) with one word per added type: the clone's selector by default (a MANUAL SLICE clone gets 5 and sounds exactly like
+  it), or `selector = n` in the manifest for a new render path (the DSP lane maps `n` to its code).
+- **A DSP module binds to its type through the extern symbol `machines.<id>.type`**: in its manifest
+  `[object.externs] _my_type = "machines.<id>.type"`; patchkit resolves it to the assigned number (a plain absolute value,
+  `sharc.abs32` or `cf.32` relocations) after the canonical assignment, so a DSP module's bytes change with the module
+  set exactly as its type does. Machine ids are claims (`machine.id.<id>`, `machine.type.<n>`); two modules with one id
+  fail with a message. The module that supplies the machine requires `core/machines`; a DSP-only module that wants a
+  type it did not declare needs a `[[machine]]` entry too (it may be the whole module).
+- For a **new render path** (not a clone): choose `selector = n` for an entry the DSP lane adds to its own dispatch
+  (the array `0x8055c840` holds 15 entries; `n >= 6` is unused by stock types, finding 06), read the type from
+  `DM 0x255970 + 2t` in its voice hook, and leave `clone_of` at the stock type whose descriptor and per-type rows the
+  ColdFire side should copy.
+
+### Evidence (`tools/pk_proof_machines.py`, DT2 1.17 and 1.16 with the same results, one daemon per image, health asserted after every input)
+
+| check | result |
+|---|---|
+| FUNC+SRC lists XSLICE (8th entry, after MIDI) and, with a second module, XClone after it | frames under `out/runs/machines-proof/` |
+| YES commits: track object type byte (`0x4265338e`) | 7 (XSLICE), 8 (XClone); stock SLICE 6 |
+| TX frame word and DSP cache after an audition | 7 and 7 (XSLICE), 8 and 8 (XClone) |
+| audition PCM of XSLICE / XClone / patched SLICE vs stock SLICE | **bit-identical** (0 differing samples; patched SLICE needs a one-block capture shift on the first image) |
+| sequencer (TRIG 1, PLAY, 2 s before STOP) | bit-identical for both clones |
+| MOD DEST picker, 14 frames over the SRC group | equal to stock SLICE for both clones |
+| patched: save project with XSLICE, set track to SAMPLE, load the project | type 7 again (track object, TX, DSP) |
+| control: the same image with the persistence immediate put back to `8` | type 0 after the load (so the immediate is what keeps it) |
+| the saved project's sound records | type 7 in 2 records (`card.overlay` export, `tools/card_overlay.py`) |
+| the saved card laid over the stock firmware's card; STOCK loads the project | track 1 is **SAMPLE** (type 0), no fault, halt or stall, TRIG 1 sounds |
+| `machines/xslice` + `test/machine-clone` in either order | the same `.syx` bytes; types 7 and 8 |
+
+The proof needed one emulator addition: `card.overlay {path}` (native/{card,machine,boot,control}: the guest's writes to
+the eMMC as sparse sectors) so a card with a patched firmware's project can be mounted by another firmware.
+
+### Open **[O]**
+
+- Hardware: never flashed. Executing the shims from the flash cave is the same as the old flash design; the DSP selector
+  block lies in a region the real SHARC boot ROM has not been shown to accept (finding 06).
+- DN2: no support (below).
+- Other tests of the clone's type may exist that no run exercised (p-lock edits of the machine's own parameters,
+  copy/paste of a sound between tracks, kit load with mixed types). Parameter-knob effects on the DSP were not shown:
+  the encoder turns on the SRC page moved the screen state (the SLICE/NOTE switch) but no turn changed a parameter value
+  in the track object or the frame page in these runs, for stock SLICE either.
+- A PCM difference of about 1e-3 appears for XClone (not XSLICE) in the release after STOP in one run; with the capture
+  stopped before STOP both are bit-identical. Attributed to capture timing, not measured.
+- Types above 8 (a third module) are untested; the framework allows 32.
+- Kits saved on patched firmware and loaded on stock lose the type (they become SAMPLE; re-saving erases it): said in the
+  gallery text of the module.

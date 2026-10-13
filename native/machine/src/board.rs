@@ -478,6 +478,11 @@ impl Board {
         self.esdhc.card_ref()
     }
 
+    /// The guest's writes to the eMMC card (see `Card::overlay_sectors`).
+    pub fn card_overlay_sectors(&self) -> Vec<emmc_card::CardOverlaySector> {
+        self.esdhc.card_ref().overlay_sectors()
+    }
+
     /// Enable the board's port-D4-to-port-C3 SD continuity gate. The caller
     /// supplies the hook state separately from checkpoint GPIO bytes, as the
     /// Python oracle does. GPIO itself remains backed by sparse RAM.
