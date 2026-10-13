@@ -3,7 +3,7 @@
 # Frame goldens are recorded with `uv run python tools/pk_harness.py run --update` (hashes only are committed).
 [test]
 name = "audible"
-devices = ["dt2", "dn2"]
+devices = ["dt2"]
 quick = true
 
 [[step]]

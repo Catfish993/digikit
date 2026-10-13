@@ -5,6 +5,7 @@ name = "DSP voice hook"
 category = "core"
 status = "experimental"
 summary = "Per-voice render hook of the SHARC engine: machine types registered by other modules render with their own DSP routine, every other type renders as stock"
+ports = ["dt2-1.16", "dt2-1.17"]
 requires = []
 conflicts = []
 

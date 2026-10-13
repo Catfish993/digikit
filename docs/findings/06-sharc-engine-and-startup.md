@@ -5415,7 +5415,7 @@ per block (idle-skip difference over 12,750 and 4,500 blocks): 0.03 % of the per
 and memory stalls that this count ignores, and the clock is assumed, so these are upper bounds **[O]**; an
 effect that needs 5,000 instructions per block (a compressor or a drive with a smoothed gain) is under 1 %.
 
-## Per-voice render hook: proposal for a new machine type (not built) **[D][O]**
+## Per-voice render hook: proposal for a new machine type (built and corrected in the next section) **[C]**
 
 Confidence that this reaches a sounding added machine: about 40 %. The master hook above shows that new DSP
 code can be placed, run and verified; the rest is mapping.
@@ -5440,3 +5440,134 @@ code can be placed, run and verified; the rest is mapping.
   contract table above covers the sample path only); how a voice record is allocated at note-on (ColdFire
   trig -> `0x1c60a2`); whether `0x1c5576` is a second path that an added type must also cover; the
   decimator state at `+0x104`.
+
+
+## Per-voice render hook: built (patchkit Phase 4.2, DT2 1.16/1.17) **[D]**
+
+Lane fastweb, 2026-10-13/14. One agent, emulator and concrete core only, not checked by a second agent. The DSP blobs
+of DT2 1.16 and 1.17 are byte-identical, so every address below holds on both; nothing ran on a device. Modules:
+`core/dsp-voice`, `test/sine-voice`, `machines/pluck`. Tests: `tests/test_dsp_voice.py`, `tests/test_pluck.py`;
+proof: `tools/pk_proof_voice.py`.
+
+**[C] The hook is the first instruction of `0x1c4ecf`, not the call at `0x1c6b00`.** Retargeting the call patches
+the code of `FUN_1c642a`, and the AOT invalidation (finding 18) then bars that function's generated region: with
+the call-site patch the coupled DT2 ran 2,000,000 ColdFire instructions in 5.7 to 7.2 s (22 DSP frames, about 4
+frames/s, an interpreter run of the busiest function) against 0.03 s stock. Overwriting the first instruction of
+the callee leaves `FUN_1c642a` generated and bars only the small region of `0x1c4ecf`: a patched image with no
+registered type costs +1,120 DSP instructions per block (+0.5 %) and its PCM is bit-identical to stock.
+
+- Site: `0x1c4ecf`, `1587 ffff ffe6` = `I7 = modify(I7, -26) (NW)` (the callee's frame reservation; 48 bits, one
+  instruction). patchkit op `jump` writes `JUMP _dv_entry` (`063e` + 24-bit pc) over it; the wrapper executes the
+  displaced instruction itself (`MODIFY(I7, -26) (NW);` assembles to the same six bytes) and `JUMP`s to `0x1c4ed2`.
+  Both are anchors by rule (`dsp.voice.render_entry`, `dsp.voice.render_next`: `reloc_hash` of the function plus
+  offsets 0 and 3).
+- The call at `0x1c6b00` is `CJUMP`-style: it builds the callee's frame (`I6 = I7`, the caller's `I6` and the
+  return address stored under it), the callee reserves its locals with `I7 -= 26 words`, restores what it clobbered,
+  loads `I12` with the return address from `[I6 - 1]` and returns with `JUMP (M14, I12) (DB)` whose delay slots
+  hold a restore and `RFRAME`. A routine that takes over the call must end the same way.
+- Inputs at the entry [D, concrete core and emulator]: `R4` = voice record (`0x2412cc + v * 0x1d8`), `R8` = the
+  voice's output block (32 floats; the 32 buffers lie `0x80` bytes apart, `0x252df8 + v * 0x80`: they are the track buses the master stage sums, left for the even voice and right for the odd voice of track `t` at `0x252df8 + t * 0x100`; read back from the emulator after a held sine: buffers 0 and 1 equal and non-zero, buffer 2 zero), `R12` = 32,
+  `R14` = the voice loop counter (32 for voice 0, 1 for voice 31: `v = 32 - R14`; nothing else in the call carries
+  the voice number), `M5 = 0`, `M6 = 1`, `M7 = -1`, `M13 = 0`, `M14 = 1`. The firmware calls this function for
+  every voice whose selector is not 2 (STRETCH takes `0x1c5576`); types 7 and up never reach selector 2 (below).
+- Voice and track: track `t` owns voices `2t` and `2t + 1` (finding 15). The type is the short word `cache[t]` at
+  `0x255970` (anchor `dsp.voice.type_cache`: the literal `I4 = 0x255970` in `FUN_1c24e9`, `reloc_hash`
+  `d2c02a58..`, +0x1e5): the DSP's copy of frame word `0x94 + 2t`, written by `FUN_1c2b24`'s change detector.
+  Verified by `DSP_FRAME_POKE=0x94=8`: `cache[0]` reads 8 and the param-record selector word `+0x4c` of voices 0
+  and 1 reads `0x254478`. Short-word loads through `Rn = DM(I, M) (SW)` are ignored by the assembler (finding
+  20), so the wrapper reads the cache as a 32-bit word that holds two tracks and extracts the half with
+  `FEXT Rx BY Ry` (`Ry` = `bit6 | len6 << 6`, len6 at bits 11:6, not 13:8).
+- **Selector collision, settled by measurement.** `FUN_1c24e9` stores `0x2567c0[type]` (32-bit words) at record
+  `+0x4c`. Words 0..6 are `0 1 2 3 4 0 5`; word 7 is `0x2567dc`, the copy-gate flag (1 in the loader image, cleared
+  by `0x1c2c8b` in the first frame: type 7 then selects 0, SAMPLE); words 8 to 13 are `0x254478 ...` pointers (>= 6:
+  stage A of `FUN_1c642a` is skipped, `compu(R6, 6)` at `0x1c6553`); words 14 and 15 are 0 (SAMPLE again), 16 to
+  21 pointers, 22 and 23 zero. A new type therefore never selects the STRETCH path (selector 2), and a type whose
+  entry is 0 or 1 runs the sample stage A (`0x1c4afe` ...) on its records, which is harmless because a registered
+  routine does not read what stage A writes and the stock empty-slot voices run it anyway. No selector table entry
+  has to be added. **[O]** the selector words of types above 23 were not read.
+- Note-on edge, independent of the selector: the arm routine `FUN_1c4eaf` stores the short 1 at `+0x1b8`, which
+  also zeroes byte `+0x1b9`; stage A (selectors 0 to 5) clears `+0x1ba` before the render, so `+0x1ba` is not usable.
+  The wrapper's contract: a routine marks a running voice by writing a non-zero byte to `+0x1b9`; `+0x1b8 != 0` and
+  `+0x1b9 == 0` is a note-on in this block. The sine and the string both retrigger correctly on it (concrete core).
+- What the later stages read: nothing in the record. `0x1cdd8b` (second loop of `FUN_1c642a`, 32 passes, a 5-word
+  record stride `0x14`) takes each voice's output block and applies the level/envelope gain; the track mix, filter,
+  FX and sends follow as for a sample. So the routine writes 32 floats to `R8` and nothing else: the 64-float work
+  buffer at `+4` and the decimator state at `+0x104` are not used (the engine renders 64 samples at 96 kHz and
+  decimates; a routine renders 48 kHz directly).
+- **What was shown downstream** (emulator, DT2 1.17, type forced on the wire, TRIG 1 held): with the machine level word
+  `0xec` halved the sine falls by the same factor as the stock sample (0.25 in RMS, -12.0 dB both: the level stage
+  is a square); with the Reverb Send raised from the FX page the reverb tail after the sine has ended carries energy
+  (it is silent without the send); with the filter Frequency lowered from the filter page the sine at 2093 Hz falls
+  by 48.6 dB. So the voice goes through the engine's level stage, the track filter and the send FX.
+
+**The routine ABI and what core/dsp-voice does** (`modules/core/dsp-voice`, 138 instructions). The wrapper reads
+the track's type, scans `_dv_table` (16 rows `{type, pc}` and an empty row; filled by the machine modules'
+`register` ops, no addresses in modules) and for a registered type of an even voice saves the registers the stock
+function preserves (`R3 R5 R6 R7 R9 R10 R11 R13 R14 R15 I0 I1 I2 I3 I5 M1 M2 M3 B3 I13`), enters the routine
+with `JUMP (M13, I12)` and `I13` = return pc (the tracer of `tools/sharc_core` does not follow an indirect `CALL`
+and the firmware has none), restores and returns like the stock function. The odd voice copies the even voice's
+block (`R8 - 0x80`). An unregistered type falls through to `0x1c4ed2`. Registers on entry: `R4` record, `R8` block,
+`R12` = 32, `R0` type, `R1` voice, `R2` track. The routine may clobber `R0-R15 I0-I5 I13 M1-M4 B3`; it must keep
+`I6 I7 I8-I12 I14 I15 M0 M5-M15`, the L registers and `MODE1`, and returns with `JUMP (M13, I13)`. Shared helpers
+exported by the core: `_dv_exp2` (2^F0, degree-5 minimax, relative error 8e-8, clobbers R0-R3) and
+`_dv_frame_hw` (R0 = halfword k of the frame copy at `0x2558dc` -> R0, anchor `dsp.voice.frame_base`: the literal
+`I5 = 0x2558dc`, `FUN_1c2b24` +0x14d).
+
+**Frame words a routine reads** [D, measured with a held TRIG 1; track `t`, all halfwords]: pitch `0x02 + 2t` =
+note << 8 (`0x3c00` = 60; the sine tracks it to 0.0003 cents, no glide seen at the note start; mid-note changes not
+tried), velocity `0x34 + 2t` = velocity << 8 (`0x6400` = 100), machine parameters from `0xda + 0x60 t + 2 (mirror
+index - 25)`: slots 0 to 7 are mirror indices 25, 26, 27, 28, 31, 32, 33, 34 (finding 02), i.e. frame offsets `0xda
+0xdc 0xde 0xe0 0xe6 0xe8 0xea 0xec`. Slot 3 (28) is the sample slot the engine reads for the sample load: a machine
+should keep it at 0. Slot 7 (34) is the level the engine applies after the voice.
+
+**Pitch** from the frame: note n = pitch word / 256 + (tune word / 256 - 64) semitones, f = 440 * 2^((n - 69) / 12).
+The TUNE slot is 0x4000 (64.0) at rest.
+
+**Speed and space** [D]. Busy DSP instructions per block, 1500 blocks counted after the note started
+(`tools/pk_proof_voice.py`, emulator tier counters): stock sample voice 214,279; stock voice through the wrapper
+215,399 (+1,120); sine voice 210,300; Pluck voice 210,405. The module code is 728 bytes (core) and 632 bytes
+(sine); Pluck is 3,500 bytes of code and data plus a reserved 262,144-byte delay area (16 tracks x 4096 samples); on
+DT2 the three modules use 267,148 of 922,756 free L2 bytes, of which 4,276 are loaded by the boot stream (patchkit
+now leaves a module's bss out of the stream: the container grew by 928 bytes, not 262 KB). DN2: 267,148 of 491,972.
+
+**Open** [O]. (1) Hardware: the unloaded L2 area is written before it is read, so a device that traps on an
+uninitialised ECC word would not trap; nothing is known about L2 ECC. (2) A DT2 1.16 run (the anchors resolve there,
+the module was not run). (3) The behaviour on a patch change of the type while a note rings. (4) The pitch word at a
+note change inside a held note (the ColdFire smoother). (5) Release (`0x24` mask) is ignored by the string.
+
+
+## Per-voice hook on DN2 1.11/1.12: assessment (not built) **[D][O]**
+
+Same session; DN2 1.11 and 1.12 share one DSP blob. What is known, from the sharcdb of `dn2-1.12` (no run):
+
+- **No sample voice, so no `0x1c4ecf` analogue.** None of the DT2 voice functions (`0x1c642a`, `0x1c4ecf`, `0x1c4f81`,
+  `0x1c24e9`, `0x1c5576`, `0xb80000`) has a relocation-tolerant match in DN2; the shared pieces are downstream
+  (`0x1cb3d8` = DN2 `0x1cdb56`, `0x1c80f2` = DN2 `0x1ca84e`, `0x1cdd8b` = DN2 `0xb8251b`). The DN2 engine is the FM
+  engine: `FUN_1c2712` (frame copy, 16-track loop; called by `0x1c9e76`) calls `FUN_1c8ef1` (1,352 instructions,
+  `0x1c8ef1..0x1c9b73`), which runs one track's pipeline of about 40 stage calls (`0x1c4f04` indexed lookup, `0x1c694a`,
+  `0x1c731a`, `0x1c82c0` interpolating oscillator, `0xb8....` helpers, ...).
+- **Type dispatch, the analogue of the DT2 selector.** In `FUN_1c8ef1` the track's type word is `R2 = DM(I0 - 12)`
+  (`0x1c9056`); `R15 = 5; compu(R2, R15)` (`0x1c905d`) and `JUMP IF GE (DB) 0x1c90d4` (`0x1c909f`) send types >= 5 past
+  the voice stage; `I12 = 0x8052db90[R2]` and `JUMP (PM)` (`0x1c90b0`) pick the stage by type: the five entries
+  `0x1c90b2 0x1c91dc 0x1c920b 0x1c922f 0x1c90d4` (FM TONE, WAVETONE, FM DRUM, SWARMER, and MIDI = the same
+  target as the bound) are followed in memory by two further tables of the same kind (`0x8052dba4`, bound 7 at
+  `0x1c9197`; `0x8052dbc0`, selected at `0x1c9587`). The tables cannot grow in place (the next one starts behind the
+  last entry), as on DT2.
+- **So the DN2 hook has the DT2 shape, one level up:** a wrapper entered from the type test, dispatching on the
+  track's type (the word at `I0 - 12` is a cache the way `0x255970` is on DT2), rendering a registered type's block
+  and rejoining the pipeline after the voice stage, falling through otherwise.
+- **Unknown, in order of risk:** (1) where the FM stages deposit the track's audio and which stages after the voice
+  stage a replacement must still run or skip (the mixer-side stages, which DN2 shares with DT2, are known); (2) the
+  record layout of DN2's voices and the ColdFire source of the type word (finding 04 did not find it on the CF
+  side); (3) whether one wrapper at `0x1c909f` can skip the three dispatch sites cleanly; (4) the per-track
+  workspace (`0x13000`-byte offsets from `I9`), which a routine must not disturb.
+- **Plan and estimate.** 1 to 2 agent days of static work to map the stage that writes the track bus and the type
+  cache (the `sharc.py` slice from the master stage `0xb8251b`... backwards, and a `DSP_FRAME_POKE` sweep of the DN2
+  frame to find the type word as was done for `0x94` on DT2); 1 day to build `core/dsp-voice` for DN2 (new
+  anchors by `reloc_hash` of `FUN_1c8ef1`, the DN2 frame words of Pluck's parameters at the DN2 stride `0x92`), the
+  same `jump`/`register` ops; the Pluck routine ports with new frame offsets (stride `0x92` instead of `0x60`, track
+  block starts and mirror indices to be re-derived from finding 04's DN2 section) and a smaller line (DN2 has 491,972
+  free L2 bytes and a 211,600-byte stream limit, both fine for 262 KB of reserved delay line now that bss is not
+  loaded). Confidence of a sounding DN2 string: about 30 %; of finding the type test and a safe skip: about 60 %.
+  Recommendation: finish `core.machines` DT2 first; DN2 is a 3 to 5 day item; its payoff is the same module on a second device,
+  so it is worth doing only after a DT2 machine has been heard on hardware.

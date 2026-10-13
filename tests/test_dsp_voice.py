@@ -119,7 +119,11 @@ class Rig:
         self.dm[nw(RECORDS + v * REC + off)] = value
 
     def call(
-        self, v: int, regs: dict | None = None, extra_reads: dict | None = None
+        self,
+        v: int,
+        regs: dict | None = None,
+        extra_reads: dict | None = None,
+        max_steps: int = 20000,
     ) -> dict:
         r4 = RECORDS + v * REC
         r8 = OUT + v * 0x80
@@ -184,7 +188,7 @@ class Rig:
                 "M1",
                 "M3",
             ),
-            max_steps=20000,
+            max_steps=max_steps,
             extra_breaks=(STOCK_BP,),
         )
         out["in"] = r

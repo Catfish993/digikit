@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 try:
     import card_check
     import hook_ab
+    import pluck_ref
     from digi_client import Emu
 finally:
     sys.path.pop(0)
@@ -67,6 +68,10 @@ def panel(page: int, encoder: int, events: int, detents: int) -> list[dict]:
     return ev
 
 
+# type 9, DECAY (slot 1, 0xdc) 0x4000, PICK (slot 2, 0xde) 0, BRIGHT (slot 4, 0xe6) max, COLOR (slot 5, 0xe8) 0x1000
+PLUCK_POKE = "0x94=9,0xdc=0x4000,0xde=0,0xe6=0x7f00,0xe8=0x1000"
+PLUCK_CASES = {"pluck60": 60, "pluck72": 72, "pluck-color": 60}
+
 # name -> (patched?, DSP_FRAME_POKE, panel events)
 CASES: dict[str, tuple[bool, str, list[dict]]] = {
     "stock": (False, "", []),
@@ -77,6 +82,9 @@ CASES: dict[str, tuple[bool, str, list[dict]]] = {
     "lev-half": (True, "0x94=8,0xec=0x3200", []),
     "lev-full": (True, "0x94=8", []),
     "stock-lev-half": (False, "0xec=0x3200", []),
+    "pluck60": (True, PLUCK_POKE, []),
+    "pluck72": (True, PLUCK_POKE + ",0x02=0x4800", []),
+    "pluck-color": (True, PLUCK_POKE + ",0xe8=0x7f00", []),
     "rev-dry": (True, "0x94=8", panel(FX_PAGE, ENC_REV, 0, 0)),
     "rev-send": (True, "0x94=8", panel(FX_PAGE, ENC_REV, 52, 4)),
     "flt-open": (True, "0x94=8,0x02=0x6000", panel(FLT_PAGE, ENC_FLT, 0, 0)),
@@ -107,6 +115,27 @@ def left_index_of(instr: int) -> float:
     return instr / 132_000_000 * 48000
 
 
+def analyse_pluck(pcm: np.ndarray, note: int, start: int) -> dict:
+    """Fundamental by bandpass and zero-crossing fit; decay as the slope of the 2048-sample RMS in dB."""
+    left = pcm[0::2].astype(np.float64)
+    want = semitone_hz(note)
+    period = 48000.0 / want
+    seg = left[start + int(4 * period) : start + 36000]
+    got = pluck_ref.f0_from_crossings(seg, want)
+    blocks = [
+        float(np.sqrt(np.mean(left[start + k : start + k + 2048] ** 2)))
+        for k in range(2048, 40000, 2048)
+    ]
+    t = (np.arange(len(blocks)) * 2048 + 2048 + 1024) / 48000.0
+    slope = float(np.polyfit(t, 20 * np.log10(np.maximum(blocks, 1e-12)), 1)[0])
+    return {
+        "f0": got,
+        "cents": 1200 * math.log2(got / want),
+        "decay_db_per_s": slope,
+        "t60_s": -60.0 / slope if slope < 0 else None,
+    }
+
+
 def analyse(pcm: np.ndarray) -> dict:
     left = pcm[0::2].astype(np.float64)
     act = np.flatnonzero(np.abs(left) > 1e-6)
@@ -134,6 +163,7 @@ def render(
     work: pathlib.Path,
 ) -> dict:
     env = {"DSP_FRAME_POKE": poke} if poke else {}
+    busy = None
     with Emu.spawn_coupled(syx, ready, timeout=300, env=env) as emu:
         samples = work / "samples"
         card_check.make_samples(samples)
@@ -157,8 +187,15 @@ def render(
             emu.call("pcm.tap", action="capture", path=str(wav))
             emu.call("input.button", code=TRIG1, down=True)
             emu.step(40_000_000)
+            t0 = (emu.status().get("audio") or {}).get("dsp_tiers") or {}
             frames = emu.status()["dsp_frames"]
             emu.call("run_until", frames=frames + 1500)
+            t1 = (emu.status().get("audio") or {}).get("dsp_tiers") or {}
+            if t0 and t1:
+                busy = (
+                    (t1["instructions"] - t1["idle_skip"])
+                    - (t0["instructions"] - t0["idle_skip"])
+                ) / 1500
             emu.call("input.button", code=TRIG1, down=False)
             frames = emu.status()["dsp_frames"]
             emu.call("run_until", frames=frames + 300)
@@ -167,13 +204,14 @@ def render(
     return {
         "dsp_halted": (st.get("audio") or {}).get("halted"),
         "frames": st["dsp_frames"],
+        "busy_per_block": busy,
     }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--stock", default=str(ROOT / "Digitakt_II_OS1.17.syx"))
-    ap.add_argument("--patched", default=str(ROOT / "out" / "patch" / "sv.syx"))
+    ap.add_argument("--patched", default=str(ROOT / "out" / "patch" / "vp.syx"))
     ap.add_argument("--ready", default=str(ROOT / "out" / "ready-fw-dt2"))
     ap.add_argument("--out", default=str(ROOT / "out" / "runs" / "voice-proof"))
     ap.add_argument("--case", action="append", choices=list(CASES))
@@ -197,6 +235,8 @@ def main() -> int:
         )
         pcm[name] = hook_ab.read_wav(wav)
         info.update(analyse(pcm[name]))
+        if name in PLUCK_CASES and not info["silent"]:
+            info.update(analyse_pluck(pcm[name], PLUCK_CASES[name], info["start"]))
         report[name] = info
         print(name, json.dumps(info), flush=True)
     ok = True
@@ -218,6 +258,10 @@ def main() -> int:
             cents = 1200 * math.log2(r["hz"] / want) if not r["silent"] else None
             r["cents_error"] = cents
             ok_run &= cents is not None and abs(cents) < 5
+        if name in PLUCK_CASES:
+            ok_run &= not r["silent"] and abs(r["cents"]) < 2.0
+            if name == "pluck60":
+                ok_run &= r["t60_s"] is not None and abs(r["t60_s"] / 1.02 - 1) < 0.15
         checks[name] = bool(ok_run)
         ok &= ok_run
     if all(k in report for k in ("lev-half", "lev-full", "stock", "stock-lev-half")):
