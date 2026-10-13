@@ -416,7 +416,8 @@ def run_tool(
     started = time.monotonic()
     records: list[dict[str, Any]] = []
 
-    if args.result is not None or args.jobs == 1 or len(names) == 1:
+    jobs = args.jobs or default_jobs(len(names))
+    if args.result is not None or jobs == 1 or len(names) == 1:
         # in this process, in the order given; sessions are pooled across the parts
         proof = (
             None
@@ -439,7 +440,6 @@ def run_tool(
             args.result.write_text(json.dumps(records[0]))
             return 0
     else:
-        jobs = args.jobs or default_jobs(len(names))
         records = run_parallel(script, names, by_name, argv, out, jobs, label)
     failed = [r["part"] for r in records if not r["ok"]]
     wall = time.monotonic() - started
