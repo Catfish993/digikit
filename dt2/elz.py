@@ -17,6 +17,7 @@ aplib.c `ap_depack`; this is a separate Python implementation of that format:
   * two bits give a short length 1..3; 00 means gamma + 2 follows. Past offset
     3328 the length gains 1. The copy count is length + 1.
 """
+
 import struct
 
 BIAS = 767

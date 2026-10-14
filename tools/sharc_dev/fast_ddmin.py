@@ -24,15 +24,22 @@ import subprocess
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-from tools.emulator import coupled
-from tools.devtools import fastcov
+from tools.devtools import fastcov  # noqa: E402
+from tools.emulator import coupled  # noqa: E402
 
 
 def run(binary, env, scenario, seconds, work: pathlib.Path) -> str:
     argv = coupled.run_args(
         binary,
         coupled.inputs(),
-        ["--scenario", scenario, "--seconds", str(seconds), "--out", str(work / "r.json")],
+        [
+            "--scenario",
+            scenario,
+            "--seconds",
+            str(seconds),
+            "--out",
+            str(work / "r.json"),
+        ],
     )
     done = subprocess.run(
         argv,
@@ -61,9 +68,14 @@ def main() -> int:
     def fails(text: str) -> bool:
         return "DSP halted" in text and args.match in text
 
-    text = run(binary, {**env, "SHARC_FAST_LOG": "1"}, args.scenario, args.seconds, work)
+    text = run(
+        binary, {**env, "SHARC_FAST_LOG": "1"}, args.scenario, args.seconds, work
+    )
     if not fails(text):
-        print("the full run does not fail:", [l for l in text.splitlines() if "halt" in l][:2])
+        print(
+            "the full run does not fail:",
+            [l for l in text.splitlines() if "halt" in l][:2],  # noqa: E741
+        )
         return 1
     pcs = []
     for line in text.splitlines():
@@ -75,7 +87,13 @@ def main() -> int:
 
     def test(subset: list[str]) -> bool:
         only.write_text(",".join(subset))
-        out = run(binary, {**env, "SHARC_FAST_ONLY": f"@{only}"}, args.scenario, args.seconds, work)
+        out = run(
+            binary,
+            {**env, "SHARC_FAST_ONLY": f"@{only}"},
+            args.scenario,
+            args.seconds,
+            work,
+        )
         return fails(out)
 
     n = 2

@@ -10,18 +10,19 @@ channel 6, and that the real files in devices/ parse and round-trip.
 No firmware and no emulator: the shipped device files are plain data, and
 everything else is built in a temp directory.
 """
+
 import os
 import tempfile
 import unittest
 
-from emu import device
 from support.paths import REPO_ROOT
 
+from emu import device
 
 REPO = str(REPO_ROOT)
-DEVICES = os.path.join(REPO, 'devices')
+DEVICES = os.path.join(REPO, "devices")
 
-SYNTHETIC = '''
+SYNTHETIC = """
 [device]
 name = "Test Device"
 short = "td"
@@ -55,12 +56,12 @@ name = "encoders"
 kind = "encoder"
 codes = [1, 2, 3]
 layout = "row"
-'''
+"""
 
 
-def write_device(dirpath, text=SYNTHETIC, name='test.toml'):
+def write_device(dirpath, text=SYNTHETIC, name="test.toml"):
     path = os.path.join(dirpath, name)
-    with open(path, 'w') as fh:
+    with open(path, "w") as fh:
         fh.write(text)
     return path
 
@@ -69,8 +70,8 @@ class ParseTest(unittest.TestCase):
     def test_parses_identity_and_panel(self):
         with tempfile.TemporaryDirectory() as d:
             dev = device.load(write_device(d))
-        self.assertEqual(dev.name, 'Test Device')
-        self.assertEqual(dev.short, 'td')
+        self.assertEqual(dev.name, "Test Device")
+        self.assertEqual(dev.short, "td")
         self.assertEqual(dev.linear_channels, 2)
         self.assertEqual(dev.encoders, 3)
         self.assertEqual(len(dev.groups), 3)
@@ -79,8 +80,8 @@ class ParseTest(unittest.TestCase):
         # Hashes get pasted in both cases; comparison must not care.
         with tempfile.TemporaryDirectory() as d:
             dev = device.load(write_device(d))
-        self.assertEqual(dev.firmwares[0].sha256, 'aabbcc')
-        self.assertIsNotNone(dev.firmware_for_sha256('AaBbCc'))
+        self.assertEqual(dev.firmwares[0].sha256, "aabbcc")
+        self.assertIsNotNone(dev.firmware_for_sha256("AaBbCc"))
 
     def test_exception_codes_are_integers(self):
         # TOML bare keys are strings even when they look like integers, so
@@ -127,29 +128,30 @@ class IdentifyTest(unittest.TestCase):
     def test_unknown_hash_is_refused_not_guessed(self):
         with tempfile.TemporaryDirectory() as d:
             write_device(d)
-            target = os.path.join(d, 'firmware.syx')
-            with open(target, 'wb') as fh:
-                fh.write(b'not a known firmware')
+            target = os.path.join(d, "firmware.syx")
+            with open(target, "wb") as fh:
+                fh.write(b"not a known firmware")
             with self.assertRaises(device.DeviceError):
                 device.identify(target, d)
 
     def test_matches_by_content_not_filename(self):
         with tempfile.TemporaryDirectory() as d:
-            payload = b'pretend firmware'
+            payload = b"pretend firmware"
             import hashlib
+
             sha = hashlib.sha256(payload).hexdigest()
             write_device(d, SYNTHETIC.replace('"AABBCC"', '"%s"' % sha))
             # A name that matches no filename field in the device file.
-            target = os.path.join(d, 'renamed-by-the-user.syx')
-            with open(target, 'wb') as fh:
+            target = os.path.join(d, "renamed-by-the-user.syx")
+            with open(target, "wb") as fh:
                 fh.write(payload)
             dev, fw = device.identify(target, d)
-            self.assertEqual(dev.name, 'Test Device')
-            self.assertEqual(fw.version, '9.9Z')
+            self.assertEqual(dev.name, "Test Device")
+            self.assertEqual(fw.version, "9.9Z")
 
     def test_missing_directory_is_refused(self):
         with self.assertRaises(device.DeviceError):
-            device.load_all('/nonexistent-devices-dir')
+            device.load_all("/nonexistent-devices-dir")
 
 
 class ShippedDeviceFilesTest(unittest.TestCase):
@@ -160,21 +162,22 @@ class ShippedDeviceFilesTest(unittest.TestCase):
 
     def test_both_products_are_present(self):
         names = sorted(d.name for d in self.devices)
-        self.assertEqual(names, ['Digitakt II', 'Digitone II'])
+        self.assertEqual(names, ["Digitakt II", "Digitone II"])
 
     def test_every_button_code_round_trips(self):
         for dev in self.devices:
             for code in dev.button_codes():
                 pos = dev.wire_for(code)
-                self.assertIsNotNone(pos, '%s code %d' % (dev.name, code))
-                self.assertEqual(dev.code_at(*pos), code,
-                                 '%s code %d' % (dev.name, code))
+                self.assertIsNotNone(pos, "%s code %d" % (dev.name, code))
+                self.assertEqual(
+                    dev.code_at(*pos), code, "%s code %d" % (dev.name, code)
+                )
 
     def test_products_differ_where_the_hardware_does(self):
         by_name = {d.name: d for d in self.devices}
         # Digitakt's name table ends at 50; Digitone carries five more.
-        self.assertEqual(max(by_name['Digitakt II'].button_codes()), 50)
-        self.assertEqual(max(by_name['Digitone II'].button_codes()), 54)
+        self.assertEqual(max(by_name["Digitakt II"].button_codes()), 50)
+        self.assertEqual(max(by_name["Digitone II"].button_codes()), 54)
 
     def test_no_duplicate_codes_within_a_kind(self):
         for dev in self.devices:
@@ -186,9 +189,9 @@ class ShippedDeviceFilesTest(unittest.TestCase):
             self.assertGreaterEqual(len(dev.firmwares), 1, dev.name)
             hashes = [fw.sha256 for fw in dev.firmwares]
             for sha in hashes:
-                self.assertRegex(sha, r'^[0-9a-f]{64}$', dev.name)
+                self.assertRegex(sha, r"^[0-9a-f]{64}$", dev.name)
             self.assertEqual(len(hashes), len(set(hashes)), dev.name)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

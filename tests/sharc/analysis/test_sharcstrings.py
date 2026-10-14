@@ -9,9 +9,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from tools import python_env
-
 from importlib import import_module
+
+from tools import python_env
 
 sharcldr = import_module("tools.sharc_dev.sharcldr")
 sharcstrings = import_module("tools.sharc_dev.sharcstrings")
@@ -128,12 +128,18 @@ class SharcStringsTest(unittest.TestCase):
             self.assertEqual(no_match.returncode, 0)
             self.assertEqual(json.loads(no_match.stdout), [])
             invalid = subprocess.run(
-                command + ["--min-length", "0"], env=python_env(), text=True, capture_output=True
+                command + ["--min-length", "0"],
+                env=python_env(),
+                text=True,
+                capture_output=True,
             )
             self.assertNotEqual(invalid.returncode, 0)
             self.assertIn("must be positive", invalid.stderr)
             bad_regex = subprocess.run(
-                command + ["--grep", "["], env=python_env(), text=True, capture_output=True
+                command + ["--grep", "["],
+                env=python_env(),
+                text=True,
+                capture_output=True,
             )
             self.assertNotEqual(bad_regex.returncode, 0)
             self.assertIn("invalid --grep regex", bad_regex.stderr)

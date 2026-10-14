@@ -6,6 +6,7 @@ per cell: 0/1 = fixed bit, a letter = field (legend printed above the figure),
 - = unused (yellow), ? = white cell with no field. Comparing the red line with ADI's own
 drawing is the visual check for each figure.
 """
+
 import os
 import string
 import sys
@@ -22,7 +23,6 @@ RED = (0.85, 0, 0)
 def main(first=301, last=563, per_sheet=4):
     doc = pymupdf.open(PDF)
     clips = []  # (page index, clip rect, title)
-    carried = []
     for pno in range(first, last + 1):
         page = doc[pno - 1]
         got = ef.extract_page(page, pno)
@@ -51,26 +51,48 @@ def main(first=301, last=563, per_sheet=4):
                     else:
                         line.append("?")
                 for i, ch in enumerate(line):
-                    page.insert_text((row.cell_center(i) - 1.8, row.y1 + 6.5), ch, fontsize=6.5, fontname="cour", color=RED)
+                    page.insert_text(
+                        (row.cell_center(i) - 1.8, row.y1 + 6.5),
+                        ch,
+                        fontsize=6.5,
+                        fontname="cour",
+                        color=RED,
+                    )
             top = min(rr["row"].y0 for rr in rows)
             bottom = max(rr["row"].y1 for rr in rows)
             legend = "  ".join(f"{v}={k}" for k, v in codes.items())
-            page.insert_text((62, top - 18), f"p{pno} {caption[:40]}", fontsize=6.5, fontname="helv", color=RED)
+            page.insert_text(
+                (62, top - 18),
+                f"p{pno} {caption[:40]}",
+                fontsize=6.5,
+                fontname="helv",
+                color=RED,
+            )
             for n, chunk in enumerate(range(0, len(legend), 110)):
-                page.insert_text((62, top - 11 + 6 * n), legend[chunk:chunk + 110], fontsize=5.5, fontname="cour", color=RED)
+                page.insert_text(
+                    (62, top - 11 + 6 * n),
+                    legend[chunk : chunk + 110],
+                    fontsize=5.5,
+                    fontname="cour",
+                    color=RED,
+                )
             clips.append((pno - 1, pymupdf.Rect(55, top - 28, 590, bottom + 48)))
 
     sheets = pymupdf.open()
     for s in range(0, len(clips), per_sheet):
-        batch = clips[s:s + per_sheet]
+        batch = clips[s : s + per_sheet]
         height = sum(c.height for _, c in batch)
         out = sheets.new_page(width=535, height=height)
         y = 0
         for pidx, clip in batch:
-            out.show_pdf_page(pymupdf.Rect(0, y, 535, y + clip.height), doc, pidx, clip=clip)
+            out.show_pdf_page(
+                pymupdf.Rect(0, y, 535, y + clip.height), doc, pidx, clip=clip
+            )
             y += clip.height
     for i, page in enumerate(sheets):
-        page.get_pixmap(dpi=150).save(os.path.join(HERE, "renders", f"sheet_{i:02d}.png"))
+        page.get_pixmap(dpi=150).save(
+            os.path.join(HERE, "renders", f"sheet_{i:02d}.png")
+        )
     print(f"{len(clips)} figure crops on {len(sheets)} sheets")
 
 

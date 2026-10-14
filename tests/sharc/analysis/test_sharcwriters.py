@@ -8,7 +8,6 @@ import unittest
 from importlib import import_module
 from unittest.mock import patch
 
-
 W = import_module("tools.sharc_dev.sharcwriters")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 trace_mod = import_module("tools.sharc_dev.sharc_trace")
@@ -19,13 +18,19 @@ BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 
 class StoreSpaceAndDirectionTest(unittest.TestCase):
     def test_simple_form_stores_dm_when_d1_g0(self):
-        self.assertEqual(W.store_space_and_direction("15b", {"d": 1, "g": 0}), (True, True))
+        self.assertEqual(
+            W.store_space_and_direction("15b", {"d": 1, "g": 0}), (True, True)
+        )
 
     def test_simple_form_stores_pm_when_d1_g1(self):
-        self.assertEqual(W.store_space_and_direction("15b", {"d": 1, "g": 1}), (True, False))
+        self.assertEqual(
+            W.store_space_and_direction("15b", {"d": 1, "g": 1}), (True, False)
+        )
 
     def test_simple_form_load_when_d0(self):
-        self.assertEqual(W.store_space_and_direction("15b", {"d": 0, "g": 0}), (False, False))
+        self.assertEqual(
+            W.store_space_and_direction("15b", {"d": 0, "g": 0}), (False, False)
+        )
 
     def test_type3c_d_is_a_real_variable_bit(self):
         self.assertEqual(W.store_space_and_direction("3c", {"d": 1}), (True, True))
@@ -42,10 +47,16 @@ class StoreSpaceAndDirectionTest(unittest.TestCase):
         self.assertEqual(W.store_space_and_direction("16b", {"g": 1}), (True, False))
 
     def test_dual_forms_store_dm_side_on_dmd(self):
-        self.assertEqual(W.store_space_and_direction("1a", {"dmd": 1, "pmd": 0}), (True, True))
-        self.assertEqual(W.store_space_and_direction("1a", {"dmd": 0, "pmd": 1}), (False, False))
+        self.assertEqual(
+            W.store_space_and_direction("1a", {"dmd": 1, "pmd": 0}), (True, True)
+        )
+        self.assertEqual(
+            W.store_space_and_direction("1a", {"dmd": 0, "pmd": 1}), (False, False)
+        )
         # The PM-side pmd bit does not affect the DM side's own classification.
-        self.assertEqual(W.store_space_and_direction("1b", {"dmd": 1, "pmd": 1}), (True, True))
+        self.assertEqual(
+            W.store_space_and_direction("1b", {"dmd": 1, "pmd": 1}), (True, True)
+        )
 
     def test_unknown_form_is_not_a_store(self):
         self.assertEqual(W.store_space_and_direction("21a", {}), (False, False))
@@ -70,17 +81,28 @@ class StaticStoreWidthTest(unittest.TestCase):
         self.assertEqual(W.static_store_width("14d", {"l": 1}), 2)
 
     def test_3b_lxw_table(self):
-        cases = {(0, 1, 1): 4, (0, 0, 0): 1, (0, 1, 0): 1, (1, 0, 0): 2, (1, 1, 0): 2, (1, 1, 1): 8}
-        for (l, x, w), width in cases.items():
-            self.assertEqual(W.static_store_width("3b", {"l": l, "x": x, "w": w}), width)
+        cases = {
+            (0, 1, 1): 4,
+            (0, 0, 0): 1,
+            (0, 1, 0): 1,
+            (1, 0, 0): 2,
+            (1, 1, 0): 2,
+            (1, 1, 1): 8,
+        }
+        for (l, x, w), width in cases.items():  # noqa: E741
+            self.assertEqual(
+                W.static_store_width("3b", {"l": l, "x": x, "w": w}), width
+            )
 
     def test_3d_mirrors_3b_table(self):
         self.assertEqual(W.static_store_width("3d", {"l": 1, "x": 1, "w": 1}), 8)
 
     def test_4b_lxw_table(self):
         cases = {(1, 1, 1): 4, (0, 0, 0): 1, (1, 0, 0): 2, (0, 1, 0): 1, (1, 1, 0): 2}
-        for (l, x, w), width in cases.items():
-            self.assertEqual(W.static_store_width("4b", {"l": l, "x": x, "w": w}), width)
+        for (l, x, w), width in cases.items():  # noqa: E741
+            self.assertEqual(
+                W.static_store_width("4b", {"l": l, "x": x, "w": w}), width
+            )
 
     def test_4d_mirrors_4b_table(self):
         self.assertEqual(W.static_store_width("4d", {"l": 1, "x": 1, "w": 1}), 4)
@@ -111,12 +133,20 @@ class EventStoreWidthTest(unittest.TestCase):
 
 class CensusInstructionsTest(unittest.TestCase):
     def test_collects_only_dm_stores(self):
-        rows = W.census_instructions([
-            (0x10, insn("15b", {"d": 1, "g": 0, "l": 0})),   # DM store
-            (0x14, insn("15b", {"d": 1, "g": 1, "l": 0})),   # PM store -- excluded from is_dm
-            (0x18, insn("15b", {"d": 0, "g": 0, "l": 0})),   # load -- not a store at all
-            (0x1c, insn("2a", {})),                          # not a store-capable form
-        ])
+        rows = W.census_instructions(
+            [
+                (0x10, insn("15b", {"d": 1, "g": 0, "l": 0})),  # DM store
+                (
+                    0x14,
+                    insn("15b", {"d": 1, "g": 1, "l": 0}),
+                ),  # PM store -- excluded from is_dm
+                (
+                    0x18,
+                    insn("15b", {"d": 0, "g": 0, "l": 0}),
+                ),  # load -- not a store at all
+                (0x1C, insn("2a", {})),  # not a store-capable form
+            ]
+        )
         self.assertEqual([r["pc"] for r in rows], [0x10, 0x14])
         self.assertTrue(rows[0]["is_dm"])
         self.assertFalse(rows[1]["is_dm"])
@@ -165,7 +195,9 @@ class AffineRangeTest(unittest.TestCase):
         self.assertEqual((lo, hi), (0x100, 0x1FF))
 
     def test_constant_offset(self):
-        lo, hi = W.affine_range(0xFFFFFFF4, [("I6e", 1)], 0x100, 0x200)  # constant == -12
+        lo, hi = W.affine_range(
+            0xFFFFFFF4, [("I6e", 1)], 0x100, 0x200
+        )  # constant == -12
         self.assertEqual((lo, hi), (0x100 - 12, 0x1FF - 12))
 
     def test_negative_coefficient_flips_bounds(self):
@@ -207,17 +239,23 @@ class ClassifyStoreAddressTest(unittest.TestCase):
     TARGET = 0x252658
 
     def test_hit(self):
-        cls, detail = W.classify_store_address(self.TARGET, 4, self.TARGET, 0x26F000, 0x2C0000)
+        cls, detail = W.classify_store_address(
+            self.TARGET, 4, self.TARGET, 0x26F000, 0x2C0000
+        )
         self.assertEqual(cls, "HIT")
         self.assertEqual(detail["address"], self.TARGET)
 
     def test_hit_covers_the_whole_width(self):
-        cls, _ = W.classify_store_address(self.TARGET - 2, 4, self.TARGET, 0x26F000, 0x2C0000)
+        cls, _ = W.classify_store_address(
+            self.TARGET - 2, 4, self.TARGET, 0x26F000, 0x2C0000
+        )
         self.assertEqual(cls, "HIT")
 
     def test_requested_range_width_is_used_for_overlap(self):
         # A store into the later bytes of a requested range is still a hit.
-        cls, _ = W.classify_store_address(self.TARGET + 4, 4, self.TARGET, 0x26F000, 0x2C0000, 16)
+        cls, _ = W.classify_store_address(
+            self.TARGET + 4, 4, self.TARGET, 0x26F000, 0x2C0000, 16
+        )
         self.assertEqual(cls, "HIT")
 
     def test_excluded_const(self):
@@ -230,7 +268,9 @@ class ClassifyStoreAddressTest(unittest.TestCase):
         self.assertIn("not reached", detail["reason"])
 
     def test_unknown_width_is_unresolved(self):
-        cls, detail = W.classify_store_address(0x100, None, self.TARGET, 0x26F000, 0x2C0000)
+        cls, detail = W.classify_store_address(
+            0x100, None, self.TARGET, 0x26F000, 0x2C0000
+        )
         self.assertEqual(cls, "UNRESOLVED")
         self.assertIn("width", detail["reason"])
 
@@ -293,7 +333,9 @@ class ClassifyStoreAddressTest(unittest.TestCase):
         self.assertEqual(cls, "HIT")
 
     def test_unrecognized_representation_is_unresolved(self):
-        cls, detail = W.classify_store_address([1, 2, 3], 4, self.TARGET, 0x26F000, 0x2C0000)
+        cls, detail = W.classify_store_address(
+            [1, 2, 3], 4, self.TARGET, 0x26F000, 0x2C0000
+        )
         self.assertEqual(cls, "UNRESOLVED")
         self.assertIn("unrecognized", detail["reason"])
 
@@ -364,13 +406,23 @@ class SeedSetsTest(unittest.TestCase):
 class TraceFactClassificationTest(unittest.TestCase):
     def test_function_fact_records_stable_identity_and_blocker_dependency(self):
         rows = [{"pc": 0x12, "form": "14a", "fields": {}, "width": 4, "is_dm": True}]
-        fact = W._function_fact("fixture", 0x10, 3, rows, {}, {"unsupported 11a"}, (), W.STRICT_TRACE_POLICY)
+        fact = W._function_fact(
+            "fixture", 0x10, 3, rows, {}, {"unsupported 11a"}, (), W.STRICT_TRACE_POLICY
+        )
         self.assertEqual(fact["function_ordinal"], 3)
         self.assertEqual(fact["dependencies"]["blockers"], ["11a"])
-        self.assertEqual(fact["dependencies"]["handler_revisions"]["11a"], "trace-handler/v1")
+        self.assertEqual(
+            fact["dependencies"]["handler_revisions"]["11a"], "trace-handler/v1"
+        )
         type7d = W._function_fact(
-            "aconv", 0x20, 4, rows, {},
-            {"Type7d B2W(B7) source is not concrete"}, (), W.STRICT_TRACE_POLICY,
+            "aconv",
+            0x20,
+            4,
+            rows,
+            {},
+            {"Type7d B2W(B7) source is not concrete"},
+            (),
+            W.STRICT_TRACE_POLICY,
         )
         self.assertEqual(type7d["dependencies"]["blockers"], ["7d"])
         self.assertEqual(
@@ -388,26 +440,36 @@ class TraceFactClassificationTest(unittest.TestCase):
             "provisional_forms": [],
             "census": {"14a": 1},
             "census_total": 1,
-            "functions": [{
-                "function_id": "fixture",
-                "function_entry": 0x10,
-                "stop_reasons": [],
-                "stores": [{
-                    "row": {"pc": 0x12, "form": "14a", "fields": {},
-                            "width": 4, "is_dm": True},
-                    "event": {"address": 0x100},
-                }],
-            }],
+            "functions": [
+                {
+                    "function_id": "fixture",
+                    "function_entry": 0x10,
+                    "stop_reasons": [],
+                    "stores": [
+                        {
+                            "row": {
+                                "pc": 0x12,
+                                "form": "14a",
+                                "fields": {},
+                                "width": 4,
+                                "is_dm": True,
+                            },
+                            "event": {"address": 0x100},
+                        }
+                    ],
+                }
+            ],
             "orphan_stores": [],
         }
         results = W.classify_trace_facts(
-            facts, [(0x100, 4), (0x200, 4)],
-            fallback_width=4, stack_lo=None, stack_hi=None,
+            facts,
+            [(0x100, 4), (0x200, 4)],
+            fallback_width=4,
+            stack_lo=None,
+            stack_hi=None,
         )
         self.assertEqual(results[(0x100, 4)]["class_totals"], {"HIT": 1})
-        self.assertEqual(
-            results[(0x200, 4)]["class_totals"], {"EXCLUDED-CONST": 1}
-        )
+        self.assertEqual(results[(0x200, 4)]["class_totals"], {"EXCLUDED-CONST": 1})
 
 
 @unittest.skipUnless(BLOB.exists(), "DT2 1.16 SHARC loader is not available")
@@ -434,13 +496,22 @@ class IntegrationTest(unittest.TestCase):
         cls.rows = W.census_instructions(sw_insns)
         dm_rows = [row for row in cls.rows if row["is_dm"]]
         chosen, stop_reasons, _retained_path_forms = W.resolve_function(
-            cls.ctx, cls.fn, dm_rows, max_steps=4000, max_states=128)
+            cls.ctx, cls.fn, dm_rows, max_steps=4000, max_states=128
+        )
         cls.classified = []
         for row in dm_rows:
             cls_, detail, width = W.classify_row(
-                row, chosen.get(row["pc"]), stop_reasons, cls.target,
-                fallback_width=4, stack_lo=W.DEFAULT_STACK_LO, stack_hi=W.DEFAULT_STACK_HI)
-            cls.classified.append({"pc": row["pc"], "form": row["form"], "class": cls_, **detail})
+                row,
+                chosen.get(row["pc"]),
+                stop_reasons,
+                cls.target,
+                fallback_width=4,
+                stack_lo=W.DEFAULT_STACK_LO,
+                stack_hi=W.DEFAULT_STACK_HI,
+            )
+            cls.classified.append(
+                {"pc": row["pc"], "form": row["form"], "class": cls_, **detail}
+            )
 
     def test_control_target_is_a_hit_at_the_known_pc(self):
         hits = [row for row in self.classified if row["class"] == "HIT"]
@@ -472,18 +543,19 @@ class ProvisionalWriterTraceTest(unittest.TestCase):
         rows = [{"pc": 0x10}, {"pc": 0x12}]
         with patch.object(trace_mod, "trace", return_value=[State()]) as trace:
             events, stops, paths = W.resolve_function(
-                ctx, fn, rows, 10, 2, provisional_forms=("14d",))
+                ctx, fn, rows, 10, 2, provisional_forms=("14d",)
+            )
         self.assertEqual(trace.call_args.kwargs["provisional_forms"], ("14d",))
         self.assertEqual(events[0x10]["address"], 0x100)
         self.assertNotIn("provisional_forms_used", events[0x10])
         self.assertEqual(events[0x12]["provisional_forms_used"], ["14d"])
         self.assertEqual(paths, (("14d",),))
         ordinary, _, _ = W.classify_row(
-            {"width": 4, "form": "14a"}, events[0x10], stops,
-            0x100, 4, None, None)
+            {"width": 4, "form": "14a"}, events[0x10], stops, 0x100, 4, None, None
+        )
         provisional, detail, _ = W.classify_row(
-            {"width": 4, "form": "14a"}, events[0x12], stops,
-            0x100, 4, None, None)
+            {"width": 4, "form": "14a"}, events[0x12], stops, 0x100, 4, None, None
+        )
         self.assertEqual(ordinary, "HIT")
         self.assertEqual(provisional, "UNRESOLVED")
         self.assertEqual(detail["provisional_forms_used"], ["14d"])
@@ -510,18 +582,34 @@ class CircularModifyEndToEndTest(unittest.TestCase):
     below would classify UNRESOLVED."""
 
     MODIFY_FIELDS = {
-        "w": 1, "g": 0, "idis[2:0]": 0, "is[2:0]": 7,
-        "data[31:16]": 0xFFFF, "data[15:0]": 0xFFFE,
+        "w": 1,
+        "g": 0,
+        "idis[2:0]": 0,
+        "is[2:0]": 7,
+        "data[31:16]": 0xFFFF,
+        "data[15:0]": 0xFFFE,
     }
-    STORE_FIELDS = {"i[2:0]": 7, "m[2:0]": 0, "g": 0, "sl": 0, "by": 0,
-                    "data[31:16]": 0, "data[15:0]": 0}
+    STORE_FIELDS = {
+        "i[2:0]": 7,
+        "m[2:0]": 0,
+        "g": 0,
+        "sl": 0,
+        "by": 0,
+        "data[31:16]": 0,
+        "data[15:0]": 0,
+    }
 
     def _modify_then_store(self, pc):
         i7 = trace_mod.UREG_CODES["I7"]
         seeds = W.seed_sets()
         self.assertEqual(seeds["I7"], "@I7e")  # sanity: still a bare @-seed
-        state = trace_mod.State(pc, {i7: trace_mod.symbol("I7e"),
-                                      trace_mod.UREG_CODES["L7"]: trace_mod.Const(seeds["L7"])})
+        state = trace_mod.State(
+            pc,
+            {
+                i7: trace_mod.symbol("I7e"),
+                trace_mod.UREG_CODES["L7"]: trace_mod.Const(seeds["L7"]),
+            },
+        )
         modified = trace_mod._execute(
             state, Instruction(0, 6, "19a_scaled", self.MODIFY_FIELDS, kind="confident")
         )[0]
@@ -535,17 +623,27 @@ class CircularModifyEndToEndTest(unittest.TestCase):
         self.assertEqual(event["action"], "store")
         return event
 
-    def test_store_through_circularly_modified_i7_is_excluded_stack_over_widened_range(self):
+    def test_store_through_circularly_modified_i7_is_excluded_stack_over_widened_range(
+        self,
+    ):
         event = self._modify_then_store(pc=0)
         cls, detail, _width = W.classify_row(
-            {"pc": 0, "form": "16a", "width": 4}, event, set(),
-            target=0x252658, fallback_width=4,
-            stack_lo=W.DEFAULT_STACK_LO, stack_hi=W.DEFAULT_STACK_HI)
+            {"pc": 0, "form": "16a", "width": 4},
+            event,
+            set(),
+            target=0x252658,
+            fallback_width=4,
+            stack_lo=W.DEFAULT_STACK_LO,
+            stack_hi=W.DEFAULT_STACK_HI,
+        )
         self.assertEqual(cls, "EXCLUDED-STACK")
-        self.assertEqual(detail["range"], [
-            W.DEFAULT_STACK_LO - W.CIRC_WRAP_SLACK,
-            W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK - 1,
-        ])
+        self.assertEqual(
+            detail["range"],
+            [
+                W.DEFAULT_STACK_LO - W.CIRC_WRAP_SLACK,
+                W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK - 1,
+            ],
+        )
         self.assertTrue(detail["via_circular_modify"])
 
     def test_two_different_modify_sites_both_excluded_but_not_asserted_equal(self):
@@ -559,9 +657,14 @@ class CircularModifyEndToEndTest(unittest.TestCase):
         self.assertNotEqual(event_a["address"], event_b["address"])
         for event in (event_a, event_b):
             cls, detail, _width = W.classify_row(
-                {"pc": 0, "form": "16a", "width": 4}, event, set(),
-                target=0x252658, fallback_width=4,
-                stack_lo=W.DEFAULT_STACK_LO, stack_hi=W.DEFAULT_STACK_HI)
+                {"pc": 0, "form": "16a", "width": 4},
+                event,
+                set(),
+                target=0x252658,
+                fallback_width=4,
+                stack_lo=W.DEFAULT_STACK_LO,
+                stack_hi=W.DEFAULT_STACK_HI,
+            )
             self.assertEqual(cls, "EXCLUDED-STACK")
 
 
@@ -580,18 +683,23 @@ class CircSymbolClassifierTest(unittest.TestCase):
         name = trace_mod.CIRC_SYMBOL_PREFIX + "7_1c1676"
         addr = {"affine": {"constant": 0, "terms": [[name, 1]]}}
         cls, detail = W.classify_store_address(
-            addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI)
+            addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI
+        )
         self.assertEqual(cls, "EXCLUDED-STACK")
-        self.assertEqual(detail["range"], [
-            W.DEFAULT_STACK_LO - W.CIRC_WRAP_SLACK,
-            W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK - 1,
-        ])
+        self.assertEqual(
+            detail["range"],
+            [
+                W.DEFAULT_STACK_LO - W.CIRC_WRAP_SLACK,
+                W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK - 1,
+            ],
+        )
         self.assertTrue(detail["via_circular_modify"])
 
     def test_plain_stack_symbol_does_not_set_via_circular_modify(self):
         addr = {"affine": {"constant": 0, "terms": [["I7e", 1]]}}
         cls, detail = W.classify_store_address(
-            addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI)
+            addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI
+        )
         self.assertEqual(cls, "EXCLUDED-STACK")
         self.assertNotIn("via_circular_modify", detail)
 
@@ -601,11 +709,16 @@ class CircSymbolClassifierTest(unittest.TestCase):
         # every EXCLUDED-STACK classification -- plain or circ_ -- must say
         # so explicitly rather than assert an unqualified bound.
         plain = {"affine": {"constant": 0, "terms": [["I7e", 1]]}}
-        circ = {"affine": {"constant": 0,
-                            "terms": [[trace_mod.CIRC_SYMBOL_PREFIX + "7_1", 1]]}}
+        circ = {
+            "affine": {
+                "constant": 0,
+                "terms": [[trace_mod.CIRC_SYMBOL_PREFIX + "7_1", 1]],
+            }
+        }
         for addr in (plain, circ):
             cls, detail = W.classify_store_address(
-                addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI)
+                addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI
+            )
             self.assertEqual(cls, "EXCLUDED-STACK")
             self.assertEqual(detail["assumption"], W.ENTRY_SEED_ASSUMPTION)
 
@@ -615,13 +728,18 @@ class CircSymbolClassifierTest(unittest.TestCase):
         name = trace_mod.CIRC_SYMBOL_PREFIX + "7_1c1676"
         addr = {"affine": {"constant": 0, "terms": [["I6e", 1], [name, 1]]}}
         cls, detail = W.classify_store_address(
-            addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI)
+            addr, 4, self.TARGET, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI
+        )
         self.assertEqual(cls, "EXCLUDED-STACK")
         expected_lo = W.DEFAULT_STACK_LO + (W.DEFAULT_STACK_LO - W.CIRC_WRAP_SLACK)
-        expected_hi = (W.DEFAULT_STACK_HI - 1) + (W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK - 1)
+        expected_hi = (W.DEFAULT_STACK_HI - 1) + (
+            W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK - 1
+        )
         self.assertEqual(detail["range"], [expected_lo, expected_hi])
 
-    def test_circ_symbol_out_of_the_plain_range_but_in_the_widened_range_is_excluded(self):
+    def test_circ_symbol_out_of_the_plain_range_but_in_the_widened_range_is_excluded(
+        self,
+    ):
         # A target just past DEFAULT_STACK_HI, inside the widened range,
         # must NOT be excluded for a plain stack symbol -- it would be
         # UNRESOLVED -- but must be excluded for a circ_ symbol only if the
@@ -631,10 +749,13 @@ class CircSymbolClassifierTest(unittest.TestCase):
         addr = {"affine": {"constant": 0, "terms": [[name, 1]]}}
         far_target = W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK + 0x10000
         cls, _detail = W.classify_store_address(
-            addr, 4, far_target, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI)
+            addr, 4, far_target, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI
+        )
         self.assertEqual(cls, "EXCLUDED-STACK")
 
-    def test_circ_symbol_target_inside_widened_slack_only_is_unresolved_not_excluded(self):
+    def test_circ_symbol_target_inside_widened_slack_only_is_unresolved_not_excluded(
+        self,
+    ):
         # A target that falls in the widened slack margin (beyond plain S,
         # but still inside S +- CIRC_WRAP_SLACK) must not be silently
         # excluded -- it must come back UNRESOLVED, the same "overlap"
@@ -643,7 +764,8 @@ class CircSymbolClassifierTest(unittest.TestCase):
         addr = {"affine": {"constant": 0, "terms": [[name, 1]]}}
         target_in_slack = W.DEFAULT_STACK_HI + W.CIRC_WRAP_SLACK - 4
         cls, detail = W.classify_store_address(
-            addr, 4, target_in_slack, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI)
+            addr, 4, target_in_slack, W.DEFAULT_STACK_LO, W.DEFAULT_STACK_HI
+        )
         self.assertEqual(cls, "UNRESOLVED")
         self.assertIn("overlaps", detail["reason"])
 
@@ -664,7 +786,8 @@ class CombinedAffineRangeTest(unittest.TestCase):
     def test_mixed_terms_sum_independently(self):
         name = trace_mod.CIRC_SYMBOL_PREFIX + "7_1"
         lo, hi = W.combined_affine_range(
-            0, [("I7e", 1), (name, 1)], 0x100, 0x200, 0x50, 0x250)
+            0, [("I7e", 1), (name, 1)], 0x100, 0x200, 0x50, 0x250
+        )
         self.assertEqual((lo, hi), (0x100 + 0x50, 0x1FF + 0x24F))
 
 

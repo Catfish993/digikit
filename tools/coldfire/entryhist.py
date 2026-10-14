@@ -24,8 +24,8 @@ def load(path):
             if not line.strip():
                 continue
             rec = json.loads(line)
-            entry = int(rec['entry'], 16)
-            ends = [int(hi, 16) + 1 for _, hi in rec['ranges']]
+            entry = int(rec["entry"], 16)
+            ends = [int(hi, 16) + 1 for _, hi in rec["ranges"]]
             funcs.append((entry, max(ends) if ends else entry))
     return sorted(funcs)
 
@@ -56,23 +56,30 @@ def ranges(funcs, base, bucket, minimum=1):
         lo, hi = base + first * bucket, base + (last + 1) * bucket
         inside = [(e, end) for e, end in funcs if lo <= e < hi]
         exact = (inside[0][0], max(end for _, end in inside))
-        if out and out[-1]['exact'][1] > lo:
+        if out and out[-1]["exact"][1] > lo:
             prev = out[-1]
-            prev['aligned'] = (prev['aligned'][0], hi)
-            prev['exact'] = (prev['exact'][0], max(prev['exact'][1], exact[1]))
-            prev['functions'] += len(inside)
+            prev["aligned"] = (prev["aligned"][0], hi)
+            prev["exact"] = (prev["exact"][0], max(prev["exact"][1], exact[1]))
+            prev["functions"] += len(inside)
         else:
-            out.append({'aligned': (lo, hi), 'exact': exact, 'functions': len(inside)})
+            out.append({"aligned": (lo, hi), "exact": exact, "functions": len(inside)})
     return out
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description='Function-entry histogram and code ranges.')
-    p.add_argument('functions', help='functions.jsonl from tools/coldfire/ghidradump.py')
-    p.add_argument('--base', type=lambda s: int(s, 0), default=0x40000400)
-    p.add_argument('--bucket', type=lambda s: int(s, 0), default=0x10000)
-    p.add_argument('--min', type=int, default=1, dest='minimum',
-                   help='entries a bucket needs to count as code')
+    p = argparse.ArgumentParser(description="Function-entry histogram and code ranges.")
+    p.add_argument(
+        "functions", help="functions.jsonl from tools/coldfire/ghidradump.py"
+    )
+    p.add_argument("--base", type=lambda s: int(s, 0), default=0x40000400)
+    p.add_argument("--bucket", type=lambda s: int(s, 0), default=0x10000)
+    p.add_argument(
+        "--min",
+        type=int,
+        default=1,
+        dest="minimum",
+        help="entries a bucket needs to count as code",
+    )
     return p.parse_args(argv)
 
 
@@ -80,17 +87,19 @@ def main(argv=None):
     args = parse_args(argv)
     funcs = load(args.functions)
     counts = histogram(funcs, args.base, args.bucket)
-    print('%d functions' % len(funcs))
+    print("%d functions" % len(funcs))
     below = sum(1 for entry, _ in funcs if entry < args.base)
     if below:
-        print('%d entries below the base' % below)
+        print("%d entries below the base" % below)
     for i in range(max(counts) + 1 if counts else 0):
-        print('0x%08x %6d' % (args.base + i * args.bucket, counts.get(i, 0)))
-    print('ranges: aligned, exact, functions')
+        print("0x%08x %6d" % (args.base + i * args.bucket, counts.get(i, 0)))
+    print("ranges: aligned, exact, functions")
     for r in ranges(funcs, args.base, args.bucket, args.minimum):
-        print('  --code 0x%08x 0x%08x   0x%08x-0x%08x %6d'
-              % (r['aligned'] + r['exact'] + (r['functions'],)))
+        print(
+            "  --code 0x%08x 0x%08x   0x%08x-0x%08x %6d"
+            % (r["aligned"] + r["exact"] + (r["functions"],))
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -3,9 +3,12 @@
 import struct
 import unittest
 
-
-from tools.sharc_dev import sharc_isa  # noqa: E402  # pyright: ignore[reportMissingImports]
-from tools.sharc_dev import sharc_visa_tables as legacy  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import (
+    sharc_isa,  # noqa: E402  # pyright: ignore[reportMissingImports]
+)
+from tools.sharc_dev import (
+    sharc_visa_tables as legacy,  # noqa: E402  # pyright: ignore[reportMissingImports]
+)
 
 
 class InstructionSetTest(unittest.TestCase):
@@ -70,17 +73,16 @@ class InstructionSetTest(unittest.TestCase):
             assert old is not None
             self.assertEqual(old, form.legacy_dict())
 
-            words = [
-                (form.frame_value >> shift) & 0xFFFF
-                for shift in (32, 16, 0)
-            ]
+            words = [(form.frame_value >> shift) & 0xFFFF for shift in (32, 16, 0)]
             selected, candidates = legacy.decode(words)
             selection = self.isa.select_frame(sharc_isa.frame_of(words))
             self.assertEqual(
                 None if selected is None else selected["name"],
                 None if selection.form is None else selection.form.id,
             )
-            self.assertEqual(candidates, [candidate.id for candidate in selection.candidates])
+            self.assertEqual(
+                candidates, [candidate.id for candidate in selection.candidates]
+            )
 
     def test_raw_bytes_use_little_endian_parcels(self):
         result = self.isa.decode_bytes(struct.pack("<HHH", 0x023E, 0x3810, 0x8022))

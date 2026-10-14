@@ -5,11 +5,21 @@ import os
 import tempfile
 import unittest
 
-
 from tools.sharc_dev import framelink  # noqa: E402
 
-KEYS = {'name', 'vector', 'handler', 'driver', 'counter', 'gate', 'countdown', 'mode',
-        'stop', 'stop_writer', 'tables'}
+KEYS = {
+    "name",
+    "vector",
+    "handler",
+    "driver",
+    "counter",
+    "gate",
+    "countdown",
+    "mode",
+    "stop",
+    "stop_writer",
+    "tables",
+}
 
 
 class FramelinkTest(unittest.TestCase):
@@ -21,12 +31,12 @@ class FramelinkTest(unittest.TestCase):
                 self.assertIsInstance(prof[name], int)
 
     def test_track_9a_table_uses_sram_row_base(self):
-        self.assertIn((0x80003cd0, 0x9a, 16, 'track_9a'), framelink.TABLES)
-        self.assertNotIn((0x80003340, 0x9a, 16, 'track_9a'), framelink.TABLES)
+        self.assertIn((0x80003CD0, 0x9A, 16, "track_9a"), framelink.TABLES)
+        self.assertNotIn((0x80003340, 0x9A, 16, "track_9a"), framelink.TABLES)
 
     def test_unknown_image_stops(self):
         with tempfile.NamedTemporaryFile(delete=False) as f:
-            f.write(b'not an image')
+            f.write(b"not an image")
         try:
             with self.assertRaises(SystemExit):
                 framelink.profile_for(f.name)
@@ -34,5 +44,5 @@ class FramelinkTest(unittest.TestCase):
             os.unlink(f.name)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

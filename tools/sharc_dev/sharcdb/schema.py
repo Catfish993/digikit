@@ -297,9 +297,27 @@ KNOWN_CODE_BLOCKS = {
     # left out -- see the module docstring. blk59 (0x200779f8) is also left
     # out: the v13 L2_BYTE_LIMIT widening now covers its start address, but
     # it has no prior characterization as code (unlike blk57).
-    "336e340aa0cdcd34e314cfa44849f709a3134f6bd4cd57dfc7e15702c83115e2": (56, 57, 66, 68, 70, 78, 81, 83),
+    "336e340aa0cdcd34e314cfa44849f709a3134f6bd4cd57dfc7e15702c83115e2": (
+        56,
+        57,
+        66,
+        68,
+        70,
+        78,
+        81,
+        83,
+    ),
     # dn2-1.10E: same target-address correspondence, shifted indices.
-    "174b391822bbe33a99e5f42bd02ef3ea75c0e79351caae6ba90e4cd2c4de5350": (56, 57, 67, 69, 71, 79, 82, 84),
+    "174b391822bbe33a99e5f42bd02ef3ea75c0e79351caae6ba90e4cd2c4de5350": (
+        56,
+        57,
+        67,
+        69,
+        71,
+        79,
+        82,
+        84,
+    ),
 }
 
 SCHEMA = """
@@ -523,9 +541,15 @@ CREATE INDEX ptr_sw ON ptr(image, sw);
 
 def git_commit():
     try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=_here, stderr=subprocess.DEVNULL,
-        ).decode().strip()
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=_here,
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
     except Exception:
         return None
 

@@ -40,10 +40,9 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-from tools import python_env
-from tools.emulator import coupled
-from tools.emulator import digi_env
-from tools.devtools import fastcov
+from tools import python_env  # noqa: E402
+from tools.devtools import fastcov  # noqa: E402
+from tools.emulator import coupled, digi_env  # noqa: E402
 
 OUT = ROOT / "out" / "native" / "perf"
 CALIB = OUT / "calibration.json"

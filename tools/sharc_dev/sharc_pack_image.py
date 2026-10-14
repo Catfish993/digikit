@@ -11,9 +11,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
-from tools.sharc_dev import sharc_run
-from tools.sharc_dev import sharc_transpile_run
+from tools.sharc_dev import sharc_run, sharc_transpile_run
 
 
 def main(argv: list[str]) -> int:

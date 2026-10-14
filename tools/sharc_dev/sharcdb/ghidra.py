@@ -26,7 +26,10 @@ _GHIDRA_CALL_KIND = {
 }
 
 _GHIDRA_DATAREF_ROLE = {
-    "READ": "read", "WRITE": "write", "READ_WRITE": "read_write", "DATA": "data",
+    "READ": "read",
+    "WRITE": "write",
+    "READ_WRITE": "read_write",
+    "DATA": "data",
 }
 
 _DISASM_LINE = re.compile(r"^[0-9a-f]{8}  ")
@@ -51,7 +54,9 @@ def _parse_disasm_insns(path):
     return rows
 
 
-def _fill_ghidra_database(db, name, sha, dump_dir, manifest, functions, ranges, calls, data_refs):
+def _fill_ghidra_database(
+    db, name, sha, dump_dir, manifest, functions, ranges, calls, data_refs
+):
     meta_rows = [
         (name, "image", name),
         (name, "image_sha256", sha),
@@ -73,8 +78,19 @@ def _fill_ghidra_database(db, name, sha, dump_dir, manifest, functions, ranges, 
         if to_fn is not None:
             callees[from_fn].add(to_fn)
             callers[to_fn].add(from_fn)
-        edge_rows.append((name, site, to_addr, _GHIDRA_CALL_KIND.get(kind, "jump"), None, None,
-                          from_fn, to_fn, kind))
+        edge_rows.append(
+            (
+                name,
+                site,
+                to_addr,
+                _GHIDRA_CALL_KIND.get(kind, "jump"),
+                None,
+                None,
+                from_fn,
+                to_fn,
+                kind,
+            )
+        )
 
     dataref_rows = [
         (name, to_addr, site, "ghidra", _GHIDRA_DATAREF_ROLE.get(kind, kind.lower()))
@@ -99,16 +115,46 @@ def _fill_ghidra_database(db, name, sha, dump_dir, manifest, functions, ranges, 
         # one); their instructions are still in `insn` (grouped by disasm
         # file, i.e. by owning function, not by this span).
         spans = ranges.get(entry) or [(entry, entry + max(size, 1) - 1)]
-        entry_span = next((hi for lo, hi in spans if lo == entry), max(hi for _lo, hi in spans))
+        entry_span = next(
+            (hi for lo, hi in spans if lo == entry), max(hi for _lo, hi in spans)
+        )
         end_sw = entry_span + 1
-        insns = _parse_disasm_insns(os.path.join(dump_dir, disasm_path)) if disasm_path else []
+        insns = (
+            _parse_disasm_insns(os.path.join(dump_dir, disasm_path))
+            if disasm_path
+            else []
+        )
         for sw, raw_hex, mnemonic in insns:
-            insn_rows.append((name, sw, None, len(raw_hex) // 2, raw_hex, None, None, None,
-                              mnemonic, 1, None, entry))
-        func_rows.append((
-            name, entry, end_sw, len(insns), None, fname,
-            int(bool(callers.get(entry))), int(not callees.get(entry)), None, None,
-        ))
+            insn_rows.append(
+                (
+                    name,
+                    sw,
+                    None,
+                    len(raw_hex) // 2,
+                    raw_hex,
+                    None,
+                    None,
+                    None,
+                    mnemonic,
+                    1,
+                    None,
+                    entry,
+                )
+            )
+        func_rows.append(
+            (
+                name,
+                entry,
+                end_sw,
+                len(insns),
+                None,
+                fname,
+                int(bool(callers.get(entry))),
+                int(not callees.get(entry)),
+                None,
+                None,
+            )
+        )
         if decomp_path:
             full = os.path.join(dump_dir, decomp_path)
             if os.path.exists(full):
@@ -122,8 +168,11 @@ def _fill_ghidra_database(db, name, sha, dump_dir, manifest, functions, ranges, 
     db.executemany("INSERT INTO decomp VALUES (?,?,?)", decomp_rows)
 
     return {
-        "n_functions": len(func_rows), "n_insn": len(insn_rows), "n_edges": len(edge_rows),
-        "n_dataref": len(dataref_rows), "n_decomp": len(decomp_rows),
+        "n_functions": len(func_rows),
+        "n_insn": len(insn_rows),
+        "n_edges": len(edge_rows),
+        "n_dataref": len(dataref_rows),
+        "n_decomp": len(decomp_rows),
     }
 
 
@@ -139,19 +188,29 @@ def build_ghidra_database(dump_dir, out_path, name=None, force=False):
     with open(manifest_path) as f:
         manifest = json.load(f)
     if not manifest.get("complete"):
-        raise SystemExit("sharcdb import-ghidra: %s is not a complete dump (manifest 'complete' is false)" % dump_dir)
+        raise SystemExit(
+            "sharcdb import-ghidra: %s is not a complete dump (manifest 'complete' is false)"
+            % dump_dir
+        )
     sha = manifest.get("image_sha256")
     if not sha:
-        raise SystemExit("sharcdb import-ghidra: %s has no image_sha256 in its manifest" % dump_dir)
+        raise SystemExit(
+            "sharcdb import-ghidra: %s has no image_sha256 in its manifest" % dump_dir
+        )
     if name is None:
         name = os.path.basename(os.path.normpath(dump_dir))
 
     if not force and os.path.exists(out_path):
         existing = read_meta(out_path)
-        if existing.get("image_sha256") == sha and existing.get("db_version") == str(DB_VERSION):
+        if existing.get("image_sha256") == sha and existing.get("db_version") == str(
+            DB_VERSION
+        ):
             return {
-                "name": name, "path": out_path, "skipped": True,
-                "seconds": time.time() - t0, "size": os.path.getsize(out_path),
+                "name": name,
+                "path": out_path,
+                "skipped": True,
+                "seconds": time.time() - t0,
+                "size": os.path.getsize(out_path),
             }
 
     xrefs_path = os.path.join(dump_dir, "xrefs.sqlite")
@@ -163,20 +222,28 @@ def build_ghidra_database(dump_dir, out_path, name=None, force=False):
         ranges = collections.defaultdict(list)
         for func, lo, hi in src.execute("SELECT func, lo, hi FROM function_ranges"):
             ranges[func].append((lo, hi))
-        calls = src.execute("SELECT from_func, to_func, to_addr, site, kind FROM calls").fetchall()
-        data_refs = src.execute("SELECT site, func, to_addr, kind FROM data_refs").fetchall()
+        calls = src.execute(
+            "SELECT from_func, to_func, to_addr, site, kind FROM calls"
+        ).fetchall()
+        data_refs = src.execute(
+            "SELECT site, func, to_addr, kind FROM data_refs"
+        ).fetchall()
     finally:
         src.close()
 
     out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
     os.makedirs(out_dir, exist_ok=True)
     tmp_path = os.path.join(
-        out_dir, ".%s.tmp-%d-%d" % (os.path.basename(out_path), os.getpid(), int(time.time() * 1e6))
+        out_dir,
+        ".%s.tmp-%d-%d"
+        % (os.path.basename(out_path), os.getpid(), int(time.time() * 1e6)),
     )
     try:
         db = open_db(tmp_path)
         try:
-            counts = _fill_ghidra_database(db, name, sha, dump_dir, manifest, functions, ranges, calls, data_refs)
+            counts = _fill_ghidra_database(
+                db, name, sha, dump_dir, manifest, functions, ranges, calls, data_refs
+            )
             counts["analyze"] = analyze_image(db, name, mem=None, blocks=None)
             db.commit()
         finally:
@@ -187,6 +254,10 @@ def build_ghidra_database(dump_dir, out_path, name=None, force=False):
             os.remove(tmp_path)
         raise
     return {
-        "name": name, "path": out_path, "skipped": False,
-        "seconds": time.time() - t0, "size": os.path.getsize(out_path), **counts,
+        "name": name,
+        "path": out_path,
+        "skipped": False,
+        "seconds": time.time() - t0,
+        "size": os.path.getsize(out_path),
+        **counts,
     }

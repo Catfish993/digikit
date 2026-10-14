@@ -15,12 +15,20 @@ for lf in ls:
         if e[0] == "d":
             p = e[1]
             for k, v in pins.items():
-                if p.a == ("f", k) and p.op == "!=" and p.b == ("c", 0):
-                    if (v != "0") != e[2]:
-                        ok = False
-                if p.a == ("f", k) and p.op == "==" and p.b[0] == "c":
-                    if (int(v) == p.b[1]) != e[2]:
-                        ok = False
+                if (
+                    p.a == ("f", k)
+                    and p.op == "!="
+                    and p.b == ("c", 0)
+                    and (v != "0") != e[2]
+                ):
+                    ok = False
+                if (
+                    p.a == ("f", k)
+                    and p.op == "=="
+                    and p.b[0] == "c"
+                    and (int(v) == p.b[1]) != e[2]
+                ):
+                    ok = False
         else:
             for label, v in e[1]:
                 if label in pins and int(pins[label]) != v:

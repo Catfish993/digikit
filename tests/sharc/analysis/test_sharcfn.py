@@ -15,13 +15,9 @@ import struct
 import tempfile
 import unittest
 from collections import Counter
+
 from support.paths import REPO_ROOT
-
-
-from tools.sharc_dev import sharc_disasm  # noqa: E402
-from tools.sharc_dev import sharcfn  # noqa: E402
-from tools.sharc_dev import sharcinv  # noqa: E402
-from tools.sharc_dev import sharcldr  # noqa: E402
+from support.sharc_encode import block as boot_block  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_rel,
     cjump,
@@ -35,7 +31,13 @@ from support.sharc_encode import (  # noqa: E402
     store,
     words,
 )
-from support.sharc_encode import block as boot_block  # noqa: E402
+
+from tools.sharc_dev import (
+    sharc_disasm,  # noqa: E402
+    sharcfn,  # noqa: E402
+    sharcinv,  # noqa: E402
+    sharcldr,  # noqa: E402
+)
 
 
 def insn_at(data, offset=0):
@@ -573,9 +575,7 @@ class ImmediateOffsetSignednessTest(unittest.TestCase):
         # data32 is -0x41 (-65), so the correct rendering is "DM(I1 -
         # 0x41)", the same signed-offset style _fmt_index_offset() already
         # uses for Type4a/15b's own (narrower) immediate.
-        mnemonic = self.render(
-            "15a", g=0, i=1, d=1, l=0, ureg=9, addr=0xFFFFFFBF
-        )
+        mnemonic = self.render("15a", g=0, i=1, d=1, l=0, ureg=9, addr=0xFFFFFFBF)
         self.assertIn("DM(I1 - 0x41) = R9", mnemonic)
         self.assertNotIn("DM(0xffffffbf)", mnemonic)
 
@@ -651,9 +651,7 @@ class CondPrefixRenderingTest(unittest.TestCase):
 
     def test_6b_shiftimm_nontrue_cond_renders_if_prefix(self):
         shiftimm = (0x01 << 16) | (8 << 8) | (3 << 4) | 4  # ashift, amount=8
-        mnemonic = self.render(
-            "6b_shiftimm", cond=7, dataex=0, shiftimm=shiftimm
-        )
+        mnemonic = self.render("6b_shiftimm", cond=7, dataex=0, shiftimm=shiftimm)
         self.assertEqual(mnemonic, "IF SV R3 = ashift(R4, 8)")
 
 
@@ -965,9 +963,7 @@ class EngineQueueTest(unittest.TestCase):
             "word_address_units": "fixture",
         }
         with tempfile.TemporaryDirectory() as notes:
-            queue = sharcfn.build_engine_queue(
-                ctx, notes, target_coverage=coverage
-            )
+            queue = sharcfn.build_engine_queue(ctx, notes, target_coverage=coverage)
         self.assertEqual(queue["target_opcode_coverage"], coverage)
 
     def test_target_opcode_coverage_has_stable_keys_when_absent_or_present(self):

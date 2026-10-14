@@ -22,14 +22,15 @@ resolved by signature. Freezing either into a data file would mean a new file
 per firmware release and would lose exactly the property that makes both
 products work from one code path.
 """
+
 import hashlib
 import os
 import tomllib
 
-DEVICES_DEFAULT = 'devices'
+DEVICES_DEFAULT = "devices"
 
-BUTTON = 'button'
-ENCODER = 'encoder'
+BUTTON = "button"
+ENCODER = "encoder"
 
 
 class DeviceError(SystemExit):
@@ -45,13 +46,13 @@ class Firmware:
         self.filename = filename
 
     def __repr__(self):
-        return '<Firmware %s %s>' % (self.version, self.sha256[:12])
+        return "<Firmware %s %s>" % (self.version, self.sha256[:12])
 
 
 class Group:
     """A set of control codes and how to arrange them. Display only."""
 
-    def __init__(self, name, kind, codes, layout='row', columns=None):
+    def __init__(self, name, kind, codes, layout="row", columns=None):
         self.name = name
         self.kind = kind
         self.codes = tuple(codes)
@@ -59,14 +60,23 @@ class Group:
         self.columns = columns
 
     def __repr__(self):
-        return '<Group %s %s %d>' % (self.name, self.kind, len(self.codes))
+        return "<Group %s %s %d>" % (self.name, self.kind, len(self.codes))
 
 
 class Device:
     """A product: its identity, its wire mapping and its panel arrangement."""
 
-    def __init__(self, name, short, firmwares, linear_channels, encoders,
-                 exceptions, groups, path=None):
+    def __init__(
+        self,
+        name,
+        short,
+        firmwares,
+        linear_channels,
+        encoders,
+        exceptions,
+        groups,
+        path=None,
+    ):
         self.name = name
         self.short = short
         self.firmwares = tuple(firmwares)
@@ -77,7 +87,7 @@ class Device:
         self.path = path
 
     def __repr__(self):
-        return '<Device %s>' % self.name
+        return "<Device %s>" % self.name
 
     def wire_for(self, code):
         """-> (channel, bit) for a BUTTON code, or None if this product has none.
@@ -112,8 +122,7 @@ class Device:
 
     def button_codes(self):
         """-> every button code this product's groups declare, in order."""
-        return tuple(c for g in self.groups if g.kind == BUTTON
-                     for c in g.codes)
+        return tuple(c for g in self.groups if g.kind == BUTTON for c in g.codes)
 
     def firmware_for_sha256(self, sha256):
         for fw in self.firmwares:
@@ -124,7 +133,7 @@ class Device:
 
 def _require(table, key, where):
     if key not in table:
-        raise DeviceError('%s: missing [%s]' % (where, key))
+        raise DeviceError("%s: missing [%s]" % (where, key))
     return table[key]
 
 
@@ -134,33 +143,40 @@ def load(path):
 
 
 def _read(path):
-    with open(path, 'rb') as fh:
+    with open(path, "rb") as fh:
         return tomllib.load(fh)
 
 
 def _from_raw(raw, path):
-    dev = _require(raw, 'device', path)
-    panel = _require(raw, 'panel', path)
-    firmwares = [Firmware(f.get('version'), _require(f, 'sha256', path),
-                          f.get('filename'))
-                 for f in raw.get('firmware', ())]
+    dev = _require(raw, "device", path)
+    panel = _require(raw, "panel", path)
+    firmwares = [
+        Firmware(f.get("version"), _require(f, "sha256", path), f.get("filename"))
+        for f in raw.get("firmware", ())
+    ]
     # TOML bare keys are strings even when they look like integers, so the
     # exception table's control codes arrive as '49' rather than 49.
     exceptions = {}
-    for code, pos in panel.get('exceptions', {}).items():
+    for code, pos in panel.get("exceptions", {}).items():
         if len(pos) != 2:
-            raise DeviceError('%s: exception %s must be [channel, bit]'
-                              % (path, code))
+            raise DeviceError("%s: exception %s must be [channel, bit]" % (path, code))
         exceptions[int(code)] = (int(pos[0]), int(pos[1]))
-    groups = [Group(g.get('name'), g.get('kind', BUTTON), g.get('codes', ()),
-                    g.get('layout', 'row'), g.get('columns'))
-              for g in panel.get('group', ())]
+    groups = [
+        Group(
+            g.get("name"),
+            g.get("kind", BUTTON),
+            g.get("codes", ()),
+            g.get("layout", "row"),
+            g.get("columns"),
+        )
+        for g in panel.get("group", ())
+    ]
     return Device(
-        name=_require(dev, 'name', path),
-        short=dev.get('short'),
+        name=_require(dev, "name", path),
+        short=dev.get("short"),
         firmwares=firmwares,
-        linear_channels=int(panel.get('linear_channels', 6)),
-        encoders=int(panel.get('encoders', 9)),
+        linear_channels=int(panel.get("linear_channels", 6)),
+        encoders=int(panel.get("encoders", 9)),
         exceptions=exceptions,
         groups=groups,
         path=path,
@@ -168,31 +184,31 @@ def _from_raw(raw, path):
 
 
 def devices_dir():
-    return os.environ.get('DT2_DEVICES', DEVICES_DEFAULT)
+    return os.environ.get("DT2_DEVICES", DEVICES_DEFAULT)
 
 
 def load_all(dirpath=None):
     """-> every Device under `dirpath`, sorted by name."""
     dirpath = dirpath or devices_dir()
     if not os.path.isdir(dirpath):
-        raise DeviceError('No devices directory at %s' % dirpath)
+        raise DeviceError("No devices directory at %s" % dirpath)
     out = []
     for n in sorted(os.listdir(dirpath)):
-        if not n.endswith('.toml'):
+        if not n.endswith(".toml"):
             continue
         path = os.path.join(dirpath, n)
         raw = _read(path)
         # devices/ also holds sidecar files (the *-leds.toml LED maps),
         # which have no [device] table
-        if 'device' in raw:
+        if "device" in raw:
             out.append(_from_raw(raw, path))
     return sorted(out, key=lambda d: d.name)
 
 
 def sha256_of(path):
     h = hashlib.sha256()
-    with open(path, 'rb') as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b''):
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -210,9 +226,10 @@ def identify(firmware_path, dirpath=None):
         if fw is not None:
             return device, fw
     raise DeviceError(
-        'No device file matches %s\n\n'
-        '  sha256 %s\n\n'
-        'Known releases are listed in %s/. This is either a firmware version\n'
-        'nobody has mapped yet or a different product; either way, guessing\n'
-        'which one would run it under the wrong panel.'
-        % (firmware_path, sha, dirpath or devices_dir()))
+        "No device file matches %s\n\n"
+        "  sha256 %s\n\n"
+        "Known releases are listed in %s/. This is either a firmware version\n"
+        "nobody has mapped yet or a different product; either way, guessing\n"
+        "which one would run it under the wrong panel."
+        % (firmware_path, sha, dirpath or devices_dir())
+    )

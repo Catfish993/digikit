@@ -40,6 +40,7 @@ def _after_sw(base_sw, pair):
 # instructions into basic blocks against that set. See the module's SCHEMA
 # comment on `bblocks`/`succ` for the kind vocabulary.
 
+
 def _gather_terminators(base_sw, aligned_insns, sites):
     """(seq, sw_index, terminators, extra_leaders) for one loader code
     block's aligned instructions.
@@ -85,8 +86,11 @@ def _gather_terminators(base_sw, aligned_insns, sites):
 
         if t in ("8a_abs", "8a_rel", "9a_rel", "9b_rel") and f.get("b") == 0:
             cond = f.get("cond")
-            target = f.get("addr") if t == "8a_abs" else \
-                sharcflow.pcrel_target(sw, f.get("reladdr", 0))
+            target = (
+                f.get("addr")
+                if t == "8a_abs"
+                else sharcflow.pcrel_target(sw, f.get("reladdr", 0))
+            )
             delayed = f.get("j")
             conditional = cond is not None and cond != sharcfn.ALWAYS_TRUE_COND
             if delayed:
@@ -99,7 +103,11 @@ def _gather_terminators(base_sw, aligned_insns, sites):
                 succs.append(("cond_not_taken", end_after))
             add(sw, end_after, succs)
 
-        elif t in ("9a_abs", "9b_abs") and sw not in return_sws and sw not in linked_indirect_sws:
+        elif (
+            t in ("9a_abs", "9b_abs")
+            and sw not in return_sws
+            and sw not in linked_indirect_sws
+        ):
             # A generic indirect jump (not the fixed return word, not an
             # indirect call's push+store idiom): both forms carry their own
             # 'j' bit (decode_table.json), so -- unlike the fixed-pattern
@@ -133,7 +141,11 @@ def _gather_terminators(base_sw, aligned_insns, sites):
                 if pos is not None:
                     end_insn = seq[pos][2]
                     end_after = end_sw + (end_insn.length_bytes or 0) // 2
-                    add(end_sw, end_after, [("loop_back", start_sw), ("loop_exit", end_after)])
+                    add(
+                        end_sw,
+                        end_after,
+                        [("loop_back", start_sw), ("loop_exit", end_after)],
+                    )
 
     return seq, sw_index, terminators, extra_leaders
 
@@ -166,7 +178,8 @@ def _build_blocks_and_succ(name, code_blocks, analyzed, functions, owner_of):
             continue
         base_sw = block["base_sw"]
         seq, sw_index, terminators, extra_leaders = _gather_terminators(
-            base_sw, block["insns"], block["sites"])
+            base_sw, block["insns"], block["sites"]
+        )
         per_idx[idx] = (seq, sw_index, terminators)
         if seq:
             global_leaders.add(seq[0][0])

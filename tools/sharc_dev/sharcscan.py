@@ -58,7 +58,12 @@ Usage:
     uv run python -m tools.sharc_dev.sharcscan section_7_digitakt.bin --json out.json
     uv run python -m tools.sharc_dev.sharcscan section_7_digitakt.bin --region 11248:236000
 """
-import argparse, hashlib, json, struct, sys
+
+import argparse
+import hashlib
+import json
+import struct
+import sys
 from collections import defaultdict
 
 
@@ -74,20 +79,22 @@ def _cjump_prefix(type_name, expected):
     """
     try:
         from tools.sharc_dev import sharc_visa_tables as _t
+
         entry = _t.get_type(type_name)
-        got = (entry['opcode_value'] >> 24) & 0xFFFFFF
+        got = (entry["opcode_value"] >> 24) & 0xFFFFFF
     except Exception:
         return expected
     if got != expected:
         raise SystemExit(
-            'sharc_visa_tables %s prefix is 0x%06x, this tool was validated '
-            'against 0x%06x. Re-validate the scan before trusting it.'
-            % (type_name, got, expected))
+            "sharc_visa_tables %s prefix is 0x%06x, this tool was validated "
+            "against 0x%06x. Re-validate the scan before trusting it."
+            % (type_name, got, expected)
+        )
     return got
 
 
-CJUMP_ABS_MASK = _cjump_prefix('25a_direct', 0x180400)
-CJUMP_PCREL_MASK = _cjump_prefix('25a_pcrel', 0x184400)
+CJUMP_ABS_MASK = _cjump_prefix("25a_direct", 0x180400)
+CJUMP_PCREL_MASK = _cjump_prefix("25a_pcrel", 0x184400)
 
 
 def instructions(data):
@@ -154,7 +161,9 @@ def _make_table(run):
     values = [v for _, v in run]
     ascending = all(values[i] < values[i + 1] for i in range(len(values) - 1))
     strides = [values[i + 1] - values[i] for i in range(len(values) - 1)]
-    uniform_stride = strides[0] if strides and all(s == strides[0] for s in strides) else None
+    uniform_stride = (
+        strides[0] if strides and all(s == strides[0] for s in strides) else None
+    )
     return {
         "offset": offset,
         "count": len(values),
@@ -180,24 +189,36 @@ def _parse_region(s):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("blob", help="path to a section_7_*.bin")
-    ap.add_argument("--region", type=_parse_region,
-                     help="LO:HI byte range restricting the CALL-GRAPH scan "
-                          "(int(s,0)); table scanning always covers the "
-                          "whole file")
-    ap.add_argument("--min-entries", type=int, default=6,
-                     help="minimum consecutive entries to call a run a table")
-    ap.add_argument("--min-space-hits", type=int, default=20,
-                     help="minimum hits for a target>>16 bucket to count "
-                          "as a code space")
+    ap.add_argument(
+        "--region",
+        type=_parse_region,
+        help="LO:HI byte range restricting the CALL-GRAPH scan "
+        "(int(s,0)); table scanning always covers the "
+        "whole file",
+    )
+    ap.add_argument(
+        "--min-entries",
+        type=int,
+        default=6,
+        help="minimum consecutive entries to call a run a table",
+    )
+    ap.add_argument(
+        "--min-space-hits",
+        type=int,
+        default=20,
+        help="minimum hits for a target>>16 bucket to count as a code space",
+    )
     ap.add_argument("--json", help="write the full result dict as JSON")
-    ap.add_argument("--top", type=int, default=20,
-                     help="how many most-called targets to print")
+    ap.add_argument(
+        "--top", type=int, default=20, help="how many most-called targets to print"
+    )
     args = ap.parse_args()
 
-    data = open(args.blob, "rb").read()
+    data = open(args.blob, "rb").read()  # noqa: SIM115
     calls = call_graph(data, args.region)
     spaces = code_spaces(calls, args.min_space_hits)
     tables = find_tables(data, spaces, args.min_entries)
@@ -208,7 +229,7 @@ def main():
         space_hits[target >> 16] += count
 
     tables_sorted = sorted(tables, key=lambda t: -t["count"])
-    top_targets = sorted(calls.items(), key=lambda kv: -kv[1])[:args.top]
+    top_targets = sorted(calls.items(), key=lambda kv: -kv[1])[: args.top]
 
     result = {
         "path": args.blob,
@@ -223,14 +244,18 @@ def main():
     }
 
     if args.json:
-        json.dump(result, open(args.json, "w"), indent=2)
+        json.dump(result, open(args.json, "w"), indent=2)  # noqa: SIM115
 
     print("=== %s ===" % args.blob)
     print("size=%d  sha256=%s" % (len(data), result["sha256"]))
-    print("call_sites=%d  distinct_targets=%d" % (
-        result["call_sites"], result["distinct_targets"]))
-    print("code_spaces=%s" % (
-        ", ".join("0x%02xxxxx(%d)" % (s, space_hits[s]) for s in spaces) or "-"))
+    print(
+        "call_sites=%d  distinct_targets=%d"
+        % (result["call_sites"], result["distinct_targets"])
+    )
+    print(
+        "code_spaces=%s"
+        % (", ".join("0x%02xxxxx(%d)" % (s, space_hits[s]) for s in spaces) or "-")
+    )
 
     print("\n--- most-called targets ---")
     for target, count in top_targets:
@@ -239,10 +264,18 @@ def main():
     print("\n--- candidate dispatch tables ---")
     for t in tables_sorted:
         preview = ",".join("0x%06x" % v for v in t["values"][:4])
-        print("off=0x%06x  entries=%-4d  ascending=%-5s  stride=%-6s  "
-              "indirect_only=%5.1f%%  [%s...]" % (
-                  t["offset"], t["count"], t["ascending"],
-                  t["uniform_stride"], t["indirect_only_pct"], preview))
+        print(
+            "off=0x%06x  entries=%-4d  ascending=%-5s  stride=%-6s  "
+            "indirect_only=%5.1f%%  [%s...]"
+            % (
+                t["offset"],
+                t["count"],
+                t["ascending"],
+                t["uniform_stride"],
+                t["indirect_only_pct"],
+                preview,
+            )
+        )
 
     return 0
 

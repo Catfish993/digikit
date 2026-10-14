@@ -84,7 +84,7 @@ def derive_key(string, const):
         raise ValueError('const must be 32 bytes, got %d' % len(const))
     h1 = hashlib.sha256(string).digest()
     h2 = hashlib.sha256(string[::-1]).digest()
-    return bytes(a ^ b ^ c for a, b, c in zip(const, h1, h2))
+    return bytes(a ^ b ^ c for a, b, c in zip(const, h1, h2, strict=False))
 
 
 def split_container(decoded):

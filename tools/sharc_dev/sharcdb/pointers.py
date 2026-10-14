@@ -97,13 +97,20 @@ _PTR_ROUNDS = 4
 # tools/sharc_dev/sharc.py's trace() seeds by default -- held in every function's
 # entry state regardless of caller, not something call-site seeding could
 # ever discover on its own.
-_PTR_M_RESET = {"M5": 0, "M6": 1, "M7": 0xFFFFFFFF, "M13": 0, "M14": 1, "M15": 0xFFFFFFFF}
+_PTR_M_RESET = {
+    "M5": 0,
+    "M6": 1,
+    "M7": 0xFFFFFFFF,
+    "M13": 0,
+    "M14": 1,
+    "M15": 0xFFFFFFFF,
+}
 
 _PTR_CALL_ARG_REGS = ("R4", "R8", "R12")
 
 
 def _ptr_bank_reg(prefix, num, f):
-    """"I%d"/"M%d" with PGR's DAG1/DAG2 bank offset (g=1 -> +8) applied --
+    """ "I%d"/"M%d" with PGR's DAG1/DAG2 bank offset (g=1 -> +8) applied --
     see the module note above on the existing extract_mem_access gap this
     intentionally does NOT share."""
     return "%s%d" % (prefix, num + (8 if f.get("g") else 0))
@@ -133,7 +140,10 @@ def _ptr_alu_updates(t, f, state):
         elif name in ("pass", "neg", "inc", "dec"):
             vx = state.get(Rx)
             if vx is not None:
-                return {Rn: {"pass": vx, "neg": -vx, "inc": vx + 1, "dec": vx - 1}[name] & 0xFFFFFFFF}
+                return {
+                    Rn: {"pass": vx, "neg": -vx, "inc": vx + 1, "dec": vx - 1}[name]
+                    & 0xFFFFFFFF
+                }
         return {}
     if t == "2c":
         field12 = f.get("compute")
@@ -255,7 +265,13 @@ def _ptr_mem_form(t, f, state, frame):
         base_value = state.get(base_reg)
         if base_value is None:
             return {}, None
-        return {}, (base_reg, base_value, (base_value + off) & 0xFFFFFFFF, direction, width)
+        return {}, (
+            base_reg,
+            base_value,
+            (base_value + off) & 0xFFFFFFFF,
+            direction,
+            width,
+        )
 
     if t == "3c":
         # The same indexed-post-modify addressing as INDEXED_MEM_FORMS
@@ -287,7 +303,9 @@ def _ptr_mem_form(t, f, state, frame):
             if mod_value is not None:
                 new_values[base_reg] = (base_value + mod_value * 4) & 0xFFFFFFFF
             return new_values, (base_reg, base_value, base_value, direction, "word")
-        address = (base_value + mod_value * 4) & 0xFFFFFFFF if mod_value is not None else None
+        address = (
+            (base_value + mod_value * 4) & 0xFFFFFFFF if mod_value is not None else None
+        )
         return {}, (base_reg, base_value, address, direction, "word")
 
     if t in sharcfn.IMMOFF_MEM_FORMS:
@@ -310,8 +328,20 @@ def _ptr_mem_form(t, f, state, frame):
         if base_value is None:
             return {}, None
         if u:
-            return {base_reg: (base_value + off) & 0xFFFFFFFF}, (base_reg, base_value, base_value, direction, width)
-        return {}, (base_reg, base_value, (base_value + off) & 0xFFFFFFFF, direction, width)
+            return {base_reg: (base_value + off) & 0xFFFFFFFF}, (
+                base_reg,
+                base_value,
+                base_value,
+                direction,
+                width,
+            )
+        return {}, (
+            base_reg,
+            base_value,
+            (base_value + off) & 0xFFFFFFFF,
+            direction,
+            width,
+        )
 
     return {}, None
 
@@ -348,7 +378,9 @@ def _ptr_merge(states):
     common = set(states[0])
     for s in states[1:]:
         common &= set(s)
-    return {k: states[0][k] for k in common if all(s[k] == states[0][k] for s in states)}
+    return {
+        k: states[0][k] for k in common if all(s[k] == states[0][k] for s in states)
+    }
 
 
 def _ptr_topo_order(entry, starts, succ_by_from, idom):
@@ -362,6 +394,7 @@ def _ptr_topo_order(entry, starts, succ_by_from, idom):
     address order -- _build_ptr_rows's merge only ever consumes an already-
     visited predecessor, so this is a safe (if occasionally lossy)
     approximation, never a wrong one."""
+
     def dominates(target, node):
         n = node
         while True:
@@ -392,11 +425,13 @@ def _build_ptr_rows(db, name, idom_rows):
     `ptr` table's own rows for one image. See the long module note above
     this section for what is and is not modelled."""
     insns = db.execute(
-        "SELECT sw, form, fields FROM insn WHERE image=? AND aligned=1 ORDER BY sw", (name,)
+        "SELECT sw, form, fields FROM insn WHERE image=? AND aligned=1 ORDER BY sw",
+        (name,),
     ).fetchall()
     decoded = {
         sw: (form, sharcinv.merge_fields(json.loads(fields_json)))
-        for sw, form, fields_json in insns if form is not None and fields_json is not None
+        for sw, form, fields_json in insns
+        if form is not None and fields_json is not None
     }
     if not decoded:
         return []
@@ -438,7 +473,8 @@ def _build_ptr_rows(db, name, idom_rows):
     calls_out, callers_in = collections.defaultdict(set), collections.defaultdict(list)
     for from_sw, from_fn, to_fn in db.execute(
         "SELECT from_sw, from_function, to_function FROM edges WHERE image=? AND kind='call' "
-        "AND from_function IS NOT NULL AND to_function IS NOT NULL", (name,),
+        "AND from_function IS NOT NULL AND to_function IS NOT NULL",
+        (name,),
     ).fetchall():
         calls_out[from_fn].add(from_sw)
         callers_in[to_fn].append((from_sw, from_fn))
@@ -477,7 +513,8 @@ def _build_ptr_rows(db, name, idom_rows):
                 # state wiped the whole function's frame tracking from that
                 # point on).
                 preds = [
-                    p for p in preds_by_to.get(start, ())
+                    p
+                    for p in preds_by_to.get(start, ())
                     if p in block_set and p in block_out and block_confident.get(p)
                 ]
                 if start == fn or not preds:
@@ -491,16 +528,24 @@ def _build_ptr_rows(db, name, idom_rows):
                     confident = True
                 for sw in block_members.get(start, ()):
                     if sw in call_sws:
-                        call_state[(fn, sw)] = {r: state[r] for r in _PTR_CALL_ARG_REGS if r in state}
+                        call_state[(fn, sw)] = {
+                            r: state[r] for r in _PTR_CALL_ARG_REGS if r in state
+                        }
                     form, f = decoded[sw]
                     row = _ptr_exec(form, f, state, frame)
                     if row is not None:
                         ptr_rows.append((sw,) + row)
-                block_out[start], block_out_frame[start], block_confident[start] = state, frame, confident
+                block_out[start], block_out_frame[start], block_confident[start] = (
+                    state,
+                    frame,
+                    confident,
+                )
 
         seed = {}
         for fn, calls in callers_in.items():
-            snaps = [call_state.get((from_fn, call_sw), {}) for call_sw, from_fn in calls]
+            snaps = [
+                call_state.get((from_fn, call_sw), {}) for call_sw, from_fn in calls
+            ]
             agree = {}
             for reg in _PTR_CALL_ARG_REGS:
                 values = [s.get(reg) for s in snaps]

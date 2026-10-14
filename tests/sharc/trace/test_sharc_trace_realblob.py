@@ -12,7 +12,9 @@ T = import_module("tools.sharc_dev.sharc_trace")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 L = import_module("tools.sharc_dev.sharcldr")
 
-_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module(
+    "tools.sharc_dev.sharc_core.floats"
+)  # _double_to_fixed isn't re-exported by T
 
 
 class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):

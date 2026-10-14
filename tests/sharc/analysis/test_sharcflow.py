@@ -2,8 +2,6 @@
 
 import unittest
 
-
-from tools.sharc_dev import sharcflow  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_abs,
     call8a_rel,
@@ -15,35 +13,60 @@ from support.sharc_encode import (  # noqa: E402
     words,
 )
 
+from tools.sharc_dev import sharcflow  # noqa: E402
+
 
 class SitesTest(unittest.TestCase):
     def test_call_with_push_and_store_in_its_delay_slots(self):
         # SW 0x1000 cjump, 0x1003 push, 0x1004 store (0x1006), return to 0x1007
         # SW 0x1007 load R4, 0x1009 cjump, 0x100c 3a push, 0x100f store (0x1011)
-        data = (cjump(0x2000) + push3c() + store(0x1006)
-                + load(4, 0xABC) + cjump(0x3000) + push3a() + store(0x1011))
+        data = (
+            cjump(0x2000)
+            + push3c()
+            + store(0x1006)
+            + load(4, 0xABC)
+            + cjump(0x3000)
+            + push3a()
+            + store(0x1011)
+        )
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual([(c['sw'], c['target'], c['slots'], c['linked'], c['returns_to'])
-                          for c in sites['calls']],
-                         [(0x1000, 0x2000, ['3c', '16a'], True, 0x1007),
-                          (0x1009, 0x3000, ['3a', '16a'], True, 0x1012)])
+        self.assertEqual(
+            [
+                (c["sw"], c["target"], c["slots"], c["linked"], c["returns_to"])
+                for c in sites["calls"]
+            ],
+            [
+                (0x1000, 0x2000, ["3c", "16a"], True, 0x1007),
+                (0x1009, 0x3000, ["3a", "16a"], True, 0x1012),
+            ],
+        )
 
     def test_store_must_hold_its_address_plus_2(self):
         data = cjump(0x2000) + push3c() + store(0xBF800000) + load(4, 1)
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual([c['linked'] for c in sites['calls']], [False])
+        self.assertEqual([c["linked"] for c in sites["calls"]], [False])
 
     def test_returns_and_indirect_calls(self):
         # SW 0x1000 return jump, 0x1002 load (epilogue), 0x1004 rframe; next code at 0x1005
         # SW 0x1005 indirect jump through M5 (DB), 0x1007 push, 0x1008 store (0x100a)
-        data = (words(0x083F, 0x343F) + load(0, 0xABC) + words(0x1901)
-                + words(0x083F, 0x2C3F) + push3c() + store(0x100A))
+        data = (
+            words(0x083F, 0x343F)
+            + load(0, 0xABC)
+            + words(0x1901)
+            + words(0x083F, 0x2C3F)
+            + push3c()
+            + store(0x100A)
+        )
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual(sites['returns'], [{'sw': 0x1000, 'slots': ['17b', '25c_rframe'],
-                                             'after': 0x1005}])
-        self.assertEqual(sites['indirect_calls'], [{'sw': 0x1005, 'slots': ['3c', '16a'],
-                                                    'returns_to': 0x100B}])
-        self.assertEqual(sites['aligned'][:3], [(0x1000, 4), (0x1002, 4), (0x1004, 2)])
+        self.assertEqual(
+            sites["returns"],
+            [{"sw": 0x1000, "slots": ["17b", "25c_rframe"], "after": 0x1005}],
+        )
+        self.assertEqual(
+            sites["indirect_calls"],
+            [{"sw": 0x1005, "slots": ["3c", "16a"], "returns_to": 0x100B}],
+        )
+        self.assertEqual(sites["aligned"][:3], [(0x1000, 4), (0x1002, 4), (0x1004, 2)])
 
 
 class Type8aCallTest(unittest.TestCase):
@@ -58,41 +81,53 @@ class Type8aCallTest(unittest.TestCase):
         # return address 0x1007 (after both delay slots).
         data = call8a_rel(0x10) + load(0, 0xAAA) + load(4, 0xBBB)
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual(len(sites['calls']), 1)
-        call = sites['calls'][0]
-        self.assertEqual((call['sw'], call['target'], call['kind'], call['cond'],
-                          call['conditional'], call['delayed'], call['linked'],
-                          call['slots'], call['returns_to']),
-                         (0x1000, 0x1010, '8a', 31, False, True, False,
-                          ['17b', '17b'], 0x1007))
+        self.assertEqual(len(sites["calls"]), 1)
+        call = sites["calls"][0]
+        self.assertEqual(
+            (
+                call["sw"],
+                call["target"],
+                call["kind"],
+                call["cond"],
+                call["conditional"],
+                call["delayed"],
+                call["linked"],
+                call["slots"],
+                call["returns_to"],
+            ),
+            (0x1000, 0x1010, "8a", 31, False, True, False, ["17b", "17b"], 0x1007),
+        )
 
     def test_branch_b0_is_not_a_call(self):
         data = call8a_rel(0x10, b=0) + load(0, 1) + load(4, 2)
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual(sites['calls'], [])
+        self.assertEqual(sites["calls"], [])
 
     def test_conditional_call_is_kept_with_its_condition_recorded(self):
         data = call8a_rel(0x8, cond=5) + load(0, 1) + load(4, 2)
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual(len(sites['calls']), 1)
-        call = sites['calls'][0]
-        self.assertEqual((call['target'], call['cond'], call['conditional']),
-                         (0x1008, 5, True))
+        self.assertEqual(len(sites["calls"]), 1)
+        call = sites["calls"][0]
+        self.assertEqual(
+            (call["target"], call["cond"], call["conditional"]), (0x1008, 5, True)
+        )
 
     def test_non_delayed_call_returns_right_after_itself(self):
         # j=0: no delay slots execute, so the return address is simply the
         # instruction after the (3-short-word) call itself.
         data = call8a_abs(0x2000, j=0) + load(0, 1) + load(4, 2)
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual(len(sites['calls']), 1)
-        call = sites['calls'][0]
-        self.assertEqual((call['target'], call['delayed'], call['slots'], call['returns_to']),
-                         (0x2000, False, None, 0x1003))
+        self.assertEqual(len(sites["calls"]), 1)
+        call = sites["calls"][0]
+        self.assertEqual(
+            (call["target"], call["delayed"], call["slots"], call["returns_to"]),
+            (0x2000, False, None, 0x1003),
+        )
 
     def test_absolute_form_target_is_the_addr_field(self):
         data = call8a_abs(0x1CB4B2) + load(0, 1) + load(4, 2)
         sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
-        self.assertEqual(sites['calls'][0]['target'], 0x1CB4B2)
+        self.assertEqual(sites["calls"][0]["target"], 0x1CB4B2)
 
 
 class PcrelTargetTest(unittest.TestCase):
@@ -115,5 +150,5 @@ class PcrelTargetTest(unittest.TestCase):
         self.assertEqual(sharcflow.pcrel_target(0x2, 0xFFFFFA), 0xFFFFFC)  # -6
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

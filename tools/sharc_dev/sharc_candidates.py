@@ -135,7 +135,7 @@ def candidates(path, offset=0x94, word_bytes=2, window=64):
     try:
         rows = _rows(db)
         result = []
-        for pos, row in enumerate(rows):
+        for _pos, row in enumerate(rows):
             if row["form"] != "19a" or row["kind"] != "confident":
                 continue
             fields = _parse_row(row)

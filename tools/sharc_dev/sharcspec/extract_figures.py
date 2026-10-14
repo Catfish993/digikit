@@ -19,6 +19,7 @@ rather than from extracted text:
 Every extracted figure is cross-checked (bits accounted for exactly once, label
 widths match bracket widths) and anything that fails is reported, not guessed.
 """
+
 import json
 import re
 import sys
@@ -30,7 +31,9 @@ CELL = 9.0
 TOL = 1.2
 GRAY = (0.82, 0.82, 0.82)
 YELLOW = (0.95, 0.80, 0.19)
-LABEL_RE = re.compile(r"^(?P<name>[A-Za-z_][\w]*)(\[(?P<hi>\d+)(:(?P<lo>\d+))?\]?)?$")  # tolerates a missing "]" typo
+LABEL_RE = re.compile(
+    r"^(?P<name>[A-Za-z_][\w]*)(\[(?P<hi>\d+)(:(?P<lo>\d+))?\]?)?$"
+)  # tolerates a missing "]" typo
 
 
 def near(a, b, tol=TOL):
@@ -38,7 +41,9 @@ def near(a, b, tol=TOL):
 
 
 def color_is(c, ref, tol=0.03):
-    return c is not None and all(abs(x - y) <= tol for x, y in zip(c, ref))
+    return c is not None and all(
+        abs(x - y) <= tol for x, y in zip(c, ref, strict=False)
+    )
 
 
 @dataclass
@@ -69,7 +74,7 @@ class Row:
 def spans_of(page):
     out = []
     for b in page.get_text("dict")["blocks"]:
-        for l in b.get("lines", []):
+        for l in b.get("lines", []):  # noqa: E741
             for s in l["spans"]:
                 if s["text"].strip():
                     out.append(s)
@@ -103,8 +108,18 @@ def connected_polyline(segs):
 
 def extract_page(page, pno):
     spans = spans_of(page)
-    bitlabels = [s for s in spans if "CourierNewPS-BoldMT" in s["font"] and s["size"] < 5 and s["text"].strip().isdigit()]
-    cell_digits = [s for s in spans if s["font"] == "CourierNewPSMT" and s["text"].strip() in ("0", "1")]
+    bitlabels = [
+        s
+        for s in spans
+        if "CourierNewPS-BoldMT" in s["font"]
+        and s["size"] < 5
+        and s["text"].strip().isdigit()
+    ]
+    cell_digits = [
+        s
+        for s in spans
+        if s["font"] == "CourierNewPSMT" and s["text"].strip() in ("0", "1")
+    ]
     if not bitlabels:
         return []
 
@@ -114,11 +129,19 @@ def extract_page(page, pno):
             for r in rects:
                 fills.append((d.get("fill"), r))
             # Some fills are closed polygons of axis-aligned lines rather than rectangles.
-            if not rects and segs and all(near(a.x, b.x, 0.05) or near(a.y, b.y, 0.05) for a, b in segs):
+            if (
+                not rects
+                and segs
+                and all(near(a.x, b.x, 0.05) or near(a.y, b.y, 0.05) for a, b in segs)
+            ):
                 fills.append((d.get("fill"), d["rect"]))
         if d["type"] in ("s", "fs"):
             for r in rects:
-                if near(r.height, CELL, 0.6) and r.width >= CELL - 0.5 and near(r.width / CELL, round(r.width / CELL), 0.12):
+                if (
+                    near(r.height, CELL, 0.6)
+                    and r.width >= CELL - 0.5
+                    and near(r.width / CELL, round(r.width / CELL), 0.12)
+                ):
                     rows.append(Row(r.x0, r.y0, r.x1, r.y1))
             pl = connected_polyline(segs)
             if pl and len(pl) >= 3:
@@ -126,7 +149,12 @@ def extract_page(page, pno):
 
     for row in rows:
         n = row.ncells
-        labels = [s for s in bitlabels if near(s["bbox"][3], row.y0, 2.5) and row.x0 - 1 <= (s["bbox"][0] + s["bbox"][2]) / 2 <= row.x1 + 1]
+        labels = [
+            s
+            for s in bitlabels
+            if near(s["bbox"][3], row.y0, 2.5)
+            and row.x0 - 1 <= (s["bbox"][0] + s["bbox"][2]) / 2 <= row.x1 + 1
+        ]
         bits = [None] * n
         for s in labels:
             i = row.cell_at((s["bbox"][0] + s["bbox"][2]) / 2)
@@ -153,10 +181,22 @@ def extract_page(page, pno):
                         kind = f"fill{tuple(round(c, 2) for c in fill)}"
             digit = None
             for s in cell_digits:
-                sx, sy = (s["bbox"][0] + s["bbox"][2]) / 2, (s["bbox"][1] + s["bbox"][3]) / 2
-                if row.x0 + row.pitch * i <= sx <= row.x0 + row.pitch * (i + 1) and row.y0 <= sy <= row.y1:
+                sx, sy = (
+                    (s["bbox"][0] + s["bbox"][2]) / 2,
+                    (s["bbox"][1] + s["bbox"][3]) / 2,
+                )
+                if (
+                    row.x0 + row.pitch * i <= sx <= row.x0 + row.pitch * (i + 1)
+                    and row.y0 <= sy <= row.y1
+                ):
                     digit = int(s["text"])
-            cells.append({"bit": bit, "kind": kind, "value": digit if kind in ("fixed", "unused") else None})
+            cells.append(
+                {
+                    "bit": bit,
+                    "kind": kind,
+                    "value": digit if kind in ("fixed", "unused") else None,
+                }
+            )
         results.append({"row": row, "cells": cells})
 
     # Field annotations. Every stroked line segment outside the rows is grouped into
@@ -169,8 +209,13 @@ def extract_page(page, pno):
         if d["type"] != "s":
             continue
         for a, b in dsegs:
-            inside = any(max(a.y, b.y) <= rr["row"].y1 + 0.6 and min(a.y, b.y) >= rr["row"].y0 - 8
-                         and rr["row"].x0 - 1 <= min(a.x, b.x) and max(a.x, b.x) <= rr["row"].x1 + 1 for rr in results)
+            inside = any(
+                max(a.y, b.y) <= rr["row"].y1 + 0.6
+                and min(a.y, b.y) >= rr["row"].y0 - 8
+                and rr["row"].x0 - 1 <= min(a.x, b.x)
+                and max(a.x, b.x) <= rr["row"].x1 + 1
+                for rr in results
+            )
             if not inside:
                 segs.append((a, b))
 
@@ -183,7 +228,10 @@ def extract_page(page, pno):
         return i
 
     def on_segment(p, a, b, tol=1.0):
-        if min(a.x, b.x) - tol <= p.x <= max(a.x, b.x) + tol and min(a.y, b.y) - tol <= p.y <= max(a.y, b.y) + tol:
+        if (
+            min(a.x, b.x) - tol <= p.x <= max(a.x, b.x) + tol
+            and min(a.y, b.y) - tol <= p.y <= max(a.y, b.y) + tol
+        ):
             dx, dy = b.x - a.x, b.y - a.y
             length = (dx * dx + dy * dy) ** 0.5 or 1.0
             return abs(dy * (p.x - a.x) - dx * (p.y - a.y)) / length <= tol
@@ -192,20 +240,29 @@ def extract_page(page, pno):
     for i, (a, b) in enumerate(segs):
         for j in range(i + 1, len(segs)):
             c, e = segs[j]
-            if on_segment(a, c, e) or on_segment(b, c, e) or on_segment(c, a, b) or on_segment(e, a, b):
+            if (
+                on_segment(a, c, e)
+                or on_segment(b, c, e)
+                or on_segment(c, a, b)
+                or on_segment(e, a, b)
+            ):
                 parent[find(i)] = find(j)
 
     comps = {}
     for i, seg in enumerate(segs):
         comps.setdefault(find(i), []).append(seg)
 
-    labels = [s for s in spans if "CourierNewPS-BoldMT" in s["font"] and 5 <= s["size"] < 7]
+    labels = [
+        s for s in spans if "CourierNewPS-BoldMT" in s["font"] and 5 <= s["size"] < 7
+    ]
     anomalies = []
 
     def label_at(pt):
         for s in labels:
             ly = (s["bbox"][1] + s["bbox"][3]) / 2
-            if near(ly, pt.y, 3) and (0 < s["bbox"][0] - pt.x < 16 or 0 < pt.x - s["bbox"][2] < 16):
+            if near(ly, pt.y, 3) and (
+                0 < s["bbox"][0] - pt.x < 16 or 0 < pt.x - s["bbox"][2] < 16
+            ):
                 return s["text"].strip()
         return None
 
@@ -224,7 +281,9 @@ def extract_page(page, pno):
         if not labs and not contacts:
             continue
         if len(labs) != 1:
-            anomalies.append(f"p{pno}: component with labels {sorted(labs)} and {len(contacts)} contacts")
+            anomalies.append(
+                f"p{pno}: component with labels {sorted(labs)} and {len(contacts)} contacts"
+            )
             continue
         lab = labs.pop()
         rows_hit = {k for k, _ in contacts}
@@ -237,14 +296,20 @@ def extract_page(page, pno):
         for i in range(min(idx), max(idx) + 1):
             c = rr["cells"][i]
             if c["kind"] == "field":
-                anomalies.append(f"p{pno}: bit {c['bit']} claimed by {c['field']!r} and {lab!r}")
+                anomalies.append(
+                    f"p{pno}: bit {c['bit']} claimed by {c['field']!r} and {lab!r}"
+                )
             c["kind"], c["field"] = "field", lab
     return results, anomalies
 
 
 def figure_tags(page):
     """Small bold Helvetica tag printed at the top left of each figure, e.g. 'Type2b'."""
-    return [(s["bbox"][1], s["text"].strip()) for s in spans_of(page) if s["font"] == "Helvetica-Bold" and 6 <= s["size"] <= 8]
+    return [
+        (s["bbox"][1], s["text"].strip())
+        for s in spans_of(page)
+        if s["font"] == "Helvetica-Bold" and 6 <= s["size"] <= 8
+    ]
 
 
 def group_figures(page, pno, results):
@@ -270,7 +335,9 @@ def group_figures(page, pno, results):
             continue
         prev = max((c[0] for c in captions if c[0] < cap[0]), default=0)
         tag = next((t for ty, t in tags if prev < ty < cap[0]), None)
-        figs.setdefault(cap[1], {"rows": [], "tag": tag, "page": pno})["rows"].append(rr)
+        figs.setdefault(cap[1], {"rows": [], "tag": tag, "page": pno})["rows"].append(
+            rr
+        )
     return figs, trailing, tags
 
 
@@ -321,15 +388,23 @@ def summarize(pno, caption, rows, tag=None):
                 flo = int(m.group("lo")) if m.group("lo") is not None else fhi
                 entry["value_bits"] = [fhi, flo]
                 if fhi - flo + 1 != len(fb):
-                    problems.append(f"field {label!r} labels {fhi - flo + 1} bits but spans {len(fb)}")
+                    problems.append(
+                        f"field {label!r} labels {fhi - flo + 1} bits but spans {len(fb)}"
+                    )
         else:
             problems.append(f"unparsed label {label!r}")
         flist.append(entry)
     if unspecified:
-        problems.append(f"bits {unspecified[0]}..{unspecified[-1]} ({len(unspecified)}) are white with no field label; check the text")
-    norm = lambda t: re.sub(r"[^a-z0-9]", "", t.lower())
+        problems.append(
+            f"bits {unspecified[0]}..{unspecified[-1]} ({len(unspecified)}) are white with no field label; check the text"
+        )
+    norm = lambda t: re.sub(r"[^a-z0-9]", "", t.lower())  # noqa: E731
     cap_title = re.sub(r"^Figure \d+-\d+:\s*", "", caption)
-    if tag and caption.startswith("Figure") and not norm(cap_title).startswith(norm(tag)):
+    if (
+        tag
+        and caption.startswith("Figure")
+        and not norm(cap_title).startswith(norm(tag))
+    ):
         problems.append(f"figure tag {tag!r} does not match caption {cap_title!r}")
     return {
         "page": pno,
@@ -340,7 +415,9 @@ def summarize(pno, caption, rows, tag=None):
         "pattern": pattern,
         "fields": flist,
         "unspecified_bits": unspecified,
-        "unused_printed": "".join(str(unused_values[b]) for b in sorted(unused_values, reverse=True)),
+        "unused_printed": "".join(
+            str(unused_values[b]) for b in sorted(unused_values, reverse=True)
+        ),
         "tag": tag,
         "problems": problems,
     }
@@ -360,22 +437,42 @@ def main(pdf, first, last, out):
         figs, trailing, tags = group_figures(page, pno, results)
         if carried:
             if figs:
-                first_cap = min(figs, key=lambda c: min(rr["row"].y0 for rr in figs[c]["rows"]))
+                first_cap = min(
+                    figs, key=lambda c: min(rr["row"].y0 for rr in figs[c]["rows"])
+                )
                 figs[first_cap]["rows"] = carried + figs[first_cap]["rows"]
                 figs[first_cap]["tag"] = figs[first_cap]["tag"] or carried_tag
                 figs[first_cap]["page"] = f"{pno - 1}-{pno}"
             else:
-                anomalies.append(f"p{pno - 1}: rows continue past page {pno} without a caption")
+                anomalies.append(
+                    f"p{pno - 1}: rows continue past page {pno} without a caption"
+                )
             carried = []
         for caption, f in figs.items():
             figures.append(summarize(f["page"], caption, f["rows"], f["tag"]))
         if trailing:
             carried = trailing
             carried_tag = next((t for ty, t in sorted(tags, reverse=True)), None)
-    legend = {"0/1": "fixed bit (gray cell)", "x": "field bit (see fields)", "-": "unused bit (yellow cell)", "?": "white cell with no field label"}
-    json.dump({"source": "SHARC+ Core Programming Reference Rev 1.5 (sc58x-2158x-prm.pdf)", "pattern_legend": legend, "figures": figures, "anomalies": anomalies}, open(out, "w"), indent=1)
+    legend = {
+        "0/1": "fixed bit (gray cell)",
+        "x": "field bit (see fields)",
+        "-": "unused bit (yellow cell)",
+        "?": "white cell with no field label",
+    }
+    json.dump(
+        {
+            "source": "SHARC+ Core Programming Reference Rev 1.5 (sc58x-2158x-prm.pdf)",
+            "pattern_legend": legend,
+            "figures": figures,
+            "anomalies": anomalies,
+        },
+        open(out, "w"),  # noqa: SIM115
+        indent=1,
+    )
     bad = [f for f in figures if f["problems"]]
-    print(f"{len(figures)} figures, {len(bad)} with problems, {len(anomalies)} attachment anomalies -> {out}")
+    print(
+        f"{len(figures)} figures, {len(bad)} with problems, {len(anomalies)} attachment anomalies -> {out}"
+    )
 
 
 if __name__ == "__main__":

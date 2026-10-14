@@ -3,13 +3,14 @@
 import unittest
 from importlib import import_module
 
-
 T = import_module("tools.sharc_dev.sharc_trace")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_trace_build import insn  # noqa: E402
 
-_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module(
+    "tools.sharc_dev.sharc_core.floats"
+)  # _double_to_fixed isn't re-exported by T
 
 from support.sharc_trace_build import TraceRunMixin  # noqa: E402
 
@@ -51,10 +52,10 @@ class TraceUregComputeTest(TraceRunMixin, unittest.TestCase):
         self.assertEqual(skipped.trace[-1]["predicate_assumption"], False)
 
     def test_computes_and_old_value_parallel_move(self):
-        short = lambda opcode, rn, rx: {"compute[11:0]": (opcode << 8) | (rn << 4) | rx}
+        short = lambda opcode, rn, rx: {"compute[11:0]": (opcode << 8) | (rn << 4) | rx}  # noqa: E731
         s = self.run_one(T.State(1, {3: T.Const(9)}), insn("2c", short(2, 1, 3), 2))
         self.assertEqual(s.uregs[1], T.Const(9))
-        full = lambda cu, op, rn, rx, ry: {
+        full = lambda cu, op, rn, rx, ry: {  # noqa: E731
             "compute[22:16]": ((cu << 4) | (op >> 4)),
             "compute[15:0]": ((op & 15) << 12) | (rn << 8) | (rx << 4) | ry,
         }

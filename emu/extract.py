@@ -15,12 +15,12 @@ endian, and the sum is checked here. Two sections opt out of it:
     4  updater  header present, sum 0, payload stored raw
     5  meta     15 ASCII bytes of build stamp, no header at all
 """
+
 import glob
 import hashlib
 import os
 import struct
 import sys
-
 
 from dt2.container import sections
 from dt2.elz import depack_section
@@ -28,10 +28,10 @@ from dt2.elz import depack_section
 # The names elektron-firmware-tool uses, so a directory extracted either way
 # looks the same to emu/config.py's globs. Section 2 is the bootstrap, not the
 # DSP -- that name is the tool's mistake, kept here for compatibility.
-NAMES = {2: 'DSP', 3: 'MAIN_OS', 4: 'UPDATER', 5: 'META', 7: 'BLOB'}
+NAMES = {2: "DSP", 3: "MAIN_OS", 4: "UPDATER", 5: "META", 7: "BLOB"}
 
 # The same file emu/run.py reads; see MARKER there.
-SOURCE_MARKER = '.source-sha256'
+SOURCE_MARKER = ".source-sha256"
 
 
 def classify(stream):
@@ -44,12 +44,12 @@ def classify(stream):
     is a check.
     """
     if len(stream) >= 8:
-        ln, sm = struct.unpack_from('>II', stream, 0)
-        if ln + 8 <= len(stream) and (sum(stream[8:8 + ln]) & 0xFFFFFFFF) == sm:
-            return 'packed', stream
+        ln, sm = struct.unpack_from(">II", stream, 0)
+        if ln + 8 <= len(stream) and (sum(stream[8 : 8 + ln]) & 0xFFFFFFFF) == sm:
+            return "packed", stream
         if sm == 0:
-            return 'raw', stream[8:]
-    return 'raw', stream
+            return "raw", stream[8:]
+    return "raw", stream
 
 
 def extract(syx, outdir, progress=None):
@@ -64,18 +64,18 @@ def extract(syx, outdir, progress=None):
     os.makedirs(outdir, exist_ok=True)
     written = []
     for sid, off, clen, dest in secs:
-        kind, payload = classify(bytes(c[off:off + clen]))
-        name = 'section_%d_%s.bin' % (sid, NAMES.get(sid, 'SECTION'))
+        kind, payload = classify(bytes(c[off : off + clen]))
+        name = "section_%d_%s.bin" % (sid, NAMES.get(sid, "SECTION"))
         if progress:
             progress(sid, kind, name)
-        if kind == 'packed':
+        if kind == "packed":
             payload = depack_section(payload)
         # Drop any earlier extraction of this section whatever it was named,
         # so a tool-made directory cannot leave a duplicate behind.
-        for stale in glob.glob(os.path.join(outdir, 'section_%d_*.bin' % sid)):
+        for stale in glob.glob(os.path.join(outdir, "section_%d_*.bin" % sid)):
             os.remove(stale)
         path = os.path.join(outdir, name)
-        with open(path, 'wb') as fh:
+        with open(path, "wb") as fh:
             fh.write(payload)
         written.append((sid, kind, path, len(payload), dest))
     record_source(syx, outdir)
@@ -85,11 +85,11 @@ def extract(syx, outdir, progress=None):
 def record_source(syx, outdir):
     """Stamp `outdir` with the hash of the .syx it came from."""
     h = hashlib.sha256()
-    with open(syx, 'rb') as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b''):
+    with open(syx, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
-    with open(os.path.join(outdir, SOURCE_MARKER), 'w') as fh:
-        fh.write(h.hexdigest() + '\n')
+    with open(os.path.join(outdir, SOURCE_MARKER), "w") as fh:
+        fh.write(h.hexdigest() + "\n")
 
 
 USAGE = """usage: python -m emu.extract [firmware.syx] [-o DIR]
@@ -105,31 +105,35 @@ Decompress a firmware .syx into its sections.
 
 def main(argv):
     from emu import config
-    if '--help' in argv or '-h' in argv:
+
+    if "--help" in argv or "-h" in argv:
         print(USAGE)
         return 0
     outdir = None
-    if '-o' in argv:
-        i = argv.index('-o')
+    if "-o" in argv:
+        i = argv.index("-o")
         if i + 1 >= len(argv):
-            raise SystemExit('-o needs a directory')
+            raise SystemExit("-o needs a directory")
         outdir = argv[i + 1]
-        argv = argv[:i] + argv[i + 2:]
-    rest = [a for a in argv if not a.startswith('-')]
+        argv = argv[:i] + argv[i + 2 :]
+    rest = [a for a in argv if not a.startswith("-")]
     syx = config.firmware(rest[0] if rest else None)
     # -o is the "explicit argument" tier of config.py's resolution order, so
     # without it this must fall through to DT2_SECTIONS rather than a literal.
     outdir = outdir or config.sections_dir()
-    print('Extracting %s -> %s/\n' % (syx, outdir.rstrip('/')), flush=True)
+    print("Extracting %s -> %s/\n" % (syx, outdir.rstrip("/")), flush=True)
 
     def started(sid, kind, name):
-        print('  %-26s %-14s' % (name, kind + '...'), end='', flush=True)
+        print("  %-26s %-14s" % (name, kind + "..."), end="", flush=True)
 
     for _sid, kind, path, n, dest in extract(syx, outdir, progress=started):
-        print('\r  %-26s %-14s%9d bytes  dest=%#010x'
-              % (os.path.basename(path), kind, n, dest), flush=True)
+        print(
+            "\r  %-26s %-14s%9d bytes  dest=%#010x"
+            % (os.path.basename(path), kind, n, dest),
+            flush=True,
+        )
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

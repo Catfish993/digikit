@@ -49,7 +49,9 @@ def main(argv=None):
     )
     ap.add_argument(
         "--notes-dir",
-        default=os.path.join(os.path.dirname(os.path.dirname(_here)), "docs", "findings", "functions"),
+        default=os.path.join(
+            os.path.dirname(os.path.dirname(_here)), "docs", "findings", "functions"
+        ),
         help="per-function notes directory for --engine-queue",
     )
     ap.add_argument("--blocks", type=_int_list, default=sharcinv.CODE_BLOCKS)

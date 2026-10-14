@@ -4,7 +4,6 @@ import hashlib
 import unittest
 from importlib import import_module
 
-
 F = import_module("tools.sharc_dev.sharc_frontier")
 T = import_module("tools.sharc_dev.sharc_trace")
 L = import_module("tools.sharc_dev.sharcldr")
@@ -27,7 +26,9 @@ def manifest(raw, successor=0x11):
                 "stop_pc_sw": 0x10,
                 "successor_pc_sw": successor,
                 "sha256": hashlib.sha256(raw).hexdigest(),
-                "assumptions": ["synthetic unsupported parcel has no control-flow effect"],
+                "assumptions": [
+                    "synthetic unsupported parcel has no control-flow effect"
+                ],
             }
         ],
         "targets": [{"name": "test", "start": 0x31000000, "end": 0x31000004}],

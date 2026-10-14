@@ -5,21 +5,22 @@ import os
 import random
 import unittest
 
-from dt2 import aplib, elz
-from dt2.container import sections
 from support.paths import REPO_ROOT
 
+from dt2 import aplib, elz
+from dt2.container import sections
+
 ROOT = str(REPO_ROOT)
-SYX = os.path.join(ROOT, 'Digitakt_II_OS1.15C.syx')
-SECTIONS = os.path.join(ROOT, 'sections')
+SYX = os.path.join(ROOT, "Digitakt_II_OS1.15C.syx")
+SECTIONS = os.path.join(ROOT, "sections")
 
 
 def sections_from_syx():
     """True when sections/ was extracted from the 1.15C .syx in the repo root."""
-    marker = os.path.join(SECTIONS, '.source-sha256')
+    marker = os.path.join(SECTIONS, ".source-sha256")
     if not (os.path.exists(SYX) and os.path.exists(marker)):
         return False
-    with open(SYX, 'rb') as f:
+    with open(SYX, "rb") as f:
         digest = hashlib.sha256(f.read()).hexdigest()
     with open(marker) as f:
         return f.read().strip() == digest
@@ -31,22 +32,30 @@ class ElzTest(unittest.TestCase):
         self.assertEqual(elz.depack_section(aplib.pack_section(data)), data)
 
     def test_declared_length_must_match_the_end_marker(self):
-        packed = bytearray(aplib.pack_section(b'hello world'))
+        packed = bytearray(aplib.pack_section(b"hello world"))
         packed[3] += 4  # declare four more stream bytes than the end marker uses
         with self.assertRaises(ValueError):
             elz.depack_section(bytes(packed) + bytes(4))
 
-    @unittest.skipUnless(sections_from_syx(), 'needs the 1.15C .syx and sections/ extracted from it')
+    @unittest.skipUnless(
+        sections_from_syx(), "needs the 1.15C .syx and sections/ extracted from it"
+    )
     def test_matches_the_device_depacker_on_1_15c(self):
         c, secs = sections(SYX)
-        names = {2: 'section_2_DSP.bin', 3: 'section_3_MAIN_OS.bin', 7: 'section_7_BLOB.bin'}
-        for sid, off, clen, dest in secs:
+        names = {
+            2: "section_2_DSP.bin",
+            3: "section_3_MAIN_OS.bin",
+            7: "section_7_BLOB.bin",
+        }
+        for sid, off, clen, _dest in secs:
             if sid in names:
                 with self.subTest(section=sid):
-                    with open(os.path.join(SECTIONS, names[sid]), 'rb') as f:
+                    with open(os.path.join(SECTIONS, names[sid]), "rb") as f:
                         expected = f.read()
-                    self.assertEqual(elz.depack_section(bytes(c[off:off + clen])), expected)
+                    self.assertEqual(
+                        elz.depack_section(bytes(c[off : off + clen])), expected
+                    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

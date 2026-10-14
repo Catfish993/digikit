@@ -13,12 +13,15 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 FIXTURES = ROOT / "tests" / "fixtures" / "coldfire"
 EXPECTED = FIXTURES / "mcf54415-oracle.json"
-LANGUAGES = ROOT / "tools" / "coldfire" / "ghidra" / "ColdfireEMAC" / "data" / "languages"
+LANGUAGES = (
+    ROOT / "tools" / "coldfire" / "ghidra" / "ColdfireEMAC" / "data" / "languages"
+)
 
 
 def load_expected():
@@ -97,14 +100,16 @@ class GnuOracleTest(unittest.TestCase):
             text=True,
         )
         instructions = []
-        pattern = re.compile(
-            r"^\s*([0-9a-f]+):\s+((?:(?:[0-9a-f]{4})\s+)+)(\S.*)$"
-        )
+        pattern = re.compile(r"^\s*([0-9a-f]+):\s+((?:(?:[0-9a-f]{4})\s+)+)(\S.*)$")
         for line in proc.stdout.splitlines():
             match = pattern.match(line)
             if match:
                 instructions.append(
-                    (int(match.group(1), 16), "".join(match.group(2).split()), match.group(3))
+                    (
+                        int(match.group(1), 16),
+                        "".join(match.group(2).split()),
+                        match.group(3),
+                    )
                 )
         return instructions
 
@@ -165,7 +170,9 @@ class GhidraOracleTest(unittest.TestCase):
         assert pypcode.__file__ is not None
         sleigh = Path(pypcode.__file__).resolve().parent / "bin" / "sleigh"
         if not sleigh.exists():
-            raise unittest.SkipTest("the installed pypcode package has no sleigh compiler")
+            raise unittest.SkipTest(
+                "the installed pypcode package has no sleigh compiler"
+            )
         subprocess.run(
             [
                 str(sleigh),
@@ -188,7 +195,7 @@ class GhidraOracleTest(unittest.TestCase):
         actual = list(self.ctx.disassemble(code).instructions)
         expected = self.expected["instructions"]
         self.assertEqual(len(actual), len(expected))
-        for got, want in zip(actual, expected):
+        for got, want in zip(actual, expected, strict=False):
             with self.subTest(offset=want["offset"]):
                 text = got.mnem + ((" " + got.body) if got.body else "")
                 self.assertEqual(got.addr.offset, want["offset"])
@@ -211,9 +218,7 @@ class GhidraOracleTest(unittest.TestCase):
 
     def test_only_mcf5441x_control_register_names_are_known_gaps(self):
         gaps = [
-            insn
-            for insn in self.expected["instructions"]
-            if "ghidra_target" in insn
+            insn for insn in self.expected["instructions"] if "ghidra_target" in insn
         ]
         self.assertEqual(
             [insn["ghidra_target"].rsplit(",", 1)[1] for insn in gaps],

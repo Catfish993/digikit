@@ -11,6 +11,7 @@ ColdFire memory content, untouched):
   u32      npages
   then npages * (u32 base, 0x100000 bytes)
 """
+
 import struct
 import sys
 

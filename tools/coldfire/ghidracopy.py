@@ -19,27 +19,40 @@ import shutil
 import sys
 import tempfile
 
-DEFAULT_GHIDRA = '/opt/homebrew/Cellar/ghidra/12.1.3/libexec'
+DEFAULT_GHIDRA = "/opt/homebrew/Cellar/ghidra/12.1.3/libexec"
 
 
 def split_path(path):
     """'/a/b/name' -> ('/a/b', 'name'); the folder of a top-level file is '/'."""
-    if not path.startswith('/'):
-        path = '/' + path
-    folder, name = path.rsplit('/', 1)
+    if not path.startswith("/"):
+        path = "/" + path
+    folder, name = path.rsplit("/", 1)
     if not name:
-        raise ValueError('no file name in %r' % path)
-    return folder or '/', name
+        raise ValueError("no file name in %r" % path)
+    return folder or "/", name
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--from', dest='src', nargs=3, required=True,
-                   metavar=('PROJECT_DIR', 'NAME', 'PATH'))
-    p.add_argument('--to', dest='dst', nargs=3, required=True,
-                   metavar=('PROJECT_DIR', 'NAME', 'PATH'))
-    p.add_argument('--gzf', help='keep the packed file here (default: a temporary file)')
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--from",
+        dest="src",
+        nargs=3,
+        required=True,
+        metavar=("PROJECT_DIR", "NAME", "PATH"),
+    )
+    p.add_argument(
+        "--to",
+        dest="dst",
+        nargs=3,
+        required=True,
+        metavar=("PROJECT_DIR", "NAME", "PATH"),
+    )
+    p.add_argument(
+        "--gzf", help="keep the packed file here (default: a temporary file)"
+    )
     return p.parse_args(argv)
 
 
@@ -48,20 +61,22 @@ def main(argv=None):
     src_dir, src_name, src_path = args.src
     dst_dir, dst_name, dst_path = args.dst
     src_dir, dst_dir = os.path.expanduser(src_dir), os.path.expanduser(dst_dir)
-    src_path = src_path if src_path.startswith('/') else '/' + src_path
+    src_path = src_path if src_path.startswith("/") else "/" + src_path
     folder_path, file_name = split_path(dst_path)
     tmp = None
     if args.gzf:
         gzf = os.path.abspath(args.gzf)
         os.makedirs(os.path.dirname(gzf), exist_ok=True)
     else:
-        tmp = tempfile.mkdtemp(prefix='ghidracopy-')
-        gzf = os.path.join(tmp, file_name + '.gzf')
+        tmp = tempfile.mkdtemp(prefix="ghidracopy-")
+        gzf = os.path.join(tmp, file_name + ".gzf")
 
-    os.environ.setdefault('GHIDRA_INSTALL_DIR', DEFAULT_GHIDRA)
+    os.environ.setdefault("GHIDRA_INSTALL_DIR", DEFAULT_GHIDRA)
     import pyghidra
+
     pyghidra.start(verbose=False)
     from java.io import File
+
     monitor = pyghidra.task_monitor()
 
     try:
@@ -69,24 +84,27 @@ def main(argv=None):
         try:
             source = project.getProjectData().getFile(src_path)
             if source is None:
-                raise SystemExit('no %s in project %s' % (src_path, src_name))
+                raise SystemExit("no %s in project %s" % (src_path, src_name))
             if os.path.exists(gzf):
                 os.unlink(gzf)
             source.packFile(File(gzf), monitor)
         finally:
             project.close()
-        print('packed %s:%s to %s (%d bytes)' % (src_name, src_path, gzf, os.path.getsize(gzf)))
+        print(
+            "packed %s:%s to %s (%d bytes)"
+            % (src_name, src_path, gzf, os.path.getsize(gzf))
+        )
 
         os.makedirs(dst_dir, exist_ok=True)
         project = pyghidra.open_project(dst_dir, dst_name, create=True)
         try:
             folder = project.getProjectData().getRootFolder()
-            for part in [p for p in folder_path.split('/') if p]:
+            for part in [p for p in folder_path.split("/") if p]:
                 folder = folder.getFolder(part) or folder.createFolder(part)
             if folder.getFile(file_name) is not None:
-                raise SystemExit('%s:%s already exists' % (dst_name, dst_path))
+                raise SystemExit("%s:%s already exists" % (dst_name, dst_path))
             created = folder.createFile(file_name, File(gzf), monitor)
-            print('created %s:%s' % (dst_name, created.getPathname()))
+            print("created %s:%s" % (dst_name, created.getPathname()))
         finally:
             project.close()
     finally:
@@ -95,5 +113,5 @@ def main(argv=None):
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

@@ -21,7 +21,9 @@ from tools.sharc_dev.sharc_isa import DecodeResult, InstructionSet, load_instruc
 PINNED_REVISION = "2b26d3b75c53063575bc5c820fa0d38879335187"
 DEFAULT_PROCESSOR = "ADSP-21569"
 DEFAULT_SECTION = "seg_pmco"
-_LISTING_ROW = re.compile(r"^\s*([0-9a-fA-F]{8})\s+([0-9a-fA-F]{4}(?:[0-9a-fA-F]{4}){0,2})\s+(.+?)\s*$")
+_LISTING_ROW = re.compile(
+    r"^\s*([0-9a-fA-F]{8})\s+([0-9a-fA-F]{4}(?:[0-9a-fA-F]{4}){0,2})\s+(.+?)\s*$"
+)
 
 
 class SelacheError(RuntimeError):
@@ -62,7 +64,7 @@ class Comparison:
 @dataclass(frozen=True)
 class OracleRun:
     revision: str
-    tool_fingerprints: tuple["ToolFingerprint", ...]
+    tool_fingerprints: tuple[ToolFingerprint, ...]
     section: str
     external_bytes: bytes
     boot_bytes: bytes
@@ -128,7 +130,9 @@ def parse_listing(text: str) -> tuple[ExternalInstruction, ...]:
     return tuple(rows)
 
 
-def _compared(external: ExternalInstruction, isa: InstructionSet) -> ComparedInstruction:
+def _compared(
+    external: ExternalInstruction, isa: InstructionSet
+) -> ComparedInstruction:
     boot = swap_parcels(external.raw)
     result: DecodeResult = isa.decode_bytes(boot)
     instruction = result.instruction
@@ -137,10 +141,13 @@ def _compared(external: ExternalInstruction, isa: InstructionSet) -> ComparedIns
         boot_bytes=boot,
         native_form_id=None if instruction is None else instruction.form.id,
         native_candidates=tuple(form.id for form in result.candidates),
-        native_fields=() if instruction is None else tuple(instruction.field_dict().items()),
+        native_fields=()
+        if instruction is None
+        else tuple(instruction.field_dict().items()),
         native_extent_bytes=None if instruction is None else instruction.extent_bytes,
         extent_agrees=(
-            instruction is not None and instruction.extent_bytes == external.extent_bytes
+            instruction is not None
+            and instruction.extent_bytes == external.extent_bytes
         ),
     )
 
@@ -148,16 +155,23 @@ def _compared(external: ExternalInstruction, isa: InstructionSet) -> ComparedIns
 def compare_listing(text: str, isa: InstructionSet | None = None) -> Comparison:
     """Compare each externally selected instruction extent with native decode."""
     instruction_set = isa or load_instruction_set()
-    return Comparison(tuple(_compared(row, instruction_set) for row in parse_listing(text)))
+    return Comparison(
+        tuple(_compared(row, instruction_set) for row in parse_listing(text))
+    )
 
 
-def compare_rows(rows: "tuple[ExternalInstruction, ...] | list[ExternalInstruction]", isa: InstructionSet | None = None) -> Comparison:
+def compare_rows(
+    rows: tuple[ExternalInstruction, ...] | list[ExternalInstruction],
+    isa: InstructionSet | None = None,
+) -> Comparison:
     """Compare externally selected instruction extents (raw bytes in Selache's parcel order) with native decode."""
     instruction_set = isa or load_instruction_set()
     return Comparison(tuple(_compared(row, instruction_set) for row in rows))
 
 
-def compare_external_bytes(data: bytes, isa: InstructionSet | None = None) -> Comparison:
+def compare_external_bytes(
+    data: bytes, isa: InstructionSet | None = None
+) -> Comparison:
     """Decode an external byte stream using native extents after parcel swapping.
 
     This is useful for regression fixtures without invoking the external tool.
@@ -169,12 +183,12 @@ def compare_external_bytes(data: bytes, isa: InstructionSet | None = None) -> Co
     offset = 0
     parcel_address = 0
     while offset < len(boot):
-        result = instruction_set.decode_bytes(boot[offset:offset + 6])
+        result = instruction_set.decode_bytes(boot[offset : offset + 6])
         if result.instruction is None:
             extent = min(2, len(boot) - offset)
         else:
             extent = result.instruction.extent_bytes
-        external_raw = swap_parcels(boot[offset:offset + extent])
+        external_raw = swap_parcels(boot[offset : offset + extent])
         rows.append(ExternalInstruction(parcel_address, external_raw, ""))
         offset += extent
         parcel_address += extent // 2
@@ -190,8 +204,10 @@ def find_elf_section(path: str | Path, name: str) -> bytes:
     section_offset = struct.unpack_from(endian + "I", data, 0x20)[0]
     entry_size, count, names_index = struct.unpack_from(endian + "HHH", data, 0x2E)
     names_header = section_offset + names_index * entry_size
-    names_offset, names_size = struct.unpack_from(endian + "II", data, names_header + 0x10)
-    names = data[names_offset:names_offset + names_size]
+    names_offset, names_size = struct.unpack_from(
+        endian + "II", data, names_header + 0x10
+    )
+    names = data[names_offset : names_offset + names_size]
 
     def section_name(index: int) -> str:
         try:
@@ -203,9 +219,11 @@ def find_elf_section(path: str | Path, name: str) -> bytes:
     for index in range(count):
         header = section_offset + index * entry_size
         name_offset = struct.unpack_from(endian + "I", data, header)[0]
-        payload_offset, payload_size = struct.unpack_from(endian + "II", data, header + 0x10)
+        payload_offset, payload_size = struct.unpack_from(
+            endian + "II", data, header + 0x10
+        )
         if section_name(name_offset) == name:
-            return data[payload_offset:payload_offset + payload_size]
+            return data[payload_offset : payload_offset + payload_size]
     raise SelacheError(f"section {name!r} not found in {path}")
 
 
@@ -233,7 +251,7 @@ class SelacheOracle:
     tool_fingerprints: tuple[ToolFingerprint, ...]
 
     @classmethod
-    def open(cls, checkout: str | Path) -> "SelacheOracle":
+    def open(cls, checkout: str | Path) -> SelacheOracle:
         root = Path(checkout).resolve()
         revision = _run(["git", "rev-parse", "HEAD"], cwd=root).strip()
         if revision != PINNED_REVISION:
@@ -241,12 +259,16 @@ class SelacheOracle:
                 f"Selache revision {revision} is not pinned revision {PINNED_REVISION}"
             )
         if _run(["git", "status", "--porcelain"], cwd=root).strip():
-            raise SelacheError("Selache checkout has local changes; oracle must be clean")
+            raise SelacheError(
+                "Selache checkout has local changes; oracle must be clean"
+            )
         selas = root / "target" / "release" / "selas"
         seldump = root / "target" / "release" / "seldump"
         missing = [str(path) for path in (selas, seldump) if not path.is_file()]
         if missing:
-            raise SelacheError("missing built Selache executable(s): " + ", ".join(missing))
+            raise SelacheError(
+                "missing built Selache executable(s): " + ", ".join(missing)
+            )
         try:
             fingerprints = tuple(
                 ToolFingerprint(
@@ -257,7 +279,9 @@ class SelacheOracle:
                 for path in (selas, seldump)
             )
         except OSError as exc:
-            raise SelacheError(f"cannot fingerprint Selache executables: {exc}") from exc
+            raise SelacheError(
+                f"cannot fingerprint Selache executables: {exc}"
+            ) from exc
         return cls(root, revision, selas, seldump, fingerprints)
 
     def assemble_text(
@@ -273,7 +297,14 @@ class SelacheOracle:
             object_path = work / "snippet.doj"
             source_path.write_text(source)
             _run(
-                [str(self.selas), "-proc", processor, "-o", str(object_path), str(source_path)]
+                [
+                    str(self.selas),
+                    "-proc",
+                    processor,
+                    "-o",
+                    str(object_path),
+                    str(source_path),
+                ]
             )
             listing = _run([str(self.seldump), "-ns", section, str(object_path)])
             external = find_elf_section(object_path, section)

@@ -21,6 +21,7 @@ Usage:
     uv run python selasm.py snippet.s --selache-dir /private/tmp/selache-public \
         --section seg_pmco
 """
+
 from __future__ import annotations
 
 import argparse
@@ -41,12 +42,21 @@ DEFAULT_SELACHE_DIR = "/private/tmp/selache-public"
 def main() -> None:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("source", help="VISA .s file to assemble")
-    parser.add_argument("--selache-dir", default=DEFAULT_SELACHE_DIR,
-                        help=f"Selache checkout with target/release built (default: {DEFAULT_SELACHE_DIR})")
-    parser.add_argument("--proc", default=DEFAULT_PROCESSOR,
-                        help=f"selas -proc target (default: {DEFAULT_PROCESSOR})")
-    parser.add_argument("--section", default=DEFAULT_SECTION,
-                        help=f"ELF section to compare (default: {DEFAULT_SECTION})")
+    parser.add_argument(
+        "--selache-dir",
+        default=DEFAULT_SELACHE_DIR,
+        help=f"Selache checkout with target/release built (default: {DEFAULT_SELACHE_DIR})",
+    )
+    parser.add_argument(
+        "--proc",
+        default=DEFAULT_PROCESSOR,
+        help=f"selas -proc target (default: {DEFAULT_PROCESSOR})",
+    )
+    parser.add_argument(
+        "--section",
+        default=DEFAULT_SECTION,
+        help=f"ELF section to compare (default: {DEFAULT_SECTION})",
+    )
     args = parser.parse_args()
 
     try:
@@ -56,7 +66,9 @@ def main() -> None:
     except (OSError, SelacheError) as exc:
         raise SystemExit(str(exc)) from exc
 
-    print(f"== Selache's own disassembly ({args.section}, {len(run.external_bytes)} bytes) ==")
+    print(
+        f"== Selache's own disassembly ({args.section}, {len(run.external_bytes)} bytes) =="
+    )
     print(run.listing)
     print("== our decoder, after the parcel-order swap ==")
     for item in run.comparison.instructions:

@@ -7,6 +7,7 @@ first. The decoder MSB-aligns up to three words into a 48-bit frame, picks the
 matching form with the longest leading (most-significant-bit-aligned) run of
 fixed bits, and reports ties as ambiguous.
 """
+
 import os
 import struct
 
@@ -17,7 +18,7 @@ from tools.sharc_dev.sharc_isa import load_instruction_set  # noqa: E402
 
 
 class Decoder:
-    def __init__(self, table=os.path.join(HERE, "decode_table.json"), mode="visa"):
+    def __init__(self, table=os.path.join(HERE, "decode_table.json"), mode="visa"):  # noqa: B008
         self.instruction_set = load_instruction_set(table, mode)
         self.forms = [
             (
@@ -37,19 +38,27 @@ class Decoder:
         # Ties are broken by total fixed-bit count, then reported as ambiguous.
         selection = self.instruction_set.select_frame(frame)
         top = [form.table_dict() for form in selection.candidates]
-        return (selection.form.table_dict() if selection.form is not None else None), top
+        return (
+            selection.form.table_dict() if selection.form is not None else None
+        ), top
 
     @staticmethod
     def fields(frame, form):
         out = {}
         for fl in form["fields"]:
-            out[fl["label"]] = (frame >> fl["lo"]) & ((1 << (fl["hi"] - fl["lo"] + 1)) - 1)
+            out[fl["label"]] = (frame >> fl["lo"]) & (
+                (1 << (fl["hi"] - fl["lo"] + 1)) - 1
+            )
         return out
 
 
 def words_at(mem, addr):
     """16-bit LE words from a bytes-like region starting at a BW offset."""
-    return [struct.unpack_from("<H", mem, addr + 2 * i)[0] for i in range(3) if addr + 2 * i + 2 <= len(mem)]
+    return [
+        struct.unpack_from("<H", mem, addr + 2 * i)[0]
+        for i in range(3)
+        if addr + 2 * i + 2 <= len(mem)
+    ]
 
 
 def linear(mem, start, count, dec):

@@ -428,7 +428,7 @@ def test_raw_instruction_pcode_reports_absent_empty_and_malformed():
         ghidraq.q_pcode(
             Program(listing=Listing(instruction)),
             ["0x20"],
-            lambda kind, payload: captured.append((kind, payload)),
+            lambda kind, payload: captured.append((kind, payload)),  # noqa: B023 (called within this iteration)
         )
         assert captured[0][0] == "pcode"
         assert captured[0][1]["status"] == status

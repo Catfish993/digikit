@@ -10,34 +10,32 @@ from tools/sharc_dev/sharc_visa_tables.py the same way tests/sharc/analysis/test
 tests/sharc/analysis/test_sharcinv.py and tests/sharc/analysis/test_sharcfn.py do.
 """
 
-import collections
 import os
 import pathlib
 import sqlite3
 import unittest
 
 import pytest
-
-
-from tools.sharc_dev import sharc  # noqa: E402
-from tools.sharc_dev import sharc_disasm  # noqa: E402
-from tools.sharc_dev import sharcdb  # noqa: E402
-from tools.sharc_dev import sharcfn  # noqa: E402
-from tools.sharc_dev import sharcinv  # noqa: E402
-from tools.sharc_dev import sharcldr  # noqa: E402
+from support.sharc_encode import block as boot_block  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_rel,
     cjump,
-    encode,
     field_insn,
     load,
     push3c,
     ret,
     rframe,
     store,
-    words,
 )
-from support.sharc_encode import block as boot_block  # noqa: E402
+
+from tools.sharc_dev import (
+    sharc,  # noqa: E402
+    sharc_disasm,  # noqa: E402
+    sharcdb,  # noqa: E402
+    sharcfn,  # noqa: E402
+    sharcinv,  # noqa: E402
+    sharcldr,  # noqa: E402
+)
 from tools.sharc_dev.sharc_trace import UREG_CODES  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
@@ -130,7 +128,9 @@ class ExtractMemAccessTest(unittest.TestCase):
         rows = sharcdb.extract_mem_access("3a", f)
         self.assertEqual(len(rows), 1)
         space, direction, base_reg, modifier, u, form, width, abs_addr = rows[0]
-        self.assertEqual((space, direction, base_reg, modifier, u), ("DM", "store", "I7", "M7", 1))
+        self.assertEqual(
+            (space, direction, base_reg, modifier, u), ("DM", "store", "I7", "M7", 1)
+        )
         self.assertEqual(form, sharcinv.MEM_FORMS["3a"])
         self.assertIsNone(abs_addr)
 
@@ -143,7 +143,9 @@ class ExtractMemAccessTest(unittest.TestCase):
         rows = sharcdb.extract_mem_access("14a", f)
         self.assertEqual(len(rows), 1)
         space, direction, base_reg, modifier, u, form, width, abs_addr = rows[0]
-        self.assertEqual((space, direction, base_reg, modifier), ("DM", "load", None, None))
+        self.assertEqual(
+            (space, direction, base_reg, modifier), ("DM", "load", None, None)
+        )
         self.assertEqual(abs_addr, 0x252658)
 
     def test_indirect_15a_offset_is_signed_and_not_an_absolute_address(self):
@@ -160,7 +162,9 @@ class ExtractMemAccessTest(unittest.TestCase):
         rows = sharcdb.extract_mem_access("15a", f)
         self.assertEqual(len(rows), 1)
         space, direction, base_reg, modifier, u, form, width, abs_addr = rows[0]
-        self.assertEqual((space, direction, base_reg, modifier), ("DM", "load", "I3", "-680"))
+        self.assertEqual(
+            (space, direction, base_reg, modifier), ("DM", "load", "I3", "-680")
+        )
         self.assertIsNone(abs_addr)
 
     def test_indirect_15a_folds_the_dag2_bank_into_the_i_register(self):
@@ -196,15 +200,30 @@ class ExtractMemAccessTest(unittest.TestCase):
         self.assertEqual(rows[0][6], "short-word")
 
     def test_dual_mem_form_yields_two_rows(self):
-        insn = insn_at(field_insn(
-            "1a", dmi=4, dmm=5, dmd=1, dmdreg=0, pmi=6, pmm=7, pmd=0, pmdreg=1,
-            compute=0,
-        ))
+        insn = insn_at(
+            field_insn(
+                "1a",
+                dmi=4,
+                dmm=5,
+                dmd=1,
+                dmdreg=0,
+                pmi=6,
+                pmm=7,
+                pmd=0,
+                pmdreg=1,
+                compute=0,
+            )
+        )
         f = sharcinv.merge_fields(insn.fields)
         rows = sharcdb.extract_mem_access("1a", f)
         self.assertEqual(len(rows), 2)
-        self.assertEqual((rows[0][0], rows[0][1], rows[0][2], rows[0][3]), ("DM", "store", "I4", "M5"))
-        self.assertEqual((rows[1][0], rows[1][1], rows[1][2], rows[1][3]), ("PM", "load", "I6", "M7"))
+        self.assertEqual(
+            (rows[0][0], rows[0][1], rows[0][2], rows[0][3]),
+            ("DM", "store", "I4", "M5"),
+        )
+        self.assertEqual(
+            (rows[1][0], rows[1][1], rows[1][2], rows[1][3]), ("PM", "load", "I6", "M7")
+        )
 
     def test_non_memory_form_yields_nothing(self):
         self.assertEqual(sharcdb.extract_mem_access("9b_abs", {}), [])
@@ -212,7 +231,9 @@ class ExtractMemAccessTest(unittest.TestCase):
     def test_direct_14d_short_word_load_is_labeled_not_long(self):
         # Type14d w=0,ex=0,l=1,x=0 is a BHSE short-word load (sharc-plus-prm
         # pp.384-386), not the "long if l else word" fallback's "long".
-        insn = insn_at(field_insn("14d", addr=0x300000, dreg=2, d=0, l=1, x=0, w=0, ex=0))
+        insn = insn_at(
+            field_insn("14d", addr=0x300000, dreg=2, d=0, l=1, x=0, w=0, ex=0)
+        )
         f = sharcinv.merge_fields(insn.fields)
         rows = sharcdb.extract_mem_access("14d", f)
         self.assertEqual(rows[0][6], "short-word")
@@ -221,13 +242,17 @@ class ExtractMemAccessTest(unittest.TestCase):
         # Type3b (l=1,x=0,w=0 -> short-word, PRM pp.13-16--13-19) and
         # Type3d (w=0,ex=0 -> normal-word, its base ACCESS form, PRM
         # pp.322-325) previously always recorded width=None here.
-        insn_3b = insn_at(field_insn(
-            "3b", u=0, i=0, m=0, cond=31, g=0, d=0, l=1, ureg=0, w=0, x=0))
+        insn_3b = insn_at(
+            field_insn("3b", u=0, i=0, m=0, cond=31, g=0, d=0, l=1, ureg=0, w=0, x=0)
+        )
         f_3b = sharcinv.merge_fields(insn_3b.fields)
         self.assertEqual(sharcdb.extract_mem_access("3b", f_3b)[0][6], "short-word")
 
-        insn_3d = insn_at(field_insn(
-            "3d", u=0, i=0, m=0, cond=31, g=0, d=0, l=0, ureg=0, ex=0, w=0, x=0))
+        insn_3d = insn_at(
+            field_insn(
+                "3d", u=0, i=0, m=0, cond=31, g=0, d=0, l=0, ureg=0, ex=0, w=0, x=0
+            )
+        )
         f_3d = sharcinv.merge_fields(insn_3d.fields)
         self.assertEqual(sharcdb.extract_mem_access("3d", f_3d)[0][6], "normal-word")
 
@@ -250,31 +275,37 @@ class PtrMemFormTest(unittest.TestCase):
 class ClassifyLiteralRangeTest(unittest.TestCase):
     def setUp(self):
         self.code_spans_sw = [(0x1C1338, 0x1C2000)]
-        self.code_spans_byte = [(sharcldr.sw_to_byte(0x1C1338), sharcldr.sw_to_byte(0x1C2000))]
+        self.code_spans_byte = [
+            (sharcldr.sw_to_byte(0x1C1338), sharcldr.sw_to_byte(0x1C2000))
+        ]
         data = boot_block(0, 0x260000, 4, payload=b"abcd")
         self.mem = sharcldr.LoadedMemory.from_stream(data)
 
     def test_value_inside_code_sw_range(self):
         in_code, in_data = sharcdb.classify_literal_range(
-            0x1C1400, self.code_spans_sw, self.code_spans_byte, self.mem)
+            0x1C1400, self.code_spans_sw, self.code_spans_byte, self.mem
+        )
         self.assertTrue(in_code)
         self.assertFalse(in_data)
 
     def test_value_inside_code_byte_alias(self):
         byte_addr = sharcldr.sw_to_byte(0x1C1400)
         in_code, in_data = sharcdb.classify_literal_range(
-            byte_addr, self.code_spans_sw, self.code_spans_byte, self.mem)
+            byte_addr, self.code_spans_sw, self.code_spans_byte, self.mem
+        )
         self.assertTrue(in_code)
 
     def test_value_inside_a_loaded_data_block(self):
         in_code, in_data = sharcdb.classify_literal_range(
-            0x260000, self.code_spans_sw, self.code_spans_byte, self.mem)
+            0x260000, self.code_spans_sw, self.code_spans_byte, self.mem
+        )
         self.assertFalse(in_code)
         self.assertTrue(in_data)
 
     def test_value_outside_everything(self):
         in_code, in_data = sharcdb.classify_literal_range(
-            -1, self.code_spans_sw, self.code_spans_byte, self.mem)
+            -1, self.code_spans_sw, self.code_spans_byte, self.mem
+        )
         self.assertFalse(in_code)
         self.assertFalse(in_data)
 
@@ -305,7 +336,13 @@ class SyntheticBuildTest(unittest.TestCase):
             fh.write(self._stream(base_sw))
         out_path = os.path.join(tmp_path, "out.sqlite")
         stats = sharcdb.build_database(
-            stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,), force=force)
+            stream_path,
+            out_path,
+            name="synthetic",
+            min_depth=1,
+            blocks=(0,),
+            force=force,
+        )
         return stream_path, out_path, stats
 
     def test_meta_and_blocks(self, tmp_path=None):
@@ -375,7 +412,9 @@ class SyntheticBuildTest(unittest.TestCase):
                 fh.write(self._stream(0x1C1338))
             out_path = os.path.join(tmp, "out.sqlite")
             with self.assertRaises(SystemExit):
-                sharcdb.build_database(stream_path, out_path, name="synthetic", min_depth=1)
+                sharcdb.build_database(
+                    stream_path, out_path, name="synthetic", min_depth=1
+                )
 
 
 class SyntheticDatarefResolvedOffsetTest(unittest.TestCase):
@@ -394,7 +433,8 @@ class SyntheticDatarefResolvedOffsetTest(unittest.TestCase):
         target = sharcldr.sw_to_byte(base_sw)
         i2_ureg = UREG_CODES["I2"]
         access = field_insn(
-            "4a", i=2, g=0, d=0, u=u, cond=0x1F, data=off, dreg=5, compute=0)
+            "4a", i=2, g=0, d=0, u=u, cond=0x1F, data=off, dreg=5, compute=0
+        )
         code = (
             cjump(base_sw + 0x10)
             + push3c()
@@ -413,10 +453,17 @@ class SyntheticDatarefResolvedOffsetTest(unittest.TestCase):
             fh.write(self._stream(0x1C1338, u))
         out_path = os.path.join(tmp_path, "out.sqlite")
         sharcdb.build_database(
-            stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,), force=True)
+            stream_path,
+            out_path,
+            name="synthetic",
+            min_depth=1,
+            blocks=(0,),
+            force=True,
+        )
         db = sqlite3.connect(out_path)
         rows = db.execute(
-            "SELECT value FROM dataref WHERE role = 'resolved_offset'").fetchall()
+            "SELECT value FROM dataref WHERE role = 'resolved_offset'"
+        ).fetchall()
         db.close()
         return [r[0] for r in rows]
 
@@ -447,10 +494,8 @@ class SyntheticType15aMemAccessTest(unittest.TestCase):
         # the bug (a small negative I-relative offset stored unchanged as
         # abs_address, indistinguishable from a real address near the top
         # of the 32-bit space).
-        access_15a = field_insn(
-            "15a", i=3, g=0, d=0, l=0, ureg=0, addr=0xFFFFFD58)
-        access_14a = field_insn(
-            "14a", g=0, d=1, l=0, ureg=0, addr=0x252658)
+        access_15a = field_insn("15a", i=3, g=0, d=0, l=0, ureg=0, addr=0xFFFFFD58)
+        access_14a = field_insn("14a", g=0, d=1, l=0, ureg=0, addr=0x252658)
         code = access_15a + access_14a + ret() + load(0, 0) + rframe()
         return boot_block(0, target, len(code), payload=code)
 
@@ -464,26 +509,39 @@ class SyntheticType15aMemAccessTest(unittest.TestCase):
                 fh.write(self._stream(base_sw))
             out_path = os.path.join(tmp, "out.sqlite")
             sharcdb.build_database(
-                stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,), force=True)
+                stream_path,
+                out_path,
+                name="synthetic",
+                min_depth=1,
+                blocks=(0,),
+                force=True,
+            )
             db = sqlite3.connect(out_path)
             sw_15a, sw_14a = base_sw, base_sw + 3
 
             space, direction, base_reg, modifier, abs_addr, form = db.execute(
                 "SELECT space, direction, base_reg, modifier, abs_address, form "
-                "FROM mem_access WHERE sw = ?", (sw_15a,)).fetchone()
-            self.assertEqual((space, direction, base_reg, modifier), ("DM", "load", "I3", "-680"))
+                "FROM mem_access WHERE sw = ?",
+                (sw_15a,),
+            ).fetchone()
+            self.assertEqual(
+                (space, direction, base_reg, modifier), ("DM", "load", "I3", "-680")
+            )
             self.assertIsNone(abs_addr)
 
-            abs_addr_14a, = db.execute(
-                "SELECT abs_address FROM mem_access WHERE sw = ?", (sw_14a,)).fetchone()
+            (abs_addr_14a,) = db.execute(
+                "SELECT abs_address FROM mem_access WHERE sw = ?", (sw_14a,)
+            ).fetchone()
             self.assertEqual(abs_addr_14a, 0x252658)
 
-            role_15a, = db.execute(
-                "SELECT role FROM dataref WHERE sw = ? AND form = '15a'", (sw_15a,)).fetchone()
+            (role_15a,) = db.execute(
+                "SELECT role FROM dataref WHERE sw = ? AND form = '15a'", (sw_15a,)
+            ).fetchone()
             self.assertEqual(role_15a, "literal")
 
-            role_14a, = db.execute(
-                "SELECT role FROM dataref WHERE sw = ? AND form = '14a'", (sw_14a,)).fetchone()
+            (role_14a,) = db.execute(
+                "SELECT role FROM dataref WHERE sw = ? AND form = '14a'", (sw_14a,)
+            ).fetchone()
             self.assertEqual(role_14a, "abs_store")
             db.close()
 
@@ -509,10 +567,13 @@ class SyntheticJumpEdgeTest(unittest.TestCase):
             with open(stream_path, "wb") as fh:
                 fh.write(self._stream(base_sw))
             out_path = os.path.join(tmp, "out.sqlite")
-            sharcdb.build_database(stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,))
+            sharcdb.build_database(
+                stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,)
+            )
             db = sqlite3.connect(out_path)
             rows = db.execute(
-                "SELECT to_sw, kind, cond FROM edges WHERE from_sw = ? ORDER BY kind", (base_sw,)
+                "SELECT to_sw, kind, cond FROM edges WHERE from_sw = ? ORDER BY kind",
+                (base_sw,),
             ).fetchall()
             db.close()
             kinds = {kind for _to, kind, _cond in rows}
@@ -534,8 +595,15 @@ class SyntheticDelayedTerminatorSuccTest(unittest.TestCase):
     def _stream(self, base_sw):
         target = sharcldr.sw_to_byte(base_sw)
         jump = call8a_rel(0x10, b=0, cond=1, j=1)  # delayed JUMP IF LT, rel=0x10
-        code = (jump + load(0, 0xAAA) + load(1, 0xBBB)  # jump + 2 delay slots
-                + load(2, 0) + ret() + load(3, 0) + rframe())
+        code = (
+            jump
+            + load(0, 0xAAA)
+            + load(1, 0xBBB)  # jump + 2 delay slots
+            + load(2, 0)
+            + ret()
+            + load(3, 0)
+            + rframe()
+        )
         return boot_block(0, target, len(code), payload=code)
 
     def _build(self, tmp, base_sw=0x1C1338):
@@ -543,7 +611,9 @@ class SyntheticDelayedTerminatorSuccTest(unittest.TestCase):
         with open(stream_path, "wb") as fh:
             fh.write(self._stream(base_sw))
         out_path = os.path.join(tmp, "out.sqlite")
-        sharcdb.build_database(stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,))
+        sharcdb.build_database(
+            stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,)
+        )
         return out_path
 
     def test_call_return_and_cond_taken_key_off_the_branch_not_the_last_slot(self):
@@ -560,13 +630,17 @@ class SyntheticDelayedTerminatorSuccTest(unittest.TestCase):
             # The delayed jump's own two delay slots (4 sw) stay in this same
             # block: it must not end until after them.
             self.assertEqual(block, (base_sw, base_sw + 7))
-            rows = sorted(db.execute(
-                "SELECT kind, to_block FROM succ WHERE from_block = ?", (block[0],)
-            ).fetchall())
+            rows = sorted(
+                db.execute(
+                    "SELECT kind, to_block FROM succ WHERE from_block = ?", (block[0],)
+                ).fetchall()
+            )
             db.close()
             self.assertEqual(
                 rows,
-                sorted([("cond_taken", base_sw + 0x10), ("cond_not_taken", base_sw + 7)]),
+                sorted(
+                    [("cond_taken", base_sw + 0x10), ("cond_not_taken", base_sw + 7)]
+                ),
             )
 
 
@@ -579,10 +653,16 @@ class SyntheticDoLoopSuccTest(unittest.TestCase):
     def _stream(self, base_sw):
         target = sharcldr.sw_to_byte(base_sw)
         code = (
-            field_insn("12a_imm", data=4, mode=0, reladdr=3)  # DO body=[sw+3,sw+3], trip 4
-            + field_insn("3c", dmi=0, dmm=0, d=0, dreg=6)  # sw+3: R6 = DM(I0, M0) (load)
+            field_insn(
+                "12a_imm", data=4, mode=0, reladdr=3
+            )  # DO body=[sw+3,sw+3], trip 4
+            + field_insn(
+                "3c", dmi=0, dmm=0, d=0, dreg=6
+            )  # sw+3: R6 = DM(I0, M0) (load)
             + load(0, 0)  # sw+4: loop-exit target
-            + ret() + load(1, 0) + rframe()
+            + ret()
+            + load(1, 0)
+            + rframe()
         )
         return boot_block(0, target, len(code), payload=code)
 
@@ -595,14 +675,18 @@ class SyntheticDoLoopSuccTest(unittest.TestCase):
             with open(stream_path, "wb") as fh:
                 fh.write(self._stream(base_sw))
             out_path = os.path.join(tmp, "out.sqlite")
-            sharcdb.build_database(stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,))
+            sharcdb.build_database(
+                stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,)
+            )
             db = sqlite3.connect(out_path)
             body_sw = base_sw + 3
-            rows = sorted(db.execute(
-                "SELECT kind, to_block FROM succ WHERE from_block = "
-                "(SELECT start_sw FROM bblocks WHERE start_sw <= ? AND end_sw > ?)",
-                (body_sw, body_sw),
-            ).fetchall())
+            rows = sorted(
+                db.execute(
+                    "SELECT kind, to_block FROM succ WHERE from_block = "
+                    "(SELECT start_sw FROM bblocks WHERE start_sw <= ? AND end_sw > ?)",
+                    (body_sw, body_sw),
+                ).fetchall()
+            )
             db.close()
             self.assertEqual(
                 rows,
@@ -632,7 +716,9 @@ class RegisterEffectsTest(unittest.TestCase):
         self.assertEqual(uses, ["R4"])
 
     def test_alu_dual_add_subtract_defines_both_results(self):
-        field23 = (0x7 << 16) | (0xA << 12) | (1 << 8) | (2 << 4) | 3  # Rs=A,Ra=1,Rx=2,Ry=3
+        field23 = (
+            (0x7 << 16) | (0xA << 12) | (1 << 8) | (2 << 4) | 3
+        )  # Rs=A,Ra=1,Rx=2,Ry=3
         defs, uses, unknown = sharcdb.register_effects("2a", {"compute": field23})
         self.assertEqual(sorted(defs), sorted([("R10", "compute"), ("R1", "compute")]))
         self.assertEqual(sorted(uses), ["R2", "R3"])
@@ -674,8 +760,14 @@ class RegisterEffectsTest(unittest.TestCase):
         # built from the exact bit math in _compute_regdef_reguse's dual
         # branch, mirroring tools/sharc_dev/sharcfn/'s decode_multifn.
         field23 = (
-            (6 << 20) | (0xB << 16) | (0xC << 12) | (0xA << 8)
-            | (0x2 << 6) | (0x1 << 4) | (0x3 << 2) | 0x0
+            (6 << 20)
+            | (0xB << 16)
+            | (0xC << 12)
+            | (0xA << 8)
+            | (0x2 << 6)
+            | (0x1 << 4)
+            | (0x3 << 2)
+            | 0x0
         )
         defs, uses, unknown = sharcdb.register_effects("2a", {"compute": field23})
         self.assertEqual(len(defs), 3)
@@ -707,19 +799,25 @@ class RegisterEffectsTest(unittest.TestCase):
         # The exact shape of the task's Type3c bug: d=0 is a LOAD (R6
         # defined), even though tools/sharc_dev/sharcfn/'s render_instruction prints
         # every Type3c as a store.
-        defs, uses, _unknown = sharcdb.register_effects("3c", {"dmi": 4, "dmm": 5, "d": 0, "dreg": 6})
+        defs, uses, _unknown = sharcdb.register_effects(
+            "3c", {"dmi": 4, "dmm": 5, "d": 0, "dreg": 6}
+        )
         self.assertEqual(defs, [("R6", "mem_load")])
         self.assertEqual(sorted(uses), ["I4", "M5"])
 
     def test_3c_store_uses_dreg(self):
-        defs, uses, _unknown = sharcdb.register_effects("3c", {"dmi": 4, "dmm": 5, "d": 1, "dreg": 6})
+        defs, uses, _unknown = sharcdb.register_effects(
+            "3c", {"dmi": 4, "dmm": 5, "d": 1, "dreg": 6}
+        )
         self.assertEqual(defs, [])
         self.assertEqual(sorted(uses), ["I4", "M5", "R6"])
 
     def test_indexed_load_u1_also_defines_i_via_dag_modify(self):
         f = {"u": 1, "i": 7, "m": 7, "d": 0, "g": 0, "dreg": 2}
         defs, uses, _unknown = sharcdb.register_effects("3a", f)
-        self.assertEqual(sorted(defs), sorted([("R2", "mem_load"), ("I7", "dag_modify")]))
+        self.assertEqual(
+            sorted(defs), sorted([("R2", "mem_load"), ("I7", "dag_modify")])
+        )
         self.assertEqual(sorted(uses), ["I7", "M7"])
 
     def test_immoff_store_u1(self):
@@ -729,8 +827,16 @@ class RegisterEffectsTest(unittest.TestCase):
         self.assertEqual(sorted(uses), ["I6", "R3"])
 
     def test_dual_mem_defines_and_uses_per_dmd_pmd(self):
-        f = {"dmi": 4, "dmm": 5, "dmdreg": 0, "dmd": 1,  # store
-             "pmi": 6, "pmm": 7, "pmdreg": 1, "pmd": 0}  # load
+        f = {
+            "dmi": 4,
+            "dmm": 5,
+            "dmdreg": 0,
+            "dmd": 1,  # store
+            "pmi": 6,
+            "pmm": 7,
+            "pmdreg": 1,
+            "pmd": 0,
+        }  # load
         defs, uses, _unknown = sharcdb.register_effects("1a", f)
         self.assertEqual(defs, [("R1", "mem_load")])
         self.assertEqual(sorted(uses), sorted(["I4", "M5", "I6", "M7", "R0"]))
@@ -766,23 +872,31 @@ class RegisterEffectsTest(unittest.TestCase):
         self.assertEqual(uses, ["ASTATX"])
 
     def test_swap_defines_and_uses_both_registers(self):
-        defs, uses, _unknown = sharcdb.register_effects("5a_swap", {"cdreg": 3, "dreg": 5})
+        defs, uses, _unknown = sharcdb.register_effects(
+            "5a_swap", {"cdreg": 3, "dreg": 5}
+        )
         self.assertEqual(sorted(defs), sorted([("R3", "swap"), ("R5", "swap")]))
         self.assertEqual(sorted(uses), ["R3", "R5"])
 
     def test_literal_load_defines_the_ureg(self):
-        defs, uses, _unknown = sharcdb.register_effects("17a", {"ureg": UREG_CODES["LCNTR"]})
+        defs, uses, _unknown = sharcdb.register_effects(
+            "17a", {"ureg": UREG_CODES["LCNTR"]}
+        )
         self.assertEqual(defs, [("LCNTR", "literal")])
 
     def test_18a_set_clear_toggle_is_read_modify_write(self):
         reg = sharcfn.ureg_name(UREG_CODES["USTAT1"])
-        defs, uses, _unknown = sharcdb.register_effects("18a", {"sreg": 0, "bop": 0, "data": 3})
+        defs, uses, _unknown = sharcdb.register_effects(
+            "18a", {"sreg": 0, "bop": 0, "data": 3}
+        )
         self.assertEqual(defs, [(reg, "literal")])
         self.assertEqual(uses, [reg])
 
     def test_18a_bit_test_only_reads(self):
         reg = sharcfn.ureg_name(UREG_CODES["USTAT1"])
-        defs, uses, _unknown = sharcdb.register_effects("18a", {"sreg": 0, "bop": 4, "data": 3})
+        defs, uses, _unknown = sharcdb.register_effects(
+            "18a", {"sreg": 0, "bop": 4, "data": 3}
+        )
         self.assertEqual(defs, [])
         self.assertEqual(uses, [reg])
 
@@ -791,7 +905,9 @@ class RegisterEffectsTest(unittest.TestCase):
         self.assertEqual(defs, [("LCNTR", "literal")])
 
     def test_loop_register_defines_lcntr_uses_source(self):
-        defs, uses, _unknown = sharcdb.register_effects("12a_ureg", {"ureg": UREG_CODES["ASTATX"]})
+        defs, uses, _unknown = sharcdb.register_effects(
+            "12a_ureg", {"ureg": UREG_CODES["ASTATX"]}
+        )
         self.assertEqual(defs, [("LCNTR", "move")])
         self.assertEqual(uses, ["ASTATX"])
 
@@ -803,7 +919,9 @@ class RegisterEffectsTest(unittest.TestCase):
         self.assertEqual(unknown, ["shiftimm_unknown_opcode"])
 
     def test_branch_form_has_no_register_effects(self):
-        defs, uses, unknown = sharcdb.register_effects("8a_rel", {"b": 0, "cond": 1, "j": 1})
+        defs, uses, unknown = sharcdb.register_effects(
+            "8a_rel", {"b": 0, "cond": 1, "j": 1}
+        )
         self.assertEqual((defs, uses, unknown), ([], [], []))
 
 
@@ -823,7 +941,9 @@ class Dt2116AcceptanceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.out_path = "out/sharcdb/dt2-1.16.sqlite"
-        cls.stats = sharcdb.build_database(str(DT2_116_BLOB), cls.out_path, name="dt2-1.16")
+        cls.stats = sharcdb.build_database(
+            str(DT2_116_BLOB), cls.out_path, name="dt2-1.16"
+        )
         cls.db = _connect(cls.out_path)
 
     @classmethod
@@ -840,9 +960,12 @@ class Dt2116AcceptanceTest(unittest.TestCase):
         self.assertEqual(rows, [(0x1C71EC, 7)])
 
     def test_2_callers_of_1c2b24_and_its_call_to_1c642a(self):
-        callers = {r[0] for r in self.db.execute(
-            "SELECT from_function FROM edges WHERE to_sw = 0x1c2b24"
-        ).fetchall()}
+        callers = {
+            r[0]
+            for r in self.db.execute(
+                "SELECT from_function FROM edges WHERE to_sw = 0x1c2b24"
+            ).fetchall()
+        }
         self.assertIn(0x1C75D8, callers)
         call = self.db.execute(
             "SELECT to_sw FROM edges WHERE from_sw = 0x1c3083 AND kind = 'call'"
@@ -850,23 +973,42 @@ class Dt2116AcceptanceTest(unittest.TestCase):
         self.assertEqual(call, [(0x1C642A,)])
 
     def test_3_stage6_callers_and_stage4_5_exclusive_to_1c71ec(self):
-        stage6_callers = sorted(r[0] for r in self.db.execute(
-            "SELECT from_sw FROM edges WHERE to_sw = 0x1cbf07 AND kind = 'call'"
-        ).fetchall())
+        stage6_callers = sorted(
+            r[0]
+            for r in self.db.execute(
+                "SELECT from_sw FROM edges WHERE to_sw = 0x1cbf07 AND kind = 'call'"
+            ).fetchall()
+        )
         self.assertEqual(stage6_callers, [0x1C73D5, 0x1C7434])
         for stage_sw in (0x1CD286, 0x1CC79E):
-            callers = {r[0] for r in self.db.execute(
-                "SELECT from_function FROM edges WHERE to_sw = ? AND kind = 'call'", (stage_sw,)
-            ).fetchall()}
+            callers = {
+                r[0]
+                for r in self.db.execute(
+                    "SELECT from_function FROM edges WHERE to_sw = ? AND kind = 'call'",
+                    (stage_sw,),
+                ).fetchall()
+            }
             self.assertEqual(callers, {0x1C71EC})
 
     def test_4_eight_pushes_via_i7_m7_in_fun_1c71ec(self):
-        expected = [0x1C735A, 0x1C736F, 0x1C7384, 0x1C739F, 0x1C73BA, 0x1C73D2, 0x1C73EA, 0x1C7431]
-        rows = sorted(r[0] for r in self.db.execute(
-            """SELECT sw FROM mem_access
+        expected = [
+            0x1C735A,
+            0x1C736F,
+            0x1C7384,
+            0x1C739F,
+            0x1C73BA,
+            0x1C73D2,
+            0x1C73EA,
+            0x1C7431,
+        ]
+        rows = sorted(
+            r[0]
+            for r in self.db.execute(
+                """SELECT sw FROM mem_access
                WHERE direction = 'store' AND base_reg = 'I7' AND modifier LIKE 'M7%'
                  AND sw BETWEEN 0x1c71ec AND 0x1c75d8"""
-        ).fetchall())
+            ).fetchall()
+        )
         for sw in expected:
             self.assertIn(sw, rows)
 
@@ -885,13 +1027,19 @@ class Dt2116AcceptanceTest(unittest.TestCase):
             rows = self.db.execute(
                 "SELECT kind, to_sw FROM edges WHERE from_sw = ?", (sw,)
             ).fetchall()
-            self.assertTrue(any(kind == "indirect" and to_sw is None for kind, to_sw in rows),
-                             "no indirect edge at 0x%x: %r" % (sw, rows))
+            self.assertTrue(
+                any(kind == "indirect" and to_sw is None for kind, to_sw in rows),
+                "no indirect edge at 0x%x: %r" % (sw, rows),
+            )
 
     def test_7_mnemonics(self):
-        row = self.db.execute("SELECT mnemonic FROM insn WHERE sw = 0x1cbf95").fetchone()
+        row = self.db.execute(
+            "SELECT mnemonic FROM insn WHERE sw = 0x1cbf95"
+        ).fetchone()
         self.assertIn("I2 = modify(I4, 0x44)", row[0])
-        row = self.db.execute("SELECT mnemonic FROM insn WHERE sw = 0x1cbf47").fetchone()
+        row = self.db.execute(
+            "SELECT mnemonic FROM insn WHERE sw = 0x1cbf47"
+        ).fetchone()
         self.assertEqual(row[0], "IF LT F8 = fadd(F8, F2)")
 
     def test_build_reports_a_size_and_a_time(self):
@@ -911,14 +1059,17 @@ class Dt2116AcceptanceTest(unittest.TestCase):
                       WHERE b.start_sw <= ? AND b.end_sw > ?)"""
 
     def _reaches(self, from_sw, to_sw):
-        row = self.db.execute(self._REACH_SQL, (from_sw, from_sw, to_sw, to_sw)).fetchone()
+        row = self.db.execute(
+            self._REACH_SQL, (from_sw, from_sw, to_sw, to_sw)
+        ).fetchone()
         return bool(row[0])
 
     def test_a_1c642a_reaches_1c7053_and_its_switch_cases(self):
         self.assertTrue(self._reaches(0x1C642A, 0x1C7053))
         for case_sw in (0x1C65BD, 0x1C6715, 0x1C6782, 0x1C686E):
             self.assertTrue(
-                self._reaches(case_sw, 0x1C7053), "case 0x%x does not reach 0x1c7053" % case_sw
+                self._reaches(case_sw, 0x1C7053),
+                "case 0x%x does not reach 0x1c7053" % case_sw,
             )
 
     def test_b_delayed_back_edge_is_cond_taken_not_loop_back(self):
@@ -933,7 +1084,9 @@ class Dt2116AcceptanceTest(unittest.TestCase):
         self.assertNotIn(("loop_back", 0x1C6530), rows)
 
     def test_b_do_loop_at_1c7040_has_loop_back(self):
-        mnemonic = self.db.execute("SELECT mnemonic FROM insn WHERE sw = 0x1c7040").fetchone()[0]
+        mnemonic = self.db.execute(
+            "SELECT mnemonic FROM insn WHERE sw = 0x1c7040"
+        ).fetchone()[0]
         self.assertIn("0x1c717f", mnemonic)
         rows = self.db.execute(
             "SELECT kind, to_block FROM succ WHERE from_block = "
@@ -1007,8 +1160,10 @@ class Dn2111AcceptanceTest(unittest.TestCase):
 
 
 @pytest.mark.slow
-@unittest.skipUnless(DT2_116_BLOB.exists() and DN2_111_BLOB.exists(),
-                      "DT2 1.16 and DN2 1.11 SHARC blobs are not both available")
+@unittest.skipUnless(
+    DT2_116_BLOB.exists() and DN2_111_BLOB.exists(),
+    "DT2 1.16 and DN2 1.11 SHARC blobs are not both available",
+)
 class CrossImageMatchTest(unittest.TestCase):
     """Acceptance fact 9: stage 6 matches DT2 <-> DN2 by relocation-tolerant
     hash, at the addresses docs/findings/11 already records by exact-byte
@@ -1032,13 +1187,17 @@ class CrossImageMatchTest(unittest.TestCase):
             """SELECT a.reloc_hash = b.reloc_hash FROM func_hash a, dn2.func_hash b
                WHERE a.entry_sw = 0x1cbf07 AND b.entry_sw = 0xb806f5"""
         ).fetchone()
-        self.assertIsNotNone(row, "one or both stage-6 entries are missing from func_hash")
+        self.assertIsNotNone(
+            row, "one or both stage-6 entries are missing from func_hash"
+        )
         self.assertEqual(row[0], 1)
 
 
 @pytest.mark.slow
-@unittest.skipUnless(DT2_116_BLOB.exists() and DN2_111_BLOB.exists(),
-                      "DT2 1.16 and DN2 1.11 SHARC blobs are not both available")
+@unittest.skipUnless(
+    DT2_116_BLOB.exists() and DN2_111_BLOB.exists(),
+    "DT2 1.16 and DN2 1.11 SHARC blobs are not both available",
+)
 class SharcApiGoldenFactsTest(unittest.TestCase):
     """The tools/sharc_dev/sharc.py analyze-pass golden facts, through the API rather
     than raw SQL: reachability from an RTOS root, a natural loop, a
@@ -1056,9 +1215,12 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
         cls.dn2.close()
 
     def test_per_frame_chain_reachable_from_rtos_root(self):
-        reached = {r[0] for r in self.dt2.sql(
-            "SELECT function_sw FROM reach WHERE image='dt2-1.16' AND root_sw=0x1c7749"
-        )}
+        reached = {
+            r[0]
+            for r in self.dt2.sql(
+                "SELECT function_sw FROM reach WHERE image='dt2-1.16' AND root_sw=0x1c7749"
+            )
+        }
         for fn in (0x1C2B24, 0x1C642A, 0x1C71EC, 0x1CBF07):
             self.assertIn(fn, reached, "0x1c7749 does not reach 0x%x" % fn)
 
@@ -1066,9 +1228,12 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
         # 0x1c1338 sits in a data/fill gap no function's span covers, so
         # reach must fall back to the next function by address (see
         # _detect_reach's docstring) to find this chain at all.
-        reached = {r[0] for r in self.dt2.sql(
-            "SELECT function_sw FROM reach WHERE image='dt2-1.16' AND root_sw=0x1c1338"
-        )}
+        reached = {
+            r[0]
+            for r in self.dt2.sql(
+                "SELECT function_sw FROM reach WHERE image='dt2-1.16' AND root_sw=0x1c1338"
+            )
+        }
         for fn in (0x1C13E6, 0x1C7FF9, 0x1C15E3):
             self.assertIn(fn, reached, "loader entry 0x1c1338 does not reach 0x%x" % fn)
 
@@ -1130,7 +1295,9 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
 
 
 @pytest.mark.slow
-@unittest.skipUnless(DT2_116_GHIDRA_DUMP.exists(), "DT2 1.16 ColdFire Ghidra dump is not available")
+@unittest.skipUnless(
+    DT2_116_GHIDRA_DUMP.exists(), "DT2 1.16 ColdFire Ghidra dump is not available"
+)
 class ColdfireImportTest(unittest.TestCase):
     """The task's ColdFire golden facts, through tools/sharc_dev/sharc.py's own API
     against a real import-ghidra build: vector-191 calls the DSPI2 frame
@@ -1143,7 +1310,9 @@ class ColdfireImportTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.out_path = "out/sharcdb/dt2-1.16-cf.sqlite"
-        sharcdb.build_ghidra_database(str(DT2_116_GHIDRA_DUMP), cls.out_path, name="dt2-1.16-cf")
+        sharcdb.build_ghidra_database(
+            str(DT2_116_GHIDRA_DUMP), cls.out_path, name="dt2-1.16-cf"
+        )
         cls.img = sharc.load("dt2-1.16-cf", db_dir="out/sharcdb")
 
     @classmethod

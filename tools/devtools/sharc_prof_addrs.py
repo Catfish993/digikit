@@ -30,11 +30,17 @@ def main() -> None:
             frames[el.get("id")] = (el.get("name"), int(el.get("addr"), 16))
         elif el.tag == "thread" and el.get("id"):
             threads[el.get("id")] = el.get("fmt") or ""
-        elif el.tag == "binary" and el.get("load-addr") and el.get("name") == "coupled-run":
+        elif (
+            el.tag == "binary"
+            and el.get("load-addr")
+            and el.get("name") == "coupled-run"
+        ):
             load = int(el.get("load-addr"), 16)
         elif el.tag == "row":
             th = el.find("thread")
-            tfmt = threads.get(th.get("id") or th.get("ref"), "") if th is not None else ""
+            tfmt = (
+                threads.get(th.get("id") or th.get("ref"), "") if th is not None else ""
+            )
             if a.thread not in tfmt:
                 el.clear()
                 continue
@@ -56,7 +62,6 @@ def main() -> None:
     by_file = collections.Counter()
     by_line: collections.Counter = collections.Counter()
     by_line_all: collections.Counter = collections.Counter()
-    idx = 0
     lines = out
     # With -i each address gives several lines then a blank separator.
     groups, cur = [], []
@@ -87,7 +92,7 @@ def main() -> None:
 
     json.dump(
         [[f, ln, n] for (f, ln), n in by_line.most_common()],
-        open(a.xml + ".lines.json", "w"),
+        open(a.xml + ".lines.json", "w"),  # noqa: SIM115
     )
     print("samples", total)
     print("--- by source file")

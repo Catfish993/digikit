@@ -36,13 +36,38 @@ _IVT_JUMP_SUFFIX = b"\x3e\x06"
 
 # sharc-plus-prm Table 4-46 "Interrupt Priority and Vectors".
 IVT_VECTOR_NAMES = {
-    0: "EMUI", 1: "RSTI", 2: "reserved", 3: "PARI", 4: "ILOPI", 5: "CB7I",
-    6: "IICDI", 7: "SOVFI", 8: "ILADI", 9: "reserved", 10: "reserved",
-    11: "TMZHI", 12: "BKPI", 13: "FIR", 14: "IIR", 15: "SECI",
-    16: "reserved", 17: "reserved", 18: "reserved", 19: "reserved",
-    20: "RINSEQI", 21: "CB15I", 22: "TMZLI", 23: "FIXI", 24: "FLTOI",
-    25: "FLTUI", 26: "FLTII", 27: "EMULI", 28: "SFT0I", 29: "SFT1I",
-    30: "SFT2I", 31: "SFT3I",
+    0: "EMUI",
+    1: "RSTI",
+    2: "reserved",
+    3: "PARI",
+    4: "ILOPI",
+    5: "CB7I",
+    6: "IICDI",
+    7: "SOVFI",
+    8: "ILADI",
+    9: "reserved",
+    10: "reserved",
+    11: "TMZHI",
+    12: "BKPI",
+    13: "FIR",
+    14: "IIR",
+    15: "SECI",
+    16: "reserved",
+    17: "reserved",
+    18: "reserved",
+    19: "reserved",
+    20: "RINSEQI",
+    21: "CB15I",
+    22: "TMZLI",
+    23: "FIXI",
+    24: "FLTOI",
+    25: "FLTUI",
+    26: "FLTII",
+    27: "EMULI",
+    28: "SFT0I",
+    29: "SFT1I",
+    30: "SFT2I",
+    31: "SFT3I",
 }
 
 # Two further ISR dispatch tables outside the IVT proper (addresses in this
@@ -54,7 +79,7 @@ IVT_VECTOR_NAMES = {
 # still CPU/image-generic so a future image that ships these tables
 # initialized gets code_pointer_array roots for free.
 IVT_DISPATCH_TABLES = (
-    (0x240ad8, 8, "generic interrupt dispatch (by ASTATX number)"),
+    (0x240AD8, 8, "generic interrupt dispatch (by ASTATX number)"),
     (0x240948, 2, "SECI dispatch (by SEC id)"),
 )
 
@@ -76,7 +101,7 @@ def _detect_interrupt_vector_roots(mem):
             continue
         target = None
         for k in range(4):
-            insn = chunk[k * 6:(k + 1) * 6]
+            insn = chunk[k * 6 : (k + 1) * 6]
             if insn[4:6] == _IVT_JUMP_SUFFIX:
                 target = int.from_bytes(insn[0:3], "little")
                 break
@@ -115,7 +140,13 @@ def _detect_dispatch_table_roots(mem, blocks, owner):
             values.append(value)
         if len(values) >= 2:
             for i, value in enumerate(values):
-                roots.append((value, "code_pointer_array", "%s table=0x%x idx=%d" % (desc, base, i)))
+                roots.append(
+                    (
+                        value,
+                        "code_pointer_array",
+                        "%s table=0x%x idx=%d" % (desc, base, i),
+                    )
+                )
     return roots
 
 
@@ -155,7 +186,13 @@ def _detect_roots(db, name, mem, blocks):
             # same one tools/sharc_dev/sharcldr.py's main_program() takes as the final
             # application's code (a boot stream may carry earlier FIRST
             # blocks for a bootstrap stage this file never scans).
-            roots.append((firsts[-1], "loader_entry", "last of %d BFLAG_FIRST entries" % len(firsts)))
+            roots.append(
+                (
+                    firsts[-1],
+                    "loader_entry",
+                    "last of %d BFLAG_FIRST entries" % len(firsts),
+                )
+            )
 
     roots += _detect_interrupt_vector_roots(mem)
     roots += _detect_dispatch_table_roots(mem, blocks, owner)
@@ -202,7 +239,9 @@ def _detect_roots(db, name, mem, blocks):
         r4u = r4 & 0xFFFFFFFF
         if owner(r4u) is None:
             continue
-        roots.append((r4u, "rtos_task", "helper=0x%x call_site=0x%x" % (to_fn, from_sw)))
+        roots.append(
+            (r4u, "rtos_task", "helper=0x%x call_site=0x%x" % (to_fn, from_sw))
+        )
 
     # Every dataref value that lands inside a scanned function's span: a
     # callback or dispatch pointer materialised as an ordinary literal/table
@@ -222,7 +261,8 @@ def _detect_roots(db, name, mem, blocks):
     # the run. Capped at 64 words so a false-positive base can't spin.
     if mem is not None:
         for (base,) in db.execute(
-            "SELECT DISTINCT value FROM dataref WHERE image=? AND role='i_reg_base'", (name,)
+            "SELECT DISTINCT value FROM dataref WHERE image=? AND role='i_reg_base'",
+            (name,),
         ).fetchall():
             values, first_owner = [], None
             for i in range(64):
@@ -237,7 +277,9 @@ def _detect_roots(db, name, mem, blocks):
                 values.append(value)
             if len(values) >= 2:
                 for i, value in enumerate(values):
-                    roots.append((value, "code_pointer_array", "table=0x%x idx=%d" % (base, i)))
+                    roots.append(
+                        (value, "code_pointer_array", "table=0x%x idx=%d" % (base, i))
+                    )
 
     # Functions no edge of any kind targets -- the same generalised "no
     # static caller" check as sharcdb.sql's canned query.
@@ -307,9 +349,11 @@ def _detect_reach(db, name, roots, function_entries):
     would take it), but today only loader_entry roots ever do -- every
     other root kind is only added when it already resolves to a function
     (see _detect_roots)."""
-    owner = _owner_factory(db.execute(
-        "SELECT entry_sw, end_sw FROM functions WHERE image=?", (name,)
-    ).fetchall())
+    owner = _owner_factory(
+        db.execute(
+            "SELECT entry_sw, end_sw FROM functions WHERE image=?", (name,)
+        ).fetchall()
+    )
     starts = sorted(function_entries)
     G = _function_call_jump_graph(db, name, function_entries)
     rows = []
@@ -320,7 +364,9 @@ def _detect_reach(db, name, roots, function_entries):
             if i >= len(starts):
                 continue
             fn = starts[i]
-        for target_fn, dist in nx.single_source_dijkstra_path_length(G, fn, weight="weight").items():
+        for target_fn, dist in nx.single_source_dijkstra_path_length(
+            G, fn, weight="weight"
+        ).items():
             rows.append((sw, target_fn, int(round(dist))))
     return rows
 
@@ -362,7 +408,16 @@ def _detect_callgraph(db, name, function_entries):
         if len(members) > 1:
             transitive |= members - {fn}
         is_recursive = len(members) > 1 or G.has_edge(fn, fn)
-        rows.append((fn, G.in_degree(fn), G.out_degree(fn), len(transitive), longest[c], int(is_recursive)))
+        rows.append(
+            (
+                fn,
+                G.in_degree(fn),
+                G.out_degree(fn),
+                len(transitive),
+                longest[c],
+                int(is_recursive),
+            )
+        )
     return rows
 
 
@@ -379,7 +434,9 @@ def _detect_dominators_and_loops(db, name):
         if fn is not None:
             by_func[fn].append(start)
     succ_by_from = collections.defaultdict(list)
-    for f, t, k in db.execute("SELECT from_block, to_block, kind FROM succ WHERE image=?", (name,)).fetchall():
+    for f, t, k in db.execute(
+        "SELECT from_block, to_block, kind FROM succ WHERE image=?", (name,)
+    ).fetchall():
         succ_by_from[f].append((t, k))
 
     idom_rows, loop_rows = [], []
@@ -430,12 +487,19 @@ def _detect_dominators_and_loops(db, name):
         headers = list(by_header.items())
         for i, (header, rec) in enumerate(headers):
             depth = 1 + sum(
-                1 for j, (h2, r2) in enumerate(headers)
+                1
+                for j, (h2, r2) in enumerate(headers)
                 if j != i and rec["body"] < r2["body"]
             )
-            loop_rows.append((
-                fn, header, len(rec["body"]), "hw_do" if rec["hw_do"] else "branch_back", depth,
-            ))
+            loop_rows.append(
+                (
+                    fn,
+                    header,
+                    len(rec["body"]),
+                    "hw_do" if rec["hw_do"] else "branch_back",
+                    depth,
+                )
+            )
 
     return idom_rows, loop_rows
 
@@ -446,14 +510,19 @@ def _detect_unentered(db, name, roots):
     nearest preceding function with an indirect site, else 'none'."""
     no_entry = sorted(sw for sw, kind, _note in roots if kind == "no_static_entry")
     array_note = {sw: note for sw, kind, note in roots if kind == "code_pointer_array"}
-    literal_note = {sw: note for sw, kind, note in roots if kind == "dataref_code_pointer"}
+    literal_note = {
+        sw: note for sw, kind, note in roots if kind == "dataref_code_pointer"
+    }
 
-    indirect_owners = sorted({
-        r[0] for r in db.execute(
-            "SELECT DISTINCT from_function FROM edges WHERE image=? AND kind='indirect' AND from_function IS NOT NULL",
-            (name,),
-        ).fetchall()
-    })
+    indirect_owners = sorted(
+        {
+            r[0]
+            for r in db.execute(
+                "SELECT DISTINCT from_function FROM edges WHERE image=? AND kind='indirect' AND from_function IS NOT NULL",
+                (name,),
+            ).fetchall()
+        }
+    )
 
     rows = []
     for fn in no_entry:
@@ -492,9 +561,12 @@ def analyze_image(db, name, mem=None, blocks=None):
     for table in ("roots", "reach", "callgraph", "idom", "loops", "unentered", "ptr"):
         db.execute("DELETE FROM %s WHERE image=?" % table, (name,))
 
-    function_entries = [r[0] for r in db.execute(
-        "SELECT entry_sw FROM functions WHERE image=?", (name,)
-    ).fetchall()]
+    function_entries = [
+        r[0]
+        for r in db.execute(
+            "SELECT entry_sw FROM functions WHERE image=?", (name,)
+        ).fetchall()
+    ]
 
     roots = _detect_roots(db, name, mem, blocks)
     reach_rows = _detect_reach(db, name, roots, function_entries)
@@ -504,15 +576,33 @@ def analyze_image(db, name, mem=None, blocks=None):
     ptr_rows = _build_ptr_rows(db, name, idom_rows)
 
     db.executemany("INSERT INTO roots VALUES (?,?,?,?)", [(name,) + r for r in roots])
-    db.executemany("INSERT INTO reach VALUES (?,?,?,?)", [(name,) + r for r in reach_rows])
-    db.executemany("INSERT INTO callgraph VALUES (?,?,?,?,?,?,?)", [(name,) + r for r in callgraph_rows])
-    db.executemany("INSERT INTO idom VALUES (?,?,?,?)", [(name,) + r for r in idom_rows])
-    db.executemany("INSERT INTO loops VALUES (?,?,?,?,?,?)", [(name,) + r for r in loop_rows])
-    db.executemany("INSERT INTO unentered VALUES (?,?,?)", [(name,) + r for r in unentered_rows])
-    db.executemany("INSERT INTO ptr VALUES (?,?,?,?,?,?,?)", [(name,) + r for r in ptr_rows])
+    db.executemany(
+        "INSERT INTO reach VALUES (?,?,?,?)", [(name,) + r for r in reach_rows]
+    )
+    db.executemany(
+        "INSERT INTO callgraph VALUES (?,?,?,?,?,?,?)",
+        [(name,) + r for r in callgraph_rows],
+    )
+    db.executemany(
+        "INSERT INTO idom VALUES (?,?,?,?)", [(name,) + r for r in idom_rows]
+    )
+    db.executemany(
+        "INSERT INTO loops VALUES (?,?,?,?,?,?)", [(name,) + r for r in loop_rows]
+    )
+    db.executemany(
+        "INSERT INTO unentered VALUES (?,?,?)", [(name,) + r for r in unentered_rows]
+    )
+    db.executemany(
+        "INSERT INTO ptr VALUES (?,?,?,?,?,?,?)", [(name,) + r for r in ptr_rows]
+    )
 
     return {
-        "seconds": time.time() - t0, "n_roots": len(roots), "n_reach": len(reach_rows),
-        "n_callgraph": len(callgraph_rows), "n_idom": len(idom_rows), "n_loops": len(loop_rows),
-        "n_unentered": len(unentered_rows), "n_ptr": len(ptr_rows),
+        "seconds": time.time() - t0,
+        "n_roots": len(roots),
+        "n_reach": len(reach_rows),
+        "n_callgraph": len(callgraph_rows),
+        "n_idom": len(idom_rows),
+        "n_loops": len(loop_rows),
+        "n_unentered": len(unentered_rows),
+        "n_ptr": len(ptr_rows),
     }

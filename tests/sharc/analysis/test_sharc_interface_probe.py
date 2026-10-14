@@ -4,8 +4,9 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-
-from tools.sharc_dev import sharc_interface_probe as P  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import (
+    sharc_interface_probe as P,  # pyright: ignore[reportMissingImports]
+)
 
 BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 
@@ -21,8 +22,9 @@ class SharcInterfaceProbeTest(unittest.TestCase):
 
     def test_extract_machine_types_rejects_short_frame(self):
         for size in (P.TX_FRAME_BYTES - 1, P.TX_FRAME_BYTES + 1):
-            with self.subTest(size=size), self.assertRaisesRegex(
-                ValueError, "expected exactly 2050"
+            with (
+                self.subTest(size=size),
+                self.assertRaisesRegex(ValueError, "expected exactly 2050"),
             ):
                 P.extract_machine_types(bytes(size))
 
@@ -45,11 +47,11 @@ class SharcInterfaceProbeTest(unittest.TestCase):
                 }
             ],
         )
-        with mock.patch.object(P.trace, "trace", return_value=[state]):
-            with self.assertRaisesRegex(
-                ValueError, "non-concrete descriptor-template"
-            ):
-                P._probe_dma_descriptor_list(mock.sentinel.memory, specification)
+        with (
+            mock.patch.object(P.trace, "trace", return_value=[state]),
+            self.assertRaisesRegex(ValueError, "non-concrete descriptor-template"),
+        ):
+            P._probe_dma_descriptor_list(mock.sentinel.memory, specification)
 
     @unittest.skipUnless(BLOB.exists(), "DT2 1.16 SHARC loader is not available")
     def test_build_report_recovers_four_ping_pong_descriptor_lists(self):

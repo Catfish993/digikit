@@ -11,14 +11,20 @@ import subprocess
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-from tools.emulator import coupled  # noqa: E402
-from tools.emulator import digi_env  # noqa: E402
-from tools.emulator import native_target  # noqa: E402
+from tools.emulator import (  # noqa: E402
+    coupled,  # noqa: E402
+    digi_env,  # noqa: E402
+    native_target,  # noqa: E402
+)
 
 gen = coupled.generated()
 digi_env.check_generated(gen)
 target = native_target.target_dir(gen, variant="dbg")
-env = {**digi_env.rust_env(), "SHARC_GEN_DIR": str(gen), "CARGO_PROFILE_RELEASE_DEBUG": "line-tables-only"}
+env = {
+    **digi_env.rust_env(),
+    "SHARC_GEN_DIR": str(gen),
+    "CARGO_PROFILE_RELEASE_DEBUG": "line-tables-only",
+}
 cmd = coupled.cargo(
     [
         "build", "--release", "--locked",

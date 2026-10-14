@@ -7,7 +7,6 @@ from __future__ import annotations
 import argparse
 import json
 
-
 from emu.hwref import (  # noqa: E402
     decode_register_value,
     resolve_address,
@@ -22,7 +21,9 @@ def parse_int(value: str) -> int:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     address = sub.add_parser("address", help="resolve an address")
@@ -79,7 +80,9 @@ def render(result):
         )
         routing = result.get("routing")
         if routing:
-            lines.append(f"request: {routing['request']} — {routing['request_description']}")
+            lines.append(
+                f"request: {routing['request']} — {routing['request_description']}"
+            )
             lines.append(
                 f"completion: {routing['completion_controller']} source "
                 f"{routing['completion_source']} / vector {routing['completion_vector']}"

@@ -162,8 +162,9 @@ def plan_joint(forms, classic):
         for decl in form.get("fields", []):
             verdict = classic_verdict(patterns, decl["hi"], decl["lo"])
             if verdict and verdict.startswith("fixed "):
-                picked.append((decl["label"], decl["hi"], decl["lo"],
-                               int(verdict.split()[1], 2)))
+                picked.append(
+                    (decl["label"], decl["hi"], decl["lo"], int(verdict.split()[1], 2))
+                )
         if not picked:
             continue
         short = name[4:] if name.startswith("Type") else name
@@ -175,7 +176,7 @@ def plan_joint(forms, classic):
 def bits_str(values, picked):
     """A joint value as binary groups, one per field, widest bit first."""
     out = []
-    for value, (_, hi, lo, _) in zip(values, picked):
+    for value, (_, hi, lo, _) in zip(values, picked, strict=False):
         out.append("?" if value is None else format(value, "0%db" % (hi - lo + 1)))
     return " ".join(out)
 
@@ -208,8 +209,7 @@ def collect(images, min_depth, joint_labels):
     for name, path, base_sw in images:
         with open(path, "rb") as handle:
             data = handle.read()
-        counts, values, first, joint, joint_first = tally(
-            data, min_depth, joint_labels)
+        counts, values, first, joint, joint_first = tally(data, min_depth, joint_labels)
         out[name] = {
             "path": path,
             "base_sw": base_sw,
@@ -233,19 +233,35 @@ def show_values(counter, top):
 
 def main():
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("region", nargs="*",
-                    help="main-program image(s); default: both known images")
-    ap.add_argument("--base-sw", type=lambda s: int(s, 0), default=None,
-                    help="base short-word address for a region given positionally")
-    ap.add_argument("--min-depth", type=int, default=8,
-                    help="sharcflow.aligned depth filter (default 8)")
-    ap.add_argument("--form", action="append", default=None,
-                    help="restrict to this form name; repeatable")
-    ap.add_argument("--all", action="store_true",
-                    help="every field, not only the constant ones")
-    ap.add_argument("--top", type=int, default=4,
-                    help="values shown per field (default 4)")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "region", nargs="*", help="main-program image(s); default: both known images"
+    )
+    ap.add_argument(
+        "--base-sw",
+        type=lambda s: int(s, 0),
+        default=None,
+        help="base short-word address for a region given positionally",
+    )
+    ap.add_argument(
+        "--min-depth",
+        type=int,
+        default=8,
+        help="sharcflow.aligned depth filter (default 8)",
+    )
+    ap.add_argument(
+        "--form",
+        action="append",
+        default=None,
+        help="restrict to this form name; repeatable",
+    )
+    ap.add_argument(
+        "--all", action="store_true", help="every field, not only the constant ones"
+    )
+    ap.add_argument(
+        "--top", type=int, default=4, help="values shown per field (default 4)"
+    )
     ap.add_argument("--json", default=None, help="write the full tally here")
     args = ap.parse_args()
 
@@ -267,8 +283,10 @@ def main():
 
     for name in names:
         w = walked[name]
-        print("%s: %d bytes, %d aligned instructions, %d forms"
-              % (name, w["bytes"], sum(w["counts"].values()), len(w["counts"])))
+        print(
+            "%s: %d bytes, %d aligned instructions, %d forms"
+            % (name, w["bytes"], sum(w["counts"].values()), len(w["counts"]))
+        )
     if not classic:
         print("classic.json unreadable or absent: no classic column")
     print()
@@ -311,8 +329,9 @@ def main():
             if verdict and verdict.startswith("fixed "):
                 want = int(verdict.split()[1], 2)
                 disagree = sum(n for value, n in merged.items() if value != want)
-            conflict = bool(verdict and verdict.startswith("fixed ")
-                            and (constant or disagree))
+            conflict = bool(
+                verdict and verdict.startswith("fixed ") and (constant or disagree)
+            )
             examples = {}
             for name in names:
                 first = walked[name]["first"].get((form_name, label), {})
@@ -321,30 +340,39 @@ def main():
                     "0x%x" % value: "0x%x" % (base_sw + off // 2)
                     for value, off in sorted(first.items())[:8]
                 }
-            rows.append({
-                "form": form["name"],
-                "field": label,
-                "hi": hi,
-                "lo": lo,
-                "n": total[form_name],
-                "distinct": len(merged),
-                "constant": constant,
-                "classic_key": matched_key,
-                "classic": verdict,
-                "conflict": conflict,
-                "disagree": disagree,
-                "values": {"0x%x" % v: n for v, n in merged.most_common()},
-                "per_image": {
-                    name: {"0x%x" % v: n for v, n in counter.most_common()}
-                    for name, counter in per_image.items()
-                },
-                "first_sw": examples,
-                "_merged": merged,
-            })
+            rows.append(
+                {
+                    "form": form["name"],
+                    "field": label,
+                    "hi": hi,
+                    "lo": lo,
+                    "n": total[form_name],
+                    "distinct": len(merged),
+                    "constant": constant,
+                    "classic_key": matched_key,
+                    "classic": verdict,
+                    "conflict": conflict,
+                    "disagree": disagree,
+                    "values": {"0x%x" % v: n for v, n in merged.most_common()},
+                    "per_image": {
+                        name: {"0x%x" % v: n for v, n in counter.most_common()}
+                        for name, counter in per_image.items()
+                    },
+                    "first_sw": examples,
+                    "_merged": merged,
+                }
+            )
 
     shown = [r for r in rows if args.all or r["constant"] or r["conflict"]]
     header = "%-22s %-16s %-7s %8s %5s  %-34s %s" % (
-        "form", "field", "bits", "n", "vals", "observed", "classic")
+        "form",
+        "field",
+        "bits",
+        "n",
+        "vals",
+        "observed",
+        "classic",
+    )
     print(header)
     print("-" * len(header))
     for r in shown:
@@ -354,23 +382,35 @@ def main():
             note += "  CONFLICT"
             if r["disagree"]:
                 note += " (%d disagree)" % r["disagree"]
-        print("%-22s %-16s %-7s %8d %5d  %-34s %s" % (
-            r["form"], r["field"], bits, r["n"], r["distinct"],
-            show_values(r["_merged"], args.top), note))
+        print(
+            "%-22s %-16s %-7s %8d %5d  %-34s %s"
+            % (
+                r["form"],
+                r["field"],
+                bits,
+                r["n"],
+                r["distinct"],
+                show_values(r["_merged"], args.top),
+                note,
+            )
+        )
 
     constants = [r for r in rows if r["constant"]]
     conflicts = [r for r in rows if r["conflict"]]
     print()
-    print("%d fields over %d forms; %d take one value; %d sit on bits the "
-          "classic grid fixes" % (len(rows), len({r["form"] for r in rows}),
-                                  len(constants), len(conflicts)))
+    print(
+        "%d fields over %d forms; %d take one value; %d sit on bits the "
+        "classic grid fixes"
+        % (len(rows), len({r["form"] for r in rows}), len(constants), len(conflicts))
+    )
     if not args.all and (constants or conflicts):
         print("(--all shows every field)")
 
     if joint_expect:
         print()
-        print("joint value of the bits the classic grid fixes and the table "
-              "leaves free:")
+        print(
+            "joint value of the bits the classic grid fixes and the table leaves free:"
+        )
         for short in sorted(joint_expect):
             table_name, picked = joint_expect[short]
             merged = Counter()
@@ -378,23 +418,30 @@ def main():
                 merged.update(walked[name]["joint"].get(short, Counter()))
             if not merged:
                 continue
-            spec = ", ".join("%s %d:%d" % (lab, hi, lo)
-                             for lab, hi, lo, _ in picked)
+            spec = ", ".join("%s %d:%d" % (lab, hi, lo) for lab, hi, lo, _ in picked)
             want = tuple(p[3] for p in picked)
             print()
-            print("  %s -- %s; the classic grid wants %s"
-                  % (table_name, spec, bits_str(want, picked)))
+            print(
+                "  %s -- %s; the classic grid wants %s"
+                % (table_name, spec, bits_str(want, picked))
+            )
             for key, n in merged.most_common():
                 where = []
                 for name in names:
                     off = walked[name]["joint_first"].get(short, {}).get(key)
                     if off is not None:
-                        where.append("%s 0x%x"
-                                     % (name, walked[name]["base_sw"] + off // 2))
-                print("    %-16s x%-6d %-11s first at %s"
-                      % (bits_str(key, picked), n,
-                         "matches" if key == want else "DISAGREES",
-                         ", ".join(where)))
+                        where.append(
+                            "%s 0x%x" % (name, walked[name]["base_sw"] + off // 2)
+                        )
+                print(
+                    "    %-16s x%-6d %-11s first at %s"
+                    % (
+                        bits_str(key, picked),
+                        n,
+                        "matches" if key == want else "DISAGREES",
+                        ", ".join(where),
+                    )
+                )
 
     if args.json:
         for r in rows:

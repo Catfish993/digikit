@@ -24,17 +24,18 @@ Discovery is by pattern, not by literal name, so another Elektron device's
 sections work without editing anything -- `section_3_MAIN_OS.bin` is one
 device's naming, not a law.
 """
+
 import glob
 import os
 
-SECTIONS_DEFAULT = 'sections'
-SNAPSHOTS_DEFAULT = 'snapshots'
+SECTIONS_DEFAULT = "sections"
+SNAPSHOTS_DEFAULT = "snapshots"
 
 # The build this project was reverse-engineered against. It breaks a tie when
 # several firmware files are present, and it never overrides an explicit
 # argument or DT2_SYX.
-TESTED_SYX = 'Digitakt_II_OS1.15C.syx'
-TESTED_NAME = 'Digitakt II OS 1.15C'
+TESTED_SYX = "Digitakt_II_OS1.15C.syx"
+TESTED_NAME = "Digitakt II OS 1.15C"
 
 
 class NotFound(SystemExit):
@@ -42,11 +43,11 @@ class NotFound(SystemExit):
 
 
 def sections_dir():
-    return os.environ.get('DT2_SECTIONS', SECTIONS_DEFAULT)
+    return os.environ.get("DT2_SECTIONS", SECTIONS_DEFAULT)
 
 
 def snapshots_dir():
-    return os.environ.get('DT2_SNAPSHOTS', SNAPSHOTS_DEFAULT)
+    return os.environ.get("DT2_SNAPSHOTS", SNAPSHOTS_DEFAULT)
 
 
 def firmware(explicit=None):
@@ -60,14 +61,14 @@ def firmware(explicit=None):
     """
     if explicit:
         if not os.path.exists(explicit):
-            raise NotFound('No such firmware file: %s' % explicit)
+            raise NotFound("No such firmware file: %s" % explicit)
         return explicit
-    env = os.environ.get('DT2_SYX')
+    env = os.environ.get("DT2_SYX")
     if env:
         if not os.path.exists(env):
-            raise NotFound('DT2_SYX points at a missing file: %s' % env)
+            raise NotFound("DT2_SYX points at a missing file: %s" % env)
         return env
-    found = sorted(glob.glob('*.syx'))
+    found = sorted(glob.glob("*.syx"))
     if len(found) == 1:
         return found[0]
     # Several present: prefer the build this project is keyed to, which keeps
@@ -77,55 +78,62 @@ def firmware(explicit=None):
         return TESTED_SYX
     if not found:
         raise NotFound(
-            'No firmware found.\n\n'
-            'No Elektron firmware ships with this repository and none ever\n'
-            'should -- it is copyright Elektron. Put your own lawfully-obtained\n'
-            '.syx in the working directory, pass it as an argument, or set\n'
-            'DT2_SYX. Only %s has been tested.' % TESTED_NAME)
+            "No firmware found.\n\n"
+            "No Elektron firmware ships with this repository and none ever\n"
+            "should -- it is copyright Elektron. Put your own lawfully-obtained\n"
+            ".syx in the working directory, pass it as an argument, or set\n"
+            "DT2_SYX. Only %s has been tested." % TESTED_NAME
+        )
     raise NotFound(
-        'Several firmware files here, so which one is ambiguous:\n\n%s\n\n'
-        'Pass one as an argument or set DT2_SYX. This is deliberately not\n'
-        'guessed: picking the wrong one runs one firmware under another\'s\n'
-        'name.' % '\n'.join('    ' + f for f in found))
+        "Several firmware files here, so which one is ambiguous:\n\n%s\n\n"
+        "Pass one as an argument or set DT2_SYX. This is deliberately not\n"
+        "guessed: picking the wrong one runs one firmware under another's\n"
+        "name." % "\n".join("    " + f for f in found)
+    )
 
 
 def main_image(explicit=None):
     """-> the decompressed MAIN OS section, found by pattern not by name."""
     if explicit:
         if not os.path.exists(explicit):
-            raise NotFound('No such MAIN OS image: %s' % explicit)
+            raise NotFound("No such MAIN OS image: %s" % explicit)
         return explicit
-    env = os.environ.get('DT2_MAIN_IMG')
+    env = os.environ.get("DT2_MAIN_IMG")
     if env:
         if not os.path.exists(env):
-            raise NotFound('DT2_MAIN_IMG points at a missing file: %s' % env)
+            raise NotFound("DT2_MAIN_IMG points at a missing file: %s" % env)
         return env
     d = sections_dir()
-    found = sorted(glob.glob(os.path.join(d, '*MAIN_OS*.bin')))
+    found = sorted(glob.glob(os.path.join(d, "*MAIN_OS*.bin")))
     if len(found) == 1:
         return found[0]
     if not found:
         raise NotFound(
-            'No MAIN OS image in %s/.\n\n'
-            'The sections inside a .syx are compressed. Decompress them once:\n\n'
-            '    uv run python -m emu.extract <firmware.syx> -o %s/\n\n'
-            'Or set DT2_MAIN_IMG to an image you already have.' % (d, d))
-    raise NotFound('Several MAIN OS images in %s/:\n%s\n\nSet DT2_MAIN_IMG.'
-                   % (d, '\n'.join('    ' + f for f in found)))
+            "No MAIN OS image in %s/.\n\n"
+            "The sections inside a .syx are compressed. Decompress them once:\n\n"
+            "    uv run python -m emu.extract <firmware.syx> -o %s/\n\n"
+            "Or set DT2_MAIN_IMG to an image you already have." % (d, d)
+        )
+    raise NotFound(
+        "Several MAIN OS images in %s/:\n%s\n\nSet DT2_MAIN_IMG."
+        % (d, "\n".join("    " + f for f in found))
+    )
 
 
 def bootstrap(explicit=None):
     """-> the bootstrap section (section 2), which holds the acceptance code."""
     if explicit:
         if not os.path.exists(explicit):
-            raise NotFound('No such bootstrap image: %s' % explicit)
+            raise NotFound("No such bootstrap image: %s" % explicit)
         return explicit
     d = sections_dir()
-    found = sorted(glob.glob(os.path.join(d, 'section_2_*.bin')))
+    found = sorted(glob.glob(os.path.join(d, "section_2_*.bin")))
     if found:
         return found[0]
-    raise NotFound('No section 2 (bootstrap) in %s/. Extract the sections '
-                   'first; see main_image().' % d)
+    raise NotFound(
+        "No section 2 (bootstrap) in %s/. Extract the sections "
+        "first; see main_image()." % d
+    )
 
 
 def snapshot(name):

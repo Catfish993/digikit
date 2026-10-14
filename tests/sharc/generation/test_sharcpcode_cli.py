@@ -1,11 +1,9 @@
 """Synthetic SHARC p-code measurement command coverage."""
 
-import os
 import sqlite3
 import sys
 import unittest
 from importlib import import_module
-
 
 P = import_module("tools.sharc_dev.sharcpcode")
 from support.sharc_encode import encode  # noqa: E402

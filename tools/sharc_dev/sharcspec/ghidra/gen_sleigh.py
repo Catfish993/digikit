@@ -215,7 +215,7 @@ FIELDS = FieldRegistry()
 # Load decode table
 # ----------------------------------------------------------------------
 def load_forms():
-    d = json.load(open(os.path.join(SPEC_DIR, "decode_table.json")))
+    d = json.load(open(os.path.join(SPEC_DIR, "decode_table.json")))  # noqa: SIM115
     return d["forms"]
 
 
@@ -640,8 +640,14 @@ def compute_marker_lines(hi_fname, lo_fname, local="cmp", skip_label="nocompute"
     ]
 
 
-def circular_guard(ibank_fname, lbank_fname, i_index_local, off_local,
-                    plain_label="pmplain", done_label="pmdone"):
+def circular_guard(
+    ibank_fname,
+    lbank_fname,
+    i_index_local,
+    off_local,
+    plain_label="pmplain",
+    done_label="pmdone",
+):
     """P-code lines for a post-modify (u==1) index-register update. When the
     paired L register is nonzero, circular buffering is active for this
     index and the wrap is not modelled here, so the update is deferred
@@ -669,8 +675,9 @@ def sized_bit(local_name, fname, size=1):
     return [f"local {local_name}:{size} = {fname};"]
 
 
-def direction_branch(d_fname, load_stmt, store_stmt,
-                      load_label="isload", done_label="iodone"):
+def direction_branch(
+    d_fname, load_stmt, store_stmt, load_label="isload", done_label="iodone"
+):
     """P-code lines selecting a LOAD or STORE at runtime from the bare `d`
     field's raw value (0 = load, 1 = store), instead of a second SLEIGH
     constructor per direction. Type3a/4a keep exactly two constructors each
@@ -702,8 +709,14 @@ def premodify_or_post(ibank_fname, off_local, u_fname, u_local="umod"):
     ]
 
 
-def postmodify_update(ibank_fname, lbank_fname, i_raw_fname, off_local,
-                       u_local="umod", skip_label="noupdate"):
+def postmodify_update(
+    ibank_fname,
+    lbank_fname,
+    i_raw_fname,
+    off_local,
+    u_local="umod",
+    skip_label="noupdate",
+):
     """P-code lines performing the post-modify (u==1) index-register update
     -- circular-guarded -- gated by `u_local` (already computed by
     premodify_or_post: 0 when u==0, 1 when u==1), so the update is skipped
@@ -765,10 +778,7 @@ def type15b_indexed_constructors(
                 disp_ops,
                 wt,
                 nwords,
-                semantic_lines=offset
-                + address
-                + dm_byte_addr_to_ram_unit()
-                + transfer,
+                semantic_lines=offset + address + dm_byte_addr_to_ram_unit() + transfer,
                 active_words=active_words,
             )
         )
@@ -817,14 +827,30 @@ MEMORY_CROSSING_RESOLVERS = [
     # since those pins come from our constrained_terms() calls, not from a
     # mask diff (g/l/cond are plain FIELDS in decode_table.json, not part
     # of Type3a/4a's own mask).
-    dict(base="Type3a", index=0, sibling="Type3b", prefer="sibling",
-         extra=[(32, 32, 0), (30, 30, 0)]),
-    dict(base="Type3a", index=1, sibling="Type3b", prefer="sibling",
-         extra=[(32, 32, 0), (30, 30, 0), (37, 33, COND_TRUE)]),
-    dict(base="Type4a", index=0, sibling="Type4b", prefer="sibling",
-         extra=[(40, 40, 0)]),
-    dict(base="Type4a", index=1, sibling="Type4b", prefer="sibling",
-         extra=[(40, 40, 0), (37, 33, COND_TRUE)]),
+    dict(
+        base="Type3a",
+        index=0,
+        sibling="Type3b",
+        prefer="sibling",
+        extra=[(32, 32, 0), (30, 30, 0)],
+    ),
+    dict(
+        base="Type3a",
+        index=1,
+        sibling="Type3b",
+        prefer="sibling",
+        extra=[(32, 32, 0), (30, 30, 0), (37, 33, COND_TRUE)],
+    ),
+    dict(
+        base="Type4a", index=0, sibling="Type4b", prefer="sibling", extra=[(40, 40, 0)]
+    ),
+    dict(
+        base="Type4a",
+        index=1,
+        sibling="Type4b",
+        prefer="sibling",
+        extra=[(40, 40, 0), (37, 33, COND_TRUE)],
+    ),
     # Type3d/Type4d (48-bit, genuine siblings): the oracle's real tie-break
     # applies. Both sides tie the leading run at the base form's own run
     # length (the sibling's extra fixed bits sit well below it, inside
@@ -835,11 +861,17 @@ MEMORY_CROSSING_RESOLVERS = [
     # "base"-preferred entry derives its extra bits automatically from the
     # sibling's mask diff (extra_fixed_runs), since those genuinely are the
     # sibling's distinguishing mask bits.
-    dict(base="Type3a", index=0, sibling="Type3d", prefer="sibling",
-         extra=[(32, 32, 0), (30, 30, 0)]),
+    dict(
+        base="Type3a",
+        index=0,
+        sibling="Type3d",
+        prefer="sibling",
+        extra=[(32, 32, 0), (30, 30, 0)],
+    ),
     dict(base="Type3a", index=1, sibling="Type3d", prefer="base"),
-    dict(base="Type4a", index=0, sibling="Type4d", prefer="sibling",
-         extra=[(40, 40, 0)]),
+    dict(
+        base="Type4a", index=0, sibling="Type4d", prefer="sibling", extra=[(40, 40, 0)]
+    ),
     dict(base="Type4a", index=1, sibling="Type4d", prefer="base"),
 ]
 
@@ -890,7 +922,11 @@ def type4a_indexed_constructors(
             semantic = whole_instruction_cond_gate(cond_fname) + body
         ctors.append(
             Constructor(
-                mnem, disp_ops, wt, nwords, semantic_lines=semantic,
+                mnem,
+                disp_ops,
+                wt,
+                nwords,
+                semantic_lines=semantic,
                 active_words=active_words,
             )
         )
@@ -935,17 +971,21 @@ def type3a_indexed_constructors(
         wt = constrained_terms(
             word_terms, field_info, (("g", 0), ("l", 0)), "type3a_indexed"
         )
-        wt = with_bare(wt, (ibank_word, ibank), (mbank_word, mbank), (ibank_word, lbank))
+        wt = with_bare(
+            wt, (ibank_word, ibank), (mbank_word, mbank), (ibank_word, lbank)
+        )
         if cond_true:
-            wt = constrained_terms(
-                wt, field_info, (("cond", COND_TRUE),), "condtrue"
-            )
+            wt = constrained_terms(wt, field_info, (("cond", COND_TRUE),), "condtrue")
             semantic = list(body)
         else:
             semantic = whole_instruction_cond_gate(cond_fname) + body
         ctors.append(
             Constructor(
-                mnem, disp_ops, wt, nwords, semantic_lines=semantic,
+                mnem,
+                disp_ops,
+                wt,
+                nwords,
+                semantic_lines=semantic,
                 active_words=active_words,
             )
         )
@@ -1142,7 +1182,9 @@ def type7d_aconv_constructors(mnem, word_terms, nwords, active_words, field_info
                                 [],
                                 terms,
                                 nwords,
-                                semantic_lines=[f"{destination} = {source} {operator} 2;"],
+                                semantic_lines=[
+                                    f"{destination} = {source} {operator} 2;"
+                                ],
                                 active_words=active_words,
                             )
                         )
@@ -1248,7 +1290,7 @@ def find_target_fragments(field_info, base_label):
     # fragment, positioned by its own label-encoded shift amount.
     frags = []
     exclude = set()
-    for label, (base, shift, chunks, hi, lo) in field_info.items():
+    for label, (base, shift, chunks, hi, _lo) in field_info.items():
         if base != base_label:
             continue
         exclude.add(label)
@@ -1336,10 +1378,10 @@ def gen_constructor(form):
     dropped_bases = set()
     if swallowed:
         base_words = {}
-        for label, (base, shift, chunks, hi, lo) in field_info.items():
+        for label, (base, _shift, chunks, _hi, _lo) in field_info.items():
             if label in target_exclude:
                 continue
-            for w, fname, clo, nbits in chunks:
+            for w, _fname, _clo, _nbits in chunks:
                 base_words.setdefault(base, set()).add(w)
         dropped_bases = {b for b, ws in base_words.items() if ws & swallowed}
 
@@ -1361,7 +1403,7 @@ def gen_constructor(form):
 
     for lbl in plain_labels:
         base, shift, chunks, hi, lo = field_info[lbl]
-        for w, fname, clo, nbits in chunks:
+        for _w, fname, _clo, _nbits in chunks:
             display_ops.append(fname)
 
     if dropped_bases:

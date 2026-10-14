@@ -52,7 +52,7 @@ use super::*;
 
 
 def type_names() -> dict[str, str]:
-    d = json.load(open(os.path.join(g.HERE, "sharcspec", "decode_table.json")))
+    d = json.load(open(os.path.join(g.HERE, "sharcspec", "decode_table.json")))  # noqa: SIM115
     tab = {}
     for f in d["forms"]:
         n = re.sub(r"\s*\((\w+)\)", r"_\1", f["name"][4:])
@@ -81,10 +81,17 @@ def rs_e(e: tuple, fv: dict) -> str:
     if k == "v" and HELPER_SYMS is not None:
         if e[1][0] in "LB" and e[1][1:].isdigit():
             return "(%s!(%s, %d) as i128)" % (
-                HELPER_RR, HELPER_SYMS, (48 if e[1][0] == "L" else 64) + int(e[1][1:])
+                HELPER_RR,
+                HELPER_SYMS,
+                (48 if e[1][0] == "L" else 64) + int(e[1][1:]),
             )
         return "(%s!(%s, 114) as i128)" % (HELPER_RR, HELPER_SYMS)
-    if k == "&" and e[1] == ("v", "mode1") and e[2][0] == "c" and HELPER_SYMS is not None:
+    if (
+        k == "&"
+        and e[1] == ("v", "mode1")
+        and e[2][0] == "c"
+        and HELPER_SYMS is not None
+    ):
         return "((%s!(%s, 114) as i128) & %d)" % (HELPER_RR, HELPER_SYMS, e[2][1])
     if k == "v":
         if e[1][0] in "LB" and e[1][1:].isdigit():
@@ -290,7 +297,7 @@ def dce_items(items: list) -> list:
         if impure or (it[0] == "def" and it[1] in used):
             keep[i] = True
             used.update(operands(it))
-    return [it for it, k in zip(items, keep) if k]
+    return [it for it, k in zip(items, keep, strict=False) if k]
 
 
 # ---------------------------------------------------------------------------
@@ -637,4 +644,4 @@ if __name__ == "__main__":
 
     path = sys.argv[1]
     names = sys.argv[2].split(",")
-    open(path, "w").write(emit_file(names))
+    open(path, "w").write(emit_file(names))  # noqa: SIM115

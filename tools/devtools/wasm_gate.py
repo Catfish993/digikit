@@ -27,9 +27,8 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools import python_env
-from tools.emulator import digi_env
-from tools.emulator import native_target
+from tools import python_env  # noqa: E402
+from tools.emulator import digi_env, native_target  # noqa: E402
 
 OUT = ROOT / "out" / "native" / "wasmgate"
 DUMP = OUT / "dump"
@@ -46,7 +45,11 @@ V8_MODES = [
 
 def sh(cmd, **kw):
     return subprocess.run(
-        cmd, cwd=kw.pop("cwd", ROOT), env=python_env(kw.pop("env", None)), check=True, **kw
+        cmd,
+        cwd=kw.pop("cwd", ROOT),
+        env=python_env(kw.pop("env", None)),
+        check=True,
+        **kw,
     )
 
 
@@ -67,8 +70,8 @@ def capture(seconds: float) -> None:
         ],
         env=env,
     )  # fmt: skip
-    rows = [l.split("\t") for l in (DUMP / "totals.tsv").read_text().splitlines()]
-    calls = [l.split("\t") for l in (DUMP / "calls.tsv").read_text().splitlines()]
+    rows = [l.split("\t") for l in (DUMP / "totals.tsv").read_text().splitlines()]  # noqa: E741
+    calls = [l.split("\t") for l in (DUMP / "calls.tsv").read_text().splitlines()]  # noqa: E741
     total = sum(int(r[2]) for r in rows)
     caught = {c[1] for c in calls}
     covered = sum(int(r[2]) for r in rows if r[0] in caught)
@@ -99,14 +102,27 @@ def build() -> pathlib.Path:
 def run(bin_dir: pathlib.Path, budget: float) -> str:
     WASM.mkdir(parents=True, exist_ok=True)
     out = []
-    gen = sh([str(bin_dir / "wasmgen"), str(DUMP), str(WASM)], capture_output=True, text=True)
+    gen = sh(
+        [str(bin_dir / "wasmgen"), str(DUMP), str(WASM)], capture_output=True, text=True
+    )
     out.append(gen.stdout.strip())
-    cl = sh([str(bin_dir / "clbench"), str(DUMP), str(budget)], capture_output=True, text=True)
+    cl = sh(
+        [str(bin_dir / "clbench"), str(DUMP), str(budget)],
+        capture_output=True,
+        text=True,
+    )
     cl_lines = cl.stdout.strip().splitlines()
     out.append("Cranelift (native): " + cl_lines[-1])
     for name, flags in V8_MODES:
         r = sh(
-            ["node", *flags, str(CRATE / "gate.mjs"), str(DUMP), str(WASM), str(budget)],
+            [
+                "node",
+                *flags,
+                str(CRATE / "gate.mjs"),
+                str(DUMP),
+                str(WASM),
+                str(budget),
+            ],
             capture_output=True,
             text=True,
         )

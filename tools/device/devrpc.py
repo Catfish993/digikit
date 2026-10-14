@@ -21,6 +21,7 @@ are matched on devid=0x10 and the type byte, not on any echo.
 This transmits to the device. Only the read-only queries (ping/version/uid/
 storage/query) are wired up; there is deliberately no write/upgrade command.
 """
+
 import argparse
 import sys
 import time
@@ -28,8 +29,15 @@ import time
 HDR = bytes((0xF0, 0x00, 0x20, 0x3C, 0x10, 0x00))
 DEV = 0x10
 
-TYPES = {0x01: "Ping", 0x02: "SoftwareVersion", 0x03: "DeviceUID",
-         0x05: "StorageSpace", 0x09: "Query", 0x10: "ReadDir", 0x53: "DataList"}
+TYPES = {
+    0x01: "Ping",
+    0x02: "SoftwareVersion",
+    0x03: "DeviceUID",
+    0x05: "StorageSpace",
+    0x09: "Query",
+    0x10: "ReadDir",
+    0x53: "DataList",
+}
 
 
 def build_request(type_byte, seq=1, cmd=0x00, payload=b""):
@@ -41,8 +49,7 @@ def build_request(type_byte, seq=1, cmd=0x00, payload=b""):
     # whatever the payload; the device reads the body up to F7. A non-zero
     # byte 9 (we once sent 0x09) is rejected, so keep it 0x00 0x00.
     seq_hi, seq_lo = (seq >> 8) & 0x7F, seq & 0x7F
-    return bytes((*HDR, cmd, seq_hi, seq_lo, 0x00, 0x00,
-                  type_byte, *payload, 0xF7))
+    return bytes((*HDR, cmd, seq_hi, seq_lo, 0x00, 0x00, type_byte, *payload, 0xF7))
 
 
 def parse_reply(msg):
@@ -62,9 +69,11 @@ def _ascii(b):
 
 def describe(type_byte, payload):
     name = TYPES.get(type_byte, f"type 0x{type_byte:02x}")
-    lines = [f"  {name}: {len(payload)}B  "
-             + " ".join(f"{c:02x}" for c in payload[:48])
-             + (" ..." if len(payload) > 48 else "")]
+    lines = [
+        f"  {name}: {len(payload)}B  "
+        + " ".join(f"{c:02x}" for c in payload[:48])
+        + (" ..." if len(payload) > 48 else "")
+    ]
     if payload:
         lines.append(f"    ascii: {_ascii(payload[:64])}")
     if type_byte == 0x02:  # SoftwareVersion: NUL-terminated strings
@@ -78,11 +87,18 @@ def describe(type_byte, payload):
 
 def open_ports(sub):
     import rtmidi
+
     mi, mo = rtmidi.MidiIn(), rtmidi.MidiOut()
-    pi = next((i for i, n in enumerate(mi.get_ports()) if sub.lower() in n.lower()), None)
-    po = next((i for i, n in enumerate(mo.get_ports()) if sub.lower() in n.lower()), None)
+    pi = next(
+        (i for i, n in enumerate(mi.get_ports()) if sub.lower() in n.lower()), None
+    )
+    po = next(
+        (i for i, n in enumerate(mo.get_ports()) if sub.lower() in n.lower()), None
+    )
     if pi is None or po is None:
-        raise SystemExit(f"no MIDI port matching {sub!r}: in={mi.get_ports()} out={mo.get_ports()}")
+        raise SystemExit(
+            f"no MIDI port matching {sub!r}: in={mi.get_ports()} out={mo.get_ports()}"
+        )
     mi.open_port(pi)
     mo.open_port(po)
     mi.ignore_types(sysex=False, timing=True, active_sense=True)
@@ -94,8 +110,10 @@ def request(mi, mo, type_byte, seq=1, wait=1.5, payload=b""):
     while mi.get_message():  # drain
         pass
     frame = build_request(type_byte, seq=seq, payload=payload)
-    print(f"-> {TYPES.get(type_byte, hex(type_byte))}: "
-          + " ".join(f"{b:02x}" for b in frame))
+    print(
+        f"-> {TYPES.get(type_byte, hex(type_byte))}: "
+        + " ".join(f"{b:02x}" for b in frame)
+    )
     mo.send_message(list(frame))
     replies, end = [], time.time() + wait
     while time.time() < end:
@@ -110,21 +128,33 @@ def request(mi, mo, type_byte, seq=1, wait=1.5, payload=b""):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--port", default="Digitakt", help="port name substring")
     ap.add_argument("--ping", action="store_true")
     ap.add_argument("--version", action="store_true")
     ap.add_argument("--uid", action="store_true")
     ap.add_argument("--storage", action="store_true")
     ap.add_argument("--query", action="store_true")
-    ap.add_argument("--readdir", metavar="PATH", default=None,
-                    help="list a device directory, e.g. --readdir /")
-    ap.add_argument("--type", type=lambda s: int(s, 0), default=None,
-                    help="send an arbitrary read-only type byte")
+    ap.add_argument(
+        "--readdir",
+        metavar="PATH",
+        default=None,
+        help="list a device directory, e.g. --readdir /",
+    )
+    ap.add_argument(
+        "--type",
+        type=lambda s: int(s, 0),
+        default=None,
+        help="send an arbitrary read-only type byte",
+    )
     ap.add_argument("--wait", type=float, default=1.5)
-    ap.add_argument("--dry-run", action="store_true",
-                    help="print the frames that WOULD be sent, transmit nothing")
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the frames that WOULD be sent, transmit nothing",
+    )
     args = ap.parse_args()
 
     plan = []  # (type_byte, payload)
@@ -148,8 +178,9 @@ def main():
     if args.dry_run:
         for i, (t, pl) in enumerate(plan, 1):
             f = build_request(t, seq=i, payload=pl)
-            print(f"would send {TYPES.get(t, hex(t))}: "
-                  + " ".join(f"{b:02x}" for b in f))
+            print(
+                f"would send {TYPES.get(t, hex(t))}: " + " ".join(f"{b:02x}" for b in f)
+            )
         return 0
 
     mi, mo = open_ports(args.port)

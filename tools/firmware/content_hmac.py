@@ -9,7 +9,7 @@ See dt2/authcode.py for the format, derivation and provenance details.
 import argparse
 import sys
 
-from dt2.authcode import DEVICES, derive_key, split_container, compute_trailer, verify
+from dt2.authcode import DEVICES, verify
 
 
 def main(argv):

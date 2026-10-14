@@ -31,48 +31,66 @@ import time
 
 from tools.coldfire.ghidracopy import split_path  # imports no ghidra module
 
-DEFAULT_GHIDRA = '/opt/homebrew/Cellar/ghidra/12.1.3/libexec'
-DEFAULT_HEAP = '32G'
+DEFAULT_GHIDRA = "/opt/homebrew/Cellar/ghidra/12.1.3/libexec"
+DEFAULT_HEAP = "32G"
 
 
 def summarize(matches):
     """-> {correlator: {status: count}} over match records."""
     out = {}
     for m in matches:
-        by_status = out.setdefault(m['correlator'], {})
-        by_status[m['status']] = by_status.get(m['status'], 0) + 1
+        by_status = out.setdefault(m["correlator"], {})
+        by_status[m["status"]] = by_status.get(m["status"], 0) + 1
     return out
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = p.add_subparsers(dest='cmd', required=True)
-    for name in ('run', 'export'):
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name in ("run", "export"):
         s = sub.add_parser(name)
-        s.add_argument('--project', required=True, help='project directory')
-        s.add_argument('--project-name', required=True)
-        s.add_argument('--session', required=True, help='session path in the project')
-        s.add_argument('--json', help='write the matches here')
-        s.add_argument('--all', action='store_true', help='export every match, not only accepted ones')
-        s.add_argument('--heap', default=DEFAULT_HEAP, help='JVM -Xmx (default %s)' % DEFAULT_HEAP)
-        if name == 'run':
-            s.add_argument('--source', required=True, help='source program path')
-            s.add_argument('--dest', required=True, help='destination program path')
-            s.add_argument('--no-duplicates', action='store_true',
-                           help='skip the duplicate function correlator')
-            s.add_argument('--dupe-min-len', type=int, default=10,
-                           help='minimum function length for the duplicate function correlator')
-            s.add_argument('--replace', action='store_true',
-                           help='delete an existing session of that name first')
+        s.add_argument("--project", required=True, help="project directory")
+        s.add_argument("--project-name", required=True)
+        s.add_argument("--session", required=True, help="session path in the project")
+        s.add_argument("--json", help="write the matches here")
+        s.add_argument(
+            "--all",
+            action="store_true",
+            help="export every match, not only accepted ones",
+        )
+        s.add_argument(
+            "--heap", default=DEFAULT_HEAP, help="JVM -Xmx (default %s)" % DEFAULT_HEAP
+        )
+        if name == "run":
+            s.add_argument("--source", required=True, help="source program path")
+            s.add_argument("--dest", required=True, help="destination program path")
+            s.add_argument(
+                "--no-duplicates",
+                action="store_true",
+                help="skip the duplicate function correlator",
+            )
+            s.add_argument(
+                "--dupe-min-len",
+                type=int,
+                default=10,
+                help="minimum function length for the duplicate function correlator",
+            )
+            s.add_argument(
+                "--replace",
+                action="store_true",
+                help="delete an existing session of that name first",
+            )
     return p.parse_args(argv)
 
 
 def start_ghidra(heap):
-    os.environ.setdefault('GHIDRA_INSTALL_DIR', DEFAULT_GHIDRA)
+    os.environ.setdefault("GHIDRA_INSTALL_DIR", DEFAULT_GHIDRA)
     from pyghidra.launcher import HeadlessPyGhidraLauncher
+
     launcher = HeadlessPyGhidraLauncher(verbose=False)
-    launcher.add_vmargs('-Xmx' + heap)
+    launcher.add_vmargs("-Xmx" + heap)
     launcher.start()
 
 
@@ -80,7 +98,8 @@ def tool_options(args):
     """The options of AutoVersionTrackingScript.createDefaultOptions()."""
     from ghidra.feature.vt.api.util import VTOptions
     from ghidra.feature.vt.gui.util import VTOptionDefines as D
-    o = VTOptions('Dummy')
+
+    o = VTOptions("Dummy")
     o.setBoolean(D.CREATE_IMPLIED_MATCHES_OPTION, True)
     o.setBoolean(D.RUN_EXACT_SYMBOL_OPTION, True)
     o.setBoolean(D.RUN_EXACT_DATA_OPTION, True)
@@ -101,7 +120,7 @@ def tool_options(args):
 
 
 def hx(addr):
-    return '0x%08x' % addr.getOffset()
+    return "0x%08x" % addr.getOffset()
 
 
 def symbol_name(program, addr):
@@ -122,75 +141,91 @@ def export(session, everything):
         correlator = str(info.getName()) if info is not None else None
         for m in match_set.getMatches():
             a = m.getAssociation()
-            records.append({
-                'correlator': correlator, 'type': str(a.getType()), 'status': str(a.getStatus()),
-                'source': hx(m.getSourceAddress()), 'dest': hx(m.getDestinationAddress()),
-                'source_name': symbol_name(src, m.getSourceAddress()),
-                'dest_name': symbol_name(dst, m.getDestinationAddress()),
-                'similarity': score(m.getSimilarityScore()),
-                'confidence': score(m.getConfidenceScore()),
-                'source_length': int(m.getSourceLength()),
-                'dest_length': int(m.getDestinationLength()),
-            })
+            records.append(
+                {
+                    "correlator": correlator,
+                    "type": str(a.getType()),
+                    "status": str(a.getStatus()),
+                    "source": hx(m.getSourceAddress()),
+                    "dest": hx(m.getDestinationAddress()),
+                    "source_name": symbol_name(src, m.getSourceAddress()),
+                    "dest_name": symbol_name(dst, m.getDestinationAddress()),
+                    "similarity": score(m.getSimilarityScore()),
+                    "confidence": score(m.getConfidenceScore()),
+                    "source_length": int(m.getSourceLength()),
+                    "dest_length": int(m.getDestinationLength()),
+                }
+            )
     summary = summarize(records)
     if not everything:
-        records = [r for r in records if r['status'] == 'ACCEPTED']
-    records.sort(key=lambda r: (r['source'], r['dest'], r['correlator'] or ''))
+        records = [r for r in records if r["status"] == "ACCEPTED"]
+    records.sort(key=lambda r: (r["source"], r["dest"], r["correlator"] or ""))
     return records, summary
 
 
 def write_report(path, session, args, records, summary, status=None, seconds=None):
     src, dst = session.getSourceProgram(), session.getDestinationProgram()
     report = {
-        'tool': 'tools/coldfire/ghidravt.py', 'project': args.project, 'session': args.session,
-        'source': str(src.getDomainFile().getPathname()),
-        'source_sha256': str(src.getExecutableSHA256()),
-        'dest': str(dst.getDomainFile().getPathname()),
-        'dest_sha256': str(dst.getExecutableSHA256()),
-        'status': status, 'seconds': seconds, 'all_matches': args.all,
-        'summary': summary, 'matches': records,
+        "tool": "tools/coldfire/ghidravt.py",
+        "project": args.project,
+        "session": args.session,
+        "source": str(src.getDomainFile().getPathname()),
+        "source_sha256": str(src.getExecutableSHA256()),
+        "dest": str(dst.getDomainFile().getPathname()),
+        "dest_sha256": str(dst.getExecutableSHA256()),
+        "status": status,
+        "seconds": seconds,
+        "all_matches": args.all,
+        "summary": summary,
+        "matches": records,
     }
-    if args.cmd == 'run':
-        report['options'] = {'duplicates': not args.no_duplicates,
-                             'dupe_min_len': args.dupe_min_len, 'heap': args.heap}
+    if args.cmd == "run":
+        report["options"] = {
+            "duplicates": not args.no_duplicates,
+            "dupe_min_len": args.dupe_min_len,
+            "heap": args.heap,
+        }
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         json.dump(report, f, indent=1)
-    print('wrote %d matches to %s' % (len(records), path))
+    print("wrote %d matches to %s" % (len(records), path))
 
 
 def print_summary(summary):
-    for correlator in sorted(summary, key=lambda c: c or ''):
-        counts = ', '.join('%s %d' % kv for kv in sorted(summary[correlator].items()))
-        print('  %s: %s' % (correlator, counts))
+    for correlator in sorted(summary, key=lambda c: c or ""):
+        counts = ", ".join("%s %d" % kv for kv in sorted(summary[correlator].items()))
+        print("  %s: %s" % (correlator, counts))
 
 
 def run(args, project, monitor):
-    from java.lang import Object
     from ghidra.feature.vt.api.db import VTSessionDB
     from ghidra.feature.vt.gui.actions import AutoVersionTrackingTask
     from ghidra.util.task import ConsoleTaskMonitor
+    from java.lang import Object
+
     data = project.getProjectData()
     folder_path, name = split_path(args.session)
     folder = data.getRootFolder()
-    for part in [p for p in folder_path.split('/') if p]:
+    for part in [p for p in folder_path.split("/") if p]:
         folder = folder.getFolder(part) or folder.createFolder(part)
     existing = folder.getFile(name)
     if existing is not None:
         if not args.replace:
-            raise SystemExit('%s exists (use --replace)' % args.session)
-        if existing.getContentType() != 'VersionTracking':
-            raise SystemExit('%s is a %s, not a session' % (args.session, existing.getContentType()))
+            raise SystemExit("%s exists (use --replace)" % args.session)
+        if existing.getContentType() != "VersionTracking":
+            raise SystemExit(
+                "%s is a %s, not a session" % (args.session, existing.getContentType())
+            )
         existing.delete()
     files = {}
-    for role, path in (('source', args.source), ('dest', args.dest)):
+    for role, path in (("source", args.source), ("dest", args.dest)):
         files[role] = data.getFile(path)
         if files[role] is None:
-            raise SystemExit('no %s program %s' % (role, path))
+            raise SystemExit("no %s program %s" % (role, path))
     consumer = Object()
-    source = files['source'].getDomainObject(consumer, False, False, monitor)
+    source = files["source"].getDomainObject(consumer, False, False, monitor)
     try:
-        dest = files['dest'].getDomainObject(consumer, False, False, monitor)
+        dest = files["dest"].getDomainObject(consumer, False, False, monitor)
         try:
             session = VTSessionDB(name, source, dest, consumer)
             try:
@@ -199,14 +234,16 @@ def run(args, project, monitor):
                 started = time.time()
                 task.monitoredRun(ConsoleTaskMonitor())
                 seconds = round(time.time() - started, 1)
-                dest.save('Updated with Auto Version Tracking', monitor)
+                dest.save("Updated with Auto Version Tracking", monitor)
                 session.save()
                 status = str(task.getStatusMsg())
-                print('%.1f s: %s' % (seconds, status))
+                print("%.1f s: %s" % (seconds, status))
                 records, summary = export(session, args.all)
                 print_summary(summary)
                 if args.json:
-                    write_report(args.json, session, args, records, summary, status, seconds)
+                    write_report(
+                        args.json, session, args, records, summary, status, seconds
+                    )
             finally:
                 session.release(consumer)
         finally:
@@ -217,9 +254,10 @@ def run(args, project, monitor):
 
 def export_session(args, project, monitor):
     from java.lang import Object
+
     df = project.getProjectData().getFile(args.session)
     if df is None:
-        raise SystemExit('no session %s' % args.session)
+        raise SystemExit("no session %s" % args.session)
     consumer = Object()
     session = df.getDomainObject(consumer, False, False, monitor)
     try:
@@ -236,14 +274,15 @@ def main(argv=None):
     args.project = os.path.expanduser(args.project)
     start_ghidra(args.heap)
     import pyghidra
+
     monitor = pyghidra.task_monitor()
     project = pyghidra.open_project(args.project, args.project_name, create=False)
     try:
-        (run if args.cmd == 'run' else export_session)(args, project, monitor)
+        (run if args.cmd == "run" else export_session)(args, project, monitor)
     finally:
         project.close()
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

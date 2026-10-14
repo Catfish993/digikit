@@ -48,7 +48,6 @@ import json
 import os
 import sys
 
-
 from emu import extract, symbols
 
 SOURCE_MARKER = extract.SOURCE_MARKER  # '.source-sha256'
@@ -84,7 +83,7 @@ def load_main_os(image_path, syx_override=None, syx_sha256_override=None):
         import tempfile
         outdir = tempfile.mkdtemp(prefix='export-profile-')
         written = extract.extract(image_path, outdir)  # calls the real pipeline
-        for sid, kind, path, n, dest in written:
+        for sid, _kind, path, _n, _dest in written:
             if sid == 3:
                 with open(path, 'rb') as fh:
                     return fh.read(), syx_sha
@@ -130,7 +129,7 @@ def build_profile_json(device, img, load_addr, syx_sha256):
     except symbols.SymbolResolutionError as e:
         resolution_error = str(e)
         got, detail = {}, {}
-        for name, rule, required in symbols.SYMBOLS:
+        for name, rule, _required in symbols.SYMBOLS:
             val, why = rule.resolve(img, load_addr, got)
             got[name] = val
             detail[name] = why
@@ -138,7 +137,7 @@ def build_profile_json(device, img, load_addr, syx_sha256):
     sym_out = {}
     resolved_count = 0
     unresolved = []
-    for name, rule, required in symbols.SYMBOLS:
+    for name, _rule, required in symbols.SYMBOLS:
         val = got.get(name)
         sym_out[name] = symbol_entry(name, required, val, detail.get(name))
         if val is None:

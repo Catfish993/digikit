@@ -235,7 +235,7 @@ def write_sqlite(path, funcs, status, calls, data_refs, strings, symbols, blocks
             db.executemany('INSERT INTO vtables VALUES (?,?,?,?,?,?,?)',
                            [(v['addr'], v['class'], v['typeinfo'], v['offset_to_top'], i, slot, owner)
                             for v in rtti['vtables']
-                            for i, (slot, owner) in enumerate(zip(v['slots'], v['owners']))])
+                            for i, (slot, owner) in enumerate(zip(v['slots'], v['owners'], strict=False))])
         db.executescript(INDEXES)
         db.commit()
     finally:
@@ -295,7 +295,7 @@ def git_head():
 
 
 def utc_now():
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
+    return datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')
 
 
 def describe(program, args, program_path, rtti):
@@ -446,7 +446,7 @@ def decompile(program, stems, entries, decomp_dir, threads, timeout):
 
     Writes decomp/<stem>.c; -> {entry: error} for those that did not complete.
     """
-    from ghidra.app.decompiler import DecompInterface, DecompileOptions
+    from ghidra.app.decompiler import DecompileOptions, DecompInterface
     fm = program.getFunctionManager()
     space = program.getAddressFactory().getDefaultAddressSpace()
     local, opened, lock = threading.local(), [], threading.Lock()
