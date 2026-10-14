@@ -27,7 +27,7 @@ marked verified by two agents):
   0x25f180 == 0x80` bytes == 32 words, so the master mix is 32 PLANAR L
   floats (`DM(0x25f180)`) followed by 32 PLANAR R floats (`DM(0x25f200)`),
   plain IEEE float32, NOT interleaved -- matching
-  `tools/sharc_dev/sharc_harness.py`'s `read_master_mix()`, which already reads 64
+  `tools/sharc_dev/sharc_harness/`'s `read_master_mix()`, which already reads 64
   contiguous floats from `DM(0x25f180)` as one buffer.
 
 * Each of the two samples read per iteration is converted with the ALU's
@@ -78,7 +78,7 @@ the tone breaks" section, which places the break at or before the master
 mix (`DM(0x25f180)`), one stage upstream of everything this module reads.
 
 The functions below are this project's one reader for the ring-A/DAC
-format (replacing `tools/sharc_dev/sharc_harness.py`'s former hand-rolled interleave
+format (replacing `tools/sharc_dev/sharc_harness/`'s former hand-rolled interleave
 logic in `read_ring_a()`) and a stereo WAV writer to go with it.
 """
 
@@ -125,7 +125,7 @@ CONVERT_CALL_SW = 0x1C7734  # inside the command-3 render path
 
 #: DmRead(address) -> unsigned 32-bit int, or None if unmapped -- the one
 #: adapter every function below needs, so this module never has to import
-#: sharc_core/sharc_trace itself (tools/sharc_dev/sharc_harness.py supplies a small
+#: sharc_core/sharc_trace itself (tools/sharc_dev/sharc_harness/ supplies a small
 #: closure over Runner.state instead; see its own read_ring_a()).
 DmRead = Callable[[int], "int | None"]
 
@@ -232,7 +232,7 @@ def decode_ring_a_words(words: Sequence[int | None]) -> RingAFrame:
 def read_ring_a_pcm(dm_read: DmRead, ring_flag_value: int | None) -> RingAFrame:
     """The DAC-facing ring-A half the last completed frame wrote, read
     through DM_READ (an `address -> unsigned 32-bit int | None` callable --
-    `tools/sharc_dev/sharc_harness.py`'s `read_ring_a()` passes a closure over
+    `tools/sharc_dev/sharc_harness/`'s `read_ring_a()` passes a closure over
     `sharc_trace._dm_read`/`Runner.state`, so this module never needs to
     import `sharc_core` itself).
 
@@ -282,7 +282,7 @@ def write_wav_stereo(
     sample_rate: int = 48000,
 ) -> None:
     """A plain 16-bit PCM stereo WAV of LEFT/RIGHT (both in [-1.0, 1.0],
-    clipped) -- `tools/sharc_dev/sharc_harness.py`'s own `write_wav()` is mono-only,
+    clipped) -- `tools/sharc_dev/sharc_harness/`'s own `write_wav()` is mono-only,
     and ring A is stereo by construction (module docstring); this is the
     ring-A counterpart it delegates to (see its own `write_ring_a_wav()`)."""
     if len(left) != len(right):

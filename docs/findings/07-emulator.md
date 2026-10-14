@@ -1490,7 +1490,7 @@ Support used to reach the "one voice renders correctly" result in finding
 06: run `FUN_1c15e3` (init) to its return, then apply setup, to get a
 post-init snapshot to start a render from, instead of a full cold boot.
 Register/memory watchpoints and `diagnose_unknown` (both in
-`tools/sharc_dev/sharc_harness.py`) narrow a stuck or wrong-value run to the
+`tools/sharc_dev/sharc_harness/`) narrow a stuck or wrong-value run to the
 instruction that produced it. `tools/sharc_dev/sharc_survey.py` runs a bounded batch
 of these probes over a function or region in one pass. `Image.cfg`,
 `callgraph`, `defuse` and `slice` (`tools/sharc_dev/sharc.py`) give the control-flow

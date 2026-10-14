@@ -114,7 +114,7 @@ def write_ring_a_wav(
     """Concatenate `read_ring_a()`'s own per-frame return dicts (RINGS, in
     frame order) into one WAV at PATH: stereo (both of ring A's own L/R
     channels, `sharc_dac.write_wav_stereo()`) by default, or a mono L+R
-    average (`tools/sharc_dev/sharc_harness.py`'s own `write_wav()`, the same
+    average (`tools/sharc_dev/sharc_harness/`'s own `write_wav()`, the same
     downmix `render_frames_to_ring_a()` already computes for
     `measure_tone()`) when STEREO is False.
 

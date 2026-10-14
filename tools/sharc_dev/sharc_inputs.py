@@ -30,7 +30,7 @@ Static labels, checked in this order (the first that applies wins):
                       this labeller used to report as `no_writer` for root
                       0x1c2b24 land in this range, including the per-track
                       gain/mixer mirror 0x255fb6-0x2560d0 FRAME_PATCH_TABLE
-                      (tools/sharc_dev/sharc_harness.py) already had to hand-patch
+                      (tools/sharc_dev/sharc_harness/) already had to hand-patch
                       around (0x2560b8, "a per-track mixer/gain parameter
                       mirror this lane's synthetic frame never populated").
     (c) sharc_root -- some OTHER SHARC+ function (outside ROOT's own reach

@@ -210,7 +210,7 @@ The copy gate: sharcdb's `ptr` table has one store to `0x2567dc`
 `0x1c2c88`.
 
 **The copy gate [V].** The only SHARC store to DM `0x2567dc` is the clear
-at sw `0x1c2c8b`. `tools/sharc_dev/sharc_harness.py`'s `drive_dma_completion()` used
+at sw `0x1c2c8b`. `tools/sharc_dev/sharc_harness/`'s `drive_dma_completion()` used
 to re-arm it every frame (a stand-in from lane G1), which made render_frame
 copy the landing ring at the start of every frame; the flag table and the
 trig test then read the same frame and step 3 was dead code. It now

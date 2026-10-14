@@ -267,7 +267,7 @@ CLEAN = [
     "tools/sharc_dev/sharc_disasm.py",
     "tools/sharc_dev/sharc_dmamap.py",
     "tools/sharc_dev/sharc_framemap.py",
-    "tools/sharc_dev/sharc_harness.py",
+    "tools/sharc_dev/sharc_harness",
     "tools/sharc_dev/sharc_inputs.py",
     "tools/sharc_dev/sharc_lp0.py",
     "tools/sharc_dev/sharc_memdiff.py",
@@ -302,6 +302,8 @@ CLEAN = [
     "tools/sharc_dev/__init__.py",
     "tools/devtools/relocate.py",
     "tests/devtools/test_relocate.py",
+    "tools/devtools/split_module.py",
+    "tests/devtools/test_split_module.py",
 ]
 
 

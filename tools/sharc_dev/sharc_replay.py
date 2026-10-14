@@ -20,7 +20,7 @@ For each captured DSPI2 frame, in capture order:
    firmware do the rest (lane G1, 2026-09-26)**, instead of poking a
    confirmed-by-execution but firmware-internal buffer directly. Lane G1
    traced the SPI-slave receive DMA's own descriptor-list ring
-   (`tools/sharc_dev/sharc_harness.py`'s own module note above
+   (`tools/sharc_dev/sharc_harness/`'s own module note above
    `dma_landing_address()`: `FUN_1c7bd4` builds it at DM `0x2641b0`/
    `0x2641cc`, ADDRSTART fields pointing at `command_word`'s own two
    ping-pong instances, `0x264220`/`0x265220` on DT2 1.16 -- the SC58x/
@@ -50,7 +50,7 @@ For each captured DSPI2 frame, in capture order:
    the real hardware address.
 
 3. **Drives the real audio-task call chain**, the same one
-   tools/sharc_dev/sharc_harness.py's `render_frames()`/`call_frame()` already proved
+   tools/sharc_dev/sharc_harness/'s `render_frames()`/`call_frame()` already proved
    reaches render_frame (block_handler -> command_dispatch_fn ->
    cmd_handler_3 -> render_frame -- docs/findings/06's "Frame call path"),
    with `FRAME_PATCH_TABLE` (that module's own hypotheses for the stops an
@@ -102,7 +102,7 @@ Stops are reported exactly as `tools/sharc_dev/sharc_survey.py`'s `CollectStop`s
 them (category, pc, form, unknowns), via `FRAME_PATCH_TABLE` the same way
 `sharc_harness.render_frames()` applies it. This tool never adds a new
 patch-table hypothesis of its own -- one belongs in `FRAME_PATCH_TABLE`
-(tools/sharc_dev/sharc_harness.py, this lane's own file), not here.
+(tools/sharc_dev/sharc_harness/, this lane's own file), not here.
 """
 
 from __future__ import annotations
@@ -130,7 +130,7 @@ from tools.sharc_dev import sharc_trace as st  # noqa: E402
 # a 2,048-byte copy from the real hardware landing zone
 # (sharc_harness.dma_landing_address()) every frame it runs -- not
 # something this tool writes to any more (see the module docstring, point
-# 2, and sharc_harness.py's own section note above dma_landing_address()).
+# 2, and sharc_harness's own section note above dma_landing_address()).
 # Kept here only for describe_frame()'s own per-track byte offsets below,
 # which are relative to this same base either way.
 RX_BASE = 0x2558DC
@@ -566,7 +566,7 @@ def _mono(ring_a_blocks: list[list[float]]) -> list[float]:
 # `frame_label()` bucket). `MASTER_BUS_DECODED` is `FUN_1c2b24`'s own
 # 0x1c2e00-0x1c2fb0 decode of that table into per-channel dynamics
 # parameters (this branch's own "Continuity across frames, root-caused"
-# note in tools/sharc_dev/sharc_harness.py); `MIX_GATE` is `DM(0x252d3c)`
+# note in tools/sharc_dev/sharc_harness/); `MIX_GATE` is `DM(0x252d3c)`
 # (docs/findings/06's still-open mix gate, three known writers: init
 # 0x1c1643, `FUN_1cb336`'s own reset at 0x1cb33a, and `FUN_1cdbb2`'s
 # 0x1cdc23); `SLOT_TYPE_WATCH` covers the 32 voice records
@@ -703,7 +703,7 @@ FUN_1C60A2 = 0x1C60A2  # docs/findings/06's Lane E2 machine-type change detector
 # docs/findings/06's Lane F2: the pointer FUN_1c60a2's own gate dereferences
 # -- null (via State.explicit_memory_model) everywhere this project has run
 # with an unfilled companding record. A real, correctly-delivered transfer
-# (lane G1) does not fill DM(0x266220) either (see sharc_harness.py's own
+# (lane G1) does not fill DM(0x266220) either (see sharc_harness's own
 # section note: the transfer fits inside command_word's own ring, and never
 # reaches command_record_table's), so this stays a diagnostic read, not
 # something this tool expects to change -- reported per frame either way.
@@ -1058,7 +1058,7 @@ def _hex_or_none(value: int | None) -> str | None:
 BUILTIN_SAMPLE_BASE = 0x8045A6C8
 BUILTIN_SAMPLE_LEN = 368
 
-# FUN_1c4f81's own DO 64 interpolation loop (sharc_harness.py's module
+# FUN_1c4f81's own DO 64 interpolation loop (sharc_harness's module
 # docstring, "Corrected voice call convention") advances the raw-sample
 # read position by `pitch_step` per iteration, 64 iterations per voice
 # render call, and one voice render call happens once per frame
@@ -1138,7 +1138,7 @@ def _make_voice_rearm_hook(
 
     Moving the poke to `voice_render`'s own entry (`profile(image).
     voice_render`, checked against the incoming `R4` -- the record base,
-    per `sharc_harness.py`'s own "Corrected voice call convention" --
+    per `sharc_harness`'s own "Corrected voice call convention" --
     since this entry point is shared by all 32 voices' own dispatch, once
     per frame each) fixed frame 304 alone (the arm frame): its own
     injected output then matched `reference_render()` almost exactly. But
@@ -1436,7 +1436,7 @@ def replay_armed_voice(
     Ring A (`sharc_harness.read_ring_a()`, deinterleaved L/R -- NOT this
     module's own `_read_ring_a()`/`_mono()`, whose plain `0.5*(L+R)`
     downmix cancels to silence for a coherent signal identically written
-    to both channels, per `sharc_harness.py`'s own "ring A's own L channel
+    to both channels, per `sharc_harness`'s own "ring A's own L channel
     is deliberately negated" module note) is read every frame and kept
     per-frame; `render_left`/`render_right` are the concatenation of frames
     `[arm_frame, arm_frame + active_frames + EXTRA_FRAMES)` -- the demo

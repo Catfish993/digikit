@@ -4,7 +4,7 @@ their own decoded l/x/w/sw/ex fields say they should use.
 Two independent checks, run separately or together:
 
 **Concrete mode** (default): run one root -- the voice render
-(``tools/sharc_dev/sharc_harness.py``'s ``call_render``, from a ``run_init()`` state
+(``tools/sharc_dev/sharc_harness/``'s ``call_render``, from a ``run_init()`` state
 with one voice set up), the frame render (``call_frame``), or an explicit
 ``--pc``) with ``sharc_core.state.State.record_events`` turned on, so every
 form handler's own ``_event()`` call (forms_move.py/forms_dag.py/

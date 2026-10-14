@@ -86,7 +86,7 @@ to: ``reset``, ``exchange``, ``audio_rx``, ``audio_tx``, ``advance``,
   4 bytes); ``audio_rx`` returns silence or (``--audio-mode tone``) an 8-bit
   ramp, so a test can assert on either without decoding a PCM format.
 - ``RunnerBackend``: where the real SHARC core (`tools/sharc_dev/sharc_run.py` /
-  `tools/sharc_dev/sharc_harness.py`, a different lane's work) plugs in once it can
+  `tools/sharc_dev/sharc_harness/`, a different lane's work) plugs in once it can
   run the audio task end to end. Not implemented yet -- lane A2 is still
   getting one voice to render correctly, so there is nothing to plug in.
   Every method raises ``NotImplementedError`` with the same message; the
@@ -300,7 +300,7 @@ class RunnerBackend(Backend):
 
     The real SHARC audio task cannot run end to end: lane A2 is still
     getting one voice to render correctly (`tools/sharc_dev/sharc_run.py`'s
-    ``sharc_run`` harness / `tools/sharc_dev/sharc_harness.py`), and the server-process
+    ``sharc_run`` harness / `tools/sharc_dev/sharc_harness/`), and the server-process
     split is orthogonal to that work -- this class exists so the protocol
     and the client (`emu/sharc_peer.py`) are already exercised against the
     exact shape a finished runner will need, not so the runner is ready now.

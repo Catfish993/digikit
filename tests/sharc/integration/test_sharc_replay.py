@@ -272,7 +272,7 @@ class ReplayIdleCaptureTest(unittest.TestCase):
     (sharc_harness.write_dma_transfer()/drive_dma_completion(), lane G1,
     2026-09-26) instead of poking RX_BASE/command_word directly -- and pins
     today's own result as a milestone, the same convention
-    tools/sharc_dev/sharc_harness.py's FRAME_MILESTONE uses for a single bare frame
+    tools/sharc_dev/sharc_harness/'s FRAME_MILESTONE uses for a single bare frame
     call.
 
     This capture's own header word is 1 (docs/findings/04's "a header
@@ -287,7 +287,7 @@ class ReplayIdleCaptureTest(unittest.TestCase):
     - frame 1 -- the FIRST real render call -- reaches the same
       "frame-returned" milestone at 95063 instructions: close to, but not
       identical to, the pre-lane-G1 pin (95982) -- expected, since
-      render_frame's own companding-copy loop (sharc_harness.py's own
+      render_frame's own companding-copy loop (sharc_harness's own
       section note above dma_landing_address()) now actually copies this
       frame's REAL, correctly byte-swapped transfer from the hardware
       landing zone, instead of copying whatever was left at RX_BASE by an
@@ -614,7 +614,7 @@ class ArmedVoiceRealSampleReplayTest(unittest.TestCase):
         # against the source sample).
         self.assertGreater(max(abs(v) for v in result["render_left"]), 0.3)
         self.assertGreater(max(abs(v) for v in result["render_right"]), 0.3)
-        # Ring A's own documented L/R negation (sharc_harness.py's module
+        # Ring A's own documented L/R negation (sharc_harness's module
         # note): both channels carry the identical mono signal this lane's
         # inject_master_mix() writes, so L is exactly R's negation.
         for left_sample, right_sample in zip(

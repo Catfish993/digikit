@@ -46,7 +46,7 @@ class FirmwareBackedTest(unittest.TestCase):
 
         # FIELD_SAMPLE_PTR (record+0): this lane's own finding, not
         # previously in docs/findings/06's contract table -- see
-        # sharc_harness.py's module docstring's "The record+0 open
+        # sharc_harness's module docstring's "The record+0 open
         # problem, resolved" section.
         self.assertEqual(read32(h.FIELD_SAMPLE_PTR), 0x310000)
         self.assertEqual(read32(h.FIELD_STEP), 1 << 31)  # step 1.0 in Q31

@@ -295,7 +295,7 @@ SYMBOLS: list[tuple[str, _Rule, frozenset[str]]] = [
     # command_dispatch_fn's OTHER by-reference output (docs/findings/06
     # "Frame call path": R1 = DM(I6-2), the record render_frame's own M9
     # points at) -- the same shift folded into command_word, added to a
-    # DIFFERENT base (lane F2, 2026-09-26). See sharc_harness.py's
+    # DIFFERENT base (lane F2, 2026-09-26). See sharc_harness's
     # companding_record_address().
     ('command_record_table', LiteralAt('command_dispatch_fn', 0x1D, form='17a'), REQUIRED_COMMON),
 

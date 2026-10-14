@@ -3459,7 +3459,7 @@ compu(R6, 6)`, `0x1c6561 JUMP IF GE 0x1c65fe` (unsigned), `0x1c6579 JUMP
 
 Checked with two independent agents: one from the image bytes and the
 public manual, one from database dataflow and concrete execution
-(`tools/sharc_dev/sharc_run.py`, `tools/sharc_dev/sharc_harness.py`).
+(`tools/sharc_dev/sharc_run.py`, `tools/sharc_dev/sharc_harness/`).
 
 **Call convention [V][C].** `FUN_1c2b24` loads `R4 = 0x2412c8` (`0x1c3080`)
 and calls `FUN_1c642a` (`0x1c3083`), which saves it at `DM(I6-4)`
@@ -3507,7 +3507,7 @@ for every voice. **[O]** What `0x1c7442` stores in the other record words.
 
 Two agents checked this round: one against the raw image bytes and the
 public PRM encode tables, one by concrete execution
-(`tools/sharc_dev/sharc_run.py`/`tools/sharc_dev/sharc_harness.py` from the post-init state).
+(`tools/sharc_dev/sharc_run.py`/`tools/sharc_dev/sharc_harness/` from the post-init state).
 This corrects the coefficient-table claim above and closes the 6-tap render
 loop `FUN_1c4f81` end to end.
 
@@ -3685,7 +3685,7 @@ own `CALL 0x1c207b` (`0x1c3099`) -- reaches a genuine non-zero
 frame, with no other perturbation: `0x1c207b`'s own per-track sum, bus
 routing, dynamics call and gain stage, and `0x1c74a1`'s Q31 ring-A
 conversion, all run unmodified and correctly propagate real content once
-they have it. `tools/sharc_dev/sharc_harness.py`'s `inject_track_buffer()`/
+they have it. `tools/sharc_dev/sharc_harness/`'s `inject_track_buffer()`/
 `render_frames_to_ring_a()` implement this (see their own docstrings for
 the full evidence and the "Master stage" call-site citation). **[O]** A
 single continuous multi-frame render (one Runner, not re-initialized per
@@ -3733,7 +3733,7 @@ compressor's own steady state is silence, and frame 0 is one frame's
 worth of "not yet converged" grace period, not a working master bus.
 
 **Fix applied (documented hypothesis, not a discovered real gate):**
-`tools/sharc_dev/sharc_harness.py`'s `CONTINUOUS_MIX_SCALAR_PATCH` pins R1/R2/R12 to
+`tools/sharc_dev/sharc_harness/`'s `CONTINUOUS_MIX_SCALAR_PATCH` pins R1/R2/R12 to
 frame 0's own real, execution-confirmed values at every recurrence of
 `pc=0x1c2353` -- the same "register-only override at one pc" technique
 recommended above, via the `PatchTable` mechanism `FRAME_PATCH_TABLE`
@@ -3805,7 +3805,7 @@ remain **[O]**.
 > "Core fixes that the path needed".
 
 **The `0x1c4969` fork's own harness patch is the frame-path pitch bug's
-root cause (lane E1, 2026-09-26) `[O]`.** `tools/sharc_dev/sharc_harness.py`'s
+root cause (lane E1, 2026-09-26) `[O]`.** `tools/sharc_dev/sharc_harness/`'s
 `FRAME_PATCH_TABLE` gets past this fork by forcing the fcomp's own operands
 (`F6`, `F4` -- register aliases `R6`/`R4`) to a fixed `1.0f`/`1.0f` at
 `0x1c4965`, one instruction before the fork. This resolves the branch
@@ -4010,7 +4010,7 @@ has real, nonzero bytes across the whole per-track gate-source range
 `0x94 + 2i`, docs/findings/04 -- track index 2 = machine type 2, the only
 one of this capture's own kit tracks with one assigned). Loading this range
 verbatim (masking only the *master-bus parameter table*,
-`0x255fb6`-`0x2560d0`, out -- see `tools/sharc_dev/sharc_harness.py`'s
+`0x255fb6`-`0x2560d0`, out -- see `tools/sharc_dev/sharc_harness/`'s
 `MASTER_BUS_TABLE_RANGE` docstring for why) and running 20 continuous
 `block_handler` frames with NO injection hack of any kind still leaves the
 per-track master-stage input (`TRACK_MIX_BASE`), the master mix
@@ -4027,12 +4027,12 @@ content: real, nonzero bytes there deterministically trip a brand-new
 semantics) on the SECOND real-frame-driven `block_handler` call -- plausibly
 a real machine type reaching `FUN_1c642a`'s dispatch for the first time
 entering genuine per-machine synthesis code this project has never executed
-before (see `tools/sharc_dev/sharc_harness.py`'s `MASTER_BUS_TABLE_RANGE` docstring
+before (see `tools/sharc_dev/sharc_harness/`'s `MASTER_BUS_TABLE_RANGE` docstring
 for the full evidence). Whether a real master-bus configuration (as opposed
 to the zeroed one this re-check used) changes the outcome remains open.
 
 **The fix taken: inject past this entire stage, onto the master mix
-itself.** `tools/sharc_dev/sharc_harness.py`'s `inject_master_mix()`, applied at
+itself.** `tools/sharc_dev/sharc_harness/`'s `inject_master_mix()`, applied at
 `MASTER_MIX_INJECT_PC` (`0x1c7734`, the call site of `FUN_1c74a1`, right
 after `FUN_1c2b24` -- the whole render orchestrator -- has returned for
 this frame), writes the same 32 decimated samples `inject_track_buffer()`
@@ -4333,7 +4333,7 @@ past a call boundary) pins down why, precisely:
   kind of unverified guess this repo's CLAUDE.md rules out for a
   `sharc_core` fix (a PRM page, a test, or a widthaudit 0-mismatch proof).
 
-**Net: both `FRAME_PATCH_TABLE` entries stay** (`tools/sharc_dev/sharc_harness.py`'s
+**Net: both `FRAME_PATCH_TABLE` entries stay** (`tools/sharc_dev/sharc_harness/`'s
 own comments there are updated with this section's findings). This lane's
 own task ("remove both, and match `output = freq * pitch_step`") is not
 achievable without either fixing one of these two `tools/sharc_dev/sharc_core` gaps
@@ -4476,7 +4476,7 @@ between by any oracle test.
 Implemented that one combined candidate as a throwaway, uncommitted
 monkeypatch (BITEXT(NU) with `BITLEN12>32` returns `Const(0)`), removed
 `0x1C4965`, and ran the harness's real-frame render
-(`tools/sharc_dev/sharc_harness.py`'s `render_frames_to_ring_a`, called via its
+(`tools/sharc_dev/sharc_harness/`'s `render_frames_to_ring_a`, called via its
 `--frame --ring-a` CLI option) at `freq=1000` Hz, `pitch_step` in
 `{1.0, 0.5}`:
 
@@ -4599,7 +4599,7 @@ independent method); no voice is armed by firmware from a real frame.
 - `tools/sharc_dev/sharc_symbols.py`: new `command_record_table` symbol
   (`LiteralAt('command_dispatch_fn', 0x1d, form='17a')`), resolves to
   `0x266220` on DT2 1.16.
-- `tools/sharc_dev/sharc_harness.py`: `FRAME_PATCH_TABLE`'s own comments corrected
+- `tools/sharc_dev/sharc_harness/`: `FRAME_PATCH_TABLE`'s own comments corrected
   per this section's task-1 findings; new `companding_record_address()`/
   `companding_record_fields()` plus `COMPANDING_RECORD_FIELD_OFFSETS`/
   `COMPANDING_RECORD_TARGETS`. No `render_frames_to_ring_a()` behaviour
@@ -4632,7 +4632,7 @@ ping-pong shift, on a specific event-code bit; it does not touch
 block and had to be re-armed explicitly (`sharc_harness.
 drive_dma_completion()`) since no other writer of it was found.
 
-**Owned-file changes (this lane): `tools/sharc_dev/sharc_harness.py`.** New section
+**Owned-file changes (this lane): `tools/sharc_dev/sharc_harness/`.** New section
 above `companding_record_fields()`: `dma_landing_address()` (the real
 ADDRSTART for a NEW transfer -- the ring `command_word_shift_src` is NOT
 currently pointing at), `write_dma_transfer()` (writes a captured frame's

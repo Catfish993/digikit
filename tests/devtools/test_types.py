@@ -52,7 +52,7 @@ TYPED = [
     "tools/sharc_dev/sharc_disasm.py",
     "tools/sharc_dev/sharc_dn2_aot.py",
     "tools/sharc_dev/sharc_framemap.py",
-    "tools/sharc_dev/sharc_harness.py",
+    "tools/sharc_dev/sharc_harness",
     "tools/sharc_dev/sharc_inputs.py",
     "tools/sharc_dev/sharc_proc.py",
     "tools/sharc_dev/sharc_rsgen.py",

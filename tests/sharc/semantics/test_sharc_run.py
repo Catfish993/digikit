@@ -22,12 +22,12 @@ T = import_module("tools.sharc_dev.sharc_trace")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 L = import_module("tools.sharc_dev.sharcldr")
 # Only for the two firmware-backed watchpoint regression tests below
-# (WatchpointFirmwareTest): tools/sharc_dev/sharc_harness.py owns voice-record layout
+# (WatchpointFirmwareTest): tools/sharc_dev/sharc_harness/ owns voice-record layout
 # and setup_voice()/call_render(), which this file must not hand-duplicate
 # (see InitSnapshotFirmwareTest's own docstring for why a different, earlier
 # firmware test here chose to duplicate rather than import it -- that
 # reasoning was about a module edited by a *different* concurrent lane at
-# the time; tools/sharc_dev/sharc_harness.py is not being edited by anyone else here).
+# the time; tools/sharc_dev/sharc_harness/ is not being edited by anyone else here).
 h = import_module("tools.sharc_dev.sharc_harness")
 
 ROOT = str(REPO_ROOT)
@@ -845,7 +845,7 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
     """Runs the real init routine (FUN_1c15e3, ~1.24M instructions -- see
     docs/findings/06) to its return and checks that a snapshot saved there
     restores byte-for-byte into a fresh Runner. Slow (~15s): run with
-    --slow. Talks to sharc_run.py only (not tools/sharc_dev/sharc_harness.py, edited
+    --slow. Talks to sharc_run.py only (not tools/sharc_dev/sharc_harness/, edited
     by another lane concurrently), duplicating its _make_runner() options
     (explicit_memory_model/approx_recips) and the documented init address
     directly.
@@ -884,7 +884,7 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 SHARC loader is not available")
 class WatchpointFirmwareTest(unittest.TestCase):
     """Both watchpoint bugs this lane fixed, reproduced against the real
-    DT2 1.16 image via tools/sharc_dev/sharc_harness.py's voice-record layout and
+    DT2 1.16 image via tools/sharc_dev/sharc_harness/'s voice-record layout and
     setup_voice()/call_render() -- sharc_run.py owns none of that record
     layout, and hand-duplicating its Q31/field pokes here would risk
     silently drifting from it. Neither test is slow: both run one bare-state

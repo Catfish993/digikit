@@ -327,7 +327,7 @@ def fresh_call_state(
 
     dataclasses.replace() keeps every scalar config field the source had
     (explicit_memory_model, approx_recips, follow_loaded_calls, ... -- the
-    same reasoning tools/sharc_dev/sharc_harness.py's own _clone_state() docstring
+    same reasoning tools/sharc_dev/sharc_harness/'s own _clone_state() docstring
     gives for why this is not sharc_core.state._copy(): that helper's
     positional State(...) construction always resets a clone's
     explicit_memory_model to False) and gives every mutable container this
@@ -338,7 +338,7 @@ def fresh_call_state(
     is a fresh call, not a continuation of wherever STATE's own pc_sw was.
     ``pending``/``stopped`` must ALSO be cleared, and are not covered by
     resetting those three alone -- a Runner that halted on its own RTS's
-    "return without followed call" (how tools/sharc_dev/sharc_harness.py's run_init()
+    "return without followed call" (how tools/sharc_dev/sharc_harness/'s run_init()
     recognises completion) still carries that pending delayed-branch
     completion and the stopped marker on its State, and either one would
     otherwise immediately re-fire as this call's very first step. This is

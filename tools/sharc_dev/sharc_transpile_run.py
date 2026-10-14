@@ -1395,9 +1395,10 @@ LIVE_VERSION = 1
 # a library generated from another core).
 LIVE_TRAILER_VERSION = 3
 # Files whose code builds the start state or defines its format: a change
-# to any of them makes a cached pack stale.
+# to any of them makes a cached pack stale. A directory entry stands for
+# every *.py file under it.
 LIVE_STATE_FILES = (
-    "sharc_harness.py",
+    "sharc_harness",
     "sharc_lp0.py",
     "sharc_run.py",
     "sharc_trace.py",
@@ -1439,7 +1440,19 @@ def live_key(
     h.update((_file_sha256(lp0) if lp0 else "-").encode())
     h.update(sharc_transpile.core_hash().encode())
     for name in LIVE_STATE_FILES:
-        h.update(_file_sha256(os.path.join(HERE, name)).encode())
+        path = os.path.join(HERE, name)
+        if os.path.isdir(path):
+            rels = sorted(
+                os.path.relpath(os.path.join(dirpath, f), path)
+                for dirpath, _dirs, files in os.walk(path)
+                for f in files
+                if f.endswith(".py")
+            )
+            for rel in rels:
+                h.update(rel.encode())
+                h.update(_file_sha256(os.path.join(path, rel)).encode())
+        else:
+            h.update(_file_sha256(path).encode())
     h.update(b"start %d" % start_frame)
     if card_sha256:
         h.update(b"\ncard %s" % card_sha256.lower().encode())

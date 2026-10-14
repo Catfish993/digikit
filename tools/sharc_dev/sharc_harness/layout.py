@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import os
-
 from tools.sharc_dev import sharc as sharcmod
 from tools.sharc_dev import sharc_symbols
-
-HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Firmware addresses (functions, tables) come from tools/sharc_dev/sharc_symbols.py's
 # resolve(), not a hardcoded dict: cached per image so repeated calls in one

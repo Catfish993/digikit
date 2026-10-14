@@ -109,7 +109,7 @@ def trace_mmr_writes(
     was reached first, i.e. the run did not stop on its own).
 
     RUNNER must already have ``state.explicit_memory_model`` set (every
-    entry point ``tools/sharc_dev/sharc_harness.py`` builds already does --
+    entry point ``tools/sharc_dev/sharc_harness/`` builds already does --
     ``_make_runner()``): a bare Runner still writes ``state.mmrs`` on a
     fixed-width MMR store (``sharc_core.memory._dm_write``'s
     ``fixed_width_mmr`` branch fires regardless), but the very next
