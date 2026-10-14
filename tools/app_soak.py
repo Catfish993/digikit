@@ -19,12 +19,13 @@ import re
 import sys
 import time
 
-sys.path.insert(0, "/Users/em/src/digi/digitakt2/tools")
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tools"))
 from digi_client import Emu
 
 log, dur = sys.argv[1], float(sys.argv[2]) if len(sys.argv) > 2 else 60
 dt2 = "--dt2" in sys.argv
-root = "/Users/em/src/digi/digitakt2/"
+root = str(ROOT) + "/"
 sock = None
 t0 = time.time()
 while time.time() - t0 < 3600:
