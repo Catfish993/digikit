@@ -14,6 +14,34 @@ one implementation:
   browser, sees the patched firmware boot, and downloads the patched `.syx`. Firmware never leaves the browser and
   the site never hosts firmware.
 
+## State and backlog (2026-10-14, prepared for merge to main)
+
+Read this first; the phase notes below are the history. Handover: `docs/handovers/HANDOVER-2026-10-14-patchkit.md`.
+Repository-wide follow-up (structure, TypeScript test runner, collaborator readiness) continues in Em's cleanup plan;
+patched-image DSP speed and headroom measurement in the SHARC/ColdFire performance plan.
+
+Done: Phases 0, 1, 2, 3 (DT2 and DN2), 3b (frameworks as modules on generic primitives), 4.1-4.2 (master-gain,
+master-drive, sine voice, PLUCK on DT2 and DN2), 5 (gallery), 6 (fw.py, atlas), 7 (PATCHING.md, MODULE-AUTHORING.md,
+modules/README.md); permanent machine type numbers; quick proof tier (`mise run patch:proofs`, 387 s); smoke matrix 15
+cells; second-agent checks of findings 01/02/04/06/08/17. Nothing flashed.
+
+Backlog for patchkit itself (the rest lives in the plans named above):
+
+- [ ] Gallery: validation surfaced per module (compatible, conflicts, claims, capacity) and a memory and headroom map
+      from `plan.json` (container vs the 3 MiB cap, cf.expansion, dsp.l2, boot-stream append) that fills in as modules
+      are selected.
+- [ ] Per-module budget in manifests (DSP instructions per block, memory), measured in the emulator, shown in the
+      gallery.
+- [ ] Region guard in the emulator (writes by stock code into allocated module regions fail a run); used by the
+      regression suite.
+- [ ] Recipes and starter templates: parameter, DSP voice, master-bus effect, ColdFire UI hook (machine exists).
+- [ ] Parameter locks on added parameters: test.
+- [ ] `fw:onboard` (not built): one pipeline from a new `.syx` to databases, ports and a device-profile skeleton
+      (next devices: Syntakt, Analog Rytm MkII).
+- [ ] A master-effects framework (several master-bus modules at once).
+- [ ] Later: an on-device runtime (module menu, CPU/RAM health) and dynamic module loading from +Drive; granular;
+      cross-porting between devices.
+
 ## Facts this design rests on
 
 - Container: checksum, HMAC trailer and per-packet checksums are reproduced; `dt2.build.rebuild` repacks and
