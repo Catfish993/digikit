@@ -28,7 +28,7 @@ uv run --with pymupdf python classic_tables.py       # PGR tables   -> classic.j
 uv run python compare_sources.py                     # bit-by-bit PRM vs PGR report
 uv run python check_overlaps.py                      # patterns no fixed bit distinguishes
 uv run python check_template_digits.py
-uv run --with pymupdf python verify_overlay.py       # renders/sheet_NN.png visual check
+uv run --with pymupdf python -m tools.sharc_dev.sharcspec.verify_overlay   # from the repo root; renders/sheet_NN.png visual check
 ```
 
 Pattern strings run MSB first: `0`/`1` fixed, `x` field, `-` unused (yellow),

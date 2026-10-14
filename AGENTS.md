@@ -40,7 +40,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Never wait with `tail -f` or any other command that does not exit: it blocks the tool call until its timeout. Poll
   with a bound (`sleep N; tail -n 5 FILE`) or use a monitor.
 - Lane agents iterate and finish on the quick proof tier (`--quick`, budget about 60 s per tool). The coordinator
-  integrates with `mise run verify` plus the smoke matrix (`tools/patchkit/pk_harness.py run --jobs N`), not by re-running
+  integrates with `mise run verify` plus the smoke matrix (`uv run python -m tools.patchkit.pk_harness run --jobs N`), not by re-running
   every proof tool. Full-tier proofs run only before a merge to `main`. Do not re-run old full proofs to measure a
   baseline that is already recorded.
 - Stop only processes you started (by PID or run directory). Never `pkill`/`killall` emulator processes: other lanes
@@ -60,7 +60,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   triggers and the changed test files; not all of tests/, which `mise run test` runs) — one process per file (DIGI_PY_JOBS, DIGI_PY_TIMEOUT), rust-tests (cargo test
   --workspace), card
   (in-process DT2 card: trigs play the files), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
-- Scenario renders are cached by content (out/cache/renders; tools/devtools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `tools/emulator/coupled.py cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python tests/devtools/test_render_inputs.py --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
+- Scenario renders are cached by content (out/cache/renders; tools/devtools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `uv run python -m tools.emulator.coupled cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python -m tests.devtools.test_render_inputs --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
 - While working, run only the tests for the code you changed.
 - Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
   `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
@@ -70,6 +70,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 
 ## Build and run
 
+- Python tools: `tools/` is a package with one subpackage per owner (docs/LAYOUT.md); the repository root is the only import root. Run a tool as `uv run python -m tools.<owner>.<module>` from the repository root and import it as `from tools.<owner> import <module>`. Never change `sys.path`. A tool that starts another tool runs `[sys.executable, "-m", "tools.<owner>.<module>", ...]` with `env=tools.python_env()`.
 - mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
   `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo` (both devices, then rebuilds the launcher), `pgo:dn2`, `pgo:dt2`, `gen:core`.
 - Paths, toolchain and fast-region tables: tools/emulator/digi_env.py, tools/emulator/fast_regions.json.
@@ -77,12 +78,12 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   paths resolve from the repo root), native/sharc (engine and fast tier), native/sharc-fast-cl and
   native/sharc-fast-wasm (kernel backends). Editing the engine or fast tier rebuilds in about 20 s; editing
   sharc-rt rebuilds the generated core (4 to 12 minutes).
-- A change to tools/sharc_dev/sharc_core, tools/sharc_dev/sharc_transpile.py or tools/sharc_dev/sharc_rsgen.py changes `CORE_FINGERPRINT`:
+- A change to tools/sharc_dev/sharc_core, tools/sharc_dev/sharc_transpile.py or tools/sharc_dev/sharc_rsgen.py changes `CORE_FINGERPRINT` (it hashes those files' paths relative to tools/sharc_dev and their bytes):
   regenerate every core (DN2 and DT2 from out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt, the shared core with
   `mise run gen:core`), backing up each gen dir first.
 - `out/native/target/*/pgo-use` belongs to the launcher; experiments build elsewhere (`DIGI_EMU_PGO_VARIANT`).
   PGO profiles are per device (`mise run pgo:dn2`, `mise run pgo:dt2`, or `mise run pgo` for both; underlying
-  `tools/emulator/native_pgo.py train [--device dt2]`); retrain at milestones.
+  `uv run python -m tools.emulator.native_pgo train [--device dt2]`); retrain at milestones.
 - Builds and timed runs share the machine through tools/devtools/benchlock.py (shared for builds, exclusive for
   benchmarks). tools/devtools/coupled_ab.py, native_pgo.py and sharc_regionbench.py take the lock themselves (wrapping them
   deadlocks).
@@ -95,7 +96,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Instrumentation (details in docs/INSTRUMENTATION.md)
 
 - App real time: `DIGI_SPIKE_LOG=DIR mise run emu`, then `uv run python -m tools.devtools.spikes DIR`; unattended runs:
-  `tools/devtools/app_soak.py`; app audio capture: `DIGI_EMU_SINK_WAV=FILE`.
+  `uv run python -m tools.devtools.app_soak`; app audio capture: `DIGI_EMU_SINK_WAV=FILE`.
 - Browser throughput: `mise run web:bench`. DSP performance: `mise run perf`, tools/devtools/perf.py, tools/devtools/coupled_ab.py.
 
 ## Static analysis
@@ -106,13 +107,13 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   go into tools/sharc_dev/sharcdb.py. SHARC+ encodings: tools/sharc_dev/sharcspec/ (from the public ADI manuals).
 - SHARC+ instruction semantics live once, in tools/sharc_dev/sharc_core/; tools/sharc_dev/sharc_trace.py (symbolic) and
   tools/sharc_dev/sharc_run.py (concrete) are drivers only.
-- ColdFire (MAIN OS): a tools/coldfire/ghidradump.py dump (out/ghidra/<image>-emac/), then
+- ColdFire (MAIN OS): a `uv run python -m tools.coldfire.ghidradump` dump (out/ghidra/<image>-emac/), then
   `uv run python -m tools.coldfire.cfdb build out/ghidra/dt2-1.16-emac` and tools/coldfire/cf.py (`cf.load("dt2-1.16-emac")`);
   hand-curated 1.16 names in tools/coldfire/cf_names.py. tools/emulator/snapread.py reads `.snap` files without a machine.
 - Ghidra: one JVM per project. Live 1.16 analysis: `~/ghidra-projects/elektron-emac`; `dt2-emac` holds 1.15C. Use
   the language `68000:BE:32:ColdfireEMAC` (the stock ColdFire language stops at `movclr`). Read the dump first;
   live queries with tools/coldfire/ghidraq.py (`--then` chains queries in one JVM). Ghidra's reference tables miss code
-  outside functions: confirm "no caller" with tools/coldfire/refscan.py. A pyghidra tool under tools/ removes its own
-  directory from `sys.path` before `import pyghidra` (copy the block in tools/coldfire/ghidraq.py). After a Ghidra upgrade,
+  outside functions: confirm "no caller" with tools/coldfire/refscan.py. A pyghidra tool runs as a module like every tool; by
+  script path its directory, which holds the Java scripts in `ghidra/`, would shadow PyGhidra's `ghidra` package. After a Ghidra upgrade,
   re-run tools/coldfire/ghidra/install-coldfire-emac.sh. For the generated SHARC+ language, measure before and after with
-  `tools/sharc_dev/sharcpcode.py measure` and `compare` (one language version per JVM).
+  `uv run python -m tools.sharc_dev.sharcpcode measure` and `compare` (one language version per JVM).

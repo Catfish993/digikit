@@ -207,7 +207,7 @@ dt2/             .syx container: decode, rebuild, decompress
 emu/             firmware extraction and the shared helpers (config, symbols, SHARC capture)
 native/          Rust workspace: ColdFire core, SHARC+ engine, coupled runner (native/README.md)
 packages/web     browser panel (Astro + Solid); packages/desktop is the Tauri app
-tools/           analysis, run and measurement tools
+tools/           Python tools, one package per owner (tools/<owner>/, docs/LAYOUT.md)
 tests/           pytest suite (native tests live in the crates); see docs/TESTING.md
 scenarios/       scripted panel inputs and pinned PCM hashes
 modules/         patchkit modules

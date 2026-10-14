@@ -1314,7 +1314,7 @@ distinct gaps 6 -> 5 (the removed `26a` group) -- exactly the coverage-gap
 table above. `cov_render`, `run_frame`, `run_voice`, `trace_frame` and
 `trace_voice` are byte-identical (none of their roots or traced paths ever
 reached block 1). Updated with
-`uv run python tests/test_sharc_golden.py --update`. **[V]**
+`PYTHONPATH=tests uv run python -m tests.sharc.integration.test_sharc_golden --update`. **[V]**
 
 **Files touched outside this task's listed ownership.** `tools/sharc_dev/sharcinv.py`
 (`analyze_block()`, `build_inventory()`, `CODE_BLOCKS`) was edited because

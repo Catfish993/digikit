@@ -10,7 +10,7 @@ tests live with their code.
 | `tests/sharc/semantics` | SHARC+ instruction semantics; interpreter against native lockstep | `tools/sharc_dev/sharc_core`, `tools/sharc_dev/sharc_run.py` |
 | `tests/sharc/trace` | The symbolic tracer | `tools/sharc_dev/sharc_trace.py` |
 | `tests/sharc/generation` | Assembler, transpiler, Rust generator, lowering, generated p-code language | `tools/sharc_dev/sharc_transpile*.py`, `tools/sharc_dev/sharc_rsgen.py`, `tools/sharc_dev/sharc_lowergen*.py`, `tools/sharc_dev/sharcpcode.py`, `tools/sharc_dev/sharcspec` |
-| `tests/sharc/analysis` | Loader, disassembler, sharcdb and the other analysis tools | `tools/sharc_dev/sharcldr.py`, `tools/sharc_dev/sharc_disasm.py`, `tools/sharc_dev/sharcdb.py`, `tools/sharc*.py` |
+| `tests/sharc/analysis` | Loader, disassembler, sharcdb and the other analysis tools | `tools/sharc_dev/sharcldr.py`, `tools/sharc_dev/sharc_disasm.py`, `tools/sharc_dev/sharcdb.py`, `tools/sharc_dev/sharc*.py` |
 | `tests/sharc/integration` | Firmware-backed harness, replay, golden hashes, capture and peer | `tools/sharc_dev/sharc_harness.py`, `tools/sharc_dev/sharc_replay.py`, `emu/sharc_capture.py`, `emu/sharc_peer.py` |
 | `tests/patchkit` | Patchkit, module primitives, DSP voice rig, PLUCK, master drive, proofs runner. `smoke/` is the emulator smoke tour (`matrix.toml`, `tours/`, `goldens.json`). `pk_src/` holds small patch sources. | `tools/patchkit/patchkit.py`, `tools/patchkit/pk_*.py`, `tools/patchkit/pk_harness.py` |
 | `tests/coldfire` | ColdFire analysis: cf/cfdb, Ghidra tools, symbols, RTTI, vtables, the ISA oracle | `tools/coldfire/cf.py`, `tools/coldfire/cfdb.py`, Ghidra tools |
@@ -32,7 +32,7 @@ Other tests:
 
 - Put the test in the directory of the code it tests.
 - Import repo paths from `support.paths`. Never count parent directories.
-- Import `tools/` modules directly. `tests/conftest.py` puts `tools/` and `tests/` on `sys.path`.
+- Import tools as `from tools.<owner> import <module>`. pytest puts the repository root and `tests/` on `sys.path` (`pythonpath` in pyproject.toml); never change `sys.path` in a test. A test that runs a tool in a subprocess uses `[sys.executable, "-m", "tools.<owner>.<module>", ...]` with `env=python_env()` (`from tools import python_env`).
 - Share helpers through `tests/support`. Never import another test module.
 - Test file basenames must be unique across `tests/`. pytest uses its default import mode and there is no `__init__.py`.
 - Mark long firmware runs `@pytest.mark.slow`. They are skipped unless `--slow` is given.
@@ -91,7 +91,7 @@ Only emulator output is cached (the report entry and the WAV). Everything that j
 
 Two guards protect against a stale hit:
 
-- Fail-closed audit: `tests/devtools/test_render_inputs.py` scans the crates linked into coupled-run. Every environment read must be in the key, in `DENYLIST` or in `IGNORED_ENV` (`tools/devtools/render_cache.py`). Computed-name env reads and runtime file reads are counted per file against `tests/devtools/render_inputs.json`. Adding a render input fails the test until it is classified; after review, regenerate the counts with `uv run python tests/devtools/test_render_inputs.py --scan`.
+- Fail-closed audit: `tests/devtools/test_render_inputs.py` scans the crates linked into coupled-run. Every environment read must be in the key, in `DENYLIST` or in `IGNORED_ENV` (`tools/devtools/render_cache.py`). Computed-name env reads and runtime file reads are counted per file against `tests/devtools/render_inputs.json`. Adding a render input fails the test until it is classified; after review, regenerate the counts with `uv run python -m tests.devtools.test_render_inputs --scan`.
 - Spot checks: `DIGI_RENDER_CACHE_CHECK=p` re-renders each hit with probability p and fails with "stale render cache ..." on any sha256 or peek difference. `verify` sets p=0.03 (about 10 fresh re-renders per full gate).
 
 Both guards were proven by mutation: an unclassified env read fails the audit, and a tampered cache entry fails the spot check.
@@ -128,14 +128,13 @@ A checkout without them skips more.
 
 ## Known issues and deferred work
 
-- `tests/sharc/generation/test_sharc_transpile.py::test_native_compute_corpus_matches` fails once a current native library is built (`mise run sharc:native-lib`); before, it was always skipped because the old library in out/native/opt/target-final lacks a symbol. The native core matches on all 1201 comparable cases; the failure is on the Python side: 3 edge-value cases of shift opcode 0x50, form 2a, raise `AssertionError: PEy tuple RN must be int-only` in tools/sharc_dev/sharc_core. Reproduce: `uv run python -c "import sys; sys.path.insert(0,'tools'); import sharc_transpile_run as r; print([(i, c.error) for i, c in enumerate(r.corpus_cases(7, 4)) if c.error])"`. A fix changes tools/sharc_dev/sharc_core, so CORE_FINGERPRINT changes and every generated core is regenerated; it is left for a separate SHARC task.
+- `tests/sharc/generation/test_sharc_transpile.py::test_native_compute_corpus_matches` fails once a current native library is built (`mise run sharc:native-lib`); before, it was always skipped because the old library in out/native/opt/target-final lacks a symbol. The native core matches on all 1201 comparable cases; the failure is on the Python side: 3 edge-value cases of shift opcode 0x50, form 2a, raise `AssertionError: PEy tuple RN must be int-only` in tools/sharc_dev/sharc_core. Reproduce: `uv run python -c "from tools.sharc_dev import sharc_transpile_run as r; print([(i, c.error) for i, c in enumerate(r.corpus_cases(7, 4)) if c.error])"`. A fix changes tools/sharc_dev/sharc_core, so CORE_FINGERPRINT changes and every generated core is regenerated; it is left for a separate SHARC task.
 - State shared between test files:
   - One pytest process over all of `tests/` used to fail (`TraceTest`) and then stall in tracer code. Three causes, all fixed:
-    1. Ghidra tools (ghidraapply, ghidraq, ghidravt, ghidradump, ghidracopy, ghidraopts, sharc_import) remove `tools/` from `sys.path` when imported, so PyGhidra's `ghidra` package is not shadowed. `tests/conftest.py` now restores `tools/` and `tests/` before each collection and test.
+    1. Ghidra tools removed `tools/` from `sys.path` when imported (so PyGhidra's `ghidra` package was not shadowed), and `tests/conftest.py` restored it. Since the package layout (R1) `tools/` is never on `sys.path`; the strip and the conftest guard are gone.
     2. `tools/emulator/native_emu.py` sets `SHARC_GEN_DIR` with `os.environ.setdefault`. `test_native_emu_launcher.py` now restores it after every test.
     3. `tools/sharc_dev/sharc_lowergen.py` patched `sharc_core` for good on the first trace. It now patches only inside `installed()` and restores on exit.
   - `mise run test` still runs one process per file: it is faster and a new leak between files cannot fail unrelated tests. To check for leaks, run `uv run python -m pytest -q tests` (about 18 minutes).
-  - Deferred: the Ghidra tools still strip `sys.path` at import. Moving the strip into their `main()` would remove the need for the conftest guard. They need a Ghidra run to verify, so this is left for a Ghidra session.
 - Comments in `tools/sharc_dev/sharc_core/*.py` and `native/sharc-rt/src/decode.rs` still name old test paths (`tests/test_*.py`). Editing them changes `CORE_FINGERPRINT` or rebuilds the generated core, so they change with the next core regeneration.
 - `docs/findings` and `docs/handovers` keep the old test paths (historical records). `git log --follow -- tests/<new path>` shows a file's history across the move (commit "tests: move test files into domain directories").
 - Not done yet:
