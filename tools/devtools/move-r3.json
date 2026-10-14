@@ -1,0 +1,34 @@
+{
+ "moves": {
+  "native/boot": "packages/emulator/boot",
+  "native/bootstrap": "packages/emulator/bootstrap",
+  "native/card": "packages/emulator/card",
+  "native/coldfire": "packages/emulator/coldfire",
+  "native/control": "packages/emulator/control",
+  "native/coupled": "packages/emulator/coupled",
+  "native/device-profile": "packages/emulator/device-profile",
+  "native/host": "packages/emulator/host",
+  "native/live": "packages/emulator/live",
+  "native/loader": "packages/emulator/loader",
+  "native/machine": "packages/emulator/machine",
+  "native/patchkit": "packages/emulator/patchkit",
+  "native/periph": "packages/emulator/periph",
+  "native/plusdrive": "packages/emulator/plusdrive",
+  "native/sharc": "packages/emulator/sharc",
+  "native/sharc-fast-cl": "packages/emulator/sharc-fast-cl",
+  "native/sharc-fast-wasm": "packages/emulator/sharc-fast-wasm",
+  "native/sharc-gen": "packages/emulator/sharc-gen",
+  "native/sharc-rt": "packages/emulator/sharc-rt",
+  "native/README.md": "packages/emulator/README.md",
+  "packages/web": "apps/web",
+  "packages/desktop": "apps/desktop"
+ },
+ "exclude_text": [
+  "docs/handovers/",
+  "pnpm-lock.yaml",
+  "Cargo.lock",
+  "uv.lock",
+  "tools/devtools/relocate-r1.json",
+  "tests/devtools/test_move_dirs.py"
+ ]
+}
