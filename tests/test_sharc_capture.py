@@ -11,6 +11,7 @@ Run with: uv run python -m pytest tests/test_sharc_capture.py -q
 
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,6 +22,8 @@ from emu.sharc_capture import (  # noqa: E402
     CapturingPeer,
     load,
 )
+
+TMP = tempfile.mkdtemp(prefix="test_sharc_capture_")
 
 
 class CaptureRoundTripTest(unittest.TestCase):
@@ -51,7 +54,7 @@ class CaptureRoundTripTest(unittest.TestCase):
         return tx_frames, ssi_reqs
 
     def test_round_trip_dspi2_and_ssi0(self):
-        path = "/tmp/test_sharc_capture_roundtrip.dt2cap"
+        path = os.path.join(TMP, "roundtrip.dt2cap")
         try:
             tx_frames, ssi_reqs = self._write(path, kind="note", frames=3, ssi0=2)
             cap = load(path)
@@ -80,7 +83,7 @@ class CaptureRoundTripTest(unittest.TestCase):
     def test_kind_must_be_valid(self):
         with self.assertRaises(ValueError):
             CaptureWriter(
-                "/tmp/test_sharc_capture_bad_kind.dt2cap",
+                os.path.join(TMP, "bad_kind.dt2cap"),
                 frame_bytes=2748,
                 kind="wat",
             )
@@ -90,7 +93,7 @@ class CaptureRoundTripTest(unittest.TestCase):
         # button instead of a single TRIG, to start the loaded pattern's own
         # sequencer -- see that module's docstring): CaptureWriter/load must
         # accept and preserve "play" the same way as "idle"/"note".
-        path = "/tmp/test_sharc_capture_kind_play.dt2cap"
+        path = os.path.join(TMP, "kind_play.dt2cap")
         try:
             tx_frames, _ = self._write(path, kind="play", frames=2, ssi0=0)
             cap = load(path)
@@ -101,7 +104,7 @@ class CaptureRoundTripTest(unittest.TestCase):
                 os.remove(path)
 
     def test_counter_none_round_trips_as_none(self):
-        path = "/tmp/test_sharc_capture_no_counter.dt2cap"
+        path = os.path.join(TMP, "no_counter.dt2cap")
         try:
             writer = CaptureWriter(path, frame_bytes=2748, kind="idle")
             peer = CapturingPeer(writer)  # no counter supplied
@@ -115,7 +118,7 @@ class CaptureRoundTripTest(unittest.TestCase):
                 os.remove(path)
 
     def test_bad_magic_rejected(self):
-        path = "/tmp/test_sharc_capture_bad_magic.dt2cap"
+        path = os.path.join(TMP, "bad_magic.dt2cap")
         try:
             with open(path, "wb") as fh:
                 fh.write(b"NOTACAP\n")
@@ -133,7 +136,7 @@ class CaptureRoundTripTest(unittest.TestCase):
         # tools/sharc_capture_run.py's observational hook on FUN_400cd48a
         # (docs/findings/04-coldfire-dsp-link.md, "eDMA and DSPI transfer
         # inventory"): records the call's own arguments only.
-        path = "/tmp/test_sharc_capture_dspi1.dt2cap"
+        path = os.path.join(TMP, "dspi1.dt2cap")
         try:
             writer = CaptureWriter(path, frame_bytes=2748, kind="idle")
             writer.write_dspi1_call(123, 0x300, 0x4FE7A340, 0x42948B04)
@@ -156,7 +159,7 @@ class CaptureRoundTripTest(unittest.TestCase):
     def test_mem_write_round_trips(self):
         # tools/sharc_capture_run.py's --watch-mem hook (e.g. the FlexBus
         # 0x8c000000 window): address plus the bytes actually written.
-        path = "/tmp/test_sharc_capture_memwrite.dt2cap"
+        path = os.path.join(TMP, "memwrite.dt2cap")
         try:
             writer = CaptureWriter(path, frame_bytes=2748, kind="idle")
             writer.write_mem_write(500, 0x8C000002, b"\xff\x81")
@@ -176,7 +179,7 @@ class CaptureRoundTripTest(unittest.TestCase):
         # Format-extension contract (see the module docstring): a capture
         # written before REC_DSPI1_CALL/REC_MEM_WRITE existed has none, and
         # must still load with empty lists, not an error.
-        path = "/tmp/test_sharc_capture_old_format.dt2cap"
+        path = os.path.join(TMP, "old_format.dt2cap")
         try:
             self._write(path, kind="idle", frames=1, ssi0=0)
             cap = load(path)
@@ -189,7 +192,7 @@ class CaptureRoundTripTest(unittest.TestCase):
     def test_mixed_record_types_preserve_order_per_type(self):
         # A real run interleaves DSPI2 frames, DSPI1 calls and memory
         # writes; each type's own list must come back in the order written.
-        path = "/tmp/test_sharc_capture_mixed.dt2cap"
+        path = os.path.join(TMP, "mixed.dt2cap")
         try:
             writer = CaptureWriter(path, frame_bytes=4, kind="play")
             peer = CapturingPeer(writer, counter=lambda: 0)
@@ -217,7 +220,7 @@ class CapturingPeerContractTest(unittest.TestCase):
 
     def test_exchange_never_invents_data(self):
         writer = CaptureWriter(
-            "/tmp/test_sharc_capture_peer_exchange.dt2cap", frame_bytes=8, kind="idle"
+            os.path.join(TMP, "peer_exchange.dt2cap"), frame_bytes=8, kind="idle"
         )
         try:
             peer = CapturingPeer(writer)
@@ -231,7 +234,7 @@ class CapturingPeerContractTest(unittest.TestCase):
 
     def test_rx_never_invents_data(self):
         writer = CaptureWriter(
-            "/tmp/test_sharc_capture_peer_rx.dt2cap", frame_bytes=8, kind="idle"
+            os.path.join(TMP, "peer_rx.dt2cap"), frame_bytes=8, kind="idle"
         )
         try:
             peer = CapturingPeer(writer)
