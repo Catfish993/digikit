@@ -54,7 +54,9 @@ apps/web/public/emulator-core*.wasm
 apps/web/public/patchkit.wasm
 # Contains DSP code generated from firmware: never commit.
 apps/web/public/emulator-core-sharc.wasm
-apps/web/.local/
+# Directories here, symlinks in lane worktrees (tools/devtools/worktree-setup.sh): no trailing slash.
+apps/web/.local
+apps/web/dist
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 
