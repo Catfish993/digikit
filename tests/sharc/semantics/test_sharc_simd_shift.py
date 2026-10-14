@@ -198,6 +198,50 @@ def test_6a_conditional_simd_mixed_outcome_stops():
     assert out.stopped == "mixed-PE conditional SIMD Type6a"
 
 
+FIFO = ("BFFWRP", "BFF_HI", "BFF_LO")
+
+
+def compute_2a(opcode, *, rn=2, rx=0, ry=1):
+    # Shifter compute unit 2: compute[22:16] = 0x20 | opcode >> 4 (0x25 for
+    # BITEXT 0x50), compute[15:0] = (opcode & 0xF) << 12 | rn << 8 | rx << 4 | ry.
+    field = (2 << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry
+    return {
+        "cond[4:0]": 0x1F,
+        "compute[22:16]": (field >> 16) & 0x7F,
+        "compute[15:0]": field & 0xFFFF,
+    }
+
+
+def run_bit_fifo(opcode, *, simd):
+    state = make(MODE1=(1 << 21) if simd else 0, R0=0xDE6A4A48, R1=6)
+    state.special["BFFWRP"] = st.Const(32)
+    state.special["BFF_HI"] = st.Const(0x12345678)
+    state.special["BFF_LO"] = st.Const(0x9ABCDEF0)
+    return run(state, "2a", compute_2a(opcode))
+
+
+def assert_simd_leaves_fifo_to_pex(opcode, writes_rn):
+    simd = run_bit_fifo(opcode, simd=True)
+    sisd = run_bit_fifo(opcode, simd=False)
+    for name in FIFO:
+        assert simd.special.get(name) == sisd.special.get(name), name
+    if writes_rn:
+        assert simd.uregs[R + 2] == sisd.uregs[R + 2]
+        # PEy writes its S slot (the S-register half of the tuple RN).
+        assert (S + 2) in simd.uregs
+    else:
+        assert R + 2 not in sisd.uregs and R + 2 not in simd.uregs
+        assert S + 2 not in simd.uregs
+
+
+def test_simd_bitext_leaves_the_shared_fifo_to_pex():
+    assert_simd_leaves_fifo_to_pex(0x50, writes_rn=True)
+
+
+def test_simd_bitdep_leaves_the_shared_fifo_to_pex():
+    assert_simd_leaves_fifo_to_pex(0x74, writes_rn=False)
+
+
 def test_18a_bit_test_ustat_sets_btf_per_element():
     # PRM p.4-55 "Bit Test Flag in SIMD Mode": BIT TST USTAT1 tests
     # USTAT1 in PEx and USTAT2 in PEy.

@@ -111,7 +111,7 @@ Per-file run (`test_outcomes.py run --jobs 6`) of the non-slow suite at
 
 - The 5 failures were in `tests/firmware/test_device.py`: `devices/*-leds.toml` has no `[device]` table. Fixed by `emu/device.py` skipping sidecar files.
 - After the fixes on this branch (bb912e1), one pytest process over all of `tests/` passes: 2322 passed, 237 skipped, 0 failed, in 18 minutes. The per-file runner takes about 8 minutes with 6 jobs.
-- Clean checkout (no firmware, no out/): 2005 passed, 554 skipped, 0 failed after the fixes in this branch; every skip names its missing input. With `mise run sharc:native-lib` (22 s from cold), the 46 native-library skips run: 644 passed and the one known failure listed under Known issues.
+- Clean checkout (no firmware, no out/): 2005 passed, 554 skipped, 0 failed after the fixes in this branch; every skip names its missing input. With `mise run sharc:native-lib` (22 s from cold), the 46 native-library skips run: 644 passed and one failure (the shift 0x50 corpus case, since fixed).
 - The same run after the test moves gave the same outcome and skip reason for every test.
 - Slowest files:
 
@@ -128,7 +128,6 @@ A checkout without them skips more.
 
 ## Known issues and deferred work
 
-- `tests/sharc/generation/test_sharc_transpile.py::test_native_compute_corpus_matches` fails once a current native library is built (`mise run sharc:native-lib`); before, it was always skipped because the old library in out/native/opt/target-final lacks a symbol. The native core matches on all 1201 comparable cases; the failure is on the Python side: 3 edge-value cases of shift opcode 0x50, form 2a, raise `AssertionError: PEy tuple RN must be int-only` in tools/sharc_dev/sharc_core. Reproduce: `uv run python -c "from tools.sharc_dev import sharc_transpile_run as r; print([(i, c.error) for i, c in enumerate(r.corpus_cases(7, 4)) if c.error])"`. A fix changes tools/sharc_dev/sharc_core, so CORE_FINGERPRINT changes and every generated core is regenerated; it is left for a separate SHARC task.
 - State shared between test files:
   - One pytest process over all of `tests/` used to fail (`TraceTest`) and then stall in tracer code. Three causes, all fixed:
     1. Ghidra tools removed `tools/` from `sys.path` when imported (so PyGhidra's `ghidra` package was not shadowed), and `tests/conftest.py` restored it. Since the package layout (R1) `tools/` is never on `sys.path`; the strip and the conftest guard are gone.
