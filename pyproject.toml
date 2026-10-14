@@ -25,7 +25,7 @@ dev = [
 package = false
 
 # Pinned here so ruff gives the same answer on every machine, whatever the
-# user-level ruff configuration says. tests/test_lint.py enforces these rules
+# user-level ruff configuration says. tests/devtools/test_lint.py enforces these rules
 # and the formatter on the files listed there; add a file to that list when
 # you clean it.
 [tool.ruff]
@@ -41,7 +41,7 @@ ignore = [
     "UP031",  # %-formatting is the house style
 ]
 
-# tests/test_types.py runs mypy on the files listed there. The SHARC core
+# tests/devtools/test_types.py runs mypy on the files listed there. The SHARC core
 # also runs under PyPy, which supports Python 3.11, so check against 3.11.
 [tool.mypy]
 python_version = "3.11"

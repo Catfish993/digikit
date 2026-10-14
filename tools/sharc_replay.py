@@ -665,7 +665,7 @@ def call_frame_collect_all_with_hits(
     instruction (often a conditional jump) will read. Its return value
     (any JSON-able dict) is merged under the hit's own `"sample"` key.
     Never called when `sample_fn` is None (the default), which keeps every
-    existing caller's hit-dict shape (and tests/test_sharc_replay.py's own
+    existing caller's hit-dict shape (and tests/sharc/integration/test_sharc_replay.py's own
     assertions on it) unchanged -- this is a pure opt-in addition, not a
     behaviour change (lane H3, 2026-09-26, tools/sharc_armpath.py's own
     caller: reading raw register state at a guard jump this way, rather

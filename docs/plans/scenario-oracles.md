@@ -221,7 +221,7 @@ state.
       spectrum and alias products, L-R difference, DC, non-finite, growth),
       write `features.json` and PNGs (waveform, envelope, spectrogram) into
       the run dir. CLI: `audiocheck.py RUN_DIR`.
-- [x] `tests/test_audiocheck.py`: each detector on synthetic signals with
+- [x] `tests/dsp/test_audiocheck.py`: each detector on synthetic signals with
       known answers. No firmware needed.
 - [ ] Add both files to the lint `CLEAN` list and the mypy `TYPED` list.
 
@@ -298,7 +298,7 @@ state.
 - 2026-10-08: plan agreed; branch created; minimal path added. Phase 1:
   stale NO-press notes fixed; button/encoder map, WAV format and FX
   parameter codes recorded above. numpy and matplotlib added to the dev
-  group. Phase 3 done: tools/audiocheck.py + tests/test_audiocheck.py (17
+  group. Phase 3 done: tools/audiocheck.py + tests/dsp/test_audiocheck.py (17
   pass, on CLEAN and TYPED); mypy stays at 3.11 with numpy/matplotlib
   stubs skipped (pyproject override). Parameter tables found by signature on
   both devices (unverified).
@@ -429,7 +429,7 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   0.50M / 0.50M). PCM unchanged everywhere: `trig1-taps` 1.5 s `3bf3ba3026953c22` in interpreter, AOT and no-AOT,
   14 s `18e5204f2015f2eb` (AOT, no-AOT), `sf-del-fb-d127`, `sf-rev-decay-u20`, `tf-br-127` equal in the three tiers
   and to the earlier hashes, the four `dn2.json` pins hold, oracle suite 61 passed (default and no-AOT), golden
-  unchanged, `tests/test_sharc_denormal.py` 22 passed, `native/sharc` `cargo test --lib --tests` 65 passed, DT2
+  unchanged, `tests/sharc/semantics/test_sharc_denormal.py` 22 passed, `native/sharc` `cargo test --lib --tests` 65 passed, DT2
   sample check clean tone. DN2 and DT2 cores regenerated (`gen-pre-ftz-20261009` backups, same block counts).
   Open: ALU sticky bits unmodelled, 64-bit ops keep denormals.
 - 2026-10-09: parallel rendering: `coupled.run_batch(jobs=N)` / `coupled.py scenario --jobs N` shard a batch by scenario

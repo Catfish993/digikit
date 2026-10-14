@@ -60,10 +60,10 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   --workspace), card
   (in-process DT2 card: trigs play the files), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
 - While working, run only the tests for the code you changed.
-- Lint: `tests/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
-  `tests/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
-  (`tests/test_pypy.py`, slow).
-- `tests/test_sharc_golden.py` hashes six SHARC core outputs: a refactor keeps them; an intended change updates
+- Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
+  `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
+  (`tests/devtools/test_pypy.py`, slow).
+- `tests/sharc/integration/test_sharc_golden.py` hashes six SHARC core outputs: a refactor keeps them; an intended change updates
   them with `--update` and says why. PCM pins in `scenarios/*.json` change only with Em's approval.
 
 ## Build and run

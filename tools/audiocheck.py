@@ -2,7 +2,7 @@
 """Features of a rendered run's audio, for scenario oracles (no firmware needed).
 
 Pure functions on float64 arrays shaped (n, channels) plus a thin CLI. Each
-detector is tested on synthetic signals in tests/test_audiocheck.py.
+detector is tested on synthetic signals in tests/dsp/test_audiocheck.py.
 
     basic, lr_diff       level, DC, non-finite, growth, L-R difference
     envelope, onsets     RMS envelope (dB) and transient onset times

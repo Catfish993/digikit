@@ -362,10 +362,10 @@ clicks while the knob moves, no fault. 20 to 968 DSP instructions per block.
 Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pk_harness.py` (module docstring).
 
 - Emulator: `fault`, `halt`, `stall`/`stall.end` events, `status.heartbeat`, `mem.cf.peek/poke`, `watchdog.config`
-  (`native/control/src/health.rs`, 5 unit tests; end to end on DT2 1.17 and DN2 1.12 through `tests/patchkit_smoke`).
+  (`native/control/src/health.rs`, 5 unit tests; end to end on DT2 1.17 and DN2 1.12 through `tests/patchkit/smoke`).
   The first real run already caught a DSP halt in stock DT2 1.17 (pattern 3 or 4 plus PLAY, a conditional Type 7a in
   the generated core, finding 17), now a test and a documented limit.
-- Harness: `tools/pk_harness.py`, `tests/patchkit_smoke/` (tour `tours/smoke.toml`, `matrix.toml`, `goldens.json` with
+- Harness: `tools/pk_harness.py`, `tests/patchkit/smoke/` (tour `tours/smoke.toml`, `matrix.toml`, `goldens.json` with
   SHA-256 only, 9 pytest tests plus 4 slow matrix cells), module tests from `modules/*/*/tests/*.toml`. Tour: boot to
   the readiness contract, track change, pattern change, audition (PCM), play/stop with the sequencer running,
   machine menu open and close, save project and reload, a seeded 40-input stress; every segment starts from `restart`.
@@ -610,7 +610,7 @@ dn2-sine) on `[[entry]]`. New anchors in `tools/port_resolve.py`: rule kind `cf_
 list, rank pairs, std::string descriptors) are built once in bss by `mf_ensure`; the clone tests hook the compare and set
 the Z flag (hooks cannot restore a register after the stock branch); the Digitone II type maps change the stack
 argument in place. Tests: `tools/pk_cfunit.py` (hook routine on the native core with registers, flags and stack set by the
-case; stubs for tails and exits), `tests/test_pk_machines_fw.py`, `_dn2_fw.py`, `test_pk_params_fw.py` (19 tests; the
+case; stubs for tails and exits), `tests/patchkit/test_pk_machines_fw.py`, `_dn2_fw.py`, `test_pk_params_fw.py` (19 tests; the
 manifest's row expressions are checked against the Rust row builders with `tools/pk_expr.py`). Waits for lane a: linking,
 apply, every proof (3b.3).
 
@@ -634,8 +634,8 @@ Problem: `core/machines` numbered machines `first + k` in module order, and a pr
 - Small: the PLUCK gallery README uses lists (the gallery renders no tables); `fw:onboard` is marked not built (backlog).
 
 Verified (quick proof tier, no full tiers): `cargo test -p patchkit` (all; new: allocation and gap tests in `tests/prims.rs`,
-requires/cycle test, PLUCK-is-9 in `tests/frameworks.rs`), 82 Python tests of the patchkit files (new `tests/test_pk_types.py`,
-a gap-row case in `tests/test_pk_machines_fw.py`), `pnpm --dir packages/web test` 29 of 29, `mise run patch:proofs` 10 of 10
+requires/cycle test, PLUCK-is-9 in `tests/frameworks.rs`), 82 Python tests of the patchkit files (new `tests/patchkit/test_pk_types.py`,
+a gap-row case in `tests/patchkit/test_pk_machines_fw.py`), `pnpm --dir packages/web test` 29 of 29, `mise run patch:proofs` 10 of 10
 (gain dt2/dn2, drive, voice dt2/dn2, machines dt2/dn2, pages dn2, pluck dt2/dn2; the PLUCK and PAGES proofs now expect types 9 and 6,
 the others did not change), smoke matrix 15 of 15 cells (DT2 1.17 and 1.16, DN2 1.12; 11 on the first run, the other 4 after the `expect_mem` / `expect_dsp` type
 constants of the select tests changed to the permanent numbers: machine-clone 8, pluck 9 on both devices, dn2-sine 7, dn2-edge 8). No frame golden
@@ -649,7 +649,7 @@ copied sections and hooks, `cf_params_refs` / `cf_params_bounds` in `tools/port_
 (`expr`, `prim`), `tests/prims.rs` (18 integration tests over the real ports and stock images: typed writes and their
 errors, multi-site writes, registry rows/symbols/strings, canonical order, entry errors, sections on ColdFire and SHARC,
 hook on ColdFire and SHARC, non-boundary, re-encoded PC-relative instructions, device filters, explain, plan.json),
-`tests/test_pk_prims.py` and `modules/test/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the
+`tests/patchkit/test_pk_prims.py` and `modules/test/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the
 ColdFire core, the hooked stock setter `Kit::vfunc_12` is called three times and behaves as stock while the hook counts,
 the registry rows and the copied section read back, and `packages/web/tests/patchkit.test.mjs` (wasm = CLI, plan.json
 included). The old `[[machine]]`/`[[param]]`/`[[table]]`/`register` path is untouched; its tests still pass.

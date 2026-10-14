@@ -155,7 +155,7 @@ every save, one summary line per edit (a few seconds for a DSP change).
 
 ```sh
 mise run patch:test -- --cell "dt2-1.17:machines/my-synth"     # smoke tour + the module's tests/*.toml, one cell
-mise run patch:test                                            # the whole matrix (tests/patchkit_smoke/matrix.toml)
+mise run patch:test                                            # the whole matrix (tests/patchkit/smoke/matrix.toml)
 mise run patch:proofs                                          # the quick tier of every emulator proof (about 7 min)
 ```
 

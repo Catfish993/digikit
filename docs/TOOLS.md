@@ -399,7 +399,7 @@ loader's own layout: the untouched gap between two code blocks, DM
 every stack-relative store as `STACK-RELATIVE` instead of trying to exclude
 it. `--jobs N` runs one function's trace per worker process. The
 interpreter-independent logic (census rules, width tables, the address
-classifier) is pure and unit-tested in `tests/test_sharcwriters.py` with
+classifier) is pure and unit-tested in `tests/sharc/analysis/test_sharcwriters.py` with
 synthetic fields and trace events -- no firmware required.
 
 `out/sharcwriters/stack-invariant.md`/`.json` census every instruction in

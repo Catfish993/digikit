@@ -14,7 +14,7 @@ It changes both CPUs.
 - **Click-free.** `d` follows the knob by at most 1/128 per block (85 ms for the full range) and the three
   coefficients ramp linearly across each 32-sample channel.
 - **Cost.** 20 DSP instructions per block with no drive and 968 at full drive, measured on the concrete core
-  (tests/test_master_drive.py). The block budget is about 330,000 (DN2) to 450,000 (DT2) instructions at the assumed
+  (tests/patchkit/test_master_drive.py). The block budget is about 330,000 (DN2) to 450,000 (DT2) instructions at the assumed
   clock (finding 06, "Headroom"): 0.3 % at most.
 - **ColdFire.** The module renames the knob on the master page. It writes the addresses of two strings (placed in
   `cf.expansion` by `core/expansion`) into the knob's parameter descriptor row: the page label `DRV` and the
@@ -45,7 +45,7 @@ can be p-locked like any other.
 
 ## Test
 
-- `tests/test_master_drive.py`: the routine on the concrete SHARC+ core against a float32 reference (140 blocks of
+- `tests/patchkit/test_master_drive.py`: the routine on the concrete SHARC+ core against a float32 reference (140 blocks of
   ramp, release to exact bypass, saved registers, instruction counts).
 - `tools/pk_proof_drive.py dt2|dn2`: the whole chain in the emulator (patch, coupled cold boot, knob, PCM).
   Numbers: finding 22.

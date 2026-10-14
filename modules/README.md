@@ -378,7 +378,7 @@ Workflow:
 1. `mise run patch:new -- category/name` and fill in the manifest and the sources.
 2. `mise run patch:dev -- --modules category/name`: edit, see one summary line per save.
 3. Add module tests; the template's `smoke.toml` only checks that the patched firmware is audible and does not fault.
-4. Add a cell to `tests/patchkit_smoke/matrix.toml` for each device and firmware you support, then
+4. Add a cell to `tests/patchkit/smoke/matrix.toml` for each device and firmware you support, then
    `mise run patch:test -- --cell "dt2-1.17:category/name" --update` records the frame goldens (hashes only) once,
    and later runs compare against them. A change that is invisible on screen must give the stock frames.
 5. A module that changes sound needs a proof against a reference (PCM level, pitch, bit-identity at the neutral
@@ -442,5 +442,5 @@ of its own: three frameworks do the firmware work, and the module only declares 
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and
 `modules/core/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/pk_cfunit.py`,
-`tests/test_pk_machines_fw.py`, `tests/test_pk_params_fw.py`), and the proofs are `tools/pk_proof_machines.py` and
+`tests/patchkit/test_pk_machines_fw.py`, `tests/patchkit/test_pk_params_fw.py`), and the proofs are `tools/pk_proof_machines.py` and
 `tools/pk_proof_pluck.py`. Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).

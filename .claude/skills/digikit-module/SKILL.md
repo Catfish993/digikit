@@ -39,9 +39,9 @@ Run everything from the repo root. Work in a lane only for long or parallel runs
 | Verify | `uv run python tools/patchkit.py verify out/patch/x.syx` (also run by `patch`) |
 | Inject | `mise run inject -- out/patch/x.syx` (into a running daemon; DSP-only change hot, MAIN change by cached coupled cold boot) |
 | Edit loop | `mise run patch:dev -- --modules fx/my-drive [--device dt2\|dn2]`: watches `src/` and `module.toml`; per edit builds, patches, injects, runs the quick tests, prints one line with `edit->running` and `edit->tested` |
-| Test | `mise run patch:test` (matrix in `tests/patchkit_smoke/matrix.toml`; `-- --cell "dt2-1.17:fx/my-drive,test/cf-demo"` with the exact module set of a cell, joined by commas; a new set needs `-- --update` once to record frame goldens) |
+| Test | `mise run patch:test` (matrix in `tests/patchkit/smoke/matrix.toml`; `-- --cell "dt2-1.17:fx/my-drive,test/cf-demo"` with the exact module set of a cell, joined by commas; a new set needs `-- --update` once to record frame goldens) |
 | Port | `mise run port:resolve [-- X.syx]` rewrites `devices/ports/*.toml` from the `[[anchor_rule]]`s (deterministic) |
-| pytest | `uv run python -m pytest tests/patchkit_smoke --slow` |
+| pytest | `uv run python -m pytest tests/patchkit/smoke --slow` |
 
 Measured edit to running (DT2 1.17): DSP-only change about 3 s; a ColdFire (MAIN) change about 13 s (cold boot with DSP;
 DN2 about 6 s; cached by MAIN hash, so an unchanged MAIN restores in under 1 s).

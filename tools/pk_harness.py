@@ -9,14 +9,14 @@
 A *cell* is device x firmware x module set (matrix TOML `[[cell]]`: `device`, `firmware`, `modules`, optional
 `stall_ms`). For each cell the harness builds the patched image (`tools/patchkit.py patch`; stock when the set is
 empty), spawns a daemon on the stock firmware's ready inputs, loads the image (`firmware.load`, DSP-only changes hot,
-a MAIN change by the cached coupled cold boot), and runs *tours*: `tests/patchkit_smoke/tours/smoke.toml` (boot to the
+a MAIN change by the cached coupled cold boot), and runs *tours*: `tests/patchkit/smoke/tours/smoke.toml` (boot to the
 readiness contract, track and pattern change, audition, play/stop with the sequencer running, machine menu open and
 close, save project and reload, a seeded random-input stress) and the tests of the modules in the set
 (`modules/*/*/tests/*.toml`). Every segment starts from `restart`, so segments do not depend on each other.
 
 After every input and every segment the harness asserts: no `fault` (status.cf.error, GUEST_FAULT), no DSP halt, no
 main-loop stall (status.heartbeat, the controller's `stall` events), and its own checks: `expect_frame` against the
-golden SHA-256 (tests/patchkit_smoke/goldens.json, keyed `DEV-FW/<module set>/<segment>/<checkpoint>`; **only hashes are
+golden SHA-256 (tests/patchkit/smoke/goldens.json, keyed `DEV-FW/<module set>/<segment>/<checkpoint>`; **only hashes are
 committed**, the PNGs go to out/runs/patchkit/frames/), `expect_pcm_db` over the PCM tap's 100 ms windows.
 
 Step format (TOML `[[segment.step]]` / `[[step]]`, exactly one action key each; names are the panel names of
@@ -72,9 +72,9 @@ from digi_client import Emu, EmuError  # noqa: E402
 
 MS = 132_000  # ColdFire instructions per emulated millisecond (the oracle clock)
 OUT = ROOT / "out" / "runs" / "patchkit"
-GOLDENS = ROOT / "tests" / "patchkit_smoke" / "goldens.json"
-TOURS = ROOT / "tests" / "patchkit_smoke" / "tours"
-DEFAULT_MATRIX = ROOT / "tests" / "patchkit_smoke" / "matrix.toml"
+GOLDENS = ROOT / "tests" / "patchkit" / "smoke" / "goldens.json"
+TOURS = ROOT / "tests" / "patchkit" / "smoke" / "tours"
+DEFAULT_MATRIX = ROOT / "tests" / "patchkit" / "smoke" / "matrix.toml"
 DEFAULT_STALL_MS = 1000
 SHARED_CACHE = (
     ROOT / "out" / "runs" / ".cache"

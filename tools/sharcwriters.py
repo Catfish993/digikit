@@ -45,7 +45,7 @@ stack-relative store to STACK-RELATIVE instead of EXCLUDED-STACK.
 
 The interpreter-independent logic (the census form rules, the width
 tables, and the address classifier) is pure and unit-tested in
-tests/test_sharcwriters.py with synthetic decoded fields and synthetic
+tests/sharc/analysis/test_sharcwriters.py with synthetic decoded fields and synthetic
 trace events -- no firmware required. Running the CLI needs the DT2 1.16
 SHARC loader (out/sections/dt2-1.16/section_7_BLOB.bin), which is not
 committed (see CLAUDE.md).
