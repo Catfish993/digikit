@@ -60,6 +60,8 @@ pub fn apply_bundle(fw: &[u8], bundle: &[u8], ids: &str) -> Result<(Vec<u8>, Str
         .filter(|s| !s.is_empty())
         .map(String::from)
         .collect();
+    // like the command line: the requirements of the selection are added
+    let (ids, _added) = lib.with_requires(&ids)?;
     let out = apply::apply(fw, &reg, &lib, &ids)?;
     let plan = serde_json::to_string_pretty(&out.plan)? + "\n";
     Ok((out.syx, plan))

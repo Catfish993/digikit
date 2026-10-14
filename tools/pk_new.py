@@ -4,12 +4,18 @@
     uv run python tools/pk_new.py fx/my-drive              # ColdFire and SHARC+ stubs
     uv run python tools/pk_new.py fx/my-drive --dsp        # SHARC+ only: a master-bus hook that passes audio through
     uv run python tools/pk_new.py test/my-demo --cf        # ColdFire only: code, data and bss in cf.expansion
+    uv run python tools/pk_new.py machines/my-synth --machine [--devices dt2,dn2]
+                                                           # a machine type: a clone of type 0 with a permanent number
 
 Writes `modules/<category>/<name>/`: `module.toml`, `src/cf/<name>.c` and/or `src/dsp/<name>.s`, `tests/smoke.toml`
 (the quick tests `patch:dev` and `patch:test` run), `gallery/README.md`; then builds the objects with
 tools/pk_build.py, so the template is known to compile. The DSP stub reuses the anchor rules of fx/master-gain (rules
 only: masked signatures and hashes, never firmware bytes). A new module claims `dsp.master.hook` when it has a DSP
 part, so it conflicts with fx/master-gain: pick one at a time until the master-fx framework (Phase 3) exists.
+
+A machine module (`--machine`) gets its permanent type number per device: the next free number in
+modules/core/machines/types.toml, which the script appends and prints. The file is committed with the module; a number
+is never reused or changed (a project stores only the number).
 """
 
 from __future__ import annotations
@@ -26,6 +32,8 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 MODULES = ROOT / "modules"
+TYPES = MODULES / "core" / "machines" / "types.toml"
+STOCK_TYPES = {"dt2": 7, "dn2": 5}  # the first number that is not a stock type
 TOP = {"fx", "machines", "test", "ui", "tools"}
 
 CF_C = """/* {id}: ColdFire code in the expansion region (cf.expansion).
@@ -159,7 +167,87 @@ resource = "dsp.master.hook"
     return "".join(parts)
 
 
-def create(id_: str, cf: bool, dsp: bool, force: bool = False) -> Path:
+MACHINE_ENTRY = """
+[[entry]]
+registry = "machines"
+id = "{eid}"
+name = "{title}"
+short = "{short}"
+clone_of = 0            # the stock type this machine copies; give it parameters and a DSP routine from here
+devices = ["{dev}"]
+"""
+
+
+def allocate(key: str, devices: list[str], path: Path = TYPES) -> dict[str, int]:
+    """Give `key` ("module id:entry id") the next free number on each device: appended to `[<dev>.alloc]` of `path`."""
+    text = path.read_text()
+    data = tomllib.loads(text)
+    out: dict[str, int] = {}
+    for dev in devices:
+        d = data.get(dev)
+        if d is None:
+            raise SystemExit(f"{path}: no [{dev}] section")
+        alloc = d.get("alloc", {})
+        if key in alloc:
+            out[dev] = alloc[key]
+            continue
+        n = max([STOCK_TYPES[dev] - 1, *alloc.values()]) + 1
+        if n > d["last"]:
+            raise SystemExit(
+                f"{path}: [{dev}] is full: the next number {n} is above last = {d['last']}"
+            )
+        lines = text.split("\n")
+        start = lines.index(f"[{dev}.alloc]")
+        end = next(
+            (i for i in range(start + 1, len(lines)) if lines[i].startswith("[")),
+            len(lines),
+        )
+        at = start + 1
+        for i in range(start + 1, end):
+            if lines[i].strip():
+                at = i + 1
+        lines.insert(at, f'"{key}" = {n}')
+        text = "\n".join(lines)
+        out[dev] = n
+    path.write_text(text)
+    return out
+
+
+def machine_manifest(id_: str, name: str, devices: list[str]) -> str:
+    title = name.replace("-", " ").capitalize()
+    eid = name.replace("-", "_")
+    head = f"""[module]
+id = "{id_}"
+version = "0.1.0"
+name = "{title}"
+category = "{id_.split("/")[0]}"
+status = "experimental"
+summary = "Describe the machine in one line"
+requires = ["core/machines"]
+conflicts = []
+
+[targets]
+"dt2-1.16" = "untested"
+"dt2-1.17" = "untested"
+"dn2-1.11" = "untested"
+"dn2-1.12" = "untested"
+
+# The machine's type number is permanent: modules/core/machines/types.toml, key "{id_}:{eid}".
+"""
+    short = re.sub(r"[^A-Z0-9]", "", name.upper())[:4] or "NEW"
+    return head + "".join(
+        MACHINE_ENTRY.format(eid=eid, title=title[:23], short=short, dev=d)
+        for d in devices
+    )
+
+
+def create(
+    id_: str,
+    cf: bool,
+    dsp: bool,
+    force: bool = False,
+    machine: list[str] | None = None,
+) -> Path:
     m = re.fullmatch(r"([a-z0-9]+)/([a-z0-9][a-z0-9-]*)", id_)
     if not m:
         raise SystemExit(
@@ -176,15 +264,17 @@ def create(id_: str, cf: bool, dsp: bool, force: bool = False) -> Path:
     if base.exists() and not force:
         raise SystemExit(f"{base} exists (use --force to overwrite the stubs)")
     files = {
-        "module.toml": manifest(id_, sym, name, cf, dsp),
+        "module.toml": machine_manifest(id_, name, machine)
+        if machine
+        else manifest(id_, sym, name, cf, dsp),
         "tests/smoke.toml": SMOKE.format(id=id_),
         "gallery/README.md": README.format(
             id=id_, title=name.replace("-", " ").capitalize()
         ),
     }
-    if cf:
+    if cf and not machine:
         files[f"src/cf/{name}.c"] = CF_C.format(id=id_, sym="pk" + sym)
-    if dsp:
+    if dsp and not machine:
         files[f"src/dsp/{name}.s"] = DSP_S.format(id=id_, sym=sym)
     for rel, text in files.items():
         path = base / rel
@@ -198,13 +288,31 @@ def main(argv: list[str]) -> int:
     ap.add_argument("id", help="category/name, for example fx/my-drive")
     ap.add_argument("--cf", action="store_true", help="ColdFire stub only")
     ap.add_argument("--dsp", action="store_true", help="SHARC+ stub only")
+    ap.add_argument(
+        "--machine", action="store_true", help="a machine type (clone of type 0)"
+    )
+    ap.add_argument(
+        "--devices", default="dt2,dn2", help="with --machine: dt2, dn2 or dt2,dn2"
+    )
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args(argv)
     cf, dsp = (a.cf or not a.dsp), (a.dsp or not a.cf)
-    base = create(a.id, cf, dsp, a.force)
+    machine = None
+    if a.machine:
+        machine = [d for d in a.devices.split(",") if d]
+        if not machine or any(d not in STOCK_TYPES for d in machine):
+            raise SystemExit("--devices is dt2, dn2 or dt2,dn2")
+        cf = dsp = False
+    base = create(a.id, cf, dsp, a.force, machine)
     print(f"created {base.relative_to(ROOT)}")
-    if not a.no_build:
+    if machine:
+        eid = a.id.split("/")[1].replace("-", "_")
+        for dev, n in allocate(f"{a.id}:{eid}", machine).items():
+            print(
+                f'type number on {dev}: {n} (appended to {TYPES.relative_to(ROOT)} as "{a.id}:{eid}"; commit it)'
+            )
+    if not a.no_build and not machine:
         import pk_build
 
         for line in pk_build.build_module(base, check=False):

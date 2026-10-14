@@ -79,6 +79,7 @@ export function buildModuleData(root = repoRoot) {
     const d = parse(text);
     const files = {};
     for (const o of d.object ?? []) files[o.path] = readFileSync(join(dir, o.path), 'utf8');
+    for (const r of d.registry ?? []) if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
     modules.push({ manifest: text, files });
     const m = d.module;
     const readme = join(dir, 'gallery', 'README.md');

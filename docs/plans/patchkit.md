@@ -133,7 +133,7 @@ patching never rebuilds the emulator (patched images boot through `boot_for_base
 | `mise run patch:dev -- --modules a,b` | Watch, rebuild, patch, inject |
 | `mise run patch:test [-- --matrix]` | Harness over the control socket |
 | `mise run port:resolve -- X.syx` | Generate or check a port file |
-| `mise run fw:onboard -- X.syx` | Extract, databases, names, port for a new firmware |
+| `mise run fw:onboard -- X.syx` | **Not built (backlog)**: extract, databases, names, port for a new firmware |
 
 Inject modes: DSP-only changes hot (exists); ColdFire changes through a coupled cold boot to ready cached by
 (MAIN sha, DSP sha) (Phase 0.6); `--hot` for code-only ColdFire edits that a module marks hot-safe.
@@ -884,4 +884,4 @@ best mitigation available. Ranked by what a failure costs.
 | Projects saved on patched firmware break stock firmware | Phase 3 persistence check; machines reuse the 8 engine slots |
 | New parameters not storable or p-lockable | Prefer the 8 positional engine slots and discarded frame words in v1 |
 | DSP overrun on hardware | Idle-loop headroom budget in the harness |
-| New Elektron OS | Signature-based ports; `fw:onboard`; 1.17 is the first test |
+| New Elektron OS | Signature-based ports; `fw:onboard` (not built, backlog); 1.17 is the first test |

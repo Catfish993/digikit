@@ -12,7 +12,7 @@ conflicts = []
 [targets]
 "dn2-1.12" = "experimental"
 
-# The machine: its own type (5), listed before MIDI. `own_dsp`: the DSP is told the machine's own type, which the FM
+# The machine: its own type (6, permanent: core/machines types.toml), listed before MIDI. `own_dsp`: the DSP is told the machine's own type, which the FM
 # engine renders as nothing (a silent machine); `clone_of = 0` gives it FM TONE's permission and name hint.
 [[entry]]
 registry = "machines"

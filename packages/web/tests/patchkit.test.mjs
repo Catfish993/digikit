@@ -95,7 +95,7 @@ test('wasm and CLI produce byte-identical output for the machine framework (two 
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from('core/machines,machines/xslice'));
   assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
-  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|outside the anchor|no registry/);
+  assert.match(text(x.pk_err_ptr, x.pk_err_len), /not compatible|outside the anchor|no registry|no number in the allocation table/);
 });
 
 test('wasm and CLI produce byte-identical output for core/params and PLUCK', { skip: !need }, async () => {
@@ -116,7 +116,9 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
   assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
   const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
   const entries = (name) => report.registries.find((r) => r.name === name).entries.map((e) => [e.id, e.index]);
-  assert.deepEqual(entries('machines'), [['pluck', 7]]);
+  // PLUCK's permanent type number is 9; 7 and 8 are gap rows (not machines)
+  assert.deepEqual(entries('machines'), [['pluck', 9]]);
+  assert.deepEqual(report.registries.find((r) => r.name === 'machines').gaps, [7, 8]);
   assert.deepEqual(entries('params'), [
     ['pluck_decay', 275], ['pluck_pick', 276], ['pluck_bright', 277], ['pluck_color', 278],
   ]);
@@ -153,6 +155,29 @@ test('wasm and CLI produce byte-identical output for the primitives (registry, s
   const [dp, dl] = put(readFileSync(images.dn2));
   assert.equal(x.pk_apply(dp, dl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
   assert.equal(JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len)).hooks, undefined);
+});
+
+test('wasm adds the requirements of the selection like the CLI', { skip: !need }, async () => {
+  const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
+  const bundlePath = join(work, 'bundle.json');
+  py('tools/patchkit.py', 'bundle', '-o', bundlePath);
+  const { x, put, get, text } = await load();
+  const [bp, bl] = put(readFileSync(bundlePath));
+  for (const dev of ['dt2', 'dn2']) {
+    const out = join(work, `${dev}-pluck-only.syx`);
+    // the CLI prints what it added
+    const said = py('tools/patchkit.py', 'patch', '--firmware', images[dev], '--modules', 'machines/pluck', '-o', out);
+    assert.match(said, /added by requires: .*core\/machines/);
+    const [fp, fl] = put(readFileSync(images[dev]));
+    const [ip, il] = put(Buffer.from('machines/pluck'));
+    assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
+    assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), `${dev}: wasm and CLI output differ`);
+  }
+  // a missing module is refused with the same words
+  const [fp, fl] = put(readFileSync(images.dt2));
+  const [ip, il] = put(Buffer.from('machines/nope'));
+  assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 1);
+  assert.match(text(x.pk_err_ptr, x.pk_err_len), /unknown module machines\/nope/);
 });
 
 test('wasm refuses what the CLI refuses', { skip: !need }, async () => {

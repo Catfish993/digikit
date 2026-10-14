@@ -110,6 +110,7 @@ def unit():
         {
             "_mf_first": FIRST,
             "_mf_count": COUNT,
+            "_mf_entries": COUNT,
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
         },

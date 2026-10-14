@@ -21,7 +21,7 @@ sources = ["src/dsp/pluck.s"]
 place = "dsp.l2"
 devices = ["dt2"]
 
-# The DSP routine renders the type core/machines assigns to this machine (`machines.pluck.index`).
+# The DSP routine renders the permanent type number of this machine (core/machines types.toml) (`machines.pluck.index`).
 [[entry]]
 registry = "voices"
 id = "pluck"

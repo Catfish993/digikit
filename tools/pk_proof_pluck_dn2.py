@@ -4,7 +4,7 @@ machines/pluck), in the emulator, through the panel.
 
     uv run python tools/pk_proof_pluck_dn2.py [--quick] [--only a,b,c,d,e] [--out DIR] [--jobs N]
 
-PLUCK is a machine of type 5 (listed before MIDI) with one SYN page of its own: knobs A..D = DECAY, PICK, BRIGHT, COLOR
+PLUCK is a machine of type 9 (listed before MIDI) with one SYN page of its own: knobs A..D = DECAY, PICK, BRIGHT, COLOR
 (sound-array slots 25..28, UI 0..127 as words 0..0x7f00; defaults 0x4000, 0x2000, 0x5000, 0x2800). The DSP routine runs
 per voice slot, takes the note-on from the rising edge of frame halfword 0x11 and its words from the slot's frame block
 (finding 06, "DN2 voice slots"). Independent parts, one daemon each:
@@ -17,7 +17,7 @@ per voice slot, takes the note-on from the rising edge of frame halfword 0x11 an
   c  retrigger the same key 20 times (150 ms apart, also past 16 voice slots) gives 20 plucks of the right pitch (the edge
                works for a repeated note); full mode adds 40 notes 110 ms apart (the plucks overlap: 16 slots in use)
   d  sequencer a step recorded on track 1 plays back as plucks of note 60 on both passes
-  e  persist   edit DECAY and BRIGHT, save, set the track to FM TONE, load: type 5 and the values are back; stock loads
+  e  persist   edit DECAY and BRIGHT, save, set the track to FM TONE, load: type 9 and the values are back; stock loads
                the project without a fault
 
 Every input asserts no fault, no DSP halt and no main-loop stall (harness health). `--quick` runs a (two notes), b (DECAY
@@ -48,7 +48,7 @@ import pluck_ref  # noqa: E402
 
 MODS = ["core/machines", "core/params", "core/dsp-voice", "machines/pluck"]
 PLUCK_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, PLUCK (before MIDI)
-PLUCK_TYPE = 5
+PLUCK_TYPE = 9  # core/machines types.toml, "machines/pluck:pluck" on dn2
 DECAY, PICK, BRIGHT, COLOR = 25, 26, 27, 28
 ENC = {DECAY: "ENC A", PICK: "ENC B", BRIGHT: "ENC C", COLOR: "ENC D"}
 DEFAULTS = {DECAY: 0x4000, PICK: 0x2000, BRIGHT: 0x5000, COLOR: 0x2800}
@@ -110,7 +110,7 @@ class PluckProof(C.Dn2Proof):
             got = {k: self.word(s, v, k) for k in DEFAULTS}
             self.release(s, "TRIG 1")
             self.check(
-                "the audio mirror holds type 5 and the defaults are PLUCK's",
+                f"the audio mirror holds type {PLUCK_TYPE} and the defaults are PLUCK's",
                 self.wire_type(s) == PLUCK_TYPE and got == DEFAULTS,
                 {k: hex(x) for k, x in got.items()},
             )
@@ -432,8 +432,8 @@ class PluckProof(C.Dn2Proof):
             )
             types = card_overlay.sound_types(overlay.read_bytes(), type_at=0xF4)
             self.check(
-                "the saved project stores type 5 in sound records",
-                types.get(5, 0) > 0,
+                f"the saved project stores type {PLUCK_TYPE} in sound records",
+                types.get(PLUCK_TYPE, 0) > 0,
                 types,
             )
             s.do_tap(["FUNC", "SRC"])

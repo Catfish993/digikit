@@ -102,6 +102,56 @@ pub struct RegistryDef {
     pub terminator: bool,
     #[serde(default)]
     pub field: Vec<FieldDef>,
+    /// Permanent entry numbers: a TOML file of the framework (path relative to the module) with, per device, the
+    /// highest number the framework supports (`last`) and one number per entry, keyed `"<module id>:<entry id>"`
+    /// (`[dt2.alloc]`). An entry's index is its allocated number, not `first + k`. The registry then spans
+    /// `first ..= highest selected number`; a number nobody selected is a gap row built from `[registry.gap]`.
+    #[serde(default)]
+    pub index_table: Option<String>,
+    /// Field values of a gap row (the registry's field defaults fill the rest).
+    #[serde(default)]
+    pub gap: Option<BTreeMap<String, toml::Value>>,
+}
+
+/// The parsed `index_table` of a registry: device -> numbers.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct AllocTable {
+    #[serde(flatten)]
+    pub devices: BTreeMap<String, DevAlloc>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DevAlloc {
+    /// The highest index the framework supports on this device.
+    pub last: i64,
+    #[serde(default)]
+    pub alloc: BTreeMap<String, i64>,
+}
+
+impl AllocTable {
+    pub fn parse(text: &str) -> Result<AllocTable> {
+        let t: AllocTable = toml::from_str(text)?;
+        for (dev, d) in &t.devices {
+            if !matches!(dev.as_str(), "dt2" | "dn2") {
+                return Err(err!("allocation table: unknown device [{dev}]"));
+            }
+            let mut seen: BTreeMap<i64, &str> = BTreeMap::new();
+            for (k, v) in &d.alloc {
+                if *v < 0 || *v > d.last {
+                    return Err(err!(
+                        "allocation table [{dev}]: {k} = {v} is outside 0..={}",
+                        d.last
+                    ));
+                }
+                if let Some(prev) = seen.insert(*v, k) {
+                    return Err(err!(
+                        "allocation table [{dev}]: {prev} and {k} both have number {v}"
+                    ));
+                }
+            }
+        }
+        Ok(t)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -221,6 +271,8 @@ pub struct Claim {
 pub struct Module {
     pub manifest: Manifest,
     pub objects: Vec<Dko>,
+    /// parsed `index_table` files, by registry name
+    pub alloc: BTreeMap<String, AllocTable>,
     /// sha256 of the manifest text and the object texts, in order (for the plan)
     pub digest: String,
 }
@@ -239,10 +291,20 @@ impl Module {
             all.push_str(&t);
             objects.push(Dko::parse(&t).map_err(|e| err!("{}: {e}", o.path))?);
         }
+        let mut alloc = BTreeMap::new();
+        for r in &manifest.registry {
+            if let Some(path) = &r.index_table {
+                let t = read(path)?;
+                all.push_str(&t);
+                let a = AllocTable::parse(&t).map_err(|e| err!("{path}: {e}"))?;
+                alloc.insert(r.name.clone(), a);
+            }
+        }
         crate::prim::validate_manifest(&manifest)?;
         Ok(Module {
             manifest,
             objects,
+            alloc,
             digest: sha256_hex(all.as_bytes()),
         })
     }
@@ -267,6 +329,49 @@ pub struct Library {
 impl Library {
     pub fn get(&self, id: &str) -> Option<&Module> {
         self.modules.iter().find(|m| m.id() == id)
+    }
+
+    /// The selection plus everything it requires, transitively. Returns the full list (the selection first, in the
+    /// order given, then the added modules in the order found) and the added ones. Refuses a module that is not in
+    /// the library, a requirement that is missing, and a `requires` cycle.
+    pub fn with_requires(&self, ids: &[String]) -> Result<(Vec<String>, Vec<String>)> {
+        fn visit(
+            lib: &Library,
+            id: &str,
+            stack: &mut Vec<String>,
+            done: &mut Vec<String>,
+        ) -> Result<()> {
+            if stack.iter().any(|s| s == id) {
+                return Err(err!("requires cycle: {} -> {id}", stack.join(" -> ")));
+            }
+            if done.iter().any(|d| d == id) {
+                return Ok(());
+            }
+            let m = lib.get(id).ok_or_else(|| match stack.last() {
+                Some(by) => err!("{by} requires {id}, which is not in the module library"),
+                None => err!("unknown module {id}"),
+            })?;
+            stack.push(id.to_string());
+            for r in &m.manifest.module.requires {
+                visit(lib, r, stack, done)?;
+            }
+            stack.pop();
+            done.push(id.to_string());
+            Ok(())
+        }
+        let mut done: Vec<String> = vec![];
+        for id in ids {
+            visit(self, id, &mut vec![], &mut done)?;
+        }
+        let mut all: Vec<String> = vec![];
+        for id in ids {
+            if !all.contains(id) {
+                all.push(id.clone());
+            }
+        }
+        let added: Vec<String> = done.into_iter().filter(|d| !all.contains(d)).collect();
+        all.extend(added.iter().cloned());
+        Ok((all, added))
     }
 }
 

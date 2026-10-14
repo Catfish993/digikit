@@ -42,18 +42,17 @@ mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain -o 
 This writes `out/patch/mg.syx` and `out/patch/mg.plan.json` (every write with its owner, diffable). Without `-o` the
 name is `out/patch/<firmware>+<modules>.syx`. The command verifies the result before it reports success. Notes:
 
-- `--modules` is a comma-separated list of module ids (their path under `modules/`). The command line does not add
-  dependencies: a module that needs `core/machines` fails with "requires core/machines, which is not selected".
-  The web gallery adds required modules for you.
+- `--modules` is a comma-separated list of module ids (their path under `modules/`). The command line adds the
+  modules they `requires`, like the web gallery, and says so (`added by requires: core/machines, ...`). A module that
+  is not in the library, a missing requirement and a `requires` cycle are refused.
 - Modules apply in a fixed order (dependencies first, then by id), whatever order you write them in.
 - The input must be a stock image. A patched image is refused.
 - Everything under `out/` is derived from firmware and is never committed.
 
-A machine needs its framework modules:
+A machine needs its framework modules, which are added for you:
 
 ```sh
-mise run patch -- --firmware Digitakt_II_OS1.17.syx \
-  --modules core/dsp-voice,core/machines,core/params,machines/pluck -o out/patch/pluck.syx
+mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
 ```
 
 ### Inspect, check, explain, verify

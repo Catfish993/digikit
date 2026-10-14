@@ -70,6 +70,15 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
     Ok(lib)
 }
 
+/// The selection plus its requirements; says what it added.
+fn with_requires(lib: &Library, ids: Vec<String>) -> Result<Vec<String>> {
+    let (all, added) = lib.with_requires(&ids)?;
+    if !added.is_empty() {
+        println!("added by requires: {}", added.join(", "));
+    }
+    Ok(all)
+}
+
 fn read(p: &str) -> Result<Vec<u8>> {
     std::fs::read(p).map_err(|e| Error(format!("{p}: {e}")))
 }
@@ -139,6 +148,7 @@ fn run(a: Args) -> Result<()> {
             let raw = read(&fwp)?;
             let reg = registry(&a.root)?;
             let lib = library(&a.root, rest)?;
+            let ids = with_requires(&lib, ids)?;
             if cmd == "check" {
                 let fw = Firmware::parse(&raw)?;
                 let port = reg
@@ -209,6 +219,7 @@ fn run(a: Args) -> Result<()> {
                     .map(|m| m.split('@').next().unwrap().to_string())
                     .collect();
             }
+            let ids = with_requires(&lib, ids)?;
             let out = apply::apply(&raw, &reg, &lib, &ids)?;
             print!("{}", patchkit::explain::explain(&raw, &out)?);
             if let Some(p) = old_plan {

@@ -7,7 +7,7 @@ machines/pluck), in the emulator, through the panel.
 Drives one patched image per part on coupled daemons through the harness (`tools/pk_harness.py` Session: panel inputs,
 health asserted after every input) and reads back:
 
-  a  select    FUNC+SRC lists PLUCK (8th entry), YES commits type 7. The machine's descriptor, read from the running
+  a  select    FUNC+SRC lists PLUCK (8th entry), YES commits type 9 (its permanent number; 7 and 8 are gap rows, not listed). The machine's descriptor, read from the running
                firmware, names the five rows (descriptor field -> relocated parameter table row -> name pointer): TUNE
                and LEV are SAMPLE's rows, DECAY, PICK, BRIGHT and COLOR the module's. After the first trig the engine
                slots hold the module's defaults (and the TX frame words follow).
@@ -18,7 +18,7 @@ health asserted after every input) and reads back:
                T60 (DECAY), spectral tilt (BRIGHT), excitation spectrum (COLOR) and the comb notch at the 4th harmonic
                (PICK = 1/2).
   e  sequencer four quarter-note trigs plus PLAY: four plucks.
-  f  persist   save the project with edited PLUCK values, set the track to SAMPLE, load it: type 7 and the four values
+  f  persist   save the project with edited PLUCK values, set the track to SAMPLE, load it: type 9 and the four values
                are back. The card's writes are laid over the card of the STOCK firmware: the track loads as SAMPLE.
   g  mod       MOD page, DEST knob: the SRC group lists PLUCK's own names (frames differ from stock SAMPLE's).
 
@@ -61,6 +61,7 @@ import pk_proof_machines as M  # noqa: E402
 import pk_proofkit as K  # noqa: E402
 import pluck_ref  # noqa: E402
 
+PLUCK_TYPE = 9  # core/machines types.toml, "machines/pluck:pluck" on dt2
 MODS = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]
 PLUCK_DOWNS = (
     7  # presses of DOWN from the top of the machine list to PLUCK (the 8th entry)
@@ -260,7 +261,11 @@ class PluckProof(M.Proof):
             self.fresh(s, 600)
             self.select(s, PLUCK_DOWNS)
             t = self.type_now(s)
-            self.check("PLUCK commits type 7", t == 7, f"track object type {t}")
+            self.check(
+                f"PLUCK commits type {PLUCK_TYPE}",
+                t == PLUCK_TYPE,
+                f"track object type {t}",
+            )
             names = self.descriptor_names(s)
             self.check(
                 "the descriptor's rows carry the module's names",
@@ -334,8 +339,8 @@ class PluckProof(M.Proof):
                 )
             tx_type, dsp_type = self.wire(s)
             self.check(
-                "TX frame machine word and DSP type cache are 7",
-                tx_type == 7 and dsp_type == 7,
+                f"TX frame machine word and DSP type cache are {PLUCK_TYPE}",
+                tx_type == PLUCK_TYPE and dsp_type == PLUCK_TYPE,
                 f"{tx_type} {dsp_type}",
             )
             s.health("end of aq")
@@ -355,7 +360,11 @@ class PluckProof(M.Proof):
             s.do_tap("YES")
             s.run_ms(300)
             t = self.type_now(s)
-            self.check("PLUCK commits type 7", t == 7, f"track object type {t}")
+            self.check(
+                f"PLUCK commits type {PLUCK_TYPE}",
+                t == PLUCK_TYPE,
+                f"track object type {t}",
+            )
             names = self.descriptor_names(s)
             print("     descriptor fields:", names)
             self.check(
@@ -387,8 +396,8 @@ class PluckProof(M.Proof):
             )
             tx_type, dsp_type = self.wire(s)
             self.check(
-                "TX frame machine word and DSP type cache are 7",
-                tx_type == 7 and dsp_type == 7,
+                f"TX frame machine word and DSP type cache are {PLUCK_TYPE}",
+                tx_type == PLUCK_TYPE and dsp_type == PLUCK_TYPE,
                 f"{tx_type} {dsp_type}",
             )
             s.health("end of a")
@@ -701,10 +710,10 @@ class PluckProof(M.Proof):
             self.check(
                 "track set to SAMPLE", self.type_now(s) == 0, f"{self.type_now(s)}"
             )
-            self.load_project(s, lambda: self.type_now(s) == 7)
+            self.load_project(s, lambda: self.type_now(s) == PLUCK_TYPE)
             self.check(
-                "project reload brings type 7 back",
-                self.type_now(s) == 7,
+                f"project reload brings type {PLUCK_TYPE} back",
+                self.type_now(s) == PLUCK_TYPE,
                 f"{self.type_now(s)} after {self.load_s:g} s",
             )
             if self.quick:
@@ -731,8 +740,8 @@ class PluckProof(M.Proof):
             card = s.card
         types = card_overlay.sound_types(overlay.read_bytes())
         self.check(
-            "the saved project stores type 7 in its sound records",
-            types.get(7, 0) > 0,
+            f"the saved project stores type {PLUCK_TYPE} in its sound records",
+            types.get(PLUCK_TYPE, 0) > 0,
             f"{types}",
         )
         base = Path(card or "")

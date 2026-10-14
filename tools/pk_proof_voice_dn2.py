@@ -3,7 +3,7 @@
 
     uv run python tools/pk_proof_voice_dn2.py [--out DIR] [--only a,b,c] [--quick] [--jobs N]
 
-Emulator only (finding 06, "Per-voice hook on DN2"). SINE is the machine type 5 that test/dn2-sine adds (selected in the
+Emulator only (finding 06, "Per-voice hook on DN2"). SINE is the machine type 7 that test/dn2-sine adds (selected in the
 machine menu; the track's frame words are forced with DSP_FRAME_POKE where a case needs another note):
 
   a  stock   with core/dsp-voice and test/dn2-sine patched in, FM TONE selected: the PCM is bit-identical to the stock

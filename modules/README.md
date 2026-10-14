@@ -44,8 +44,8 @@ must equal the module id.
 - **Claims**: declare every scarce resource the module takes with `[[claim]]`, for example the one hook site that a
   module takes (`dsp.master.hook`). Two modules with the same claim cannot be patched together, and the gallery
   explains it. Registry entries claim themselves.
-- **Dependencies**: `requires` lists framework modules. The command line needs them listed in `--modules`; the
-  gallery adds them.
+- **Dependencies**: `requires` lists framework modules. The command line and the gallery add them for you (the
+  command line prints `added by requires: ...`); a missing module or a `requires` cycle is refused.
 - **`gallery/README.md`**: text for the gallery card. Write for a player: what it adds, which firmware, how to hear
   it, limits, "emulator only". The gallery renders a small Markdown subset: headings, paragraphs, `-` lists, fenced
   code blocks, `` `code` `` and `**bold**`. It has no tables, no links and no HTML. No firmware bytes, no vendor
@@ -251,6 +251,8 @@ A framework declares a table that other modules add rows to.
 | `region` | where the rows are placed |
 | `devices` | optional; a registry with one name may be declared once per device |
 | `terminator` | `true`: one all-zero row follows the entries (not counted), for a routine that scans until a zero row |
+| `index_table` | path of a TOML file with permanent entry numbers (see below); entries are numbered by it, not by order |
+| `[registry.gap]` | with `index_table`: the field values of a gap row (the field defaults fill the rest) |
 | `[[registry.field]]` | `name`, `kind`, `max_len` (`cstr`), `default` |
 
 Field kinds: `u8`, `u16`, `u32`, `cstr` (a pointer to a string placed behind the rows; `max_len` checks the length)
@@ -258,8 +260,29 @@ and `sym` (an expression: a symbol of any module or `<registry>.<id>.index`). Ro
 size is rounded to the widest field, the byte order is the region's CPU. A field with no `default` must be given by
 every entry.
 
-patchkit defines `<reg>.first`, `<reg>.count`, `<reg>.rows`, `<reg>.row_size` and `<reg>.<id>.index` (= first + k,
-entries in canonical module order).
+patchkit defines `<reg>.first`, `<reg>.count`, `<reg>.entries`, `<reg>.rows`, `<reg>.row_size` and
+`<reg>.<id>.index` (= first + k, entries in canonical module order; with an `index_table` see below).
+
+**Permanent numbers (`index_table`).** A project stores only a machine's type number, so the number must not depend
+on which other modules are selected. `core/machines` therefore ships `types.toml`:
+
+```toml
+[dt2]
+last = 23                          # the highest number the framework supports on this device
+[dt2.alloc]
+"machines/pluck:pluck" = 9         # "<module id>:<entry id>" = number
+```
+
+The numbers are allocated by hand (or by `mise run patch:new -- machines/NAME --machine`, which takes the next free
+number on each device and prints it) and committed with the module. A number is never reused or changed, also not
+after its machine is removed. Digitakt II numbers start at 7, Digitone II at 5 (stock types are never allocated); `last`
+is 23 on both (Digitakt II: the DSP selector table was read to entry 23). patchkit refuses an entry without a number,
+two entries with one number (the table itself is checked at load) and a number outside `first ..= last`. The table
+spans `first` to the highest *selected* number: a number nobody selected is a **gap row** built from `[registry.gap]`
+(for machines: a clone of type 0 with position `0xffffffff`, which the machine list does not show; a stored project
+that names it plays as type 0). `<reg>.count` counts the rows including gaps, `<reg>.entries` the real entries; plan.json
+lists the gap indices as `gaps`. Give a new framework with a persistent number the same two things: a table file and
+a gap row that its routines can skip.
 
 ```toml
 [[registry]]
@@ -286,7 +309,7 @@ field. Numbers, strings for `cstr` fields and expressions or symbols for `sym` a
 [[entry]]
 registry = "voices"
 id = "pluck"
-type = "machines.pluck.index"     # the type number core/machines assigns to the machine below
+type = "machines.pluck.index"     # the permanent type number of the machine below (core/machines types.toml)
 pc = "_pk_render"                 # the routine, a symbol of this module's DSP object
 devices = ["dt2"]
 ```
@@ -407,8 +430,9 @@ of its own: three frameworks do the firmware work, and the module only declares 
 - **The parameters.** Four `[[entry]]` rows in the `params` registry of `core/params`: `name`, `short`, a `template`
   stock row to copy the formatter and value class from, `slot` (the engine slot the value travels in), `min`, `max`
   and `default`.
-- **No numbers of the firmware's types.** patchkit assigns the type number and the parameter indices in canonical
-  module order. The DSP entry and the machine entry both name `machines.pluck.index`, so they always agree.
+- **No numbers of the firmware's types.** The machine's type number is permanent: its row in
+  `modules/core/machines/types.toml` (`mise run patch:new -- machines/NAME --machine` adds the next free one). The
+  parameter indices are assigned in canonical module order. The DSP entry and the machine entry both name `machines.pluck.index`, so they always agree.
 - **Tests.** `tests/select.toml` opens the machine list, selects PLUCK, checks the committed type, the SRC page frame,
   that a trig sounds, that the DSP knows the type and that turning a knob changes the page. `tests/smoke.toml` checks
   that the module leaves the stock voice alone.

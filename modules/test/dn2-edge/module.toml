@@ -12,7 +12,7 @@ conflicts = []
 [targets]
 "dn2-1.12" = "experimental"
 
-# The machine: its own type (5), listed before MIDI, sent to the DSP as it is (`own_dsp`); the page layout, parameters
+# The machine: its own type (8, permanent: core/machines types.toml), listed before MIDI, sent to the DSP as it is (`own_dsp`); the page layout, parameters
 # and names are FM TONE's (clone_of = 0).
 [[entry]]
 registry = "machines"
