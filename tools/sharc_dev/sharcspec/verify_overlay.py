@@ -23,7 +23,6 @@ RED = (0.85, 0, 0)
 def main(first=301, last=563, per_sheet=4):
     doc = pymupdf.open(PDF)
     clips = []  # (page index, clip rect, title)
-    carried = []
     for pno in range(first, last + 1):
         page = doc[pno - 1]
         got = ef.extract_page(page, pno)

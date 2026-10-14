@@ -11,7 +11,7 @@ import subprocess
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-from tools.emulator import (
+from tools.emulator import (  # noqa: E402
     coupled,  # noqa: E402
     digi_env,  # noqa: E402
     native_target,  # noqa: E402

@@ -1,6 +1,5 @@
 """Synthetic SHARC p-code measurement command coverage."""
 
-import os
 import sqlite3
 import sys
 import unittest

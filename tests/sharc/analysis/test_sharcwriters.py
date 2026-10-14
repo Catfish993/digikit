@@ -89,7 +89,7 @@ class StaticStoreWidthTest(unittest.TestCase):
             (1, 1, 0): 2,
             (1, 1, 1): 8,
         }
-        for (l, x, w), width in cases.items():
+        for (l, x, w), width in cases.items():  # noqa: E741
             self.assertEqual(
                 W.static_store_width("3b", {"l": l, "x": x, "w": w}), width
             )
@@ -99,7 +99,7 @@ class StaticStoreWidthTest(unittest.TestCase):
 
     def test_4b_lxw_table(self):
         cases = {(1, 1, 1): 4, (0, 0, 0): 1, (1, 0, 0): 2, (0, 1, 0): 1, (1, 1, 0): 2}
-        for (l, x, w), width in cases.items():
+        for (l, x, w), width in cases.items():  # noqa: E741
             self.assertEqual(
                 W.static_store_width("4b", {"l": l, "x": x, "w": w}), width
             )

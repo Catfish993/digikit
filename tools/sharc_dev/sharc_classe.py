@@ -24,7 +24,7 @@ hist: dict[int, int] = {}
 roots: dict[int, str] = {}
 runs: dict[int, tuple] = {}
 stops: dict[int, collections.Counter] = collections.defaultdict(collections.Counter)
-for line in open(a.err, errors="replace"):
+for line in open(a.err, errors="replace"):  # noqa: SIM115
     if line.startswith("hist: 0x"):
         _, pc, n = line.split()
         hist[int(pc, 16)] = int(n)

@@ -16,7 +16,7 @@ C = import_module("tools.sharc_dev.sharc_candidates")
 
 class CandidatesTest(unittest.TestCase):
     def setUp(self):
-        self.file = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
+        self.file = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)  # noqa: SIM115
         self.file.close()
         self.db = sqlite3.connect(self.file.name)
         self.db.executescript("""
@@ -166,7 +166,7 @@ class CandidatesTest(unittest.TestCase):
         self.db.commit()
         with self.assertRaisesRegex(ValueError, "bad decoder fields JSON"):
             C.candidates(self.file.name)
-        missing = tempfile.NamedTemporaryFile(delete=False)
+        missing = tempfile.NamedTemporaryFile(delete=False)  # noqa: SIM115
         missing.close()
         try:
             with self.assertRaisesRegex(ValueError, "missing or incompatible"):

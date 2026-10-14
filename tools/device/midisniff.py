@@ -90,7 +90,7 @@ def decode_frame(msg):
                     )
     elif len(msg) >= 3 and msg[0] == 0xF0 and msg[1] == 0x7E:
         lines.append(
-            f"  universal non-realtime (SDS): " + " ".join(f"{b:02x}" for b in msg)
+            "  universal non-realtime (SDS): " + " ".join(f"{b:02x}" for b in msg)
         )
     return lines
 

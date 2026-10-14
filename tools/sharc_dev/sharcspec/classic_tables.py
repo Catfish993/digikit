@@ -14,7 +14,6 @@ instruction-set compatible, so it serves as an independent second source.
 
 import json
 import re
-import sys
 
 import pymupdf
 
@@ -63,10 +62,10 @@ def parse_page(page, pno):
         if w[4].isdigit() and int(w[4]) <= 47:
             rows.setdefault(round(w[1]), []).append(w)
     tables = []
-    for y, ws in sorted(rows.items()):
+    for _y, ws in sorted(rows.items()):
         ws.sort(key=lambda w: w[0])
         nums = [int(w[4]) for w in ws]
-        if len(ws) < 3 or any(a - b != 1 for a, b in zip(nums, nums[1:])):
+        if len(ws) < 3 or any(a - b != 1 for a, b in zip(nums, nums[1:], strict=False)):
             continue
         top = min(w[1] for w in ws)
         bottom_header = max(w[3] for w in ws)
@@ -178,7 +177,7 @@ def main():
             "pattern": pattern,
             "cells": cells,
         }
-    json.dump(out, open("classic.json", "w"), indent=1)
+    json.dump(out, open("classic.json", "w"), indent=1)  # noqa: SIM115
     for name, t in out.items():
         print(
             f"{name:10s} {t['msb']:2d}..{t['lsb']:<2d} {t['pattern']}  "

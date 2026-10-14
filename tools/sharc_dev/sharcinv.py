@@ -82,7 +82,7 @@ from collections import Counter, defaultdict
 
 _here = os.path.dirname(os.path.abspath(__file__))
 
-from tools.sharc_dev import (
+from tools.sharc_dev import (  # noqa: E402
     sharcflow,  # noqa: E402
     sharcimm,  # noqa: E402
     sharcldr,  # noqa: E402
@@ -484,8 +484,8 @@ def function_bounds(block: dict):
 def instructions_in(block: dict, entry: int, exit_: int):
     """[(sw, Instruction)] for one function, sliced from the block's aligned
     instruction stream by bisecting on short-word address."""
-    base_sw = block["base_sw"]
     insns = block["insns"]
+    base_sw = block["base_sw"]  # noqa: F841
     sws = block["_insn_sw"]
     lo = bisect.bisect_left(sws, entry)
     hi = bisect.bisect_left(sws, exit_)
@@ -893,7 +893,7 @@ def build_inventory(blob_path, block_idxs, min_depth=8):
 
     # owning function for every call/indirect-call site, by (block, sw)
     def owner_of(idx, sw):
-        block = analyzed[idx]
+        block = analyzed[idx]  # noqa: F841
         fns = [
             fn
             for fn in functions
@@ -915,12 +915,12 @@ def build_inventory(blob_path, block_idxs, min_depth=8):
                     all_calls.append((fn["id"], c["target"], "direct"))
 
     callers = defaultdict(list)
-    for owner_id, target, kind in all_calls:
+    for owner_id, target, _kind in all_calls:
         for callee_id in entry_to_func.get(target, []):
             callers[callee_id].append(owner_id)
 
     callees = defaultdict(list)
-    for owner_id, target, kind in all_calls:
+    for owner_id, target, _kind in all_calls:
         resolved = entry_to_func.get(target)
         callees[owner_id].append({"target": target, "resolved": resolved})
 
@@ -1048,14 +1048,6 @@ def main(argv=None):
             print(line)
 
     if args.top:
-        interesting_labels = {
-            "FFT-like (dual add/subtract + spectral tell)",
-            "FFT-like (bit-reversed addressing)",
-            "interpolating table lookup / wavetable oscillator",
-            "IIR or recurrence",
-            "envelope or gain",
-            "unclassified/mixed",
-        }
 
         def score(fn):
             v = fn["vector"]

@@ -11,8 +11,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from tools.sharc_dev import sharc_trace as trace
 from tools.sharc_dev.sharcldr import LoadedMemory
@@ -908,7 +909,7 @@ def _probe_dma_descriptor_list(
         "classification": "descriptor-list template passed to 0x1ca7e4; live DMA10 fetch not proven",
         "candidate_object": specification["candidate_object"],
         "candidate_slot": specification["candidate_slot"],
-        "descriptors": [dict(zip(fields, item)) for item in descriptors],
+        "descriptors": [dict(zip(fields, item, strict=False)) for item in descriptors],
         "buffer_bytes": descriptors[0][3] * descriptors[0][4],
         "calibration": {
             "disposable_stack": True,

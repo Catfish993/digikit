@@ -119,7 +119,7 @@ def _type14d_width(f: dict):
     and a store with x=1 are cases the tracer stops on rather than
     executing, so they get the same "unknown(...)" fallback _immoff_width
     uses for an unrepresented combination."""
-    w, ex, l, x = f.get("w", 0), f.get("ex", 0), f.get("l", 0), f.get("x", 0)
+    w, ex, l, x = f.get("w", 0), f.get("ex", 0), f.get("l", 0), f.get("x", 0)  # noqa: E741
     if w or ex or (f.get("d") and x):
         return "unknown(w=%d,ex=%d,l=%d,x=%d)" % (w, ex, l, x)
     return ACCESS_WIDTHS[(l, x, 0)]
@@ -139,7 +139,7 @@ def _type3d_width(f: dict):
     tools/sharc_dev/sharc_trace.py has no "3d" _execute branch to cross-check
     against (decode_table.json also flags Type3d with unconfirmed_bits=7),
     so this is derived from the manual alone."""
-    w, ex, l, x = f.get("w", 0), f.get("ex", 0), f.get("l", 0), f.get("x", 0)
+    w, ex, l, x = f.get("w", 0), f.get("ex", 0), f.get("l", 0), f.get("x", 0)  # noqa: E741
     if w:
         if not ex:
             return "unknown(w=1,ex=0,l=%d,x=%d)" % (l, x)

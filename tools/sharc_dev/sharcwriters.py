@@ -66,7 +66,7 @@ from typing import Any, cast
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 from tools.sharc_dev import sharc_trace as trace_mod  # noqa: E402
-from tools.sharc_dev import (
+from tools.sharc_dev import (  # noqa: E402
     sharcfn,  # noqa: E402
     sharcinv,  # noqa: E402
 )

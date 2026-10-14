@@ -361,7 +361,7 @@ def validate_spec(spec, count=7):
         try:
             value.encode("ascii")
         except UnicodeEncodeError:
-            raise SystemExit(
+            raise SystemExit(  # noqa: B904
                 "machinepatch: spec.%s must be pure ASCII, got %r" % (field_name, value)
             )
     if len(spec.desc_name) > DESC_NAME_MAX:
@@ -392,14 +392,14 @@ def validate_spec(spec, count=7):
         raise SystemExit(
             "machinepatch: spec.position must be 0..%d, got %r" % (count, spec.position)
         )
-    if spec.fields is not None:
-        if len(spec.fields) != 9 or not all(
-            isinstance(f, int) and 0 <= f <= 0xFFFFFFFF for f in spec.fields
-        ):
-            raise SystemExit(
-                "machinepatch: spec.fields must be 9 ints, each "
-                "0..0xffffffff, got %r" % (spec.fields,)
-            )
+    if spec.fields is not None and (
+        len(spec.fields) != 9
+        or not all(isinstance(f, int) and 0 <= f <= 0xFFFFFFFF for f in spec.fields)
+    ):
+        raise SystemExit(
+            "machinepatch: spec.fields must be 9 ints, each "
+            "0..0xffffffff, got %r" % (spec.fields,)
+        )
 
 
 # These describe DEFAULT_SPEC only -- kept as module constants because

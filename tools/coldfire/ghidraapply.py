@@ -245,7 +245,7 @@ def apply_rtti(ap, data):
 
     owners = {}
     for vt in data["vtables"]:
-        for i, (slot, owner) in enumerate(zip(vt["slots"], vt["owners"])):
+        for i, (slot, owner) in enumerate(zip(vt["slots"], vt["owners"], strict=False)):
             owners.setdefault(slot, {}).setdefault(owner, i)
     for slot, by_owner in sorted(owners.items()):
         if len(by_owner) > 1:
@@ -265,7 +265,7 @@ def apply_rtti(ap, data):
         loads.setdefault(f.getEntryPoint().getOffset(), (f, []))[1].append(
             (ref["site"], ref["class"])
         )
-    for entry, (f, refs) in sorted(loads.items()):
+    for _entry, (f, refs) in sorted(loads.items()):
         classes = [c for _, c in sorted(refs)]
         comment = None
         if len(set(classes)) > 1:

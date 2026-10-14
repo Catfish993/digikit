@@ -36,7 +36,8 @@ def decode_syx(path):
         payload = body[9:125]         # 9-byte header, 116 payload, 1 checksum
         k = 0
         while k < len(payload):
-            ms = payload[k]; k += 1
+            ms = payload[k]
+            k += 1
             for n in range(7):
                 if k >= len(payload):
                     break

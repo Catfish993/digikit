@@ -215,7 +215,7 @@ FIELDS = FieldRegistry()
 # Load decode table
 # ----------------------------------------------------------------------
 def load_forms():
-    d = json.load(open(os.path.join(SPEC_DIR, "decode_table.json")))
+    d = json.load(open(os.path.join(SPEC_DIR, "decode_table.json")))  # noqa: SIM115
     return d["forms"]
 
 
@@ -1290,7 +1290,7 @@ def find_target_fragments(field_info, base_label):
     # fragment, positioned by its own label-encoded shift amount.
     frags = []
     exclude = set()
-    for label, (base, shift, chunks, hi, lo) in field_info.items():
+    for label, (base, shift, chunks, hi, _lo) in field_info.items():
         if base != base_label:
             continue
         exclude.add(label)
@@ -1378,10 +1378,10 @@ def gen_constructor(form):
     dropped_bases = set()
     if swallowed:
         base_words = {}
-        for label, (base, shift, chunks, hi, lo) in field_info.items():
+        for label, (base, _shift, chunks, _hi, _lo) in field_info.items():
             if label in target_exclude:
                 continue
-            for w, fname, clo, nbits in chunks:
+            for w, _fname, _clo, _nbits in chunks:
                 base_words.setdefault(base, set()).add(w)
         dropped_bases = {b for b, ws in base_words.items() if ws & swallowed}
 
@@ -1403,7 +1403,7 @@ def gen_constructor(form):
 
     for lbl in plain_labels:
         base, shift, chunks, hi, lo = field_info[lbl]
-        for w, fname, clo, nbits in chunks:
+        for _w, fname, _clo, _nbits in chunks:
             display_ops.append(fname)
 
     if dropped_bases:

@@ -70,7 +70,7 @@ def check_provenance(syx, sections_dir, accept):
             "came from. Re-extract, or pass --accept-sections if you are\n"
             "certain they match %s." % (SOURCE_MARKER, sections_dir, syx)
         )
-    was = open(marker_path).read().strip()
+    was = open(marker_path).read().strip()  # noqa: SIM115
     if was != digest:
         raise SystemExit(
             "%s/ belongs to a different firmware image.\n\n"

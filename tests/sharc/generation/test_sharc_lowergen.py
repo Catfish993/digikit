@@ -8,8 +8,6 @@ only keeps the checked-in file from going stale when the semantics change.
 
 from __future__ import annotations
 
-import pathlib
-
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT

@@ -14,10 +14,11 @@ from __future__ import annotations
 import json
 import re
 import struct
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence, TypedDict, cast
+from typing import TypedDict, cast
 
 HERE = Path(__file__).resolve().parent
 TABLE_PATH = HERE / "sharcspec" / "decode_table.json"
@@ -60,7 +61,7 @@ class _TableForm(TypedDict):
     unconfirmed_bits: int
 
 
-class OperandKind(str, Enum):
+class OperandKind(str, Enum):  # noqa: UP042
     """Conservative structural classification, not an execution claim."""
 
     ADDRESS = "address"
@@ -71,7 +72,7 @@ class OperandKind(str, Enum):
     SELECTOR = "selector"
 
 
-class EvidenceStatus(str, Enum):
+class EvidenceStatus(str, Enum):  # noqa: UP042
     """Status of one machine-readable encoding claim."""
 
     DOCUMENTED = "documented"
@@ -390,7 +391,7 @@ class InstructionSet:
     @classmethod
     def from_json(
         cls, table: str | Path = TABLE_PATH, mode: str = "visa"
-    ) -> "InstructionSet":
+    ) -> InstructionSet:
         if mode not in {"visa", "isa"}:
             raise ValueError(f"unsupported SHARC decode mode {mode!r}")
         try:

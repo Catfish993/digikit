@@ -60,7 +60,7 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(TOOLS))
 
 from tools import python_env  # noqa: E402
-from tools.sharc_dev import (
+from tools.sharc_dev import (  # noqa: E402
     sharcflow,  # noqa: E402
     sharcimm,  # noqa: E402
 )

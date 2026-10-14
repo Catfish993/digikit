@@ -106,7 +106,7 @@ def demangle(names):
     ).stdout.splitlines()
     if len(out) != len(names):
         return {n: n for n in names}
-    return dict(zip(names, out))
+    return dict(zip(names, out, strict=False))
 
 
 def kind_vptrs(img, vals):
@@ -235,7 +235,7 @@ def code_refs(data, base, code, targets):
     """-> {target: addresses of instructions whose operands contain $target}"""
     hits = {t: [] for t in targets}
     for lo, hi in code:
-        for pc, hx, mn, ops in disasm(data, base, lo, hi):
+        for pc, _hx, _mn, ops in disasm(data, base, lo, hi):
             for v in {int(tok, 16) for tok in TOKEN.findall(ops)}:
                 if v in hits:
                     hits[v].append(pc)

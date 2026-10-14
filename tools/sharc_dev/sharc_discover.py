@@ -33,16 +33,17 @@ import sqlite3
 import sys
 import time
 from collections import Counter, defaultdict
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from importlib import import_module
 from multiprocessing import get_context
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, cast
 
 _HERE = Path(__file__).resolve().parent
 
 from tools.sharc_dev import sharc_trace as trace  # noqa: E402
-from tools.sharc_dev import (
+from tools.sharc_dev import (  # noqa: E402
     sharcflow,  # noqa: E402
     sharcfn,  # noqa: E402
     sharcinv,  # noqa: E402
@@ -51,7 +52,7 @@ from tools.sharc_dev import (
 from tools.sharc_dev.sharc_disasm import decode_loaded_at  # noqa: E402
 
 sharc_index = import_module("tools.sharc_dev.sharc_index")  # noqa: E402
-from tools.sharc_dev.sharc_static import (
+from tools.sharc_dev.sharc_static import (  # noqa: E402
     _compact_functions,
     build_static_context,
     find_pointer_runs,
@@ -334,7 +335,7 @@ def _expand_probe(probe: Mapping[str, Any], maximum: int) -> list[dict[str, Any]
     result = []
     for combination in combinations:
         sets = dict(base_sets)
-        sets.update(zip(keys, combination))
+        sets.update(zip(keys, combination, strict=False))
         result.append(dict(sorted(sets.items())))
     return result
 
@@ -714,7 +715,7 @@ def _audit_trace_case(
     if "dispatch_site_pc_sw" in case:
         audit_site = _integer(case["dispatch_site_pc_sw"], "dispatch_site_pc_sw")
         audit_target = _integer(case["expected_target_sw"], "expected_target_sw")
-        for state, terminal in zip(states, summary["states"]):
+        for state, terminal in zip(states, summary["states"], strict=False):
             terminal["dispatch_branch_audit"] = [
                 {
                     key: event[key]
@@ -735,7 +736,7 @@ def _audit_trace_case(
             provenance["selector_register"],
         )
         site = _integer(provenance["dispatch_site_pc_sw"], "dispatch_site_pc_sw")
-        for state, terminal in zip(states, summary["states"]):
+        for state, terminal in zip(states, summary["states"], strict=False):
             events = state.trace
             copies = [
                 {

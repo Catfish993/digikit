@@ -27,8 +27,8 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools import python_env
-from tools.emulator import digi_env, native_target
+from tools import python_env  # noqa: E402
+from tools.emulator import digi_env, native_target  # noqa: E402
 
 OUT = ROOT / "out" / "native" / "wasmgate"
 DUMP = OUT / "dump"
@@ -70,8 +70,8 @@ def capture(seconds: float) -> None:
         ],
         env=env,
     )  # fmt: skip
-    rows = [l.split("\t") for l in (DUMP / "totals.tsv").read_text().splitlines()]
-    calls = [l.split("\t") for l in (DUMP / "calls.tsv").read_text().splitlines()]
+    rows = [l.split("\t") for l in (DUMP / "totals.tsv").read_text().splitlines()]  # noqa: E741
+    calls = [l.split("\t") for l in (DUMP / "calls.tsv").read_text().splitlines()]  # noqa: E741
     total = sum(int(r[2]) for r in rows)
     caught = {c[1] for c in calls}
     covered = sum(int(r[2]) for r in rows if r[0] in caught)

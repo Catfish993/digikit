@@ -12,11 +12,12 @@ import json
 import os
 import sqlite3
 import tempfile
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from multiprocessing import get_context
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 DB_SCHEMA_VERSION = 5
@@ -542,7 +543,7 @@ class AnalysisIndex:
         path: Path | None = None,
         config: IndexConfig,
         readonly: bool = False,
-    ) -> "AnalysisIndex":
+    ) -> AnalysisIndex:
         blob_path = Path(blob_path)
         fingerprint = cls._fingerprint(blob_path, config)
         static_key = hashlib.sha256(_canonical_bytes(fingerprint)).hexdigest()
@@ -580,7 +581,7 @@ class AnalysisIndex:
         cache: Path,
         config: IndexConfig,
         fingerprint: Mapping[str, Any],
-    ) -> "AnalysisIndex":
+    ) -> AnalysisIndex:
         snapshot = cls._make_snapshot(blob_path, config)
         static_key = hashlib.sha256(_canonical_bytes(fingerprint)).hexdigest()
         raw = _payload(snapshot)
@@ -944,7 +945,7 @@ class AnalysisIndex:
             facts_request = self._request_writer_facts()
             cached_functions = self._writer_function_facts(facts_request)
             try:
-                facts = getattr(sharcwriters, "collect_trace_facts")(
+                facts = sharcwriters.collect_trace_facts(
                     blob,
                     tuple(config["code_blocks"]),
                     config["min_depth"],
@@ -956,7 +957,7 @@ class AnalysisIndex:
                 raise RuntimeError("writer trace-fact batch failed") from error
             self._publish_writer_function_facts(facts_request, facts["functions"])
             try:
-                out = getattr(sharcwriters, "classify_trace_facts")(
+                out = sharcwriters.classify_trace_facts(
                     facts,
                     [(i.address, i.width) for i, _, _ in missing_writers],
                     **WRITER_CLASSIFY_POLICY,

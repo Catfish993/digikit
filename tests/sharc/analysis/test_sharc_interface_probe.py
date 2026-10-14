@@ -47,9 +47,11 @@ class SharcInterfaceProbeTest(unittest.TestCase):
                 }
             ],
         )
-        with mock.patch.object(P.trace, "trace", return_value=[state]):
-            with self.assertRaisesRegex(ValueError, "non-concrete descriptor-template"):
-                P._probe_dma_descriptor_list(mock.sentinel.memory, specification)
+        with (
+            mock.patch.object(P.trace, "trace", return_value=[state]),
+            self.assertRaisesRegex(ValueError, "non-concrete descriptor-template"),
+        ):
+            P._probe_dma_descriptor_list(mock.sentinel.memory, specification)
 
     @unittest.skipUnless(BLOB.exists(), "DT2 1.16 SHARC loader is not available")
     def test_build_report_recovers_four_ping_pong_descriptor_lists(self):

@@ -96,7 +96,7 @@ def check(key, src_funcs, dst_funcs, src_image, dst_image, base, fwd):
         out["bytes"] = "equal"
     elif len(sb) == len(db):
         out["bytes"] = "same-size"
-        out["diff_bytes"] = sum(1 for a, b in zip(sb, db) if a != b)
+        out["diff_bytes"] = sum(1 for a, b in zip(sb, db, strict=False) if a != b)
     else:
         out["bytes"] = "resized"
     if is_default(sf["name"]) or is_default(df["name"]):

@@ -199,7 +199,7 @@ def encode_syx(stream, device_id, framing_start, framing_end, checksum=None):
     """
     k = framing_start[1:-1][7]  # transfer-type const; see packet_checksum
     if checksum is None:
-        checksum = lambda body: packet_checksum(body, k)
+        checksum = lambda body: packet_checksum(body, k)  # noqa: E731
 
     n_msgs = (len(stream) + CHUNK_SIZE - 1) // CHUNK_SIZE
     framing_start = _patch_framing_count(framing_start, n_msgs)
@@ -368,7 +368,9 @@ def _self_test():
             fh.write(syx_bytes)
         c, secs = containermod.sections(path)
         assert len(secs) == len(entries)
-        for (sid, off, clen, dest), (esid, edest, edata) in zip(secs, entries):
+        for (sid, off, clen, dest), (esid, edest, edata) in zip(
+            secs, entries, strict=False
+        ):
             assert (sid, clen, dest) == (esid, len(edata), edest)
             assert c[off : off + clen] == edata
     finally:
@@ -411,7 +413,7 @@ if __name__ == "__main__":
     try:
         _, new_secs = containermod.sections(tmp_path)
         print("%-6s %14s %14s" % ("id", "orig stored", "new stored"))
-        for sid, off, clen, dest in new_secs:
+        for sid, _off, clen, _dest in new_secs:
             print("%-6d %14d %14d" % (sid, orig_lens.get(sid, -1), clen))
     finally:
         os.remove(tmp_path)

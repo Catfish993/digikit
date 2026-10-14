@@ -195,7 +195,7 @@ class GhidraOracleTest(unittest.TestCase):
         actual = list(self.ctx.disassemble(code).instructions)
         expected = self.expected["instructions"]
         self.assertEqual(len(actual), len(expected))
-        for got, want in zip(actual, expected):
+        for got, want in zip(actual, expected, strict=False):
             with self.subTest(offset=want["offset"]):
                 text = got.mnem + ((" " + got.body) if got.body else "")
                 self.assertEqual(got.addr.offset, want["offset"])

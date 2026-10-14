@@ -218,7 +218,7 @@ def main():
     )
     args = ap.parse_args()
 
-    data = open(args.blob, "rb").read()
+    data = open(args.blob, "rb").read()  # noqa: SIM115
     calls = call_graph(data, args.region)
     spaces = code_spaces(calls, args.min_space_hits)
     tables = find_tables(data, spaces, args.min_entries)
@@ -244,7 +244,7 @@ def main():
     }
 
     if args.json:
-        json.dump(result, open(args.json, "w"), indent=2)
+        json.dump(result, open(args.json, "w"), indent=2)  # noqa: SIM115
 
     print("=== %s ===" % args.blob)
     print("size=%d  sha256=%s" % (len(data), result["sha256"]))

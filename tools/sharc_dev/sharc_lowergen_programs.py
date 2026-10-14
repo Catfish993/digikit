@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def table() -> dict:
-    d = json.load(open(os.path.join(HERE, "sharcspec", "decode_table.json")))
+    d = json.load(open(os.path.join(HERE, "sharcspec", "decode_table.json")))  # noqa: SIM115
     return {re.sub(r"\s*\((\w+)\)", r"_\1", f["name"][4:]): f for f in d["forms"]}
 
 
@@ -43,7 +43,7 @@ def enc(form: str, **fields) -> list[int]:
         else:
             # A whole field given by its stem (compute, data, addr, reladdr...):
             # split over the labelled pieces, most significant first.
-            pieces = sorted((labels[l] for l in stems[key]), key=lambda x: -x["lo"])
+            pieces = sorted((labels[l] for l in stems[key]), key=lambda x: -x["lo"])  # noqa: E741
             width = sum(x["hi"] - x["lo"] + 1 for x in pieces)
             shift = width
             for x in pieces:
@@ -67,7 +67,7 @@ def R(n):
     return n
 
 
-def I(n):
+def I(n):  # noqa: E743
     return 16 + n
 
 
@@ -137,8 +137,6 @@ def simd_loop(trips: int = 16) -> list[int]:
         srcureghigh=I(12) >> 2,
         **{"srcureglow[1:1]": (I(12) >> 1) & 1, "srcureglow[0:0]": I(12) & 1},
     )
-    end = len(body) // 3 * 0  # placeholder; the DO's end is given in short words below
-    do_at = len(prog)
     body_words = len(body)
     # DO (to the last instruction of the body) UNTIL LCE: the end address is
     # relative to the DO; the last body instruction starts at do_at + 3 + body_words - 3.
@@ -615,7 +613,7 @@ def main() -> None:
             )
         )
     lines.append("];")
-    open(a.out, "w").write("\n".join(lines) + "\n")
+    open(a.out, "w").write("\n".join(lines) + "\n")  # noqa: SIM115
 
 
 if __name__ == "__main__":

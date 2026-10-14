@@ -62,7 +62,6 @@ def main() -> None:
     by_file = collections.Counter()
     by_line: collections.Counter = collections.Counter()
     by_line_all: collections.Counter = collections.Counter()
-    idx = 0
     lines = out
     # With -i each address gives several lines then a blank separator.
     groups, cur = [], []
@@ -93,7 +92,7 @@ def main() -> None:
 
     json.dump(
         [[f, ln, n] for (f, ln), n in by_line.most_common()],
-        open(a.xml + ".lines.json", "w"),
+        open(a.xml + ".lines.json", "w"),  # noqa: SIM115
     )
     print("samples", total)
     print("--- by source file")

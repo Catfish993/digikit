@@ -50,8 +50,8 @@ from dataclasses import replace
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools.patchkit import machinepatch as mp
-from tools.patchkit import machineprofile as mprof
+from tools.patchkit import machinepatch as mp  # noqa: E402
+from tools.patchkit import machineprofile as mprof  # noqa: E402
 
 PROFILE_BY_NAME = {
     "dt2-1.15C": mprof.DT2_115C,
@@ -184,7 +184,7 @@ def plan_and_verify(image_path, profile, spec, parts):
             )
 
     patched = bytearray(image)
-    for addr, old, new in writes:
+    for addr, _old, new in writes:
         off = addr - load_addr
         if off < 0 or off + len(new) > len(patched):
             raise SystemExit(

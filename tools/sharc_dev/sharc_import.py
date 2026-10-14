@@ -86,7 +86,7 @@ def mapped_segments(byte_address, byte_count):
         if byte_address < boundary < end:
             cuts.append(boundary)
     cuts.sort()
-    for start, stop in zip(cuts, cuts[1:]):
+    for start, stop in zip(cuts, cuts[1:], strict=False):
         yield start - byte_address, ghidra_addr(start), stop - start
 
 
@@ -136,7 +136,7 @@ def main(argv):
     ap.add_argument('--overwrite', action='store_true')
     args = ap.parse_args(argv)
 
-    data = open(args.blob, 'rb').read()
+    data = open(args.blob, 'rb').read()  # noqa: SIM115
     blocks, entry = plan(data)
     name = args.name or os.path.basename(args.blob)
     print('%s: %d blocks, entry sw %s' % (name, len(blocks),
@@ -309,7 +309,7 @@ def main(argv):
         # We created the program rather than opening it through the project,
         # so the project is not one of its consumers and close() would fail
         # trying to release it. The save has already happened by here.
-        try:
+        try:  # noqa: SIM105
             project.close()
         except Exception:
             pass

@@ -34,7 +34,7 @@ COMPUTE_MENU = [
 
 
 def load() -> dict:
-    d = json.load(open(os.path.join(HERE, "sharcspec", "decode_table.json")))
+    d = json.load(open(os.path.join(HERE, "sharcspec", "decode_table.json")))  # noqa: SIM115
     out = {}
     for f in d["forms"]:
         out[re.sub(r"\s*\((\w+)\)", r"_\1", f["name"][4:])] = f
@@ -131,7 +131,7 @@ def main() -> None:
                 '    ("%s", %d, [%#06x, %#06x, %#06x]),' % (name, parcels, *ps)
             )
     lines.append("];")
-    open(a.out, "w").write("\n".join(lines) + "\n")
+    open(a.out, "w").write("\n".join(lines) + "\n")  # noqa: SIM115
 
 
 if __name__ == "__main__":

@@ -127,14 +127,14 @@ class AnchorsTest(unittest.TestCase):
 @unittest.skipUnless(AVAILABLE, "no MAIN OS image with a machine profile on disk")
 class PlanPerImageTest(unittest.TestCase):
     def test_byte_checks_pass(self):
-        for sha, profile, path in AVAILABLE:
+        for _sha, profile, path in AVAILABLE:
             with self.subTest(profile["name"]):
                 failures, checked = prof.verify(profile, prof.image_reader(path))
                 self.assertTrue(checked, "profile defines no byte checks")
                 self.assertEqual(failures, [])
 
     def test_plan_is_eighteen_writes(self):
-        for sha, profile, path in AVAILABLE:
+        for _sha, profile, path in AVAILABLE:
             with self.subTest(profile["name"]):
                 writes = mp.plan_b(
                     prof.image_reader(path),
@@ -147,7 +147,7 @@ class PlanPerImageTest(unittest.TestCase):
     def test_trampoline_carries_its_own_descriptor(self):
         """No other image's descriptor array may appear in this one's plan."""
         others = [p for p in prof.PROFILES.values()]
-        for sha, profile, path in AVAILABLE:
+        for _sha, profile, path in AVAILABLE:
             with self.subTest(profile["name"]):
                 writes = mp.plan_b(
                     prof.image_reader(path),
@@ -174,7 +174,7 @@ class PlanPerImageTest(unittest.TestCase):
 
     def test_every_patch_site_belongs_to_this_image(self):
         """A write either lands in the cave or at an anchor of this profile."""
-        for sha, profile, path in AVAILABLE:
+        for _sha, profile, path in AVAILABLE:
             with self.subTest(profile["name"]):
                 a = mp.anchors_for(profile)
                 cave = profile["cave_b"]
@@ -186,7 +186,7 @@ class PlanPerImageTest(unittest.TestCase):
                     for n in LEGACY
                     if isinstance(getattr(a, n, None), int)
                 }
-                for addr, old, new in writes:
+                for addr, _old, _new in writes:
                     if cave <= addr < cave + 0x400:
                         continue
                     near = any(base <= addr <= base + 0x20 for base in anchors)
@@ -197,7 +197,7 @@ class PlanPerImageTest(unittest.TestCase):
                     )
 
     def test_clone_plan_matches_1_16_sites(self):
-        for sha, profile, path in AVAILABLE:
+        for _sha, profile, path in AVAILABLE:
             if profile is not prof.DT2_116:
                 continue
             with self.subTest(profile["name"]):
@@ -229,14 +229,14 @@ class PlanPerImageTest(unittest.TestCase):
     def test_the_plan_reads_only_this_image(self):
         """`read` outside the image raises, so a stray 1.15C address on 1.16
         would fault rather than silently produce a plausible plan."""
-        for sha, profile, path in AVAILABLE:
+        for _sha, profile, path in AVAILABLE:
             with self.subTest(profile["name"]):
                 seen = []
                 base = prof.image_reader(path)
 
                 def watched(addr, n):
-                    seen.append(addr)
-                    return base(addr, n)
+                    seen.append(addr)  # noqa: B023 (used within this iteration)
+                    return base(addr, n)  # noqa: B023 (used within this iteration)
 
                 mp.plan_b(watched, profile["cave_b"], parts=PARTS, profile=profile)
                 self.assertTrue(seen)

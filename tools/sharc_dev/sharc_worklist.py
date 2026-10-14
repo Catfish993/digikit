@@ -25,7 +25,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from tools.sharc_dev import (
+from tools.sharc_dev import (  # noqa: E402
     sharcflow,  # noqa: E402
     sharcpcode,  # noqa: E402
 )

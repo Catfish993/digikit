@@ -24,8 +24,8 @@ import subprocess
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-from tools.devtools import fastcov
-from tools.emulator import coupled
+from tools.devtools import fastcov  # noqa: E402
+from tools.emulator import coupled  # noqa: E402
 
 
 def run(binary, env, scenario, seconds, work: pathlib.Path) -> str:
@@ -74,7 +74,7 @@ def main() -> int:
     if not fails(text):
         print(
             "the full run does not fail:",
-            [l for l in text.splitlines() if "halt" in l][:2],
+            [l for l in text.splitlines() if "halt" in l][:2],  # noqa: E741
         )
         return 1
     pcs = []

@@ -128,7 +128,7 @@ def figure_printed_bits(fig):
     dash_bits = [msb - i + shift for i, ch in enumerate(pattern) if ch == "-"]
     up = fig.get("unused_printed", "")
     assert len(dash_bits) == len(up), (fig["caption"], len(dash_bits), len(up))
-    for b, ch in zip(dash_bits, up):
+    for b, ch in zip(dash_bits, up, strict=False):
         printed[b] = int(ch)
     return printed
 
@@ -312,9 +312,9 @@ def main():
     ap.add_argument("--top", type=int, default=15, help="rows to print in the table")
     args = ap.parse_args()
 
-    decode_table = json.load(open(os.path.join(HERE, "decode_table.json")))
-    figures = json.load(open(os.path.join(HERE, "figures.json")))["figures"]
-    classic = json.load(open(os.path.join(HERE, "classic.json")))
+    decode_table = json.load(open(os.path.join(HERE, "decode_table.json")))  # noqa: SIM115
+    figures = json.load(open(os.path.join(HERE, "figures.json")))["figures"]  # noqa: SIM115
+    classic = json.load(open(os.path.join(HERE, "classic.json")))  # noqa: SIM115
     figs_by_name = figure_lookup(figures)
 
     rows = [audit_form(f, figs_by_name, classic) for f in decode_table["forms"]]

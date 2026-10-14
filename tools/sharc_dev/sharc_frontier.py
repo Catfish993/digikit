@@ -12,8 +12,8 @@ import argparse
 import hashlib
 import json
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Mapping, Sequence
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -354,7 +354,7 @@ def report(
     start = _integer(document.get("start_sw"), "start_sw")
     summaries = trace.summarize([path.state for path in paths], start)["states"]
     endpoints = {}
-    for summary, path in zip(summaries, paths):
+    for summary, path in zip(summaries, paths, strict=False):
         hits = [
             event
             for event in path.state.trace

@@ -60,7 +60,7 @@ classic_covered = {
     "Type25c_rframe",
 }
 
-for f in json.load(open("figures.json"))["figures"]:
+for f in json.load(open("figures.json"))["figures"]:  # noqa: SIM115
     name = (
         re.sub(r"^Figure \d+-\d+:\s*", "", f["caption"])
         .replace(" Instruction", "")

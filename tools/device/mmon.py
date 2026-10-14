@@ -31,7 +31,7 @@ TYPES = {
 
 def load(path):
     """Return [(ts_nanos, endpoint_name, full_bytes)], time-sorted."""
-    arch = plistlib.loads(plistlib.load(open(path, "rb"))["messageData"])
+    arch = plistlib.loads(plistlib.load(open(path, "rb"))["messageData"])  # noqa: SIM115
     objs = arch["$objects"]
     out = []
     for o in objs:

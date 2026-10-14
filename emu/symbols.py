@@ -417,7 +417,7 @@ class StringTable:
                 entries = [struct.unpack_from('>I', img, base + 4 * i)[0]
                            for i in range(len(self.strings))]
                 if all(self._cstr(img, load_addr, e) == s
-                       for e, s in zip(entries, self.strings)):
+                       for e, s in zip(entries, self.strings, strict=False)):
                     found.add(base)
         if len(found) != 1:
             return None, ('%d table(s) matching %d anchor string(s), need 1'
@@ -460,7 +460,7 @@ def _mask_pattern(raw, lo, hi, wild=()):
             i += 1
     for k in wild:
         mask[k] = 1
-    return b''.join(b'.' if m else re.escape(bytes([b])) for b, m in zip(raw, mask))
+    return b''.join(b'.' if m else re.escape(bytes([b])) for b, m in zip(raw, mask, strict=False))
 
 
 # --------------------------------------------------------------------------
@@ -1011,7 +1011,7 @@ def resolve(image, load_addr=LOAD_ADDR):
         return cached
 
     got, detail = {}, {}
-    for name, rule, required in SYMBOLS:
+    for name, rule, _required in SYMBOLS:
         val, why = rule.resolve(image, load_addr, got)
         got[name] = val
         detail[name] = why
@@ -1039,5 +1039,5 @@ if __name__ == '__main__':
         profile = resolve(img)
     except SymbolResolutionError as e:
         print(str(e))
-        raise SystemExit(1)
+        raise SystemExit(1)  # noqa: B904
     print(profile.report())

@@ -15,7 +15,7 @@ import re
 from tools.sharc_dev.sharcspec.sharc_decode import Decoder, linear
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-_CT = json.load(open(os.path.join(HERE, "compute_table.json")))
+_CT = json.load(open(os.path.join(HERE, "compute_table.json")))  # noqa: SIM115
 
 
 def reg(n, float_=False):
@@ -82,7 +82,7 @@ def _wildcard_match(pattern, bits):
     non-0/1 character (F, x, y, r, ...) is a don't-care."""
     if len(pattern) != len(bits):
         return False
-    return all(p == b for p, b in zip(pattern, bits) if p in "01")
+    return all(p == b for p, b in zip(pattern, bits, strict=False) if p in "01")
 
 
 def _match_mulop32(opbits):

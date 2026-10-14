@@ -12,7 +12,7 @@ class JsonlMmioTrace:
     """
 
     def __init__(self, path):
-        self.file = open(path, "w", encoding="utf-8")
+        self.file = open(path, "w", encoding="utf-8")  # noqa: SIM115
         self.sequence = 0
         self.closed = False
 

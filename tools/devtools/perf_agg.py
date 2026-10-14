@@ -19,7 +19,7 @@ import json
 import pathlib
 
 HERE = pathlib.Path(__file__).resolve().parent
-from tools.devtools import fastcov, perf
+from tools.devtools import fastcov, perf  # noqa: E402
 
 BASELINES = ["trig1-taps", "tf-dry-hold", "sf-dry-hold"]
 

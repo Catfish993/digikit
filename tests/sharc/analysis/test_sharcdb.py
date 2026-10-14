@@ -10,7 +10,6 @@ from tools/sharc_dev/sharc_visa_tables.py the same way tests/sharc/analysis/test
 tests/sharc/analysis/test_sharcinv.py and tests/sharc/analysis/test_sharcfn.py do.
 """
 
-import collections
 import os
 import pathlib
 import sqlite3
@@ -21,14 +20,12 @@ from support.sharc_encode import block as boot_block  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_rel,
     cjump,
-    encode,
     field_insn,
     load,
     push3c,
     ret,
     rframe,
     store,
-    words,
 )
 
 from tools.sharc_dev import (

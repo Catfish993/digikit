@@ -656,7 +656,7 @@ class PokeDmTest(unittest.TestCase):
             stream.write(loader_block(1, L.sw_to_byte(0x10), 2, payload=b"\x01\x00"))
             stream.write(loader_block(1 << L.BFLAGS["FINAL"], 0, 0))
             program_path = stream.name
-        poke_file = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        poke_file = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)  # noqa: SIM115
         try:
             json.dump({"0x300000": 291, "0x310ca300": [1, 2, 3]}, poke_file)
             poke_file.close()

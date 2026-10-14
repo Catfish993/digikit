@@ -47,7 +47,7 @@ class ElzTest(unittest.TestCase):
             3: "section_3_MAIN_OS.bin",
             7: "section_7_BLOB.bin",
         }
-        for sid, off, clen, dest in secs:
+        for sid, off, clen, _dest in secs:
             if sid in names:
                 with self.subTest(section=sid):
                     with open(os.path.join(SECTIONS, names[sid]), "rb") as f:

@@ -267,7 +267,7 @@ if __name__ == "__main__":
     t_total = time.time()
     failures = 0
     for path in paths:
-        data = open(path, "rb").read()
+        data = open(path, "rb").read()  # noqa: SIM115
         t0 = time.time()
         stream = pack_section(data)
         got = depack_section(stream)

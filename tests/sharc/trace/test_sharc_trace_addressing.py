@@ -461,7 +461,7 @@ class TraceModifyFormsTest(TraceRunMixin, unittest.TestCase):
             # unscaled here, where assume_nw32 is off.
             (1, 1, 1): ("long-word", 0x83),
         }
-        for (l, x, w), (access_width, address) in expected.items():
+        for (l, x, w), (access_width, address) in expected.items():  # noqa: E741
             event = self.run_one(
                 T.State(1, {16: T.Const(0x80), 32: T.Const(3)}),
                 insn("3b", {**base, "l": l, "x": x, "w": w}),
@@ -705,7 +705,7 @@ class TraceAffineCircularTest(TraceRunMixin, unittest.TestCase):
             T.symbol("not-valid")
 
     def test_affine_compute_and_memory_events(self):
-        short = lambda opcode, rn, rx: {"compute[11:0]": (opcode << 8) | (rn << 4) | rx}
+        short = lambda opcode, rn, rx: {"compute[11:0]": (opcode << 8) | (rn << 4) | rx}  # noqa: E731
         state = T.State(1, {1: T.symbol("receive_buffer"), 2: T.Const(0x94)})
         state = self.run_one(state, insn("2c", short(0, 1, 2), 2))
         self.assertEqual(state.uregs[1], T.Affine(0x94, (("receive_buffer", 1),)))

@@ -41,7 +41,9 @@ def near(a, b, tol=TOL):
 
 
 def color_is(c, ref, tol=0.03):
-    return c is not None and all(abs(x - y) <= tol for x, y in zip(c, ref))
+    return c is not None and all(
+        abs(x - y) <= tol for x, y in zip(c, ref, strict=False)
+    )
 
 
 @dataclass
@@ -72,7 +74,7 @@ class Row:
 def spans_of(page):
     out = []
     for b in page.get_text("dict")["blocks"]:
-        for l in b.get("lines", []):
+        for l in b.get("lines", []):  # noqa: E741
             for s in l["spans"]:
                 if s["text"].strip():
                     out.append(s)
@@ -396,7 +398,7 @@ def summarize(pno, caption, rows, tag=None):
         problems.append(
             f"bits {unspecified[0]}..{unspecified[-1]} ({len(unspecified)}) are white with no field label; check the text"
         )
-    norm = lambda t: re.sub(r"[^a-z0-9]", "", t.lower())
+    norm = lambda t: re.sub(r"[^a-z0-9]", "", t.lower())  # noqa: E731
     cap_title = re.sub(r"^Figure \d+-\d+:\s*", "", caption)
     if (
         tag
@@ -464,7 +466,7 @@ def main(pdf, first, last, out):
             "figures": figures,
             "anomalies": anomalies,
         },
-        open(out, "w"),
+        open(out, "w"),  # noqa: SIM115
         indent=1,
     )
     bad = [f for f in figures if f["problems"]]

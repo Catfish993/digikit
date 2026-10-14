@@ -672,13 +672,15 @@ class ManifestAndDumpTest(unittest.TestCase):
             "continue_external_calls",
             "core_reset_state",
         ):
-            with self.subTest(boolean=boolean):
-                with self.assertRaisesRegex(ValueError, f"{boolean} must be boolean"):
-                    D.resolve_selector_provenance_probes(
-                        [{**declaration, boolean: "false"}],
-                        [{"site_pc_sw": 0x50, "table_byte_address": 0x8000}],
-                        [table],
-                    )
+            with (
+                self.subTest(boolean=boolean),
+                self.assertRaisesRegex(ValueError, f"{boolean} must be boolean"),
+            ):
+                D.resolve_selector_provenance_probes(
+                    [{**declaration, boolean: "false"}],
+                    [{"site_pc_sw": 0x50, "table_byte_address": 0x8000}],
+                    [table],
+                )
 
     def test_dispatch_target_summary_requires_exact_branch_evidence(self):
         branch = {"action": "branch", "pc_sw": 0x50, "target_sw": 0x100}

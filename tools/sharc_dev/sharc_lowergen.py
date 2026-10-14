@@ -36,7 +36,7 @@ from tools.sharc_dev.sharc_core import (  # noqa: E402
     encoding,
     forms,
 )
-from tools.sharc_dev.sharc_core import (
+from tools.sharc_dev.sharc_core import (  # noqa: E402
     state as st,
 )
 from tools.sharc_dev.sharc_core.state import State  # noqa: E402
@@ -245,7 +245,7 @@ def _bitvec(e: tuple):
             return [0] * n + a[: NBITS - n]
         return a[n:] + [0] * n
     out = []
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         if k == "&":
             if x == 0 or y == 0:
                 out.append(0)
@@ -505,7 +505,7 @@ class Ctx:
         and it has no run-time symbol, else None."""
         used: set = set()
         _fields_of(e, used)
-        if any(l not in self.pinned for l in used) or _has_var(e):
+        if any(l not in self.pinned for l in used) or _has_var(e):  # noqa: E741
             return None
         return _eval_e(e, self.pinned)
 
@@ -596,22 +596,22 @@ class Ctx:
         """The number E stands for, enumerating its unpinned fields."""
         used: set = set()
         _fields_of(e, used)
-        free = sorted(l for l in used if l not in self.pinned)
+        free = sorted(l for l in used if l not in self.pinned)  # noqa: E741
         if free:
             if self.pos < len(self.script):
                 kind, assign = self.script[self.pos]
                 assert kind == "e"
             else:
                 size = 1
-                for l in free:
+                for l in free:  # noqa: E741
                     size <<= FIELD_DOMAIN[l]
                 if size > 4096:
                     raise Stop("enumeration of %s too large" % (free,))
-                assign = tuple((l, 0) for l in free)
+                assign = tuple((l, 0) for l in free)  # noqa: E741
                 self.discovered.append(self.pos)
             self.pos += 1
             self.path.append(("e", assign))
-            for l, v in assign:
+            for l, v in assign:  # noqa: E741
                 self.pinned[l] = v
         return _eval_e(e, self.pinned)
 
@@ -928,18 +928,18 @@ def lift_pure(fn, x):
         return fn(x)
     used: set = set()
     _fields_of(x.e, used)
-    free = sorted(l for l in used if l not in CTX.pinned)
+    free = sorted(l for l in used if l not in CTX.pinned)  # noqa: E741
     if not free:
         return fn(_eval_e(x.e, CTX.pinned))
     size = 1
-    for l in free:
+    for l in free:  # noqa: E741
         size <<= FIELD_DOMAIN[l]
     if size > 1 << 16:
         raise Stop("lift over %s too large" % (free,))
     values = set()
-    for combo in itertools.product(*[range(1 << FIELD_DOMAIN[l]) for l in free]):
+    for combo in itertools.product(*[range(1 << FIELD_DOMAIN[l]) for l in free]):  # noqa: E741
         env = dict(CTX.pinned)
-        env.update(zip(free, combo))
+        env.update(zip(free, combo, strict=False))
         values.add(_eval_e(x.e, env))
     xs = sorted(values)
     results = [fn(xv) for xv in xs]
@@ -986,7 +986,7 @@ def lift_pure(fn, x):
         pat, j = best
         runs.append([xs[i], xs[j - 1], pat])
         i = j
-    for lo, hi, o in runs[:-1]:
+    for _lo, hi, o in runs[:-1]:
         if CTX.decide(P("<=", x.e, ("c", hi))):
             return _lift_result(o, x)
     return _lift_result(runs[-1][2], x)
@@ -1121,14 +1121,14 @@ class SymFields(dict):
 
     def __init__(self, form_fields):
         super().__init__()
-        for label, hi, lo in form_fields:
+        for label, _hi, _lo in form_fields:
             self[label] = S(("f", label))
 
 
 def form_fields(type_name: str) -> list:
     import json
 
-    d = json.load(open(os.path.join(HERE, "sharcspec", "decode_table.json")))
+    d = json.load(open(os.path.join(HERE, "sharcspec", "decode_table.json")))  # noqa: SIM115
     for f in d["forms"]:
         if f["name"] == type_name:
             return [(x["label"], x["hi"], x["lo"]) for x in f["fields"]]
@@ -1179,13 +1179,16 @@ def trace_form(name: str, type_name: str):
                 if entry[0] == "d":
                     work.append(CTX.path[:pos] + [("d", entry[1], False)])
                 else:
-                    labels = [l for l, _ in entry[1]]
+                    labels = [l for l, _ in entry[1]]  # noqa: E741
                     for combo in itertools.product(
-                        *[range(1 << FIELD_DOMAIN[l]) for l in labels]
+                        *[range(1 << FIELD_DOMAIN[l]) for l in labels]  # noqa: E741
                     ):
                         if combo == tuple(0 for _ in labels):
                             continue
-                        work.append(CTX.path[:pos] + [("e", tuple(zip(labels, combo)))])
+                        work.append(
+                            CTX.path[:pos]
+                            + [("e", tuple(zip(labels, combo, strict=False)))]
+                        )
         return leaves
 
 
@@ -1217,11 +1220,14 @@ def trace_call(fn, labels: dict[str, int], pre=None):
                 if entry[0] == "d":
                     work.append(CTX.path[:pos] + [("d", entry[1], False)])
                 else:
-                    labs = [l for l, _ in entry[1]]
+                    labs = [l for l, _ in entry[1]]  # noqa: E741
                     for combo in itertools.product(
-                        *[range(1 << FIELD_DOMAIN[l]) for l in labs]
+                        *[range(1 << FIELD_DOMAIN[l]) for l in labs]  # noqa: E741
                     ):
                         if combo == tuple(0 for _ in labs):
                             continue
-                        work.append(CTX.path[:pos] + [("e", tuple(zip(labs, combo)))])
+                        work.append(
+                            CTX.path[:pos]
+                            + [("e", tuple(zip(labs, combo, strict=False)))]
+                        )
         return leaves

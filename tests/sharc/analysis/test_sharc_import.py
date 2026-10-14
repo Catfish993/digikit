@@ -4,7 +4,7 @@ import struct
 import unittest
 from importlib import import_module
 
-I = import_module("tools.sharc_dev.sharc_import")
+I = import_module("tools.sharc_dev.sharc_import")  # noqa: E741
 L = import_module("tools.sharc_dev.sharcldr")
 
 

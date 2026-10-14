@@ -167,7 +167,7 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
-    img = open(args.image, "rb").read()
+    img = open(args.image, "rb").read()  # noqa: SIM115
     scan_start = args.scan_start if args.scan_start is not None else args.base
     scan_end = args.scan_end if args.scan_end is not None else args.base + len(img)
     lo, hi = args.range

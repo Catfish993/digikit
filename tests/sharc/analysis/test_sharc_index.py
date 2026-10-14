@@ -8,7 +8,7 @@ import unittest
 from importlib import import_module
 from unittest.mock import patch
 
-I = import_module("tools.sharc_dev.sharc_index")
+I = import_module("tools.sharc_dev.sharc_index")  # noqa: E741
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 
 

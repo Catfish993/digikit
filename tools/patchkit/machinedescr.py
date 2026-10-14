@@ -370,7 +370,7 @@ def resolve_name_source(lines, image, dest_idx, window=NAME_SCAN_WINDOW):
 
 def find_dest_pea(lines, target_addr):
     found = None
-    for i, (addr, text) in enumerate(lines):
+    for i, (_addr, text) in enumerate(lines):
         m = PEA_RE.match(text)
         if not m:
             continue

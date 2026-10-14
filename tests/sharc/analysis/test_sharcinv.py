@@ -34,7 +34,7 @@ def compute23(name, field23):
     hand from each chunk's (hi, lo)."""
     t = T.get_type(name)
     insn = t["opcode_value"]
-    for label, (hi, lo) in t["fields"].items():
+    for label, (_hi, lo) in t["fields"].items():
         if label.split("[")[0] != "compute":
             continue
         chi, clo = label[label.index("[") + 1 : -1].split(":")

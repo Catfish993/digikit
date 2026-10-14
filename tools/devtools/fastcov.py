@@ -57,8 +57,8 @@ import subprocess
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-from tools.devtools import benchlock
-from tools.emulator import coupled, digi_env
+from tools.devtools import benchlock  # noqa: E402
+from tools.emulator import coupled, digi_env  # noqa: E402
 
 OUT_DIR = ROOT / "out" / "native" / "fastcov"
 DB_DIR = ROOT / "out" / "sharcdb"

@@ -18,7 +18,7 @@ from tools.sharc_dev.sharc_isa import load_instruction_set  # noqa: E402
 
 
 class Decoder:
-    def __init__(self, table=os.path.join(HERE, "decode_table.json"), mode="visa"):
+    def __init__(self, table=os.path.join(HERE, "decode_table.json"), mode="visa"):  # noqa: B008
         self.instruction_set = load_instruction_set(table, mode)
         self.forms = [
             (

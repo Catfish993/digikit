@@ -100,7 +100,7 @@ def disasm(img, base, start, end, annotate=None):
 def main():
     import sys
 
-    img = open(sys.argv[1], "rb").read()
+    img = open(sys.argv[1], "rb").read()  # noqa: SIM115
     base = int(sys.argv[2], 16)
     start, end = int(sys.argv[3], 16), int(sys.argv[4], 16)
     for a, hx, mn, ops in disasm(img, base, start, end):

@@ -80,7 +80,7 @@ def scan(data, base, code):
     calls, vectors, pointers = [], [], []
     for lo, hi in code:
         loads = []  # (register, value), or None, for the last three instructions
-        for pc, hx, mn, ops in disasm(data, base, lo, hi):
+        for pc, _hx, mn, ops in disasm(data, base, lo, hi):
             taken = []
             if mn == "pea":
                 m = PEA.fullmatch(ops)

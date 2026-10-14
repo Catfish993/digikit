@@ -311,7 +311,7 @@ def resolve_coordinate(program, token):
     try:
         value = int(number, 0)
     except ValueError:
-        raise ValueError('invalid coordinate %r' % token)
+        raise ValueError('invalid coordinate %r' % token)  # noqa: B904
     if value < 0:
         raise ValueError('coordinate must be non-negative: %r' % token)
     if short_word and not metadata['short_word_addresses']:
@@ -644,22 +644,29 @@ def q_slice(program, args, out):
     payload['address_space'] = program_address_metadata(program)
     if len(args) != 2:
         payload['errors'].append('slice wants PC SELECTOR')
-        out('slice', payload); return
+        out('slice', payload)
+        return
     try:
         pc, payload['pc'] = resolve_coordinate(program, args[0])
         parse_slice_selector(args[1])
     except ValueError as exc:
-        payload['errors'].append(str(exc)); out('slice', payload); return
+        payload['errors'].append(str(exc))
+        out('slice', payload)
+        return
     fn = program.getFunctionManager().getFunctionContaining(_addr(program, pc))
     if fn is None:
-        payload['errors'].append('no containing function'); out('slice', payload); return
+        payload['errors'].append('no containing function')
+        out('slice', payload)
+        return
     payload['function'] = _function_identity(fn)
     ifc = _decompiler(program)
     try:
         from ghidra.util.task import TaskMonitor  # type: ignore[import-not-found]
         res = ifc.decompileFunction(fn, DECOMPILE_TIMEOUT, TaskMonitor.DUMMY)
         if not res.decompileCompleted():
-            payload['errors'].append(str(res.getErrorMessage())); out('slice', payload); return
+            payload['errors'].append(str(res.getErrorMessage()))
+            out('slice', payload)
+            return
         matches = [op for op in _high_ops(res.getHighFunction()) if _offset(op.getSeqnum().getTarget()) == pc]
         parsed_kind, parsed_value = parse_slice_selector(args[1])
         register = program.getLanguage().getRegister(parsed_value) if parsed_kind == 'reg' else None
@@ -676,7 +683,8 @@ def q_slice(program, args, out):
         payload['slice_ops'] = [serialize_op(op) for op in sliced['ops']]
         payload['roots'] = [serialize_varnode(v) for v in sliced['roots']]
         payload['partial'], payload['engine'] = sliced['partial'], sliced['engine']
-        if 'error' in sliced: payload['errors'].append(sliced['error'])
+        if 'error' in sliced:
+            payload['errors'].append(sliced['error'])
         payload['status'] = 'ok' if seed_specs else 'no-seeds'
     except Exception as exc:
         payload['errors'].append('%s: %s' % (type(exc).__name__, exc))
@@ -701,7 +709,10 @@ def _q_memory_accesses(program, args, out, direction, command):
     payload['program'] = _program_identity(program)
     payload['address_space'] = program_address_metadata(program)
     if len(args) not in (1, 3):
-        payload['status'] = 'error'; payload['errors'].append('%s wants TARGET [LO HI]' % command); out(command, payload); return
+        payload['status'] = 'error'
+        payload['errors'].append('%s wants TARGET [LO HI]' % command)
+        out(command, payload)
+        return
     try:
         target, payload['target_coordinate'] = resolve_coordinate(program, args[0])
         if len(args) == 3:
@@ -714,24 +725,34 @@ def _q_memory_accesses(program, args, out, direction, command):
         if bounds is not None and bounds[0] > bounds[1]:
             raise ValueError('%s range requires LO <= HI' % command)
     except ValueError as exc:
-        payload['status'] = 'error'; payload['errors'].append(str(exc)); out(command, payload); return
+        payload['status'] = 'error'
+        payload['errors'].append(str(exc))
+        out(command, payload)
+        return
     functions = sorted(list(program.getFunctionManager().getFunctions(True)), key=lambda f: _offset(f.getEntryPoint()))
     if not functions:
-        out(command, payload); return
+        out(command, payload)
+        return
     ifc = _decompiler(program)
     try:
         from ghidra.util.task import TaskMonitor  # type: ignore[import-not-found]
         for fn in functions:
             entry = _offset(fn.getEntryPoint())
-            if bounds and not (bounds[0] <= entry < bounds[1]): continue
-            item = _function_identity(fn); item['matches'] = []
+            if bounds and not (bounds[0] <= entry < bounds[1]):
+                continue
+            item = _function_identity(fn)
+            item['matches'] = []
             try:
                 result = ifc.decompileFunction(fn, DECOMPILE_TIMEOUT, TaskMonitor.DUMMY)
                 if not result.decompileCompleted():
-                    item['error'] = str(result.getErrorMessage()); payload['partial'] = True; payload['functions'].append(item); continue
+                    item['error'] = str(result.getErrorMessage())
+                    payload['partial'] = True
+                    payload['functions'].append(item)
+                    continue
                 for op in _high_ops(result.getHighFunction()):
                     access = memory_access_operands(op, direction, program)
-                    if access is None: continue
+                    if access is None:
+                        continue
                     address, value = access['address'], access['value']
                     static_address = access['direct_address'] or address.isConstant()
                     memory_space = access['memory_space']
@@ -762,9 +783,12 @@ def _q_memory_accesses(program, args, out, direction, command):
                         'partial': partial})
                     payload['partial'] = payload['partial'] or partial
                 item['matches'].sort(key=lambda match: op_sort_key_from_serialized(match['op']))
-                if item['matches']: payload['functions'].append(item)
+                if item['matches']:
+                    payload['functions'].append(item)
             except Exception as exc:
-                item['error'] = '%s: %s' % (type(exc).__name__, exc); payload['partial'] = True; payload['functions'].append(item)
+                item['error'] = '%s: %s' % (type(exc).__name__, exc)
+                payload['partial'] = True
+                payload['functions'].append(item)
     finally:
         ifc.dispose()
     out(command, payload)
@@ -825,7 +849,8 @@ def _print_text(kind, payload):
                 print('  from %s  %-14s %s' % (r['from'], r['type'], r['in_function'] or '(no function)'))
         elif kind in ('func', 'callers'):
             if item['function'] is None:
-                print('%s -- no function' % item['addr']); continue
+                print('%s -- no function' % item['addr'])
+                continue
             if kind == 'func':
                 print('%s -- %s @ %s  (%d bytes)' % (item['addr'], item['function'], item['entry'], item['size']))
                 print('  sig:     %s' % item['signature'])
@@ -837,12 +862,14 @@ def _print_text(kind, payload):
                     print('  %s  %s' % (c['entry'], c['name']))
         elif kind == 'decompile':
             if item['function'] is None:
-                print('%s -- no function' % item['addr']); continue
+                print('%s -- no function' % item['addr'])
+                continue
             print('%s -- %s @ %s' % (item['addr'], item['function'], item['entry']))
             print(item['c'] or ('DECOMPILE FAILED: %s' % item['error']))
         elif kind == 'read':
             if 'error' in item:
-                print('%s -- %s' % (item['addr'], item['error'])); continue
+                print('%s -- %s' % (item['addr'], item['error']))
+                continue
             print('%s (%d bytes)' % (item['addr'], item['len']))
             h = item['hex']
             for off in range(0, item['len'], 16):

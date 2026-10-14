@@ -17,8 +17,8 @@ from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from tools.sharc_dev.sharc_disasm import decode_loaded_at
-from tools.sharc_dev.sharcldr import LoadedMemory, sw_to_byte
+from tools.sharc_dev.sharc_disasm import decode_loaded_at  # noqa: E402
+from tools.sharc_dev.sharcldr import LoadedMemory, sw_to_byte  # noqa: E402
 
 
 def number(value: str) -> int:

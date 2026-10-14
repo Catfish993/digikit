@@ -252,7 +252,7 @@ def main(argv=None):
         key=lambda x: x["firmware_sha256"],
     )
     # Compare facts, excluding their deliberately different provenance.
-    sequence = lambda item: [
+    sequence = lambda item: [  # noqa: E731
         {k: e[k] for k in ("pc", "address", "width", "direction", "value", "register")}
         for e in item["events"]
     ]

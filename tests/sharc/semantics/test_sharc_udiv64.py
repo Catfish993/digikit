@@ -18,7 +18,6 @@ Skipped when the firmware image is absent.
 """
 
 import os
-import pathlib
 import random
 
 import pytest

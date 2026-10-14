@@ -48,7 +48,6 @@ Run: .venv/bin/python compute_tables.py   (produces compute_table.json + stdout 
 
 import json
 import re
-from collections import Counter
 
 import pymupdf
 
@@ -85,7 +84,7 @@ def bit_header(page, y):
     ws = [w for w in words_near(page, y) if re.fullmatch(r"\d{1,2}", w[4])]
     ws.sort(key=lambda w: w[0])
     cells = {int(w[4]): (w[0], w[2]) for w in ws}
-    centers = sorted(((w[0] + w[2]) / 2 for w in ws))
+    centers = sorted((w[0] + w[2]) / 2 for w in ws)
     pitch = (centers[-1] - centers[0]) / (len(centers) - 1)
     return cells, pitch
 
@@ -155,7 +154,7 @@ def geometric_tables(doc):
     # Figure 18-1/18-2/18-3 were already extracted with full geometry (including
     # fixed/unused-bit shading) by extract_figures.py -> figures.json. Reuse it
     # rather than re-deriving, and just re-key by our field-hi/lo convention.
-    figs = {f["caption"]: f for f in json.load(open("figures.json"))["figures"]}
+    figs = {f["caption"]: f for f in json.load(open("figures.json"))["figures"]}  # noqa: SIM115
 
     def fig_fields(cap):
         return [
@@ -191,7 +190,7 @@ def geometric_tables(doc):
         "(bit6:len6 / bitlen12); see Table 18-9.",
     }
 
-    page = lambda n: doc[n - 1]  # printed page N == pdf index N-1 in this PDF
+    page = lambda n: doc[n - 1]  # noqa: E731  # printed page N == pdf index N-1 in this PDF
 
     tabs["Table18-11_SingleComputeFixed"] = {
         "source": "PRM Table 18-11 (p.433), geometric",
@@ -1016,7 +1015,7 @@ def summarize(data):
 
 if __name__ == "__main__":
     data = build()
-    json.dump(data, open("compute_table.json", "w"), indent=1)
+    json.dump(data, open("compute_table.json", "w"), indent=1)  # noqa: SIM115
     n_bytes = len(json.dumps(data))
     print(f"Wrote compute_table.json ({n_bytes:,} bytes)\n")
     summarize(data)

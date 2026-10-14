@@ -64,7 +64,7 @@ class Comparison:
 @dataclass(frozen=True)
 class OracleRun:
     revision: str
-    tool_fingerprints: tuple["ToolFingerprint", ...]
+    tool_fingerprints: tuple[ToolFingerprint, ...]
     section: str
     external_bytes: bytes
     boot_bytes: bytes
@@ -161,7 +161,7 @@ def compare_listing(text: str, isa: InstructionSet | None = None) -> Comparison:
 
 
 def compare_rows(
-    rows: "tuple[ExternalInstruction, ...] | list[ExternalInstruction]",
+    rows: tuple[ExternalInstruction, ...] | list[ExternalInstruction],
     isa: InstructionSet | None = None,
 ) -> Comparison:
     """Compare externally selected instruction extents (raw bytes in Selache's parcel order) with native decode."""
@@ -251,7 +251,7 @@ class SelacheOracle:
     tool_fingerprints: tuple[ToolFingerprint, ...]
 
     @classmethod
-    def open(cls, checkout: str | Path) -> "SelacheOracle":
+    def open(cls, checkout: str | Path) -> SelacheOracle:
         root = Path(checkout).resolve()
         revision = _run(["git", "rev-parse", "HEAD"], cwd=root).strip()
         if revision != PINNED_REVISION:

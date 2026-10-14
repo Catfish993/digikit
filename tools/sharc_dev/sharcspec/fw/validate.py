@@ -163,7 +163,7 @@ def summarize_sweep(entries):
     no_match = unknown - ambiguous
     form_hist = {}
     width_hist = {}
-    for pos, nwords, form, cands, frame in entries:
+    for _pos, _nwords, form, _cands, _frame in entries:
         name = form["name"] if form else "UNKNOWN"
         form_hist[name] = form_hist.get(name, 0) + 1
         width = form["width"] if form else 16
@@ -250,7 +250,7 @@ def print_first_n(entries, region_load, dec, n=60):
     print(
         f"\nFirst {n} instructions of the linear sweep (SW addr, hex words, form, fields):"
     )
-    for pos, nwords, form, cands, frame in entries[:n]:
+    for pos, nwords, form, _cands, frame in entries[:n]:
         sw = instr_sw(region_load, pos)
         raw = _words_at_from_frame(frame, nwords)
         hexwords = " ".join(f"{w:04x}" for w in raw)
@@ -265,7 +265,7 @@ def _words_at_from_frame(frame, nwords):
 
 
 def run_core(name, cfg, dec, print_first=False):
-    mem = open(cfg["region"], "rb").read()
+    mem = open(cfg["region"], "rb").read()  # noqa: SIM115
     region_load = region_load_addr(cfg["region"])
     entry_bw = sw_to_bw(cfg["entry_sw"])
     offset = entry_bw - region_load
@@ -284,9 +284,9 @@ def run_core(name, cfg, dec, print_first=False):
     # --- 1. Linear sweep ---
     entries = linear_sweep(mem, offset, dec)
     stats = summarize_sweep(entries)
-    print(f"\n-- Linear sweep from entry to end of region --")
+    print("\n-- Linear sweep from entry to end of region --")
     print(f"total instructions decoded: {stats['total']}")
-    pct = lambda x: 100.0 * x / stats["total"] if stats["total"] else 0.0
+    pct = lambda x: 100.0 * x / stats["total"] if stats["total"] else 0.0  # noqa: E731
     print(
         f"unknown (form=None):        {stats['unknown']} ({pct(stats['unknown']):.2f}%)"
     )
@@ -303,7 +303,7 @@ def run_core(name, cfg, dec, print_first=False):
     reached, decode_errors, paths_run = recursive_trace(mem, offset, dec, region_load)
     reached_bytes = sum(reached)
     span = len(mem) - offset  # entry..end-of-region span
-    print(f"\n-- Recursive control-flow trace from entry --")
+    print("\n-- Recursive control-flow trace from entry --")
     print(f"paths (work-queue items) run: {paths_run}")
     print(
         f"bytes reached: {reached_bytes} / region size {len(mem)} ({100.0 * reached_bytes / len(mem):.2f}%)"

@@ -74,7 +74,7 @@ def decode_cr_writes(image):
     """
     d0 = 0
     writes = {}
-    for pc, raw, mnemonic, operands in disasm(image, LOAD_ADDRESS, START, END):
+    for _pc, raw, _mnemonic, _operands in disasm(image, LOAD_ADDRESS, START, END):
         b = bytes.fromhex(raw)
         if raw.startswith("203c") and len(raw) == 12:  # move.l #imm,d0
             d0 = int.from_bytes(b[2:6], "big")

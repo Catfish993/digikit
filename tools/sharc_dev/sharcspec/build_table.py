@@ -17,8 +17,8 @@ bits 47..16. VISA availability comes from the PRM headings ("ISA", "VISA", "ISA/
 import json
 import re
 
-prm = json.load(open("figures.json"))["figures"]
-classic = json.load(open("classic.json"))
+prm = json.load(open("figures.json"))["figures"]  # noqa: SIM115
+classic = json.load(open("classic.json"))  # noqa: SIM115
 
 # PRM figure name -> classic table keys (a merged figure lists every classic variant).
 PAIRS = {
@@ -665,7 +665,7 @@ for entry in UNDOCUMENTED:
     forms.append(undocumented_form(entry))
     notes.append(f"{entry['name']}: {entry['note']}")
 
-json.dump({"forms": forms, "notes": notes}, open("decode_table.json", "w"), indent=1)
+json.dump({"forms": forms, "notes": notes}, open("decode_table.json", "w"), indent=1)  # noqa: SIM115
 for fm in forms:
     flag = "  UNCONFIRMED" if fm["unconfirmed_bits"] else ""
     print(

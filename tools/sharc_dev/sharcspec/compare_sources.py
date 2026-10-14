@@ -13,8 +13,8 @@ shows as prm-field/classic-fixed with the variant's value.
 import json
 import re
 
-prm = json.load(open("figures.json"))["figures"]
-classic = json.load(open("classic.json"))
+prm = json.load(open("figures.json"))["figures"]  # noqa: SIM115
+classic = json.load(open("classic.json"))  # noqa: SIM115
 
 # PRM figure name -> classic table keys drawn by that figure.
 PAIRS = {

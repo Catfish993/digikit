@@ -111,7 +111,7 @@ def _type14d_suffix(f, direction):
     at, since the manual does not name them.
     """
     store = direction == "store"
-    w, ex, l, x = f.get("w"), f.get("ex"), f.get("l"), f.get("x")
+    w, ex, l, x = f.get("w"), f.get("ex"), f.get("l"), f.get("x")  # noqa: E741
     if w:
         if not ex:
             return " (undocumented: w=1,ex=0)"

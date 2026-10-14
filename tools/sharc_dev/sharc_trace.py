@@ -11,7 +11,7 @@ import argparse
 import json
 import os
 from collections.abc import Mapping, Sequence
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 from tools.sharc_dev.sharc_core.compute import (  # noqa: E402, F401
@@ -198,7 +198,7 @@ from tools.sharc_dev.sharc_core.values import (  # noqa: E402, F401
 )
 from tools.sharc_dev.sharc_disasm import Instruction  # noqa: E402, F401  (re-exported)
 from tools.sharc_dev.sharcimm import name_address  # noqa: E402
-from tools.sharc_dev.sharcldr import (
+from tools.sharc_dev.sharcldr import (  # noqa: E402
     LoadedMemory,  # noqa: E402
     sw_to_byte,  # noqa: E402, F401  (re-exported)
 )
@@ -245,9 +245,9 @@ def _dedupe_key(state: State) -> tuple:
 
 def trace(
     data: bytes | LoadedMemory,
-    base_sw: Optional[int],
+    base_sw: int | None,
     start: int,
-    sets: Optional[Mapping[Union[str, int], int | Value | str]] = None,
+    sets: Mapping[str | int, int | Value | str] | None = None,
     max_steps: int = 100,
     max_states: int = 32,
     *,
@@ -261,10 +261,10 @@ def trace(
     core_reset_state: bool = False,
     breakpoints: Sequence[int] = (),
     provisional_forms: Sequence[str] = (),
-    pokes: Optional[Mapping[int, int]] = None,
+    pokes: Mapping[int, int] | None = None,
     approx_recips: bool = False,
-) -> List[State]:
-    uregs: Dict[int, Value] = (
+) -> list[State]:
+    uregs: dict[int, Value] = (
         {
             UREG_CODES[name]: Const(value)
             for name, value in CORE_UREG_RESET_VALUES.items()
@@ -292,7 +292,7 @@ def trace(
         raise ValueError("breakpoints must be 24-bit short-word addresses")
     breakpoint_set = frozenset(breakpoints)
     concrete = data if isinstance(data, LoadedMemory) and concrete_memory else None
-    mmrs: Dict[int, Value] = (
+    mmrs: dict[int, Value] = (
         {address: Const(value) for address, value in CORE_MMR_RESET_VALUES.items()}
         if core_reset_state
         else {}
@@ -327,8 +327,8 @@ def trace(
             )
     # FIFO of distinct live states. Paths that reconverge on an identical state
     # behave identically from there, so only one is kept.
-    active: Dict[tuple, State] = {_dedupe_key(start_state): start_state}
-    done: List[State] = []
+    active: dict[tuple, State] = {_dedupe_key(start_state): start_state}
+    done: list[State] = []
     while active:
         state = active.pop(next(iter(active)))
         if state.pc_sw in breakpoint_set:

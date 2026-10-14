@@ -47,7 +47,7 @@ def main() -> None:
     ap.add_argument("lines_json")
     ap.add_argument("--unknown", type=int, default=0)
     a = ap.parse_args()
-    d = json.load(open(a.lines_json))
+    d = json.load(open(a.lines_json))  # noqa: SIM115
     cache: dict[str, list[str] | None] = {}
 
     def src(f: str) -> list[str] | None:
@@ -55,7 +55,7 @@ def main() -> None:
             c = glob.glob("out/native/dn2-audio/gen/" + f) + glob.glob(
                 "native/**/" + f, recursive=True
             )
-            cache[f] = open(c[0], errors="replace").read().splitlines() if c else None
+            cache[f] = open(c[0], errors="replace").read().splitlines() if c else None  # noqa: SIM115
         return cache[f]
 
     tot = sum(n for _, _, n in d)

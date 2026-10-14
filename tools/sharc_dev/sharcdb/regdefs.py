@@ -107,10 +107,7 @@ def _shortcompute_regdef_reguse(field12):
     is_float = opcode in sharcfn.FLOAT_SHORT_OPS
     Rn, Rx = sharcfn.reg_name(rn, is_float), sharcfn.reg_name(rx, is_float)
     defs = [(Rn, "compute")]
-    if opcode in sharcfn._UNARY_RX_SHORT_OPS:
-        uses = [Rx]
-    else:
-        uses = [Rn, Rx]
+    uses = [Rx] if opcode in sharcfn._UNARY_RX_SHORT_OPS else [Rn, Rx]
     return defs, uses
 
 

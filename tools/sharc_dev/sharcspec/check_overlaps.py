@@ -13,7 +13,7 @@ import re
 
 figs = [
     f
-    for f in json.load(open("figures.json"))["figures"]
+    for f in json.load(open("figures.json"))["figures"]  # noqa: SIM115
     if re.search(r"Type\s*\d", f["caption"])
 ]
 

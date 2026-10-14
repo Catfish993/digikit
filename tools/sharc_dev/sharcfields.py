@@ -176,7 +176,7 @@ def plan_joint(forms, classic):
 def bits_str(values, picked):
     """A joint value as binary groups, one per field, widest bit first."""
     out = []
-    for value, (_, hi, lo, _) in zip(values, picked):
+    for value, (_, hi, lo, _) in zip(values, picked, strict=False):
         out.append("?" if value is None else format(value, "0%db" % (hi - lo + 1)))
     return " ".join(out)
 

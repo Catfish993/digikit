@@ -52,7 +52,7 @@ use super::*;
 
 
 def type_names() -> dict[str, str]:
-    d = json.load(open(os.path.join(g.HERE, "sharcspec", "decode_table.json")))
+    d = json.load(open(os.path.join(g.HERE, "sharcspec", "decode_table.json")))  # noqa: SIM115
     tab = {}
     for f in d["forms"]:
         n = re.sub(r"\s*\((\w+)\)", r"_\1", f["name"][4:])
@@ -297,7 +297,7 @@ def dce_items(items: list) -> list:
         if impure or (it[0] == "def" and it[1] in used):
             keep[i] = True
             used.update(operands(it))
-    return [it for it, k in zip(items, keep) if k]
+    return [it for it, k in zip(items, keep, strict=False) if k]
 
 
 # ---------------------------------------------------------------------------
@@ -644,4 +644,4 @@ if __name__ == "__main__":
 
     path = sys.argv[1]
     names = sys.argv[2].split(",")
-    open(path, "w").write(emit_file(names))
+    open(path, "w").write(emit_file(names))  # noqa: SIM115
