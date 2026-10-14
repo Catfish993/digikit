@@ -1,5 +1,6 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
-# Groups: setup, emu*, web*, scenario*, test*, lint*, perf*, gen:*, dev:*, check.
+# Groups: setup, emu*, web*, scenario*, test*, lint*, perf*, gen:*, dev:*, check,
+# verify*, toolchains, patch*, port:*, inject.
 # Old task names stay as aliases.
 
 [settings]
@@ -95,7 +96,7 @@ description = "Oracle tests with the full sweeps (every track FX and send FX sce
 
 [tasks.verify]
 run = "uv run python tools/verify.py"
-description = "Exactness gate for what changed (tools/verify.py; --base BRANCH in a lane, --only STEPS); one PASS/FAIL line per step, logs in out/runs/verify/"
+description = "Exactness gate for what changed (tools/verify.py; --base BRANCH in a lane, --only STEPS, --explain shows the routing and the plan without running); one PASS/FAIL line per step, logs in out/runs/verify/"
 
 [tasks."verify:full"]
 run = "uv run python tools/verify.py --full"
@@ -159,7 +160,7 @@ description = "All linters"
 
 [tasks.check]
 depends = ["lint", "test:quick"]
-description = "The pre-merge gate: lint + test:quick"
+description = "Quick local check (lint + test:quick), not the merge gate: use `mise run verify` for what changed and `mise run verify:full` before merging to main"
 
 # --- performance ---
 
@@ -255,7 +256,7 @@ description = "Smoke tour and module tests over the matrix (tests/patchkit_smoke
 
 [tasks."patch:proofs"]
 run = "uv run python tools/pk_proofs.py"
-description = "Every emulator proof on its quick tier, in sequence (gain, drive, voice, machines, pluck on DT2 and DN2): mise run patch:proofs [-- --only pluck,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
+description = "Every emulator proof on its quick tier, in sequence (DT2: gain, drive, voice, machines, pluck; DN2: gain, voice, machines, pages, pluck; drive runs on DT2 only): mise run patch:proofs [-- --only pluck,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
 
 [tasks."port:resolve"]
 run = "uv run python tools/port_resolve.py"

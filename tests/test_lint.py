@@ -14,6 +14,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
     "tests/support",
+    "tests/test_verify.py",
+    "tests/test_pk_proofs.py",
     "tests/test_pluck.py",
     "tests/test_dsp_voice.py",
     "tools/pluck_ref.py",

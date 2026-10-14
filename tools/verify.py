@@ -6,6 +6,14 @@
     uv run python tools/verify.py --full --dt2     # plus the full DT2 FX tier sweep
     uv run python tools/verify.py --only pins,check
     uv run python tools/verify.py --jobs 1         # sequential (default: half the CPUs in parallel)
+    uv run python tools/verify.py --explain        # show the routing and the plan, run nothing
+
+python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match a changed file,
+and every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps). With
+--full it runs PY_GATE plus every suite, not all of tests/ (`mise run test` runs all of tests/).
+rust-tests runs cargo test --workspace --release. --explain takes the same options as a run, then
+prints each changed file with its matched prefix and steps, the node plan with dependencies and
+the python-tests files with their suite, without running anything or creating a run directory.
 
 Prints the chosen steps, then one PASS/FAIL line per step as each finishes (independent steps
 run in parallel after the builds they need; each step's output is printed whole); each step's output is in
@@ -36,7 +44,10 @@ import fastcov  # noqa: E402
 PY = ["uv", "run", "python"]
 FX_FILES = ("scenarios/dn2-trackfx.json", "scenarios/dn2-sendfx.json")
 DT2_FX_FILES = ("scenarios/dt2-trackfx.json", "scenarios/dt2-sendfx.json")
-PY_TESTS = (
+# python-tests always runs PY_GATE. A suite of PY_SUITES, (name, trigger prefixes, test
+# paths), runs when a changed file starts with one of its prefixes (all suites with
+# --full). Test paths may be globs or directories; one that matches nothing is an error.
+PY_GATE = (
     "tests/test_sharc_golden.py",
     "tests/test_sharc_denormal.py",
     "tests/test_sharc_rsgen_density.py",
@@ -44,6 +55,68 @@ PY_TESTS = (
     "tests/test_types.py",
     "tests/test_patchkit.py",
     "tests/test_patchkit_expansion.py",
+)
+PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "patchkit",
+        (
+            "native/patchkit/",
+            "modules/",
+            "devices/ports/",
+            "tools/pk_",
+            "tools/port_resolve.py",
+            "tools/patchkit.py",
+            "tools/pluck_ref.py",
+            "tests/test_pk_",
+            "tests/test_patchkit",
+            "tests/patchkit_smoke/",
+            "tests/test_dsp_voice.py",
+            "tests/test_pluck.py",
+            "tests/test_master_drive",
+        ),
+        (
+            "tests/test_patchkit.py",
+            "tests/test_patchkit_expansion.py",
+            "tests/test_pk_*.py",
+            "tests/test_dsp_voice.py",
+            "tests/test_pluck.py",
+            "tests/test_master_drive.py",
+            "tests/test_master_drive_emu.py",
+            "tests/patchkit_smoke",
+        ),
+    ),
+    (
+        "control-client",
+        ("tools/digi_client.py", "native/control/"),
+        ("tests/test_digi_client.py",),
+    ),
+    (
+        "devtools",
+        (
+            "tools/verify.py",
+            "tools/rust_ws.py",
+            "tools/pk_proofs.py",
+            "tools/benchlock.py",
+        ),
+        ("tests/test_verify.py", "tests/test_pk_proofs.py", "tests/test_benchlock.py"),
+    ),
+    (
+        "launcher",
+        (
+            "tools/native_emu.py",
+            "tools/native_pgo.py",
+            "tools/native_target.py",
+            "tools/coupled.py",
+            "tools/digi_env.py",
+        ),
+        (
+            "tests/test_native_emu_launcher.py",
+            "tests/test_native_pgo.py",
+            "tests/test_native_target.py",
+            "tests/test_coupled_tool.py",
+            "tests/test_gen_fingerprint.py",
+        ),
+    ),
 )
 STEPS = (
     "build",
@@ -119,7 +192,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("rust-tests", "python-tests", "web"),
     ),
-    (("native/control/",), ("desktop", "rust-tests", "card")),
+    (("native/control/",), ("desktop", "rust-tests", "card", "python-tests")),
     (
         ("native/plusdrive/", "native/card/", "tools/card_check.py"),
         ("desktop", "rust-tests", "card"),
@@ -172,16 +245,83 @@ def changed_files(base: str) -> list[str]:
     return sorted(files)
 
 
+def route(path: str) -> tuple[str, tuple[str, ...]]:
+    """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
+    if path.endswith(".md"):
+        return "docs", ()  # documentation selects no steps
+    for prefixes, steps in RULES:
+        for prefix in prefixes:
+            if path.startswith(prefix):
+                return prefix, steps
+    return "fallback", FALLBACK
+
+
+def is_changed_test(path: str) -> bool:
+    """A changed test file that python-tests runs itself (scenario tests have steps)."""
+    name = path.rsplit("/", 1)[-1]
+    return (
+        path.startswith("tests/")
+        and not path.startswith("tests/scenarios/")
+        and name.startswith("test_")
+        and name.endswith(".py")
+        and (ROOT / path).is_file()
+    )
+
+
+def resolve_tests(paths: tuple[str, ...]) -> list[str]:
+    """Repo-relative test paths for PATHS (globs and directories); a name that matches
+    nothing is a registry error, so a rename cannot drop a suite silently."""
+    found: list[str] = []
+    for pattern in paths:
+        if any(c in pattern for c in "*?["):
+            hits = sorted(ROOT.glob(pattern))
+        else:
+            hits = [ROOT / pattern] if (ROOT / pattern).exists() else []
+        if not hits:
+            raise SystemExit(f"verify: PY_SUITES entry matches nothing: {pattern}")
+        found += [hit.relative_to(ROOT).as_posix() for hit in hits]
+    return found
+
+
+def support_users(path: str) -> list[str]:
+    """The test files that import the changed helper module tests/support/NAME.py."""
+    if not (path.startswith("tests/support/") and path.endswith(".py")):
+        return []
+    module = "support." + path.removeprefix("tests/support/").removesuffix(".py")
+    tests = sorted((ROOT / "tests").rglob("test_*.py"))
+    users = [t for t in tests if module in t.read_text(encoding="utf-8")]
+    return [t.relative_to(ROOT).as_posix() for t in users]
+
+
+def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
+    """(pytest path, source) in run order, without duplicates: the gate files, the
+    suites a changed file triggers (all of them when FULL), changed test files, then
+    the tests that import a changed tests/support/ module."""
+    plan_: list[tuple[str, str]] = [(path, "gate") for path in PY_GATE]
+    for name, triggers, tests in PY_SUITES:
+        if full or any(f.startswith(triggers) for f in files):
+            plan_ += [(path, name) for path in resolve_tests(tests)]
+    plan_ += [(f, "changed") for f in files if is_changed_test(f)]
+    plan_ += [(t, "support") for f in files for t in support_users(f)]
+    seen: set[str] = set()
+    return [(p, s) for p, s in plan_ if not (p in seen or seen.add(p))]
+
+
+def python_tests(files: list[str], full: bool) -> list[str]:
+    """The ordered, de-duplicated pytest paths for the python-tests step."""
+    return [path for path, _ in python_test_plan(files, full)]
+
+
 def steps_for(files: list[str]) -> tuple[str, ...]:
     """The steps the changed files need, in gate order."""
     wanted: set[str] = set()
     for path in files:
-        if path.endswith(".md"):
-            continue  # documentation selects no steps
-        rule = next(
-            (steps for prefixes, steps in RULES if path.startswith(prefixes)), FALLBACK
-        )
-        wanted.update(rule)
+        wanted.update(route(path)[1])
+        if is_changed_test(path) or (
+            not path.endswith(".md")
+            and any(path.startswith(triggers) for _, triggers, _ in PY_SUITES)
+        ):
+            wanted.add("python-tests")
     return tuple(s for s in STEPS if s in wanted)
 
 
@@ -202,8 +342,9 @@ class Gate:
     """Collects each step's output lines in a per-thread buffer, so parallel steps
     print whole and in order when they finish."""
 
-    def __init__(self, out: Path) -> None:
+    def __init__(self, out: Path, py_tests: list[str] | None = None) -> None:
         self.out = out
+        self.py_tests = py_tests if py_tests is not None else list(PY_GATE)
         self.failed: list[str] = []
         self.local = threading.local()
         self.lock = threading.Lock()
@@ -354,6 +495,35 @@ def plan(steps: tuple[str, ...]) -> tuple[list[str], dict[str, tuple[str, ...]]]
     return nodes, deps
 
 
+def rust_tests_command() -> list[str]:
+    # cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
+    # packages/web/dist is absent
+    return [*PY, "tools/rust_ws.py", "test"]
+
+
+def explain(
+    steps: tuple[str, ...],
+    files: list[str],
+    py_plan: list[tuple[str, str]],
+    per_file: bool,
+) -> None:
+    """Print the routing, the node plan and the python-tests files; run nothing."""
+    if per_file:
+        print("changed files:")
+        for path in files:
+            label, wanted = route(path)
+            print(f"  {path} -> {label} -> {', '.join(wanted) or 'no steps'}")
+    print(f"steps: {', '.join(steps) or 'nothing to run'}")
+    nodes, deps = plan(steps)
+    print("plan:")
+    for node in nodes:
+        print(f"  {node} <- {', '.join(deps[node]) or 'no dependencies'}")
+    if "python-tests" in steps:
+        print("python-tests files:")
+        for path, source in py_plan:
+            print(f"  {path} ({source})")
+
+
 def run_step(gate: Gate, step: str) -> None:
     scenario_tests = [
         *PY,
@@ -394,20 +564,12 @@ def run_step(gate: Gate, step: str) -> None:
         tier(gate, "tier-sweep", 1)
     elif step == "python-tests":
         gate.run(
-            "python-tests", [*PY, "-m", "pytest", "-q", *PY_TESTS], check=pytest_ran
+            "python-tests",
+            [*PY, "-m", "pytest", "-q", *gate.py_tests],
+            check=pytest_ran,
         )
     elif step == "rust-tests":
-        cmd = [
-            *PY,
-            "tools/rust_ws.py",
-            "test",
-            "--",
-            "-p",
-            "sharc-native",
-            "-p",
-            "sharc-rt",
-        ]
-        gate.run("rust-tests", cmd)
+        gate.run("rust-tests", rust_tests_command())
     elif step == "card":
         gate.run("card", [*PY, "tools/card_check.py"])
     elif step == "dt2-tone":
@@ -491,13 +653,21 @@ def main(argv: list[str] | None = None) -> int:
         default=0,
         help="steps run at once (default: half the CPUs); 1 is sequential",
     )
+    ap.add_argument(
+        "--explain",
+        action="store_true",
+        help="print the routing, the plan and the python-tests files; run nothing",
+    )
     args = ap.parse_args(argv)
+    files: list[str] = []
     if args.only:
         steps = tuple(args.only.split(","))
         unknown = sorted(set(steps) - set(STEPS))
         if unknown:
             ap.error(f"unknown steps: {', '.join(unknown)}")
         why = "--only"
+        if "python-tests" in steps:
+            files = changed_files(args.base)
     elif args.full:
         skip = {"tier-quick", "dt2-tier-quick" if args.dt2 else "dt2-tier-sweep"}
         steps = tuple(s for s in STEPS if s not in skip)
@@ -506,13 +676,17 @@ def main(argv: list[str] | None = None) -> int:
         files = changed_files(args.base)
         steps = steps_for(files)
         why = f"{len(files)} changed files since {args.base}"
+    py_plan = python_test_plan(files, args.full)
+    if args.explain:
+        explain(steps, files, py_plan, per_file=not (args.only or args.full))
+        return 0
     out = Path(digi_env.run_dir("verify"))
     out.mkdir(parents=True, exist_ok=True)
     print(
         f"verify: {', '.join(steps) or 'nothing to run'} ({why}); logs in {out}",
         flush=True,
     )
-    gate = Gate(out)
+    gate = Gate(out, [path for path, _ in py_plan])
     jobs = args.jobs if args.jobs else default_step_jobs()
     start = time.monotonic()
     times = run_steps(gate, steps, jobs)

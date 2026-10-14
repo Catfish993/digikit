@@ -51,11 +51,13 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Verify
 
 - `mise run verify` runs the gate steps that the changed files need (`tools/verify.py`; default: uncommitted
-  changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps). `mise run verify:full` runs every
+  changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running). `mise run verify:full` runs every
   step with the full 134-scenario tier sweep (about 45 minutes): before merging to `main` and after changes to the
   generated core.
 - Steps: build, desktop (app crate check), web (node tests and astro check), pins (seven DN2 PCM pins), check (61
-  DN2 scenario oracles), check-no-aot, tier-quick / tier-sweep (AOT = no-AOT PCM), python-tests, rust-tests, card
+  DN2 scenario oracles), check-no-aot, tier-quick / tier-sweep (AOT = no-AOT PCM), python-tests (the PY_GATE files, the PY_SUITES the change
+  triggers and the changed test files; not all of tests/, which `mise run test` runs), rust-tests (cargo test
+  --workspace), card
   (in-process DT2 card: trigs play the files), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
 - While working, run only the tests for the code you changed.
 - Lint: `tests/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
