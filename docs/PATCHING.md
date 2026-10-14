@@ -7,6 +7,9 @@ bytes. The tool runs on the command line (`mise run patch`) and in the browser (
 **No patched image from this repository has been flashed to a device.** Every result here comes from the emulator.
 Read [Safety and hardware](#safety-and-hardware) before you flash anything.
 
+New to modules? Start with [MODULE-AUTHORING.md](MODULE-AUTHORING.md): the short path from an empty module to a
+patched firmware running in the emulator.
+
 Supported firmware (a "port" exists for each): Digitakt II 1.16 and 1.17, Digitone II 1.11 and 1.12. Use your own
 copy of the `.syx` files; the repository never contains them.
 

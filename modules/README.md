@@ -2,8 +2,9 @@
 
 A module is our own code (ColdFire C or assembly, SHARC+ assembly) plus a manifest, `module.toml`. patchkit links the
 code into a stock Elektron `.syx`, places it in a free region, hooks firmware sites and writes a patched `.syx`.
-How patchkit works and how to run it: [docs/PATCHING.md](../docs/PATCHING.md). This file is the authoring guide
-and the manifest reference. Rules that apply to every module:
+The short path (create, build, patch, inject, test): [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md). How
+patchkit works and how to run it: [docs/PATCHING.md](../docs/PATCHING.md). This file is the authoring guide and the
+manifest reference. Rules that apply to every module:
 
 - **No firmware bytes in a module.** A `write` carries the SHA-256 of the bytes it replaces, never the bytes.
   Tables of the stock firmware are copied from the user's image at patch time (`[[section]]`).
