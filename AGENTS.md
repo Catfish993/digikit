@@ -53,13 +53,14 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Test layout, commands and the current baseline: docs/TESTING.md.
 - `mise run verify` runs the gate steps that the changed files need (`tools/verify.py`; default: uncommitted
   changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running; `--rerun-failed` re-runs only the steps that failed in the last run). `mise run verify:full` runs every
-  step with the full 134-scenario tier sweep (about 20 minutes with warm builds): before merging to `main` and after changes to the
+  step with the full 134-scenario tier sweep (about 7 minutes with a warm render cache, about 20 minutes when DSP/native code changed): before merging to `main` and after changes to the
   generated core.
 - Steps: build, desktop (app crate check), web (node tests and astro check), pins (seven DN2 PCM pins), check (61
   DN2 scenario oracles), check-no-aot, tier-quick / tier-sweep (AOT = no-AOT PCM) (one shared queue of small chunks, DIGI_TIER_JOBS workers, default cpus-4), python-tests (the PY_GATE files, the PY_SUITES the change
   triggers and the changed test files; not all of tests/, which `mise run test` runs) — one process per file (DIGI_PY_JOBS, DIGI_PY_TIMEOUT), rust-tests (cargo test
   --workspace), card
   (in-process DT2 card: trigs play the files), dt2-tone, dt2-check (DT2 scenario oracles), dt2-tier-quick / dt2-tier-sweep (DT2 AOT = interpreter PCM; the full sweep with --full --dt2).
+- Scenario renders are cached by content (out/cache/renders; tools/render_cache.py): a render reruns only when the binary, input files, scenario, peeks, device TOMLs or a SHARC_/DIGI_/DSP_ variable changed. `--no-cache` or DIGI_RENDER_CACHE=0 forces renders; `tools/coupled.py cache clear` empties it. Only emulator output is cached; oracles, hash compares and pins run fresh. Guard 1: tests/devtools/test_render_inputs.py fails when a render input (env read or file read) is not classified; regenerate counts with `uv run python tests/devtools/test_render_inputs.py --scan` after review. Guard 2: verify sets DIGI_RENDER_CACHE_CHECK=0.03, which re-renders about 3% of hits and fails on any difference. Use `verify --no-cache` for release gates.
 - While working, run only the tests for the code you changed.
 - Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
   `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11

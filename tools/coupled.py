@@ -31,6 +31,8 @@ import json
 import math
 import os
 import pathlib
+import random
+import shutil
 import subprocess
 import sys
 
@@ -40,6 +42,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 try:
     import digi_env
     import native_target
+    import render_cache
 finally:
     sys.path.pop(0)
 
@@ -376,6 +379,35 @@ def _run_one(
     return out
 
 
+def recheck_probability() -> float:
+    """``DIGI_RENDER_CACHE_CHECK``: chance (0..1, default 0) that a cache hit is
+    re-rendered and compared."""
+    raw = os.environ.get("DIGI_RENDER_CACHE_CHECK", "0")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not 0.0 <= value <= 1.0:
+        raise SystemExit(
+            f"DIGI_RENDER_CACHE_CHECK={raw!r}: expected a probability from 0 to 1"
+        )
+    return value
+
+
+def pick_rechecks(
+    names: list[str], probability: float, rng: random.Random
+) -> list[str]:
+    """The names (in order) chosen for a fresh re-render, each with
+    ``probability``."""
+    if probability <= 0:
+        return []
+    return [n for n in names if probability >= 1 or rng.random() < probability]
+
+
+def _recheck_view(entry: dict) -> tuple[object, object]:
+    return ((entry.get("pcm") or {}).get("sha256"), entry.get("peek"))
+
+
 def run_batch(
     device: str,
     scenarios_file: pathlib.Path | str,
@@ -386,6 +418,8 @@ def run_batch(
     binary: pathlib.Path | None = None,
     no_build: bool = False,
     jobs: int = 1,
+    *,
+    cache: render_cache.RenderCache | None = None,
 ) -> dict:
     """Render ``names`` of a scenario file into ``run_dir`` (report.json,
     audio-<name>.wav, logs/) and return the parsed report. ``peeks`` are
@@ -403,8 +437,47 @@ def run_batch(
     run_dir = pathlib.Path(run_dir)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     scn = str(pathlib.Path(scenarios_file).resolve())
+    if cache is None:
+        cache = render_cache.RenderCache()
+    use_cache = cache.enabled and not parsed
+    keys: dict[str, str] = {}
+    hits: dict[str, tuple[dict, dict]] = {}
+    if use_cache:
+        base = run_args(binary, inputs(device), [])
+        context = render_cache.context_key(
+            binary, base[1:], run_env(), device, list(peeks)
+        )
+        with pathlib.Path(scn).open() as handle:
+            objs = {sc["name"]: sc for sc in json.load(handle)["scenarios"]}
+        for name in names:
+            if name not in objs:
+                continue
+            keys[name] = render_cache.scenario_key(context, objs[name])
+            found = cache.load(keys[name])
+            if found is None:
+                continue
+            top, entry, wav_path = found
+            shutil.copyfile(wav_path, run_dir / f"audio-{name}.wav")
+            entry = dict(entry)
+            entry["render_cache"] = "hit"
+            hits[name] = (top, entry)
+    misses = [n for n in names if n not in hits]
+    rechecks = (
+        pick_rechecks(
+            [n for n in names if n in hits],
+            recheck_probability(),
+            random.Random(os.urandom(16)),
+        )
+        if hits
+        else []
+    )
+    for name in rechecks:
+        hits[name][1]["render_cache"] = "hit-rechecked"
+    todo = misses + rechecks
     shards = (
-        shard_names(names, scenario_seconds(scn), jobs) if jobs > 1 else [list(names)]
+        shard_names(todo, scenario_seconds(scn), jobs)
+        if jobs > 1
+        else ([list(todo)] if todo else [])
     )
 
     def launch(shard: list[str], d: pathlib.Path) -> pathlib.Path:
@@ -418,26 +491,80 @@ def run_batch(
         argv = run_args(binary, inputs(device), extra)
         return _run_one(argv, run_env(digi_env.diag_env(parsed, d)), d)
 
+    rendered: list[dict] = []
+    entries: dict[str, dict] = {}
     if len(shards) == 1:
-        return read_report(launch(shards[0], run_dir))
-    dirs = [run_dir / f"shard-{i}" for i in range(len(shards))]
-    with (
-        benchlock("shared", f"coupled-run x{len(shards)}"),
-        concurrent.futures.ThreadPoolExecutor(len(shards)) as pool,
-    ):
-        futures = [
-            pool.submit(launch, sh, d) for sh, d in zip(shards, dirs, strict=True)
-        ]
-        outs = [f.result() for f in futures]
+        dirs = [run_dir]
+        outs = [launch(shards[0], run_dir)]
+    elif shards:
+        dirs = [run_dir / f"shard-{i}" for i in range(len(shards))]
+        with (
+            benchlock("shared", f"coupled-run x{len(shards)}"),
+            concurrent.futures.ThreadPoolExecutor(len(shards)) as pool,
+        ):
+            futures = [
+                pool.submit(launch, sh, d) for sh, d in zip(shards, dirs, strict=True)
+            ]
+            outs = [f.result() for f in futures]
+    else:
+        dirs, outs = [], []
     for shard, d in zip(shards, dirs, strict=True):
         for name in shard:
             wav = d / f"audio-{name}.wav"
             if not wav.exists() and len(shard) == 1:
                 wav = d / "audio.wav"
-            if wav.exists():
-                os.replace(wav, run_dir / f"audio-{name}.wav")
-    merged = merge_reports([read_report(o) for o in outs], names)
+            dst = run_dir / f"audio-{name}.wav"
+            if wav.exists() and wav != dst:
+                os.replace(wav, dst)
+    rendered = [read_report(o) for o in outs]
+    for rep in rendered:
+        for sc in rep.get("scenarios", []):
+            entries[sc["name"]] = sc
+    if rendered:
+        # Raises when a requested scenario is missing from the reports.
+        merge_reports(rendered, todo)
+    if use_cache:
+        for rep in rendered:
+            top = {k: v for k, v in rep.items() if k != "scenarios"}
+            for name in misses:
+                wav = run_dir / f"audio-{name}.wav"
+                if (
+                    name in keys
+                    and entries.get(name) is not None
+                    and name in {sc["name"] for sc in rep.get("scenarios", [])}
+                    and wav.is_file()
+                ):
+                    cache.store(keys[name], top, entries[name], wav)
+    top_report = (
+        {k: v for k, v in rendered[0].items() if k != "scenarios"}
+        if rendered
+        else {k: v for k, v in next(iter(hits.values()))[0].items() if k != "scenarios"}
+    )
+    all_entries = {**entries, **{n: h[1] for n, h in hits.items()}}
+    merged = {
+        **top_report,
+        "scenarios": [all_entries[n] for n in names],
+        "render_cache": {
+            "hits": len(hits),
+            "rechecked": len(rechecks),
+            "rendered": len(misses),
+        },
+    }
     (run_dir / "report.json").write_text(json.dumps(merged))
+    print(
+        f"render cache: {len(hits)} hit ({len(rechecks)} rechecked), "
+        f"{len(misses)} rendered"
+    )
+    for name in rechecks:
+        cached, fresh = hits[name][1], entries[name]
+        a = _recheck_view(cached)
+        b = _recheck_view(fresh)
+        if a != b:
+            raise RuntimeError(
+                f"stale render cache for {name}: cached sha256 {a[0]} != fresh "
+                f"{b[0]} (key {keys[name]}); clear it with `tools/coupled.py cache "
+                "clear` and report the missing key input"
+            )
     return merged
 
 
@@ -467,8 +594,13 @@ def run_parallel(binary: pathlib.Path, args) -> int:
         diag=args.diag,
         binary=binary,
         jobs=args.jobs,
+        cache=render_cache.RenderCache(enabled=False)
+        if getattr(args, "no_cache", False)
+        else None,
     )
-    summarize(run_dir / "report.json")
+    if args.out and pathlib.Path(args.out).name != "report.json":
+        pathlib.Path(args.out).write_text((run_dir / "report.json").read_text())
+    summarize(pathlib.Path(args.out) if args.out else run_dir / "report.json")
     bad = [r["name"] for r in scenario_results(report) if r["ok"] is False]
     return 2 if bad else 0
 
@@ -494,9 +626,22 @@ def cmd_scenario(args) -> int:
     # No --scenario means every scenario of the file; coupled-run exits 2 on
     # any expect_sha256 mismatch or failed gate.
     selection = [x for name in args.names for x in ("--scenario", name)]
-    if args.jobs > 1:
+    eligible = (
+        args.seconds is None and not args.extra and not args.dump_dsp and not args.diag
+    )
+    if args.jobs > 1 or eligible:
         return run_parallel(binary, args)
     return run_and_report(binary, selection, args)
+
+
+def cmd_cache(args) -> int:
+    cache = render_cache.RenderCache()
+    if args.action == "clear":
+        print(f"removed {cache.clear()} entries")
+    else:
+        stats = cache.stats()
+        print(f"{stats['entries']} entries, {stats['bytes'] / 1e6:.1f} MB")
+    return 0
 
 
 def cmd_replay(args) -> int:
@@ -697,6 +842,9 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="write the DSP state at the end to <run>/dsp-<scenario>.bin (tools/dspdiff.py)",
     )
+    p.add_argument(
+        "--no-cache", action="store_true", help="render without the render cache"
+    )
     run_flags(p)
     p = add("replay", cmd_replay, "replay a scenario or diagnostics export")
     p.add_argument("file", metavar="FILE")
@@ -705,6 +853,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("name", metavar="NAME")
     p.add_argument("--seconds", type=float)
     p.add_argument("--no-build", action="store_true", help="skip the cargo build")
+    p = add("cache", cmd_cache, "render cache: stats or clear")
+    p.add_argument("action", choices=["stats", "clear"])
     add("test-quick", cmd_test_quick, "fast cargo tests with the pinned toolchain")
     return top
 

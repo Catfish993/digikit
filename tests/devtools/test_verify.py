@@ -176,6 +176,39 @@ def test_rerun_failed_excludes_only_and_full() -> None:
     assert info.value.code == 2
 
 
+def test_pick_rechecks() -> None:
+    names = [f"s{i}" for i in range(20)]
+    rng = verify.coupled.random.Random(1)
+    assert verify.coupled.pick_rechecks(names, 0.0, rng) == []
+    assert verify.coupled.pick_rechecks(names, 1.0, rng) == names
+    first = verify.coupled.pick_rechecks(names, 0.5, verify.coupled.random.Random(7))
+    again = verify.coupled.pick_rechecks(names, 0.5, verify.coupled.random.Random(7))
+    assert first == again
+    assert 0 < len(first) < len(names)
+    assert set(first) <= set(names)
+
+
+def test_recheck_probability_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DIGI_RENDER_CACHE_CHECK", raising=False)
+    assert verify.coupled.recheck_probability() == 0.0
+    monkeypatch.setenv("DIGI_RENDER_CACHE_CHECK", "0.25")
+    assert verify.coupled.recheck_probability() == 0.25
+    for bad in ("2", "-0.1", "x", "nan"):
+        monkeypatch.setenv("DIGI_RENDER_CACHE_CHECK", bad)
+        with pytest.raises(SystemExit):
+            verify.coupled.recheck_probability()
+
+
+def test_cache_env() -> None:
+    env = verify.cache_env({"A": "1"})
+    assert env == {"A": "1", "DIGI_RENDER_CACHE_CHECK": "0.03"}
+    keep = verify.cache_env({"DIGI_RENDER_CACHE_CHECK": "0.5"})
+    assert keep["DIGI_RENDER_CACHE_CHECK"] == "0.5"
+    off = verify.cache_env({}, no_cache=True)
+    assert off["DIGI_RENDER_CACHE"] == "0"
+    assert "DIGI_RENDER_CACHE" not in env
+
+
 def test_explain_runs_nothing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

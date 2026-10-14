@@ -9,6 +9,12 @@
     uv run python tools/verify.py --jobs 1        # sequential (default: half the CPUs in parallel)
     uv run python tools/verify.py --explain        # show the routing and the plan, run nothing
 
+Scenario renders go through the content-addressed render cache (tools/render_cache.py). Each
+cache hit is also re-rendered from scratch with probability DIGI_RENDER_CACHE_CHECK (verify
+default 0.03; 0 = off) and compared by PCM sha256 and peeks; a mismatch fails the step as a
+stale cache. verify.py sets the variable for all steps once, in main(). --no-cache sets
+DIGI_RENDER_CACHE=0 so everything is rendered (the release/publication gate).
+
 python-tests runs one pytest process per file, in parallel (DIGI_PY_JOBS, default
 max(2, cpus // 4); DIGI_PY_TIMEOUT per file in seconds, default 3600), through tools/test_outcomes.py; a run that passed no test fails. The
 tier steps cut their (default/no-aot x file) groups into small chunks of scenarios and run
@@ -322,6 +328,19 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
         ):
             wanted.add("python-tests")
     return tuple(s for s in STEPS if s in wanted)
+
+
+def cache_env(
+    base: dict[str, str] | None = None, no_cache: bool = False
+) -> dict[str, str]:
+    """``base`` (default os.environ) with the render-cache settings of the
+    scenario-rendering steps: spot-check probability (default 0.03) and, with
+    ``no_cache``, DIGI_RENDER_CACHE=0."""
+    env = dict(os.environ if base is None else base)
+    env.setdefault("DIGI_RENDER_CACHE_CHECK", "0.03")
+    if no_cache:
+        env["DIGI_RENDER_CACHE"] = "0"
+    return env
 
 
 def no_aot_env() -> dict[str, str]:
@@ -824,6 +843,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="only the steps that failed in the most recent run",
     )
+    ap.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="render every scenario (DIGI_RENDER_CACHE=0): the release gate",
+    )
     args = ap.parse_args(argv)
     if args.rerun_failed and (args.only or args.full):
         ap.error("--rerun-failed cannot be combined with --only or --full")
@@ -875,6 +899,8 @@ def main(argv: list[str] | None = None) -> int:
             per_file=not (args.only or args.full or args.rerun_failed),
         )
         return 0
+    # Every step, and no_aot_env(), inherits os.environ: set the cache env once.
+    os.environ.update(cache_env(None, args.no_cache))
     out = Path(digi_env.run_dir("verify"))
     out.mkdir(parents=True, exist_ok=True)
     print(

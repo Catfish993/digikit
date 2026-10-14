@@ -69,8 +69,8 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run check` | `lint` and `test:quick` | Quick local check. Not the merge gate. |
 | `mise run verify` | The gate steps the changed files need (`tools/verify.py`). The `python-tests` step runs `PY_GATE`, the `PY_SUITES` whose trigger prefixes match, changed `tests/**/test_*.py` files, and users of a changed `tests/support` module. `--explain` shows the plan without running. `--rerun-failed` re-runs only the steps that failed last time (reads the run's result.json). | Before a commit; a lane passes `--base BRANCH` |
-| `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 19-21 min on a 16-core machine with warm builds; tier-sweep is the critical path) | Before merging to `main` |
-| `mise run scenarios` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check |
+| `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 7 min with a warm render cache, about 20 min when DSP/native code changed) | Before merging to `main` |
+| `mise run scenarios` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
 | `mise run scenarios:check` | `pytest tests/scenarios --slow`: DN2 FX oracles, fast subset (about 3 min) | After DSP or scenario changes |
 | `mise run scenarios:dt2` | DT2 FX oracles on the one-sample card (about 2 min) | After DT2 changes |
 | `mise run scenarios:sweep` | Oracles with the full sweeps (about 20 min) | Before a merge |
@@ -78,6 +78,27 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run patch:proofs` | Every emulator proof on its quick tier, in sequence | After patchkit or module changes |
 | `uv run python tools/test_outcomes.py run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
 | `uv run python tools/test_outcomes.py BEFORE.xml AFTER.xml --renames-from REF` | Compares outcomes and skip reasons test by test, following git renames | After moving or refactoring tests |
+
+## Render cache
+
+Scenario renders are cached per scenario under `out/cache/renders/` (`record.json` and `audio.wav`, about 1.6 MB per entry; `tools/render_cache.py`).
+The key hashes the coupled-run binary, the input files (firmware .syx, DSP image, DSP state, CF snapshot, card image, any other existing-file argument), the scenario JSON object (all fields, including `expect_sha256`), the peek specs, the device, the device TOMLs (`devices/*.toml` or `$DIGI_DEVICES_DIR`), and every `SHARC_*`, `DIGI_*` and `DSP_*` environment variable except a denylist of non-semantic ones (job counts, timeouts, log and diagnostic outputs, path selectors whose files are hashed, build-only variables). `@FILE` values are hashed by content.
+A hit restores the report entry and the WAV; a miss renders as before and stores the result. Runs with `--diag` bypass the cache.
+`--no-cache` (`tools/coupled.py scenario`) or `DIGI_RENDER_CACHE=0` disables it; `uv run python tools/coupled.py cache stats|clear` shows or empties it.
+Effect: pins, check, check-no-aot and tier-sweep render only scenarios whose inputs changed. A change to DSP or native code changes the binary hash, so everything renders again.
+
+Only emulator output is cached (the report entry and the WAV). Everything that judges a render runs fresh: check's Python oracles analyse the cached WAV, tier compares hashes, and the pins' expected hashes are part of the key.
+
+Two guards protect against a stale hit:
+
+- Fail-closed audit: `tests/devtools/test_render_inputs.py` scans the crates linked into coupled-run. Every environment read must be in the key, in `DENYLIST` or in `IGNORED_ENV` (`tools/render_cache.py`). Computed-name env reads and runtime file reads are counted per file against `tests/devtools/render_inputs.json`. Adding a render input fails the test until it is classified; after review, regenerate the counts with `uv run python tests/devtools/test_render_inputs.py --scan`.
+- Spot checks: `DIGI_RENDER_CACHE_CHECK=p` re-renders each hit with probability p and fails with "stale render cache ..." on any sha256 or peek difference. `verify` sets p=0.03 (about 10 fresh re-renders per full gate).
+
+Both guards were proven by mutation: an unclassified env read fails the audit, and a tampered cache entry fails the spot check.
+
+Use `verify --no-cache` (or `DIGI_RENDER_CACHE=0`) for release and publication gates: it renders everything.
+
+Measured `verify:full`: 1188 s (19.8 min) with a cold cache, 428 s (7.1 min) with a warm cache. Warm: pins 0 s, tier-sweep 3 s, check 12 s, check-no-aot 12 s. The critical path is now python-tests (`test_pluck.py`), then rust-tests (two serialized differential tests in `native/sharc/src/tests_gen.rs`).
 
 ## Baseline (2026-10-14)
 

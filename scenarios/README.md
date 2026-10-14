@@ -52,6 +52,12 @@ mise run scenario:bisect NAME           # which DSP tier changes the PCM
 restores its own ready snapshot, so the PCM hashes equal the single-process ones.
 Not combinable with `--seconds` or `--dump-dsp`. Default 1.
 
+Renders are cached per scenario by content in `out/cache/renders/` (see
+`docs/TESTING.md`, "Render cache"). A hit restores the report entry and the WAV;
+`--diag` runs bypass the cache. Force renders with `--no-cache` or
+`DIGI_RENDER_CACHE=0`. `DIGI_RENDER_CACHE_CHECK=p` re-renders each hit with
+probability p and fails on a difference (`verify` uses 0.03).
+
 The runs need the private ready inputs (`mise run emu:ready -- dn2|dt2`). Pins are
 only valid for the firmware and ready snapshot they were recorded with.
 
