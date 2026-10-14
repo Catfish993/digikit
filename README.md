@@ -177,8 +177,9 @@ mise run inject -- out/patch/mg.syx     # into a running emulator (mise run emu,
 mise run web                            # the gallery at /patch: patch in the browser, nothing is uploaded
 ```
 
-Usage, the dev loop, tests, how it works and the safety rules: [docs/PATCHING.md](docs/PATCHING.md). Writing a
-module: [modules/README.md](modules/README.md). Facts behind it: [findings 01](docs/findings/01-container-and-patching.md),
+**Writing a module** (create, build, patch, inject into the running emulator, test, and what modules can do):
+[docs/MODULE-AUTHORING.md](docs/MODULE-AUTHORING.md). Usage, the dev loop, tests, how it works and the safety rules:
+[docs/PATCHING.md](docs/PATCHING.md). Manifest reference: [modules/README.md](modules/README.md). Facts behind it: [findings 01](docs/findings/01-container-and-patching.md),
 [02](docs/findings/02-machines-and-parameters.md) and [21](docs/findings/21-patchkit-core.md).
 
 **Hardware warning**
