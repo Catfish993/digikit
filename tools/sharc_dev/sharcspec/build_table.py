@@ -13,6 +13,7 @@ Rules (see README "Findings"):
 Frames are 48 bits, MSB aligned: a 16-bit form occupies bits 47..32, a 32-bit form
 bits 47..16. VISA availability comes from the PRM headings ("ISA", "VISA", "ISA/VISA").
 """
+
 import json
 import re
 
@@ -21,22 +22,53 @@ classic = json.load(open("classic.json"))
 
 # PRM figure name -> classic table keys (a merged figure lists every classic variant).
 PAIRS = {
-    "Type1a": ["Type 1a"], "Type1b": ["Type 1b"], "Type2a": ["Type 2a"], "Type2b": ["Type 2b"], "Type2c": ["Type 2c"],
-    "Type3a": ["Type 3a"], "Type3b": ["Type 3b"], "Type3c": ["Type 3c"], "Type4a": ["Type 4a"], "Type4b": ["Type 4b"],
-    "Type5a_move": ["Type 5a"], "Type5a (swap)": ["Type 5a #2"], "Type5b (move)": ["Type 5b"], "Type5b (swap)": ["Type 5b #2"],
+    "Type1a": ["Type 1a"],
+    "Type1b": ["Type 1b"],
+    "Type2a": ["Type 2a"],
+    "Type2b": ["Type 2b"],
+    "Type2c": ["Type 2c"],
+    "Type3a": ["Type 3a"],
+    "Type3b": ["Type 3b"],
+    "Type3c": ["Type 3c"],
+    "Type4a": ["Type 4a"],
+    "Type4b": ["Type 4b"],
+    "Type5a_move": ["Type 5a"],
+    "Type5a (swap)": ["Type 5a #2"],
+    "Type5b (move)": ["Type 5b"],
+    "Type5b (swap)": ["Type 5b #2"],
     # The PGR's second Type 6a table parses identically to the first, so the no-memory
     # form keeps its PRM fixed bits (see the "else" branch below).
-    "Type6a (mem)": ["Type 6a"], "Type7a": ["Type 7a"], "Type7b": ["Type 7b"],
+    "Type6a (mem)": ["Type 6a"],
+    "Type7a": ["Type 7a"],
+    "Type7b": ["Type 7b"],
     # Type8a/9a/9b/10a are NOT merged via PAIRS -- see SPLIT_FORMS below: each
     # is a genuine absolute-or-indirect vs. PC-relative pair that must stay
     # two separate decode forms (merging them loses the addressing mode).
-    "Type11a": ["Type 11a", "Type 11a #2"], "Type11c": ["Type 11c", "Type 11c #2"],
-    "Type12a_imm": ["Type 12a"], "Type13a": ["Type 13a"], "Type14a": ["Type 14a"], "Type15a": ["Type 15a"], "Type15b": ["Type 15b"],
-    "Type16a": ["Type 16a"], "Type16b": ["Type 16b"], "Type17a": ["Type 17a"], "Type17b": ["Type 17b"], "Type18a": ["Type 18a"],
-    "Type19a": ["Type 19a"], "Type19a_bitrev": ["Type 19a #2"], "Type20a": ["Type 20a"], "Type21a": ["Type 21a"], "Type21c": ["Type 21c"],
-    "Type22c": ["Type 22c"], "Type25a_direct": ["Type 25a"], "Type25a_pcrel": ["Type 25a #2"], "Type25c_rframe": ["Type 25c"],
+    "Type11a": ["Type 11a", "Type 11a #2"],
+    "Type11c": ["Type 11c", "Type 11c #2"],
+    "Type12a_imm": ["Type 12a"],
+    "Type13a": ["Type 13a"],
+    "Type14a": ["Type 14a"],
+    "Type15a": ["Type 15a"],
+    "Type15b": ["Type 15b"],
+    "Type16a": ["Type 16a"],
+    "Type16b": ["Type 16b"],
+    "Type17a": ["Type 17a"],
+    "Type17b": ["Type 17b"],
+    "Type18a": ["Type 18a"],
+    "Type19a": ["Type 19a"],
+    "Type19a_bitrev": ["Type 19a #2"],
+    "Type20a": ["Type 20a"],
+    "Type21a": ["Type 21a"],
+    "Type21c": ["Type 21c"],
+    "Type22c": ["Type 22c"],
+    "Type25a_direct": ["Type 25a"],
+    "Type25a_pcrel": ["Type 25a #2"],
+    "Type25c_rframe": ["Type 25c"],
 }
-ISA_ONLY = {"Type10a"}  # PRM heading "Type 10a ISA (...)"; every other form is ISA/VISA or VISA
+ISA_ONLY = {
+    "Type10a"
+}  # PRM heading "Type 10a ISA (...)"; every other form is ISA/VISA or VISA
 
 # The PRM heading marks the whole Type10a figure "ISA" (no "VISA" or
 # "ISA/VISA", unlike its siblings 8a/9a "ISA/VISA" and 9b "VISA" -- see
@@ -92,9 +124,7 @@ FIELD_OVERRIDE = {
 # PRM Table 14-22: Type 7d is the Type 7a word whose condition is 11111 and
 # whose compute field is empty, so those bits select the form and are not
 # free fields.
-PIN_FIELDS = {
-    "Type7d": {"cond[4:0]": 0x1F, "compute[22:16]": 0, "compute[15:0]": 0}
-}
+PIN_FIELDS = {"Type7d": {"cond[4:0]": 0x1F, "compute[22:16]": 0, "compute[15:0]": 0}}
 
 # Bits where a split branch form takes the PRM figure's digit although its own
 # classic table leaves that bit blank, listed per emitted form name. The generic
@@ -122,8 +152,8 @@ RESTORE_PRM_GAP = {
 FULL_WORD = {
     "Type21a": (48, 0x000000000000, ()),
     "Type21c": (16, 0x000100000000, ()),
-    "Type22a": (48, 0x008000000000, (38,)),   # Figure 17-7: idle/emuidle
-    "Type26a": (48, 0x004000000000, ()),      # Figure 17-13
+    "Type22a": (48, 0x008000000000, (38,)),  # Figure 17-7: idle/emuidle
+    "Type26a": (48, 0x004000000000, ()),  # Figure 17-13
 }
 
 UNDOCUMENTED = [
@@ -138,7 +168,7 @@ UNDOCUMENTED = [
         "width": 16,
         "prefix_bits": "000000000",
         "note": "provisional, from firmware only (the old Type21a prefix; 95% "
-                "of its matches are not the all-zero NOP word)",
+        "of its matches are not the all-zero NOP word)",
     },
     # Type22a is idle/emuidle, and its figure prints every other bit, so the
     # 220 words that matched its nine-bit prefix across the two images are not
@@ -148,16 +178,16 @@ UNDOCUMENTED = [
         "width": 48,
         "prefix_bits": "000000001",
         "note": "provisional, from firmware only (the old Type22a prefix; its "
-                "strict word occurs in neither image; 48 bits as the loose "
-                "Type22a read them -- a 16-bit reading strands the other two "
-                "words)",
+        "strict word occurs in neither image; 48 bits as the loose "
+        "Type22a read them -- a 16-bit reading strands the other two "
+        "words)",
     },
     {
         "name": "Type26p_undoc48",
         "width": 48,
         "prefix_bits": "0000000001000000",
         "note": "provisional, from firmware only (the old Type26a prefix; one "
-                "instance per image, too few to judge)",
+        "instance per image, too few to judge)",
     },
     # The words Type8a used to take on its loose eight-bit prefix, now that
     # both halves fix bit 25 to zero (RESTORE_PRM_GAP). Excluding them without
@@ -183,10 +213,10 @@ UNDOCUMENTED = [
             {"label": "imm[15:0]", "hi": 15, "lo": 0},
         ],
         "source": "firmware (undocumented; the bit-25 words Type8a used to "
-                  "take; unconfirmed)",
+        "take; unconfirmed)",
         "note": "provisional, from firmware only (bits 47-41 = 0000011 with "
-                "bit 25 set, which no real Type 8a branch has; 32 across the "
-                "two images)",
+        "bit 25 set, which no real Type 8a branch has; 32 across the "
+        "two images)",
     },
 ]
 
@@ -221,17 +251,28 @@ UNDOCUMENTED = [
 #                             classic.json) but is unrelated to those
 #                             registers -- it's a plain signed displacement.
 SPLIT_FORMS = {
-    "Type8a":  dict(abs_key="Type 8a", rel_key="Type 8a #2", selector="r", shared_target="addr"),
-    "Type9a":  dict(abs_key="Type 9a", rel_key="Type 9a #2", selector="rel", shared_target=None),
-    "Type9b":  dict(abs_key="Type 9b", rel_key="Type 9b #2", selector="rel", shared_target=None),
-    "Type10a": dict(abs_key="Type 10a", rel_key="Type 10a #2", selector="rel", shared_target=None),
+    "Type8a": dict(
+        abs_key="Type 8a", rel_key="Type 8a #2", selector="r", shared_target="addr"
+    ),
+    "Type9a": dict(
+        abs_key="Type 9a", rel_key="Type 9a #2", selector="rel", shared_target=None
+    ),
+    "Type9b": dict(
+        abs_key="Type 9b", rel_key="Type 9b #2", selector="rel", shared_target=None
+    ),
+    "Type10a": dict(
+        abs_key="Type 10a", rel_key="Type 10a #2", selector="rel", shared_target=None
+    ),
 }
 # Bit range of the register-indirect PMI/PMM fields in Type9a/9b/10a's merged
 # PRM figure, which the rel=1 RELADDR field replaces (see shared_target=None
 # above). Fixed across all three forms -- PMI/PMM always sit in the same
 # frame-bit slot regardless of instruction width/type.
 INDIRECT_REGISTER_LABELS = {"pmi[2:2]", "pmi[1:0]", "pmm[2:0]"}
-RELADDR6_FIELDS = [{"label": "reladdr[5:5]", "hi": 32, "lo": 32}, {"label": "reladdr[4:0]", "hi": 31, "lo": 27}]
+RELADDR6_FIELDS = [
+    {"label": "reladdr[5:5]", "hi": 32, "lo": 32},
+    {"label": "reladdr[4:0]", "hi": 31, "lo": 27},
+]
 
 
 def fixed_bits_for(width, fields, keys, prm=None, gap_bits=()):
@@ -258,8 +299,12 @@ def fixed_bits_for(width, fields, keys, prm=None, gap_bits=()):
         vals = {v.get(b) for v in variants}
         if len(vals) == 1 and vals <= {"0", "1"}:
             fixed[b] = int(vals.pop())
-        elif (b in gap_bits and prm is not None and vals <= {".", None}
-              and prm.get(b) in ("0", "1")):
+        elif (
+            b in gap_bits
+            and prm is not None
+            and vals <= {".", None}
+            and prm.get(b) in ("0", "1")
+        ):
             fixed[b] = int(prm[b])
     return fixed
 
@@ -269,9 +314,16 @@ def make_form(name, width, fields, fixed, source, keys=()):
     value = sum(v << b for b, v in fixed.items())
     isa_only = name.split("_")[0] in ISA_ONLY and name not in VISA_OVERRIDE
     return {
-        "name": name, "width": width, "visa": not isa_only, "isa": width == 48,
-        "mask": f"0x{mask:012x}", "value": f"0x{value:012x}", "fixed_bits": len(fixed),
-        "fields": fields, "source": source, "classic_keys": list(keys),
+        "name": name,
+        "width": width,
+        "visa": not isa_only,
+        "isa": width == 48,
+        "mask": f"0x{mask:012x}",
+        "value": f"0x{value:012x}",
+        "fixed_bits": len(fixed),
+        "fields": fields,
+        "source": source,
+        "classic_keys": list(keys),
         "unconfirmed_bits": 0,
     }
 
@@ -286,17 +338,23 @@ def split_branch_form(name, width, fields, cfg, prm=None):
         base = cfg["shared_target"]
         abs_fields = common
         rel_fields = [
-            dict(fl, label=fl["label"].replace(base, "reladdr", 1)) if fl["label"].startswith(base) else fl
+            dict(fl, label=fl["label"].replace(base, "reladdr", 1))
+            if fl["label"].startswith(base)
+            else fl
             for fl in common
         ]
     else:
         abs_fields = common
-        rel_fields = [fl for fl in common if fl["label"] not in INDIRECT_REGISTER_LABELS] + RELADDR6_FIELDS
+        rel_fields = [
+            fl for fl in common if fl["label"] not in INDIRECT_REGISTER_LABELS
+        ] + RELADDR6_FIELDS
 
-    abs_fixed = fixed_bits_for(width, abs_fields, [cfg["abs_key"]], prm,
-                               RESTORE_PRM_GAP.get(f"{name}_abs", ()))
-    rel_fixed = fixed_bits_for(width, rel_fields, [cfg["rel_key"]], prm,
-                               RESTORE_PRM_GAP.get(f"{name}_rel", ()))
+    abs_fixed = fixed_bits_for(
+        width, abs_fields, [cfg["abs_key"]], prm, RESTORE_PRM_GAP.get(f"{name}_abs", ())
+    )
+    rel_fixed = fixed_bits_for(
+        width, rel_fields, [cfg["rel_key"]], prm, RESTORE_PRM_GAP.get(f"{name}_rel", ())
+    )
     src = "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)"
     return [
         make_form(f"{name}_abs", width, abs_fields, abs_fixed, src, [cfg["abs_key"]]),
@@ -305,7 +363,13 @@ def split_branch_form(name, width, fields, cfg, prm=None):
 
 
 def prm_name(f):
-    return re.sub(r"^Figure \d+-\d+:\s*", "", f["caption"]).replace(" Instruction", "").replace(" Opcode", "").replace(" Syntax", "").strip()
+    return (
+        re.sub(r"^Figure \d+-\d+:\s*", "", f["caption"])
+        .replace(" Instruction", "")
+        .replace(" Opcode", "")
+        .replace(" Syntax", "")
+        .strip()
+    )
 
 
 def rebase(pattern, msb):
@@ -329,8 +393,10 @@ for f in prm:
 
     if name in SPLIT_FORMS:
         forms.extend(split_branch_form(name, width, fields, SPLIT_FORMS[name], pb))
-        notes.append(f"{name}: split into {name}_abs/{name}_rel -- classic.json keeps these as "
-                      "separate absolute-or-indirect/PC-relative tables; see SPLIT_FORMS")
+        notes.append(
+            f"{name}: split into {name}_abs/{name}_rel -- classic.json keeps these as "
+            "separate absolute-or-indirect/PC-relative tables; see SPLIT_FORMS"
+        )
         continue
 
     source = "prm"
@@ -340,8 +406,15 @@ for f in prm:
     if name == "Type3a":  # PRM figure is a copy of Type 1a
         c = classic["Type 3a"]
         pb = rebase(c["pattern"], c["msb"])
-        fields = [{"label": cell["text"].lower().replace(" ", ""), "hi": cell["bits"][0], "lo": cell["bits"][1]}
-                  for cell in c["cells"] if cell["kind"] == "field"]
+        fields = [
+            {
+                "label": cell["text"].lower().replace(" ", ""),
+                "hi": cell["bits"][0],
+                "lo": cell["bits"][1],
+            }
+            for cell in c["cells"]
+            if cell["kind"] == "field"
+        ]
         source, keys = "pgr (PRM figure is a copy of Type 1a)", []
         notes.append("Type3a: layout and values from PGR")
     if name == "Type25c_rframe":  # PRM figure is a copy of Type 25a rframe
@@ -350,7 +423,9 @@ for f in prm:
         source, keys = "pgr (PRM figure is a copy of Type 25a rframe)", []
         notes.append("Type25c_rframe: 16-bit form from PGR")
     if name in PRM_VALUE_WINS:
-        notes.append(f"{name}: fixed-bit values from PRM figure (overrides PGR; firmware-confirmed)")
+        notes.append(
+            f"{name}: fixed-bit values from PRM figure (overrides PGR; firmware-confirmed)"
+        )
     for fl in fields:
         if name == "Type4b" and fl["label"] == "dreg[6:0]":
             fl["label"] = "dreg[3:0]"
@@ -361,16 +436,20 @@ for f in prm:
     if name in DROP_FIELDS:
         dropped = sorted(DROP_FIELDS[name])
         fields = [fl for fl in fields if fl["label"] not in DROP_FIELDS[name]]
-        notes.append(f"{name}: PRM field declarations {dropped} dropped so the "
-                      "classic grid's fixed values at those bits are used")
+        notes.append(
+            f"{name}: PRM field declarations {dropped} dropped so the "
+            "classic grid's fixed values at those bits are used"
+        )
 
     if name in FIELD_OVERRIDE:
         override = FIELD_OVERRIDE[name]
         fields = [fl for fl in fields if fl["label"] not in override["remove"]]
         fields += [dict(fl) for fl in override["add"]]
         fields.sort(key=lambda fl: -fl["hi"])
-        notes.append(f"{name}: PRM fields {sorted(override['remove'])} replaced "
-                      "with the classic grid's m[2:0], as in Type7b")
+        notes.append(
+            f"{name}: PRM fields {sorted(override['remove'])} replaced "
+            "with the classic grid's m[2:0], as in Type7b"
+        )
 
     fixed = {}
     unconfirmed = []
@@ -403,8 +482,9 @@ for f in prm:
                     unconfirmed.append(b)
     if name in FULL_WORD:
         full_width, word, free = FULL_WORD[name]
-        fixed = {b: (word >> b) & 1 for b in range(48 - full_width, 48)
-                 if b not in free}
+        fixed = {
+            b: (word >> b) & 1 for b in range(48 - full_width, 48) if b not in free
+        }
         source = "prm figure (every bit printed; the PGR grid leaves them blank)"
     if name in PIN_FIELDS:
         pinned = PIN_FIELDS[name]
@@ -418,16 +498,27 @@ for f in prm:
             "prm figure and the Table 14-22 selector; the firmware cluster "
             "matches the documented ACONV rows"
         )
-        notes.append(f"{name}: PRM Table 14-22 pins {sorted(pinned)}; the form "
-                      "is Type 7a with condition 11111 and an empty compute")
+        notes.append(
+            f"{name}: PRM Table 14-22 pins {sorted(pinned)}; the form "
+            "is Type 7a with condition 11111 and an empty compute"
+        )
     mask = sum(1 << b for b in fixed)
     value = sum(v << b for b, v in fixed.items())
-    forms.append({
-        "name": name, "width": width, "visa": name not in ISA_ONLY, "isa": width == 48,
-        "mask": f"0x{mask:012x}", "value": f"0x{value:012x}", "fixed_bits": len(fixed),
-        "fields": fields, "source": source, "classic_keys": list(keys),
-        "unconfirmed_bits": len(unconfirmed),
-    })
+    forms.append(
+        {
+            "name": name,
+            "width": width,
+            "visa": name not in ISA_ONLY,
+            "isa": width == 48,
+            "mask": f"0x{mask:012x}",
+            "value": f"0x{value:012x}",
+            "fixed_bits": len(fixed),
+            "fields": fields,
+            "source": source,
+            "classic_keys": list(keys),
+            "unconfirmed_bits": len(unconfirmed),
+        }
+    )
 
 # The same public decoder independently agrees with the PRM-only Type12a UREG
 # field layout on the exact loop words reached from reset, so that form no
@@ -445,16 +536,18 @@ type12a_ureg["unconfirmed_bits"] = 0
 # See docs/sharc/SOURCES.md and docs/findings/06-sharc-engine-and-startup.md,
 # "`0x023e` is the first parcel of a 48-bit immediate shift".
 type6a_nomem = next(f for f in forms if f["name"] == "Type6a (nomem)")
-forms.append({
-    **type6a_nomem,
-    "name": "Type6b_shiftimm",
-    "visa": True,
-    "isa": False,
-    "value": "0x020000000000",
-    "source": "public Selache VISA decoder, cross-checked against PRM Type6a shiftimm",
-    "classic_keys": [],
-    "unconfirmed_bits": 0,
-})
+forms.append(
+    {
+        **type6a_nomem,
+        "name": "Type6b_shiftimm",
+        "visa": True,
+        "isa": False,
+        "value": "0x020000000000",
+        "source": "public Selache VISA decoder, cross-checked against PRM Type6a shiftimm",
+        "classic_keys": [],
+        "unconfirmed_bits": 0,
+    }
+)
 notes.append(
     "Type6b_shiftimm: public decoder selects 48 bits for the 0x02 prefix; "
     "the PRM Type6a no-memory mask and ShiftImm fields then decode the operation"
@@ -464,29 +557,29 @@ notes.append(
 # uses bit 39 to choose SW/NW scaling.  The public Selache decoder independently
 # confirms the remaining PRM field layout.  Keep the ordinary sc=10 Type19a
 # above for classic compatibility and emit the scaled form explicitly.
-forms.append({
-    "name": "Type19a_scaled",
-    "width": 48,
-    "visa": True,
-    "isa": True,
-    "mask": "0xff0000000000",
-    "value": "0x150000000000",
-    "fixed_bits": 8,
-    "fields": [
-        {"label": "w", "hi": 39, "lo": 39},
-        {"label": "g", "hi": 38, "lo": 38},
-        {"label": "idis[2:0]", "hi": 37, "lo": 35},
-        {"label": "is[2:0]", "hi": 34, "lo": 32},
-        {"label": "data[31:16]", "hi": 31, "lo": 16},
-        {"label": "data[15:0]", "hi": 15, "lo": 0},
-    ],
-    "source": "prm Type19a layout/BH table + public Selache decoder cross-check",
-    "classic_keys": [],
-    "unconfirmed_bits": 0,
-})
-notes.append(
-    "Type19a_scaled: PRM Type19a BH sc=01 form; bit 39 selects SW/NW scaling"
+forms.append(
+    {
+        "name": "Type19a_scaled",
+        "width": 48,
+        "visa": True,
+        "isa": True,
+        "mask": "0xff0000000000",
+        "value": "0x150000000000",
+        "fixed_bits": 8,
+        "fields": [
+            {"label": "w", "hi": 39, "lo": 39},
+            {"label": "g", "hi": 38, "lo": 38},
+            {"label": "idis[2:0]", "hi": 37, "lo": 35},
+            {"label": "is[2:0]", "hi": 34, "lo": 32},
+            {"label": "data[31:16]", "hi": 31, "lo": 16},
+            {"label": "data[15:0]", "hi": 15, "lo": 0},
+        ],
+        "source": "prm Type19a layout/BH table + public Selache decoder cross-check",
+        "classic_keys": [],
+        "unconfirmed_bits": 0,
+    }
 )
+notes.append("Type19a_scaled: PRM Type19a BH sc=01 form; bit 39 selects SW/NW scaling")
 
 # VISA width for the 0x01 prefix: bit 39 (bit 7 of the first parcel) selects a
 # 32-bit single-function compute; bit 39 = 0 keeps the 48-bit conditional
@@ -498,26 +591,29 @@ notes.append(
 # later.  This is not the PRM's Type2b (prefix 0xc0), which keeps its name.
 # The longer fixed lead wins over Type2a in VISA decode; classic ISA keeps
 # Type2a.  See docs/sharc/SPEC-FINDINGS.md and docs/FINDINGS.md.
-forms.append({
-    "name": "Type2a_short",
-    "width": 32,
-    "visa": True,
-    "isa": False,
-    "mask": "0xff8000000000",
-    "value": "0x018000000000",
-    "fixed_bits": 9,
-    "fields": [
-        {"label": "compute[22:16]", "hi": 38, "lo": 32},
-        {"label": "compute[15:0]", "hi": 31, "lo": 16},
-    ],
-    "source": "public Selache VISA width rule + PRM compute tables; firmware-checked",
-    "classic_keys": [],
-    "unconfirmed_bits": 0,
-})
+forms.append(
+    {
+        "name": "Type2a_short",
+        "width": 32,
+        "visa": True,
+        "isa": False,
+        "mask": "0xff8000000000",
+        "value": "0x018000000000",
+        "fixed_bits": 9,
+        "fields": [
+            {"label": "compute[22:16]", "hi": 38, "lo": 32},
+            {"label": "compute[15:0]", "hi": 31, "lo": 16},
+        ],
+        "source": "public Selache VISA width rule + PRM compute tables; firmware-checked",
+        "classic_keys": [],
+        "unconfirmed_bits": 0,
+    }
+)
 notes.append(
     "Type2a_short: 0x01 prefix with bit 39 set is a 32-bit unconditional "
     "compute (Selache VISA width rule); bit 39 clear keeps 48-bit Type2a"
 )
+
 
 def undocumented_form(entry):
     prefix_bits = entry["prefix_bits"]
@@ -539,11 +635,25 @@ def undocumented_form(entry):
     # form leaves its later words unlabelled, as the wildcard forms do.
     fields = entry.get("fields")
     if fields is None:
-        fields = ([] if fixed_bits >= 16 else
-                  [{"label": f"operand[{15 - fixed_bits}:0]", "hi": 47 - fixed_bits, "lo": 32}])
+        fields = (
+            []
+            if fixed_bits >= 16
+            else [
+                {
+                    "label": f"operand[{15 - fixed_bits}:0]",
+                    "hi": 47 - fixed_bits,
+                    "lo": 32,
+                }
+            ]
+        )
     return {
-        "name": entry["name"], "width": width, "visa": True, "isa": width == 48,
-        "mask": f"0x{mask:012x}", "value": f"0x{value:012x}", "fixed_bits": fixed_bits,
+        "name": entry["name"],
+        "width": width,
+        "visa": True,
+        "isa": width == 48,
+        "mask": f"0x{mask:012x}",
+        "value": f"0x{value:012x}",
+        "fixed_bits": fixed_bits,
         "fields": fields,
         "source": entry.get("source", "firmware (undocumented; unconfirmed)"),
         "classic_keys": [],
@@ -558,4 +668,6 @@ for entry in UNDOCUMENTED:
 json.dump({"forms": forms, "notes": notes}, open("decode_table.json", "w"), indent=1)
 for fm in forms:
     flag = "  UNCONFIRMED" if fm["unconfirmed_bits"] else ""
-    print(f"{fm['name']:18s} {fm['width']:2d}b visa={fm['visa']!s:5} mask {fm['mask']} value {fm['value']} ({fm['fixed_bits']} fixed) {fm['source']}{flag}")
+    print(
+        f"{fm['name']:18s} {fm['width']:2d}b visa={fm['visa']!s:5} mask {fm['mask']} value {fm['value']} ({fm['fixed_bits']} fixed) {fm['source']}{flag}"
+    )

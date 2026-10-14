@@ -98,7 +98,9 @@ class HEmit(r.Emitter):
                 if op == "const":
                     self.let(vid, "(%s) as u32" % r.rs_e(it[3], fv), ind)
                 elif op == "bin":
-                    self.let(vid, OPS[it[3]].format(a="v%d" % it[4], b="v%d" % it[5]), ind)
+                    self.let(
+                        vid, OPS[it[3]].format(a="v%d" % it[4], b="v%d" % it[5]), ind
+                    )
                 elif op == "not":
                     self.let(vid, "!v%d" % it[3], ind)
                 elif op == "rd":
@@ -123,10 +125,18 @@ class HEmit(r.Emitter):
                 if self.touch:
                     self.w(ind, "t.wr((%s) as u32);" % r.rs_e(it[1], fv))
                 else:
-                    self.w(ind, "{ let c = (%s) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v%d); nw += 1; }" % (r.rs_e(it[1], fv), it[2]))
+                    self.w(
+                        ind,
+                        "{ let c = (%s) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v%d); nw += 1; }"
+                        % (r.rs_e(it[1], fv), it[2]),
+                    )
             elif k == "store":
                 if not self.touch:
-                    self.w(ind, "st[nst] = (v%d, v%d, %s as u8); nst += 1;" % (it[1], it[2], r.rs_e(it[3], fv)))
+                    self.w(
+                        ind,
+                        "st[nst] = (v%d, v%d, %s as u8); nst += 1;"
+                        % (it[1], it[2], r.rs_e(it[3], fv)),
+                    )
             elif k in ("cond", "apply"):
                 self.w(ind, "return %s;" % ("false" if self.touch else "1"))
             elif k == "br":
@@ -150,8 +160,15 @@ class HEmit(r.Emitter):
                             elif lo == hi:
                                 conds.append("%s == %di128" % (x, lo))
                             else:
-                                conds.append("(%s >= %di128 && %s <= %di128)" % (x, lo, x, hi))
-                        self.w(ind, ("if " if n == 0 else "} else if ") + " || ".join(conds) + " {")
+                                conds.append(
+                                    "(%s >= %di128 && %s <= %di128)" % (x, lo, x, hi)
+                                )
+                        self.w(
+                            ind,
+                            ("if " if n == 0 else "} else if ")
+                            + " || ".join(conds)
+                            + " {",
+                        )
                     else:
                         self.w(ind, "} else {")
                     self.prog(sub, ind + 1)
@@ -185,7 +202,8 @@ def form_fns(name: str, type_name: str) -> list[str]:
     declared: set = set()
     r.inner_defs(prog, declared, True)
     out = [
-        "pub const LABELS_%s: &[&str] = &[%s];" % (name.upper(), ", ".join(r.rs_str(x) for x in labels))
+        "pub const LABELS_%s: &[&str] = &[%s];"
+        % (name.upper(), ", ".join(r.rs_str(x) for x in labels))
     ]
     r.HELPER_SYMS = "&*s"
     try:
@@ -193,7 +211,11 @@ def form_fns(name: str, type_name: str) -> list[str]:
             r.HELPER_RR = "rrt" if touch else "rr"
             em = HEmit(fv, declared, touch)
             if touch:
-                em.w(0, "pub fn t_%s<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {" % name)
+                em.w(
+                    0,
+                    "pub fn t_%s<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {"
+                    % name,
+                )
             else:
                 em.w(0, "pub fn h_%s(s: &mut St, f: &[i64; NF]) -> u32 {" % name)
             for i, _ in enumerate(labels):
@@ -209,8 +231,14 @@ def form_fns(name: str, type_name: str) -> list[str]:
             if touch:
                 em.w(1, "true")
             else:
-                em.w(1, "for i in 0..nst { if !hstore_ok(s, st[i].0, st[i].1, st[i].2) { return 1; } }")
-                em.w(1, "for i in 0..nw { s.r[ws[i].0 as usize] = V::c(ws[i].1 as Int); }")
+                em.w(
+                    1,
+                    "for i in 0..nst { if !hstore_ok(s, st[i].0, st[i].1, st[i].2) { return 1; } }",
+                )
+                em.w(
+                    1,
+                    "for i in 0..nw { s.r[ws[i].0 as usize] = V::c(ws[i].1 as Int); }",
+                )
                 em.w(1, "0")
             em.w(0, "}")
             out.extend(em.lines)
@@ -222,7 +250,9 @@ def form_fns(name: str, type_name: str) -> list[str]:
 def emit_file(names: list[str]) -> str:
     tab = r.type_names()
     out = [HEADER]
-    out.append("pub const FORMS: &[&str] = &[%s];\n" % ", ".join(r.rs_str(n) for n in names))
+    out.append(
+        "pub const FORMS: &[&str] = &[%s];\n" % ", ".join(r.rs_str(n) for n in names)
+    )
     for n in names:
         out.extend(form_fns(n, tab[n]))
         out.append("")
@@ -240,7 +270,9 @@ def emit_file(names: list[str]) -> str:
     out.append("        _ => 1,")
     out.append("    }")
     out.append("}\n")
-    out.append("pub fn touch<S: RegRead>(id: usize, s: &S, f: &[i64; NF], t: &mut Touch) -> bool {")
+    out.append(
+        "pub fn touch<S: RegRead>(id: usize, s: &S, f: &[i64; NF], t: &mut Touch) -> bool {"
+    )
     out.append("    match id {")
     for i, n in enumerate(names):
         out.append("        %d => t_%s(s, f, t)," % (i, n))

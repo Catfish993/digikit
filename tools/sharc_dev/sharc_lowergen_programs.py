@@ -260,9 +260,7 @@ def add(a: Asm, rn: int, rx: int, ry: int) -> None:
 
 
 def call(a: Asm, label: str, delayed: bool, cond: int = 0x1F) -> None:
-    a.ins(
-        "8a_rel", b=1, a=0, cond=cond, j=int(delayed), ci=0, reladdr=("rel", label)
-    )
+    a.ins("8a_rel", b=1, a=0, cond=cond, j=int(delayed), ci=0, reladdr=("rel", label))
 
 
 def jump_abs(a: Asm, label: str) -> None:
@@ -273,7 +271,9 @@ def rts(a: Asm, delayed: bool, cond: int = 0x1F) -> None:
     a.ins("11c", x=0, j=int(delayed), cond=cond, lr=0)
 
 
-def rts_compute(a: Asm, delayed: bool, cond: int, e: int, rn: int, rx: int, ry: int) -> None:
+def rts_compute(
+    a: Asm, delayed: bool, cond: int, e: int, rn: int, rx: int, ry: int
+) -> None:
     a.ins(
         "11a",
         x=0,
@@ -419,7 +419,16 @@ def ctl_return_rframe_simd() -> tuple[list[int], list[int], int]:
     a.ins("18a", bop=0, sreg=2, data=0x200000)  # MODE1 = set(MODE1, PEYEN)
     a.ins("17a", ureg=I(12), data=("abs", "back"))
     set_r(a, 14 + 32, 0)
-    a.ins("9b_abs", b=0, a=0, cond=0x1F, **{"pmi[2:2]": 1, "pmi[1:0]": 0}, **{"pmm[2:0]": 6}, j=1, ci=0)
+    a.ins(
+        "9b_abs",
+        b=0,
+        a=0,
+        cond=0x1F,
+        **{"pmi[2:2]": 1, "pmi[1:0]": 0},
+        **{"pmm[2:0]": 6},
+        j=1,
+        ci=0,
+    )
     a.ins("25c_rframe")
     a.ins("21c")
     set_r(a, 1, 55)
@@ -435,13 +444,31 @@ def ctl_indirect_jump() -> tuple[list[int], list[int], int]:
     a = Asm()
     a.ins("17a", ureg=I(12), data=("abs", "t1"))
     set_r(a, 13 + 32, 0)  # M13 = 0
-    a.ins("9b_abs", b=0, a=0, cond=0x1F, **{"pmi[2:2]": 1, "pmi[1:0]": 0}, **{"pmm[2:0]": 5}, j=0, ci=0)
+    a.ins(
+        "9b_abs",
+        b=0,
+        a=0,
+        cond=0x1F,
+        **{"pmi[2:2]": 1, "pmi[1:0]": 0},
+        **{"pmm[2:0]": 5},
+        j=0,
+        ci=0,
+    )
     set_r(a, 1, 55)
     a.label("t1")
     set_r(a, 2, 66)
     a.ins("17a", ureg=I(13), data=("abs", "t2"))
     set_r(a, 14 + 32, 0)  # M14 = 0
-    a.ins("9b_abs", b=0, a=0, cond=0x1F, **{"pmi[2:2]": 1, "pmi[1:0]": 1}, **{"pmm[2:0]": 6}, j=1, ci=0)
+    a.ins(
+        "9b_abs",
+        b=0,
+        a=0,
+        cond=0x1F,
+        **{"pmi[2:2]": 1, "pmi[1:0]": 1},
+        **{"pmm[2:0]": 6},
+        j=1,
+        ci=0,
+    )
     set_r(a, 3, 77)
     add(a, 4, 3, 2)
     set_r(a, 5, 88)
@@ -452,8 +479,16 @@ def ctl_indirect_jump() -> tuple[list[int], list[int], int]:
     a.ins("17a", ureg=I(12), data=("abs", "t3"))
     set_r(a, 13 + 32, 0)
     a.ins(
-        "9a_abs", b=0, a=0, cond=0x1F, **{"pmi[2:2]": 1, "pmi[1:0]": 0}, **{"pmm[2:0]": 5},
-        j=1, e=0, ci=0, compute=compute(ADD, 9, 1, 2),
+        "9a_abs",
+        b=0,
+        a=0,
+        cond=0x1F,
+        **{"pmi[2:2]": 1, "pmi[1:0]": 0},
+        **{"pmm[2:0]": 5},
+        j=1,
+        e=0,
+        ci=0,
+        compute=compute(ADD, 9, 1, 2),
     )
     set_r(a, 7, 5)
     set_r(a, 8, 6)
@@ -462,8 +497,16 @@ def ctl_indirect_jump() -> tuple[list[int], list[int], int]:
     # The same with ELSE: the compute never runs.
     a.ins("17a", ureg=I(12), data=("abs", "t4"))
     a.ins(
-        "9a_abs", b=0, a=0, cond=0x1F, **{"pmi[2:2]": 1, "pmi[1:0]": 0}, **{"pmm[2:0]": 5},
-        j=0, e=1, ci=0, compute=compute(ADD, 11, 1, 2),
+        "9a_abs",
+        b=0,
+        a=0,
+        cond=0x1F,
+        **{"pmi[2:2]": 1, "pmi[1:0]": 0},
+        **{"pmm[2:0]": 5},
+        j=0,
+        e=1,
+        ci=0,
+        compute=compute(ADD, 11, 1, 2),
     )
     set_r(a, 12, 8)
     a.label("t4")
@@ -508,7 +551,16 @@ def ctl_return_slots() -> tuple[list[int], list[int], int]:
     a = Asm()
     a.ins("17a", ureg=I(12), data=("abs", "back"))
     set_r(a, 14 + 32, 0)  # M14 = 0
-    a.ins("9b_abs", b=0, a=0, cond=0x1F, **{"pmi[2:2]": 1, "pmi[1:0]": 0}, **{"pmm[2:0]": 6}, j=1, ci=0)
+    a.ins(
+        "9b_abs",
+        b=0,
+        a=0,
+        cond=0x1F,
+        **{"pmi[2:2]": 1, "pmi[1:0]": 0},
+        **{"pmm[2:0]": 6},
+        j=1,
+        ci=0,
+    )
     a.ins(
         "5b_move",
         cond=0x1F,
@@ -547,13 +599,20 @@ def main() -> None:
         ps = fn()
         lines.append('    ("%s", &[%s]),' % (name, ", ".join("%#06x" % p for p in ps)))
     lines.append("];")
-    lines.append("/// (name, parcels, region entries, configurations: 1 both, 2 stack model only)")
+    lines.append(
+        "/// (name, parcels, region entries, configurations: 1 both, 2 stack model only)"
+    )
     lines.append("pub const CONTROL: &[(&str, &[u16], &[u32], u8)] = &[")
     for name, fn in CONTROL.items():
         ps, entries, cfgs = fn()
         lines.append(
             '    ("%s", &[%s], &[%s], %d),'
-            % (name, ", ".join("%#06x" % p for p in ps), ", ".join(str(e) for e in entries), cfgs)
+            % (
+                name,
+                ", ".join("%#06x" % p for p in ps),
+                ", ".join(str(e) for e in entries),
+                cfgs,
+            )
         )
     lines.append("];")
     open(a.out, "w").write("\n".join(lines) + "\n")

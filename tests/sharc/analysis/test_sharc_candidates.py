@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from importlib import import_module
+
 from tools import python_env
 
 C = import_module("tools.sharc_dev.sharc_candidates")
@@ -32,7 +33,9 @@ class CandidatesTest(unittest.TestCase):
         self.db.close()
         os.unlink(self.file.name)
 
-    def row(self, sw, form, fields, kind="confident", function=100, flow="FALL_THROUGH"):
+    def row(
+        self, sw, form, fields, kind="confident", function=100, flow="FALL_THROUGH"
+    ):
         self.db.execute(
             "INSERT INTO decoder VALUES (?, ?, ?, ?, 1)",
             (sw, form, kind, json.dumps(fields)),
@@ -108,7 +111,13 @@ class CandidatesTest(unittest.TestCase):
         self.candidate(101)
         self.db.commit()
         output = subprocess.run(
-            [sys.executable, "-m", "tools.sharc_dev.sharc_candidates", self.file.name, "--json"],
+            [
+                sys.executable,
+                "-m",
+                "tools.sharc_dev.sharc_candidates",
+                self.file.name,
+                "--json",
+            ],
             env=python_env(),
             capture_output=True,
             text=True,

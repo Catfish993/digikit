@@ -26,6 +26,7 @@ import time
 
 root = pathlib.Path(__file__).resolve().parents[2]
 from tools.emulator import digi_env  # noqa: E402
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument(
     "--diagnostics",
@@ -83,7 +84,9 @@ def resolve_target_dir(gen: str | None) -> pathlib.Path:
     # Shared target dir keyed by the generated core (see tools/emulator/native_target.py).
     # CARGO_TARGET_DIR still wins for both builds; with it set the two builds
     # share one dir, which works but rebuilds the crate each time.
-    path = pathlib.Path(os.environ.get("CARGO_TARGET_DIR") or native_target.target_dir(gen))
+    path = pathlib.Path(
+        os.environ.get("CARGO_TARGET_DIR") or native_target.target_dir(gen)
+    )
     return path if path.is_absolute() else root / path
 
 
@@ -115,7 +118,12 @@ if stale.exists():
     print(f"removed stale {stale} (the coupled core now lives in packages/web/.local)")
 
 
-def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], dest: pathlib.Path) -> None:
+def build(
+    features: list[str],
+    target_dir: pathlib.Path,
+    env: dict[str, str],
+    dest: pathlib.Path,
+) -> None:
     command = [
         "cargo",
         "build",
@@ -138,7 +146,9 @@ def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], de
         raise SystemExit(
             "WASM build failed; install wasm32-unknown-unknown for the pinned Rust toolchain"
         ) from None
-    shutil.copyfile(target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm", dest)
+    shutil.copyfile(
+        target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm", dest
+    )
 
 
 def build_patchkit() -> None:
@@ -166,11 +176,28 @@ def build_patchkit() -> None:
     built = target_dir / "wasm32-unknown-unknown/release/patchkit.wasm"
     dest = public / "patchkit.wasm"
     if shutil.which("wasm-opt") is not None:
-        subprocess.run(["wasm-opt", "-Oz", "--enable-bulk-memory", "--enable-sign-ext", "--enable-mutable-globals", "--enable-nontrapping-float-to-int", "--enable-multivalue", "--enable-reference-types", str(built), "-o", str(dest)], check=True)
+        subprocess.run(
+            [
+                "wasm-opt",
+                "-Oz",
+                "--enable-bulk-memory",
+                "--enable-sign-ext",
+                "--enable-mutable-globals",
+                "--enable-nontrapping-float-to-int",
+                "--enable-multivalue",
+                "--enable-reference-types",
+                str(built),
+                "-o",
+                str(dest),
+            ],
+            check=True,
+        )
     else:
         shutil.copyfile(built, dest)
     if dest.stat().st_size > 2 * 1024 * 1024:
-        raise SystemExit(f"{dest} is {dest.stat().st_size} bytes: patchkit.wasm must stay small and firmware-free")
+        raise SystemExit(
+            f"{dest} is {dest.stat().st_size} bytes: patchkit.wasm must stay small and firmware-free"
+        )
     print(f"patchkit.wasm: {dest.stat().st_size} bytes")
 
 
@@ -185,10 +212,14 @@ if args.patchkit_only:
 diagnostics = ["diagnostic-profile", "diagnostic-events"] if args.diagnostics else []
 plain_env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
 build(diagnostics, resolve_target_dir(None), plain_env, public / "emulator-core.wasm")
-sharc_wasm = pathlib.Path(args.out) if args.out else local_dir / "emulator-core-sharc.wasm"
+sharc_wasm = (
+    pathlib.Path(args.out) if args.out else local_dir / "emulator-core-sharc.wasm"
+)
 if coupled:
     if args.wasm_opt and shutil.which("wasm-opt") is None:
-        raise SystemExit("wasm-opt not found: run `mise install` (mise.toml pins binaryen)")
+        raise SystemExit(
+            "wasm-opt not found: run `mise install` (mise.toml pins binaryen)"
+        )
     raw_wasm = sharc_wasm.with_name(f"{sharc_wasm.stem}.raw.wasm")
     build(
         [*diagnostics, "sharc", *([] if args.no_fast else ["fast-wasm"])],
@@ -220,4 +251,6 @@ if coupled:
         )
 else:
     sharc_wasm.unlink(missing_ok=True)
-    print("coupled SHARC+ core skipped (--cf-only or no generated core); removed any stale emulator-core-sharc.wasm")
+    print(
+        "coupled SHARC+ core skipped (--cf-only or no generated core); removed any stale emulator-core-sharc.wasm"
+    )

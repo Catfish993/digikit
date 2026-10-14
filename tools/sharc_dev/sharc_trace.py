@@ -14,20 +14,29 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Dict, List, Optional, Union
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-from tools.sharc_dev.sharc_disasm import Instruction  # noqa: E402, F401  (re-exported)
-from tools.sharc_dev.sharcimm import name_address  # noqa: E402
-from tools.sharc_dev.sharcldr import LoadedMemory  # noqa: E402
-from tools.sharc_dev.sharcldr import sw_to_byte  # noqa: E402, F401  (re-exported)
+from tools.sharc_dev.sharc_core.compute import (  # noqa: E402, F401
+    MR_DATAMOVE_REGISTERS,
+    _apply_compute,
+    _apply_compute_pey,
+    _apply_compute_simd,
+    _compute,
+    _compute_pey,
+    _compute_pey_values,
+    _compute_simd,
+    _field_deposit_or,
+    _mr_data_move,
+    _shift_immediate,
+)
 
 # The SHARC+ semantics live in tools/sharc_dev/sharc_core/. Every name is re-exported
 # here so existing `sharc_trace.X` callers keep working.
 from tools.sharc_dev.sharc_core.encoding import (  # noqa: E402, F401
-    ACCESS_WIDTHS,
     AC_BIT,
+    ACCESS_WIDTHS,
     AF_BIT,
     AI_BIT,
-    ALUSAT_BIT,
     ALU_FLAGS_MASK,
+    ALUSAT_BIT,
     AN_BIT,
     AS_BIT,
     AV_BIT,
@@ -40,8 +49,8 @@ from tools.sharc_dev.sharc_core.encoding import (  # noqa: E402, F401
     L1_BLOCK3_SW_BASE,
     MI_BIT,
     MN_BIT,
-    MULT_FLAGS_MASK,
     MU_BIT,
+    MULT_FLAGS_MASK,
     MV_BIT,
     SF_BIT,
     SHIFT_FLAGS_MASK,
@@ -54,89 +63,6 @@ from tools.sharc_dev.sharc_core.encoding import (  # noqa: E402, F401
     UREG_NAMES,
     _field,
     _wide,
-)
-from tools.sharc_dev.sharc_core.values import (  # noqa: E402, F401
-    Affine,
-    CIRC_SYMBOL_PREFIX,
-    Const,
-    PartialConst,
-    Unknown,
-    Value,
-    _BOUNDED_SYMBOL_RE,
-    _SYMBOL_RE,
-    _aconv,
-    _aconv_symbol,
-    _add,
-    _affine,
-    _astatx_known_bit,
-    _bitwise,
-    _multiply,
-    _multiply_fractional,
-    _negate,
-    _not,
-    _signed,
-    _signed32,
-    _stack_bounded_symbol,
-    _subtract,
-    _terms,
-    symbol,
-)
-from tools.sharc_dev.sharc_core.state import (  # noqa: E402, F401
-    AFTER_DELAY_SLOTS,
-    MR,
-    Loop,
-    Pending,
-    State,
-    _CUREG_PAIRS,
-    _copy,
-    _cureg_code,
-    _event,
-    _json_value,
-    _mr_from_signed,
-    _mr_read_word,
-    _mr_write_word,
-    _render,
-    _simd_active,
-    _stop,
-    _sync_pc_stack,
-    _sync_status_stack,
-    _ureg,
-    _ureg_raw,
-)
-from tools.sharc_dev.sharc_core.memory import (  # noqa: E402, F401
-    _SIMD_COMPANION_WIDTHS,
-    _access_modifier_scale,
-    _canonical_dm_address,
-    _circular_wrap_const,
-    _concrete_address,
-    _dm_read,
-    _dm_write,
-    _dossier,
-    _load_normal_ureg,
-    _read_px48,
-    _simd_ureg_mem_companion,
-    dm_write_range,
-)
-from tools.sharc_dev.sharc_core.floats import (  # noqa: E402, F401
-    _FLOAT_ALL_ONES,
-    _approx_recips,
-    _fixed_to_float,
-    _fixed_to_float_scaled,
-    _float32,
-    _float32_bits,
-    _float_binary,
-    _float_clip,
-    _float_copysign,
-    _float_logb,
-    _float_mantissa,
-    _float_max,
-    _float_min,
-    _float_round32,
-    _float_scalb,
-    _float_to_fixed,
-    _float_to_fixed_trunc,
-    _float_unary,
-    _scale_fixed_input,
 )
 from tools.sharc_dev.sharc_core.flags import (  # noqa: E402, F401
     MULT_FLAGS_CLEAR,
@@ -169,18 +95,43 @@ from tools.sharc_dev.sharc_core.flags import (  # noqa: E402, F401
     _float_alu_updates,
     _or_updates,
 )
-from tools.sharc_dev.sharc_core.compute import (  # noqa: E402, F401
-    MR_DATAMOVE_REGISTERS,
-    _apply_compute,
-    _apply_compute_pey,
-    _apply_compute_simd,
-    _compute,
-    _compute_pey,
-    _compute_pey_values,
-    _compute_simd,
-    _field_deposit_or,
-    _mr_data_move,
-    _shift_immediate,
+from tools.sharc_dev.sharc_core.floats import (  # noqa: E402, F401
+    _FLOAT_ALL_ONES,
+    _approx_recips,
+    _fixed_to_float,
+    _fixed_to_float_scaled,
+    _float32,
+    _float32_bits,
+    _float_binary,
+    _float_clip,
+    _float_copysign,
+    _float_logb,
+    _float_mantissa,
+    _float_max,
+    _float_min,
+    _float_round32,
+    _float_scalb,
+    _float_to_fixed,
+    _float_to_fixed_trunc,
+    _float_unary,
+    _scale_fixed_input,
+)
+from tools.sharc_dev.sharc_core.forms import (  # noqa: E402, F401
+    _execute,
+)
+from tools.sharc_dev.sharc_core.memory import (  # noqa: E402, F401
+    _SIMD_COMPANION_WIDTHS,
+    _access_modifier_scale,
+    _canonical_dm_address,
+    _circular_wrap_const,
+    _concrete_address,
+    _dm_read,
+    _dm_write,
+    _dossier,
+    _load_normal_ureg,
+    _read_px48,
+    _simd_ureg_mem_companion,
+    dm_write_range,
 )
 from tools.sharc_dev.sharc_core.sequencer import (  # noqa: E402, F401
     _advance,
@@ -197,8 +148,59 @@ from tools.sharc_dev.sharc_core.sequencer import (  # noqa: E402, F401
     _transfer,
     decode_at,
 )
-from tools.sharc_dev.sharc_core.forms import (  # noqa: E402, F401
-    _execute,
+from tools.sharc_dev.sharc_core.state import (  # noqa: E402, F401
+    _CUREG_PAIRS,
+    AFTER_DELAY_SLOTS,
+    MR,
+    Loop,
+    Pending,
+    State,
+    _copy,
+    _cureg_code,
+    _event,
+    _json_value,
+    _mr_from_signed,
+    _mr_read_word,
+    _mr_write_word,
+    _render,
+    _simd_active,
+    _stop,
+    _sync_pc_stack,
+    _sync_status_stack,
+    _ureg,
+    _ureg_raw,
+)
+from tools.sharc_dev.sharc_core.values import (  # noqa: E402, F401
+    _BOUNDED_SYMBOL_RE,
+    _SYMBOL_RE,
+    CIRC_SYMBOL_PREFIX,
+    Affine,
+    Const,
+    PartialConst,
+    Unknown,
+    Value,
+    _aconv,
+    _aconv_symbol,
+    _add,
+    _affine,
+    _astatx_known_bit,
+    _bitwise,
+    _multiply,
+    _multiply_fractional,
+    _negate,
+    _not,
+    _signed,
+    _signed32,
+    _stack_bounded_symbol,
+    _subtract,
+    _terms,
+    symbol,
+)
+from tools.sharc_dev.sharc_disasm import Instruction  # noqa: E402, F401  (re-exported)
+from tools.sharc_dev.sharcimm import name_address  # noqa: E402
+from tools.sharc_dev.sharcldr import (
+    LoadedMemory,  # noqa: E402
+    sw_to_byte,  # noqa: E402, F401  (re-exported)
 )
 
 
@@ -423,8 +425,7 @@ def summarize(
                 event.get("action") == "loaded-call-enter" for event in state.trace
             ),
             "opaque_calls": sum(
-                event.get("action") == "opaque-external-call"
-                for event in state.trace
+                event.get("action") == "opaque-external-call" for event in state.trace
             ),
             "loop_setups": loop_setups,
             "peripheral_accesses": peripheral_accesses,
@@ -481,7 +482,7 @@ def main(argv=None) -> int:
     p.add_argument(
         "--poke-dm-file",
         metavar="PATH",
-        help="JSON {\"addr\": value} (or {\"addr\": [v0, v1, ...]} for "
+        help='JSON {"addr": value} (or {"addr": [v0, v1, ...]} for '
         "consecutive 32-bit words) to seed before tracing starts "
         "(requires --concrete-memory)",
     )
@@ -667,11 +668,7 @@ def main(argv=None) -> int:
         except OSError as error:
             p.error("cannot write trace JSON: " + str(error))
     if a.summary:
-        print(
-            json.dumps(
-                summarize(states, a.start, a.watch_dm), separators=(",", ":")
-            )
-        )
+        print(json.dumps(summarize(states, a.start, a.watch_dm), separators=(",", ":")))
     elif a.json:
         print(json.dumps(result, indent=2))
     else:

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Render the area around the opcode rows on a PRM page, for visual checking."""
+
 import os
 import sys
+
 import pymupdf
+
 from tools.sharc_dev.sharcspec import extract_figures as ef
+
 
 def render(doc, pno, out, dpi=170):
     page = doc[pno - 1]
@@ -16,8 +20,11 @@ def render(doc, pno, out, dpi=170):
     page.get_pixmap(dpi=dpi, clip=pymupdf.Rect(60, y0, 590, y1)).save(out)
     return True
 
+
 if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
-    doc = pymupdf.open(os.path.join(here, "..", "..", "..", "docs", "refs", "sc58x-2158x-prm.pdf"))
+    doc = pymupdf.open(
+        os.path.join(here, "..", "..", "..", "docs", "refs", "sc58x-2158x-prm.pdf")
+    )
     for p in sys.argv[1:]:
         print(p, render(doc, int(p), os.path.join(here, "renders", f"fig_p{p}.png")))

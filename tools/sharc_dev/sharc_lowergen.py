@@ -1185,9 +1185,7 @@ def trace_form(name: str, type_name: str):
                     ):
                         if combo == tuple(0 for _ in labels):
                             continue
-                        work.append(
-                            CTX.path[:pos] + [("e", tuple(zip(labels, combo)))]
-                        )
+                        work.append(CTX.path[:pos] + [("e", tuple(zip(labels, combo)))])
         return leaves
 
 
@@ -1225,7 +1223,5 @@ def trace_call(fn, labels: dict[str, int], pre=None):
                     ):
                         if combo == tuple(0 for _ in labs):
                             continue
-                        work.append(
-                            CTX.path[:pos] + [("e", tuple(zip(labs, combo)))]
-                        )
+                        work.append(CTX.path[:pos] + [("e", tuple(zip(labs, combo)))])
         return leaves

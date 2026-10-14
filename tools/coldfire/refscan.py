@@ -48,17 +48,17 @@ Usage:
 Exit status is always 0; "zero hits" is a valid, useful answer and is not
 an error.
 """
+
 import argparse
 import json
 import re
 import sys
 
-
 from dt2.coldfire import disasm  # noqa: E402
 
 # A bare "$hex" token not immediately followed by "(" -- that "(" case is a
 # displacement operand like "$14(a7)" or "-$14(a7)", not an absolute address.
-_TOKEN_RE = re.compile(r'\$([0-9A-Fa-f]+)(?!\()')
+_TOKEN_RE = re.compile(r"\$([0-9A-Fa-f]+)(?!\()")
 
 
 def extract_refs(ops, min_value):
@@ -85,7 +85,7 @@ def scan(img, base, scan_start, scan_end, lo, hi, min_value=0x10000):
     swept_bytes = scan_end - scan_start
     for pc, hx, mn, ops in disasm(img, base, scan_start, scan_end):
         size = len(hx) // 2
-        if mn == '.word':
+        if mn == ".word":
             continue
         total_instructions += 1
         covered_bytes += size
@@ -109,73 +109,117 @@ def build_map(hits, lo, hi):
     prev = lo
     for t in targets:
         if t > prev:
-            gaps.append({'start': prev, 'end': t, 'size': t - prev})
+            gaps.append({"start": prev, "end": t, "size": t - prev})
         prev = max(prev, t + 1)
     if prev < hi:
-        gaps.append({'start': prev, 'end': hi, 'size': hi - prev})
-    gaps.sort(key=lambda g: -g['size'])
+        gaps.append({"start": prev, "end": hi, "size": hi - prev})
+    gaps.sort(key=lambda g: -g["size"])
     return targets, gaps
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('image', help='path to a raw firmware section, e.g. sections/section_3_MAIN_OS.bin')
-    ap.add_argument('--base', required=True, type=lambda s: int(s, 0),
-                     help='guest load address of image[0]')
-    ap.add_argument('--range', nargs=2, required=True, metavar=('LO', 'HI'),
-                     type=lambda s: int(s, 0), help='target address range [LO, HI) to report hits for')
-    ap.add_argument('--scan-start', type=lambda s: int(s, 0), default=None,
-                     help='sweep start address (default: --base)')
-    ap.add_argument('--scan-end', type=lambda s: int(s, 0), default=None,
-                     help='sweep end address (default: base + len(image))')
-    ap.add_argument('--min-value', type=lambda s: int(s, 0), default=0x10000,
-                     help='drop candidate values below this (default 0x10000, filters small immediates/displacements)')
-    ap.add_argument('--map', action='store_true',
-                     help='also print referenced-target clusters and the gaps between them')
-    ap.add_argument('--json', metavar='PATH', help='write machine-readable results here')
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "image",
+        help="path to a raw firmware section, e.g. sections/section_3_MAIN_OS.bin",
+    )
+    ap.add_argument(
+        "--base",
+        required=True,
+        type=lambda s: int(s, 0),
+        help="guest load address of image[0]",
+    )
+    ap.add_argument(
+        "--range",
+        nargs=2,
+        required=True,
+        metavar=("LO", "HI"),
+        type=lambda s: int(s, 0),
+        help="target address range [LO, HI) to report hits for",
+    )
+    ap.add_argument(
+        "--scan-start",
+        type=lambda s: int(s, 0),
+        default=None,
+        help="sweep start address (default: --base)",
+    )
+    ap.add_argument(
+        "--scan-end",
+        type=lambda s: int(s, 0),
+        default=None,
+        help="sweep end address (default: base + len(image))",
+    )
+    ap.add_argument(
+        "--min-value",
+        type=lambda s: int(s, 0),
+        default=0x10000,
+        help="drop candidate values below this (default 0x10000, filters small immediates/displacements)",
+    )
+    ap.add_argument(
+        "--map",
+        action="store_true",
+        help="also print referenced-target clusters and the gaps between them",
+    )
+    ap.add_argument(
+        "--json", metavar="PATH", help="write machine-readable results here"
+    )
     args = ap.parse_args(argv)
 
-    img = open(args.image, 'rb').read()
+    img = open(args.image, "rb").read()
     scan_start = args.scan_start if args.scan_start is not None else args.base
     scan_end = args.scan_end if args.scan_end is not None else args.base + len(img)
     lo, hi = args.range
 
-    hits, total_insns, covered, swept = scan(img, args.base, scan_start, scan_end, lo, hi, args.min_value)
+    hits, total_insns, covered, swept = scan(
+        img, args.base, scan_start, scan_end, lo, hi, args.min_value
+    )
     pct = 100.0 * covered / swept if swept else 0.0
 
-    print('scanned 0x%08x-0x%08x (%d bytes), %d instructions decoded, '
-          '%.2f%% byte coverage' % (scan_start, scan_end, swept, total_insns, pct))
-    print('target range 0x%08x-0x%08x (%d bytes): %d hits' % (lo, hi, hi - lo, len(hits)))
+    print(
+        "scanned 0x%08x-0x%08x (%d bytes), %d instructions decoded, "
+        "%.2f%% byte coverage" % (scan_start, scan_end, swept, total_insns, pct)
+    )
+    print(
+        "target range 0x%08x-0x%08x (%d bytes): %d hits" % (lo, hi, hi - lo, len(hits))
+    )
     for pc, hx, mn, ops, target in hits:
-        print('  0x%08x  %-16s %-9s %-28s -> 0x%08x' % (pc, hx, mn, ops, target))
+        print("  0x%08x  %-16s %-9s %-28s -> 0x%08x" % (pc, hx, mn, ops, target))
 
     result = {
-        'scan_start': scan_start, 'scan_end': scan_end, 'swept_bytes': swept,
-        'total_instructions': total_insns, 'covered_bytes': covered, 'coverage_pct': pct,
-        'range_lo': lo, 'range_hi': hi,
-        'hits': [{'pc': pc, 'bytes': hx, 'mnemonic': mn, 'ops': ops, 'target': target}
-                 for pc, hx, mn, ops, target in hits],
+        "scan_start": scan_start,
+        "scan_end": scan_end,
+        "swept_bytes": swept,
+        "total_instructions": total_insns,
+        "covered_bytes": covered,
+        "coverage_pct": pct,
+        "range_lo": lo,
+        "range_hi": hi,
+        "hits": [
+            {"pc": pc, "bytes": hx, "mnemonic": mn, "ops": ops, "target": target}
+            for pc, hx, mn, ops, target in hits
+        ],
     }
 
     if args.map:
         targets, gaps = build_map(hits, lo, hi)
-        print('\n%d distinct referenced target address(es) in range' % len(targets))
+        print("\n%d distinct referenced target address(es) in range" % len(targets))
         for t in targets:
-            print('  0x%08x' % t)
-        print('\ngaps (unreferenced runs), largest first:')
+            print("  0x%08x" % t)
+        print("\ngaps (unreferenced runs), largest first:")
         for g in gaps:
-            print('  0x%08x-0x%08x  %d bytes' % (g['start'], g['end'], g['size']))
-        result['distinct_targets'] = targets
-        result['gaps'] = gaps
+            print("  0x%08x-0x%08x  %d bytes" % (g["start"], g["end"], g["size"]))
+        result["distinct_targets"] = targets
+        result["gaps"] = gaps
 
     if args.json:
-        with open(args.json, 'w') as f:
+        with open(args.json, "w") as f:
             json.dump(result, f, indent=2)
-        print('\nwrote %s' % args.json)
+        print("\nwrote %s" % args.json)
 
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

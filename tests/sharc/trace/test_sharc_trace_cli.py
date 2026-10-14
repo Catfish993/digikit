@@ -18,7 +18,9 @@ L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_encode import encode  # noqa: E402
 from support.sharc_trace_build import insn, loader_block, loader_memory  # noqa: E402
 
-_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module(
+    "tools.sharc_dev.sharc_core.floats"
+)  # _double_to_fixed isn't re-exported by T
 
 from support.sharc_trace_build import TraceRunMixin  # noqa: E402
 
@@ -33,7 +35,8 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             valid = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "tools.sharc_dev.sharc_trace",
+                    "-m",
+                    "tools.sharc_dev.sharc_trace",
                     path,
                     "--base-sw",
                     "0",
@@ -49,7 +52,8 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             invalid = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "tools.sharc_dev.sharc_trace",
+                    "-m",
+                    "tools.sharc_dev.sharc_trace",
                     path,
                     "--base-sw",
                     "0",
@@ -64,7 +68,8 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             invalid_register = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "tools.sharc_dev.sharc_trace",
+                    "-m",
+                    "tools.sharc_dev.sharc_trace",
                     path,
                     "--base-sw",
                     "0",
@@ -160,7 +165,9 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
         try:
             command = [sys.executable, "-m", "tools.sharc_dev.sharc_trace"]
             missing_base = subprocess.run(
-                command + [stream_path, "--start", hex(pc)], env=python_env(), capture_output=True
+                command + [stream_path, "--start", hex(pc)],
+                env=python_env(),
+                capture_output=True,
             )
             ambiguous = subprocess.run(
                 command + [stream_path, "--blob", "--base-sw", "0", "--start", hex(pc)],
@@ -492,7 +499,8 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
                 invalid = subprocess.run(
                     [
                         sys.executable,
-                        "-m", "tools.sharc_dev.sharc_trace",
+                        "-m",
+                        "tools.sharc_dev.sharc_trace",
                         path,
                         "--base-sw",
                         "0",
@@ -511,7 +519,8 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             out = subprocess.check_output(
                 [
                     sys.executable,
-                    "-m", "tools.sharc_dev.sharc_trace",
+                    "-m",
+                    "tools.sharc_dev.sharc_trace",
                     path,
                     "--base-sw",
                     "0",
@@ -626,7 +635,8 @@ class PokeDmTest(unittest.TestCase):
         return subprocess.run(
             [
                 sys.executable,
-                "-m", "tools.sharc_dev.sharc_trace",
+                "-m",
+                "tools.sharc_dev.sharc_trace",
                 program_path,
                 "--blob",
                 "--start",
@@ -695,7 +705,8 @@ class ApproxRecipsCliTest(unittest.TestCase):
         try:
             base_command = [
                 sys.executable,
-                "-m", "tools.sharc_dev.sharc_trace",
+                "-m",
+                "tools.sharc_dev.sharc_trace",
                 path,
                 "--base-sw",
                 "0",
@@ -703,9 +714,14 @@ class ApproxRecipsCliTest(unittest.TestCase):
                 "0",
                 "--json",
             ]
-            without_flag = subprocess.run(base_command, env=python_env(), capture_output=True, text=True)
+            without_flag = subprocess.run(
+                base_command, env=python_env(), capture_output=True, text=True
+            )
             with_flag = subprocess.run(
-                base_command + ["--approx-recips"], env=python_env(), capture_output=True, text=True
+                base_command + ["--approx-recips"],
+                env=python_env(),
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(without_flag.returncode, 0, without_flag.stderr)
             self.assertEqual(with_flag.returncode, 0, with_flag.stderr)

@@ -13,11 +13,10 @@ from __future__ import annotations
 import os
 import struct
 import unittest
+
 from support.paths import REPO_ROOT
 
-TOOLS = os.path.join(
-    str(REPO_ROOT), "tools"
-)
+TOOLS = os.path.join(str(REPO_ROOT), "tools")
 
 from tools.sharc_dev.sharc_core.compute_alu import _alu_recip_seed_impl  # noqa: E402
 from tools.sharc_dev.sharc_core.floats import Const  # noqa: E402

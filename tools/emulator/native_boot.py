@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import sys
-import secrets
 from pathlib import Path
-
 
 USAGE = "usage: mise run boot -- SYX [--out DIR] [--card-image FILE] [--limit N] [--stop-at ready|limit]"
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -74,14 +73,32 @@ def main(argv: list[str]) -> int:
             fail(f"--out must be a new or empty directory: {out}")
     print("Oracle diagnostic bundle enabled; full hardware and DSP remain pending.")
     print(f"report directory: {out}")
-    subprocess.run([
-        "cargo", "build", "--manifest-path", str(ROOT / "native/boot/Cargo.toml"),
-        "--release", "--locked", "--offline",
-    ], cwd=ROOT, check=True)
+    subprocess.run(
+        [
+            "cargo",
+            "build",
+            "--manifest-path",
+            str(ROOT / "native/boot/Cargo.toml"),
+            "--release",
+            "--locked",
+            "--offline",
+        ],
+        cwd=ROOT,
+        check=True,
+    )
     command = [
         str(ROOT / "target/release/elektron-native-boot"),
-        "--syx", str(syx), "--out", str(out), "--mode", "oracle-diagnostic",
-        "--limit", limit, "--stop-at", stop_at, "--diagnostic-services",
+        "--syx",
+        str(syx),
+        "--out",
+        str(out),
+        "--mode",
+        "oracle-diagnostic",
+        "--limit",
+        limit,
+        "--stop-at",
+        stop_at,
+        "--diagnostic-services",
     ]
     if card_image is not None:
         command.extend(["--card-image", str(card)])

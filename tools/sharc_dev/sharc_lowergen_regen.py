@@ -23,7 +23,6 @@ GEN = ROOT / "native/sharc/src/fast/lower/gen_forms.rs"
 from tools import python_env  # noqa: E402
 from tools.sharc_dev import sharc_lowergen_rs as r  # noqa: E402
 
-
 # Forms with a generated helper body (flag-neutral transfers; tools/sharc_dev/sharc_lowergen_helpers.py).
 HELPER_FORMS = ["3a", "3b", "3c", "3d", "4a", "4b", "4d", "14a", "15a", "15b"]
 
@@ -48,7 +47,10 @@ def main() -> None:
     for f in filter(None, a.add.split(",")):
         if f not in forms:
             forms.append(f)
-    forms = sorted(forms, key=lambda n: (re.sub(r"\D", "", n) == "", int(re.sub(r"\D.*", "", n) or 0), n))
+    forms = sorted(
+        forms,
+        key=lambda n: (re.sub(r"\D", "", n) == "", int(re.sub(r"\D.*", "", n) or 0), n),
+    )
     if not a.no_core:
         run(
             "uv", "run", "python", "-m", "tools.sharc_dev.sharc_transpile", "--strict",

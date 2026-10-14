@@ -70,6 +70,7 @@ Everything in the module docstring above is a hypothesis this module tests
 against the real device, not documentation trusted on faith: run this file's
 __main__ against a sections/ directory to see it re-confirmed.
 """
+
 import struct
 
 
@@ -80,7 +81,7 @@ def _gamma_bits(value):
     last one, 0 otherwise) -- the inverted-continue polarity confirmed above.
     """
     if value < 2:
-        raise ValueError('gamma2 cannot encode values below 2, got %d' % value)
+        raise ValueError("gamma2 cannot encode values below 2, got %d" % value)
     tail = bin(value)[3:]  # binary digits after the leading '1'
     out = []
     for i, ch in enumerate(tail):
@@ -100,11 +101,11 @@ def _events(data):
     bit the depacker will read, paired with whatever raw bytes it reads
     immediately after that bit (empty for bits that consume none)."""
     events = [(1, bytes((b,))) for b in data]
-    events.append((0, b''))                      # enter the match/terminator path
+    events.append((0, b""))  # enter the match/terminator path
     gbits = _gamma_bits(_TERMINATOR_GAMMA_VALUE)
     last = len(gbits) - 1
     for i, bit in enumerate(gbits):
-        events.append((bit, bytes((_TERMINATOR_TRAILER_BYTE,)) if i == last else b''))
+        events.append((bit, bytes((_TERMINATOR_TRAILER_BYTE,)) if i == last else b""))
     return events
 
 
@@ -114,7 +115,7 @@ def _assemble(events):
     group's payload bytes appended right after it, in event order."""
     out = bytearray()
     for i in range(0, len(events), 8):
-        chunk = events[i:i + 8]
+        chunk = events[i : i + 8]
         tagbyte = 0
         payload = bytearray()
         for j, (bit, pl) in enumerate(chunk):
@@ -139,7 +140,7 @@ def pack_section(data):
     mod 2**32, of the packed stream's bytes. Matches the convention
     dt2/container.py and emu/extract.py already use to read sections."""
     body = pack(data)
-    return struct.pack('>II', len(body), sum(body) & 0xFFFFFFFF) + body
+    return struct.pack(">II", len(body), sum(body) & 0xFFFFFFFF) + body
 
 
 def _shadow_decode(comp):
@@ -183,12 +184,14 @@ def _shadow_decode(comp):
                 break
         if result != _TERMINATOR_GAMMA_VALUE:
             raise NotImplementedError(
-                'shadow decoder only understands this module\'s own '
-                'terminator, not a real match (gamma result=%d)' % result)
+                "shadow decoder only understands this module's own "
+                "terminator, not a real match (gamma result=%d)" % result
+            )
         trailer = read_byte()
         if trailer != _TERMINATOR_TRAILER_BYTE:
             raise NotImplementedError(
-                'unexpected terminator trailer byte 0x%02x' % trailer)
+                "unexpected terminator trailer byte 0x%02x" % trailer
+            )
         break
     return bytes(out)
 
@@ -202,23 +205,30 @@ def _self_test():
     """
     import os
 
-    for data in [b'', b'A', b'AB', b'\x00', b'\xff' * 3, bytes(range(256)),
-                 os.urandom(500)]:
+    for data in [
+        b"",
+        b"A",
+        b"AB",
+        b"\x00",
+        b"\xff" * 3,
+        bytes(range(256)),
+        os.urandom(500),
+    ]:
         comp = pack(data)
         got = _shadow_decode(comp)
         assert got == data, (data[:16], got[:16])
 
     # pack_section's header: length excludes the header, sum is over the
     # packed body only, and packing never counts as *shrinking* the input.
-    data = b'roundtrip me'
+    data = b"roundtrip me"
     section = pack_section(data)
-    ln, sm = struct.unpack_from('>II', section, 0)
+    ln, sm = struct.unpack_from(">II", section, 0)
     body = section[8:]
     assert ln == len(body) == len(pack(data))
     assert sm == sum(body) & 0xFFFFFFFF
     assert len(section) > len(data) + 8
 
-    print('aplib self_test OK')
+    print("aplib self_test OK")
 
 
 USAGE = """usage: uv run python -m dt2.aplib [sections_dir]
@@ -228,12 +238,12 @@ emu/extract.py) is given or found via DT2_SECTIONS -- round-trips every
 section through pack_section() and dt2/elz.py's depack_section."""
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import sys
 
     _self_test()
 
-    if '--help' in sys.argv or '-h' in sys.argv:
+    if "--help" in sys.argv or "-h" in sys.argv:
         print(USAGE)
         raise SystemExit(0)
 
@@ -246,26 +256,35 @@ if __name__ == '__main__':
 
     sections_dir = sys.argv[1] if len(sys.argv) > 1 else config.sections_dir()
 
-    paths = sorted(glob.glob(os.path.join(sections_dir, 'section_*.bin')))
+    paths = sorted(glob.glob(os.path.join(sections_dir, "section_*.bin")))
     if not paths:
-        print('no section_*.bin files in %s/ -- offline self-test only' % sections_dir)
+        print("no section_*.bin files in %s/ -- offline self-test only" % sections_dir)
         raise SystemExit(0)
 
-    print('\n%-26s %10s %10s %7s  %s' % ('section', 'orig', 'packed', 'ratio', 'result'))
+    print(
+        "\n%-26s %10s %10s %7s  %s" % ("section", "orig", "packed", "ratio", "result")
+    )
     t_total = time.time()
     failures = 0
     for path in paths:
-        data = open(path, 'rb').read()
+        data = open(path, "rb").read()
         t0 = time.time()
         stream = pack_section(data)
         got = depack_section(stream)
         ok = got == data
         failures += not ok
-        print('%-26s %10d %10d %6.3fx  %-4s  %6.2fs'
-              % (os.path.basename(path), len(data), len(stream),
-                 len(stream) / max(len(data), 1), 'PASS' if ok else 'FAIL',
-                 time.time() - t0))
+        print(
+            "%-26s %10d %10d %6.3fx  %-4s  %6.2fs"
+            % (
+                os.path.basename(path),
+                len(data),
+                len(stream),
+                len(stream) / max(len(data), 1),
+                "PASS" if ok else "FAIL",
+                time.time() - t0,
+            )
+        )
         if not ok:
-            print('    expected %d bytes, depacker produced %d' % (len(data), len(got)))
-    print('\ntotal: %.2fs, %d failure(s)' % (time.time() - t_total, failures))
+            print("    expected %d bytes, depacker produced %d" % (len(data), len(got)))
+    print("\ntotal: %.2fs, %d failure(s)" % (time.time() - t_total, failures))
     raise SystemExit(1 if failures else 0)

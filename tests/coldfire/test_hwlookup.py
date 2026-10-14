@@ -46,7 +46,9 @@ class RoutingLookupTest(unittest.TestCase):
     def test_vector_170_is_dma_50_completion(self):
         result = resolve_vector(170)
         self.assertEqual((result["controller"], result["source"]), ("INTC1", 42))
-        self.assertEqual(result["assignment"]["description"], "DMA channel 50 transfer complete")
+        self.assertEqual(
+            result["assignment"]["description"], "DMA channel 50 transfer complete"
+        )
         self.assertEqual(result["assignment"]["clear"], "write EDMA_CINT=50")
 
     def test_vector_191_is_unassigned_hardware_and_software_forceable(self):

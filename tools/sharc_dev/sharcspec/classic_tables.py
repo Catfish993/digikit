@@ -11,6 +11,7 @@ binary constant as wide as the cell (fixed bits), a field name (sometimes stacke
 one letter per line), or nothing. This is the older core; SHARC+ is documented as
 instruction-set compatible, so it serves as an independent second source.
 """
+
 import json
 import re
 import sys
@@ -47,7 +48,12 @@ def parse_page(page, pno):
     headings = []
     for i, w in enumerate(words):
         # Table headings are large ("Type 2a", 14.4 pt): words about 17 pt tall.
-        if w[4] == "Type" and w[3] - w[1] > 14 and i + 1 < len(words) and re.fullmatch(r"\d+[a-d]", words[i + 1][4]):
+        if (
+            w[4] == "Type"
+            and w[3] - w[1] > 14
+            and i + 1 < len(words)
+            and re.fullmatch(r"\d+[a-d]", words[i + 1][4])
+        ):
             headings.append((w[1], "Type " + words[i + 1][4]))
     vr, hr = vrules(page), hrules(page)
 
@@ -65,16 +71,28 @@ def parse_page(page, pno):
         top = min(w[1] for w in ws)
         bottom_header = max(w[3] for w in ws)
         # Column centres come from the header numbers; cell edges from the header dividers.
-        edges = sorted({round((r.x0 + r.x1) / 2, 1) for r in vr if r.y0 <= top + 1 and r.y1 >= bottom_header - 1})
+        edges = sorted(
+            {
+                round((r.x0 + r.x1) / 2, 1)
+                for r in vr
+                if r.y0 <= top + 1 and r.y1 >= bottom_header - 1
+            }
+        )
         if len(edges) < len(ws) + 1:
             continue
         # The value row ends at the next horizontal rule below the header.
-        below = sorted(r.y0 for r in hr if r.y0 > bottom_header + 3 and edges[0] - 2 <= r.x0 <= edges[0] + 2)
+        below = sorted(
+            r.y0
+            for r in hr
+            if r.y0 > bottom_header + 3 and edges[0] - 2 <= r.x0 <= edges[0] + 2
+        )
         if not below:
             continue
         vtop, vbot = bottom_header + 2, below[0]
         mid = (vtop + vbot) / 2
-        bounds = sorted({round((r.x0 + r.x1) / 2, 1) for r in vr if r.y0 <= mid <= r.y1})
+        bounds = sorted(
+            {round((r.x0 + r.x1) / 2, 1) for r in vr if r.y0 <= mid <= r.y1}
+        )
         cols = []
         for w in ws:
             cx = (w[0] + w[2]) / 2
@@ -93,9 +111,20 @@ def parse_page(page, pno):
         entries = []
         for cell in cells:
             x0, x1 = cell[0][1], cell[-1][2]
-            inside = sorted((w for w in words if vtop <= w[1] and w[3] <= vbot and x0 <= (w[0] + w[2]) / 2 <= x1), key=lambda w: (round(w[1]), w[0]))
+            inside = sorted(
+                (
+                    w
+                    for w in words
+                    if vtop <= w[1] and w[3] <= vbot and x0 <= (w[0] + w[2]) / 2 <= x1
+                ),
+                key=lambda w: (round(w[1]), w[0]),
+            )
             # Stacked single letters read top to bottom; words on one line left to right.
-            text = "".join(w[4] for w in inside) if inside and all(len(w[4]) == 1 for w in inside) else " ".join(w[4] for w in inside)
+            text = (
+                "".join(w[4] for w in inside)
+                if inside and all(len(w[4]) == 1 for w in inside)
+                else " ".join(w[4] for w in inside)
+            )
             hi, lo = cell[0][0], cell[-1][0]
             if text and re.fullmatch(r"[01]+", text) and len(text) == hi - lo + 1:
                 kind = "fixed"
@@ -135,13 +164,30 @@ def main():
         for c in cells:
             hi, lo = c["bits"]
             width = hi - lo + 1
-            pattern += c["text"] if c["kind"] == "fixed" else ("." * width if c["kind"] == "blank" else "x" * width)
+            pattern += (
+                c["text"]
+                if c["kind"] == "fixed"
+                else ("." * width if c["kind"] == "blank" else "x" * width)
+            )
         if len(pattern) != msb - lsb + 1:
             print(f"warning: {key} pattern length {len(pattern)} != {msb - lsb + 1}")
-        out[key] = {"page": v["page"], "msb": msb, "lsb": lsb, "pattern": pattern, "cells": cells}
+        out[key] = {
+            "page": v["page"],
+            "msb": msb,
+            "lsb": lsb,
+            "pattern": pattern,
+            "cells": cells,
+        }
     json.dump(out, open("classic.json", "w"), indent=1)
     for name, t in out.items():
-        print(f"{name:10s} {t['msb']:2d}..{t['lsb']:<2d} {t['pattern']}  " + " ".join(f"{c['text']}[{c['bits'][0]}:{c['bits'][1]}]" for c in t["cells"] if c["kind"] == "field"))
+        print(
+            f"{name:10s} {t['msb']:2d}..{t['lsb']:<2d} {t['pattern']}  "
+            + " ".join(
+                f"{c['text']}[{c['bits'][0]}:{c['bits'][1]}]"
+                for c in t["cells"]
+                if c["kind"] == "field"
+            )
+        )
 
 
 if __name__ == "__main__":

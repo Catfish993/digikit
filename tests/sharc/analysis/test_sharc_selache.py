@@ -4,8 +4,9 @@ import os
 import pathlib
 import unittest
 
-
-from tools.sharc_dev import sharc_selache as S  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import (
+    sharc_selache as S,  # noqa: E402  # pyright: ignore[reportMissingImports]
+)
 
 
 class SelacheAdapterTest(unittest.TestCase):
@@ -57,17 +58,21 @@ class SelacheAdapterTest(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("SELACHE_DIR"), "SELACHE_DIR not set")
     def test_pinned_external_round_trip(self):
         oracle = S.SelacheOracle.open(pathlib.Path(os.environ["SELACHE_DIR"]))
-        result = oracle.assemble_text(
-            ".section/pm seg_pmco;\nNOP;\n"
-        )
+        result = oracle.assemble_text(".section/pm seg_pmco;\nNOP;\n")
         self.assertEqual(result.revision, S.PINNED_REVISION)
-        self.assertEqual({item.name for item in result.tool_fingerprints}, {"selas", "seldump"})
-        self.assertTrue(all(len(item.sha256) == 64 for item in result.tool_fingerprints))
+        self.assertEqual(
+            {item.name for item in result.tool_fingerprints}, {"selas", "seldump"}
+        )
+        self.assertTrue(
+            all(len(item.sha256) == 64 for item in result.tool_fingerprints)
+        )
         self.assertEqual(
             tuple(item.native_form_id for item in result.comparison.instructions),
             ("21c",),
         )
-        self.assertTrue(all(item.extent_agrees for item in result.comparison.instructions))
+        self.assertTrue(
+            all(item.extent_agrees for item in result.comparison.instructions)
+        )
 
 
 if __name__ == "__main__":

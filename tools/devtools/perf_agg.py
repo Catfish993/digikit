@@ -19,8 +19,7 @@ import json
 import pathlib
 
 HERE = pathlib.Path(__file__).resolve().parent
-from tools.devtools import fastcov
-from tools.devtools import perf
+from tools.devtools import fastcov, perf
 
 BASELINES = ["trig1-taps", "tf-dry-hold", "sf-dry-hold"]
 

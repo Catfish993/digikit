@@ -14,13 +14,10 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from tools.sharc_dev.sharcldr import LoadedMemory
 from tools.sharc_dev import sharc_trace as trace
+from tools.sharc_dev.sharcldr import LoadedMemory
 
-
-DT2_116_BLOB_SHA256 = (
-    "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2"
-)
+DT2_116_BLOB_SHA256 = "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2"
 MACHINE_OFFSET = 0x94
 TRACKS = 16
 TX_FRAME_BYTES = 0x802
@@ -202,7 +199,12 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C7719,
         "5b_move",
-        {"srcureghigh[4:0]": 5, "srcureglow[1:1]": 0, "srcureglow[0:0]": 1, "dstureg[6:0]": 8},
+        {
+            "srcureghigh[4:0]": 5,
+            "srcureglow[1:1]": 0,
+            "srcureglow[0:0]": 1,
+            "dstureg[6:0]": 8,
+        },
         "caller copies I5 to argument R8",
     ),
     (
@@ -270,13 +272,27 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C7938,
         "14a",
-        {"g": 0, "d": 1, "l": 0, "ureg[6:0]": 20, "addr[31:16]": 0x26, "addr[15:0]": 0x20C8},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 0,
+            "ureg[6:0]": 20,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x20C8,
+        },
         "first descriptor-list head points to its second descriptor",
     ),
     (
         0x1C795F,
         "14a",
-        {"g": 0, "d": 1, "l": 1, "ureg[6:0]": 14, "addr[31:16]": 0x26, "addr[15:0]": 0x20D0},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 1,
+            "ureg[6:0]": 14,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x20D0,
+        },
         "first descriptor long-word store writes CFG/XCNT",
     ),
     (
@@ -294,13 +310,27 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C79CD,
         "14a",
-        {"g": 0, "d": 1, "l": 0, "ureg[6:0]": 20, "addr[31:16]": 0x26, "addr[15:0]": 0x2100},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 0,
+            "ureg[6:0]": 20,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x2100,
+        },
         "second descriptor-list head points to its second descriptor",
     ),
     (
         0x1C79DD,
         "14a",
-        {"g": 0, "d": 1, "l": 1, "ureg[6:0]": 10, "addr[31:16]": 0x26, "addr[15:0]": 0x2110},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 1,
+            "ureg[6:0]": 10,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x2110,
+        },
         "second descriptor long-word store writes XMOD/YCNT",
     ),
     (
@@ -318,13 +348,27 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C7AE6,
         "14a",
-        {"g": 0, "d": 1, "l": 0, "ureg[6:0]": 20, "addr[31:16]": 0x26, "addr[15:0]": 0x4138},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 0,
+            "ureg[6:0]": 20,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x4138,
+        },
         "third descriptor-list head points to its second descriptor",
     ),
     (
         0x1C7AC8,
         "14a",
-        {"g": 0, "d": 1, "l": 1, "ureg[6:0]": 6, "addr[31:16]": 0x26, "addr[15:0]": 0x4140},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 1,
+            "ureg[6:0]": 6,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x4140,
+        },
         "third descriptor long-word store writes CFG/XCNT",
     ),
     (
@@ -342,13 +386,27 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C7B88,
         "14a",
-        {"g": 0, "d": 1, "l": 0, "ureg[6:0]": 20, "addr[31:16]": 0x26, "addr[15:0]": 0x4170},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 0,
+            "ureg[6:0]": 20,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x4170,
+        },
         "fourth descriptor-list head points to its second descriptor",
     ),
     (
         0x1C7B6D,
         "14a",
-        {"g": 0, "d": 1, "l": 1, "ureg[6:0]": 6, "addr[31:16]": 0x26, "addr[15:0]": 0x4178},
+        {
+            "g": 0,
+            "d": 1,
+            "l": 1,
+            "ureg[6:0]": 6,
+            "addr[31:16]": 0x26,
+            "addr[15:0]": 0x4178,
+        },
         "fourth descriptor long-word store writes CFG/XCNT",
     ),
     (
@@ -366,13 +424,27 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C7524,
         "14a",
-        {"g": 0, "d": 0, "l": 0, "ureg[6:0]": 2, "addr[31:16]": 0x25, "addr[15:0]": 0xF780},
+        {
+            "g": 0,
+            "d": 0,
+            "l": 0,
+            "ureg[6:0]": 2,
+            "addr[31:16]": 0x25,
+            "addr[15:0]": 0xF780,
+        },
         "load the ping-pong selector before the buffer-maintenance callback",
     ),
     (
         0x1C7578,
         "14a",
-        {"g": 0, "d": 0, "l": 0, "ureg[6:0]": 1, "addr[31:16]": 0x25, "addr[15:0]": 0xF780},
+        {
+            "g": 0,
+            "d": 0,
+            "l": 0,
+            "ureg[6:0]": 1,
+            "addr[31:16]": 0x25,
+            "addr[15:0]": 0xF780,
+        },
         "reload the ping-pong selector before the marker store",
     ),
     (
@@ -390,7 +462,13 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C7583,
         "19a",
-        {"g": 0, "idis[2:0]": 0, "is[2:0]": 4, "data[31:16]": 0x26, "data[15:0]": 0x2138},
+        {
+            "g": 0,
+            "idis[2:0]": 0,
+            "is[2:0]": 4,
+            "data[31:16]": 0x26,
+            "data[15:0]": 0x2138,
+        },
         "add the first large DMA-buffer base to the selector offset",
     ),
     (
@@ -465,19 +543,39 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
         },
         "store incoming I3 value R9 through frame-supplied I5/M5",
     ),
-    (0x1C2CC1, "19a", {"is[2:0]": 4, "data[15:0]": 0x75C}, "sibling frame offset 0x75c"),
+    (
+        0x1C2CC1,
+        "19a",
+        {"is[2:0]": 4, "data[15:0]": 0x75C},
+        "sibling frame offset 0x75c",
+    ),
     (0x1C2CCB, "19a", {"is[2:0]": 1, "data[15:0]": 0x94}, "I1 += machine offset 0x94"),
     (
         0x1C2CD4,
         "5a_move",
-        {"srcureghigh[4:0]": 4, "srcureglow[1:1]": 0, "srcureglow[0:0]": 1, "dstureg[6:0]": 26},
+        {
+            "srcureghigh[4:0]": 4,
+            "srcureglow[1:1]": 0,
+            "srcureglow[0:0]": 1,
+            "dstureg[6:0]": 26,
+        },
         "preserve I1+0x94 in I10",
     ),
-    (0x1C2CD7, "19a", {"is[2:0]": 4, "data[15:0]": 0x73C}, "sibling frame offset 0x73c"),
+    (
+        0x1C2CD7,
+        "19a",
+        {"is[2:0]": 4, "data[15:0]": 0x73C},
+        "sibling frame offset 0x73c",
+    ),
     (
         0x1C2CA6,
         "5a_move",
-        {"srcureghigh[4:0]": 9, "srcureglow[1:1]": 1, "srcureglow[0:0]": 1, "dstureg[6:0]": 11},
+        {
+            "srcureghigh[4:0]": 9,
+            "srcureglow[1:1]": 1,
+            "srcureglow[0:0]": 1,
+            "dstureg[6:0]": 11,
+        },
         "copy fixed M7=-1 shift amount to R11",
     ),
     (
@@ -489,13 +587,23 @@ CHECKS: tuple[tuple[int, str, Mapping[str, int], str], ...] = (
     (
         0x1C2D02,
         "5b_move",
-        {"srcureghigh[4:0]": 1, "srcureglow[1:1]": 0, "srcureglow[0:0]": 1, "dstureg[6:0]": 32},
+        {
+            "srcureghigh[4:0]": 1,
+            "srcureglow[1:1]": 0,
+            "srcureglow[0:0]": 1,
+            "dstureg[6:0]": 32,
+        },
         "copy R5 to M0",
     ),
     (
         0x1C33C4,
         "5a_move",
-        {"srcureghigh[4:0]": 6, "srcureglow[1:1]": 1, "srcureglow[0:0]": 0, "dstureg[6:0]": 16},
+        {
+            "srcureghigh[4:0]": 6,
+            "srcureglow[1:1]": 1,
+            "srcureglow[0:0]": 0,
+            "dstureg[6:0]": 16,
+        },
         "restore I10 into I0",
     ),
     (
@@ -545,7 +653,9 @@ def extract_machine_types(frame: bytes) -> list[int]:
             f"frame is {len(frame)} bytes; expected exactly {TX_FRAME_BYTES}"
         )
     return [
-        int.from_bytes(frame[MACHINE_OFFSET + 2 * i : MACHINE_OFFSET + 2 * i + 2], "big")
+        int.from_bytes(
+            frame[MACHINE_OFFSET + 2 * i : MACHINE_OFFSET + 2 * i + 2], "big"
+        )
         for i in range(TRACKS)
     ]
 
@@ -559,7 +669,9 @@ def _verify_static(memory: LoadedMemory) -> list[dict[str, Any]]:
                 f"{pc:#x}: expected {expected_form}, decoded {insn.type_name}"
             )
         if insn.length_bytes is None or insn.raw is None:
-            raise ValueError(f"{pc:#x}: confident instruction has no extent or raw word")
+            raise ValueError(
+                f"{pc:#x}: confident instruction has no extent or raw word"
+            )
         mismatches = {
             name: {"expected": value, "actual": insn.fields.get(name)}
             for name, value in expected_fields.items()
@@ -620,7 +732,9 @@ def _probe_track(memory: LoadedMemory, track: int) -> dict[str, Any]:
     # is not always the *only* one observed -- only the presence of the
     # expected, fully-resolved expression is load-bearing here.
     if expected not in loads:
-        raise ValueError(f"track {track}: expected {expected}, observed {sorted(loads)}")
+        raise ValueError(
+            f"track {track}: expected {expected}, observed {sorted(loads)}"
+        )
     pcs = {event.get("pc_sw") for state in states for event in state.trace}
     if not {0x1C33D7, 0x1C33DF}.issubset(pcs):
         raise ValueError(f"track {track}: compare/branch endpoint was not reached")
@@ -886,8 +1000,7 @@ def build_report(blob_path: Path, frame_path: Path | None = None) -> dict[str, A
         "static_chain": _verify_static(memory),
         "calibrated_track_probes": [_probe_track(memory, i) for i in (0, 1, 15)],
         "calibrated_sport_caller_probes": [
-            _probe_sport_caller(memory, *arguments)
-            for arguments in SPORT_CALLER_PROBES
+            _probe_sport_caller(memory, *arguments) for arguments in SPORT_CALLER_PROBES
         ],
         "calibrated_dma_descriptor_probes": [
             _probe_dma_descriptor_list(memory, specification)
@@ -989,7 +1102,9 @@ def build_report(blob_path: Path, frame_path: Path | None = None) -> dict[str, A
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("blob", type=Path, help="DT2 1.16 section_7_BLOB.bin")
-    parser.add_argument("--frame", type=Path, help="optional 0x802-byte ColdFire TX frame")
+    parser.add_argument(
+        "--frame", type=Path, help="optional 0x802-byte ColdFire TX frame"
+    )
     parser.add_argument("-o", "--output", type=Path, help="write JSON report here")
     args = parser.parse_args()
     report = build_report(args.blob, args.frame)

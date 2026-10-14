@@ -25,8 +25,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from tools.sharc_dev import sharcflow  # noqa: E402
-from tools.sharc_dev import sharcpcode  # noqa: E402
+from tools.sharc_dev import (
+    sharcflow,  # noqa: E402
+    sharcpcode,  # noqa: E402
+)
 
 REPO = os.path.dirname(os.path.dirname(HERE))
 
@@ -66,7 +68,8 @@ def build_table(rows):
     per_form = {}
     for _sw, form, has_ops, deliberately_empty, undecoded in rows:
         rec = per_form.setdefault(
-            form, {"count": 0, "yes": 0, "no": 0, "undecoded": 0, "deliberately_empty": 0}
+            form,
+            {"count": 0, "yes": 0, "no": 0, "undecoded": 0, "deliberately_empty": 0},
         )
         rec["count"] += 1
         if undecoded:
@@ -93,7 +96,9 @@ def build_table(rows):
                 "form": form,
                 "count": rec["count"],
                 "has_semantics": has_semantics,
-                "yes_fraction": round(rec["yes"] / rec["count"], 4) if rec["count"] else 0,
+                "yes_fraction": round(rec["yes"] / rec["count"], 4)
+                if rec["count"]
+                else 0,
                 "yes": rec["yes"],
                 "no": rec["no"],
                 "undecoded": rec["undecoded"],
@@ -106,8 +111,10 @@ def build_table(rows):
 
 
 def markdown_table(rows, limit=None):
-    lines = ["| form | count | has semantics? | share | cumulative share |",
-             "|---|---:|---|---:|---:|"]
+    lines = [
+        "| form | count | has semantics? | share | cumulative share |",
+        "|---|---:|---|---:|---:|",
+    ]
     for row in rows[:limit] if limit else rows:
         if row["undecoded"]:
             status = "undecoded"
@@ -125,10 +132,14 @@ def markdown_table(rows, limit=None):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--image", default="dt2-1.16", choices=list(sharcpcode.IMAGES))
     ap.add_argument("--min-depth", type=int, default=8)
-    ap.add_argument("--function", help="LO:HI short-word addresses (inclusive..exclusive)")
+    ap.add_argument(
+        "--function", help="LO:HI short-word addresses (inclusive..exclusive)"
+    )
     ap.add_argument("--out-json", required=True)
     ap.add_argument("--out-md", required=True)
     args = ap.parse_args(argv)
@@ -141,7 +152,9 @@ def main(argv=None):
 
     compiler = sharcpcode.find_sleigh(prefer_ghidra=True)
     lint, ldefs = sharcpcode.build_language(
-        sharcpcode.LANG_DIR, os.path.join(os.path.dirname(args.out_json), "lang"), compiler
+        sharcpcode.LANG_DIR,
+        os.path.join(os.path.dirname(args.out_json), "lang"),
+        compiler,
     )
     if lint["compile"]["returncode"] != 0:
         raise SystemExit("the installed slaspec does not compile: %s" % lint)

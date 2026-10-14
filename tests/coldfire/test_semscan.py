@@ -38,7 +38,8 @@ class SemscanTest(unittest.TestCase):
         # in as modelled, its poster is reachable from a modelled vector and
         # must join never_fake.
         with_pit3 = semscan.never_fake_semaphores(
-            path.read_bytes(), modeled_vectors=frozenset({PIT3_VECTOR}))
+            path.read_bytes(), modeled_vectors=frozenset({PIT3_VECTOR})
+        )
         self.assertIn(profile.display_sem, with_pit3)
         self.assertTrue({profile.bq_free_sem, profile.bq_ready_sem} <= with_pit3)
 
@@ -69,8 +70,8 @@ class SemscanTest(unittest.TestCase):
         data = DT16.read_bytes()
         vectors = semscan._find_vectors(data, symbols.LOAD_ADDR)
         self.assertEqual(len(vectors), 31)
-        self.assertEqual(len({v['handler'] for v in vectors}), 26)
+        self.assertEqual(len({v["handler"] for v in vectors}), 26)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

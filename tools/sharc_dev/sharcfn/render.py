@@ -33,21 +33,36 @@ def sign_extend(value: int, bits: int) -> int:
 # only so an occurrence still gets a manual-traceable name instead of a
 # bare number.
 COND_NAMES = {
-    0x00: "EQ", 0x10: "NE",
-    0x01: "LT", 0x11: "GE",
-    0x02: "LE", 0x12: "GT",
-    0x03: "AC", 0x13: "NOT AC",
-    0x04: "AV", 0x14: "NOT AV",
-    0x05: "MV", 0x15: "NOT MV",
-    0x06: "MS", 0x16: "NOT MS",
-    0x07: "SV", 0x17: "NOT SV",
-    0x08: "SZ", 0x18: "NOT SZ",
-    0x09: "FLAG0", 0x19: "NOT FLAG0",
-    0x0A: "FLAG1", 0x1A: "NOT FLAG1",
-    0x0B: "FLAG2", 0x1B: "NOT FLAG2",
-    0x0C: "FLAG3", 0x1C: "NOT FLAG3",
-    0x0D: "TF", 0x1D: "NOT TF",
-    0x0E: "BM/SF1", 0x1E: "NOT BM/SF1",
+    0x00: "EQ",
+    0x10: "NE",
+    0x01: "LT",
+    0x11: "GE",
+    0x02: "LE",
+    0x12: "GT",
+    0x03: "AC",
+    0x13: "NOT AC",
+    0x04: "AV",
+    0x14: "NOT AV",
+    0x05: "MV",
+    0x15: "NOT MV",
+    0x06: "MS",
+    0x16: "NOT MS",
+    0x07: "SV",
+    0x17: "NOT SV",
+    0x08: "SZ",
+    0x18: "NOT SZ",
+    0x09: "FLAG0",
+    0x19: "NOT FLAG0",
+    0x0A: "FLAG1",
+    0x1A: "NOT FLAG1",
+    0x0B: "FLAG2",
+    0x1B: "NOT FLAG2",
+    0x0C: "FLAG3",
+    0x1C: "NOT FLAG3",
+    0x0D: "TF",
+    0x1D: "NOT TF",
+    0x0E: "BM/SF1",
+    0x1E: "NOT BM/SF1",
     0x0F: "LCE",  # DO-UNTIL termination code only, not a real IF condition
     0x1F: "TRUE",
 }
@@ -266,7 +281,9 @@ def render_mem_immoff(sw, f, insn_type):
     post_modify = insn_type != "15b" and bool(f.get("u"))
     if post_modify:
         addr = "I%d" % i
-        note = (", post-modify %s %d" % ("-" if off < 0 else "+", abs(off))) if off else ""
+        note = (
+            (", post-modify %s %d" % ("-" if off < 0 else "+", abs(off))) if off else ""
+        )
     else:
         addr = _fmt_index_offset(i, off)
         note = ""

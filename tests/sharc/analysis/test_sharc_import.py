@@ -34,7 +34,9 @@ class GhidraAddressTest(unittest.TestCase):
         # Inside the L1 system-alias window: byte = 2*sw + SPACE_BASE maps
         # down to Ghidra offset 2*sw.
         self.assertEqual(I.ghidra_addr(I.SPACE_BASE), 0)
-        self.assertEqual(I.ghidra_addr(I.L1_ALIAS_LIMIT - 1), I.L1_ALIAS_LIMIT - 1 - I.SPACE_BASE)
+        self.assertEqual(
+            I.ghidra_addr(I.L1_ALIAS_LIMIT - 1), I.L1_ALIAS_LIMIT - 1 - I.SPACE_BASE
+        )
         # At and past the L1 alias window's upper bound, an address is no
         # longer an alias -- it keeps its own value.
         self.assertEqual(I.ghidra_addr(I.L1_ALIAS_LIMIT), I.L1_ALIAS_LIMIT)
@@ -69,7 +71,9 @@ class GhidraAddressTest(unittest.TestCase):
         self.assertEqual(I.loaded_bytes(data, payload, 1, 4), b"aylo")
 
         fill = {"fill": True, "argument": 0x11223344}
-        self.assertEqual(I.loaded_bytes(b"", fill, 0, 8), struct.pack("<II", 0x11223344, 0x11223344))
+        self.assertEqual(
+            I.loaded_bytes(b"", fill, 0, 8), struct.pack("<II", 0x11223344, 0x11223344)
+        )
         self.assertEqual(I.loaded_bytes(b"", fill, 3, 5), bytes.fromhex("1144332211"))
 
 

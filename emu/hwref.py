@@ -7,11 +7,10 @@ instead of duplicating address arithmetic or parsing the manual at runtime.
 
 from __future__ import annotations
 
-from functools import lru_cache
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
-
 
 CONTRACT_PATH = (
     Path(__file__).resolve().parent.parent
@@ -38,7 +37,9 @@ def _memory_range(address: int, reference: dict[str, Any]) -> dict[str, Any] | N
     return None
 
 
-def resolve_vector(vector: int, reference: dict[str, Any] | None = None) -> dict[str, Any]:
+def resolve_vector(
+    vector: int, reference: dict[str, Any] | None = None
+) -> dict[str, Any]:
     reference = reference or load_reference()
     controller = next(
         (
@@ -68,7 +69,9 @@ def resolve_vector(vector: int, reference: dict[str, Any] | None = None) -> dict
         "vector": vector,
         "controller": controller["name"],
         "source": source,
-        "icr_address": as_int(controller["base"]) + as_int(controller["icr0_offset"]) + source,
+        "icr_address": as_int(controller["base"])
+        + as_int(controller["icr0_offset"])
+        + source,
         "force_register": f"{controller['name']}.{force_name}",
         "force_address": as_int(controller["base"]) + force_offset,
         "force_bit": source & 31,
@@ -263,7 +266,9 @@ def decode_register_value(
             if value & (1 << field["bit"])
         ]
     elif resolved.get("name", "").endswith(".INTFRCH"):
-        decoded["forced_sources"] = [32 + bit for bit in range(32) if value & (1 << bit)]
+        decoded["forced_sources"] = [
+            32 + bit for bit in range(32) if value & (1 << bit)
+        ]
     elif resolved.get("name", "").endswith(".INTFRCL"):
         decoded["forced_sources"] = [bit for bit in range(32) if value & (1 << bit)]
     return decoded

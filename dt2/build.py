@@ -36,15 +36,16 @@ the content checksum and HMAC trailer, and re-encode -- reusing the source
 file's own framing messages (with a corrected message count), since this
 module cannot build new ones from scratch.
 """
+
 import struct
 
 from dt2 import aplib, aplibpack
-from dt2.container import MFR, COUNT_OFF, TABLE_OFF, ENTRY_SZ, decode_syx, sections
+from dt2.container import COUNT_OFF, ENTRY_SZ, MFR, TABLE_OFF, decode_syx, sections
 
 # The first data message's counter value; see the module docstring in
 # dt2/container.py and the format facts this was built from.
 FIRST_COUNTER = 242
-CHUNK_SIZE = 101       # decoded bytes carried by one 128-byte message
+CHUNK_SIZE = 101  # decoded bytes carried by one 128-byte message
 
 
 def encode_8in7(data):
@@ -54,7 +55,7 @@ def encode_8in7(data):
     stripped. A short final group is handled the same way as a full one."""
     out = bytearray()
     for start in range(0, len(data), 7):
-        group = data[start:start + 7]
+        group = data[start : start + 7]
         marker = 0
         for n, b in enumerate(group):
             if b & 0x80:
@@ -73,7 +74,7 @@ def content_checksum(container):
     firmwares in the repo root."""
     acc = 0
     for idx in range(1, (len(container) >> 2) + 1):
-        word, = struct.unpack_from('>I', container, (idx - 1) * 4)
+        (word,) = struct.unpack_from(">I", container, (idx - 1) * 4)
         acc = (acc + (idx ^ word)) & 0xFFFFFFFF
     return acc
 
@@ -93,25 +94,25 @@ def packet_checksum(body, k):
 
 
 PACKERS = {
-    'store': aplib.pack_section,        # every byte a literal: about 12.5% larger
-    'aplib': aplibpack.pack_section,    # compressed, about the stock size
+    "store": aplib.pack_section,  # every byte a literal: about 12.5% larger
+    "aplib": aplibpack.pack_section,  # compressed, about the stock size
 }
 
 
-def store_for_section(section_id, data, pack='store'):
+def store_for_section(section_id, data, pack="store"):
     """Decompressed section bytes -> stored bytes, applying the per-section
     storage rule dt2/container.py and emu/extract.py already document.
     `pack` picks the packer for the aPLib sections: 'store' (the default, until
     the compressor is reviewed) or 'aplib' (dt2/aplibpack.py).
     Raises on an unknown section id rather than guessing its rule."""
-    if section_id in (2, 3, 7, 8):    # 8 is 1.16 and later
+    if section_id in (2, 3, 7, 8):  # 8 is 1.16 and later
         return PACKERS[pack](data)
     if section_id == 4:
         # 8-byte header present, but byte_sum is 0 and the payload is raw.
-        return struct.pack('>II', len(data), 0) + bytes(data)
+        return struct.pack(">II", len(data), 0) + bytes(data)
     if section_id == 5:
         return bytes(data)
-    raise ValueError('no known storage rule for section id %d' % section_id)
+    raise ValueError("no known storage rule for section id %d" % section_id)
 
 
 def build_container(header, entries):
@@ -132,10 +133,10 @@ def build_container(header, entries):
     1885144+8+32 = 1885184.
     """
     if len(header) != COUNT_OFF:
-        raise ValueError('header must be exactly %d bytes' % COUNT_OFF)
+        raise ValueError("header must be exactly %d bytes" % COUNT_OFF)
     n = len(entries)
     if TABLE_OFF + n * ENTRY_SZ > 0x80:
-        raise ValueError('too many sections for the 0x80 table area')
+        raise ValueError("too many sections for the 0x80 table area")
 
     table = []
     body = bytearray()
@@ -153,9 +154,9 @@ def build_container(header, entries):
 
     out = bytearray(0x80)
     out[:COUNT_OFF] = header
-    struct.pack_into('>I', out, COUNT_OFF, n)
+    struct.pack_into(">I", out, COUNT_OFF, n)
     for i, (sid, off, clen, dest) in enumerate(table):
-        struct.pack_into('>IIII', out, TABLE_OFF + i * ENTRY_SZ, sid, off, clen, dest)
+        struct.pack_into(">IIII", out, TABLE_OFF + i * ENTRY_SZ, sid, off, clen, dest)
     out += body
     out += bytes((-len(out)) % 16)
     out += bytes(32)
@@ -196,7 +197,7 @@ def encode_syx(stream, device_id, framing_start, framing_end, checksum=None):
     transfer-type constant taken from `framing_start`; `checksum` overrides
     this only for testing.
     """
-    k = framing_start[1:-1][7]     # transfer-type const; see packet_checksum
+    k = framing_start[1:-1][7]  # transfer-type const; see packet_checksum
     if checksum is None:
         checksum = lambda body: packet_checksum(body, k)
 
@@ -208,7 +209,7 @@ def encode_syx(stream, device_id, framing_start, framing_end, checksum=None):
     out += framing_start
     counter = FIRST_COUNTER
     for start in range(0, len(stream), CHUNK_SIZE):
-        chunk = stream[start:start + CHUNK_SIZE]
+        chunk = stream[start : start + CHUNK_SIZE]
         if len(chunk) < CHUNK_SIZE:
             chunk = chunk + bytes(CHUNK_SIZE - len(chunk))  # placeholder pad; see above
         payload = encode_8in7(chunk)
@@ -233,12 +234,12 @@ def _source_framing(raw_syx):
     i = 0
     while i < len(raw_syx):
         if raw_syx[i] != 0xF0:
-            raise ValueError('expected F0 at offset %d' % i)
+            raise ValueError("expected F0 at offset %d" % i)
         j = raw_syx.index(0xF7, i)
-        messages.append(raw_syx[i:j + 1])
+        messages.append(raw_syx[i : j + 1])
         i = j + 1
     if len(messages) < 2 or len(messages[0]) != 16 or len(messages[-1]) != 16:
-        raise ValueError('source .syx is missing its 16-byte framing messages')
+        raise ValueError("source .syx is missing its 16-byte framing messages")
     return messages[0], messages[-1]
 
 
@@ -248,7 +249,9 @@ def _source_framing(raw_syx):
 FLASH_CONTAINER_MAX = 0x300000
 
 
-def rebuild(syx_path, replacements=None, checksum=None, pack='store', max_container=None):
+def rebuild(
+    syx_path, replacements=None, checksum=None, pack="store", max_container=None
+):
     """Source .syx path -> rebuilt .syx bytes.
 
     Decodes the source, takes its container header, section order and
@@ -272,29 +275,29 @@ def rebuild(syx_path, replacements=None, checksum=None, pack='store', max_contai
     per-message checksum function; the default leaves it at encode_syx's
     own default (packet_checksum()).
     """
-    from dt2.authcode import seal, DEVICE_BY_ID
+    from dt2.authcode import DEVICE_BY_ID, seal
 
     replacements = replacements or {}
 
     dec = decode_syx(syx_path)
-    off = dec.find(b'ELE3')
+    off = dec.find(b"ELE3")
     if off < 0:
-        raise ValueError('no ELE3 magic; unsupported container')
-    header = dec[off:off + COUNT_OFF]
+        raise ValueError("no ELE3 magic; unsupported container")
+    header = dec[off : off + COUNT_OFF]
 
-    with open(syx_path, 'rb') as fh:
+    with open(syx_path, "rb") as fh:
         raw_syx = fh.read()
     framing_start, framing_end = _source_framing(raw_syx)
     device_id = framing_start[1:-1][3]
     if device_id not in DEVICE_BY_ID:
-        raise ValueError('unknown device id 0x%02x' % device_id)
+        raise ValueError("unknown device id 0x%02x" % device_id)
     device = DEVICE_BY_ID[device_id]
 
     c, secs = sections(syx_path)
 
     entries = []
     for sid, s_off, clen, dest in secs:
-        raw = bytes(c[s_off:s_off + clen])
+        raw = bytes(c[s_off : s_off + clen])
         if sid in replacements:
             entries.append((sid, dest, store_for_section(sid, replacements[sid], pack)))
         else:
@@ -303,9 +306,14 @@ def rebuild(syx_path, replacements=None, checksum=None, pack='store', max_contai
     new_container = build_container(header, entries)
     new_container = seal(new_container, device)
     if max_container is not None and len(new_container) > max_container:
-        raise ValueError('container is %d bytes, over the %d-byte limit (pack=%r)'
-                         % (len(new_container), max_container, pack))
-    stream = struct.pack('>II', len(new_container), content_checksum(new_container)) + new_container
+        raise ValueError(
+            "container is %d bytes, over the %d-byte limit (pack=%r)"
+            % (len(new_container), max_container, pack)
+        )
+    stream = (
+        struct.pack(">II", len(new_container), content_checksum(new_container))
+        + new_container
+    )
 
     return encode_syx(stream, device_id, framing_start, framing_end, checksum=checksum)
 
@@ -331,34 +339,42 @@ def _self_test():
                 k += 1
         assert bytes(decoded) == data, n
 
-    header = (b'ELE3' + struct.pack('>I', 0x2b)
-              + b'0071       1.15C'[:16].ljust(16, b'\x00') + bytes(4))
+    header = (
+        b"ELE3"
+        + struct.pack(">I", 0x2B)
+        + b"0071       1.15C"[:16].ljust(16, b"\x00")
+        + bytes(4)
+    )
     entries = [
-        (5, 0x0, b'X' * 15),
-        (2, 0x2000000, b'Y' * 200),
-        (3, 0x40000400, b'Z' * 50),
+        (5, 0x0, b"X" * 15),
+        (2, 0x2000000, b"Y" * 200),
+        (3, 0x40000400, b"Z" * 50),
     ]
     cont = build_container(header, entries)
 
     framing = bytes([0xF0]) + bytes(14) + bytes([0xF7])
-    syx_bytes = encode_syx(cont, device_id=0x14, framing_start=framing, framing_end=framing)
+    syx_bytes = encode_syx(
+        cont, device_id=0x14, framing_start=framing, framing_end=framing
+    )
 
     import tempfile
+
     from dt2 import container as containermod
-    fd, path = tempfile.mkstemp(suffix='.syx')
+
+    fd, path = tempfile.mkstemp(suffix=".syx")
     os.close(fd)
     try:
-        with open(path, 'wb') as fh:
+        with open(path, "wb") as fh:
             fh.write(syx_bytes)
         c, secs = containermod.sections(path)
         assert len(secs) == len(entries)
         for (sid, off, clen, dest), (esid, edest, edata) in zip(secs, entries):
             assert (sid, clen, dest) == (esid, len(edata), edest)
-            assert c[off:off + clen] == edata
+            assert c[off : off + clen] == edata
     finally:
         os.remove(path)
 
-    print('build self_test OK')
+    print("build self_test OK")
 
 
 USAGE = """usage: uv run python -m dt2.build firmware.syx
@@ -368,12 +384,12 @@ original and new stored length. See the module docstring for what still
 remains before flashing."""
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import sys
 
     _self_test()
 
-    if len(sys.argv) < 2 or '--help' in sys.argv or '-h' in sys.argv:
+    if len(sys.argv) < 2 or "--help" in sys.argv or "-h" in sys.argv:
         print(USAGE)
         raise SystemExit(0 if len(sys.argv) < 2 else 1)
 
@@ -385,15 +401,17 @@ if __name__ == '__main__':
 
     import os
     import tempfile
+
     from dt2 import container as containermod
-    fd, tmp_path = tempfile.mkstemp(suffix='.syx')
+
+    fd, tmp_path = tempfile.mkstemp(suffix=".syx")
     os.close(fd)
-    with open(tmp_path, 'wb') as fh:
+    with open(tmp_path, "wb") as fh:
         fh.write(new_bytes)
     try:
         _, new_secs = containermod.sections(tmp_path)
-        print('%-6s %14s %14s' % ('id', 'orig stored', 'new stored'))
+        print("%-6s %14s %14s" % ("id", "orig stored", "new stored"))
         for sid, off, clen, dest in new_secs:
-            print('%-6d %14d %14d' % (sid, orig_lens.get(sid, -1), clen))
+            print("%-6d %14d %14d" % (sid, orig_lens.get(sid, -1), clen))
     finally:
         os.remove(tmp_path)

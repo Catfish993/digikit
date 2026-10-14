@@ -30,6 +30,7 @@ of the main program - which is what "entry point" should mean here, and
 was cross-checked against both dt2 and dn2 before relying on it. This
 script therefore uses the corrected formula throughout; see BASE below.
 """
+
 import os
 import re
 import struct
@@ -41,7 +42,9 @@ from tools.sharc_dev.sharcspec.sharc_decode import Decoder, linear  # noqa: E402
 
 # Program regions are not committed (they are firmware bytes); put them in
 # the repo's git-ignored out/sharcspec/ with the file names below.
-OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(SPEC_DIR))), "out", "sharcspec")
+OUT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(SPEC_DIR))), "out", "sharcspec"
+)
 
 # BW = 2*SW + BASE (L1 alias base). See module docstring.
 BASE = 0x28000000
@@ -209,7 +212,11 @@ def recursive_trace(mem, start, dec, region_load):
             if form["name"].startswith(BRANCH_PREFIXES):
                 fields = dec.fields(frame, form)
                 target = branch_target_offset(form, fields, region_load, pos)
-                if target is not None and 0 <= target < len(mem) and target not in queued:
+                if (
+                    target is not None
+                    and 0 <= target < len(mem)
+                    and target not in queued
+                ):
                     queued.add(target)
                     work.append(target)
                 if is_unconditional(form, fields):
@@ -221,7 +228,11 @@ def recursive_trace(mem, start, dec, region_load):
 
 
 def _words_at(mem, addr):
-    return [struct.unpack_from("<H", mem, addr + 2 * i)[0] for i in range(3) if addr + 2 * i + 2 <= len(mem)]
+    return [
+        struct.unpack_from("<H", mem, addr + 2 * i)[0]
+        for i in range(3)
+        if addr + 2 * i + 2 <= len(mem)
+    ]
 
 
 def _pack_frame(words):
@@ -236,7 +247,9 @@ def fmt_fields(fields):
 
 
 def print_first_n(entries, region_load, dec, n=60):
-    print(f"\nFirst {n} instructions of the linear sweep (SW addr, hex words, form, fields):")
+    print(
+        f"\nFirst {n} instructions of the linear sweep (SW addr, hex words, form, fields):"
+    )
     for pos, nwords, form, cands, frame in entries[:n]:
         sw = instr_sw(region_load, pos)
         raw = _words_at_from_frame(frame, nwords)
@@ -258,8 +271,12 @@ def run_core(name, cfg, dec, print_first=False):
     offset = entry_bw - region_load
 
     print(f"\n{'=' * 70}\n{name}: {os.path.basename(cfg['region'])}\n{'=' * 70}")
-    print(f"region load addr (BW) = {region_load:#010x}, region size = {len(mem)} bytes")
-    print(f"entry SW = {cfg['entry_sw']:#08x} -> entry BW = {entry_bw:#010x} -> region offset = {offset:#x} ({offset})")
+    print(
+        f"region load addr (BW) = {region_load:#010x}, region size = {len(mem)} bytes"
+    )
+    print(
+        f"entry SW = {cfg['entry_sw']:#08x} -> entry BW = {entry_bw:#010x} -> region offset = {offset:#x} ({offset})"
+    )
     if not (0 <= offset < len(mem)):
         print("  !! entry offset falls outside the region; skipping.")
         return
@@ -270,7 +287,9 @@ def run_core(name, cfg, dec, print_first=False):
     print(f"\n-- Linear sweep from entry to end of region --")
     print(f"total instructions decoded: {stats['total']}")
     pct = lambda x: 100.0 * x / stats["total"] if stats["total"] else 0.0
-    print(f"unknown (form=None):        {stats['unknown']} ({pct(stats['unknown']):.2f}%)")
+    print(
+        f"unknown (form=None):        {stats['unknown']} ({pct(stats['unknown']):.2f}%)"
+    )
     print(f"  - ambiguous (candidates>0): {stats['ambiguous']}")
     print(f"  - no match (candidates=0):  {stats['no_match']}")
     print("form histogram:")
@@ -286,8 +305,12 @@ def run_core(name, cfg, dec, print_first=False):
     span = len(mem) - offset  # entry..end-of-region span
     print(f"\n-- Recursive control-flow trace from entry --")
     print(f"paths (work-queue items) run: {paths_run}")
-    print(f"bytes reached: {reached_bytes} / region size {len(mem)} ({100.0 * reached_bytes / len(mem):.2f}%)")
-    print(f"             : {reached_bytes} / entry->end span {span} ({100.0 * reached_bytes / span:.2f}%)")
+    print(
+        f"bytes reached: {reached_bytes} / region size {len(mem)} ({100.0 * reached_bytes / len(mem):.2f}%)"
+    )
+    print(
+        f"             : {reached_bytes} / entry->end span {span} ({100.0 * reached_bytes / span:.2f}%)"
+    )
     print(f"distinct decode errors hit while tracing: {len(decode_errors)}")
     if decode_errors:
         shown = sorted(decode_errors)[:10]

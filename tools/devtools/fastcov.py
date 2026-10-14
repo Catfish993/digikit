@@ -58,8 +58,7 @@ import subprocess
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 from tools.devtools import benchlock
-from tools.emulator import coupled
-from tools.emulator import digi_env
+from tools.emulator import coupled, digi_env
 
 OUT_DIR = ROOT / "out" / "native" / "fastcov"
 DB_DIR = ROOT / "out" / "sharcdb"
@@ -413,7 +412,9 @@ def main() -> int:
         help="timed runs share the lock (coverage runs)",
     )
     ap.add_argument(
-        "--out", default=None, help="output directory (default out/runs/fastcov/<stamp>/)"
+        "--out",
+        default=None,
+        help="output directory (default out/runs/fastcov/<stamp>/)",
     )
     args = ap.parse_args()
     global NO_LOCK

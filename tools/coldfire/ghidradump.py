@@ -446,7 +446,7 @@ def decompile(program, stems, entries, decomp_dir, threads, timeout):
 
     Writes decomp/<stem>.c; -> {entry: error} for those that did not complete.
     """
-    from ghidra.app.decompiler import DecompInterface, DecompileOptions
+    from ghidra.app.decompiler import DecompileOptions, DecompInterface
     fm = program.getFunctionManager()
     space = program.getAddressFactory().getDefaultAddressSpace()
     local, opened, lock = threading.local(), [], threading.Lock()

@@ -1,15 +1,16 @@
 """Static snapshot producers shared by discovery and AnalysisIndex."""
+
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Mapping, Sequence
 
-from tools.sharc_dev import sharcldr
-from tools.sharc_dev import sharcfn
-from tools.sharc_dev import sharcinv
-from tools.sharc_dev import sharcwriters
+from tools.sharc_dev import sharcfn, sharcinv, sharcldr, sharcwriters
 
-def _owner_indexes(functions: Sequence[Mapping[str, Any]]) -> dict[int, list[Mapping[str, Any]]]:
+
+def _owner_indexes(
+    functions: Sequence[Mapping[str, Any]],
+) -> dict[int, list[Mapping[str, Any]]]:
     result: dict[int, list[Mapping[str, Any]]] = defaultdict(list)
     for function in functions:
         result[function["block"]].append(function)
@@ -17,19 +18,19 @@ def _owner_indexes(functions: Sequence[Mapping[str, Any]]) -> dict[int, list[Map
         items.sort(key=lambda item: (item["entry"], item["exit"], item["id"]))
     return result
 
+
 def _owner_of(
     owners: Mapping[int, Sequence[Mapping[str, Any]]], block: int, pc_sw: int
 ) -> str | None:
     matches = [
-        item
-        for item in owners.get(block, ())
-        if item["entry"] <= pc_sw < item["exit"]
+        item for item in owners.get(block, ()) if item["entry"] <= pc_sw < item["exit"]
     ]
     if not matches:
         return None
     return min(matches, key=lambda item: (item["exit"] - item["entry"], item["entry"]))[
         "id"
     ]
+
 
 def build_static_context(ctx: Mapping[str, Any]) -> dict[str, Any]:
     """Return stable instruction, literal and indirect-transfer indexes."""
@@ -99,6 +100,7 @@ def build_static_context(ctx: Mapping[str, Any]) -> dict[str, Any]:
         "indirect_sites": sorted(indirect_sites, key=lambda item: item["pc_sw"]),
     }
 
+
 def find_pointer_runs(
     ctx: Mapping[str, Any],
     instructions: Mapping[int, Mapping[str, Any]],
@@ -157,7 +159,10 @@ def find_pointer_runs(
     runs = []
     current = []
     for hit in hits:
-        if current and hit["source_byte_address"] != current[-1]["source_byte_address"] + 4:
+        if (
+            current
+            and hit["source_byte_address"] != current[-1]["source_byte_address"] + 4
+        ):
             if len(current) >= minimum_run:
                 runs.append(current)
             current = []
@@ -184,7 +189,10 @@ def find_pointer_runs(
     result.sort(key=lambda item: (-item["entry_count"], item["source_byte_address"]))
     return result, len(hits)
 
-def build_snapshot(blob_path: str, code_blocks: Sequence[int], min_depth: int) -> Mapping[str, Any]:
+
+def build_snapshot(
+    blob_path: str, code_blocks: Sequence[int], min_depth: int
+) -> Mapping[str, Any]:
     """Build the immutable snapshot payload from loader-final semantic facts."""
     ctx = sharcfn.load_context(blob_path, code_blocks, min_depth)
     if not ctx["mem"].has_final_marker():
@@ -192,19 +200,34 @@ def build_snapshot(blob_path: str, code_blocks: Sequence[int], min_depth: int) -
     static = build_static_context(ctx)
     tables, pointer_hits = find_pointer_runs(ctx, static["instructions"], code_blocks)
     census, orphan = sharcwriters.full_project_census(ctx)
-    memory_sites = [{"function_id": fn_id, **row}
-                    for fn_id, rows in census.items() for row in rows if row["is_dm"]]
+    memory_sites = [
+        {"function_id": fn_id, **row}
+        for fn_id, rows in census.items()
+        for row in rows
+        if row["is_dm"]
+    ]
     memory_sites.extend({"function_id": None, **row} for row in orphan if row["is_dm"])
     inventory = sorted(ctx["functions"], key=lambda fn: (fn["block"], fn["entry"]))
     engine_candidates = sharcfn.engine_candidates(inventory)
-    return {"functions": _compact_functions(ctx["functions"]),
-            "function_inventory": inventory,
-            "engine_target_opcode_coverage": sharcfn.target_opcode_coverage(ctx, engine_candidates),
-            "instructions": [{"pc_sw": pc, **record} for pc, record in sorted(static["instructions"].items())],
-            "instruction_pcs": sorted(static["instructions"]), "literals": static["literals"],
-            "indirect_sites": static["indirect_sites"], "pointer_runs": tables,
-            "pointer_hits": pointer_hits,
-            "memory_sites": sorted(memory_sites, key=lambda item: (item["pc"], item.get("function_id") or ""))}
+    return {
+        "functions": _compact_functions(ctx["functions"]),
+        "function_inventory": inventory,
+        "engine_target_opcode_coverage": sharcfn.target_opcode_coverage(
+            ctx, engine_candidates
+        ),
+        "instructions": [
+            {"pc_sw": pc, **record}
+            for pc, record in sorted(static["instructions"].items())
+        ],
+        "instruction_pcs": sorted(static["instructions"]),
+        "literals": static["literals"],
+        "indirect_sites": static["indirect_sites"],
+        "pointer_runs": tables,
+        "pointer_hits": pointer_hits,
+        "memory_sites": sorted(
+            memory_sites, key=lambda item: (item["pc"], item.get("function_id") or "")
+        ),
+    }
 
 
 def _compact_functions(functions: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

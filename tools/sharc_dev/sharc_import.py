@@ -36,8 +36,8 @@ import os
 import sys
 
 _here = os.path.dirname(os.path.abspath(__file__))
-from tools.sharc_dev import sharcldr as L                                              # noqa: E402
-from tools.sharc_dev import sharcscan as S                                             # noqa: E402
+from tools.sharc_dev import sharcldr as L  # noqa: E402
+from tools.sharc_dev import sharcscan as S  # noqa: E402
 
 LANGUAGE_ID = 'SHARC_VISA:LE:32:default'
 SPACE_BASE = 0x28000000          # byte_address - this == ghidra byte offset, L1 alias only
@@ -147,14 +147,14 @@ def main(argv):
     pyghidra.start(verbose=False)
 
     from ghidra.base.project import GhidraProject
+    from ghidra.program.database import ProgramDB
     from ghidra.program.model.lang import LanguageID
+    from ghidra.program.model.symbol import SourceType
     from ghidra.program.util import DefaultLanguageService
     from ghidra.util.task import TaskMonitor
     from java.io import ByteArrayInputStream
     from java.lang import Object as JObject
-    from ghidra.program.database import ProgramDB
     from jpype import JArray, JByte
-    from ghidra.program.model.symbol import SourceType
 
     lang = DefaultLanguageService.getLanguageService().getLanguage(LanguageID(LANGUAGE_ID))
     if os.path.exists(os.path.join(args.project, args.project_name + '.gpr')):

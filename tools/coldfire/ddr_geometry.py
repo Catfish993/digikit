@@ -40,6 +40,7 @@ Reproduce the disassembly by hand:
 Verified identical (byte-for-byte, same file offsets 0x2f2-0x4fc) in both
 Digitakt II 1.15C's and Digitone II 1.10E's bootstraps.
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -75,19 +76,19 @@ def decode_cr_writes(image):
     writes = {}
     for pc, raw, mnemonic, operands in disasm(image, LOAD_ADDRESS, START, END):
         b = bytes.fromhex(raw)
-        if raw.startswith("203c") and len(raw) == 12:      # move.l #imm,d0
+        if raw.startswith("203c") and len(raw) == 12:  # move.l #imm,d0
             d0 = int.from_bytes(b[2:6], "big")
         elif len(raw) == 4 and b[0] == 0x70:
-            d0 = b[1]                                        # moveq #imm,d0 (d0 only)
+            d0 = b[1]  # moveq #imm,d0 (d0 only)
         elif raw == "4200":
-            d0 &= ~0xFF                                      # clr.b d0
+            d0 &= ~0xFF  # clr.b d0
         elif raw == "4240":
-            d0 &= ~0xFFFF                                    # clr.w d0
-        elif raw.startswith("303c") and len(raw) == 8:       # move.w #imm,d0
+            d0 &= ~0xFFFF  # clr.w d0
+        elif raw.startswith("303c") and len(raw) == 8:  # move.w #imm,d0
             d0 = (d0 & 0xFFFF0000) | int.from_bytes(b[2:4], "big")
-        elif raw.startswith("23c0") and len(raw) == 12:       # move.l d0,(abs).L
+        elif raw.startswith("23c0") and len(raw) == 12:  # move.l d0,(abs).L
             writes[int(b[2:6].hex(), 16)] = d0
-        elif raw.startswith("42b9") and len(raw) == 12:       # clr.l (abs).L
+        elif raw.startswith("42b9") and len(raw) == 12:  # clr.l (abs).L
             writes[int(b[2:6].hex(), 16)] = 0
         # every other instruction in range (jsr/rts/branches/other regs) is
         # scaffolding around the init block (mutex, PPM writes, etc) -- ignored.
@@ -99,9 +100,11 @@ def geometry(image, *, expect=None):
     expect = EXPECTED if expect is None else expect
     missing = [hex(a) for a in expect if a not in writes]
     if missing:
-        raise ValueError("DDRMC contract mismatch: no write seen to %s in "
-                          "0x%x-0x%x -- bootstrap sequence has changed, "
-                          "re-derive by hand" % (missing, START, END))
+        raise ValueError(
+            "DDRMC contract mismatch: no write seen to %s in "
+            "0x%x-0x%x -- bootstrap sequence has changed, "
+            "re-derive by hand" % (missing, START, END)
+        )
     mismatched = {a: (expect[a], writes[a]) for a in expect if writes[a] != expect[a]}
     cr04, cr15, cr16 = writes[DDR_CR04], writes[DDR_CR15], writes[DDR_CR16]
     banks = 8 if (cr04 >> 8) & 1 else 4
@@ -112,29 +115,45 @@ def geometry(image, *, expect=None):
     size_bytes = CHIP_SELECTS * (2 ** (rows + cols)) * banks * DATAPATH_BYTES
     return {
         "registers": {
-            "DDR_CR04": "0x%08x" % cr04, "DDR_CR15": "0x%08x" % cr15,
+            "DDR_CR04": "0x%08x" % cr04,
+            "DDR_CR15": "0x%08x" % cr15,
             "DDR_CR16": "0x%08x" % cr16,
         },
         "fields": {"8BNK": banks == 8, "ADDPINS": addpins, "COLSIZ": colsiz},
-        "geometry": {"rows": rows, "columns": cols, "banks": banks,
-                     "chip_selects": CHIP_SELECTS, "datapath_bytes": DATAPATH_BYTES},
+        "geometry": {
+            "rows": rows,
+            "columns": cols,
+            "banks": banks,
+            "chip_selects": CHIP_SELECTS,
+            "datapath_bytes": DATAPATH_BYTES,
+        },
         "size_bytes": size_bytes,
         "size_mib": size_bytes / (1024 * 1024),
         "known_value_match": not mismatched,
-        "mismatches": {"0x%x" % a: {"expected": "0x%x" % e, "found": "0x%x" % f}
-                        for a, (e, f) in mismatched.items()},
+        "mismatches": {
+            "0x%x" % a: {"expected": "0x%x" % e, "found": "0x%x" % f}
+            for a, (e, f) in mismatched.items()
+        },
     }
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("bootstrap", nargs="?", default="sections/section_2_DSP.bin",
-                   help="decompressed bootstrap image (section 2 body)")
-    p.add_argument("--allow-unknown-values", action="store_true",
-                   help="compute geometry even if the CR values differ from "
-                        "the two reviewed firmwares (still requires the same "
-                        "instruction shapes)")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "bootstrap",
+        nargs="?",
+        default="sections/section_2_DSP.bin",
+        help="decompressed bootstrap image (section 2 body)",
+    )
+    p.add_argument(
+        "--allow-unknown-values",
+        action="store_true",
+        help="compute geometry even if the CR values differ from "
+        "the two reviewed firmwares (still requires the same "
+        "instruction shapes)",
+    )
     args = p.parse_args(argv)
     image = Path(args.bootstrap).read_bytes()
     result = geometry(image, expect={} if args.allow_unknown_values else None)
@@ -142,13 +161,19 @@ def main(argv=None):
         print("%-9s = %s" % (k, v))
     print("fields    : %s" % result["fields"])
     g = result["geometry"]
-    print("geometry  : %d row + %d col bits, %d banks, %d chip select(s), "
-          "%d-byte datapath" % (g["rows"], g["columns"], g["banks"],
-                                  g["chip_selects"], g["datapath_bytes"]))
-    print("DDR size  : %d bytes (%.0f MiB)" % (result["size_bytes"], result["size_mib"]))
+    print(
+        "geometry  : %d row + %d col bits, %d banks, %d chip select(s), "
+        "%d-byte datapath"
+        % (g["rows"], g["columns"], g["banks"], g["chip_selects"], g["datapath_bytes"])
+    )
+    print(
+        "DDR size  : %d bytes (%.0f MiB)" % (result["size_bytes"], result["size_mib"])
+    )
     if not result["known_value_match"]:
-        print("NOTE: register values differ from the two reviewed firmwares:",
-              result["mismatches"])
+        print(
+            "NOTE: register values differ from the two reviewed firmwares:",
+            result["mismatches"],
+        )
     return 0
 
 

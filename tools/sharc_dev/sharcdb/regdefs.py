@@ -14,6 +14,7 @@ from tools.sharc_dev import sharcfn, sharcinv
 # an 'unknown' tag instead of a guessed def/use, per instruction, so the
 # build report can count them per form.
 
+
 def _compute_regdef_reguse(field23):
     """Register defs/uses for a 23-bit parallel compute field (1a/2a/
     2a_short/2b/3a/4a/5a_move/5a_swap/7a/9a_abs/9a_rel/11a). -> (defs:
@@ -163,8 +164,11 @@ def _mem_regdef_reguse(t, f):
 
     space, direction = sharcfn._space_dir(f)
     dreg, ureg = f.get("dreg"), f.get("ureg")
-    reg = "R%d" % dreg if dreg is not None else \
-        (sharcfn.ureg_name(ureg) if ureg is not None else None)
+    reg = (
+        "R%d" % dreg
+        if dreg is not None
+        else (sharcfn.ureg_name(ureg) if ureg is not None else None)
+    )
     if t in sharcfn.INDEXED_MEM_FORMS:
         uses += ["I%d" % f.get("i", 0), "M%d" % f.get("m", 0)]
     elif t in sharcfn.IMMOFF_MEM_FORMS:
@@ -226,8 +230,12 @@ def register_effects(insn_type: str, f: dict):
             defs += d2
             uses += u2
 
-    if t in sharcfn.DIRECT_MEM_FORMS or t in sharcfn.INDEXED_MEM_FORMS or \
-            t in sharcfn.IMMOFF_MEM_FORMS or t == "3c":
+    if (
+        t in sharcfn.DIRECT_MEM_FORMS
+        or t in sharcfn.INDEXED_MEM_FORMS
+        or t in sharcfn.IMMOFF_MEM_FORMS
+        or t == "3c"
+    ):
         d2, u2 = _mem_regdef_reguse(t, f)
         defs += d2
         uses += u2

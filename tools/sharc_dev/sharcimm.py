@@ -45,7 +45,6 @@ import json
 import struct
 import sys
 
-
 from tools.sharc_dev import sharc_disasm  # noqa: E402
 from tools.sharc_dev.sharc_disasm import disassemble  # noqa: E402
 
@@ -61,32 +60,87 @@ CORE_MMR_REGS = {
 }
 
 SPI_REGS = {
-    0x04: "CTL", 0x08: "RXCTL", 0x0C: "TXCTL", 0x10: "CLK", 0x14: "DLY",
-    0x18: "SLVSEL", 0x1C: "RWC", 0x20: "RWCR", 0x24: "TWC", 0x28: "TWCR",
-    0x30: "IMSK", 0x34: "IMSK_CLR", 0x38: "IMSK_SET", 0x40: "STAT",
-    0x44: "ILAT", 0x48: "ILAT_CLR", 0x50: "RFIFO", 0x58: "TFIFO",
-    0x60: "MMRDH", 0x64: "MMTOP",
+    0x04: "CTL",
+    0x08: "RXCTL",
+    0x0C: "TXCTL",
+    0x10: "CLK",
+    0x14: "DLY",
+    0x18: "SLVSEL",
+    0x1C: "RWC",
+    0x20: "RWCR",
+    0x24: "TWC",
+    0x28: "TWCR",
+    0x30: "IMSK",
+    0x34: "IMSK_CLR",
+    0x38: "IMSK_SET",
+    0x40: "STAT",
+    0x44: "ILAT",
+    0x48: "ILAT_CLR",
+    0x50: "RFIFO",
+    0x58: "TFIFO",
+    0x60: "MMRDH",
+    0x64: "MMTOP",
 }
 
 DMA_REGS = {
-    0x00: "DSCPTR_NXT", 0x04: "ADDRSTART", 0x08: "CFG", 0x0C: "XCNT",
-    0x10: "XMOD", 0x14: "YCNT", 0x18: "YMOD", 0x24: "DSCPTR_CUR",
-    0x28: "DSCPTR_PRV", 0x2C: "ADDR_CUR", 0x30: "STAT", 0x34: "XCNT_CUR",
-    0x38: "YCNT_CUR", 0x40: "BWLCNT", 0x44: "BWLCNT_CUR", 0x48: "BWMCNT",
+    0x00: "DSCPTR_NXT",
+    0x04: "ADDRSTART",
+    0x08: "CFG",
+    0x0C: "XCNT",
+    0x10: "XMOD",
+    0x14: "YCNT",
+    0x18: "YMOD",
+    0x24: "DSCPTR_CUR",
+    0x28: "DSCPTR_PRV",
+    0x2C: "ADDR_CUR",
+    0x30: "STAT",
+    0x34: "XCNT_CUR",
+    0x38: "YCNT_CUR",
+    0x40: "BWLCNT",
+    0x44: "BWLCNT_CUR",
+    0x48: "BWMCNT",
     0x4C: "BWMCNT_CUR",
 }
 
 # Offsets inside the DAI0 page 0x310C9000; DAI1 repeats them at 0x310CA000.
 DAI_REGS = {
-    0x0C0: "CLK0", 0x0C4: "CLK1", 0x0C8: "CLK2", 0x0CC: "CLK3", 0x0D0: "CLK4",
-    0x0D4: "CLK5", 0x100: "DAT0", 0x104: "DAT1", 0x108: "DAT2", 0x10C: "DAT3",
-    0x110: "DAT4", 0x114: "DAT5", 0x118: "DAT6", 0x140: "FS0", 0x144: "FS1",
-    0x148: "FS2", 0x150: "FS4", 0x180: "PIN0", 0x184: "PIN1", 0x188: "PIN2",
-    0x190: "PIN4", 0x1C0: "MISC0", 0x1C4: "MISC1", 0x1E0: "PBEN0",
-    0x1E4: "PBEN1", 0x1E8: "PBEN2", 0x1EC: "PBEN3", 0x200: "IMSK_FE",
-    0x204: "IMSK_RE", 0x210: "IMSK_PRI", 0x220: "IRPTL_H", 0x224: "IRPTL_L",
-    0x230: "IRPTL_HS", 0x234: "IRPTL_LS", 0x2E4: "PIN_STAT",
-    0x2E8: "GBL_SP_EN", 0x2EC: "GBL_INT_EN",
+    0x0C0: "CLK0",
+    0x0C4: "CLK1",
+    0x0C8: "CLK2",
+    0x0CC: "CLK3",
+    0x0D0: "CLK4",
+    0x0D4: "CLK5",
+    0x100: "DAT0",
+    0x104: "DAT1",
+    0x108: "DAT2",
+    0x10C: "DAT3",
+    0x110: "DAT4",
+    0x114: "DAT5",
+    0x118: "DAT6",
+    0x140: "FS0",
+    0x144: "FS1",
+    0x148: "FS2",
+    0x150: "FS4",
+    0x180: "PIN0",
+    0x184: "PIN1",
+    0x188: "PIN2",
+    0x190: "PIN4",
+    0x1C0: "MISC0",
+    0x1C4: "MISC1",
+    0x1E0: "PBEN0",
+    0x1E4: "PBEN1",
+    0x1E8: "PBEN2",
+    0x1EC: "PBEN3",
+    0x200: "IMSK_FE",
+    0x204: "IMSK_RE",
+    0x210: "IMSK_PRI",
+    0x220: "IRPTL_H",
+    0x224: "IRPTL_L",
+    0x230: "IRPTL_HS",
+    0x234: "IRPTL_LS",
+    0x2E4: "PIN_STAT",
+    0x2E8: "GBL_SP_EN",
+    0x2EC: "GBL_INT_EN",
 }
 
 ASRC_REGS = {0x00: "CTL01", 0x04: "CTL23", 0x08: "MUTE", 0x20: "RAT01", 0x24: "RAT23"}
@@ -94,33 +148,60 @@ ASRC_REGS = {0x00: "CTL01", 0x04: "CTL23", 0x08: "MUTE", 0x20: "RAT01", 0x24: "R
 # Offsets inside the PCG0 blocks at 0x310C9300 (channels A, B) and
 # 0x310CA300 (channels C, D).
 PCG_REGS = {
-    0x310C9300: "CTLA0", 0x310C9304: "CTLA1", 0x310C9308: "CTLB0",
-    0x310C930C: "CTLB1", 0x310C9310: "PW1", 0x310C9314: "SYNC1",
-    0x310CA300: "CTLC0", 0x310CA304: "CTLC1", 0x310CA308: "CTLD0",
-    0x310CA30C: "CTLD1", 0x310CA310: "PW2", 0x310CA314: "SYNC2",
+    0x310C9300: "CTLA0",
+    0x310C9304: "CTLA1",
+    0x310C9308: "CTLB0",
+    0x310C930C: "CTLB1",
+    0x310C9310: "PW1",
+    0x310C9314: "SYNC1",
+    0x310CA300: "CTLC0",
+    0x310CA304: "CTLC1",
+    0x310CA308: "CTLD0",
+    0x310CA30C: "CTLD1",
+    0x310CA310: "PW2",
+    0x310CA314: "SYNC2",
 }
 
 # DMA channel -> (base, peripheral it serves), Table 27-2.
 DMA_CHANNELS = {
-    0: (0x31022000, "SPORT0A"), 1: (0x31022080, "SPORT0B"),
-    2: (0x31022100, "SPORT1A"), 3: (0x31022180, "SPORT1B"),
-    4: (0x31022200, "SPORT2A"), 5: (0x31022280, "SPORT2B"),
-    6: (0x31022300, "SPORT3A"), 7: (0x31022380, "SPORT3B"),
-    8: (0x310A7000, "MDMA0 src"), 9: (0x310A7080, "MDMA0 dst"),
-    10: (0x31023000, "SPORT4A"), 11: (0x31023080, "SPORT4B"),
-    12: (0x31023100, "SPORT5A"), 13: (0x31023180, "SPORT5B"),
-    14: (0x31023200, "SPORT6A"), 15: (0x31023280, "SPORT6B"),
-    16: (0x31023300, "SPORT7A"), 17: (0x31023380, "SPORT7B"),
-    18: (0x310A7100, "MDMA1 src"), 19: (0x310A7180, "MDMA1 dst"),
-    20: (0x31026080, "UART0 TX"), 21: (0x31026000, "UART0 RX"),
-    22: (0x3102D000, "SPI0 TX"), 23: (0x3102D080, "SPI0 RX"),
-    24: (0x3102D100, "SPI1 TX"), 25: (0x3102D180, "SPI1 RX"),
-    26: (0x3102D200, "SPI2 TX"), 27: (0x3102D280, "SPI2 RX"),
-    30: (0x30FFF000, "LP0"), 34: (0x31026180, "UART1 TX"),
-    35: (0x31026100, "UART1 RX"), 36: (0x30FFF080, "LP1"),
-    37: (0x31026280, "UART2 TX"), 38: (0x31026200, "UART2 RX"),
-    39: (0x3109A000, "MDMA2 src"), 40: (0x3109A080, "MDMA2 dst"),
-    43: (0x3109B000, "MDMA3 src"), 44: (0x3109B080, "MDMA3 dst"),
+    0: (0x31022000, "SPORT0A"),
+    1: (0x31022080, "SPORT0B"),
+    2: (0x31022100, "SPORT1A"),
+    3: (0x31022180, "SPORT1B"),
+    4: (0x31022200, "SPORT2A"),
+    5: (0x31022280, "SPORT2B"),
+    6: (0x31022300, "SPORT3A"),
+    7: (0x31022380, "SPORT3B"),
+    8: (0x310A7000, "MDMA0 src"),
+    9: (0x310A7080, "MDMA0 dst"),
+    10: (0x31023000, "SPORT4A"),
+    11: (0x31023080, "SPORT4B"),
+    12: (0x31023100, "SPORT5A"),
+    13: (0x31023180, "SPORT5B"),
+    14: (0x31023200, "SPORT6A"),
+    15: (0x31023280, "SPORT6B"),
+    16: (0x31023300, "SPORT7A"),
+    17: (0x31023380, "SPORT7B"),
+    18: (0x310A7100, "MDMA1 src"),
+    19: (0x310A7180, "MDMA1 dst"),
+    20: (0x31026080, "UART0 TX"),
+    21: (0x31026000, "UART0 RX"),
+    22: (0x3102D000, "SPI0 TX"),
+    23: (0x3102D080, "SPI0 RX"),
+    24: (0x3102D100, "SPI1 TX"),
+    25: (0x3102D180, "SPI1 RX"),
+    26: (0x3102D200, "SPI2 TX"),
+    27: (0x3102D280, "SPI2 RX"),
+    30: (0x30FFF000, "LP0"),
+    34: (0x31026180, "UART1 TX"),
+    35: (0x31026100, "UART1 RX"),
+    36: (0x30FFF080, "LP1"),
+    37: (0x31026280, "UART2 TX"),
+    38: (0x31026200, "UART2 RX"),
+    39: (0x3109A000, "MDMA2 src"),
+    40: (0x3109A080, "MDMA2 dst"),
+    43: (0x3109B000, "MDMA3 src"),
+    44: (0x3109B080, "MDMA3 dst"),
 }
 
 
@@ -131,27 +212,43 @@ def _blocks():
         base = 0x31002000 + 0x100 * n
         blocks.append((base, 0x80, f"SPORT{n}A", None))
         blocks.append((base + 0x80, 0x80, f"SPORT{n}B", None))
-    for n, base in enumerate((0x31001400, 0x31001500, 0x31001600, 0x31001000, 0x31001100, 0x31001200)):
+    for n, base in enumerate(
+        (0x31001400, 0x31001500, 0x31001600, 0x31001000, 0x31001100, 0x31001200)
+    ):
         blocks.append((base, 0x100, f"TWI{n}", None))
     for n, base in enumerate((0x31003000, 0x31003400, 0x31003800)):
         blocks.append((base, 0x400, f"UART{n}", None))
     blocks += [
-        (0x31004000, 0x80, "PORTA", None), (0x31004080, 0x80, "PORTB", None),
-        (0x31004100, 0x80, "PORTC", None), (0x31004400, 0x100, "PADS0", None),
-        (0x31005000, 0x100, "PINT0", None), (0x31005100, 0x100, "PINT1", None),
-        (0x31005200, 0x100, "PINT2", None), (0x31008000, 0x800, "WDOG0", None),
-        (0x31008800, 0x800, "WDOG1", None), (0x3100B000, 0x1000, "CNT0", None),
-        (0x31016000, 0x1000, "HADC0", None), (0x31018000, 0x1000, "TIMER0", None),
+        (0x31004000, 0x80, "PORTA", None),
+        (0x31004080, 0x80, "PORTB", None),
+        (0x31004100, 0x80, "PORTC", None),
+        (0x31004400, 0x100, "PADS0", None),
+        (0x31005000, 0x100, "PINT0", None),
+        (0x31005100, 0x100, "PINT1", None),
+        (0x31005200, 0x100, "PINT2", None),
+        (0x31008000, 0x800, "WDOG0", None),
+        (0x31008800, 0x800, "WDOG1", None),
+        (0x3100B000, 0x1000, "CNT0", None),
+        (0x31016000, 0x1000, "HADC0", None),
+        (0x31018000, 0x1000, "TIMER0", None),
         (0x31027000, 0x1000, "OSPI0", None),
-        (0x3102E000, 0x1000, "SPI0", SPI_REGS), (0x3102F000, 0x1000, "SPI1", SPI_REGS),
+        (0x3102E000, 0x1000, "SPI0", SPI_REGS),
+        (0x3102F000, 0x1000, "SPI1", SPI_REGS),
         (0x31030000, 0x1000, "SPI2", SPI_REGS),
-        (0x31070000, 0x1000, "DMC0", None), (0x31071000, 0x1000, "DMC0 PHY", None),
-        (0x31080000, 0x1000, "L2CTL0", None), (0x31089000, 0x1000, "SEC0", None),
-        (0x3108B000, 0x1000, "SPU0", None), (0x3108C000, 0x1000, "RCU0", None),
-        (0x3108D000, 0x1000, "CGU0", None), (0x3108E000, 0x1000, "CGU1", None),
-        (0x3108F000, 0x1000, "CDU0", None), (0x3109D000, 0x1000, "MLB0", None),
-        (0x310A5000, 0x1000, "CRC0", None), (0x310A6000, 0x1000, "CRC1", None),
-        (0x30FFE000, 0x100, "LP0", None), (0x30FFE100, 0x100, "LP1", None),
+        (0x31070000, 0x1000, "DMC0", None),
+        (0x31071000, 0x1000, "DMC0 PHY", None),
+        (0x31080000, 0x1000, "L2CTL0", None),
+        (0x31089000, 0x1000, "SEC0", None),
+        (0x3108B000, 0x1000, "SPU0", None),
+        (0x3108C000, 0x1000, "RCU0", None),
+        (0x3108D000, 0x1000, "CGU0", None),
+        (0x3108E000, 0x1000, "CGU1", None),
+        (0x3108F000, 0x1000, "CDU0", None),
+        (0x3109D000, 0x1000, "MLB0", None),
+        (0x310A5000, 0x1000, "CRC0", None),
+        (0x310A6000, 0x1000, "CRC1", None),
+        (0x30FFE000, 0x100, "LP0", None),
+        (0x30FFE100, 0x100, "LP1", None),
     ]
     for n, (base, owner) in DMA_CHANNELS.items():
         blocks.append((base, 0x80, f"DMA{n} ({owner})", DMA_REGS))
@@ -202,7 +299,7 @@ def values_of(fields: dict) -> list[tuple[str, int, int]]:
     for label, value in fields.items():
         if label in paired or "[" not in label:
             continue
-        hi, lo = label[label.index("[") + 1:-1].split(":")
+        hi, lo = label[label.index("[") + 1 : -1].split(":")
         bits = int(hi) - int(lo) + 1
         if bits >= 9:
             out.append((label, value, bits))
@@ -298,7 +395,9 @@ def sweep_offsets(table: dict, size: int) -> set:
     return offsets
 
 
-def scan(data: bytes, base_sw: int, ranges: list, wanted: set, min_depth: int = 1) -> list:
+def scan(
+    data: bytes, base_sw: int, ranges: list, wanted: set, min_depth: int = 1
+) -> list:
     table = decode_all(data)
     depth = depths(table, len(data))
     sweep = sweep_offsets(table, len(data))
@@ -311,21 +410,26 @@ def scan(data: bytes, base_sw: int, ranges: list, wanted: set, min_depth: int = 
                 continue
             if depth[offset] < min_depth:
                 continue
-            hits.append({
-                "sw": base_sw + offset // 2,
-                "offset": offset,
-                "form": insn.type_name,
-                "kind": insn.kind,
-                "field": label,
-                "value": value,
-                "bits": bits,
-                # the other fields; those holding the value are left out
-                "fields": {k: v for k, v in insn.fields.items()
-                           if k.split("[")[0] != label.split("[")[0]},
-                "depth": depth[offset],
-                "sweep": offset in sweep,
-                "name": name_address(value) if bits == 32 else None,
-            })
+            hits.append(
+                {
+                    "sw": base_sw + offset // 2,
+                    "offset": offset,
+                    "form": insn.type_name,
+                    "kind": insn.kind,
+                    "field": label,
+                    "value": value,
+                    "bits": bits,
+                    # the other fields; those holding the value are left out
+                    "fields": {
+                        k: v
+                        for k, v in insn.fields.items()
+                        if k.split("[")[0] != label.split("[")[0]
+                    },
+                    "depth": depth[offset],
+                    "sweep": offset in sweep,
+                    "name": name_address(value) if bits == 32 else None,
+                }
+            )
     return hits
 
 
@@ -344,13 +448,17 @@ def scan_words(stream: bytes, ranges: list, wanted: set) -> list:
             if not (any(lo <= value <= hi for lo, hi in ranges) or value in wanted):
                 continue
             addr = target + off
-            hits.append({
-                "block": block["index"],
-                "addr": addr,
-                "data_ptr": addr - 0x28000000 if 0x28000000 <= addr < 0x30000000 else None,
-                "value": value,
-                "name": name_address(value),
-            })
+            hits.append(
+                {
+                    "block": block["index"],
+                    "addr": addr,
+                    "data_ptr": addr - 0x28000000
+                    if 0x28000000 <= addr < 0x30000000
+                    else None,
+                    "value": value,
+                    "name": name_address(value),
+                }
+            )
     return hits
 
 
@@ -366,16 +474,37 @@ def _range(text: str) -> tuple:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("region", nargs="?")
-    ap.add_argument("--words", metavar="STREAM",
-                    help="scan the 32-bit words of every block of this boot stream instead")
-    ap.add_argument("--base-sw", type=_int, default=0x1C1338,
-                    help="short-word address of the first word (default 0x1c1338)")
-    ap.add_argument("--range", type=_range, action="append", dest="ranges",
-                    help="LO:HI, inclusive, for 32-bit values (repeatable; default the peripheral space)")
-    ap.add_argument("--value", type=_int, action="append", default=[],
-                    help="exact value, any field of 9+ bits or a 32-bit pair (repeatable)")
-    ap.add_argument("--min-depth", type=int, default=1,
-                    help="drop hits whose decoded run is shorter than this")
+    ap.add_argument(
+        "--words",
+        metavar="STREAM",
+        help="scan the 32-bit words of every block of this boot stream instead",
+    )
+    ap.add_argument(
+        "--base-sw",
+        type=_int,
+        default=0x1C1338,
+        help="short-word address of the first word (default 0x1c1338)",
+    )
+    ap.add_argument(
+        "--range",
+        type=_range,
+        action="append",
+        dest="ranges",
+        help="LO:HI, inclusive, for 32-bit values (repeatable; default the peripheral space)",
+    )
+    ap.add_argument(
+        "--value",
+        type=_int,
+        action="append",
+        default=[],
+        help="exact value, any field of 9+ bits or a 32-bit pair (repeatable)",
+    )
+    ap.add_argument(
+        "--min-depth",
+        type=int,
+        default=1,
+        help="drop hits whose decoded run is shorter than this",
+    )
     ap.add_argument("--json", help="write the hits as JSON")
     args = ap.parse_args(argv)
 
@@ -389,14 +518,26 @@ def main(argv=None) -> int:
         with open(args.words, "rb") as f:
             hits = scan_words(f.read(), ranges, set(args.value))
         for h in hits:
-            ptr = f"data {h['data_ptr']:#08x}" if h["data_ptr"] is not None else " " * 13
+            ptr = (
+                f"data {h['data_ptr']:#08x}" if h["data_ptr"] is not None else " " * 13
+            )
             name = f"  {h['name']}" if h["name"] else ""
-            print(f"block {h['block']:>3}  {h['addr']:#010x}  {ptr}  {h['value']:#010x}{name}")
+            print(
+                f"block {h['block']:>3}  {h['addr']:#010x}  {ptr}  {h['value']:#010x}{name}"
+            )
         print(f"\n{len(hits)} hits")
         if args.json:
             with open(args.json, "w") as f:
-                json.dump({"stream": args.words, "ranges": [list(r) for r in ranges],
-                           "values": args.value, "hits": hits}, f, indent=1)
+                json.dump(
+                    {
+                        "stream": args.words,
+                        "ranges": [list(r) for r in ranges],
+                        "values": args.value,
+                        "hits": hits,
+                    },
+                    f,
+                    indent=1,
+                )
         return 0
 
     with open(args.region, "rb") as f:
@@ -406,8 +547,10 @@ def main(argv=None) -> int:
     for h in hits:
         others = " ".join(f"{k}={v:#x}" for k, v in h["fields"].items())
         name = f"  {h['name']}" if h["name"] else ""
-        print(f"SW {h['sw']:#08x}  {h['form']:<12} {h['field']}={h['value']:#010x}"
-              f"  depth={h['depth']:<4} {'sweep' if h['sweep'] else '-    '}  [{others}]{name}")
+        print(
+            f"SW {h['sw']:#08x}  {h['form']:<12} {h['field']}={h['value']:#010x}"
+            f"  depth={h['depth']:<4} {'sweep' if h['sweep'] else '-    '}  [{others}]{name}"
+        )
 
     by_block = {}
     for h in hits:
@@ -421,9 +564,17 @@ def main(argv=None) -> int:
 
     if args.json:
         with open(args.json, "w") as f:
-            json.dump({"region": args.region, "base_sw": args.base_sw,
-                       "ranges": [list(r) for r in ranges], "values": args.value,
-                       "hits": hits}, f, indent=1)
+            json.dump(
+                {
+                    "region": args.region,
+                    "base_sw": args.base_sw,
+                    "ranges": [list(r) for r in ranges],
+                    "values": args.value,
+                    "hits": hits,
+                },
+                f,
+                indent=1,
+            )
     return 0
 
 

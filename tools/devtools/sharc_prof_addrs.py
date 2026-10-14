@@ -30,11 +30,17 @@ def main() -> None:
             frames[el.get("id")] = (el.get("name"), int(el.get("addr"), 16))
         elif el.tag == "thread" and el.get("id"):
             threads[el.get("id")] = el.get("fmt") or ""
-        elif el.tag == "binary" and el.get("load-addr") and el.get("name") == "coupled-run":
+        elif (
+            el.tag == "binary"
+            and el.get("load-addr")
+            and el.get("name") == "coupled-run"
+        ):
             load = int(el.get("load-addr"), 16)
         elif el.tag == "row":
             th = el.find("thread")
-            tfmt = threads.get(th.get("id") or th.get("ref"), "") if th is not None else ""
+            tfmt = (
+                threads.get(th.get("id") or th.get("ref"), "") if th is not None else ""
+            )
             if a.thread not in tfmt:
                 el.clear()
                 continue

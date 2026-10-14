@@ -5,7 +5,6 @@ from pathlib import Path
 
 from emu import symbols
 
-
 # The pinned per-version extracts, not the shared sections/ directory, which
 # holds whichever firmware was extracted last.
 DT15 = Path("out/sections/dt2-1.15C/section_3_MAIN_OS.bin")
@@ -43,7 +42,9 @@ class DigitaktResolverTest(unittest.TestCase):
         for path, values in expected.items():
             with self.subTest(path=path):
                 profile = symbols.resolve(path.read_bytes())
-                self.assertEqual((profile.display_frame_post, profile.display_sem), values)
+                self.assertEqual(
+                    (profile.display_frame_post, profile.display_sem), values
+                )
                 self.assertNotEqual(profile.display_sem, profile.frame_sem)
 
     def test_worker_done_semaphore_resolves_in_both_images(self):

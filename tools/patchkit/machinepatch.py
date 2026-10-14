@@ -30,10 +30,7 @@ unicorn-reference-final.
 import struct
 from dataclasses import dataclass
 
-
-
 from tools.patchkit import machineprofile
-
 
 END_SITE = 0x40052000
 START_SITE = 0x4005200A

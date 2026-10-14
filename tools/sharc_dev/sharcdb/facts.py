@@ -77,7 +77,9 @@ def classify_literal_range(value: int, code_spans_sw, code_spans_byte, mem):
     in_code = any(lo <= value < hi for lo, hi in code_spans_sw)
     if not in_code:
         byte_val = sharcldr.sw_to_byte(value)
-        in_code = any(lo <= value < hi or lo <= byte_val < hi for lo, hi in code_spans_byte)
+        in_code = any(
+            lo <= value < hi or lo <= byte_val < hi for lo, hi in code_spans_byte
+        )
     in_data = False
     if not in_code:
         for lo, hi in mem.ranges():
@@ -174,38 +176,96 @@ def extract_mem_access(insn_type: str, f: dict):
         index = (f.get("i", 0) & 0x7) + (8 if f.get("g") else 0)
         off = sharcfn.sign_extend(f.get("addr", 0) & 0xFFFFFFFF, 32)
         width = "long" if f.get("l") else "word"
-        rows.append((space, direction, "I%d" % index, str(off), None,
-                     sharcinv.MEM_FORMS.get(insn_type, insn_type), width, None))
+        rows.append(
+            (
+                space,
+                direction,
+                "I%d" % index,
+                str(off),
+                None,
+                sharcinv.MEM_FORMS.get(insn_type, insn_type),
+                width,
+                None,
+            )
+        )
     elif insn_type in sharcfn.DIRECT_MEM_FORMS:
         space, direction = sharcfn._space_dir(f)
         width = (
-            _type14d_width(f) if insn_type == "14d"
+            _type14d_width(f)
+            if insn_type == "14d"
             else ("long" if f.get("l") else "word")
         )
-        rows.append((space, direction, None, None, None,
-                     sharcinv.MEM_FORMS.get(insn_type, insn_type),
-                     width, f.get("addr")))
+        rows.append(
+            (
+                space,
+                direction,
+                None,
+                None,
+                None,
+                sharcinv.MEM_FORMS.get(insn_type, insn_type),
+                width,
+                f.get("addr"),
+            )
+        )
     elif insn_type in sharcfn.INDEXED_MEM_FORMS:
         space, direction = sharcfn._space_dir(f)
         if insn_type == "3b":
-            width = ACCESS_WIDTHS.get(
-                (f.get("l", 0), f.get("x", 0), f.get("w", 0)))
+            width = ACCESS_WIDTHS.get((f.get("l", 0), f.get("x", 0), f.get("w", 0)))
         elif insn_type == "3d":
             width = _type3d_width(f)
         else:
             width = None
-        rows.append((space, direction, "I%d" % f.get("i", 0), "M%d" % f.get("m", 0),
-                     f.get("u"), sharcinv.MEM_FORMS.get(insn_type, insn_type), width, None))
+        rows.append(
+            (
+                space,
+                direction,
+                "I%d" % f.get("i", 0),
+                "M%d" % f.get("m", 0),
+                f.get("u"),
+                sharcinv.MEM_FORMS.get(insn_type, insn_type),
+                width,
+                None,
+            )
+        )
     elif insn_type in sharcfn.IMMOFF_MEM_FORMS:
         space, direction = sharcfn._space_dir(f)
         bits = sharcfn._IMMOFF_DATA_BITS.get(insn_type, 6)
         off = sharcfn.sign_extend(f.get("data", 0), bits)
-        rows.append((space, direction, "I%d" % f.get("i", 0), str(off), None,
-                     sharcinv.MEM_FORMS.get(insn_type, insn_type),
-                     _immoff_width(insn_type, f), None))
+        rows.append(
+            (
+                space,
+                direction,
+                "I%d" % f.get("i", 0),
+                str(off),
+                None,
+                sharcinv.MEM_FORMS.get(insn_type, insn_type),
+                _immoff_width(insn_type, f),
+                None,
+            )
+        )
     elif insn_type in sharcfn.DUAL_MEM_FORMS:
-        rows.append(("DM", "store" if f.get("dmd") else "load", "I%d" % f.get("dmi", 0),
-                     "M%d" % f.get("dmm", 0), None, "dual", None, None))
-        rows.append(("PM", "store" if f.get("pmd") else "load", "I%d" % f.get("pmi", 0),
-                     "M%d" % f.get("pmm", 0), None, "dual", None, None))
+        rows.append(
+            (
+                "DM",
+                "store" if f.get("dmd") else "load",
+                "I%d" % f.get("dmi", 0),
+                "M%d" % f.get("dmm", 0),
+                None,
+                "dual",
+                None,
+                None,
+            )
+        )
+        rows.append(
+            (
+                "PM",
+                "store" if f.get("pmd") else "load",
+                "I%d" % f.get("pmi", 0),
+                "M%d" % f.get("pmm", 0),
+                None,
+                "dual",
+                None,
+                None,
+            )
+        )
     return rows

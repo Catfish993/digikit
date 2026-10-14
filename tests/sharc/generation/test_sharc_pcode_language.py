@@ -11,14 +11,16 @@ import sys
 import tempfile
 import unittest
 
-
-
 from support.sharc_encode import encode  # noqa: E402
 from support.sharc_pcode_build import branch, field  # noqa: E402
 
-from tools.sharc_dev import sharc_disasm  # noqa: E402  # pyright: ignore[reportMissingImports]
-from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402  # pyright: ignore[reportMissingImports]
-from tools.sharc_dev import sharcpcode  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import (
+    sharc_disasm,  # noqa: E402  # pyright: ignore[reportMissingImports]
+    sharcpcode,  # noqa: E402  # pyright: ignore[reportMissingImports]
+)
+from tools.sharc_dev import (
+    sharc_visa_tables as T,  # noqa: E402  # pyright: ignore[reportMissingImports]
+)
 
 TARGET_SW = 0x1C1400
 COND_EQ = 0x00
@@ -620,9 +622,17 @@ class GeneratedLanguage(unittest.TestCase):
         # L2-window correction) so Ghidra's own wordsize-2 LOAD/STORE scaling
         # (byte offset = 2*unit) recovers the original byte address.
         expected_ops = [
-            "INT_ZEXT", "INT_LEFT", "INT_ZEXT", "INT_OR",
-            "INT_LESSEQUAL", "INT_LESS", "BOOL_AND", "INT_ZEXT",
-            "INT_RIGHT", "INT_MULT", "INT_ADD",
+            "INT_ZEXT",
+            "INT_LEFT",
+            "INT_ZEXT",
+            "INT_OR",
+            "INT_LESSEQUAL",
+            "INT_LESS",
+            "BOOL_AND",
+            "INT_ZEXT",
+            "INT_RIGHT",
+            "INT_MULT",
+            "INT_ADD",
         ]
         for direction, buf, expected_name in (
             ("load", observed_load, "LOAD"),
@@ -657,7 +667,10 @@ class GeneratedLanguage(unittest.TestCase):
             with self.subTest(label=label):
                 buf = type14a(
                     d=0,
-                    **{"addr[31:16]": (addr >> 16) & 0xFFFF, "addr[15:0]": addr & 0xFFFF},
+                    **{
+                        "addr[31:16]": (addr >> 16) & 0xFFFF,
+                        "addr[15:0]": addr & 0xFFFF,
+                    },
                 )
                 _names, ops = self.lift(buf)
                 _op, unit = eval_pcode(ops)
@@ -690,8 +703,13 @@ class GeneratedLanguage(unittest.TestCase):
             names,
             [
                 "INT_ADD",
-                "INT_LESSEQUAL", "INT_LESS", "BOOL_AND", "INT_ZEXT",
-                "INT_RIGHT", "INT_MULT", "INT_ADD",
+                "INT_LESSEQUAL",
+                "INT_LESS",
+                "BOOL_AND",
+                "INT_ZEXT",
+                "INT_RIGHT",
+                "INT_MULT",
+                "INT_ADD",
                 "LOAD",
             ],
         )
@@ -769,7 +787,9 @@ class GeneratedLanguage(unittest.TestCase):
         i2 = 0x00300000
         r = run_pcode(ops, registers={"I2": i2, "L2": 0x40})
         self.assertEqual(r["loads"][0]["address"], i2 >> 1)
-        self.assertEqual(r["registers"]["I2"], i2, "circular buffering: no plain update")
+        self.assertEqual(
+            r["registers"]["I2"], i2, "circular buffering: no plain update"
+        )
         circular = [c for c in r["callothers"] if c["name"] == "circular"]
         self.assertEqual(len(circular), 1)
         self.assertEqual(circular[0]["args"], [2], "argument is the raw index register")

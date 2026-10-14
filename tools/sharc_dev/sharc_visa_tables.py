@@ -22,12 +22,20 @@ fixed bits unconfirmed) and source.
 """
 
 import os
-
 from collections.abc import Iterable, Sequence
 
-from tools.sharc_dev.sharc_isa import LegacyForm, frame_of as _frame_of, form_id, load_instruction_set
+from tools.sharc_dev.sharc_isa import (
+    LegacyForm,
+    form_id,
+    load_instruction_set,
+)
+from tools.sharc_dev.sharc_isa import (
+    frame_of as _frame_of,
+)
 
-TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sharcspec', 'decode_table.json')
+TABLE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "sharcspec", "decode_table.json"
+)
 
 
 def form_name(name):
@@ -35,14 +43,14 @@ def form_name(name):
     return form_id(name)
 
 
-def load(path: str = TABLE, mode: str = 'visa') -> list[LegacyForm]:
+def load(path: str = TABLE, mode: str = "visa") -> list[LegacyForm]:
     """-> TYPES for the VISA forms (mode 'visa') or the 48-bit ISA forms ('isa')."""
     return [form.legacy_dict() for form in load_instruction_set(path, mode).forms]
 
 
 TYPES: list[LegacyForm] = load()
-_BY_NAME = {t['name']: t for t in TYPES}
-_ISA = load_instruction_set(TABLE, 'visa')
+_BY_NAME = {t["name"]: t for t in TYPES}
+_ISA = load_instruction_set(TABLE, "visa")
 
 
 def get_type(name: str) -> LegacyForm | None:
@@ -67,12 +75,11 @@ def decode(
         selection = _ISA.select_frame(frame)
         selected = None if selection.form is None else _BY_NAME[selection.form.id]
         return selected, [form.id for form in selection.candidates]
-    hits = [t for t in types
-            if frame & t['frame_mask'] == t['frame_value']]
+    hits = [t for t in types if frame & t["frame_mask"] == t["frame_value"]]
     if not hits:
         return None, []
-    best = max(t['lead'] for t in hits)
-    hits = [t for t in hits if t['lead'] == best]
-    most = max(t['fixed_bits'] for t in hits)
-    top = [t for t in hits if t['fixed_bits'] == most]
-    return (top[0] if len(top) == 1 else None), [t['name'] for t in top]
+    best = max(t["lead"] for t in hits)
+    hits = [t for t in hits if t["lead"] == best]
+    most = max(t["fixed_bits"] for t in hits)
+    top = [t for t in hits if t["fixed_bits"] == most]
+    return (top[0] if len(top) == 1 else None), [t["name"] for t in top]

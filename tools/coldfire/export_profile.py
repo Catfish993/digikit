@@ -48,7 +48,6 @@ import json
 import os
 import sys
 
-
 from emu import extract, symbols
 
 SOURCE_MARKER = extract.SOURCE_MARKER  # '.source-sha256'

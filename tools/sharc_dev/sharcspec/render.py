@@ -7,6 +7,7 @@ w.r.t. any vendor disassembler: it only consumes the two JSON tables
 (decode_table.json via sharc_decode.py, and compute_table.json here) and
 re-derives readable syntax from their documented bit layouts.
 """
+
 import json
 import os
 import re
@@ -38,7 +39,9 @@ for r in _rows("aluop_64bit"):
 
 # -- Single-function Multiplier (Table 18-7 has wildcard letters F/x/y/r; Table 18-8 is exact) --
 MULOP_64 = {_nospace(r["opcode"]): r["syntax"] for r in _rows("mulop_64bit")}
-MULOP_32_PATTERNS = [(_nospace(r["opcode"]), r["syntax"]) for r in _rows("mulop_32_40bit")]
+MULOP_32_PATTERNS = [
+    (_nospace(r["opcode"]), r["syntax"]) for r in _rows("mulop_32_40bit")
+]
 
 # -- Single-function Shifter / ShiftImm (Table 18-9): one row list, two keys --
 SHIFTOP = {}
@@ -49,21 +52,29 @@ for r in _rows("shiftop_shiftimm"):
         SHIFTIMM[r["shiftimm_6bit"]] = r["syntax"]
 
 # -- Dual add/subtract (cu=00 ALU, opcode[19:16] only, Table 18-10) --
-DUALADDSUB = {_nospace(r["opcode_19_16"]): r["syntax"] for r in _rows("dual_add_subtract")}
+DUALADDSUB = {
+    _nospace(r["opcode_19_16"]): r["syntax"] for r in _rows("dual_add_subtract")
+}
 
 # -- Multifunction MUL/ALU (opcode[21:16], PGR Table 12-12) --
-MULTIFN_MULALU = {_nospace(r["opcode_21_16"]): r["syntax"] for r in _rows("multifn_mul_alu")}
+MULTIFN_MULALU = {
+    _nospace(r["opcode_21_16"]): r["syntax"] for r in _rows("multifn_mul_alu")
+}
 
 # -- Multifunction MUL dual add/sub: only top 2 bits (10=fixed,11=float) are a real
 # selector; the low 4 bits are the Rs register field, not opcode bits (see PRM ch.25). --
-MULTIFN_DUALADDSUB = {"10": _rows("multifn_mul_dual_addsub")[0]["syntax"],
-                       "11": _rows("multifn_mul_dual_addsub")[1]["syntax"]}
+MULTIFN_DUALADDSUB = {
+    "10": _rows("multifn_mul_dual_addsub")[0]["syntax"],
+    "11": _rows("multifn_mul_dual_addsub")[1]["syntax"],
+}
 
 # -- ShortCompute (Type 2c, Table opcode[11:8]) --
 SHORTCOMPUTE = {_nospace(r["opcode_11_8"]): r["syntax"] for r in _rows("shortcompute")}
 
 # -- MRDATAMOVE (PRM Table 18-29 + PGR-only top bits, flagged "gap" in compute_table.json) --
-MRDATAMOVE = {_nospace(r["opcode_15_12"]): r["mr_register"] for r in _rows("mrdatamove")}
+MRDATAMOVE = {
+    _nospace(r["opcode_15_12"]): r["mr_register"] for r in _rows("mrdatamove")
+}
 
 
 def _wildcard_match(pattern, bits):
@@ -99,8 +110,14 @@ def _render_singlefn(field23):
     rx = (field23 >> 4) & 0xF
     ry = field23 & 0xF
     opbits = f"{opcode:08b}"
-    regmap = {"RN": reg(rn), "RX": reg(rx), "RY": reg(ry),
-              "FN": reg(rn, True), "FX": reg(rx, True), "FY": reg(ry, True)}
+    regmap = {
+        "RN": reg(rn),
+        "RX": reg(rx),
+        "RY": reg(ry),
+        "FN": reg(rn, True),
+        "FX": reg(rx, True),
+        "FY": reg(ry, True),
+    }
 
     if cu == 0b00:  # ALU
         top4 = opbits[:4]
@@ -135,11 +152,16 @@ def _quad_map(field23, prefix):
     rya = field23 & 0x3
     is_f = prefix == "F"
     return {
-        f"{prefix}M": reg(rm, is_f), f"{prefix}A": reg(ra, is_f),
-        "R3-0": reg(rxm, is_f), "R7-4": reg(4 + rym, is_f),
-        "RXA": reg(8 + rxa, is_f), "RYA": reg(12 + rya, is_f),
-        "F3-0": reg(rxm, True), "F7-4": reg(4 + rym, True),
-        "FXA": reg(8 + rxa, True), "FYA": reg(12 + rya, True),
+        f"{prefix}M": reg(rm, is_f),
+        f"{prefix}A": reg(ra, is_f),
+        "R3-0": reg(rxm, is_f),
+        "R7-4": reg(4 + rym, is_f),
+        "RXA": reg(8 + rxa, is_f),
+        "RYA": reg(12 + rya, is_f),
+        "F3-0": reg(rxm, True),
+        "F7-4": reg(4 + rym, True),
+        "FXA": reg(8 + rxa, True),
+        "FYA": reg(12 + rya, True),
     }
 
 
@@ -180,7 +202,9 @@ def _render_short(field12):
     syntax = SHORTCOMPUTE.get(f"{opcode:04b}")
     if syntax is None:
         return f"compute(0x{field12:03x})"
-    return _subst(syntax, {"RN": reg(rn), "RX": reg(rx), "FN": reg(rn, True), "FX": reg(rx, True)})
+    return _subst(
+        syntax, {"RN": reg(rn), "RX": reg(rx), "FN": reg(rn, True), "FX": reg(rx, True)}
+    )
 
 
 def _render_shiftimm(field23):
@@ -192,7 +216,9 @@ def _render_shiftimm(field23):
     if syntax is None:
         return f"compute(0x{field23:06x})"
     text = re.sub(r"\b\w+\|[\w:]+\b", f"0x{data8:02x}", syntax)
-    return _subst(text, {"RN": reg(rn), "RX": reg(rx), "FN": reg(rn, True), "FX": reg(rx, True)})
+    return _subst(
+        text, {"RN": reg(rn), "RX": reg(rx), "FN": reg(rn, True), "FX": reg(rx, True)}
+    )
 
 
 def render_compute(field23, variant="compute"):
@@ -289,4 +315,7 @@ def disassemble(mem, region_load, start=0, count=None):
     if count is None:
         count = (len(mem) - start) // 2  # worst case: all 16-bit instructions
     entries = linear(mem, start, count, dec)
-    return [disasm_line(region_load, pos, n, form, frame) for pos, n, form, cands, frame in entries]
+    return [
+        disasm_line(region_load, pos, n, form, frame)
+        for pos, n, form, cands, frame in entries
+    ]

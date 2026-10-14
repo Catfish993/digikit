@@ -294,9 +294,24 @@ def _operand_kind(name: str) -> OperandKind:
     if name == "data" or name.startswith("data"):
         return OperandKind.IMMEDIATE
     if name in {
-        "ureg", "srcureg", "dstureg", "cureg", "dreg", "cdreg", "sreg",
-        "i", "m", "is", "idis", "dmi", "dmm", "pmi", "pmm", "breg",
-        "dmdreg", "pmdreg",
+        "ureg",
+        "srcureg",
+        "dstureg",
+        "cureg",
+        "dreg",
+        "cdreg",
+        "sreg",
+        "i",
+        "m",
+        "is",
+        "idis",
+        "dmi",
+        "dmm",
+        "pmi",
+        "pmm",
+        "breg",
+        "dmdreg",
+        "pmdreg",
     }:
         return OperandKind.REGISTER
     return OperandKind.SELECTOR
@@ -308,9 +323,11 @@ class InstructionTableError(ValueError):
 
 def _integer(value: object, field: str, base: int = 10) -> int:
     try:
-        return int(cast(str | bytes | bytearray, value), base) if isinstance(
-            value, (str, bytes, bytearray)
-        ) else int(cast(int, value))
+        return (
+            int(cast(str | bytes | bytearray, value), base)
+            if isinstance(value, (str, bytes, bytearray))
+            else int(cast(int, value))
+        )
     except (TypeError, ValueError) as exc:
         raise InstructionTableError(f"invalid integer for {field}: {value!r}") from exc
 
@@ -371,14 +388,18 @@ class InstructionSet:
             raise ValueError("duplicate SHARC instruction form id")
 
     @classmethod
-    def from_json(cls, table: str | Path = TABLE_PATH, mode: str = "visa") -> "InstructionSet":
+    def from_json(
+        cls, table: str | Path = TABLE_PATH, mode: str = "visa"
+    ) -> "InstructionSet":
         if mode not in {"visa", "isa"}:
             raise ValueError(f"unsupported SHARC decode mode {mode!r}")
         try:
             payload = json.loads(Path(table).read_text())
             rows = cast(list[_TableForm], payload["forms"])
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise InstructionTableError(f"cannot load SHARC instruction table {table}") from exc
+            raise InstructionTableError(
+                f"cannot load SHARC instruction table {table}"
+            ) from exc
         forms = []
         for row in rows:
             if mode == "visa" and not row["visa"]:
@@ -389,7 +410,9 @@ class InstructionSet:
             fields = _fields(row)
             mask = _integer(row["mask"], f"{ident}.mask", 16)
             source = str(row.get("source") or "")
-            unconfirmed = _integer(row.get("unconfirmed_bits") or 0, f"{ident}.unconfirmed_bits")
+            unconfirmed = _integer(
+                row.get("unconfirmed_bits") or 0, f"{ident}.unconfirmed_bits"
+            )
             forms.append(
                 InstructionForm(
                     id=ident,
@@ -436,7 +459,8 @@ class InstructionSet:
         fields = form.extract_fields(frame)
         field_values = {item.field.label: item.value for item in fields}
         operands = tuple(
-            OperandValue(operand, operand.extract(field_values)) for operand in form.operands
+            OperandValue(operand, operand.extract(field_values))
+            for operand in form.operands
         )
         raw = frame >> form.width_shift
         return DecodeResult(
@@ -452,6 +476,8 @@ class InstructionSet:
         return self.decode_words(words)
 
 
-def load_instruction_set(table: str | Path = TABLE_PATH, mode: str = "visa") -> InstructionSet:
+def load_instruction_set(
+    table: str | Path = TABLE_PATH, mode: str = "visa"
+) -> InstructionSet:
     """Load one immutable instruction set from the current table bytes."""
     return InstructionSet.from_json(Path(table).resolve(), mode)

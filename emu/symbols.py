@@ -61,7 +61,6 @@ import re
 import struct
 import sys
 
-
 LOAD_ADDR = 0x40000400   # both known builds load MAIN OS here (see emu.config)
 
 # Sig masks out any inlined abs32 that relocates between builds. The default

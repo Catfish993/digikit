@@ -110,8 +110,10 @@ def _restarts(document: Mapping) -> dict[int, Restart]:
             int(digest, 16)
         except ValueError as error:
             raise ValueError("restart sha256 must be hexadecimal") from error
-        if not isinstance(assumptions, list) or not assumptions or not all(
-            isinstance(item, str) and item for item in assumptions
+        if (
+            not isinstance(assumptions, list)
+            or not assumptions
+            or not all(isinstance(item, str) and item for item in assumptions)
         ):
             raise ValueError("restart assumptions must be nonempty strings")
         if stop in result:
@@ -138,9 +140,7 @@ def _targets(document: Mapping) -> tuple[Target, ...]:
     return tuple(result)
 
 
-def _initial_state(
-    memory: LoadedMemory, document: Mapping, start: int
-) -> trace.State:
+def _initial_state(memory: LoadedMemory, document: Mapping, start: int) -> trace.State:
     reset = _boolean(document.get("core_reset_state"), "core_reset_state")
     uregs: dict[int, trace.Value] = (
         {
@@ -156,7 +156,11 @@ def _initial_state(
     for name, value in sets.items():
         if not isinstance(name, str):
             raise ValueError("set names must be strings")
-        seeded = value if isinstance(value, str) and value.startswith("@") else _integer(value, name)
+        seeded = (
+            value
+            if isinstance(value, str) and value.startswith("@")
+            else _integer(value, name)
+        )
         uregs[trace._seed_code(name)] = trace._seed_value(seeded)
     mmrs: dict[int, trace.Value] = (
         {
@@ -173,9 +177,7 @@ def _initial_state(
     if skip_entries and not follow:
         raise ValueError("skip_provisional_entries requires follow_loaded_calls")
     dossier_bytes = _integer(document.get("dossier_bytes", 0), "dossier_bytes")
-    max_call_depth = _integer(
-        document.get("max_call_depth", 8), "max_call_depth"
-    )
+    max_call_depth = _integer(document.get("max_call_depth", 8), "max_call_depth")
     if not 0 <= dossier_bytes <= 256:
         raise ValueError("dossier_bytes must be between 0 and 256")
     if not 1 <= max_call_depth <= 32:

@@ -10,15 +10,23 @@ name, so this also tells request (host->device) from reply (device->host):
 a spy-on-output capture tags outgoing messages with the destination name.
 SysEx bodies are stored without the leading 0xF0 (kept in `statusByte`).
 """
+
 import argparse
 import plistlib
 import sys
 from plistlib import UID
 
 ELEKTRON = bytes((0xF0, 0x00, 0x20, 0x3C))
-TYPES = {0x01: "Ping", 0x02: "SoftwareVersion", 0x03: "DeviceUID",
-         0x05: "StorageSpace", 0x07: "TempoWrite", 0x09: "Query",
-         0x10: "FsSampleReadDir/List", 0x53: "DataList"}
+TYPES = {
+    0x01: "Ping",
+    0x02: "SoftwareVersion",
+    0x03: "DeviceUID",
+    0x05: "StorageSpace",
+    0x07: "TempoWrite",
+    0x09: "Query",
+    0x10: "FsSampleReadDir/List",
+    0x53: "DataList",
+}
 
 
 def load(path):
@@ -32,11 +40,16 @@ def load(path):
         cls = objs[o["$class"].data].get("$classname", "")
         if "Message" not in cls:
             continue
-        ep = objs[o["originatingEndpoint"].data] if isinstance(
-            o.get("originatingEndpoint"), UID) else "?"
+        ep = (
+            objs[o["originatingEndpoint"].data]
+            if isinstance(o.get("originatingEndpoint"), UID)
+            else "?"
+        )
         body = objs[o["data"].data]
         sb = o.get("statusByte", 0)
-        full = bytes([sb]) + bytes(body) if isinstance(body, (bytes, bytearray)) else b""
+        full = (
+            bytes([sb]) + bytes(body) if isinstance(body, (bytes, bytearray)) else b""
+        )
         out.append((o.get("timeStampInNanos", 0), ep, full))
     out.sort()
     return out
@@ -55,18 +68,21 @@ def describe_elektron(f):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("file")
     ap.add_argument("--sysex", action="store_true", help="SysEx only")
-    ap.add_argument("--endpoints", action="store_true",
-                    help="just summarise endpoints (direction)")
+    ap.add_argument(
+        "--endpoints", action="store_true", help="just summarise endpoints (direction)"
+    )
     ap.add_argument("--max-hex", type=int, default=48)
     args = ap.parse_args()
 
     msgs = load(args.file)
     if args.endpoints:
         from collections import Counter
+
         for ep, n in Counter(ep for _, ep, _ in msgs).most_common():
             print(f"{n:5d}  {ep}")
         return 0
@@ -82,11 +98,11 @@ def main():
             head += f"  {d}"
         hexs = f.hex(" ")
         if len(f) > args.max_hex:
-            hexs = " ".join(f"{b:02x}" for b in f[:args.max_hex]) + f" ... ({len(f)}B)"
+            hexs = " ".join(f"{b:02x}" for b in f[: args.max_hex]) + f" ... ({len(f)}B)"
         print(f"{head}\n    {hexs}")
         body = f[12:-1] if d else f
         if any(32 <= c < 127 for c in body):
-            print(f"    ascii: {ascii_of(f[:args.max_hex + 12])}")
+            print(f"    ascii: {ascii_of(f[: args.max_hex + 12])}")
     return 0
 
 
