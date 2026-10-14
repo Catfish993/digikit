@@ -426,7 +426,7 @@ class Pipeline:
         ext = ".dylib" if platform.system() == "Darwin" else ".so"
         if ext == ".dylib":
             cmd += ["--", "-Clink-arg=-Wl,-install_name,@rpath/libsharc_native.dylib"]
-        self.run(stage, cmd, cwd=ROOT / "native" / "sharc", env=env)
+        self.run(stage, cmd, cwd=ROOT / "packages" / "emulator" / "sharc", env=env)
         lib = self.out / "lib" / (name + ext)
         shutil.copyfile(self.target / "release" / ("libsharc_native" + ext), lib)
         return lib
@@ -540,7 +540,12 @@ class Pipeline:
         env = dict(self.env, SHARC_GEN_DIR=str(gen), CARGO_TARGET_DIR=str(target))
         cmd = [str(self.tc / "bin" / "cargo"), "build", "--release", "--offline", "--locked",
                "--features", "sharc", "--example", "sharc_live"]  # fmt: skip
-        self.run("build-sharc_live", cmd, cwd=ROOT / "native" / "boot", env=env)
+        self.run(
+            "build-sharc_live",
+            cmd,
+            cwd=ROOT / "packages" / "emulator" / "boot",
+            env=env,
+        )
         binary = target / "release" / "examples" / "sharc_live"
         result: dict[str, Any] = {}
         for name, extra in (

@@ -17,11 +17,11 @@ use sha2::{Digest, Sha256};
 
 const DT2_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../devices/digitakt-ii.toml"
+    "/../../../devices/digitakt-ii.toml"
 ));
 const DN2_SOURCE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../devices/digitone-ii.toml"
+    "/../../../devices/digitone-ii.toml"
 ));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -486,11 +486,11 @@ mod tests {
 
     const DT2: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../devices/digitakt-ii.toml"
+        "/../../../devices/digitakt-ii.toml"
     ));
     const DN2: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../devices/digitone-ii.toml"
+        "/../../../devices/digitone-ii.toml"
     ));
 
     #[test]

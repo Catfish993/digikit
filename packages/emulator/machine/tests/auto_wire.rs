@@ -415,6 +415,8 @@ fn auto_ready_native_wire_prefix() {
         .unwrap()
         .parent()
         .unwrap()
+        .parent()
+        .unwrap()
         .join("out")
         .canonicalize()
         .unwrap();

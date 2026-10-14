@@ -54,7 +54,7 @@ fn input(name: &str) -> String {
 fn output(name: &str) -> String {
     let path = input(name);
     let out = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../out")
+        .join("../../../out")
         .canonicalize()
         .unwrap();
     assert!(

@@ -127,7 +127,7 @@ function webListeners(port, webDir) {
 async function stopDevServer(server, port) {
   try { process.kill(-server.pid, 'SIGTERM'); } catch { /* already gone */ }
   if (await waitPortFree(port, 3000)) return;
-  const webDir = fs.realpathSync(path.join(root, 'packages', 'web'));
+  const webDir = fs.realpathSync(path.join(root, 'apps', 'web'));
   for (const pid of webListeners(port, webDir)) {
     log(`killing astro dev pid ${pid} (SIGTERM)`);
     try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
@@ -140,7 +140,7 @@ async function stopDevServer(server, port) {
 }
 
 function startDevServer(port, syx) {
-  const cwd = path.join(root, 'packages', 'web');
+  const cwd = path.join(root, 'apps', 'web');
   const bin = path.join(cwd, 'node_modules', '.bin', 'astro');
   const args = ['dev', '--host', '127.0.0.1', '--port', String(port)];
   const child = spawn(bin, args, { cwd, env: { ...process.env, DIGI_EMU_SYX: syx, ...(fs.existsSync(path.join(root, 'node_modules')) ? { DIGI_VITE_FS_ALLOW: path.dirname(fs.realpathSync(path.join(root, 'node_modules'))) } : {}) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });

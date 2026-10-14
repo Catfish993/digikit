@@ -33,7 +33,7 @@ from tools.emulator import digi_env, native_target  # noqa: E402
 OUT = ROOT / "out" / "native" / "wasmgate"
 DUMP = OUT / "dump"
 WASM = OUT / "wasm"
-CRATE = ROOT / "native" / "sharc-fast-wasm"
+CRATE = ROOT / "packages" / "emulator" / "sharc-fast-wasm"
 CORE = ROOT / "out" / "native" / "shared-core" / "gen"
 TARGET = native_target.TARGET_ROOT / "wasmgate"
 V8_MODES = [

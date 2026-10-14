@@ -55,7 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-_CRATE_DIR = _ROOT / "native" / "live"
+_CRATE_DIR = _ROOT / "packages" / "emulator" / "live"
 DEFAULT_SHARC_LIB = Path(
     os.environ.get(
         "SHARC_NATIVE_LIB",

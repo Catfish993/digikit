@@ -3,7 +3,7 @@ use serde_json::Value;
 
 /// DSPI2 frames per audio second (one 32-sample block each).
 pub const FRAMES_PER_SECOND: f64 = 1500.0;
-pub const DEFAULT_SCENARIOS: &str = include_str!("../../../scenarios/dn2.json");
+pub const DEFAULT_SCENARIOS: &str = include_str!("../../../../scenarios/dn2.json");
 
 #[derive(Clone, Copy, Debug)]
 pub enum When {

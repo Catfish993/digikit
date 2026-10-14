@@ -62,7 +62,7 @@ fn thread_cpu_ns() -> u64 {
 }
 
 fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
 #[derive(Default)]

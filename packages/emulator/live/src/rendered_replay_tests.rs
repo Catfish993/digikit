@@ -53,7 +53,7 @@ fn exact_rendered_input_and_zero_stop_gate() {
     let max_renders = max + max / 3;
     let path = input("SHARC_RENDER_INPUTS");
     let ignored = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../out")
+        .join("../../../out")
         .canonicalize()
         .unwrap();
     assert!(

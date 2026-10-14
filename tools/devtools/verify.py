@@ -173,7 +173,11 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         EVERYTHING,
     ),
     (
-        ("packages/emulator/sharc/src/fast/", "packages/emulator/sharc-fast-cl/", "packages/emulator/sharc-fast-wasm/"),
+        (
+            "packages/emulator/sharc/src/fast/",
+            "packages/emulator/sharc-fast-cl/",
+            "packages/emulator/sharc-fast-wasm/",
+        ),
         ("build", "pins", "check", "check-no-aot", "tier-quick", "rust-tests"),
     ),
     (
@@ -201,13 +205,20 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("rust-tests", "python-tests", "web"),
     ),
-    (("packages/emulator/control/",), ("desktop", "rust-tests", "card", "python-tests")),
     (
-        ("packages/emulator/plusdrive/", "packages/emulator/card/", "tools/emulator/card_check.py"),
+        ("packages/emulator/control/",),
+        ("desktop", "rust-tests", "card", "python-tests"),
+    ),
+    (
+        (
+            "packages/emulator/plusdrive/",
+            "packages/emulator/card/",
+            "tools/emulator/card_check.py",
+        ),
         ("desktop", "rust-tests", "card"),
     ),
     (
-        ("native/",),
+        ("packages/emulator/",),
         ("build", "desktop", "pins", "check", "rust-tests", "card", "dt2-tone"),
     ),
     (
@@ -623,7 +634,7 @@ def desktop_check(gate: Gate) -> None:
 
 
 def web_check(gate: Gate) -> None:
-    web = ROOT / "packages" / "web"
+    web = ROOT / "apps" / "web"
     gate.run(
         "patchkit-wasm", [*PY, "-m", "tools.emulator.native_wasm", "--patchkit-only"]
     )

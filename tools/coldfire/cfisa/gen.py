@@ -28,7 +28,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 TABLE = ROOT / "tools" / "coldfire" / "cfisa" / "coldfire.json"
-OUT = ROOT / "native" / "coldfire" / "src" / "decode_gen.rs"
+OUT = ROOT / "packages" / "emulator" / "coldfire" / "src" / "decode_gen.rs"
 
 MODES = [
     "dn",

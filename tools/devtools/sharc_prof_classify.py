@@ -53,7 +53,7 @@ def main() -> None:
     def src(f: str) -> list[str] | None:
         if f not in cache:
             c = glob.glob("out/native/dn2-audio/gen/" + f) + glob.glob(
-                "native/**/" + f, recursive=True
+                "packages/emulator/**/" + f, recursive=True
             )
             cache[f] = open(c[0], errors="replace").read().splitlines() if c else None  # noqa: SIM115
         return cache[f]

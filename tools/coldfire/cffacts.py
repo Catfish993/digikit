@@ -29,7 +29,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CRATE = ROOT / "native" / "coldfire"
+CRATE = ROOT / "packages" / "emulator" / "coldfire"
 DEFAULT_BASE = 0x40000400
 IMAGE_LIMIT = 0x40400000  # nothing in a MAIN OS image lies beyond this
 
@@ -53,7 +53,7 @@ def cfdis_path() -> Path:
         subprocess.run(
             [
                 "cargo", "build", "--release", "--quiet",
-                "--manifest-path", str(main / "native" / "coldfire" / "Cargo.toml"),
+                "--manifest-path", str(main / "packages" / "emulator" / "coldfire" / "Cargo.toml"),
                 "--bin", "cfdis", "--target-dir", str(target),
             ],
             check=True,

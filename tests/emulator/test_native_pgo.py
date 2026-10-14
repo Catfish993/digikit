@@ -153,7 +153,7 @@ def test_cmd_check_reports_the_reuse(tree, monkeypatch, capsys):
     )
 
 
-def test_local_package_dirs_excludes_packages(monkeypatch):
+def test_local_package_dirs_excludes_apps(monkeypatch):
     metadata = {
         "packages": [
             {"source": None, "manifest_path": str(ROOT / name / "Cargo.toml")}
@@ -170,7 +170,10 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
         "run",
         lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(metadata), ""),
     )
-    assert native_pgo.local_package_dirs() == ["packages/emulator/coldfire", "packages/emulator/sharc"]
+    assert native_pgo.local_package_dirs() == [
+        "packages/emulator/coldfire",
+        "packages/emulator/sharc",
+    ]
 
 
 def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):

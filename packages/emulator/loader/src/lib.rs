@@ -505,8 +505,8 @@ mod tests {
     #[test]
     fn parses_repo_fixtures_when_present() {
         for file in [
-            "../../Digitakt_II_OS1.16.syx",
-            "../../Digitone_II_OS1.11.syx",
+            "../../../Digitakt_II_OS1.16.syx",
+            "../../../Digitone_II_OS1.11.syx",
         ] {
             let Ok(data) = std::fs::read(file) else {
                 continue;

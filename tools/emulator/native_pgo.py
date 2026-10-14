@@ -53,7 +53,7 @@ cargo gives the test target's dependencies other crate hashes than the app's,
 so a profile trained on it never matched the app). It needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
 The launcher (``tools/emulator/native_emu.py``) does not retrain: it warns about a stale
 profile and uses it anyway. Retrain with ``mise run pgo`` or by launching with
-DIGI_EMU_PGO_TRAIN=1. The key covers the emulation crates only (not packages/),
+DIGI_EMU_PGO_TRAIN=1. The key covers the emulation crates only (not apps/),
 so a desktop-crate edit leaves the profile current; the fast-region lists are
 read at run time and are not part of the key.
 
@@ -211,14 +211,14 @@ DESKTOP_DIR = str(pathlib.PurePosixPath(MANIFEST_PATH).parent)
 
 
 def is_emulation_package(rel: str) -> bool:
-    """True for a crate that shapes hot code; the UI shell under packages/ does not.
+    """True for a crate that shapes hot code; the UI shell under apps/ does not.
 
     The profile is keyed by the emulation code only. A slightly stale profile is
     safe: LLVM ignores profile data for functions whose CFG hash changed, so a
     desktop-crate edit costs nothing, while a profile treated as stale makes the
     launcher fall back to a non-PGO build (about 30% slower DSP).
     """
-    return pathlib.PurePosixPath(rel).parts[:1] != ("packages",)
+    return pathlib.PurePosixPath(rel).parts[:1] != ("apps",)
 
 
 def local_package_dirs() -> list[str]:

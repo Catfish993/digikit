@@ -43,6 +43,18 @@ def test_digi_client_triggers_its_test() -> None:
     assert "python-tests" in verify.steps_for(["packages/emulator/control/src/lib.rs"])
 
 
+def test_moved_paths_route() -> None:
+    assert "web" in verify.steps_for(["apps/web/src/x.ts"])
+    assert "desktop" in verify.steps_for(["apps/desktop/src-tauri/src/main.rs"])
+    assert "dt2-tone" in verify.steps_for(["packages/emulator/sharc/src/lib.rs"])
+    assert "tier-quick" in verify.steps_for(
+        ["packages/emulator/sharc-fast-cl/src/lib.rs"]
+    )
+    assert "web" in verify.steps_for(["packages/emulator/patchkit/src/lib.rs"])
+    assert "card" in verify.steps_for(["packages/emulator/plusdrive/src/lib.rs"])
+    assert "dt2-tone" in verify.steps_for(["packages/emulator/machine/src/lib.rs"])
+
+
 def test_full_and_empty() -> None:
     assert verify.python_tests([], False) == list(verify.PY_GATE)
     full = verify.python_tests([], True)

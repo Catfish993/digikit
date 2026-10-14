@@ -2594,7 +2594,7 @@ mod tests {
 
     #[test]
     fn ssi_delivery_precedes_same_boundary_timer_and_is_recorded_without_fault() {
-        let Ok(syx) = std::fs::read("../../Digitone_II_OS1.11.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitone_II_OS1.11.syx") else {
             return;
         };
         let mut runtime = Emulator::new(&syx, None).unwrap();
@@ -2651,7 +2651,7 @@ mod tests {
             "Digitone_II_OS1.11.syx",
             "Digitone_II_OS1.12.syx",
         ] {
-            let Ok(syx) = std::fs::read(format!("../../{file}")) else {
+            let Ok(syx) = std::fs::read(format!("../../../{file}")) else {
                 continue;
             };
             let emu = Emulator::new_with_policy(&syx, None, ExecutionPolicy::SoftfloatAbiV1)
@@ -2671,7 +2671,7 @@ mod tests {
             "Digitone_II_OS1.11.syx",
             "Digitone_II_OS1.12.syx",
         ] {
-            let Ok(syx) = std::fs::read(format!("../../{file}")) else {
+            let Ok(syx) = std::fs::read(format!("../../../{file}")) else {
                 continue;
             };
             let mut slow = Emulator::new(&syx, None).unwrap();
@@ -2742,7 +2742,7 @@ mod tests {
 
     #[test]
     fn ram_clear_declines_modified_code_inputs_active_timers_and_invalid_state() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let mut emu = Emulator::new(&syx, None).unwrap();
@@ -2795,7 +2795,7 @@ mod tests {
 
     #[test]
     fn diagnostics_preserves_cpu_and_pending_frame_delivery() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let mut runtime = Emulator::new(&syx, None).unwrap();
@@ -2815,7 +2815,7 @@ mod tests {
 
     #[test]
     fn restored_frame_is_published_once_to_a_fresh_observer() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let mut saved = Emulator::new(&syx, None).unwrap();
@@ -2873,7 +2873,7 @@ mod tests {
     /// `UnsupportedGuestPc`.
     #[test]
     fn code_in_ddr_runs_and_sees_its_own_writes() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let base = 0x47e8_b000u32;
@@ -2927,7 +2927,7 @@ mod tests {
 
     #[test]
     fn idle_advance_matches_reference_cpu_and_guest_clock() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let mut slow = Emulator::new(&syx, None).unwrap();
@@ -2957,7 +2957,7 @@ mod tests {
     /// reset RAM clears, timers and MMIO.
     #[test]
     fn batched_chunks_match_single_steps_from_cold_boot() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let mut slow = Emulator::new(&syx, None).unwrap();
@@ -3083,7 +3083,7 @@ mod tests {
 
     #[test]
     fn known_fixture_constructs_without_running_guest_code() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let runtime = Emulator::new(&syx, None).unwrap();
@@ -3093,7 +3093,7 @@ mod tests {
 
     #[test]
     fn panel_packets_keep_chords_split_signed_turns_and_reserve_capacity() {
-        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+        let Ok(syx) = std::fs::read("../../../Digitakt_II_OS1.16.syx") else {
             return;
         };
         let mut runtime = Emulator::new(&syx, None).unwrap();

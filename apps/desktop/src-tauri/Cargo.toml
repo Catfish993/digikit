@@ -17,10 +17,10 @@ tauri-build = { version = "2.5.1", features = [] }
 tauri = { version = "2.9.1", features = ["custom-protocol"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-elektron-native-boot = { path = "../../../native/boot" }
-emmc-card = { path = "../../../native/card" }
-digi-coupled = { path = "../../../native/coupled" }
-digi-control = { path = "../../../native/control" }
+elektron-native-boot = { path = "../../../packages/emulator/boot" }
+emmc-card = { path = "../../../packages/emulator/card" }
+digi-coupled = { path = "../../../packages/emulator/coupled" }
+digi-control = { path = "../../../packages/emulator/control" }
 
 [dev-dependencies]
 sha2 = "0.10"

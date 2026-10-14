@@ -24,7 +24,7 @@ use crate::sharc_source::{
 };
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
 }
 
 fn lib() -> Option<PathBuf> {

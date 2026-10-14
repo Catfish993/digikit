@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-CRATE = ROOT / "native" / "coldfire"
+CRATE = ROOT / "packages" / "emulator" / "coldfire"
 # The native crates form one cargo workspace; its default target dir is ROOT/target.
 CFDIS = ROOT / "target" / "release" / "cfdis"
 LANG_DIR = (

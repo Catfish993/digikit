@@ -48,7 +48,7 @@ def test_sleigh_normalisation():
 def test_crate():
     subprocess.run(
         ["cargo", "test", "--release", "--quiet"],
-        cwd=ROOT / "native" / "coldfire",
+        cwd=ROOT / "packages" / "emulator" / "coldfire",
         check=True,
     )
 

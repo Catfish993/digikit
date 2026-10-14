@@ -42,8 +42,8 @@ scratch/
 # regenerated on demand instead (tools/emulator/gen_test_samples.py, samples/README.md).
 samples/*.wav
 
-# Rust build output for native/
-native/**/target/
+# Rust build output for packages/emulator/
+packages/emulator/**/target/
 
 # JavaScript build artifacts
 node_modules/

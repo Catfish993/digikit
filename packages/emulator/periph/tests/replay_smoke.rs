@@ -17,7 +17,7 @@ fn trace_dir() -> std::path::PathBuf {
     // Traces live in the main tree's `out/`, linked into a worktree by
     // `tools/devtools/worktree-setup.sh`; this crate's manifest dir is
     // `<repo>/native/periph`.
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../out/mmio-trace")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../out/mmio-trace")
 }
 
 #[test]

@@ -478,7 +478,7 @@ def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
     DIGI_EMU_PANEL=1 forces the build.
     """
     digest = panel_digest()
-    dist = ROOT / "packages" / "web" / "dist"
+    dist = ROOT / "apps" / "web" / "dist"
     try:
         same = json.loads(PANEL_STAMP.read_text()).get("digest") == digest
     except (OSError, ValueError):
@@ -511,7 +511,7 @@ def plusdrive_card(
     )
     if not names:
         raise SystemExit(f"--samples: no .wav files directly in {samples}")
-    manifest = ROOT / "native" / "plusdrive" / "Cargo.toml"
+    manifest = ROOT / "packages" / "emulator" / "plusdrive" / "Cargo.toml"
     # Share the CF-only target dir with the desktop app: one dependency build.
     target = target_dir_for(None)
     done = subprocess.run(

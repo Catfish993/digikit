@@ -587,7 +587,10 @@ def test_pgo_build_failure_skips_the_check(monkeypatch, capsys):
 def test_daemon_command_builds_digi_emud_without_pgo_or_the_panel():
     scope = launcher()
     plain = scope["daemon_command"](["x.syx"])
-    assert plain[plain.index("--manifest-path") + 1] == "packages/emulator/control/Cargo.toml"
+    assert (
+        plain[plain.index("--manifest-path") + 1]
+        == "packages/emulator/control/Cargo.toml"
+    )
     assert plain[plain.index("--bin") + 1] == "digi-emud"
     assert "--features" not in plain
     assert plain[plain.index("--") + 1 :] == ["x.syx"]

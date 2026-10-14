@@ -1684,7 +1684,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     pf.add_argument("--save-to", help="snapshot path for --save-at")
     pp = sub.add_parser(
-        "pack", help="write a frame pack for packages/emulator/sharc's sharc-frames (no Python)"
+        "pack",
+        help="write a frame pack for packages/emulator/sharc's sharc-frames (no Python)",
     )
     pp.add_argument("image")
     pp.add_argument("capture")

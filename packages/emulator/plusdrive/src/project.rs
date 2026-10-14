@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn finds_the_builtin_stream_in_relinked_firmware() {
         let main_of = |file: &str| {
-            let syx = std::fs::read(format!("../../{file}")).ok()?;
+            let syx = std::fs::read(format!("../../../{file}")).ok()?;
             let parsed = dt2_firmware_loader::parse(&syx).ok()?;
             parsed.sections.into_iter().find(|s| s.id == 3).map(|s| s.bytes)
         };
