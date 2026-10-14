@@ -60,6 +60,26 @@ def test_lattice_types():
     assert u.kind == "union" and set(u.args) == {tp.INT, tp.STR}
 
 
+def test_variable_length_tuple_renders_with_ellipsis():
+    """A 1-tuple reading of `tuple[X]` truncated BITEXT/BITDEP results natively."""
+    from mypy import build
+    from mypy.modulefinder import BuildSource
+    from mypy.options import Options
+
+    opts = Options()
+    opts.python_version = (3, 11)
+    opts.incremental = False
+    src = "x: tuple[int, ...]\ny: tuple[int, str]\n"
+    result = build.build([BuildSource(None, "m", src)], opts)
+    names = result.graph["m"].tree.names
+    assert (
+        infer.render_type(names["x"].node.type) == "builtins.tuple[builtins.int, ...]"
+    )
+    assert (
+        infer.render_type(names["y"].node.type) == "tuple[builtins.int, builtins.str]"
+    )
+
+
 def test_a_construct_outside_the_subset_is_rejected(tmp_path):
     core_dir = tmp_path / "sharc_core"
     shutil.copytree(infer.CORE_DIR, core_dir)
