@@ -32,7 +32,7 @@ main_sha256 = "57b06a7960b7c3dc9803bde6b31896b89a2fbdcc404a932ff503f3856d4d7a61"
 boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"
 readiness_contract = "main-panel-v1"
-# The softfloat ABI shortcuts (native/boot softfloat) are verified on this MAIN OS.
+# The softfloat ABI shortcuts (packages/emulator/boot softfloat) are verified on this MAIN OS.
 softfloat_abi = true
 # The SHARC+ DSP the coupled audio runs (see devices/digitakt-ii.toml).
 dsp = { image = "dn2-1.11", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_head = 0xb88aab }
@@ -45,7 +45,7 @@ main_sha256 = "a098f620019b2ad38fd7e0397df39501fb1cf6bc26d0283915f34c49446fdf1a"
 boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"
 readiness_contract = "main-panel-v1"
-# The softfloat ABI shortcuts (native/boot softfloat) are verified on this MAIN OS.
+# The softfloat ABI shortcuts (packages/emulator/boot softfloat) are verified on this MAIN OS.
 softfloat_abi = true
 # Section 7 is byte-identical to 1.11, so the idle loop addresses carry over.
 dsp = { image = "dn2-1.12", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_head = 0xb88aab }

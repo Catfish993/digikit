@@ -22,7 +22,7 @@ lists what is implemented. The design, including parts that are not built, is in
 | Daemon `digi-emud` | `mise run emu:serve` | No window. Starts paused: a client steps it or sets `run.mode free`. `--free` runs it live. |
 
 Coupled DSP audio in the daemon needs `--auto-coupled` and the ready inputs; see [PATCHING.md](PATCHING.md).
-Startup flags are shared by both servers (`native/control/src/cli.rs`): `--control`, `--no-control`, `--paused`,
+Startup flags are shared by both servers (`packages/emulator/control/src/cli.rs`): `--control`, `--no-control`, `--paused`,
 `--run-dir DIR`, `--card-image FILE`, `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
 flags. `--scenario` needs a coupled-audio build.
 

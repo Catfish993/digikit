@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and run the headless coupled runner (``coupled-run``) and bisect DSP tiers.
 
-``coupled-run`` (native/coupled/src/bin/coupled_run.rs) restores the DN2 ready
+``coupled-run`` (packages/emulator/coupled/src/bin/coupled_run.rs) restores the DN2 ready
 session and plays a scenario of panel events, reporting the PCM hash and RMS.
 The binary is built into the prod generated-core target dir
 (tools/emulator/native_target.py), so it reuses the compiled ``sharc-gen``.
@@ -202,7 +202,7 @@ def build(device: str = "dn2", image=None) -> pathlib.Path:
     command = cargo(
         [
             "build", "--release", "--locked",
-            "--manifest-path", "native/coupled/Cargo.toml",
+            "--manifest-path", "packages/emulator/coupled/Cargo.toml",
             "--features", FEATURES,
             "--bin", BINARY_NAME,
             "--target-dir", str(target),
@@ -745,21 +745,21 @@ def cmd_test_quick(args) -> int:
     base_env.pop("SHARC_GEN_DIR", None)
     steps = [
         (
-            "native/live",
+            "packages/emulator/live",
             base_env,
-            ["--manifest-path", "native/live/Cargo.toml", "--lib",
+            ["--manifest-path", "packages/emulator/live/Cargo.toml", "--lib",
              "--target-dir", str(nogen)],
         ),
         (
-            "native/boot",
+            "packages/emulator/boot",
             base_env,
-            ["--manifest-path", "native/boot/Cargo.toml", "--features", "play",
+            ["--manifest-path", "packages/emulator/boot/Cargo.toml", "--features", "play",
              "--lib", "--target-dir", str(nogen)],
         ),
         (
-            "native/coupled",
+            "packages/emulator/coupled",
             {**base_env, "SHARC_GEN_DIR": str(gen)},
-            ["--manifest-path", "native/coupled/Cargo.toml",
+            ["--manifest-path", "packages/emulator/coupled/Cargo.toml",
              "--features", FEATURES, "--lib", "--bins",
              "--target-dir", str(prod)],
         ),

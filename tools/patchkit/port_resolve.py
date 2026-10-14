@@ -256,7 +256,7 @@ def param_table(cf: CfFacts, rule: dict) -> tuple[int, int]:
 def scan_param_sites(
     main: bytes, main_base: int, t1: int, count: int
 ) -> tuple[list[int], list[tuple[int, int]]]:
-    """The same scan as `params::scan` in native/patchkit: references into the table and clamp bounds."""
+    """The same scan as `params::scan` in packages/emulator/patchkit: references into the table and clamp bounds."""
     import numpy as np
 
     end = min(t1 - main_base, len(main))

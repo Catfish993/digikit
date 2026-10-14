@@ -6,7 +6,7 @@ core module (``ast`` underneath, with names resolved and every expression
 typed -- see tools/sharc_dev/sharc_transpile_infer.py for how the core's
 unannotated handlers get their types), and emits one Rust module per core
 module. Every module-level function becomes a Rust ``fn`` over the native
-runtime in native/sharc-rt/src/rt.rs:
+runtime in packages/emulator/sharc-rt/src/rt.rs:
 
 - Python ``int`` -> ``Int`` (i128), ``float`` -> ``f64``, ``bool``,
   ``str`` -> ``Sym`` (an interned string id; strings that only feed

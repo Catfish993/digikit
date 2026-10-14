@@ -18,7 +18,7 @@ Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
 
 DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
 has no DT2 workload (its gate restores the DN2 ready snapshot), so the profile is
-trained on an instrumented ``coupled-run`` (native/coupled) on the one-sample
+trained on an instrumented ``coupled-run`` (packages/emulator/coupled) on the one-sample
 card's ready state (tools/emulator/dt2_sample_check.py): ``dt2-sample-trig`` plus the FX
 scenarios of :data:`DT2_WORKLOAD` (bit reduction, delay send, reverb send, master
 compressor). State lives in ``out/native/pgo/dt2/<triple>/`` (own manifest and
@@ -33,7 +33,7 @@ cross-device check) and tools/devtools/coupled_ab.py times it::
 
 DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
 has no DT2 workload (the gate restores the DN2 ready snapshot), so the profile is
-trained on an instrumented ``coupled-run`` (native/coupled) on the one-sample
+trained on an instrumented ``coupled-run`` (packages/emulator/coupled) on the one-sample
 card's ready state (tools/emulator/dt2_sample_check.py): ``dt2-sample-trig`` plus the FX
 scenarios of :data:`DT2_WORKLOAD` (bit reduction, delay send, reverb send,
 master compressor), a few seconds each. State lives in
@@ -82,7 +82,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.emulator import digi_env  # noqa: E402
 
-MANIFEST_PATH = "packages/desktop/src-tauri/Cargo.toml"
+MANIFEST_PATH = "apps/desktop/src-tauri/Cargo.toml"
 DEFAULT_GENERATED = digi_env.DEFAULT_GENERATED
 READY = digi_env.READY
 TOOLCHAIN = digi_env.TOOLCHAIN
@@ -1004,7 +1004,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 # --- DT2: instrumented coupled-run on the one-sample card -----------------------
 
-COUPLED_MANIFEST = "native/coupled/Cargo.toml"
+COUPLED_MANIFEST = "packages/emulator/coupled/Cargo.toml"
 # (scenario file, scenario names): 3 s trig of the card's sample, then FX.
 DT2_WORKLOAD: list[tuple[str, list[str]]] = [
     ("scenarios/dt2.json", ["dt2-sample-trig"]),
@@ -1039,7 +1039,7 @@ def build_coupled(
     gen: pathlib.Path,
     log: pathlib.Path,
 ) -> pathlib.Path:
-    """Build native/coupled's ``coupled-run`` (RUSTFLAGS builds use --target)."""
+    """Build packages/emulator/coupled's ``coupled-run`` (RUSTFLAGS builds use --target)."""
     env = base_env(gen)
     if rustflags:
         env["RUSTFLAGS"] = rustflags

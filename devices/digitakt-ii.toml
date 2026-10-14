@@ -33,7 +33,7 @@ boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"
 plusdrive_project_contract = "dt2-v3-default-1.16"
 readiness_contract = "main-panel-fs-check-v1"
-# The softfloat ABI shortcuts (native/boot softfloat) are verified on this MAIN OS.
+# The softfloat ABI shortcuts (packages/emulator/boot softfloat) are verified on this MAIN OS.
 softfloat_abi = true
 # The SHARC+ DSP the coupled audio runs. image: tools/sharc_dev/sharcdb/ name. The idle
 # loop is the RTOS idle task's spin loop (same code as DN2, moved by -0x26dc:
@@ -51,7 +51,7 @@ boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"
 plusdrive_project_contract = "dt2-v3-default-1.16"
 readiness_contract = "main-panel-fs-check-v1"
-# The softfloat ABI shortcuts (native/boot softfloat) are verified on this MAIN OS.
+# The softfloat ABI shortcuts (packages/emulator/boot softfloat) are verified on this MAIN OS.
 softfloat_abi = true
 # Section 7 (the SHARC+ blob) is byte-identical to 1.16, so the idle loop addresses carry over.
 dsp = { image = "dt2-1.17", idle_start = 0xb8636d, idle_end = 0xb863df, idle_head = 0xb863cf, sample_link = "lp0" }

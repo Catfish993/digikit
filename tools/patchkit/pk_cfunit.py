@@ -17,7 +17,7 @@ that site, and leaves through a tail or an exit of the stock code. This harness 
 The routine sees the registers `d`/`a` (a dict index -> value, default 0), the flags `ccr` (bit 2 = Z) and the stack
 `stack` (word 0 on top; `unit.rts` as word 0 makes a routine that ends in `rts` come back). The result names the
 stub it left through (``"rts"`` for a return), the registers, the flags and the 16 stack words at that moment. The
-module's own bss starts zeroed on every case. Backed by native/boot/examples/cf_call.rs (state cached under
+module's own bss starts zeroed on every case. Backed by packages/emulator/boot/examples/cf_call.rs (state cached under
 out/cache/pk_cfcall/).
 """
 

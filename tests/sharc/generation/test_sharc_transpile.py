@@ -1,5 +1,5 @@
 """The SHARC+ core's Rust translation (tools/sharc_dev/sharc_transpile/) and the
-native core built from it (native/sharc, tools/sharc_dev/sharc_transpile_run.py).
+native core built from it (packages/emulator/sharc, tools/sharc_dev/sharc_transpile_run.py).
 
 The translation itself needs no firmware: it reads tools/sharc_dev/sharc_core. The
 native checks need the library built with the generated code
@@ -94,7 +94,7 @@ def test_a_construct_outside_the_subset_is_rejected(tmp_path):
 
 
 needs_lib = pytest.mark.skipif(
-    not os.path.exists(LIB), reason="native core not built (native/sharc)"
+    not os.path.exists(LIB), reason="native core not built (packages/emulator/sharc)"
 )
 
 

@@ -69,7 +69,7 @@ def build(device: str) -> Path:
     command = [
         "rustup", "run", digi_env.TOOLCHAIN,
         "cargo", "build", "--release", "--locked",
-        "--manifest-path", "native/control/Cargo.toml",
+        "--manifest-path", "packages/emulator/control/Cargo.toml",
         "--bin", "digi-emud",
         "--features", "coupled-audio",
         "--target", digi_env.TRIPLE,

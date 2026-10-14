@@ -7,7 +7,7 @@ tick), the interpreter runs on through the rest of that block: a generated
 region has entries only at its block starts, so the next instruction is not
 one. `coupled-run --profile-execution` therefore records, besides the PCs where
 an interpreter run starts, the PC after the first instruction of a run that
-began at a block entry (native/sharc/src/lib.rs, `diag_step`). Making those PCs
+began at a block entry (packages/emulator/sharc/src/lib.rs, `diag_step`). Making those PCs
 block starts lets the run end after one instruction. The new starts can be gated
 the same way, so the search repeats until no frequent new PC appears.
 

@@ -1,30 +1,30 @@
 # One workspace for the native crates that build together, so they share a
 # Cargo.lock, one set of profiles (cargo reads profiles only from the root)
 # and, above all, one compiled copy of the ~80 MB generated core (sharc-gen)
-# per target dir. See native/README.md for the target-dir convention.
+# per target dir. See packages/emulator/README.md for the target-dir convention.
 [workspace]
 resolver = "3"
 members = [
-    "native/boot",
-    "native/bootstrap",
-    "native/card",
-    "native/coldfire",
-    "native/control",
-    "native/coupled",
-    "native/device-profile",
-    "native/host",
-    "native/live",
-    "native/loader",
-    "native/patchkit",
-    "native/machine",
-    "native/periph",
-    "native/plusdrive",
-    "native/sharc",
-    "native/sharc-fast-cl",
-    "native/sharc-fast-wasm",
-    "native/sharc-gen",
-    "native/sharc-rt",
-    "packages/desktop/src-tauri",
+    "packages/emulator/boot",
+    "packages/emulator/bootstrap",
+    "packages/emulator/card",
+    "packages/emulator/coldfire",
+    "packages/emulator/control",
+    "packages/emulator/coupled",
+    "packages/emulator/device-profile",
+    "packages/emulator/host",
+    "packages/emulator/live",
+    "packages/emulator/loader",
+    "packages/emulator/patchkit",
+    "packages/emulator/machine",
+    "packages/emulator/periph",
+    "packages/emulator/plusdrive",
+    "packages/emulator/sharc",
+    "packages/emulator/sharc-fast-cl",
+    "packages/emulator/sharc-fast-wasm",
+    "packages/emulator/sharc-gen",
+    "packages/emulator/sharc-rt",
+    "apps/desktop/src-tauri",
 ]
 exclude = [
     # Agent worktrees live inside the main tree; keep cargo from treating

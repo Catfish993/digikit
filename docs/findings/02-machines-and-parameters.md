@@ -1003,7 +1003,7 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 
 ## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
 
-Plan: `docs/plans/patchkit.md` (Phase 3). Code: `native/patchkit/src/machines.rs`, `modules/core/machines`,
+Plan: `docs/plans/patchkit.md` (Phase 3). Code: `packages/emulator/patchkit/src/machines.rs`, `modules/core/machines`,
 `modules/machines/xslice`, `modules/test/machine-clone`, `tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
 `tools/emulator/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
@@ -1133,7 +1133,7 @@ the eMMC as sparse sectors) so a card with a patched firmware's project can be m
 
 ## core.params: parameter descriptors for added machines (patchkit) **[D]**
 
-Plan: `docs/plans/patchkit.md` (Phase 3 and 4.2 results). Code: `native/patchkit/src/params.rs` (with `tests/params.rs`, 5
+Plan: `docs/plans/patchkit.md` (Phase 3 and 4.2 results). Code: `packages/emulator/patchkit/src/params.rs` (with `tests/params.rs`, 5
 integration tests on the real ports and images, 3 unit tests), `[[param]]` in `module.rs`, `modules/core/params`,
 `tools/patchkit/port_resolve.py` (three rule kinds), `modules/machines/pluck`, `tools/patchkit/pk_proof_pluck.py`. One agent, emulator only,
 nothing flashed, not checked by a second agent: **[D]** unless stated. A second agent verified **[V]** the static site
@@ -1245,10 +1245,10 @@ emulator (health asserted after every input; the numbers below are 1.17):
 ## core.machines on Digitone II 1.12 (patchkit, lane fastweb) **[D]**
 
 Emulator only, nothing flashed, one agent, not checked by a second one: **[D]** unless marked. Code:
-`native/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
+`packages/emulator/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
 per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rules `tools/patchkit/pk_machine_rules_dn2.py`
 (`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `modules/test/dn2-clone` (a clone of FM TONE as
-type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `native/patchkit/tests/machines.rs`
+type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `packages/emulator/patchkit/tests/machines.rs`
 (DN2 1.12 and 1.11 patch; the Digitakt output is byte-identical to the previous patchkit for `core/machines` +
 `machines/xslice` + `test/machine-clone` on 1.16 and 1.17). Addresses are 1.12; 1.11 is the same by function hash.
 
@@ -1426,7 +1426,7 @@ moves the slot's word; before any note no block changes). See finding 06, "DN2 v
 
 ## core.machines, core.params and core.dsp-voice as modules (patchkit 3b.2/3b.3, lane b) **[D]**
 
-**[C]** to the code references above: `native/patchkit/src/machines.rs`, `machines/dn2.rs`, `params.rs`, their tests, and the
+**[C]** to the code references above: `packages/emulator/patchkit/src/machines.rs`, `machines/dn2.rs`, `params.rs`, their tests, and the
 manifest keys `[[machine]]`, `[[param]]`, `[[table]]`, `op = "register"` and `op = "jump"` were deleted. The frameworks are
 ordinary modules now: ColdFire assembly (`modules/core/machines/src/cf/dt2/machines.s`, `.../dn2/machines.s`,
 `modules/core/params/src/cf/dt2/params.s`), a manifest with registries (`machines`, `params`, `voices`), P1 copies of the
@@ -1450,7 +1450,7 @@ the behaviour and the evidence above stand; what changed is who builds the table
 - **Unit tests:** `tools/patchkit/pk_cfunit.py` runs one hook routine on the native core with chosen registers, flags and stack (tails and
   exits are stubs that report where the routine left); `tests/test_pk_machines_fw.py`, `test_pk_machines_dn2_fw.py`,
   `test_pk_params_fw.py`; the manifest row expressions are evaluated by `tools/patchkit/pk_expr.py` and compared with the old Rust
-  row builders' formulas. Integration: `native/patchkit/tests/frameworks.rs` (real modules on the real images).
+  row builders' formulas. Integration: `packages/emulator/patchkit/tests/frameworks.rs` (real modules on the real images).
 - **Hot-path cost matters to the proofs [D]:** the Digitone II hooks on the frame builder (vector 191), the type reader and the
   type maps run for every audio block or parameter access. A first version saved registers before it knew the type was a
   stock one; the patched image then cold-booted half a DSP block (32 frames) off the stock timeline and the exact
@@ -1463,7 +1463,7 @@ Emulator only, one agent, not checked by a second one: **[D]**. Realises "DN2 pa
 there stands except where marked **[C]**. Code: `modules/core/machines` (DN2 assembly `src/cf/dn2/machines.s`, registry `pages`),
 `modules/core/params` (the Digitone II side: registry, `pf_table` section, hooks and writes for 321 rows, rules in
 `modules/core/params/module.toml`), `modules/test/dn2-pages` (the content proof), `tools/patchkit/pk_proof_pages_dn2.py` (quick and full),
-`tests/test_pk_machines_dn2_fw.py` (the routines on the ColdFire call harness, 5 new tests). No change in `native/patchkit`.
+`tests/test_pk_machines_dn2_fw.py` (the routines on the ColdFire call harness, 5 new tests). No change in `packages/emulator/patchkit`.
 
 **What a content module writes.** Parameters as on the Digitakt (`registry = "params"`: `name`, `short`, `template` = a stock code
 of the same value class, `slot` = the **sound-array slot itself** 25..64, `min`, `max`, `default`) and one row per page:

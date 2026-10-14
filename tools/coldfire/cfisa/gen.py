@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the ColdFire decoder (native/coldfire/src/decode_gen.rs) from the
+"""Generate the ColdFire decoder (packages/emulator/coldfire/src/decode_gen.rs) from the
 instruction table tools/coldfire/cfisa/coldfire.json.
 
     uv run python -m tools.coldfire.cfisa.gen            # check the table, write the Rust

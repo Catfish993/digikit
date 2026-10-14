@@ -65,7 +65,7 @@ RUST_MAGIC = b"DT2SNP01"
 
 
 def _load_rust_pages(path: str) -> dict[int, bytearray]:
-    """Memory pages of a Rust DT2SNP01 snapshot (native/machine board.rs
+    """Memory pages of a Rust DT2SNP01 snapshot (packages/emulator/machine board.rs
     `BORD` section): u64 LE page count, then per page a u32 LE index (address
     >> 20) and 256 chunks of 4 KiB, each preceded by a presence byte. Regs and
     the rest of the file are not parsed."""
@@ -114,7 +114,7 @@ class Snapshot:
         with open(path, "rb") as fh:
             magic = fh.read(8)
         if magic == RUST_MAGIC:
-            # Rust DT2SNP01 file (native/boot runtime.rs): memory only.
+            # Rust DT2SNP01 file (packages/emulator/boot runtime.rs): memory only.
             pages = _load_rust_pages(path)
             self._blob: dict[str, Any] = {
                 "regs": {},

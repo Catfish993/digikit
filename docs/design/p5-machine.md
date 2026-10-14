@@ -1,11 +1,11 @@
-# P5 design: native/machine (ColdFire + periph + SHARC + live audio)
+# P5 design: packages/emulator/machine (ColdFire + periph + SHARC + live audio)
 
 > Historical: the Python emulator (`emu/` machine modules), the Unicorn oracle and the lockstep tools named below were removed (see tag `unicorn-reference-final`).
 
-Base: `5396f9a`. Sources read: `docs/plans/native-emulator.md`, `native/coldfire/src/{lib,cpu}.rs`
-(Bus trait, `Cpu::step`), `native/periph/src/{lib,machine,dspi,ssi,spilink,dsp}.rs` (signatures),
-`scratchpad/p4a-periph-timers.md`, `p4b-periph-dma.md`, `native/sharc/src/frames.rs`,
-`native/live/src/{lib,sharc_source,producer,repeater,source}.rs` (signatures),
+Base: `5396f9a`. Sources read: `docs/plans/native-emulator.md`, `packages/emulator/coldfire/src/{lib,cpu}.rs`
+(Bus trait, `Cpu::step`), `packages/emulator/periph/src/{lib,machine,dspi,ssi,spilink,dsp}.rs` (signatures),
+`scratchpad/p4a-periph-timers.md`, `p4b-periph-dma.md`, `packages/emulator/sharc/src/frames.rs`,
+`packages/emulator/live/src/{lib,sharc_source,producer,repeater,source}.rs` (signatures),
 `emu/longrun.py` (`IdleSpin` 741-808, `spin` 999-1132, service order 1195-1207),
 `emu/pit.py` (`interrupt_level` 170, `deliver_pending` 473), `emu/harness.py` (`raise_vector` 382),
 `emu/livesharc.py` (`FrameForcer` 106), `emu/dspi2.py` (model and lockstep docs 60-190, `service` 464),
@@ -84,7 +84,7 @@ A bitmap over the code region (1 bit per 2 bytes, ~256 KiB for the MAIN OS span)
 wait loop (vector 155 delivery), `flash_read` HLE (Oracle), SSI0 ISR RTE handover of vector 191
 (Oracle, `emu/ssi.py`). Device mode clears all but idle and flash.
 
-### 1.4 CPU additions (native/coldfire, small)
+### 1.4 CPU additions (packages/emulator/coldfire, small)
 
 ```rust
 pub enum RunExit { Budget, Hook(u32), Irq(u8), Stop(Stop) }
@@ -154,7 +154,7 @@ pub trait SharcLink {
 ```
 
 Implementations: `ZeroLink` (= `ZeroPeer`, parity runs), `RecordLink` (TX frames + FlexBus bytes with
-clocks, in `.dt2cap`/`flexbus.raw` form for byte comparison), `QueueLink` (desktop, in native/live:
+clocks, in `.dt2cap`/`flexbus.raw` form for byte comparison), `QueueLink` (desktop, in packages/emulator/live:
 TX -> `FrameQueue::write`, RX zeros), `InlineLink` (renders each frame with `SharcRenderer` on the
 calling thread; tests, single-worker wasm, and the future reply path).
 
@@ -183,7 +183,7 @@ Python snapshots are pickles (`emu/snapshot.py save`): `regs` (d0-7, a0-7, pc, s
 
 - `tools/snapconv.py` (Python, reuses `emu.snapshot._load_blob`): `.snap <-> .mstate`.
   `.mstate` = magic, JSON header (everything but pages), then `(base u32, len u32, zlib bytes)` records.
-- `native/machine/src/state.rs`: `MachineState` and `read/write`. Import fills fields the snapshot
+- `packages/emulator/machine/src/state.rs`: `MachineState` and `read/write`. Import fills fields the snapshot
   lacks (EMAC, inactive A7, CACR/RAMBAR not in `ctlregs`) with what a Python restore leaves them
   at; this is checked on the first parity run, not assumed.
 - Export writes `.mstate`; `snapconv` turns it into a `.snap`; `tools/snapeq.py py.snap native.snap`
@@ -210,14 +210,14 @@ impl<L: SharcLink> Machine<L> {
 ```
 
 Locating a mismatch: with feature `trace`, the machine writes `DT2MMIO` v1 (the format
-`native/periph/src/trace.rs` reads) through a zero-cost generic `Tracer`; `mmio-diff py.mmio
+`packages/emulator/periph/src/trace.rs` reads) through a zero-cost generic `Tracer`; `mmio-diff py.mmio
 native.mmio` prints the first differing record and its clock. Then the P3 per-instruction lockstep
 narrows it inside one step.
 
 ## 5. Crate layout, profile, host edges
 
 ```
-native/machine/            pure, std only, builds for wasm32 (--no-default-features drops trace/state io)
+packages/emulator/machine/            pure, std only, builds for wasm32 (--no-default-features drops trace/state io)
   lib.rs      Machine<L>, Mode, Exit, run(), guest_time()
   board.rs    Board, Bus impl, DMA effect completion
   map.rs      Region/DevId tables
@@ -225,7 +225,7 @@ native/machine/            pure, std only, builds for wasm32 (--no-default-featu
   idle.rs     IdleSpin;  hooks.rs  PC bitmap + Oracle HLEs;  link.rs  SharcLink, ZeroLink, RecordLink
   state.rs    MachineState, .mstate;  profile.rs  Profile + ImageFacts;  input.rs  input events + log
   trace.rs    (feature) DT2MMIO writer;  bin/mrun.rs  import, run N, export, trace, stats
-native/live/               desktop host: QueueLink, InlineLink, pacing, CF thread, cpal (exists)
+packages/emulator/live/               desktop host: QueueLink, InlineLink, pacing, CF thread, cpal (exists)
 native/desktop/ (bin)      window + local webview (HTML canvas UI), wiring
 native/web/ (P6)           Web Worker host, AudioWorklet + SharedArrayBuffer ring
 ```
@@ -251,7 +251,7 @@ impl<L: SharcLink> Machine<L> {
   recorded in findings as they are found.
 - **`ImageFacts` (per image, resolved on the user's machine):** image sha256, idle sites, UART8 wait
   PC, `flash_read` PC, intro handover PC, Oracle-only frame gate/counter/vector. First produced by a
-  Python exporter into `out/` (JSON); later by `native/loader` from signatures.
+  Python exporter into `out/` (JSON); later by `packages/emulator/loader` from signatures.
 - **Host edges:** desktop has three threads beyond the UI: ColdFire (runs `Machine::run` in ~1 ms
   guest slices, parks on the pacing condvar), producer (SHARC, exists), cpal callback (exists). Input
   crosses by an SPSC queue into `Machine::input`; the display crosses by a double buffer. The browser

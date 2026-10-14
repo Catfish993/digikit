@@ -4,7 +4,7 @@ A codegen experiment on the hot DSP regions costs minutes through the coupled
 build. This tool makes a gen dir that holds only the selected regions
 (tools/sharc_dev/sharc_rsgen.py --only), captures the engine state at each region's
 entry from the DN2 note replay, and times the region's generated entry
-function from that state (native/sharc/examples/region_bench.rs).
+function from that state (packages/emulator/sharc/examples/region_bench.rs).
 
     sharc_regionbench.py gen [--variant base] [--tools-dir DIR] [-- RSGEN ARGS]
     sharc_regionbench.py capture [--variant base]
@@ -62,7 +62,7 @@ STATE = os.path.join(
 # frames of the note capture).
 FRAMES = os.path.join(BENCH, "digi-audio-note.frames")
 # Hand-written versions of hot regions (firmware-derived: stays under out/,
-# compiled into region_bench only when present, see native/sharc/build.rs).
+# compiled into region_bench only when present, see packages/emulator/sharc/build.rs).
 SOL = os.path.join(BENCH, "sol", "sol.rs")
 DEFAULT_REGIONS = "1C399A,1C3862,1C364F,1C2484,1C5765,B823DB"
 TOOLCHAIN = "1.98.1"

@@ -37,7 +37,7 @@ string numbers the block code uses are the core's.
     uv run python -m tools.sharc_dev.sharc_rsgen dt2-1.16 --coverage COV \\
         --entries I.entries --transitions T --out out/native/opt/gen
     SHARC_GEN_DIR=$PWD/out/native/opt/gen cargo build --release \\
-        --manifest-path native/sharc/Cargo.toml
+        --manifest-path packages/emulator/sharc/Cargo.toml
 """
 
 from __future__ import annotations
@@ -143,7 +143,7 @@ def insn_static(syms, pc: int, insn) -> str:
 # *engine* does between instructions: complete a pending bank or PC-stack
 # change, tick the core timer, take an interrupt, set EMUCLK, step a
 # peripheral. A block is "model-safe" when none of those can matter inside
-# it, given the engine's entry gate (native/sharc/src/lib.rs block_plan):
+# it, given the engine's entry gate (packages/emulator/sharc/src/lib.rs block_plan):
 #
 # - it writes none of MODE1 (a bank request), PCSTKP/PCSTK/MODE1STK/LADDR/
 #   CURLCNTR (stack models), IRPTL/IMASK/IMASKP/MMASK (interrupt state),
@@ -1237,7 +1237,7 @@ CODE_LOOKAHEAD = 6  # short words past a block the decoder may read
 
 def code_ranges(mem, blocks: list[Block]) -> list[tuple[int, int, str]]:
     """Merged short-word ranges covering the generated blocks (plus
-    CODE_LOOKAHEAD words), each with the SHA-256 native/sharc/src/lib.rs
+    CODE_LOOKAHEAD words), each with the SHA-256 packages/emulator/sharc/src/lib.rs
     verify_code computes over the loaded words."""
     import hashlib
 

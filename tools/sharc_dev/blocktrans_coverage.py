@@ -3,7 +3,7 @@
 
 Arms `SHARC_BLOCKTRANS` cluster roots for the top-N AOT entries of a region
 cost ranking, runs a short coupled idle scenario with `SHARC_FAST_COV=1`
-(coverage lines from `native/sharc/src/fast/`), and reports
+(coverage lines from `packages/emulator/sharc/src/fast/`), and reports
 
   (a) a table per root: AOT ms/s at stake, calls/s, translated fraction of
       the dynamic instructions, first stop;
@@ -53,7 +53,7 @@ RANKED = ROOT / "out/native/runs/20261005-region-cost/ranked.json"
 BINARY = ROOT / "out/native/target/cov/release/coupled-run"
 DB = ROOT / "out/sharcdb/dn2-1.11.sqlite"
 IDLE = (0xB88A49, 0xB88ABB)
-GAP_CAP = 4096  # matches COV_GAP_CAP in native/sharc/src/fast/mod.rs
+GAP_CAP = 4096  # matches COV_GAP_CAP in packages/emulator/sharc/src/fast/mod.rs
 DECLINES = ("shape", "req", "window", "budget", "exit0")
 
 # -- log parsing (pure) -------------------------------------------------------

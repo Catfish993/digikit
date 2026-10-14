@@ -368,7 +368,7 @@ before the caches are enabled, so it needs no cache maintenance.
 
 Section 2 (DT2 1.16 and 1.17 are byte-identical, version 0x0201) loads at 0x80000400
 (the file's first 4 bytes are a length word; the image's first two longwords are SP
-0x80010000 and PC 0x80000de8). `native/bootstrap` runs its real instructions on the
+0x80010000 and PC 0x80000de8). `packages/emulator/bootstrap` runs its real instructions on the
 native ColdFire core; `tools/emulator/bootstrap_run.py` drives it; `tests/test_bootstrap.py`
 pins the results. Modelled, not executed: the QSPI transport (flash read 0x8000f010,
 flash id 0x800024ec, sector erase 0x80002714, page program 0x8000227e), the panel UART
@@ -484,7 +484,7 @@ boots it, and a cold ColdFire boot reaches the main screen with PATCHKIT in the 
 ## RAM map, an expansion region and a loader hook (Phase 0.3 of the patchkit plan)
 
 Tools: `tools/coldfire/regions.py` (`report`, `confirm`, `loader-test`), `tools/firmware/aplib_check.py`,
-the native examples `regions_probe` and `depack_check` (native/boot/examples).
+the native examples `regions_probe` and `depack_check` (packages/emulator/boot/examples).
 `uv run python -m tools.coldfire.regions report` prints everything below for dt2-1.16,
 dt2-1.17, dn2-1.11 and dn2-1.12 from `out/sections/`.
 

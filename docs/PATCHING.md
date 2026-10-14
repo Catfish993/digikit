@@ -184,8 +184,8 @@ Open `/patch`. Drop your own `.syx` on the page (it is read in the browser and n
 check the result and download it. Required modules are added automatically; conflicts and incompatible firmware are
 explained with patchkit's own error text. "Boot in emulator" starts the patched image in the browser core (screen and
 controls, no DSP audio yet). The page reads `public/modules/index.json` and `bundle.json`, which
-`packages/web/scripts/gen-modules.mjs` generates from the committed `modules/` and `devices/ports/` (never from
-`out/`). `patchkit.wasm` produces the same bytes as the command line (`packages/web/tests/patchkit.test.mjs`). The
+`apps/web/scripts/gen-modules.mjs` generates from the committed `modules/` and `devices/ports/` (never from
+`out/`). `patchkit.wasm` produces the same bytes as the command line (`apps/web/tests/patchkit.test.mjs`). The
 first `mise run web` in a fresh tree compiles the browser cores and takes several minutes.
 
 ## How it works
@@ -198,7 +198,7 @@ first `mise run web` in a fresh tree compiles the browser cores and takes severa
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
 | Content module | Own code and declarative registry entries. No addresses. | `fx/master-gain`, `machines/pluck` |
 
-patchkit itself (`native/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
+patchkit itself (`packages/emulator/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
 frameworks are modules built on them. One implementation serves the command line and `patchkit.wasm`.
 
 ### Ports and anchors
@@ -277,7 +277,7 @@ The region is above the bss end, so the reset clear does not touch it, and a can
 free L2. The ColdFire boot routine sends the whole decompressed section, so no ColdFire change is needed. Limits:
 stored size at most `0x100000`, decompressed size at most `0xfffff`; usable appended payload 727,540 B (DT2) and
 211,600 B (DN2). patchkit checks every output stream against the boot-ROM rules that the public manual states
-(`native/patchkit/src/bootrom.rs`, [finding 06](findings/06-sharc-engine-and-startup.md), "Boot ROM conformance").
+(`packages/emulator/patchkit/src/bootrom.rs`, [finding 06](findings/06-sharc-engine-and-startup.md), "Boot ROM conformance").
 
 ### Linking and `.dko` objects
 

@@ -14,7 +14,7 @@ run restarts and compares every instruction over the last interval).
 The native side is set up as `open_dn2_engine` does (runtime decode,
 instruction clock, software IRQs, core timer, peripheral model, approximate
 RECIPS); the Python side gets the same flags. Needs libsharc_native (the cdylib
-of native/sharc built with the generated core): `--lib` or SHARC_NATIVE_LIB.
+of packages/emulator/sharc built with the generated core): `--lib` or SHARC_NATIVE_LIB.
 """
 
 from __future__ import annotations

@@ -1712,7 +1712,7 @@ class FnT:
         static: dict,
     ) -> E | None:
         """Calls of the float helpers that have a hand-written fast path in
-        native/sharc-rt/src/rt/bnd.rs (bit-identical results and flags; a NaN
+        packages/emulator/sharc-rt/src/rt/bnd.rs (bit-identical results and flags; a NaN
         result falls back to the original sequence there)."""
         bound = {
             p[0]: (p[1], a)

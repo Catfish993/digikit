@@ -40,7 +40,7 @@ def test_digi_client_triggers_its_test() -> None:
         ["tools/control/digi_client.py"], False
     )
     assert "python-tests" in verify.steps_for(["tools/control/digi_client.py"])
-    assert "python-tests" in verify.steps_for(["native/control/src/lib.rs"])
+    assert "python-tests" in verify.steps_for(["packages/emulator/control/src/lib.rs"])
 
 
 def test_full_and_empty() -> None:

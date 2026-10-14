@@ -260,7 +260,7 @@ def inplace_margin(stream, dest=0x40000400, stage=0x40400000):
     """Slack, in bytes, of unpacking `stream` where the bootstrap does.
 
     The bootstrap stages a packed section at `stage` and unpacks it to `dest`
-    (native/boot/examples/depack_check.rs reproduces it). A MAIN OS image longer
+    (packages/emulator/boot/examples/depack_check.rs reproduces it). A MAIN OS image longer
     than stage - dest bytes writes over the staged stream while it is still
     being read. This returns the smallest, over the stream, of
     (stream bytes consumed) - (output bytes written past the staging address),

@@ -237,7 +237,7 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   851,236,338. **[D]**
 - **Two things were version-keyed and are not any more.** `supported_softfloat` was a
   `("dt2","1.16") | ("dn2","1.11")` match; it is now the profile field `softfloat_abi`. The built-in
-  project stream that `native/plusdrive` takes from MAIN sat at a fixed offset (`0x25edd8`); in
+  project stream that `packages/emulator/plusdrive` takes from MAIN sat at a fixed offset (`0x25edd8`); in
   1.17 the same bytes are at `0x25f314`, so the stream is found by structure (length, byte sum,
   container check). Without that the DT2 card builder fails with `StreamOutOfBounds`. **[V]**
   `Registry::load()` reads `devices/*.toml` at run time (`$DIGI_DEVICES_DIR`, else `devices/` of the

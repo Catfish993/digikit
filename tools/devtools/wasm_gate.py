@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""The V8 gate of the wasm kernel backend (native/sharc-fast-wasm).
+"""The V8 gate of the wasm kernel backend (packages/emulator/sharc-fast-wasm).
 
 Captures real fast-tier kernel calls from a coupled run (SHARC_FAST_DUMP,
-native/sharc/src/fast/dump.rs), turns the kernels into WebAssembly, replays
+packages/emulator/sharc/src/fast/dump.rs), turns the kernels into WebAssembly, replays
 every call through Cranelift (native) and through V8 (Node), checks the
 results against the recorded ones and prints ns per instruction and compile
 time. The gate is <= 1.2 ns per instruction.

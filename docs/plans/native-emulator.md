@@ -4,7 +4,7 @@
 
 Status 2026-09-30, current HEAD `39f8f20`; the original plan base was
 `95d92de` on `work/sharc-emulator`. Update 2026-10-08: this is design history.
-The crate map is in `native/README.md`. `native/sharc-jit`, named below, no
+The crate map is in `packages/emulator/README.md`. `native/sharc-jit`, named below, no
 longer exists: the fast tier and the generated blocks replaced it.
 
 ## Goal
@@ -37,8 +37,8 @@ cannot pass about 0.4x). So:
    instructions/s. No ColdFire JIT on the desktop if it passes.
 3. Remaining peripherals against the traces: eSDHC and card, GPIO, UART,
    panel input, display.
-4. P5 machine wiring: ColdFire core + native/periph + the ahead-of-time
-   SHARC + native/live in one native process, checked against the Python
+4. P5 machine wiring: ColdFire core + packages/emulator/periph + the ahead-of-time
+   SHARC + packages/emulator/live in one native process, checked against the Python
    emulator on the same snapshot windows, then 1.0x with audio.
 
 ## Hand-off: status and next tasks (2026-09-29, commit fc15de5)
@@ -52,22 +52,22 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
 | Area | State | Where |
 |---|---|---|
 | Live play (desktop) | Works: a TRIG in the GUI plays through the ahead-of-time SHARC core. The ColdFire (Unicorn + Python) runs at 0.22x, so the UI and sequencer are slow. | `uv run python tools/dt2gui.py --live-audio`; finding 15 |
-| SHARC, ahead of time | 411-467 us per frame of 667, exact vs Python. The library carries a `sharc_core` hash and refuses a stale build. | `native/sharc`; rebuild command = `REGENERATE_HINT` in `tools/sharc_dev/sharc_transpile_run.py`; DN2 block library from scratch, gated and reproducible: `tools/sharc_dev/sharc_dn2_aot.py` (finding 07) |
+| SHARC, ahead of time | 411-467 us per frame of 667, exact vs Python. The library carries a `sharc_core` hash and refuses a stale build. | `packages/emulator/sharc`; rebuild command = `REGENERATE_HINT` in `tools/sharc_dev/sharc_transpile_run.py`; DN2 block library from scratch, gated and reproducible: `tools/sharc_dev/sharc_dn2_aot.py` (finding 07) |
 | SHARC JIT (P2) | Paused. Correct (91/91 drive3 frames) and deterministic, but 2.5-3.3 ms/frame under wasmtime. On resume: diff its WebAssembly for one hot loop against the ahead-of-time code compiled to wasm32 (630-720 us/frame), fix the differences, and measure with counters (region entries/frame, bytes/instruction, spills). | `native/sharc-jit` (build with `SHARC_GEN_DIR=$PWD/out/native/opt/gen-final`) |
-| ColdFire core (P3) | All 101 used forms; fuzz and EMAC lockstep pass, and bounded DT2 snapshot windows pass under the known Unicorn MVZ-N exemption. The decode cache reaches **80.8–82.2M useful instr/s** with the accepted state hash. Broader windows, DN2 exception boundaries and oracle-exempt EMAC behavior remain open. | `native/coldfire`; `tools/cf_lockstep.py {snap,fuzz,emac}` |
-| Peripherals (P4) | Timers, INTC, eDMA, SSI0, DSPI and DSP FIFO have replay gates; focused early GPIO/eSDHC/card traces and bounded channel-59 transfer effects also pass. Broad peripheral coverage and real trace gates remain for late DMA delivery, UART, panel and display. | `native/periph` (`mmio-replay <trace> [--limit N] [--verbose]`); traces in `out/mmio-trace/` from `tools/mmio_record.py` |
-| Machine (P5) | Partial: `native/machine` has `Board`/`Time`/`Runner` Oracle-replay probes. Autonomous Device timer delivery is deliberately rejected, and the crate has no SHARC/live-audio integration yet. | `native/machine`; `docs/design/p5-machine.md` |
+| ColdFire core (P3) | All 101 used forms; fuzz and EMAC lockstep pass, and bounded DT2 snapshot windows pass under the known Unicorn MVZ-N exemption. The decode cache reaches **80.8–82.2M useful instr/s** with the accepted state hash. Broader windows, DN2 exception boundaries and oracle-exempt EMAC behavior remain open. | `packages/emulator/coldfire`; `tools/cf_lockstep.py {snap,fuzz,emac}` |
+| Peripherals (P4) | Timers, INTC, eDMA, SSI0, DSPI and DSP FIFO have replay gates; focused early GPIO/eSDHC/card traces and bounded channel-59 transfer effects also pass. Broad peripheral coverage and real trace gates remain for late DMA delivery, UART, panel and display. | `packages/emulator/periph` (`mmio-replay <trace> [--limit N] [--verbose]`); traces in `out/mmio-trace/` from `tools/mmio_record.py` |
+| Machine (P5) | Partial: `packages/emulator/machine` has `Board`/`Time`/`Runner` Oracle-replay probes. Autonomous Device timer delivery is deliberately rejected, and the crate has no SHARC/live-audio integration yet. | `packages/emulator/machine`; `docs/design/p5-machine.md` |
 | Unicorn oracle | 5 patches installed (`tools/install-patched-unicorn.sh`). Four known EMAC defects outside the firmware's MACSR modes (0x00, 0x20) are not patched, and the MVZ N flag is wrong; `cf_lockstep` treats these as oracle-exempt. | `patches/README.md` |
 
 ### Benchmarks and gates
 
 - ColdFire speed:
   1. `PYTHONPATH=. uv run python -m tools.coldfire.cf_snapdump snapshots/dt2-1.16-drive3/boot280M.snap out/coldfire-bench/boot280M.cfdump` (once);
-  2. in `native/coldfire`, `cargo build --release --bin cfrealmix && ./target/release/cfrealmix ../../out/coldfire-bench/boot280M.cfdump 100000000`.
+  2. in `packages/emulator/coldfire`, `cargo build --release --bin cfrealmix && ./target/release/cfrealmix ../../out/coldfire-bench/boot280M.cfdump 100000000`.
 
   Gate: the state hash stays `0x0bb544e65d49266b` and instructions/s are reported. (That dump is byte-identical to the one the baseline used.)
 - ColdFire correctness: `uv run python tools/cf_lockstep.py fuzz dt2-1.16 --seed 42` (and `dn2-1.11`), `... emac`, `... snap SNAP --limit N`.
-- Peripherals: `cargo run --release --bin mmio-replay -- out/mmio-trace/<trace>.mmio` in `native/periph`.
+- Peripherals: `cargo run --release --bin mmio-replay -- out/mmio-trace/<trace>.mmio` in `packages/emulator/periph`.
 - Tests: `uv run python -m pytest tests -q` (add `--slow` before a commit; the SHARC slow tests need splitting into groups under 10 minutes) and `cargo test --release` in each crate.
 
 ### Next tasks, in order
@@ -77,7 +77,7 @@ progress and migration gates below.
 
 1. **ColdFire divergence at 0x401768a6** (oracle-driven; Sonnet or GPT). Find which side is wrong using the manual, fix it, then run `snap` lockstep over more windows of both images (the drive3/auto snapshots and `snapshots/dn2-1.11/`) until they are clean or every exemption is explained.
 2. **ColdFire handler dispatch** (Sonnet or GPT): one handler per decoded form with pre-extracted operands, no `Result`/`dyn` on the hot path. Gate: at least 62M instructions/s on `cfrealmix`, hash unchanged, lockstep unchanged. If it falls short, profile before considering a ColdFire JIT.
-3. **Remaining peripherals** (oracle-driven): eSDHC + card (with the +Drive overlay), GPIO, UART, panel input and display, each against the traces and following the `native/periph` interface (see its lib.rs docs).
+3. **Remaining peripherals** (oracle-driven): eSDHC + card (with the +Drive overlay), GPIO, UART, panel input and display, each against the traces and following the `packages/emulator/periph` interface (see its lib.rs docs).
 4. **P5 machine**, following `docs/design/p5-machine.md` step by step. Opus for the scheduler, the oracle/device interrupt delivery and the pacing; the rest is oracle-driven.
 5. **Findings to record** (with a second check before [V]):
    - the four Unicorn EMAC defects and the MVZ N flag;
@@ -101,7 +101,7 @@ progress and migration gates below.
   treat their replay as proof of complete card behavior. Record an earlier
   bounded oracle window before implementing that gate.
 - Task 3 (partial): early 24M checkpoints now supply bounded DT2/DN2 traces
-  through the GPIO SD gate and initial eSDHC access. `native/periph` matches
+  through the GPIO SD gate and initial eSDHC access. `packages/emulator/periph` matches
   all 20 gate writes, 20 read-hook writes and 20 reads per image in its
   explicit focused replay mode. Original v1 whole traces report 2/3
   unexpected vector-207 IRQs because they cannot see a guest SR write after
@@ -120,8 +120,8 @@ progress and migration gates below.
    native SHARC state and control correctness. Recorded AOT SHARC performance
    is not a claim about JIT misses or browser execution.
 2. Validate a native Device timer/IRQ delivery contract before enabling it.
-   `TimerPolicy::Device` is reserved (`native/machine/src/time.rs:21-36`) and
-   rejected by `Runner::step_timed` (`native/machine/src/runner.rs:278-289`);
+   `TimerPolicy::Device` is reserved (`packages/emulator/machine/src/time.rs:21-36`) and
+   rejected by `Runner::step_timed` (`packages/emulator/machine/src/runner.rs:278-289`);
    Python callback-entry counts are not its oracle.
 3. Integrate the native path in order: ColdFire frame production, DSPI wire,
    rendered inputs, SHARC, then PCM. Gate each seam against its recorded
@@ -149,7 +149,7 @@ progress and migration gates below.
 |---|---|
 | SHARC semantics | `tools/sharc_dev/sharc_core` is the source of truth. Current bounded state-pack gates require regenerating the initial pack after a semantic change. |
 | Native SHARC | The current 204/256 bounded replays are exact state/stop gates, not full instruction-parity or realtime claims. Historical AOT timing and compile-only modules remain separately qualified. |
-| Live audio | `native/live` (cpal); `emu/gui.py --live-audio` plays TRIGs live. |
+| Live audio | `packages/emulator/live` (cpal); `emu/gui.py --live-audio` plays TRIGs live. |
 | Current live ColdFire path | Unicorn with 5 patches plus about 30 Python peripheral models and hooks. 0.22x real time with the audio clock running; about 0.4x is the ceiling of this design. The Rust ColdFire core and native-machine probes are recorded separately in the current status table; they are not yet wired into this live path. |
 | Oracles available | Python SHARC core, `tools/sharc_dev/sharc_diff.py` lockstep harness, patched Unicorn, the Python machine, `.snap` snapshots, `tools/snapeq.py`, `.dt2cap` captures, the FlexBus log. |
 
@@ -367,7 +367,7 @@ Keep workflows under about 10 agents; each lane has a single owner per crate.
 
 `devices/digitakt-ii.toml` and `devices/digitone-ii.toml` are the canonical
 product identity, release hash, and physical-panel records. The portable
-`native/device-profile` crate embeds and validates those documents for native
+`packages/emulator/device-profile` crate embeds and validates those documents for native
 and wasm runners; the browser parses the same raw TOML. Its optional boot
 contract is hash-bound to a MAIN image and names the existing explicit Oracle
 MAIN diagnostic contract. It does not claim hardware accuracy or describe
@@ -375,8 +375,8 @@ hardware topology. A future topology reference must remain separate and add
 only independently evidenced fields. Firmware-specific names and guest
 addresses continue to be signature-resolved from the selected image.
 
-`native/loader` now provides a dependency-free, wasm32-compilable SysEx/ELE3
-loader. `native/host` is an offline CLI that consumes it: `--syx` decodes
+`packages/emulator/loader` now provides a dependency-free, wasm32-compilable SysEx/ELE3
+loader. `packages/emulator/host` is an offline CLI that consumes it: `--syx` decodes
 ELE3 section 3 (`MAIN_OS`, destination `0x40000400`) and requires its hash to
 match the existing checkpoint profile; `--main` remains available for the
 same gate. Section 2 is the bootstrap, not MAIN_OS, and this command does not
@@ -391,7 +391,7 @@ DT2 1.16 invocation below produced 68 wire TX frames, 204 clean SHARC renders
 for `--main` and `--syx`:
 
 ```sh
-cd native/host
+cd packages/emulator/host
 CARGO_TARGET_DIR=/private/tmp/dt2-native-integration-target cargo build --release --offline
 DYLD_FALLBACK_LIBRARY_PATH=/path/to/sharc-lib-dir \
   /private/tmp/dt2-native-integration-target/release/dt2-native-host --timer oracle \
@@ -443,14 +443,14 @@ preserved, and `+14` applies to INTFRCL rather than IMRL. Board capture owns
 pending/outbound TX through `take`; both TX35 and DSPI use SERQ-all. The
 full-machine gate reports 83 passing and 13 ignored tests plus its wasm check.
 
-`native/boot` promotes the bounded Oracle cold-boot diagnostic. It requires
+`packages/emulator/boot` promotes the bounded Oracle cold-boot diagnostic. It requires
 an embedded-registry SYX/MAIN identity, resolves its signatures from the
 selected image, and writes reports only to an explicit empty absolute output
 directory. Its compatibility services (zero pages, forced status reads, flash
 HLE, timers, idle interrupts, and TX35) require `--diagnostic-services`:
 
 ```sh
-cargo run --manifest-path native/boot/Cargo.toml --offline -- \
+cargo run --manifest-path packages/emulator/boot/Cargo.toml --offline -- \
   --syx "$PWD/Digitakt_II_OS1.16.syx" --out /private/tmp/dt2-boot \
   --mode oracle-diagnostic --limit 1000000 --stop-at limit --diagnostic-services
 ```

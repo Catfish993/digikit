@@ -19,7 +19,7 @@ Per form two functions are generated:
 - ``t_FORM(s, f, t) -> bool``: which registers the instruction reads and
   writes (`Touch`), false when the leaf for these fields is not supported.
 
-    uv run python -m tools.sharc_dev.sharc_lowergen_helpers native/sharc/src/fast/gen_helpers.rs FORM,...
+    uv run python -m tools.sharc_dev.sharc_lowergen_helpers packages/emulator/sharc/src/fast/gen_helpers.rs FORM,...
 """
 
 from __future__ import annotations

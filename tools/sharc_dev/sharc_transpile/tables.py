@@ -27,7 +27,7 @@ from .types import (
 # ---------------------------------------------------------------------------
 
 
-# Strings the runtime (native/sharc-rt/src/rt.rs RT_SYMS) knows by number:
+# Strings the runtime (packages/emulator/sharc-rt/src/rt.rs RT_SYMS) knows by number:
 # interned first, in this order, and defined there rather than in syms.rs.
 RT_SYMS = (
     "",
@@ -168,7 +168,7 @@ for _n in [
     BOUNDARY["sharc_core.state." + _n] = Bnd()
 BOUNDARY["sharc_core.state._bank_request"] = Bnd(traps=True)
 BOUNDARY["sharc_core.state._pc_stack_request"] = Bnd(traps=True)
-# Hand-written twins in native/sharc-rt/src/rt/periph.rs, reached only from the
+# Hand-written twins in packages/emulator/sharc-rt/src/rt/periph.rs, reached only from the
 # memory boundary and the host.
 for _n in [
     "_mmr",
@@ -193,7 +193,7 @@ for _n in [
 for _n in ["_concrete_address", "_byte_present"]:
     BOUNDARY["sharc_core.memory." + _n] = Bnd()
 # The address table: one out-of-line range walk in the runtime instead of a
-# copy at every use (native/sharc-rt/src/addressing.rs).
+# copy at every use (packages/emulator/sharc-rt/src/addressing.rs).
 BOUNDARY["sharc_core.addressing.normal_word_to_byte"] = Bnd()
 for _n in [
     "_canonical_dm_address",
@@ -281,7 +281,7 @@ PARTIAL_MASKS = {118: 0x00FFFFFF, 119: 0xFFFFFFFF, 120: 0xFFFFFFFF, 121: 0xFFFFF
 
 # floats._float_binary called with one of these operations (and
 # floats._float_multiply) is replaced by a hand-written fast path in
-# native/sharc-rt/src/rt/bnd.rs (Transpiler.fast_float_call).
+# packages/emulator/sharc-rt/src/rt/bnd.rs (Transpiler.fast_float_call).
 FAST_FLOAT_BINARY = {
     "sharc_core.floats._f_add": "_float_binary_add",
     "sharc_core.floats._f_sub": "_float_binary_sub",

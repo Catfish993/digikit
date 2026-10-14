@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build and run the coupled-run scenario matrix; write one report and a summary.
 
-``coupled-run`` (native/coupled) executes the desktop app's coupled run loop
+``coupled-run`` (packages/emulator/coupled) executes the desktop app's coupled run loop
 headless. This tool builds it once per DSP configuration, runs every scenario
 under the exclusive benchmark lock, repeats the runs, and writes
 ``out/native/runs/<timestamp>/{report.json,summary.md}`` plus the raw per-run

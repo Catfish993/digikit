@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Where the fast tier stops: DSP CPU, the tier split and what the interpreter runs.
 
-Runs a coupled scenario (native/coupled, `coupled-run`) under one or more
+Runs a coupled scenario (packages/emulator/coupled, `coupled-run`) under one or more
 tier configurations and reports, for each:
 
 - DSP thread CPU per audio second, the PCM SHA-256 (a changed hash means the
@@ -35,7 +35,7 @@ Configurations (``--config``, repeatable; default ``default fast-auto``):
     env:K=V[;K=V...]    anything else (applied over the shipped defaults)
 
 SHARC_AOT=0 turns off the generated blocks only; the fast tier keeps running
-(native/sharc/src/lib.rs block_plan). Timed runs take the exclusive benchmark
+(packages/emulator/sharc/src/lib.rs block_plan). Timed runs take the exclusive benchmark
 lock (tools/devtools/benchlock.py). The firmware comes from DIGI_EMU_SYX (default: the
 repo-root Digitone II OS 1.11 .syx); the build is the coupled-run build of
 tools/emulator/coupled.py (the prod generated-core target dir of this tree).

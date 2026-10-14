@@ -1,6 +1,6 @@
 """Run the native SHARC+ core against the Python core.
 
-The native core (native/sharc, built from tools/sharc_dev/sharc_transpile/'s
+The native core (packages/emulator/sharc, built from tools/sharc_dev/sharc_transpile/'s
 translation of tools/sharc_dev/sharc_core and tools/sharc_dev/sharc_rsgen.py's block code)
 implements tools/sharc_dev/sharc_diff.py's C ABI. This module adds what running it
 for real needs:
@@ -207,7 +207,7 @@ _EXTRA_FUNCTIONS = (
     ),
 )
 
-# Peripheral host events (native/sharc/src/lib.rs); bound when present so an
+# Peripheral host events (packages/emulator/sharc/src/lib.rs); bound when present so an
 # older library still reaches the build-info check.
 _PERIPHERAL_FUNCTIONS = (
     ("sharc_native_sec_raise", [ctypes.c_void_p, ctypes.c_uint32], ctypes.c_int32),
@@ -274,7 +274,7 @@ REGENERATE_HINT = (
     "--coverage out/native/opt/drive3m.cov --entries out/native/opt/drive3e.entries "
     "--transitions out/native/opt/drive3b.trans --out out/native/opt/gen-final && "
     "SHARC_GEN_DIR=$PWD/out/native/opt/gen-final CARGO_TARGET_DIR=out/native/opt/target-final "
-    "cargo build --release --manifest-path native/sharc/Cargo.toml"
+    "cargo build --release --manifest-path packages/emulator/sharc/Cargo.toml"
 )
 # Set to 1 to load a stale library anyway (with a warning), e.g. to time an
 # old build.
@@ -283,7 +283,7 @@ ALLOW_STALE_ENV = "SHARC_NATIVE_ALLOW_STALE"
 
 class NativeLibraryUnusable(RuntimeError):
     """The native library cannot serve this tree: it is missing symbols this
-    tree's tools call (built from older native/sharc sources), or it is stale.
+    tree's tools call (built from older packages/emulator/sharc sources), or it is stale.
     Tests that need the library skip on this (tests/conftest.py)."""
 
 
@@ -1329,7 +1329,7 @@ def pack_frames(
     snapshot: str | None = None,
     lp0: str | None = None,
 ) -> dict:
-    """Write the frame pack native/sharc's ``sharc-frames`` replays without
+    """Write the frame pack packages/emulator/sharc's ``sharc-frames`` replays without
     Python: magic "SHFP", version 1; the image blob; the start state
     (``to_native``'s: SHRD with the whole overlay as ranges) and its
     set_option calls; the host constants of ``NativeFrames.frame``
@@ -1383,15 +1383,15 @@ def pack_frames(
 
 
 # ---------------------------------------------------------------------------
-# Live packs (native/live's SHARC frame source)
+# Live packs (packages/emulator/live's SHARC frame source)
 # ---------------------------------------------------------------------------
 
 LIVE_DIR = os.path.join(ROOT, "out", "native", "live")
 LIVE_TRAILER = b"SHLV"
 LIVE_VERSION = 1
-# The trailer layout written (native/live's LivePack reads 1 to 3): version
+# The trailer layout written (packages/emulator/live's LivePack reads 1 to 3): version
 # 2 appends the card image's SHA-256 after the key, version 3 then the
-# tools/sharc_dev/sharc_core hash the start state was built with (native/live refuses
+# tools/sharc_dev/sharc_core hash the start state was built with (packages/emulator/live refuses
 # a library generated from another core).
 LIVE_TRAILER_VERSION = 3
 # Files whose code builds the start state or defines its format: a change
@@ -1496,7 +1496,7 @@ def live_pack(
     rebuild: bool = False,
     init_limit: int = 2_000_000,
 ) -> dict:
-    """The pack native/live plays: the SHFP frame pack (pack_frames'
+    """The pack packages/emulator/live plays: the SHFP frame pack (pack_frames'
     format, so sharc-frames reads it too) from armed_start's state, with
     CAPTURE's frames START_FRAME.. to the end (none when CAPTURE is None: a
     state pack, for frames that arrive live), then a trailer: "SHLV",
@@ -1582,10 +1582,10 @@ def state_pack(
     rebuild: bool = False,
     init_limit: int = 2_000_000,
 ) -> dict:
-    """The frameless live pack native/live's LiveSource starts from:
+    """The frameless live pack packages/emulator/live's LiveSource starts from:
     armed_start(IMAGE, LP0) (run_init, the frame DMA set-up, the LP0 feed
     of the FlexBus log), keyed and marked with CARD_SHA256, the card image
-    that log was recorded from (native/live refuses the pack for another
+    that log was recorded from (packages/emulator/live refuses the pack for another
     card). Built once (about 2 min), then cached; see live_pack."""
     return live_pack(
         image,
@@ -1684,7 +1684,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     pf.add_argument("--save-to", help="snapshot path for --save-at")
     pp = sub.add_parser(
-        "pack", help="write a frame pack for native/sharc's sharc-frames (no Python)"
+        "pack", help="write a frame pack for packages/emulator/sharc's sharc-frames (no Python)"
     )
     pp.add_argument("image")
     pp.add_argument("capture")
@@ -1694,7 +1694,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     pp.add_argument("--lp0", help="FlexBus log to feed over LP0 first")
     ps = sub.add_parser(
         "state-pack",
-        help="build (or find) the frameless pack native/live renders live frames from",
+        help="build (or find) the frameless pack packages/emulator/live renders live frames from",
     )
     ps.add_argument("image")
     ps.add_argument("--lp0", help="FlexBus log to feed over LP0 first")
@@ -1709,7 +1709,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="init instruction cap; requires --rebuild (LP0 callbacks have separate limits)",
     )
     for name, help_text in (
-        ("live-pack", "build (or find) the cached pack native/live plays"),
+        ("live-pack", "build (or find) the cached pack packages/emulator/live plays"),
         ("live-ref", "the Python replay's voice outputs for the live check"),
     ):
         pv = sub.add_parser(name, help=help_text)

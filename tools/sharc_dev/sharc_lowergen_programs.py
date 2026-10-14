@@ -2,13 +2,13 @@
 """Hand-assembled test programs for the generated lowering (no firmware).
 
 Encodes instructions from tools/sharc_dev/sharcspec/decode_table.json (the public ISA
-field layout) and writes native/sharc/src/tests_gen_programs.rs: for each
+field layout) and writes packages/emulator/sharc/src/tests_gen_programs.rs: for each
 program a list of 16-bit parcels. The SIMD loop below has the shape of the
 MODE1/PEYEN-toggling loops the Digitone II firmware runs (a SIMD enable, a DO
 loop of pointer moves, loads, float adds and stores with SIMD companions, a
 SIMD disable), written here from the ISA, not copied.
 
-    uv run python -m tools.sharc_dev.sharc_lowergen_programs --out native/sharc/src/tests_gen_programs.rs
+    uv run python -m tools.sharc_dev.sharc_lowergen_programs --out packages/emulator/sharc/src/tests_gen_programs.rs
 """
 
 from __future__ import annotations

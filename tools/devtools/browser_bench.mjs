@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Headless-browser throughput bench of the coupled browser core (page mode
-// `/?bench=1&seconds=N`, packages/web/src/runtime/bench.ts). Drives Chrome or
+// `/?bench=1&seconds=N`, apps/web/src/runtime/bench.ts). Drives Chrome or
 // Chromium over CDP with Node's built-in fetch/WebSocket (no dependencies),
 // starts the astro dev server itself unless --url is given, and prints one
 // JSON document.
@@ -106,7 +106,7 @@ async function waitPortFree(port, ms) {
   return portIsFree(port);
 }
 
-// Listeners on the port whose cwd is packages/web (astro re-spawns itself in a new process group, out of reach of the group kill).
+// Listeners on the port whose cwd is apps/web (astro re-spawns itself in a new process group, out of reach of the group kill).
 function webListeners(port, webDir) {
   let pids = [];
   try { pids = execFileSync('lsof', ['-t', '-iTCP:' + port, '-sTCP:LISTEN'], { encoding: 'utf8' }).split('\n').filter(Boolean); } catch { /* lsof exits nonzero when nothing listens */ }
@@ -122,7 +122,7 @@ function webListeners(port, webDir) {
   return ours;
 }
 
-// SIGTERM the server's process group, wait up to 3 s for the port to free; then terminate the packages/web listener
+// SIGTERM the server's process group, wait up to 3 s for the port to free; then terminate the apps/web listener
 // that escaped the group, wait 3 s more, and SIGKILL it if it is still there.
 async function stopDevServer(server, port) {
   try { process.kill(-server.pid, 'SIGTERM'); } catch { /* already gone */ }

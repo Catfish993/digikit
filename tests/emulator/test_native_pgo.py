@@ -13,16 +13,16 @@ from tools.emulator import (  # noqa: E402
     native_pgo,  # noqa: E402
 )
 
-PACKAGES = ["native/sharc", "native/machine"]
+PACKAGES = ["packages/emulator/sharc", "packages/emulator/machine"]
 
 
 @pytest.fixture
 def tree(tmp_path, monkeypatch):
     """A tiny repo with a trained profile manifest for it."""
     for rel, text in {
-        "native/sharc/lib.rs": "a",
-        "native/machine/lib.rs": "b",
-        "packages/desktop/src-tauri/main.rs": "ui",
+        "packages/emulator/sharc/lib.rs": "a",
+        "packages/emulator/machine/lib.rs": "b",
+        "apps/desktop/src-tauri/main.rs": "ui",
         "Cargo.toml": "[workspace]",
         "Cargo.lock": "lock",
         "gen/core.rs": "core",
@@ -63,7 +63,7 @@ def test_unchanged_tree_is_ok(tree):
 
 
 def test_desktop_crate_change_reuses_the_profile(tree):
-    (tree / "packages/desktop/src-tauri/main.rs").write_text("ui, diagnostics fix")
+    (tree / "apps/desktop/src-tauri/main.rs").write_text("ui, diagnostics fix")
     status, _, desktop = state(tree)
     assert (status, desktop) == ("ok", True)
     assert native_pgo.check(tree / "gen", "")[0] == "ok"
@@ -72,14 +72,14 @@ def test_desktop_crate_change_reuses_the_profile(tree):
 def test_desktop_files_in_a_listed_package_list_are_ignored(tree):
     manifest_path = tree / "state" / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
-    manifest["packages"] = [*PACKAGES, "packages/desktop/src-tauri"]
+    manifest["packages"] = [*PACKAGES, "apps/desktop/src-tauri"]
     manifest_path.write_text(json.dumps(manifest))
-    (tree / "packages/desktop/src-tauri/main.rs").write_text("changed")
+    (tree / "apps/desktop/src-tauri/main.rs").write_text("changed")
     assert state(tree)[0] == "ok"
 
 
 def test_emulation_crate_change_is_partly_stale(tree):
-    (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "packages/emulator/sharc/lib.rs").write_text("a changed")
     status, detail, _ = state(tree)
     assert (status, detail) == ("partial", "changed: sources")
 
@@ -90,7 +90,7 @@ def test_rustc_change_is_stale(tree, monkeypatch):
 
 
 def test_sources_plus_generated_change_is_stale(tree):
-    (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "packages/emulator/sharc/lib.rs").write_text("a changed")
     (tree / "gen/core.rs").write_text("new core")
     status, detail, _ = state(tree)
     assert status == "stale"
@@ -125,7 +125,7 @@ def test_blocktrans_roots_follow_env_then_table(monkeypatch, tmp_path):
 
 
 def test_current_profile_returns_the_file_even_when_stale(tree):
-    (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "packages/emulator/sharc/lib.rs").write_text("a changed")
     (tree / "gen/core.rs").write_text("new core")
     assert state(tree)[0] == "stale"
     assert native_pgo.current_profile() == str(tree / "state" / "p.profdata")
@@ -146,7 +146,7 @@ def test_cmd_check_reports_the_reuse(tree, monkeypatch, capsys):
     monkeypatch.setattr(native_pgo, "fast_regions", lambda: "")
     monkeypatch.setattr(native_pgo, "blocktrans_roots", lambda: "")
     monkeypatch.setattr(native_pgo, "generated_dir", lambda environ=None: tree / "gen")
-    (tree / "packages/desktop/src-tauri/main.rs").write_text("ui 2")
+    (tree / "apps/desktop/src-tauri/main.rs").write_text("ui 2")
     assert native_pgo.cmd_check(None) == 0
     assert (
         capsys.readouterr().out.strip() == "ok (desktop crate changed; profile reused)"
@@ -158,9 +158,9 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
         "packages": [
             {"source": None, "manifest_path": str(ROOT / name / "Cargo.toml")}
             for name in (
-                "native/sharc",
-                "native/coldfire",
-                "packages/desktop/src-tauri",
+                "packages/emulator/sharc",
+                "packages/emulator/coldfire",
+                "apps/desktop/src-tauri",
             )
         ]
         + [{"source": "registry+x", "manifest_path": "/elsewhere/Cargo.toml"}]
@@ -170,7 +170,7 @@ def test_local_package_dirs_excludes_packages(monkeypatch):
         "run",
         lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(metadata), ""),
     )
-    assert native_pgo.local_package_dirs() == ["native/coldfire", "native/sharc"]
+    assert native_pgo.local_package_dirs() == ["packages/emulator/coldfire", "packages/emulator/sharc"]
 
 
 def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):
@@ -194,7 +194,7 @@ def test_launch_plan_uses_a_partly_stale_profile(tree, monkeypatch):
         "native_target",
         lambda: type("T", (), {"target_dir": lambda *a, **k: tree / "target"}),
     )
-    (tree / "native/sharc/lib.rs").write_text("a changed")
+    (tree / "packages/emulator/sharc/lib.rs").write_text("a changed")
     plan, notice = native_pgo.launch_plan({})
     assert plan is not None
     assert "-no-pgo-warn-mismatch" in plan.env["RUSTFLAGS"]

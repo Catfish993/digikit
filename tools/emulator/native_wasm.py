@@ -2,15 +2,15 @@
 """Build the portable native runtime for the browser without changing toolchains.
 
 Writes three files:
-  packages/web/public/patchkit.wasm
-      The patch tool of native/patchkit (C ABI, no firmware inside: ports and modules are passed in at run time).
-  packages/web/public/emulator-core.wasm
+  apps/web/public/patchkit.wasm
+      The patch tool of packages/emulator/patchkit (C ABI, no firmware inside: ports and modules are passed in at run time).
+  apps/web/public/emulator-core.wasm
       CF-only core (small), used for the normal boot.
-  packages/web/.local/emulator-core-sharc.wasm
+  apps/web/.local/emulator-core-sharc.wasm
       coupled ColdFire + SHARC+ core (large, firmware-derived, gitignored). The
       dev server serves it; it must never be in public/ or dist/. Built when a
       generated core is available and --cf-only is not given. A stale copy in
-      packages/web/public is deleted on every run.
+      apps/web/public is deleted on every run.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--out",
-    help="output path of the coupled SHARC+ core (default packages/web/.local/emulator-core-sharc.wasm)",
+    help="output path of the coupled SHARC+ core (default apps/web/.local/emulator-core-sharc.wasm)",
 )
 parser.add_argument(
     "--wasm-opt",
@@ -108,14 +108,14 @@ base_env = os.environ | {
     "RUSTC": rustc,
     "RUSTDOC": str(pathlib.Path(rustc).with_name("rustdoc")),
 }
-public = root / "packages/web/public"
+public = root / "apps/web/public"
 public.mkdir(parents=True, exist_ok=True)
-local_dir = root / "packages/web/.local"
+local_dir = root / "apps/web/.local"
 local_dir.mkdir(parents=True, exist_ok=True)
 stale = public / "emulator-core-sharc.wasm"
 if stale.exists():
     stale.unlink()
-    print(f"removed stale {stale} (the coupled core now lives in packages/web/.local)")
+    print(f"removed stale {stale} (the coupled core now lives in apps/web/.local)")
 
 
 def build(
@@ -128,7 +128,7 @@ def build(
         "cargo",
         "build",
         "--manifest-path",
-        "native/boot/Cargo.toml",
+        "packages/emulator/boot/Cargo.toml",
         "--locked",
         "--offline",
         "--release",
@@ -158,7 +158,7 @@ def build_patchkit() -> None:
         "cargo",
         "build",
         "--manifest-path",
-        "native/patchkit/Cargo.toml",
+        "packages/emulator/patchkit/Cargo.toml",
         "--locked",
         "--offline",
         "--release",
@@ -208,7 +208,7 @@ if args.patchkit_only:
 # The plain core has no fast tier. The coupled core has one (feature fast-wasm,
 # off until the page calls digi_sharc_fast or digi_sharc_fast_regions): it
 # reads no SHARC_FAST_REGIONS (wasm32-unknown-unknown has no environment) and
-# its kernels are wasm modules the page compiles (packages/web/src/core-host.ts).
+# its kernels are wasm modules the page compiles (apps/web/src/core-host.ts).
 diagnostics = ["diagnostic-profile", "diagnostic-events"] if args.diagnostics else []
 plain_env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
 build(diagnostics, resolve_target_dir(None), plain_env, public / "emulator-core.wasm")

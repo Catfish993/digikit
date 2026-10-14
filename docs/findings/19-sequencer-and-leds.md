@@ -25,14 +25,14 @@ The step chain, DT2 1.16 (DN2 1.11 runs the same code):
    `_DAT_80004888` for the next step (`_DAT_43158f84` = 900000 per bar unit), and queues trig events through
    `FUN_4013a52a` / `FUN_4013a6b0` for `FUN_40139b78`, which drains them into the DSP-bound queue each block.
 
-Root cause **[D]**: the emulator never delivered INTC software-forced interrupts. `native/periph/src/intc.rs`
+Root cause **[D]**: the emulator never delivered INTC software-forced interrupts. `packages/emulator/periph/src/intc.rs`
 had `hw_intfrc_bit` and no caller; only INTC1 source 63 (vector 191) had a model (the SSI model, `on_intfrch1`).
 Evidence from a run to 6 s with `--peek`: INTFRCH0 (`0xfc048010`) reads `0x00001000` at 0.5 s (before PLAY), 0.8 s
 and 6 s, vector 108 holds `0x400d5a50`, `_DAT_43158f7c` (step time base) stays `0x12da1300` and the transport state
 is 1. So the transport keeps "playing" and the step clock never fires. The one hit at PLAY comes from the start
 routine itself. (This also explains finding 04's "PLAY reaches the scheduler once, the pool looks empty".)
 
-Fix **[D]**: `Time::service_with` (native/machine/src/time.rs) offers the highest-level forced, unmasked INTC source
+Fix **[D]**: `Time::service_with` (packages/emulator/machine/src/time.rs) offers the highest-level forced, unmasked INTC source
 above the live IPL (`IntcBank::forced_candidate`, skipping vector 191), after PIT and DTIM, with the existing
 `blocked` / `idle_window` caches covering it. It is behind `DIGI_INTC_FORCE=1` (default off) because it changes
 every PCM that involves the sequencer: with it on, the pins `exactness-100m`, `trig1-noqa-40m`, `trig1-taps` and

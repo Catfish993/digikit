@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Random instruction encodings per form, for the generated-lowering fuzz test.
 
-Writes native/sharc/src/tests_gen_vectors.rs: for each form NAME, N words
+Writes packages/emulator/sharc/src/tests_gen_vectors.rs: for each form NAME, N words
 built from tools/sharc_dev/sharcspec/decode_table.json (the fixed bits of the form, then
 a random value in every field). Firmware-free. The Rust test
-(native/sharc/src/tests_gen.rs) runs each on the interpreter and on the fast
+(packages/emulator/sharc/src/tests_gen.rs) runs each on the interpreter and on the fast
 tier and compares the machine state.
 
-    uv run python -m tools.sharc_dev.sharc_lowergen_vectors --out native/sharc/src/tests_gen_vectors.rs 4a 3a ...
+    uv run python -m tools.sharc_dev.sharc_lowergen_vectors --out packages/emulator/sharc/src/tests_gen_vectors.rs 4a 3a ...
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def pick(rng: random.Random, label: str, width: int, form: str) -> int:
             return (base >> 16) if label.endswith("[31:16]") else (base & 0xFFFF)
     if stem in ("ureg", "dstureg", "dreg") and width == 7 and rng.random() < 0.25:
         # The system registers the lowering holds as plain words
-        # (native/sharc/src/fast/lower/sysops.rs `plain_sys`).
+        # (packages/emulator/sharc/src/fast/lower/sysops.rs `plain_sys`).
         return rng.choice([108, 109, 112, 113, 115, 116, 126, 127])
     if form == "18a":
         if stem == "sreg" and rng.random() < 0.8:

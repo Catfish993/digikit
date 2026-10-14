@@ -76,7 +76,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
         "patchkit",
         (
-            "native/patchkit/",
+            "packages/emulator/patchkit/",
             "modules/",
             "devices/ports/",
             "tools/patchkit/pk_",
@@ -89,7 +89,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ),
     (
         "control-client",
-        ("tools/control/digi_client.py", "native/control/"),
+        ("tools/control/digi_client.py", "packages/emulator/control/"),
         ("tests/control",),
     ),
     (
@@ -159,25 +159,25 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("dt2-check", "dt2-tier-quick", "python-tests"),
     ),
-    (("packages/web/",), ("web",)),
-    (("packages/desktop/",), ("desktop", "web")),
+    (("apps/web/",), ("web",)),
+    (("apps/desktop/",), ("desktop", "web")),
     (
         (
             "tools/sharc_dev/sharc_core/",
             "tools/sharc_dev/sharc_transpile/",
             "tools/sharc_dev/sharc_transpile_infer.py",
             "tools/sharc_dev/sharc_rsgen.py",
-            "native/sharc-gen/",
-            "native/sharc-rt/",
+            "packages/emulator/sharc-gen/",
+            "packages/emulator/sharc-rt/",
         ),
         EVERYTHING,
     ),
     (
-        ("native/sharc/src/fast/", "native/sharc-fast-cl/", "native/sharc-fast-wasm/"),
+        ("packages/emulator/sharc/src/fast/", "packages/emulator/sharc-fast-cl/", "packages/emulator/sharc-fast-wasm/"),
         ("build", "pins", "check", "check-no-aot", "tier-quick", "rust-tests"),
     ),
     (
-        ("native/sharc/",),
+        ("packages/emulator/sharc/",),
         (
             "build",
             "desktop",
@@ -191,7 +191,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     ),
     (
         (
-            "native/patchkit/",
+            "packages/emulator/patchkit/",
             "modules/",
             "devices/ports/",
             "tools/patchkit/pk_",
@@ -201,9 +201,9 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("rust-tests", "python-tests", "web"),
     ),
-    (("native/control/",), ("desktop", "rust-tests", "card", "python-tests")),
+    (("packages/emulator/control/",), ("desktop", "rust-tests", "card", "python-tests")),
     (
-        ("native/plusdrive/", "native/card/", "tools/emulator/card_check.py"),
+        ("packages/emulator/plusdrive/", "packages/emulator/card/", "tools/emulator/card_check.py"),
         ("desktop", "rust-tests", "card"),
     ),
     (
@@ -617,7 +617,7 @@ def desktop_check(gate: Gate) -> None:
     """The desktop app crate must compile with its own features."""
     env = digi_env.rust_env()
     env["SHARC_GEN_DIR"] = str(digi_env.generated_dir())
-    cmd = ["cargo", "check", "--manifest-path", "packages/desktop/src-tauri/Cargo.toml"]
+    cmd = ["cargo", "check", "--manifest-path", "apps/desktop/src-tauri/Cargo.toml"]
     cmd += ["--target-dir", str(ROOT / "out" / "native" / "target" / "check-desktop")]
     gate.run("desktop", cmd, env=env)
 
@@ -680,7 +680,7 @@ def plan(steps: tuple[str, ...]) -> tuple[list[str], dict[str, tuple[str, ...]]]
 
 def rust_tests_command() -> list[str]:
     # cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
-    # packages/web/dist is absent
+    # apps/web/dist is absent
     return [*PY, "-m", "tools.devtools.rust_ws", "test"]
 
 

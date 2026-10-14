@@ -59,7 +59,7 @@ ends:
 - Scenario format: `scenarios/README.md`. Events are `button` or
   `turn` (`{"turn": ENCODER, "detents": N}`) at `at_instr` or `at_s`.
   `exact_events` fires at the exact count. No scenario uses `turn` yet.
-- Runner: `native/coupled/src/bin/coupled_run.rs`. Report `pcm` and
+- Runner: `packages/emulator/coupled/src/bin/coupled_run.rs`. Report `pcm` and
   `gates` at about l.666-700. `--wav` writes float WAV; the channel count
   is not confirmed (check the writer, about l.489-560). 48 kHz.
 - Ready inputs: `tools/emulator/digi_env.py` `ready_inputs(device)`; built by
@@ -74,7 +74,7 @@ ends:
   card (`tools/emulator/ready.py dt2 --card-image IMG`). `tools/emulator/dt2_sample_check.py`
   does this for a 1 kHz sine. Kit and slot layout: finding 14 (about l.43,
   l.136-141).
-- Control socket (`native/control`, `tools/control/digi_client.py`) has inputs but
+- Control socket (`packages/emulator/control`, `tools/control/digi_client.py`) has inputs but
   no sample capture and no state save/load.
 - MIDI input is not modelled.
 - Panel button codes (DT2, `docs/handovers/HANDOVER-2026-09-13.md:127-145`,
@@ -88,7 +88,7 @@ ends:
   firmware reportedly clamps a flush to +/-30 (`emu/panelin.py:129`,
   unverified). Use +/-1 detent events spaced apart, and read back.
 - WAV from `--wav`: stereo, 32-bit float, 48 kHz, interleaved L,R
-  (`native/boot/src/wav.rs`, created at `native/coupled/src/lib.rs:541`).
+  (`packages/emulator/boot/src/wav.rs`, created at `packages/emulator/coupled/src/lib.rs:541`).
 - DT2 1.16 parameter descriptors (`tools/coldfire/paramtable.py --codes ...`;
   range 0..0x7f00, value in the high byte):
   0x43 Chorus Send, 0x44 Delay Send (mirror 55), 0x45 Reverb Send
@@ -157,7 +157,7 @@ Sizes: S = under an hour of agent work, M = one session, L = open-ended.
 
 - [x] Fix the stale NO-press notes: descriptions of `trig1-hold`,
       `trig1-taps` and the scenario at about l.211 in `scenarios/dn2.json`;
-      `native/README.md` l.155-159 (l.155 also calls `trig1-noqa-40m`
+      `packages/emulator/README.md` l.155-159 (l.155 also calls `trig1-noqa-40m`
       silent; it sounds, rms 0.60).
 - [ ] Em: does the DT2 "FILE SYSTEM OK" window appear on hardware after
       loading samples? If not, fix the emulator model instead of pressing
@@ -379,10 +379,10 @@ Fingerprint guard now covers: tools/emulator/ready.py, tools/devtools/perf.py (s
   +0.3-0.4% (20 pairs, noise level); PCM identical in all runs. Keep the larger core (finding 18).
 - 2026-10-09: translator refusals batch 1 (finding 18, "Batch 1"): flat guarded access for
   unknown-range accesses and for roots whose static windows keep declining, plus a u32 read of
-  sign-extended constant ranges (`native/sharc/src/fast`, opt-in `SHARC_FAST_FLATAUTO=1`,
+  sign-extended constant ranges (`packages/emulator/sharc/src/fast`, opt-in `SHARC_FAST_FLATAUTO=1`,
   `+flat` config). No-AOT trig1-taps interpreted 5.48 -> 0.99%, timed 6.63 -> 5.00 CPU s per
   audio s, PCM `e0e6c8af7a84c443` unchanged; oracle suite 61 passed and `scenario --all` pins ok
-  in that config (shared core); `cargo test` native/sharc 64 passed. Default stays off.
+  in that config (shared core); `cargo test` packages/emulator/sharc 64 passed. Default stays off.
 - 2026-10-09: batch 1 flat fallback is now the default (`cfg::flat_auto`; opt out with
   `SHARC_FAST_FLATAUTO=0`, fastcov `env:SHARC_FAST_FLATAUTO=0`). Default config (AOT + fast tier),
   same binary, exclusive lock, alternating pairs: trig1-taps median 1.393 (on) vs 1.395 (off) DSP
@@ -396,7 +396,7 @@ Fingerprint guard now covers: tools/emulator/ready.py, tools/devtools/perf.py (s
   `SHARC_FAST_DYNFLAT=1` rebuilds such regions with flat accesses: calls 18.66M -> 13.21M, DSP CPU
   5.099 -> 4.599 (run time 2.942 -> 2.306), 3 exclusive pairs, PCM `e0e6c8af7a84c443` in all 18 runs;
   oracle suite 61 passed in the no-AOT config with the flag on, `cargo test --lib --tests` in
-  native/sharc 64 passed. Default stays off. New `tools/devtools/perf_calls.py` (call sources and exit kinds);
+  packages/emulator/sharc 64 passed. Default stays off. New `tools/devtools/perf_calls.py` (call sources and exit kinds);
   `tools/devtools/fastcov.py` `parse_run` now reads every exit of a root (`;` separated).
 - 2026-10-09: compile offload design (`docs/design/fast-compile-offload.md`, finding 18 "Compile timeline and
   offload premises"). No-AOT trig1-taps 20 s: 19.8 s compile + 2.9 s build of 99.8 DSP s, 16.5 s of it in the
@@ -413,13 +413,13 @@ Fingerprint guard now covers: tools/emulator/ready.py, tools/devtools/perf.py (s
   no-AOT 4.9-5.1 -> 2.8, AOT 1.84 -> 1.41 (headline 14 s: -19% / -10%), 2 + 3 exclusive pairs; PCM equal in 12 timed
   runs, in 25 scenarios no-AOT and 25 AOT (off vs on; pins `trig1-taps` `e0e6c8af7a84c443` and `trig1-tap-release`
   `883476213933...` hold), DT2 sample trig equal. New unit test `fast_denormal_multiply_matches_the_interpreter`,
-  `cargo test --lib` in native/sharc 65 passed. Default off; next: make it the default, then decide on flushing
+  `cargo test --lib` in packages/emulator/sharc 65 passed. Default off; next: make it the default, then decide on flushing
   denormals in the core as the hardware does.
 - 2026-10-09: `SHARC_FAST_DYNFLAT` on by default and the fast tier's Cranelift `opt_level` `none` (opt out
   `SHARC_FAST_DYNFLAT=0`, `SHARC_FAST_CL_OPT=speed`; fastcov `env:` form). Default AOT trig1-taps 1.476 vs 1.477 (8
   pairs, no change); no-AOT `static-insns+follow` 4.72 vs 5.89 (5 pairs, -20%). PCM `e0e6c8af7a84c443` throughout.
   `scenarios` pins ok, oracle suite 61 passed in the default and in the no-AOT config, `cargo test --lib --tests` in
-  native/sharc 64 passed (needs the shared-core `SHARC_GEN_DIR`), native/sharc-fast-cl and `cargo check --examples`
+  packages/emulator/sharc 64 passed (needs the shared-core `SHARC_GEN_DIR`), packages/emulator/sharc-fast-cl and `cargo check --examples`
   clean, golden 6 passed, DT2 sample check clean tone. Decisions: `docs/design/fast-compile-offload.md`.
 - 2026-10-09: denormal flush in the core (finding 15, "Denormal flush", **[D]**): denormal operands read as zero,
   post-rounded denormal results returned as zero, multiplier MU from the underflow (`tools/sharc_dev/sharc_core` floats,
@@ -429,7 +429,7 @@ Fingerprint guard now covers: tools/emulator/ready.py, tools/devtools/perf.py (s
   0.50M / 0.50M). PCM unchanged everywhere: `trig1-taps` 1.5 s `3bf3ba3026953c22` in interpreter, AOT and no-AOT,
   14 s `18e5204f2015f2eb` (AOT, no-AOT), `sf-del-fb-d127`, `sf-rev-decay-u20`, `tf-br-127` equal in the three tiers
   and to the earlier hashes, the four `dn2.json` pins hold, oracle suite 61 passed (default and no-AOT), golden
-  unchanged, `tests/sharc/semantics/test_sharc_denormal.py` 22 passed, `native/sharc` `cargo test --lib --tests` 65 passed, DT2
+  unchanged, `tests/sharc/semantics/test_sharc_denormal.py` 22 passed, `packages/emulator/sharc` `cargo test --lib --tests` 65 passed, DT2
   sample check clean tone. DN2 and DT2 cores regenerated (`gen-pre-ftz-20261009` backups, same block counts).
   Open: ALU sticky bits unmodelled, 64-bit ops keep denormals.
 - 2026-10-09: parallel rendering: `coupled.run_batch(jobs=N)` / `coupled.py scenario --jobs N` shard a batch by scenario
@@ -446,7 +446,7 @@ Fingerprint guard now covers: tools/emulator/ready.py, tools/devtools/perf.py (s
 - 2026-10-09: design for mask-free AOT emission written, `docs/design/aot-mask-free.md` (read-only analysis, no
   build or timing). Redoes the finding 18 ceiling (default 1.43; <= 1.0 needs AOT <= 2.1 ns/insn), plans a sliced
   proof with the oracle suite, pins and tier sweep as the exactness gates. Waiting for Em's decision on slices 0-1.
-- 2026-10-09: desktop baseline and PGO retrain measured (finding 18 "Desktop baseline 2026-10-09" [D]): default config DSP CPU per audio s 1.59/1.58/1.64 without PGO, 1.17/1.17/1.26 with the retrained profile (trig1-taps / tf-dry-hold / tf-br-127; old profile no gain); gap to 1.0 is 15-20% more. `coupled_ready_exactness` pins (CF digest, DSP export) were stale since 7c489c5 and are edited locally in native/coupled/src/lib.rs, uncommitted, awaiting a second check.
+- 2026-10-09: desktop baseline and PGO retrain measured (finding 18 "Desktop baseline 2026-10-09" [D]): default config DSP CPU per audio s 1.59/1.58/1.64 without PGO, 1.17/1.17/1.26 with the retrained profile (trig1-taps / tf-dry-hold / tf-br-127; old profile no gain); gap to 1.0 is 15-20% more. `coupled_ready_exactness` pins (CF digest, DSP export) were stale since 7c489c5 and are edited locally in packages/emulator/coupled/src/lib.rs, uncommitted, awaiting a second check.
 - 2026-10-10: mask-free slices 0-1 done (`docs/design/aot-mask-free.md` section 6, finding 18 **[D]**). Gate: not
   mask handling (ordinary registers fold already; ASTAT/STKY masks worth 6.5% in situ, paired 0.935, PCM and exits
   identical) and not region entry (34 ns per call); the largest item is front-end stalls (28-32% of DSP cycles,

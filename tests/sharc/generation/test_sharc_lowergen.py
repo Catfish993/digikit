@@ -1,4 +1,4 @@
-"""The generated lowering (native/sharc/src/fast/lower/gen_forms.rs) is what
+"""The generated lowering (packages/emulator/sharc/src/fast/lower/gen_forms.rs) is what
 tools/sharc_dev/sharc_lowergen.py makes of tools/sharc_dev/sharc_core today.
 
 Exactness against the interpreter is the Rust test `gen_lowering_matches_the_

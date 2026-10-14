@@ -6,7 +6,7 @@
 For each image (dt2-1.16, dt2-1.17, dn2-1.11, dn2-1.12) and each packed
 section, from out/sections/IMAGE/: pack it, read it back with dt2/elz.py, and
 run the same bytes through the bootstrap's own depacker (section 2, found by
-its prologue) on the native ColdFire core (native/boot example depack_check,
+its prologue) on the native ColdFire core (packages/emulator/boot example depack_check,
 built on first use). The bootstrap stages a packed section at 0x40400000 and
 unpacks to 0x40000400, which the example reproduces. Prints stored sizes,
 the stock size from the .syx, and seconds.

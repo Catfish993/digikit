@@ -3,7 +3,7 @@
 
 tools/coldfire/cfdb.py calls compute() while it builds a database; tools/coldfire/cfmatch.py reads
 the result. The instruction stream comes from the repo's ColdFire decoder
-(native/coldfire, through its `cfdis --ranges` mode), over the body ranges that
+(packages/emulator/coldfire, through its `cfdis --ranges` mode), over the body ranges that
 Ghidra recorded for each function. Each instruction is turned into a token in
 which what a relink moves is masked:
 

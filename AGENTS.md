@@ -10,7 +10,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Results go in docs/findings/, not in handovers. Marks: **[V]** verified here, **[D]** measured or read once,
   **[O]** open, **[C]** corrects an earlier claim. A second agent checks a finding against the image bytes before
   it is marked [V]. An empty Ghidra caller list is not evidence of dead code.
-- Firmware and anything derived from it (`*.syx`, `sections/`, `out/`, `snapshots/`, `packages/web/.local`, card
+- Firmware and anything derived from it (`*.syx`, `sections/`, `out/`, `snapshots/`, `apps/web/.local`, card
   images) and users' sample audio: never commit it.
 - Never name, copy or quote the vendor DSP toolchain or its files. Cite only public manuals
   (docs/sharc/SOURCES.md).
@@ -28,7 +28,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   `git diff`); a runner builds, tests and measures. The coordinating agent keeps decisions and orchestration.
 - Parallel work runs in persistent lane worktrees: `tools/devtools/lane.sh NAME [BASE]` creates or resets
   `../lanes/NAME` on branch `lane/NAME` and runs `tools/devtools/worktree-setup.sh`, which links `out/`, `sections/`,
-  `snapshots/`, `.venv`, the firmware `*.syx` and `packages/web/.local` from the main tree and installs
+  `snapshots/`, `.venv`, the firmware `*.syx` and `apps/web/.local` from the main tree and installs
   `node_modules` with `pnpm install --offline`. Lanes are reused so their Rust build directories stay warm (a
   fresh worktree costs about 25 minutes of cold builds). Use a lane only for parallel native edits or long
   measurements; reading and small edits happen in the main tree.
@@ -74,9 +74,9 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
   `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo` (both devices, then rebuilds the launcher), `pgo:dn2`, `pgo:dt2`, `gen:core`.
 - Paths, toolchain and fast-region tables: tools/emulator/digi_env.py, tools/emulator/fast_regions.json.
-- SHARC crates: native/sharc-rt (runtime), native/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative
-  paths resolve from the repo root), native/sharc (engine and fast tier), native/sharc-fast-cl and
-  native/sharc-fast-wasm (kernel backends). Editing the engine or fast tier rebuilds in about 20 s; editing
+- SHARC crates: packages/emulator/sharc-rt (runtime), packages/emulator/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative
+  paths resolve from the repo root), packages/emulator/sharc (engine and fast tier), packages/emulator/sharc-fast-cl and
+  packages/emulator/sharc-fast-wasm (kernel backends). Editing the engine or fast tier rebuilds in about 20 s; editing
   sharc-rt rebuilds the generated core (4 to 12 minutes).
 - A change to tools/sharc_dev/sharc_core, tools/sharc_dev/sharc_transpile/, tools/sharc_dev/sharc_transpile_infer.py or tools/sharc_dev/sharc_rsgen.py changes `CORE_FINGERPRINT` (it hashes those files' paths relative to tools/sharc_dev and their bytes):
   regenerate every core (DN2 and DT2 from out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt, the shared core with

@@ -1,5 +1,5 @@
 """core/machines (Digitone II) as a module: the ColdFire routines against a model of the Rust generator's behaviour
-(native/patchkit/src/machines/dn2.rs). The routines touch no firmware code, so the DT2 1.17 ready state runs them.
+(packages/emulator/patchkit/src/machines/dn2.rs). The routines touch no firmware code, so the DT2 1.17 ready state runs them.
 
 Skips when the m68k toolchain or the DT2 1.17 image is absent."""
 

@@ -291,7 +291,7 @@ re-checked by a second agent.
   hull of all stores of the region and `Mem::window` needs every byte of the hull
   overlay-written; the hull covers stores on paths that never ran for that object (first byte
   and last byte neither present nor dirty), so the region declined forever.
-- Fix, translator only (`native/sharc/src/fast`): (a) `flat_auto`: an instruction refused for
+- Fix, translator only (`packages/emulator/sharc/src/fast`): (a) `flat_auto`: an instruction refused for
   "address range unknown" is re-lowered as a flat guarded access (the existing
   `Lower::flat_access`, per-access page-table and bitmap guards) at that PC only, not for every
   access as `SHARC_FAST_FLAT` does; (b) a root whose windows decline 3 times is rebuilt with
@@ -310,7 +310,7 @@ re-checked by a second agent.
   s because the flat kernels are larger: Cranelift compile time is paid up front, so judge it on
   the full length. For the browser that compile cost has to be re-measured with the wasm backend.
 - Exactness: oracle suite (`tests/scenarios --slow`, 61 passed) and `scenario --all` pins ok in
-  this config on the shared core; `cargo test` in `native/sharc` 64 passed (two new unit tests).
+  this config on the shared core; `cargo test` in `packages/emulator/sharc` 64 passed (two new unit tests).
   Default (AOT) config not measured: the flag is opt-in, `as_addr` is always on.
 - Default flip (2026-10-09) **[D]**: `SHARC_FAST_FLATAUTO` is now on unless set to `0`
   (`+flat` in fastcov is a no-op; `env:SHARC_FAST_FLATAUTO=0` turns it off). Default config
@@ -321,7 +321,7 @@ re-checked by a second agent.
   5.66 (5.14-5.67) vs off 7.32 (6.49-7.36), 5 pairs, so the batch-1 gain holds. PCM identical in
   every run (`e0e6c8af7a84c443`, `16f3d0a81e686049`). Checks with the default on: `scenarios`
   pins ok, oracle suite 61 passed, `dt2_sample_check` clean tone, golden 6 passed, `cargo test
-  --lib --tests` in `native/sharc` 48 passed. The `region_bench` example no longer compiles (its
+  --lib --tests` in `packages/emulator/sharc` 48 passed. The `region_bench` example no longer compiles (its
   `Env` literal lacks `flat_windows`), so `cargo test --workspace` fails; not touched here.
 - Left in these functions (batch 2): `2a_short` compute cu=0 opcode 0xad at 0x1c4fa3, 0x1c516b,
   0x1c5186; multifunction category 0x1e/0x1f at 0x1c5060 (3a), 0x1c553a, 0x1c5547; `8a_rel` with a
@@ -505,7 +505,7 @@ and build per audio s (`tools/devtools/fast_timeline.py` ticks, `SHARC_FAST_TL=1
 **Cause (verified).** Diagnostic runs (`SHARC_FAST_COV`/`HIST`, cumulative, differenced as
 4-8 s against 12-16 s windows): region calls 17.4M -> 26.3M/s, interpreted instructions 5.0M -> 9.7M/s,
 kernel instructions 497M -> 492M/s; the growth is in guard exits at one site, `result_normal_or_zero`
-(`native/sharc/src/fast/lower/mod.rs`, the float multiply result guard): 0.07M -> 2.19M exits/s, plus the
+(`packages/emulator/sharc/src/fast/lower/mod.rs`, the float multiply result guard): 0.07M -> 2.19M exits/s, plus the
 edge and `exit` re-entries each exit forces (edge +1.1M, exit +1.0M). Another 0.19M/s come from the
 `guard_zero_or_normal` guard (`float_alu.rs`: `fix`/`trunc`/`scalb` of a denormal operand, one site in `FUN_1c244d`, not fixed). The functions are
 the per-voice and FX stages: `FUN_1cdc30`, `FUN_b826c8`, `FUN_1c6664`, `FUN_1c244d`, `FUN_1c1f1e`,
@@ -537,7 +537,7 @@ adds `Req::StkyMus` (a masked compare of STKYX bit 8 at entry, `glue::reg_checks
 update; ASTATX.MU comes from the result bits at the flag replay (`glue::apply_flag` `Fmul`, and
 `cond.rs` for lazily tracked flags). PEy (SIMD) multiplies keep the old guard. A region built with MUS
 clear keeps the old guard and nothing else changes without the flag. Test:
-`fast_denormal_multiply_matches_the_interpreter` (`native/sharc/src/tests.rs`: all registers
+`fast_denormal_multiply_matches_the_interpreter` (`packages/emulator/sharc/src/tests.rs`: all registers
 including ASTATX and STKYX equal the interpreter at 8 chunk sizes, MUS set and clear, a flag-reading
 `IF MS` in the loop; dropping the MU line makes it fail on `r118`); `cargo test --lib` 65 passed.
 
@@ -615,7 +615,7 @@ Design. `tools/sharc_dev/sharc_lowergen.py` runs the real `tools/sharc_dev/sharc
 tracing state: decoded fields and lowering context (MODE1, `assume_nw32`) are static
 symbols, a test on one forks the trace, register contents and memory words are dynamic
 nodes, and a data-dependent branch refuses. `tools/sharc_dev/sharc_lowergen_rs.py` value-numbers the
-leaf programs and folds the decision tree into `native/sharc/src/fast/lower/gen_forms.rs`
+leaf programs and folds the decision tree into `packages/emulator/sharc/src/fast/lower/gen_forms.rs`
 (one method per form over the primitives of `gen_prims.rs`, hand-written once). Never edit
 `gen_forms.rs` by hand. Control transfers (calls, returns, loops, delayed branches) stay in
 `cfg.rs`/`flow.rs` because the tracer never runs `_advance`. Flags stay lazy and are
@@ -630,7 +630,7 @@ Add a family:
 - Regenerate with `mise run gen:regen -- --add FORM,...`. Add the form to
   `tools/sharc_dev/sharc_lowergen_vectors.py` (steer the random fields into the accepted region) and,
   for sequences, to `tools/sharc_dev/sharc_lowergen_programs.py`.
-- Check: `cargo test --lib gen_` in `native/sharc` (with `SHARC_GEN_DIR` set; about 75 s),
+- Check: `cargo test --lib gen_` in `packages/emulator/sharc` (with `SHARC_GEN_DIR` set; about 75 s),
   `tests/test_sharc_lowergen.py` (fails when `gen_forms.rs` is stale), and
   `tools/sharc_dev/sharc_lowergen_bisect.sh` for PCM and coverage with a form subset.
 
@@ -715,7 +715,7 @@ How measured, and caveats:
   (2026-10-08 18:24) is stale and was not rebuilt; `mise run emu` rebuilds it with the new
   profile (`38d7c8fe..`) on the next launch. Its `pgo-use/.../coupled-run` (2026-10-05) is
   unrelated and stale. The app's own CPU split was not measured here.
-- The training gate (`coupled_ready_exactness`, `native/coupled/src/lib.rs`) failed before
+- The training gate (`coupled_ready_exactness`, `packages/emulator/coupled/src/lib.rs`) failed before
   training: its CF state digest and DSP export pins were stale since 7c489c5 (2026-10-08, SIMD
   shift fix). PCM pin `b3f5230f..` and sample count held. Observed CF digest
   `4a9d3123..` (pinned `55dc699e..`), DSP export `20905b23..` (pinned `4dc48019..`); both pins
@@ -955,7 +955,7 @@ merge into `prof-merged-c2`, run entry rounds, regenerate, and gate on AOT = no-
 
 Em's page showed 0.22 audio s per wall s on DN2 1.11 after Trig 1 (underruns 9). Method: `mise run web:bench`
 (docs/INSTRUMENTATION.md): headless Chromium 150 (Google Chrome is not installed here; same V8), dev server,
-`packages/web/.local/emulator-core-sharc.wasm` built 12:55 on 2026-10-11, DN2 1.11 ready state, `tap(25)` at
+`apps/web/.local/emulator-core-sharc.wasm` built 12:55 on 2026-10-11, DN2 1.11 ready state, `tap(25)` at
 load as the Trig 1 button does, 10 audio s, no AudioContext (PCM port drained), exclusive benchlock, fresh
 profile per run (no code cache). One machine, load not controlled, not re-checked by a second agent.
 
@@ -969,8 +969,8 @@ Each run leaves 17-18% of wall time outside the step call (busy fraction 0.82). 
 instructions, ColdFire 132M.
 
 - **H1 (one worker, costs add): true, but not the main cause.** `digi_step` runs the DSP synchronously inside
-  the ColdFire DSPI2 frame write (native/boot/src/abi.rs `mod coupled`), in the one worker
-  (packages/web/src/runtime/runtime-worker.ts). CDP CPU profile of that worker (6 s, default flags, share of
+  the ColdFire DSPI2 frame write (packages/emulator/boot/src/abi.rs `mod coupled`), in the one worker
+  (apps/web/src/runtime/runtime-worker.ts). CDP CPU profile of that worker (6 s, default flags, share of
   non-idle time): DSP 77% (generated `sharc_gen` kernels plus the engine), ColdFire 21%, other 2%. Per audio s
   that is about DSP 2.6 s and ColdFire 0.7 s, against the desktop's 0.93-1.10 and 0.5. Serial on the
   desktop numbers the page would reach about 0.66; it reaches 0.25, so the wasm is also about 2.5x (DSP) and
@@ -1171,7 +1171,7 @@ by a second agent.
   calls and chain (fewer than 1M calls per audio s at 0.5 ns per insn), which is the engine work of step 2.
 - **Bench pitfalls found.** (1) `browser_bench.mjs` without `--url` starts `astro dev --port 4399`; if another
   worktree's server owns 4399 the run silently measures that server's core. (2) Astro 7 keeps one dev server per
-  `packages/web/node_modules/.astro`; a worktree that symlinks `node_modules` as a whole shares that lock and its
+  `apps/web/node_modules/.astro`; a worktree that symlinks `node_modules` as a whole shares that lock and its
   start is skipped. Give the worktree a real `node_modules` directory with symlinked entries (not `.astro`), start
   `astro dev --port N` once and pass `--url`. The first baseline numbers of this lane (0.36-0.40) were taken against
   another lane's server; the figures above are from a private one and agree.
@@ -1185,12 +1185,12 @@ second agent.
 
 - **`Op::Helper` in the wasm emitter.** A kernel with a helper call imports `env.helper(st, rec) -> status` (function 0,
   `k<i>` shift by one; only when a kernel needs it). The page links the import to the core's `digi_helper_exec(st, rec)`
-  export (`native/boot/src/abi.rs`, `helper_exec` with `rec` as the wasm32 pointer), a wasm-to-wasm call with no JS
+  export (`packages/emulator/boot/src/abi.rs`, `helper_exec` with `rec` as the wasm32 pointer), a wasm-to-wasm call with no JS
   trampoline; `core-host.ts` and `tools/devtools/wasm_parity.mjs` pass it. A record above 32 bits is refused (`emit_function`
   returns Err; the region falls back to the interpreter). No helper kernel arises in the shipped DN2 config (helpers
   need `SHARC_FAST_HELPER`, which the browser core cannot set, or the `exit0` rebuild, which did not fire in
   these runs), so the path is tested apart: `cargo test -p sharc-fast-wasm` (module imports `helper`; wide record
-  refused) and `node native/sharc-fast-wasm/helper_check.mjs` on the emitted module (V8 validates it; the stub sees
+  refused) and `node packages/emulator/sharc-fast-wasm/helper_check.mjs` on the emitted module (V8 validates it; the stub sees
   `(st, rec)` per iteration; status 0 leaves with exit 3). **[O]** a real helper kernel in the browser, which needs a
   way to turn `SHARC_FAST_HELPER` on without an environment (`cfg.rs`).
 - **Build and seeding.** `tools/emulator/native_wasm.py` now builds the coupled core with `fast-wasm` (`--no-fast` leaves it out;
@@ -1406,7 +1406,7 @@ window smaller). Early exits and a DO on a conditional path only make the window
 loop widens the inner Entry-kind terms through the same `widen`, and a stride with a `ts` term gives no stride. Regions
 with entry loops or call targets never take N. The `iters = n - 1` mutant survives the old fuzz and test because a
 window is a host pointer into one 64 KiB page: a window one byte short is harmless until the last access crosses the page
-end. New test `fast_register_count_loop_windows_end_exactly_at_the_page_boundary` (`native/sharc/src/tests.rs`) steps a
+end. New test `fast_register_count_loop_windows_end_exactly_at_the_page_boundary` (`packages/emulator/sharc/src/tests.rs`) steps a
 load pointer or a store pointer to end just before, on and one byte past the page end (n = 3, 6, 9) and reads the last
 store back; it passes on the real code and fails on the mutant (R3 differs at ptr=0 n=3 d=1). **[O]** the same mutant on
 the NwPlain hull (`nw_ok`) is not covered: byte forms do not take NwPlain, so a normal-word variant at a plain-range end
@@ -1571,7 +1571,7 @@ Hand-written native replacement of a hot DSP function ("HLE"), with an exactness
 function: no gain, killed.** The mechanism and the checker work and are reusable; the cost model that chose the
 function was wrong.
 
-**Mechanism** (`native/sharc/src/hle.rs`, `hle/dn2_b82342.rs`; off unless `SHARC_HLE=1` or `SHARC_HLE=name,..`). A table
+**Mechanism** (`packages/emulator/sharc/src/hle.rs`, `hle/dn2_b82342.rs`; off unless `SHARC_HLE=1` or `SHARC_HLE=name,..`). A table
 maps an entry PC to a Rust routine. `Engine::step` tries it where it tries the fast tier (same `block_plan` gates:
 models, latent interrupt, timer limit, `stop_loop_empty`), before the fast tier and the AOT block; entry PCs are in
 the chain-stop set. Guards: SHA-256 of the function's code words (re-run when a watched code page is stored to), then

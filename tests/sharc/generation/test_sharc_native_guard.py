@@ -1,10 +1,10 @@
 """The native SHARC+ library's staleness guard: a library carries the hash
 of the tools/sharc_dev/sharc_core sources and the generator version its code was
 generated from (sharc_native_info), and tools/sharc_dev/sharc_transpile_run.py
-refuses one that does not match this tree (native/live checks the core
-hash against its live pack: cargo test in native/live).
+refuses one that does not match this tree (packages/emulator/live checks the core
+hash against its live pack: cargo test in packages/emulator/live).
 
-The checks on a real library need one built with this tree's native/sharc
+The checks on a real library need one built with this tree's packages/emulator/sharc
 (``SHARC_NATIVE_GUARD_LIB``, else the default library) and are skipped
 without it.
 """

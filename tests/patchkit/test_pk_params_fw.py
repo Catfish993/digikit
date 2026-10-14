@@ -1,5 +1,5 @@
 """core/params as a module: the hook routine on the native core, and the table-row expressions of module.toml against
-the Rust generator's row builder (native/patchkit/src/params.rs).
+the Rust generator's row builder (packages/emulator/patchkit/src/params.rs).
 
 The expressions are evaluated by a small stand-in for patchkit's expression language (integers, symbols, `$field`,
 `image.u8|u16|u32(...)`, + - * / & | << >> and parentheses): lane a's evaluator is the real one, this keeps the

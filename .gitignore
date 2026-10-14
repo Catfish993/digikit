@@ -49,19 +49,19 @@ native/**/target/
 node_modules/
 .astro/
 dist/
-packages/web/public/emulator-core.wasm
-packages/web/public/emulator-core*.wasm
-packages/web/public/patchkit.wasm
+apps/web/public/emulator-core.wasm
+apps/web/public/emulator-core*.wasm
+apps/web/public/patchkit.wasm
 # Contains DSP code generated from firmware: never commit.
-packages/web/public/emulator-core-sharc.wasm
-packages/web/.local/
-packages/desktop/src-tauri/target/
-packages/desktop/src-tauri/gen/
+apps/web/public/emulator-core-sharc.wasm
+apps/web/.local/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 
 # Temporary local agent worktrees.
 .claude/worktrees/
 /target/
-packages/web/public/modules/
+apps/web/public/modules/
 
 # never commit: secrets, local OS files, audio, card images
 .env

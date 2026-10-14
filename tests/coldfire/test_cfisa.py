@@ -1,5 +1,5 @@
 """The ColdFire instruction table (tools/coldfire/cfisa/coldfire.json), its generated
-decoder (native/coldfire/src/decode_gen.rs) and the decoder's agreement with
+decoder (packages/emulator/coldfire/src/decode_gen.rs) and the decoder's agreement with
 Ghidra and SLEIGH on the firmware images (tools/coldfire/cfisa/oracle.py)."""
 
 from __future__ import annotations

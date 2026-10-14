@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Headless parity check of the coupled (ColdFire + SHARC+) browser core.
 //
-// Loads packages/web/.local/emulator-core-sharc.wasm, restores the DN2 ready session,
+// Loads apps/web/.local/emulator-core-sharc.wasm, restores the DN2 ready session,
 // plays a scenario from scenarios/dn2.json exactly as `coupled-run`
 // does, and prints the SHA-256 of the PCM (f32le bytes of every value produced
 // since the ready point, the same bytes PcmTap hashes). With a scenario that has
@@ -11,7 +11,7 @@
 //   node tools/devtools/wasm_parity.mjs --scenario exactness-100m --out wasm.f32
 //
 // Options (defaults match tools/emulator/digi_env.py; DIGI_EMU_* variables are honoured):
-//   --core PATH        packages/web/.local/emulator-core-sharc.wasm
+//   --core PATH        apps/web/.local/emulator-core-sharc.wasm
 //   --syx PATH         Digitone_II_OS1.11.syx            (DIGI_EMU_SYX)
 //   (READY = ready_dir of tools/emulator/ready_inputs.json, or DIGI_EMU_READY_DIR)
 //   --dsp-image PATH   READY/digi-audio-dn2-image.bin (DIGI_EMU_DSP_IMAGE)
@@ -31,7 +31,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const STEP_CHUNK = 250_000; // native/coupled STEP_CHUNK
+const STEP_CHUNK = 250_000; // packages/emulator/coupled STEP_CHUNK
 const FRAMES_PER_SECOND = 1500;
 const VALUES_PER_FRAME = 64; // 32 stereo samples per DSPI2 frame
 
@@ -46,7 +46,7 @@ const root = path.resolve(args.repo ?? (fs.existsSync(path.join(here, '..', '..'
 const env = process.env;
 const ready = path.resolve(root, env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
 const paths = {
-  core: args.core ?? path.join(root, 'packages/web/.local/emulator-core-sharc.wasm'),
+  core: args.core ?? path.join(root, 'apps/web/.local/emulator-core-sharc.wasm'),
   syx: args.syx ?? env.DIGI_EMU_SYX ?? env.DIGI_COUPLED_SYX ?? path.join(root, 'Digitone_II_OS1.11.syx'),
   image: args['dsp-image'] ?? env.DIGI_EMU_DSP_IMAGE ?? path.join(ready, 'digi-audio-dn2-image.bin'),
   dsp: args['dsp-state'] ?? env.DIGI_EMU_DSP_STATE ?? path.join(ready, 'digi-audio-m5.snap.dsp'),
@@ -86,14 +86,14 @@ const hostEnv = {
   host_wasm_run(id, ctx, st) { hostStats.runs++; return kernels[id](ctx, st); },
   host_wasm_free(id) { kernels[id] = null; },
 };
-// --split 1: the two-worker session of the browser (packages/web/src/split-session.ts):
+// --split 1: the two-worker session of the browser (apps/web/src/split-session.ts):
 // the ColdFire instance runs in this thread, the DSP instance in a worker_threads
 // worker (tools/devtools/wasm_split.mjs), DSPI2 frames cross a SharedArrayBuffer. Same
 // scenario loop and events, so the PCM must be the single-instance PCM.
 let e, mem, call, first, loadS, cfSide, dspDone, linkBuffer;
 const dspiStub = { host_dspi_exchange() { throw new Error('no remote DSP'); }, host_dspi_link() { throw new Error('no remote DSP'); } };
 if (args.split === '1') {
-  const web = path.join(root, 'packages/web/src');
+  const web = path.join(root, 'apps/web/src');
   const { createCfSide } = await import(path.join(web, 'split-session.ts'));
   const { createLinkBuffer } = await import(path.join(web, 'sab-link.ts'));
   const { Worker } = await import('node:worker_threads');
@@ -146,7 +146,7 @@ if (args.split !== '1' && fastConfig) {
 const readyAt = first.status.icount;
 console.error(`scenario ${scenario.name}: load ${loadS.toFixed(2)} s, ready at icount ${readyAt}`);
 
-// The QA prelude of native/boot/examples/common (Script::poll): NO down at
+// The QA prelude of packages/emulator/boot/examples/common (Script::poll): NO down at
 // ready, up at +1M, down at +20M, up at +21M, encoder A +1 at +40M. It is
 // polled after each chunk, before the scenario's own events of the next loop.
 const qa = scenario.qa_script ? { stage: 1 } : null;
@@ -222,7 +222,7 @@ const wallS = (performance.now() - wallStart) / 1000;
 let pcm = Buffer.concat(chunks);
 let stats;
 if (cfSide) {
-  const { LinkServer } = await import(path.join(root, 'packages/web/src/sab-link.ts'));
+  const { LinkServer } = await import(path.join(root, 'apps/web/src/sab-link.ts'));
   new LinkServer(linkBuffer).close();
   const done = await dspDone;
   pcm = Buffer.from(done.pcm);
