@@ -983,7 +983,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   the wide-wins-a-leading-bits-tie pattern the database's second pass
   already corrects; none was a form choice among same-width candidates or
   a fields-only difference. DT2 1.16's two `2c`/`2b` instances at `sw
-  0x1c502b` and `sw 0x1c59ce` are exactly `tools/sharc_dev/sharc_harness.py`'s
+  0x1c502b` and `sw 0x1c59ce` are exactly `tools/sharc_dev/sharc_harness/`'s
   `_KNOWN_BAD_DECODE_PCS` workaround (that module's own docstring already
   named this "a systematic decode-table/disassembler bug, not two isolated
   ones" and asked for it to be reported rather than patched locally) -- the
@@ -1094,7 +1094,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   - **`sw 0x1c32b1` (`1a`, `cu=3 opcode=0xe0`) and, all-roots only, `sw
     0xb88e8b` (`2a_short`, `cu=2 opcode=0x40`) / `sw 0xb88edb`
     (`5a_move`, `cu=2 opcode=0x40`, both in loader block 69, the L2
-    decimator region -- `tools/sharc_dev/sharc_harness.py`'s `ADDRESSES["decimator"]
+    decimator region -- `tools/sharc_dev/sharc_harness/`'s `ADDRESSES["decimator"]
     = 0xb80000`).** Real code, bytes match, decode already confident and
     already agrees with the database. `sharc_coverage.py`'s "compute" gap
     kind means exactly what it says: `sharc_trace._compute`/`sharc_core.

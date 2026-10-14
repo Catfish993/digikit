@@ -266,7 +266,7 @@ class BuildStaticTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class BuildWithInitTest(unittest.TestCase):
     """build() against a real post-init overlay (~1.24M instructions, several
-    seconds -- see tools/sharc_dev/sharc_harness.py's own InitStateRenderTest)."""
+    seconds -- see tools/sharc_dev/sharc_harness/'s own InitStateRenderTest)."""
 
     @classmethod
     def setUpClass(cls):
@@ -284,7 +284,7 @@ class BuildWithInitTest(unittest.TestCase):
         self.assertEqual(by_addr[0x252D78].label, "init")
 
     def test_per_track_record_defaults_are_init_written(self):
-        # docs/findings/06's "Init writes" / tools/sharc_dev/sharc_harness.py's own
+        # docs/findings/06's "Init writes" / tools/sharc_dev/sharc_harness/'s own
         # notes on FUN_1c15e3 filling every voice record with defaults.
         # 2026-09-28 re-pin, 0x3f800000 -> 0x3f000000 (0.5f): the only
         # init writer of 0x2506ec is now sw 0x1c60cc (0.5f). The old 1.0f
@@ -304,9 +304,9 @@ class BuildWithInitTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class DynamicViewTest(unittest.TestCase):
     """dynamic_view() against the real frame call (setup_voice() +
-    setup_frame() + fresh_call(block_handler), tools/sharc_dev/sharc_harness.py's own
+    setup_frame() + fresh_call(block_handler), tools/sharc_dev/sharc_harness/'s own
     call chain), with FRAME_PATCH_TABLE so it reaches the same known
-    stop tools/sharc_dev/sharc_harness.py pins as FRAME_MILESTONE -- run_init() alone is several
+    stop tools/sharc_dev/sharc_harness/ pins as FRAME_MILESTONE -- run_init() alone is several
     seconds; a Watchpoint-logged run is slower still, so this is its own
     slow test rather than folded into BuildWithInitTest."""
 

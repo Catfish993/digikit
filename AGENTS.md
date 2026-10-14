@@ -78,7 +78,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   paths resolve from the repo root), native/sharc (engine and fast tier), native/sharc-fast-cl and
   native/sharc-fast-wasm (kernel backends). Editing the engine or fast tier rebuilds in about 20 s; editing
   sharc-rt rebuilds the generated core (4 to 12 minutes).
-- A change to tools/sharc_dev/sharc_core, tools/sharc_dev/sharc_transpile.py or tools/sharc_dev/sharc_rsgen.py changes `CORE_FINGERPRINT` (it hashes those files' paths relative to tools/sharc_dev and their bytes):
+- A change to tools/sharc_dev/sharc_core, tools/sharc_dev/sharc_transpile/, tools/sharc_dev/sharc_transpile_infer.py or tools/sharc_dev/sharc_rsgen.py changes `CORE_FINGERPRINT` (it hashes those files' paths relative to tools/sharc_dev and their bytes):
   regenerate every core (DN2 and DT2 from out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt, the shared core with
   `mise run gen:core`), backing up each gen dir first.
 - `out/native/target/*/pgo-use` belongs to the launcher; experiments build elsewhere (`DIGI_EMU_PGO_VARIANT`).

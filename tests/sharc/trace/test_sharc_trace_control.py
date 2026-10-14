@@ -632,7 +632,7 @@ class StateCopyPreservesEveryFieldTest(unittest.TestCase):
     """sharc_core.state._copy() used to build its State(...) with positional
     args that stopped before explicit_memory_model (and any field added
     after it), so a fork silently reset that field to its default -- see
-    tools/sharc_dev/sharc_harness.py's _clone_state docstring, which worked around
+    tools/sharc_dev/sharc_harness/'s _clone_state docstring, which worked around
     this by not calling _copy() at all. Every conditional/predicated fork
     inside forms_move.py/sequencer.py/forms_flow.py/forms_compute.py/
     forms_dag.py goes through _copy(), so this was live on any run that set

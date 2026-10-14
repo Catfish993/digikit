@@ -1490,7 +1490,7 @@ Support used to reach the "one voice renders correctly" result in finding
 06: run `FUN_1c15e3` (init) to its return, then apply setup, to get a
 post-init snapshot to start a render from, instead of a full cold boot.
 Register/memory watchpoints and `diagnose_unknown` (both in
-`tools/sharc_dev/sharc_harness.py`) narrow a stuck or wrong-value run to the
+`tools/sharc_dev/sharc_harness/`) narrow a stuck or wrong-value run to the
 instruction that produced it. `tools/sharc_dev/sharc_survey.py` runs a bounded batch
 of these probes over a function or region in one pass. `Image.cfg`,
 `callgraph`, `defuse` and `slice` (`tools/sharc_dev/sharc.py`) give the control-flow
@@ -5977,7 +5977,7 @@ is about 632 ms of the same 1.075 s, and ColdFire waits on DSP replies for
 about 40% of it.
 
 **[V]** The accepted cache `out/native/dn2-audio/gen` is reproducible. At HEAD
-`eecf7b8`, `tools/sharc_dev/sharc_transpile.py --strict` followed by
+`eecf7b8`, `tools/sharc_dev/sharc_transpile/ --strict` followed by
 `tools/sharc_dev/sharc_rsgen.py dn2-1.11 --coverage cov6.txt --entries ent9.txt
 --transitions trans9.txt --model-safe --explicit-memory-model 0 --chain
 --exclude 0xb88a49:0xb88abc --unknown-fallbacks 0x1c253f` (same `--work` and
@@ -6024,7 +6024,7 @@ The hand versions are firmware-derived and kept under `out/`.
 
 **[V]** Float add, subtract and multiply in generated code now use native
 f32 arithmetic (`rt/bnd.rs` `_float_binary_*`, redirected by
-`tools/sharc_dev/sharc_transpile.py` `fast_float_call`). A double result of two f32
+`tools/sharc_dev/sharc_transpile/` `fast_float_call`). A double result of two f32
 operands rounds once to the same f32, so the results are identical; NaN
 results run the original sequence. Differential tests: 40,203,392 and
 18,017,865 comparisons, 0 mismatches. Coupled, plain release, 21 pairs:

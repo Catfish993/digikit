@@ -97,13 +97,15 @@ CORE_FINGERPRINT_FILE = "CORE_FINGERPRINT"
 
 def core_fingerprint(root: pathlib.Path | None = None) -> str:
     """SHA-256 over the paths and contents of the sources a generated core is
-    made from: tools/sharc_dev/sharc_core/**/*.py, sharc_transpile.py and
-    sharc_rsgen.py, with paths relative to tools/sharc_dev."""
+    made from: tools/sharc_dev/sharc_core/**/*.py, sharc_transpile/**/*.py,
+    sharc_transpile_infer.py and sharc_rsgen.py, with paths relative to
+    tools/sharc_dev."""
     root = ROOT if root is None else pathlib.Path(root)
     base = root / "tools" / "sharc_dev"
     files = [
         *base.joinpath("sharc_core").rglob("*.py"),
-        base / "sharc_transpile.py",
+        *base.joinpath("sharc_transpile").rglob("*.py"),
+        base / "sharc_transpile_infer.py",
         base / "sharc_rsgen.py",
     ]
     digest = hashlib.sha256()

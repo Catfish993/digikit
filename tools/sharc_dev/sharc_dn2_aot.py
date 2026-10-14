@@ -2,7 +2,7 @@
 
 One command runs the whole profile-guided pipeline and writes a manifest:
 
-1. ``tools/sharc_dev/sharc_transpile.py --strict`` into ``OUT/gen-c0`` (the core only,
+1. ``tools/sharc_dev/sharc_transpile/ --strict`` into ``OUT/gen-c0`` (the core only,
    no image) and a cargo build of it.
 2. ``--cycles`` profiling cycles (default 3). Cycle 0 replays the capture
    interpreter-only with the gen-c0 library; cycle i > 0 runs

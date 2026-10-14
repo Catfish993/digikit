@@ -149,7 +149,7 @@ class FrameRenderFromInitTest(unittest.TestCase):
         # cmd_handler_3 -> render_frame -> ...) completed.
         # tools/sharc_dev/sharc_widthaudit.py --root frame independently confirms 0
         # access-width mismatches across this run's 17,468 load/store
-        # events. See tools/sharc_dev/sharc_harness.py's FRAME_MILESTONE docstring.
+        # events. See tools/sharc_dev/sharc_harness/'s FRAME_MILESTONE docstring.
         self.assertEqual(halt.reason, h.FRAME_MILESTONE["reason"])
         self.assertEqual(halt.pc_sw, h.FRAME_MILESTONE["pc_sw"])
         self.assertEqual(results[0].instructions, h.FRAME_MILESTONE["instructions"])
@@ -171,7 +171,7 @@ class RingAMilestoneTest(unittest.TestCase):
     **Updated (lane B2, 2026-09-25): now a genuinely continuous Runner, not
     N independent post-init renders.** render_frames_to_ring_a() runs all
     frames on one Runner and applies CONTINUOUS_MIX_SCALAR_PATCH (see that
-    constant's own docstring in tools/sharc_dev/sharc_harness.py for the full
+    constant's own docstring in tools/sharc_dev/sharc_harness/ for the full
     evidence): without it, ring A goes silent from frame 1 onward given
     this lane's blank synthetic mix configuration -- real firmware
     behaviour, not an emulator bug, per that investigation.
@@ -181,7 +181,7 @@ class RingAMilestoneTest(unittest.TestCase):
     per-track dispatch never carries a track's sample values into the
     master mix under any state this lane found (see the "why the track
     buffer never reaches the master mix as audio" module note above
-    `MASTER_MIX_INJECT_PC` in tools/sharc_dev/sharc_harness.py) -- what
+    `MASTER_MIX_INJECT_PC` in tools/sharc_dev/sharc_harness/) -- what
     `inject_track_buffer()` alone produced there was a sparse,
     compressor-envelope-shaped signal, not the injected tone. This test
     now checks `ring_a_left`/`ring_a_right` (not `ring_a_mono`): ring A's

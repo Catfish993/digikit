@@ -481,7 +481,7 @@ class CollectAllEndToEndTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class CollectAllFrameRunTest(unittest.TestCase):
     """run_collect_all() against the real block_handler dispatch (setup_frame()
-    + fresh_call(), like tools/sharc_dev/sharc_harness.py's own FrameRenderFromInitTest)
+    + fresh_call(), like tools/sharc_dev/sharc_harness/'s own FrameRenderFromInitTest)
     -- this lane's own validation that --collect-all finds every stop on the
     frame-render path a single survey()/run_with_patches() run only ever
     reports one of at a time. run_init() is ~1.24M instructions (several
@@ -510,7 +510,7 @@ class CollectAllFrameRunTest(unittest.TestCase):
         # FRAME_PATCH_TABLE's two register hypotheses already avoid every
         # fork on this path (docs/findings/06, this lane's handover): the
         # only stop collect-all records is the same FRAME_MILESTONE stop
-        # tools/sharc_dev/sharc_harness.py's own FrameRenderFromInitTest pins -- a
+        # tools/sharc_dev/sharc_harness/'s own FrameRenderFromInitTest pins -- a
         # genuine RETURN since the Y1 lane's Type3a (LW) fix (2026-09-25):
         # sv._categorize maps "return without followed call" to its own
         # "frame-returned" category (see that function), not the raw halt

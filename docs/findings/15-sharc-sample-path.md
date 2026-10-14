@@ -210,7 +210,7 @@ The copy gate: sharcdb's `ptr` table has one store to `0x2567dc`
 `0x1c2c88`.
 
 **The copy gate [V].** The only SHARC store to DM `0x2567dc` is the clear
-at sw `0x1c2c8b`. `tools/sharc_dev/sharc_harness.py`'s `drive_dma_completion()` used
+at sw `0x1c2c8b`. `tools/sharc_dev/sharc_harness/`'s `drive_dma_completion()` used
 to re-arm it every frame (a stand-in from lane G1), which made render_frame
 copy the landing ring at the start of every frame; the flag table and the
 trig test then read the same frame and step 3 was dead code. It now
@@ -587,7 +587,7 @@ Fixes:
 
 - `coupled.py` now picks the core by the device's DSP image.
 - Every generated core carries `CORE_FINGERPRINT`, a hash of
-  `tools/sharc_dev/sharc_core`, `sharc_transpile.py` and `sharc_rsgen.py`.
+  `tools/sharc_dev/sharc_core`, `sharc_transpile/`, `sharc_transpile_infer.py` and `sharc_rsgen.py`.
   `digi_env.check_generated` refuses a missing or different fingerprint
   before `coupled.py`, `native_emu.py` and `native_pgo.py` build.
   `DIGI_ALLOW_STALE_GEN=1` turns the error into a warning.

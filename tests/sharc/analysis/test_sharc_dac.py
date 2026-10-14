@@ -3,7 +3,7 @@
 Pure Python: every function here takes a plain `dm_read` callable (or
 plain lists), so none of this needs the real firmware image bytes -- the
 format itself (module docstring's static citations plus the isolated
-`FUN_1c74a1` cross-check) is what tools/sharc_dev/sharc_harness.py's own
+`FUN_1c74a1` cross-check) is what tools/sharc_dev/sharc_harness/'s own
 tests/sharc/integration/test_sharc_harness_*.py exercise against the real image.
 """
 
@@ -47,7 +47,7 @@ class Q31RoundTripTest(unittest.TestCase):
 
     def test_q31_to_float_masks_unsigned_input(self):
         # A caller may pass an already-masked (0..2**32-1) word, as
-        # Runner.state reads give (see tools/sharc_dev/sharc_harness.py's
+        # Runner.state reads give (see tools/sharc_dev/sharc_harness/'s
         # read_ring_a() dm_read closure).
         self.assertAlmostEqual(dac.q31_to_float(0x80000000), -1.0, places=9)
         self.assertAlmostEqual(dac.q31_to_float(0x7FFFFFFF), 1.0, places=6)

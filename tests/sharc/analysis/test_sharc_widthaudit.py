@@ -99,7 +99,7 @@ class WidthRulesTest(unittest.TestCase):
 
     def test_3a_selects_long_word_on_l(self):
         # 2026-09-25: Type3a's (LW) option is now implemented (see
-        # forms_move.py's _type_3a docstring and tools/sharc_dev/sharc_harness.py's
+        # forms_move.py's _type_3a docstring and tools/sharc_dev/sharc_harness/'s
         # FRAME_MILESTONE), the same register-pair access _w_pair already
         # covers for Type14a/15a/15b -- _w_3a mirrors it exactly.
         self.assertEqual(wa._w_3a({"l": 0}), "normal-word")
@@ -125,7 +125,7 @@ class WidthRulesTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class ConcreteAuditTest(unittest.TestCase):
     """audit_root() against the real firmware -- run_init() is ~1.24M
-    instructions (see tools/sharc_dev/sharc_harness.py's own docstring), so this is
+    instructions (see tools/sharc_dev/sharc_harness/'s own docstring), so this is
     a firmware integration test like tests/sharc/integration/test_sharc_harness_frame.py's
     FrameRenderFromInitTest, not a unit test."""
 

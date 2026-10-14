@@ -15,7 +15,7 @@ Python side of the contract it will be checked against:
 3. Lockstep comparison: run two engines from the same imported state, step
    them in tandem, and stop at the first state divergence with a readable
    diff. ``run_frame_lockstep`` does the same at frame granularity, reusing
-   tools/sharc_dev/sharc_harness.py's/tools/sharc_dev/sharc_replay.py's own frame-call
+   tools/sharc_dev/sharc_harness/'s/tools/sharc_dev/sharc_replay.py's own frame-call
    primitives (``write_dma_transfer`` / ``drive_dma_completion`` /
    ``call_frame_collect_all``) instead of re-implementing frame delivery.
 4. A self-test: two independent PythonEngine instances must agree with each

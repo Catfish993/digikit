@@ -26,7 +26,10 @@ def _tree(root: Path) -> None:
     core = root / "tools" / "sharc_dev" / "sharc_core"
     core.mkdir(parents=True)
     (core / "a.py").write_text("x = 1\n")
-    (root / "tools" / "sharc_dev" / "sharc_transpile.py").write_text("t = 1\n")
+    transpile = root / "tools" / "sharc_dev" / "sharc_transpile"
+    transpile.mkdir()
+    (transpile / "__init__.py").write_text("t = 1\n")
+    (root / "tools" / "sharc_dev" / "sharc_transpile_infer.py").write_text("i = 1\n")
     (root / "tools" / "sharc_dev" / "sharc_rsgen.py").write_text("r = 1\n")
 
 

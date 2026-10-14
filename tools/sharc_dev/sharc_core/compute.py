@@ -510,14 +510,17 @@ def _apply_compute_pey(
         return
     if isinstance(rn, tuple):
         assert isinstance(value, tuple), "tuple RN without tuple value"
-        # Unlike _apply_compute, no PEy result names a special-dict
-        # (string) destination in a tuple result: only the multifunction
-        # dual/triple ALU rows produce a tuple RN here, and their
-        # destinations are always ordinary S-register numbers.
+        # String slots (BFFWRP, BFF_HI, BFF_LO from BITEXT/BITDEP) belong
+        # to the single shared bit FIFO, which PEy does not write (PRM
+        # 3-17: bit FIFO operations are meaningful only in SISD); only int
+        # slots (S registers) are written, so PEx's FIFO result is left
+        # intact.
         names = []
         for reg in rn:
-            assert isinstance(reg, int), "PEy tuple RN must be int-only"
-            names.append("S%d" % reg)
+            if isinstance(reg, str):
+                names.append(reg)
+            else:
+                names.append("S%d" % reg)
         _event(
             state,
             insn,
@@ -527,8 +530,8 @@ def _apply_compute_pey(
             value=[_json_value(v) for v in value],
         )
         for reg, val in zip(rn, value, strict=True):
-            assert isinstance(reg, int), "PEy tuple RN must be int-only"
-            state.uregs[80 + reg] = val
+            if isinstance(reg, int):
+                state.uregs[80 + reg] = val
         return
     assert not isinstance(value, tuple), "int RN with tuple value"
     # Only a string (MRF/MRB/...) or tuple destination ever carries an

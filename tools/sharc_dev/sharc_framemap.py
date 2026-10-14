@@ -19,7 +19,7 @@ two now-superseded RX-buffer candidates, `CANDIDATE_RX_BUFFERS`
 -- 0x261bac/0x261aa4, docs/findings/04's own still-open guess, which this
 finding's literal match already supersedes), then runs the real
 block_handler -> command_dispatch_fn -> cmd_handler_3 -> render_frame call
-chain (tools/sharc_dev/sharc_harness.py's setup_frame()/FRAME_PATCH_TABLE -- the same
+chain (tools/sharc_dev/sharc_harness/'s setup_frame()/FRAME_PATCH_TABLE -- the same
 chain tools/sharc_dev/sharc_replay.py drives) with a non-stopping
 tools/sharc_dev/sharc_run.py Watchpoint logging every read/write across the SHARC
 workspace band tools/sharc_dev/sharc_inputs.py's own DYNAMIC_DM_RANGE already uses
@@ -107,7 +107,7 @@ FINGERPRINT_FIELDS: tuple[int, ...] = (
 TRACK_COUNT = 16
 
 # Known destination structures a match's address is checked against, in
-# this order -- see tools/sharc_dev/sharc_harness.py (voice records) and
+# this order -- see tools/sharc_dev/sharc_harness/ (voice records) and
 # tools/sharc_dev/sharc_inputs.py (rings).
 VOICE_RECORDS_BASE = 0x2412CC
 VOICE_RECORD_STRIDE = h.VOICE_RECORD_STRIDE

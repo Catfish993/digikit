@@ -667,7 +667,7 @@ class Type3aLongWordTest(unittest.TestCase):
 
     def test_pair_load_post_modify_real_instance(self):
         # real SW 0x1c2920 (1845536), the frame-render stop this fixed
-        # (tools/sharc_dev/sharc_harness.py's FRAME_MILESTONE docstring):
+        # (tools/sharc_dev/sharc_harness/'s FRAME_MILESTONE docstring):
         # {"compute": 0, "cond": 31, "d": 0, "g": 0, "i": 1, "l": 1,
         # "m": 4, "u": 1, "ureg": 0} -- an unconditional (cond=31), no-op
         # compute, DM (g=0) load into the R0:R1 pair, post-modify (u=1) by
