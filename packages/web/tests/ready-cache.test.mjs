@@ -1,14 +1,14 @@
 // The ready-state cache logic under Node with an in-memory store, on the DN2
 // ready inputs when present: the round trip is exact, key and version
 // handling work, and the timings of saving and restoring are printed.
-//   node tests/test_ready_cache.mjs
+//   node --test packages/web/tests/ready-cache.test.mjs (part of pnpm test)
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { ReadyCache, memoryStore, sha256Hex, CORE_VERSION } from '../packages/web/src/ready-cache.ts';
+import { ReadyCache, memoryStore, sha256Hex, CORE_VERSION } from '../src/ready-cache.ts';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const ready = path.resolve(root, process.env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/ready_inputs.json'), 'utf8')).ready_dir);
 const read = (n) => new Uint8Array(fs.readFileSync(path.join(ready, n)));
 const state = fs.existsSync(path.join(ready, 'digi-audio-m5.snap'))
