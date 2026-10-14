@@ -8,6 +8,72 @@ in the emulator. Details: [PATCHING.md](PATCHING.md) (commands and how patchkit 
 Nothing here touches hardware. Flashing a patched image is a separate, deliberate step (see "Safety and hardware" in
 PATCHING.md).
 
+## Try it: the PLUCK machine in the emulator
+
+The fastest way to see a module work: patch the existing PLUCK machine (a plucked string) into Digitakt II 1.17 and
+inject it into the running desktop emulator. Firmware files go in the repository root; the ready state is built once
+(about 2 minutes) and stays under `out/`.
+
+```sh
+uv run python tools/ready.py dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # once
+```
+
+Shell 1, the emulator on Digitakt II 1.17 (`DIGI_EMU_READY_DIR_DT2` points the app at that ready state; the default
+one is for 1.16). The first launch builds the app, which takes several minutes:
+
+```sh
+DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- Digitakt_II_OS1.17.syx
+```
+
+Shell 2, patch and inject:
+
+```sh
+mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
+mise run inject -- out/patch/pluck.syx
+```
+
+`patch` adds the frameworks PLUCK needs (`core/machines`, `core/params`, `core/dsp-voice`) and verifies the image.
+`inject` boots the patched firmware inside the running app with DSP audio (about 15 s the first time, under 1 s after).
+
+On the faceplate:
+
+1. Hold **FUNC** and press **SRC** for machine select; **PLUCK** is at the end of the list, after MIDI. Confirm with
+   **YES**.
+2. The SRC page shows PLUCK's parameters: TUNE, DECAY, PICK, BRIGHT, COLOR, LEV.
+3. Press trig keys to play. Turn knobs with quick turns: slow single detents barely move a value (encoder
+   acceleration).
+4. Save the project and reload it: the track stays PLUCK (machine type 9). Stock firmware loads the same project with
+   the track as SAMPLE.
+
+Audio caveat: the emulator runs patched DSP code slower than real time (about 4.5x for a ringing PLUCK on a build
+without PGO), so in the desktop app the screens and knobs behave normally but PLUCK's audio stutters. To hear it
+clean, record the app's output, which is generated in emulated time:
+
+```sh
+DIGI_EMU_SINK_WAV=out/pluck.wav DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- Digitakt_II_OS1.17.syx
+```
+
+Other modules to try the same way:
+
+```sh
+# a clone machine (XSLICE, a MANUAL SLICE clone with its own name; no DSP code of its own)
+mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/xslice -o out/patch/xslice.syx
+# a master-bus drive: the DRV knob on the FUNC + MOD master page (encoder 7; above 80 adds drive)
+mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-drive -o out/patch/drive.syx
+# Digitone II 1.12 (start the emulator with Digitone_II_OS1.12.syx and a 1.12 ready state)
+mise run patch -- --firmware Digitone_II_OS1.12.syx --modules machines/pluck -o out/patch/pluck-dn2.syx
+```
+
+Inject each with `mise run inject -- <file>`. To see what a patch changed, and to go back to stock:
+
+```sh
+mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck
+mise run inject -- Digitakt_II_OS1.17.syx
+```
+
+If the app starts without audio it prints which ready inputs are missing; rebuild them with the `tools/ready.py` line
+above.
+
 ## Quick usage
 
 Run every command from the repository root. Put your own stock firmware files in the root
