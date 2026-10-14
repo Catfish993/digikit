@@ -1,4 +1,4 @@
-# PLUCK is the 8th entry of the machine list; YES commits type 7 (the track object, byte 0x4265338e), the SRC page opens with the module's knobs, a trig sounds (a plucked string) and the DSP's type cache (DM 0x255970) holds 7.
+# PLUCK is the 8th entry of the machine list; YES commits type 9 (the track object, byte 0x4265338e), the SRC page opens with the module's knobs, a trig sounds (a plucked string) and the DSP's type cache (DM 0x255970) holds 9.
 
 [test]
 name = "select_pluck"
@@ -46,7 +46,7 @@ tap = "YES"
 [[step]]
 wait_ms = 0x12c
 [[step]]
-expect_mem = { addr = 0x4265338c, mask = 0xff00, eq = 0x700 }
+expect_mem = { addr = 0x4265338c, mask = 0xff00, eq = 0x900 }
 [[step]]
 tap = "YES"
 [[step]]
@@ -64,7 +64,7 @@ wait_ms = 0x1f4
 [[step]]
 expect_pcm_db = { min = -60, max = -3 }
 [[step]]
-expect_dsp = { addr = 0x255970, hex = "07" }
+expect_dsp = { addr = 0x255970, hex = "09" }
 [[step]]
 expect_no_fault = true
 [[step]]
