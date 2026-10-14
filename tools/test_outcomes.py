@@ -7,6 +7,10 @@ Usage:
     uv run python tools/test_outcomes.py BEFORE.xml AFTER.xml --renames-from HEAD
     uv run python tools/test_outcomes.py BEFORE.xml AFTER.xml \
         --rename tests/test_a.py=tests/sharc/test_a.py [--allow-new]
+    uv run python tools/test_outcomes.py BEFORE.xml AFTER.xml \
+        --split tests/test_a.py=tests/test_a1.py,tests/test_a2.py
+(--split: tests of OLD may now be in any NEW file and class; matched by bare name,
+by class and name when the bare name is not unique in OLD.)
 
 Run every test file in its own pytest process and record a baseline:
     uv run python tools/test_outcomes.py run --out DIR [--root PATH] [--jobs N] \
@@ -120,16 +124,76 @@ def counts(results: dict[Key, Result]) -> str:
     )
 
 
+def bare_of(rest: str) -> str:
+    """Test name without its class: the part after the last '::'."""
+    return rest.rsplit("::", 1)[-1]
+
+
+def class_of(rest: str) -> str:
+    return rest.rsplit("::", 1)[0]
+
+
+def apply_split(
+    moved: dict[Key, Result],
+    after: dict[Key, Result],
+    old: str,
+    news: list[str],
+) -> str:
+    """Re-key AFTER tests in NEWS to the BEFORE key they match in OLD.
+
+    Matched pairs end up under the same key in both dicts. Returns the report
+    line."""
+    bkeys = sorted(k for k in moved if k[0] == old)
+    akeys = sorted(k for k in after if k[0] in news)
+    by_bare_b: dict[str, list[Key]] = {}
+    by_bare_a: dict[str, list[Key]] = {}
+    for k in bkeys:
+        by_bare_b.setdefault(bare_of(k[1]), []).append(k)
+    for k in akeys:
+        by_bare_a.setdefault(bare_of(k[1]), []).append(k)
+    pairs: list[tuple[Key, Key]] = []
+    for bare, bl in by_bare_b.items():
+        al = list(by_bare_a.get(bare, []))
+        unique = len(bl) == 1
+        if unique and len(al) == 1:
+            pairs.append((bl[0], al[0]))
+            continue
+        for bk in bl:
+            same = [a for a in al if class_of(a[1]) == class_of(bk[1])]
+            if same:
+                al.remove(same[0])
+                pairs.append((bk, same[0]))
+    matched_a = {a for _, a in pairs}
+    new_count = len([k for k in akeys if k not in matched_a])
+    results = {a: after[a] for _, a in pairs}
+    for a in matched_a:
+        del after[a]
+    for b, a in pairs:
+        after[b] = results[a]
+    missing = len(bkeys) - len(pairs)
+    return (
+        f"split {old} -> {len(news)} files: {len(pairs)} matched, "
+        f"{missing} missing, {new_count} new"
+    )
+
+
 def compare(
     before: dict[Key, Result],
     after: dict[Key, Result],
     renames: dict[str, str],
     allow_new: bool,
+    splits: dict[str, list[str]] | None = None,
 ) -> int:
     """Print the report and return the exit status."""
     moved = {(renames.get(p, p), r): v for (p, r), v in before.items()}
+    after = dict(after)
+    split_lines = [
+        apply_split(moved, after, old, news) for old, news in (splits or {}).items()
+    ]
     print(f"before: {counts(moved)}")
     print(f"after:  {counts(after)}")
+    for line in split_lines:
+        print(line)
     missing = sorted(set(moved) - set(after))
     new = sorted(set(after) - set(moved))
     show("only in BEFORE (missing)", [fmt(k) for k in missing])
@@ -375,6 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("after", type=Path)
     ap.add_argument("--renames-from", metavar="REF")
     ap.add_argument("--rename", action="append", default=[], metavar="OLD=NEW")
+    ap.add_argument("--split", action="append", default=[], metavar="OLD=NEW1,NEW2")
     ap.add_argument("--allow-new", action="store_true")
     try:
         args = ap.parse_args(argv)
@@ -390,12 +455,20 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"bad --rename {item!r}, want OLD=NEW", file=sys.stderr)
                 return 2
             renames[old] = new
+        splits: dict[str, list[str]] = {}
+        for item in args.split:
+            old, sep, rest = item.partition("=")
+            news = [n for n in rest.split(",") if n]
+            if not sep or not old or not news:
+                print(f"bad --split {item!r}, want OLD=NEW1,NEW2", file=sys.stderr)
+                return 2
+            splits.setdefault(old, []).extend(news)
         before = read_outcomes(args.before)
         after = read_outcomes(args.after)
     except (OSError, ET.ParseError, subprocess.CalledProcessError) as exc:
         print(f"test_outcomes: {exc}", file=sys.stderr)
         return 2
-    return compare(before, after, renames, args.allow_new)
+    return compare(before, after, renames, args.allow_new, splits)
 
 
 if __name__ == "__main__":

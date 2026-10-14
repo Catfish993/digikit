@@ -77,6 +77,34 @@ class OutcomesTest(unittest.TestCase):
         a = [case("tests.test_a", "test_x", "<error message='m'/>")]
         self.assertEqual(self.run_cmp(b, a), 1)
 
+    def test_split_class_change(self) -> None:
+        b = [case("tests.test_a.TraceTest", n) for n in ("test_a", "test_b")]
+        a = [
+            case("tests.test_n1.AClass", "test_a"),
+            case("tests.test_n2.BClass", "test_b"),
+        ]
+        split = "tests/test_a.py=tests/test_n1.py,tests/test_n2.py"
+        self.assertEqual(self.run_cmp(b, a), 1)
+        self.assertEqual(self.run_cmp(b, a, "--split", split), 0)
+
+    def test_split_missing(self) -> None:
+        b = [case("tests.test_a.TraceTest", n) for n in ("test_a", "test_b")]
+        a = [case("tests.test_n1.AClass", "test_a")]
+        split = "tests/test_a.py=tests/test_n1.py,tests/test_n2.py"
+        self.assertEqual(self.run_cmp(b, a, "--split", split), 1)
+
+    def test_split_duplicate_name_by_class(self) -> None:
+        y = case("tests.test_n2.Y", "test_d", skip("s"))
+        b = [
+            case("tests.test_a.X", "test_d"),
+            case("tests.test_a.Y", "test_d", skip("s")),
+        ]
+        a = [y, case("tests.test_n1.X", "test_d")]
+        split = "tests/test_a.py=tests/test_n1.py,tests/test_n2.py"
+        self.assertEqual(self.run_cmp(b, a, "--split", split), 0)
+        a2 = [case("tests.test_n1.Z", "test_d"), y]
+        self.assertEqual(self.run_cmp(b, a2, "--split", split), 1)
+
     def test_unreadable(self) -> None:
         self.assertEqual(test_outcomes.main(["/nonexistent/a", "/nonexistent/b"]), 2)
 
