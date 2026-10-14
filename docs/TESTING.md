@@ -39,6 +39,25 @@ Other tests:
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - A new Python file joins the `CLEAN` list in `tests/devtools/test_lint.py`.
 
+## Inputs tests need
+
+In a clean checkout (no firmware, no `out/`), 2002 tests pass and 542 skip. Each skip names the input it lacks.
+`pytest -rs` lists the reasons.
+
+| Input | Skip message looks like | How to provide | Tests |
+| --- | --- | --- | --- |
+| Stock firmware `.syx` in the repo root (DT2 1.16/1.17, DN2 1.11/1.12; 1.15C/1.10E for old analysis) | "needs Digitakt_II_OS1.16.syx in the repo root", "stock firmware images not present" | README "Firmware" (files come from Elektron's support site; `DIGI_EMU_SYX` and `DIGI_EMU_SYX_DT2` override paths) | `tests/firmware`, `tests/patchkit`, `tests/emulator/test_bootstrap.py` |
+| Extracted sections `out/sections/<image>/` | "out/sections/dt2-1.16/section_7_BLOB.bin is not available", "no extracted sections", "DT2 1.16 image absent" | `uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16` (likewise `dn2-1.11`; README "Extract the firmware") | `tests/sharc/*`, `tests/coldfire`, `tests/dsp` |
+| SHARC program database `out/sharcdb/<image>.sqlite` | "out/sharcdb/dt2-1.16.sqlite is not available", "no program database" | `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin` (needs the sections) | `tests/sharc/analysis` |
+| ColdFire Ghidra dump `out/ghidra/<image>-emac` and its cfdb | "out/ghidra/dt2-1.16-emac missing", "no cfdb for dt2-1.17" | Needs Ghidra: a `tools/ghidradump.py` dump, then `uv run python tools/cfdb.py build out/ghidra/<image>-emac` (AGENTS.md "Static analysis") | `tests/coldfire`, `tests/firmware/test_fw.py` |
+| Native SHARC library (`DEFAULT_LIB` in `tools/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (native/sharc)" | Regenerate and build it with the `REGENERATE_HINT` command in `tools/sharc_transpile_run.py`. It reads coverage inputs under `out/native/opt`, which are not produced by a documented task. | `tests/sharc/semantics`, `tests/sharc/generation` |
+| Generated shared core `out/native/shared-core/gen` | "no shared core generated here" | `mise run gen:core` | `tests/sharc/generation/test_sharc_lowergen.py` |
+| Module toolchains in `out/tools` (m68k gcc/binutils, Selache) | "selache not built (tools/pk_toolchains.py selache)", "m68k toolchain not installed" | `mise run toolchains` (about 15 min; `uv run python tools/pk_toolchains.py status` shows what is present; docs/PATCHING.md) | `tests/patchkit` |
+| `digi-emud` daemon | "needs DIGI_EMUD (a built digi-emud) and the DN2 .syx" | Build it with `mise run emu:serve -- --build-only` (per `tools/digi_client.py`), set `DIGI_EMUD` to the binary (`DIGI_EMUD_DN2` / `DIGI_EMUD_DT2` for coupled runs; `tools/native_emu.py --daemon --build-only <syx>` prints the path), and have the `.syx` (`DIGI_EMU_SYX`) | `tests/control`, `tests/patchkit/test_master_drive_emu.py`, `tests/emulator/test_coupled_patched.py` |
+| Ready inputs, `snapshots/*.snap` | "no snapshots/*.snap present", patched ready inputs missing | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min; needs the `.syx`; README) | `tests/firmware/test_snapread.py`, `tests/emulator/test_coupled_patched.py` |
+| Captures `out/captures/*.dt2cap` | "the fulltx play capture is not available", "no drive3 capture" | Not reproducible from the repository alone; these tests stay skipped for most contributors. | `tests/sharc/integration`, `tests/sharc/generation` |
+| Opt-in switches | "set LIVE_AUDIO_DEVICE_TESTS=1 to open a real output device", "native/live not built: cd native/live && cargo build --release" | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `cd native/live && cargo build --release` builds the live library; `--slow` runs the long firmware runs. A `SELACHE_DIR` oracle switch is not confirmed (see `tools/pk_toolchains.py`, which defines `SELACHE_DIR` as a path, not an environment variable). | `tests/emulator/test_live_audio.py`, tests marked `slow` |
+
 ## Commands
 
 | Command | What runs | When |
@@ -71,6 +90,7 @@ Per-file run (`test_outcomes.py run --jobs 6`) of the non-slow suite at
 
 - The 5 failures were in `tests/firmware/test_device.py`: `devices/*-leds.toml` has no `[device]` table. Fixed by `emu/device.py` skipping sidecar files.
 - After the fixes on this branch (bb912e1), one pytest process over all of `tests/` passes: 2322 passed, 237 skipped, 0 failed, in 18 minutes. The per-file runner takes about 8 minutes with 6 jobs.
+- Clean checkout (no firmware, no out/): 2005 passed, 554 skipped, 0 failed after the fixes in this branch; every skip names its missing input.
 - The same run after the test moves gave the same outcome and skip reason for every test.
 - Slowest files:
 
@@ -87,6 +107,7 @@ A checkout without them skips more.
 
 ## Known issues and deferred work
 
+- No documented command builds the native SHARC library that tests/sharc/semantics and generation use (about 44 tests skip with 'no native library built'). The only recipe is REGENERATE_HINT in tools/sharc_transpile_run.py. A mise task for it is a follow-up.
 - State shared between test files:
   - One pytest process over all of `tests/` used to fail (`TraceTest`) and then stall in tracer code. Three causes, all fixed:
     1. Ghidra tools (ghidraapply, ghidraq, ghidravt, ghidradump, ghidracopy, ghidraopts, sharc_import) remove `tools/` from `sys.path` when imported, so PyGhidra's `ghidra` package is not shadowed. `tests/conftest.py` now restores `tools/` and `tests/` before each collection and test.
