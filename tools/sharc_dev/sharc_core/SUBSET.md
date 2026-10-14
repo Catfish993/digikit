@@ -6,7 +6,7 @@ symbolic driver (`tools/sharc_dev/sharc_trace.py`), the concrete driver
 concrete core (Rust or C) from the same Python. This file defines the
 Python subset that translator may assume. `tools/sharc_dev/sharc_subset_lint.py`
 checks the parts of it that the syntax tree shows, and
-`tests/test_sharc_subset_lint.py` holds the core to
+`tests/sharc/generation/test_sharc_subset_lint.py` holds the core to
 `subset_allowlist.json`, which only shrinks.
 
     uv run python -m tools.sharc_dev.sharc_subset_lint            # counts per module and rule

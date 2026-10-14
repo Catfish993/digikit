@@ -228,7 +228,7 @@ class State:
     # known reset value and no harness-set value raises
     # sharc_core.memory.UnmodeledMMR instead of also going Unknown. Default
     # False: this must not change tools/sharc_dev/sharc_run.py's default CLI output
-    # or tests/test_sharc_golden.py's hashes.
+    # or tests/sharc/integration/test_sharc_golden.py's hashes.
     explicit_memory_model: bool = False
     # Opt-in secondary register files controlled by MODE1 SRRFL/SRRFH and
     # SRD1H/L/SRD2H/L.  The visible UREG file is always the currently active

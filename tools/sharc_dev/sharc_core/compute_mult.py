@@ -14,7 +14,7 @@ bit layout the manual documents (all.txt:22660-22734), rather than
 hand-written per opcode: each opcode's fixed/variable bits are derived once
 in one of the five handler-builder functions
 (``_mult_handler``/``_mac_handler``/``_sat_handler``/``_rnd_handler``/
-``_clear_handler``), and ``tests/test_sharc_compute_table.py`` cross-checks
+``_clear_handler``), and ``tests/sharc/semantics/test_sharc_compute_table.py`` cross-checks
 every generated key against ``tools/sharc_dev/sharcspec/compute_table.json``.
 """
 
