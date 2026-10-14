@@ -4,19 +4,41 @@ Tests marked ``slow`` (long firmware integration runs) are skipped unless
 ``--slow`` is given.
 """
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+_TOOLS_DIR = str(Path(__file__).resolve().parents[1] / "tools")
 # tests/ itself, so tests import tests/support/ from any subdirectory
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_TESTS_DIR = str(Path(__file__).resolve().parent)
+
+
+def _ensure_paths():
+    """Some Ghidra tools drop tools/ from sys.path when imported (so PyGhidra's
+    ghidra package is not shadowed); restore the paths this conftest promises
+    before each collection and test."""
+    present = {os.path.abspath(p) for p in sys.path if p}
+    for path in (_TESTS_DIR, _TOOLS_DIR):
+        if os.path.abspath(path) not in present:
+            sys.path.insert(0, path)
+
+
+_ensure_paths()
 from sharc_transpile_run import NativeLibraryUnusable  # noqa: E402
 
 
 def pytest_addoption(parser):
     parser.addoption("--slow", action="store_true", help="also run tests marked slow")
+
+
+def pytest_collectstart(collector):
+    _ensure_paths()
+
+
+def pytest_runtest_setup(item):
+    _ensure_paths()
 
 
 def pytest_configure(config):
