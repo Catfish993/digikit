@@ -28,6 +28,14 @@ def fresh_gen(monkeypatch):
     monkeypatch.setenv("DIGI_ALLOW_STALE_GEN", "1")
 
 
+@pytest.fixture(autouse=True)
+def _restore_sharc_gen_dir(monkeypatch):
+    """native_emu sets SHARC_GEN_DIR with os.environ.setdefault; record it so
+    monkeypatch restores it after each test."""
+    monkeypatch.setenv("SHARC_GEN_DIR", "x")
+    monkeypatch.delenv("SHARC_GEN_DIR")
+
+
 def launcher():
     return runpy.run_path(str(ROOT / "tools/native_emu.py"), run_name="launcher_test")
 
