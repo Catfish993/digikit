@@ -100,7 +100,7 @@ description = "Exactness gate for what changed (tools/verify.py; --base BRANCH i
 
 [tasks."verify:full"]
 run = "uv run python tools/verify.py --full"
-description = "Exactness gate, every step with the full 134-scenario tier sweep (about 45 min): before merging to main"
+description = "Exactness gate, every step with the full 134-scenario tier sweep (about 20 min with warm builds): before merging to main"
 
 [tasks.scenario]
 run = "uv run python tools/coupled.py scenario"
