@@ -5,7 +5,8 @@
     uv run python tools/verify.py --full           # every step, with the full 134-scenario tier sweep
     uv run python tools/verify.py --full --dt2     # plus the full DT2 FX tier sweep
     uv run python tools/verify.py --only pins,check
-    uv run python tools/verify.py --jobs 1         # sequential (default: half the CPUs in parallel)
+    uv run python tools/verify.py --rerun-failed   # only the steps that failed in the last run
+    uv run python tools/verify.py --jobs 1        # sequential (default: half the CPUs in parallel)
     uv run python tools/verify.py --explain        # show the routing and the plan, run nothing
 
 python-tests runs one pytest process per file, in parallel (DIGI_PY_JOBS, default
@@ -768,6 +769,29 @@ def run_steps(gate: Gate, steps: tuple[str, ...], jobs: int) -> list[tuple[str, 
     return times
 
 
+def load_last_result(verify_dir: Path, exclude: Path | None) -> dict | None:
+    """The newest (by directory name) result.json under VERIFY_DIR, skipping EXCLUDE."""
+    if not verify_dir.is_dir():
+        return None
+    for run in sorted(verify_dir.iterdir(), key=lambda p: p.name, reverse=True):
+        if exclude is not None and run.resolve() == exclude.resolve():
+            continue
+        path = run / "result.json"
+        if run.is_dir() and not run.is_symlink() and path.is_file():
+            return json.loads(path.read_text())
+    return None
+
+
+def rerun_plan(result: dict) -> tuple[tuple[str, ...], list[str]]:
+    """(steps, python-tests files) to repeat the steps that failed in RESULT."""
+    failed = tuple(result.get("failed", []))
+    unknown = sorted(set(failed) - set(STEPS))
+    if unknown:
+        raise SystemExit(f"verify: unknown steps in last result: {', '.join(unknown)}")
+    steps = tuple(s for s in STEPS if s in failed)
+    return steps, list(result.get("py_tests", []))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run the exactness gate for what changed, one line per step."
@@ -795,9 +819,35 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print the routing, the plan and the python-tests files; run nothing",
     )
+    ap.add_argument(
+        "--rerun-failed",
+        action="store_true",
+        help="only the steps that failed in the most recent run",
+    )
     args = ap.parse_args(argv)
+    if args.rerun_failed and (args.only or args.full):
+        ap.error("--rerun-failed cannot be combined with --only or --full")
     files: list[str] = []
-    if args.only:
+    full, dt2 = args.full, args.dt2
+    rerun_tests: list[str] | None = None
+    if args.rerun_failed:
+        last = load_last_result(Path(digi_env.RUNS_ROOT) / "verify", None)
+        if last is None:
+            print("verify: no previous run with a result.json")
+            return 2
+        if not last.get("failed"):
+            print("verify: the last run had no failed steps; nothing to do")
+            return 0
+        steps, rerun_tests = rerun_plan(last)
+        full, dt2 = bool(last.get("full")), bool(last.get("dt2"))
+        old, new = str(last.get("head", "?")), git_lines("rev-parse", "HEAD")[0]
+        if old != new:
+            print(
+                f"verify: code changed since the failed run ({old[:10]} -> "
+                f"{new[:10]}); re-running the failed steps on the current tree"
+            )
+        why = "--rerun-failed"
+    elif args.only:
         steps = tuple(args.only.split(","))
         unknown = sorted(set(steps) - set(STEPS))
         if unknown:
@@ -813,9 +863,17 @@ def main(argv: list[str] | None = None) -> int:
         files = changed_files(args.base)
         steps = steps_for(files)
         why = f"{len(files)} changed files since {args.base}"
-    py_plan = python_test_plan(files, args.full)
+    if rerun_tests is not None:
+        py_plan = [(path, "rerun") for path in rerun_tests]
+    else:
+        py_plan = python_test_plan(files, args.full)
     if args.explain:
-        explain(steps, files, py_plan, per_file=not (args.only or args.full))
+        explain(
+            steps,
+            files,
+            py_plan,
+            per_file=not (args.only or args.full or args.rerun_failed),
+        )
         return 0
     out = Path(digi_env.run_dir("verify"))
     out.mkdir(parents=True, exist_ok=True)
@@ -830,6 +888,16 @@ def main(argv: list[str] | None = None) -> int:
     for name, seconds in times:
         print(f"  {name:<16} {seconds:6.0f} s", flush=True)
     print(f"verify: wall {time.monotonic() - start:.0f} s with {jobs} jobs", flush=True)
+    result = {
+        "steps": list(steps),
+        "failed": [s for s in gate.failed if s in STEPS],
+        "full": full,
+        "dt2": dt2,
+        "base": args.base,
+        "head": git_lines("rev-parse", "HEAD")[0],
+        "py_tests": gate.py_tests,
+    }
+    (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     if gate.failed:
         print(f"verify: FAILED: {', '.join(gate.failed)}", flush=True)
         return 1

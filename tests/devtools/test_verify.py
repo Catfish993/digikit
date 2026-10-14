@@ -149,6 +149,33 @@ def test_python_timeout_env(monkeypatch: pytest.MonkeyPatch) -> None:
         verify.python_timeout()
 
 
+def test_load_last_result_picks_newest(tmp_path: Path) -> None:
+    assert verify.load_last_result(tmp_path / "none", None) is None
+    for stamp in ("20260101-000000", "20260102-000000", "20260103-000000"):
+        (tmp_path / stamp).mkdir()
+    (tmp_path / "20260101-000000" / "result.json").write_text('{"n": 1}')
+    (tmp_path / "20260102-000000" / "result.json").write_text('{"n": 2}')
+    assert verify.load_last_result(tmp_path, None) == {"n": 2}
+    assert verify.load_last_result(tmp_path, tmp_path / "20260102-000000") == {"n": 1}
+
+
+def test_rerun_plan() -> None:
+    result = {"failed": ["pins", "check"], "py_tests": ["tests/a.py"]}
+    expected = tuple(s for s in verify.STEPS if s in {"pins", "check"})
+    assert verify.rerun_plan(result) == (expected, ["tests/a.py"])
+    with pytest.raises(SystemExit):
+        verify.rerun_plan({"failed": ["bogus"], "py_tests": []})
+
+
+def test_rerun_failed_excludes_only_and_full() -> None:
+    with pytest.raises(SystemExit) as info:
+        verify.main(["--rerun-failed", "--only", "pins"])
+    assert info.value.code == 2
+    with pytest.raises(SystemExit) as info:
+        verify.main(["--rerun-failed", "--full"])
+    assert info.value.code == 2
+
+
 def test_explain_runs_nothing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
