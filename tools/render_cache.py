@@ -84,6 +84,15 @@ DENY_PREFIXES: tuple[str, ...] = (
     "DIGI_EMU_READY_DIR_",
 )
 
+# Environment variables read by native code linked into coupled-run that do not change
+# a render (checked by tests/devtools/test_render_inputs.py). Variables matching the
+# key's prefixes need no entry here; anything else read by that code must be listed.
+IGNORED_ENV: dict[str, str] = {
+    "WASM_HELPER_OUT": "read only by a sharc-fast-wasm unit test (debug output)",
+    "DT2_SYX": "read only by a plusdrive unit test to find firmware for fixtures",
+    "LIVE_AUDIO_DEVICE_TESTS": "gate of an ignored live-audio unit test",
+}
+
 _KEEP_PREFIXES = ("SHARC_", "DIGI_", "DSP_")
 _OUTPUT_FLAGS = frozenset({"--out", "--wav", "--dump-dsp"})
 _SCENARIO_FLAGS = frozenset({"--scenario", "--scenarios"})

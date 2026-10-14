@@ -19,6 +19,7 @@ CLEAN = [
     "tools/test_outcomes.py",
     "tools/render_cache.py",
     "tests/devtools/test_render_cache.py",
+    "tests/devtools/test_render_inputs.py",
     "tests/patchkit/test_pk_proofs.py",
     "tests/patchkit/test_pluck.py",
     "tests/patchkit/test_dsp_voice.py",

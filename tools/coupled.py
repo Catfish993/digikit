@@ -31,6 +31,7 @@ import json
 import math
 import os
 import pathlib
+import random
 import shutil
 import subprocess
 import sys
@@ -378,6 +379,35 @@ def _run_one(
     return out
 
 
+def recheck_probability() -> float:
+    """``DIGI_RENDER_CACHE_CHECK``: chance (0..1, default 0) that a cache hit is
+    re-rendered and compared."""
+    raw = os.environ.get("DIGI_RENDER_CACHE_CHECK", "0")
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not 0.0 <= value <= 1.0:
+        raise SystemExit(
+            f"DIGI_RENDER_CACHE_CHECK={raw!r}: expected a probability from 0 to 1"
+        )
+    return value
+
+
+def pick_rechecks(
+    names: list[str], probability: float, rng: random.Random
+) -> list[str]:
+    """The names (in order) chosen for a fresh re-render, each with
+    ``probability``."""
+    if probability <= 0:
+        return []
+    return [n for n in names if probability >= 1 or rng.random() < probability]
+
+
+def _recheck_view(entry: dict) -> tuple[object, object]:
+    return ((entry.get("pcm") or {}).get("sha256"), entry.get("peek"))
+
+
 def run_batch(
     device: str,
     scenarios_file: pathlib.Path | str,
@@ -431,7 +461,19 @@ def run_batch(
             entry = dict(entry)
             entry["render_cache"] = "hit"
             hits[name] = (top, entry)
-    todo = [n for n in names if n not in hits]
+    misses = [n for n in names if n not in hits]
+    rechecks = (
+        pick_rechecks(
+            [n for n in names if n in hits],
+            recheck_probability(),
+            random.Random(os.urandom(16)),
+        )
+        if hits
+        else []
+    )
+    for name in rechecks:
+        hits[name][1]["render_cache"] = "hit-rechecked"
+    todo = misses + rechecks
     shards = (
         shard_names(todo, scenario_seconds(scn), jobs)
         if jobs > 1
@@ -484,7 +526,7 @@ def run_batch(
     if use_cache:
         for rep in rendered:
             top = {k: v for k, v in rep.items() if k != "scenarios"}
-            for name in todo:
+            for name in misses:
                 wav = run_dir / f"audio-{name}.wav"
                 if (
                     name in keys
@@ -498,14 +540,31 @@ def run_batch(
         if rendered
         else {k: v for k, v in next(iter(hits.values()))[0].items() if k != "scenarios"}
     )
-    all_entries = {**{n: h[1] for n, h in hits.items()}, **entries}
+    all_entries = {**entries, **{n: h[1] for n, h in hits.items()}}
     merged = {
         **top_report,
         "scenarios": [all_entries[n] for n in names],
-        "render_cache": {"hits": len(hits), "rendered": len(todo)},
+        "render_cache": {
+            "hits": len(hits),
+            "rechecked": len(rechecks),
+            "rendered": len(misses),
+        },
     }
     (run_dir / "report.json").write_text(json.dumps(merged))
-    print(f"render cache: {len(hits)} hit, {len(todo)} rendered")
+    print(
+        f"render cache: {len(hits)} hit ({len(rechecks)} rechecked), "
+        f"{len(misses)} rendered"
+    )
+    for name in rechecks:
+        cached, fresh = hits[name][1], entries[name]
+        a = _recheck_view(cached)
+        b = _recheck_view(fresh)
+        if a != b:
+            raise RuntimeError(
+                f"stale render cache for {name}: cached sha256 {a[0]} != fresh "
+                f"{b[0]} (key {keys[name]}); clear it with `tools/coupled.py cache "
+                "clear` and report the missing key input"
+            )
     return merged
 
 
