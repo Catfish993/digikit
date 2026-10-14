@@ -22,6 +22,7 @@ The result per form is a decision tree whose leaves are effect programs.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import os
 import sys
@@ -44,7 +45,7 @@ from sharc_core.state import State  # noqa: E402
 from sharc_core.values import Const  # noqa: E402
 
 MASK32 = 0xFFFFFFFF
-# The real compute decoder, before install() replaces it by an opaque token.
+# The real compute decoder, before installed() replaces it by an opaque token.
 ORIG_COMPUTE = compute._compute
 
 
@@ -1074,19 +1075,42 @@ class LenientNames(list):
         return list.__getitem__(self, i)
 
 
-def install() -> None:
+_INSTALL_DEPTH = 0
+
+
+@contextlib.contextmanager
+def installed():
+    """Patch every sharc_core submodule for the symbolic trace; restore on
+    exit. Re-entrant: only the outermost entry patches and restores."""
+    global _INSTALL_DEPTH
     import importlib
     import pkgutil
 
-    names = LenientNames(encoding.UREG_NAMES)
+    _INSTALL_DEPTH += 1
+    saved: list = []
+    try:
+        if _INSTALL_DEPTH == 1:
+            names = LenientNames(encoding.UREG_NAMES)
 
-    for m in pkgutil.iter_modules(sharc_core.__path__):
-        mod = importlib.import_module("sharc_core." + m.name)
-        for name, fn in PATCHES.items():
-            if hasattr(mod, name):
-                setattr(mod, name, fn)
-        if hasattr(mod, "UREG_NAMES"):
-            mod.UREG_NAMES = names
+            def put(mod, name, value):
+                saved.append((mod, name, hasattr(mod, name), getattr(mod, name, None)))
+                setattr(mod, name, value)
+
+            for m in pkgutil.iter_modules(sharc_core.__path__):
+                mod = importlib.import_module("sharc_core." + m.name)
+                for name, fn in PATCHES.items():
+                    if hasattr(mod, name):
+                        put(mod, name, fn)
+                if hasattr(mod, "UREG_NAMES"):
+                    put(mod, "UREG_NAMES", names)
+        yield
+    finally:
+        _INSTALL_DEPTH -= 1
+        for mod, name, existed, old in reversed(saved):
+            if existed:
+                setattr(mod, name, old)
+            else:
+                delattr(mod, name)
 
 
 # ---------------------------------------------------------------------------
@@ -1124,81 +1148,86 @@ class FakeInsn:
 
 def trace_form(name: str, type_name: str):
     """All leaves of one form."""
-    install()
-    ff = form_fields(type_name)
-    for label, hi, lo in ff:
-        FIELD_DOMAIN[label] = hi - lo + 1
-    fields = SymFields(ff)
-    handler = forms.FORMS[name]
-    leaves: list[Leaf] = []
-    work = [[]]
-    while work:
-        script = work.pop()
-        CTX.reset(script)
-        state = State(pc_sw=0)
-        state.uregs = TR  # type: ignore[assignment]
-        state.assume_nw32 = True
-        state.approx_recips = False
-        state.special = {}
-        state.trace = [{}]
-        state.concrete = object()  # type: ignore[assignment]  # memory is the kernel's
-        insn = FakeInsn(type_name=name, fields=fields)
-        refused = None
-        try:
-            handler(state, insn, fields, name)
-        except Stop as e:
-            refused = str(e)
-        except ValueError as e:
-            refused = "ValueError: " + str(e)
-        leaves.append(Leaf(list(CTX.path), list(CTX.effects), refused))
-        for pos in CTX.discovered:
-            entry = CTX.path[pos]
-            if entry[0] == "d":
-                work.append(CTX.path[:pos] + [("d", entry[1], False)])
-            else:
-                labels = [l for l, _ in entry[1]]
-                for combo in itertools.product(
-                    *[range(1 << FIELD_DOMAIN[l]) for l in labels]
-                ):
-                    if combo == tuple(0 for _ in labels):
-                        continue
-                    work.append(CTX.path[:pos] + [("e", tuple(zip(labels, combo)))])
-    return leaves
+    with installed():
+        ff = form_fields(type_name)
+        for label, hi, lo in ff:
+            FIELD_DOMAIN[label] = hi - lo + 1
+        fields = SymFields(ff)
+        handler = forms.FORMS[name]
+        leaves: list[Leaf] = []
+        work = [[]]
+        while work:
+            script = work.pop()
+            CTX.reset(script)
+            state = State(pc_sw=0)
+            state.uregs = TR  # type: ignore[assignment]
+            state.assume_nw32 = True
+            state.approx_recips = False
+            state.special = {}
+            state.trace = [{}]
+            # memory is the kernel's
+            state.concrete = object()  # type: ignore[assignment]
+            insn = FakeInsn(type_name=name, fields=fields)
+            refused = None
+            try:
+                handler(state, insn, fields, name)
+            except Stop as e:
+                refused = str(e)
+            except ValueError as e:
+                refused = "ValueError: " + str(e)
+            leaves.append(Leaf(list(CTX.path), list(CTX.effects), refused))
+            for pos in CTX.discovered:
+                entry = CTX.path[pos]
+                if entry[0] == "d":
+                    work.append(CTX.path[:pos] + [("d", entry[1], False)])
+                else:
+                    labels = [l for l, _ in entry[1]]
+                    for combo in itertools.product(
+                        *[range(1 << FIELD_DOMAIN[l]) for l in labels]
+                    ):
+                        if combo == tuple(0 for _ in labels):
+                            continue
+                        work.append(
+                            CTX.path[:pos] + [("e", tuple(zip(labels, combo)))]
+                        )
+        return leaves
 
 
 def trace_call(fn, labels: dict[str, int], pre=None):
     """All leaves of FN(state): a state with the tracing registers; LABELS
     maps static field symbols to bit widths. FN returns a value (kept in
     ``Leaf.result``) or raises Stop."""
-    install()
-    for label, width in labels.items():
-        FIELD_DOMAIN[label] = width
-    leaves: list[Leaf] = []
-    work = [[]]
-    while work:
-        script = work.pop()
-        CTX.reset(script)
-        refused = None
-        result = None
-        try:
-            result = fn()
-        except Stop as e:
-            refused = str(e)
-        except ValueError as e:
-            refused = "ValueError: " + str(e)
-        lf = Leaf(list(CTX.path), list(CTX.effects), refused)
-        lf.result = result  # type: ignore[attr-defined]
-        leaves.append(lf)
-        for pos in CTX.discovered:
-            entry = CTX.path[pos]
-            if entry[0] == "d":
-                work.append(CTX.path[:pos] + [("d", entry[1], False)])
-            else:
-                labs = [l for l, _ in entry[1]]
-                for combo in itertools.product(
-                    *[range(1 << FIELD_DOMAIN[l]) for l in labs]
-                ):
-                    if combo == tuple(0 for _ in labs):
-                        continue
-                    work.append(CTX.path[:pos] + [("e", tuple(zip(labs, combo)))])
-    return leaves
+    with installed():
+        for label, width in labels.items():
+            FIELD_DOMAIN[label] = width
+        leaves: list[Leaf] = []
+        work = [[]]
+        while work:
+            script = work.pop()
+            CTX.reset(script)
+            refused = None
+            result = None
+            try:
+                result = fn()
+            except Stop as e:
+                refused = str(e)
+            except ValueError as e:
+                refused = "ValueError: " + str(e)
+            lf = Leaf(list(CTX.path), list(CTX.effects), refused)
+            lf.result = result  # type: ignore[attr-defined]
+            leaves.append(lf)
+            for pos in CTX.discovered:
+                entry = CTX.path[pos]
+                if entry[0] == "d":
+                    work.append(CTX.path[:pos] + [("d", entry[1], False)])
+                else:
+                    labs = [l for l, _ in entry[1]]
+                    for combo in itertools.product(
+                        *[range(1 << FIELD_DOMAIN[l]) for l in labs]
+                    ):
+                        if combo == tuple(0 for _ in labs):
+                            continue
+                        work.append(
+                            CTX.path[:pos] + [("e", tuple(zip(labs, combo)))]
+                        )
+        return leaves
