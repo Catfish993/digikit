@@ -13,47 +13,19 @@ import unittest
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools'))
 
-import sharc_disasm  # noqa: E402
 import sharc_visa_tables as T  # noqa: E402
 import sharcflow  # noqa: E402
 import sharcinv  # noqa: E402
-from test_sharc_disasm import encode  # noqa: E402
-from test_sharcflow import call8a_rel, cjump, load, push3c, store, words  # noqa: E402
-
-
-def field_insn(name, **values):
-    """A `name` instruction with each of its fields set from `values` (by
-    merged base name, e.g. reladdr=0x1234 covers both reladdr[22:16] and
-    reladdr[15:0]) -- generalizes compute23's per-chunk placement below to
-    any form whose fields are split across non-overlapping bit ranges, such
-    as Type12a's data/reladdr."""
-    t = T.get_type(name)
-    insn = t['opcode_value']
-    for label, (hi, lo) in t['fields'].items():
-        base = label.split('[')[0]
-        if base not in values:
-            continue
-        if '[' in label:
-            chi, clo = label[label.index('[') + 1:-1].split(':')
-            chi, clo = int(chi), int(clo)
-            chunk = (values[base] >> clo) & ((1 << (chi - clo + 1)) - 1)
-        else:
-            chunk = values[base] & ((1 << (hi - lo + 1)) - 1)
-        insn |= chunk << lo
-    nwords = t['bits'] // 16
-    ws = [(insn >> (t['bits'] - 16 * (i + 1))) & 0xFFFF for i in range(nwords)]
-    return struct.pack('<%dH' % nwords, *ws)
-
-
-def loop_insn(sw, count, reladdr, form='12a_imm'):
-    """(sw, Instruction) for a Type12a hardware-loop setup at `sw`, trip
-    count `count` (12a_imm) and end offset `reladdr` short-words ahead of
-    the loop body's start (PRM Table 12a: reladdr is PC-relative from the
-    setup instruction itself, see sharcinv.compute_vector)."""
-    data = field_insn(form, data=count, reladdr=reladdr & 0x7FFFFF, mode=0) \
-        if form == '12a_imm' else field_insn(form, ureg=count, reladdr=reladdr & 0x7FFFFF, mode=0)
-    insn = next(sharc_disasm.disassemble(data))
-    return sw, insn
+from support.sharc_encode import (  # noqa: E402
+    call8a_rel,
+    cjump,
+    load,
+    loop_insn,
+    push3c,
+    ret,
+    rframe,
+    store,
+)
 
 
 def compute23(name, field23):
@@ -73,15 +45,6 @@ def compute23(name, field23):
     nwords = t['bits'] // 16
     ws = [(insn >> (t['bits'] - 16 * (i + 1))) & 0xFFFF for i in range(nwords)]
     return struct.pack('<%dH' % nwords, *ws)
-
-
-def rframe():
-    return encode('25c_rframe')
-
-
-def ret():
-    """9b_abs return jump (raw 0x083F343F), split into its two 16-bit words."""
-    return words(sharcinv.RETURN_JUMP >> 16, sharcinv.RETURN_JUMP & 0xFFFF)
 
 
 DUAL_ADD_SUB_FIXED = (0x7 << 16) | (0xA << 12) | (0x1 << 8) | (0x2 << 4) | 0x3

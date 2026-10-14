@@ -15,27 +15,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "too
 T = import_module("sharc_trace")
 Instruction = import_module("sharc_disasm").Instruction
 L = import_module("sharcldr")
-encode = import_module("test_sharc_disasm").encode
+from support.sharc_encode import encode  # noqa: E402
+from support.sharc_trace_build import insn, loader_block, loader_memory  # noqa: E402
+
 _floats = import_module("sharc_core.floats")  # _double_to_fixed isn't re-exported by T
-
-
-def loader_block(code, address, count, arg=0, payload=b""):
-    """Build a checksum-valid synthetic loader block."""
-    header = bytearray(struct.pack("<IIII", code | 0xAD000000, address, count, arg))
-    header[2] = 0
-    checksum = 0
-    for byte in header:
-        checksum ^= byte
-    header[2] = checksum
-    return bytes(header) + payload
-
-
-def loader_memory(*blocks):
-    return L.LoadedMemory.from_stream(b"".join(blocks))
-
-
-def insn(name, fields, length=4, kind="confident"):
-    return Instruction(0, length, name, fields, kind=kind)
 
 
 class TraceTest(unittest.TestCase):

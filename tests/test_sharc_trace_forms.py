@@ -19,7 +19,7 @@ from importlib import import_module
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
 T = import_module("sharc_trace")
 Instruction = import_module("sharc_disasm").Instruction
-from test_sharc_trace import loader_memory  # noqa: E402  (shared fixture)
+from support.sharc_trace_build import loader_memory  # noqa: E402  (shared fixture)
 
 
 def insn(name, fields, length=4, kind="confident"):

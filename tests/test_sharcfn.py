@@ -26,10 +26,20 @@ import sharc_disasm  # noqa: E402
 import sharcfn  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
-from test_sharc_disasm import encode  # noqa: E402
-from test_sharcflow import call8a_rel, cjump, load, push3c, store, words  # noqa: E402
-from test_sharcinv import field_insn, loop_insn, ret, rframe  # noqa: E402
-from test_sharcldr import block as boot_block  # noqa: E402
+from support.sharc_encode import (  # noqa: E402
+    call8a_rel,
+    cjump,
+    encode,
+    field_insn,
+    load,
+    loop_insn,
+    push3c,
+    ret,
+    rframe,
+    store,
+    words,
+)
+from support.sharc_encode import block as boot_block  # noqa: E402
 
 
 def insn_at(data, offset=0):

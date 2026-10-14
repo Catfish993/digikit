@@ -1,7 +1,6 @@
 """tools/sharcldr.py main_program() on a hand-built boot stream."""
 
 import os
-import struct
 import sys
 import unittest
 from importlib import import_module
@@ -11,18 +10,9 @@ sys.path.insert(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
 )
 
+from support.sharc_encode import block  # noqa: E402
+
 sharcldr = import_module("sharcldr")
-
-
-def block(code, addr, count, arg=0, payload=b""):
-    """Build a core-0 header with a valid HDRCHK, then its payload."""
-    hdr = bytearray(struct.pack("<IIII", code | 0xAD000000, addr, count, arg))
-    hdr[2] = 0
-    x = 0
-    for b in hdr:
-        x ^= b
-    hdr[2] = x
-    return bytes(hdr) + payload
 
 
 class LoadedMemoryTest(unittest.TestCase):

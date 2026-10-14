@@ -12,8 +12,7 @@ import sharc_disasm  # noqa: E402
 import sharc_visa_tables as T  # noqa: E402
 import sharcldr  # noqa: E402
 import sharcimm  # noqa: E402
-from test_sharc_disasm import encode  # noqa: E402
-from test_sharcldr import block  # noqa: E402
+from support.sharc_encode import block, encode  # noqa: E402
 
 
 def pack48(value):

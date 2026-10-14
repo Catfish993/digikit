@@ -1,61 +1,23 @@
 """tools/sharcflow.py call and return recognition (the Ghidra pass needs a project)."""
 
 import os
-import struct
 import sys
 import unittest
 
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools'))
 
-import sharc_visa_tables as T  # noqa: E402
 import sharcflow  # noqa: E402
-from test_sharc_disasm import encode  # noqa: E402
-
-
-def put(name, **stems):
-    """-> bits for encode(): each field whose label is STEM or STEM[..] set to its value."""
-    extra = 0
-    for label, (hi, lo) in T.get_type(name)['fields'].items():
-        stem = label.split('[')[0]
-        if stem in stems:
-            extra |= stems[stem] << lo
-    return extra
-
-
-def words(*ws):
-    return struct.pack('<%dH' % len(ws), *ws)
-
-
-def cjump(target):
-    return encode('25a_direct', put('25a_direct') | (target & 0xFFFFFF))
-
-
-def push3c():
-    return words(0x9FF2)
-
-
-def push3a():
-    return encode('3a', put('3a', u=1, i=7, m=7, cond=31, g=0, d=1, l=0, ureg=2))
-
-
-def store(value):
-    return encode('16a', put('16a', i=7, m=7) | (value & 0xFFFFFFFF))
-
-
-def load(ureg, value):
-    return encode('17b', put('17b', ureg=ureg) | (value & 0xFFFF))
-
-
-def call8a_rel(rel, b=1, a=0, cond=31, j=1, ci=0):
-    """Type 8a PC-relative jump/call (SHARC+ Core Programming Reference, Type
-    8a, p.357): b=1 is CALL, b=0 is JUMP; j is delayed (1) vs non-delayed (0),
-    not a call/jump selector; cond=31 is unconditional."""
-    return encode('8a_rel', put('8a_rel', b=b, a=a, cond=cond, j=j, ci=ci) | (rel & 0xFFFFFF))
-
-
-def call8a_abs(addr, b=1, a=0, cond=31, j=1, ci=0):
-    return encode('8a_abs', put('8a_abs', b=b, a=a, cond=cond, j=j, ci=ci) | (addr & 0xFFFFFF))
+from support.sharc_encode import (  # noqa: E402
+    call8a_abs,
+    call8a_rel,
+    cjump,
+    load,
+    push3a,
+    push3c,
+    store,
+    words,
+)
 
 
 class SitesTest(unittest.TestCase):

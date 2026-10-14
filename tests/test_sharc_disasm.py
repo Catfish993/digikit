@@ -10,22 +10,12 @@ sys.path.insert(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
 )
 
-from test_sharcldr import block  # noqa: E402
+from support.sharc_encode import block, encode  # noqa: E402
 
 import sharc_disasm  # noqa: E402
 import sharc_visa_tables as T  # noqa: E402
 import sharccompare  # noqa: E402
 import sharcldr  # noqa: E402
-
-
-def encode(name, extra=0):
-    """-> little-endian bytes of a form-`name` instruction: its fixed bits, plus `extra` elsewhere."""
-    t = T.get_type(name)
-    insn = t["opcode_value"] | (extra & ~t["opcode_mask"] & ((1 << t["bits"]) - 1))
-    words = [
-        (insn >> (t["bits"] - 16 * (i + 1))) & 0xFFFF for i in range(t["bits"] // 16)
-    ]
-    return struct.pack("<%dH" % len(words), *words)
 
 
 def undecodable_word():

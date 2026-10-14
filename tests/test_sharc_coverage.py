@@ -15,8 +15,7 @@ sys.path.insert(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
 )
 
-from test_sharc_disasm import encode  # noqa: E402
-from test_sharcldr import block  # noqa: E402
+from support.sharc_encode import block, encode  # noqa: E402
 
 import sharc  # noqa: E402
 import sharc_coverage  # noqa: E402

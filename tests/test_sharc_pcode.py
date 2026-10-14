@@ -20,7 +20,7 @@ sys.path.insert(
 import sharc_disasm  # noqa: E402  # pyright: ignore[reportMissingImports]
 import sharc_visa_tables as T  # noqa: E402  # pyright: ignore[reportMissingImports]
 import sharcpcode  # noqa: E402  # pyright: ignore[reportMissingImports]
-from test_sharc_disasm import encode  # noqa: E402
+from support.sharc_encode import encode  # noqa: E402
 
 TARGET_SW = 0x1C1400
 COND_EQ = 0x00

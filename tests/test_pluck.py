@@ -13,9 +13,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tests"))
 
-import test_dsp_voice as dv  # noqa: E402
+import support.dsp_voice_rig as dv  # noqa: E402
 
 import pk_sharc  # noqa: E402
 import pk_toolchains  # noqa: E402

@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+# tests/ itself, so tests import tests/support/ from any subdirectory
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sharc_transpile_run import NativeLibraryUnusable  # noqa: E402
 
 

@@ -14,11 +14,13 @@ import unittest
 from importlib import import_module
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
-sys.path.insert(0, os.path.dirname(__file__))
 T = import_module("sharc_trace")
 Instruction = import_module("sharc_disasm").Instruction
 L = import_module("sharcldr")
-from test_sharc_trace import insn, loader_memory  # noqa: E402  (shared fixtures)
+from support.sharc_trace_build import (  # noqa: E402  (shared fixtures)
+    insn,
+    loader_memory,
+)
 
 
 def short_compute(opcode, rn, rx):
