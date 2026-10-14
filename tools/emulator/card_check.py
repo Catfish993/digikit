@@ -32,8 +32,9 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import digi_env
-from tools.control.digi_client import Emu
+from tools import python_env  # noqa: E402
+from tools.control.digi_client import Emu  # noqa: E402
+from tools.emulator import digi_env  # noqa: E402
 
 TRK, TRIG1 = 16, 25
 
@@ -123,9 +124,9 @@ def judge(track: int, result: dict) -> tuple[bool, str]:
 
 def build_daemon(syx: pathlib.Path) -> pathlib.Path:
     done = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "emulator" / "native_emu.py"), "--daemon",
+        [sys.executable, "-m", "tools.emulator.native_emu", "--daemon",
          "--build-only", str(syx)],
-        cwd=ROOT, capture_output=True, text=True,
+        cwd=ROOT, env=python_env(), capture_output=True, text=True,
     )  # fmt: skip
     if done.returncode:
         raise SystemExit(f"building digi-emud failed:\n{done.stderr[-2000:]}")

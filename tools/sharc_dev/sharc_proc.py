@@ -16,7 +16,7 @@ CPython for Unicorn:
     uv run --no-project --python pypy3.11 python -m tools.sharc_dev.sharc_proc
 
 This module is pure standard library (plus, for a future runner backend,
-`tools/sharc_dev/sharc_core`/`tools/sharc_run` -- see ``RunnerBackend``): no `unicorn`,
+`tools/sharc_dev/sharc_core`/`tools/sharc_dev/sharc_run` -- see ``RunnerBackend``): no `unicorn`,
 `capstone` or `pypcode`, so it starts under PyPy. Everything CPython-only
 (Unicorn, the DSPI2/SSI0 models themselves) stays on the client side, in
 ``emu/sharc_peer.py``.

@@ -365,8 +365,8 @@ def extract_descriptors(img: fw.CF, section: str) -> list[dict[str, Any]]:
 
 
 def extract_params(section: str) -> list[dict[str, Any]]:
-    from tools.patchkit import machineprofile
     from tools.coldfire import paramtable
+    from tools.patchkit import machineprofile
 
     if not os.path.exists(section):
         return []

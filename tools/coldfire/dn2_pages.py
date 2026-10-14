@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import struct
-from pathlib import Path
 
 from tools.emulator.snapread import Snapshot  # noqa: E402
 

@@ -60,7 +60,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharcinv  # noqa: E402
-from tools.sharc_dev.sharc_core.encoding import ACCESS_WIDTHS, TYPE4B_ACCESS_WIDTHS  # noqa: E402
+from tools.sharc_dev.sharc_core.encoding import (  # noqa: E402
+    ACCESS_WIDTHS,
+    TYPE4B_ACCESS_WIDTHS,
+)
 from tools.sharc_dev.sharc_core.forms import FORMS  # noqa: E402
 
 # --- static field/width tables ----------------------------------------------

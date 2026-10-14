@@ -58,7 +58,7 @@ Usage:
     uv run python -m tools.sharc_dev.sharcscan section_7_digitakt.bin --json out.json
     uv run python -m tools.sharc_dev.sharcscan section_7_digitakt.bin --region 11248:236000
 """
-import argparse, hashlib, json, os, struct, sys
+import argparse, hashlib, json, struct, sys
 from collections import defaultdict
 
 

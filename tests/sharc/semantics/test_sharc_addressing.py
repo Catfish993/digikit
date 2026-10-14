@@ -1,8 +1,6 @@
 """Synthetic product-map regressions; no firmware or running state."""
 
-
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.sharc_dev import sharc_run as sr
 from tools.sharc_dev import sharc_trace as trace

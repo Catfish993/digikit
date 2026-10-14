@@ -433,7 +433,7 @@ def _check_return_target(state: State, pmi: int) -> str | None:
     register (I8-I15) its own register allocation leaves free, then jumps
     back through that register plus M14 (the ABI's fixed return-address
     modifier: DEFAULT_REGS/CORE_MMR reset gives M14 == 1). I12 (pmi == 4)
-    is what nearly every occurrence uses (tools/sharcdb census of dt2-1.16:
+    is what nearly every occurrence uses (tools/sharc_dev/sharcdb census of dt2-1.16:
     1051 of 1052 cond=0x1F/b=0/j=1/pmm=6 Type9a_abs/9b_abs instructions);
     I13 (pmi == 5) appears once, at 0x1c0cb5, traced back to a DM load of
     the same manual return-address slot into I13 at that function's own

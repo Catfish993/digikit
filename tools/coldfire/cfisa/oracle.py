@@ -41,7 +41,9 @@ ROOT = Path(__file__).resolve().parents[3]
 CRATE = ROOT / "native" / "coldfire"
 # The native crates form one cargo workspace; its default target dir is ROOT/target.
 CFDIS = ROOT / "target" / "release" / "cfdis"
-LANG_DIR = ROOT / "tools" / "coldfire" / "ghidra" / "ColdfireEMAC" / "data" / "languages"
+LANG_DIR = (
+    ROOT / "tools" / "coldfire" / "ghidra" / "ColdfireEMAC" / "data" / "languages"
+)
 DEFAULT_IMAGES = ["dt2-1.16", "dn2-1.11"]
 
 LINE = re.compile(r"^([0-9a-f]{8})  ((?:[0-9a-f]{4} ?)+?)\s{2,}(\S.*)$")
@@ -172,7 +174,9 @@ CTRL_NAMES: dict[str, str] = {}
 
 
 def load_ctrl_names() -> None:
-    table = json.loads((ROOT / "tools" / "coldfire" / "cfisa" / "coldfire.json").read_text())
+    table = json.loads(
+        (ROOT / "tools" / "coldfire" / "cfisa" / "coldfire.json").read_text()
+    )
     for k, v in table["control_registers"].items():
         if not k.startswith("_"):
             CTRL_NAMES[k.lower()] = v
@@ -360,7 +364,9 @@ UNIT: dict[str, str] = {}
 
 
 def load_flows() -> None:
-    table = json.loads((ROOT / "tools" / "coldfire" / "cfisa" / "coldfire.json").read_text())
+    table = json.loads(
+        (ROOT / "tools" / "coldfire" / "cfisa" / "coldfire.json").read_text()
+    )
     for f in table["forms"]:
         FLOW[f["id"]] = f.get("flow", "")
         UNIT[f["id"]] = f["unit"]

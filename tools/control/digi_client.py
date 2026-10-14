@@ -15,7 +15,7 @@ current one. Standard library only.
 
 In a script:
 
-    from digi_client import Emu
+    from tools.control.digi_client import Emu
     emu = Emu.connect()
     print(emu.inject("out/patched.syx")["start_used"])
 
@@ -208,6 +208,7 @@ class Emu:
         (`tools/emulator/ready.py`: digi-audio-dn2-image.bin, digi-audio-m5.snap, digi-audio-m5.snap.dsp). The fast tier
         is on as in the launcher."""
         from tools.emulator import digi_env
+
         syx = pathlib.Path(syx).resolve()
         ready = pathlib.Path(ready_dir).resolve()
         env = {}

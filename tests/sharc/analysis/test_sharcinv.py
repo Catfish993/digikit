@@ -7,7 +7,6 @@ tests/sharc/analysis/test_sharcflow.py builds calls and returns.
 
 import struct
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402

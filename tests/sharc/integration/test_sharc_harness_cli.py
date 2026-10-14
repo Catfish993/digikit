@@ -7,8 +7,6 @@ import struct
 import unittest
 import wave
 
-from support.paths import REPO_ROOT
-
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")

@@ -1,5 +1,5 @@
 """Attach pc breakpoints at a list of function entries during a
-tools/sharc_replay.py-style continuous replay, and log every hit's own
+tools/sharc_dev/sharc_replay.py-style continuous replay, and log every hit's own
 registers, stack args and (once the matching call returns) its R0 return
 value.
 
@@ -61,7 +61,8 @@ def _maybe_reexec_under_pypy() -> None:
 
     if shutil.which("uv") is None:
         return
-    here = os.path.abspath(__file__)
+    from tools import python_env
+
     cmd = [
         "uv",
         "run",
@@ -71,11 +72,12 @@ def _maybe_reexec_under_pypy() -> None:
         "--with",
         "networkx",
         "python",
-        here,
+        "-m",
+        "tools.sharc_dev.sharc_calltrace",
         *sys.argv[1:],
     ]
     try:
-        os.execvp(cmd[0], cmd)
+        os.execvpe(cmd[0], cmd, python_env())
     except OSError as exc:
         print(
             "sharc_calltrace: PyPy re-exec failed (%s), running as-is" % exc,
@@ -94,13 +96,12 @@ import time  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+from emu import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_survey as sv  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402
-
-from emu import sharc_capture  # noqa: E402
 
 DEFAULT_ENTRY_PCS: tuple[int, ...] = (
     0x1C7442,

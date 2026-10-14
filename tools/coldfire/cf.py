@@ -2,7 +2,7 @@
 """One small Python API over a tools/coldfire/cfdb.py database: build/import once,
 then query in-process instead of a fresh CLI round trip per question.
 
-    import cf
+    from tools.coldfire import cf
     img = cf.load("dt2-1.16-emac")
     img.func(0x400caf48)                        # by address
     img.func("machine_descriptor_dispatch")      # by tools/coldfire/cf_names.py name
@@ -362,7 +362,7 @@ class Image:
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) != 2:
-        print('usage: tools/coldfire/cf.py IMAGE "SQL"', file=sys.stderr)
+        print('usage: uv run python -m tools.coldfire.cf IMAGE "SQL"', file=sys.stderr)
         return 2
     name, query = argv
     img = load(name)

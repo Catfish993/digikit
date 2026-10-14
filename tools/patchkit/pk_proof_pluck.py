@@ -52,12 +52,14 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools.emulator import card_overlay  # noqa: E402
-from tools.patchkit import hook_ab  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    hook_ab,  # noqa: E402
+    pluck_ref,  # noqa: E402
+)
 from tools.patchkit import pk_dn2_common as C  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proof_machines as M  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
-from tools.patchkit import pluck_ref  # noqa: E402
 
 PLUCK_TYPE = 9  # core/machines types.toml, "machines/pluck:pluck" on dt2
 MODS = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]

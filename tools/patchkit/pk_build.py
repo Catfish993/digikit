@@ -26,8 +26,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-from tools.patchkit import pk_link  # noqa: E402
-from tools.patchkit import pk_sharc  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_link,  # noqa: E402
+    pk_sharc,  # noqa: E402
+)
 
 FORMAT = 1
 SHARC_TYPES = {pk_sharc.R_ABS24: "sharc.abs24", pk_sharc.R_ABS32: "sharc.abs32"}
@@ -209,7 +211,7 @@ def build_module(moddir: Path, check: bool) -> list[str]:
         if check:
             if not out.exists() or out.read_text() != text:
                 raise BuildError(
-                    f"{out} is stale: run tools/patchkit/pk_build.py build {moddir}"
+                    f"{out} is stale: uv run python -m tools.patchkit.pk_build build {moddir}"
                 )
             messages.append(f"{out}: current")
         else:

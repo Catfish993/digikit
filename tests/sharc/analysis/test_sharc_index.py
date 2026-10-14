@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from importlib import import_module
 from unittest.mock import patch
-from support.paths import REPO_ROOT
 
 I = import_module("tools.sharc_dev.sharc_index")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction

@@ -8,11 +8,13 @@ from pathlib import Path
 
 import pytest
 
-
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_transpile_run as nr  # noqa: E402
 from tools.sharc_dev import sharcldr  # noqa: E402
-from tools.sharc_dev.sharc_core.state import _sync_pc_stack, _sync_status_stack  # noqa: E402
+from tools.sharc_dev.sharc_core.state import (  # noqa: E402
+    _sync_pc_stack,
+    _sync_status_stack,
+)
 from tools.sharc_dev.sharc_core.values import Const  # noqa: E402
 from tools.sharc_dev.sharc_disasm import get_type  # noqa: E402
 

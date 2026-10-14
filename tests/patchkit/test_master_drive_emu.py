@@ -13,6 +13,7 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
+from tools import python_env  # noqa: E402
 from tools.patchkit import pk_toolchains  # noqa: E402
 
 CASES = {
@@ -31,7 +32,7 @@ def test_proof(device, tmp_path):
     if pk_toolchains.selache_dir() is None:
         pytest.skip("selache not built")
     patched = tmp_path / f"md-{device}.syx"
-    run = [sys.executable, str(ROOT / "tools" / "patchkit" / "patchkit.py"), "patch"]
+    run = [sys.executable, "-m", "tools.patchkit.patchkit", "patch"]
     done = subprocess.run(
         [
             *run,
@@ -43,6 +44,7 @@ def test_proof(device, tmp_path):
             str(patched),
         ],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )
@@ -50,7 +52,8 @@ def test_proof(device, tmp_path):
     proof = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tools" / "patchkit" / "pk_proof_drive.py"),
+            "-m",
+            "tools.patchkit.pk_proof_drive",
             device,
             "--patched",
             str(patched),
@@ -58,6 +61,7 @@ def test_proof(device, tmp_path):
             str(tmp_path / "proof"),
         ],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )

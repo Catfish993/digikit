@@ -14,8 +14,6 @@ independent of the parallel compute-opcode work landing in the same file.
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
 T = import_module("tools.sharc_dev.sharc_trace")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 from support.sharc_trace_build import loader_memory  # noqa: E402  (shared fixture)
@@ -348,7 +346,9 @@ class LongWordModifierScaleTest(unittest.TestCase):
     space."""
 
     def test_long_word_scales_like_a_normal_word(self):
-        scale = import_module("tools.sharc_dev.sharc_core.memory")._access_modifier_scale
+        scale = import_module(
+            "tools.sharc_dev.sharc_core.memory"
+        )._access_modifier_scale
         self.assertEqual(scale("long-word", True), 4)
         self.assertEqual(scale("normal-word", True), 4)
         self.assertEqual(scale("long-word", False), 1)

@@ -1,16 +1,6 @@
 """native_target: cargo target dirs keyed by the generated core."""
 
-import importlib.util
-import sys
-
-from support.paths import REPO_ROOT
-
-TOOL = REPO_ROOT / "tools" / "emulator" / "native_target.py"
-_spec = importlib.util.spec_from_file_location("native_target", TOOL)
-assert _spec and _spec.loader
-nt = importlib.util.module_from_spec(_spec)
-sys.modules["tools.emulator.native_target"] = nt
-_spec.loader.exec_module(nt)
+import tools.emulator.native_target as nt
 
 
 def test_missing_or_unset_gen_is_nogen(tmp_path):

@@ -1095,7 +1095,7 @@ def installed():
                 setattr(mod, name, value)
 
             for m in pkgutil.iter_modules(sharc_core.__path__):
-                mod = importlib.import_module("sharc_core." + m.name)
+                mod = importlib.import_module("tools.sharc_dev.sharc_core." + m.name)
                 for name, fn in PATCHES.items():
                     if hasattr(mod, name):
                         put(mod, name, fn)

@@ -36,9 +36,8 @@ import sys
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.patchkit import hook_ab
-from tools.patchkit import pk_proofkit as K
-from tools.patchkit import pluck_ref
+from tools.patchkit import hook_ab, pluck_ref  # noqa: E402
+from tools.patchkit import pk_proofkit as K  # noqa: E402
 
 PATCH_MODS = ["core/dsp-voice", "test/sine-voice"]
 

@@ -7,9 +7,6 @@ PE's condition is true (logical OR).  Stock DT2 1.17 has `IF EQ modify(I4,
 M4)` at 0x1cbc93 (finding 07).
 """
 
-
-from support.paths import REPO_ROOT
-
 from tools.sharc_dev import sharc_trace as st
 from tools.sharc_dev.sharc_core.encoding import AZ_BIT
 from tools.sharc_dev.sharc_disasm import Instruction

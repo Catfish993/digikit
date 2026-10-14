@@ -5,7 +5,6 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import ghidradump  # noqa: E402

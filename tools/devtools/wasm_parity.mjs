@@ -42,7 +42,7 @@ for (let i = 2; i < process.argv.length; i++) {
   args[a.slice(2)] = process.argv[++i];
 }
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(args.repo ?? (fs.existsSync(path.join(here, '..', 'native')) ? path.join(here, '..') : process.cwd()));
+const root = path.resolve(args.repo ?? (fs.existsSync(path.join(here, '..', '..', 'native')) ? path.join(here, '..', '..') : process.cwd()));
 const env = process.env;
 const ready = path.resolve(root, env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
 const paths = {

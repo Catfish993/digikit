@@ -17,9 +17,9 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.firmware import l2canary
-from tools.patchkit import patched_audio_check as pac
-from tools.control.digi_client import Emu, EmuError
+from tools.control.digi_client import Emu, EmuError  # noqa: E402
+from tools.firmware import l2canary  # noqa: E402
+from tools.patchkit import patched_audio_check as pac  # noqa: E402
 
 CASES = {
     "dn2": ("Digitone_II_OS1.12.syx", "snapshots/dn2-112-ready"),

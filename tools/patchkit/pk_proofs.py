@@ -4,7 +4,7 @@
     uv run python -m tools.patchkit.pk_proofs [--only gain,drive,...] [--jobs N] [--out DIR]
     mise run patch:proofs
 
-Each tool is `tools/pk_proof_<name>.py --quick` (parts in parallel processes inside the tool, `--jobs`); the tools
+Each tool is `tools/patchkit/pk_proof_<name>.py --quick` (parts in parallel processes inside the tool, `--jobs`); the tools
 run in sequence so that their timings do not disturb each other. Logs and the tools' output go under OUT (default
 out/runs/proofs). Exit 0 only when every tool passes. The full tiers run only at integration (AGENTS.md).
 """
@@ -16,6 +16,8 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+
+from tools import python_env
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -42,7 +44,14 @@ def selected(label: str, want: list[str] | None) -> bool:
 
 def command(script: str, extra: list[str], out: Path, jobs: int) -> list[str]:
     """The quick-tier command of one tool; OUT is its output directory."""
-    cmd = [sys.executable, "-u", str(HERE / script), *extra, "--quick"]
+    cmd = [
+        sys.executable,
+        "-u",
+        "-m",
+        f"tools.patchkit.{Path(script).stem}",
+        *extra,
+        "--quick",
+    ]
     cmd += ["--out", str(out)]
     if jobs:
         cmd += ["--jobs", str(jobs)]
@@ -87,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         log = a.out / f"{slug}.log"
         with log.open("wb") as f:
             rc = subprocess.run(
-                cmd, stdout=f, stderr=subprocess.STDOUT, cwd=ROOT
+                cmd, stdout=f, stderr=subprocess.STDOUT, cwd=ROOT, env=python_env()
             ).returncode
         wall = time.monotonic() - t0
         lines = log.read_text(errors="replace").strip().splitlines()

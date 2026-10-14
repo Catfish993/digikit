@@ -12,10 +12,12 @@ import struct
 import wave
 
 import pytest
-from support.paths import REPO_ROOT
 
-
-from tools.emulator.live_audio import LiveAudio, LiveStats, _default_library_path  # noqa: E402
+from tools.emulator.live_audio import (  # noqa: E402
+    LiveAudio,
+    LiveStats,
+    _default_library_path,
+)
 
 LIBRARY_PATH = _default_library_path()
 

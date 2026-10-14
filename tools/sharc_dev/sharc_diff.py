@@ -136,7 +136,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402  (re-exports sharc_core)
-from tools.sharc_dev.sharc_core.values import Operand  # noqa: E402  (not re-exported by sharc_trace)
+from tools.sharc_dev.sharc_core.values import (  # noqa: E402
+    Operand,  # noqa: E402  (not re-exported by sharc_trace)
+)
 from tools.sharc_dev.sharcldr import LoadedMemory  # noqa: E402
 
 # ---------------------------------------------------------------------------

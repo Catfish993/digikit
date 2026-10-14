@@ -15,8 +15,6 @@ change.
 import pathlib
 import unittest
 
-from support.paths import REPO_ROOT
-
 from tools.sharc_dev import sharc  # noqa: E402
 from tools.sharc_dev import sharc_contract as C  # noqa: E402
 

@@ -16,6 +16,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from unittest.mock import patch
 from support.paths import REPO_ROOT
+from tools import python_env
 
 
 sharc_disasm = importlib.import_module("tools.sharc_dev.sharc_disasm")
@@ -572,8 +573,8 @@ class FirmwareIntegrationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             directory = pathlib.Path(directory)
             index, first_path, second_path = directory / "index.sqlite", directory / "one.json", directory / "two.json"
-            base = [sys.executable, "tools/sharc_dev/sharc_discover.py", str(BLOB), str(MANIFEST), "--index", str(index)]
-            first_env, second_env = dict(os.environ, PYTHONHASHSEED="1"), dict(os.environ, PYTHONHASHSEED="999")
+            base = [sys.executable, "-m", "tools.sharc_dev.sharc_discover", str(BLOB), str(MANIFEST), "--index", str(index)]
+            first_env, second_env = python_env(dict(os.environ, PYTHONHASHSEED="1")), python_env(dict(os.environ, PYTHONHASHSEED="999"))
             # Fill the temporary cache in parallel; jobs=1 then exercises the
             # same canonical report and read-only warm path without making the
             # suite pay for a serial whole-image writer census.

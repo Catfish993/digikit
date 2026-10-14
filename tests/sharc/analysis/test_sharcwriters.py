@@ -7,7 +7,6 @@ import pathlib
 import unittest
 from importlib import import_module
 from unittest.mock import patch
-from support.paths import REPO_ROOT
 
 
 W = import_module("tools.sharc_dev.sharcwriters")

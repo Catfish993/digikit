@@ -51,7 +51,7 @@ from collections import Counter
 
 import pymupdf
 
-PRM = "../../docs/refs/sc58x-2158x-prm.pdf"
+PRM = "../../../docs/refs/sc58x-2158x-prm.pdf"
 NOTES = []          # human-readable gaps / caveats, printed in the summary
 CONFLICTS = []       # {topic, prm, pgr} dicts where PRM and PGR disagree
 

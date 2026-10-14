@@ -38,14 +38,13 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import bootstrap_run
-from tools.control import digi_client
-from tools.patchkit import patchimg
-from tools.firmware import roundtrip
-
 from dt2 import container, inplace  # noqa: E402
 from dt2.elz import depack_section  # noqa: E402
 from emu.extract import classify  # noqa: E402
+from tools.control import digi_client  # noqa: E402
+from tools.emulator import bootstrap_run  # noqa: E402
+from tools.firmware import roundtrip  # noqa: E402
+from tools.patchkit import patchimg  # noqa: E402
 
 MAIN_LOAD = 0x4000_0400
 DEFAULT_STRING = ("UNTITLED", "PATCHKIT")

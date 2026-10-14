@@ -19,11 +19,6 @@ import shutil
 import sys
 import tempfile
 
-# tools/coldfire/ghidra/ is a plain directory of Java scripts that shadows the real
-# `ghidra` Java-bridge namespace PyGhidra needs, once tools/ lands on
-# sys.path -- which it does when this is run as `python -m tools.coldfire.ghidracopy`.
-_here = os.path.dirname(os.path.abspath(__file__))
-
 DEFAULT_GHIDRA = '/opt/homebrew/Cellar/ghidra/12.1.3/libexec'
 
 

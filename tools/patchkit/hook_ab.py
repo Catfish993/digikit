@@ -25,6 +25,8 @@ from pathlib import Path
 
 import numpy as np
 
+from tools import python_env
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -91,7 +93,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     out_dir = ROOT / "out" / "runs" / "hook" / args.label
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "uv", "run", "python", str(ROOT / "tools" / "emulator" / "coupled.py"), "scenario", args.scenario,
+        "uv", "run", "python", "-m", "tools.emulator.coupled", "scenario", args.scenario,
         "--no-build", "--wav", "--device", args.device, "--out", str(out_dir / "report.json"),
     ]  # fmt: skip
     if args.dt2_card:
@@ -104,7 +106,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     if extra:
         cmd += ["--", *extra]
     print(" ".join(cmd))
-    return subprocess.call(cmd, cwd=ROOT)
+    return subprocess.call(cmd, cwd=ROOT, env=python_env())
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -30,9 +30,8 @@ import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.devtools import benchlock
-from tools.emulator import coupled
-
+from tools.devtools import benchlock  # noqa: E402
+from tools.emulator import coupled  # noqa: E402
 
 # Set by --dt2-card: the sample card's ready inputs and its `--card-image` argument.
 CARD: tuple[dict[str, pathlib.Path], list[str]] | None = None

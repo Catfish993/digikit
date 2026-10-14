@@ -42,8 +42,8 @@ from typing import Any
 
 import numpy as np
 
-from tools.emulator import audiocheck as ac
 from tools.coldfire import paramtable
+from tools.emulator import audiocheck as ac
 
 F0 = 261.6  # Trig 1 audition pitch, Hz
 WIN = (0.1, 0.3)  # analysis window after the note onset, s

@@ -24,12 +24,12 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.sharc_dev import sharc_transpile_run as tr  # noqa: E402
 from tools.emulator.live_audio import (  # noqa: E402
     DEFAULT_SHARC_LIB,
     LiveAudio,
     _default_library_path,
 )
+from tools.sharc_dev import sharc_transpile_run as tr  # noqa: E402
 
 IMAGE = "dt2-1.16"
 CAPTURE = ROOT / "out/captures/drive3/dt2-1.16-drive3-trig1-emac.dt2cap"

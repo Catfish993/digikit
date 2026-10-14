@@ -7,7 +7,7 @@ look like in this capture", "which tasks exist and where is each one's
 stack". This reads the Rust DT2SNP01 format and the old pickled Python
 format with a plain read/u32/u16/u8/regs/tasks API, no machine.
 
-    from tools.snapread import Snapshot
+    from tools.emulator.snapread import Snapshot
     s = Snapshot("snapshots/dt2-1.16-drive3/loaded.snap")
     s.u32(0x80004704)                  # -> int or None (unmapped)
     s.read(0x80003cd0, 0x9a)           # -> bytes or None
@@ -28,17 +28,10 @@ pc/a-registers and `tasks`' entry/tcb when the CLI prints them.
 
 from __future__ import annotations
 
-import os
 import pickle
 import struct
 import sys
 from typing import Any
-
-_here = os.path.dirname(os.path.abspath(__file__))
-_root = os.path.dirname(os.path.dirname(_here))
-for p in (_here, _root):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 
 class _SnapshotUnpickler(pickle.Unpickler):

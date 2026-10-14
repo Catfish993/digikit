@@ -23,6 +23,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+from tools import python_env  # noqa: E402
 from tools.emulator import digi_env  # noqa: E402
 
 # Fast-tier regions (SHARC_FAST_REGIONS) and block-translator cluster roots
@@ -197,7 +198,8 @@ def ready_for(
     tools/emulator/ready.py on first use and reused after."""
     command = [
         sys.executable,
-        str(ROOT / "tools" / "emulator" / "ready.py"),
+        "-m",
+        "tools.emulator.ready",
         device,
         "--syx",
         str(syx),
@@ -208,7 +210,9 @@ def ready_for(
         f"Preparing the {device.upper()} audio state for this card (first time only)...",
         file=sys.stderr,
     )
-    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    done = subprocess.run(
+        command, cwd=ROOT, env=python_env(), capture_output=True, text=True
+    )
     sys.stderr.write(done.stderr[-2000:])
     ready_dir = next(
         (
@@ -220,7 +224,8 @@ def ready_for(
     )
     if done.returncode or ready_dir is None:
         print(
-            f"tools/emulator/ready.py {device} failed:\n{done.stdout[-2000:]}", file=sys.stderr
+            f"tools/emulator/ready.py {device} failed:\n{done.stdout[-2000:]}",
+            file=sys.stderr,
         )
         return paths
     base = pathlib.Path(ready_dir)
@@ -235,6 +240,7 @@ def ready_for(
 def target_dir_for(gen: pathlib.Path | None) -> str:
     """The shared cargo target dir for a generated core (tools/emulator/native_target.py)."""
     from tools.emulator import native_target
+
     # "" means no generated core, whatever SHARC_GEN_DIR says.
     return str(native_target.target_dir(gen if gen is not None else ""))
 
@@ -280,10 +286,12 @@ def train_profile(device: str = "dn2") -> str:
         done = subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "tools" / "emulator" / "native_pgo.py"),
+                "-m",
+                "tools.emulator.native_pgo",
                 "train",
                 *(["--device", device] if device != "dn2" else []),
             ],
+            env=python_env(),
             cwd=ROOT,
             check=False,
         )
@@ -356,7 +364,7 @@ def pgo_plan(args: list[str]) -> object | None:
 
 PGO_MISMATCH_WARNING = (
     "WARNING: PGO profile does not match this binary (crate hashes differ); "
-    "live DSP will run ~35% slower. Run tools/emulator/native_pgo.py train."
+    "live DSP will run ~35% slower. Run uv run python -m tools.emulator.native_pgo train."
 )
 PGO_MISMATCH_WARNING_DT2 = PGO_MISMATCH_WARNING.replace("train.", "train --device dt2.")
 
@@ -381,7 +389,8 @@ def verify_pgo(command: list[str], env: dict[str, str], device: str = "dn2") -> 
         done = subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "tools" / "emulator" / "native_pgo.py"),
+                "-m",
+                "tools.emulator.native_pgo",
                 "verify",
                 "--device",
                 device,
@@ -391,6 +400,7 @@ def verify_pgo(command: list[str], env: dict[str, str], device: str = "dn2") -> 
                     else []
                 ),
             ],
+            env=python_env(),
             cwd=ROOT,
             check=False,
         )

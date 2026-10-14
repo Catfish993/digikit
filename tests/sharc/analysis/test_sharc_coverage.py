@@ -8,14 +8,13 @@ import pathlib
 import struct
 import unittest
 
-from support.paths import REPO_ROOT
-
-
 from support.sharc_encode import block, encode  # noqa: E402
 
-from tools.sharc_dev import sharc  # noqa: E402
-from tools.sharc_dev import sharc_coverage  # noqa: E402
-from tools.sharc_dev import sharcldr  # noqa: E402
+from tools.sharc_dev import (
+    sharc,  # noqa: E402
+    sharc_coverage,  # noqa: E402
+    sharcldr,  # noqa: E402
+)
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 

@@ -30,7 +30,8 @@ import sys
 import wave
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import digi_env
+from tools import python_env  # noqa: E402
+from tools.emulator import digi_env  # noqa: E402
 
 
 def native_emu():
@@ -113,9 +114,9 @@ def prepare() -> tuple[pathlib.Path, pathlib.Path, pathlib.Path, pathlib.Path]:
     else:
         card = ne.plusdrive_card(samples, syx, digi_env.rust_env(dict(os.environ)))
     ready = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "emulator" / "ready.py"), "dt2", "--syx", str(syx),
+        [sys.executable, "-m", "tools.emulator.ready", "dt2", "--syx", str(syx),
          "--card-image", str(card)],
-        cwd=ROOT, capture_output=True, text=True, check=True,
+        cwd=ROOT, env=python_env(), capture_output=True, text=True, check=True,
     )  # fmt: skip
     ready_dir = next(
         pathlib.Path(line.partition("=")[2])
@@ -155,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
     syx, card, ready_dir, work = prepare()
     from tools.emulator import coupled
+
     binary = a.binary or coupled.ensure_binary(
         not a.rebuild, "dt2", ready_dir / "digi-audio-dn2-image.bin"
     )

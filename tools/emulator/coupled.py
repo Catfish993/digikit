@@ -38,9 +38,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
-from tools.emulator import digi_env
-from tools.emulator import native_target
-from tools.devtools import render_cache
+from tools.devtools import render_cache  # noqa: E402
+from tools.emulator import digi_env, native_target  # noqa: E402
 
 TOOLCHAIN = digi_env.TOOLCHAIN
 FEATURES = os.environ.get("DIGI_COUPLED_FEATURES", "coupled-audio")
@@ -52,6 +51,7 @@ RUNS_DIR = digi_env.RUNS_ROOT
 def benchlock(mode: str, label: str):
     """Lock for builds (shared) and timed runs (exclusive), see benchlock.py."""
     from tools.devtools import benchlock as module
+
     return module.hold(mode, label)
 
 
@@ -554,7 +554,7 @@ def run_batch(
         if a != b:
             raise RuntimeError(
                 f"stale render cache for {name}: cached sha256 {a[0]} != fresh "
-                f"{b[0]} (key {keys[name]}); clear it with `tools/emulator/coupled.py cache "
+                f"{b[0]} (key {keys[name]}); clear it with `uv run python -m tools.emulator.coupled cache "
                 "clear` and report the missing key input"
             )
     return merged

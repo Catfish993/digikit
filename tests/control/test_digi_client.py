@@ -21,8 +21,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.control import digi_client
-
+from tools.control import digi_client  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
 
 
@@ -261,6 +260,7 @@ PATCH = ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.11-master-half.patc
 def patched_dsp_syx():
     """The stock .syx with the master-half DSP patch written into its DSP stream."""
     from tools.patchkit import dsp_patch
+
     with tempfile.TemporaryDirectory(prefix="dgp") as name:
         out = pathlib.Path(name) / "master-half.syx"
         parsed = dsp_patch.parse_for_stream(PATCH.read_text(), SYX)
@@ -286,8 +286,9 @@ def test_a_dsp_only_change_without_audio_is_reported_and_not_applied(patched_dsp
 @needs_daemon
 @pytest.mark.slow
 def test_a_patched_main_cold_boots_once_then_hits_the_snapshot_cache():
-    from tools.patchkit import dsp_patch
     from dt2.build import rebuild
+    from tools.patchkit import dsp_patch
+
     main = bytearray(dsp_patch.section_blob(SYX, 3))
     at = main.find(b"UNTITLED")
     assert at >= 0
@@ -322,6 +323,7 @@ def test_hot_dsp_inject_halves_the_master_level_and_the_original_restores_it(
     """The master-half patch (-6 dB) injected into the running DSP halves the
     PCM level; injecting the original .syx gives the reference PCM back."""
     from tools.emulator import digi_env
+
     env = {**os.environ, "DIGI_EMU_SYX": str(SYX)}
     ready = digi_env.ready_inputs(env)
     if not all(p.is_file() for p in ready.values()):

@@ -13,8 +13,10 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.patchkit import pk_sharc  # noqa: E402
-from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_sharc,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
@@ -41,7 +43,7 @@ def val(x: int) -> float:
 
 class Rig:
     def __init__(self) -> None:
-        import sharc_core.memory as mem
+        from tools.sharc_dev.sharc_core import memory as mem
 
         self.obj = pk_sharc.assemble(SRC.read_text())
         self.addr = {n: DATA_NW + i for i, n in enumerate(self.obj.data_symbols)}
@@ -116,8 +118,7 @@ def rig_cls():
 def test_every_word_redecodes_and_the_short_word_load_is_the_swse_form(rig_cls):
     rig = rig_cls()
     assert rig.linked.checked >= 80
-    from tools.sharc_dev import sharc_asm
-    from tools.sharc_dev import sharc_isa
+    from tools.sharc_dev import sharc_asm, sharc_isa
 
     isa = sharc_isa.load_instruction_set()
     d = rig.linked.code_boot

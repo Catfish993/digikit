@@ -22,8 +22,6 @@ edits do not collide with other agents' concurrent edits to those files.
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
 T = import_module("tools.sharc_dev.sharc_trace")
 compute_shift = import_module("tools.sharc_dev.sharc_core.compute_shift")
 

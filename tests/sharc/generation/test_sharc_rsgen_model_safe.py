@@ -11,9 +11,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from support.paths import REPO_ROOT
-
-
 from tools.sharc_dev import sharc_rsgen as rg
 from tools.sharc_dev.sharc_core.encoding import UREG_CODES
 

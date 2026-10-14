@@ -24,8 +24,7 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import coupled
-from tools.emulator import fxcheck
+from tools.emulator import coupled, fxcheck  # noqa: E402
 
 FILES = ("trackfx", "sendfx")
 

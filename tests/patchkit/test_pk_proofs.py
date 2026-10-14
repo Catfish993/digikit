@@ -15,7 +15,7 @@ from tools.patchkit import pk_proofs  # noqa: E402
 
 def test_every_tool_script_exists() -> None:
     for label, script, _ in pk_proofs.TOOLS:
-        assert (ROOT / "tools" / script).is_file(), label
+        assert (ROOT / "tools" / "patchkit" / script).is_file(), label
 
 
 def test_gain_and_drive_name_a_device() -> None:

@@ -1,7 +1,6 @@
 """tools/coldfire/ghidravt.py match summary and arguments (the run itself needs Ghidra)."""
 
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import ghidravt  # noqa: E402

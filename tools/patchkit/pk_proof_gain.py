@@ -29,13 +29,12 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import card_check
-from tools.patchkit import hook_ab
-from tools.patchkit import pk_harness as H
-from tools.patchkit import pk_proofkit as K
-from tools.control.digi_client import Emu
-from tools.patchkit.patched_audio_check import DN2_NOTE, TRIG1
-
+from tools.control.digi_client import Emu  # noqa: E402
+from tools.emulator import card_check  # noqa: E402
+from tools.patchkit import hook_ab  # noqa: E402
+from tools.patchkit import pk_harness as H  # noqa: E402
+from tools.patchkit import pk_proofkit as K  # noqa: E402
+from tools.patchkit.patched_audio_check import DN2_NOTE, TRIG1  # noqa: E402
 
 FW = {"dt2": "1.17", "dn2": "1.12"}
 

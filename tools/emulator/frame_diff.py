@@ -20,9 +20,7 @@ import sys
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import coupled
-from tools.emulator import digi_env
-from tools.emulator import fxcheck
+from tools.emulator import coupled, digi_env, fxcheck  # noqa: E402
 
 TX = {"dt2": (0x80005348, 0x802), "dn2": (0x80005E60, 0xA80)}
 

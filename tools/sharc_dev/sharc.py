@@ -2,7 +2,7 @@
 """One small Python API over a tools/sharc_dev/sharcdb.py database: build/analyze once,
 then query in-process instead of a fresh CLI round trip per question.
 
-    import sharc
+    from tools.sharc_dev import sharc
     img = sharc.load("dt2-1.16")
     img.func(0x1c642a)
     img.reach(0x1c642a, 0x1c7053)
@@ -26,11 +26,13 @@ _here = os.path.dirname(os.path.abspath(__file__))
 
 import networkx as nx  # noqa: E402
 
-from tools.sharc_dev import sharc_trace  # noqa: E402
-from tools.sharc_dev import sharcdb  # noqa: E402
-from tools.sharc_dev import sharcfn  # noqa: E402
-from tools.sharc_dev import sharcinv  # noqa: E402
-from tools.sharc_dev import sharcldr  # noqa: E402
+from tools.sharc_dev import (  # noqa: E402
+    sharc_trace,  # noqa: E402
+    sharcdb,  # noqa: E402
+    sharcfn,  # noqa: E402
+    sharcinv,  # noqa: E402
+    sharcldr,  # noqa: E402
+)
 
 SECTIONS_DIR = "out/sections"
 DB_DIR = "out/sharcdb"

@@ -290,6 +290,18 @@ CLEAN = [
     "tools/sharc_dev/sharcldr.py",
     "tools/emulator/snapread.py",
     "tools/emulator/wiretrace.py",
+    "tools/__init__.py",
+    "tools/coldfire/__init__.py",
+    "tools/coldfire/cfisa/__init__.py",
+    "tools/control/__init__.py",
+    "tools/device/__init__.py",
+    "tools/devtools/__init__.py",
+    "tools/emulator/__init__.py",
+    "tools/firmware/__init__.py",
+    "tools/patchkit/__init__.py",
+    "tools/sharc_dev/__init__.py",
+    "tools/devtools/relocate.py",
+    "tests/devtools/test_relocate.py",
 ]
 
 

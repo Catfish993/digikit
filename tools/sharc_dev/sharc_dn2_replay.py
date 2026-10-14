@@ -19,21 +19,13 @@ import argparse
 import ctypes
 import hashlib
 import json
-import os
-import sys
 import time
 from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
-for path in (HERE, ROOT):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
+from emu import sharc_capture as cap  # noqa: E402
 from tools.sharc_dev import sharc_diff as sd  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_transpile_run as nr  # noqa: E402
-from emu import sharc_capture as cap  # noqa: E402
 
 # The diagnostic run configuration of the DN2 audio replays (see
 # docs/findings/07-emulator.md): runtime decoding, instruction clock, software

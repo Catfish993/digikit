@@ -50,6 +50,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from tools import python_env
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 TOOL = "sharc_dn2_aot"
@@ -238,7 +240,8 @@ def rsgen_command(
 ) -> list[str]:
     """The rsgen arguments for one generation (MERGED is the profile prefix)."""
     cmd = [
-        "tools/sharc_dev/sharc_rsgen.py",
+        "-m",
+        "tools.sharc_dev.sharc_rsgen",
         image,
         "--coverage",
         str(merged),
@@ -388,7 +391,7 @@ class Pipeline:
         return log.read_text()
 
     def python(self, stage: str, args: list[str]) -> str:
-        return self.run(stage, [sys.executable, *args])
+        return self.run(stage, [sys.executable, *args], env=python_env(self.env))
 
     def prepare(self) -> None:
         if self.out.exists() and any(self.out.iterdir()):
@@ -434,7 +437,7 @@ class Pipeline:
         res = self.out / "replay" / (stage + ".json")
         res.parent.mkdir(exist_ok=True)
         args = [
-            "tools/sharc_dev/sharc_dn2_replay.py",
+            "-m", "tools.sharc_dev.sharc_dn2_replay",
             "--lib", str(lib),
             "--image", self.a.image,
             "--state", str(Path(self.a.state).resolve()),
@@ -582,7 +585,8 @@ class Pipeline:
         self.python(
             "transpile",
             [
-                "tools/sharc_dev/sharc_transpile.py",
+                "-m",
+                "tools.sharc_dev.sharc_transpile",
                 "--strict",
                 "--out",
                 str(gen0),

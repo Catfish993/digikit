@@ -28,9 +28,9 @@ import time
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import card_check
-from tools.emulator import digi_env
-from tools.control.digi_client import Emu
+from tools import python_env  # noqa: E402
+from tools.control.digi_client import Emu  # noqa: E402
+from tools.emulator import card_check, digi_env  # noqa: E402
 
 # DN2: TRIG 1 tapped, then PLAY (the pinned trig1 scenarios' prelude).
 DN2_NOTE = [
@@ -49,7 +49,8 @@ def harmless_patched(syx: pathlib.Path, name: str) -> pathlib.Path:
         subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "tools" / "patchkit" / "patched_image.py"),
+                "-m",
+                "tools.patchkit.patched_image",
                 "--syx",
                 str(syx),
                 "--out",
@@ -60,6 +61,7 @@ def harmless_patched(syx: pathlib.Path, name: str) -> pathlib.Path:
             check=True,
             capture_output=True,
             cwd=ROOT,
+            env=python_env(),
         )
     return out
 

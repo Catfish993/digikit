@@ -851,7 +851,9 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
     directly.
     """
 
-    INIT_SW = 0x1C15E3  # tools/sharc_dev/sharc_symbols.py's REQUIRED_DT2 'init' FuncMatch
+    INIT_SW = (
+        0x1C15E3  # tools/sharc_dev/sharc_symbols.py's REQUIRED_DT2 'init' FuncMatch
+    )
 
     def test_snapshot_round_trip_matches_a_full_init_run(self):
         memory = sr._load_image_memory("dt2-1.16")

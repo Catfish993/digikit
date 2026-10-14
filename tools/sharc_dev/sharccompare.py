@@ -46,13 +46,16 @@ def names_agree(ours, spec):
 
 
 def load_ours(directory=None):
-    """-> the sharc_disasm module from directory (default: tools/)."""
-    directory = os.path.abspath(directory or HERE)
+    """-> the sharc_disasm module from directory (default: the current tree)."""
+    if not directory:
+        from tools.sharc_dev import sharc_disasm
+        return sharc_disasm
+    directory = os.path.abspath(directory)
     for name in ('sharc_disasm', 'sharc_visa_tables'):
         sys.modules.pop(name, None)
     sys.path.insert(0, directory)
     try:
-        return importlib.import_module('tools.sharc_dev.sharc_disasm')
+        return importlib.import_module('sharc_disasm')
     finally:
         sys.path.remove(directory)
 
@@ -113,7 +116,8 @@ def parse_args(argv=None):
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('region')
     p.add_argument('--start', type=lambda s: int(s, 0), default=0, help='byte offset')
-    p.add_argument('--ours', help='directory with sharc_disasm.py and sharc_visa_tables.py')
+    p.add_argument('--ours', help='directory with flat sharc_disasm.py and sharc_visa_tables.py, '
+                   'i.e. a tools/ directory from before the package layout')
     p.add_argument('--pairs', type=int, default=15, help='disagreeing form pairs to list')
     p.add_argument('--json')
     return p.parse_args(argv)

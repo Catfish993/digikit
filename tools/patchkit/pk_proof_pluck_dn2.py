@@ -38,11 +38,13 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools.emulator import card_overlay  # noqa: E402
-from tools.patchkit import hook_ab  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    hook_ab,  # noqa: E402
+    pluck_ref,  # noqa: E402
+)
 from tools.patchkit import pk_dn2_common as C  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
-from tools.patchkit import pluck_ref  # noqa: E402
 
 MODS = ["core/machines", "core/params", "core/dsp-voice", "machines/pluck"]
 PLUCK_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, PLUCK (before MIDI)

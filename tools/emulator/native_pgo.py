@@ -27,9 +27,9 @@ DT2 DSP image. The profile applies to ``coupled-run`` only; ``coupled-build
 --profile PATH|current`` builds it (any profile, e.g. the DN2 one for a
 cross-device check) and tools/devtools/coupled_ab.py times it::
 
-    tools/emulator/native_pgo.py train --device dt2 [--runs 3] [--variant NAME]
-    tools/emulator/native_pgo.py check --device dt2
-    tools/emulator/native_pgo.py coupled-build --device dt2 [--profile PATH|current] [--variant NAME]
+    uv run python -m tools.emulator.native_pgo train --device dt2 [--runs 3] [--variant NAME]
+    uv run python -m tools.emulator.native_pgo check --device dt2
+    uv run python -m tools.emulator.native_pgo coupled-build --device dt2 [--profile PATH|current] [--variant NAME]
 
 DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
 has no DT2 workload (the gate restores the DN2 ready snapshot), so the profile is
@@ -43,9 +43,9 @@ applies to ``coupled-run`` (``coupled-build``, then tools/devtools/coupled_ab.py
 desktop app's DT2 build is not trained here. ``coupled-build --profile PATH``
 applies any profile, e.g. the DN2 one (a cross-device check)::
 
-    tools/emulator/native_pgo.py train --device dt2 [--runs 3]
-    tools/emulator/native_pgo.py check --device dt2
-    tools/emulator/native_pgo.py coupled-build --device dt2 [--profile PATH] --variant NAME
+    uv run python -m tools.emulator.native_pgo train --device dt2 [--runs 3]
+    uv run python -m tools.emulator.native_pgo check --device dt2
+    uv run python -m tools.emulator.native_pgo coupled-build --device dt2 [--profile PATH] --variant NAME
 
 The training workload is the ``coupled_ready_exactness`` gate, run from the
 instrumented desktop APP binary with ``--pgo-train`` (not the test binary:
@@ -81,6 +81,7 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.emulator import digi_env  # noqa: E402
+
 MANIFEST_PATH = "packages/desktop/src-tauri/Cargo.toml"
 DEFAULT_GENERATED = digi_env.DEFAULT_GENERATED
 READY = digi_env.READY
@@ -99,12 +100,14 @@ SKIP_FILES = {".DS_Store"}
 def native_target():
     """tools/emulator/native_target.py: cargo target dirs keyed by generated core."""
     from tools.emulator import native_target as module
+
     return module
 
 
 def benchlock(mode: str, label: str):
     """Lock for builds (shared) and timed runs (exclusive), see benchlock.py."""
     from tools.devtools import benchlock as module
+
     return module.hold(mode, label)
 
 
@@ -478,9 +481,9 @@ def plan_for(
 
 def train_hint(device: str = "dn2") -> str:
     return (
-        "tools/emulator/native_pgo.py train --device dt2"
+        "uv run python -m tools.emulator.native_pgo train --device dt2"
         if device == "dt2"
-        else "tools/emulator/native_pgo.py train"
+        else "uv run python -m tools.emulator.native_pgo train"
     )
 
 
@@ -1018,12 +1021,14 @@ DT2_WORKLOAD_NAME = "coupled-run-dt2:" + ",".join(
 
 def coupled_module():
     from tools.emulator import coupled as module
+
     return module
 
 
 def dt2_generated() -> pathlib.Path:
     """SHARC_GEN_DIR, else the core registered for the DT2 DSP image."""
     from tools.emulator import dt2_sample_check
+
     _, _, ready, _ = dt2_sample_check.prepare()
     return coupled_module().generated("dt2", ready / "digi-audio-dn2-image.bin")
 

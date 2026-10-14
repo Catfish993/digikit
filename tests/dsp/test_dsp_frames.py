@@ -1,8 +1,5 @@
 import re
 
-from support.paths import TOOLS
-
-
 from tools.emulator import dsp_frames  # noqa: E402
 
 

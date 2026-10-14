@@ -28,6 +28,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
+from tools import python_env  # noqa: E402
 from tools.patchkit import pk_build  # noqa: E402
 from tools.patchkit import pk_harness as h  # noqa: E402
 
@@ -75,7 +76,8 @@ class Dev:
         r = subprocess.run(
             [
                 sys.executable,
-                str(HERE / "patchkit.py"),
+                "-m",
+                "tools.patchkit.patchkit",
                 "patch",
                 "--firmware",
                 str(self.session.syx),
@@ -85,6 +87,7 @@ class Dev:
                 str(self.out),
             ],
             cwd=ROOT,
+            env=python_env(),
             capture_output=True,
             text=True,
         )

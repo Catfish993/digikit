@@ -4,7 +4,6 @@ import json
 import os
 import tempfile
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import entryhist  # noqa: E402

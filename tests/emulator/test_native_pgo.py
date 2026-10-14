@@ -8,9 +8,10 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.emulator import digi_env  # noqa: E402
-from tools.emulator import native_pgo  # noqa: E402
-
+from tools.emulator import (  # noqa: E402
+    digi_env,  # noqa: E402
+    native_pgo,  # noqa: E402
+)
 
 PACKAGES = ["native/sharc", "native/machine"]
 

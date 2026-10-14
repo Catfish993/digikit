@@ -6,8 +6,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
-
 
 from tools.sharc_dev import sharc_dn2_aot as aot
 from tools.sharc_dev import sharc_rsgen as rg

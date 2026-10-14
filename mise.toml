@@ -60,7 +60,7 @@ run = "pnpm test"
 description = "Run the web panel's audio-health tests (node --test)"
 
 [tasks."web:wasm"]
-run = "tools/emulator/native_wasm.py"
+run = "python3 -m tools.emulator.native_wasm"
 description = "Build only the browser emulator core (WASM); the coupled core goes through wasm-opt -O3 (--wasm-opt= turns it off)"
 
 [tasks."web:bench"]
@@ -216,7 +216,7 @@ description = "Regenerate the shared core, native/sharc/src/fast/lower/gen_forms
 
 [tasks."dev:boot"]
 alias = "boot"
-run = "tools/emulator/native_boot.py"
+run = "python3 -m tools.emulator.native_boot"
 description = "Run the bounded native Oracle boot diagnostic"
 
 [tasks."dev:plusdrive"]

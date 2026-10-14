@@ -6,7 +6,7 @@ voice and frame renders, and two symbolic trace summaries. Any difference
 is a behaviour change. When the change is intended, update the hashes and
 say why in the commit message:
 
-    uv run python tests/sharc/integration/test_sharc_golden.py --update
+    PYTHONPATH=tests uv run python -m tests.sharc.integration.test_sharc_golden --update
 
 Only hashes are stored, because the outputs derive from Elektron's
 firmware. The test skips when the image is absent or is not the one the
@@ -77,7 +77,7 @@ def image_sha256():
 def output(name):
     """The case's CLI output, exactly as printed, run in-process."""
     module_name, argv = CASES[name]
-    module = importlib.import_module(module_name)
+    module = importlib.import_module("tools.sharc_dev." + module_name)
     text = io.StringIO()
     cwd = os.getcwd()
     os.chdir(ROOT)  # the tools resolve out/ relative to the working directory
@@ -110,8 +110,8 @@ def test_golden(name):
         pytest.skip("golden hashes are for image %s" % golden["image_sha256"])
     actual = _sha256(output(name).encode())
     assert actual == golden["outputs"][name], (
-        "%s changed. If intended: uv run python tests/sharc/integration/test_sharc_golden.py --update"
-        % name
+        "%s changed. If intended: PYTHONPATH=tests uv run python -m "
+        "tests.sharc.integration.test_sharc_golden --update" % name
     )
 
 
@@ -133,6 +133,7 @@ def update():
 if __name__ == "__main__":
     if sys.argv[1:] != ["--update"]:
         raise SystemExit(
-            "usage: python tests/sharc/integration/test_sharc_golden.py --update"
+            "usage: PYTHONPATH=tests uv run python -m "
+            "tests.sharc.integration.test_sharc_golden --update"
         )
     update()

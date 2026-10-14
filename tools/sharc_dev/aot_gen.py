@@ -28,9 +28,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import digi_env
-from tools.emulator import ready
-from tools.sharc_dev import sharc_dn2_aot
+from tools import python_env  # noqa: E402
+from tools.emulator import digi_env, ready  # noqa: E402
+from tools.sharc_dev import sharc_dn2_aot  # noqa: E402
 
 MODEL_FLAGS = ["--model-safe", "--explicit-memory-model", "0", "--chain"]
 
@@ -54,9 +54,9 @@ def main(argv: list[str] | None = None) -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     done = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "emulator" / "ready.py"), a.device, "--syx", str(syx),
+        [sys.executable, "-m", "tools.emulator.ready", a.device, "--syx", str(syx),
          "--card-image", str(a.card_image)],
-        cwd=ROOT, capture_output=True, text=True, check=True,
+        cwd=ROOT, env=python_env(), capture_output=True, text=True, check=True,
     )  # fmt: skip
     ready_dir = pathlib.Path(
         next(
@@ -95,11 +95,11 @@ def main(argv: list[str] | None = None) -> int:
 
     def rsgen(base: pathlib.Path) -> None:
         subprocess.run(
-            [sys.executable, str(ROOT / "tools" / "sharc_dev" / "sharc_rsgen.py"), cfg["image"],
+            [sys.executable, "-m", "tools.sharc_dev.sharc_rsgen", cfg["image"],
              "--coverage", str(base), "--entries", f"{base}.entries",
              "--transitions", f"{base}.trans", *MODEL_FLAGS,
              "--work", str(out / "work"), "--out", str(gen)],
-            cwd=ROOT, check=True,
+            cwd=ROOT, env=python_env(), check=True,
         )  # fmt: skip
 
     rsgen(prof)

@@ -20,10 +20,7 @@ import struct
 import tempfile
 import unittest
 
-from support.paths import REPO_ROOT
-
-
-import tools.plusdrive as pd  # noqa: E402
+from tools.firmware import plusdrive as pd  # noqa: E402
 
 SEED = 0x31323334
 

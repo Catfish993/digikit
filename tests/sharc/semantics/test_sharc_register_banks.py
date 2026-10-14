@@ -7,8 +7,6 @@ import struct
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
-
 
 from tools.sharc_dev import sharc_diff as sd
 from tools.sharc_dev import sharc_trace as st
@@ -232,8 +230,7 @@ def test_state_comparison_detects_latent_bank_divergence() -> None:
 
 
 def test_diagnostic_call_and_render_clones_own_their_inactive_registers() -> None:
-    from tools.sharc_dev import sharc_harness
-    from tools.sharc_dev import sharc_run
+    from tools.sharc_dev import sharc_harness, sharc_run
 
     initial = _state()
     for clone in (

@@ -43,6 +43,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
+from tools import python_env  # noqa: E402
 from tools.emulator import card_overlay  # noqa: E402
 from tools.patchkit import hook_ab  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
@@ -278,14 +279,14 @@ class Proof(K.Proof):
         """Control: the same image with the persistence immediate put back (one byte): the type must NOT survive."""
         import tomllib
 
-        from tools.patchkit import port_resolve as pr
         from dt2 import build as dbuild
+        from tools.patchkit import port_resolve as pr
 
         src = ROOT / "out" / "patch" / f"proof-xslice-{FW}.syx"
         r = subprocess.run(
-            [sys.executable, str(HERE / "patchkit.py"), "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
+            [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
              "--modules", ",".join(MODS_ONE), "-o", str(src)],
-            capture_output=True, text=True, cwd=ROOT,
+            capture_output=True, text=True, cwd=ROOT, env=python_env(),
         )  # fmt: skip
         self.check("patch for the control", r.returncode == 0)
         port = tomllib.loads(
@@ -382,9 +383,9 @@ class Proof(K.Proof):
         ):
             img = ROOT / "out" / "patch" / f"proof-two-{name}-{FW}.syx"
             r = subprocess.run(
-                [sys.executable, str(HERE / "patchkit.py"), "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
+                [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
                  "--modules", ",".join(mods), "-o", str(img)],
-                capture_output=True, text=True, cwd=ROOT,
+                capture_output=True, text=True, cwd=ROOT, env=python_env(),
             )  # fmt: skip
             self.check(
                 f"patch ({name} order)",

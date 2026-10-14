@@ -6,7 +6,6 @@ import struct
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
@@ -122,7 +121,7 @@ class FrameRenderFromInitTest(unittest.TestCase):
         # (I12/M14's idiom included) never touches it, so this was always
         # a software convention, not a literal hardware return -- and nothing
         # rules out a different free DAG2 index register per callee. A
-        # tools/sharcdb census of dt2-1.16's Type9a_abs/9b_abs population
+        # tools/sharc_dev/sharcdb census of dt2-1.16's Type9a_abs/9b_abs population
         # confirms this reading: 1051 of 1052 cond=0x1F/b=0/j=1/pmm=6
         # (M14) instructions use pmi=4 (I12); exactly one (0x1c0cb5) uses
         # pmi=5 (I13). sequencer._check_return_target now takes pmi and

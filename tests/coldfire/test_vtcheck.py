@@ -1,7 +1,6 @@
 """tools/coldfire/vtcheck.py on hand-made matches, functions and images."""
 
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import vtcheck  # noqa: E402

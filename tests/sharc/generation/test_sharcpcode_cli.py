@@ -6,7 +6,6 @@ import sys
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
 
 P = import_module("tools.sharc_dev.sharcpcode")
 from support.sharc_encode import encode  # noqa: E402
@@ -31,7 +30,8 @@ class SharcImportArgumentsTest(unittest.TestCase):
             argv,
             [
                 sys.executable,
-                os.path.join(P.TOOLS, "sharc_import.py"),
+                "-m",
+                "tools.sharc_dev.sharc_import",
                 "blob",
                 "--name",
                 "dt2_SHARC",

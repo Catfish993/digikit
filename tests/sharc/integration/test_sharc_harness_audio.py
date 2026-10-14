@@ -6,8 +6,6 @@ import struct
 import unittest
 import wave
 
-from support.paths import REPO_ROOT
-
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 
 SCRATCH = (

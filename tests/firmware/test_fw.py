@@ -10,8 +10,11 @@ from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 
-from tools.coldfire import atlas  # noqa: E402
-from tools.coldfire import fw  # noqa: E402
+from tools import python_env  # noqa: E402
+from tools.coldfire import (  # noqa: E402
+    atlas,  # noqa: E402
+    fw,  # noqa: E402
+)
 
 CF_DB = os.path.join(ROOT, "out", "cfdb", "dt2-1.17-emac.sqlite")
 SHARC_DB = os.path.join(ROOT, "out", "sharcdb", "dt2-1.17.sqlite")
@@ -99,12 +102,14 @@ def test_batch_blocks(tmp_path):
     out = subprocess.run(
         [
             sys.executable,
-            os.path.join(ROOT, "tools", "fw.py"),
+            "-m",
+            "tools.coldfire.fw",
             "batch",
             str(q),
             "-i",
             "dt2-1.17",
         ],
+        env=python_env(),
         capture_output=True,
         text=True,
         check=True,

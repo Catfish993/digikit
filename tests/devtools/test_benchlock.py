@@ -1,7 +1,6 @@
 """benchlock: readers-writer lock for builds (shared) and timed runs (exclusive)."""
 # ruff: noqa: SIM117
 
-import importlib.util
 import json
 import os
 import subprocess
@@ -9,14 +8,9 @@ import sys
 import threading
 
 import pytest
-from support.paths import REPO_ROOT
 
-TOOL = str(REPO_ROOT / "tools" / "devtools" / "benchlock.py")
-_spec = importlib.util.spec_from_file_location("benchlock", TOOL)
-assert _spec and _spec.loader
-benchlock = importlib.util.module_from_spec(_spec)
-sys.modules["tools.devtools.benchlock"] = benchlock
-_spec.loader.exec_module(benchlock)
+import tools.devtools.benchlock as benchlock
+from tools import python_env
 
 
 @pytest.fixture
@@ -84,7 +78,11 @@ def test_stale_sidecar_cleanup(lock):
     live = sdir / f"{os.getpid()}.99.json"
     live.write_text(json.dumps({**info, "pid": os.getpid(), "label": "live"}))
     out = subprocess.run(
-        [sys.executable, TOOL, "status"], capture_output=True, text=True, check=True
+        [sys.executable, "-m", "tools.devtools.benchlock", "status"],
+        env=python_env(),
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     assert "live" in out and "dead" not in out
     assert not stale.exists() and live.exists()
@@ -99,12 +97,24 @@ def test_disabled_is_noop(lock, monkeypatch):
 
 
 def test_cli_run_exit_code_and_blocking(lock):
-    ok = subprocess.run([sys.executable, TOOL, "run", "--shared", "--", "true"])
+    ok = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "tools.devtools.benchlock",
+            "run",
+            "--shared",
+            "--",
+            "true",
+        ],
+        env=python_env(),
+    )
     assert ok.returncode == 0
     bad = subprocess.run(
         [
             sys.executable,
-            TOOL,
+            "-m",
+            "tools.devtools.benchlock",
             "run",
             "--exclusive",
             "--label",
@@ -113,14 +123,16 @@ def test_cli_run_exit_code_and_blocking(lock):
             "sh",
             "-c",
             "exit 7",
-        ]
+        ],
+        env=python_env(),
     )
     assert bad.returncode == 7
     with benchlock.hold("shared", "build"):
         blocked = subprocess.run(
             [
                 sys.executable,
-                TOOL,
+                "-m",
+                "tools.devtools.benchlock",
                 "run",
                 "--exclusive",
                 "--timeout",
@@ -128,6 +140,7 @@ def test_cli_run_exit_code_and_blocking(lock):
                 "--",
                 "true",
             ],
+            env=python_env(),
             capture_output=True,
             text=True,
         )
@@ -167,8 +180,18 @@ def _shared_cli(lock, extra_env=None, drop=()):
     env.update(extra_env or {})
     env["BENCHLOCK_PATH"] = str(lock)
     return subprocess.run(
-        [sys.executable, TOOL, "run", "--shared", "--timeout", "0.4", "--", "true"],
-        env=env,
+        [
+            sys.executable,
+            "-m",
+            "tools.devtools.benchlock",
+            "run",
+            "--shared",
+            "--timeout",
+            "0.4",
+            "--",
+            "true",
+        ],
+        env=python_env(env),
         capture_output=True,
         text=True,
     )

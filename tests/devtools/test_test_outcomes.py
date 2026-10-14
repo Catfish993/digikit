@@ -6,9 +6,6 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from support.paths import TOOLS
-
-
 from tools.devtools import test_outcomes  # noqa: E402
 
 

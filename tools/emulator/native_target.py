@@ -41,6 +41,7 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.emulator import digi_env  # noqa: E402
+
 # A worktree's .git is a file; its target dirs must not collide with the main tree's.
 IS_WORKTREE = (ROOT / ".git").is_file()
 TARGET_ROOT = (

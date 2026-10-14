@@ -11,8 +11,8 @@ pytestmark = pytest.mark.skipif(
     not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in the repo root"
 )
 
-from tools.patchkit import patched_image  # noqa: E402
 from dt2 import container, inplace  # noqa: E402
+from tools.patchkit import patched_image  # noqa: E402
 
 
 def test_no_edit_reproduces_the_stock_file_byte_for_byte():

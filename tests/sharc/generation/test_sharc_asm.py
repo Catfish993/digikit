@@ -2,9 +2,7 @@
 firmware's own words for the same instruction shapes (register and immediate
 fields differ only where the instruction does)."""
 
-
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.patchkit import dsp_master_hook  # noqa: E402
 from tools.sharc_dev import sharc_asm  # noqa: E402

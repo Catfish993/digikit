@@ -11,7 +11,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.emulator import audiocheck as ac
+from tools.emulator import audiocheck as ac  # noqa: E402
 
 R = 48000
 

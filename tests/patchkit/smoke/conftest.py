@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-
 import pytest
 from support.paths import REPO_ROOT
 

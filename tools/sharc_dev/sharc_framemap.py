@@ -72,13 +72,12 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+from emu import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_inputs as si  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_survey as sv  # noqa: E402
 from tools.sharc_dev.sharcldr import SW_ALIAS_BASE  # noqa: E402
-
-from emu import sharc_capture  # noqa: E402
 
 # docs/findings/06, "The ColdFire frame is mapped into SHARC DM at 0x2558dc".
 FRAME_BASE = 0x2558DC

@@ -4,7 +4,6 @@ import dataclasses
 import os
 import struct
 import unittest
-from support.paths import REPO_ROOT
 
 
 from emu import config

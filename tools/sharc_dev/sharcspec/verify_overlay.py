@@ -6,6 +6,7 @@ per cell: 0/1 = fixed bit, a letter = field (legend printed above the figure),
 - = unused (yellow), ? = white cell with no field. Comparing the red line with ADI's own
 drawing is the visual check for each figure.
 """
+import os
 import string
 import sys
 
@@ -13,7 +14,8 @@ import pymupdf
 
 from tools.sharc_dev.sharcspec import extract_figures as ef
 
-PDF = "../../docs/refs/sc58x-2158x-prm.pdf"
+HERE = os.path.dirname(os.path.abspath(__file__))
+PDF = os.path.join(HERE, "..", "..", "..", "docs", "refs", "sc58x-2158x-prm.pdf")
 RED = (0.85, 0, 0)
 
 
@@ -68,7 +70,7 @@ def main(first=301, last=563, per_sheet=4):
             out.show_pdf_page(pymupdf.Rect(0, y, 535, y + clip.height), doc, pidx, clip=clip)
             y += clip.height
     for i, page in enumerate(sheets):
-        page.get_pixmap(dpi=150).save(f"renders/sheet_{i:02d}.png")
+        page.get_pixmap(dpi=150).save(os.path.join(HERE, "renders", f"sheet_{i:02d}.png"))
     print(f"{len(clips)} figure crops on {len(sheets)} sheets")
 
 

@@ -32,14 +32,18 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-from tools.patchkit import pk_elf  # noqa: E402
-from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_elf,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 from tools.sharc_dev import sharc_selache as sel  # noqa: E402
 
 SECTION = "seg_pmco"
 PROCESSOR = "ADSP-21569"
 R_ABS24, R_ABS32 = 11, 12
-SW_ALIAS_BASE = 0x28000000  # loader byte address of short-word 0 (tools/sharc_dev/sharcldr.py)
+SW_ALIAS_BASE = (
+    0x28000000  # loader byte address of short-word 0 (tools/sharc_dev/sharcldr.py)
+)
 
 
 class PkSharcError(RuntimeError):

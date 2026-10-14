@@ -4,7 +4,6 @@
 import os
 import tempfile
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import framelink  # noqa: E402

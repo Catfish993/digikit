@@ -1,6 +1,5 @@
 """tools/coldfire/regions.py static analysis on the extracted sections (skipped without them)."""
 
-
 import pytest
 from support.paths import REPO_ROOT
 

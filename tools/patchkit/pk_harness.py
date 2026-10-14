@@ -65,8 +65,9 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-from tools.emulator import card_check  # noqa: E402
+from tools import python_env  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
+from tools.emulator import card_check  # noqa: E402
 
 MS = 132_000  # ColdFire instructions per emulated millisecond (the oracle clock)
 OUT = ROOT / "out" / "runs" / "patchkit"
@@ -315,12 +316,14 @@ def daemon_binary(device: str, syx: Path, pgo: bool | None = None) -> Path:
         r = subprocess.run(
             [
                 sys.executable,
-                str(HERE / "native_emu.py"),
+                "-m",
+                "tools.emulator.native_emu",
                 "--daemon",
                 "--build-only",
                 str(syx),
             ],
             cwd=ROOT,
+            env=python_env(),
             capture_output=True,
             text=True,
         )
@@ -343,7 +346,8 @@ def patched_image(cell: Cell, syx: Path, dest: Path | None = None) -> Path:
     r = subprocess.run(
         [
             sys.executable,
-            str(HERE / "patchkit.py"),
+            "-m",
+            "tools.patchkit.patchkit",
             "patch",
             "--firmware",
             str(syx),
@@ -353,6 +357,7 @@ def patched_image(cell: Cell, syx: Path, dest: Path | None = None) -> Path:
             str(out),
         ],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )
@@ -1093,7 +1098,8 @@ def _run_cells_parallel(
                     [
                         sys.executable,
                         "-u",
-                        str(Path(__file__).resolve()),
+                        "-m",
+                        "tools.patchkit.pk_harness",
                         "run",
                         *base,
                         "--index",
@@ -1106,6 +1112,7 @@ def _run_cells_parallel(
                     stdout=f,
                     stderr=subprocess.STDOUT,
                     cwd=ROOT,
+                    env=python_env(),
                 )
             running[i] = (p, res, log, time.monotonic())
         time.sleep(0.5)

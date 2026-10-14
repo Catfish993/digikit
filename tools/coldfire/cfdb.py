@@ -130,6 +130,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 def _cffacts():
     from tools.coldfire import cffacts
+
     return cffacts
 
 
@@ -552,7 +553,10 @@ def _image_names(name):
     import importlib
 
     short = name[: -len("-emac")] if name.endswith("-emac") else name
-    mod = {"dt2-1.16": "cf_names", "dt2-1.17": "cf_names_dt2_1_17"}.get(short)
+    mod = {
+        "dt2-1.16": "tools.coldfire.cf_names",
+        "dt2-1.17": "tools.coldfire.cf_names_dt2_1_17",
+    }.get(short)
     if mod is None:
         return {}
     try:

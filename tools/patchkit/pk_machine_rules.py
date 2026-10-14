@@ -17,11 +17,7 @@ import argparse
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
-for p in (str(HERE), str(ROOT)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+ROOT = Path(__file__).resolve().parents[2]
 
 from tools.coldfire import cf  # noqa: E402
 from tools.patchkit import machinepatch as mp  # noqa: E402

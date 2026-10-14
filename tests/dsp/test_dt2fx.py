@@ -9,8 +9,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.emulator import fxcheck
-from tools.emulator import gen_dt2fx
+from tools.emulator import fxcheck, gen_dt2fx  # noqa: E402
 
 FILES = {
     "dt2-trackfx.json": gen_dt2fx.trackfx,

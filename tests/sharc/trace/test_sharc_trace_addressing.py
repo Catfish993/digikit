@@ -4,7 +4,6 @@ import json
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
 
 T = import_module("tools.sharc_dev.sharc_trace")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction

@@ -11,7 +11,6 @@ import pathlib
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.sharc_dev import sharc_memdiff as md  # noqa: E402
 

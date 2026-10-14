@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ColdFire (MCF5441x, ISA_C + EMAC, no FPU) patchkit modules: compile, make an object, link, check, call.
 
-    uv run python -m tools.patchkit.pk_link build src.c [more.s ...] --base 0x47e8b000 --syms-module cf_names_dt2_1_17 \
+    uv run python -m tools.patchkit.pk_link build src.c [more.s ...] --base 0x47e8b000 --syms-module tools.coldfire.cf_names_dt2_1_17 \
         [--sym name=0xADDR ...] [--object out.dko.json] [--bin out.bin]
 
 Pipeline (the same one patchkit's module build and patch-time linker follow):
@@ -33,8 +33,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-from tools.patchkit import pk_elf  # noqa: E402
-from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_elf,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 CPU = "54418"
 CFLAGS = [

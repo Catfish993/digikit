@@ -32,7 +32,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
   const i = args.findIndex((a) => a === `--${name}` || a.startsWith(`--${name}=`));

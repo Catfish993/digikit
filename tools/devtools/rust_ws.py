@@ -22,8 +22,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
-from tools.emulator import digi_env
-from tools.emulator import native_target
+from tools.emulator import digi_env, native_target  # noqa: E402
 
 CLEAN_CRATES = [
     "bootstrap-emu",

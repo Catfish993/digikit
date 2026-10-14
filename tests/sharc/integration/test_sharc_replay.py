@@ -11,12 +11,10 @@ skipped without either.
 import hashlib
 import os
 import pathlib
-import sys
 import tempfile
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay_mod  # noqa: E402
@@ -319,10 +317,6 @@ class ReplayIdleCaptureTest(unittest.TestCase):
     never reaches that second one).
     """
 
-    @classmethod
-    def setUpClass(cls):
-        sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-
     def test_three_frame_replay_milestone(self):
         result = replay_mod.replay(
             "dt2-1.16", str(IDLE_CAPTURE), n_frames=3, tone_freq=1000.0
@@ -405,10 +399,6 @@ class CallFrameCollectAllWithHitsTest(unittest.TestCase):
     sharc_survey.run_collect_all()'s own loop), not a memory watch on a
     write target a function is only believed to touch -- lane E2's own task
     1 (2026-09-25/26, docs/findings/06's "Lane E2" section)."""
-
-    @classmethod
-    def setUpClass(cls):
-        sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 
     def _runner(self):
         memory = h.load_image_memory("dt2-1.16")

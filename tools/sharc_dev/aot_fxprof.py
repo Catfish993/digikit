@@ -30,8 +30,8 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import coupled
-from tools.sharc_dev import sharc_dn2_aot
+from tools.emulator import coupled  # noqa: E402
+from tools.sharc_dev import sharc_dn2_aot  # noqa: E402
 
 INTERP_ENV = {
     "SHARC_FAST_REGIONS": "",

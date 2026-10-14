@@ -7,9 +7,6 @@ jump needs both elements, p.4-54).  The DN2 delay-send bug: a SIMD `btst`
 left ASTATY stale, so `JUMP IF SZ` (an AND of both elements) was not taken.
 """
 
-
-from support.paths import REPO_ROOT
-
 from tools.sharc_dev import sharc_trace as st
 from tools.sharc_dev.sharc_core.encoding import AZ_BIT, BTF_BIT, SZ_BIT
 from tools.sharc_dev.sharc_disasm import Instruction

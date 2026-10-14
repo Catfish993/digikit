@@ -21,7 +21,7 @@ import pathlib
 import re
 
 HERE = pathlib.Path(__file__).resolve().parent
-from tools.devtools import fastcov
+from tools.devtools import fastcov  # noqa: E402
 
 
 def main() -> int:

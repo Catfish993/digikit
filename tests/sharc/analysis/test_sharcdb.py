@@ -17,7 +17,6 @@ import sqlite3
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import sharc  # noqa: E402

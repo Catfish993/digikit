@@ -2,7 +2,6 @@
 
 import struct
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import sharc_disasm  # noqa: E402

@@ -19,7 +19,6 @@ import unittest
 from importlib import import_module
 
 import pytest
-from support.paths import REPO_ROOT
 
 sv = import_module("tools.sharc_dev.sharc_survey")
 sr = import_module("tools.sharc_dev.sharc_run")
@@ -490,7 +489,9 @@ class CollectAllFrameRunTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from tools.sharc_dev import sharc_harness as h  # noqa: PLC0415 -- only this slow test needs it
+        from tools.sharc_dev import (
+            sharc_harness as h,  # noqa: PLC0415 -- only this slow test needs it
+        )
 
         cls.h = h
         cls.img = sharc.load("dt2-1.16")

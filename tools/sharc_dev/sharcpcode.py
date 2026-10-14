@@ -59,6 +59,7 @@ from collections import Counter
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(TOOLS))
 
+from tools import python_env  # noqa: E402
 from tools.sharc_dev import sharcflow  # noqa: E402
 from tools.sharc_dev import sharcimm  # noqa: E402
 
@@ -515,10 +516,8 @@ def write_program(db, program, lo_sw, hi_sw):
 
 def start_pyghidra():
     """Start the JVM once -> the pyghidra module."""
-    # tools/coldfire/ghidra/ is a plain directory of Java scripts that shadows the real
-    # `ghidra` Java-bridge namespace PyGhidra needs, once tools/ lands on
-    # sys.path -- which it does when this is run as `python -m tools.sharc_dev.sharcpcode`.
-    _here = os.path.dirname(os.path.abspath(__file__))
+    # Run as a module (`python -m tools.sharc_dev.sharcpcode`), not by script path: tools/coldfire
+    # then stays off sys.path and its plain `ghidra/` directory cannot shadow PyGhidra's `ghidra`.
     os.environ.setdefault('GHIDRA_INSTALL_DIR', DEFAULT_GHIDRA)
     import pyghidra
     if not pyghidra.started():
@@ -528,14 +527,14 @@ def start_pyghidra():
 
 def timed_run(argv):
     t0 = time.perf_counter()
-    proc = subprocess.run(argv, capture_output=True, text=True, cwd=REPO)
+    proc = subprocess.run(argv, capture_output=True, text=True, cwd=REPO, env=python_env())
     return proc, round(time.perf_counter() - t0, 2)
 
 
 def sharc_import_args(blob, name, project, spec):
     """Build sharc_import.py arguments for one image's configured seed tables."""
     argv = [
-        sys.executable, os.path.join(TOOLS, 'sharc_import.py'), blob, '--name', name,
+        sys.executable, '-m', 'tools.sharc_dev.sharc_import', blob, '--name', name,
         '--project', project, '--project-name', PROJECT_NAME]
     for label_table in spec.get('label_tables', []):
         argv.extend(['--label-table', label_table])
@@ -554,7 +553,7 @@ def measure_ghidra(image, spec, out_dir, timeout, max_functions, db=None):
         raise SystemExit('sharc_import.py failed:\n' + imp.stdout + imp.stderr)
     flow_json = os.path.join(out_dir, image + '-sharcflow.json')
     flow, flow_seconds = timed_run([
-        sys.executable, os.path.join(TOOLS, 'sharcflow.py'), region,
+        sys.executable, '-m', 'tools.sharc_dev.sharcflow', region,
         '--base-sw', hex(spec['base_sw']), '--program', '/' + name,
         '--project', project, '--project-name', PROJECT_NAME,
         '--cover', '--analyze', '--save', '--json', flow_json])

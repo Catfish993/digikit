@@ -11,7 +11,6 @@ import sys
 import tempfile
 import unittest
 
-from support.paths import REPO_ROOT
 
 
 from support.sharc_encode import encode  # noqa: E402

@@ -75,7 +75,6 @@ import os
 import struct
 import sys
 
-
 SECTOR = 512
 PAGE = 0x8000  # 32 KiB, 0x40 sectors
 RECORD_SIZE = 0x80  # 128 bytes

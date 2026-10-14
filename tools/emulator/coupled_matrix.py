@@ -39,9 +39,10 @@ from collections.abc import Callable
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.devtools import benchlock  # noqa: E402
-from tools.emulator import native_target  # noqa: E402
-
-from tools.emulator import digi_env  # noqa: E402
+from tools.emulator import (  # noqa: E402
+    digi_env,  # noqa: E402
+    native_target,  # noqa: E402
+)
 
 TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"

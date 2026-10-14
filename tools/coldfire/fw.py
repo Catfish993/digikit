@@ -704,7 +704,7 @@ def cmd_xref(img: Image, token: str) -> list[str]:
         out.append("  vtable %s slot %d (vtable %08x)" % (cls, slot, vt))
     if len(out) == 1:
         out.append(
-            "  no references recorded (Ghidra misses code outside functions; try tools/coldfire/refscan.py)"
+            "  no references recorded (Ghidra misses code outside functions; try uv run python -m tools.coldfire.refscan)"
         )
     return out
 
@@ -877,7 +877,7 @@ def cmd_port(sess: Session, name: str, src: str, dst: str) -> list[str]:
             out.append("  (reverse) %s [%s]" % (b.label(e), method))
     if len(out) == 1:
         out.append(
-            "  no recorded match (tools/coldfire/cfmatch.py run %s %s writes them)"
+            "  no recorded match (uv run python -m tools.coldfire.cfmatch run %s %s writes them)"
             % (a.db_name, b.db_name)
         )
     return out
@@ -1002,7 +1002,7 @@ def _atlas_one(image: str, term: str, per: int) -> list[str]:
     path = os.path.join(ATLAS_DIR, short_image(image) + ".sqlite")
     if not os.path.exists(path):
         raise FwError(
-            "no atlas for %s: run tools/coldfire/atlas.py build %s"
+            "no atlas for %s: run uv run python -m tools.coldfire.atlas build %s"
             % (short_image(image), short_image(image))
         )
     con = open_ro(path)
@@ -1115,7 +1115,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp.add_argument("term", nargs="+")
     sp.add_argument("--in", dest="where", default="names,strings,decomp,atlas")
-    sp = common(sub.add_parser("atlas", help="semantic atlas lookup (tools/coldfire/atlas.py)"))
+    sp = common(
+        sub.add_parser("atlas", help="semantic atlas lookup (tools/coldfire/atlas.py)")
+    )
     sp.add_argument("term", nargs="+")
     sp = common(sub.add_parser("batch", help="run many queries from FILE or - (stdin)"))
     sp.add_argument("file")

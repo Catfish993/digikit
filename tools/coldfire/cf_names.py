@@ -8,7 +8,7 @@ FlexBus link to the SHARC, and the boot-time UI sequence. Putting them in
 emu/symbols.py's Fixed()/Sig() machinery would require reference bytes and a
 second firmware to verify against, which this table doesn't have -- so they
 live here instead, read by tools/emulator/snapread.py (to label a raw address) and
-tools/cfdb.py/tools/cf.py (to look up a function by name).
+tools/coldfire/cfdb.py and cf.py (to look up a function by name).
 
 Each entry: NAME -> (address, mark, description, source). `mark` follows
 docs/findings/FINDINGS.md's convention (see CLAUDE.md's Rules): '[V]'

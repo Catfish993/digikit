@@ -236,8 +236,8 @@ class FrameLockstepTest(unittest.TestCase):
     primitives sharc_replay.replay()'s own frame loop uses."""
 
     def test_two_engines_agree_over_two_real_frames(self):
-        from tools.sharc_dev import sharc_harness as h
         from emu import sharc_capture
+        from tools.sharc_dev import sharc_harness as h
 
         image = "dt2-1.16"
         memory = h.load_image_memory(image)

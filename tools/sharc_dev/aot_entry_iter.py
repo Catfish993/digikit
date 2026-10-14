@@ -28,7 +28,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.sharc_dev import aot_fxprof
+from tools.sharc_dev import aot_fxprof  # noqa: E402
 
 # The DN2 scenarios of the fxprof profile (out/native/dn2-audio/PROVENANCE.txt).
 SCENARIOS = [

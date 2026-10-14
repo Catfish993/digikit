@@ -97,9 +97,8 @@ def bundle(extra: list[Path] | None = None) -> dict:
 
 def sharc_listing(syx: Path, plan: dict) -> list[str]:
     """Disassemble the DSP sites of a plan from the patched image's boot stream."""
-    from tools.sharc_dev import sharc_asm
-    from tools.sharc_dev import sharc_isa
     from tools.patchkit.dsp_patch import Stream, section_blob
+    from tools.sharc_dev import sharc_asm, sharc_isa
 
     stream = Stream(section_blob(syx, 7))
     isa = sharc_isa.load_instruction_set()

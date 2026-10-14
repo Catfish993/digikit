@@ -14,6 +14,7 @@ from support.paths import REPO_ROOT
 ROOT = str(REPO_ROOT)
 
 TYPED = [
+    "tools/__init__.py",
     "tools/coldfire/fw.py",
     "tools/coldfire/atlas.py",
     "tests/firmware/test_fw.py",

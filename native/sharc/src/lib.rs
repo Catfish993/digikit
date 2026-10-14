@@ -1858,7 +1858,7 @@ impl Engine {
                             self.s.bank_pending_mask = p;
                         }
                     } else if self.s.cfg.bank_model && self.s.bank_requested_mask >= 0 {
-                        // The block's last instruction wrote MODE1 (tools/
+                        // The block's last instruction wrote MODE1 (tools/sharc_dev/
                         // sharc_rsgen.py TERMINAL): its completion, as St::commit
                         // does after an interpreted instruction.
                         self.s.bank_complete();

@@ -79,7 +79,6 @@ from collections import defaultdict
 from types import MappingProxyType
 from typing import Any
 
-
 HEADER_LEN = 16
 BFLAGS = {
     "SAVE": 4,

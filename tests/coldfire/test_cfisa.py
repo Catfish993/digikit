@@ -12,8 +12,10 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.coldfire.cfisa import gen  # noqa: E402
-from tools.coldfire.cfisa import oracle  # noqa: E402
+from tools.coldfire.cfisa import (  # noqa: E402
+    gen,  # noqa: E402
+    oracle,  # noqa: E402
+)
 
 
 def test_generated_decoder_is_current():

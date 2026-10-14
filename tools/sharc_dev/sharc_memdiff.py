@@ -69,7 +69,8 @@ def _maybe_reexec_under_pypy() -> None:
 
     if shutil.which("uv") is None:
         return
-    here = os.path.abspath(__file__)
+    from tools import python_env
+
     cmd = [
         "uv",
         "run",
@@ -79,11 +80,12 @@ def _maybe_reexec_under_pypy() -> None:
         "--with",
         "networkx",
         "python",
-        here,
+        "-m",
+        "tools.sharc_dev.sharc_memdiff",
         *sys.argv[1:],
     ]
     try:
-        os.execvp(cmd[0], cmd)
+        os.execvpe(cmd[0], cmd, python_env())
     except OSError as exc:
         print(
             "sharc_memdiff: PyPy re-exec failed (%s), running as-is" % exc,
@@ -102,14 +104,13 @@ import time  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+from emu import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_dac  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402
 from tools.sharc_dev.sharcldr import SW_ALIAS_BASE  # noqa: E402
-
-from emu import sharc_capture  # noqa: E402
 
 # --- Known DM structure, exactly as given by this lane's brief -------------
 # Each entry is (lo, hi, label): lo <= address < hi. Built lazily per image

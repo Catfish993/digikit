@@ -114,7 +114,7 @@ def parse_config(spec: str) -> tuple[str, dict[str, str]]:
         key, _, value = tail.partition("=")
         return spec, {**env, key: value}
     if spec.endswith("+gen"):
-        # The generated lowering of tools/sharc_lowergen (lane F) for every form it has.
+        # The generated lowering of tools/sharc_dev/sharc_lowergen (lane F) for every form it has.
         _, env = parse_config(spec.removesuffix("+gen"))
         return spec, {**env, "SHARC_FAST_GEN": "all"}
     if spec.endswith("+flat"):

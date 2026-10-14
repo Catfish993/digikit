@@ -1,7 +1,6 @@
 """tools/coldfire/ghidracopy.py path splitting (the copy itself needs Ghidra projects)."""
 
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import ghidracopy  # noqa: E402

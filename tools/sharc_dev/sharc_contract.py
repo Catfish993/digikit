@@ -7,7 +7,7 @@ filled fill/zero block, or nobody this pass can find).
     uv run python -m tools.sharc_dev.sharc_contract dt2-1.16 0x1c2b24
     uv run python -m tools.sharc_dev.sharc_contract dt2-1.16 0x1c7671 --json out.json
 
-    import sys; sys.path.insert(0, "tools"); import sharc, sharc_contract
+    from tools.sharc_dev import sharc, sharc_contract
     img = sharc.load("dt2-1.16")
     contract = sharc_contract.build(img, 0x1c2b24)
 

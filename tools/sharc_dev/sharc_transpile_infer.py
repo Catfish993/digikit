@@ -26,6 +26,8 @@ import types as pytypes
 from dataclasses import dataclass, field
 from typing import Any
 
+from tools import REPO_ROOT
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 from mypy import build  # noqa: E402
@@ -37,12 +39,23 @@ from mypy.typeops import make_simplified_union  # noqa: E402
 
 CORE_DIR = os.path.join(HERE, "sharc_core")
 PACKAGE = "sharc_core"
+# mypy checks the annotated copy as top-level `sharc_core`; the live modules are
+# imported under the package path.
+LIVE_PACKAGE = "tools.sharc_dev.sharc_core"
 
 # Modules that need names in the added annotations.
 _ANNOTATION_IMPORTS = (
-    "import builtins, typing, collections.abc, types, sharc_disasm, sharcldr, "
+    "import builtins, typing, collections.abc, types, "
+    "tools.sharc_dev.sharc_disasm, tools.sharc_dev.sharcldr, "
     "sharc_core.values, sharc_core.state"
 )
+
+
+def live_module(name: str) -> str:
+    """The importable name of a core module given by its mypy name."""
+    if name == PACKAGE or name.startswith(PACKAGE + "."):
+        return LIVE_PACKAGE + name[len(PACKAGE) :]
+    return name
 
 
 def core_modules(core_dir: str = CORE_DIR) -> list[str]:
@@ -71,7 +84,7 @@ _SOFT_ERRORS: list[str] = []
 def _mypy(directory: str) -> build.BuildResult:
     opts = Options()
     opts.python_version = (3, 11)
-    opts.mypy_path = [HERE]
+    opts.mypy_path = [str(REPO_ROOT)]
     opts.ignore_missing_imports = True
     opts.check_untyped_defs = True
     opts.follow_imports = "silent"
@@ -258,14 +271,14 @@ class Core:
         mod = self.modules.get(module)
         if mod is None:
             try:
-                mod = importlib.import_module(module)
+                mod = importlib.import_module(live_module(module))
             except (ImportError, ValueError):
                 return None
         return getattr(mod, name, None)
 
 
 def _import_live() -> dict[str, pytypes.ModuleType]:
-    return {m: importlib.import_module(m) for m in core_modules()}
+    return {m: importlib.import_module(live_module(m)) for m in core_modules()}
 
 
 def _obj_of_live(core: Core, value: Any) -> Obj | None:

@@ -20,8 +20,7 @@ import sys
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import coupled
-from tools.emulator import digi_env
+from tools.emulator import coupled, digi_env  # noqa: E402
 
 
 def run(

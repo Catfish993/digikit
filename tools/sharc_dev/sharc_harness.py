@@ -140,18 +140,16 @@ from dataclasses import dataclass, replace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+from emu import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc as sharcmod  # noqa: E402
-from tools.sharc_dev import sharc_dac  # noqa: E402
+from tools.sharc_dev import (  # noqa: E402
+    sharc_dac,  # noqa: E402
+    sharc_symbols,  # noqa: E402
+)
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_survey as sv  # noqa: E402
-from tools.sharc_dev import sharc_symbols  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402
 from tools.sharc_dev.sharcldr import LoadedMemory  # noqa: E402
-
-# emu/ is a sibling of tools/, not on sys.path by default -- same pattern
-# tools/sharc_dev/sharc_replay.py's own import block already uses (lane E2's file;
-# not duplicated here, just the same two-line sys.path fix).
-from emu import sharc_capture  # noqa: E402
 
 # Firmware addresses (functions, tables) come from tools/sharc_dev/sharc_symbols.py's
 # resolve(), not a hardcoded dict: cached per image so repeated calls in one

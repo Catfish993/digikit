@@ -4,7 +4,7 @@
     uv run python -m tools.coldfire.cfmatch match dt2-1.16-emac dt2-1.17-emac
         [--eval out/vt/dt2-1.15C_to_dt2-1.16.json] [--write] [--json OUT]
     uv run python -m tools.coldfire.cfmatch port SRC DST            # names into DST's cfdb
-    uv run python -m tools.coldfire.cfmatch port-names SRC DST --out tools/cf_names_x.py
+    uv run python -m tools.coldfire.cfmatch port-names SRC DST --out tools/coldfire/cf_names_x.py
 
 SRC and DST are cfdb names (out/cfdb/<name>.sqlite, see tools/coldfire/cfdb.py; a cfdb
 older than DB_VERSION is rebuilt from its Ghidra dump by tools/coldfire/cf.py's loader).
@@ -416,8 +416,7 @@ class AddrMapper:
     """
 
     def __init__(self, mt: Matcher):
-        from tools.coldfire import cfdb
-        from tools.coldfire import cffacts
+        from tools.coldfire import cfdb, cffacts
 
         self.mt = mt
         self.cffacts = cffacts
@@ -649,17 +648,23 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("src")
         p.add_argument("dst")
         p.add_argument("--db-dir")
-        p.add_argument("--eval", help="a tools/coldfire/ghidravt.py export to compare with")
+        p.add_argument(
+            "--eval", help="a tools/coldfire/ghidravt.py export to compare with"
+        )
         p.add_argument(
             "--write", action="store_true", help="store matches in DST's cfdb"
         )
         p.add_argument("--json", help="write the evaluation to this file")
-    pn = sub.add_parser("port-names", help="carry tools/coldfire/cf_names.py entries across")
+    pn = sub.add_parser(
+        "port-names", help="carry tools/coldfire/cf_names.py entries across"
+    )
     pn.add_argument("src")
     pn.add_argument("dst")
     pn.add_argument("--db-dir")
     pn.add_argument(
-        "--out", required=True, help="module to write, e.g. tools/coldfire/cf_names_dt2_1_17.py"
+        "--out",
+        required=True,
+        help="module to write, e.g. tools/coldfire/cf_names_dt2_1_17.py",
     )
     args = ap.parse_args(argv)
     t0 = time.time()

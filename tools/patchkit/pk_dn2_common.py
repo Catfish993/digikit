@@ -24,10 +24,12 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-from tools.patchkit import hook_ab  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    hook_ab,  # noqa: E402
+    pluck_ref,  # noqa: E402
+)
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
-from tools.patchkit import pluck_ref  # noqa: E402
 
 READY = ROOT / "out" / "ready-fastweb-dn2"  # Digitone II 1.12 (intc_force false)
 TX = 0x80005E60

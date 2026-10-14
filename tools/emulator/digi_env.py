@@ -24,7 +24,9 @@ from collections.abc import Callable
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 # The DN2 ready-inputs directory: ready_dir in tools/emulator/ready_inputs.json (shared
 # with the JS tools), overridden by DIGI_EMU_READY_DIR.
-_READY_JSON = json.loads((ROOT / "tools" / "emulator" / "ready_inputs.json").read_text())
+_READY_JSON = json.loads(
+    (ROOT / "tools" / "emulator" / "ready_inputs.json").read_text()
+)
 READY = ROOT / (os.environ.get("DIGI_EMU_READY_DIR") or _READY_JSON["ready_dir"])
 # The ready directory of the other devices (`ready_dirs` in the same file),
 # overridden per device by DIGI_EMU_READY_DIR_<DEVICE> (DIGI_EMU_READY_DIR_DT2).
@@ -95,17 +97,18 @@ CORE_FINGERPRINT_FILE = "CORE_FINGERPRINT"
 
 def core_fingerprint(root: pathlib.Path | None = None) -> str:
     """SHA-256 over the paths and contents of the sources a generated core is
-    made from: tools/sharc_dev/sharc_core/**/*.py, sharc_transpile.py and sharc_rsgen.py."""
+    made from: tools/sharc_dev/sharc_core/**/*.py, sharc_transpile.py and
+    sharc_rsgen.py, with paths relative to tools/sharc_dev."""
     root = ROOT if root is None else pathlib.Path(root)
-    tools = root / "tools"
+    base = root / "tools" / "sharc_dev"
     files = [
-        *tools.joinpath("sharc_core").rglob("*.py"),
-        tools / "sharc_transpile.py",
-        tools / "sharc_rsgen.py",
+        *base.joinpath("sharc_core").rglob("*.py"),
+        base / "sharc_transpile.py",
+        base / "sharc_rsgen.py",
     ]
     digest = hashlib.sha256()
-    for path in sorted(files, key=lambda f: f.relative_to(root).as_posix()):
-        digest.update(path.relative_to(root).as_posix().encode() + b"\0")
+    for path in sorted(files, key=lambda f: f.relative_to(base).as_posix()):
+        digest.update(path.relative_to(base).as_posix().encode() + b"\0")
         digest.update(path.read_bytes() + b"\0")
     return digest.hexdigest()
 
@@ -131,7 +134,7 @@ def check_generated(gen: pathlib.Path, environ: Environ | None = None) -> None:
         f"generated core {gen} is stale: its {CORE_FINGERPRINT_FILE} is {have}, "
         f"tools/sharc_dev/sharc_core is {want}.\n"
         "Regenerate it: DT2: mise run aot-gen -- dt2 --card-image IMG; "
-        "DN2: tools/sharc_dev/sharc_dn2_aot.py (recipe in gen/PROVENANCE.txt); "
+        "DN2: uv run python -m tools.sharc_dev.sharc_dn2_aot (recipe in gen/PROVENANCE.txt); "
         "shared core: mise run gen:core.\n"
         "Or set DIGI_ALLOW_STALE_GEN=1 to use it anyway."
     )

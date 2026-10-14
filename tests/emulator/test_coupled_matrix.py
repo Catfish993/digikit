@@ -12,7 +12,6 @@ from tools.emulator import coupled_matrix as cm  # noqa: E402
 from tools.emulator import native_target  # noqa: E402
 
 
-
 def fake_report(name, dsp=1.9, rtf=0.5, over=1.0, ok=True, sha="ab" * 32):
     return {
         "name": name,

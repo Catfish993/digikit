@@ -292,7 +292,6 @@ def capture_pack(
     if lp0 is None:
         found = sorted(Path(capture).resolve().parent.glob("flexbus*.raw"))
         lp0 = found[0] if len(found) == 1 else None
-    tools = str(_ROOT / "tools")
     from tools.sharc_dev import sharc_transpile_run
 
     info = sharc_transpile_run.live_pack(
@@ -315,7 +314,6 @@ def state_pack(
     of LP0, the FlexBus log recorded from the card image CARD_SHA256; built
     once, about 1.5-2 min of Python, then cached by image, LP0 log, card and
     core hashes)."""
-    tools = str(_ROOT / "tools")
     from tools.sharc_dev import sharc_transpile_run
 
     info = sharc_transpile_run.state_pack(

@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.sharc_dev import sharc_trace as st
 from tools.sharc_dev.sharc_disasm import Instruction

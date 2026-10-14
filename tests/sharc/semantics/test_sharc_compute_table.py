@@ -32,7 +32,10 @@ from tools.sharc_dev.sharc_core.compute_mult import (  # noqa: E402
     MULT_FIXED_OPS,
     MULT_OPS,
 )
-from tools.sharc_dev.sharc_core.compute_multi import MULTIFN_MUL_ALU_OPS, SHORT_OPS  # noqa: E402
+from tools.sharc_dev.sharc_core.compute_multi import (  # noqa: E402
+    MULTIFN_MUL_ALU_OPS,
+    SHORT_OPS,
+)
 from tools.sharc_dev.sharc_core.compute_shift import SHIFT_OPS  # noqa: E402
 from tools.sharc_dev.sharc_core.values import Const  # noqa: E402
 
@@ -41,7 +44,7 @@ from tools.sharc_dev.sharc_core.values import Const  # noqa: E402
 assert not (set(MULT_OPS) & set(MULT_FIXED_OPS))
 MULT_ALL = {**MULT_OPS, **MULT_FIXED_OPS}
 
-with open(os.path.join(TOOLS, "sharcspec", "compute_table.json")) as _fh:
+with open(os.path.join(TOOLS, "sharc_dev", "sharcspec", "compute_table.json")) as _fh:
     COMPUTE_TABLE = json.load(_fh)
 
 

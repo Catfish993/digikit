@@ -854,7 +854,11 @@ def corpus_cases(seed: int, cases_per_op: int) -> list[sd.ComputeCase]:
     data moves and multiply-accumulate patterns; each op half with
     sharc_diff's random registers and half with float/fixed edge values."""
     from tools.sharc_dev.sharc_core.compute_alu import ALU_OPS
-    from tools.sharc_dev.sharc_core.compute_mult import MR_DATAMOVE_REGISTERS, MULT_FIXED_OPS, MULT_OPS
+    from tools.sharc_dev.sharc_core.compute_mult import (
+        MR_DATAMOVE_REGISTERS,
+        MULT_FIXED_OPS,
+        MULT_OPS,
+    )
     from tools.sharc_dev.sharc_core.compute_multi import MULTIFN_MUL_ALU_OPS, SHORT_OPS
     from tools.sharc_dev.sharc_core.compute_shift import SHIFT_OPS
 
@@ -1243,9 +1247,9 @@ def run_frames(
     set-up, cached in SNAPSHOT); the two exported states are compared
     after every frame in FRAMES. SAVE_AT/SAVE_TO keep the Python state
     after that frame (a later run's SNAPSHOT)."""
+    from emu import sharc_capture
     from tools.sharc_dev import sharc_harness as h
     from tools.sharc_dev import sharc_survey as sv
-    from emu import sharc_capture
 
     cap = sharc_capture.load(capture)
     runner, memory = frame_start(image, snapshot, lp0)
@@ -1334,8 +1338,8 @@ def pack_frames(
     one ring). Frames start at the snapshot's own frame."""
     import struct
 
-    from tools.sharc_dev import sharc_harness as h
     from emu import sharc_capture
+    from tools.sharc_dev import sharc_harness as h
 
     if lp0 and snapshot and not os.path.exists(snapshot):
         raise SystemExit("pack needs an existing --snapshot (see the frames command)")
@@ -1492,9 +1496,9 @@ def live_pack(
     its path, key and how long building took."""
     import struct
 
+    from emu import sharc_capture
     from tools.sharc_dev import sharc_harness as h
     from tools.sharc_dev import sharc_transpile
-    from emu import sharc_capture
 
     memory = h.load_image_memory(image)
     img = pack_image(memory)

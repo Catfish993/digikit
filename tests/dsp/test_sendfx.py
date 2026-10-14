@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.emulator import fxcheck
-from tools.emulator import gen_sendfx
-from tools.emulator import scenario_dsl as d
+from tools.emulator import fxcheck, gen_sendfx  # noqa: E402
+from tools.emulator import scenario_dsl as d  # noqa: E402
 
 
 def test_chord_latches() -> None:

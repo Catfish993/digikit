@@ -19,7 +19,6 @@ import struct
 import sys
 from pathlib import Path
 
-
 from tools.sharc_dev import sharc_diff as sd
 from tools.sharc_dev import sharc_run as sr
 from tools.sharc_dev import sharc_trace as st

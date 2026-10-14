@@ -272,8 +272,6 @@ def rebuild(syx_path, replacements=None, checksum=None, pack='store', max_contai
     per-message checksum function; the default leaves it at encode_syx's
     own default (packet_checksum()).
     """
-    import os
-    import sys
     from dt2.authcode import seal, DEVICE_BY_ID
 
     replacements = replacements or {}

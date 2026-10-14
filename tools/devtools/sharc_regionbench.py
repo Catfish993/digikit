@@ -43,6 +43,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tools import python_env  # noqa: E402
 from tools.emulator import digi_env  # noqa: E402
 
 BENCH = os.path.join(ROOT, "out", "native", "regionbench")
@@ -155,14 +156,24 @@ def region_blocks(names: list[str]) -> dict[str, list[str]]:
 # -- gen -------------------------------------------------------------------
 
 
+def tools_env(tools_dir: str) -> dict[str, str]:
+    """Environment for a child that imports tools from TOOLS_DIR's parent."""
+    parent = os.path.dirname(tools_dir)
+    if os.path.samefile(tools_dir, os.path.join(ROOT, "tools")):
+        return python_env()
+    rest = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]
+    return dict(os.environ, PYTHONPATH=os.pathsep.join([parent, *rest]))
+
+
 def work_dir(tools_dir: str) -> str:
-    files = [os.path.join(tools_dir, "sharc_transpile.py")]
+    dev = os.path.join(tools_dir, "sharc_dev")
+    files = [os.path.join(dev, "sharc_transpile.py")]
     files += [
-        os.path.join(tools_dir, f)
-        for f in os.listdir(tools_dir)
+        os.path.join(dev, f)
+        for f in os.listdir(dev)
         if f.startswith("sharc_transpile") and f.endswith(".py")
     ]
-    files += tree_files(os.path.join(tools_dir, "sharc_core"), (".py",))
+    files += tree_files(os.path.join(dev, "sharc_core"), (".py",))
     return os.path.join(BENCH, "work-" + sha256_files(sorted(set(files)))[:12])
 
 
@@ -180,14 +191,16 @@ def cmd_gen(args, extra: list[str]) -> None:
         timings["transpile"] = 0.0
     else:
         timings["transpile"] = run(
-            [python(), os.path.join(tools, "sharc_transpile.py"), "--strict"]
+            [python(), "-m", "tools.sharc_dev.sharc_transpile", "--strict"]
             + ["--out", os.path.join(work + "-tp-out"), "--work", work]
             + shlex.split(args.transpile_args),
             stdout=subprocess.DEVNULL,
+            cwd=os.path.dirname(tools),
+            env=tools_env(tools),
         )
         open(os.path.join(work, ".done"), "w").close()
     timings["rsgen"] = run(
-        [python(), os.path.join(tools, "sharc_rsgen.py"), IMAGE_NAME]
+        [python(), "-m", "tools.sharc_dev.sharc_rsgen", IMAGE_NAME]
         + ["--coverage", os.path.join(INPUTS, "cov6.txt")]
         + ["--entries", os.path.join(INPUTS, "ent9.txt")]
         + ["--transitions", os.path.join(INPUTS, "trans9.txt")]
@@ -195,6 +208,8 @@ def cmd_gen(args, extra: list[str]) -> None:
         + ["--work", work, "--out", gen, "--only", only]
         + extra,
         stdout=subprocess.DEVNULL,
+        cwd=os.path.dirname(tools),
+        env=tools_env(tools),
     )
     with open(os.path.join(vdir, "gen.json"), "w") as fh:
         json.dump(
@@ -218,12 +233,14 @@ def cmd_gen(args, extra: list[str]) -> None:
 def benchlock(mode: str, label: str):
     """Lock for builds (shared) and timed runs (exclusive), see benchlock.py."""
     from tools.devtools import benchlock as module
+
     return module.hold(mode, label)
 
 
 def native_target():
     """tools/emulator/native_target.py: cargo target dirs keyed by generated core."""
     from tools.emulator import native_target as module
+
     return module
 
 
@@ -846,7 +863,13 @@ def main(argv: list[str] | None = None) -> int:
         return sp
 
     g = common(sub.add_parser("gen", help="mini gen of the selected regions"))
-    g.add_argument("--tools-dir", default=os.path.join(ROOT, "tools"))
+    g.add_argument(
+        "--tools-dir",
+        default=os.path.join(ROOT, "tools"),
+        help="DIR must be a tools/ directory with the package layout "
+        "(tools/sharc_dev/...): children run as -m tools.sharc_dev.... "
+        "with DIR's parent first on PYTHONPATH",
+    )
     g.add_argument("--transpile-args", default="")
     c = common(sub.add_parser("capture", help="capture entry states"))
     c.add_argument("--min-frame", type=int, default=4620)

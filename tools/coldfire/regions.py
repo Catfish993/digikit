@@ -65,6 +65,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+from tools import python_env  # noqa: E402
 
 MAIN_BASE = 0x40000400
 RESET_ENTRY = 0x400004E8
@@ -517,8 +518,7 @@ def scenario_args(name: str) -> list[str]:
 
 
 def probe_binary(dsp_dir: pathlib.Path | None = None) -> pathlib.Path:
-    from tools.emulator import digi_env
-    from tools.emulator import native_target
+    from tools.emulator import digi_env, native_target
 
     env = {k: v for k, v in os.environ.items() if k != "SHARC_GEN_DIR"}
     features: list[str] = []
@@ -535,7 +535,8 @@ def probe_binary(dsp_dir: pathlib.Path | None = None) -> pathlib.Path:
     subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tools" / "devtools" / "benchlock.py"),
+            "-m",
+            "tools.devtools.benchlock",
             "run",
             "--shared",
             "--",
@@ -552,7 +553,7 @@ def probe_binary(dsp_dir: pathlib.Path | None = None) -> pathlib.Path:
             *features,
         ],
         cwd=ROOT,
-        env=env,
+        env=python_env(env),
         check=True,
     )
     return binary

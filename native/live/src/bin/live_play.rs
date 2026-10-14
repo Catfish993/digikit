@@ -143,6 +143,14 @@ fn default_lp0(capture: &Path) -> Option<PathBuf> {
     (found.len() == 1).then(|| found[0].clone())
 }
 
+/// PYTHONPATH with `root` first, then any inherited entries.
+fn pythonpath_with(root: &Path) -> std::ffi::OsString {
+    let inherited = std::env::var_os("PYTHONPATH").unwrap_or_default();
+    let rest = std::env::split_paths(&inherited).filter(|p| p != root);
+    std::env::join_paths(std::iter::once(root.to_path_buf()).chain(rest))
+        .unwrap_or_else(|_| root.as_os_str().to_owned())
+}
+
 /// `sharc_transpile_run.py live-pack`: the cached pack's path.
 fn resolve_pack(a: &Args, capture: &str) -> PathBuf {
     let root = repo_root();
@@ -154,7 +162,8 @@ fn resolve_pack(a: &Args, capture: &str) -> PathBuf {
         c.args(["run", "python"]);
         c
     };
-    cmd.arg(root.join("tools/sharc_dev/sharc_transpile_run.py"))
+    cmd.args(["-m", "tools.sharc_dev.sharc_transpile_run"])
+        .env("PYTHONPATH", pythonpath_with(&root))
         .arg("live-pack")
         .arg(a.image.as_deref().unwrap_or("dt2-1.16"))
         .arg(capture)

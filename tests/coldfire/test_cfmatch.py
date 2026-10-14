@@ -11,8 +11,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.coldfire import cffacts
-from tools.coldfire import cfmatch
+from tools.coldfire import cffacts, cfmatch  # noqa: E402
 
 BASE = 0x40000400
 HI = 0x40320000

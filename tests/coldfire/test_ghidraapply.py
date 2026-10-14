@@ -1,7 +1,6 @@
 """tools/coldfire/ghidraapply.py name splitting (the Ghidra parts need a project)."""
 
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import ghidraapply  # noqa: E402

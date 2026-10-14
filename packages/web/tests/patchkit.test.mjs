@@ -15,7 +15,7 @@ const images = {
   dn2: join(root, 'Digitone_II_OS1.12.syx'),
 };
 const need = [wasmPath, ...Object.values(images)].every(existsSync);
-const py = (...args) => execFileSync('uv', ['run', 'python', ...args], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+const py = (module, ...args) => execFileSync('uv', ['run', 'python', '-m', module, ...args], { cwd: root, env: { ...process.env, PYTHONPATH: root }, encoding: 'utf8', maxBuffer: 1 << 28 });
 
 async function load() {
   const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath), {});
@@ -44,14 +44,14 @@ test('patchkit.wasm is small and carries no firmware', () => {
 test('wasm and CLI produce byte-identical output for fx/master-gain', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
-  py('tools/patchkit/patchkit.py', 'bundle', '-o', bundlePath);
+  py('tools.patchkit.patchkit','bundle', '-o', bundlePath);
   const bundle = readFileSync(bundlePath);
   const { x, put, get, text } = await load();
   for (const [name, path] of Object.entries(images)) {
     const fw = readFileSync(path);
     const out = join(work, `${name}.syx`);
     const plan = join(work, `${name}.plan.json`);
-    py('tools/patchkit/patchkit.py', 'patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out, '--plan', plan);
+    py('tools.patchkit.patchkit','patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out, '--plan', plan);
     const [fp, fl] = put(fw);
     const [bp, bl] = put(bundle);
     const [ip, il] = put(Buffer.from('fx/master-gain'));
@@ -75,14 +75,14 @@ test('wasm and CLI produce byte-identical output for fx/master-gain', { skip: !n
 test('wasm and CLI produce byte-identical output for the machine framework (two machines)', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
-  py('tools/patchkit/patchkit.py', 'bundle', '-o', bundlePath);
+  py('tools.patchkit.patchkit','bundle', '-o', bundlePath);
   const bundle = readFileSync(bundlePath);
   const { x, put, get, text } = await load();
   const mods = 'core/machines,machines/xslice,test/machine-clone';
   const fw = readFileSync(images.dt2);
   const out = join(work, 'dt2-machines.syx');
   const plan = join(work, 'dt2-machines.plan.json');
-  py('tools/patchkit/patchkit.py', 'patch', '--firmware', images.dt2, '--modules', mods, '-o', out, '--plan', plan);
+  py('tools.patchkit.patchkit','patch', '--firmware', images.dt2, '--modules', mods, '-o', out, '--plan', plan);
   const [fp, fl] = put(fw);
   const [bp, bl] = put(bundle);
   const [ip, il] = put(Buffer.from(mods));
@@ -101,14 +101,14 @@ test('wasm and CLI produce byte-identical output for the machine framework (two 
 test('wasm and CLI produce byte-identical output for core/params and PLUCK', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
-  py('tools/patchkit/patchkit.py', 'bundle', '-o', bundlePath);
+  py('tools.patchkit.patchkit','bundle', '-o', bundlePath);
   const bundle = readFileSync(bundlePath);
   const { x, put, get, text } = await load();
   const mods = 'core/dsp-voice,core/machines,core/params,machines/pluck';
   const fw = readFileSync(images.dt2);
   const out = join(work, 'dt2-pluck.syx');
   const plan = join(work, 'dt2-pluck.plan.json');
-  py('tools/patchkit/patchkit.py', 'patch', '--firmware', images.dt2, '--modules', mods, '-o', out, '--plan', plan);
+  py('tools.patchkit.patchkit','patch', '--firmware', images.dt2, '--modules', mods, '-o', out, '--plan', plan);
   const [fp, fl] = put(fw);
   const [bp, bl] = put(bundle);
   const [ip, il] = put(Buffer.from(mods));
@@ -124,7 +124,7 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
   ]);
   // PLUCK builds for Digitone II too (device-filtered entries and objects): the same parity there
   const outDn2 = join(work, 'dn2-pluck.syx');
-  py('tools/patchkit/patchkit.py', 'patch', '--firmware', images.dn2, '--modules', mods, '-o', outDn2);
+  py('tools.patchkit.patchkit','patch', '--firmware', images.dn2, '--modules', mods, '-o', outDn2);
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from(mods));
   assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 0, text(x.pk_err_ptr, x.pk_err_len));
@@ -134,12 +134,12 @@ test('wasm and CLI produce byte-identical output for core/params and PLUCK', { s
 test('wasm and CLI produce byte-identical output for the primitives (registry, section, hook)', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
-  py('tools/patchkit/patchkit.py', 'bundle', '-o', bundlePath);
+  py('tools.patchkit.patchkit','bundle', '-o', bundlePath);
   const bundle = readFileSync(bundlePath);
   const { x, put, get, text } = await load();
   const out = join(work, 'dt2-rd.syx');
   const plan = join(work, 'dt2-rd.plan.json');
-  py('tools/patchkit/patchkit.py', 'patch', '--firmware', images.dt2, '--modules', 'test/registry-demo', '-o', out, '--plan', plan);
+  py('tools.patchkit.patchkit','patch', '--firmware', images.dt2, '--modules', 'test/registry-demo', '-o', out, '--plan', plan);
   const [fp, fl] = put(readFileSync(images.dt2));
   const [bp, bl] = put(bundle);
   const [ip, il] = put(Buffer.from('test/registry-demo'));
@@ -160,13 +160,13 @@ test('wasm and CLI produce byte-identical output for the primitives (registry, s
 test('wasm adds the requirements of the selection like the CLI', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
-  py('tools/patchkit/patchkit.py', 'bundle', '-o', bundlePath);
+  py('tools.patchkit.patchkit','bundle', '-o', bundlePath);
   const { x, put, get, text } = await load();
   const [bp, bl] = put(readFileSync(bundlePath));
   for (const dev of ['dt2', 'dn2']) {
     const out = join(work, `${dev}-pluck-only.syx`);
     // the CLI prints what it added
-    const said = py('tools/patchkit/patchkit.py', 'patch', '--firmware', images[dev], '--modules', 'machines/pluck', '-o', out);
+    const said = py('tools.patchkit.patchkit','patch', '--firmware', images[dev], '--modules', 'machines/pluck', '-o', out);
     assert.match(said, /added by requires: .*core\/machines/);
     const [fp, fl] = put(readFileSync(images[dev]));
     const [ip, il] = put(Buffer.from('machines/pluck'));
@@ -184,8 +184,8 @@ test('wasm refuses what the CLI refuses', { skip: !need }, async () => {
   const work = mkdtempSync(join(tmpdir(), 'pk-wasm-'));
   const bundlePath = join(work, 'bundle.json');
   // the DN2-only oracle is generated under out/modules (it holds a firmware word, so it is not committed)
-  py('tools/patchkit/pk_oracle_dn2_half.py');
-  py('tools/patchkit/patchkit.py', 'bundle', '-o', bundlePath, '--modules-dir', join(root, 'out', 'modules'));
+  py('tools.patchkit.pk_oracle_dn2_half');
+  py('tools.patchkit.patchkit','bundle', '-o', bundlePath, '--modules-dir', join(root, 'out', 'modules'));
   const { x, put, text } = await load();
   const [fp, fl] = put(readFileSync(images.dt2));
   const [bp, bl] = put(readFileSync(bundlePath));

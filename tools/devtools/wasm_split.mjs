@@ -17,7 +17,7 @@ import { Worker, isMainThread, parentPort, workerData } from 'node:worker_thread
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(here, '..');
+const root = path.resolve(here, '../..');
 const web = path.join(root, 'packages/web/src');
 const { createDspSide, createCfSide } = {
   ...(await import(path.join(web, 'split-session.ts'))),

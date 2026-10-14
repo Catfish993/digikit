@@ -15,8 +15,6 @@ synthetic one.
 import pathlib
 import unittest
 
-from support.paths import REPO_ROOT
-
 from tools.sharc_dev import sharc  # noqa: E402
 
 DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")

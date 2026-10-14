@@ -43,7 +43,10 @@ def test_a_library_from_another_core_is_refused_naming_the_command(monkeypatch):
         run.check_build_info(info, "some/lib.dylib")
     msg = str(e.value)
     assert "some/lib.dylib" in msg and "0" * 64 in msg and tp.core_hash() in msg
-    assert "tools/sharc_dev/sharc_rsgen.py" in msg and "cargo build --release" in msg
+    assert (
+        "python -m tools.sharc_dev.sharc_rsgen" in msg
+        and "cargo build --release" in msg
+    )
 
 
 def test_a_library_from_another_generator_version_is_refused(monkeypatch):

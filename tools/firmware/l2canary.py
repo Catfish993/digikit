@@ -34,8 +34,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-from tools.control import digi_client
-from tools.patchkit import dsp_patch
+from tools.control import digi_client  # noqa: E402
+from tools.patchkit import dsp_patch  # noqa: E402
 
 DEFAULT_SEED = 0xC4A9_0000
 CHUNK = 0x10000
@@ -72,6 +72,7 @@ def build(
     syx: Path, out: Path, rng: tuple[int, int] | None, seed: int
 ) -> dict[str, object]:
     from dt2.build import FLASH_CONTAINER_MAX, rebuild
+
     stream = dsp_patch.Stream(dsp_patch.section_blob(syx, 7))
     stock_len = len(stream.blob)
     addr, length = rng or largest_free(stream)

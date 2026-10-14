@@ -12,7 +12,6 @@ import pathlib
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.sharc_dev import sharc_calltrace as ct  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402

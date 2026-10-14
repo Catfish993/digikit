@@ -14,9 +14,11 @@ ROOT = REPO_ROOT
 
 import support.dsp_voice_rig as dv  # noqa: E402
 
-from tools.patchkit import pk_sharc  # noqa: E402
-from tools.patchkit import pk_toolchains  # noqa: E402
-from tools.patchkit import pluck_ref  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_sharc,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+    pluck_ref,  # noqa: E402
+)
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,

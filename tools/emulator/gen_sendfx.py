@@ -192,7 +192,9 @@ def scenarios() -> list[dict]:
 
 def main(argv: list[str]) -> int:
     default = (
-        pathlib.Path(__file__).resolve().parent.parent.parent / "scenarios" / "dn2-sendfx.json"
+        pathlib.Path(__file__).resolve().parent.parent.parent
+        / "scenarios"
+        / "dn2-sendfx.json"
     )
     path = pathlib.Path(argv[1]) if len(argv) > 1 else default
     sc = scenarios()

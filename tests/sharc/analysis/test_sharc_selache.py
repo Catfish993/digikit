@@ -3,7 +3,6 @@
 import os
 import pathlib
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import sharc_selache as S  # noqa: E402  # pyright: ignore[reportMissingImports]

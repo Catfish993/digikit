@@ -34,15 +34,6 @@ import json
 import os
 import sys
 
-# NOT sys.path.insert(0, repo_root) -- this script needs nothing from the
-# repo, and running it as `python -m tools.coldfire.apply_profile` auto-prepends
-# tools/ to sys.path, which contains a plain `ghidra/` directory (the Java
-# scripts for ghidra.sh, no __init__.py -- an implicit namespace package).
-# That shadows the real `ghidra` Java-bridge namespace PyGhidra installs at
-# start(), and the import machinery recurses trying to resolve it. Strip
-# tools/ (this script's own directory) out before importing pyghidra.
-_here = os.path.dirname(os.path.abspath(__file__))
-
 DEFAULT_PROJECT = os.path.expanduser('~/ghidra-projects/dt2')
 DEFAULT_PROJECT_NAME = 'dt2'
 

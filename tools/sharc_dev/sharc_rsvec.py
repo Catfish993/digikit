@@ -218,7 +218,9 @@ def install(rec: Recorder):
 
     st._execute = execute
     for name, module in list(sys.modules.items()):
-        if name == "sharc_core" or name.startswith("sharc_core."):
+        if name == "tools.sharc_dev.sharc_core" or name.startswith(
+            "tools.sharc_dev.sharc_core."
+        ):
             if getattr(module, "_dm_read", None) is orig_read:
                 module._dm_read = dm_read
             if getattr(module, "_dm_write", None) is orig_write:
@@ -237,7 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("capture", help=".dt2cap DSPI2 capture")
     p.add_argument("--blocks", default="", help="comma-separated hex block starts")
     p.add_argument(
-        "--blocks-from", help="tools/sharc_dev/sharc_rsgen.py report.json: its translated blocks"
+        "--blocks-from",
+        help="tools/sharc_dev/sharc_rsgen.py report.json: its translated blocks",
     )
     p.add_argument(
         "--frames", default="1-3", help="frames to record in (others run unrecorded)"
@@ -248,10 +251,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="out/native/vectors.txt")
     args = p.parse_args(argv)
 
+    from emu import sharc_capture
     from tools.sharc_dev import sharc_harness as h
     from tools.sharc_dev import sharc_lp0 as lp0
     from tools.sharc_dev import sharc_survey as sv
-    from emu import sharc_capture
     from tools.sharc_dev.sharc_core.sequencer import decode_at
 
     starts = [int(x, 16) for x in args.blocks.split(",") if x]

@@ -1,8 +1,6 @@
 """Reset-table parsing stays explicit and rejects contradictory inputs."""
 
-
 import pytest
-from support.paths import REPO_ROOT
 
 from tools.sharc_dev.sharc_mmr_reset import parse_reset_tables
 

@@ -20,8 +20,10 @@ from support.paths import REPO_ROOT
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
 
-from tools.sharc_dev import sharc  # noqa: E402
-from tools.sharc_dev import sharc_symbols  # noqa: E402
+from tools.sharc_dev import (  # noqa: E402
+    sharc,  # noqa: E402
+    sharc_symbols,  # noqa: E402
+)
 
 DB_DIR = os.path.join(ROOT, "out", "sharcdb")
 IMAGE_NAMES = ["dt2-1.16", "dn2-1.11", "dt2-1.15C", "dn2-1.10E"]

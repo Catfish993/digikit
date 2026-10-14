@@ -8,11 +8,13 @@ import pytest
 from support.paths import REPO_ROOT
 
 TOOLS = REPO_ROOT / "tools"
-from tools.emulator import digi_env
+from tools.emulator import digi_env  # noqa: E402
 
 
 def _load_coupled():
-    spec = importlib.util.spec_from_file_location("coupled", TOOLS / "emulator" / "coupled.py")
+    spec = importlib.util.spec_from_file_location(
+        "tools.emulator.coupled", TOOLS / "emulator" / "coupled.py"
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules["tools.emulator.coupled"] = module
@@ -21,18 +23,18 @@ def _load_coupled():
 
 
 def _tree(root: Path) -> None:
-    core = root / "tools" / "sharc_core"
+    core = root / "tools" / "sharc_dev" / "sharc_core"
     core.mkdir(parents=True)
     (core / "a.py").write_text("x = 1\n")
-    (root / "tools" / "sharc_transpile.py").write_text("t = 1\n")
-    (root / "tools" / "sharc_rsgen.py").write_text("r = 1\n")
+    (root / "tools" / "sharc_dev" / "sharc_transpile.py").write_text("t = 1\n")
+    (root / "tools" / "sharc_dev" / "sharc_rsgen.py").write_text("r = 1\n")
 
 
 def test_fingerprint_is_stable_and_tracks_content(tmp_path):
     _tree(tmp_path)
     first = digi_env.core_fingerprint(tmp_path)
     assert digi_env.core_fingerprint(tmp_path) == first
-    (tmp_path / "tools" / "sharc_core" / "a.py").write_text("x = 2\n")
+    (tmp_path / "tools" / "sharc_dev" / "sharc_core" / "a.py").write_text("x = 2\n")
     assert digi_env.core_fingerprint(tmp_path) != first
 
 

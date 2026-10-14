@@ -2,7 +2,6 @@
 
 import struct
 from importlib import import_module
-from pathlib import Path
 
 L = import_module("tools.sharc_dev.sharcldr")
 T = import_module("tools.sharc_dev.sharc_trace")
@@ -24,7 +23,9 @@ def loader_memory(*blocks):
 
 
 def insn(name, fields, length=4, kind="confident"):
-    return import_module("tools.sharc_dev.sharc_disasm").Instruction(0, length, name, fields, kind=kind)
+    return import_module("tools.sharc_dev.sharc_disasm").Instruction(
+        0, length, name, fields, kind=kind
+    )
 
 
 def full_compute(cu, opcode, rn, rx, ry):

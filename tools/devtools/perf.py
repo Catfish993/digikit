@@ -40,6 +40,7 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
+from tools import python_env
 from tools.emulator import coupled
 from tools.emulator import digi_env
 from tools.devtools import fastcov
@@ -441,9 +442,9 @@ def main() -> int:
             import subprocess
 
             subprocess.run(
-                [sys.executable, str(HERE / "sharc_transpile.py"), "--strict", "--out", str(core),
+                [sys.executable, "-m", "tools.sharc_dev.sharc_transpile", "--strict", "--out", str(core),
                  "--work", str(core.parent / "work")],
-                cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
+                cwd=ROOT, env=python_env(), check=True, stdout=subprocess.DEVNULL,
             )  # fmt: skip
         digi_env.check_generated(core)
         os.environ["SHARC_GEN_DIR"] = str(core)

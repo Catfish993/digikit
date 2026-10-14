@@ -55,9 +55,6 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# tools/coldfire/ghidra/ is a plain directory of Java scripts that shadows the real
-# `ghidra` Java-bridge namespace PyGhidra needs, once tools/ lands on
-# sys.path -- which it does when this is run as `python -m tools.coldfire.ghidradump`.
 _here = os.path.dirname(os.path.abspath(__file__))
 
 REPO = os.path.dirname(os.path.dirname(_here))

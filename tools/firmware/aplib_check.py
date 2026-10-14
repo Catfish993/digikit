@@ -28,6 +28,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 from dt2 import aplibpack, elz  # noqa: E402
 from dt2.container import sections  # noqa: E402
+from tools import python_env  # noqa: E402
 
 IMAGES = {
     "dt2-1.16": "Digitakt_II_OS1.16.syx",
@@ -55,7 +56,8 @@ def native_binary() -> pathlib.Path:
     subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tools" / "devtools" / "benchlock.py"),
+            "-m",
+            "tools.devtools.benchlock",
             "run",
             "--shared",
             "--",
@@ -71,6 +73,7 @@ def native_binary() -> pathlib.Path:
             "depack_check",
         ],
         cwd=ROOT,
+        env=python_env(),
         check=True,
         capture_output=True,
     )

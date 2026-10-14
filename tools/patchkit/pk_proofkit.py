@@ -49,6 +49,7 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
+from tools import python_env  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 
 MAX_POOL = 3  # live daemons per process
@@ -494,7 +495,8 @@ def run_parallel(
                     [
                         sys.executable,
                         "-u",
-                        script,
+                        "-m",
+                        f"tools.patchkit.{Path(script).stem}",
                         *base,
                         "--only",
                         n,
@@ -506,6 +508,7 @@ def run_parallel(
                     stdout=f,
                     stderr=subprocess.STDOUT,
                     cwd=ROOT,
+                    env=python_env(),
                 )
             running[n] = (p, log, res, time.monotonic())
         time.sleep(0.5)

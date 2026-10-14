@@ -12,7 +12,6 @@ ROOT = REPO_ROOT
 from tools.emulator import digi_env  # noqa: E402
 
 
-
 @pytest.fixture(autouse=True)
 def pinned_rustc(monkeypatch):
     """Never ask rustup for the toolchain from these tests."""
@@ -34,7 +33,9 @@ def _restore_sharc_gen_dir(monkeypatch):
 
 
 def launcher():
-    return runpy.run_path(str(ROOT / "tools/emulator/native_emu.py"), run_name="launcher_test")
+    return runpy.run_path(
+        str(ROOT / "tools/emulator/native_emu.py"), run_name="launcher_test"
+    )
 
 
 def test_default_command_preserves_locked_cf_only_build():
@@ -345,6 +346,7 @@ COUPLED = ["x.syx", "--coupled"]
 def pgo(monkeypatch):
     """The real native_pgo module with its state, blocker and subprocess mocked."""
     from tools.emulator import native_pgo
+
     for name in ("DIGI_EMU_PGO", "DIGI_EMU_PGO_TRAIN"):
         monkeypatch.delenv(name, raising=False)
     box = type("Box", (), {})()
@@ -490,7 +492,10 @@ def test_missing_dt2_profile_says_how_to_train_it(pgo, monkeypatch, tmp_path, ca
     assert (
         launcher()["pgo_plan"](["--coupled", "--audio-profile-syx", str(syx)]) is None
     )
-    assert "native_pgo.py train --device dt2" in capsys.readouterr().err
+    assert (
+        "python -m tools.emulator.native_pgo train --device dt2"
+        in capsys.readouterr().err
+    )
 
 
 def test_dt2_opt_in_training_trains_the_dt2_profile(pgo, monkeypatch, tmp_path):
@@ -610,6 +615,7 @@ def test_main_daemon_builds_and_runs_digi_emud(monkeypatch):
 def _dt2_launch(monkeypatch, tmp_path, manifest_core):
     """A DT2 launch with ready inputs, a registered core and a PGO manifest."""
     from tools.emulator import native_pgo
+
     syx = dt2_syx(monkeypatch, tmp_path)
     ready = tmp_path / "ready-dt2"
     ready.mkdir()

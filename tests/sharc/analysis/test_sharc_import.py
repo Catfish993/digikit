@@ -3,7 +3,6 @@
 import struct
 import unittest
 from importlib import import_module
-from support.paths import REPO_ROOT
 
 I = import_module("tools.sharc_dev.sharc_import")
 L = import_module("tools.sharc_dev.sharcldr")

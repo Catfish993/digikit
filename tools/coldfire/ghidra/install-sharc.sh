@@ -11,7 +11,7 @@
 set -e
 GHIDRA="${GHIDRA_INSTALL_DIR:-/opt/homebrew/Cellar/ghidra/12.1.3/libexec}"
 HERE=$(cd "$(dirname "$0")" && pwd)
-GEN=$(cd "$HERE/../sharcspec/ghidra" && pwd)
+GEN=$(cd "$HERE/../../sharc_dev/sharcspec/ghidra" && pwd)
 (cd "$GEN" && uv run python gen_sleigh.py)
 "$GHIDRA/support/sleigh" -a "$GEN/SHARC_VISA/data/languages"
 rm -rf "$GHIDRA/Ghidra/Processors/SHARC_VISA"

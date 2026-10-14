@@ -1,7 +1,6 @@
 """tools/sharc_dev/dspmap.py regions and caller trees (the map needs an image and a dump)."""
 
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import dspmap  # noqa: E402

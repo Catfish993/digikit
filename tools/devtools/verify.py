@@ -47,10 +47,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-from tools.devtools import benchlock  # noqa: E402
-from tools.emulator import coupled  # noqa: E402
-from tools.emulator import digi_env  # noqa: E402
-from tools.devtools import fastcov  # noqa: E402
+from tools import python_env  # noqa: E402
+from tools.devtools import (  # noqa: E402
+    benchlock,  # noqa: E402
+    fastcov,  # noqa: E402
+)
+from tools.emulator import (  # noqa: E402
+    coupled,  # noqa: E402
+    digi_env,  # noqa: E402
+)
 
 PY = ["uv", "run", "python"]
 FX_FILES = ("scenarios/dn2-trackfx.json", "scenarios/dn2-sendfx.json")
@@ -74,7 +79,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "native/patchkit/",
             "modules/",
             "devices/ports/",
-            "tools/pk_",
+            "tools/patchkit/pk_",
             "tools/patchkit/port_resolve.py",
             "tools/patchkit/patchkit.py",
             "tools/patchkit/pluck_ref.py",
@@ -188,7 +193,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
             "native/patchkit/",
             "modules/",
             "devices/ports/",
-            "tools/pk_",
+            "tools/patchkit/pk_",
             "tools/patchkit/port_resolve.py",
             "tools/patchkit/patchkit.py",
             "tests/patchkit/",
@@ -370,7 +375,15 @@ def python_tests_passed(out_dir: Path) -> str | None:
 
 def python_tests_command(out: Path, files: list[str]) -> list[str]:
     """The per-file runner for the python-tests step (one pytest process per file)."""
-    cmd = [*PY, "tools/devtools/test_outcomes.py", "run", "--check", "--out", str(out)]
+    cmd = [
+        *PY,
+        "-m",
+        "tools.devtools.test_outcomes",
+        "run",
+        "--check",
+        "--out",
+        str(out),
+    ]
     cmd = [*cmd, "--timeout", str(python_timeout())]
     return [*cmd, "--jobs", str(python_jobs()), *files]
 
@@ -415,7 +428,9 @@ class Gate:
         """Run one step, log its output and print its line."""
         start = time.monotonic()
         with benchlock.hold("shared", f"verify {name}"):
-            proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
+            proc = subprocess.run(
+                cmd, cwd=cwd, env=python_env(env), capture_output=True, text=True
+            )
         text = proc.stdout + proc.stderr
         (self.out / f"{name}.log").write_text(text)
         if proc.returncode:
@@ -532,13 +547,24 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     def run_chunk(chunk: Chunk) -> tuple[subprocess.CompletedProcess[str], float]:
         report = report_of(chunk)
         report.parent.mkdir(parents=True, exist_ok=True)
-        cmd = [*PY, "tools/emulator/coupled.py", "scenario", "--scenarios", chunk.path]
+        cmd = [
+            *PY,
+            "-m",
+            "tools.emulator.coupled",
+            "scenario",
+            "--scenarios",
+            chunk.path,
+        ]
         cmd += [*chunk.names, "--no-build", "--jobs", "1", "--out", str(report)]
         if dt2:
             cmd += ["--device", "dt2", "--dt2-card"]
         with benchlock.hold("shared", f"verify {name}"):
             proc = subprocess.run(
-                cmd, cwd=ROOT, env=envs[chunk.label], capture_output=True, text=True
+                cmd,
+                cwd=ROOT,
+                env=python_env(envs[chunk.label]),
+                capture_output=True,
+                text=True,
             )
         return proc, time.monotonic() - start
 
@@ -597,7 +623,9 @@ def desktop_check(gate: Gate) -> None:
 
 def web_check(gate: Gate) -> None:
     web = ROOT / "packages" / "web"
-    gate.run("patchkit-wasm", [*PY, "tools/emulator/native_wasm.py", "--patchkit-only"])
+    gate.run(
+        "patchkit-wasm", [*PY, "-m", "tools.emulator.native_wasm", "--patchkit-only"]
+    )
     gate.run("web-tests", ["node", "--test", "tests/*.test.mjs"], cwd=web)
     gate.run("web-types", ["npx", "astro", "check"], cwd=web)
 
@@ -652,7 +680,7 @@ def plan(steps: tuple[str, ...]) -> tuple[list[str], dict[str, tuple[str, ...]]]
 def rust_tests_command() -> list[str]:
     # cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
     # packages/web/dist is absent
-    return [*PY, "tools/devtools/rust_ws.py", "test"]
+    return [*PY, "-m", "tools.devtools.rust_ws", "test"]
 
 
 def explain(
@@ -690,9 +718,12 @@ def run_step(gate: Gate, step: str) -> None:
     ]
     jobs = str(coupled.default_jobs())
     if step == "build":
-        gate.run("build", [*PY, "tools/emulator/coupled.py", "build"])
+        gate.run("build", [*PY, "-m", "tools.emulator.coupled", "build"])
     elif step == "build-dt2":
-        gate.run("build-dt2", [*PY, "tools/emulator/coupled.py", "build", "--device", "dt2"])
+        gate.run(
+            "build-dt2",
+            [*PY, "-m", "tools.emulator.coupled", "build", "--device", "dt2"],
+        )
     elif step == "desktop":
         desktop_check(gate)
     elif step == "web":
@@ -700,7 +731,8 @@ def run_step(gate: Gate, step: str) -> None:
     elif step == "pins":
         cmd = [
             *PY,
-            "tools/emulator/coupled.py",
+            "-m",
+            "tools.emulator.coupled",
             "scenario",
             "--all",
             "--no-build",
@@ -726,9 +758,9 @@ def run_step(gate: Gate, step: str) -> None:
     elif step == "rust-tests":
         gate.run("rust-tests", rust_tests_command())
     elif step == "card":
-        gate.run("card", [*PY, "tools/emulator/card_check.py"])
+        gate.run("card", [*PY, "-m", "tools.emulator.card_check"])
     elif step == "dt2-tone":
-        gate.run("dt2-tone", [*PY, "tools/emulator/dt2_sample_check.py"])
+        gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":
         gate.run("dt2-check", [*scenario_tests, "--device", "dt2"], check=pytest_ran)
     elif step == "dt2-tier-quick":

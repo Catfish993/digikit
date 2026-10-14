@@ -92,12 +92,11 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+from emu import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_trace as st  # noqa: E402
-
-from emu import sharc_capture  # noqa: E402
 
 # --- FUN_1c642a's per-voice dispatch (word/pc_sw addresses; see the module
 # docstring for the decode each of these comes from). One breakpoint per

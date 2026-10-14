@@ -86,7 +86,6 @@ import struct
 import sys
 from typing import NamedTuple
 
-
 from tools.patchkit import machineprofile  # noqa: E402
 
 TABLE_ADDR = 0x4020F18C

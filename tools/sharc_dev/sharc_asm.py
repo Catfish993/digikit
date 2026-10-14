@@ -30,8 +30,10 @@ from pathlib import Path
 
 _here = str(Path(__file__).resolve().parent)
 
-from tools.sharc_dev import sharc_disasm  # noqa: E402
-from tools.sharc_dev import sharcfn  # noqa: E402
+from tools.sharc_dev import (  # noqa: E402
+    sharc_disasm,  # noqa: E402
+    sharcfn,  # noqa: E402
+)
 from tools.sharc_dev.sharc_trace import UREG_CODES  # noqa: E402
 
 COND_TRUE = 0x1F

@@ -42,7 +42,9 @@ Pages = dict[int, tuple["np.ndarray", "np.ndarray"]]
 
 def read_ranges(path: str | Path) -> list[tuple[int, bytes]]:
     """The memory ranges (canonical byte address, bytes) of a dump."""
-    from tools.sharc_dev import sharc_diff  # heavy import (sharc.py, networkx): only when parsing
+    from tools.sharc_dev import (
+        sharc_diff,  # heavy import (sharc.py, networkx): only when parsing
+    )
 
     blob = Path(path).read_bytes()
     start = blob.find(b"SHRD")

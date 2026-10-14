@@ -30,7 +30,7 @@ import re
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.patchkit import pk_harness as H
+from tools.patchkit import pk_harness as H  # noqa: E402
 
 TRIG1 = H.button("TRIG 1")
 PLUCK_MODS = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]

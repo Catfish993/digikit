@@ -2,7 +2,7 @@
 
 Promoted from a scratch driver (a lane-L7 survey of FUN_1c2b24, the frame
 render root) into a general tool: start from an already-booted state (a
-tools/sharc_dev/sharc_run.py snapshot, or a fresh tools/sharc_harness.run_init()),
+tools/sharc_dev/sharc_run.py snapshot, or a fresh tools/sharc_dev/sharc_harness.run_init()),
 jump to an arbitrary root with Runner.fresh_call(), apply an accumulated
 table of register/memory hypotheses each time a given pc is about to
 execute, run with diagnose_unknown=True, and print a rich diagnosis of
@@ -801,7 +801,9 @@ def _start_runner(
             root, regs=regs, return_address=return_address, diagnose_unknown=True
         )
     elif run_init:
-        from tools.sharc_dev import sharc_harness as h  # lazy: only this path needs the harness
+        from tools.sharc_dev import (
+            sharc_harness as h,  # lazy: only this path needs the harness
+        )
 
         init = h.run_init(memory, image)
         if not init.ran or init.runner is None:

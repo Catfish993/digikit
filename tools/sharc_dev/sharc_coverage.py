@@ -32,11 +32,12 @@ import collections
 import json
 import sys
 
-
 import networkx as nx  # noqa: E402
 
-from tools.sharc_dev import sharc  # noqa: E402
-from tools.sharc_dev import sharc_trace  # noqa: E402
+from tools.sharc_dev import (
+    sharc,  # noqa: E402
+    sharc_trace,  # noqa: E402
+)
 from tools.sharc_dev.sharc_core.forms import FORMS  # noqa: E402
 from tools.sharc_dev.sharc_core.sequencer import decode_at  # noqa: E402
 

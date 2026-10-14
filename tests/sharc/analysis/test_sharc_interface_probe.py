@@ -3,7 +3,6 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import sharc_interface_probe as P  # pyright: ignore[reportMissingImports]

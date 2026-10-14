@@ -65,8 +65,7 @@ Usage:
     uv run python -m tools.sharc_dev.sharc_inputs dt2-1.16 0x1c2b24 \
         --capture out/captures/dt2-1.16-play-pretracks.dt2cap --capture-frames 3
 
-    import sys; sys.path.insert(0, "tools")
-    import sharc, sharc_inputs
+    from tools.sharc_dev import sharc, sharc_inputs
     img = sharc.load("dt2-1.16")
     report = sharc_inputs.build(img, 0x1c2b24)
 """
@@ -168,7 +167,9 @@ def run_init_state(image: str):
     overlay needs the harness at all) to check ADDR's own write-overlay
     membership against. Raises RuntimeError if init does not reach its
     return (see run_init()'s own docstring)."""
-    from tools.sharc_dev import sharc_harness as h  # lazy: only this path needs the harness
+    from tools.sharc_dev import (
+        sharc_harness as h,  # lazy: only this path needs the harness
+    )
 
     memory = sr._load_image_memory(image)
     init = h.run_init(memory, image)
@@ -393,7 +394,9 @@ def dynamic_view(
     run never wrote and that run_init() did not write either -- see the
     module note above for why this is worth checking beyond the static
     labels."""
-    from tools.sharc_dev import sharc_harness as h  # lazy: only this path needs the harness
+    from tools.sharc_dev import (
+        sharc_harness as h,  # lazy: only this path needs the harness
+    )
 
     memory = sr._load_image_memory(image)
     init = h.run_init(memory, image)
@@ -478,9 +481,13 @@ def dynamic_view_capture(
     never miscounted just because this tool, not SHARC code, supplied the
     byte.
     """
-    from tools.sharc_dev import sharc_harness as h  # lazy: only this path needs the harness
-    from tools.sharc_dev import sharc_replay as rp  # lazy: only this path needs the capture format
     from emu import sharc_capture
+    from tools.sharc_dev import (
+        sharc_harness as h,  # lazy: only this path needs the harness
+    )
+    from tools.sharc_dev import (
+        sharc_replay as rp,  # lazy: only this path needs the capture format
+    )
 
     memory = sr._load_image_memory(image)
     init = h.run_init(memory, image)

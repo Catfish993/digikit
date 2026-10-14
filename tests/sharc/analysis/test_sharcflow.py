@@ -1,7 +1,6 @@
 """tools/sharc_dev/sharcflow.py call and return recognition (the Ghidra pass needs a project)."""
 
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.sharc_dev import sharcflow  # noqa: E402

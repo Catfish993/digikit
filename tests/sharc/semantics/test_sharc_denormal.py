@@ -17,8 +17,6 @@ Rules under test (page numbers are PDF pages of out/refs/sharc-plus-prm,
 
 import struct
 
-from support.paths import REPO_ROOT
-
 from tools.sharc_dev import sharc_trace as st
 from tools.sharc_dev.sharc_core.encoding import (
     AI_BIT,

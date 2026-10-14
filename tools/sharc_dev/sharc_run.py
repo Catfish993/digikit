@@ -21,7 +21,7 @@ Library use goes through :class:`Runner` directly, without sharc.py's
 sqlite/networkx machinery, given any already-loaded
 :class:`tools.sharcldr.LoadedMemory`:
 
-    import sharc_run
+    from tools.sharc_dev import sharc_run
     runner = sharc_run.Runner(loaded_memory, start=0x1c4ecf)
     result = runner.run(max_steps=20000)
     print(result.halt.reason, result.instructions_per_second)
@@ -45,7 +45,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 from tools.sharc_dev import sharc_trace as st  # noqa: E402
 from tools.sharc_dev import sharcfn  # noqa: E402
 from tools.sharc_dev.sharc_core.addressing import normal_word_to_byte  # noqa: E402
-from tools.sharc_dev.sharc_core.memory import UnmodeledMMR, _canonical_dm_address  # noqa: E402
+from tools.sharc_dev.sharc_core.memory import (  # noqa: E402
+    UnmodeledMMR,
+    _canonical_dm_address,
+)
 from tools.sharc_dev.sharc_core.periph import _sec_line  # noqa: E402
 from tools.sharc_dev.sharc_core.sequencer import (  # noqa: E402
     _core_timer_tick,

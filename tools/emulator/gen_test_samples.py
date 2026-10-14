@@ -20,7 +20,8 @@ import sys
 import wave
 
 SAMPLES_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "samples"
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "samples",
 )
 RATE = 48000
 

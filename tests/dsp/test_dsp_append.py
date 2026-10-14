@@ -6,8 +6,8 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.patchkit import dsp_patch
-from tools.sharc_dev import sharcldr
+from tools.patchkit import dsp_patch  # noqa: E402
+from tools.sharc_dev import sharcldr  # noqa: E402
 
 DATA, FIRST, FINAL = 0x0001, 0x4001, 0x8001
 

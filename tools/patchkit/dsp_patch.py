@@ -222,6 +222,7 @@ def block_header(target: int, count: int, flags: int = 1, argument: int = 0) -> 
 
 def _loaded_memory(blob: bytes):
     from tools.sharc_dev import sharcldr
+
     return sharcldr.LoadedMemory.from_stream(blob)
 
 
@@ -340,6 +341,7 @@ def section_blob(syx: Path, section: int) -> bytes:
     from dt2.container import sections
     from dt2.elz import depack_section
     from emu.extract import classify
+
     container, table = sections(str(syx))
     for sid, off, clen, _dest in table:
         if sid == section:
@@ -375,6 +377,7 @@ def write_syx(base: Path, patch: Patch, out: Path) -> tuple[int, int]:
         changed += sum(a != b for a, b in zip(before, op.new, strict=True))
         stream.write(op.addr, op.new)
     from dt2.build import FLASH_CONTAINER_MAX, rebuild
+
     out.write_bytes(
         rebuild(
             str(base),

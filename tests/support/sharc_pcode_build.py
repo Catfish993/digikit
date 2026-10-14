@@ -1,9 +1,7 @@
 """Field and branch encoders for the SHARC+ p-code tests."""
 
-from pathlib import Path
-
-from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
 from support.sharc_encode import encode  # noqa: E402
+from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
 
 
 def field(name, label, value):

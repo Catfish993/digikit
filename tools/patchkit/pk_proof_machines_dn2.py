@@ -33,6 +33,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
+from tools import python_env  # noqa: E402
 from tools.emulator import card_overlay  # noqa: E402
 from tools.patchkit import hook_ab  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
@@ -328,14 +329,14 @@ class Proof(K.Proof):
         import subprocess
         import tomllib
 
-        from tools.patchkit import port_resolve as pr
         from dt2 import build as dbuild
+        from tools.patchkit import port_resolve as pr
 
         src = ROOT / "out" / "patch" / "proof-dn2-clone.syx"
         r = subprocess.run(
-            [sys.executable, str(HERE / "patchkit.py"), "patch", "--firmware", str(ROOT / "Digitone_II_OS1.12.syx"),
+            [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(ROOT / "Digitone_II_OS1.12.syx"),
              "--modules", ",".join(MODS), "-o", str(src)],
-            capture_output=True, text=True, cwd=ROOT,
+            capture_output=True, text=True, cwd=ROOT, env=python_env(),
         )  # fmt: skip
         self.check("patch for the control", r.returncode == 0)
         port = tomllib.loads((ROOT / "devices" / "ports" / "dn2-1.12.toml").read_text())

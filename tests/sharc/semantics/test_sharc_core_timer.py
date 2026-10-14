@@ -1,10 +1,6 @@
 """Public core timer clocks, write priority and timer interrupt vectors."""
 
-
 import pytest
-from support.paths import REPO_ROOT
-
-
 from support.sharc_swi import native_core, runner, word
 
 from tools.sharc_dev import sharc_diff as sd

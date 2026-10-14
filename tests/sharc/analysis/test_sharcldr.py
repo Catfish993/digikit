@@ -3,9 +3,6 @@
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
-
 from support.sharc_encode import block  # noqa: E402
 
 sharcldr = import_module("tools.sharc_dev.sharcldr")

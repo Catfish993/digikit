@@ -27,6 +27,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+from tools import python_env
 from tools.emulator import digi_env
 from tools.emulator import native_target
 
@@ -44,7 +45,9 @@ V8_MODES = [
 
 
 def sh(cmd, **kw):
-    return subprocess.run(cmd, cwd=kw.pop("cwd", ROOT), check=True, **kw)
+    return subprocess.run(
+        cmd, cwd=kw.pop("cwd", ROOT), env=python_env(kw.pop("env", None)), check=True, **kw
+    )
 
 
 def capture(seconds: float) -> None:
@@ -52,13 +55,13 @@ def capture(seconds: float) -> None:
     shutil.rmtree(DUMP, ignore_errors=True)
     env = {**os.environ, "SHARC_FAST_DUMP": str(DUMP)}
     sh(
-        [sys.executable, "tools/emulator/coupled.py", "build"],
+        [sys.executable, "-m", "tools.emulator.coupled", "build"],
         env=env,
         stdout=subprocess.DEVNULL,
     )
     sh(
         [
-            sys.executable, "tools/devtools/fastcov.py", "--no-build", "--no-lock", "--diag", "no",
+            sys.executable, "-m", "tools.devtools.fastcov", "--no-build", "--no-lock", "--diag", "no",
             "--seconds", str(seconds), "--config", "static-blocks+follow",
             "--out", str(OUT / "fastcov"),
         ],
@@ -77,7 +80,7 @@ def capture(seconds: float) -> None:
 
 def build() -> pathlib.Path:
     if not (CORE / "core_g.rs").is_file():
-        sh([sys.executable, "tools/sharc_dev/sharc_transpile.py", "--strict", "--out", str(CORE),
+        sh([sys.executable, "-m", "tools.sharc_dev.sharc_transpile", "--strict", "--out", str(CORE),
             "--work", str(CORE.parent / "work")], stdout=subprocess.DEVNULL)  # fmt: skip
     env = {
         **digi_env.rust_env(),

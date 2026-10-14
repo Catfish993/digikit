@@ -17,7 +17,7 @@ import sys
 
 import pymupdf
 
-PDF = "../../docs/refs/adsp-2136x_2137x_214xx_pgr_rev2.4.pdf"
+PDF = "../../../docs/refs/adsp-2136x_2137x_214xx_pgr_rev2.4.pdf"
 
 
 def vrules(page):

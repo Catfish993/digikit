@@ -13,9 +13,6 @@ import os
 import tempfile
 import unittest
 
-from support.paths import REPO_ROOT
-
-
 from emu.sharc_capture import (  # noqa: E402
     MAGIC,
     CaptureWriter,

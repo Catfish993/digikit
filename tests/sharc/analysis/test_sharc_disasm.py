@@ -3,15 +3,14 @@
 import struct
 import unittest
 
-from support.paths import REPO_ROOT
-
-
 from support.sharc_encode import block, encode  # noqa: E402
 
-from tools.sharc_dev import sharc_disasm  # noqa: E402
+from tools.sharc_dev import (
+    sharc_disasm,  # noqa: E402
+    sharccompare,  # noqa: E402
+    sharcldr,  # noqa: E402
+)
 from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
-from tools.sharc_dev import sharccompare  # noqa: E402
-from tools.sharc_dev import sharcldr  # noqa: E402
 
 
 def undecodable_word():

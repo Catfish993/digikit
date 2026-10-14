@@ -15,6 +15,7 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
+from tools import python_env  # noqa: E402
 from tools.emulator import native_target  # noqa: E402
 from tools.patchkit import port_resolve  # noqa: E402
 
@@ -86,9 +87,10 @@ def test_aplib_packer_equals_python_on_small_sections(patchkit):
     rust = pk_aplib_eq.rust_bin()
     assert rust.exists()
     r = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "patchkit" / "pk_aplib_eq.py"), "--only", "2,7,8", "--rust", str(rust),
+        [sys.executable, "-m", "tools.patchkit.pk_aplib_eq", "--only", "2,7,8", "--rust", str(rust),
          "Digitakt_II_OS1.16.syx", "Digitone_II_OS1.12.syx"],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )  # fmt: skip
@@ -97,16 +99,18 @@ def test_aplib_packer_equals_python_on_small_sections(patchkit):
 
 def test_dn2_master_half_equals_dsp_patch_py(patchkit, tmp_path):
     subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "patchkit" / "pk_oracle_dn2_half.py")],
+        [sys.executable, "-m", "tools.patchkit.pk_oracle_dn2_half"],
         cwd=ROOT,
+        env=python_env(),
         check=True,
         capture_output=True,
     )
     out, _ = apply(patchkit, tmp_path, DN2_111, "oracle/dn2-master-half", "--no-record")
     ref = tmp_path / "ref.syx"
     subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "patchkit" / "dsp_patch.py"), "syx", str(DN2_111),
+        [sys.executable, "-m", "tools.patchkit.dsp_patch", "syx", str(DN2_111),
          str(ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.11-master-half.patch"), str(ref)],
+        env=python_env(),
         check=True,
         capture_output=True,
     )  # fmt: skip
@@ -118,8 +122,9 @@ def test_dn2_master_half_equals_dsp_patch_py(patchkit, tmp_path):
 def xslice_module():
     """The XSLICE oracle is generated (it holds words of the 1.16 image) under out/modules, never committed."""
     r = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "patchkit" / "pk_oracle_xslice.py")],
+        [sys.executable, "-m", "tools.patchkit.pk_oracle_xslice"],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )
@@ -171,8 +176,7 @@ def test_master_gain_applies_and_verifies(patchkit, tmp_path, fw):
 @pytest.mark.parametrize("fw,image", [(DT2_117, "dt2-1.17"), (DN2_112, "dn2-1.12")])
 def test_rust_linker_equals_python_linker(patchkit, tmp_path, fw, image):
     """The block patchkit appends is what tools/patchkit/pk_sharc.py's linker makes for the same bases and externs."""
-    from tools.patchkit import dsp_patch
-    from tools.patchkit import pk_sharc
+    from tools.patchkit import dsp_patch, pk_sharc
 
     out, plan = apply(patchkit, tmp_path, fw, "fx/master-gain")
     port = (ROOT / "devices" / "ports" / f"{image}.toml").read_text()
@@ -204,8 +208,9 @@ def test_rust_linker_equals_python_linker(patchkit, tmp_path, fw, image):
 
 def test_pk_build_objects_are_current():
     r = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "patchkit" / "pk_build.py"), "build-all", "--check"],
+        [sys.executable, "-m", "tools.patchkit.pk_build", "build-all", "--check"],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )

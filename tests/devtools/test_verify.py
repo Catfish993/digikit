@@ -15,7 +15,7 @@ from tools.devtools import verify  # noqa: E402
 def test_rust_tests_command_has_no_package_flags() -> None:
     cmd = verify.rust_tests_command()
     assert "-p" not in cmd
-    assert cmd[-2:] == ["tools/devtools/rust_ws.py", "test"]
+    assert cmd[-3:] == ["-m", "tools.devtools.rust_ws", "test"]
 
 
 def test_docs_select_no_steps() -> None:
@@ -36,7 +36,9 @@ def test_pk_harness_triggers_the_patchkit_suite() -> None:
 
 
 def test_digi_client_triggers_its_test() -> None:
-    assert "tests/control" in verify.python_tests(["tools/control/digi_client.py"], False)
+    assert "tests/control" in verify.python_tests(
+        ["tools/control/digi_client.py"], False
+    )
     assert "python-tests" in verify.steps_for(["tools/control/digi_client.py"])
     assert "python-tests" in verify.steps_for(["native/control/src/lib.rs"])
 
@@ -129,7 +131,7 @@ def test_python_tests_passed(tmp_path: Path) -> None:
 
 def test_python_tests_command() -> None:
     cmd = verify.python_tests_command(Path("x"), ["tests/a.py"])
-    assert "tools/devtools/test_outcomes.py" in cmd
+    assert "tools.devtools.test_outcomes" in cmd
     assert "run" in cmd and "--check" in cmd
     assert "--timeout" in cmd
     assert cmd[-1] == "tests/a.py"

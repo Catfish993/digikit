@@ -7,15 +7,12 @@ import struct
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
-
 
 from tools.sharc_dev import sharc_diff as sd
-from tools.sharc_dev import sharc_harness
+from tools.sharc_dev import sharc_harness, sharcldr
 from tools.sharc_dev import sharc_run as sr
 from tools.sharc_dev import sharc_trace as st
 from tools.sharc_dev import sharc_transpile_run as nr
-from tools.sharc_dev import sharcldr
 from tools.sharc_dev.sharc_core.state import _copy, _sync_pc_stack, _sync_status_stack
 from tools.sharc_dev.sharc_disasm import Instruction, get_type
 

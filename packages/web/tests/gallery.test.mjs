@@ -15,7 +15,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const wasmPath = join(root, 'packages/web/public/patchkit.wasm');
 const images = { dt2: join(root, 'Digitakt_II_OS1.17.syx'), dn2: join(root, 'Digitone_II_OS1.12.syx') };
 const have = [wasmPath, ...Object.values(images)].every(existsSync);
-const py = (...args) => execFileSync('uv', ['run', 'python', ...args], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+const py = (module, ...args) => execFileSync('uv', ['run', 'python', '-m', module, ...args], { cwd: root, env: { ...process.env, PYTHONPATH: root }, encoding: 'utf8', maxBuffer: 1 << 28 });
 
 test('index lists the committed modules with gallery metadata', () => {
   const { index, bundle } = buildModuleData(root);
@@ -37,7 +37,7 @@ test('index lists the committed modules with gallery metadata', () => {
 
 test('bundle equals tools/patchkit/patchkit.py bundle', { skip: !existsSync(join(root, '.venv')) }, () => {
   const out = join(mkdtempSync(join(tmpdir(), 'gal-')), 'bundle.json');
-  py('tools/patchkit/patchkit.py', 'bundle', '-o', out);
+  py('tools.patchkit.patchkit','bundle', '-o', out);
   assert.deepEqual(buildModuleData(root).bundle, JSON.parse(readFileSync(out, 'utf8')));
 });
 
@@ -79,7 +79,7 @@ test('worker core: check and apply equal the command line (fx/master-gain)', { s
     assert.ok(checked.port?.startsWith(name));
     assert.equal(checked.modules.find((m) => m.id === 'fx/master-gain').ok, true);
     const out = join(work, `${name}.syx`);
-    py('tools/patchkit/patchkit.py', 'patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out);
+    py('tools.patchkit.patchkit','patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out);
     const r = kit.apply(fw, ['fx/master-gain']);
     assert.ok(Buffer.from(r.syx).equals(readFileSync(out)), `${name}: output differs from the CLI`);
     assert.equal(r.plan.record.modules[0].split('@')[0], 'fx/master-gain');

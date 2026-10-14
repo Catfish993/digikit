@@ -9,8 +9,10 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.patchkit import pk_sharc  # noqa: E402
-from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_sharc,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,

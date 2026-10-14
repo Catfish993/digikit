@@ -14,7 +14,6 @@ import unittest
 from importlib import import_module
 
 import pytest
-from support.paths import REPO_ROOT
 
 fm = import_module("tools.sharc_dev.sharc_framemap")
 L = import_module("tools.sharc_dev.sharcldr")

@@ -30,9 +30,11 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
 from tools.devtools import benchlock  # noqa: E402
-from tools.emulator import digi_env  # noqa: E402
-from tools.emulator import native_pgo  # noqa: E402
-from tools.emulator import native_target  # noqa: E402
+from tools.emulator import (  # noqa: E402
+    digi_env,  # noqa: E402
+    native_pgo,  # noqa: E402
+    native_target,  # noqa: E402
+)
 
 FIRMWARE = {"dt2": "1.17", "dn2": "1.12"}  # the harness' default firmware per device
 

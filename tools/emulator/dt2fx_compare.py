@@ -19,7 +19,7 @@ import sys
 from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import fxcheck
+from tools.emulator import fxcheck  # noqa: E402
 
 
 def load(run: pathlib.Path) -> dict[str, tuple[dict[str, int], str, int]]:

@@ -34,10 +34,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.devtools import benchlock
-from tools.emulator import digi_env
-from tools.emulator import native_target
-from tools.sharc_dev import sharc_cold_state
+from tools.devtools import benchlock  # noqa: E402
+from tools.emulator import digi_env, native_target  # noqa: E402
+from tools.sharc_dev import sharc_cold_state  # noqa: E402
 
 # After ready the example runs a little further so the snapshot is not at the
 # very first ready instruction; the QA inputs start after the save.

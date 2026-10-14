@@ -10,8 +10,10 @@ from support.paths import REPO_ROOT
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
 
-from tools.coldfire import cf  # noqa: E402
-from tools.coldfire import cf_names  # noqa: E402
+from tools.coldfire import (  # noqa: E402
+    cf,  # noqa: E402
+    cf_names,  # noqa: E402
+)
 
 IMAGE_NAME = "dt2-1.16-emac"
 DUMP_DIR = os.path.join(ROOT, "out", "ghidra", IMAGE_NAME)

@@ -10,8 +10,10 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.patchkit import pk_cfunit  # noqa: E402
-from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_cfunit,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 SYX = ROOT / "Digitakt_II_OS1.17.syx"
 SRC = ROOT / "modules" / "core" / "machines" / "src" / "cf" / "dt2" / "machines.s"

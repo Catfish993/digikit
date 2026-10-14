@@ -379,5 +379,5 @@ def main(pdf, first, last, out):
 
 
 if __name__ == "__main__":
-    pdf = sys.argv[1] if len(sys.argv) > 1 else "../../docs/refs/sc58x-2158x-prm.pdf"
+    pdf = sys.argv[1] if len(sys.argv) > 1 else "../../../docs/refs/sc58x-2158x-prm.pdf"
     main(pdf, 301, 563, "figures.json")

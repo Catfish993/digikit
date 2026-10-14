@@ -9,10 +9,9 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-from tools.emulator import fxcheck
-from tools.emulator import gen_trackfx
-from tools.coldfire import paramtable
-from tools.emulator import scenario_dsl as d
+from tools.coldfire import paramtable  # noqa: E402
+from tools.emulator import fxcheck, gen_trackfx  # noqa: E402
+from tools.emulator import scenario_dsl as d  # noqa: E402
 
 DN2 = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
 DT2 = ROOT / "out" / "sections" / "dt2-1.16" / "section_3_MAIN_OS.bin"

@@ -38,11 +38,11 @@ import time
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.emulator import card_check
-from tools.patchkit import hook_ab
-from tools.patchkit import pk_harness as H
-from tools.patchkit import pk_proofkit as K
-from tools.control.digi_client import Emu
+from tools.control.digi_client import Emu  # noqa: E402
+from tools.emulator import card_check  # noqa: E402
+from tools.patchkit import hook_ab  # noqa: E402
+from tools.patchkit import pk_harness as H  # noqa: E402
+from tools.patchkit import pk_proofkit as K  # noqa: E402
 
 FW = {"dt2": "1.17", "dn2": "1.12"}
 TRIG1, FUNC = 25, 17

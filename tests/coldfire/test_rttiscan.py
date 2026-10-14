@@ -2,7 +2,6 @@
 
 import struct
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import rttiscan  # noqa: E402

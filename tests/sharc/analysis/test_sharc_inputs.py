@@ -14,7 +14,6 @@ import unittest
 from importlib import import_module
 
 import pytest
-from support.paths import REPO_ROOT
 
 si = import_module("tools.sharc_dev.sharc_inputs")
 sharc = import_module("tools.sharc_dev.sharc")

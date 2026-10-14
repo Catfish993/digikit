@@ -6,8 +6,6 @@ import os
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
-
 
 from tools.sharc_dev import sharc_diff as sd
 from tools.sharc_dev import sharc_transpile_run as nr

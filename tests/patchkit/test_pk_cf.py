@@ -11,8 +11,10 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.patchkit import pk_link  # noqa: E402
-from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_link,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 SYX = ROOT / "Digitakt_II_OS1.17.syx"
 SRC = ROOT / "tests" / "patchkit" / "pk_src"

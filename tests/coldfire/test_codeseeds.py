@@ -1,7 +1,6 @@
 """tools/coldfire/codeseeds.py on a hand-assembled image."""
 
 import unittest
-from support.paths import REPO_ROOT
 
 
 from tools.coldfire import codeseeds  # noqa: E402
