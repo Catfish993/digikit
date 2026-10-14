@@ -19,7 +19,7 @@
 - Verified: `file` reports "PDF document, version 1.6 (zip deflate encoded)". `pdfinfo` reports:
   Title: "MCF5441x Reference Manual", Author: "NXP Semiconductors", **1360 pages**, CreationDate
   2018-04-24, matching the expected Rev 5 05/2018 manual exactly.
-- Local path: `/Users/em/src/digi/digitakt2/docs/refs/MCF5441XRM.pdf`
+- Local path: `docs/refs/MCF5441XRM.pdf`
 
 **CFPRM.pdf** (saved as `docs/refs/CFPRM.pdf`) — SUCCESS, but not from NXP directly.
 - Direct `curl` to `https://www.nxp.com/docs/en/reference-manual/CFPRM.pdf` also returned **HTTP 404**
@@ -33,7 +33,7 @@
   "Howard Richey" (a Freescale ColdFire architecture author), **316 pages**, encrypted with RC4 but with
   print/copy/extract permitted (this is a very old, harmless owner-password lock that doesn't block
   reading — `pdftotext`/`pdfinfo` opened it fine).
-- Local path: `/Users/em/src/digi/digitakt2/docs/refs/CFPRM.pdf`
+- Local path: `docs/refs/CFPRM.pdf`
 - Note: this is a larger (Rev 3, 316-page) copy than the "1.63 MB" NXP listing implies, but its title,
   author, and content match the known CFPRM document — likely the NXP copy is a later/trimmed revision;
   either way it is the same document title/series, used here as the correct manual for the ColdFire ISA

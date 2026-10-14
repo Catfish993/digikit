@@ -1,6 +1,6 @@
 # DN2 real-time audio: measurement baseline and the plan to own the Rust DSP core
 
-Date: 2026-10-05. Workspace `/Users/em/src/digi/digitakt2`, branch
+Date: 2026-10-05. Workspace `<repo>`, branch
 `work/sharc-emulator`, baseline HEAD `bd7f0f9`. Em authorized a local source
 and results checkpoint commit on 2026-10-05. It replaces
 `docs/HANDOVER-2026-10-04-dn2-realtime-progress.md` for state

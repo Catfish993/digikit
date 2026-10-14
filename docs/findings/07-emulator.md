@@ -2280,7 +2280,7 @@ boot project's samples on a cold boot, with no UI.
 ## Fractional EMAC was wrong in patched Unicorn **[V][D][C][O]**
 
 2026-09-28. Everything here was executed or read once; the fix is built and
-tested in worktree `.claude/worktrees/agent-a35ef1ffe626acbe5` but **not
+tested in worktree `<agent session artifact>` but **not
 installed in the shared venv** and not merged.
 
 > **[C] 2026-09-29 (P0).** The fix is merged (commit `95d92de`:
@@ -2365,7 +2365,7 @@ Install (Em, between runs; running processes keep the old library; done
 by 2026-09-29, and the installer now runs from any tree at `95d92de` or
 later):
 
-    cd /Users/em/src/digi/digitakt2/.claude/worktrees/agent-a35ef1ffe626acbe5 && tools/install-patched-unicorn.sh
+    cd <agent session artifact> && tools/install-patched-unicorn.sh
 
 Then `uv run python -m emu.unicorn_compat` and `uv run python -m pytest
 tests/test_unicorn_emac.py tests/test_unicorn_compat.py -q`.
