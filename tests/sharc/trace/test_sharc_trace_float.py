@@ -14,6 +14,7 @@ from support.sharc_trace_build import insn  # noqa: E402
 _floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
 
 from support.sharc_trace_build import (  # noqa: E402
+    TraceRunMixin,
     dual_add_subtract_fields,
     f32,
     full_compute,
@@ -996,7 +997,7 @@ class FloatComputeTest(unittest.TestCase):
         self.assertIsInstance(executed.uregs[0], T.Unknown)
 
 
-class PhaseAOpcodeRegressionTest(unittest.TestCase):
+class PhaseAOpcodeRegressionTest(TraceRunMixin, unittest.TestCase):
     """Literal Phase A vectors from the public PRM tables in SOURCES.md."""
 
     def test_type10a_relative_decodes_its_split_fields(self):
@@ -1044,9 +1045,6 @@ class PhaseAOpcodeRegressionTest(unittest.TestCase):
         self.assertEqual(record.fields, {"compute[22:16]": 0, "compute[15:0]": compute})
         state = self.run_one(T.State(0x10, {3: T.Const(7), 4: T.Const(9)}), record)
         self.assertEqual((state.pc_sw, state.uregs[2]), (0x12, T.Const(16)))
-
-    def run_one(self, state, record):
-        return T._execute(state, record)[0]
 
     def test_alu_copysign_uses_magnitude_and_sign_operands(self):
         # ALUOP 0xe0: FN = FX copysign FY (PRM Table 18-5).

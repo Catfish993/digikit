@@ -23,15 +23,11 @@ import pytest
 sv = import_module("tools.sharc_dev.sharc_survey")
 sr = import_module("tools.sharc_dev.sharc_run")
 T = import_module("tools.sharc_dev.sharc_trace")
-L = import_module("tools.sharc_dev.sharcldr")
 sharc = import_module("tools.sharc_dev.sharc")
+from support.sharc_trace_build import loader_memory  # noqa: E402
 
 DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
-
-
-def loader_memory():
-    return L.LoadedMemory.from_stream(b"")
 
 
 class LoadPatchTableTest(unittest.TestCase):

@@ -15,12 +15,10 @@ import unittest
 from importlib import import_module
 
 T = import_module("tools.sharc_dev.sharc_trace")
-Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
-from support.sharc_trace_build import loader_memory  # noqa: E402  (shared fixture)
-
-
-def insn(name, fields, length=4, kind="confident"):
-    return Instruction(0, length, name, fields, kind=kind)
+from support.sharc_trace_build import (  # noqa: E402  (shared fixture)
+    insn,
+    loader_memory,
+)
 
 
 class Type1aTest(unittest.TestCase):

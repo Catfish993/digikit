@@ -3,31 +3,15 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from typing import Any
+
+from support.git_repo import make_repo
 
 from tools.devtools import relocate
 
 AB_MOVES = {"tools/a.py": "tools/emu/a.py", "tools/b.py": "tools/emu/b.py"}
 AB_FILES = {"tools/a.py": "VALUE = 1\n", "tools/b.py": "VALUE = 2\n"}
-
-
-def git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True)
-
-
-def make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
-    root = tmp_path / "repo"
-    for rel, text in files.items():
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-    git(root, "init", "-q")
-    git(root, "add", "-A")
-    commit = ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=0"]
-    git(root, *commit, "commit", "-qm", "x")
-    return root
 
 
 def run(

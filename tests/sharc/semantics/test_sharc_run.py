@@ -8,7 +8,6 @@ copyright and must never end up here).
 
 import os
 import pathlib
-import struct
 import tempfile
 import unittest
 from importlib import import_module
@@ -16,10 +15,10 @@ from unittest.mock import patch
 
 import pytest
 from support.paths import REPO_ROOT
+from support.sharc_trace_build import insn, loader_block, loader_memory
 
 sr = import_module("tools.sharc_dev.sharc_run")
 T = import_module("tools.sharc_dev.sharc_trace")
-Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 L = import_module("tools.sharc_dev.sharcldr")
 # Only for the two firmware-backed watchpoint regression tests below
 # (WatchpointFirmwareTest): tools/sharc_dev/sharc_harness/ owns voice-record layout
@@ -32,26 +31,6 @@ h = import_module("tools.sharc_dev.sharc_harness")
 
 ROOT = str(REPO_ROOT)
 DT2_116_BLOB = pathlib.Path(ROOT) / "out/sections/dt2-1.16/section_7_BLOB.bin"
-
-
-def loader_block(code, address, count, arg=0, payload=b""):
-    """Build a checksum-valid synthetic loader block (the tests/sharc/trace/ files'
-    helper, duplicated rather than imported so this file stands alone)."""
-    header = bytearray(struct.pack("<IIII", code | 0xAD000000, address, count, arg))
-    header[2] = 0
-    checksum = 0
-    for byte in header:
-        checksum ^= byte
-    header[2] = checksum
-    return bytes(header) + payload
-
-
-def loader_memory(*blocks):
-    return L.LoadedMemory.from_stream(b"".join(blocks))
-
-
-def insn(name, fields, length=4, kind="confident"):
-    return Instruction(0, length, name, fields, kind=kind)
 
 
 class ResetUregsTest(unittest.TestCase):

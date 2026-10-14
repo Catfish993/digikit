@@ -7,6 +7,7 @@ import sys
 
 import pytest
 from support.paths import REPO_ROOT
+from support.words import be32
 
 ROOT = REPO_ROOT
 
@@ -73,10 +74,6 @@ ENTRIES = [
 COUNT = len(ENTRIES)
 STR_AT = 0x47EC3000
 STOCK = [3, 0, 1, 2, 4, 5, 6]  # a stock display order
-
-
-def be32(x):
-    return (x & 0xFFFFFFFF).to_bytes(4, "big")
 
 
 def tables():

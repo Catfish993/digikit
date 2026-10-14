@@ -21,15 +21,12 @@ C = import_module("tools.sharc_dev.sharc_contract")
 sr = import_module("tools.sharc_dev.sharc_run")
 st = import_module("tools.sharc_dev.sharc_trace")
 L = import_module("tools.sharc_dev.sharcldr")
+from support.sharc_trace_build import loader_memory  # noqa: E402
 
 DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
 PLAY_PRETRACKS_CAPTURE = pathlib.Path("out/captures/dt2-1.16-play-pretracks.dt2cap")
-
-
-def loader_memory():
-    return L.LoadedMemory.from_stream(b"")
 
 
 class RingLabelTest(unittest.TestCase):

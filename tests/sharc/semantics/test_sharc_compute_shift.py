@@ -24,17 +24,7 @@ from importlib import import_module
 
 T = import_module("tools.sharc_dev.sharc_trace")
 compute_shift = import_module("tools.sharc_dev.sharc_core.compute_shift")
-
-
-def shiftimm_fields(opcode, data8, rn, rx, dataex=0):
-    """A ShiftImm field dict for T._shift_immediate (matches the helper of
-    the same name in tests/support/sharc_trace_build.py)."""
-    field = (opcode << 16) | (data8 << 8) | (rn << 4) | rx
-    return {
-        "shiftimm[22:16]": field >> 16,
-        "shiftimm[15:0]": field & 0xFFFF,
-        "dataex[3:0]": dataex,
-    }
+from support.sharc_trace_build import shiftimm_fields  # noqa: E402
 
 
 def bitext_fields(opcode, bitlen12, rn, rx=0):

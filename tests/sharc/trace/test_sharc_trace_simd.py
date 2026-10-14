@@ -20,11 +20,8 @@ L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_trace_build import (  # noqa: E402  (shared fixtures)
     insn,
     loader_memory,
+    short_compute,
 )
-
-
-def short_compute(opcode, rn, rx):
-    return {"compute[11:0]": (opcode << 8) | (rn << 4) | rx}
 
 
 class TraceHelpers(unittest.TestCase):

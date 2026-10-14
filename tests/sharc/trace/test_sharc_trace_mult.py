@@ -12,19 +12,11 @@ import unittest
 from importlib import import_module
 
 T = import_module("tools.sharc_dev.sharc_trace")
-Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
-
-
-def insn(name, fields, length=4, kind="confident"):
-    return Instruction(0, length, name, fields, kind=kind)
-
-
-def full_compute(cu, opcode, rn, rx, ry):
-    """A full-compute field dict for _compute(f, short=False, ...): mirrors
-    tests/support/sharc_trace_build.py's helper of the same name (PRM Figure 18-1,
-    p.423: mf=0, cu[21:20], opcode[19:12], rn[11:8], rx[7:4], ry[3:0])."""
-    field = (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry
-    return {"compute[22:16]": field >> 16, "compute[15:0]": field & 0xFFFF}
+from support.sharc_trace_build import (  # noqa: E402
+    TraceRunMixin,
+    full_compute,
+    insn,
+)
 
 
 def signed32(value):
@@ -242,13 +234,10 @@ class MultiplierComputeOpcodeTest(unittest.TestCase):
         )
 
 
-class MultiplierComputeIntegrationTest(unittest.TestCase):
+class MultiplierComputeIntegrationTest(TraceRunMixin, unittest.TestCase):
     """End-to-end through _execute/_apply_compute (Type 2a, always-true
     condition), mirroring the tests/sharc/trace/ files'
     test_full_compute_register_to_mr_move_is_recorded."""
-
-    def run_one(self, state, record):
-        return T._execute(state, record)[0]
 
     def test_fractional_load_then_accumulate_then_multiply_sequence(self):
         state = T.State(

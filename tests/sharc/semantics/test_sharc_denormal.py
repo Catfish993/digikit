@@ -15,7 +15,7 @@ Rules under test (page numbers are PDF pages of out/refs/sharc-plus-prm,
 - PEy computes the same on the S register file.
 """
 
-import struct
+from support.sharc_trace_build import f32
 
 from tools.sharc_dev import sharc_trace as st
 from tools.sharc_dev.sharc_core.encoding import (
@@ -48,10 +48,6 @@ BIG_DENORMAL = 0x007FFFFF  # the largest denormal
 MIN_NORMAL = 0x00800000
 ONE = 0x3F800000
 HALF = 0x3F000000
-
-
-def f32(value):
-    return struct.unpack("<I", struct.pack("<f", value))[0]
 
 
 def make(simd=False, **regs):
