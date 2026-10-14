@@ -128,7 +128,7 @@ uv run python tools/dsp_patch.py syx BASE.syx tools/dsp_patches/dn2-1.11-master-
 ```
 
 `tools/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched
-`.syx`. The protocol is in [docs/design/emulator-control.md](docs/design/emulator-control.md).
+`.syx`. Control socket reference: [docs/CONTROL.md](docs/CONTROL.md). The protocol design is in [docs/design/emulator-control.md](docs/design/emulator-control.md).
 
 ## Scenarios and tests
 

@@ -51,17 +51,18 @@ from sharcldr import LoadedMemory  # noqa: E402
 
 # The optimised build (native-opt): regenerate it after any sharc_core change,
 # or it runs the old semantics (see docs/plans/native-emulator.md).
+# Order: SHARC_NATIVE_LIB, the image-specific build if present, else the
+# firmware-free shared-core build (`mise run sharc:native-lib`).
+_LIB_NAME = "libsharc_native." + ("dylib" if sys.platform == "darwin" else "so")
+_IMAGE_LIB = os.path.join(
+    ROOT, "out", "native", "opt", "target-final", "release", _LIB_NAME
+)
+_SHARED_LIB = os.path.join(
+    ROOT, "out", "native", "shared-core", "target", "release", _LIB_NAME
+)
 DEFAULT_LIB = os.environ.get(
     "SHARC_NATIVE_LIB",
-    os.path.join(
-        ROOT,
-        "out",
-        "native",
-        "opt",
-        "target-final",
-        "release",
-        "libsharc_native.dylib",
-    ),
+    _IMAGE_LIB if os.path.exists(_IMAGE_LIB) else _SHARED_LIB,
 )
 SPECIAL_SLOTS = sd.SPECIAL_SLOTS
 NATIVE_TRAP = "native-trap:"

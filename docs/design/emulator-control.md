@@ -1,5 +1,7 @@
 # Emulator control protocol
 
+> User reference for what is implemented: docs/CONTROL.md. This document is the design and includes parts that are not built.
+
 Status: P0, P1 and the injection part of P3 are implemented (2026-10-07); P2
 and the rest of P3 are design. Scope: the desktop app (`mise run emu`), the
 headless daemon `digi-emud` (`mise run emu:serve`), the Python client

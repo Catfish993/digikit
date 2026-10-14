@@ -151,6 +151,7 @@ CLEAN = [
     "tests/devtools/test_benchlock.py",
     "tools/native_emu.py",
     "tools/rust_ws.py",
+    "tools/sharc_native_lib.py",
     "tools/native_pgo.py",
     "tools/native_target.py",
     "tools/digi_env.py",

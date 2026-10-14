@@ -202,6 +202,11 @@ alias = "core"
 run = "uv run python tools/sharc_transpile.py --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
 description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
 
+[tasks."sharc:native-lib"]
+depends = ["gen:core"]
+run = "uv run python tools/sharc_native_lib.py"
+description = "Build the firmware-free native SHARC library (shared core) that tests/sharc/semantics and generation load; no firmware needed; out/native/shared-core/target"
+
 [tasks."gen:regen"]
 alias = "regen"
 run = "uv run python tools/sharc_lowergen_regen.py"
