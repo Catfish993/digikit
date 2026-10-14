@@ -21,7 +21,7 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from digi_client import Emu
+from digi_client import Emu  # noqa: E402
 
 log, dur = sys.argv[1], float(sys.argv[2]) if len(sys.argv) > 2 else 60
 dt2 = "--dt2" in sys.argv
