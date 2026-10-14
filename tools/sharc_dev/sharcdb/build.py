@@ -291,7 +291,7 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
                     # (post-modify) -- so THIS access is at `base`, not
                     # `base + off_val`, when u=1. Type15b has no u bit and
                     # is always pre-modify (PRM p.15-11). This matches
-                    # tools/sharc_dev/sharcdb.py's own `ptr` table (_ptr_mem_form)
+                    # tools/sharc_dev/sharcdb/'s own `ptr` table (_ptr_mem_form)
                     # and tools/sharc_dev/sharc_trace.py's "4a"/"4b" handlers, which
                     # already draw this same distinction -- this
                     # `resolved_offset` role had not been updated to match.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # fmt: off
-"""Resolve SHARC+ program addresses from tools/sharc_dev/sharcdb.py's database, instead
+"""Resolve SHARC+ program addresses from tools/sharc_dev/sharcdb/'s database, instead
 of hardcoding them per firmware build -- the SHARC-side counterpart to
 emu/symbols.py, which does this for the ColdFire main OS. Read that module's
 docstring first: the same idea (fixed anchors verified by content, everything
@@ -8,13 +8,13 @@ else found by what it looks like or how it is reached from something already
 resolved, REQUIRED fails loudly at resolve() time, OPTIONAL degrades to None)
 applies here with three SHARC-specific primitives instead of ColdFire's:
 
-    * FuncMatch: a function identified by tools/sharc_dev/sharcdb.py's relocation-
+    * FuncMatch: a function identified by tools/sharc_dev/sharcdb/'s relocation-
       tolerant `func_hash` (same instruction sequence with every relocatable
       address field masked to zero) against a REFERENCE image, DT2 1.16 --
       the SHARC analogue of a masked-signature `Sig`, except the "signature"
       is a whole function's shape rather than a byte string, and the search
       is one query against an index instead of a scan.
-    * LiteralAt: a literal value decoded by tools/sharc_dev/sharcdb.py's own typed
+    * LiteralAt: a literal value decoded by tools/sharc_dev/sharcdb/'s own typed
       instruction reader, at a fixed word (`sw`) offset from an
       already-resolved function's entry -- the SHARC analogue of
       emu.symbols.Operand, except the literal is read from the `literals`
@@ -28,7 +28,7 @@ applies here with three SHARC-specific primitives instead of ColdFire's:
 
 Why the offset in LiteralAt is safe to carry across images: `func_hash`'s
 reloc_hash is a SHA-256 over the function's instructions with every
-'addr'/'reladdr'/'data' field zeroed (tools/sharc_dev/sharcdb.py's mask_relocatable),
+'addr'/'reladdr'/'data' field zeroed (tools/sharc_dev/sharcdb/'s mask_relocatable),
 concatenated in instruction order. Two functions can only hash equal if they
 have the same instruction count AND the same per-instruction byte length in
 the same order -- so once a reloc_hash match pins down a target function's
@@ -98,7 +98,7 @@ class SymbolResolutionError(RuntimeError):
 class FuncMatch:
     """The function at `ref_addr` in the reference image (DT2 1.16),
     located in the target image by tools/sharc_dev/sharc.py's Image.match() --
-    tools/sharc_dev/sharcdb.py's relocation-tolerant func_hash. Must be unique.
+    tools/sharc_dev/sharcdb/'s relocation-tolerant func_hash. Must be unique.
 
     When the target IS the reference image, this just confirms `ref_addr`
     names a real function there (the reference's own known-address table is
@@ -155,7 +155,7 @@ class LiteralAt:
         if self.form is not None and form != self.form:
             return None, ('literal at %s+0x%x (sw 0x%x) has form %r, expected %r'
                            % (self.symbol, self.delta, sw, form, self.form))
-        # literals.value is sign-extended per tools/sharc_dev/sharcdb.py's
+        # literals.value is sign-extended per tools/sharc_dev/sharcdb/'s
         # extract_literal (correct for a compute-register operand); these
         # symbols are addresses, so fold a negative (top-bit-set) reading
         # back to its unsigned 32-bit form.
@@ -189,7 +189,7 @@ class Offset:
 
 class IVTSlot:
     """A populated slot of the L1 hardware IVT, read from `roots`
-    (kind='interrupt_vector', tools/sharc_dev/sharcdb.py's DB_VERSION v7). Needs no
+    (kind='interrupt_vector', tools/sharc_dev/sharcdb/'s DB_VERSION v7). Needs no
     reference image: the IVT layout is RTOS/hardware structure, present the
     same way in every image this database has ever seen. Must be unique."""
 

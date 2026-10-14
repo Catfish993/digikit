@@ -1834,7 +1834,7 @@ Inside `0x1cbf07`: `I4=R4` (`0x1cbf20`) is a context struct, `I5=R8`
 (`0x1cbf3d`), `I3=R12` (`0x1cbf53`). `I1=DM(I4+16)` (`0x1cbf93`) loads a
 table pointer. `I2=modify(I4,0x44)` (`0x1cbf95`, Type19a) has fields
 `is=4, idis=6`, so its destination is `is XOR idis = 2` (`I2`), not `I4` as
-older `tools/sharc_dev/sharcfn.py` listings printed. `DM(I5,M6) u=1`, read into `R12`
+older `tools/sharc_dev/sharcfn/` listings printed. `DM(I5,M6) u=1`, read into `R12`
 at `sw 0x1cbfc7`, is written back to `DM(I3,M6) u=1` from `R12` at `sw
 0x1cbfe9`: one buffer, two cursors, since the orchestrator passes the same
 pointer in `R8` and `R12`. `DM(I4+13)`/`DM(I4+14)` are written at `sw
@@ -2240,7 +2240,7 @@ checks `R6` against 6 (`compu(R6, R2)`, `R2 = 6`). **[V]**
 `0x1c6530`..`0x1c6acc` is a per-track loop (`I4 += 0xdc` at `0x1c6532`;
 `JUMP IF SZ (DB)` at `0x1c6acc` back to `0x1c6530`). In the delay slot of the
 branch at `0x1c6538`, `0x1c653b` loads `R6 = DM(I4, M5)` (Type3c, `d = 0`;
-older `tools/sharc_dev/sharcfn.py` listings printed it as a store) from
+older `tools/sharc_dev/sharcfn/` listings printed it as a store) from
 `track_base + 0x4c`, where `track_base = 0x2506ec + track * 0xdc` is built
 from the `R8` argument (`0x1c6491`, `0x1c64a8`, `0x1c64d5`, `0x1c6532`). The
 caller's `R6 = 0x3c088889` is only spilled, at `0x1c646d`. The `out/sharcdb`
@@ -2630,7 +2630,7 @@ every instruction that can write I6, I7, B6 or B7. Full writer table and
 proof: `out/sharcwriters/stack-invariant.md`/`.json` (not committed --
 built from the firmware, see CLAUDE.md). Two decode bugs in the
 (throwaway, uncommitted) census scanner were caught mid-pass by
-cross-checking against `tools/sharc_dev/sharcfn.py`'s own renderer: `merge_fields`
+cross-checking against `tools/sharc_dev/sharcfn/`'s own renderer: `merge_fields`
 already combines a form's split sub-fields (`srcureglow[1:1]`+
 `srcureglow[0:0]`, `is[2:2]`+`is[1:0]`) into one key, so re-splitting them
 from the now-absent raw sub-keys always read 0 -- caught on the
@@ -3078,7 +3078,7 @@ confirmed six; proposed as a conditional per-track state accumulator **[O]**.
 
 ## Tooling: a function dossier, and six decode gaps closed **[V]**
 
-**`tools/sharc_dev/sharcfn.py`** produces a **function dossier** in one command, replacing
+**`tools/sharc_dev/sharcfn/`** produces a **function dossier** in one command, replacing
 the setup work six agents had each been doing by hand (each wrote its own
 annotated disassembler in the scratchpad):
 
@@ -3273,7 +3273,7 @@ write M14/M13 into per-track arrays at `0x24f0ac`/`0x24f0ec` and call
 Nothing traced indexes a table by the type value. Checked by a second agent
 against the bytes, the manual and a seeded trace run.
 
-`tools/sharc_dev/sharcfn.py`'s `render_modify()` prints the MODIFY destination as the
+`tools/sharc_dev/sharcfn/`'s `render_modify()` prints the MODIFY destination as the
 `is` register; the real destination is `is XOR idis` (plus bank), as
 `tools/sharc_dev/sharc_trace.py` executes it. Do not trust `sharcfn.py --listing`
 destinations for 19a/16a/16b forms. **[V]**
@@ -3963,7 +3963,7 @@ execution, with watchpoints on `0x252df8`-`0x253df8` and
    touches its buffer).
 2. Bit clear in (1), `btst(R4, R2)` bit clear -> falls into `FUN_1c238a`
    (`0x1c245b`, reached by a plain in-function `JUMP`, not a `CALL` --
-   `tools/sharc_dev/sharcdb.py`'s own function-boundary split puts it in a
+   `tools/sharc_dev/sharcdb/`'s own function-boundary split puts it in a
    *different* `functions` row, so a pc-range filter restricted to
    `FUN_1c207b`'s own `[entry, end)` span misses it). This is the DEFAULT
    outcome from any synthetic `run_init()` state (both masks read

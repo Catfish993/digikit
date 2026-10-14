@@ -20,7 +20,7 @@ TARGET is a DM byte address (e.g. 0x252658). The tool:
    on the DM side when dmd==1, independent of the PM side's own pmd bit.
 
 2. **Resolve** -- groups the census by owning function (tools/sharc_dev/sharcinv.py's
-   own function recovery, via tools/sharc_dev/sharcfn.py's load_context/
+   own function recovery, via tools/sharc_dev/sharcfn/'s load_context/
    build_inventory: return-delimited spans split at interior call
    targets), then runs tools/sharc_dev/sharc_trace.py's forward abstract interpreter
    once per function from its entry, with every I/M/B/L register seeded as

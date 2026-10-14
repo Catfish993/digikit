@@ -158,7 +158,7 @@ def extract_mem_access(insn_type: str, f: dict):
     all (14a/14d: sharc-plus-prm pp.373-383, "DM(<addr32>)" / "PM(<addr32>)"
     direct addressing, no base register). Despite sharing DIRECT_MEM_FORMS'
     grouping with those two, Type15a is register-relative, not absolute --
-    see tools/sharc_dev/sharcfn.py's render_mem_direct docstring for the manual
+    see tools/sharc_dev/sharcfn/'s render_mem_direct docstring for the manual
     citation (pp.387-390, Figure 15-3, worked example "DM(24,I5)=TCOUNT"):
     "addr" there is a signed 32-bit offset from an I register the decoder
     never updates, not a memory address. Before this fix abs_address held

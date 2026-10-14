@@ -80,9 +80,16 @@ def documented_function_entries(notes_dir):
 
 
 def source_hashes():
+    package = os.path.join(_here, "sharcfn")
+    package_files = sorted(
+        os.path.relpath(os.path.join(root, fn), _here)
+        for root, _dirs, files in os.walk(package)
+        for fn in files
+        if fn.endswith(".py")
+    )
     return {
         name: sha256_of(os.path.join(_here, name))
-        for name in ("sharcfn.py", "sharcinv.py", "sharcflow.py", "sharcldr.py")
+        for name in (*package_files, "sharcinv.py", "sharcflow.py", "sharcldr.py")
     }
 
 

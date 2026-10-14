@@ -45,7 +45,7 @@ from .regdefs import register_effects
 #     invalidates its destination rather than guessing.
 #   - Every direct (14a/14d), indexed (3a/3b/3d/6a_mem) and immediate-offset
 #     (4a/4b/4d/15b) memory form's own addressing math, INCLUDING Type15a's
-#     I+immediate address: tools/sharc_dev/sharcfn.py's DIRECT_MEM_FORMS groups 15a
+#     I+immediate address: tools/sharc_dev/sharcfn/'s DIRECT_MEM_FORMS groups 15a
 #     with the pure-absolute 14a/14d, but PRM p.388 and tools/sharc_dev/sharc_trace.py's
 #     own "15a" handler both give it an I-register-relative address (its
 #     DM(I6-4)/DM(0xfffffffc,I6) example is the exact frame-slot pairing
@@ -59,7 +59,7 @@ from .regdefs import register_effects
 #     (a pre-existing, out-of-scope gap confirmed directly against
 #     tools/sharc_dev/sharcspec/decode_table.json's field widths and sharc_trace.py's
 #     own bank math; left alone rather than risk-edited under this task).
-#   - Type3c (the plain-R-register "DM(Ii,Mm) = Rd" encoding tools/sharc_dev/sharcfn.py
+#   - Type3c (the plain-R-register "DM(Ii,Mm) = Rd" encoding tools/sharc_dev/sharcfn/
 #     also renders as the I7/M7 stack-push idiom, but dmi/dmm are ordinary
 #     register fields -- FUN_1c15e3's workspace-copy loop uses it with
 #     dmi=I4/dmm=M6): always DM, always mandatory post-modify (no g/u

@@ -6,7 +6,8 @@ import os
 
 from tools.sharc_dev import sharcimm, sharcinv, sharcldr
 
-_here = os.path.dirname(os.path.abspath(__file__))
+# Names tools/sharc_dev (the parent of this package), as before the split.
+_here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 EXPECTED_SHA256 = {
     "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2": "dt2-1.16 section_7_BLOB.bin",

@@ -182,7 +182,7 @@ def render_mem_indexed(sw, f):
     further here -- printed as-is).
 
     3a/3b/3d name their register with the wide "ureg" field; 6a_mem instead
-    has a plain 4-bit "dreg" (R0-R15) -- same fallback tools/sharc_dev/sharcfn.py's
+    has a plain 4-bit "dreg" (R0-R15) -- same fallback tools/sharc_dev/sharcfn/'s
     render_mem_immoff() already uses for 4a/4b/4d/15b."""
     i = f.get("i", 0)
     m = f.get("m", 0)
@@ -241,7 +241,7 @@ def render_mem_immoff(sw, f, insn_type):
     (unmodified) I and only writes I+offset back afterwards (post-modify)
     -- so the address this instruction actually touches is I alone when
     u=1, not I+offset (matching tools/sharc_dev/sharc_trace.py's "4a"/"4b" handlers
-    and tools/sharc_dev/sharcdb.py's `ptr` table, both of which already draw this
+    and tools/sharc_dev/sharcdb/'s `ptr` table, both of which already draw this
     distinction). Type15b has no u bit and is always pre-modify (PRM
     p.15-11)."""
     i = f.get("i", 0)

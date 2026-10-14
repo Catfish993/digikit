@@ -209,7 +209,7 @@ def values_of(fields: dict) -> list[tuple[str, int, int]]:
     return out
 
 
-# tools/sharc_dev/sharcfn.py's module docstring: "Type10a_rel (and, as measured
+# tools/sharc_dev/sharcfn/'s module docstring: "Type10a_rel (and, as measured
 # there, Type10a_abs too) is absent from tools/sharc_dev/sharc_visa_tables.py's VISA
 # form set entirely, so any real occurrence surfaces as a disassembler
 # desync -- resynced and reported ..., not silently skipped." decode_table.
@@ -221,7 +221,7 @@ def values_of(fields: dict) -> list[tuple[str, int, int]]:
 # 2 bytes and keep going" treatment desync recovery needs. Confirmed
 # against DT2 1.16 sw 0x1c1338-based sharcdb: only 4 of 4808 raw Type10a_rel
 # matches in the whole image ever reached "aligned" status, all four raw
-# field dumps (tools/sharc_dev/sharcfn.py has no renderer for the form, again because
+# field dumps (tools/sharc_dev/sharcfn/ has no renderer for the form, again because
 # it is not real); excluding both from this table lets the sweep resync
 # through sw 0x1c4b99-0x1c4bb5 onto the real 64-bit voice-record store at sw
 # 0x1c4ba0 (Type3b, l=1, i=I4, d=store) that a Type10a_rel "hit" at sw

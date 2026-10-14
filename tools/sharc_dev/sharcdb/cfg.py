@@ -122,7 +122,7 @@ def _gather_terminators(base_sw, aligned_insns, sites):
             # loop mechanism, not an instruction-level delayed branch) --
             # the terminator is the loop's LAST body instruction, at
             # end_sw, not this DO instruction. Same end_sw formula as
-            # tools/sharc_dev/sharcfn.py's render_loop / tools/sharc_dev/sharc_trace.py's
+            # tools/sharc_dev/sharcfn/'s render_loop / tools/sharc_dev/sharc_trace.py's
             # _start_counted_loop.
             reladdr = f.get("reladdr")
             if reladdr is not None:

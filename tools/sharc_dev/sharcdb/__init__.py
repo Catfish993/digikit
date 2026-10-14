@@ -9,11 +9,11 @@ function hash for cross-image matching.
 
 This exists so a question like "who jumps into 0x1c71ec" or "what writes
 0x262138" is a `sqlite3` query in milliseconds, built once, instead of a
-fresh ~5s tools/sharc_dev/sharcfn.py load-and-decode plus a throwaway script every
+fresh ~5s tools/sharc_dev/sharcfn/ load-and-decode plus a throwaway script every
 time. It reuses every decoder already in this repo -- tools/sharc_dev/sharcldr.py
 (loader blocks, LoadedMemory, sw<->byte mapping), tools/sharc_dev/sharcinv.py (code
 block classification, function boundaries, the merged-field helper),
-tools/sharc_dev/sharcflow.py (call/return site finding, pcrel_target), tools/sharc_dev/sharcfn.py
+tools/sharc_dev/sharcflow.py (call/return site finding, pcrel_target), tools/sharc_dev/sharcfn/
 (render_instruction for the mnemonic text, register/condition naming) and
 tools/sharc_dev/sharc_disasm.py/sharcimm.py (the linear disassembler and its sweep) --
 and adds no new instruction decoding of its own.

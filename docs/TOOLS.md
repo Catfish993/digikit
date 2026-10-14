@@ -369,7 +369,7 @@ when `g==0`; dual-memory 1a/1b store on the DM side when `dmd==1`.
 (`sharcinv.py`'s own `MEM_FORMS` omits Type3c even though it has a real `d`
 bit and stores exactly like its siblings -- this tool keeps its own table.)
 
-Resolve: groups the census by owning function (`tools/sharc_dev/sharcfn.py`
+Resolve: groups the census by owning function (`tools/sharc_dev/sharcfn/`
 `load_context`/`build_inventory`) and runs `tools/sharc_dev/sharc_trace.py`'s tracer
 once per function from its entry, with every I/M/B register seeded as its
 own named symbol (so an address survives as `Affine(I6e - 12)` instead of

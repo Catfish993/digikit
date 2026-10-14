@@ -8,7 +8,8 @@ import subprocess
 
 from tools.sharc_dev import sharcinv
 
-_here = os.path.dirname(os.path.abspath(__file__))
+# Names tools/sharc_dev (the parent of this package), as before the split.
+_here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_VERSION = 16
 
@@ -31,7 +32,7 @@ DB_VERSION = 16
 # last-write-wins resolution). Both places that built the `insn`/`functions`
 # table's underlying decode -- this file's own per-code-block loop below and
 # tools/sharc_dev/sharcinv.py's analyze_block()/build_inventory() (which this file's
-# _fill_database() also calls, via tools/sharc_dev/sharcfn.py's load_context(), for
+# _fill_database() also calls, via tools/sharc_dev/sharcfn/'s load_context(), for
 # function boundaries and call/jump/return sites) -- read a code block's OWN
 # stream bytes (data[payload_offset:payload_offset+payload_len]). Both now
 # instead read the block's declared [target_address, target_address+
@@ -382,13 +383,13 @@ CREATE TABLE succ (
     image TEXT, from_block INTEGER, to_block INTEGER, kind TEXT);
 
 -- Every constant an instruction materialises as an address: a 17a/17b/16a/
--- 16b/18a/19a*/15a/14a literal (tools/sharc_dev/sharcdb.py's own `literals` table,
+-- 16b/18a/19a*/15a/14a literal (tools/sharc_dev/sharcdb/'s own `literals` table,
 -- given a role here) plus any 14a/14d absolute mem_access address (kept
 -- separate from `literals` since 14d isn't a LITERAL_FORMS entry). role:
 -- i_reg_base (a literal loaded directly into an I register -- a PM/DM table
 -- base), abs_load/abs_store (a direct absolute address, from mem_access's
 -- own direction so this never inherits a mnemonic-only bug -- see
--- tools/sharc_dev/sharcfn.py's Type3c note; 14a only -- see extract_mem_access's
+-- tools/sharc_dev/sharcfn/'s Type3c note; 14a only -- see extract_mem_access's
 -- module note on why 15a is not a direct-address form despite looking like
 -- one), literal (any other literal-carrying form: 16a/16b, 18a, 17a/17b
 -- into a non-I register, 19a* -- a modify delta, not an address; also 15a,
@@ -400,7 +401,7 @@ CREATE TABLE dataref (
     image TEXT, value INTEGER, sw INTEGER, form TEXT, role TEXT);
 
 -- Register definitions and uses, from the typed decode fields (not from
--- mnemonic text -- see tools/sharc_dev/sharcfn.py's Type3c direction bug in the task
+-- mnemonic text -- see tools/sharc_dev/sharcfn/'s Type3c direction bug in the task
 -- report). kind: compute (an ALU/MULT/SHIFT/MULTIFN/short-compute result),
 -- mem_load (a data register loaded from memory), literal (a ureg set
 -- directly from an immediate, or a hardware-loop LCNTR literal), move (a
@@ -440,7 +441,7 @@ CREATE INDEX regdef_sw ON regdef(image, sw);
 CREATE INDEX reguse_reg ON reguse(image, reg);
 CREATE INDEX reguse_sw ON reguse(image, sw);
 
--- --- analysis tables (tools/sharc_dev/sharcdb.py's analyze_image(), DB_VERSION 3) -----
+-- --- analysis tables (tools/sharc_dev/sharcdb/'s analyze_image(), DB_VERSION 3) -----
 --
 -- Built once per image from edges/succ/dataref/literals with networkx,
 -- reusing nothing decoded here: see analyze_image()'s docstring for the

@@ -860,12 +860,12 @@ None is resolved to `0x252658` yet. **[D][O]**
     14d/4d/3d: decode confidence uncertain" gaps are gone (see counts below).
 - **Database bug, form 15a: `mem_access.abs_address` was the I-register
   offset, not an address.** `extract_mem_access()`'s `DIRECT_MEM_FORMS`
-  branch (`tools/sharc_dev/sharcdb.py`) treated Type15a the same as the genuinely
+  branch (`tools/sharc_dev/sharcdb/`) treated Type15a the same as the genuinely
   absolute Type14a/14d, storing its raw `addr` field straight into
   `abs_address`. The PRM is explicit that Type15a is `DM(<data32>,Ia) =
   Ureg` / `PM(<data32>,Ic) = Ureg` (pp.387-390, Figure 16-3, worked example
   `DM(24,I5)=TCOUNT;`): an I-register-relative access the core never updates
-  I for, not a direct address -- `tools/sharc_dev/sharcfn.py`'s `render_mem_direct`
+  I for, not a direct address -- `tools/sharc_dev/sharcfn/`'s `render_mem_direct`
   already documents this correction for the disassembler's own mnemonic
   rendering and `_ptr_mem_form` already models it correctly for the `ptr`
   table; only `extract_mem_access` (mem_access) and the `extract_literal`
@@ -898,7 +898,7 @@ None is resolved to `0x252658` yet. **[D][O]**
     only Type15a's presence in the `DIRECT_MEM_FORMS` grouping (alongside
     the genuinely-absolute 14a/14d) caused this bug, and it was isolated to
     that one form. **[V]**
-- `DB_VERSION` 11 -> 12 (`tools/sharc_dev/sharcdb.py`, both changes as one bump).
+- `DB_VERSION` 11 -> 12 (`tools/sharc_dev/sharcdb/`, both changes as one bump).
   Rebuilt `out/sharcdb/dt2-1.16.sqlite` (private per-lane copy) before/after,
   same `section_7_BLOB.bin` (image sha256 unchanged):
 
@@ -950,7 +950,7 @@ None is resolved to `0x252658` yet. **[D][O]**
 ## One decode path: `decode_at()` now makes the database's own width/form choice **[V]**
 
 - Instruction decoding used to happen two ways that disagreed. The program
-  database (`tools/sharc_dev/sharcdb.py build`, via `tools/sharc_dev/sharcimm.py`'s
+  database (`tools/sharc_dev/sharcdb/ build`, via `tools/sharc_dev/sharcimm.py`'s
   `decode_all()`) walks a whole code block and re-checks a wide form's own
   width choice against its successors (`_prefer_confident_widths`, see the
   "Type22a is idle"-era `_WIDTH_LOOKAHEAD` comment this section's history
@@ -1046,7 +1046,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   stream by later blocks (mostly one large 86,216-byte `FILL` of zeros,
   block 18, plus a few small `data` patches) before `LoadedMemory`'s
   documented last-write-wins resolution reaches a final answer -- so the
-  bytes `tools/sharc_dev/sharcdb.py`'s per-block scan decoded were never resident in
+  bytes `tools/sharc_dev/sharcdb/`'s per-block scan decoded were never resident in
   the image the emulator (or `decode_at()`) actually runs from. DN2 1.11/
   1.10E's larger counts are the same block-1 pattern (2,269 rows) plus a
   second, larger, not-yet-characterized block (block 57, 10,392/9,806
@@ -1116,7 +1116,7 @@ None is resolved to `0x252658` yet. **[D][O]**
     that never reach the final image. The one-decode-path fix cannot
     "resolve" this (there is no live candidate to choose differently
     between; the input itself differs), and fixing it for real means
-    teaching `tools/sharc_dev/sharcdb.py`'s block scan to skip -- or teaching
+    teaching `tools/sharc_dev/sharcdb/`'s block scan to skip -- or teaching
     `sharc_coverage.py`'s gap report to exclude -- a `code` block a later
     block in the same stream fully overwrites, which is a database/
     lifecycle change, not a decoder one. **[V][C]** (resolved below, "Loader
@@ -1231,7 +1231,7 @@ any sw past the bank boundary, while block 57 itself extends to
 ADSP-2156x hardware reference (`out/refs/adsp-2156x-hwr`) documents the real
 size: "L2CTL0 contains 1M byte of RAM grouped into eight banks, 128K bytes
 each and 96K bytes of boot ROM" -- the old bound modeled one bank of eight.
-`L2_BYTE_LIMIT` is now `0x20100000` (the full 1 MB), and `tools/sharc_dev/sharcfn.py`'s
+`L2_BYTE_LIMIT` is now `0x20100000` (the full 1 MB), and `tools/sharc_dev/sharcfn/`'s
 `base_sw_note()` (which quoted the old bound in a diagnostic string) now
 formats it from the live constants instead of a hardcoded literal. Block 57
 stays in `KNOWN_CODE_BLOCKS`, now resolved end to end (0 stale bytes,
@@ -1319,8 +1319,8 @@ reached block 1). Updated with
 **Files touched outside this task's listed ownership.** `tools/sharc_dev/sharcinv.py`
 (`analyze_block()`, `build_inventory()`, `CODE_BLOCKS`) was edited because
 the stale-input bug lives in its `analyze_block()`/`build_inventory()`
-functions, which `tools/sharc_dev/sharcfn.py`'s `load_context()` and
-`tools/sharc_dev/sharcdb.py`'s `_fill_database()` both call into for function
+functions, which `tools/sharc_dev/sharcfn/`'s `load_context()` and
+`tools/sharc_dev/sharcdb/`'s `_fill_database()` both call into for function
 boundaries and call/jump/return sites -- fixing only this task's own files'
 decode loop would have left `functions`/`edges`/`bblocks` still built from
 block 1's stale bytes, an incoherent database. The edit is minimal (the

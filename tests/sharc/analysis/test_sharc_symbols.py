@@ -145,7 +145,7 @@ def test_literalat_checks_the_expected_form():
 
 
 def test_literalat_masks_a_sign_extended_value_to_unsigned_32_bit():
-    # tools/sharc_dev/sharcdb.py's extract_literal sign-extends; float_table_a
+    # tools/sharc_dev/sharcdb/'s extract_literal sign-extends; float_table_a
     # (0x8045a6c8) reads back negative from a signed column.
     tgt = _FakeImg("x", lambda q, a: [(0x8045A6C8 - (1 << 32), "17a")])
     value, detail = sharc_symbols.LiteralAt("base", 4, form="17a").resolve(

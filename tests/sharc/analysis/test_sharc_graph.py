@@ -31,7 +31,7 @@ LIT_SW = 0x1C5002  # `M4 = 0x1bc`, defines the M4 the load above uses
 # `bit-test(MODE1STK, mask=0x10000) -> BTF` at BTF_WRITE_SW, consumed by
 # `JUMP IF TF non-delayed` at BTF_BRANCH_SW. Before this file's own
 # per-group ASTAT modelling, defuse()'s whole-register "ASTAT" rule had no
-# def at all for a Type18a bit-test (tools/sharc_dev/sharcdb.py's register_effects
+# def at all for a Type18a bit-test (tools/sharc_dev/sharcdb/'s register_effects
 # records no regdef row for one -- it only reads a source into BTF, never
 # writes a data register), so slice(reg="ASTAT") here used to walk straight
 # past it to the last unrelated compute (BTF_UNRELATED_COMPUTE_SW, an R14

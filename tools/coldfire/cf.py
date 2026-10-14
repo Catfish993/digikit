@@ -18,7 +18,7 @@ Ad hoc SQL from the shell, without writing a script:
 
 Ghidra's call/data-ref tables miss code outside functions -- an empty
 callers()/refs_to() here is not evidence of dead code (CLAUDE.md's Ghidra
-section, tools/sharc_dev/sharcdb.py's own note); confirm with tools/coldfire/refscan.py on the
+section, tools/sharc_dev/sharcdb/'s own note); confirm with tools/coldfire/refscan.py on the
 raw image before drawing that conclusion.
 """
 
@@ -196,7 +196,7 @@ class Image:
         """Every edge (of any kind, or only `kinds` -- 'call'/'jump'/
         'cond_jump') targeting addr's owning function's entry OR addr
         itself: a JUMP into the middle of a function is a real caller too
-        (see tools/sharc_dev/sharcdb.py's own note on this -- Ghidra's own CALL-only
+        (see tools/sharc_dev/sharcdb/'s own note on this -- Ghidra's own CALL-only
         xref view misses it), not just CALL."""
         addr = self._resolve(addr_or_name)
         if addr is None:

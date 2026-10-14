@@ -63,7 +63,7 @@ def test_build_produces_expected_tables_and_counts(db_path):
 def test_function_end_uses_own_contiguous_range(db_path):
     """A function's `end` is its entry's own contiguous range, not the max
     across every disjoint chunk a scattered function can have (see the
-    module docstring's cross-reference to tools/sharc_dev/sharcdb.py's identical
+    module docstring's cross-reference to tools/sharc_dev/sharcdb/'s identical
     concern for the SHARC side)."""
     import sqlite3
 

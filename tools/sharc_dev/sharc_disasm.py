@@ -247,7 +247,7 @@ WIDTH_LOOKAHEAD = 8
 # instructions. Search farther only for an otherwise unresolved 2b/2c pair.
 WIDTH_REJOIN_LOOKAHEAD = 16
 
-# tools/sharc_dev/sharcfn.py's module docstring: Type10a_rel (and, as measured there,
+# tools/sharc_dev/sharcfn/'s module docstring: Type10a_rel (and, as measured there,
 # Type10a_abs too) is absent from tools/sharc_dev/sharc_visa_tables.py's VISA form set
 # entirely, so any real occurrence is a disassembler desync landing on a
 # coincidental bit-pattern match, not a genuine instruction -- confirmed on

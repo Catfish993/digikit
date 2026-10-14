@@ -6,7 +6,7 @@ from tools.sharc_dev import sharcfn, sharcinv
 
 # --- register def/use -------------------------------------------------------
 #
-# Mirrors tools/sharc_dev/sharcfn.py's register-operand bit layouts (Figure 18-1/18-2/
+# Mirrors tools/sharc_dev/sharcfn/'s register-operand bit layouts (Figure 18-1/18-2/
 # 18-3, Table 18-11/13/18/19/21) directly from the typed decode fields --
 # never from mnemonic text, per the Type3c direction bug in the build
 # report -- so the register identity always agrees with what that file's
@@ -48,7 +48,7 @@ def _compute_regdef_reguse(field23):
         # classify_compute()'s is_float is only correct for opcode 0x30
         # ("FN = FX*FY"); every other MULT opcode's bit 3 is MOD1's
         # Integer/Fraction result-format bit, not a float/fixed switch --
-        # see tools/sharc_dev/sharcfn.py's decode_mult for the same fix and citation.
+        # see tools/sharc_dev/sharcfn/'s decode_mult for the same fix and citation.
         is_float = opcode == 0x30
         rn, rx, ry = ((field23 >> sh) & 0xF for sh in (8, 4, 0))
         Rn, Rx, Ry = (sharcfn.reg_name(r, is_float) for r in (rn, rx, ry))
@@ -71,7 +71,7 @@ def _compute_regdef_reguse(field23):
         is_float = bool(top3 & 1)
         if d.get("is_dual_addsub"):
             # Table 18-18/19: fixed layout, no opcode sub-table -- same
-            # register math as tools/sharc_dev/sharcfn.py's decode_multifn dual branch.
+            # register math as tools/sharc_dev/sharcfn/'s decode_multifn dual branch.
             rya = (field23 & 3) + 12
             rxa = ((field23 >> 2) & 3) + 8
             rym = ((field23 >> 4) & 3) + 4
@@ -86,7 +86,7 @@ def _compute_regdef_reguse(field23):
             uses += [Rxm, Rym, Rxa, Rya]
         else:
             # The regular MUL+ALU multifunction op's ALU sub-operation is a
-            # table lookup (tools/sharc_dev/sharcfn.py's MULTIFN_ALU_SYNTAX, PGR Table
+            # table lookup (tools/sharc_dev/sharcfn/'s MULTIFN_ALU_SYNTAX, PGR Table
             # 12-12) whose operand count varies by row; left unmodelled here
             # rather than guessed.
             unknown.append("multifn_alu_compute")
@@ -98,9 +98,9 @@ def _compute_regdef_reguse(field23):
 def _shortcompute_regdef_reguse(field12):
     """Type 2c (PRM Table 17-2/18-21): RN 7:4 is always the result; the
     unary-Rx opcodes (pass/not/float, and inc/dec -- PRM's "RN = RX +/- 1"
-    reads only RX, never RN; see tools/sharc_dev/sharcfn.py's render_shortcompute)
+    reads only RX, never RN; see tools/sharc_dev/sharcfn/'s render_shortcompute)
     read only RX; every other opcode reads both RN and RX (PRM/
-    tools/sharc_dev/sharcfn.py's render_shortcompute: "RN = op(RN, RX)")."""
+    tools/sharc_dev/sharcfn/'s render_shortcompute: "RN = op(RN, RX)")."""
     opcode = (field12 >> 8) & 0xF
     rn, rx = (field12 >> 4) & 0xF, field12 & 0xF
     is_float = opcode in sharcfn.FLOAT_SHORT_OPS
@@ -114,7 +114,7 @@ def _shortcompute_regdef_reguse(field12):
 
 
 def _shiftimm_regdef_reguse(f):
-    """6a_mem's parallel ShiftImm sub-instruction (tools/sharc_dev/sharcfn.py's
+    """6a_mem's parallel ShiftImm sub-instruction (tools/sharc_dev/sharcfn/'s
     render_shiftimm): RN 7:4 is the result for every opcode this repo
     models, RX 3:0 is always read; the "or-" variants also read RN as the
     other OR operand; an opcode outside _SHIFTIMM_MNEMONICS (including
@@ -147,7 +147,7 @@ def _mem_regdef_reguse(t, f):
     from mnemonic text -- see the module docstring's Type3c note."""
     defs, uses = [], []
     if t == "3c":
-        # Not in tools/sharc_dev/sharcfn.py's DIRECT/INDEXED_MEM_FORMS (that module's
+        # Not in tools/sharc_dev/sharcfn/'s DIRECT/INDEXED_MEM_FORMS (that module's
         # render_instruction special-cases Type3c as the R2 push idiom
         # unconditionally instead); decoded directly here from its own
         # dmi/dmm/d/dreg fields (see the module docstring's Type3c note).
