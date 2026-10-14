@@ -61,7 +61,7 @@ TYPED = [
     "tools/sharc_dev/sharc_survey.py",
     "tools/sharc_dev/sharc_symbols.py",
     "tools/sharc_dev/sharc_trace.py",
-    "tools/sharc_dev/sharc_transpile.py",
+    "tools/sharc_dev/sharc_transpile",
     "tools/sharc_dev/sharc_transpile_infer.py",
     "tools/sharc_dev/sharc_transpile_run.py",
     "tools/sharc_dev/sharc_widthaudit.py",

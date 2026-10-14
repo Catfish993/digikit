@@ -167,12 +167,12 @@ def tools_env(tools_dir: str) -> dict[str, str]:
 
 def work_dir(tools_dir: str) -> str:
     dev = os.path.join(tools_dir, "sharc_dev")
-    files = [os.path.join(dev, "sharc_transpile.py")]
-    files += [
+    files = [
         os.path.join(dev, f)
         for f in os.listdir(dev)
         if f.startswith("sharc_transpile") and f.endswith(".py")
     ]
+    files += tree_files(os.path.join(dev, "sharc_transpile"), (".py",))
     files += tree_files(os.path.join(dev, "sharc_core"), (".py",))
     return os.path.join(BENCH, "work-" + sha256_files(sorted(set(files)))[:12])
 

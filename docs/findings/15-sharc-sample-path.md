@@ -587,7 +587,7 @@ Fixes:
 
 - `coupled.py` now picks the core by the device's DSP image.
 - Every generated core carries `CORE_FINGERPRINT`, a hash of
-  `tools/sharc_dev/sharc_core`, `sharc_transpile.py` and `sharc_rsgen.py`.
+  `tools/sharc_dev/sharc_core`, `sharc_transpile/`, `sharc_transpile_infer.py` and `sharc_rsgen.py`.
   `digi_env.check_generated` refuses a missing or different fingerprint
   before `coupled.py`, `native_emu.py` and `native_pgo.py` build.
   `DIGI_ALLOW_STALE_GEN=1` turns the error into a warning.

@@ -1,4 +1,4 @@
-"""The SHARC+ core's Rust translation (tools/sharc_dev/sharc_transpile.py) and the
+"""The SHARC+ core's Rust translation (tools/sharc_dev/sharc_transpile/) and the
 native core built from it (native/sharc, tools/sharc_dev/sharc_transpile_run.py).
 
 The translation itself needs no firmware: it reads tools/sharc_dev/sharc_core. The

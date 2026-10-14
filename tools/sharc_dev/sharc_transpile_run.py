@@ -1,6 +1,6 @@
 """Run the native SHARC+ core against the Python core.
 
-The native core (native/sharc, built from tools/sharc_dev/sharc_transpile.py's
+The native core (native/sharc, built from tools/sharc_dev/sharc_transpile/'s
 translation of tools/sharc_dev/sharc_core and tools/sharc_dev/sharc_rsgen.py's block code)
 implements tools/sharc_dev/sharc_diff.py's C ABI. This module adds what running it
 for real needs:

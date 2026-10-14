@@ -164,7 +164,8 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (
         (
             "tools/sharc_dev/sharc_core/",
-            "tools/sharc_dev/sharc_transpile.py",
+            "tools/sharc_dev/sharc_transpile/",
+            "tools/sharc_dev/sharc_transpile_infer.py",
             "tools/sharc_dev/sharc_rsgen.py",
             "native/sharc-gen/",
             "native/sharc-rt/",

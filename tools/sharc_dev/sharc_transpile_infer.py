@@ -1,4 +1,4 @@
-"""Type facts for tools/sharc_dev/sharc_transpile.py: mypy's view of tools/sharc_dev/sharc_core,
+"""Type facts for tools/sharc_dev/sharc_transpile/: mypy's view of tools/sharc_dev/sharc_core,
 with the core's unannotated handler parameters typed from their callers.
 
 The translator needs a static type for every expression it emits. mypy

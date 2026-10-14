@@ -9,6 +9,7 @@ import os
 import sys
 from dataclasses import dataclass
 
+from tools import REPO_ROOT
 from tools.sharc_dev import sharc_transpile_infer as infer
 
 from .fn import FnT
@@ -16,9 +17,7 @@ from .tables import BOUNDARY, DYN_CALLS, ERASED_CALLS, TRAP_CALLS, rust_ident
 from .translator import Translator
 from .types import TranspileError
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-
-ROOT = os.path.dirname(os.path.dirname(HERE))
+ROOT = str(REPO_ROOT)
 
 
 # Functions never translated: the boundary (hand-written runtime),

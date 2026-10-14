@@ -226,7 +226,7 @@ new core is worth 5-8% by earlier retrains, 0.92-0.96 ratio **[D]**).
 
 ### 3.1 Code to change
 
-- `tools/sharc_dev/sharc_transpile.py` (5311 lines): a block-concrete translation mode next to the `V`
+- `tools/sharc_dev/sharc_transpile/` (5311 lines): a block-concrete translation mode next to the `V`
   mode (`Translator.blk`): type map `VAL -> U32` for ordinary registers, `Spec`/`VI` reduced to
   `u32`/`i128` addresses, calls to `bndc::*`; the ordering analysis (`variant_order`, next to
   `_can_trap` and `variant_logs`), the per-variant register class report (extends
@@ -556,7 +556,7 @@ kept (`gen-pre-s2-20261010`) and `rsgen --step-budget` restores the old budget f
 
 ### 7.1 What changed, per item
 
-All in the files that make the generated core: `tools/sharc_dev/sharc_rsgen.py`, `tools/sharc_dev/sharc_transpile.py` (both are in
+All in the files that make the generated core: `tools/sharc_dev/sharc_rsgen.py`, `tools/sharc_dev/sharc_transpile/` (both are in
 `CORE_FINGERPRINT`: the DN2, DT2 and shared cores were regenerated, backups `gen-pre-s2-20261010`) and the runtime
 `native/sharc-rt/src/{rt.rs,rt/bnd.rs,addressing.rs}`.
 
@@ -737,7 +737,7 @@ the coupled run has, so the loop-slot code runs there as in situ.
 ### 8.2 What changed, per item
 
 Files: `native/sharc-rt/src/{addressing,mem}.rs`, `native/sharc-rt/src/rt/{bnd,periph}.rs`,
-`native/sharc/src/lib.rs`, `tools/sharc_dev/sharc_transpile.py` (in `CORE_FINGERPRINT`: DN2, DT2 and shared cores regenerated,
+`native/sharc/src/lib.rs`, `tools/sharc_dev/sharc_transpile/` (in `CORE_FINGERPRINT`: DN2, DT2 and shared cores regenerated,
 backups `gen-pre-s3-20261010`), tools `aot_entry_iter.py` (new), `aot_attrib.py`, `aot_dyntrace.py`.
 
 1. **Float helpers.** `_float_binary_add/sub` and `_float_multiply` flush both operands (`ftz32`), compute in `f32`
