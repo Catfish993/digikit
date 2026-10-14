@@ -9,7 +9,8 @@
     uv run python tools/verify.py --explain        # show the routing and the plan, run nothing
 
 python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match a changed file,
-and every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps). With
+every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
+test files that import a changed tests/support module. With
 --full it runs PY_GATE plus every suite, not all of tests/ (`mise run test` runs all of tests/).
 rust-tests runs cargo test --workspace --release. --explain takes the same options as a run, then
 prints each changed file with its matched prefix and steps, the node plan with dependencies and

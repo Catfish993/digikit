@@ -199,7 +199,7 @@ emu/             firmware extraction and the shared helpers (config, symbols, SH
 native/          Rust workspace: ColdFire core, SHARC+ engine, coupled runner (native/README.md)
 packages/web     browser panel (Astro + Solid); packages/desktop is the Tauri app
 tools/           analysis, run and measurement tools
-tests/           pytest suite (native tests live in the crates)
+tests/           pytest suite (native tests live in the crates); see docs/TESTING.md
 scenarios/       scripted panel inputs and pinned PCM hashes
 devices/*.toml   firmware hashes and panel layout per device
 docs/            findings, designs, handovers

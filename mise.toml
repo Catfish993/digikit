@@ -131,7 +131,7 @@ run = [
   "pnpm test",
   "uv run python tools/coupled.py scenario --all",
 ]
-description = "Everything except the slow gates: Python tests (one pytest process per file, in parallel: tools/test_outcomes.py run; a single pytest process over all of tests/ is not clean, see docs/TESTING.md), cargo test --workspace, web tests, every DN2 scenario pin"
+description = "Everything except the slow gates: Python tests (tools/test_outcomes.py run: one process per file, in parallel, so a state leak between files cannot fail unrelated tests, see docs/TESTING.md), cargo test --workspace, web tests, every DN2 scenario pin"
 
 [tasks."test:slow"]
 run = [

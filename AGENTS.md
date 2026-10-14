@@ -50,6 +50,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 
 ## Verify
 
+- Test layout, commands and the current baseline: docs/TESTING.md.
 - `mise run verify` runs the gate steps that the changed files need (`tools/verify.py`; default: uncommitted
   changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running). `mise run verify:full` runs every
   step with the full 134-scenario tier sweep (about 45 minutes): before merging to `main` and after changes to the
