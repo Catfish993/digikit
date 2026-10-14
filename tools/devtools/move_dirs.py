@@ -171,12 +171,15 @@ def apply_plan(root: Path, moves: dict[str, str], scans: dict[str, Scan]) -> Non
     for old, new in sorted(moves.items()):
         (root / new).parent.mkdir(parents=True, exist_ok=True)
         git(root, "mv", old, new)
-    paths = set(moves.values())
+    # git mv staged the renames. Stage only the rewritten files (all tracked), so
+    # untracked or ignored files that moved with a directory stay unstaged.
+    rewritten = set()
     for scan in scans.values():
         if scan.out != scan.text:
             (root / scan.new).write_bytes(scan.out.encode("utf-8"))
-            paths.add(scan.new)
-    git(root, "add", "-A", "--", *sorted(paths))
+            rewritten.add(scan.new)
+    if rewritten:
+        git(root, "add", "--", *sorted(rewritten))
 
 
 def build_report(

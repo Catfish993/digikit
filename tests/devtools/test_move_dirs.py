@@ -99,6 +99,23 @@ def test_apply_moves_and_rewrites(tmp_path: Path) -> None:
     assert not git(root, "diff").strip()  # everything is staged
 
 
+def test_apply_does_not_stage_untracked_or_ignored(tmp_path: Path) -> None:
+    root = make_repo(tmp_path, FILES)
+    (root / ".gitignore").write_text("*.ignored\n")
+    (root / "native/boot/loose.txt").write_text("untracked\n")
+    (root / "native/boot/cache.ignored").write_text("ignored\n")
+    code, _ = run(root, apply=True)
+    assert code == 0
+    assert (root / "packages/emulator/boot/loose.txt").exists()
+    assert (root / "packages/emulator/boot/cache.ignored").exists()
+    tracked = git(root, "ls-files").splitlines()
+    assert "packages/emulator/boot/loose.txt" not in tracked
+    assert "packages/emulator/boot/cache.ignored" not in tracked
+    status = git(root, "status", "--porcelain", "--ignored").splitlines()
+    assert "?? packages/emulator/boot/loose.txt" in status
+    assert "!! packages/emulator/boot/cache.ignored" in status
+
+
 def test_boundaries_and_relative_refs(tmp_path: Path) -> None:
     root = make_repo(tmp_path, FILES)
     code, data = run(root, apply=True)
