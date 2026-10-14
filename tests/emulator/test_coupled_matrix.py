@@ -1,5 +1,6 @@
 """tools/coupled_matrix.py: job planning, environments, aggregation, the report."""
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -107,8 +108,14 @@ def test_config_env_clears_tuning_and_sets_the_configs(monkeypatch):
     assert auto["SHARC_FAST_AUTO"] == "256,64"
 
 
-def test_binary_and_build_command_follow_the_target_dir_convention():
-    prod = cm.CONFIGS["prod"]
+def test_binary_and_build_command_follow_the_target_dir_convention(
+    tmp_path, monkeypatch
+):
+    # gen_key returns "prod" only for an existing dir equal to PROD_GEN.
+    gen = tmp_path / "gen"
+    gen.mkdir()
+    monkeypatch.setattr(native_target, "PROD_GEN", gen)
+    prod = dataclasses.replace(cm.CONFIGS["prod"], gen=gen)
     # In a lane worktree the target root is out/native/target-wt/<name>.
     target_root = native_target.TARGET_ROOT
     assert cm.binary_path(prod, None) == target_root / "prod/release/coupled-run"

@@ -66,10 +66,13 @@ def test_coupled_picks_the_gen_of_the_device_image(tmp_path, monkeypatch):
         seen.append(Path(image))
         return dt2_gen if Path(image).name == "dt2.bin" else None
 
+    dn2_gen = tmp_path / "dn2-gen"
+    dn2_gen.mkdir()
     monkeypatch.delenv("SHARC_GEN_DIR", raising=False)
+    monkeypatch.setattr(digi_env, "DEFAULT_GENERATED", dn2_gen)
     monkeypatch.setattr(digi_env, "gen_for_image", gen_for_image)
     assert coupled.generated("dt2", tmp_path / "dt2.bin") == dt2_gen
-    assert coupled.generated("dn2", tmp_path / "dn2.bin") == digi_env.DEFAULT_GENERATED
+    assert coupled.generated("dn2", tmp_path / "dn2.bin") == dn2_gen
     assert coupled.generated("dt2", Path("/x/dt2.bin")) == dt2_gen
     coupled.generated("dt2")
     assert seen[-1] == digi_env.ready_inputs(device="dt2")["DSP image"]
