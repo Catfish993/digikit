@@ -1,6 +1,6 @@
 """Tests for tools/sharc_replay.py.
 
-Two groups, the same convention tests/sharc/integration/test_sharc_harness.py uses: pure
+Two groups, the same convention tests/sharc/integration/test_sharc_harness_*.py use: pure
 helpers (describe_frame/_mono/parse_args) need no firmware and always run;
 replay() itself needs the real DT2 1.16 SHARC+ image bytes (Elektron's
 copyright, never committed here) and a real capture file (out/captures/,

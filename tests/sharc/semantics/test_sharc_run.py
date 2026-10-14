@@ -1,6 +1,6 @@
 """Synthetic tests for tools/sharc_run.py, the concrete single-path runner.
 
-Follows tests/sharc/trace/test_sharc_trace.py's convention: build tiny synthetic loader
+Follows the tests/sharc/trace/ convention: build tiny synthetic loader
 streams and Instruction records by hand rather than reading real firmware
 bytes (sections/, out/ and anything derived from them are Elektron's
 copyright and must never end up here).
@@ -37,7 +37,7 @@ DT2_116_BLOB = pathlib.Path(ROOT) / "out/sections/dt2-1.16/section_7_BLOB.bin"
 
 
 def loader_block(code, address, count, arg=0, payload=b""):
-    """Build a checksum-valid synthetic loader block (test_sharc_trace.py's
+    """Build a checksum-valid synthetic loader block (the tests/sharc/trace/ files'
     helper, duplicated rather than imported so this file stands alone)."""
     header = bytearray(struct.pack("<IIII", code | 0xAD000000, address, count, arg))
     header[2] = 0
@@ -278,7 +278,7 @@ class RunnerStepTest(unittest.TestCase):
         return fields
 
     def test_depth0_return_is_a_clean_halt_not_an_exception_from_advance(self):
-        # PGR's delayed-return idiom (pmm==6, j=1); tools/test_sharc_trace.py's
+        # PGR's delayed-return idiom (pmm==6, j=1); tests/sharc/trace/'s
         # test_type9a_abs_i4_m6_delayed_is_return_with_compute confirms
         # sharc_trace itself reports this as state.stopped ==
         # "return without followed call" for an empty call_stack -- i.e. the
@@ -453,7 +453,7 @@ class RunnerStepTest(unittest.TestCase):
         )
         # Type2a, unconditional ALU "R1 = pass R0" (cu=0, opcode=0x21,
         # rn=1, rx=0, ry=0 -- PRM Table 18-5; the same compute[22:16]/
-        # compute[15:0] split tests/sharc/trace/test_sharc_trace.py's Type2a fixtures
+        # compute[15:0] split tests/sharc/trace/'s Type2a fixtures
         # use).
         pass_field = (0x21 << 12) | (1 << 8)
         runner._cache[0x10] = insn(
@@ -602,7 +602,7 @@ class ForkDiagnosisTest(unittest.TestCase):
 
 class WatchpointTest(unittest.TestCase):
     # A Type4a (i=I6, g=DM, cond=always) store/load, matching
-    # tests/sharc/trace/test_sharc_trace.py's own Type4a fixtures. ADDR is already at
+    # tests/sharc/trace/'s own Type4a fixtures. ADDR is already at
     # or above SW_ALIAS_BASE (0x28000000) so _dm_write/_dm_read never
     # aliases it -- see sharc_core/memory.py's _canonical_dm_address --
     # keeping the watched address exactly what the test says it is.

@@ -226,7 +226,7 @@ class ConfidentDecodeTest(unittest.TestCase):
         # directly still decodes it -- decode_all()'s table simply has no
         # verdict on a PC only reachable this way (never "aligned" real
         # code), not a "this PC is definitely not code" one. See
-        # tests/sharc/trace/test_sharc_trace.py's PhaseAOpcodeRegressionTest, which
+        # tests/sharc/trace/test_sharc_trace_float.py's PhaseAOpcodeRegressionTest, which
         # relies on this for Type10a_rel's own field layout.
         data = _pack48(0xE00000000000)  # a pure Type10a_rel decode trap
         resolved = sharc_disasm.decode_confident(data, 0)

@@ -14,7 +14,7 @@ expected outputs verified independently of this file's own code (by hand,
 in the docstring/comments below -- not by calling _bff_extract/_bff_deposit
 to generate the "expected" value, which would test nothing).
 
-Kept separate from tests/sharc/trace/test_sharc_trace.py and tests/sharc/trace/test_sharc_trace_forms.py
+Kept separate from tests/sharc/trace/test_sharc_trace_flags.py and tests/sharc/trace/test_sharc_trace_forms.py
 (which cover the ShiftImm opcode dispatch table itself) so this lane's
 edits do not collide with other agents' concurrent edits to those files.
 """
@@ -33,7 +33,7 @@ compute_shift = import_module("sharc_core.compute_shift")
 
 def shiftimm_fields(opcode, data8, rn, rx, dataex=0):
     """A ShiftImm field dict for T._shift_immediate (matches the helper of
-    the same name in tests/sharc/trace/test_sharc_trace.py)."""
+    the same name in tests/support/sharc_trace_build.py)."""
     field = (opcode << 16) | (data8 << 8) | (rn << 4) | rx
     return {
         "shiftimm[22:16]": field >> 16,

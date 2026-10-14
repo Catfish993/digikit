@@ -4,7 +4,7 @@ Pure Python: every function here takes a plain `dm_read` callable (or
 plain lists), so none of this needs the real firmware image bytes -- the
 format itself (module docstring's static citations plus the isolated
 `FUN_1c74a1` cross-check) is what tools/sharc_harness.py's own
-tests/sharc/integration/test_sharc_harness.py exercises against the real image.
+tests/sharc/integration/test_sharc_harness_*.py exercise against the real image.
 """
 
 import os

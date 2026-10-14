@@ -3,7 +3,7 @@
 The static lint and the per-form WIDTH_RULES functions need no firmware
 image, so they run unconditionally. The concrete audit (audit_root, needing
 a real run_init() plus a call_render()/call_frame()) is a firmware
-integration test like tests/sharc/integration/test_sharc_harness.py's own FrameRenderFromInit
+integration test like tests/sharc/integration/test_sharc_harness_frame.py's own FrameRenderFromInit
 Test -- marked slow and skipped when the DT2 1.16 bytes are absent.
 """
 
@@ -130,7 +130,7 @@ class WidthRulesTest(unittest.TestCase):
 class ConcreteAuditTest(unittest.TestCase):
     """audit_root() against the real firmware -- run_init() is ~1.24M
     instructions (see tools/sharc_harness.py's own docstring), so this is
-    a firmware integration test like tests/sharc/integration/test_sharc_harness.py's
+    a firmware integration test like tests/sharc/integration/test_sharc_harness_frame.py's
     FrameRenderFromInitTest, not a unit test."""
 
     def test_voice_root_has_zero_mismatches(self):

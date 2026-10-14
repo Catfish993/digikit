@@ -72,7 +72,7 @@ def test_changed_support_module_runs_its_users() -> None:
     tests = verify.python_tests(["tests/support/sharc_swi.py"], False)
     assert "tests/sharc/semantics/test_sharc_software_interrupts.py" in tests
     assert "tests/sharc/semantics/test_sharc_core_timer.py" in tests
-    assert "tests/sharc/trace/test_sharc_trace.py" not in tests
+    assert "tests/sharc/trace/test_sharc_trace_control.py" not in tests
 
 
 def test_explain_runs_nothing(

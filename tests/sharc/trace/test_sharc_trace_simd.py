@@ -1,6 +1,6 @@
 """SIMD (PEx + PEy) execution tests for tools/sharc_trace.py.
 
-Companion to tests/sharc/trace/test_sharc_trace.py (not edited here, per instructions):
+Companion to the other tests/sharc/trace/ files (not edited here, per instructions):
 synthetic instruction-level tests for the PEy register file, per-PE
 computation, per-PE conditions, SIMD-mode data-move companions, and one
 real-image test over the render path's actual SIMD-enabled region
@@ -1356,7 +1356,7 @@ class RealBlobSimdRegionTest(unittest.TestCase):
     FUN_1c642a at 0x1c65b3/0x1c6c72): MODE1.PEYEN is set at 0xb8012f and
     cleared at 0xb80150. Skips cleanly when the firmware isn't present
     (CLAUDE.md: never commit sections/out; matches this repo's
-    skip-not-fail convention, e.g. tests/sharc/trace/test_sharc_trace.py's
+    skip-not-fail convention, e.g. tests/sharc/trace/test_sharc_trace_realblob.py's
     RealBlobStage6NormalWordAddressingTest)."""
 
     BLOB = os.path.join(

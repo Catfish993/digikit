@@ -6,7 +6,7 @@ firmware nor its program database. The end-to-end tests do (out/sharcdb,
 out/sections -- see the worktree's symlinks) and are skipped, not marked
 slow, when they are not available, matching tests/sharc/analysis/test_sharc_contract.py.
 run_init()/dynamic_view() are additionally marked slow (~1.24M instructions
-for init alone), like tests/sharc/integration/test_sharc_harness.py's own equivalents.
+for init alone), like tests/sharc/integration/test_sharc_harness_voice.py's own equivalents.
 """
 
 import os

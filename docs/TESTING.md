@@ -97,7 +97,7 @@ Per-file run (`test_outcomes.py run --jobs 6`) of the non-slow suite at
 | File | Time |
 | --- | --- |
 | `tests/patchkit/test_pluck.py` | 453 s |
-| `tests/sharc/integration/test_sharc_harness.py` | 210 s |
+| `tests/sharc/integration/test_sharc_harness.py` (before the split into test_sharc_harness_{audio,voice,frame,cli}.py) | 210 s |
 | `tests/patchkit/test_patchkit.py` | 111 s |
 | `tests/coldfire/test_regions.py` | 86 s |
 | `tests/patchkit/test_dsp_voice.py` | 73 s |
@@ -118,6 +118,5 @@ A checkout without them skips more.
 - Comments in `tools/sharc_core/*.py` and `native/sharc-rt/src/decode.rs` still name old test paths (`tests/test_*.py`). Editing them changes `CORE_FINGERPRINT` or rebuilds the generated core, so they change with the next core regeneration.
 - `docs/findings` and `docs/handovers` keep the old test paths (historical records). `git log --follow -- tests/<new path>` shows a file's history across the move (commit "tests: move test files into domain directories").
 - Not done yet:
-  - Splitting `tests/sharc/trace/test_sharc_trace.py` (6700 lines) and `tests/sharc/integration/test_sharc_harness.py`.
   - The TypeScript runner for regression and module tests.
   - Moving `native/` and `packages/{web,desktop}` into the planned `packages/emulator` and `apps/` layout.

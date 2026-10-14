@@ -3,7 +3,7 @@ tools/sharc_trace.py: PRM Table 17-7 "MULOP Encode Table" (out/refs/
 sharc-plus-prm/all.txt, p.17-7/17-8) rows this tracer did not previously
 decode.
 
-Kept in a separate file (rather than tests/sharc/trace/test_sharc_trace.py) so this
+Kept in a separate file (rather than the other tests/sharc/trace/ files) so this
 opcode-set's edits do not collide with other agents' concurrent edits to
 that file.
 """
@@ -26,7 +26,7 @@ def insn(name, fields, length=4, kind="confident"):
 
 def full_compute(cu, opcode, rn, rx, ry):
     """A full-compute field dict for _compute(f, short=False, ...): mirrors
-    tests/sharc/trace/test_sharc_trace.py's helper of the same name (PRM Figure 18-1,
+    tests/support/sharc_trace_build.py's helper of the same name (PRM Figure 18-1,
     p.423: mf=0, cu[21:20], opcode[19:12], rn[11:8], rx[7:4], ry[3:0])."""
     field = (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry
     return {"compute[22:16]": field >> 16, "compute[15:0]": field & 0xFFFF}
@@ -77,7 +77,7 @@ class MultiplierFractionalHelperTest(unittest.TestCase):
 class MultiplierComputeOpcodeTest(unittest.TestCase):
     """One numeric case per new cu=0x1 opcode, called directly through
     _compute (bypassing _execute) the same way
-    tests/sharc/trace/test_sharc_trace.py's AstatxFlagsTest does."""
+    tests/sharc/trace/test_sharc_trace_flags.py's AstatxFlagsTest does."""
 
     def compute(self, fields, values, special=None):
         return T._compute(fields, False, values, special)
@@ -249,7 +249,7 @@ class MultiplierComputeOpcodeTest(unittest.TestCase):
 
 class MultiplierComputeIntegrationTest(unittest.TestCase):
     """End-to-end through _execute/_apply_compute (Type 2a, always-true
-    condition), mirroring test_sharc_trace.py's
+    condition), mirroring the tests/sharc/trace/ files'
     test_full_compute_register_to_mr_move_is_recorded."""
 
     def run_one(self, state, record):

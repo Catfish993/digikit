@@ -256,7 +256,7 @@ def regenerate_slaspec(dst):
     The copy leaves out the generated SHARC_VISA tree, so what comes back is
     what the current decode_table.json and gen_sleigh.py produce with nothing
     inherited from the output already on disk. Same approach as
-    tests/sharc/generation/test_sharc_pcode.py's GeneratedLanguage."""
+    tests/sharc/generation/test_sharc_pcode_language.py's GeneratedLanguage."""
     spec = os.path.join(dst, 'sharcspec')
     shutil.copytree(os.path.join(TOOLS, 'sharcspec'), spec,
                     ignore=shutil.ignore_patterns('SHARC_VISA', '__pycache__'))
