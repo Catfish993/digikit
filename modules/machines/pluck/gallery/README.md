@@ -9,26 +9,22 @@ SWARMER: every note (up to the 16 voices) is its own string.
 
 On the **Digitakt II** the SRC page has these knobs (UI 0 to 127):
 
-| Knob | Name | What it does | Default |
-|---|---|---|---|
-| A | TUNE | fine tuning in the usual SAMPLE way | 64 (no offset) |
-| B | DECAY | how long the string rings: about 0.25 s at 32, 1 s at 64, longer above | 64 |
-| C | PICK | where the string is plucked: 0 is the end (bright), 63 is the middle (hollow, even harmonics soften) | 32 |
-| E | BRIGHT | damping of the string: low is a dull thump, high rings with all its harmonics | 80 |
-| F | COLOR | softness of the excitation: 0 is a sharp click, high is a soft finger | 40 |
-| H | LEV | track level | 100 |
+- **A, TUNE:** fine tuning in the usual SAMPLE way. Default 64 (no offset).
+- **B, DECAY:** how long the string rings: about 0.25 s at 32, 1 s at 64, longer above. Default 64.
+- **C, PICK:** where the string is plucked: 0 is the end (bright), 63 is the middle (hollow, even harmonics soften). Default 32.
+- **E, BRIGHT:** damping of the string: low is a dull thump, high rings with all its harmonics. Default 80.
+- **F, COLOR:** softness of the excitation: 0 is a sharp click, high is a soft finger. Default 40.
+- **H, LEV:** track level. Default 100.
 
 D and G are empty. The track's amp envelope, filter, FX sends and reverb work on it as on any machine.
 
 On the **Digitone II** PLUCK has one SYN page of its own (the SYN key shows it; there is no FM algorithm and no
 operator page). Knobs (UI 0 to 127), same meaning and defaults as above:
 
-| Knob | Name | Default |
-|---|---|---|
-| A | DECAY | 64 |
-| B | PICK | 32 |
-| C | BRIGHT | 80 |
-| D | COLOR | 40 |
+- **A, DECAY:** default 64.
+- **B, PICK:** default 32.
+- **C, BRIGHT:** default 80.
+- **D, COLOR:** default 40.
 
 The note pitch follows the keyboard and the sequencer (there is no TUNE knob); the last knob is the track level. The
 voice's amplitude envelope (AMP page), filter, overdrive, FX sends and reverb work on it as on the other machines:

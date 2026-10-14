@@ -110,6 +110,7 @@ def unit():
         {
             "_mf_first": FIRST,
             "_mf_count": COUNT,
+            "_mf_entries": COUNT,
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
         },
@@ -223,6 +224,60 @@ def test_list_and_rank_tables(unit):
         assert pairs[8 * i : 8 * i + 4] == be32(t) and pairs[
             8 * i + 4 : 8 * i + 8
         ] == be32(i)
+
+
+GAP = row("", "", [0] * 8 + [0x0A], 0, 0xFFFFFFFF)
+
+
+@pytest.fixture(scope="module")
+def gap_unit():
+    # rows: XSlice (7), a gap (8: nobody selected it), Pluck (9)
+    return pk_cfunit.CfUnit(
+        SYX,
+        [SRC],
+        STUBS,
+        {
+            "_mf_first": FIRST,
+            "_mf_count": 3,
+            "_mf_entries": 2,
+            "_mf_rows": ROWS,
+            "_mf_list_stock": STOCK_LIST,
+        },
+        ["mf_list_entry", "mf_rank"],
+    )
+
+
+def test_a_gap_row_is_neither_listed_nor_ranked(gap_unit, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], "ENTRIES", [ENTRIES[0], GAP, ENTRIES[1]])
+    mem = tables()
+    res = gap_unit.run_cases(
+        mem,
+        [
+            {"routine": "mf_rank", "stack": [0x1111, 0x2222, 0x3333]},
+        ],
+    )[0]
+    assert res.stub == "_mf_t_rank"
+    begin, end = res.stack[1], res.stack[2]
+    assert end - begin == 8 * (FIRST + 2), "the pairs cover the listed machines only"
+    # XSlice at position 7 (the end), Pluck at 2: the gap type 8 appears nowhere
+    expect = list(STOCK)
+    expect.insert(min(7, len(expect)), FIRST)
+    expect.insert(2, FIRST + 2)
+    got = gap_unit.run_cases(
+        mem,
+        [
+            {
+                "routine": "mf_rank",
+                "stack": [0, 0, 0],
+                "reads": [(begin, 8 * len(expect))],
+            },
+        ],
+    )[0]
+    pairs = got.reads[0]
+    assert [
+        int.from_bytes(pairs[8 * i : 8 * i + 4], "big") for i in range(len(expect))
+    ] == expect
+    assert FIRST + 1 not in expect
 
 
 # site -> (type register, stub that stands for "equal", for "not equal"); stubs named `_mf_cN` are the site address,

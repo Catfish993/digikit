@@ -1,4 +1,4 @@
-# Alone it is type 7; with machines/xslice in the set it is 8, so this test is for the cell without it.
+# Its permanent type number is 8 (core/machines types.toml), whichever other machines are selected.
 
 [test]
 name = "select_xclone"
@@ -46,7 +46,7 @@ tap = "YES"
 [[step]]
 wait_ms = 0x12c
 [[step]]
-expect_mem = { addr = 0x4265338c, mask = 0xff00, eq = 0x700 }
+expect_mem = { addr = 0x4265338c, mask = 0xff00, eq = 0x800 }
 [[step]]
 tap = "YES"
 [[step]]
@@ -64,6 +64,6 @@ wait_ms = 0x1f4
 [[step]]
 expect_pcm_db = { min = -60, max = -3 }
 [[step]]
-expect_dsp = { addr = 0x255970, hex = "07" }
+expect_dsp = { addr = 0x255970, hex = "08" }
 [[step]]
 expect_no_fault = true

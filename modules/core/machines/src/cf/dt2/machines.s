@@ -2,7 +2,7 @@
 |
 | The framework does not know the machines at build time. A content module adds an `[[entry]] registry =
 | "machines"`; patchkit lays the entries out as the table `machines.rows` (row layout in module.toml, offsets O_*
-| below), assigns the type numbers `machines.first + k` and copies the stock tables (names, permission masks,
+| below), gives every entry its permanent type number (types.toml) and copies the stock tables (names, permission masks,
 | per-type bytes, DSP selector) with one row appended per entry. These routines look the rows up at run time for a
 | type >= machines.first, and give every other type to the stock code unchanged.
 |
@@ -12,7 +12,7 @@
 | Registers named in a comment as "free" are scratch at that point of the stock code (read from the disassembly).
 |
 | Lazily built tables (mf_ensure, once, the first time a routine needs them): the displayed order of the machine
-| list (stock order with every entry inserted at its `position`), the rank pairs the sort comparator's std::map
+| list (stock order with every entry inserted at its `position`; gap rows, position -1, are not listed), the rank pairs the sort comparator's std::map
 | takes, and the std::string representations the dispatch descriptors point to (upper-cased name and short name).
 
     .text
@@ -51,6 +51,9 @@ mf_ensure:
     tst.l   %d4
     beq.s   5f
 2:  move.l  O_POS(%a2),%d0
+    addq.l  #1,%d0
+    beq.s   20f                     | position -1: a gap row (a number nobody selected): not listed
+    subq.l  #1,%d0
     cmp.l   %d3,%d0
     bls.s   3f
     move.l  %d3,%d0
@@ -64,7 +67,7 @@ mf_ensure:
     bra.s   4b
 6:  move.l  %d5,(%a0,%d0.l*4)
     addq.l  #1,%d3
-    addq.l  #1,%d5
+20: addq.l  #1,%d5
     lea     ROWSIZE(%a2),%a2
     subq.l  #1,%d4
     bne.s   2b
@@ -156,7 +159,7 @@ mf_rank:
     move.l  #mf_rank_buf,%d0
     move.l  %d0,4(%sp)
     move.l  #_mf_first,%d0
-    addi.l  #_mf_count,%d0
+    addi.l  #_mf_entries,%d0        | the listed machines (gap rows are not in mf_rank_buf)
     lsl.l   #3,%d0
     addi.l  #mf_rank_buf,%d0
     move.l  %d0,8(%sp)

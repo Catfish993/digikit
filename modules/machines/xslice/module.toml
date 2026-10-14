@@ -12,7 +12,7 @@ conflicts = []
 "dt2-1.16" = "experimental"
 "dt2-1.17" = "experimental"
 
-# The framework gives this machine the next free type number and exports it as `machines.xslice.index`.
+# The machine's type number is permanent (modules/core/machines/types.toml, "machines/xslice:xslice"); it is exported as `machines.xslice.index`.
 # f0..f8 are the nine descriptor ID fields: MANUAL SLICE's, with field 2 (an empty box on the SRC page) set to
 # 0xfa, SLICE's orphaned CFADE parameter row (finding 02, "XSLICE").
 [[entry]]

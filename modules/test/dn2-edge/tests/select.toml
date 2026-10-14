@@ -1,5 +1,5 @@
-# EDGE is the 5th entry of the machine list (before MIDI); YES commits type 5, which the DSP receives as it is; after a
-# TRIG the audio mirror (SRAM 0x8000487c, first byte) holds 5, the TX frame sends type 5 (own_dsp) and the voice sounds.
+# EDGE is the 5th entry of the machine list (before MIDI); YES commits type 8, which the DSP receives as it is; after a
+# TRIG the audio mirror (SRAM 0x8000487c, first byte) holds 8, the TX frame sends type 8 (own_dsp) and the voice sounds.
 
 [test]
 name = "select_edge"
@@ -41,9 +41,9 @@ tap = "TRIG 1"
 [[step]]
 wait_ms = 500
 [[step]]
-expect_mem = { addr = 0x8000487c, mask = 0xff000000, eq = 0x5000000 }
+expect_mem = { addr = 0x8000487c, mask = 0xff000000, eq = 0x8000000 }
 [[step]]
-expect_mem = { addr = 0x80005ef4, mask = 0xffff0000, eq = 0x50000 }
+expect_mem = { addr = 0x80005ef4, mask = 0xffff0000, eq = 0x80000 }
 [[step]]
 expect_pcm_db = { min = -120, max = 0 }
 [[step]]

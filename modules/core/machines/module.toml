@@ -20,8 +20,10 @@ conflicts = []
 #     f0 = 0xca ... f8 = 0x0a  # the nine descriptor ID fields; a parameter of core/params as "params.<id>.index"
 #     own_dsp = 1              # Digitone II: the DSP is told the machine's own type
 #
-# patchkit assigns the types `machines.first + k` in canonical module order (symbols machines.first, .count, .rows,
-# .row_size, machines.<id>.index; machines.<id>.index is the type number a DSP object or a voice entry names).
+# The type of an entry is its permanent number in types.toml (key "<module id>:<entry id>", per device; the file
+# also holds the highest supported number); patchkit refuses an entry without a number. Symbols: machines.first,
+# .count (rows incl. gaps), .entries (rows that are machines), .rows, .row_size, machines.<id>.index (the type number a
+# DSP object or a voice entry names).
 # Row layout (offsets in src/cf/*/machines.s): the order of the fields below, every field one 32-bit word.
 # Digitone II: a machine with own parameter pages adds `[[entry]] registry = "pages"` rows (documented at the registry
 # below) and, for its knobs, `registry = "params"` rows of core/params; without page rows it is a clone of `clone_of`.
@@ -40,6 +42,17 @@ name = "machines"
 first = "image.u8(cf.machines.dispatch + 1) + 1"   # `moveq #last,D1` of the dispatch: the stock type count
 max = 32
 region = "cf.expansion"
+# Permanent type numbers (types.toml, finding 02 "Stable machine type numbers"): a machine's type is its number in that
+# table, never "the k-th selected machine". A number nobody selected is a gap row: a clone of type 0 that the machine
+# list does not show (position 0xffffffff) and nobody can pick; a stored project that names it plays as type 0.
+index_table = "types.toml"
+
+[registry.gap]
+clone_of = 0
+position = 0xffffffff
+own_dsp = 0
+name = ""
+short = ""
 
 # 0, 1: the dispatch descriptor's long and short name (std::string characters), built at run time from name and short
 [[registry.field]]
@@ -273,6 +286,7 @@ devices = ["dt2"]
 [object.externs]
 _mf_first = "machines.first"
 _mf_count = "machines.count"
+_mf_entries = "machines.entries"
 _mf_rows = "machines.rows"
 _mf_list_stock = "mf_list_stock"
 _mf_t_dispatch = "hook.cf.machines.dispatch.tail"
@@ -303,6 +317,7 @@ devices = ["dn2"]
 [object.externs]
 _mf_first = "machines.first"
 _mf_count = "machines.count"
+_mf_entries = "machines.entries"
 _mf_rows = "machines.rows"
 _mf_list_stock = "mf_list_stock"
 _mf_t_dispatch = "hook.cf.machines.dispatch.tail"
@@ -372,7 +387,7 @@ devices = ["dn2"]
 op = "write"
 anchor = "cf.machines.list_alloc"
 offset = 0x2
-value = "(machines.first + machines.count) * 4"
+value = "(machines.first + machines.entries) * 4"
 width = 2
 devices = ["dt2", "dn2"]
 
@@ -380,7 +395,7 @@ devices = ["dt2", "dn2"]
 op = "write"
 anchor = "cf.machines.list"
 offset = 0x8
-value = "(machines.first + machines.count) * 4"
+value = "(machines.first + machines.entries) * 4"
 width = 2
 devices = ["dt2", "dn2"]
 
@@ -388,7 +403,7 @@ devices = ["dt2", "dn2"]
 op = "write"
 anchor = "cf.machines.list"
 offset = 0x2
-value = "mf_list_buf + (machines.first + machines.count) * 4"
+value = "mf_list_buf + (machines.first + machines.entries) * 4"
 width = 4
 devices = ["dt2", "dn2"]
 

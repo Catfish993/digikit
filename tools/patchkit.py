@@ -90,6 +90,9 @@ def bundle(extra: list[Path] | None = None) -> dict:
         files = {
             o["path"]: (m.parent / o["path"]).read_text() for o in d.get("object", [])
         }
+        for r in d.get("registry", []):  # the permanent-number tables of frameworks
+            if r.get("index_table"):
+                files[r["index_table"]] = (m.parent / r["index_table"]).read_text()
         modules.append({"manifest": m.read_text(), "files": files})
     return {"ports": ports, "modules": modules}
 

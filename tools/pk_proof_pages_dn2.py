@@ -4,11 +4,11 @@ on the Digitone II, test/dn2-pages), in the emulator, through the panel.
 
     uv run python tools/pk_proof_pages_dn2.py [--quick] [--only a,b,c,d,e] [--out DIR] [--jobs N]
 
-test/dn2-pages is a machine of type 5 with two SYN pages of its own: page 1 knobs A..D = ALPH, BETA, GAMA, DELT (sound-array
+test/dn2-pages is a machine of type 6 with two SYN pages of its own: page 1 knobs A..D = ALPH, BETA, GAMA, DELT (sound-array
 slots 25, 26, 27, 30; ranges 0..0x7f00, 0..0x3f00, 0x100..0x7f00, 0..0x7f00; defaults 0x2000, 0x1000, 0x7000, 0x4000),
 page 2 knobs A, B = EPSL, ZETA (slots 40, 41; defaults 0x800, 0x7f00). Independent parts, one daemon each:
 
-  a  select   the machine list has PAGES (5th entry, before MIDI); YES commits type 5; the SYN key shows the module's two
+  a  select   the machine list has PAGES (5th entry, before MIDI); YES commits type 6; the SYN key shows the module's two
               pages (frames differ from FM TONE's and from each other, the cycle is two pages long); the page rows read
               back from the running firmware hold the module's names, titles and codes (std::string descriptors built at
               run time); the stock FM TONE pages are unchanged by the patch (frame hashes equal to the stock firmware's)
@@ -17,7 +17,7 @@ page 2 knobs A, B = EPSL, ZETA (slots 40, 41; defaults 0x800, 0x7f00). Independe
               40, 41); the ranges clamp (BETA top 0x3f00, GAMA bottom 0x100, GAMA top 0x7f00)
   c  defaults after the machine is selected and a note starts, the words of slots 25, 26, 27, 30, 40, 41 are the module's
               defaults, not FM TONE's
-  d  persist  edit values, save the project, set the track to FM TONE, load it: type 5 is current again and the edited
+  d  persist  edit values, save the project, set the track to FM TONE, load it: type 6 is current again and the edited
               values are back; the stock firmware loads the same project without a fault (the track becomes FM TONE)
   e  stock    FM TONE (stock firmware vs patched image): SYN/FLTR/AMP page frames equal, same parameters
 
@@ -44,7 +44,7 @@ import pk_proofkit as K  # noqa: E402
 
 MODS = ["core/machines", "core/params", "test/dn2-pages"]
 PAGES_DOWNS = 4  # FM TONE, FM DRUM, WAVETONE, SWARMER, PAGES (before MIDI)
-PAGES_TYPE = 5
+PAGES_TYPE = 6  # core/machines types.toml, "test/dn2-pages:pages" on dn2
 # (encoder, sound-array slot, minimum, maximum, default) per page
 PAGE1 = [
     ("ENC A", 25, 0, 0x7F00, 0x2000),
@@ -123,7 +123,10 @@ class PagesProof(C.Dn2Proof):
             )
             v = self.hold(s, "TRIG 1")
             self.release(s, "TRIG 1")
-            self.check("the audio mirror holds type 5", self.wire_type(s) == PAGES_TYPE)
+            self.check(
+                f"the audio mirror holds type {PAGES_TYPE}",
+                self.wire_type(s) == PAGES_TYPE,
+            )
             frames = []
             for k in range(3):
                 s.do_tap("SYN")
@@ -156,7 +159,7 @@ class PagesProof(C.Dn2Proof):
                 [hex(c) for c in rows[0]["codes"]],
             )
             self.check(
-                "the rows belong to type 5",
+                f"the rows belong to type {PAGES_TYPE}",
                 all(r["machine"] == PAGES_TYPE for r in rows),
             )
             s.health("end of a")
@@ -279,8 +282,8 @@ class PagesProof(C.Dn2Proof):
             )
             types = card_overlay.sound_types(overlay.read_bytes(), type_at=0xF4)
             self.check(
-                "the saved project stores type 5 in sound records",
-                types.get(5, 0) > 0,
+                f"the saved project stores type {PAGES_TYPE} in sound records",
+                types.get(PAGES_TYPE, 0) > 0,
                 types,
             )
             s.do_tap(["FUNC", "SRC"])

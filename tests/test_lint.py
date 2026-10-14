@@ -51,6 +51,7 @@ CLEAN = [
     "tools/patched_audio_check.py",
     "tools/pk_harness.py",
     "tools/pk_new.py",
+    "tests/test_pk_types.py",
     "tools/pk_dev.py",
     "tests/patchkit_smoke/conftest.py",
     "tests/patchkit_smoke/test_pk_harness_units.py",

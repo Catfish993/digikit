@@ -972,6 +972,10 @@ type byte raw. A stock firmware loading that project, kit or sound:
 
 ### Consequences for patchkit
 
+**[C] (2026-10-14) Type numbers are permanent, not "the k-th selected machine".** The first patchkit assigned `first + k` in canonical module order,
+so a project saved with PLUCK as type 7 would load as another machine after the module set changed (a project stores only the
+number, point 2 below). See "Stable machine type numbers" at the end of this file.
+
 1. **One immediate decides whether the type survives load.** To keep type N-1 (the new highest id): raise the
    `moveq #8,D2` immediate to `N+1` (DT2 stock N = 7, new type 7 -> N = 8 -> byte `09`). Addresses of the immediate
    byte: DT2 1.16 `0x400db2eb` (function `FUN_400db24e`), 1.17 `0x400db44f` (function `0x400db3b2`); DN2 1.11
@@ -1536,3 +1540,42 @@ The routine and its contract: finding 06, "DN2 voice routine: PLUCK". Evidence (
 **Differences from the Digitakt PLUCK [D].** No TUNE and no LEV rows (the engine's level is the last knob; pitch is the voice's pitch word);
 the note's end is the engine's amplitude envelope and gate, so a long DECAY is heard only while the key is held or the AMP release is long
 (the T60 measures hold the key); the amplitude of a note is the velocity word like the Digitakt's.
+
+## Stable machine type numbers (patchkit, lane b, 2026-10-14) **[D]**
+
+**Problem [C].** `core/machines` numbered the added machines `machines.first + k` in canonical module order. The number is
+all a project stores ("Persistence of machine types", point 2), so the same project loaded as a different machine, or as
+type 0, as soon as another machine module was added or removed. The old rule is replaced.
+
+**Rule.** A machine's type is its row in `modules/core/machines/types.toml`: per device, `"<module id>:<entry id>" = number`,
+and `last`, the highest number the framework supports. Numbers are committed with the module, never reused or changed; a
+removed machine keeps its number retired. patchkit (generic, no machine code): the registry key `index_table` names the file,
+`[registry.gap]` gives the field values of a filler row. It refuses an entry without a number (the message names the key to
+add), two entries with one number (checked when the table loads), a number below `first` (stock types are never allocated)
+and a number above `last`. `mise run patch:new -- machines/NAME --machine` appends the next free number per device and says so.
+
+| device | stock types | first number | `last` | why |
+|---|---|---|---|---|
+| Digitakt II 1.16 / 1.17 | 0..6 | 7 | 23 | the DSP type -> selector table was read to entry 23 (finding 06), the entries above are not known; the frame word of type t is `0x94 + 2t` |
+| Digitone II 1.11 / 1.12 | 0..4 | 5 | 23 | chosen, equal to the Digitakt's. Firmware bounds that were read: the persistence byte (`(u8)(type + 1) < imm`, so up to 254), page tables built per type by core/machines, the FM engine knows 0..4 and treats the rest as MIDI. No table that caps the type lower was found **[O]**: the DN2 limit is a choice, not a measurement |
+
+Allocated: Digitakt II `machines/xslice:xslice` 7, `test/machine-clone:xclone` 8, `machines/pluck:pluck` 9; Digitone II
+`test/dn2-clone:fmclone` 5, `test/dn2-pages:pages` 6, `test/dn2-sine:dn2sine` 7, `test/dn2-edge:dn2edge` 8, `machines/pluck:pluck` 9.
+(`test/sine-voice` names type 8 as a literal on purpose: it adds no machine, the proof forces the wire type; it claims
+`machine.type.8`.)
+
+**Gaps.** The tables of the framework are indexed by type, so the registry spans `first ..= the highest selected number`
+(`machines.count` = rows including gaps, `machines.entries` = real machines). A number nobody selected is a **gap row**: a
+clone of type 0 (permission, per-type byte, DSP selector word), empty names, `position = 0xffffffff`. The run-time list
+builder skips a row with that position, the rank pairs and the list length use `machines.entries`, so the machine list shows
+only the selected machines; the bounds (name, permission, per-type, group, persistence immediate) use the span, so a stored
+type that names a gap loads and plays as type 0 (SAMPLE or FM TONE). PLUCK alone on the Digitakt is type 9 with rows 7 and 8
+as gaps; the plan lists them (`gaps`). The sizes of the stock tables copied into the expansion region and `dsp.l2` grow by
+one row per gap (4 to 64 bytes each).
+
+**Evidence.** `cargo test -p patchkit` (prims: numbers follow the table, not the selection order, a subset keeps its numbers,
+gap rows take `[registry.gap]`, the five refusals; frameworks: PLUCK alone is 9 with gaps `[7, 8]`, the descriptor row holds
+the module's parameter codes, row 7 is a clone of type 0 and hidden); `tests/test_pk_types.py` (every machine entry has a number
+on each device it targets, numbers unique and in range, `pk_new.allocate`); the ColdFire call harness tests of the list
+builder (`tests/test_pk_machines_fw.py`, `_dn2_fw.py`) pass unchanged. Emulator: see the results note in
+docs/plans/patchkit.md (quick-tier proofs and the smoke matrix on the permanent numbers).

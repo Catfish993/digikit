@@ -1249,3 +1249,151 @@ fn old_plans_do_not_grow_new_keys() {
         assert!(j.get(k).is_none(), "{k}");
     }
 }
+
+// ---- permanent entry numbers (registry index_table) -----------------------------------------------------------------
+
+fn nfw(table: &str) -> Module {
+    try_nfw(table).unwrap()
+}
+
+fn try_nfw(table: &str) -> patchkit::Result<Module> {
+    let text = format!(
+        "[module]\nid = \"n/fw\"\nversion = \"1.0.0\"\nname = \"n\"\ncategory = \"test\"\nstatus = \"experimental\"\nsummary = \"s\"\n{}",
+        r#"
+[[registry]]
+name = "nums"
+first = "image.u8(cf.main + 8) + 100"
+max = 6
+region = "cf.expansion"
+index_table = "nums.toml"
+[registry.gap]
+tag = 0xff
+[[registry.field]]
+name = "tag"
+kind = "u8"
+[[registry.field]]
+name = "label"
+kind = "cstr"
+default = ""
+"#
+    );
+    let table = table.to_string();
+    let read = move |_p: &str| -> patchkit::Result<String> { Ok(table.clone()) };
+    Module::from_parts(&text, &read)
+}
+
+fn nentry(id: &str, tag: u32) -> String {
+    format!("[[entry]]\nregistry = \"nums\"\nid = \"{id}\"\ntag = {tag}\n")
+}
+
+#[test]
+fn entries_take_their_permanent_numbers_and_the_gaps_are_filled() {
+    need_image!(DT2);
+    let (main, _) = stock_main(DT2);
+    let first = main[8] as i64 + 100;
+    let table = format!(
+        "[dt2]\nlast = {}\n[dt2.alloc]\n\"n/a:one\" = {}\n\"n/a:two\" = {}\n\"n/b:three\" = {}\n",
+        first + 4,
+        first + 3,
+        first + 1,
+        first + 4
+    );
+    let lib = library(vec![
+        nfw(&table),
+        module(
+            "n/a",
+            "requires = [\"n/fw\"]",
+            &(nentry("one", 1) + &nentry("two", 2)),
+            None,
+        ),
+        module("n/b", "requires = [\"n/fw\"]", &nentry("three", 3), None),
+    ]);
+    // all three: numbers are the table's, not the selection order's
+    let out = run(&lib, &["n/b", "n/a", "n/fw"]).unwrap();
+    let rows = sym(&out, "n/fw", "nums.rows");
+    assert_eq!(sym(&out, "n/a", "nums.one.index") as i64, first + 3);
+    assert_eq!(sym(&out, "n/a", "nums.two.index") as i64, first + 1);
+    assert_eq!(sym(&out, "n/b", "nums.three.index") as i64, first + 4);
+    assert_eq!(
+        sym(&out, "n/fw", "nums.count"),
+        5,
+        "rows: first ..= highest"
+    );
+    assert_eq!(sym(&out, "n/fw", "nums.entries"), 3);
+    let row_size = sym(&out, "n/fw", "nums.row_size") as usize;
+    let t = read_cf(&out, rows, 5 * row_size);
+    let tags: Vec<u8> = (0..5).map(|k| t[k * row_size]).collect();
+    assert_eq!(tags, [0xff, 2, 0xff, 1, 3], "gap rows take [registry.gap]");
+    let j = serde_json::to_value(&out.plan).unwrap();
+    assert_eq!(j["registries"][0]["gaps"], json!([first, first + 2]));
+    // a subset keeps the numbers; the table ends at the highest selected
+    let out = run(&lib, &["n/fw", "n/a"]).unwrap();
+    assert_eq!(sym(&out, "n/a", "nums.two.index") as i64, first + 1);
+    assert_eq!(sym(&out, "n/a", "nums.one.index") as i64, first + 3);
+    assert_eq!(sym(&out, "n/fw", "nums.count"), 4);
+    // an entry without a number, a number below first, above last, and a table with a duplicate number
+    let lib = library(vec![
+        nfw(&format!(
+            "[dt2]\nlast = {}\n[dt2.alloc]\n\"n/a:one\" = {}\n",
+            first + 4,
+            first
+        )),
+        module(
+            "n/a",
+            "requires = [\"n/fw\"]",
+            &(nentry("one", 1) + &nentry("two", 2)),
+            None,
+        ),
+    ]);
+    expect_err(
+        run(&lib, &["n/fw", "n/a"]),
+        "n/a:two has no number in the allocation table",
+    );
+    let lib = library(vec![
+        nfw(&format!(
+            "[dt2]\nlast = {}\n[dt2.alloc]\n\"n/a:one\" = {}\n",
+            first + 4,
+            first - 1
+        )),
+        module("n/a", "requires = [\"n/fw\"]", &nentry("one", 1), None),
+    ]);
+    expect_err(run(&lib, &["n/fw", "n/a"]), "stock one");
+    expect_err(
+        try_nfw("[dt2]\nlast = 102\n[dt2.alloc]\n\"n/a:one\" = 103\n"),
+        "outside 0..=",
+    );
+    expect_err(
+        try_nfw("[dt2]\nlast = 20\n[dt2.alloc]\n\"n/a:one\" = 9\n\"n/a:two\" = 9\n"),
+        "both have number 9",
+    );
+    // no section for the device
+    let lib = library(vec![
+        nfw(&format!("[dn2]\nlast = {}\n", first + 4)),
+        module("n/a", "requires = [\"n/fw\"]", &nentry("one", 1), None),
+    ]);
+    expect_err(run(&lib, &["n/fw", "n/a"]), "no [dt2] section");
+}
+
+#[test]
+fn requires_are_added_and_cycles_and_missing_modules_refused() {
+    let lib = library(vec![
+        module("c/a", "requires = [\"c/b\"]", "", None),
+        module("c/b", "requires = [\"c/c\"]", "", None),
+        module("c/c", "", "", None),
+        module("c/x", "requires = [\"c/y\"]", "", None),
+        module("c/y", "requires = [\"c/x\"]", "", None),
+        module("c/m", "requires = [\"c/none\"]", "", None),
+    ]);
+    let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let (all, added) = lib.with_requires(&ids(&["c/a"])).unwrap();
+    assert_eq!(all, ids(&["c/a", "c/c", "c/b"]));
+    assert_eq!(added, ids(&["c/c", "c/b"]));
+    let (all, added) = lib.with_requires(&ids(&["c/c", "c/a"])).unwrap();
+    assert_eq!((all.len(), added), (3, ids(&["c/b"])));
+    expect_err(lib.with_requires(&ids(&["c/x"])), "requires cycle");
+    expect_err(
+        lib.with_requires(&ids(&["c/m"])),
+        "c/m requires c/none, which is not in the module library",
+    );
+    expect_err(lib.with_requires(&ids(&["nope"])), "unknown module nope");
+}

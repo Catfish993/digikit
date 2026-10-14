@@ -297,7 +297,9 @@ fn a_digitakt_machine_is_refused_on_the_digitone() {
     // MANUAL SLICE (type 6) is not a Digitone II type: the clone's table reads lie outside the anchors
     let e = err_of(r);
     assert!(
-        e.contains("outside the anchor") || e.contains("anchor"),
+        e.contains("outside the anchor")
+            || e.contains("anchor")
+            || e.contains("no number in the allocation table"),
         "{e}"
     );
 }
@@ -347,7 +349,13 @@ fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
         // the machine's fields carry the assigned codes
         let m = reg(&p, "machines");
         let main = Main::new(&a.syx, stock_len(file));
-        let rows = main.u32s(m["addr"].as_u64().unwrap() as u32, 16);
+        // PLUCK's permanent number is 9: rows 7 and 8 are gaps (clones of type 0, not listed)
+        assert_eq!(m["gaps"], serde_json::json!([7, 8]));
+        assert_eq!(m["entries"][0]["index"], 9);
+        let rows = main.u32s(m["addr"].as_u64().unwrap() as u32, 48);
+        assert_eq!(rows[16 + 12], 0xffff_ffff, "gap row position: hidden");
+        assert_eq!(rows[16 + 11], 0, "gap row clones type 0");
+        let rows = &rows[32..];
         assert_eq!(
             &rows[2..11],
             &[0xca, 0x113, 0x114, 0, 0x115, 0x116, 0, 0xd1, 0x0a]

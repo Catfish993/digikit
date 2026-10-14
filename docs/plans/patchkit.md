@@ -133,7 +133,7 @@ patching never rebuilds the emulator (patched images boot through `boot_for_base
 | `mise run patch:dev -- --modules a,b` | Watch, rebuild, patch, inject |
 | `mise run patch:test [-- --matrix]` | Harness over the control socket |
 | `mise run port:resolve -- X.syx` | Generate or check a port file |
-| `mise run fw:onboard -- X.syx` | Extract, databases, names, port for a new firmware |
+| `mise run fw:onboard -- X.syx` | **Not built (backlog)**: extract, databases, names, port for a new firmware |
 
 Inject modes: DSP-only changes hot (exists); ColdFire changes through a coupled cold boot to ready cached by
 (MAIN sha, DSP sha) (Phase 0.6); `--hot` for code-only ColdFire edits that a module marks hot-safe.
@@ -586,6 +586,33 @@ case; stubs for tails and exits), `tests/test_pk_machines_fw.py`, `_dn2_fw.py`, 
 manifest's row expressions are checked against the Rust row builders with `tools/pk_expr.py`). Waits for lane a: linking,
 apply, every proof (3b.3).
 
+### Stable machine type numbers and CLI requires (2026-10-14, lane `b`)
+
+Problem: `core/machines` numbered machines `first + k` in module order, and a project stores only the number (findings 02,
+"Persistence"): the same project could load as another machine after the module set changed. Built:
+
+- **Permanent numbers.** `modules/core/machines/types.toml` per device (`"<module id>:<entry id>" = n`, `last`). Generic
+  registry keys in patchkit: `index_table = "types.toml"` and `[registry.gap]`; the registry then spans `first ..= highest
+  selected number`, numbers nobody selected are gap rows (clone of type 0, `position = 0xffffffff`, hidden by the list builder
+  and the rank pairs; a stored type that names one plays as type 0). New symbols `<reg>.entries`; plan.json lists `gaps`.
+  Refused: an entry with no number, a duplicate number (when the table loads), a number below `first` or above `last`.
+  DT2 `last` = 23 (the DSP selector table was read to 23); DN2 `last` = 23 chosen, no firmware cap found. Allocated: DT2 xslice 7,
+  xclone 8, pluck 9; DN2 fmclone 5, pages 6, dn2sine 7, dn2edge 8, pluck 9 (PLUCK alone on the Digitakt is now type 9, rows 7
+  and 8 are gaps). `mise run patch:new -- machines/NAME --machine [--devices dt2,dn2]` appends the next free number and says so.
+  Rule and table in modules/README.md; the [C] and the evidence in findings 02, "Stable machine type numbers".
+- **CLI requires.** `patchkit apply|check|explain` (and so `mise run patch`) add the requirements of the selection and print
+  `added by requires: ...`; `patchkit.wasm` does the same (byte-identical output to the CLI for `machines/pluck` alone on both
+  devices); an unknown module, a missing requirement and a `requires` cycle are refused with the module names. `Library::with_requires`.
+- Small: the PLUCK gallery README uses lists (the gallery renders no tables); `fw:onboard` is marked not built (backlog).
+
+Verified (quick proof tier, no full tiers): `cargo test -p patchkit` (all; new: allocation and gap tests in `tests/prims.rs`,
+requires/cycle test, PLUCK-is-9 in `tests/frameworks.rs`), 82 Python tests of the patchkit files (new `tests/test_pk_types.py`,
+a gap-row case in `tests/test_pk_machines_fw.py`), `pnpm --dir packages/web test` 29 of 29, `mise run patch:proofs` 10 of 10
+(gain dt2/dn2, drive, voice dt2/dn2, machines dt2/dn2, pages dn2, pluck dt2/dn2; the PLUCK and PAGES proofs now expect types 9 and 6,
+the others did not change), smoke matrix 15 of 15 cells (DT2 1.17 and 1.16, DN2 1.12; 11 on the first run, the other 4 after the `expect_mem` / `expect_dsp` type
+constants of the select tests changed to the permanent numbers: machine-clone 8, pluck 9 on both devices, dn2-sine 7, dn2-edge 8). No frame golden
+changed and none was re-recorded: the machine list shows the same entries in the same order, gap rows are hidden.
+
 ### Phase 3b.1 results (2026-10-14, lane `a`)
 
 Built: `native/patchkit/src/expr.rs` (P3), `prim.rs` (manifest checks, registry and section builders, ColdFire site
@@ -884,4 +911,4 @@ best mitigation available. Ranked by what a failure costs.
 | Projects saved on patched firmware break stock firmware | Phase 3 persistence check; machines reuse the 8 engine slots |
 | New parameters not storable or p-lockable | Prefer the 8 positional engine slots and discarded frame words in v1 |
 | DSP overrun on hardware | Idle-loop headroom budget in the harness |
-| New Elektron OS | Signature-based ports; `fw:onboard`; 1.17 is the first test |
+| New Elektron OS | Signature-based ports; `fw:onboard` (not built, backlog); 1.17 is the first test |

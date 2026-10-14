@@ -163,6 +163,19 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
             return Err(err!("{id}: registry {}: max is 0", r.name));
         }
         expr::parse(&r.first.text()).map_err(|e| err!("{id}: registry {} first: {e}", r.name))?;
+        if r.gap.is_some() && r.index_table.is_none() {
+            return Err(err!(
+                "{id}: registry {}: gap rows only exist with an index_table",
+                r.name
+            ));
+        }
+        if let Some(g) = &r.gap {
+            for k in g.keys() {
+                if !r.field.iter().any(|f| f.name == *k) {
+                    return Err(err!("{id}: registry {}: gap names no field {k}", r.name));
+                }
+            }
+        }
         let mut seen: Vec<&str> = vec![];
         for f in &r.field {
             if !ident_ok(&f.name) || matches!(f.name.as_str(), "registry" | "id" | "devices") {
@@ -256,7 +269,9 @@ fn toml_text(v: &toml::Value, k: FKind) -> Result<String> {
 
 pub struct ActiveEntry<'a> {
     pub owner: &'a Module,
-    pub def: &'a EntryDef,
+    pub def: std::borrow::Cow<'a, EntryDef>,
+    /// a filler row of a registry with an `index_table`: a number nobody selected (no symbol, no claim)
+    pub gap: bool,
 }
 
 pub struct ActiveReg<'a> {
@@ -264,6 +279,10 @@ pub struct ActiveReg<'a> {
     pub def: &'a RegistryDef,
     pub entries: Vec<ActiveEntry<'a>>,
     pub kinds: Vec<FKind>,
+    /// the registry's allocation table (`index_table`)
+    pub table: Option<&'a AllocTable>,
+    /// entries that are not gaps
+    pub live: usize,
     /// Byte offset of each field in a row (natural alignment).
     pub offsets: Vec<usize>,
     pub row_size: usize,
@@ -338,6 +357,8 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
                 def: d,
                 entries: vec![],
                 kinds,
+                table: m.alloc.get(&d.name),
+                live: 0,
                 offsets,
                 row_size: at.div_ceil(widest) * widest,
             });
@@ -368,7 +389,11 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
                     ));
                 }
             }
-            r.entries.push(ActiveEntry { owner: m, def: e });
+            r.entries.push(ActiveEntry {
+                owner: m,
+                def: std::borrow::Cow::Borrowed(e),
+                gap: false,
+            });
         }
         for s in m.manifest.section.iter().filter(|s| on(&s.devices, dev)) {
             if act.sections.iter().any(|x| x.def.name == s.name) {
@@ -376,6 +401,9 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
             }
             act.sections.push(ActiveSection { owner: m, def: s });
         }
+    }
+    for r in &mut act.regs {
+        r.live = r.entries.len();
     }
     for r in &act.regs {
         if r.entries.len() > r.def.max as usize {
@@ -406,6 +434,104 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
         }
     }
     Ok(act)
+}
+
+impl<'a> Active<'a> {
+    /// Registries with an `index_table`: give every entry its permanent number and fill the numbers nobody selected
+    /// with gap rows, so `entries[k]` has index `first + k`. `firsts` is `first` of each registry (from the image).
+    pub fn layout(&mut self, firsts: &[i64], dev: &str) -> Result<()> {
+        for (ri, r) in self.regs.iter_mut().enumerate() {
+            let Some(table) = r.table else { continue };
+            if r.entries.is_empty() {
+                continue;
+            }
+            let first = firsts[ri];
+            let who = r.owner.id().to_string();
+            let da = table.devices.get(dev).ok_or_else(|| {
+                err!(
+                    "{who}: registry {}: its allocation table has no [{dev}] section",
+                    r.def.name
+                )
+            })?;
+            let mut placed: Vec<(i64, ActiveEntry<'a>)> = vec![];
+            for e in std::mem::take(&mut r.entries) {
+                let key = format!("{}:{}", e.owner.id(), e.def.id);
+                let n = *da.alloc.get(&key).ok_or_else(|| {
+                    err!(
+                        "{key} has no number in the allocation table of registry {} ({}, [{dev}]): the module is not built for {dev}, or add `\"{key}\" = <free number>`",
+                        r.def.name,
+                        r.def.index_table.as_deref().unwrap_or("?")
+                    )
+                })?;
+                if n < first {
+                    return Err(err!(
+                        "{key}: number {n} is below {first}, the first number that is not a stock one (registry {})",
+                        r.def.name
+                    ));
+                }
+                if n > da.last {
+                    return Err(err!(
+                        "{key}: number {n} is above the framework's last supported number {} ([{dev}], registry {})",
+                        da.last,
+                        r.def.name
+                    ));
+                }
+                placed.push((n, e));
+            }
+            placed.sort_by_key(|(n, _)| *n);
+            for w in placed.windows(2) {
+                if w[0].0 == w[1].0 {
+                    return Err(err!(
+                        "registry {}: {}:{} and {}:{} have the same number {}",
+                        r.def.name,
+                        w[0].1.owner.id(),
+                        w[0].1.def.id,
+                        w[1].1.owner.id(),
+                        w[1].1.def.id,
+                        w[0].0
+                    ));
+                }
+            }
+            let span = (placed.last().unwrap().0 - first + 1) as usize;
+            if span > r.def.max as usize {
+                return Err(err!(
+                    "registry {}: the highest number {} spans {span} rows, at most {}",
+                    r.def.name,
+                    placed.last().unwrap().0,
+                    r.def.max
+                ));
+            }
+            let gap_def = EntryDef {
+                registry: r.def.name.clone(),
+                id: "(gap)".into(),
+                devices: vec![],
+                fields: r.def.gap.clone().unwrap_or_default(),
+            };
+            let mut it = placed.into_iter().peekable();
+            for slot in 0..span {
+                let n = first + slot as i64;
+                if it.peek().is_some_and(|(k, _)| *k == n) {
+                    r.entries.push(it.next().unwrap().1);
+                } else {
+                    r.entries.push(ActiveEntry {
+                        owner: r.owner,
+                        def: std::borrow::Cow::Owned(gap_def.clone()),
+                        gap: true,
+                    });
+                }
+            }
+            for fi in 0..r.def.field.len() {
+                for e in r.entries.iter().filter(|e| e.gap) {
+                    r.text(fi, e).map_err(|e| {
+                        err!(
+                            "{e} (a gap row takes its fields from [registry.gap] and the defaults)"
+                        )
+                    })?;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// The scope an expression is evaluated in.
@@ -483,6 +609,9 @@ pub struct PlanRegistry {
     /// (field, kind, byte offset in the row)
     pub fields: Vec<(String, String, u64)>,
     pub entries: Vec<PlanEntry>,
+    /// indexes of the gap rows (registries with an `index_table`)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]

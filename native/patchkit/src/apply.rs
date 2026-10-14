@@ -719,7 +719,27 @@ pub fn apply_with(
     let in_expansion = order.iter().any(|i| i == EXPANSION);
 
     // Registries, entries and sections of the primitives (P1, P2), for this device.
-    let active = prim::collect(lib, &order, &dev)?;
+    let mut active = prim::collect(lib, &order, &dev)?;
+    {
+        let anchor_fn = |n: &str| port.anchor(n).map(|a| anchor_value(a) as i64);
+        let image_fn = |n: &str, off: i64, w: u8| image_read(&mem, port, n, off, w);
+        let empty: BTreeMap<String, u64> = BTreeMap::new();
+        let sc = prim::Scope {
+            syms: &empty,
+            anchor: &anchor_fn,
+            image: &image_fn,
+            this: None,
+            fields: None,
+        };
+        let mut firsts = vec![];
+        for r in &active.regs {
+            firsts.push(
+                crate::expr::eval_str(&r.def.first.text(), &sc)
+                    .map_err(|e| err!("{}: registry {} first: {e}", r.owner.id(), r.def.name))?,
+            );
+        }
+        active.layout(&firsts, &dev)?;
+    }
 
     // Claims: one owner per resource; every registry entry claims `<registry>.<id>`.
     let mut claims: BTreeMap<String, String> = BTreeMap::new();
@@ -738,7 +758,7 @@ pub fn apply_with(
         }
     }
     for r in &active.regs {
-        for e in &r.entries {
+        for e in r.entries.iter().filter(|e| !e.gap) {
             let res = format!("{}.{}", r.def.name, e.def.id);
             if let Some(prev) = claims.insert(res.clone(), e.owner.id().to_string()) {
                 return Err(err!("{} and {prev} both claim {res}", e.owner.id()));
@@ -973,9 +993,10 @@ pub fn apply_with(
             let n = &r.def.name;
             add(r.owner, format!("{n}.first"), stg.reg_first[ri] as u64)?;
             add(r.owner, format!("{n}.count"), r.entries.len() as u64)?;
+            add(r.owner, format!("{n}.entries"), r.live as u64)?;
             add(r.owner, format!("{n}.rows"), reg_at[ri].0)?;
             add(r.owner, format!("{n}.row_size"), r.row_size as u64)?;
-            for (k, e) in r.entries.iter().enumerate() {
+            for (k, e) in r.entries.iter().enumerate().filter(|(_, e)| !e.gap) {
                 add(
                     e.owner,
                     format!("{n}.{}.index", e.def.id),
@@ -1085,10 +1106,18 @@ pub fn apply_with(
                     .enumerate()
                     .map(|(i, f)| (f.name.clone(), f.kind.clone(), r.offsets[i] as u64))
                     .collect(),
+                gaps: r
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, e)| e.gap)
+                    .map(|(k, _)| (stg.reg_first[ri] + k as i64) as u64)
+                    .collect(),
                 entries: r
                     .entries
                     .iter()
                     .enumerate()
+                    .filter(|(_, e)| !e.gap)
                     .map(|(k, e)| prim::PlanEntry {
                         id: e.def.id.clone(),
                         module: e.owner.tag(),
