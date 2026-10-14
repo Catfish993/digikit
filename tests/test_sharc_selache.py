@@ -4,8 +4,9 @@ import os
 import pathlib
 import sys
 import unittest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import sharc_selache as S  # noqa: E402  # pyright: ignore[reportMissingImports]
 

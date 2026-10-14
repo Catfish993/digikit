@@ -1,11 +1,11 @@
 """tools/regions.py static analysis on the extracted sections (skipped without them)."""
 
 import sys
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import regions  # noqa: E402

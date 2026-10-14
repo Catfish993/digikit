@@ -6,8 +6,9 @@ import struct
 import sys
 import unittest
 from importlib import import_module
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 
 F = import_module("sharc_frontier")
 T = import_module("sharc_trace")

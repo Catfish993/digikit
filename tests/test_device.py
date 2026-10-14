@@ -15,9 +15,10 @@ import tempfile
 import unittest
 
 from emu import device
+from support.paths import REPO_ROOT
 
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = str(REPO_ROOT)
 DEVICES = os.path.join(REPO, 'devices')
 
 SYNTHETIC = '''

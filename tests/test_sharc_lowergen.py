@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import pathlib
 import sys
+from support.paths import REPO_ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import sharc_lowergen as g  # noqa: E402

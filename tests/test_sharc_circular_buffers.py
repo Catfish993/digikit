@@ -7,11 +7,11 @@ neither updates I nor wraps; L is scaled by the access size in byte space.
 """
 
 import sys
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 import sharc_trace as T
 from sharc_core import memory as m
 from sharc_core.values import Const, Unknown

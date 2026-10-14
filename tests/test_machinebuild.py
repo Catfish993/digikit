@@ -8,16 +8,17 @@ would have caught that in milliseconds instead of a hung boot.
 import os
 import sys
 import unittest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools'))
+    str(REPO_ROOT), 'tools'))
 
 import machinebuild as mb
 import machinepatch as mp
 import machineprofile as prof
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = str(REPO_ROOT)
 DT2_116_IMAGE = os.path.join(REPO, 'out', 'sections', 'dt2-1.16',
                              'section_3_MAIN_OS.bin')
 DT2_116_AVAILABLE = (os.path.exists(DT2_116_IMAGE)

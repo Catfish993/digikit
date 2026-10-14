@@ -4,8 +4,9 @@ import pathlib
 import sys
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 SYX = ROOT / "Digitakt_II_OS1.16.syx"
 pytestmark = pytest.mark.skipif(
     not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in the repo root"

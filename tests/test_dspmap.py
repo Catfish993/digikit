@@ -3,9 +3,10 @@
 import os
 import sys
 import unittest
+from support.paths import REPO_ROOT
 
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools'))
+    str(REPO_ROOT), 'tools'))
 
 import dspmap  # noqa: E402
 

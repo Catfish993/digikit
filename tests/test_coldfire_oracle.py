@@ -13,8 +13,9 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = REPO_ROOT
 FIXTURES = ROOT / "tests" / "fixtures" / "coldfire"
 EXPECTED = FIXTURES / "mcf54415-oracle.json"
 LANGUAGES = ROOT / "tools" / "ghidra" / "ColdfireEMAC" / "data" / "languages"

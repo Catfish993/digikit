@@ -2,9 +2,10 @@
 
 import importlib.util
 import sys
-from pathlib import Path
 
-TOOL = Path(__file__).resolve().parents[1] / "tools" / "blocktrans_coverage.py"
+from support.paths import REPO_ROOT
+
+TOOL = REPO_ROOT / "tools" / "blocktrans_coverage.py"
 _spec = importlib.util.spec_from_file_location("blocktrans_coverage", TOOL)
 bc = importlib.util.module_from_spec(_spec)
 sys.modules["blocktrans_coverage"] = bc

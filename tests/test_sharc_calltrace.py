@@ -14,8 +14,9 @@ import sys
 import unittest
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 import sharc_calltrace as ct  # noqa: E402
 import sharc_trace as st  # noqa: E402
 

@@ -16,8 +16,9 @@ from importlib import import_module
 from unittest.mock import patch
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 sr = import_module("sharc_run")
 T = import_module("sharc_trace")
 Instruction = import_module("sharc_disasm").Instruction
@@ -31,7 +32,7 @@ L = import_module("sharcldr")
 # the time; tools/sharc_harness.py is not being edited by anyone else here).
 h = import_module("sharc_harness")
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 DT2_116_BLOB = pathlib.Path(ROOT) / "out/sections/dt2-1.16/section_7_BLOB.bin"
 
 

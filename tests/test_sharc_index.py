@@ -7,8 +7,9 @@ import tempfile
 import unittest
 from importlib import import_module
 from unittest.mock import patch
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 I = import_module("sharc_index")
 Instruction = import_module("sharc_disasm").Instruction
 

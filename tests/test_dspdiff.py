@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import io
-import pathlib
 import struct
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+from support.paths import REPO_ROOT
+
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 import dspdiff as dd  # noqa: E402
 

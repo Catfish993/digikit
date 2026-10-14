@@ -13,7 +13,9 @@ import sys
 import unittest
 import wave
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+from support.paths import REPO_ROOT
+
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 import sharc_dac as dac  # noqa: E402
 
 

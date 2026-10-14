@@ -7,11 +7,11 @@ manifest honest until it lands."""
 
 import sys
 import tomllib
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import pk_cfunit  # noqa: E402

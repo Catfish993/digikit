@@ -7,11 +7,11 @@ import struct
 import sys
 import tempfile
 import unittest
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import sharc_lp0 as lp  # noqa: E402

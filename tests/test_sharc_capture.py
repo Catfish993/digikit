@@ -14,7 +14,9 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from support.paths import REPO_ROOT
+
+sys.path.insert(0, str(REPO_ROOT))
 
 from emu.sharc_capture import (  # noqa: E402
     MAGIC,

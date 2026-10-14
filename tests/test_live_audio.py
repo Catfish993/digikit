@@ -13,8 +13,9 @@ import sys
 import wave
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(REPO_ROOT))
 
 from tools.live_audio import LiveAudio, LiveStats, _default_library_path  # noqa: E402
 

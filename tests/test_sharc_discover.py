@@ -15,8 +15,9 @@ import pytest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from unittest.mock import patch
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 sharc_disasm = importlib.import_module("sharc_disasm")
 D = importlib.import_module("sharc_discover")
@@ -578,9 +579,9 @@ class FirmwareIntegrationTest(unittest.TestCase):
             # same canonical report and read-only warm path without making the
             # suite pay for a serial whole-image writer census.
             cold_jobs = min(8, os.cpu_count() or 1)
-            subprocess.run([*base, "--jobs", str(cold_jobs), "-o", str(first_path)], check=True, cwd=pathlib.Path(__file__).parents[1], env=first_env)
+            subprocess.run([*base, "--jobs", str(cold_jobs), "-o", str(first_path)], check=True, cwd=REPO_ROOT, env=first_env)
             mtime = index.stat().st_mtime_ns
-            subprocess.run([*base, "--jobs", "1", "-o", str(second_path)], check=True, cwd=pathlib.Path(__file__).parents[1], env=second_env)
+            subprocess.run([*base, "--jobs", "1", "-o", str(second_path)], check=True, cwd=REPO_ROOT, env=second_env)
             self.assertEqual(mtime, index.stat().st_mtime_ns)
             first, second = first_path.read_bytes(), second_path.read_bytes()
         self.assertEqual(first, second)

@@ -17,9 +17,10 @@ Rules under test (page numbers are PDF pages of out/refs/sharc-plus-prm,
 
 import struct
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from support.paths import REPO_ROOT
+
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 import sharc_trace as st
 from sharc_core.encoding import (
     AI_BIT,

@@ -23,8 +23,9 @@ import random
 import sys
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 BLOB = ROOT / "out/sections/dt2-1.16/section_7_BLOB.bin"
 pytestmark = pytest.mark.skipif(not BLOB.exists(), reason="DT2 1.16 image absent")

@@ -6,8 +6,9 @@ import subprocess
 import sys
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import atlas  # noqa: E402

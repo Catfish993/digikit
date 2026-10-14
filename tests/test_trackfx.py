@@ -3,13 +3,13 @@ read-back decoding. Images are skipped when absent."""
 
 from __future__ import annotations
 
-import pathlib
 import struct
 import sys
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 try:
     import fxcheck

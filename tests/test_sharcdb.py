@@ -18,10 +18,11 @@ import sys
 import unittest
 
 import pytest
+from support.paths import REPO_ROOT
 
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
+    os.path.join(str(REPO_ROOT), "tools"),
 )
 
 import sharc  # noqa: E402

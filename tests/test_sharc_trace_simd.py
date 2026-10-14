@@ -13,7 +13,9 @@ import sys
 import unittest
 from importlib import import_module
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+from support.paths import REPO_ROOT
+
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 T = import_module("sharc_trace")
 Instruction = import_module("sharc_disasm").Instruction
 L = import_module("sharcldr")
@@ -1358,7 +1360,7 @@ class RealBlobSimdRegionTest(unittest.TestCase):
     RealBlobStage6NormalWordAddressingTest)."""
 
     BLOB = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        str(REPO_ROOT),
         "out",
         "sections",
         "dt2-1.16",

@@ -7,8 +7,9 @@ import unittest
 
 from dt2 import aplib, elz
 from dt2.container import sections
+from support.paths import REPO_ROOT
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 SYX = os.path.join(ROOT, 'Digitakt_II_OS1.15C.syx')
 SECTIONS = os.path.join(ROOT, 'sections')
 

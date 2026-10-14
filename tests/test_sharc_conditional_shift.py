@@ -4,8 +4,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 import sharc_trace as st
 from sharc_disasm import Instruction
 from sharcldr import LoadedMemory

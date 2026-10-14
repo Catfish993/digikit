@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-TOOLS = Path(__file__).resolve().parents[1] / "tools"
+TOOLS = REPO_ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 try:
     import digi_env

@@ -3,11 +3,11 @@ firmware's own words for the same instruction shapes (register and immediate
 fields differ only where the instruction does)."""
 
 import sys
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 import dsp_master_hook  # noqa: E402
 import sharc_asm  # noqa: E402
 

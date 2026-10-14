@@ -21,7 +21,9 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from support.paths import REPO_ROOT
+
+sys.path.insert(0, str(REPO_ROOT))
 
 import tools.plusdrive as pd  # noqa: E402
 

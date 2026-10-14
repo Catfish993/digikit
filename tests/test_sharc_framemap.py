@@ -15,8 +15,9 @@ import unittest
 from importlib import import_module
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 fm = import_module("sharc_framemap")
 L = import_module("sharcldr")
 

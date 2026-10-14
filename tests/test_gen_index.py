@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import sys
+from support.paths import REPO_ROOT
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 
 import digi_env  # noqa: E402

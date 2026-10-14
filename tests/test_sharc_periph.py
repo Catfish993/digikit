@@ -7,8 +7,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 import sharc_diff as sd
 import sharc_transpile_run as nr

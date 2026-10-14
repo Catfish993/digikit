@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 import pk_harness  # noqa: E402
 

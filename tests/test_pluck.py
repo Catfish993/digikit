@@ -6,12 +6,12 @@ device) is carried from call to call as DM words. Skips when Selache is not buil
 
 import struct
 import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import support.dsp_voice_rig as dv  # noqa: E402

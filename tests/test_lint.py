@@ -4,13 +4,13 @@ The rules live in pyproject.toml. Add a path here once it passes both
 `ruff check` and `ruff format --check`; the list should only grow.
 """
 
-import os
 import subprocess
 import sys
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 
 CLEAN = [
     "tests/support",

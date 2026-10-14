@@ -13,8 +13,9 @@ import sys
 import unittest
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 import sharc_memdiff as md  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")

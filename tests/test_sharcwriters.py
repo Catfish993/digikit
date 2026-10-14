@@ -9,8 +9,9 @@ import sys
 import unittest
 from importlib import import_module
 from unittest.mock import patch
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 
 W = import_module("sharcwriters")
 Instruction = import_module("sharc_disasm").Instruction

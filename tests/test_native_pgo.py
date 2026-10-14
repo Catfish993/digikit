@@ -4,11 +4,11 @@ import hashlib
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 import digi_env  # noqa: E402
 import native_pgo  # noqa: E402

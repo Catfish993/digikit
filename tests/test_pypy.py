@@ -14,14 +14,14 @@ networkx, a pure-Python package that runs fine under PyPy, so it is
 installed alongside pytest.
 """
 
-import os
 import shutil
 import subprocess
 import time
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 
 PYPY_TESTS = [
     "tests/test_sharc_compute_mr.py",

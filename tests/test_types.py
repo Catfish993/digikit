@@ -6,11 +6,12 @@ The SHARC core (tools/sharc_core) also runs under PyPy 3.11
 list should only grow.
 """
 
-import os
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from support.paths import REPO_ROOT
+
+ROOT = str(REPO_ROOT)
 
 TYPED = [
     "tools/fw.py",

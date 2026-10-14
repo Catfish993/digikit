@@ -18,8 +18,9 @@ import unittest
 import wave
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
+sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 import sharc_harness as h  # noqa: E402
 import sharc_run as sr  # noqa: E402
 

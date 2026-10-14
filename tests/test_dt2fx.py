@@ -4,12 +4,12 @@ scenario is well formed, and fxcheck switches between the devices cleanly."""
 from __future__ import annotations
 
 import json
-import pathlib
 import sys
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 try:
     import fxcheck

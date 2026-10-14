@@ -1,11 +1,11 @@
 """Reset-table parsing stays explicit and rejects contradictory inputs."""
 
 import sys
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(REPO_ROOT / "tools"))
 from sharc_mmr_reset import parse_reset_tables
 
 

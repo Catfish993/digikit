@@ -17,15 +17,16 @@ import os
 import struct
 import sys
 import unittest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools'))
+    str(REPO_ROOT), 'tools'))
 
 import machinepatch as mp
 import machineprofile as prof
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = str(REPO_ROOT)
 IMAGES = {
     '6a6a887b0573a557b71badf32cd9392777c60b4d1f33dfae12bb8346a014a37b':
         os.path.join(REPO, 'sections', 'section_3_MAIN_OS.bin'),

@@ -10,8 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import sharc_rsgen as rg  # noqa: E402

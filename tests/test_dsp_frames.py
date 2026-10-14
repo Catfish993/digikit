@@ -2,7 +2,9 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+from support.paths import TESTS
+
+sys.path.insert(0, os.path.join(str(TESTS), "..", "tools"))
 
 import dsp_frames  # noqa: E402
 

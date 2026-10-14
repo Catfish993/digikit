@@ -5,10 +5,11 @@ import os
 import struct
 import sys
 import unittest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools'))
+    str(REPO_ROOT), 'tools'))
 
 from emu import config
 

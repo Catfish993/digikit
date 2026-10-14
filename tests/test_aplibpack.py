@@ -2,14 +2,14 @@
 dt2.build.rebuild keeps untouched sections verbatim."""
 
 import random
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
 from dt2 import aplibpack, build, elz
 from dt2.container import sections
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 
 
 def _samples():

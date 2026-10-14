@@ -6,7 +6,9 @@ import sys
 import tomllib
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from support.paths import REPO_ROOT
+
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import pk_new  # noqa: E402

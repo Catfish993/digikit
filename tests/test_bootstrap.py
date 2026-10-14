@@ -4,12 +4,12 @@ Each test runs unmodified bootstrap code with a modelled flash, panel and MIDI U
 firmware in the repo root and a cargo toolchain (the first call builds native/bootstrap, no generated core).
 """
 
-import pathlib
 import struct
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 SYX = ROOT / "Digitakt_II_OS1.16.syx"
 pytestmark = pytest.mark.skipif(
     not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in the repo root"

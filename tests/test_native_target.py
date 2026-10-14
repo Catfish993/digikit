@@ -2,9 +2,10 @@
 
 import importlib.util
 import sys
-from pathlib import Path
 
-TOOL = Path(__file__).resolve().parents[1] / "tools" / "native_target.py"
+from support.paths import REPO_ROOT
+
+TOOL = REPO_ROOT / "tools" / "native_target.py"
 _spec = importlib.util.spec_from_file_location("native_target", TOOL)
 assert _spec and _spec.loader
 nt = importlib.util.module_from_spec(_spec)

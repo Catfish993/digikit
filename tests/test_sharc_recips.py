@@ -14,9 +14,10 @@ import os
 import struct
 import sys
 import unittest
+from support.paths import REPO_ROOT
 
 TOOLS = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"
+    str(REPO_ROOT), "tools"
 )
 if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)

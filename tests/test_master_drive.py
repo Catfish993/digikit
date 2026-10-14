@@ -7,12 +7,12 @@ tools/pk_proof_drive.py."""
 
 import struct
 import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import pk_sharc  # noqa: E402

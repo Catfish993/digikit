@@ -3,9 +3,10 @@
 import importlib.util
 import struct
 import sys
-from pathlib import Path
 
-TOOL = Path(__file__).resolve().parents[1] / "tools" / "dspi_log.py"
+from support.paths import REPO_ROOT
+
+TOOL = REPO_ROOT / "tools" / "dspi_log.py"
 _spec = importlib.util.spec_from_file_location("dspi_log", TOOL)
 assert _spec and _spec.loader
 dl = importlib.util.module_from_spec(_spec)

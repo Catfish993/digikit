@@ -16,8 +16,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+ROOT = REPO_ROOT
 HERE = pathlib.Path(__file__).resolve().parent
 
 sys.path.insert(0, str(ROOT / "tools"))

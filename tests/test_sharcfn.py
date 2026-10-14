@@ -16,10 +16,11 @@ import sys
 import tempfile
 import unittest
 from collections import Counter
+from support.paths import REPO_ROOT
 
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
+    os.path.join(str(REPO_ROOT), "tools"),
 )
 
 import sharc_disasm  # noqa: E402
@@ -741,7 +742,7 @@ class DualMemDirectionRenderingTest(unittest.TestCase):
 
 
 _DT2_116_BLOB = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    str(REPO_ROOT),
     "out",
     "sections",
     "dt2-1.16",

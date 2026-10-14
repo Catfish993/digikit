@@ -3,9 +3,10 @@ import sys
 import types
 from pathlib import Path
 from typing import cast
+from support.paths import REPO_ROOT
 
 spec = importlib.util.spec_from_file_location(
-    "ghidraq", Path(__file__).parents[1] / "tools/ghidraq.py"
+    "ghidraq", REPO_ROOT / "tools/ghidraq.py"
 )
 assert spec is not None and spec.loader is not None
 ghidraq = importlib.util.module_from_spec(spec)

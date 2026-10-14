@@ -20,8 +20,9 @@ import unittest
 from unittest.mock import patch
 
 import pytest
+from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, str(REPO_ROOT))
 
 from emu.sharc_peer import (  # noqa: E402
     SharcServerDied,
@@ -30,7 +31,7 @@ from emu.sharc_peer import (  # noqa: E402
     default_command,
 )
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 SERVER_PATH = os.path.join(ROOT, "tools", "sharc_proc.py")
 CPYTHON_COMMAND = [sys.executable, SERVER_PATH]
 

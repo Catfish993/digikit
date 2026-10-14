@@ -22,8 +22,9 @@ import os
 import sys
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
 BLOB = "out/sections/dt2-1.16/section_7_BLOB.bin"
 GOLDEN = os.path.join(ROOT, "tests", "golden", "sharc_golden.json")

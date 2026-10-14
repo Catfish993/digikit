@@ -6,11 +6,11 @@ Skips when the m68k toolchain (tools/pk_toolchains.py m68k) or the 1.17 image is
 import json
 import sys
 import zlib
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import pk_link  # noqa: E402

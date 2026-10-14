@@ -11,10 +11,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from support.paths import REPO_ROOT
 
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
+    os.path.join(str(REPO_ROOT), "tools"),
 )
 
 import sharc_disasm  # noqa: E402  # pyright: ignore[reportMissingImports]

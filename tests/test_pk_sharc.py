@@ -4,11 +4,11 @@ Skips when Selache is not built (uv run python tools/pk_toolchains.py selache)."
 
 import struct
 import sys
-from pathlib import Path
 
 import pytest
+from support.paths import REPO_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 import pk_sharc  # noqa: E402

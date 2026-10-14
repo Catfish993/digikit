@@ -12,9 +12,11 @@ import sys
 import unittest
 from importlib import import_module
 
+from support.paths import REPO_ROOT
+
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
+    os.path.join(str(REPO_ROOT), "tools"),
 )
 
 sharc_proc = import_module("sharc_proc")
