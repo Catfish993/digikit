@@ -4,7 +4,7 @@
 
 Status 2026-09-30, current HEAD `39f8f20`; the original plan base was
 `95d92de` on `work/sharc-emulator`. Update 2026-10-08: this is design history.
-The crate map is in `packages/emulator/README.md`. `native/sharc-jit`, named below, no
+The crate map is in `packages/emulator/README.md`. `packages/emulator/sharc-jit`, named below, no
 longer exists: the fast tier and the generated blocks replaced it.
 
 ## Goal
@@ -53,7 +53,7 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
 |---|---|---|
 | Live play (desktop) | Works: a TRIG in the GUI plays through the ahead-of-time SHARC core. The ColdFire (Unicorn + Python) runs at 0.22x, so the UI and sequencer are slow. | `uv run python tools/dt2gui.py --live-audio`; finding 15 |
 | SHARC, ahead of time | 411-467 us per frame of 667, exact vs Python. The library carries a `sharc_core` hash and refuses a stale build. | `packages/emulator/sharc`; rebuild command = `REGENERATE_HINT` in `tools/sharc_dev/sharc_transpile_run.py`; DN2 block library from scratch, gated and reproducible: `tools/sharc_dev/sharc_dn2_aot.py` (finding 07) |
-| SHARC JIT (P2) | Paused. Correct (91/91 drive3 frames) and deterministic, but 2.5-3.3 ms/frame under wasmtime. On resume: diff its WebAssembly for one hot loop against the ahead-of-time code compiled to wasm32 (630-720 us/frame), fix the differences, and measure with counters (region entries/frame, bytes/instruction, spills). | `native/sharc-jit` (build with `SHARC_GEN_DIR=$PWD/out/native/opt/gen-final`) |
+| SHARC JIT (P2) | Paused. Correct (91/91 drive3 frames) and deterministic, but 2.5-3.3 ms/frame under wasmtime. On resume: diff its WebAssembly for one hot loop against the ahead-of-time code compiled to wasm32 (630-720 us/frame), fix the differences, and measure with counters (region entries/frame, bytes/instruction, spills). | `packages/emulator/sharc-jit` (build with `SHARC_GEN_DIR=$PWD/out/native/opt/gen-final`) |
 | ColdFire core (P3) | All 101 used forms; fuzz and EMAC lockstep pass, and bounded DT2 snapshot windows pass under the known Unicorn MVZ-N exemption. The decode cache reaches **80.8–82.2M useful instr/s** with the accepted state hash. Broader windows, DN2 exception boundaries and oracle-exempt EMAC behavior remain open. | `packages/emulator/coldfire`; `tools/cf_lockstep.py {snap,fuzz,emac}` |
 | Peripherals (P4) | Timers, INTC, eDMA, SSI0, DSPI and DSP FIFO have replay gates; focused early GPIO/eSDHC/card traces and bounded channel-59 transfer effects also pass. Broad peripheral coverage and real trace gates remain for late DMA delivery, UART, panel and display. | `packages/emulator/periph` (`mmio-replay <trace> [--limit N] [--verbose]`); traces in `out/mmio-trace/` from `tools/mmio_record.py` |
 | Machine (P5) | Partial: `packages/emulator/machine` has `Board`/`Time`/`Runner` Oracle-replay probes. Autonomous Device timer delivery is deliberately rejected, and the crate has no SHARC/live-audio integration yet. | `packages/emulator/machine`; `docs/design/p5-machine.md` |
@@ -208,7 +208,7 @@ progress and migration gates below.
 ## Architecture target
 
 ```
-native/
+packages/emulator/
   sharc/        SHARC core: transpiled handlers + runtime (pure, no firmware)
   sharc-jit/    block translator: SHARC blocks -> WebAssembly (or native)
   coldfire/     ColdFire V4e core: ISA_A/B/C, EMAC (pure; the MCF5441x
@@ -259,7 +259,7 @@ optional desktop speed-up. The output is a decision note with the numbers.
 
 ### P2: SHARC JIT
 
-- **Build:** `native/sharc-jit` with the chosen backend. The live path
+- **Build:** `packages/emulator/sharc-jit` with the chosen backend. The live path
   switches to it, and the AOT generator is retired; the transpiler stays for
   the handlers.
 - **Gate:**

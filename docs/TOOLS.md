@@ -133,7 +133,7 @@ files without a machine.
 
 ## Native emulator, scenarios and performance tools
 
-The native emulator (`native/`, see [`packages/emulator/README.md`](../native/README.md)) is built
+The native emulator (`packages/emulator/`, see [`packages/emulator/README.md`](../packages/emulator/README.md)) is built
 and run through mise (`mise tasks` lists every task). These tools sit behind those tasks;
 each has a module docstring with its full command line.
 

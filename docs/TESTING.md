@@ -138,4 +138,3 @@ A checkout without them skips more.
 - `docs/findings` and `docs/handovers` keep the old test paths (historical records). `git log --follow -- tests/<new path>` shows a file's history across the move (commit "tests: move test files into domain directories").
 - Not done yet:
   - The TypeScript runner for regression and module tests.
-  - Moving `native/` and `packages/{web,desktop}` into the planned `packages/emulator` and `apps/` layout.

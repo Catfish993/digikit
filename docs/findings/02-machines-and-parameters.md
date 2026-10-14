@@ -1108,7 +1108,7 @@ cave capped the number of types), `cf.expansion` 744 B (code and tables). Eviden
 | the saved card laid over the stock firmware's card; STOCK loads the project | track 1 is **SAMPLE** (type 0), no fault, halt or stall, TRIG 1 sounds |
 | `machines/xslice` + `test/machine-clone` in either order | the same `.syx` bytes; types 7 and 8 |
 
-The proof needed one emulator addition: `card.overlay {path}` (native/{card,machine,boot,control}: the guest's writes to
+The proof needed one emulator addition: `card.overlay {path}` (packages/emulator/{card,machine,boot,control}: the guest's writes to
 the eMMC as sparse sectors) so a card with a patched firmware's project can be mounted by another firmware.
 
 - **[O]** Part d of the proof, `XClone`'s MOD destination frames equal to MANUAL SLICE's, **fails on 1.17 and 1.16, and on 1.17 with the cave
