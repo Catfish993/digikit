@@ -256,7 +256,7 @@ Do not silently switch to an external/foreground agent protocol after failures.
 
 ## Repo / Git / ownership
 
-- Repo/cwd: `/Users/em/src/digi/digitakt2`, main checkout.
+- Repo/cwd: `<repo>`, main checkout.
 - Branch: `work/sharc-emulator`.
 - Last known HEAD: `7eb90592407626fd0def7c57dcc0f47891ca3391` (`7eb9059`).
 - That commit was explicitly requested earlier and already made. **No further
@@ -330,15 +330,15 @@ commit; use focused tests while working):
 
 ```
 SHARC_NATIVE_LIB=/private/tmp/digi-r1-int-t-dt2lib/release/libsharc_native.dylib
-RUSTC=/Users/em/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustc
-RUSTDOC=/Users/em/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustdoc
-DYLD_LIBRARY_PATH=/Users/em/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib
+RUSTC=~/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustc
+RUSTDOC=~/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustdoc
+DYLD_LIBRARY_PATH=~/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib
 CARGO_NET_OFFLINE=true UV_OFFLINE=1
 uv run python -m pytest tests -q --slow
 ```
 
 Precommit report:
-`/Users/em/.pi/agent/sessions/--Users-em-src-digi-digitakt2--/subagent-artifacts/outputs/56c11cfd-ef67-460d-9ce7-7f5aa839f2e9/validation/precommit.json`.
+<agent session artifact>.
 Logs: `/private/tmp/dn2-audio-continuation-20261003/{pytest,web-audio,web-check,diff-check,preflight,final-status}.log`.
 
 ## Current uncommitted implementation: ten paths
@@ -440,7 +440,7 @@ Initial source-bound evidence:
 Full logs in that directory's `logs/01-rustfmt.log` through
 `06-diff-check.log` (including `05-ready-fixtures.log`).
 Gate report:
-`/Users/em/.pi/agent/sessions/--Users-em-src-digi-digitakt2--/subagent-artifacts/outputs/4903f3b4-680d-4401-b181-062edcf3aa86/validation/native-gates.json`.
+<agent session artifact>.
 
 ### Real review blocker: post-start CPAL errors
 
@@ -450,7 +450,7 @@ callback after successful stream start only printed to stderr. The feeder
 could stay alive, health could say no error, and draining could stall.
 
 Review:
-`/Users/em/.pi/agent/sessions/--Users-em-src-digi-digitakt2--/subagent-artifacts/outputs/4903f3b4-680d-4401-b181-062edcf3aa86/review/native-integration.md`.
+<agent session artifact>.
 
 The exact two-file remediation IS APPLIED:
 
@@ -507,7 +507,7 @@ Captured patch SHA:
 `3ef04a6cc062cca71907e6dffa7c82d8d0f2e838dfcb18e9d03089568d75cbe5`.
 
 Cleanup report:
-`/Users/em/.pi/agent/sessions/--Users-em-src-digi-digitakt2--/subagent-artifacts/outputs/b1229e89-bd7f-4858-9519-868e5261c3f3/implementation/autofix-cleanup.md`.
+<agent session artifact>.
 Scratch `autofix-cleanup-before.*`, `autofix-cleanup-after.*`,
 `autofix-cleanup-protected-before.json` and `stream-errors-unexpected.diff` are
 under `/private/tmp/dn2-audio-continuation-20261003/`.
@@ -531,9 +531,9 @@ pause confirmation was used, not a persistent Pi configuration change.
 
 ```
 # Common environment:
-RUSTC=/Users/em/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustc
-RUSTDOC=/Users/em/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustdoc
-DYLD_LIBRARY_PATH=/Users/em/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib
+RUSTC=~/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustc
+RUSTDOC=~/.rustup/toolchains/1.98.1-aarch64-apple-darwin/bin/rustdoc
+DYLD_LIBRARY_PATH=~/.rustup/toolchains/1.98.1-aarch64-apple-darwin/lib
 CARGO_NET_OFFLINE=true UV_OFFLINE=1
 # Use cargo from that toolchain's bin directory.
 
@@ -544,8 +544,8 @@ cargo test --release --offline --locked --manifest-path native/boot/Cargo.toml -
 # CARGO_TARGET_DIR=/private/tmp/dn2-audio-triage-20261003/desktop-target
 # SHARC_GEN_DIR=/private/tmp/digi-r1-int-gen-dn2
 # NOTE_EVENTS=trig
-# DIGI_COUPLED_FIXTURES=/Users/em/src/digi/digitakt2/snapshots/dn2-audio-ready-2026-10-03
-# DIGI_COUPLED_SYX=/Users/em/src/digi/digitakt2/Digitone_II_OS1.11.syx
+# DIGI_COUPLED_FIXTURES=<repo>/snapshots/dn2-audio-ready-2026-10-03
+# DIGI_COUPLED_SYX=<repo>/Digitone_II_OS1.11.syx
 cargo test --release --offline --locked --manifest-path packages/desktop/src-tauri/Cargo.toml --features coupled-audio desktop_runtime::coupled::tests:: -- --ignored --nocapture --test-threads=1
 ```
 
@@ -641,7 +641,7 @@ it just to profile a new build; load new artifacts via scratch harness/server.
 ### Exact profiling preparation already scouted; do not repeat reconnaissance
 
 Report (latest read-only follow-up overwrote prior preparation):
-`/Users/em/.pi/agent/sessions/--Users-em-src-digi-digitakt2--/subagent-artifacts/outputs/56c11cfd-ef67-460d-9ce7-7f5aa839f2e9/preparation/performance.md`.
+<agent session artifact>.
 
 `tools/sharc_dn2_replay.py` CLI:
 `--lib`, `--image` (default dn2-1.11), `--state`, `--capture`, `--out`,

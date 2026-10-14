@@ -16,7 +16,7 @@ meant. `listing()` prints the re-decoded mnemonics.
     a.words()   # list of (pc, [parcels])
 
 Only the forms the hook routines need exist; add a form together with a test
-in tests/test_sharc_asm.py. Encodings come from the public manuals via
+in tests/sharc/generation/test_sharc_asm.py. Encodings come from the public manuals via
 tools/sharcspec/; no vendor toolchain is used. Register codes are the
 universal-register codes of tools/sharc_trace.UREG_CODES.
 """

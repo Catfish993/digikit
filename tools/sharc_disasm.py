@@ -425,7 +425,7 @@ def decode_confident(data: bytes, offset: int) -> Instruction:
     one as an "aligned" real instruction anywhere, so the database gives no
     verdict on a PC only reachable this way, and excluding it here would
     change decode_confident()'s own contract for a caller that lands there on
-    purpose -- see tests/test_sharc_trace.py's PhaseAOpcodeRegressionTest for
+    purpose -- see tests/sharc/trace/test_sharc_trace_float.py's PhaseAOpcodeRegressionTest for
     Type10a_rel's own field layout). raw_at() below still excludes it from a
     *successor* chain, exactly as decode_all()'s table does, so the width
     correction remains identical to the database's."""

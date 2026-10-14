@@ -4957,7 +4957,7 @@ tests/test_lint.py tests/test_types.py tests/test_sharc_golden.py -q --slow`:
 > trig: mask, latch and arm".
 
 Branch `work/sharc-emulator` @ `cb77543`, worktree
-`.claude/worktrees/agent-a27e3e3d359f0cd36`. `sections/.source-sha256`
+`<agent session artifact>`. `sections/.source-sha256`
 (`278541e4...dddf3a9ec`) matches `shasum -a 256` of the real 1.16 `.syx`.
 Built on Lane I1's `snapshots/dt2-1.16/running.snap` (a genuinely running
 RTOS, kit loaded, track 2 = machine type 2) and Lane H3's guard decode.

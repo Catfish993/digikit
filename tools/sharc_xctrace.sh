@@ -1,6 +1,6 @@
 #!/bin/zsh
 # usage: tools/sharc_xctrace.sh OUT.trace [CONFIG]: CPU Profiler trace of the DSP scenario.
-export DIGI_EMU_SYX=${DIGI_EMU_SYX:-/Users/em/src/digi/digitakt2/Digitone_II_OS1.11.syx}
+export DIGI_EMU_SYX=${DIGI_EMU_SYX:-$(cd "$(dirname "$0")/.." && pwd)/Digitone_II_OS1.11.syx}
 out=$1
 config=${2:-default}
 rm -rf $out

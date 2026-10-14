@@ -20,7 +20,7 @@ Rules (id, kind, source):
             (0xAC, 0xAB are other cores); a different value ends the boot (ROM_BOOT_ERR_HDRSGN 0xA).
   H2  ROM   HDRCHK: the XOR of the 16 header bytes is zero (ROM_BOOT_ERR_HDRCHK 0xC). Table 40-27
             words it as "an 8-bit XOR checksum of the other 24 bits"; every stock header satisfies
-            the whole-header XOR, and the three-byte reading does not (tests/test_sharc_bootcheck.py).
+            the whole-header XOR, and the three-byte reading does not (tests/sharc/analysis/test_sharc_bootcheck.py).
   H3  ROM   HWR 40-39: TARGET_ADDRESS and BYTE_COUNT are multiples of 4 (the kernel uses 32-bit DMA).
             TARGET_ADDRESS is checked where a block loads memory: DN2's FIRST and FINAL blocks carry
             the entry point 0x1c12e2 (a short-word pc, 2-byte aligned) and the stock DN2 image boots.

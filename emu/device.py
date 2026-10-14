@@ -130,8 +130,15 @@ def _require(table, key, where):
 
 def load(path):
     """-> Device parsed from one TOML device file."""
+    return _from_raw(_read(path), path)
+
+
+def _read(path):
     with open(path, 'rb') as fh:
-        raw = tomllib.load(fh)
+        return tomllib.load(fh)
+
+
+def _from_raw(raw, path):
     dev = _require(raw, 'device', path)
     panel = _require(raw, 'panel', path)
     firmwares = [Firmware(f.get('version'), _require(f, 'sha256', path),
@@ -169,8 +176,16 @@ def load_all(dirpath=None):
     dirpath = dirpath or devices_dir()
     if not os.path.isdir(dirpath):
         raise DeviceError('No devices directory at %s' % dirpath)
-    out = [load(os.path.join(dirpath, n))
-           for n in sorted(os.listdir(dirpath)) if n.endswith('.toml')]
+    out = []
+    for n in sorted(os.listdir(dirpath)):
+        if not n.endswith('.toml'):
+            continue
+        path = os.path.join(dirpath, n)
+        raw = _read(path)
+        # devices/ also holds sidecar files (the *-leds.toml LED maps),
+        # which have no [device] table
+        if 'device' in raw:
+            out.append(_from_raw(raw, path))
     return sorted(out, key=lambda d: d.name)
 
 

@@ -97,7 +97,7 @@ class Halt(Exception):
         self.text = text
         # Populated only when the caller opted into Runner(diagnose_unknown=True)
         # (see _fork_diagnosis()): empty by default, so to_json()'s default
-        # shape -- and therefore tests/test_sharc_golden.py's hashes -- never
+        # shape -- and therefore tests/sharc/integration/test_sharc_golden.py's hashes -- never
         # change for a caller that did not ask for this.
         self.unknowns = unknowns
         message = "%s at %#x (%s)" % (reason, pc_sw, form or "?")
@@ -970,7 +970,7 @@ class Runner:
         # Off by default: computing it is cheap (it only ever runs once, on
         # the Halt that ends a run -- see _fork_diagnosis()), but printing
         # or serialising it changes Halt.to_json()'s shape, and
-        # tests/test_sharc_golden.py hashes that shape (see Halt.unknowns'
+        # tests/sharc/integration/test_sharc_golden.py hashes that shape (see Halt.unknowns'
         # docstring note).
         self.diagnose_unknown = diagnose_unknown
         # PC of the last step() that reassigned each _DIAGNOSE_TRACKED_UREGS
@@ -1205,7 +1205,7 @@ _SNAPSHOT_VERSION = 1
 
 
 def _image_sha256(data: LoadedMemory) -> str:
-    """The same digest tests/test_sharc_golden.py's image_sha256() computes
+    """The same digest tests/sharc/integration/test_sharc_golden.py's image_sha256() computes
     over the .bin file directly: LoadedMemory.data is that file's bytes
     verbatim (tools/sharc.py's Image._mem()), so this is stable across a
     save_snapshot()/load_snapshot() round trip run against the same image,

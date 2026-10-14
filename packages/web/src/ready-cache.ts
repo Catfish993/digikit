@@ -6,7 +6,7 @@
 // the visitor's own storage.
 //
 // Only erasable TypeScript (the logic is tested under Node, tools/wasm_split.mjs
-// users and tests/test_ready_cache.mjs, with an in-memory store).
+// users and packages/web/tests/ready-cache.test.mjs, with an in-memory store).
 
 export interface ReadyState {
   /** Packed DSP image, DSP state (`DT2DSP01` file) and ColdFire snapshot (`DT2SNP01`). */

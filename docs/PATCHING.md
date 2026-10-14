@@ -134,17 +134,17 @@ MAIN hash). The daemon takes 1 to 2 minutes to start.
 mise run patch:test                                                    # the whole matrix (about 1 minute per cell)
 mise run patch:test -- --cell "dt2-1.17:fx/master-gain,test/cf-demo"   # one cell; modules joined with a comma
 mise run patch:test -- --cell "..." --update                           # record frame goldens for a new module set
-uv run python tools/pk_harness.py list                                 # the cells of tests/patchkit_smoke/matrix.toml
+uv run python tools/pk_harness.py list                                 # the cells of tests/patchkit/smoke/matrix.toml
 cargo test -p patchkit                                                 # the patching library
-uv run python -m pytest tests/test_patchkit.py tests/test_pk_prims.py  # codec, linker, primitives (about 2 minutes)
-uv run python -m pytest tests/patchkit_smoke --slow                    # the matrix through pytest
+uv run python -m pytest tests/patchkit/test_patchkit.py tests/patchkit/test_pk_prims.py  # codec, linker, primitives (about 2 minutes)
+uv run python -m pytest tests/patchkit/smoke --slow                    # the matrix through pytest
 ```
 
 A matrix cell is device x firmware x module set. For each cell the harness patches, loads the image into a daemon and
 runs the smoke tour (boot, track and pattern change, audition, play and stop, machine menu, save and reload a project,
 a seeded 40-input stress) plus the `tests/*.toml` files of the modules in the set. After every input it asserts no
 fault, no DSP halt and no main-loop stall. Frames are compared by SHA-256 against
-`tests/patchkit_smoke/goldens.json`, keyed by device, firmware and module set (hashes only). A module set with no
+`tests/patchkit/smoke/goldens.json`, keyed by device, firmware and module set (hashes only). A module set with no
 recorded goldens fails with "no golden"; record them with `--update`. Details: the docstring of `tools/pk_harness.py`
 and [finding 17](findings/17-emulator-control.md). The proof tools `tools/pk_proof_*.py` (PCM and behaviour proofs per
 module family) are slower and are run before a merge, not in the loop.

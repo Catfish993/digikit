@@ -59,7 +59,7 @@ earlier claim.
 | [`refs/`](refs/) | Notes on public references (MCF5441x, Linux and QEMU sources, DSPI2/eDMA) |
 | [`INSTRUMENTATION.md`](INSTRUMENTATION.md) | Where run output goes and the diagnostic and tuning switches |
 | [`TOOLS.md`](TOOLS.md) | Index of the tools |
-| [`UNICORN.md`](UNICORN.md) | The patched Unicorn requirement |
+| `UNICORN.md` (removed with the Unicorn emulator; in git history at tag `unicorn-reference-final`) | The patched Unicorn requirement |
 | [`handovers/`](handovers/) | Dated handovers: state and next steps at the time, not results |
 | [`archive/`](archive/) | Superseded cold-start documents and plans, kept for history |
 

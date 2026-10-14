@@ -1453,7 +1453,7 @@ def setup_frame_dma(state, image: str, *, ring_flag: int = 0) -> int:
 # `0xFFFFFFFF`/AI=1 result take a different, but still successful, path
 # than this entry's own arbitrary `0x4000` override did), so
 # `RealFrameRingAMilestoneTest`'s own ring-A digest changes too (see
-# `tests/test_sharc_harness.py`'s own note on that hash for why -- an
+# `tests/sharc/integration/test_sharc_harness_frame.py`'s own note on that hash for why -- an
 # intended fix, not a regression).
 #
 # **[C] Lane G2: `0x1C4965` stays, and corrects docs/findings/06's own
@@ -1578,7 +1578,7 @@ FRAME_PATCH_TABLE: sv.PatchTable = {
     # are bit6:len6 fields, e.g. 0xb88fa4 "R0 = R0 or fdep R12 by 31:1"
     # sets the sign bit of FUN_b88f70's integer-to-float result. With that
     # decoded, the fcomp at 0x1c4965 gets concrete operands and the frame
-    # returns with no patch (tests/test_sharc_harness.py's
+    # returns with no patch (tests/sharc/integration/test_sharc_harness_frame.py's
     # test_render_frames_without_patches_*).
     # 0x1C4965: [("reg", "R6", 0x3F800000), ("reg", "R4", 0x3F800000)],
 }
@@ -2796,7 +2796,7 @@ def measure_tone(
     samples: Sequence[float], freq_hz: float, sample_rate: int, *, discard: int = 0
 ) -> dict:
     """This module's own direct-correlation tone measurement (the same
-    technique `tests/test_sharc_harness.py`'s `CliFrequencyTest` uses):
+    technique `tests/sharc/integration/test_sharc_harness_cli.py`'s `CliFrequencyTest` uses):
     correlating SAMPLES against cos/sin at exactly `freq_hz` reconstructs
     that frequency's power with no spectral leakage regardless of whether
     the window holds a whole number of cycles (unlike an FFT bin readout),
@@ -3464,7 +3464,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # default), so it does not depend on --sample-rate at all; --sample-rate
     # only needs to match that 48 kHz decimated rate for the WAV to *play
     # back* at the frequency its own header claims (this lane verified the
-    # corrected formula empirically: tests/test_sharc_harness.py's
+    # corrected formula empirically: tests/sharc/integration/test_sharc_harness_cli.py's
     # CliFrequencyTest zero-crossing-counts a rendered WAV against
     # freq * pitch_step for several (freq, pitch_step) pairs).
     output_frequency_hz = a.freq * a.pitch_step

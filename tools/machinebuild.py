@@ -13,7 +13,7 @@ that `plan_b` documents but does not do itself:
      `old` bytes against the image, apply them to a copy, and diff the
      result against the original: every changed byte must land either in a
      listed write or inside the profile's flash_cave. This is the same
-     invariant `tests/test_machinepatch_profiles.py`'s
+     invariant `tests/firmware/test_machinepatch_profiles.py`'s
      `test_every_patch_site_belongs_to_this_image` checks, run here as a
      precondition before rebuilding anything.
 

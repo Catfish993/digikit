@@ -192,7 +192,7 @@ progress and migration gates below.
   - Merging copies the verified files and checks them byte for byte.
   - A **coder** is used for small hand-specified edits only.
 - **One owner per file:** lanes own whole crates or files, and shared lists
-  (`tests/test_lint.py`, `tests/test_types.py`, `CLAUDE.md`) are edited only at
+  (`tests/devtools/test_lint.py`, `tests/devtools/test_types.py`, `CLAUDE.md`) are edited only at
   merge time.
 - **Reuse the tools:** `tools/cf.py` (cfdb), `tools/snapread.py`,
   `tools/sharc.py`, `tools/sharc_diff.py` and `tools/snapeq.py` come before any

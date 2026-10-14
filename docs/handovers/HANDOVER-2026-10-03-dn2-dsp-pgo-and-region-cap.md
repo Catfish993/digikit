@@ -1,6 +1,6 @@
 # DN2 DSP performance and live audio — stopping-point handover
 
-Date: 2026-10-03. Workspace: `/Users/em/src/digi/digitakt2`.
+Date: 2026-10-03. Workspace: `<repo>`.
 Branch: `work/sharc-emulator`.
 HEAD: `eecf7b8a498df2c11c7ffd4181db4b5a4d1034a0`.
 

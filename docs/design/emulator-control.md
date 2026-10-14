@@ -1,5 +1,7 @@
 # Emulator control protocol
 
+> User reference for what is implemented: docs/CONTROL.md. This document is the design and includes parts that are not built.
+
 Status: P0, P1 and the injection part of P3 are implemented (2026-10-07); P2
 and the rest of P3 are design. Scope: the desktop app (`mise run emu`), the
 headless daemon `digi-emud` (`mise run emu:serve`), the Python client
@@ -336,7 +338,7 @@ with Emu.spawn("--auto-coupled", "--audio-buffer", "1") as emu:
   runtime (skipped without the DN2 .syx); job interleaving (`status` during
   `run_until`, a UI `emu_step` while paused); exact `at_instr`; non-consuming
   frame reads.
-- pytest (`tests/test_digi_client.py`): spawn `digi-emud --cf-only`; `hello`,
+- pytest (`tests/control/test_digi_client.py`): spawn `digi-emud --cf-only`; `hello`,
   version gating, `step` exactness, record-then-replay to the same state
   digest, errors, quit.
 - `slow`: coupled run from the private fixtures; `trig1-tap-release` through

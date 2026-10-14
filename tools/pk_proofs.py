@@ -35,7 +35,21 @@ TOOLS = [
 ]
 
 
-def main() -> int:
+def selected(label: str, want: list[str] | None) -> bool:
+    """Whether --only WANT (labels or first words) picks LABEL."""
+    return not want or any(label == w or label.split()[0] == w for w in want)
+
+
+def command(script: str, extra: list[str], out: Path, jobs: int) -> list[str]:
+    """The quick-tier command of one tool; OUT is its output directory."""
+    cmd = [sys.executable, "-u", str(HERE / script), *extra, "--quick"]
+    cmd += ["--out", str(out)]
+    if jobs:
+        cmd += ["--jobs", str(jobs)]
+    return cmd
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
         "--only", help="comma-separated tool labels or first words (gain, drive, ...)"
@@ -47,28 +61,28 @@ def main() -> int:
         help="passed to every tool (default: the tool's own)",
     )
     ap.add_argument("--out", type=Path, default=ROOT / "out" / "runs" / "proofs")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     want = a.only.split(",") if a.only else None
+    if want:
+        unknown = [w for w in want if not any(selected(t[0], [w]) for t in TOOLS)]
+        if unknown:
+            labels = ", ".join(t[0] for t in TOOLS)
+            print(
+                f"pk_proofs: unknown --only names: {', '.join(unknown)} "
+                f"(valid labels or first words: {labels})",
+                file=sys.stderr,
+            )
+            return 2
     a.out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     failed: list[str] = []
     n = 0
     for label, script, extra in TOOLS:
-        if want and not any(label == w or label.split()[0] == w for w in want):
+        if not selected(label, want):
             continue
         n += 1
         slug = label.replace(" ", "-")
-        cmd = [
-            sys.executable,
-            "-u",
-            str(HERE / script),
-            *extra,
-            "--quick",
-            "--out",
-            str(a.out / slug),
-        ]
-        if a.jobs:
-            cmd += ["--jobs", str(a.jobs)]
+        cmd = command(script, extra, a.out / slug, a.jobs)
         t0 = time.monotonic()
         log = a.out / f"{slug}.log"
         with log.open("wb") as f:
@@ -83,7 +97,8 @@ def main() -> int:
             if ln.startswith("     FAIL") or ln.strip().startswith("FAIL ")
         ]
         state = "PASS" if rc == 0 else "FAIL"
-        print(f"{state}  {label:<13} {wall:>5.0f} s   {log}", flush=True)
+        note = "   usage error (rc 2)" if rc == 2 else ""
+        print(f"{state}  {label:<13} {wall:>5.0f} s   {log}{note}", flush=True)
         for ln in bad[:6]:
             print(f"      {ln}", flush=True)
         if rc:

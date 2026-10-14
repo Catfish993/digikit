@@ -240,7 +240,7 @@ new core is worth 5-8% by earlier retrains, 0.92-0.96 ratio **[D]**).
   trap tail per region, `rf.o` copies only where the form needs them. Flag `--concrete`
   (default off until the gate passes) so old and new cores can be generated from the same tree and
   A/B'd. The `_unknown` fallback region keeps the V path.
-- No change to `tools/sharc_core` semantics: golden hashes (`tests/test_sharc_golden.py`) must
+- No change to `tools/sharc_core` semantics: golden hashes (`tests/sharc/integration/test_sharc_golden.py`) must
   not move.
 
 ### 3.2 Build cost and fast iteration
@@ -277,7 +277,7 @@ Layered, cheapest first:
    `scenarios:sweep` (191 tests) in the default and the no-AOT config; `coupled.py scenario --all
    --jobs 6`; `coupled.py bisect` on any difference. Tier-equivalence gate: the AOT tier and the
    interpreter render identical PCM (134 of 134 scenarios equal today).
-4. `tests/test_sharc_golden.py` unchanged; DT2 sample check when the DT2 core is regenerated;
+4. `tests/sharc/integration/test_sharc_golden.py` unchanged; DT2 sample check when the DT2 core is regenerated;
    `cargo test --lib --tests` in `native/sharc`.
 Rule: any PCM change is a bug, not an intended change; no pin is updated.
 
@@ -606,7 +606,7 @@ Tools added: `tools/aot_attrib.py` (machine-code bytes and executed bytes per so
 generated statement, from `llvm-objdump -l` and an `aot_dyntrace.py --dump`; needs
 `REGIONBENCH_DEBUG=1 tools/sharc_regionbench.py` and the target's `region_bench.dSYM`), `tools/coupled_ab.py`
 (alternating exclusive A/B of `coupled-run` binaries). `aot_dyntrace.py --dump` writes the function start for
-`aot_attrib`. Test: `tests/test_sharc_rsgen_density.py`.
+`aot_attrib`. Test: `tests/sharc/generation/test_sharc_rsgen_density.py`.
 
 ### 7.2 Where the bytes were
 
@@ -650,7 +650,7 @@ now decline at the limit. That is the only difference and it is by design (item 
 - `dn2.json` pins (`mise run scenarios`): all hold.
 - `scenarios:check` 61 passed in the default and the no-AOT config; `scenarios:sweep` 191 passed.
 - Tier sweep, all 134 FX scenarios (47 track, 87 send), AOT against `SHARC_AOT=0`: **134 of 134 PCM equal**.
-- `tests/test_sharc_golden.py` and `tests/test_sharc_denormal.py` 28 passed; `tests/test_sharc_rsgen_density.py`,
+- `tests/sharc/integration/test_sharc_golden.py` and `tests/sharc/semantics/test_sharc_denormal.py` 28 passed; `tests/sharc/generation/test_sharc_rsgen_density.py`,
   lint, `sharc_rsgen_model_safe`, `gen_fingerprint` pass; `cargo test` sharc-rt 13 passed (with the new address
   table test); sharc-native 66 passed, 2 failed (`tests_gen::gen_programs_match_the_interpreter`,
   `gen_control_programs_match_the_interpreter`: "simd_loop: the fast tier never ran"): they fail the same way on the

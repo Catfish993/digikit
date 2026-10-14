@@ -94,7 +94,7 @@ inside a file whose source can be read upstream.
 | `0x137708` | `..\..\..\..\lib\freertos-sharc\event_groups.c` |
 | `0x137728` | `..\..\..\..\lib\freertos-sharc\queue.c` |
 | `0x137760` | `..\..\..\..\lib\freertos-sharc\stream_buffer.c` |
-| `0x1377a0` | `..\..\..\..\lib\freertos-sharc\portable\CCES\SHARC_215xx\port.c` |
+| `0x1377a0` | `..\..\..\..\lib\freertos-sharc\portable\<port>\SHARC_215xx\port.c` |
 | `0x16839c` | `..\..\..\..\lib\freertos-sharc\tasks.c` |
 | `0x168424` | `..\..\..\..\lib\freertos-sharc\timers.c` |
 | `0x16e870` | `..\..\..\..\lib\freertos-sharc\portable\heap_4.c` |

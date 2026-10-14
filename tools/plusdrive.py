@@ -63,7 +63,7 @@ below); the Python reimplementation here was checked bit-for-bit against 44
 real calls to the firmware's own ``FUN_4015abb2`` (lengths 0-29, 508, 511,
 512, 600, 1199-1201, 1211, 2401, each with random content), covering every
 tail case of its switch and both the single-block and multi-block streaming
-paths -- see ``tests/test_plusdrive.py``.
+paths -- see ``tests/firmware/test_plusdrive.py``.
 """
 
 import argparse
@@ -355,7 +355,7 @@ def hashlittle(data, initval):
     returning the raw seed unfinalized. See docs/findings/14 and this
     module's docstring. Bit-exact for all 32-bit lengths (verified against
     44 real firmware calls covering every tail case 0-12 and multi-block
-    streaming; tests/test_plusdrive.py has the golden vectors)."""
+    streaming; tests/firmware/test_plusdrive.py has the golden vectors)."""
     a = b = c = (initval + 0xDEADBEEF) & _MASK32
     n = len(data)
     if n == 0:

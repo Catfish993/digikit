@@ -15,15 +15,15 @@ from __future__ import annotations
 
 import json
 import math
-import pathlib
 from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import pytest
+from support.paths import REPO_ROOT
 
 sweep = pytest.mark.sweep
-SCENARIOS = pathlib.Path(__file__).resolve().parents[2] / "scenarios"
+SCENARIOS = REPO_ROOT / "scenarios"
 
 TF_FAST = (
     "tf-dry-hold", "tf-dry-tap", "tf-dry-flt",

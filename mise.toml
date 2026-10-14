@@ -1,5 +1,6 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
-# Groups: setup, emu*, web*, scenario*, test*, lint*, perf*, gen:*, dev:*, check.
+# Groups: setup, emu*, web*, scenario*, test*, lint*, perf*, gen:*, dev:*, check,
+# verify*, toolchains, patch*, port:*, inject.
 # Old task names stay as aliases.
 
 [settings]
@@ -95,7 +96,7 @@ description = "Oracle tests with the full sweeps (every track FX and send FX sce
 
 [tasks.verify]
 run = "uv run python tools/verify.py"
-description = "Exactness gate for what changed (tools/verify.py; --base BRANCH in a lane, --only STEPS); one PASS/FAIL line per step, logs in out/runs/verify/"
+description = "Exactness gate for what changed (tools/verify.py; --base BRANCH in a lane, --only STEPS, --explain shows the routing and the plan without running); one PASS/FAIL line per step, logs in out/runs/verify/"
 
 [tasks."verify:full"]
 run = "uv run python tools/verify.py --full"
@@ -118,23 +119,23 @@ description = "Find the DSP tier (fast region, cluster root, AOT) that changes a
 
 [tasks."test:quick"]
 run = [
-  "uv run python -m pytest -q tests/test_native_emu_launcher.py tests/test_native_pgo.py tests/test_native_target.py tests/test_coupled_tool.py",
+  "uv run python -m pytest -q tests/emulator/test_native_emu_launcher.py tests/emulator/test_native_pgo.py tests/emulator/test_native_target.py tests/emulator/test_coupled_tool.py",
   "uv run python tools/coupled.py test-quick",
 ]
 description = "Fast checks for the tooling, the audio sink and the coupled runtime"
 
 [tasks.test]
 run = [
-  "uv run python -m pytest -q tests",
+  "uv run python tools/test_outcomes.py run --check --out out/runs/tests/latest tests",
   "uv run python tools/rust_ws.py test",
   "pnpm test",
   "uv run python tools/coupled.py scenario --all",
 ]
-description = "Everything except the slow gates: pytest, cargo test --workspace, web tests, every DN2 scenario pin"
+description = "Everything except the slow gates: Python tests (tools/test_outcomes.py run: one process per file, in parallel, so a state leak between files cannot fail unrelated tests, see docs/TESTING.md), cargo test --workspace, web tests, every DN2 scenario pin"
 
 [tasks."test:slow"]
 run = [
-  "uv run python -m pytest -q tests --slow",
+  "uv run python tools/test_outcomes.py run --check --timeout 3600 --out out/runs/tests/latest-slow --pytest-arg=--slow tests",
   "uv run python tools/rust_ws.py gates",
 ]
 description = "Slow pytest runs and the ignored Rust gates that have private fixtures (coupled_ready_exactness)"
@@ -142,8 +143,8 @@ description = "Slow pytest runs and the ignored Rust gates that have private fix
 # --- lint ---
 
 [tasks."lint:py"]
-run = "uv run python -m pytest -q tests/test_lint.py"
-description = "ruff check and ruff format --check on the CLEAN list of tests/test_lint.py"
+run = "uv run python -m pytest -q tests/devtools/test_lint.py"
+description = "ruff check and ruff format --check on the CLEAN list of tests/devtools/test_lint.py"
 
 [tasks."lint:web"]
 run = "pnpm lint"
@@ -159,7 +160,7 @@ description = "All linters"
 
 [tasks.check]
 depends = ["lint", "test:quick"]
-description = "The pre-merge gate: lint + test:quick"
+description = "Quick local check (lint + test:quick), not the merge gate: use `mise run verify` for what changed and `mise run verify:full` before merging to main"
 
 # --- performance ---
 
@@ -200,6 +201,11 @@ description = "Generate a firmware block library (AOT core) and register it by D
 alias = "core"
 run = "uv run python tools/sharc_transpile.py --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
 description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
+
+[tasks."sharc:native-lib"]
+depends = ["gen:core"]
+run = "uv run python tools/sharc_native_lib.py"
+description = "Build the firmware-free native SHARC library (shared core) that tests/sharc/semantics and generation load; no firmware needed; out/native/shared-core/target"
 
 [tasks."gen:regen"]
 alias = "regen"
@@ -251,11 +257,11 @@ description = "Developer loop: mise run patch:dev -- --modules a,b [--device dt2
 
 [tasks."patch:test"]
 run = "uv run python tools/pk_harness.py run"
-description = "Smoke tour and module tests over the matrix (tests/patchkit_smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:fx/master-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
+description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:fx/master-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
 
 [tasks."patch:proofs"]
 run = "uv run python tools/pk_proofs.py"
-description = "Every emulator proof on its quick tier, in sequence (gain, drive, voice, machines, pluck on DT2 and DN2): mise run patch:proofs [-- --only pluck,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
+description = "Every emulator proof on its quick tier, in sequence (DT2: gain, drive, voice, machines, pluck; DN2: gain, voice, machines, pages, pluck; drive runs on DT2 only): mise run patch:proofs [-- --only pluck,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
 
 [tasks."port:resolve"]
 run = "uv run python tools/port_resolve.py"

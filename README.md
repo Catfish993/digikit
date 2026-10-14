@@ -22,11 +22,15 @@ the snapshots and the databases (`out/`) out of git.
 
 ## Firmware
 
-Use Digitakt II OS 1.16 and Digitone II OS 1.11. The older builds are kept because much
-of the early analysis used them.
+Modules and patchkit target Digitakt II 1.17 and Digitone II 1.12. The emulator also runs
+1.16 and 1.11, which most earlier analysis used; they are its default files (see below).
+1.15C and 1.10E are kept for old analysis. Get the `.syx` files from Elektron's support
+site for your device; the repository never includes them.
 
 | device | version | file | sha256 |
 | --- | --- | --- | --- |
+| Digitakt II | 1.17 | `Digitakt_II_OS1.17.syx` | `26c22f6652625ac2cfd47f7ee970d388ed8b6427dae3563c0a6a2f2d334350d5` |
+| Digitone II | 1.12 | `Digitone_II_OS1.12.syx` | `7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35` |
 | Digitakt II | 1.16 | `Digitakt_II_OS1.16.syx` | `278541e466edcd77d6b3e018a91fb90185932d3c7de224dd3e68294dddf3a9ec` |
 | Digitone II | 1.11 | `Digitone_II_OS1.11.syx` | `2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0` |
 | Digitakt II | 1.15C | `Digitakt_II_OS1.15C.syx` | `62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c` |
@@ -93,7 +97,7 @@ the default fast tier, `build 1 s + boot 12 s` for three files), presses NO on t
 OK window and swaps the runtime; the toolbar shows "Building the card", "Booting the Digitakt
 II with the card (n%)" and "Card ready". The card and its ready state are cached by a hash of
 the firmware and the samples under `<run dir>/cards/<key>/` (default `out/native/run`), so the
-same folder restores in well under a second. It needs the DT2 ready inputs (`mise run ready --
+same folder restores in well under a second. It needs the DT2 ready inputs (`mise run emu:ready --
 dt2` once: the DSP image and `cold-idle.dsp` come from there). The app remembers the last card
 (`<run dir>/cards/last.json`) and mounts it again when a DT2 starts without `--card-image`, in
 well under a second; the toolbar shows "Samples: NAME (N files)", or "Choose samples to load a
@@ -124,7 +128,7 @@ uv run python tools/dsp_patch.py syx BASE.syx tools/dsp_patches/dn2-1.11-master-
 ```
 
 `tools/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched
-`.syx`. The protocol is in [docs/design/emulator-control.md](docs/design/emulator-control.md).
+`.syx`. Control socket reference: [docs/CONTROL.md](docs/CONTROL.md). The protocol design is in [docs/design/emulator-control.md](docs/design/emulator-control.md).
 
 ## Scenarios and tests
 
@@ -139,8 +143,13 @@ mise run test:quick           # fast checks
 mise run test                 # pytest, cargo test --workspace, web tests, all scenario pins
 mise run test:slow            # slow runs and gates that need private fixtures
 mise run lint                 # ruff, oxlint, cargo fmt on the clean crates
-mise run check                # lint + test:quick, the pre-merge gate
+mise run check                # lint + test:quick, a quick local check
+mise run verify               # the gate: the steps your changed files need
+mise run verify:full          # every step; run before merging to main
 ```
+
+`mise run verify` is the gate, not `mise run check`. Test layout and commands:
+[docs/TESTING.md](docs/TESTING.md).
 
 Pins are valid only for the firmware and ready state they were recorded with.
 
@@ -199,11 +208,14 @@ emu/             firmware extraction and the shared helpers (config, symbols, SH
 native/          Rust workspace: ColdFire core, SHARC+ engine, coupled runner (native/README.md)
 packages/web     browser panel (Astro + Solid); packages/desktop is the Tauri app
 tools/           analysis, run and measurement tools
-tests/           pytest suite (native tests live in the crates)
+tests/           pytest suite (native tests live in the crates); see docs/TESTING.md
 scenarios/       scripted panel inputs and pinned PCM hashes
-devices/*.toml   firmware hashes and panel layout per device
+modules/         patchkit modules
+devices/         device profiles (firmware hashes, panel layout), LED maps, and ports/ (patchkit firmware ports)
 docs/            findings, designs, handovers
 ```
+
+Who owns what, and planned moves: [docs/LAYOUT.md](docs/LAYOUT.md).
 
 ## Documentation map
 
@@ -217,6 +229,16 @@ docs/            findings, designs, handovers
 
 Record results in `docs/findings/`, not in handovers. Marks: **[V]** verified here,
 **[D]** documented or read once, **[O]** open, **[C]** corrects an earlier claim.
+
+## Limitations
+
+- The DSP does not run in real time yet ([finding 18](docs/findings/18-dsp-performance.md)).
+- The browser DSP is slow; the browser host is parked on the branch `wip/browser-host`.
+- No patched firmware has been installed on a device.
+- The control socket is a Unix socket ([docs/design/emulator-control.md](docs/design/emulator-control.md)).
+- Some scenario PCM pins need the private ready inputs ([scenarios/README.md](scenarios/README.md)).
+
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 

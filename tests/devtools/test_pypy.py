@@ -1,0 +1,79 @@
+"""The SHARC core's own tests, run under PyPy 3.11.
+
+tools/sharc_core and tools/sharc_run.py are written to also run under PyPy
+(see [tool.mypy]'s python_version = "3.11" in pyproject.toml, checked by
+tests/devtools/test_types.py), since a symbolic trace or a concrete run is pure
+Python arithmetic that benefits from PyPy's JIT. This test proves that
+claim by actually running the core's test suite under a PyPy interpreter,
+in a subprocess, instead of just type-checking against 3.11.
+
+The file list below is every required test file that exercises sharc_core/
+sharc_trace/sharc_run without a CPython-only dependency (unicorn, capstone,
+pypcode); tools/sharc.py (imported by test_sharc_contract.py) needs
+networkx, a pure-Python package that runs fine under PyPy, so it is
+installed alongside pytest.
+"""
+
+import shutil
+import subprocess
+import time
+
+import pytest
+from support.paths import REPO_ROOT
+
+ROOT = str(REPO_ROOT)
+
+PYPY_TESTS = [
+    "tests/sharc/semantics/test_sharc_compute_mr.py",
+    "tests/sharc/semantics/test_sharc_compute_table.py",
+    "tests/sharc/trace/test_sharc_trace_control.py",
+    "tests/sharc/trace/test_sharc_trace_memory.py",
+    "tests/sharc/trace/test_sharc_trace_ureg.py",
+    "tests/sharc/trace/test_sharc_trace_branches.py",
+    "tests/sharc/trace/test_sharc_trace_addressing.py",
+    "tests/sharc/trace/test_sharc_trace_cli.py",
+    "tests/sharc/trace/test_sharc_trace_flags.py",
+    "tests/sharc/trace/test_sharc_trace_float.py",
+    "tests/sharc/trace/test_sharc_trace_realblob.py",
+    "tests/sharc/trace/test_sharc_trace_mult.py",
+    "tests/sharc/trace/test_sharc_trace_alu.py",
+    "tests/sharc/trace/test_sharc_trace_forms.py",
+    "tests/sharc/trace/test_sharc_trace_simd.py",
+    "tests/sharc/semantics/test_sharc_denormal.py",
+    "tests/sharc/semantics/test_sharc_run.py",
+    "tests/sharc/analysis/test_sharc_contract.py",
+]
+
+
+@pytest.mark.slow
+def test_sharc_core_under_pypy():
+    if shutil.which("uv") is None:
+        pytest.skip("uv not on PATH")
+    start = time.perf_counter()
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--python",
+            "pypy3.11",
+            "--with",
+            "pytest",
+            "--with",
+            "networkx",
+            "python",
+            "-m",
+            "pytest",
+            *PYPY_TESTS,
+            "-q",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    elapsed = time.perf_counter() - start
+    assert result.returncode == 0, "%s\n%s\n(%.1fs)" % (
+        result.stdout,
+        result.stderr,
+        elapsed,
+    )
