@@ -41,7 +41,7 @@ Other tests:
 
 ## Inputs tests need
 
-In a clean checkout (no firmware, no `out/`), 2002 tests pass and 542 skip. Each skip names the input it lacks.
+In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each skip names the input it lacks.
 `pytest -rs` lists the reasons.
 
 | Input | Skip message looks like | How to provide | Tests |
@@ -50,7 +50,7 @@ In a clean checkout (no firmware, no `out/`), 2002 tests pass and 542 skip. Each
 | Extracted sections `out/sections/<image>/` | "out/sections/dt2-1.16/section_7_BLOB.bin is not available", "no extracted sections", "DT2 1.16 image absent" | `uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16` (likewise `dn2-1.11`; README "Extract the firmware") | `tests/sharc/*`, `tests/coldfire`, `tests/dsp` |
 | SHARC program database `out/sharcdb/<image>.sqlite` | "out/sharcdb/dt2-1.16.sqlite is not available", "no program database" | `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin` (needs the sections) | `tests/sharc/analysis` |
 | ColdFire Ghidra dump `out/ghidra/<image>-emac` and its cfdb | "out/ghidra/dt2-1.16-emac missing", "no cfdb for dt2-1.17" | Needs Ghidra: a `tools/ghidradump.py` dump, then `uv run python tools/cfdb.py build out/ghidra/<image>-emac` (AGENTS.md "Static analysis") | `tests/coldfire`, `tests/firmware/test_fw.py` |
-| Native SHARC library (`DEFAULT_LIB` in `tools/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (native/sharc)" | `mise run sharc:native-lib` (firmware-free; builds the shared core first; output in `out/native/shared-core/target`). An image-specific library at `out/native/opt/target-final` is preferred when present; `SHARC_NATIVE_LIB` overrides. | `tests/sharc/semantics`, `tests/sharc/generation` |
+| Native SHARC library (`DEFAULT_LIB` in `tools/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (native/sharc)" | `mise run sharc:native-lib` (firmware-free; builds the shared core first; output in `out/native/shared-core/target`). The shared-core library is preferred when present; else the image-specific library at `out/native/opt/target-final` (perf/AOT work; may be stale, and an old one that lacks symbols makes the tests skip); `SHARC_NATIVE_LIB` overrides. | `tests/sharc/semantics`, `tests/sharc/generation` |
 | Generated shared core `out/native/shared-core/gen` | "no shared core generated here" | `mise run gen:core` | `tests/sharc/generation/test_sharc_lowergen.py` |
 | Module toolchains in `out/tools` (m68k gcc/binutils, Selache) | "selache not built (tools/pk_toolchains.py selache)", "m68k toolchain not installed" | `mise run toolchains` (about 15 min; `uv run python tools/pk_toolchains.py status` shows what is present; docs/PATCHING.md) | `tests/patchkit` |
 | `digi-emud` daemon | "needs DIGI_EMUD (a built digi-emud) and the DN2 .syx" | Build it with `mise run emu:serve -- --build-only` (per `tools/digi_client.py`), set `DIGI_EMUD` to the binary (`DIGI_EMUD_DN2` / `DIGI_EMUD_DT2` for coupled runs; `tools/native_emu.py --daemon --build-only <syx>` prints the path), and have the `.syx` (`DIGI_EMU_SYX`) | `tests/control`, `tests/patchkit/test_master_drive_emu.py`, `tests/emulator/test_coupled_patched.py` |
@@ -90,7 +90,7 @@ Per-file run (`test_outcomes.py run --jobs 6`) of the non-slow suite at
 
 - The 5 failures were in `tests/firmware/test_device.py`: `devices/*-leds.toml` has no `[device]` table. Fixed by `emu/device.py` skipping sidecar files.
 - After the fixes on this branch (bb912e1), one pytest process over all of `tests/` passes: 2322 passed, 237 skipped, 0 failed, in 18 minutes. The per-file runner takes about 8 minutes with 6 jobs.
-- Clean checkout (no firmware, no out/): 2005 passed, 554 skipped, 0 failed after the fixes in this branch; every skip names its missing input.
+- Clean checkout (no firmware, no out/): 2005 passed, 554 skipped, 0 failed after the fixes in this branch; every skip names its missing input. With `mise run sharc:native-lib` (22 s from cold), the 46 native-library skips run: 644 passed and the one known failure listed under Known issues.
 - The same run after the test moves gave the same outcome and skip reason for every test.
 - Slowest files:
 
@@ -107,6 +107,7 @@ A checkout without them skips more.
 
 ## Known issues and deferred work
 
+- `tests/sharc/generation/test_sharc_transpile.py::test_native_compute_corpus_matches` fails once a current native library is built (`mise run sharc:native-lib`); before, it was always skipped because the old library in out/native/opt/target-final lacks a symbol. The native core matches on all 1201 comparable cases; the failure is on the Python side: 3 edge-value cases of shift opcode 0x50, form 2a, raise `AssertionError: PEy tuple RN must be int-only` in tools/sharc_core. Reproduce: `uv run python -c "import sys; sys.path.insert(0,'tools'); import sharc_transpile_run as r; print([(i, c.error) for i, c in enumerate(r.corpus_cases(7, 4)) if c.error])"`. A fix changes tools/sharc_core, so CORE_FINGERPRINT changes and every generated core is regenerated; it is left for a separate SHARC task.
 - State shared between test files:
   - One pytest process over all of `tests/` used to fail (`TraceTest`) and then stall in tracer code. Three causes, all fixed:
     1. Ghidra tools (ghidraapply, ghidraq, ghidravt, ghidradump, ghidracopy, ghidraopts, sharc_import) remove `tools/` from `sys.path` when imported, so PyGhidra's `ghidra` package is not shadowed. `tests/conftest.py` now restores `tools/` and `tests/` before each collection and test.
