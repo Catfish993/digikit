@@ -36,6 +36,11 @@ collaborator readiness; section "Inputs from the patchkit milestone"), then `VER
 - **Docs**: `docs/MODULE-AUTHORING.md` (short path), `docs/PATCHING.md`, `modules/README.md`, skills
   `digikit-module` and `firmware-query`.
 
+## Merge gate (2026-10-14, on the tip of `work/patchkit`)
+
+`verify:full` all passed (1,301 s, tier sweep included); smoke matrix 15 of 15 cells (304 s, `--jobs 4`);
+`mise run patch:proofs` 10 of 10 tools (369 s).
+
 ## Rules learned this milestone (also in AGENTS.md)
 
 - Agents never wait with `tail -f`; poll with a bound. Stop only processes you started; never pkill emulators.
