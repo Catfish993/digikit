@@ -8,6 +8,10 @@
     uv run python tools/verify.py --jobs 1         # sequential (default: half the CPUs in parallel)
     uv run python tools/verify.py --explain        # show the routing and the plan, run nothing
 
+python-tests runs one pytest process per file, in parallel (DIGI_PY_JOBS, default
+max(2, cpus // 4); DIGI_PY_TIMEOUT per file in seconds, default 3600), through tools/test_outcomes.py; a run that passed no test fails. The
+tier steps cut their (default/no-aot x file) groups into small chunks of scenarios and run
+them from one shared queue, longest first, on DIGI_TIER_JOBS workers (default cpus - 4).
 python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match a changed file,
 every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
 test files that import a changed tests/support module. With
@@ -32,6 +36,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -331,6 +336,27 @@ def pytest_ran(text: str) -> str | None:
     return None if " passed" in last else f"nothing passed ({last})"
 
 
+def python_tests_passed(out_dir: Path) -> str | None:
+    """A python-tests run whose files passed no test at all is not a pass."""
+    summary = out_dir / "summary.tsv"
+    if not summary.exists():
+        return f"no {summary.name}"
+    rows = summary.read_text().splitlines()[1:]
+    passed = 0
+    for row in rows:
+        cols = row.split("\t")
+        if len(cols) > 4 and cols[4].isdigit():
+            passed += int(cols[4])
+    return None if passed > 0 else "nothing passed (0 tests passed)"
+
+
+def python_tests_command(out: Path, files: list[str]) -> list[str]:
+    """The per-file runner for the python-tests step (one pytest process per file)."""
+    cmd = [*PY, "tools/test_outcomes.py", "run", "--check", "--out", str(out)]
+    cmd = [*cmd, "--timeout", str(python_timeout())]
+    return [*cmd, "--jobs", str(python_jobs()), *files]
+
+
 class Gate:
     """Collects each step's output lines in a per-thread buffer, so parallel steps
     print whole and in order when they finish."""
@@ -381,6 +407,80 @@ class Gate:
         self.report(name, problem, time.monotonic() - start, text)
 
 
+def tier_jobs_budget() -> int:
+    """Coupled-run processes for all tier groups together: DIGI_TIER_JOBS, else
+    cpus - 4 (the performance cores of a 16-core machine)."""
+    env = os.environ.get("DIGI_TIER_JOBS")
+    if env:
+        jobs = int(env)
+        if jobs < 1:
+            raise SystemExit("verify: DIGI_TIER_JOBS must be at least 1")
+        return jobs
+    return max(1, (os.cpu_count() or 1) - 4)
+
+
+def python_jobs() -> int:
+    """Test files run at once in python-tests: DIGI_PY_JOBS, else max(2, cpus // 4)."""
+    env = os.environ.get("DIGI_PY_JOBS")
+    if env:
+        return max(1, int(env))
+    return max(2, (os.cpu_count() or 1) // 4)
+
+
+def python_timeout() -> int:
+    """Per-file timeout for python-tests: catches hangs, not slow files (test_pluck.py
+    takes ~450 s alone and more than 900 s under verify:full load)."""
+    env = os.environ.get("DIGI_PY_TIMEOUT")
+    if env:
+        seconds = int(env)
+        if seconds < 1:
+            raise SystemExit("verify: DIGI_PY_TIMEOUT must be at least 1")
+        return seconds
+    return 3600
+
+
+# no-AOT renders cost about 2x per simulated second (measured 1.9-2.0 on DN2 FX, 2026-10-14); weights chunk costs
+TIER_NO_AOT_COST = 2.0
+
+
+@dataclass(frozen=True)
+class Chunk:
+    """Consecutive scenarios of one (label, file) group, run by one coupled process."""
+
+    label: str
+    path: str
+    names: tuple[str, ...]
+    cost: float
+    index: int
+
+
+def plan_chunks(
+    groups: list[tuple[str, str, list[str], dict[str, float], float]], budget: int
+) -> list[Chunk]:
+    """Cut each group (label, path, names, seconds by name, cost factor) into consecutive
+    chunks of about total cost / (budget * 4), at least one scenario each; longest first."""
+    costs = [
+        [factor * seconds[n] for n in names] for _, _, names, seconds, factor in groups
+    ]
+    target = sum(sum(c) for c in costs) / (budget * 4)
+    chunks: list[Chunk] = []
+    for (label, path, names, _, _), group_costs in zip(groups, costs, strict=True):
+        index = 0
+        taken: list[str] = []
+        cost = 0.0
+        for name, c in zip(names, group_costs, strict=True):
+            taken.append(name)
+            cost += c
+            if cost >= target:
+                chunks.append(Chunk(label, path, tuple(taken), cost, index))
+                index += 1
+                taken, cost = [], 0.0
+        if taken:
+            chunks.append(Chunk(label, path, tuple(taken), cost, index))
+    chunks.sort(key=lambda c: -c.cost)
+    return chunks
+
+
 def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     """FX scenarios must give the same PCM in the default and no-AOT configurations.
 
@@ -388,32 +488,75 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     interpreter alone (`SHARC_AOT=0`, about 80 s per audio second), as DT2 has no
     fast regions."""
     start = time.monotonic()
-    jobs = str(coupled.default_jobs())
     shas: dict[str, dict[str, str]] = {}
     dt2 = device == "dt2"
     no_aot = {**os.environ, "SHARC_AOT": "0"} if dt2 else no_aot_env()
-    for label, env in (("default", None), ("no-aot", no_aot)):
+    envs: dict[str, dict[str, str] | None] = {"default": None, "no-aot": no_aot}
+    groups: list[tuple[str, str, list[str], dict[str, float], float]] = []
+    for label in envs:
         for path in DT2_FX_FILES if dt2 else FX_FILES:
-            names = sorted(coupled.scenario_seconds(path))[::every]
-            report = gate.out / f"{name}-{label}-{Path(path).stem}" / "report.json"
-            report.parent.mkdir(parents=True, exist_ok=True)
-            cmd = [*PY, "tools/coupled.py", "scenario", "--scenarios", path, *names]
-            cmd += ["--no-build", "--jobs", jobs, "--out", str(report)]
-            if dt2:
-                cmd += ["--device", "dt2", "--dt2-card"]
-            with benchlock.hold("shared", f"verify {name}"):
-                proc = subprocess.run(
-                    cmd, cwd=ROOT, env=env, capture_output=True, text=True
-                )
-            text = proc.stdout + proc.stderr
-            (report.parent / "run.log").write_text(text)
-            # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
-            if proc.returncode not in (0, 2) or not report.exists():
-                problem = f"{label} {path}: exit {proc.returncode}"
-                gate.report(name, problem, time.monotonic() - start, text)
+            seconds = coupled.scenario_seconds(path)
+            names = sorted(seconds)[::every]
+            factor = TIER_NO_AOT_COST if label == "no-aot" else 1.0
+            groups.append((label, path, names, seconds, factor))
+    budget = tier_jobs_budget()
+    chunks = plan_chunks(groups, budget)
+
+    def report_of(chunk: Chunk) -> Path:
+        stem = Path(chunk.path).stem
+        return (
+            gate.out
+            / f"{name}-{chunk.label}-{stem}"
+            / f"chunk-{chunk.index:03d}"
+            / "report.json"
+        )
+
+    def run_chunk(chunk: Chunk) -> tuple[subprocess.CompletedProcess[str], float]:
+        report = report_of(chunk)
+        report.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [*PY, "tools/coupled.py", "scenario", "--scenarios", chunk.path]
+        cmd += [*chunk.names, "--no-build", "--jobs", "1", "--out", str(report)]
+        if dt2:
+            cmd += ["--device", "dt2", "--dt2-card"]
+        with benchlock.hold("shared", f"verify {name}"):
+            proc = subprocess.run(
+                cmd, cwd=ROOT, env=envs[chunk.label], capture_output=True, text=True
+            )
+        return proc, time.monotonic() - start
+
+    with ThreadPoolExecutor(max_workers=budget) as pool:
+        done = list(pool.map(run_chunk, chunks))
+    ended: dict[tuple[str, str], float] = {}
+    for chunk, (_, end) in zip(chunks, done, strict=True):
+        key = (chunk.label, chunk.path)
+        ended[key] = max(ended.get(key, 0.0), end)
+    for label, path, names, _, _ in groups:
+        count = sum(1 for c in chunks if (c.label, c.path) == (label, path))
+        gate.say(
+            f"     {label} {Path(path).stem}: {len(names)} scenarios in "
+            f"{count} chunks, {ended.get((label, path), 0.0):.0f} s"
+        )
+    gate.say(f"     budget {budget} jobs, {len(chunks)} chunks")
+    for chunk, (proc, _) in zip(chunks, done, strict=True):
+        report = report_of(chunk)
+        text = proc.stdout + proc.stderr
+        (report.parent / "run.log").write_text(text)
+        # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
+        if proc.returncode not in (0, 2) or not report.exists():
+            problem = (
+                f"{chunk.label} {chunk.path} chunk {chunk.index}: "
+                f"exit {proc.returncode}"
+            )
+            gate.report(name, problem, time.monotonic() - start, text)
+            return
+        for result in coupled.scenario_results(json.loads(report.read_text())):
+            shas.setdefault(result["name"], {})[chunk.label] = result["sha256"]
+    for label, path, names, _, _ in groups:
+        for n in names:
+            if label not in shas.get(n, {}):
+                problem = f"{label} {path}: no result for {n}"
+                gate.report(name, problem, time.monotonic() - start)
                 return
-            for result in coupled.scenario_results(json.loads(report.read_text())):
-                shas.setdefault(result["name"], {})[label] = result["sha256"]
     differ = [n for n, s in shas.items() if s.get("default") != s.get("no-aot")]
     problem = (
         f"{len(differ)} of {len(shas)} differ: {', '.join(differ[:5])}"
@@ -556,10 +699,11 @@ def run_step(gate: Gate, step: str) -> None:
     elif step == "tier-sweep":
         tier(gate, "tier-sweep", 1)
     elif step == "python-tests":
+        out = gate.out / "python-tests"
         gate.run(
             "python-tests",
-            [*PY, "-m", "pytest", "-q", *gate.py_tests],
-            check=pytest_ran,
+            python_tests_command(out, gate.py_tests),
+            check=lambda _text: python_tests_passed(out),
         )
     elif step == "rust-tests":
         gate.run("rust-tests", rust_tests_command())
