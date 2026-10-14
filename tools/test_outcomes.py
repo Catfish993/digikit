@@ -8,17 +8,27 @@ Usage:
     uv run python tools/test_outcomes.py BEFORE.xml AFTER.xml \
         --rename tests/test_a.py=tests/sharc/test_a.py [--allow-new]
 
-Exit status: 0 when the outcomes are the same, 1 when they differ, 2 on usage
+Run every test file in its own pytest process and record a baseline:
+    uv run python tools/test_outcomes.py run --out DIR [--root PATH] [--jobs N] \
+        [--timeout SECONDS] [--pytest-arg ARG ...] PATHS...
+writes DIR/logs, DIR/xml, DIR/summary.tsv and DIR/all.xml (a hung or crashed file
+becomes one error testcase named __file__) and exits 0.
+
+Exit status of the compare mode: 0 when the outcomes are the same, 1 when they differ, 2 on usage
 errors or unreadable XML.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import signal
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -144,7 +154,203 @@ def compare(
     return 0
 
 
+def slug_of(path: str) -> str:
+    """File path -> log/XML base name: '/' becomes '__', no '.py'."""
+    return path.removesuffix(".py").replace("/", "__")
+
+
+def dotted_of(path: str) -> str:
+    """File path -> module dotted path."""
+    return path.removesuffix(".py").replace("/", ".")
+
+
+def expand_paths(root: Path, paths: list[str]) -> list[str]:
+    """Expand files and directories to sorted, unique test_*.py paths below ROOT."""
+    found: set[str] = set()
+    for item in paths:
+        full = root / item
+        files = sorted(full.rglob("test_*.py")) if full.is_dir() else [full]
+        for f in files:
+            rel = f.relative_to(root)
+            if "support" not in rel.parts[:-1]:
+                found.add(rel.as_posix())
+    return sorted(found)
+
+
+def xml_counts(path: Path) -> tuple[int, int, int, int] | None:
+    """(passed, failed, skipped, errors) of a JUnit XML file, None if unreadable."""
+    try:
+        cases = list(ET.parse(path).getroot().iter("testcase"))
+    except (OSError, ET.ParseError):
+        return None
+    failed = skipped = errors = 0
+    for c in cases:
+        tags = {child.tag for child in c}
+        if "error" in tags:
+            errors += 1
+        elif "failure" in tags:
+            failed += 1
+        elif "skipped" in tags:
+            skipped += 1
+    return len(cases) - failed - skipped - errors, failed, skipped, errors
+
+
+def run_one(
+    root: Path, out: Path, rel: str, pytest_args: list[str], timeout: float
+) -> dict[str, object]:
+    """Run pytest on one file in its own process group; return its record."""
+    slug = slug_of(rel)
+    xml = out / "xml" / f"{slug}.xml"
+    cmd = [
+        sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
+        f"--junitxml={xml}", *pytest_args, rel,
+    ]  # fmt: skip
+    start = time.monotonic()
+    timed_out = False
+    with open(out / "logs" / f"{slug}.log", "wb") as log:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=root,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        try:
+            rc = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+            except ProcessLookupError:
+                pass
+            rc = proc.returncode
+    seconds = time.monotonic() - start
+    cnt = None if timed_out else xml_counts(xml)
+    if timed_out:
+        status = "TIMEOUT"
+    elif cnt is None:
+        status = "NO-XML"
+    else:
+        status = "OK"
+    return {
+        "file": rel,
+        "status": status,
+        "rc": rc,
+        "seconds": seconds,
+        "counts": cnt,
+        "xml": xml,
+    }
+
+
+def run_all(
+    root: Path,
+    out: Path,
+    files: list[str],
+    pytest_args: list[str],
+    jobs: int,
+    timeout: float,
+) -> None:
+    """Run every file, print one line each, write summary.tsv and all.xml."""
+    (out / "logs").mkdir(parents=True, exist_ok=True)
+    (out / "xml").mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, object]] = []
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [
+            pool.submit(run_one, root, out, f, pytest_args, timeout) for f in files
+        ]
+        for fut in as_completed(futures):
+            rec = fut.result()
+            cnt = rec["counts"]
+            if isinstance(cnt, tuple):
+                shown = "/".join(str(n) for n in cnt)
+            else:
+                shown = str(rec["status"])
+            print(
+                f"{rec['rc']}  {rec['seconds']:.1f}  {shown}  {rec['file']}", flush=True
+            )
+            records.append(rec)
+    records.sort(key=lambda r: str(r["file"]))
+    suites = ET.Element("testsuites")
+    lines = ["file\tstatus\trc\tseconds\tpassed\tfailed\tskipped\terrors"]
+    for rec in records:
+        cnt = rec["counts"]
+        nums = cnt if isinstance(cnt, tuple) else ("", "", "", "")
+        lines.append(
+            "\t".join(
+                str(x)
+                for x in (
+                    rec["file"],
+                    rec["status"],
+                    rec["rc"],
+                    f"{rec['seconds']:.1f}",
+                    *nums,
+                )
+            )
+        )
+        suite = ET.SubElement(suites, "testsuite", name=str(rec["file"]))
+        xml = rec["xml"]
+        assert isinstance(xml, Path)
+        if rec["status"] == "OK":
+            for c in ET.parse(xml).getroot().iter("testcase"):
+                suite.append(c)
+            continue
+        if rec["status"] == "TIMEOUT":
+            message = f"TIMEOUT after {timeout:g} s"
+        else:
+            message = f"NO-XML rc={rec['rc']}"
+        c = ET.SubElement(
+            suite,
+            "testcase",
+            classname=dotted_of(str(rec["file"])),
+            name="__file__",
+        )
+        ET.SubElement(c, "error", message=message)
+    (out / "summary.tsv").write_text("\n".join(lines) + "\n")
+    ET.ElementTree(suites).write(
+        out / "all.xml", encoding="utf-8", xml_declaration=True
+    )
+
+
+def run_main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="test_outcomes.py run",
+        description="Run every test file in isolation and record a baseline.",
+    )
+    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--root", type=Path, default=REPO)
+    ap.add_argument("--jobs", type=int, default=4)
+    ap.add_argument("--timeout", type=float, default=900)
+    ap.add_argument("--pytest-arg", action="append", default=[], metavar="ARG")
+    ap.add_argument("paths", nargs="+", metavar="PATHS")
+    try:
+        args = ap.parse_args(argv)
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else 2
+    if args.jobs < 1 or args.timeout <= 0:
+        print("test_outcomes: --jobs and --timeout must be positive", file=sys.stderr)
+        return 2
+    root = args.root.resolve()
+    if not root.is_dir():
+        print(f"test_outcomes: no such root {root}", file=sys.stderr)
+        return 2
+    files = expand_paths(root, args.paths)
+    if not files:
+        print("test_outcomes: no test files found", file=sys.stderr)
+        return 2
+    run_all(root, args.out.resolve(), files, args.pytest_arg, args.jobs, args.timeout)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "run":
+        return run_main(argv[1:])
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("before", type=Path)
     ap.add_argument("after", type=Path)

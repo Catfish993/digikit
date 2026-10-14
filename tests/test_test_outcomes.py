@@ -79,5 +79,53 @@ class OutcomesTest(unittest.TestCase):
         self.assertEqual(test_outcomes.main(["/nonexistent/a", "/nonexistent/b"]), 2)
 
 
+class RunModeTest(unittest.TestCase):
+    def test_slug_and_dotted(self) -> None:
+        self.assertEqual(
+            test_outcomes.slug_of("tests/sharc/test_a.py"), "tests__sharc__test_a"
+        )
+        self.assertEqual(
+            test_outcomes.dotted_of("tests/sharc/test_a.py"), "tests.sharc.test_a"
+        )
+
+    def test_expand_skips_support(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel in ("tests/test_b.py", "tests/test_a.py", "tests/x/test_c.py",
+                        "tests/support/test_s.py", "tests/helper.py"):  # fmt: skip
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text("")
+            got = test_outcomes.expand_paths(root, ["tests", "tests/test_a.py"])
+            self.assertEqual(
+                got, ["tests/test_a.py", "tests/test_b.py", "tests/x/test_c.py"]
+            )
+
+    def test_end_to_end(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "root"
+            out = Path(tmp) / "out"
+            root.mkdir()
+            (root / "test_ok.py").write_text("def test_a():\n    pass\n")
+            (root / "test_skip.py").write_text(
+                "import pytest\n\n\ndef test_s():\n    pytest.skip('no')\n"
+            )
+            (root / "test_hang.py").write_text(
+                "import time\n\n\ndef test_h():\n    time.sleep(30)\n"
+            )
+            rc = test_outcomes.main(
+                ["run", "--out", str(out), "--root", str(root), "--timeout", "2", "."]
+            )
+            self.assertEqual(rc, 0)
+            all_xml = out / "all.xml"
+            self.assertTrue(all_xml.exists())
+            self.assertTrue((out / "summary.tsv").exists())
+            self.assertEqual(test_outcomes.main([str(all_xml), str(all_xml)]), 0)
+            res = test_outcomes.read_outcomes(all_xml)
+            self.assertEqual(res[("test_hang.py", "::__file__")][0], "error")
+            self.assertEqual(res[("test_ok.py", "::test_a")][0], "passed")
+            self.assertEqual(res[("test_skip.py", "::test_s")][0], "skipped")
+            self.assertIn("TIMEOUT", all_xml.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
