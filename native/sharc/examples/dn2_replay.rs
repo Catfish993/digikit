@@ -73,6 +73,9 @@ fn model_stats_delta(after: ModelStats, before: ModelStats) -> ModelStats {
         timer_gated: after.timer_gated - before.timer_gated,
         mmr_exits: after.mmr_exits - before.mmr_exits,
         code_mismatch: after.code_mismatch - before.code_mismatch,
+        code_verifies: after.code_verifies - before.code_verifies,
+        code_verify_ns: after.code_verify_ns - before.code_verify_ns,
+        interp_appended: after.interp_appended - before.interp_appended,
         irq_taken: after.irq_taken - before.irq_taken,
         irq_by_vector: std::array::from_fn(|i| after.irq_by_vector[i] - before.irq_by_vector[i]),
     }

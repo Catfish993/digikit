@@ -40,6 +40,8 @@ impl Analysis {
                 (sha256_hex(&section.bytes), section.bytes.len()),
             );
             if section.id == SECTION_DSP {
+                // The emulator flattens the stream and never runs the boot ROM: refuse here what the ROM would.
+                patchkit::bootrom::require(&section.bytes).map_err(|e| e.to_string())?;
                 dsp = Some(section.bytes.clone());
             }
         }

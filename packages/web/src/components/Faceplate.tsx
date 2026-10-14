@@ -8,6 +8,9 @@ import { fetchLocalInputs, localManifest, sha256Hex } from '../runtime/local-inp
 import CoupledAudio, { startCoupled } from './CoupledAudio';
 import { benchRequested, runBench } from '../runtime/bench';
 import { cardLine, startCard, topLevelWavs, type CardStatus } from '../runtime/cards';
+import { devEnabled } from '../dev';
+import { identify } from '../patch/identify';
+import { takeHandoff } from '../patch/handoff';
 import './faceplate.css';
 
 const iconPaths: Record<string, string> = {
@@ -21,14 +24,24 @@ const iconPaths: Record<string, string> = {
 };
 function Icon(props: { name: string }) { return <g class="icon" aria-hidden="true"><path class="icon-stroke" d={iconPaths[props.name] ?? ''} /><Show when={props.name === 'settings'}><circle class="icon-stroke" cx="12" cy="12" r="3" /></Show><Show when={props.name === 'perform'}><circle class="icon-fill" cx="5.5" cy="17.5" r="2.6" /></Show><Show when={props.name === 'arp'}><circle class="icon-fill" cx="6" cy="18.5" r="2.6"/><circle class="icon-fill" cx="16" cy="16.5" r="2.6"/><path class="icon-fill" d="M8.4 5.8 L18.4 3.8 V7 L8.4 9 Z" /></Show><Show when={props.name === 'noteedit'}><circle class="icon-fill" cx="11.8" cy="19" r="2.5"/><circle class="icon-fill" cx="11.8" cy="13" r="1.5"/><circle class="icon-fill" cx="11.8" cy="9" r="1.5"/><circle class="icon-fill" cx="11.8" cy="5" r="1.5"/></Show><Show when={props.name === 'unison'}><circle class="icon-stroke" cx="5" cy="5" r="2.2"/><circle class="icon-stroke" cx="12" cy="4" r="2.2"/><circle class="icon-stroke" cx="19" cy="5" r="2.2"/><circle class="icon-fill" cx="12" cy="19" r="2.6"/></Show><Show when={props.name === 'keyboard'}><rect class="icon-fill" x="6" y="3" width="3" height="11"/><rect class="icon-fill" x="10.5" y="3" width="3" height="11"/><rect class="icon-fill" x="15" y="3" width="3" height="11"/></Show><Show when={props.name === 'headphones'}><rect class="icon-fill" x="3" y="13.5" width="4.5" height="7.5"/><rect class="icon-fill" x="16.5" y="13.5" width="4.5" height="7.5"/></Show></g>; }
 
+function BenchStatus() {
+  onMount(() => { void runBench(); });
+  return <output id="bench-status">bench mode: see window.__bench</output>;
+}
+
+/** The emulator page: the bench (dev only, tools/browser_bench.mjs) or the panel. */
 export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
-  if (benchRequested()) { onMount(() => { void runBench(); }); return <output id="bench-status">bench mode: see window.__bench</output>; }
+  return <Show when={!(devEnabled() && benchRequested())} fallback={<BenchStatus />}><Panel runtime={props.runtime} /></Show>;
+}
+
+function Panel(props: { runtime?: EmulatorRuntime }) {
+  const dev = devEnabled();
   const [device, setDevice] = createSignal<'dt2' | 'dn2'>('dt2');
   const [pressed, setPressed] = createSignal(new Set<number>());
   const [leds, setLeds] = createSignal(new Uint8Array(LED_COUNT));
   // `?leds=<128 hex digits>` shows a fixed LED state without a running emulator (a styling aid; a loaded firmware replaces it).
-  onMount(() => { const preview = new URLSearchParams(location.search).get('leds'); if (preview) setLeds(parseLeds(preview)); });
-  const [status, setStatus] = createSignal('Choose a firmware image to start the diagnostic runtime.');
+  onMount(() => { const preview = dev ? new URLSearchParams(location.search).get('leds') : null; if (preview) setLeds(parseLeds(preview)); });
+  const [status, setStatus] = createSignal('Choose a firmware file (.syx) to start.');
   const [reportAvailable, setReportAvailable] = createSignal(false);
   const [paused, setPaused] = createSignal(true);
   const [loaded, setLoaded] = createSignal(false);
@@ -111,11 +124,11 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   const choose = async (file?: File) => {
     if (!file) return;
     // Dev-only coupled path (Digitone II): create and resume the AudioContext before any await.
-    const coupledSink = device() === 'dn2' ? new PcmSink() : undefined; void coupledSink?.resume().catch(() => {}); if (coupledSink) resumeOnNextGesture(coupledSink);
+    const coupledSink = dev ? new PcmSink() : undefined; void coupledSink?.resume().catch(() => {}); if (coupledSink) resumeOnNextGesture(coupledSink);
     let kept = false;
     releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); setReportAvailable(false); setLoaded(false); firmwareFile = file; setStatus(`Loading ${file.name}…`);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer()); if (firmwareFile !== file) return; setChosenFirmware({ name: file.name, bytes: bytes.slice() }); const selected = await runtimeReady; if (firmwareFile !== file || !selected) return;
+      const bytes = new Uint8Array(await file.arrayBuffer()); if (firmwareFile !== file) return; setChosenFirmware({ name: file.name, bytes: bytes.slice() }); const identity = identify(await sha256Hex(bytes)); if (identity) setDevice(identity.device); const selected = await runtimeReady; if (firmwareFile !== file || !selected) return;
       let coupledError = '';
       if (coupledSink) {
         try {
@@ -140,6 +153,8 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
     } catch (error) { if (firmwareFile === file) { setPaused(true); setLoaded(false); setStatus(String(error)); } }
     finally { if (!kept) coupledSink?.close(); }
   };
+  // /patch hands a patched image over through IndexedDB (never the network): boot it as if it had been chosen.
+  onMount(() => { if (new URLSearchParams(location.search).get('handoff') !== '1') return; void takeHandoff().then((item) => { if (!item) { setStatus('Nothing to boot: open the patch page and press Boot in emulator.'); return; } if (item.device === 'dt2' || item.device === 'dn2') setDevice(item.device); void choose(new File([item.bytes], item.name)); }).catch((error) => setStatus(`Could not read the patched firmware: ${String(error)}`)); });
   const pollCard = () => {
     const cards = runtime()?.cards; if (!cards) return;
     cardTimer = window.setTimeout(async () => {
@@ -182,9 +197,10 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
     } catch (error) { setStatus(`Diagnostic export failed: ${String(error)}`); }
   };
   const restart = async () => { try { const snapshot = await runtime()?.restart(); if (snapshot) update({ type: 'snapshot', snapshot }); setPaused(false); } catch (error) { setPaused(true); setLoaded(false); setStatus(String(error)); } };
-  return <main style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}>
-    <header class="toolbar"><label class="file">Choose firmware<input type="file" accept=".syx,application/octet-stream" onChange={(e) => choose(e.currentTarget.files?.[0])} /></label><select aria-label="Device" value={device()} onChange={(e) => { releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); firmwareFile = undefined; const input = document.querySelector<HTMLInputElement>('.file input'); if (input) input.value = ''; setReportAvailable(false); setDevice(e.currentTarget.value as 'dt2' | 'dn2'); setPaused(true); setLoaded(false); setStatus('Choose a firmware image to start.'); }}><option value="dt2">Digitakt II</option><option value="dn2">Digitone II</option></select><button disabled={!loaded()} onClick={() => { if (paused()) { runtime()?.resume(); setPaused(false); } else { runtime()?.pause(); setPaused(true); } }}>{paused() ? 'Resume' : 'Pause'}</button><button disabled={!loaded()} onClick={() => void restart()}>Restart</button><Show when={device() === 'dt2'}><button class="samples" disabled={!runtime()?.cards || !loaded() || cardBusy()} title={runtime()?.cards ? 'Pick a folder of .wav files: track N plays file N (sorted by name)' : 'Sample cards need the desktop app for now'} onClick={() => cardInput?.click()}>Choose samples</button><input ref={(el) => { cardInput = el; el.setAttribute('webkitdirectory', ''); }} type="file" multiple hidden onChange={(e) => void chooseSamples(e.currentTarget.files)} /><Show when={!runtime()?.cards}><small class="samples-note">desktop only for now</small></Show></Show><button disabled={!reportAvailable()} onClick={() => void exportDiagnostics()}>Export diagnostics</button><output>{status()}</output><Show when={cardNote() || cardLine(cardStatus())}><output class="card-status" aria-live="polite">{cardNote() || cardLine(cardStatus())}</output></Show></header>
-    <Show when={browserAudioSetup()}><CoupledAudio reset={browserAudioReset()} firmware={chosenFirmware} adopted={adopted} runtime={() => runtimeReady ?? Promise.resolve(undefined)} onStarted={(snapshot) => { releaseAll(); clearCanvas(); update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true); }} onError={(error) => setStatus(error)} /></Show>
+  return <main class="emulator" style={{ '--accent': panel().accent, '--func-legend': panel().func_legend }}>
+    <header class="toolbar"><label class="file">Choose firmware<input type="file" accept=".syx,application/octet-stream" onChange={(e) => choose(e.currentTarget.files?.[0])} /></label><Show when={dev}><select aria-label="Device" value={device()} onChange={(e) => { releaseAll(); setBrowserAudioReset((value) => value + 1); void runtime()?.stop(); clearCanvas(); firmwareFile = undefined; const input = document.querySelector<HTMLInputElement>('.file input'); if (input) input.value = ''; setReportAvailable(false); setDevice(e.currentTarget.value as 'dt2' | 'dn2'); setPaused(true); setLoaded(false); setStatus('Choose a firmware image to start.'); }}><option value="dt2">Digitakt II</option><option value="dn2">Digitone II</option></select></Show><button disabled={!loaded()} onClick={() => { if (paused()) { runtime()?.resume(); setPaused(false); } else { runtime()?.pause(); setPaused(true); } }}>{paused() ? 'Resume' : 'Pause'}</button><button disabled={!loaded()} onClick={() => void restart()}>Restart</button><Show when={device() === 'dt2'}><button class="samples" disabled={!runtime()?.cards || !loaded() || cardBusy()} title={runtime()?.cards ? 'Pick a folder of .wav files: track N plays file N (sorted by name)' : 'Sample cards need the desktop app for now'} onClick={() => cardInput?.click()}>Choose samples</button><input ref={(el) => { cardInput = el; el.setAttribute('webkitdirectory', ''); }} type="file" multiple hidden onChange={(e) => void chooseSamples(e.currentTarget.files)} /><Show when={!runtime()?.cards}><small class="samples-note">desktop only for now</small></Show></Show><Show when={dev}><button disabled={!reportAvailable()} onClick={() => void exportDiagnostics()}>Export diagnostics</button></Show><output class="status" aria-live="polite">{status()}</output><Show when={cardNote() || cardLine(cardStatus())}><output class="card-status" aria-live="polite">{cardNote() || cardLine(cardStatus())}</output></Show></header>
+    <Show when={!loaded()}><p class="hint">The firmware you choose stays in this browser. The browser emulator shows the screen and controls; sound is not available here yet. To change the firmware first, use the <a href={`${import.meta.env.BASE_URL.replace(/\/?$/, '/')}patch`}>Patch</a> page.</p></Show>
+    <Show when={dev && browserAudioSetup()}><CoupledAudio reset={browserAudioReset()} firmware={chosenFirmware} adopted={adopted} runtime={() => runtimeReady ?? Promise.resolve(undefined)} onStarted={(snapshot) => { releaseAll(); clearCanvas(); update({ type: 'snapshot', snapshot }); setPaused(false); setLoaded(true); }} onError={(error) => setStatus(error)} /></Show>
     <Show when={nativeAudio()}>{(audio) => <div class="coupled" style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '0.5rem', 'align-items': 'center', padding: '0.4rem 0' }}><output>{audio().setup_needed ? 'Audio setup is unavailable for this firmware.' : !audio().playback_requested ? 'Audio output muted.' : audio().device_error ?? audio().sink?.error ?? (audio().sink_connected ? (audio().sink?.stream_started ? audioLine(audio()) : 'Audio output ready; buffering.') : 'Audio output is unavailable.')}</output><button disabled={!loaded() || audio().setup_needed || !audio().flow_started} onClick={() => void runtime()?.tap?.(25).catch((error) => update({ type: 'error', error: String(error) }))}>Audition Trig 1</button></div>}</Show>
     <section class="panel-wrap" aria-label={`${panel().name} front panel`}><div class="panel-surface"><svg class="panel" viewBox="0 0 215 176" onPointerUp={(e) => releasePointer(e.pointerId)} onPointerCancel={(e) => releasePointer(e.pointerId)} onLostPointerCapture={(e) => { if (pointers.get(e.pointerId)?.code) releasePointer(e.pointerId); }}>
       <defs><linearGradient id="chassis" x2="0" y2="1"><stop stop-color="#34363a"/><stop offset=".5" stop-color="#2c2e31"/><stop offset="1" stop-color="#242528"/></linearGradient><radialGradient id="knob"><stop stop-color="#44464b"/><stop offset=".68" stop-color="#2a2c2f"/><stop offset=".72" stop-color="#111214"/></radialGradient></defs>

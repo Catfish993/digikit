@@ -1,0 +1,20 @@
+[package]
+name = "bootstrap-emu"
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Runs the device bootstrap (OS section 2) on the ColdFire core with a minimal board: SPI flash, panel and MIDI UARTs"
+
+# std only, besides the pure ColdFire core.
+[dependencies]
+coldfire = { path = "../coldfire" }
+
+[lib]
+name = "bootstrap_emu"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "bootstrap-run"
+path = "src/main.rs"

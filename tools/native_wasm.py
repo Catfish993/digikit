@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Build the portable native runtime for the browser without changing toolchains.
 
-Writes two files:
+Writes three files:
+  packages/web/public/patchkit.wasm
+      The patch tool of native/patchkit (C ABI, no firmware inside: ports and modules are passed in at run time).
   packages/web/public/emulator-core.wasm
       CF-only core (small), used for the normal boot.
   packages/web/.local/emulator-core-sharc.wasm
@@ -44,6 +46,11 @@ parser.add_argument(
     action="store_true",
     help="fail unless the coupled SHARC+ core (emulator-core-sharc.wasm) can be built "
     "(needs SHARC_GEN_DIR or the default generated core)",
+)
+parser.add_argument(
+    "--patchkit-only",
+    action="store_true",
+    help="build only public/patchkit.wasm",
 )
 parser.add_argument(
     "--no-fast",
@@ -138,6 +145,43 @@ def build(features: list[str], target_dir: pathlib.Path, env: dict[str, str], de
         ) from None
     shutil.copyfile(target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm", dest)
 
+
+def build_patchkit() -> None:
+    """patchkit as a wasm32 cdylib (no generated core, no firmware); small, so it ships in public/."""
+    target_dir = resolve_target_dir(None)
+    command = [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "native/patchkit/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--release",
+        "--lib",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--target-dir",
+        str(target_dir),
+    ]
+    env = {k: v for k, v in base_env.items() if k != "SHARC_GEN_DIR"}
+    try:
+        subprocess.run(command, cwd=root, env=env, check=True)
+    except subprocess.CalledProcessError:
+        raise SystemExit("patchkit WASM build failed") from None
+    built = target_dir / "wasm32-unknown-unknown/release/patchkit.wasm"
+    dest = public / "patchkit.wasm"
+    if shutil.which("wasm-opt") is not None:
+        subprocess.run(["wasm-opt", "-Oz", "--enable-bulk-memory", "--enable-sign-ext", "--enable-mutable-globals", "--enable-nontrapping-float-to-int", "--enable-multivalue", "--enable-reference-types", str(built), "-o", str(dest)], check=True)
+    else:
+        shutil.copyfile(built, dest)
+    if dest.stat().st_size > 2 * 1024 * 1024:
+        raise SystemExit(f"{dest} is {dest.stat().st_size} bytes: patchkit.wasm must stay small and firmware-free")
+    print(f"patchkit.wasm: {dest.stat().st_size} bytes")
+
+
+build_patchkit()
+if args.patchkit_only:
+    raise SystemExit(0)
 
 # The plain core has no fast tier. The coupled core has one (feature fast-wasm,
 # off until the page calls digi_sharc_fast or digi_sharc_fast_regions): it

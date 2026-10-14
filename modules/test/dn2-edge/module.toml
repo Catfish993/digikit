@@ -1,0 +1,39 @@
+[module]
+id = "test/dn2-edge"
+version = "0.1.0"
+name = "Edge probe (Digitone II)"
+category = "test"
+status = "experimental"
+summary = "Research probe for the Digitone II voice hook: writes a click into the voice buffer for every trig and release pulse the frame carries (finding 06, note-on edge)"
+ports = ["dn2-1.11", "dn2-1.12"]
+requires = ["core/machines", "core/dsp-voice"]
+conflicts = []
+
+[targets]
+"dn2-1.12" = "experimental"
+
+# The machine: its own type (8, permanent: core/machines types.toml), listed before MIDI, sent to the DSP as it is (`own_dsp`); the page layout, parameters
+# and names are FM TONE's (clone_of = 0).
+[[entry]]
+registry = "machines"
+id = "dn2edge"
+name = "Edge"
+short = "EDG"
+clone_of = 0
+position = 4
+f8 = 10
+own_dsp = 1
+devices = ["dn2"]
+
+[[object]]
+path = "build/edge-probe-dn2-dsp.dko.json"
+sources = ["src/dsp/edge_probe_dn2.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[[entry]]
+registry = "voices"
+id = "dn2edge"
+type = "machines.dn2edge.index"
+pc = "_ed_render"
+devices = ["dn2"]

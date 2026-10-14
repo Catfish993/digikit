@@ -43,7 +43,7 @@ import sqlite3
 import sys
 import time
 
-DB_VERSION = 1
+DB_VERSION = 2
 DEFAULT_DB_DIR = "out/cfdb"
 
 SCHEMA = """
@@ -84,6 +84,36 @@ CREATE TABLE symbols (
 );
 CREATE INDEX symbols_addr ON symbols(image, addr);
 CREATE INDEX symbols_name ON symbols(image, name);
+
+-- Version 2: cross-version matching facts (tools/cffacts.py, tools/cfmatch.py).
+-- h_*: masked instruction hashes of the function body; mnem_seq: its mnemonics.
+CREATE TABLE func_hash (
+  image TEXT, entry INTEGER, ninsn INTEGER, nbytes INTEGER,
+  h_strict TEXT, h_loose TEXT, h_mnem TEXT, mnem_seq TEXT,
+  PRIMARY KEY (image, entry)
+);
+CREATE INDEX func_hash_strict ON func_hash(image, h_strict);
+CREATE INDEX func_hash_loose ON func_hash(image, h_loose);
+
+-- RTTI from the dump (tools/rttiscan.py applied): typeinfo objects and one row
+-- per vtable slot.
+CREATE TABLE typeinfos (
+  image TEXT, addr INTEGER, kind TEXT, name TEXT, mangled TEXT, bases TEXT
+);
+CREATE INDEX typeinfos_name ON typeinfos(image, name);
+CREATE TABLE vtables (
+  image TEXT, addr INTEGER, class TEXT, typeinfo INTEGER, offset_to_top INTEGER,
+  slot INTEGER, target INTEGER, owner TEXT
+);
+CREATE INDEX vtables_class ON vtables(image, class);
+CREATE INDEX vtables_target ON vtables(image, target);
+
+-- Names carried from another image by tools/cfmatch.py port.
+CREATE TABLE ported (
+  image TEXT, entry INTEGER, name TEXT, from_image TEXT, from_entry INTEGER,
+  method TEXT, score REAL,
+  PRIMARY KEY (image, entry, name)
+);
 """
 
 _CALL_KIND = {
@@ -93,6 +123,39 @@ _CALL_KIND = {
     "COMPUTED_JUMP": "jump",
     "CONDITIONAL_JUMP": "cond_jump",
 }
+
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _cffacts():
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import cffacts
+    finally:
+        sys.path.pop(0)
+    return cffacts
+
+
+def _find_image(manifest, sha):
+    """The MAIN OS file whose SHA-256 is the dump's (the manifest's recorded
+    path can name a later image: sections/ is overwritten by each extract)."""
+    import glob
+    import hashlib
+
+    cands = [manifest.get("sections_image"), manifest.get("image_path")]
+    cands += sorted(
+        glob.glob(os.path.join(ROOT, "out/sections/*/section_3_MAIN_OS.bin"))
+    )
+    for cand in cands:
+        if not cand:
+            continue
+        for path in (cand, os.path.join(ROOT, cand)):
+            if os.path.isfile(path):
+                with open(path, "rb") as f:
+                    if hashlib.sha256(f.read()).hexdigest() == sha:
+                        return path
+    return None
 
 
 def open_db(path):
@@ -207,8 +270,33 @@ def build_database(dump_dir, out_path, name=None, force=False):
             if _table_exists(src, "symbols")
             else []
         )
+        typeinfos = (
+            src.execute(
+                "SELECT addr, kind, name, mangled, bases FROM typeinfos"
+            ).fetchall()
+            if _table_exists(src, "typeinfos")
+            else []
+        )
+        vtables = (
+            src.execute(
+                "SELECT addr, class, typeinfo, offset_to_top, slot, target, owner "
+                "FROM vtables"
+            ).fetchall()
+            if _table_exists(src, "vtables")
+            else []
+        )
     finally:
         src.close()
+
+    facts = {}
+    image_file = _find_image(manifest, sha)
+    if image_file is not None:
+        cffacts = _cffacts()
+        facts = cffacts.compute(
+            cffacts.Path(image_file),
+            cffacts.DEFAULT_BASE,
+            {e: ranges_by_func[e] for e, *_ in functions if ranges_by_func.get(e)},
+        )
 
     out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
     os.makedirs(out_dir, exist_ok=True)
@@ -286,6 +374,25 @@ def build_database(dump_dir, out_path, name=None, force=False):
             ]
             db.executemany("INSERT INTO symbols VALUES (?,?,?,?,?,?)", symbol_rows)
 
+            db.executemany(
+                "INSERT INTO func_hash VALUES (?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        name, entry, f["ninsn"], f["nbytes"], f["h_strict"],
+                        f["h_loose"], f["h_mnem"], f["mnem_seq"],
+                    )
+                    for entry, f in facts.items()
+                ],
+            )  # fmt: skip
+            db.executemany(
+                "INSERT INTO typeinfos VALUES (?,?,?,?,?,?)",
+                [(name, *row) for row in typeinfos],
+            )
+            db.executemany(
+                "INSERT INTO vtables VALUES (?,?,?,?,?,?,?,?)",
+                [(name, *row) for row in vtables],
+            )
+
             db.commit()
         finally:
             db.close()
@@ -336,6 +443,136 @@ def cmd_build(args):
     return 0
 
 
+FTS_VERSION = 2
+
+
+def fts_path(db_path):
+    """The full-text sidecar for a database: <name>.fts.sqlite beside it. It is
+    a separate file so adding or rebuilding it never touches DB_VERSION or the
+    main database (other lanes share out/cfdb)."""
+    return db_path[: -len(".sqlite")] + ".fts.sqlite"
+
+
+def build_fts(db_path, force=False):
+    """Build the FTS5 sidecar for one cfdb database and return its path.
+
+    Tables (all FTS5; the rowid is the function entry or string address):
+      fts_names   (name, cf_name, klass)   trigram; function, cf_names and RTTI names
+      fts_strings (text)                   trigram, so substrings match
+      fts_decomp  (body)                   decompiled C, contentless; hits are
+                                           located again by reading the dump
+    Rebuilt when the main database's image sha256 or FTS_VERSION moves on."""
+    out = fts_path(db_path)
+    meta = read_meta(db_path)
+    stamp = "%s/%s/%s" % (meta.get("image_sha256"), meta.get("build_time"), FTS_VERSION)
+    if os.path.exists(out) and not force:
+        try:
+            con = sqlite3.connect(out)
+            row = con.execute("SELECT value FROM fts_meta WHERE key='stamp'").fetchone()
+            con.close()
+            if row and row[0] == stamp:
+                return out
+        except sqlite3.Error:
+            pass
+    tmp = out + ".tmp.%d" % os.getpid()
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    src = sqlite3.connect(db_path)
+    name = meta["image"]
+    dump = meta.get("ghidra_dump_dir")
+    con = sqlite3.connect(tmp)
+    con.executescript(
+        "CREATE TABLE fts_meta (key TEXT PRIMARY KEY, value TEXT);"
+        "CREATE VIRTUAL TABLE fts_names USING fts5(name, cf_name, klass, "
+        "tokenize='trigram');"
+        "CREATE VIRTUAL TABLE fts_strings USING fts5(text, tokenize='trigram');"
+        "CREATE VIRTUAL TABLE fts_decomp USING fts5(body, content='', detail=column, "
+        "tokenize=\"unicode61 tokenchars '_'\");"
+    )
+    klass_of: dict[int, str] = {}
+    for target, cls in src.execute(
+        "SELECT target, class FROM vtables WHERE image=? ORDER BY addr, slot", (name,)
+    ):
+        klass_of.setdefault(target, cls)
+    names = _image_names(name)
+    rows = []
+    for entry, fname in src.execute(
+        "SELECT entry, name FROM functions WHERE image=?", (name,)
+    ):
+        rows.append((entry, fname, names.get(entry, ""), klass_of.get(entry, "")))
+    con.executemany(
+        "INSERT INTO fts_names(rowid, name, cf_name, klass) VALUES (?,?,?,?)", rows
+    )
+    con.executemany(
+        "INSERT INTO fts_strings(rowid, text) VALUES (?,?)",
+        [
+            (i, t)
+            for i, (_a, t) in enumerate(
+                src.execute("SELECT addr, text FROM strings WHERE image=?", (name,))
+            )
+        ],
+    )
+    con.execute("CREATE TABLE string_rows (id INTEGER PRIMARY KEY, addr INTEGER)")
+    con.executemany(
+        "INSERT INTO string_rows VALUES (?,?)",
+        [
+            (i, a)
+            for i, (a,) in enumerate(
+                src.execute("SELECT addr FROM strings WHERE image=?", (name,))
+            )
+        ],
+    )
+    n = 0
+    if dump:
+        batch = []
+        for entry, path in src.execute(
+            "SELECT entry, decomp_path FROM functions WHERE image=? AND decomp_path IS NOT NULL",
+            (name,),
+        ):
+            fp = os.path.join(dump, path)
+            if not os.path.exists(fp):
+                continue
+            with open(fp, errors="replace") as fh:
+                batch.append((entry, fh.read()))
+            n += 1
+            if len(batch) >= 500:
+                con.executemany(
+                    "INSERT INTO fts_decomp(rowid, body) VALUES (?,?)", batch
+                )
+                batch = []
+        if batch:
+            con.executemany("INSERT INTO fts_decomp(rowid, body) VALUES (?,?)", batch)
+    con.execute("INSERT INTO fts_meta VALUES ('stamp', ?)", (stamp,))
+    con.execute("INSERT INTO fts_meta VALUES ('decomp_files', ?)", (str(n),))
+    con.commit()
+    con.close()
+    src.close()
+    os.replace(tmp, out)
+    return out
+
+
+def _image_names(name):
+    """tools/cf_names*.py names for an image name like dt2-1.17-emac."""
+    import importlib
+
+    short = name[: -len("-emac")] if name.endswith("-emac") else name
+    mod = {"dt2-1.16": "cf_names", "dt2-1.17": "cf_names_dt2_1_17"}.get(short)
+    if mod is None:
+        return {}
+    try:
+        return dict(importlib.import_module(mod).NAME_BY_ADDR)
+    except ImportError:
+        return {}
+
+
+def cmd_fts(args):
+    path = args.db or os.path.join(args.db_dir, args.name + ".sqlite")
+    t = time.time()
+    out = build_fts(path, force=args.force)
+    print("%s (%.1f s, %.1f MB)" % (out, time.time() - t, os.path.getsize(out) / 1e6))
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -357,9 +594,17 @@ def main(argv=None):
         help="rebuild even if sha256+DB_VERSION already match",
     )
 
+    f = sub.add_parser("fts", help="build the FTS5 sidecar for a database")
+    f.add_argument("name", help="e.g. dt2-1.17-emac")
+    f.add_argument("--db")
+    f.add_argument("--db-dir", default=DEFAULT_DB_DIR)
+    f.add_argument("--force", action="store_true")
+
     args = ap.parse_args(argv)
     if args.cmd == "build":
         return cmd_build(args)
+    if args.cmd == "fts":
+        return cmd_fts(args)
     return 1
 
 

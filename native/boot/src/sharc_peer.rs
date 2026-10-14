@@ -152,6 +152,26 @@ pub trait DspEngine {
     /// One 32-bit word of DSP data memory at `addr`, a byte address as the
     /// findings write them (e.g. 0x25f180; consecutive words are 4 apart).
     /// None: unknown or unmodeled, or not supported by the engine.
+    /// Memory bytes from `addr` (`None`: unknown to the engine), read through
+    /// the aligned words of `peek_word`.
+    fn peek_bytes(&self, addr: u32, n: usize) -> Vec<Option<u8>> {
+        let mut word: Option<(u32, Option<u32>)> = None;
+        (0..n as u32)
+            .map(|k| {
+                let a = addr.wrapping_add(k);
+                let base = a & !3;
+                let w = match word {
+                    Some((b, w)) if b == base => w,
+                    _ => {
+                        let w = self.peek_word(base);
+                        word = Some((base, w));
+                        w
+                    }
+                };
+                w.map(|w| (w >> (8 * (a & 3))) as u8)
+            })
+            .collect()
+    }
     fn peek_word(&self, _addr: u32) -> Option<u32> {
         None
     }
@@ -718,7 +738,8 @@ impl<E: DspEngine> Core<E> {
         self.deliver_lp0();
         self.pc_at_rx = self.engine.pc();
         let spi_start = timing.as_ref().map(|_| Instant::now());
-        let exchange = self.engine.spi2_exchange(tx);
+        let poked = frame_poke(tx);
+        let exchange = self.engine.spi2_exchange(poked.as_deref().unwrap_or(tx));
         if let (Some(timing), Some(start)) = (timing, spi_start) {
             timing.spi_ns = timing.spi_ns.saturating_add(elapsed_ns(start));
         }
@@ -1008,6 +1029,12 @@ enum Msg {
         patch: crate::dsp_patch::DspPatch,
         ack: mpsc::Sender<Result<u64, String>>,
     },
+    /// Read DSP memory between frames.
+    Peek {
+        addr: u32,
+        len: usize,
+        ack: mpsc::Sender<Vec<Option<u8>>>,
+    },
 }
 
 /// Most per-period records the worker keeps (about 22 minutes of audio).
@@ -1285,6 +1312,9 @@ impl ThreadedPeer {
                         Msg::ExecutionProfileReport => {
                             let _ = execution_profile_tx.send(core.engine.execution_profile());
                         }
+                        Msg::Peek { addr, len, ack } => {
+                            let _ = ack.send(core.engine.peek_bytes(addr, len));
+                        }
                         Msg::Patch { patch, ack } => {
                             let result = core
                                 .engine
@@ -1428,6 +1458,24 @@ impl ThreadedHandle {
         ack_rx
             .recv()
             .map_err(|_| "DSP worker stopped while patching".to_string())?
+    }
+
+    /// Read `len` bytes of DSP memory at `addr` between two frames (`None`
+    /// for a byte the engine does not know).
+    pub fn peek_bytes(&self, addr: u32, len: usize) -> Result<Vec<Option<u8>>, String> {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        let sent = self
+            .link
+            .borrow()
+            .tx
+            .as_ref()
+            .is_some_and(|c| c.send(Msg::Peek { addr, len, ack: ack_tx }).is_ok());
+        if !sent {
+            return Err("DSP worker has stopped".into());
+        }
+        ack_rx
+            .recv()
+            .map_err(|_| "DSP worker stopped while reading".to_string())
     }
 
     /// Commit completed frames without waiting; streaming hosts use this between steps.
@@ -1719,6 +1767,47 @@ fn concretise_import(e: &mut sharc_native::Engine) {
     }
 }
 
+/// Diagnostic frame override (spike 0.7): `DSP_FRAME_POKE=OFF=VAL[/TRACKS][,...]`
+/// sets the big-endian 16-bit wire word at byte OFF of every frame sent to the
+/// DSP (hex or decimal; with `/N`, at OFF + 0x60 * t for t in 0..N). It lets a
+/// run drive a per-track frame word that no stock UI control reaches (the
+/// ColdFire side of a real parameter is a later patch). Unset: no effect.
+fn frame_poke(tx: &[u8]) -> Option<Vec<u8>> {
+    static SPEC: std::sync::OnceLock<Vec<(usize, u16, usize)>> = std::sync::OnceLock::new();
+    let spec = SPEC.get_or_init(|| {
+        let Ok(text) = std::env::var("DSP_FRAME_POKE") else {
+            return Vec::new();
+        };
+        let num = |s: &str| {
+            let s = s.trim();
+            match s.strip_prefix("0x") {
+                Some(h) => usize::from_str_radix(h, 16).ok(),
+                None => s.parse().ok(),
+            }
+        };
+        text.split(',')
+            .filter_map(|item| {
+                let (off, rest) = item.split_once('=')?;
+                let (val, tracks) = rest.split_once('/').unwrap_or((rest, "1"));
+                Some((num(off)?, num(val)? as u16, num(tracks)?))
+            })
+            .collect()
+    });
+    if spec.is_empty() {
+        return None;
+    }
+    let mut out = tx.to_vec();
+    for &(off, val, tracks) in spec {
+        for t in 0..tracks {
+            let at = off + 0x60 * t;
+            if at + 2 <= out.len() {
+                out[at..at + 2].copy_from_slice(&val.to_be_bytes());
+            }
+        }
+    }
+    Some(out)
+}
+
 /// Build the DN2 continuation engine from a packed image blob
 /// (`tools/sharc_pack_image.py`) and a canonical state blob, with the option
 /// set the audio runs use. `clock_base` seeds the diagnostic instruction
@@ -1750,6 +1839,15 @@ pub fn apply_dsp_patch(
             .collect()
     }
     fn write(e: &mut sharc_native::Engine, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        // New code or data in L2 that nothing loaded: `poke` on an absent
+        // address would store it at the short-word alias, where neither the
+        // fetch nor a plain data read looks (spike 0.7).
+        if (0x2000_0000..0x2010_0000).contains(&addr)
+            && !matches!(e.peek(u64::from(addr), 1), Ok(Some(_)))
+        {
+            e.poke_raw(addr, bytes);
+            return Ok(());
+        }
         if e.poke(u64::from(addr), bytes, 1) as usize != bytes.len() {
             return Err(format!("DSP patch: write at {addr:#x} refused"));
         }

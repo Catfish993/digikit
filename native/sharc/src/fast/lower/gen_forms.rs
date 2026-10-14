@@ -10761,1123 +10761,1161 @@ impl Lower {
         let mut v65: Val = 0;
         let mut v66: Val = 0;
         let mut v67: Val = 0;
-        if (f2 == 31i128) {
-            if (f3 != 0i128) {
-                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                if (f7 != 0i128) {
-                    v3 = self.ci(2i128 as u32);
-                    v4 = self.g_bin(Bin::Mul, v2, v3);
-                    v5 = self.g_bin(Bin::Add, v0, v4);
-                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                } else {
-                    if (f9 != 0i128) {
-                        self.g_plainmod(v0)?;
-                        v6 = self.ci(4i128 as u32);
-                        v7 = self.g_bin(Bin::Mul, v2, v6);
-                        v8 = self.g_bin(Bin::Add, v0, v7);
-                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+        if (f3 != 0i128) {
+            if (f7 != 0i128) {
+                if ((self.m1(0x200000) as i128) != 0i128) {
+                    if (f2 != 31i128) {
+                        self.g_cond(f2 as u32, false)?;
+                        self.g_cond(f2 as u32, true)?;
+                        v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        match (f5, f6) {
+                            (0i128, 0i128) => {
+                                if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                    v5 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (0i128, 1i128) => {
+                                if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                    v7 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v7)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (1i128, 0i128) => {
+                                if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                    v8 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (1i128, 1i128) => {
+                                if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                    v9 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v9)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (2i128, 0i128) => {
+                                if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                    v10 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v10)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (2i128, 1i128) => {
+                                if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                    v11 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (3i128, 0i128) => {
+                                if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                    v12 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v12)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (3i128, 1i128) => {
+                                if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                    v13 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v13)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
                     } else {
-                        v9 = self.ci(1i128 as u32);
-                        v10 = self.g_bin(Bin::Mul, v2, v9);
-                        v11 = self.g_bin(Bin::Add, v0, v10);
-                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                        v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                    }
+                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                        self.g_apply(d, "compute", false, false)?;
+                        self.g_apply(d, "compute", true, false)?;
+                    }
+                } else {
+                    if (f2 != 31i128) {
+                        self.g_cond(f2 as u32, false)?;
+                        v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        match (f5, f6) {
+                            (0i128, 0i128) => {
+                                if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                    v5 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (0i128, 1i128) => {
+                                if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                    v7 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v7)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (1i128, 0i128) => {
+                                if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                    v8 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (1i128, 1i128) => {
+                                if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                    v9 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v9)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (2i128, 0i128) => {
+                                if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                    v10 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v10)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (2i128, 1i128) => {
+                                if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                    v11 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (3i128, 0i128) => {
+                                if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                    v12 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v12)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            (3i128, 1i128) => {
+                                if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                    v13 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v13)?;
+                                } else {
+                                    v6 = self.g_bin(Bin::Add, v0, v4);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                        v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v4 = self.g_bin(Bin::Mul, v2, v3);
+                        v6 = self.g_bin(Bin::Add, v0, v4);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v6)?;
+                    }
+                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                        self.g_apply(d, "compute", false, false)?;
                     }
                 }
             } else {
-                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                if (f7 != 0i128) {
-                    v3 = self.ci(2i128 as u32);
-                    v14 = self.g_bin(Bin::Mul, v13, v3);
-                    v15 = self.g_bin(Bin::Add, v12, v14);
-                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                } else {
-                    if (f9 != 0i128) {
-                        self.g_plainmod(v12)?;
-                        v6 = self.ci(4i128 as u32);
-                        v16 = self.g_bin(Bin::Mul, v13, v6);
-                        v17 = self.g_bin(Bin::Add, v12, v16);
-                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
+                if (f9 != 0i128) {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            self.g_cond(f2 as u32, true)?;
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            self.g_plainmod(v0)?;
+                            v14 = self.ci(4i128 as u32);
+                            v15 = self.g_bin(Bin::Mul, v2, v14);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                        v16 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v16)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                        v18 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v18)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                        v19 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v19)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                        v20 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v20)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                        v21 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v21)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                        v22 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v22)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                        v23 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v23)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                        v24 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v24)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            self.g_plainmod(v0)?;
+                            v14 = self.ci(4i128 as u32);
+                            v15 = self.g_bin(Bin::Mul, v2, v14);
+                            v17 = self.g_bin(Bin::Add, v0, v15);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                            self.g_apply(d, "compute", true, false)?;
+                        }
                     } else {
-                        v9 = self.ci(1i128 as u32);
-                        v18 = self.g_bin(Bin::Mul, v13, v9);
-                        v19 = self.g_bin(Bin::Add, v12, v18);
-                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            self.g_plainmod(v0)?;
+                            v14 = self.ci(4i128 as u32);
+                            v15 = self.g_bin(Bin::Mul, v2, v14);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                        v16 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v16)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                        v18 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v18)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                        v19 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v19)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                        v20 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v20)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                        v21 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v21)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                        v22 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v22)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                        v23 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v23)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                        v24 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v15, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v24)?;
+                                    } else {
+                                        v17 = self.g_bin(Bin::Add, v0, v15);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            self.g_plainmod(v0)?;
+                            v14 = self.ci(4i128 as u32);
+                            v15 = self.g_bin(Bin::Mul, v2, v14);
+                            v17 = self.g_bin(Bin::Add, v0, v15);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v17)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                        }
                     }
-                }
-            }
-            if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
-                self.g_apply(d, "compute", false, false)?;
-                if ((self.m1(0x200000) as i128) != 0i128) {
-                    self.g_apply(d, "compute", true, false)?;
+                } else {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            self.g_cond(f2 as u32, true)?;
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v26 = self.g_bin(Bin::Mul, v2, v25);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                        v27 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v27)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                        v29 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v29)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                        v30 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v30)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                        v31 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v31)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                        v32 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v32)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                        v33 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v33)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                        v34 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v34)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                        v35 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v35)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v26 = self.g_bin(Bin::Mul, v2, v25);
+                            v28 = self.g_bin(Bin::Add, v0, v26);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                            self.g_apply(d, "compute", true, false)?;
+                        }
+                    } else {
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v26 = self.g_bin(Bin::Mul, v2, v25);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
+                                        v27 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v27)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
+                                        v29 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v29)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
+                                        v30 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v30)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
+                                        v31 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v31)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
+                                        v32 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v32)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
+                                        v33 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v33)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
+                                        v34 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v34)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
+                                        v35 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v26, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v35)?;
+                                    } else {
+                                        v28 = self.g_bin(Bin::Add, v0, v26);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
+                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v26 = self.g_bin(Bin::Mul, v2, v25);
+                            v28 = self.g_bin(Bin::Add, v0, v26);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                        }
+                    }
                 }
             }
         } else {
-            if (f2 == 23i128) {
-                if (f3 != 0i128) {
-                    if (f7 != 0i128) {
-                        if (f1 != 0i128) {
-                            return refuse("unsupported Type7a conditional compute");
-                        } else {
-                            if (f0 != 0i128) {
-                                return refuse("unsupported Type7a conditional compute");
-                            } else {
-                                match (f5, f6) {
-                                    (0i128, 0i128) => {
-                                        if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v20 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v20)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    (0i128, 1i128) => {
-                                        if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v21 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v21)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    (1i128, 0i128) => {
-                                        if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v22 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v22)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    (1i128, 1i128) => {
-                                        if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v23 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v23)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    (2i128, 0i128) => {
-                                        if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v24 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v24)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    (2i128, 1i128) => {
-                                        if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v25 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v25)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    (3i128, 0i128) => {
-                                        if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v26 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v26)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    (3i128, 1i128) => {
-                                        if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v27 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v4, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v27)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                            v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v4 = self.g_bin(Bin::Mul, v2, v3);
-                                            v5 = self.g_bin(Bin::Add, v0, v4);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v5)?;
-                                        }
-                                    }
-                                    _ => unreachable!(),
-                                }
-                                if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
-                                    self.g_apply(d, "compute", false, false)?;
-                                    if ((self.m1(0x200000) as i128) != 0i128) {
-                                        self.g_apply(d, "compute", true, false)?;
-                                    }
+            if (f7 != 0i128) {
+                if ((self.m1(0x200000) as i128) != 0i128) {
+                    if (f2 != 31i128) {
+                        self.g_cond(f2 as u32, false)?;
+                        self.g_cond(f2 as u32, true)?;
+                        v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                        v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v38 = self.g_bin(Bin::Mul, v37, v3);
+                        match (f5, f6) {
+                            (0i128, 0i128) => {
+                                if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                    v39 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v39)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
                                 }
                             }
+                            (0i128, 1i128) => {
+                                if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                    v41 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v41)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (1i128, 0i128) => {
+                                if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                    v42 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v42)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (1i128, 1i128) => {
+                                if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                    v43 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v43)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (2i128, 0i128) => {
+                                if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                    v44 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v44)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (2i128, 1i128) => {
+                                if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                    v45 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v45)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (3i128, 0i128) => {
+                                if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                    v46 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v46)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (3i128, 1i128) => {
+                                if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                    v47 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v47)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            _ => unreachable!(),
                         }
                     } else {
-                        if (f9 != 0i128) {
-                            if (f1 != 0i128) {
-                                return refuse("unsupported Type7a conditional compute");
-                            } else {
-                                if (f0 != 0i128) {
-                                    return refuse("unsupported Type7a conditional compute");
-                                } else {
-                                    match (f5, f6) {
-                                        (0i128, 0i128) => {
-                                            if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v28 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v28)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        (0i128, 1i128) => {
-                                            if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v29 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v29)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        (1i128, 0i128) => {
-                                            if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v30 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v30)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        (1i128, 1i128) => {
-                                            if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v31 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v31)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        (2i128, 0i128) => {
-                                            if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v32 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v32)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        (2i128, 1i128) => {
-                                            if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v33 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v33)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        (3i128, 0i128) => {
-                                            if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v34 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v34)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        (3i128, 1i128) => {
-                                            if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v35 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v7, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v35)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                self.g_plainmod(v0)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v7 = self.g_bin(Bin::Mul, v2, v6);
-                                                v8 = self.g_bin(Bin::Add, v0, v7);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v8)?;
-                                            }
-                                        }
-                                        _ => unreachable!(),
-                                    }
-                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
-                                        self.g_apply(d, "compute", false, false)?;
-                                        if ((self.m1(0x200000) as i128) != 0i128) {
-                                            self.g_apply(d, "compute", true, false)?;
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            if (f1 != 0i128) {
-                                return refuse("unsupported Type7a conditional compute");
-                            } else {
-                                if (f0 != 0i128) {
-                                    return refuse("unsupported Type7a conditional compute");
-                                } else {
-                                    match (f5, f6) {
-                                        (0i128, 0i128) => {
-                                            if (((self.sv_lb(56)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v36 = { let b = ((self.sv_lb(72)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(56)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v36)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        (0i128, 1i128) => {
-                                            if (((self.sv_lb(60)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v37 = { let b = ((self.sv_lb(76)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(60)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v37)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        (1i128, 0i128) => {
-                                            if (((self.sv_lb(57)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v38 = { let b = ((self.sv_lb(73)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(57)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v38)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        (1i128, 1i128) => {
-                                            if (((self.sv_lb(61)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v39 = { let b = ((self.sv_lb(77)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(61)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v39)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        (2i128, 0i128) => {
-                                            if (((self.sv_lb(58)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v40 = { let b = ((self.sv_lb(74)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(58)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v40)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        (2i128, 1i128) => {
-                                            if (((self.sv_lb(62)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v41 = { let b = ((self.sv_lb(78)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(62)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v41)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        (3i128, 0i128) => {
-                                            if (((self.sv_lb(59)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v42 = { let b = ((self.sv_lb(75)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(59)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v42)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        (3i128, 1i128) => {
-                                            if (((self.sv_lb(63)? as i128) & 4294967295i128) != 0i128) {
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v43 = { let b = ((self.sv_lb(79)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(63)? as i128) & 4294967295i128) as i64; self.g_circ(v0, v10, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v43)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v0 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 8i128)) as u32)?;
-                                                v2 = self.g_rd((32i128 + (f8 + 8i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v10 = self.g_bin(Bin::Mul, v2, v9);
-                                                v11 = self.g_bin(Bin::Add, v0, v10);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 8i128)) as u32, v11)?;
-                                            }
-                                        }
-                                        _ => unreachable!(),
-                                    }
-                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
-                                        self.g_apply(d, "compute", false, false)?;
-                                        if ((self.m1(0x200000) as i128) != 0i128) {
-                                            self.g_apply(d, "compute", true, false)?;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                        v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v38 = self.g_bin(Bin::Mul, v37, v3);
+                        v40 = self.g_bin(Bin::Add, v36, v38);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                    }
+                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                        self.g_apply(d, "compute", false, false)?;
+                        self.g_apply(d, "compute", true, false)?;
                     }
                 } else {
-                    if (f7 != 0i128) {
-                        if (f1 != 0i128) {
-                            return refuse("unsupported Type7a conditional compute");
-                        } else {
-                            if (f0 != 0i128) {
-                                return refuse("unsupported Type7a conditional compute");
-                            } else {
-                                match (f5, f6) {
-                                    (0i128, 0i128) => {
-                                        if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v44 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v44)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    (0i128, 1i128) => {
-                                        if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v45 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v45)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    (1i128, 0i128) => {
-                                        if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v46 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v46)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    (1i128, 1i128) => {
-                                        if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v47 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v47)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    (2i128, 0i128) => {
-                                        if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v48 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v48)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    (2i128, 1i128) => {
-                                        if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v49 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v49)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    (3i128, 0i128) => {
-                                        if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v50 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    (3i128, 1i128) => {
-                                        if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v51 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v14, b, n, true)? };
-                                            self.g_cond(f2 as u32, false)?;
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v51)?;
-                                        } else {
-                                            self.g_cond(f2 as u32, false)?;
-                                            v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                            v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                            v3 = self.ci(2i128 as u32);
-                                            v14 = self.g_bin(Bin::Mul, v13, v3);
-                                            v15 = self.g_bin(Bin::Add, v12, v14);
-                                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v15)?;
-                                        }
-                                    }
-                                    _ => unreachable!(),
-                                }
-                                if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
-                                    self.g_apply(d, "compute", false, false)?;
-                                    if ((self.m1(0x200000) as i128) != 0i128) {
-                                        self.g_apply(d, "compute", true, false)?;
-                                    }
+                    if (f2 != 31i128) {
+                        self.g_cond(f2 as u32, false)?;
+                        v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                        v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v38 = self.g_bin(Bin::Mul, v37, v3);
+                        match (f5, f6) {
+                            (0i128, 0i128) => {
+                                if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                    v39 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v39)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
                                 }
                             }
+                            (0i128, 1i128) => {
+                                if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                    v41 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v41)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (1i128, 0i128) => {
+                                if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                    v42 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v42)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (1i128, 1i128) => {
+                                if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                    v43 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v43)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (2i128, 0i128) => {
+                                if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                    v44 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v44)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (2i128, 1i128) => {
+                                if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                    v45 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v45)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (3i128, 0i128) => {
+                                if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                    v46 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v46)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            (3i128, 1i128) => {
+                                if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                    v47 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v38, b, n, true)? };
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v47)?;
+                                } else {
+                                    v40 = self.g_bin(Bin::Add, v36, v38);
+                                    self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                                }
+                            }
+                            _ => unreachable!(),
                         }
                     } else {
-                        if (f9 != 0i128) {
-                            if (f1 != 0i128) {
-                                return refuse("unsupported Type7a conditional compute");
-                            } else {
-                                if (f0 != 0i128) {
-                                    return refuse("unsupported Type7a conditional compute");
-                                } else {
-                                    match (f5, f6) {
-                                        (0i128, 0i128) => {
-                                            if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v52 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v52)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        (0i128, 1i128) => {
-                                            if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v53 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v53)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        (1i128, 0i128) => {
-                                            if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v54 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v54)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        (1i128, 1i128) => {
-                                            if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v55 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v55)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        (2i128, 0i128) => {
-                                            if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v56 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v56)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        (2i128, 1i128) => {
-                                            if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v57 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v57)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        (3i128, 0i128) => {
-                                            if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v58 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v58)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        (3i128, 1i128) => {
-                                            if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v59 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v16, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v59)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                self.g_plainmod(v12)?;
-                                                v6 = self.ci(4i128 as u32);
-                                                v16 = self.g_bin(Bin::Mul, v13, v6);
-                                                v17 = self.g_bin(Bin::Add, v12, v16);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v17)?;
-                                            }
-                                        }
-                                        _ => unreachable!(),
-                                    }
-                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
-                                        self.g_apply(d, "compute", false, false)?;
-                                        if ((self.m1(0x200000) as i128) != 0i128) {
-                                            self.g_apply(d, "compute", true, false)?;
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            if (f1 != 0i128) {
-                                return refuse("unsupported Type7a conditional compute");
-                            } else {
-                                if (f0 != 0i128) {
-                                    return refuse("unsupported Type7a conditional compute");
-                                } else {
-                                    match (f5, f6) {
-                                        (0i128, 0i128) => {
-                                            if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v60 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        (0i128, 1i128) => {
-                                            if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v61 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v61)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        (1i128, 0i128) => {
-                                            if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v62 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v62)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        (1i128, 1i128) => {
-                                            if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v63 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v63)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        (2i128, 0i128) => {
-                                            if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v64 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v64)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        (2i128, 1i128) => {
-                                            if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v65 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v65)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        (3i128, 0i128) => {
-                                            if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v66 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v66)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        (3i128, 1i128) => {
-                                            if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v67 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v12, v18, b, n, true)? };
-                                                self.g_cond(f2 as u32, false)?;
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v67)?;
-                                            } else {
-                                                self.g_cond(f2 as u32, false)?;
-                                                v12 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
-                                                v13 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
-                                                v9 = self.ci(1i128 as u32);
-                                                v18 = self.g_bin(Bin::Mul, v13, v9);
-                                                v19 = self.g_bin(Bin::Add, v12, v18);
-                                                self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v19)?;
-                                            }
-                                        }
-                                        _ => unreachable!(),
-                                    }
-                                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
-                                        self.g_apply(d, "compute", false, false)?;
-                                        if ((self.m1(0x200000) as i128) != 0i128) {
-                                            self.g_apply(d, "compute", true, false)?;
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                        v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                        v3 = self.ci(2i128 as u32);
+                        v38 = self.g_bin(Bin::Mul, v37, v3);
+                        v40 = self.g_bin(Bin::Add, v36, v38);
+                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v40)?;
+                    }
+                    if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                        self.g_apply(d, "compute", false, false)?;
                     }
                 }
             } else {
-                return refuse("unsupported Type7a predicate");
+                if (f9 != 0i128) {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            self.g_cond(f2 as u32, true)?;
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            self.g_plainmod(v36)?;
+                            v14 = self.ci(4i128 as u32);
+                            v48 = self.g_bin(Bin::Mul, v37, v14);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                        v49 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v49)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                        v51 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v51)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                        v52 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v52)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                        v53 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v53)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                        v54 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v54)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                        v55 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v55)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                        v56 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v56)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                        v57 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v57)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            self.g_plainmod(v36)?;
+                            v14 = self.ci(4i128 as u32);
+                            v48 = self.g_bin(Bin::Mul, v37, v14);
+                            v50 = self.g_bin(Bin::Add, v36, v48);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                            self.g_apply(d, "compute", true, false)?;
+                        }
+                    } else {
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            self.g_plainmod(v36)?;
+                            v14 = self.ci(4i128 as u32);
+                            v48 = self.g_bin(Bin::Mul, v37, v14);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                        v49 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v49)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                        v51 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v51)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                        v52 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v52)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                        v53 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v53)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                        v54 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v54)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                        v55 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v55)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                        v56 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v56)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                        v57 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v48, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v57)?;
+                                    } else {
+                                        v50 = self.g_bin(Bin::Add, v36, v48);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            self.g_plainmod(v36)?;
+                            v14 = self.ci(4i128 as u32);
+                            v48 = self.g_bin(Bin::Mul, v37, v14);
+                            v50 = self.g_bin(Bin::Add, v36, v48);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v50)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                        }
+                    }
+                } else {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            self.g_cond(f2 as u32, true)?;
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v58 = self.g_bin(Bin::Mul, v37, v25);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                        v59 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v59)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                        v61 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v61)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                        v62 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v62)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                        v63 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v63)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                        v64 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v64)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                        v65 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v65)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                        v66 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v66)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                        v67 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v67)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v58 = self.g_bin(Bin::Mul, v37, v25);
+                            v60 = self.g_bin(Bin::Add, v36, v58);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                            self.g_apply(d, "compute", true, false)?;
+                        }
+                    } else {
+                        if (f2 != 31i128) {
+                            self.g_cond(f2 as u32, false)?;
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v58 = self.g_bin(Bin::Mul, v37, v25);
+                            match (f5, f6) {
+                                (0i128, 0i128) => {
+                                    if (((self.sv_lb(48)? as i128) & 4294967295i128) != 0i128) {
+                                        v59 = { let b = ((self.sv_lb(64)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(48)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v59)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (0i128, 1i128) => {
+                                    if (((self.sv_lb(52)? as i128) & 4294967295i128) != 0i128) {
+                                        v61 = { let b = ((self.sv_lb(68)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(52)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v61)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (1i128, 0i128) => {
+                                    if (((self.sv_lb(49)? as i128) & 4294967295i128) != 0i128) {
+                                        v62 = { let b = ((self.sv_lb(65)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(49)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v62)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (1i128, 1i128) => {
+                                    if (((self.sv_lb(53)? as i128) & 4294967295i128) != 0i128) {
+                                        v63 = { let b = ((self.sv_lb(69)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(53)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v63)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (2i128, 0i128) => {
+                                    if (((self.sv_lb(50)? as i128) & 4294967295i128) != 0i128) {
+                                        v64 = { let b = ((self.sv_lb(66)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(50)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v64)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (2i128, 1i128) => {
+                                    if (((self.sv_lb(54)? as i128) & 4294967295i128) != 0i128) {
+                                        v65 = { let b = ((self.sv_lb(70)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(54)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v65)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (3i128, 0i128) => {
+                                    if (((self.sv_lb(51)? as i128) & 4294967295i128) != 0i128) {
+                                        v66 = { let b = ((self.sv_lb(67)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(51)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v66)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                (3i128, 1i128) => {
+                                    if (((self.sv_lb(55)? as i128) & 4294967295i128) != 0i128) {
+                                        v67 = { let b = ((self.sv_lb(71)? as i128) & 4294967295i128) as u32; let n = ((self.sv_lb(55)? as i128) & 4294967295i128) as i64; self.g_circ(v36, v58, b, n, true)? };
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v67)?;
+                                    } else {
+                                        v60 = self.g_bin(Bin::Add, v36, v58);
+                                        self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                                    }
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            v36 = self.g_rd((16i128 + ((((f6) << (2i128 as u32)) | f5) + 0i128)) as u32)?;
+                            v37 = self.g_rd((32i128 + (f8 + 0i128)) as u32)?;
+                            v25 = self.ci(1i128 as u32);
+                            v58 = self.g_bin(Bin::Mul, v37, v25);
+                            v60 = self.g_bin(Bin::Add, v36, v58);
+                            self.g_wr((16i128 + (((((f6) << (2i128 as u32)) | f5) ^ f4) + 0i128)) as u32, v60)?;
+                        }
+                        if ((((f1) << (16i128 as u32)) | f0) != 0i128) {
+                            self.g_apply(d, "compute", false, false)?;
+                        }
+                    }
+                }
             }
         }
         Ok(())

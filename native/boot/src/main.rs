@@ -274,7 +274,7 @@ fn run() -> Result<(), String> {
     {
         return Err("entry prefix verification failed".into());
     }
-    let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
+    let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
     let (device, firmware_profile, boot) = registry
         .boot_for_main(&syx_sha, &main.bytes)
         .map_err(|e| e.to_string())?;

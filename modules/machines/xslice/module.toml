@@ -1,0 +1,33 @@
+[module]
+id = "machines/xslice"
+version = "0.1.0"
+name = "XSLICE"
+category = "machines"
+status = "experimental"
+summary = "A MANUAL SLICE clone with its own name and a SRC page that also shows the orphaned CFADE row (an XSLICE machine, built on core/machines)"
+requires = ["core/machines"]
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+
+# The machine's type number is permanent (modules/core/machines/types.toml, "machines/xslice:xslice"); it is exported as `machines.xslice.index`.
+# f0..f8 are the nine descriptor ID fields: MANUAL SLICE's, with field 2 (an empty box on the SRC page) set to
+# 0xfa, SLICE's orphaned CFADE parameter row (finding 02, "XSLICE").
+[[entry]]
+registry = "machines"
+id = "xslice"
+name = "XSlice"
+short = "XSL"
+clone_of = 6
+position = 7
+f0 = 0xf8
+f1 = 0xf9
+f2 = 0xfa
+f3 = 0xfb
+f4 = 0xfc
+f5 = 0xfd
+f6 = 0
+f7 = 0xfe
+f8 = 0x0a

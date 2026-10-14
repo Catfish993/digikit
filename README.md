@@ -165,20 +165,28 @@ Ghidra project, `tools/cfdb.py build` makes a database from the dump, and `tools
 queries it. Decoding uses only public manuals ([docs/sharc/SOURCES.md](docs/sharc/SOURCES.md)).
 All tools are indexed in [docs/TOOLS.md](docs/TOOLS.md).
 
-## Patch the firmware
+## Patching
 
-`tools/machinebuild.py` adds an eighth machine to the ColdFire OS (section 3) and writes a
-new `.syx`. This changes only the ColdFire side; the DSP remap table covers machine types
-0-6. `tools/roundtrip.py` rebuilds and re-extracts a container and checks the checksums
-and HMAC that the device checks. See [docs/PATCHING.md](docs/PATCHING.md) and
-[findings 01](docs/findings/01-container-and-patching.md) and
-[02](docs/findings/02-machines-and-parameters.md).
+patchkit applies modules (new machines, parameters, master-bus effects) to your own stock `.syx` and writes a new
+`.syx`. Modules hold our code only, never firmware bytes.
+
+```sh
+mise run toolchains    # once: pinned ColdFire and SHARC+ toolchains for building modules
+mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
+mise run inject -- out/patch/mg.syx     # into a running emulator (mise run emu, or emu:serve)
+mise run web                            # the gallery at /patch: patch in the browser, nothing is uploaded
+```
+
+**Writing a module** (create, build, patch, inject into the running emulator, test, and what modules can do):
+[docs/MODULE-AUTHORING.md](docs/MODULE-AUTHORING.md). Usage, the dev loop, tests, how it works and the safety rules:
+[docs/PATCHING.md](docs/PATCHING.md). Manifest reference: [modules/README.md](modules/README.md). Facts behind it: [findings 01](docs/findings/01-container-and-patching.md),
+[02](docs/findings/02-machines-and-parameters.md) and [21](docs/findings/21-patchkit-core.md).
 
 **Hardware warning**
 
 - No patched image from this repository has been installed on a device. Only Em decides
   to do that.
-- Never change section 2 (bootstrap) or section 4 (updater). `tools/patchimg.py` refuses.
+- Never change section 2 (bootstrap), section 4 (updater) or section 8. patchkit refuses.
 - Recovery through the bootstrap STARTUP menu (hold FUNC at power-on, SysEx over MIDI DIN)
   is not tested on hardware.
 - Read `docs/findings/01-container-and-patching.md` before you install anything.

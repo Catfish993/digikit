@@ -142,6 +142,7 @@ class Emu:
         binary: str | os.PathLike[str] | None = None,
         timeout: float = 120.0,
         run_dir: str | os.PathLike[str] | None = None,
+        env: dict[str, str] | None = None,
     ) -> Emu:
         """Start a private `digi-emud` (paused) with ARGS and connect to it.
 
@@ -163,16 +164,21 @@ class Emu:
             if run_dir is not None
             else tempfile.TemporaryDirectory(prefix="digi-run-")
         )
-        proc = subprocess.Popen(
-            [exe, "--run-dir", run_dir_obj.name, *args],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            cwd=ROOT,
-        )
+        # stderr goes to a file in the run directory: an undrained pipe blocks the daemon once it fills, and the
+        # file keeps the reason when the daemon dies.
+        errlog = pathlib.Path(run_dir_obj.name) / "daemon.stderr"
+        with errlog.open("wb") as err_file:
+            proc = subprocess.Popen(
+                [exe, "--run-dir", run_dir_obj.name, *args],
+                stdout=subprocess.DEVNULL,
+                stderr=err_file,
+                cwd=ROOT,
+                env=None if env is None else {**os.environ, **env},
+            )
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if proc.poll() is not None:
-                err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
+                err = errlog.read_bytes().decode(errors="replace")
                 run_dir_obj.cleanup()
                 raise RuntimeError(
                     f"digi-emud exited {proc.returncode}: {err.strip()[-400:]}"
@@ -189,6 +195,46 @@ class Emu:
         emu = cls.connect(path)
         emu._proc, emu._run_dir = proc, run_dir_obj
         return emu
+
+    @classmethod
+    def spawn_coupled(
+        cls,
+        syx: str | os.PathLike[str],
+        ready_dir: str | os.PathLike[str],
+        *args: str,
+        **kwargs: Any,
+    ) -> Emu:
+        """`spawn` a daemon with DSP audio (no sound card): SYX is loaded, READY_DIR holds the ready inputs
+        (`tools/ready.py`: digi-audio-dn2-image.bin, digi-audio-m5.snap, digi-audio-m5.snap.dsp). The fast tier
+        is on as in the launcher."""
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        try:
+            import digi_env
+        finally:
+            sys.path.pop(0)
+        syx = pathlib.Path(syx).resolve()
+        ready = pathlib.Path(ready_dir).resolve()
+        env = {}
+        if regions := digi_env.fast_regions_for(syx):
+            env["SHARC_FAST_REGIONS"] = regions
+        if roots := digi_env.blocktrans_roots_for(syx):
+            env["SHARC_BLOCKTRANS"] = roots
+        return cls.spawn(
+            str(syx),
+            "--auto-coupled",
+            "--audio-profile-syx",
+            str(syx),
+            "--dsp-image",
+            str(ready / "digi-audio-dn2-image.bin"),
+            "--dsp-state",
+            str(ready / "digi-audio-m5.snap.dsp"),
+            "--cf-snapshot",
+            str(ready / "digi-audio-m5.snap"),
+            "--no-audio",
+            *args,
+            env={**env, **kwargs.pop("env", {})},
+            **kwargs,
+        )
 
     def close(self) -> None:
         try:
@@ -273,6 +319,15 @@ class Emu:
             with contextlib.suppress(OSError):
                 self._sock.settimeout(None)
 
+    def subscribe(self, *kinds: str) -> None:
+        """Start event delivery on this connection; `call()` keeps what arrives for `drain_events()`."""
+        self.call("events.subscribe", **({"kinds": list(kinds)} if kinds else {}))
+
+    def drain_events(self) -> list[dict[str, Any]]:
+        """The events kept so far (after `subscribe`), oldest first; empties the list."""
+        out, self._events = self._events, []
+        return out
+
     # ----- wrappers ---------------------------------------------------------
 
     def status(self) -> dict[str, Any]:
@@ -302,8 +357,9 @@ class Emu:
 
     inject = load
 
-    def restart(self) -> dict[str, Any]:
-        return self.call("restart")
+    def restart(self, auto_no: bool = False) -> dict[str, Any]:
+        """Back to the ready state of the running firmware; AUTO_NO presses NO there (DT2 FILE SYSTEM OK)."""
+        return self.call("restart", **({"auto_no": True} if auto_no else {}))
 
     def step(self, instructions: int, **params: Any) -> dict[str, Any]:
         return self.call("step", instructions=instructions, **params)
@@ -352,6 +408,10 @@ class Emu:
     def patch(self, text: str | None = None, file: str | None = None) -> dict[str, Any]:
         return self.call("dsp.patch", **_opt(text=text, file=file))
 
+    def dsp_peek(self, addr: int, length: int) -> dict[str, Any]:
+        """DSP memory: `hex` holds `??` for bytes the engine does not know."""
+        return self.call("dsp.peek", addr=addr, len=length)
+
     def frame(self) -> tuple[int, bytes]:
         """(revision, 1024 raw OLED bytes)."""
         result = self.call("framebuffer.get")
@@ -359,6 +419,19 @@ class Emu:
 
     def frame_png(self) -> bytes:
         return oled_png(self.frame()[1])
+
+    def peek32(self, addr: int) -> int | None:
+        """One guest longword (None when unmapped), read without side effects."""
+        value = self.call("mem.cf.peek", addr=addr)["value"]
+        return None if value is None else int(value)
+
+    def poke32(self, addr: int, value: int) -> dict[str, Any]:
+        """Write one SDRAM longword (a test aid; not recorded for replay)."""
+        return self.call("mem.cf.poke", addr=addr, value=value)
+
+    def watchdog(self, stall_ms: int | None = None) -> dict[str, Any]:
+        """The heartbeat; STALL_MS sets the stall threshold in emulated ms (0 disables)."""
+        return self.call("watchdog.config", **_opt(stall_ms=stall_ms))
 
     def quit(self) -> dict[str, Any]:
         return self.call("quit")

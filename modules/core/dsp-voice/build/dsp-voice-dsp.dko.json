@@ -1,0 +1,172 @@
+{
+ "arch": "sharc",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 13,
+   "section": "seg_pmco",
+   "symbol": "_fw_type_cache",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 35,
+   "section": "seg_pmco",
+   "symbol": "_dv_table",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 41,
+   "section": "seg_pmco",
+   "symbol": "_dv_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 45,
+   "section": "seg_pmco",
+   "symbol": "_dv_scan",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 104,
+   "section": "seg_pmco",
+   "symbol": "_dv_odd",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 109,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 114,
+   "section": "seg_pmco",
+   "symbol": "_dv_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 181,
+   "section": "seg_pmco",
+   "symbol": "_fw_render_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 237,
+   "section": "seg_pmco",
+   "symbol": "_fw_frame",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 266,
+   "section": "seg_pmco",
+   "symbol": "_fw_frame",
+   "type": "sharc.abs32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 8,
+   "hex": "800f20000ec13e0210082001810f0e00840121013e0200001101020f00000000800121113e703f8a51993e02100820013e02100022403e0200002204800f000420cda4011201140f000000009099929900c200060000000001c32006000000003f703f0e8715ffffe2ff089dfa01089df902089d7803089df703089df604089d7505089df405089df306089d7207089df107089d7008089def08089d6e09089ded09089dec0a089deb10089d6a11089de911089de821089de70e01c2810f20001ec13e02100821013e021000314033c22006000000008c0f20001d0f000000003f083f283e0600000000be70bf080116ffff80ffbe703f08000c00200600be5300000000be5100800000089cf902089c7803089cf703089cf604089c7505089cf405089cf306089c7207089cf107089c7008089cef08089c6e09089ced09089cec0a089ceb10089c6a11089ce911089ce821089ce70efe4d3f0e3f083f34089cfa0101198715ffffe6ff3e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe01840101013e0200001101020f00000000800121113e703f8a51993e02100020403e0200002204800f000420cda40112003e0a00000000810ffe01840101013e0200001101020f00000000800121113e703f8a51993e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a00000000",
+   "kind": "text",
+   "name": "seg_pmco",
+   "size": 590
+  }
+ ],
+ "source_sha256": "ef191b95736ded8b9393eb6d18574b23e07c74b07139402bd24ecab6362ec983",
+ "symbols": [
+  {
+   "global": false,
+   "name": "_dv_back",
+   "section": "seg_pmco",
+   "value": 114
+  },
+  {
+   "global": false,
+   "name": "_dv_done",
+   "section": "seg_pmco",
+   "value": 133
+  },
+  {
+   "global": true,
+   "name": "_dv_entry",
+   "section": "seg_pmco",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_exp2",
+   "section": "seg_pmco",
+   "value": 184
+  },
+  {
+   "global": true,
+   "name": "_dv_frame_hw",
+   "section": "seg_pmco",
+   "value": 230
+  },
+  {
+   "global": true,
+   "name": "_dv_frame_sw",
+   "section": "seg_pmco",
+   "value": 259
+  },
+  {
+   "global": false,
+   "name": "_dv_odd",
+   "section": "seg_pmco",
+   "value": 117
+  },
+  {
+   "global": false,
+   "name": "_dv_scan",
+   "section": "seg_pmco",
+   "value": 38
+  },
+  {
+   "global": false,
+   "name": "_dv_stock",
+   "section": "seg_pmco",
+   "value": 178
+  },
+  {
+   "global": true,
+   "name": "_dv_table",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fw_frame",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fw_render_next",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fw_type_cache",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "instructions_redecoded": "141",
+  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
+  "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
+  "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"
+ }
+}

@@ -6,6 +6,7 @@
 resolver = "3"
 members = [
     "native/boot",
+    "native/bootstrap",
     "native/card",
     "native/coldfire",
     "native/control",
@@ -14,6 +15,7 @@ members = [
     "native/host",
     "native/live",
     "native/loader",
+    "native/patchkit",
     "native/machine",
     "native/periph",
     "native/plusdrive",

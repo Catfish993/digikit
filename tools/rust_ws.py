@@ -30,12 +30,14 @@ finally:
     sys.path.pop(0)
 
 CLEAN_CRATES = [
+    "bootstrap-emu",
     "coldfire",
     "device-profile",
     "digiemu-desktop",
     "dt2-firmware-loader",
     "dt2-native-host",
     "live-audio",
+    "patchkit",
     "periph",
     "plusdrive-format",
     "sharc-gen",

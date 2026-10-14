@@ -183,6 +183,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootstrap-emu"
+version = "0.1.0"
+dependencies = [
+ "coldfire",
+]
+
+[[package]]
 name = "brotli"
 version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -854,6 +861,7 @@ dependencies = [
  "dt2-firmware-loader",
  "elektron-native-boot",
  "emmc-card",
+ "patchkit",
  "plusdrive-format",
  "serde_json",
  "sha2",
@@ -2661,6 +2669,18 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-link",
+]
+
+[[package]]
+name = "patchkit"
+version = "0.1.0"
+dependencies = [
+ "coldfire",
+ "dt2-firmware-loader",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

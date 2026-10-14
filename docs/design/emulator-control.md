@@ -22,7 +22,8 @@ Methods now served: `hello`, `status`, `firmware.load`, `restart`, `run.mode`,
 `framebuffer.get` (raw 1024-byte panel bytes; the client makes the PNG),
 `diagnostics`, `audio.report`, `state.digest`, `pcm.tap` (start/report PCM
 level, window RMS and SHA-256 of the DSP output), `dsp.patch` (inject a patch
-file's text), `events.subscribe`, `quit`. Events: `session.changed`,
+file's text), `dsp.peek` (`addr`, `len` up to 64 KiB: DSP memory as hex, `??` for a
+byte the engine does not know), `events.subscribe`, `quit`. Events: `session.changed`,
 `firmware.loaded`, `mode`, `scenario.done`, `lagged`. Not built yet (P2):
 captures, `mem.*.read`, `state.save/load`, `scenario.run`, `replay`,
 `dsp.counters`.
@@ -225,13 +226,23 @@ and stop on `PcmPlayer` **[O]**; `dspi_log` and `dsp_watch` via a new worker
    about 0.2 s with the ready inputs), then re-apply the DSP difference.
 3. Patched MAIN: `Emulator::new_patched(syx, base_sha256)` identifies the
    firmware by the base's hash (no whole-file or MAIN digest check; each
-   signature lookup still has to resolve). The ColdFire side boots cold to
-   ready as a job (`start_used: "cold"`, 4.4 s for DN2 1.11) and the snapshot
-   is cached at `<run_dir>/patched/<MAIN sha256>.snap`; the next load of the
-   same MAIN restores it (`"snapshot-cache"`, 0.13 s). `start: snapshot` never
-   boots cold (error 4); `start: cold` ignores the cache. A patched MAIN runs
-   without DSP audio: the DSP state cannot be rebuilt (**[O]**: a coupled cold
-   start, see `native/boot/examples/dsp_cold.rs`).
+   signature lookup still has to resolve). With the launch's DSP inputs (a
+   coupled daemon or app) the ColdFire cold boots with the base's DSP
+   attached (`cold::boot_patched_to_ready` on a worker thread; the
+   controller answers `firmware.load` when it is ready) and the ready pair
+   (CF snapshot and DSP state) is cached at
+   `<run_dir>/patched/<MAIN sha16>-<key>/`, where the key hashes the MAIN
+   digest, the DSP image, the cold-idle state and the card file. The next load
+   restores it (`start_used: "snapshot-cache"`, 0.3 to 0.5 s) with DSP audio;
+   a DSP section that differs from the base's is applied hot afterwards.
+   `start: snapshot` never boots cold (error 4); `start: cold` rebuilds the
+   pair. Uncached: 6 to 7 s (DN2 1.12) and 13 s (DT2 with a card), see
+   finding 17. The ready inputs must belong to the base: `SOURCE.json` next
+   to the DSP image names their .syx, and a mismatch (or no inputs, or no
+   `cold-idle.dsp`) falls back to the old ColdFire-only boot, saved at
+   `<run_dir>/patched/<MAIN sha256>.snap`, with `coupled_note` saying why.
+   `auto_no: true` (also on `restart`) presses NO once the new runtime is
+   ready, closing DT2's FILE SYSTEM OK modal as `card.load` does.
 4. `base_sha256` is optional: it defaults to the running firmware's base and
    must match it when given. The first load of a patched file needs it.
 

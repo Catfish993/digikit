@@ -549,8 +549,9 @@ def plusdrive_card(
         print(f"+Drive card: reusing {image} ({len(names)} sample(s))", file=sys.stderr)
         return image
     image.parent.mkdir(parents=True, exist_ok=True)
-    partial = image.with_suffix(".part")
-    partial.unlink(missing_ok=True)
+    # One partial file per process: parallel verify steps can build the same
+    # key at once, and os.replace lets the last one win atomically.
+    partial = image.with_name(f"dt2.{os.getpid()}.part")
     done = subprocess.run(
         [str(binary), "build", str(samples), "-o", str(partial), "--syx", str(syx)],
         cwd=ROOT,
@@ -559,7 +560,7 @@ def plusdrive_card(
     if done.returncode:
         partial.unlink(missing_ok=True)
         raise SystemExit(done.returncode)
-    partial.rename(image)
+    os.replace(partial, image)
     print(f"+Drive card: built {image} ({len(names)} sample(s))", file=sys.stderr)
     return image
 

@@ -258,4 +258,34 @@ mod tests {
             }]
         );
     }
+
+    #[test]
+    fn diff_of_streams_with_an_appended_block_writes_the_new_range() {
+        // `new` is `old` with a block inserted before the final one.
+        let mut old = block(0, 0x2000, 4, 0, &[1, 2, 3, 4]);
+        let final_block = block(0x8000, 0x10, 0, 0, &[]);
+        let mut new = old.clone();
+        new.extend(block(0, 0x4000, 8, 0, &[9, 8, 7, 6, 5, 4, 3, 2]));
+        old.extend(final_block.clone());
+        new.extend(final_block);
+        let (old, new) = (
+            LoadedMemory::from_stream(&old).unwrap(),
+            LoadedMemory::from_stream(&new).unwrap(),
+        );
+        assert_eq!((old.blocks(), new.blocks()), (2, 3));
+        let d = diff(&old, &new, 0);
+        assert_eq!(d.changed_bytes, 8);
+        assert_eq!(d.dropped_bytes, 0);
+        assert_eq!(
+            d.patch.ops,
+            vec![PatchOp::Bytes {
+                addr: 0x4000,
+                bytes: vec![9, 8, 7, 6, 5, 4, 3, 2],
+                was: None
+            }]
+        );
+        // and back: the removed block's bytes cannot be undone by a patch
+        let back = diff(&new, &old, 0);
+        assert_eq!((back.changed_bytes, back.dropped_bytes), (0, 8));
+    }
 }

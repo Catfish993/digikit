@@ -83,7 +83,8 @@ const buildGuard = {
           const full = path.join(current, entry.name);
           if (entry.isDirectory()) { walk(full); continue; }
           if (!entry.isFile()) continue;
-          const bad = /^emulator-core-sharc.*\.wasm$/.test(entry.name)
+          // Ports and modules (hashes and our own code) are allowed; a firmware image or snapshot never is.
+          const bad = /^emulator-core-sharc.*\.wasm$/.test(entry.name) || /\.(syx|snap|mstate)$/i.test(entry.name)
             || (entry.name !== 'emulator-core.wasm' && fs.statSync(full).size > 5 * 1024 * 1024);
           if (bad) throw new Error(`firmware-derived file in build output: ${full}`);
         }

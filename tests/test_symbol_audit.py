@@ -32,7 +32,10 @@ DIAGNOSTIC_ONLY = frozenset({'transport', 'call_sites'})
 
 ALLOWED_NONE = TRACE_UI_ONLY | DIAGNOSTIC_ONLY
 
-IMAGES = {'dt2-1.16': DT16, 'dn2-1.11': DN11}
+DT17 = Path("out/sections/dt2-1.17/section_3_MAIN_OS.bin")
+DN12 = Path("out/sections/dn2-1.12/section_3_MAIN_OS.bin")
+
+IMAGES = {'dt2-1.16': DT16, 'dn2-1.11': DN11, 'dt2-1.17': DT17, 'dn2-1.12': DN12}
 
 
 class SymbolAuditTest(unittest.TestCase):

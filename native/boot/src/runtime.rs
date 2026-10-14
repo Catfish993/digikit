@@ -16,6 +16,9 @@ use crate::telemetry::EventKind;
 use crate::telemetry::{DiagnosticReport, Mark, Position, Recorder};
 use coldfire::fused::Loop;
 
+mod call;
+pub use call::{CallResult, CallSpec};
+
 const CHUNK_MAX: u32 = 250_000;
 const CAPTURE_BUS_TRACE: bool = false;
 const ACCELERATE_RAM_CLEAR: bool = true;
@@ -23,6 +26,9 @@ const SET_PIXEL_SIG: &str = "2f032f02206f000c222f0010202f00144a816d4c4a806d48b2a
 const TCD34_BASE: u32 = 0xfc04_5440;
 const TCD34_DADDR: u32 = TCD34_BASE + 0x10;
 const RX_VECTOR: u8 = 154;
+/// Board RAM window the core may fetch from outside MAIN: SDRAM (DDR, ACR0) and internal SRAM.
+const RAM_EXEC_START: u32 = 0x4000_0000;
+const RAM_EXEC_END: u32 = 0x8c00_0000;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
@@ -42,6 +48,12 @@ pub struct Status {
     pub input_ready: bool,
     pub input_pending: usize,
     pub input_irqs: u64,
+    /// Passes through the resolved main-loop PC since boot: the guest's heartbeat.
+    pub mainloop_hits: u64,
+    /// The resolved main-loop PC (the address counted by `mainloop_hits`).
+    pub mainloop_pc: u32,
+    /// `running`, `stopped` (waiting in STOP for an interrupt) or `halted`.
+    pub cpu_state: &'static str,
     /// Actual CPU steps, excluding analytic idle and reset-clear batches.
     pub interpreted_instructions: u64,
     pub idle_fast_forwarded_instructions: u64,
@@ -161,6 +173,8 @@ pub struct Emulator {
     fused_clean: Vec<bool>,
     /// The watched PCs other than fused-loop heads, sorted.
     observed_pcs: Vec<u32>,
+    /// Whether `observed_pcs` holds a PC outside the MAIN image (RAM code).
+    observed_outside_main: bool,
     /// Host-requested PC hit counters (`probe_pcs`), for headless diagnosis.
     probe_hits: BTreeMap<u32, u64>,
     /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
@@ -294,10 +308,13 @@ impl Emulator {
         if main.get(entry_offset..entry_offset + 6) != Some(&[0x41, 0xef, 0, 4, 0x23, 0xd0]) {
             return Err("entry prefix verification failed".into());
         }
-        let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
+        let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
         let (device, profile, _) = match base_sha256 {
             Some(base) => registry.boot_for_base(base),
-            None => registry.boot_for_main(&digest(syx), &main),
+            None => registry
+                .boot_for_main(&digest(syx), &main)
+                // A .syx of a known MAIN with another DSP stream has no known file digest.
+                .or_else(|e| registry.boot_by_main(&main).ok_or(e)),
         }
         .map_err(|e| e.to_string())?;
         let contract = profile
@@ -387,10 +404,7 @@ impl Emulator {
             .filter(|(offset, bytes)| offset % 2 == 0 && *bytes == [0x60, 0xfe])
             .map(|(offset, _)| MAIN_LOAD + offset as u32)
             .collect();
-        let supported_softfloat = matches!(
-            (device.short.as_str(), profile.version.as_str()),
-            ("dt2", "1.16") | ("dn2", "1.11")
-        );
+        let supported_softfloat = profile.softfloat_abi;
         let softfloat = match policy {
             ExecutionPolicy::Reference => SoftfloatAbi::disabled("reference policy"),
             ExecutionPolicy::SoftfloatAbiV1 => {
@@ -479,6 +493,7 @@ impl Emulator {
             fused_loops,
             fused_clean: Vec::new(),
             observed_pcs: Vec::new(),
+            observed_outside_main: false,
             probe_hits: BTreeMap::new(),
             irq1_pending: false,
             probe_rets: BTreeMap::new(),
@@ -659,10 +674,55 @@ impl Emulator {
         self.probe_rets.iter().map(|(k, v)| (*k, *v)).collect()
     }
 
+    /// The guest's writes to the eMMC card, per touched sector (for `card.overlay`).
+    pub fn card_overlay(&self) -> Vec<emmc_card::CardOverlaySector> {
+        self.bus.board.card_overlay_sectors()
+    }
+
     /// Read a guest longword without side effects (None when unmapped or
     /// device-owned). For headless diagnosis only.
     pub fn peek32(&mut self, addr: u32) -> Option<u32> {
         self.bus.board.read32(addr).ok()
+    }
+
+    /// Write a guest longword without bus side effects (headless diagnosis:
+    /// canary fills). Unmapped SDRAM pages are mapped zeroed first.
+    pub fn poke32(&mut self, addr: u32, value: u32) -> Result<(), String> {
+        if addr & 3 != 0 || !(0x4000_0000..0x5000_0000).contains(&addr) {
+            return Err(format!("poke32 {addr:#x}: not an aligned word in SDRAM or its +128 MiB alias"));
+        }
+        self.bus
+            .board
+            .map_zeroed_ram_page(addr & !0xf_ffff)
+            .map_err(|e| format!("poke32 map {addr:#x}: {e:?}"))?;
+        self.bus
+            .board
+            .write_guest(addr, 4, value)
+            .map_err(|e| format!("poke32 {addr:#x}: {e:?}"))?;
+        self.cpu.invalidate_external_write(addr, 4);
+        Ok(())
+    }
+
+    /// Step (reset-clear batches included) until the program counter equals
+    /// `target`; false when `max` instructions pass first or the run errors.
+    pub fn run_until_pc(&mut self, target: u32, max: u64) -> bool {
+        let start = self.cpu.icount;
+        while self.error.is_none() && self.cpu.icount - start < max {
+            if self.cpu.pc == target {
+                return true;
+            }
+            if ACCELERATE_RAM_CLEAR
+                && self
+                    .ram_clear
+                    .as_ref()
+                    .is_some_and(|clear| self.cpu.pc == clear.loop_pc)
+                && self.advance_ram_clear(250_000) != 0
+            {
+                continue;
+            }
+            self.step_once();
+        }
+        self.cpu.pc == target
     }
 
     pub fn probe_hits(&self) -> Vec<(u32, u64)> {
@@ -775,6 +835,13 @@ impl Emulator {
             input_ready: self.input_ready,
             input_pending: self.input_packets.len() + usize::from(self.rx_pending),
             input_irqs: self.input_irqs,
+            mainloop_hits: self.mainloop_hits,
+            mainloop_pc: self.mainloop,
+            cpu_state: match self.cpu.state {
+                coldfire::RunState::Running => "running",
+                coldfire::RunState::Stopped => "stopped",
+                coldfire::RunState::Halted => "halted",
+            },
             interpreted_instructions: self.interpreted_instructions,
             idle_fast_forwarded_instructions: self.idle_fast_forwarded_instructions,
             ram_clear_fast_forwarded_instructions: self.ram_clear_fast_forwarded_instructions,
@@ -916,7 +983,7 @@ impl Emulator {
         let Some(time) = self.bus.board.time_mut() else {
             return 0;
         };
-        if time.policy() != TimerPolicy::Oracle {
+        if time.policy() != TimerPolicy::Oracle || time.forced_deliverable() {
             return 0;
         }
         let timer_deadline = time.deadline(now);
@@ -1000,6 +1067,7 @@ impl Emulator {
                     .all(|&o| observed.binary_search(&(head + o)).is_err())
             })
             .collect();
+        self.observed_outside_main = observed.iter().any(|&pc| !self.in_main(pc));
         self.observed_pcs = observed;
         pcs.extend(self.fused_loops.iter().map(|(head, _, _)| *head));
         for pc in pcs {
@@ -1011,6 +1079,21 @@ impl Emulator {
             }
         }
         self.watch = watch;
+    }
+
+    /// A whole instruction (6 bytes) lies inside the MAIN image.
+    #[inline]
+    fn in_main(&self, pc: u32) -> bool {
+        (pc.wrapping_sub(MAIN_LOAD) as usize) <= self.main.len().saturating_sub(6)
+    }
+
+    /// Whether the core may fetch at `pc` outside the MAIN image: anywhere in
+    /// SDRAM or internal SRAM (the board's RAM window). The hardware executes
+    /// from DDR (ACR0 covers it) and SRAM; the core's decode cache is evicted
+    /// by every write, so code written at run time is seen.
+    #[inline]
+    fn ram_exec(pc: u32) -> bool {
+        (RAM_EXEC_START..RAM_EXEC_END).contains(&pc)
     }
 
     #[inline]
@@ -1063,7 +1146,11 @@ impl Emulator {
         let (mut next_sample, mut last_n) = (0u32, 0u32);
         while n < budget {
             let pc = self.cpu.pc;
-            if pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset {
+            let outside = pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset;
+            if outside
+                && (!Self::ram_exec(pc)
+                    || (self.observed_outside_main && self.observed_pcs.binary_search(&pc).is_ok()))
+            {
                 #[cfg(feature = "cf-profile")]
                 self.prof.exit(1, pc);
                 break;
@@ -1074,7 +1161,7 @@ impl Emulator {
                 last_n = n;
                 next_sample = n + 64;
             }
-            if self.watched(pc) {
+            if !outside && self.watched(pc) {
                 // Only fused-loop heads are handled here (0: step the head
                 // like any other instruction); any other observed PC goes
                 // to `step_once`.
@@ -1223,11 +1310,7 @@ impl Emulator {
                 return;
             }
         }
-        let Some(offset) = pc.checked_sub(MAIN_LOAD).map(|value| value as usize) else {
-            self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
-            return;
-        };
-        if self.main.get(offset..offset + 6).is_none() {
+        if !self.in_main(pc) && !Self::ram_exec(pc) {
             self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
             return;
         }
@@ -1510,6 +1593,10 @@ impl Emulator {
             }
         }
         let ranges = self.bus.board.take_dma_written_ranges();
+        // DMA into a page with decoded instructions (code run from RAM).
+        for &(address, bytes) in &ranges {
+            self.cpu.invalidate_external_write(address, bytes);
+        }
         self.dma_ranges += ranges.len() as u64;
         self.dma_bytes += ranges.iter().map(|(_, bytes)| *bytes as u64).sum::<u64>();
         #[cfg(feature = "diagnostic-events")]
@@ -2554,9 +2641,36 @@ mod tests {
         assert_eq!(runtime.delivery_counts[timer_vector as usize], 1);
     }
 
+    /// Every signature-resolved anchor of the boot path resolves on the
+    /// current firmware of both products, relinked builds included.
+    #[test]
+    fn boot_anchors_resolve_on_every_supported_firmware() {
+        for file in [
+            "Digitakt_II_OS1.16.syx",
+            "Digitakt_II_OS1.17.syx",
+            "Digitone_II_OS1.11.syx",
+            "Digitone_II_OS1.12.syx",
+        ] {
+            let Ok(syx) = std::fs::read(format!("../../{file}")) else {
+                continue;
+            };
+            let emu = Emulator::new_with_policy(&syx, None, ExecutionPolicy::SoftfloatAbiV1)
+                .unwrap_or_else(|e| panic!("{file}: {e}"));
+            assert!(emu.softfloat.enabled, "{file}: softfloat {:?}", emu.softfloat.reason);
+            assert!(emu.ram_clear.is_some(), "{file}: RAM clear loop");
+            assert!(!emu.fused_loops.is_empty(), "{file}: fused loops");
+            assert!(!emu.idle_spins.is_empty(), "{file}: idle spins");
+        }
+    }
+
     #[test]
     fn ram_clear_batches_match_interpreter_across_chunks_pages_and_final_flags() {
-        for file in ["Digitakt_II_OS1.16.syx", "Digitone_II_OS1.11.syx"] {
+        for file in [
+            "Digitakt_II_OS1.16.syx",
+            "Digitakt_II_OS1.17.syx",
+            "Digitone_II_OS1.11.syx",
+            "Digitone_II_OS1.12.syx",
+        ] {
             let Ok(syx) = std::fs::read(format!("../../{file}")) else {
                 continue;
             };
@@ -2751,6 +2865,64 @@ mod tests {
         assert_eq!(idle_advance_limit(20, 1, 100, Some(101)), 0);
         assert_eq!(idle_advance_limit(20, 1, 100, Some(99)), 0);
         assert_eq!(idle_advance_limit(3, 1, 100, None), 3);
+    }
+
+    /// Code in DDR (outside MAIN), written at run time and rewritten by the
+    /// guest itself, runs under `step_once` and under the batched `run_fast`
+    /// to the same machine; a PC outside RAM still stops with
+    /// `UnsupportedGuestPc`.
+    #[test]
+    fn code_in_ddr_runs_and_sees_its_own_writes() {
+        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let base = 0x47e8_b000u32;
+        let routine = base + 0x40;
+        let mut code: Vec<u8> = Vec::new();
+        let w16 = |c: &mut Vec<u8>, v: u16| c.extend_from_slice(&v.to_be_bytes());
+        let w32 = |c: &mut Vec<u8>, v: u32| c.extend_from_slice(&v.to_be_bytes());
+        w16(&mut code, 0x207c); // movea.l #routine,A0
+        w32(&mut code, routine);
+        w16(&mut code, 0x4eb9); // jsr routine
+        w32(&mut code, routine);
+        w16(&mut code, 0x2601); // move.l D1,D3
+        w16(&mut code, 0x30bc); // move.w #moveq #2,D1,(A0)
+        w16(&mut code, 0x7202);
+        w16(&mut code, 0x4eb9); // jsr routine (patched by the guest)
+        w32(&mut code, routine);
+        w16(&mut code, 0x60fe); // bra.s *
+        let mut emus = Vec::new();
+        for fast in [false, true] {
+            let mut emu = Emulator::new(&syx, None).unwrap();
+            emu.bus.board.map_zeroed_ram_page(base & !0xf_ffff).unwrap();
+            for (i, b) in code.iter().enumerate() {
+                emu.bus.board.write_guest(base + i as u32, 1, u32::from(*b)).unwrap();
+            }
+            for (i, b) in [0x72u8, 0x01, 0x4e, 0x75].iter().enumerate() {
+                emu.bus.board.write_guest(routine + i as u32, 1, u32::from(*b)).unwrap();
+            }
+            emu.cpu.pc = base;
+            emu.cpu.sr = 0x2700;
+            emu.cpu.a[7] = base + 0x800;
+            emu.rebuild_watch();
+            if fast {
+                emu.step_chunk(60);
+            } else {
+                for _ in 0..60 {
+                    emu.step_once();
+                }
+            }
+            assert_eq!(emu.error, None);
+            assert_eq!(emu.cpu.d[3], 1, "first call ran the original routine");
+            assert_eq!(emu.cpu.d[1], 2, "second call ran the rewritten routine");
+            assert_eq!(emu.cpu.pc, base + 0x18);
+            emus.push(emu);
+        }
+        assert_eq!(emus[0].cpu, emus[1].cpu);
+        let mut off = Emulator::new(&syx, None).unwrap();
+        off.cpu.pc = 0xfc00_0000;
+        off.step_once();
+        assert_eq!(off.error.as_deref(), Some("UnsupportedGuestPc(0xfc000000)"));
     }
 
     #[test]

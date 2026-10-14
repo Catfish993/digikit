@@ -156,6 +156,28 @@ impl CoupledRuntime {
         runtime.input_base = runtime.emulator.icount();
         Ok(runtime)
     }
+    /// A runtime for a patched build of the firmware `base_sha256` with DSP
+    /// audio: the ColdFire state comes from `options.snapshot` and the DSP
+    /// state from `options.state`, both made for this MAIN by
+    /// [`cold::boot_patched_to_ready`]. The `automatic` profile check is not
+    /// applied (the options name this build's own files).
+    pub fn new_patched_audio(
+        syx: &[u8],
+        card: Option<Card>,
+        base_sha256: &str,
+        options: &AudioOptions,
+    ) -> Result<Self, String> {
+        let mut runtime = Self {
+            emulator: Emulator::new_patched(syx, card, base_sha256)?,
+            #[cfg(feature = "coupled-audio")]
+            audio: None,
+            inputs: Vec::new(),
+            input_base: 0,
+        };
+        runtime.attach(Some(options))?;
+        runtime.input_base = runtime.emulator.icount();
+        Ok(runtime)
+    }
     /// Load a ColdFire snapshot into this fresh runtime and restart the
     /// scenario clock there (`elapsed_instructions` counts from the restored
     /// state, as after a coupled restore).
@@ -216,6 +238,21 @@ impl CoupledRuntime {
         #[cfg(not(feature = "coupled-audio"))]
         {
             let _ = patch;
+            Err("no DSP audio session".into())
+        }
+    }
+    /// DSP memory bytes (`None` where the engine does not know the byte), read
+    /// between two frames.
+    pub fn peek_dsp(&mut self, addr: u32, len: usize) -> Result<Vec<Option<u8>>, String> {
+        #[cfg(feature = "coupled-audio")]
+        {
+            let audio = self.audio.as_mut().ok_or("no DSP audio session")?;
+            audio.sync();
+            audio.handle.peek_bytes(addr, len)
+        }
+        #[cfg(not(feature = "coupled-audio"))]
+        {
+            let _ = (addr, len);
             Err("no DSP audio session".into())
         }
     }
@@ -371,6 +408,15 @@ impl CoupledRuntime {
     /// PCM seen since `observe_pcm`, up to the last `snapshot()`/`sync`.
     pub fn pcm_tap(&self) -> Option<&PcmTap> {
         self.audio.as_ref()?.pcm_tap.as_ref()
+    }
+    /// Why the DSP stopped, once it has (set when a frame exchange fails).
+    pub fn dsp_halted(&self) -> Option<String> {
+        self.audio.as_ref().and_then(|a| a.halted())
+    }
+    /// Underrun events of the audio sink since the session began (`None`
+    /// without a player: no device, no sink capture).
+    pub fn sink_underruns(&self) -> Option<u64> {
+        self.audio.as_ref().and_then(|a| a.sink_underruns())
     }
     /// DSPI2 frames handed to the DSP worker (one per 0.667 ms of audio).
     pub fn frames_sent(&self) -> u64 {
@@ -685,7 +731,7 @@ mod coupled {
             player: impl FnOnce(Mode, Recovery) -> Result<PcmPlayer, String>,
         ) -> Result<Self, String> {
             let profile = emulator.diagnostics();
-            let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
+            let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
             let dsp = registry
                 .dsp_for(&profile.device, &profile.version)
                 .cloned()
@@ -884,6 +930,12 @@ mod coupled {
 
         /// True when the device ring plus the feeder's pending input holds
         /// at least `pace_seconds`. False without a player.
+        pub(super) fn halted(&self) -> Option<String> {
+            self.shared.borrow().halted.clone()
+        }
+        pub(super) fn sink_underruns(&self) -> Option<u64> {
+            self.player.as_ref().map(|p| p.queue_state().underrun_events)
+        }
         pub(super) fn queue_ahead(&self) -> bool {
             self.player.as_ref().is_some_and(|p| {
                 let q = p.queue_state();
@@ -930,6 +982,9 @@ mod coupled {
                             "fast_runs": t.fast_runs, "fast_calls": t.fast_calls,
                             "fast_built": t.fast_built, "fast_refused": t.fast_refused,
                             "fast_armed": t.fast_armed,
+                            "code_gen": t.code_gen, "code_verifies": t.code_verifies,
+                            "code_verify_ns": t.code_verify_ns, "code_mismatch": t.code_mismatch,
+                            "interp_appended": t.interp_appended,
                         })
                     })
                 })

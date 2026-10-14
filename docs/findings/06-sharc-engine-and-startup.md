@@ -5213,3 +5213,571 @@ post-modifies, all on I7 (the software stack, B/L `0x2d08c0/0x3e2`,
 `0x26f000/0x1fd`, `0x269170/0xc2`), and none wraps
 (`tools/sharc_circstats.py`). The L7 values read earlier as delay lines are
 stack buffers; the coupled hashes and PCM are unchanged by the fix.
+
+## Appending to the SHARC boot stream, and what free L2 is (patchkit spikes 0.4 and 0.2, 2026-10-13)
+
+**How the ColdFire sends section 7.** The routine is `FUN_400ccf74` in DT2 1.16 (828 bytes, called from the boot init
+chain `FUN_400cc864` at `0x400ccaee`); its equivalents, found by `tools/cfmatch.py` and by the only function that
+writes DSPI0 PUSHR (`0xec038034`), are `FUN_400cd0d8` (DT2 1.17), `FUN_400cf34c` (DN2 1.11) and `FUN_400cf4b0`
+(DN2 1.12), 828 bytes each with the same constants. In 1.16: two 1 MiB buffers are allocated (`0x400cd174`,
+`0x400cd19e`, size `0x100000`); section 7 is looked up (`FUN_401361b6(7, &info)`); a stored size over `0x100000` ends
+with status 2 (`0x400cd1d4`, `cmpi.l #0x100000 / bhi`); the stored bytes are copied from flash (`info.offset +
+0x80000`) into the first buffer; a `0x03` byte (the SPI flash READ command the SHARC boot ROM expects) is written at
+the start of the second buffer and the section is depacked after it (`FUN_4013815c`); a depacked size over `0xfffff`
+(`len + 1 > 0x100000`, `0x400cd20c`) ends with status 3; then every byte is pushed through DSPI0 one at a time, each
+after the SHARC's handshake line (GPIO bit 4) goes low (`0x400cd22a` to `0x400cd262`), and a final frame
+`0x18000000` ends the transfer. There is no length field and no per-block check on the ColdFire side: the whole
+depacked section is sent, whatever the block list, **as long as stored <= `0x100000` and depacked <= `0xfffff` bytes**.
+Verified by disassembly of all four images (same comparisons, same `pea 7`, same `move.b #3,(A0)+`); the failure
+statuses were not run. The sender constants are **[V]**; the failure statuses stay **[D]**.
+
+**Stream limits, therefore.** DT2 section 7 is `0x4e5f8` bytes: room for 727,540 payload bytes (`0xfffff` less the stream
+and one 16-byte header); DN2 1.11/1.12 is `0xcc55c`: room for 211,600. The stored (packed) size counts too: an
+incompressible 727,540-byte block gave a stored section of `0xf56da` bytes on DT2 and `0xd0725` on DN2 (both under
+`0x100000`); the container then is 2.92 MB (DT2) and 2.71 MB (DN2), under the 3 MiB flash cap. Hence the usable
+appended payload is bounded by the stream, not by free L2: DT2 727,540 of 939,140 free bytes, DN2 211,600 of 491,972.
+Section sizes, payload limits, the loaded L2 ends (`0x2001ab7c`, `0x2008823c`) and the free ranges are **[V]**; the
+stored-size runs are **[D]**.
+
+**What an append is.** A boot stream is a chain of blocks, each a 16-byte little-endian header (block code, target
+address, byte count, argument) and a payload; the top byte of the block code is `0xad` (core 0) and byte 2 is chosen so
+the XOR of all 16 header bytes is zero; a plain data block has flags `0x0001`, FIRST `0x4001`, FINAL `0x8001`. The
+stream's own data blocks are multiples of 4 bytes long and follow each other without padding. `tools/dsp_patch.py`
+`Stream.append_block(addr, data)` inserts one such block immediately before the FINAL block (word aligned, padded to 4,
+refused over loaded memory, outside L2 `0x20000000..0x20100000`, or past the stream cap); the patch-file form is
+`APPEND <addr> <hex>` (the Rust parser treats it as `BYTES`, so the same file also injects hot), and
+`dsp_patch.py syx` rebuilds the container with the aPLib packer. The Rust `dsp_stream::diff` is address based, so a
+stream with another block list diffs to plain `BYTES` runs (unit test added). **[D]**
+
+**Arrival, intactness, PCM.** `tools/l2canary.py build` appends an address-dependent pattern block
+(`((addr * 0x9E3779B1) ^ seed)`) filling the usable free range; the ready inputs of that .syx are built with
+`tools/ready.py --syx STOCK --dsp-syx CANARY` (the loader image in the emulator is the flattened block list, so
+arrival is "the block's bytes are at its address in the engine"; the SHARC boot ROM itself is not emulated, see the
+open point below). **[D]**
+
+| | DT2 1.16 (one-sample card) | DN2 1.11 |
+|---|---|---|
+| appended block | 727,540 bytes at `0x2001ab7c` | 211,600 bytes at `0x2008823c` |
+| present at the ready state | yes, byte exact (`dsp.peek`; DN2 checked at ready) | yes |
+| scenarios run with it | 5 (`scenarios/dt2.json`) | 10 (`scenarios/dn2.json`) |
+| canary after each scenario | intact (SHA-256 of the range equal) | intact |
+| PCM against the same ready built without the block | equal in all 5 | equal in all 10 |
+
+Pins: with the stock ColdFire boot, the DN2 PCM pins `exactness-100m`, `trig1-taps` and `trig1-tap-release` hold on a
+freshly built ready (as on the committed 2026-10-07 ready); `trig1-noqa-40m` is `37dd4b0b..` against the pinned
+`d56d8f4b..` on a freshly built ready with or without the canary (a ready-rebuild effect: the committed ready gives
+the pin). The first attempt, with the ColdFire booted from the canary .syx, changed the PCM of seven scenarios: that was
+the one-frame ready shift described in finding 17, not the block. **[D]**
+
+**Free L2, runtime evidence.** Static map of what the boot stream writes: DT2 1.16/1.17 loads L2 up to `0x2001ab7c`,
+leaving `0x2001ab7c..0x20100000` = 939,140 bytes (`0xe5484`); DN2 1.11/1.12 loads up to `0x2008823c` with an
+8-byte gap at `0x2001e880`, leaving `0x2008823c..0x20100000` = **491,972** bytes (`0x77dc4`; the text above says 490,948,
+which is 1,024 short: **[C]**). Canary pattern laid over the whole range after the ready state is restored
+(`coupled-run --dsp-patch` from `l2canary.py patchfile`), read back by block hash after every scenario
+(`--dsp-peek canary=ADDR:LEN:4096`), and the PCM compared with the run without the patch: **[D]**
+
+| | scenarios | audio | canary | PCM vs no canary |
+|---|---:|---:|---|---|
+| DT2 1.16, card: `dt2-trackfx`, `dt2-sendfx` (the `dt2` set is in the table above) | 60 | 201 s | all 939,140 bytes intact | all equal |
+| DN2 1.11: `dn2-fx`, `dn2-trackfx`, `dn2-sendfx` | 151 | 779 s | all 491,972 bytes intact | all equal |
+| a 35 s tour (PLAY, every trig, RECORD, every page and mode, encoders, PLAY again) | 1 per device | 35 s each | intact | equal |
+
+Nothing in these runs writes or reads (in a way that changes the PCM) any byte of the unloaded L2 of either device,
+including the DT2 16 KB at `0x200fa000..0x200fe000` that two functions reference as literals: those functions did not
+run (or did not matter) in 66 DT2 and 162 DN2 scenario runs with the canary (this table plus the table above). The control run is positive: a canary over
+`0x2825c000..0x28260000` (loaded L1 data of DN2) was damaged in ranges `0x2825c000..0x2825d300` and `0x2825d600..0x2825d700`
+by one `trig1-taps` run, and the PCM changed. Conclusion: the unloaded L2 is free for the code paths these suites
+exercise; keep `0x200fa000..0x200fe000` out of the allocator on DT2 until a path that uses it is found, which leaves
+922,756 bytes (DT2) and 491,972 bytes (DN2), of which the stream can carry 727,540 and 211,600. Static references and
+the unexercised paths (sample recording to RAM, sample load beyond one file, MIDI) remain **[O]**.
+
+**Open.** (1) Whether the real SHARC boot ROM accepts the extra block: partly closed by the rule check in "Boot ROM conformance" below, which also corrects this section (**[C]**: the free range up to `0x20100000` includes the ROM's own 8 KB workspace, which a boot block may not target, and the append did not update the FIRST blocks' next-application pointer); the rest is hardware **[O]**. (2) L1: the sizes of the L1 blocks are
+in the datasheet, which is not under `out/refs/`; the emulator accepts writes anywhere, so a run cannot show that the
+gaps between the loaded L1 windows (`0x2826f000..0x282c0000`, `0x282d8000..0x28380000` on DT2) are RAM. L1 PM room stays
+**[O]**; `append_block` refuses L1. (3) The append lengths above assume nothing else raises the stored size past
+`0x100000`; a patchkit build must check the packed size of section 7 as well as the depacked size.
+
+## Master hook: a routine in free L2 scales the final block before the Q31 conversion (spike 0.7) **[D]**
+
+Measured in the coupled emulator on DT2 1.16 and DN2 1.11 (the DSP blobs of DT2 1.17 and DN2 1.12 are
+byte-identical, so the addresses hold there). A second agent verified **[V]** the hook site and converter (DT2
+`0x1c7734` `1804 001c 74a1`, DN2 `0x1c9fd2` `1804 001c 9d3f`, one caller each) and the converter buffers (`0x25f180`,
+`0x268438`); PCM results and register liveness stay **[D]**.
+
+**Site.** The block handler's render command ends with one call of the Q31 converter: DT2 `CALL 0x1c74a1`
+at `0x1c7734` (`1804001c74a1`, Type 25a direct, delayed), DN2 `CALL 0x1c9d3f` at `0x1c9fd2` (`1804001c9d3f`).
+Each converter has exactly one caller. It runs after `FUN_1c2b24` / `FUN_1c2712` (all track, send and master
+stages, meters included) returned, so the buffer it reads is the final master. Retargeting the CALL operand
+is a one-instruction patch with no displaced instruction (`PM 1c7734 180400bd0000 was 1804001c74a1`).
+
+**Buffer.** 64 IEEE floats (nominally -1..+1): 32 left samples, then 32 right at +0x80 bytes, planar, at
+DT2 `0x25f180` and DN2 `0x268438` (byte addresses; `0x25f180` is also a work buffer of the track stages: writing it in place had no
+other visible reader, since gain 1.0 gives bit-identical PCM). One block is 32 samples; the DSP gets 1500 blocks/s (48 kHz). The
+converter (19 instructions, `I3` = buffer, 32 iterations, `R2 = 0x1f` is the `fix_by` exponent, the
+`0x1c9d51` word of finding 17) writes interleaved Q31 into the ring half given in `R4` (left) and `R8`
+(right, `R4 + 4`, stride 2 words).
+
+**State at the hook, as read from the callers and the converter.** `I6` frame pointer and `I7` stack are
+live, and so are `R4` and `R8` (arguments of the converter). `M5 = 0`, `M6 = 1`, `M7 = -1` are the firmware's
+global constants. SIMD is off (`MODE1` bit 0x200000 cleared at `0x1c7709` / `0x1c9fa7`), no DO loop is
+active, and the converter itself addresses `I3`/`I4`/`I5` linearly, so `L3..L5` are 0. Dead at the call:
+`R0..R3`, `I0..I4` (the converter loads `I4` from `R4`; it saves and restores `I3` and `I5` itself; the
+caller reloads everything else from its own frame). A hooked routine may therefore use `R0..R3`, `I4`
+freely and must end by jumping to the converter with `R4`, `R8`, `I6`, `I7` unchanged (a tail `JUMP`, so the
+converter's `RETURN` goes to the original caller).
+
+**Routine and site, as emitted by `tools/dsp_master_hook.py` (DT2 shown; DN2 differs in the buffer and the
+final jump):**
+
+```
+0xbd0000  R0 = DM(0x200a0100)            ; gain float (or: the frame-word variant below)
+0xbd0003  I4 = 0x25f180
+0xbd0006  DO 0xbd000e UNTIL LCE (64)
+0xbd0009  R1 = DM(I4, M5)                ; M5 = 0, normal word
+0xbd000b  F1 = F1 * F0
+0xbd000e  DM(I4, M6) = R1                ; M6 = 1
+0xbd0010  JUMP 0x1c74a1
+```
+
+L2 byte `0x200a0000` (pc `0xbd0000`; pc = `0xb80000` + (byte - `0x20000000`) / 2) is past the last word either
+loader writes (DT2 `0x2001ab7b`, DN2 `0x2008823b`). 200 instructions per block.
+`tools/sharc_asm.py` builds the words from `tools/sharcspec/decode_table.json` and re-decodes each with the
+repository decoder; the forms it emits were checked against the firmware's own words
+(`tests/test_sharc_asm.py`). A first version used the short-word access bits by mistake (`l,x,w = 1,0,0`
+instead of `0,1,1`): the decoder accepted both, the PCM showed it, so check access width in the listing.
+
+**PCM evidence.** `tools/hook_ab.py run` / `compare`, same ready inputs, one audio render each:
+
+| device | scenario | gain word | result vs unpatched |
+|---|---|---|---|
+| DN2 1.11 | `trig1-tap-release` (8.5 s) | 1.0 | bit-identical; sha256 `f4f6d19f...` is the scenario's pin |
+| DN2 1.11 | same | 0.5 | RMS -6.0206 dB, peak ratio 0.5, max error 2.3e-10 (half a Q31 step) |
+| DT2 1.16 | `dt2-sample-trig` (3 s, one-sample card) | 1.0 | bit-identical (`999dd109...`) |
+| DT2 1.16 | same | 0.5 | RMS -6.0206 dB, max error 2.3e-10 |
+
+**Engine fix needed to run it.** `Engine::poke` of an address that holds no loaded byte stores at the
+short-word alias (`_canonical_dm_address`, finding 07), where neither the instruction fetch of an L2 pc
+(`Mem::read_sw`) nor a plain data read looks, so new code halted with "no decoded instruction at 0xbd0000".
+`Engine::poke_raw` writes the bytes at their own address and `apply_dsp_patch` uses it for absent L2 bytes.
+Run-time patches only; the boot-stream append (spike 0.4) is not needed for this result. A patch that changes
+the call site bars the generated blocks that contain it, as for any code patch (finding 18); the new routine
+runs in the interpreter (200 instructions per block, no wall-time effect visible).
+
+## Parameter channel: the CFADE word is read, but its only effect is a flag **[C][D][O]**
+
+**[C]** Corrects "`+0xde` CFADE discarded" and "`+0xe6` dropped" (this file, "Where the SRC-page words go").
+Two spills hid the uses.
+- `+0xde`: `0x1c265f R11 = DM(I2+2) (sw)`, `0x1c2661` shifts it right by 8, `0x1c2687` spills it. `0x1c26ed`
+  reloads it into `R10`, and `0x1c26ef R10 = pass(R10)` sets the ALU flags that `0x1c2700 IF GT R3 = M6`
+  tests. `R3` (0 or 1) is stored as a float at slot word 4 (`0x1c2711`/`0x1c2714`, `DM(I5 - 23)`, slot =
+  `0x2506ec + R8*0xdc`). So CFADE >= 0x100 raises a flag in the voice table. Its reader is not found **[O]**.
+- `+0xe6` (mirror 31, SAMPLE's START): `0x1c2664 F8 = float(F13)`, scaled by `0x38088889` (1/30720) at
+  `0x1c26e8`, spilled, stored by `0x1c26f4` at slot word 1. It is live.
+
+**[D]** Whole-engine test, `DSP_FRAME_POKE` (a diagnostic of the coupled worker: `OFF=VAL[/TRACKS]`, a
+big-endian 16-bit wire word set in every frame sent to the DSP; the frame offset is the one of finding 04),
+DT2 `dt2-sample-trig` with the one-sample card, Sample machine, no hook:
+
+| poke (all 16 tracks) | PCM vs unpatched |
+|---|---|
+| `+0xde` = 0x0100, 0x7f00 | bit-identical |
+| `+0xe6` = 0x4000 | changes (RMS -1.6 dB) |
+
+So for the Sample machine the CFADE word has no effect on the output at any value in its range, including
+the flag-raising ones. Other machine types (slot type bits differ) and the flag's reader are untested **[O]**.
+
+**[D]** The hooked routine can read the word. DSP memory holds the frame copy at `0x2558dc` (512 short words
+copied at `0x1c2c79` each block), so track 0 `+0xde` is the short word at `0x2559ba` (track `t`: `+0x60*t`).
+Variant `--param-word 0x2559ba`: gain = 1.0 + word/32768 (`R0 = DM(0x2559ba) (sw)`, `float`, times 2^-15, plus
+1.0; 12 more instructions than the constant-gain routine, 201.8 per block). With the poke: word 0 gives the
+unpatched PCM bit for bit; word 0x4000 gives peak ratio 1.5000000 and +3.52 dB, exactly 1.5x.
+
+**What is not shown.** No stock control reaches `+0xde`: the firmware's CFADE entries (param codes 0xcc Sample,
+0xfa MSlice) are in no stock descriptor. The real chain, a UI knob -> mirror index 27 -> frame -> hook, needs a
+patched MAIN (the XSLICE route of finding 02) and so a coupled cold boot with DSP audio (spike 0.6). The poke
+sets the same wire word the ColdFire would send; it is not a knob. DN2: not examined (its per-track unpack is
+not `FUN_1c24e9`; the hook itself works there).
+
+## Headroom **[D]**
+
+Instruction counts of the coupled runner (the DSP is stepped 666,667 instructions per 1500 Hz block, i.e. an
+assumed 1 GHz core with one instruction per cycle; the idle loop is skipped exactly and counted):
+
+| device | scenario | idle share | busy per block |
+|---|---|---|---|
+| DN2 1.11 | one voice (`trig1-tap-release`) | 49.8 % | 335,000 of 666,667 |
+| DN2 1.11 | `kb-chord16`, 16 voices | 49.75 % | 335,003 |
+| DT2 1.16 | one voice (`dt2-sample-trig`) | 68.3 % | 211,000 |
+| DT2 1.16 | all 16 trig keys down in keyboard mode (`dt2-chord16` probe, rms unchanged) | 68.5 % | 210,047 |
+
+The cost is a constant background; 16 voices do not show on DN2 (rms 0.10 vs 0.0065). A master effect has
+roughly 330,000 (DN2) and 450,000 (DT2) instructions per 32-sample block at the assumed clock, i.e. about
+10,000 and 14,000 per output sample. The constant-gain hook costs 192.0 (DN2) and 195.6 (DT2) instructions
+per block (idle-skip difference over 12,750 and 4,500 blocks): 0.03 % of the period. Real hardware has cache
+and memory stalls that this count ignores, and the clock is assumed, so these are upper bounds **[O]**; an
+effect that needs 5,000 instructions per block (a compressor or a drive with a smoothed gain) is under 1 %.
+
+## Per-voice render hook: proposal for a new machine type (built and corrected in the next section) **[C]**
+
+Confidence that this reaches a sounding added machine: about 40 %. The master hook above shows that new DSP
+code can be placed, run and verified; the rest is mapping.
+
+- **Where the per-voice render is called.** `FUN_1c642a` loops over 32 voice records (`0x2412cc`, stride
+  `0x1d8`, `R14 = 0x20`, `R13` = record pointer, `0x1c6ad7`-`0x1c6b09`). Per record it tests a bit (`R2 =
+  btgl(R2, bit 1)` from `DM(I2, M1)`, `0x1c6ae7`; branch at `0x1c6aeb`) and calls either `0x1c5576`
+  (`CALL` at `0x1c6af1`) or `0x1c4ecf` (`CALL` at `0x1c6b00`), both with `R4 = R13` (record), `R12 = R15`. Both
+  zero the output unless record word 0 and byte `+0x1b8` are non-zero; `0x1c4f81` then renders 64 floats into
+  record `+4..+0x103` (6-tap polyphase from the sample, table `0x25d940`) and `0xb80000` decimates them to 32.
+- **Proposal.** Retarget the `0x1c4ecf` CALL at `0x1c6b00` to a dispatcher in L2: if the record belongs to
+  our machine (a byte of the record that nothing stock writes, set from a hooked `FUN_1c60a2` / the type
+  change at `0x1c33d7`; the per-track flag `0x2412c8 + 4 + t*0x1d8 + 0x1b9` is the nearest existing hook),
+  render 64 floats into record `+4` and set up the state the later stages expect; else `JUMP 0x1c4ecf`.
+  Same register contract as the master hook (a tail jump keeps the stack). The later per-slot stages
+  (`FUN_1c71ec`, table `0x8055c874`) then treat the output like any voice.
+- **Selection.** The ColdFire type word (frame `+0x94 + 2t`) reaches `0x255970` and is used only as a change
+  detector (finding above); the `0x2567c0` table indexed by it holds the per-type selector, and type 7 collides
+  with the existing manual-slice entry. A new type needs a free selector entry, a non-colliding type number
+  and the ColdFire machine descriptor (finding 02).
+- **Unknown, in order of risk.** Which record fields the stages after `0x1c4ecf` read (the voice record
+  contract table above covers the sample path only); how a voice record is allocated at note-on (ColdFire
+  trig -> `0x1c60a2`); whether `0x1c5576` is a second path that an added type must also cover; the
+  decimator state at `+0x104`.
+
+## Boot ROM conformance of the SHARC boot stream (2026-10-13) **[D]** **[C]**
+
+The emulator flattens the block list (`sharcldr.LoadedMemory`, `dsp_stream.rs`) and never runs the boot ROM, and its
+parsers stop silently at the first bad header. Rules below come from the public ADSP-2156x Hardware Reference
+(`out/refs/adsp-2156x-hwr`, chapter 40, printed pages "HWR 40-nn"); `tools/sharc_bootcheck.py` applies them to a
+stream (rule ids H1 to H13, S1 in its docstring), `native/patchkit/src/bootrom.rs` is the Rust port of the error
+rules. Marks: ROM = stated by the manual, CONV = not stated as a ROM check but true of every stock stream. A second agent
+verified **[V]** rules H1, H2, H3, H4/H5, H8, H9 and H12.
+
+| Rule | Source | Check |
+|---|---|---|
+| H1 HDRSIGN | 40-39, 40-60 | byte 3 is `0xAD` for core 0 (`0xAC`, `0xAB` are other cores; error `HDRSGN` 0xA) |
+| H2 HDRCHK | 40-39, 40-60 | XOR of the 16 header bytes is 0 (error 0xC). Table 40-27 says "XOR of the other 24 bits"; only the whole-header reading holds on stock headers (the three-byte reading (byte 2 = byte 0 ^ byte 1 ^ byte 3) holds for 0 of the 104 DT2 headers, `tests/test_sharc_bootcheck.py`) |
+| H3 alignment | 40-39 | BYTE_COUNT and a load TARGET_ADDRESS are multiples of 4. FIRST/FINAL blocks carry the entry pc (DN2: `0x1c12e2`, 2-byte aligned) and boot on the real device, so the address rule is applied to blocks that load memory only |
+| H4/H5 FIRST | 40-40 | the first block of the stream has BFLAG_FIRST; FIRST cannot be a FILL block |
+| H6/H7 FILL, IGNORE | 40-42 | FILL: no payload, ARGUMENT is the word; IGNORE: payload present and skipped; INIT, CALLBACK, FINAL, AUX are cleared on an IGNORE block |
+| H8 FINAL | 40-41, 40-60 | the stream ends with FINAL (else `NOFINAL` 0xE); nothing is read after it. The ColdFire sends every byte (below), so bytes after FINAL would stall the handshake: error |
+| H9 workspace | 40-2 Table 40-1 and note | the 8 KB `0x200FE000..0x20100000` "is not a bootable region": a block aimed there ends the boot in the error handler |
+| H10 | 40-41, 40-44 | INDIRECT and CALLBACK blocks need ROM callback state: error (no stock block uses them); AUX/SAVE: warning |
+| H12 next pointer | 40-85 (`pNextDxe`) | a FIRST block's ARGUMENT is the byte count from the end of its header to the next application's header, or to the end of the stream (CONV: used by `adi_rom_Boot()` list walking, not by the slave boot) |
+| L1 | 8-1, 40-5 | L2 is 1 MB (`0x20000000..0x20100000`), initialised by the preboot before the first block; targets outside L2 (L1 aliases, DDR) are reported as info only |
+
+Results.
+
+- **Stock streams pass** (DT2 1.16 and 1.17: 104 blocks, 321,016 bytes; DN2 1.11 and 1.12: 95 blocks, 836,956 bytes).
+  Their layout is two applications: an initcode application (FIRST|IGNORE at offset 0, entry `0x120230`, ARGUMENT
+  `0x2964`, then an INIT block that calls it) and the main one (FIRST|IGNORE at `0x2974`, ARGUMENT = bytes to the end
+  of the stream, FINAL last, its TARGET_ADDRESS equal to the entry `0x1c1338` / `0x1c12e2`). Every BCODE is 1.
+  The INIT block runs the initcode (clock and DDR set-up) before the DDR FILL blocks, so DDR is not an emulator
+  question. Block counts and sizes **[V]**; the rest **[D]**.
+- **Patchkit outputs with appended blocks pass** against their stock stream (`check_against_stock`: inserted blocks only
+  before FINAL, stock headers unchanged, FIRST pointer grown, inserted blocks in bootable L2, no overlap, BCODE 1,
+  no flags): `fx/master-gain` and `fx/master-drive` on DT2 1.17 and DN2 1.12 (gain: 2 blocks, 148 bytes; drive: 1
+  block, 620 bytes; one in-place edit of 3 payload bytes in the stock block that holds the hook CALL), and the L2
+  canary at its maximum on both (727,556 and 211,616 bytes; both streams then are `0xFFFFC` bytes). **[D]**
+- **Defects found and fixed [C].** (1) `Stream.append_block` (Python and Rust) left the second FIRST block's
+  ARGUMENT at the old stream length, so every patchkit output from before this change fails H12 (`out/patch/combo.syx`
+  and `dev-dt2-1.17.syx` did). It is now grown with its checksum. (2) The append window and the canary's "free L2"
+  ran to `0x20100000`; the last 8 KB is the boot kernel's workspace, so a block there is refused by the ROM
+  (windows now end at `0x200FE000`; the free-L2 numbers above are runtime numbers and stay valid for code that is
+  written after boot, e.g. by `dsp.patch`; the usable boot payloads of 727,540 and 211,600 bytes end below it).
+- **What the ColdFire does** (read again on `FUN_400cd0d8`, DT2 1.17): the SHARC is released from reset, then the
+  routine sends `0x03` (SPICMD "keep single-bit mode", Table 40-18) and the depacked section one byte per DSPI frame,
+  each after the handshake line (GPIO `0xec094018` bit 4) goes low, then the frame `0x18000000`. It does not parse
+  blocks, and a rejected stream (the ROM enters its error handler and stops accepting) leaves the loop polling for
+  ever: there is no timeout. A bad stream is a boot hang, not a returned error. The bootstrap's STARTUP menu and
+  recovery do not depend on it (0.2). **[D]**
+- **Emulator enforcement.** The ROM rules now run where the emulator takes a stream: `tools/ready.py` (building a
+  ready state from a `.syx`), `firmware.load` (`Analysis::of` in `native/control/src/firmware.rs`, through
+  `patchkit::bootrom::require`) and `patchkit verify` (every `patch`). They refuse a stream with any H-rule error.
+- **Open [O], hardware or a datasheet.** (a) Rules the ROM applies and the manual does not state (the manual
+  documents `ROM_BOOT_ERR_NEXTDXE` 0x14 without saying when it fires; H12 keeps the stock invariant so that case
+  cannot arise). (b) "Valid memory" for L1 targets: the product datasheet map is not in `out/refs`, so L1 targets are
+  not checked (appends are L2 only). (c) The entry point is the last FIRST block's TARGET_ADDRESS (40-65 says the
+  first-block address is saved; with two FIRST blocks the stock FINAL carries the same address, so either reading
+  gives the stock entry; patchkit changes neither). (d) SPI slave boot asks hosts for multiples of 1024 bytes (40-21);
+  the stock section is `321017 mod 1024 = 505` bytes with the command byte, so the ROM copes with a short tail, but a
+  patched stream moves the tail length: gain +148 B, drive +620 B, canary to `0xFFFFC`. (e) What the initcode does to
+  L2 (it is stock code and the appended blocks come after it in the stream, so only a stock initcode side effect on
+  L2 could matter; no stock block writes the free range).
+
+## Per-voice render hook: built (patchkit Phase 4.2, DT2 1.16/1.17) **[D]**
+
+Lane fastweb, 2026-10-13/14. One agent, emulator and concrete core only, not checked by a second agent. The DSP blobs
+of DT2 1.16 and 1.17 are byte-identical, so every address below holds on both; nothing ran on a device. A second agent
+verified **[V]** the voice hook entry (`1587 ffff ffe6` at `0x1c4ecf`, next instruction `0x1c4ed2`), the DN2
+`FUN_b8251b` entry (`1587 ffff ffee`) and the selector words 0..13, 14/15 = 0 and 16..21 pointers; PCM, headroom, register
+liveness and note-on contracts stay **[D]**. Modules:
+`core/dsp-voice`, `test/sine-voice`, `machines/pluck`. Tests: `tests/test_dsp_voice.py`, `tests/test_pluck.py`;
+proof: `tools/pk_proof_voice.py`.
+
+**[C] The hook is the first instruction of `0x1c4ecf`, not the call at `0x1c6b00`.** Retargeting the call patches
+the code of `FUN_1c642a`, and the AOT invalidation (finding 18) then bars that function's generated region: with
+the call-site patch the coupled DT2 ran 2,000,000 ColdFire instructions in 5.7 to 7.2 s (22 DSP frames, about 4
+frames/s, an interpreter run of the busiest function) against 0.03 s stock. Overwriting the first instruction of
+the callee leaves `FUN_1c642a` generated and bars only the small region of `0x1c4ecf`: a patched image with no
+registered type costs +1,120 DSP instructions per block (+0.5 %) and its PCM is bit-identical to stock.
+
+- Site: `0x1c4ecf`, `1587 ffff ffe6` = `I7 = modify(I7, -26) (NW)` (the callee's frame reservation; 48 bits, one
+  instruction). patchkit op `jump` writes `JUMP _dv_entry` (`063e` + 24-bit pc) over it; the wrapper executes the
+  displaced instruction itself (`MODIFY(I7, -26) (NW);` assembles to the same six bytes) and `JUMP`s to `0x1c4ed2`.
+  Both are anchors by rule (`dsp.voice.render_entry`, `dsp.voice.render_next`: `reloc_hash` of the function plus
+  offsets 0 and 3).
+- The call at `0x1c6b00` is `CJUMP`-style: it builds the callee's frame (`I6 = I7`, the caller's `I6` and the
+  return address stored under it), the callee reserves its locals with `I7 -= 26 words`, restores what it clobbered,
+  loads `I12` with the return address from `[I6 - 1]` and returns with `JUMP (M14, I12) (DB)` whose delay slots
+  hold a restore and `RFRAME`. A routine that takes over the call must end the same way.
+- Inputs at the entry [D, concrete core and emulator]: `R4` = voice record (`0x2412cc + v * 0x1d8`), `R8` = the
+  voice's output block (32 floats; the 32 buffers lie `0x80` bytes apart, `0x252df8 + v * 0x80`: they are the track buses the master stage sums, left for the even voice and right for the odd voice of track `t` at `0x252df8 + t * 0x100`; read back from the emulator after a held sine: buffers 0 and 1 equal and non-zero, buffer 2 zero), `R12` = 32,
+  `R14` = the voice loop counter (32 for voice 0, 1 for voice 31: `v = 32 - R14`; nothing else in the call carries
+  the voice number), `M5 = 0`, `M6 = 1`, `M7 = -1`, `M13 = 0`, `M14 = 1`. The firmware calls this function for
+  every voice whose selector is not 2 (STRETCH takes `0x1c5576`); types 7 and up never reach selector 2 (below).
+- Voice and track: track `t` owns voices `2t` and `2t + 1` (finding 15). The type is the short word `cache[t]` at
+  `0x255970` (anchor `dsp.voice.type_cache`: the literal `I4 = 0x255970` in `FUN_1c24e9`, `reloc_hash`
+  `d2c02a58..`, +0x1e5): the DSP's copy of frame word `0x94 + 2t`, written by `FUN_1c2b24`'s change detector.
+  Verified by `DSP_FRAME_POKE=0x94=8`: `cache[0]` reads 8 and the param-record selector word `+0x4c` of voices 0
+  and 1 reads `0x254478`. Short-word loads through `Rn = DM(I, M) (SW)` are ignored by the assembler (finding
+  20), so the wrapper reads the cache as a 32-bit word that holds two tracks and extracts the half with
+  `FEXT Rx BY Ry` (`Ry` = `bit6 | len6 << 6`, len6 at bits 11:6, not 13:8).
+- **Selector collision, settled by measurement.** `FUN_1c24e9` stores `0x2567c0[type]` (32-bit words) at record
+  `+0x4c`. Words 0..6 are `0 1 2 3 4 0 5`; word 7 is `0x2567dc`, the copy-gate flag (1 in the loader image, cleared
+  by `0x1c2c8b` in the first frame: type 7 then selects 0, SAMPLE); words 8 to 13 are `0x254478 ...` pointers (>= 6:
+  stage A of `FUN_1c642a` is skipped, `compu(R6, 6)` at `0x1c6553`); words 14 and 15 are 0 (SAMPLE again), 16 to
+  21 pointers, 22 and 23 pointers `0x254878` and `0x2548f8` (**[C]**, earlier text said zero). A new type therefore never selects the STRETCH path (selector 2), and a type whose
+  entry is 0 or 1 runs the sample stage A (`0x1c4afe` ...) on its records, which is harmless because a registered
+  routine does not read what stage A writes and the stock empty-slot voices run it anyway. No selector table entry
+  has to be added. **[O]** the selector words of types above 23 were not read.
+- Note-on edge, independent of the selector: the arm routine `FUN_1c4eaf` stores the short 1 at `+0x1b8`, which
+  also zeroes byte `+0x1b9`; stage A (selectors 0 to 5) clears `+0x1ba` before the render, so `+0x1ba` is not usable.
+  The wrapper's contract: a routine marks a running voice by writing a non-zero byte to `+0x1b9`; `+0x1b8 != 0` and
+  `+0x1b9 == 0` is a note-on in this block. The sine and the string both retrigger correctly on it (concrete core).
+- What the later stages read: nothing in the record. `0x1cdd8b` (second loop of `FUN_1c642a`, 32 passes, a 5-word
+  record stride `0x14`) takes each voice's output block and applies the level/envelope gain; the track mix, filter,
+  FX and sends follow as for a sample. So the routine writes 32 floats to `R8` and nothing else: the 64-float work
+  buffer at `+4` and the decimator state at `+0x104` are not used (the engine renders 64 samples at 96 kHz and
+  decimates; a routine renders 48 kHz directly).
+- **What was shown downstream** (emulator, DT2 1.17, type forced on the wire, TRIG 1 held): with the machine level word
+  `0xec` halved the sine falls by the same factor as the stock sample (0.25 in RMS, -12.0 dB both: the level stage
+  is a square); with the Reverb Send raised from the FX page the reverb tail after the sine has ended carries energy
+  (it is silent without the send); with the filter Frequency lowered from the filter page the sine at 2093 Hz falls
+  by 48.6 dB. So the voice goes through the engine's level stage, the track filter and the send FX.
+
+**The routine ABI and what core/dsp-voice does** (`modules/core/dsp-voice`, 138 instructions). The wrapper reads
+the track's type, scans `_dv_table` (16 rows `{type, pc}` and an empty row; filled by the machine modules'
+`register` ops, no addresses in modules) and for a registered type of an even voice saves the registers the stock
+function preserves (`R3 R5 R6 R7 R9 R10 R11 R13 R14 R15 I0 I1 I2 I3 I5 M1 M2 M3 B3 I13`), enters the routine
+with `JUMP (M13, I12)` and `I13` = return pc (the tracer of `tools/sharc_core` does not follow an indirect `CALL`
+and the firmware has none), restores and returns like the stock function. The odd voice copies the even voice's
+block (`R8 - 0x80`). An unregistered type falls through to `0x1c4ed2`. Registers on entry: `R4` record, `R8` block,
+`R12` = 32, `R0` type, `R1` voice, `R2` track. The routine may clobber `R0-R15 I0-I5 I13 M1-M4 B3`; it must keep
+`I6 I7 I8-I12 I14 I15 M0 M5-M15`, the L registers and `MODE1`, and returns with `JUMP (M13, I13)`. Shared helpers
+exported by the core: `_dv_exp2` (2^F0, degree-5 minimax, relative error 8e-8, clobbers R0-R3) and
+`_dv_frame_hw` (R0 = halfword k of the frame copy at `0x2558dc` -> R0, anchor `dsp.voice.frame_base`: the literal
+`I5 = 0x2558dc`, `FUN_1c2b24` +0x14d).
+
+**Frame words a routine reads** [D, measured with a held TRIG 1; track `t`, all halfwords]: pitch `0x02 + 2t` =
+note << 8 (`0x3c00` = 60; the sine tracks it to 0.0003 cents, no glide seen at the note start; mid-note changes not
+tried), velocity `0x34 + 2t` = velocity << 8 (`0x6400` = 100), machine parameters from `0xda + 0x60 t + 2 (mirror
+index - 25)`: slots 0 to 7 are mirror indices 25, 26, 27, 28, 31, 32, 33, 34 (finding 02), i.e. frame offsets `0xda
+0xdc 0xde 0xe0 0xe6 0xe8 0xea 0xec`. Slot 3 (28) is the sample slot the engine reads for the sample load: a machine
+should keep it at 0. Slot 7 (34) is the level the engine applies after the voice.
+
+**Pitch** from the frame: note n = pitch word / 256 + (tune word / 256 - 64) semitones, f = 440 * 2^((n - 69) / 12).
+The TUNE slot is 0x4000 (64.0) at rest.
+
+**Speed and space** [D]. Busy DSP instructions per block, 1500 blocks counted after the note started
+(`tools/pk_proof_voice.py`, emulator tier counters): stock sample voice 214,279; stock voice through the wrapper
+215,399 (+1,120); sine voice 210,300; Pluck voice 210,405. The module code is 728 bytes (core) and 632 bytes
+(sine); Pluck is 3,500 bytes of code and data plus a reserved 262,144-byte delay area (16 tracks x 4096 samples); on
+DT2 the three modules use 267,148 of 922,756 free L2 bytes, of which 4,276 are loaded by the boot stream (patchkit
+now leaves a module's bss out of the stream: the container grew by 928 bytes, not 262 KB). DN2: 267,148 of 491,972.
+
+**Open** [O]. (1) Hardware: the unloaded L2 area is written before it is read, so a device that traps on an
+uninitialised ECC word would not trap; nothing is known about L2 ECC. (2) A DT2 1.16 run (the anchors resolve there,
+the module was not run). (3) The behaviour on a patch change of the type while a note rings. (4) The pitch word at a
+note change inside a held note (the ColdFire smoother). (5) Release (`0x24` mask) is ignored by the string.
+
+
+## Per-voice hook on DN2 1.11/1.12: assessment (not built) **[D][O]**
+
+Same session; DN2 1.11 and 1.12 share one DSP blob. What is known, from the sharcdb of `dn2-1.12` (no run):
+
+- **No sample voice, so no `0x1c4ecf` analogue.** None of the DT2 voice functions (`0x1c642a`, `0x1c4ecf`, `0x1c4f81`,
+  `0x1c24e9`, `0x1c5576`, `0xb80000`) has a relocation-tolerant match in DN2; the shared pieces are downstream
+  (`0x1cb3d8` = DN2 `0x1cdb56`, `0x1c80f2` = DN2 `0x1ca84e`, `0x1cdd8b` = DN2 `0xb8251b`). The DN2 engine is the FM
+  engine: `FUN_1c2712` (frame copy, 16-track loop; called by `0x1c9e76`) calls `FUN_1c8ef1` (1,352 instructions,
+  `0x1c8ef1..0x1c9b73`), which runs one track's pipeline of about 40 stage calls (`0x1c4f04` indexed lookup, `0x1c694a`,
+  `0x1c731a`, `0x1c82c0` interpolating oscillator, `0xb8....` helpers, ...).
+- **Type dispatch, the analogue of the DT2 selector.** In `FUN_1c8ef1` the track's type word is `R2 = DM(I0 - 12)`
+  (`0x1c9056`); `R15 = 5; compu(R2, R15)` (`0x1c905d`) and `JUMP IF GE (DB) 0x1c90d4` (`0x1c909f`) send types >= 5 past
+  the voice stage; `I12 = 0x8052db90[R2]` and `JUMP (PM)` (`0x1c90b0`) pick the stage by type: the five entries
+  `0x1c90b2 0x1c91dc 0x1c920b 0x1c922f 0x1c90d4` (FM TONE, WAVETONE, FM DRUM, SWARMER, and MIDI = the same
+  target as the bound) are followed in memory by two further tables of the same kind (`0x8052dba4`, bound 7 at
+  `0x1c9197`; `0x8052dbc0`, selected at `0x1c9587`). The tables cannot grow in place (the next one starts behind the
+  last entry), as on DT2.
+- **So the DN2 hook has the DT2 shape, one level up:** a wrapper entered from the type test, dispatching on the
+  track's type (the word at `I0 - 12` is a cache the way `0x255970` is on DT2), rendering a registered type's block
+  and rejoining the pipeline after the voice stage, falling through otherwise.
+- **Unknown, in order of risk:** (1) where the FM stages deposit the track's audio and which stages after the voice
+  stage a replacement must still run or skip (the mixer-side stages, which DN2 shares with DT2, are known); (2) the
+  record layout of DN2's voices and the ColdFire source of the type word (finding 04 did not find it on the CF
+  side); (3) whether one wrapper at `0x1c909f` can skip the three dispatch sites cleanly; (4) the per-track
+  workspace (`0x13000`-byte offsets from `I9`), which a routine must not disturb.
+- **Plan and estimate.** 1 to 2 agent days of static work to map the stage that writes the track bus and the type
+  cache (the `sharc.py` slice from the master stage `0xb8251b`... backwards, and a `DSP_FRAME_POKE` sweep of the DN2
+  frame to find the type word as was done for `0x94` on DT2); 1 day to build `core/dsp-voice` for DN2 (new
+  anchors by `reloc_hash` of `FUN_1c8ef1`, the DN2 frame words of Pluck's parameters at the DN2 stride `0x92`), the
+  same `jump`/`register` ops; the Pluck routine ports with new frame offsets (stride `0x92` instead of `0x60`, track
+  block starts and mirror indices to be re-derived from finding 04's DN2 section) and a smaller line (DN2 has 491,972
+  free L2 bytes and a 211,600-byte stream limit, both fine for 262 KB of reserved delay line now that bss is not
+  loaded). Confidence of a sounding DN2 string: about 30 %; of finding the type test and a safe skip: about 60 %.
+  Recommendation: finish `core.machines` DT2 first; DN2 is a 3 to 5 day item; its payoff is the same module on a second device,
+  so it is worth doing only after a DT2 machine has been heard on hardware.
+
+## Per-voice hook on DN2 1.11/1.12: built (patchkit, lane fastweb) **[D]**
+
+Emulator only, not checked by a second agent; one DSP blob for 1.11 and 1.12. Modules: `core/dsp-voice` (the DN2 object
+`dsp-voice-dn2.s`), `test/dn2-sine` (a machine of type 5 that renders a sine); `tools/pk_proof_voice_dn2.py` (a, b, c all
+pass). **[C] This replaces the "Per-voice hook on DN2: assessment" above where they differ.**
+
+**What the Digitone II engine is.** `FUN_1c8ef1` (R4 = `0x241298`, R8 = `0x2554b8`, R12 = `0x257e6c`, called once per
+block from `FUN_1c2712` at `0x1c3044`) is not a per-track function: it is a pipeline of stages over 16 **voice slots**,
+each stage a loop over the slots (`0x234`-byte per-slot parameter structs from `0x25569c`, the type word at `DM(I0 - 12)`).
+Slot v has the frame slot (halfword indices of the DSP's frame copy at `0x25c48c`, big-endian values: pitch `1 + v` = note << 8,
+velocity `26 + v` = velocity << 8, machine type `74 + v`, i.e. frame bytes `0x02 + 2v`, `0x34 + 2v`, `0x94 + 2v`: the
+Digitakt's layout; the ColdFire allocates the slots round robin, a second TRIG goes to slot 1, and writes the track's
+type into the slot's type word) and a **32-float voice buffer at `0x804acf90 + 0x80 v`** (48 kHz; external memory), which
+all stages work on in place. Measured with `SHARC_WWATCH` on voice buffer words, one block, in time order: clear
+(`0xb804e5`), FM synthesis (`0xb827b1`...; types 0..3 through the stage table `0x8052db90` at `0x1c90b0`), a gain
+(`0x1c949b`, x1.585), the amplitude stage and envelope (`FUN_b80c39` per slot, `0xb80c60`), the filter (`0xb813be`,
+`0xb823b3`), the track chain (overdrive, bit reduction...), then the final loop at `0x1c9aea` upsamples each buffer to
+the **64-float output block at `0x257ee8 + 0x100 v` (96 kHz)** that `FUN_1c1738` (per-slot sends and filters) and
+`FUN_1c1f1e` (pan and send mix) read, then the master. A type above 4 is skipped by the synthesis like MIDI: its buffer
+holds the cleared data and the voice's later stages (amplitude envelope, gate) run on it.
+
+**The hook: `FUN_b8251b`** (55 instructions, leaf), called by the engine once per voice buffer after the synthesis
+(`0x1c9459`, a loop with R15 = 16 .. 1, so v = 16 - R15; R8 = R12 = the buffer, R4 = a control block whose first word is
+0 for every FM note; another path reaches it by a tail jump from `FUN_b8258f` with R8 != R12). patchkit overwrites its first
+instruction (48 bits, `1587 ffff ffee`, `I7 = MODIFY(I7, -18)`) with `JUMP _dv_entry` (same op as on the Digitakt); the wrapper
+saves everything it touches in a DM area (the function's callers keep live registers), runs the registered routine
+for the slot's type and continues in the stock helper at its second instruction. A patched image with no registered type
+is **bit-identical** to stock (FM TONE, 62,176 active samples; the boot lands a DSP block away as on every patched
+image). Cost: 16 calls per block, about 70 instructions each when no type is registered, by count.
+Anchors (rules in `modules/core/dsp-voice/module.toml`): `dsp.voice.render_entry` / `render_next` (`reloc_hash` of
+`FUN_b8251b`, offsets 0 and 3), `dsp.voice.frame_base` (the literal `I5 = 0x25c48c` at `0x1c2877` of `FUN_1c2712`, offset `0x165`; the second literal, at `0x1c301a`, is `I4` **[C]**).
+
+**Routine ABI on the Digitone II** (the registration contract is the Digitakt's: a `register` row `{type, routine}` in
+`_dv_table`; the routine is entered with `JUMP (M13, I12)`, I13 = return pc, ends with `JUMP (M13, I13)`):
+R4 = the slot's voice buffer (32 floats, written in full), R0 = type, R2 = slot v, R12 = 32. It may use R0-R15, I0-I5,
+I12, I13, M1-M4 (saved); it keeps I6-I11, I14, I15, M0, M5-M15, the L registers and MODE1; M5 = 0, M6 = 1, M7 = -1,
+M13 = 0, M14 = 1, M15 = -1 hold. There is no voice record: a routine keeps its own per-slot state. Helpers exported by
+the core: `_dv_exp2` and `_dv_frame_hw` / `_dv_frame_sw` (halfword k of the frame copy). What the routine writes is the
+signal **before** the engine's gain, amplitude envelope and gate, filter, overdrive and the rest of the track chain.
+Two consequences: the note's end is the engine's (the amplitude envelope releases the voice), and the routine sees no
+gate or note-on edge of its own (the frame carries none: pitch and velocity words are written at the trig and never
+cleared; the voice records at `0x241298 + ...` change at a trig but their flags stay set). A routine that needs the
+edge (a string) can use a change of the slot's pitch or velocity word (a second note goes to the next slot, so this
+works for 16 notes and then fails for a repeated note) **[O]**.
+The type words reach the DSP as the ColdFire sends them: `core/machines` on the Digitone II sends a clone of FM TONE as
+type 0 (the engine renders it), a machine with `own_dsp = true` with its own number (finding 02).
+
+**Evidence** (`tools/pk_proof_voice_dn2.py`; the proof starts every case from `restart`, TRIG 1 held for 1 s):
+
+| check | result |
+|---|---|
+| a. FM TONE with `core/dsp-voice` and `test/dn2-sine` patched in vs stock | bit-identical |
+| b. SINE note 60 / 72 (pitch word `0x4800` forced) | 261.626 / 523.252 Hz (0.00 cents) |
+| c. LEVEL knob down 300 detents (stock FM TONE with the same knob: -28.8 dB) | -31.8 dB |
+| c. the amplitude envelope releases the sine after the note | RMS per 100 ms 0.0176 .. 0.0133 held, then 0.0048, 0.0012, 0.0003, 0.0001 |
+| c. filter frequency down 300 detents on a 2093 Hz sine | -28.4 dB |
+| c. overdrive up on the sine | 3rd harmonic 1.2e-6 -> 0.156 of the fundamental |
+| c. reverb send up | a tail after the note (RMS 0 -> 0.00016) |
+| harness smoke tour (boot, track, pattern, play/stop, machine menu, save/reload, stress) with SINE in the set | 33 checks pass |
+
+**Seam I tried first and why it is worse [D].** Hooking the first instruction of `FUN_1c1738` (the function after the engine
+call) and writing the track's 64-float block `0x257ee8 + 0x100 v` directly works too (pitch exact) but skips everything the
+engine does to the voice buffer: no amplitude envelope (the sine never ended), no LEVEL, filter or overdrive; only the
+sends and the master apply. The 96 kHz block also needs the phase increment halved. Not used.
+
+**Open [O].** Hardware (never flashed; the DSP engine's L2 use is the stream's). The note-on edge and per-voice parameters
+of a machine with its own parameter page (the machine slot words of the DN2 frame block `0xda + 0x92 v` were not mapped
+to knobs). The wrapper calls the routine for every slot with a registered type each block, also for slots whose voice
+is idle (the engine's envelope silences them).
+
+## DN2 voice slots: slot to track, parameter words, the note-on edge (wave 7, lane fastweb) **[D]**
+
+Digitone II 1.12 (DSP blob shared with 1.11), emulator and static; one agent, not second-checked. Tools:
+`tools/dn2_probe.py` (`edge`, `slotmap`, `knobs`, `dspblock`, `edgepcm`), module `modules/test/dn2-edge`. Output under
+`out/runs/` (never committed). **[C]** to "Per-voice hook on DN2 built" above in three points (marked).
+
+**Slots are voices, allocated by the ColdFire; a slot is not a track [C].** The Digitone II has 16-voice polyphony shared
+by the tracks (manual, VOICE STEAL / LOCKED VOICES). The ColdFire keeps a voice table at `0x40288300 + 0x14 v`
+(`FUN_4002b1f4(v)` = the signed byte at `+6` = the track, -1 when free; `FUN_4002b22e`, `+7` = the note, `FUN_4002b06e`
+frees a voice). **Slot to track map:** `0x40288306 + 0x14 v`. Measured (`dn2_probe.py slotmap --track 6 --notes 3`): TRK + TRIG 6
+then TRIG 6 three times gives the table rows `(slot 0, track 5, note 60)`, then `(1, 5, 60)`, then `(2, 5, 60)`: round
+robin from slot 0, the track index is not the slot. **The DSP never needs the map**: everything the engine reads for slot v is
+in the frame at index v (below), and the machine type of the slot is the type of the track that owns the voice
+(`test/dn2-edge` selected on track 6 sounds in slot 0: 20 of 20 notes, `edgepcm --trig 6`). The earlier remark "a second
+TRIG goes to slot 1" meant the key of track 2, and "slot v = track v" must not be assumed (the proofs so far only played
+track 1).
+
+**The slot's parameter words [C: per voice, not per track].** The TX frame block of slot v is at `0xda + 0x92 v`; the word of
+sound-array slot s (25..65) is the halfword at `0xda + 0x92 v + 2 (s - 25)` (finding 02, "DN2 parameter pages");
+the DSP copy at `0x25c48c` is identical (73 of 73 halfwords for slots 0 .. 9). The ColdFire fills the block from the owning
+track's sound at the note-on and updates it while the voice lives: a knob turned while the key is held moved the held
+slot's word (`slotmap --live`: SYN2 knob B, `0x2000 -> 0x3000`); before any note no block changes, and a slot's block keeps
+the last values after its release. Frame halfword index of slot v, sound slot s: `k = 0x6d + 0x49 v + (s - 25)`.
+**Limit of `_dv_frame_hw` / `_dv_frame_sw` (core/dsp-voice, DN2 object): they mask `k` to 9 bits (`0x1fe`), so only
+slots 0..5 can read their parameter words (`k <= 511`); slots 6..15 have `k` from `0x223` to `0x4b8`.** A routine that reads
+its machine's knobs needs a wider helper (mask `0xffe`: the frame copy is 2,700 bytes, about 1,350 halfwords).
+
+**The note-on edge [C: the frame does carry one].** The frame header has four 16-bit **slot masks**, halfwords `0x11 .. 0x14`
+(bytes `0x22 .. 0x28`; written by the vector-191 handler at `0x400265..`: `_DAT_80005e82 .. e88`), bit v = slot v:
+`0x11` and `0x13` are set at a note-on, `0x12` and `0x14` at the voice's release; each lasts **one frame (one DSP block,
+about 0.67 ms)** and is then cleared (`dn2_probe.py edge`, sampled every 0.35 ms on the ColdFire side and in the DSP
+copy: `t=2.10 DSP hw0x11: 0 -> 1, hw0x13: 0 -> 1` with pitch word `hw1: 0 -> 0x3c00`, velocity `hw0x1a: 0x6400`; release
+`hw0x12, hw0x14: 0 -> 1` 6.65 ms after the key-up; the retrig of the same note goes to the next slot: masks `0x1, 0x2, 0x4,
+0x8, 0x10, 0x20` for six notes, while the pitch and velocity words of the earlier slots are never cleared). The two
+mask pairs were identical for plain trigs (the difference, probably retrig without envelope reset or legato, is **[O]**).
+**Proof with a routine** (`modules/test/dn2-edge`, a machine of type 5 whose routine keeps the previous bit per
+(slot, mask) and writes a click of 0.5 at sample 8k of the voice buffer on a rising edge, no branch on the state):
+24 notes of one key at 100 ms (hold 40 ms) give **24 note-on clicks**, 100.0 ms apart; 40 notes at 16 ms (hold 6 ms)
+give 40 note-on clicks, 16.0 ms apart, also past the 16 slots (in the 40-note run the first 16 notes show no release
+click and the later ones do, 6 ms after their trig; the cause is not found **[O]**, so start a state on the trig edge and let
+the engine's envelope end it). Edge rule for a routine: `trig(v) = (hw[0x11] >> v) & 1`,
+rising edge = `trig & ~prev(v)` with `prev` kept per slot; the pulse is one frame long, so a routine called once per frame
+(the hook is) sees it once.
+
+**SHARC assembler/decoder notes found on the way [D].** `Rn = Rn + Rm` with a high register (for example `R1 = R1 + R9`,
+`R0 = R0 + R9`) assembles to a 16-bit form whose bytes our decoder reads as a 48-bit one (`pk_build` stops with "Selache
+lists c019, our decoder c019083f"): write `R0 = R9 + R0` or a distinct destination. `R3 = R0 AND NOT R3` is not accepted
+(`R3 = NOT R3; R3 = R0 AND R3`). A conditional branch on module state that the emulator does not know yet (`.PKDATA` in
+bss) halts the DSP ("native-trap ... fork") when the state is read before it is written: make the first use
+branch-free.
+
+**Open [O].** The semantics of `0x13` / `0x14` against `0x11` / `0x12`; whether a stolen voice (17th note while 16 sound)
+pulses `0x11` in the same slot (the proof's 40 notes wrap the slots after their release, not before); the hook's call
+for idle slots (the wrapper runs for every slot with a registered type each block); a second agent's check of all of
+the above against the image.
+
+## DN2 voice routine: PLUCK (patchkit, lane b) **[D]**
+
+Emulator only, one agent, not second-checked. `modules/machines/pluck/src/dsp/pluck_dn2.s` on the DN2 ABI of `core/dsp-voice` (R4 = the slot's
+32-float buffer, R2 = slot v). What the build showed about the contract above:
+
+- **The note-on edge works as an arming signal for a stateful voice.** The routine reads bit v of frame halfword `0x11` every block
+  (`_dv_frame_hw`, whose mask is already `0xffe`, 16 slots reach their words: slot v's knob word s is halfword `0x6d + 0x49 v + (s - 25)`),
+  keeps the previous bit per slot, and on a rising edge writes zeros and arms (phase 1); the **next** block reads the pitch, velocity and
+  knob words and excites the string (phase 2), so it does not matter in which order the ColdFire writes them within the frame. The
+  engine's envelope runs from the edge; the 0.67 ms of silence is not audible. 40 notes of one key 110 ms apart (16 strings overlapping,
+  voices stolen) gave 40 plucks.
+- **Per-slot state in unloaded L2 starts unknown**: the row has a magic word, the phase and the previous trig bit are forced to zero by
+  conditional instructions (`IF NE`) while the magic differs, and the first branch is on a value derived that way (a branch on a raw
+  bss word is the emulator limit noted above); no halt occurred.
+- **The routine is called for idle slots too** (every slot whose type is PLUCK, every block): phase 0 writes 32 zeros and returns; a
+  string whose peak stayed below 2^-16 for 8 blocks returns to phase 0.
+- State is 2 KiB (16 rows of 32 words) plus 16 delay lines of 4,096 samples (256 KiB of reserved L2, the same as the Digitakt
+  routine); the excitation written at a note-on equals `tools/pluck_ref.py` bit for bit (finding 02, "PLUCK on Digitone II").

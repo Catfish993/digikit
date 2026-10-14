@@ -26,5 +26,5 @@ pub use capture::Dspi2Capture;
 pub use cputime::thread_cpu_ns;
 pub use telemetry::DiagnosticReport;
 
-pub use runtime::{Emulator, Snapshot, Status};
+pub use runtime::{CallResult, CallSpec, Emulator, Snapshot, Status};
 pub use softfloat::ExecutionPolicy;

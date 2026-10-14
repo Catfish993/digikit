@@ -10,6 +10,9 @@ description = "Host-agnostic emulator controller and control protocol (JSON-RPC 
 
 [lib]
 name = "digi_control"
+# No doctests here (only text blocks). Compiling them links digi_coupled from the shared
+# target dir, which a parallel verify step may be rebuilding with other features (E0463).
+doctest = false
 
 [features]
 default = ["server"]
@@ -25,6 +28,7 @@ digi-coupled = { path = "../coupled" }
 dt2-firmware-loader = { path = "../loader" }
 elektron-native-boot = { path = "../boot" }
 emmc-card = { path = "../card" }
+patchkit = { path = "../patchkit" }
 plusdrive-format = { path = "../plusdrive" }
 serde_json = "1"
 sha2 = "0.10"

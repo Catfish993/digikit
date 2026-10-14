@@ -1,0 +1,79 @@
+# The patchkit test matrix: device x firmware x module set (tools/pk_harness.py). An empty set is the stock firmware.
+# Ready inputs for each firmware must be fresh (tools/ready.py, SOURCE.json intc_force false): see the harness doc.
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = []
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["fx/master-gain", "test/cf-demo"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = []
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["fx/master-gain", "test/cf-demo"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["core/machines", "machines/xslice"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["core/machines", "test/machine-clone"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["core/dsp-voice", "core/machines", "core/params", "machines/pluck"]
+
+# The device on the desk runs DT2 1.16: the same sets there.
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = []
+
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["fx/master-gain", "test/cf-demo"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["fx/master-drive"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["core/machines", "machines/xslice"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/machines", "test/dn2-clone"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/machines", "core/dsp-voice", "test/dn2-sine"]
+
+# Digitone II PLUCK (its own SYN page, the DN2 voice hook) and the own-pages test machine.
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/machines", "core/params", "core/dsp-voice", "machines/pluck"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/machines", "core/params", "test/dn2-pages"]

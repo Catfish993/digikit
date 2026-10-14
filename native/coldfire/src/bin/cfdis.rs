@@ -46,15 +46,46 @@ fn main() {
         }
         return;
     }
-    if args.len() != 3 {
+    if args.len() != 3 && !(args.len() == 4 && args[3] == "--ranges") {
         eprintln!(
-            "usage: cfdis IMAGE BASE_HEX < addresses | cfdis --words < 'pc w0 w1 w2' | cfdis --forms"
+            "usage: cfdis IMAGE BASE_HEX [--ranges] < addresses | cfdis --words < 'pc w0 w1 w2' | cfdis --forms"
         );
         std::process::exit(2);
     }
     let image = std::fs::read(&args[1]).expect("read image");
     let base = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("base");
     let stdin = std::io::stdin();
+    if args.len() == 4 {
+        // "--ranges": each input line is "LO HI" (hex, HI exclusive); decode it
+        // sequentially (an illegal word advances by 2) and print "R LO HI"
+        // before its instructions, in the same line format as above.
+        for line in stdin.lock().lines() {
+            let line = line.unwrap();
+            let v: Vec<u32> = line
+                .split_whitespace()
+                .map(|t| u32::from_str_radix(t.trim_start_matches("0x"), 16).expect("hex"))
+                .collect();
+            if v.len() != 2 {
+                continue;
+            }
+            writeln!(out, "R {:08x} {:08x}", v[0], v[1]).unwrap();
+            let mut addr = v[0];
+            while addr < v[1] {
+                let off = addr.wrapping_sub(base) as usize;
+                match coldfire::decode_at(&image, base, off) {
+                    Some(i) => {
+                        writeln!(out, "{:08x} {} {} {}", addr, i.len, i.id(), i).unwrap();
+                        addr += (i.len as u32).max(2);
+                    }
+                    None => {
+                        writeln!(out, "{:08x} 0 - illegal", addr).unwrap();
+                        addr += 2;
+                    }
+                }
+            }
+        }
+        return;
+    }
     for line in stdin.lock().lines() {
         let line = line.unwrap();
         let t = line.trim();

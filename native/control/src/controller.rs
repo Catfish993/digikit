@@ -34,6 +34,7 @@ use crate::{
     cards::{self, CardPaths},
     events::Events,
     firmware::{self, Analysis},
+    health::{self, Alert, Health},
     proto::{Params, RpcError, RpcResult, base64, code},
 };
 
@@ -405,12 +406,19 @@ struct Actor {
     held_leds: Option<(String, Option<String>)>,
     /// A card being built and booted on a worker thread.
     card_job: Option<CardJob>,
+    /// A patched MAIN being cold booted with DSP audio on a worker thread.
+    patch_job: Option<PatchJob>,
     /// The last card job's outcome, for `card.status`.
     card_last: Value,
     /// Press NO once the runtime is ready (closes DT2's FILE SYSTEM OK modal).
     auto_no: bool,
+    /// `firmware.load {auto_no}`: press NO once the runtime it installs is ready.
+    want_auto_no: bool,
     remember_card: bool,
     quit: bool,
+    /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
+    health: Health,
+    health_tick: u32,
 }
 
 fn no_firmware<T>() -> Result<T, RpcError> {
@@ -424,6 +432,23 @@ fn frames(runtime: &Runtime) -> u64 {
 #[cfg(not(feature = "coupled-audio"))]
 fn frames(_runtime: &Runtime) -> u64 {
     0
+}
+
+#[cfg(feature = "coupled-audio")]
+fn dsp_halted(runtime: &Runtime) -> Option<String> {
+    runtime.dsp_halted()
+}
+#[cfg(not(feature = "coupled-audio"))]
+fn dsp_halted(_runtime: &Runtime) -> Option<String> {
+    None
+}
+#[cfg(feature = "coupled-audio")]
+fn sink_underruns(runtime: &Runtime) -> Option<u64> {
+    runtime.sink_underruns()
+}
+#[cfg(not(feature = "coupled-audio"))]
+fn sink_underruns(_runtime: &Runtime) -> Option<u64> {
+    None
 }
 
 impl Actor {
@@ -452,18 +477,29 @@ impl Actor {
             held_frame: None,
             held_leds: None,
             card_job: None,
+            patch_job: None,
             card_last: json!({"state": "idle"}),
             auto_no: false,
+            want_auto_no: false,
             remember_card: config.remember_card,
             quit: false,
+            health: Health::new(
+                std::env::var("DIGI_STALL_MS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(health::DEFAULT_STALL_MS),
+            ),
+            health_tick: 0,
         }
     }
 
     fn run(mut self) {
         while !self.quit {
             self.poll_card();
-            // While a card boots on its worker thread the running guest waits.
-            let carding = self.card_job.is_some();
+            self.poll_patch();
+            // While a card or a patched MAIN boots on its worker thread the
+            // running guest waits.
+            let carding = self.card_job.is_some() || self.patch_job.is_some();
             let busy = self.runtime.is_some()
                 && (self.job.is_some() || (self.mode == Mode::Free && !carding));
             let command = if busy {
@@ -504,9 +540,63 @@ impl Actor {
                 .reply
                 .send(Err(RpcError::io("controller stopped during a job")));
         }
+        if let Some(job) = self.patch_job.take() {
+            job.cancel.store(true, Ordering::Relaxed);
+            let _ = job
+                .reply
+                .send(Err(RpcError::io("controller stopped during a cold boot")));
+        }
     }
 
     // ----- shared helpers -------------------------------------------------
+
+    /// Feed one chunk's status to the health watcher and emit its alerts.
+    /// The DSP halt flag is read every 16th call (it needs the audio session).
+    fn watch(&mut self, status: &elektron_native_boot::Status) {
+        self.health_tick = self.health_tick.wrapping_add(1);
+        let sample = self.health_tick % 16 == 1;
+        let dsp_halted = if sample {
+            self.runtime.as_ref().and_then(dsp_halted)
+        } else {
+            None
+        };
+        let sink_underruns = if sample {
+            self.runtime.as_ref().and_then(sink_underruns)
+        } else {
+            None
+        };
+        let elapsed = self
+            .runtime
+            .as_ref()
+            .map_or(0, Runtime::elapsed_instructions);
+        let obs = health::Observation {
+            elapsed,
+            hits: status.mainloop_hits,
+            main_ui: status.main_ui_reached,
+            cpu_running: status.cpu_state == "running",
+            error: status.error.clone(),
+            dsp_halted,
+            sink_underruns,
+        };
+        for alert in self.health.observe(self.epoch, &obs) {
+            match alert {
+                Alert::Fault(error) => self.emit(
+                    "fault",
+                    json!({"error": error, "pc": status.pc, "cpu_state": status.cpu_state}),
+                ),
+                Alert::Halt(reason) => self.emit("halt", json!({"reason": reason})),
+                Alert::Stall { hits, stalled_ms } => self.emit(
+                    "stall",
+                    json!({"mainloop_hits": hits, "stalled_ms": stalled_ms, "pc": status.pc,
+                           "cpu_state": status.cpu_state}),
+                ),
+                Alert::StallEnd { hits } => self.emit("stall.end", json!({"mainloop_hits": hits})),
+                Alert::Underrun { new, total } => {
+                    self.emit("underrun", json!({"new": new, "total": total}))
+                }
+            }
+        }
+    }
 
     fn emit(&self, kind: &str, data: Value) {
         let (icount, elapsed) = self
@@ -568,6 +658,9 @@ impl Actor {
     fn install(&mut self, runtime: Runtime, error: Option<ReadError>) {
         self.runtime = Some(runtime);
         self.read_error = error;
+        if std::mem::take(&mut self.want_auto_no) {
+            self.auto_no = true;
+        }
         self.schedule.clear();
         self.held_frame = None;
         self.held_leds = None;
@@ -883,6 +976,7 @@ impl Actor {
         }
         let runtime = self.runtime.as_mut().expect("runtime");
         let snapshot = runtime.step_chunk(budget.min(STEP_CHUNK));
+        self.watch(&snapshot.status);
         if let Some(error) = self.card_error() {
             Err(format!("card image read: {error}"))
         } else {
@@ -1000,6 +1094,7 @@ impl Actor {
             budget = budget.min(next.at.saturating_sub(elapsed));
         }
         let snapshot = runtime.step_chunk(budget.max(1) as u32);
+        self.watch(&snapshot.status);
         if snapshot.frame.is_some() {
             self.held_frame = snapshot.frame.clone();
         }
@@ -1091,12 +1186,16 @@ impl Actor {
             "step" => self.rpc_step(&p, &reply),
             "run_until" => self.rpc_run_until(&p, &reply),
             "firmware.load" => self.rpc_firmware_load(&p, &reply),
-            "restart" => self.rpc_restart(&reply),
+            "restart" => self.rpc_restart(&p, &reply),
             "input.button" | "input.turn" => self.rpc_input(method, &p).map(Some),
             "input.tap" => self.rpc_tap(&p).map(Some),
             "input.schedule" => self.rpc_schedule(&p).map(Some),
             "inputs.recorded" => self.rpc_recorded().map(Some),
             "framebuffer.get" => self.rpc_framebuffer().map(Some),
+            "mem.cf.peek" => self.rpc_mem_peek(&p).map(Some),
+            "mem.cf.poke" => self.rpc_mem_poke(&p).map(Some),
+            "card.overlay" => self.rpc_card_overlay(&p).map(Some),
+            "watchdog.config" => self.rpc_watchdog(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
             "audio.report" => self
                 .with_runtime(|r| Ok(r.audio_status().unwrap_or(Value::Null)))
@@ -1127,6 +1226,7 @@ impl Actor {
                     }
                 })
                 .map(Some),
+            "dsp.peek" => self.rpc_dsp_peek(&p).map(Some),
             "dsp.patch" => self.rpc_dsp_patch(&p).map(Some),
             "card.load" => self.rpc_card_load(&p, &reply),
             "card.status" => Ok(Some(self.card_status())),
@@ -1212,8 +1312,59 @@ impl Actor {
             "controller_cpu_ns": elektron_native_boot::thread_cpu_ns(),
             "firmware": loaded, "cf": cf, "audio": audio, "job": job,
             "scheduled_inputs": scheduled, "frame_revision": frame,
+            "heartbeat": {"mainloop_hits": cf["mainloop_hits"], "stalled": self.health.stalled(),
+                          "stall_count": self.health.stall_count, "stall_ms": self.health.stall_ms,
+                          "underrun_count": self.health.underrun_count,
+                          "mainloop_pc": cf["mainloop_pc"]},
             "dsp_frames": frames(runtime),
         }))
+    }
+
+    /// `watchdog.config {stall_ms}`: set the stall threshold in emulated ms (0 disables) and
+    /// report the heartbeat.
+    fn rpc_watchdog(&mut self, p: &Params) -> RpcResult {
+        if let Ok(ms) = p.u64("stall_ms") {
+            self.health.stall_ms = ms;
+        }
+        let hits = self.runtime.as_mut().map(|r| r.status().mainloop_hits);
+        Ok(json!({"stall_ms": self.health.stall_ms, "stalled": self.health.stalled(),
+                  "stall_count": self.health.stall_count,
+                  "mainloop_hits": hits}))
+    }
+
+    /// `mem.cf.peek {addr}`: one guest longword, read without side effects.
+    fn rpc_mem_peek(&mut self, p: &Params) -> RpcResult {
+        let addr = u32::try_from(p.u64("addr")?)
+            .map_err(|_| RpcError::bad_params("addr is a 32-bit byte address"))?;
+        let value = self.with_runtime(|r| Ok(r.peek32(addr)))?;
+        Ok(json!({"addr": addr, "value": value}))
+    }
+
+    /// `mem.cf.poke {addr, value}`: write one longword of SDRAM (a test aid: break the guest on
+    /// purpose to exercise `fault`/`stall`). Not part of the replay record.
+    /// `card.overlay {path}`: write the guest's writes to the card as a sparse file: per touched sector
+    /// `u64 le sector, [u8; 64] mask (bit i of byte i/8 names data byte i), [u8; 512] data`. Applied over the card's
+    /// base image it gives the card the guest sees (`tools/card_overlay.py`).
+    fn rpc_card_overlay(&mut self, p: &Params) -> RpcResult {
+        let path = p.str("path")?.to_string();
+        let sectors = self.with_runtime(|r| Ok(r.card_overlay()))?;
+        let mut out = Vec::with_capacity(sectors.len() * (8 + 64 + 512));
+        for s in &sectors {
+            out.extend_from_slice(&s.sector.to_le_bytes());
+            out.extend_from_slice(&s.written);
+            out.extend_from_slice(&s.data);
+        }
+        std::fs::write(&path, &out).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
+        Ok(json!({"path": path, "sectors": sectors.len()}))
+    }
+
+    fn rpc_mem_poke(&mut self, p: &Params) -> RpcResult {
+        let addr = u32::try_from(p.u64("addr")?)
+            .map_err(|_| RpcError::bad_params("addr is a 32-bit byte address"))?;
+        let value = u32::try_from(p.u64("value")?)
+            .map_err(|_| RpcError::bad_params("value is a 32-bit word"))?;
+        self.with_runtime(|r| r.poke32(addr, value).map_err(RpcError::bad_params))?;
+        Ok(json!({"addr": addr, "value": value}))
     }
 
     fn rpc_run_mode(&mut self, p: &Params) -> RpcResult {
@@ -1426,6 +1577,27 @@ impl Actor {
         }
     }
 
+    /// `dsp.peek {addr, len}`: DSP memory bytes as a hex string (`??` where
+    /// the engine does not know the byte), at most 64 KiB.
+    fn rpc_dsp_peek(&mut self, p: &Params) -> RpcResult {
+        let addr = u32::try_from(p.u64("addr")?)
+            .map_err(|_| RpcError::bad_params("addr is a 32-bit byte address"))?;
+        let len = usize::try_from(p.u64("len")?).unwrap_or(usize::MAX);
+        if len == 0 || len > 65_536 {
+            return Err(RpcError::bad_params("len is 1 to 65536"));
+        }
+        let bytes = self.with_runtime(|r| {
+            r.peek_dsp(addr, len)
+                .map_err(|e| RpcError::new(code::AUDIO_UNAVAILABLE, e))
+        })?;
+        let hex: String = bytes
+            .iter()
+            .map(|b| b.map_or("??".to_string(), |b| format!("{b:02x}")))
+            .collect();
+        let unknown = bytes.iter().filter(|b| b.is_none()).count();
+        Ok(json!({"addr": addr, "len": len, "hex": hex, "unknown": unknown}))
+    }
+
     fn rpc_dsp_patch(&mut self, p: &Params) -> RpcResult {
         let text = match (p.opt_str("text")?, p.opt_str("file")?) {
             (Some(text), _) => text.to_string(),
@@ -1452,12 +1624,13 @@ impl Actor {
         Ok(json!({"injected": injected, "seconds": started.elapsed().as_secs_f64()}))
     }
 
-    fn rpc_restart(&mut self, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
+    fn rpc_restart(&mut self, p: &Params, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
         let Some(loaded) = self.loaded.as_ref() else {
             return no_firmware();
         };
         let params = json!({
             "bytes": true, "force": true, "start": "auto",
+            "auto_no": p.opt_bool("auto_no")?.unwrap_or(false),
             "card": loaded.card.as_ref().map(|c| c.display().to_string()),
         });
         let current = loaded.current.clone();
@@ -1483,7 +1656,7 @@ impl Actor {
         reply: &RpcReply,
     ) -> Result<Option<Value>, RpcError> {
         let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, m);
-        if self.job.is_some() {
+        if self.job.is_some() || self.patch_job.is_some() {
             return Err(RpcError::new(
                 code::BUSY,
                 "a job is running; wait for it before loading firmware",
@@ -1498,6 +1671,7 @@ impl Actor {
             return Err(RpcError::bad_params("start is auto, snapshot or cold"));
         }
         let force = p.opt_bool("force")?.unwrap_or(false);
+        self.want_auto_no = p.opt_bool("auto_no")?.unwrap_or(false);
         let base_param = p.opt_str("base_sha256")?.map(str::to_ascii_lowercase);
         let card_param = p.opt_str("card")?.map(PathBuf::from);
         let patch = match p.opt_str("dsp_patch")? {
@@ -1611,6 +1785,7 @@ impl Actor {
             // The cold boot answers when it is ready.
             return Ok(None);
         }
+        self.want_auto_no = false;
         report["seconds"] = started.elapsed().as_secs_f64().into();
         self.emit(
             "firmware.loaded",
@@ -1786,6 +1961,24 @@ impl Actor {
             .run_dir
             .join("patched")
             .join(format!("{main_sha}.snap"));
+        // With coupled audio inputs for the base: boot the ColdFire and the
+        // DSP together (or restore the cached pair).
+        match self.load_patched_coupled(
+            &bytes,
+            &card,
+            &new,
+            &base_sha,
+            &base_bytes,
+            report,
+            start,
+            reply,
+        )? {
+            CoupledLoad::Done => return Ok(false),
+            CoupledLoad::Started => return Ok(true),
+            CoupledLoad::Unavailable(why) => {
+                report["coupled_note"] = why.into();
+            }
+        }
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
         let mut runtime = Runtime::new_patched(&bytes, card_obj, &base_sha).map_err(&rejected)?;
         let cache_hit = start != "cold" && cache.is_file();
@@ -1856,6 +2049,328 @@ impl Actor {
             return Ok(true);
         }
         Ok(false)
+    }
+}
+
+// ----- patched MAIN with DSP audio: the coupled cold boot ---------------------
+
+/// What `load_patched_coupled` did.
+enum CoupledLoad {
+    /// Installed now (a cached ready pair).
+    Done,
+    /// A worker is cold booting; the reply comes when it is ready.
+    Started,
+    /// No coupled inputs for this base; the ColdFire-only path takes over.
+    Unavailable(String),
+}
+
+/// Everything `install_patched_audio` needs once the ready pair exists.
+struct PatchInstall {
+    bytes: Vec<u8>,
+    card: Option<PathBuf>,
+    new: Analysis,
+    base_sha: String,
+    base_bytes: Option<Vec<u8>>,
+    /// The launch options with the snapshot and DSP state of this MAIN.
+    audio: AudioOptions,
+    report: Value,
+}
+
+/// What a finished coupled cold boot reports.
+struct PatchBooted {
+    icount: u64,
+    frames: usize,
+    wall_seconds: f64,
+    dsp_start_seconds: f64,
+}
+
+struct PatchJob {
+    done: mpsc::Receiver<Result<PatchBooted, String>>,
+    cancel: Arc<AtomicBool>,
+    reply: RpcReply,
+    started: Instant,
+    install: PatchInstall,
+}
+
+/// The file name stem of the ready pair of a (MAIN, DSP inputs, card): the
+/// SHA-256 of the MAIN digest, of the DSP image and cold-idle state files, and
+/// of the card file's identity.
+#[cfg(feature = "coupled-audio")]
+fn patched_pair_key(
+    main_sha: &str,
+    image: &Path,
+    cold_idle: &Path,
+    card: Option<&Path>,
+) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(main_sha.as_bytes());
+    for path in [image, cold_idle] {
+        let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        hash.update(Sha256::digest(&data));
+    }
+    if let Some(card) = card {
+        let meta = std::fs::metadata(card).map_err(|e| format!("{}: {e}", card.display()))?;
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs());
+        hash.update(format!("{}:{}:{modified}", card.display(), meta.len()).as_bytes());
+    }
+    let key = format!("{:x}", hash.finalize());
+    Ok(format!(
+        "{}-{}",
+        &main_sha[..16.min(main_sha.len())],
+        &key[..16]
+    ))
+}
+
+impl Actor {
+    /// A patched MAIN with DSP audio. The ColdFire boots from the patched
+    /// bytes with the base's DSP (the ready inputs' image and cold-idle state)
+    /// attached, and the ready pair is cached under
+    /// `<run_dir>/patched/<MAIN>-<key>/`; a DSP section that differs from the
+    /// base's is applied hot afterwards (`firmware.load` semantics).
+    #[cfg(feature = "coupled-audio")]
+    #[allow(clippy::too_many_arguments)]
+    fn load_patched_coupled(
+        &mut self,
+        bytes: &[u8],
+        card: &Option<PathBuf>,
+        new: &Analysis,
+        base_sha: &str,
+        base_bytes: &Option<Vec<u8>>,
+        report: &mut Value,
+        start: &str,
+        reply: &RpcReply,
+    ) -> Result<CoupledLoad, RpcError> {
+        let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, m);
+        let Some(mut audio) = self.audio_default.clone().or_else(|| self.audio.clone()) else {
+            return Ok(CoupledLoad::Unavailable("no coupled audio inputs".into()));
+        };
+        let unavailable = |why: String| Ok(CoupledLoad::Unavailable(why));
+        let image = match std::fs::canonicalize(&audio.image) {
+            Ok(image) => image,
+            Err(e) => return unavailable(format!("DSP image {}: {e}", audio.image.display())),
+        };
+        let dir = image.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let cold_idle = dir.join("cold-idle.dsp");
+        if !cold_idle.is_file() {
+            return unavailable(format!(
+                "{} not found (run `mise run ready -- <device>`)",
+                cold_idle.display()
+            ));
+        }
+        // The ready inputs must be the base's: SOURCE.json names their .syx.
+        if let Some(source) = std::fs::read_to_string(dir.join("SOURCE.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            .and_then(|v| v["syx_sha256"].as_str().map(str::to_string))
+            && source != base_sha
+        {
+            return unavailable(format!(
+                "the ready inputs in {} belong to another firmware ({})",
+                dir.display(),
+                &source[..12.min(source.len())]
+            ));
+        }
+        let main_sha = new
+            .main_sha256()
+            .ok_or_else(|| rejected("the firmware has no MAIN section".into()))?;
+        let stem =
+            patched_pair_key(main_sha, &image, &cold_idle, card.as_deref()).map_err(&rejected)?;
+        let pair = self.run_dir.join("patched").join(stem);
+        let (snapshot, dsp_state) = (
+            pair.join("digi-audio-m5.snap"),
+            pair.join("digi-audio-m5.snap.dsp"),
+        );
+        audio.image = image.clone();
+        audio.snapshot = snapshot.clone();
+        audio.state = dsp_state;
+        audio.dsp_patch = None;
+        audio.automatic = false;
+        audio.expected_syx = None;
+        let mut install = PatchInstall {
+            bytes: bytes.to_vec(),
+            card: card.clone(),
+            new: new.clone(),
+            base_sha: base_sha.to_string(),
+            base_bytes: base_bytes.clone(),
+            audio,
+            report: report.clone(),
+        };
+        let cache_hit = start != "cold" && snapshot.is_file();
+        if cache_hit {
+            install.report["start_used"] = "snapshot-cache".into();
+            install.report["cache_hit"] = true.into();
+            install.report["snapshot_ok"] = true.into();
+            install.report["cache_dir"] = pair.display().to_string().into();
+            match self.install_patched_audio(install) {
+                Ok(done) => {
+                    *report = done;
+                    return Ok(CoupledLoad::Done);
+                }
+                Err(e) if start != "snapshot" => {
+                    // A bad cache: drop it and boot cold.
+                    report["cache_note"] = format!("cached pair unusable: {}", e.message).into();
+                    let _ = std::fs::remove_file(&snapshot);
+                    return self.load_patched_coupled(
+                        bytes, card, new, base_sha, base_bytes, report, "cold", reply,
+                    );
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        if start == "snapshot" {
+            return Err(rejected(format!(
+                "no cached pair for this MAIN ({}); start snapshot never boots cold",
+                pair.display()
+            )));
+        }
+        // The pair's presence is its snapshot: drop an old one first.
+        let _ = std::fs::remove_file(&snapshot);
+        install.report["start_used"] = "cold".into();
+        install.report["cache_dir"] = pair.display().to_string().into();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (done_tx, done) = mpsc::channel();
+        let (worker_cancel, worker_bytes, worker_card, worker_base) = (
+            cancel.clone(),
+            bytes.to_vec(),
+            card.clone(),
+            base_sha.to_string(),
+        );
+        let inputs = digi_coupled::cold::ColdInputs { image, cold_idle };
+        thread::Builder::new()
+            .name("digi-patched-boot".into())
+            .spawn(move || {
+                let result = card_for(worker_card).and_then(|(card_obj, _)| {
+                    digi_coupled::cold::boot_patched_to_ready(
+                        &worker_bytes,
+                        card_obj,
+                        &worker_base,
+                        &inputs,
+                        &pair,
+                        &worker_cancel,
+                        |_| {},
+                    )
+                });
+                let _ = done_tx.send(result.map(|r| PatchBooted {
+                    icount: r.icount,
+                    frames: r.frames,
+                    wall_seconds: r.wall_seconds,
+                    dsp_start_seconds: r.dsp_start_seconds,
+                }));
+            })
+            .map_err(|e| RpcError::io(format!("boot thread: {e}")))?;
+        self.patch_job = Some(PatchJob {
+            done,
+            cancel,
+            reply: reply.clone(),
+            started: Instant::now(),
+            install,
+        });
+        Ok(CoupledLoad::Started)
+    }
+
+    #[cfg(not(feature = "coupled-audio"))]
+    #[allow(clippy::too_many_arguments)]
+    fn load_patched_coupled(
+        &mut self,
+        _bytes: &[u8],
+        _card: &Option<PathBuf>,
+        _new: &Analysis,
+        _base_sha: &str,
+        _base_bytes: &Option<Vec<u8>>,
+        _report: &mut Value,
+        _start: &str,
+        _reply: &RpcReply,
+    ) -> Result<CoupledLoad, RpcError> {
+        Ok(CoupledLoad::Unavailable(
+            "this build has no coupled audio".into(),
+        ))
+    }
+
+    /// Build the runtime from a ready pair, make it the running one and apply
+    /// the DSP difference to the base. Leaves the controller untouched on error.
+    fn install_patched_audio(&mut self, install: PatchInstall) -> Result<Value, RpcError> {
+        let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, m);
+        let PatchInstall {
+            bytes,
+            card,
+            new,
+            base_sha,
+            base_bytes,
+            audio,
+            mut report,
+        } = install;
+        let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
+        let runtime =
+            Runtime::new_patched_audio(&bytes, card_obj, &base_sha, &audio).map_err(&rejected)?;
+        report["audio"] = runtime.has_audio().into();
+        let base_analysis = match &base_bytes {
+            Some(base) => Some(Analysis::of(base).map_err(&rejected)?),
+            None => None,
+        };
+        self.loaded = Some(Loaded {
+            base: base_bytes,
+            base_sha,
+            current: bytes,
+            card,
+            base_analysis: base_analysis.clone(),
+            current_analysis: Some(new.clone()),
+        });
+        self.install(runtime, error);
+        self.session = self.session.max(1);
+        self.emit("session.changed", json!({"reason": "firmware.load"}));
+        report["dsp"] = match (base_analysis.and_then(|b| b.dsp), new.dsp) {
+            (Some(base), Some(new_dsp)) if base != new_dsp => {
+                let diff = firmware::dsp_diff(&base, &new_dsp).map_err(&rejected)?;
+                self.inject_diff(diff)?
+            }
+            (Some(_), Some(_)) => {
+                json!({"applied": false, "reason": "the DSP section is the base's"})
+            }
+            _ => json!({
+                "applied": false,
+                "reason": "the base .syx is not known, so the DSP difference cannot be computed",
+            }),
+        };
+        Ok(report)
+    }
+
+    /// Install the finished coupled cold boot, or report why not.
+    fn poll_patch(&mut self) {
+        let Some(job) = self.patch_job.as_ref() else {
+            return;
+        };
+        let outcome = match job.done.try_recv() {
+            Ok(outcome) => outcome,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => Err("boot worker stopped".into()),
+        };
+        let job = self.patch_job.take().expect("patch job");
+        let seconds = job.started.elapsed().as_secs_f64();
+        let result = match outcome {
+            Err(e) => Err(RpcError::new(code::GUEST_FAULT, e)),
+            Ok(booted) => {
+                let mut install = job.install;
+                install.report["boot"] = json!({
+                    "icount": booted.icount, "frames": booted.frames,
+                    "wall_seconds": booted.wall_seconds,
+                    "dsp_start_seconds": booted.dsp_start_seconds,
+                });
+                self.install_patched_audio(install)
+            }
+        };
+        self.emit(
+            "firmware.loaded",
+            json!({"ok": result.is_ok(), "seconds": seconds}),
+        );
+        let _ = job.reply.send(result.map(|mut report| {
+            report["seconds"] = seconds.into();
+            self.envelope(report)
+        }));
     }
 }
 
@@ -2022,7 +2537,7 @@ impl Actor {
             });
         let wait = p.opt_bool("wait")?.unwrap_or(true);
         let auto_no = p.opt_bool("auto_no")?.unwrap_or(true);
-        if self.job.is_some() || self.card_job.is_some() {
+        if self.job.is_some() || self.card_job.is_some() || self.patch_job.is_some() {
             return Err(RpcError::new(code::BUSY, "another job is running"));
         }
         let loaded = self.loaded.as_ref().ok_or_else(RpcError::no_firmware)?;
@@ -2182,4 +2697,34 @@ fn summarize_audio(runtime: &mut Runtime) -> Value {
         "source_audio_seconds": report["source_audio_seconds"],
         "dsp_tiers": report["dsp_tiers"],
     })
+}
+
+#[cfg(all(test, feature = "coupled-audio"))]
+mod tests {
+    use super::patched_pair_key;
+
+    #[test]
+    fn the_ready_pair_key_follows_main_dsp_inputs_and_card() {
+        let dir = std::env::temp_dir().join(format!("digi-pair-key-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (image, idle, card) = (dir.join("image"), dir.join("idle"), dir.join("card"));
+        std::fs::write(&image, b"image one").unwrap();
+        std::fs::write(&idle, b"idle one").unwrap();
+        std::fs::write(&card, vec![0u8; 512]).unwrap();
+        let main = "ab".repeat(32);
+        let key = |main: &str, card: Option<&std::path::Path>| {
+            patched_pair_key(main, &image, &idle, card).unwrap()
+        };
+        let base = key(&main, None);
+        assert_eq!(base, key(&main, None), "stable");
+        assert!(base.starts_with("abababababababab-"));
+        assert_ne!(base, key(&"cd".repeat(32), None), "another MAIN");
+        assert_ne!(base, key(&main, Some(&card)), "a card");
+        std::fs::write(&idle, b"idle two").unwrap();
+        assert_ne!(base, key(&main, None), "another DSP cold state");
+        std::fs::write(&idle, b"idle one").unwrap();
+        std::fs::write(&image, b"image two").unwrap();
+        assert_ne!(base, key(&main, None), "another DSP image");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

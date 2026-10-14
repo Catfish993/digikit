@@ -213,6 +213,115 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
   driver compares the TX length with `0xaf0` where 1.15C uses `0xbc0`.
   **[V]**
 
+## Digitakt II 1.17 and Digitone II 1.12: a relink plus one new menu, and an in-house function matcher **[D][V][O]**
+
+Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
+
+- **What changed.** Against 1.16 and 1.11 only section 3 (MAIN OS) and 5 (META) differ;
+  sections 2, 4, 7 (the SHARC+ blob) and 8 are byte-identical, so the DSP image, the idle-loop
+  PCs and the DSP databases carry over (`out/sharcdb/dt2-1.17.sqlite`, `dn2-1.12.sqlite`). **[V]**
+  The only new class in RTTI is `BreakOutBoxOutputRoutingMenuView` (with its `shared_ptr`
+  control block), on both products: 1066 -> 1068 typeinfos on DT2, 1047 -> 1049 on DN2. Of 14441
+  matched functions (DT2) 14421 are byte-identical after masking addresses and 8 have a changed
+  loose hash; 436 destination functions (46 KB, 14 of them in the new class) and 302 source
+  functions (27 KB) have no counterpart. Matched entries move by a few constants (`+0x164`,
+  `+0x2dc`, `+0x2e0`, `+0x416`, `+0x540`: insertions at about five places; DN2 `+0x41a`), not
+  at random. **[D]**
+- **Emulator.** `devices/*.toml` gained the two firmware entries (sha256, MAIN sha256,
+  `main-os-oracle-v1`, `elektron-rtos-v1`, readiness contract, DSP block copied from 1.16 / 1.11;
+  `plusdrive_project_contract` for DT2). All signature-resolved anchors of the boot path resolve
+  on both with no code change (`boot_anchors_resolve_on_every_supported_firmware`: softfloat ABI,
+  RAM clear, fused loops, idle spins); `emu/symbols.py` leaves the same nine (DT2) / eleven (DN2)
+  symbols unresolved as on 1.16 / 1.11, all on `tests/test_symbol_audit.py`'s allow-list. Both boot
+  to ready natively: DT2 1.17 ready at 1,114,985,926 ColdFire instructions, DN2 1.12 at
+  851,236,338. **[D]**
+- **Two things were version-keyed and are not any more.** `supported_softfloat` was a
+  `("dt2","1.16") | ("dn2","1.11")` match; it is now the profile field `softfloat_abi`. The built-in
+  project stream that `native/plusdrive` takes from MAIN sat at a fixed offset (`0x25edd8`); in
+  1.17 the same bytes are at `0x25f314`, so the stream is found by structure (length, byte sum,
+  container check). Without that the DT2 card builder fails with `StreamOutOfBounds`. **[V]**
+  `Registry::load()` reads `devices/*.toml` at run time (`$DIGI_DEVICES_DIR`, else `devices/` of the
+  working directory or an ancestor of the executable) and falls back to the embedded copy, so a new
+  firmware hash needs a TOML edit and no rebuild. **[D]**
+- **Scenarios** (ready inputs from the .syx alone, `snapshots/dt2-117-ready`, `dn2-112-ready`).
+  DN2 1.12: three of the four pinned PCM hashes (`exactness-100m`, `trig1-taps`,
+  `trig1-tap-release`) equal the 1.11 pins; `trig1-noqa-40m` (a 40 M-instruction validation
+  window) and the unpinned `dn2-rec-play` differ, which is what a different ColdFire timeline gives
+  with the same DSP. All 61 DN2 scenario oracles pass. DT2 1.17: the five `dt2.json` scenarios
+  run (no pins in that file); the DT2 FX oracles give 99 passed and 36 failed, all in
+  `test_readback` and the tests built on it: the encoder-turn scenarios end with different
+  parameter values (`tf-br-22` reads 37, `tf-over-127` reads 97). The RAM and SRAM addresses of the
+  peeks did not move (below), so this is a behaviour change or a different UI state at the ready
+  point, not a stale address. **[D][O]**
+- **Matcher.** `tools/cffacts.py` hashes the instruction stream of each function with the repo's
+  ColdFire decoder (`cfdis --ranges`): strict (relink-moved addresses and branch targets masked),
+  loose (all numbers masked), mnemonics only. `tools/cfdb.py` stores them (`func_hash`, DB_VERSION
+  2, plus RTTI `typeinfos` / `vtables`). `tools/cfmatch.py` pairs unique hashes, then strings, then
+  vtable slots, call-graph neighbours and address-order gaps, repeating until nothing changes.
+  It runs in about 8 s; Version Tracking took 1092 s with a 32 GB heap.
+
+  | pair | matched | strict | loose | strings | mnem | vtable | callee | caller | gap |
+  |---|---|---|---|---|---|---|---|---|---|
+  | DT2 1.15C -> 1.16 | 13924 / 14257 (97.7%) | 5681 | 229 | 186 | 3 | 3206 | 1383 | 457 | 2779 |
+  | DT2 1.16 -> 1.17 | 14441 / 14743 (98.0%) | 6226 | 12 | 152 | 3 | 3264 | 1354 | 483 | 2947 |
+  | DN2 1.10E -> 1.11 | 13109 / 13448 (97.5%) | 4917 | 320 | 191 | 5 | 3119 | 1422 | 449 | 2686 |
+  | DN2 1.11 -> 1.12 | 13724 / 14017 (97.9%) | 5703 | 8 | 147 | 2 | 3212 | 1357 | 476 | 2819 |
+
+  Against the Version Tracking exports (function associations, `out/vt/`): 1.15C -> 1.16 agrees on
+  9762 of 9769 shared sources (precision 99.93%) and finds 99.84% of the 9778 associations; 1.10E ->
+  1.11 agrees on 9054 of 9074 (99.78%), recall 99.6%. The matcher adds about 4100 pairs that Version
+  Tracking did not make. Version Tracking is not ground truth, so three independent checks: (a) for
+  the pairs where both images have an RTTI-derived name, the class agrees in 6735 of 6747 (99.8%; the
+  `_vN_t` storage-version rename counts as the same class; the rest are byte-identical sibling
+  getters); per stage the weakest is `gap` (1455 of 1461). (b) The 68 symbols that `emu/symbols.py`
+  resolves by its own signatures in both images: 62 map to the right address on 1.16 -> 1.17 and 61
+  of 67 on 1.11 -> 1.12, none wrong, the rest unmapped (fixed RTOS addresses outside any function,
+  two char* tables, one address inside a rewritten function); on 1.15C -> 1.16 one is wrong
+  (`transport`, which `emu/symbols.py` itself says is unverified). (c) the 86 addresses of
+  `tools/cf_names.py`: 85 carry to 1.17 (`tools/cf_names_dt2_1_17.py`, generated, all [D]); 45 moved,
+  40 did not. SRAM (`0x8000xxxx`) and the heap-side globals (`0x43...`, `0x44...`, `0x47...`,
+  `0x405b...`) are at the same address in 1.17; only data inside the image moved.
+  `machine_display_name_table` is not carried (no instruction refers to it by a literal). **[D]**
+- Pipeline for a new firmware, all serial in one JVM: `tools/ghidra.sh import` (the program in its
+  own folder of `elektron-emac`), `tools/entryhist.py` on a `--limit 1` dump for the code ranges,
+  `codeseeds.py` / `rttiscan.py`, `ghidraapply.py seeds --analyze` and `rtti`, `ghidradump.py --rtti`,
+  `cfdb.py build`. 1.17: 10921 functions after import, 11098 after seeds, 14877 after RTTI; 1.12:
+  10261 -> 14155. The matcher needs the dump only for function boundaries; the names it ports
+  (`cfmatch.py port`) go into the `ported` table of the destination cfdb. `pyghidra` is not in the
+  venv: run the dump and apply tools with `uv run --with <ghidra>/Ghidra/Features/PyGhidra/pypkg/dist/pyghidra-3.1.0-py3-none-any.whl
+  --with .../jpype1-1.5.2-cp312-cp312-macosx_10_9_universal2.whl python tools/ghidradump.py ...`. **[D]**
+- **[C] The 36 DT2 FX oracle failures are not a 1.17 change** (lane fastweb, 2026-10-13). DT2 1.16 fails the
+  same 36 tests when its ready state is rebuilt today, and for 1.16 and 1.17 all 60 FX scenarios give identical
+  decoded Sound/Fx read-backs and identical PCM hashes on the same recipe (`tools/dt2fx_compare.py`). **[V]**
+  The cause is the ready state. The oracle intents (encoder-turn counts, `UPS` in `tools/gen_dt2fx.py`) were
+  calibrated on a DT2 ready snapshot booted before software-forced INTC delivery became the default
+  (b8d45a7, 2026-10-13 07:27). A snapshot booted with it on has a different CPU phase at ready; the encoder
+  acceleration depends on the phase (ladder for `lad-N`, Bit Reduction after N events of +4, N = 12, 14, ...
+  on the old and the new snapshot: `11 11 16 16 32 32 22 38 38 54 54 87 ...` against `7 12 12 20 20 37 37 26 43 43
+  59 59 93 ...`, the same curve shifted by one slot), so `tf-br-22` ends at 37 instead of 22. Each snapshot is
+  used by the 1.16 and 1.17 tests only through `snapshots/<ready>/by-card/<card sha>[-<syx sha>]`; since f75da50
+  keys 1.16 snapshots by firmware too, every fresh 1.16 snapshot was a new, forced-IRQ boot. **[V]**
+  Evidence: the old 1.16 snapshot (`by-card/1c1fed346ea9`, 90,114,376 bytes, 2026-10-08) gives 22 for `tf-br-22`
+  and 272,149,997 guest instructions, a fresh one gives 37 and 271,899,997. A DT2 ready state booted with
+  `DIGI_INTC_FORCE=0` and run with the default (forced delivery on) passes all 146 tests of
+  `test_dt2_fx.py --device dt2 --slow --sweep` on 1.16 and on 1.17. **[V]**
+  Fix: `tools/ready.py` boots ready states with `DIGI_INTC_FORCE=0` (recorded as `intc_force: false` in
+  SOURCE.json). The DN2 1.12 ready state built that way also keeps all four pins of 1.11
+  (`exactness-100m 826db0d1`, `trig1-noqa-40m d56d8f4b`, `trig1-taps 8b26c70c`, `trig1-tap-release f4f6d19f`), so
+  the "3 of 4 pins" above had the same cause. **[V]** Existing ready directories built before the fix
+  (`snapshots/dt2-117-ready`, `dn2-112-ready`, the 1.16 `by-card/*-278541e4`) must be rebuilt
+  (`tools/ready.py ... --force`) to pass; a rebuilt 1.17 DT2 set is in `out/ready-fix-117`. No oracle or pin was
+  changed. `tools/dt2_sample_check.py` takes `DIGI_DT2_CARD` to pin a card image. The mislabelled
+  `by-card/1c1fed346ea9/SOURCE.json` (says 1.17, holds the 1.16 Oct-8 snapshot) comes from `ready.py` rewriting
+  SOURCE.json when it reuses an existing snapshot. **[D]**
+- **`dt2-sample-trig-noqa` had an empty PCM hash** on a ready state booted without forced delivery and run with
+  it: `step_error: unexpected interrupt before idle advance deadline` after 15,171 instructions. The idle
+  fast-forward (`advance_idle`) crossed a software-forced interrupt that the CPU could take; it now declines when
+  `Time::forced_deliverable()`. With the fix the scenario runs to 237,749,990 instructions (172,864 PCM values).
+  **[V]** The run is silent (0 non-zero samples, hash 892660e6...): without the NO prelude the boot modal is
+  still open and takes the trig. That is the scenario's purpose, not a fault; it is not pinned. **[D]**
+- Open: the new `BreakOutBoxOutputRoutingMenuView` has not been read. **[O]**
+
 ## What we were overlooking about ColdFire: eDMA **[V]**
 
 Feeding bytes to the UART model in `emu/console.py` could never have produced
@@ -330,21 +439,40 @@ exact fingerprint:
 | `0xFC080000`-`0xFC08C000` | PIT0-PIT3 |
 | `0xFC090000` | EPORT |
 
-### Flash and DDR capacity **[V]**
+### Flash and DDR capacity **[V]**, DDR corrected **[C]**
 
 Both come out of the firmware's own code; neither needs a datasheet or a probe.
 
-DDR is **64 MiB**, from the bootstrap's own DDRMC writes:
+DDR is **128 MiB** **[C]** **[V]** (an earlier version of this section said 64 MiB),
+from the bootstrap's own DDRMC writes and the OS's own use of RAM:
 
 ```
 DDR_CR04 @0xFC0B8010 = 0x00010101   ; bit 8 8BNK=1     -> 8 banks
-DDR_CR15 @0xFC0B803C = 0x02000103   ; ADDPINS=2        -> rows = 15-2 = 13
+DDR_CR15 @0xFC0B803C = 0x02000103   ; ADDPINS=2        -> rows = 16-2 = 14
 DDR_CR16 @0xFC0B8040 = 0x02000407   ; COLSIZ=2         -> cols = 12-2 = 10
 ```
 
-with the controller's fixed 1 chip select and x8 datapath: `2^23 * 8 * 1 =
-67,108,864`. The init sequence is byte-identical on both devices.
-`tools/ddr_geometry.py` re-derives this from any bootstrap image.
+with the controller's fixed 1 chip select and x8 datapath: `2^(14+10+3) * 1 =
+134,217,728`, the geometry of a standard 1 Gbit x8 DDR2 part (14 row, 10 column
+bits, 8 banks). The register values and the single x8 component are as before;
+the correction is the row limit. The reference manual contradicts itself: the
+MAXROW field reads 0x10 (16 row pins), while 21.5.2.2 lists 15 rows. With 15 the
+result is 64 MiB, which the firmware rules out (a 123.09 MiB clear and the reset
+stack at 0x48000000 would wrap) **[V]**:
+
+- the reset entry sets the stack pointer to `0x48000000` (`movea.l
+  #0x48000000,a7` at `0x400004f2`) and the bss clear runs to `0x47e28470`; on
+  64 MiB the clear would wrap into the running image;
+- statics and the 32 MiB C++ heap sit above `0x44000000` (heap arena
+  `0x44f39c40-0x46f39c40` on DT2 1.16; framebuffers at `0x44e4a5b8`);
+- ACR0 (`0x4007e020`) maps exactly `0x40000000-0x47ffffff`, 128 MiB.
+
+Addresses `0x48000000-0x4fffffff` are an uncached alias of the same DDR (ACR0
+does not cover them); the firmware's DMA buffers are reached through it (see
+01, "RAM map"). `tools/ddr_geometry.py` now uses 16 as the maximum row bits and
+prints 128 MiB for both devices. A second check would read the DDR_CR15 field
+width off the MCF5441x part's own register table, or find a write above
+`0x44000000` that a 64 MiB part would alias onto the image.
 
 NOR flash is **16 MiB**. The bootstrap issues RDID (`0x9F`) and dispatches on
 the 5 ID bytes at `FUN_800024ec`; only the branch matching mfg `0x01`, id

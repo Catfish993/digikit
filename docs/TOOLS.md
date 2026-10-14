@@ -31,6 +31,8 @@ uv run --with pytest python -m pytest tests -q
 | `tools/content_hmac.py` | Inspect or calculate the container's content-authentication trailer. |
 | `tools/patchimg.py` | Apply byte-exact, preconditioned patches to an extracted section image. |
 | `tools/ddr_geometry.py` | Derive DDR geometry from the bootstrap's initialization sequence. |
+| `tools/regions.py` | RAM map of a MAIN OS image, flash caves and the expansion region per image; `confirm` canary-fills a region and runs the emulator; `loader-test` boots a patched image with a reset-path loader. |
+| `tools/aplib_check.py` | Pack every section of the four firmwares with `dt2/aplibpack.py` and check it with `dt2/elz.py` and the bootstrap's own depacker on the native core. |
 
 Never patch the bootstrap or updater sections. See
 [`PATCHING.md`](PATCHING.md) before producing an image intended for hardware.
@@ -442,6 +444,38 @@ stores the stack pointer's circular MODIFY was blocking for target
 needs an offset at or beyond one buffer length, or an unrecognised symbol
 name, which the fix deliberately does not claim bounded (see the proof).
 
+## Agent query CLI and the atlas
+
+`tools/fw.py` is the first stop for firmware questions (the `firmware-query` skill says the same). One process,
+compact text, a 60-line cap with a "... N more" tail, ColdFire and SHARC from one image name
+(`-i dt2-1.17`, or `FW_IMAGE`). It uses only the standard library; the call graph is cached in `out/cache/fw/`
+(keyed by the database hash).
+
+| Command | Answers |
+| --- | --- |
+| `fn X`, `decomp X`, `disasm X` | Summary (size, callers, callees, strings, a few decompiled lines), full C, listing. X is an address, a Ghidra name or a `cf_names` name. |
+| `callers X`, `callees X`, `xref ADDR`, `path A B` | Call sites, callees, every reference to an address (data, code, vtable slots), shortest call path. |
+| `str TEXT`, `class NAME` | Strings and the functions using them; an RTTI class with bases, derived classes and vtable. |
+| `port X --from dt2-1.16 --to dt2-1.17` | The same function on another version (`cfmatch` matches in the database). |
+| `search TERM` | FTS5 over function and class names, strings, decompiled C and the atlas. |
+| `atlas TERM` | Machines, parameters, classes, UI strings, structs and manual pages for a manual term. |
+| `sql "SELECT ..."` | Read-only SQL on the same database. |
+| `batch FILE\|-` | One command per line, one `## command` result block each, one process. |
+
+Full-text indexes are sidecars, `out/cfdb/<image>-emac.fts.sqlite` (`tools/cfdb.py fts IMAGE`, 2 s, built on
+first use): trigram tables for names and strings, a token index for decompiled C. SHARC `search` uses LIKE over
+function names, labels and notes (there is no SHARC decompilation).
+
+`tools/atlas.py build IMAGE...` writes `out/atlas/<image>.sqlite` from the rules in the repository: the
+machine/page descriptor table (found by its 44-byte stride, any version), the parameter table
+(`paramtable.py`), RTTI classes and vtable slots, UI strings grouped by the view class that uses them, storage
+structs, manual pages (`out/refs/`, Digitakt II 1.03A and Digitone II 1.12 text via `tools/refstext.py`) and a
+glossary of manual terms (`TERMS` in the file). Every row has `provenance` and `confidence`. The data is derived
+from firmware and stays uncommitted. Add a term by adding a `TERMS` entry; rebuild takes about 12 s per image.
+
+Measured (Apple M-series): `fw.py fn` 0.05 s, `path` 0.10 s with a cold graph cache and 0.06 s warm, a
+12-query `batch` 0.27 s.
+
 ## Reference manuals
 
 `tools/refstext.py` extracts supplied public manuals into searchable,
@@ -455,6 +489,7 @@ sources.
 
 | Question | Start with |
 | --- | --- |
+| Where is feature X handled on firmware Y; what does this function do? | `fw.py atlas X`, `fw.py search`, `fw.py fn` |
 | What does this loader offset become in DSP memory? | `sharcldr.py` |
 | Where is a known constant or peripheral address used? | `sharcimm.py`, then SQLite |
 | Which exact offset calculations are plausible readers? | `sharc_candidates.py` |

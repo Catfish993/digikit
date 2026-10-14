@@ -1,0 +1,46 @@
+[module]
+id = "test/dn2-sine"
+version = "0.1.0"
+name = "Sine voice (Digitone II)"
+category = "test"
+status = "experimental"
+summary = "Test machine for the Digitone II: a pitched sine rendered by the DN2 voice hook, to prove that a new machine type runs through the engine's later stages"
+ports = ["dn2-1.11", "dn2-1.12"]
+requires = ["core/machines", "core/dsp-voice"]
+conflicts = []
+
+[targets]
+"dn2-1.12" = "experimental"
+
+# The machine: its own type (7, permanent: core/machines types.toml), listed before MIDI, sent to the DSP as it is (`own_dsp`); the page layout, parameters
+# and names are FM TONE's (clone_of = 0).
+[[entry]]
+registry = "machines"
+id = "dn2sine"
+name = "Sine"
+short = "SIN"
+clone_of = 0
+position = 4
+f0 = 0
+f1 = 0
+f2 = 0
+f3 = 0
+f4 = 0
+f5 = 0
+f6 = 0
+f7 = 0
+f8 = 10
+own_dsp = 1
+
+[[object]]
+path = "build/sine-voice-dn2-dsp.dko.json"
+sources = ["src/dsp/sine_voice_dn2.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[[entry]]
+registry = "voices"
+id = "dn2sine"
+type = "machines.dn2sine.index"
+pc = "_sv_render"
+devices = ["dn2"]

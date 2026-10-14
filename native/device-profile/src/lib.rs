@@ -2,6 +2,8 @@
 //!
 //! The canonical records live in the repository's `devices/*.toml` files and
 //! are embedded at compile time, so native and wasm callers need no filesystem.
+//! Native callers can also read them at run time (`Registry::load`), so a new
+//! firmware hash needs a TOML edit and no rebuild.
 //! A boot contract identifies the existing explicit Oracle MAIN diagnostic
 //! path; it is not a hardware-topology description.
 
@@ -66,6 +68,10 @@ pub struct FirmwareProfile {
     pub plusdrive_project_contract: Option<PlusdriveProjectContract>,
     pub readiness_contract: Option<ReadinessContract>,
     pub dsp: Option<DspProfile>,
+    /// The softfloat ABI shortcuts (native/boot softfloat) are verified for this
+    /// firmware's MAIN OS. Off when absent: the emulator then runs the library
+    /// code itself.
+    pub softfloat_abi: bool,
 }
 
 /// The SHARC+ DSP behind the coupled audio of one firmware.
@@ -187,6 +193,8 @@ struct SourceFirmware {
     plusdrive_project_contract: Option<PlusdriveProjectContract>,
     readiness_contract: Option<ReadinessContract>,
     dsp: Option<DspProfile>,
+    #[serde(default)]
+    softfloat_abi: bool,
 }
 
 impl Registry {
@@ -250,6 +258,7 @@ impl Registry {
                     plusdrive_project_contract: firmware.plusdrive_project_contract,
                     readiness_contract: firmware.readiness_contract,
                     dsp: firmware.dsp,
+                    softfloat_abi: firmware.softfloat_abi,
                 });
             }
             let panel = parsed
@@ -272,6 +281,53 @@ impl Registry {
             ("devices/digitakt-ii.toml", DT2_SOURCE),
             ("devices/digitone-ii.toml", DN2_SOURCE),
         ])
+    }
+
+    /// The registry a runner should use: the documents in `$DIGI_DEVICES_DIR`
+    /// (or, failing that, `devices/` beside the working directory or an ancestor
+    /// of the executable) when the two device files are there, else the embedded
+    /// copy. A document that is present but does not parse is an error, not a
+    /// silent fallback. Not available on wasm, which has no filesystem.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load() -> Result<Self, RegistryError> {
+        use std::path::PathBuf;
+        const FILES: [&str; 2] = ["digitakt-ii.toml", "digitone-ii.toml"];
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        if let Some(dir) = std::env::var_os("DIGI_DEVICES_DIR") {
+            dirs.push(dir.into());
+        } else {
+            if let Ok(cwd) = std::env::current_dir() {
+                dirs.extend(cwd.ancestors().map(|a| a.join("devices")));
+            }
+            if let Ok(exe) = std::env::current_exe() {
+                dirs.extend(exe.ancestors().skip(1).map(|a| a.join("devices")));
+            }
+        }
+        for dir in dirs {
+            let texts: Vec<_> = FILES
+                .iter()
+                .map(|f| std::fs::read_to_string(dir.join(f)))
+                .collect();
+            if texts.iter().all(Result::is_ok) {
+                let names: Vec<String> = FILES
+                    .iter()
+                    .map(|f| dir.join(f).display().to_string())
+                    .collect();
+                let texts: Vec<String> = texts.into_iter().map(Result::unwrap).collect();
+                let sources: Vec<(&str, &str)> = names
+                    .iter()
+                    .map(String::as_str)
+                    .zip(texts.iter().map(String::as_str))
+                    .collect();
+                return Self::parse(&sources);
+            }
+        }
+        Self::embedded()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn load() -> Result<Self, RegistryError> {
+        Self::embedded()
     }
 
     pub fn devices(&self) -> &[DeviceProfile] {
@@ -321,6 +377,22 @@ impl Registry {
             });
         };
         Ok((device, firmware, boot))
+    }
+
+    /// The boot profile of the known firmware whose MAIN OS is `main`, for a
+    /// .syx whose other sections differ from every known firmware (a changed
+    /// DSP stream): the file's own SHA-256 is unknown, its MAIN is not.
+    pub fn boot_by_main(
+        &self,
+        main: &[u8],
+    ) -> Option<(&DeviceProfile, &FirmwareProfile, &BootProfile)> {
+        let actual = hex_digest(main);
+        self.devices.iter().find_map(|device| {
+            device.firmwares.iter().find_map(|firmware| {
+                let boot = firmware.boot.as_ref()?;
+                (boot.main_sha256 == actual).then_some((device, firmware, boot))
+            })
+        })
     }
 
     /// Looks up a firmware and verifies its MAIN bytes before returning the
@@ -439,10 +511,56 @@ mod tests {
             [
                 ("dt2", "1.15C"),
                 ("dt2", "1.16"),
+                ("dt2", "1.17"),
                 ("dn2", "1.10E"),
-                ("dn2", "1.11")
+                ("dn2", "1.11"),
+                ("dn2", "1.12")
             ]
         );
+    }
+
+    #[test]
+    fn softfloat_abi_is_declared_per_firmware() {
+        let registry = Registry::embedded().unwrap();
+        let on: Vec<_> = registry
+            .devices()
+            .iter()
+            .flat_map(|device| {
+                device
+                    .firmwares
+                    .iter()
+                    .filter(|f| f.softfloat_abi)
+                    .map(move |f| (device.short.as_str(), f.version.as_str()))
+            })
+            .collect();
+        assert_eq!(
+            on,
+            [
+                ("dt2", "1.16"),
+                ("dt2", "1.17"),
+                ("dn2", "1.11"),
+                ("dn2", "1.12")
+            ]
+        );
+    }
+
+    #[test]
+    fn run_time_documents_replace_the_embedded_ones() {
+        let dir = std::env::temp_dir().join(format!("digi-devices-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let extra = format!(
+            "{DT2_SOURCE}\n[[firmware]]\nversion = \"9.99\"\nsha256 = \"{}\"\n",
+            "ab".repeat(32)
+        );
+        std::fs::write(dir.join("digitakt-ii.toml"), extra).unwrap();
+        std::fs::write(dir.join("digitone-ii.toml"), DN2_SOURCE).unwrap();
+        // SAFETY: no other test in this crate reads the variable.
+        unsafe { std::env::set_var("DIGI_DEVICES_DIR", &dir) };
+        let registry = Registry::load().unwrap();
+        unsafe { std::env::remove_var("DIGI_DEVICES_DIR") };
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(registry.identify(&"ab".repeat(32)).is_ok());
+        assert!(Registry::embedded().unwrap().identify(&"ab".repeat(32)).is_err());
     }
 
     #[test]
@@ -491,7 +609,10 @@ mod tests {
             .collect();
         assert_eq!(
             projects,
-            [("dt2", "1.16", PlusdriveProjectContract::Dt2V3Default116)]
+            [
+                ("dt2", "1.16", PlusdriveProjectContract::Dt2V3Default116),
+                ("dt2", "1.17", PlusdriveProjectContract::Dt2V3Default116)
+            ]
         );
     }
 

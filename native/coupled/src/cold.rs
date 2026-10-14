@@ -58,6 +58,8 @@ pub struct ColdReport {
     pub icount: u64,
     pub frames: usize,
     pub wall_seconds: f64,
+    /// Of `wall_seconds`: reading the DSP files and starting the DSP engine.
+    pub dsp_start_seconds: f64,
 }
 
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
@@ -81,6 +83,36 @@ pub fn boot_to_ready(
     inputs: &ColdInputs,
     out_dir: &Path,
     cancel: &AtomicBool,
+    progress: impl FnMut(&ColdProgress),
+) -> Result<ColdReport, String> {
+    let emulator = Emulator::new(syx, Some(card))?;
+    boot_emulator_to_ready(emulator, inputs, out_dir, cancel, progress)
+}
+
+/// [`boot_to_ready`] for a patched build of the firmware whose SHA-256 is
+/// `base_sha256` (`Emulator::new_patched`: the base names the device profile;
+/// the MAIN bytes are not checked). The DSP side is the base's, so `inputs`
+/// are the base's cold-start files.
+pub fn boot_patched_to_ready(
+    syx: &[u8],
+    card: Option<Card>,
+    base_sha256: &str,
+    inputs: &ColdInputs,
+    out_dir: &Path,
+    cancel: &AtomicBool,
+    progress: impl FnMut(&ColdProgress),
+) -> Result<ColdReport, String> {
+    let emulator = Emulator::new_patched(syx, card, base_sha256)?;
+    boot_emulator_to_ready(emulator, inputs, out_dir, cancel, progress)
+}
+
+/// The cold boot of a fresh `emulator` (nothing stepped yet) with the DSP of
+/// `inputs` on the DSPI2 link, saved at the ready state into `out_dir`.
+pub fn boot_emulator_to_ready(
+    mut emulator: Emulator,
+    inputs: &ColdInputs,
+    out_dir: &Path,
+    cancel: &AtomicBool,
     mut progress: impl FnMut(&ColdProgress),
 ) -> Result<ColdReport, String> {
     let started = Instant::now();
@@ -93,9 +125,8 @@ pub fn boot_to_ready(
     let base = u64::from_le_bytes(sidecar[8..16].try_into().unwrap());
     let state = sidecar[24..].to_vec();
 
-    let mut emulator = Emulator::new(syx, Some(card))?;
     let profile = emulator.diagnostics();
-    let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
+    let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
     let dsp = registry
         .dsp_for(&profile.device, &profile.version)
         .cloned()
@@ -125,6 +156,7 @@ pub fn boot_to_ready(
         shared.dsp_instructions = 0;
     }
     emulator.set_dspi2_peer(peer.boxed());
+    let dsp_start_seconds = started.elapsed().as_secs_f64();
 
     // DT2's sample loader keeps sending after the panel is ready: save at the
     // first ready point where link port 0 has been quiet for a while.
@@ -188,6 +220,7 @@ pub fn boot_to_ready(
                 icount,
                 frames,
                 wall_seconds: started.elapsed().as_secs_f64(),
+                dsp_start_seconds,
             });
         }
         if status.icount >= BOOT_LIMIT {

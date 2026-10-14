@@ -1935,3 +1935,40 @@ function and checker" measured ~0.9 ns, so they do not hold.
     share.
   - DN2 verify steps pass. The DT2 steps are blocked by the stale DT2 generated core.
   - The `Fields` intern pool never frees blocks; it is bounded by the number of distinct decoded instructions.
+
+## Why patched DSP images were slow (lane b, DT2 1.17, `tools/pk_tiers.py`) **[D]**
+
+DT2 has no fast-tier regions (`fast_present` false), so the tiers are AOT blocks and the interpreter (about 70 ns per
+instruction against about 1 ns in AOT). Window of 1 audio s after the note started, one daemon per row, non-PGO build;
+DSP CPU per audio s and DSP instructions per audio s in millions:
+
+| image                              | CPU before | interp (of it appended code) | CPU after fix |
+|------------------------------------|-----------:|-----------------------------:|--------------:|
+| stock                              | 1.31       | 2.0 (0)                      | 1.31          |
+| fx/master-gain                     | 1.45       | 3.9                          | 1.46          |
+| core/dsp-voice, no type            | 2.1        | 12.2 (1.1)                   | 2.0           |
+| + test/sine-voice, sine ringing    | 3.9        | 13.8 (3.0)                   | 2.1           |
+| PLUCK set, idle                    | 4.3        | 44.2 (1.4)                   | 4.3           |
+| PLUCK set, note ringing            | 42         | 45.8 (3.3)                   | 4.5           |
+
+- **Cause of the 42 s (fixed).** Appended module code and data sit on the 64 KiB page that also holds the last stock L2
+  code (stock code ends at word `0xb88fb1`, byte `0x2001_1f62`; the module state is at `0x2001afd8` and up). The code
+  watch (`Mem::watch_code`) marked whole pages, so every store of a module to its own state bumped `code_gen`, and the
+  next dispatch ran `verify_code`, a SHA-256 over all 230 code ranges (about 0.6 ms). A ringing PLUCK note caused 73,500
+  verifications per audio s (about 49 per 32-sample block): 100 % of the extra 38 s. The sine voice caused 3,000 (2.0 s of
+  its 3.9 s). Counters: `code_verifies`, `code_verify_ns` in `dsp_tiers`. Fix: `Mem` keeps the exact watched spans
+  (`code_spans`) and a store bumps `code_gen` only when it overlaps one; window writes still count per page. PCM of all
+  six images is bit-identical before and after (sha256 of the window), stock scenarios keep their pins; stock cost
+  +0.7 % (coupled_ab B/A 1.007 and 1.008, tf-dry-hold and tf-br-127).
+- **Remaining cost (not fixed).** (a) The hook word `0x1c4ecf` is in the hashed range `0x1c4e8d..0x1c5048` and the
+  `selector_table` words of core/machines in `0x1c24e9..0x1c2acf`; every region with an entry in a changed range is
+  barred (`verify_code`: 6 regions for the first range, including the stock sample renderer `0x1c4f81`, the arm
+  routine `0x1c4eaf` and `0x1c6b07`), so the stock voice code runs interpreted: +10 M interpreted instructions per
+  audio s for the hook alone (+0.7 s), +40 M with the selector patch (+3 s). Ceiling, measured with an engine run
+  that bars only the regions that hold a changed word (`0x1c4ecf`, `0x1c2607`; experiment, not committed): core/dsp-voice
+  2.0 to 1.52, PLUCK ringing 4.5 to 2.76 CPU per audio s. Exact barring needs per-region code extents from the
+  generator (`REGION_ENTRIES` lists entries only), that is a change of `tools/sharc_rsgen.py`, so a regeneration of
+  the DT2, DN2 and shared cores. (b) Appended code is interpreted (not in the AOT image): 1.1 to 3.3 M instructions per
+  audio s, 0.1 to 0.25 s.
+- The fast-tier kernels still decline any store into a code-watched page (`mem_addr.rs` guards on the page's watch
+  byte), so on DN2 module data on a code page leaves the fast tier; placing module data on its own page would avoid it.
