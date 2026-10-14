@@ -124,6 +124,9 @@ def render_type(t: mt.Type) -> str:
         return "None"
     if isinstance(p, mt.Instance):
         name = p.type.fullname
+        # mypy represents a variable-length tuple as an Instance of builtins.tuple with one argument; a fixed-length tuple is a TupleType.
+        if name == "builtins.tuple" and len(p.args) == 1:
+            return "builtins.tuple[%s, ...]" % render_type(p.args[0])
         if p.args:
             return "%s[%s]" % (name, ", ".join(render_type(a) for a in p.args))
         return name
