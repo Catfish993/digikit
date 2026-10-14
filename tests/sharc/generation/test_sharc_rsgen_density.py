@@ -9,15 +9,13 @@ for the cold paths and the shared exits, with no firmware:
 
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-import sharc_rsgen as rg
-import sharc_transpile as tp
+from tools.sharc_dev import sharc_rsgen as rg
+from tools.sharc_dev import sharc_transpile as tp
 
 
 def test_cold_paths_mark_question_marks_and_early_errors() -> None:

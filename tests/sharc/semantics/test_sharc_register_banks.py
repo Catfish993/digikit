@@ -4,21 +4,19 @@ from __future__ import annotations
 
 import os
 import struct
-import sys
 from pathlib import Path
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-import sharc_diff as sd
-import sharc_trace as st
-import sharc_transpile_run as nr
-from sharc_core.encoding import UREG_CODES
-from sharc_core.forms_system import _type_20a
-from sharc_core.state import State, _bank_complete, _copy, _write_ureg
-from sharc_core.values import Const, Unknown
+from tools.sharc_dev import sharc_diff as sd
+from tools.sharc_dev import sharc_trace as st
+from tools.sharc_dev import sharc_transpile_run as nr
+from tools.sharc_dev.sharc_core.encoding import UREG_CODES
+from tools.sharc_dev.sharc_core.forms_system import _type_20a
+from tools.sharc_dev.sharc_core.state import State, _bank_complete, _copy, _write_ureg
+from tools.sharc_dev.sharc_core.values import Const, Unknown
 
 
 def _state() -> State:
@@ -97,7 +95,7 @@ def test_push_and_pop_status_latch_mode1_bank_selection() -> None:
     state.uregs[UREG_CODES["MODE1"]] = Const(1 << 10)
     state.uregs[UREG_CODES["MMASK"]] = Const(1 << 10)
     # Type20a only consumes these fields before advancing a two-byte insn.
-    from sharc_disasm import Instruction
+    from tools.sharc_dev.sharc_disasm import Instruction
 
     insn = Instruction(
         0,
@@ -156,7 +154,7 @@ def test_native_generated_forms_match_reference_for_banks_and_delay_slots() -> N
     library = os.environ.get("SHARC_NATIVE_LIB", nr.DEFAULT_LIB)
     if not Path(library).exists():
         pytest.skip("no native library built")
-    from sharc_disasm import Instruction
+    from tools.sharc_dev.sharc_disasm import Instruction
 
     reference = _state()
     reference.uregs[UREG_CODES["MODE1"]] = Const(0)
@@ -234,8 +232,8 @@ def test_state_comparison_detects_latent_bank_divergence() -> None:
 
 
 def test_diagnostic_call_and_render_clones_own_their_inactive_registers() -> None:
-    import sharc_harness
-    import sharc_run
+    from tools.sharc_dev import sharc_harness
+    from tools.sharc_dev import sharc_run
 
     initial = _state()
     for clone in (

@@ -1,15 +1,12 @@
 """Typed SHARC ISA model over the public-manual-derived decode table."""
 
-import os
 import struct
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 
-import sharc_isa  # noqa: E402  # pyright: ignore[reportMissingImports]
-import sharc_visa_tables as legacy  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import sharc_isa  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import sharc_visa_tables as legacy  # noqa: E402  # pyright: ignore[reportMissingImports]
 
 
 class InstructionSetTest(unittest.TestCase):

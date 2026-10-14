@@ -1,5 +1,5 @@
 //! `digi-emud`: the emulator without a window. The controller plus the control
-//! socket; start it, then drive it from `tools/digi_client.py`.
+//! socket; start it, then drive it from `tools/control/digi_client.py`.
 //!
 //!   digi-emud [SYX] [--card-image FILE] [--auto-coupled ...] [--free]
 //!

@@ -24,7 +24,7 @@ pub struct StereoSample {
     pub r: f32,
 }
 
-/// Stereo samples per SHARC audio frame (ring A half, `tools/sharc_dac.py`
+/// Stereo samples per SHARC audio frame (ring A half, `tools/sharc_dev/sharc_dac.py`
 /// `SAMPLES_PER_HALF`).
 pub const FRAME_LEN: usize = 32;
 

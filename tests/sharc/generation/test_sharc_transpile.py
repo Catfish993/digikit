@@ -1,27 +1,24 @@
-"""The SHARC+ core's Rust translation (tools/sharc_transpile.py) and the
-native core built from it (native/sharc, tools/sharc_transpile_run.py).
+"""The SHARC+ core's Rust translation (tools/sharc_dev/sharc_transpile.py) and the
+native core built from it (native/sharc, tools/sharc_dev/sharc_transpile_run.py).
 
-The translation itself needs no firmware: it reads tools/sharc_core. The
+The translation itself needs no firmware: it reads tools/sharc_dev/sharc_core. The
 native checks need the library built with the generated code
-(``SHARC_GEN_DIR``; see tools/sharc_rsgen.py) and are skipped without it;
+(``SHARC_GEN_DIR``; see tools/sharc_dev/sharc_rsgen.py) and are skipped without it;
 the frame check also needs the firmware and a capture.
 """
 
 import os
 import shutil
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-import sharc_transpile as tp  # noqa: E402
-import sharc_transpile_infer as infer  # noqa: E402
-import sharc_transpile_run as run  # noqa: E402
+from tools.sharc_dev import sharc_transpile as tp  # noqa: E402
+from tools.sharc_dev import sharc_transpile_infer as infer  # noqa: E402
+from tools.sharc_dev import sharc_transpile_run as run  # noqa: E402
 
 LIB = run.DEFAULT_LIB
 CAPTURE = os.path.join(
@@ -161,11 +158,11 @@ IMAGE_DB = os.path.join(ROOT, "out", "sharcdb", "dt2-1.16.sqlite")
 
 @pytest.mark.skipif(not os.path.exists(IMAGE_DB), reason="no program database")
 def test_block_mode_keeps_registers_static(translated):
-    """Block mode (tools/sharc_rsgen.py): an instruction of a hot DO loop
+    """Block mode (tools/sharc_dev/sharc_rsgen.py): an instruction of a hot DO loop
     specialises with every register index static, reading and writing the
     block's register file only."""
-    import sharc
-    import sharc_rsgen as rg
+    from tools.sharc_dev import sharc
+    from tools.sharc_dev import sharc_rsgen as rg
 
     _core, out = translated
     tr = out.translator

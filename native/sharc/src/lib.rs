@@ -1,8 +1,8 @@
-//! Native SHARC+ core, generated from `tools/sharc_core`.
+//! Native SHARC+ core, generated from `tools/sharc_dev/sharc_core`.
 //!
-//! The instruction semantics are not written here. `tools/sharc_transpile.py`
-//! translates `tools/sharc_core` into Rust (`core_i`/`core_g`), and
-//! `tools/sharc_rsgen.py` turns the firmware's basic blocks into functions
+//! The instruction semantics are not written here. `tools/sharc_dev/sharc_transpile.py`
+//! translates `tools/sharc_dev/sharc_core` into Rust (`core_i`/`core_g`), and
+//! `tools/sharc_dev/sharc_rsgen.py` turns the firmware's basic blocks into functions
 //! that call it with each instruction's decoded fields as constants. Both
 //! write under `out/` (the block part embeds firmware); build with
 //! `SHARC_GEN_DIR=<that directory>` to link them in. Without it this crate
@@ -10,7 +10,7 @@
 //!
 //! This crate holds the runtime the generated code runs on ([`rt`],
 //! [`mem`]), the dispatcher, the harness's canonical state format
-//! (tools/sharc_diff.py) and its C ABI:
+//! (tools/sharc_dev/sharc_diff.py) and its C ABI:
 //!
 //! ```c
 //! void*   sharc_native_create(const uint8_t* image, size_t image_len);
@@ -24,7 +24,7 @@
 //! A step that reaches something the native core does not model (a fork,
 //! a stop, an unmodelled MMR, an instruction with no native code) undoes
 //! that instruction and halts with a reason starting `native-trap:`; the
-//! caller then lets the Python core execute it (tools/sharc_transpile_run.py).
+//! caller then lets the Python core execute it (tools/sharc_dev/sharc_transpile_run.py).
 
 pub mod canon;
 mod diag;
@@ -117,7 +117,7 @@ pub fn tick_hz() -> u64 {
 }
 
 /// A dispatch entry: the block function and whether the generator classed it
-/// model-safe (tools/sharc_rsgen.py model_safe), i.e. its instructions touch
+/// model-safe (tools/sharc_dev/sharc_rsgen.py model_safe), i.e. its instructions touch
 /// none of the state the bank, stack, timer, interrupt, clock and peripheral
 /// models update between instructions.
 #[derive(Clone, Copy)]
@@ -133,7 +133,7 @@ pub struct Dispatch {
 }
 
 /// `SHARC_AOT_DENY=0xb80509,...` (hex entry PCs): generated blocks to leave
-/// out, for bisecting a tier fault (see tools/coupled.py bisect).
+/// out, for bisecting a tier fault (see tools/emulator/coupled.py bisect).
 fn aot_deny_from_env() -> Vec<u32> {
     std::env::var("SHARC_AOT_DENY")
         .unwrap_or_default()
@@ -242,7 +242,7 @@ pub struct Engine {
     pub export_ranges: bool,
     pub dispatch: Dispatch,
     pub stats: Stats,
-    /// Coverage (tools/sharc_rsgen.py --coverage): instructions run through
+    /// Coverage (tools/sharc_dev/sharc_rsgen.py --coverage): instructions run through
     /// the one-instruction interpreter, by (pc, MODE1 bits, MODE1 known).
     pub cov: Option<std::collections::HashMap<(u32, u32, bool), u64>>,
     /// Stop after one block call or one interpreted instruction (the
@@ -766,7 +766,7 @@ impl Engine {
         self.fast = fast;
     }
 
-    /// An engine over an image blob (tools/sharc_transpile_run.py
+    /// An engine over an image blob (tools/sharc_dev/sharc_transpile_run.py
     /// `pack_image`), memory at the loader image.
     pub fn from_image(bytes: &[u8]) -> Result<Engine, i32> {
         let img = canon::parse_image(bytes)?;
@@ -1051,7 +1051,7 @@ impl Engine {
             5 => self.instruction_clock = value != 0,
             26 => {
                 // Coverage, entries, transitions and block exits for
-                // tools/sharc_rsgen.py (read back by sharc_native_profile).
+                // tools/sharc_dev/sharc_rsgen.py (read back by sharc_native_profile).
                 if value != 0 {
                     self.cov.get_or_insert_with(Default::default);
                     self.entries.get_or_insert_with(Default::default);
@@ -1633,7 +1633,7 @@ impl Engine {
                     });
                     if self.s.cfg.peripheral_model && rt::periph::sec_line_active(&self.s) {
                         // The SEC request line latches SECI at the boundary
-                        // (tools/sharc_run.py calls periph._sec_line here).
+                        // (tools/sharc_dev/sharc_run.py calls periph._sec_line here).
                         self.s.begin();
                         match rt::periph::sec_line(&mut self.s) {
                             Ok(()) => self.s.commit_host(),
@@ -1991,7 +1991,7 @@ impl Engine {
     /// state is the one a `step` ending at that instruction count leaves,
     /// as step sizes never change results. A block exits at the first PC it
     /// has no body for, so the boundary is exact when no generated body
-    /// covers [LO, HI) (tools/sharc_rsgen.py --exclude).
+    /// covers [LO, HI) (tools/sharc_dev/sharc_rsgen.py --exclude).
     pub fn step_until_in(&mut self, n: u32, lo: u32, hi: u32) -> u32 {
         self.stop_range = Some((lo, hi));
         let ran = self.step(n);
@@ -2194,7 +2194,7 @@ impl Engine {
 }
 
 // ---------------------------------------------------------------------------
-// C ABI (tools/sharc_diff.py NativeEngine, tools/sharc_transpile_run.py)
+// C ABI (tools/sharc_dev/sharc_diff.py NativeEngine, tools/sharc_dev/sharc_transpile_run.py)
 // ---------------------------------------------------------------------------
 
 /// Allocate a host-transfer buffer, including in WebAssembly where JavaScript
@@ -2216,7 +2216,7 @@ pub unsafe extern "C" fn sharc_native_free(ptr: *mut u8, len: usize) {
 }
 
 /// # Safety
-/// IMAGE must point to IMAGE_LEN readable bytes (a tools/sharc_transpile_run.py
+/// IMAGE must point to IMAGE_LEN readable bytes (a tools/sharc_dev/sharc_transpile_run.py
 /// `pack_image` blob).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sharc_native_create(image: *const u8, image_len: usize) -> *mut Engine {
@@ -2423,7 +2423,7 @@ pub unsafe extern "C" fn sharc_native_stats(
     n as i32
 }
 
-/// The profile maps (option 26) as text, for tools/sharc_rsgen.py: KIND 0
+/// The profile maps (option 26) as text, for tools/sharc_dev/sharc_rsgen.py: KIND 0
 /// coverage ("pc MODE1 known count", sharc-frames --coverage), 1 entries
 /// ("pc count"), 2 block transitions ("from to count"), 3 block exits
 /// ("block kind at count"), 4 entry-bail state
@@ -2722,7 +2722,7 @@ pub unsafe extern "C" fn sharc_native_info(out: *mut u8, out_cap: usize) -> i32 
 }
 
 /// The build's description (sharc_native_info): the SHA-256 of the
-/// tools/sharc_core sources and the generator version the generated code
+/// tools/sharc_dev/sharc_core sources and the generator version the generated code
 /// came from (0: generated before the version existed), the image's
 /// SHA-256 and the block count. Loaders compare the first two with the
 /// current sources and refuse a stale library

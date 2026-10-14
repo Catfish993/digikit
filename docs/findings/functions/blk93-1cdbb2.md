@@ -1,18 +1,18 @@
 # blk93@0x1cdbb2 — conditional per-track state update (two guarded skips, float MAC body, data-dependent tail loop)
 
 - **Bounds**: entry `0x1cdbb2`, exit `0x1cdcb0`, **115 instructions**, matching
-  `tools/sharcinv.py` exactly (`entry=1891250 exit=1891504 n_insns=115`,
+  `tools/sharc_dev/sharcinv.py` exactly (`entry=1891250 exit=1891504 n_insns=115`,
   confirmed by an independent linear disassembly of the same byte range with
   `sharc_disasm.disassemble()`, zero desyncs, 115 decoded instructions before
   the return's two delay slots end at `0x1cdcb0`). **[V]**
 - **The single return is genuine and unconditional**: the only `9b_abs` in
   the span is at `0x1cdcab` — `b=0, cond=0x1F` (TRUE), `pmi=4, pmm=6`
-  (DAG2 `I12`/`M14`), `j=1` — exactly `tools/sharc_trace.py`'s hard-coded
+  (DAG2 `I12`/`M14`), `j=1` — exactly `tools/sharc_dev/sharc_trace.py`'s hard-coded
   "verified compiler return" idiom (jump through `I12`/`M14`, two delay
   slots: a `15b` store then `25c_rframe`). No conditional return exists in
   this function, so the return-delimited boundary is not at risk of the
   "conditional returns are missed" failure mode the task warns about.
-  **[V]** (`tools/sharc_trace.py --blob --start 0x1cdbb2` reaches this exact
+  **[V]** (`tools/sharc_dev/sharc_trace.py --blob --start 0x1cdbb2` reaches this exact
   PC on 3 of 4 explored paths and stops with `"return without followed
   call"`, which for a fresh trace with an empty call stack is the *normal*
   successful exit, not an error).
@@ -47,7 +47,7 @@
 - **Callees**: none — confirmed leaf (`callees: []`, and no `25a_direct`,
   `8a_rel` with `b=1`, or `9b_abs` CALL found anywhere in the 115
   instructions). **[V]**
-- **Label**: `tools/sharcinv.py` abstains — "unclassified/mixed", confidence
+- **Label**: `tools/sharc_dev/sharcinv.py` abstains — "unclassified/mixed", confidence
   0, reason "no rule matched". Feature vector: `float_mul=24 mac=6
   float_alu=30 int_alu=2 shifter=1 loop_register=1 loop_literal=0
   dual_add_sub=0 multifn=0 named_tables_touched=[] float_immediates=[]`.
@@ -62,7 +62,7 @@
 ## What it computes
 
 **[D]** for the algorithm identification below (traced twice — once via
-`tools/sharc_trace.py --blob --start 0x1cdbb2 --concrete-memory
+`tools/sharc_dev/sharc_trace.py --blob --start 0x1cdbb2 --concrete-memory
 --assume-32bit-normal-words --follow-loaded-calls --json`, which explored 4
 paths (44/70/73/94 steps) and reached the real return on 3 of them, one
 stopping only at the data-dependent hardware-loop count; once via an
@@ -274,7 +274,7 @@ parameter-frame consumer** — not ruled out, not confirmed. **[O]**
   matching the task and `.coldtrace/Digitakt_II_OS1.16/section_7_BLOB.bin`.
   Note `sections/.source-sha256` in the working tree is a *different*
   (1.15C) hash — the 1.16 blob lives under `out/sections/dt2-1.16/`.
-- Inventory: `python3 tools/sharcinv.py out/sections/dt2-1.16/section_7_BLOB.bin
+- Inventory: `python3 -m tools.sharc_dev.sharcinv out/sections/dt2-1.16/section_7_BLOB.bin
   --blocks 93 --json /tmp/inv93.json`.
 - Disassembly: `sharcldr.LoadedMemory` + `sharc_disasm.disassemble()` over
   the loader-byte range for `sw 0x1cdbb2` (115 instructions, zero desyncs)
@@ -285,7 +285,7 @@ parameter-frame consumer** — not ruled out, not confirmed. **[O]**
 - Call-site discovery: exact byte-pattern search (word-swapped 48-bit
   `25a_direct` frame `18 04 00 1c db b2` -> `04 18 1c 00 b2 db`) over the
   whole blob — 1 hit.
-- Semantic trace: `tools/sharc_trace.py out/sections/dt2-1.16/section_7_BLOB.bin
+- Semantic trace: `tools/sharc_dev/sharc_trace.py out/sections/dt2-1.16/section_7_BLOB.bin
   --blob --start 0x1cdbb2 --concrete-memory --assume-32bit-normal-words
   --follow-loaded-calls --json --max-steps 200 --max-states 64` (note: the
   positional `source` argument is required even with `--blob`; omitting it

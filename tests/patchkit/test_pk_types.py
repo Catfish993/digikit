@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import sys
 import tomllib
 from pathlib import Path
 
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_new  # noqa: E402
+from tools.patchkit import pk_new  # noqa: E402
 
 TYPES = ROOT / "modules" / "core" / "machines" / "types.toml"
 

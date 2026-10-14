@@ -1,33 +1,27 @@
-"""tools/sharc_coverage.py's compare_decode_at(): tools/sharcdb.py's own
+"""tools/sharc_dev/sharc_coverage.py's compare_decode_at(): tools/sharc_dev/sharcdb.py's own
 decode (the `insn` table) against tools/sharc_core.sequencer.decode_at() at
 the same PC. See docs/findings/05-sharc-isa-and-decoding.md, "One decode
 path"."""
 
 import json
-import os
 import pathlib
 import struct
-import sys
 import unittest
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(
-    0,
-    os.path.join(str(REPO_ROOT), "tools"),
-)
 
 from support.sharc_encode import block, encode  # noqa: E402
 
-import sharc  # noqa: E402
-import sharc_coverage  # noqa: E402
-import sharcldr  # noqa: E402
+from tools.sharc_dev import sharc  # noqa: E402
+from tools.sharc_dev import sharc_coverage  # noqa: E402
+from tools.sharc_dev import sharcldr  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 
 
 class RawLeBytesTest(unittest.TestCase):
-    """_raw_le_bytes() must invert the packing tools/sharc_isa.py's
+    """_raw_le_bytes() must invert the packing tools/sharc_dev/sharc_isa.py's
     frame_of()/DecodedInstruction.raw use: 16-bit little-endian words, most
     significant short word first."""
 
@@ -45,7 +39,7 @@ class RawLeBytesTest(unittest.TestCase):
 
 
 class _FakeImage:
-    """The minimal tools/sharc.py Image surface compare_decode_at() uses:
+    """The minimal tools/sharc_dev/sharc.py Image surface compare_decode_at() uses:
     .name, ._mem() and .sql()."""
 
     def __init__(self, name, mem, rows):

@@ -1,14 +1,12 @@
 """Builders for hand-made SHARC+ words, loader blocks and call/return sites."""
 
 import struct
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 
-import sharc_disasm  # noqa: E402
-import sharc_visa_tables as T  # noqa: E402
-import sharcinv  # noqa: E402
+from tools.sharc_dev import sharc_disasm  # noqa: E402
+from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
+from tools.sharc_dev import sharcinv  # noqa: E402
 
 
 def encode(name, extra=0):

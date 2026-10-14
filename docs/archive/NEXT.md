@@ -228,7 +228,7 @@ oracles that already work in `emu/oracle.py`:
 | per-packet SysEx checksum | `(K + sum(body[6+i] ^ (i+K), i=0..118)) & 0x7F` | byte 125 of each SysEx packet, K = byte 7 of the 16-byte framing message |
 
 Together with CRC + depacker these are the bootstrap's **entire** accept/reject
-decision for a MIDI-delivered image. `tools/roundtrip.py` now verifies all
+decision for a MIDI-delivered image. `tools/firmware/roundtrip.py` now verifies all
 three checksum/HMAC routines plus the framing message count against a
 rebuilt image.
 

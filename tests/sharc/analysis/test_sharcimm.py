@@ -1,24 +1,20 @@
-"""tools/sharcimm.py on instructions built from the table and a hand-built boot stream."""
+"""tools/sharc_dev/sharcimm.py on instructions built from the table and a hand-built boot stream."""
 
-import os
 import struct
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import sharc_disasm  # noqa: E402
-import sharc_visa_tables as T  # noqa: E402
-import sharcldr  # noqa: E402
-import sharcimm  # noqa: E402
+from tools.sharc_dev import sharc_disasm  # noqa: E402
+from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
+from tools.sharc_dev import sharcldr  # noqa: E402
+from tools.sharc_dev import sharcimm  # noqa: E402
 from support.sharc_encode import block, encode  # noqa: E402
 
 
 def pack48(value):
     """Little-endian bytes of a raw 48-bit word, bypassing sharc_visa_tables
-    (used for Type10a_rel/10a_abs below, which -- per tools/sharcfn.py's
+    (used for Type10a_rel/10a_abs below, which -- per tools/sharc_dev/sharcfn.py's
     module docstring -- are absent from that table's VISA form set)."""
     words = [(value >> (48 - 16 * (i + 1))) & 0xFFFF for i in range(3)]
     return struct.pack('<3H', *words)
@@ -87,8 +83,8 @@ class ScanTest(unittest.TestCase):
 
 class NeverAlignedFormsTest(unittest.TestCase):
     """decode_all() must never treat Type10a_rel/10a_abs as a real decoded
-    instruction (tools/sharcimm.py's _NEVER_ALIGNED_FORMS comment):
-    tools/sharcfn.py's module docstring says both are absent from the real
+    instruction (tools/sharc_dev/sharcimm.py's _NEVER_ALIGNED_FORMS comment):
+    tools/sharc_dev/sharcfn.py's module docstring says both are absent from the real
     VISA form set entirely, so any bit-pattern match is a disassembler
     desync, not a genuine instruction. Before this fix, decode_all() fed
     such a match straight into the depth/sweep alignment sweep, which is
@@ -117,7 +113,7 @@ class NeverAlignedFormsTest(unittest.TestCase):
 
 
 class WidthPreferenceTest(unittest.TestCase):
-    """tools/sharc_isa.py's select_frame() ranks matching forms by leading
+    """tools/sharc_dev/sharc_isa.py's select_frame() ranks matching forms by leading
     fixed bits, so Type2b (32-bit, 9 leading fixed bits, all inside word0)
     always outranks Type2c (16-bit, 4 fixed bits) on any word0 whose top 9
     bits happen to fit both -- even though Type2b's word1 is entirely free
@@ -126,7 +122,7 @@ class WidthPreferenceTest(unittest.TestCase):
     _WIDTH_LOOKAHEAD comment): decode_all() must prefer Type2c whenever
     Type2b's own successor chain breaks down, or a Type2c-led reading
     independently walks back onto one of Type2b's own successor offsets.
-    Built from tools/sharc_visa_tables.py's public field layout only (never
+    Built from tools/sharc_dev/sharc_visa_tables.py's public field layout only (never
     from firmware bytes)."""
 
     def test_broken_successor_prefers_narrower_form(self):

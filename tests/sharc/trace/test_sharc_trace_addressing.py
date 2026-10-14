@@ -1,20 +1,17 @@
 """Symbolic tracer: pre/post-modify, affine and circular addressing."""
 
 import json
-import os
-import sys
 import unittest
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
-L = import_module("sharcldr")
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_trace_build import insn, loader_block, loader_memory  # noqa: E402
 
-_floats = import_module("sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
 
 from support.sharc_trace_build import TraceRunMixin  # noqa: E402
 
@@ -562,7 +559,7 @@ class TraceModifyFormsTest(TraceRunMixin, unittest.TestCase):
         # into (executed, skipped) states -- attempting the memory access
         # on one of them -- even when the predicate resolved to a
         # concrete False, unlike _type_3a's matching fast path. A single-
-        # path concrete runner (tools/sharc_run.py) cannot resolve a
+        # path concrete runner (tools/sharc_dev/sharc_run.py) cannot resolve a
         # 2-state fork from an already-known-False predicate.
         astatx_code = T.UREG_CODES["ASTATX"]
         memory = loader_memory(loader_block(1, 0x80, 4, payload=b"\0" * 4))
@@ -754,7 +751,7 @@ class TraceAffineCircularTest(TraceRunMixin, unittest.TestCase):
     def test_scaled_type19_circular_modify_of_bare_symbol_yields_fresh_symbol(self):
         # B7 not concrete (the ordinary case when a function is traced from
         # its own entry with every register seeded as its own named
-        # symbol), L7 concrete (tools/sharcwriters.py's own
+        # symbol), L7 concrete (tools/sharc_dev/sharcwriters.py's own
         # GLOBAL_CONSTANT_SEEDS): the old behaviour collapsed straight to
         # Unknown("scaled circular modify I7"). It should now recognise
         # I7's bare entry symbol and mint a FRESH symbol for the result --

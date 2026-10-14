@@ -1,22 +1,17 @@
-"""tools/audiocheck.py on synthetic signals with known answers."""
+"""tools/emulator/audiocheck.py on synthetic signals with known answers."""
 
 from __future__ import annotations
 
 import math
 import pathlib
 import struct
-import sys
 
 import numpy as np
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import audiocheck as ac
-finally:
-    sys.path.pop(0)
+from tools.emulator import audiocheck as ac
 
 R = 48000
 

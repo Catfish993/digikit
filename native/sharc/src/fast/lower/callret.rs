@@ -3,7 +3,7 @@
 //! delay slot of a call (16a), and RFRAME in the delay slot of a return
 //! (25c_rframe).
 //!
-//! `tools/sharc_core/forms_flow.py::_type_25a_direct`, `forms_move.py::_type_16a`
+//! `tools/sharc_dev/sharc_core/forms_flow.py::_type_25a_direct`, `forms_move.py::_type_16a`
 //! and `forms_flow.py::_type_25c_rframe` are the definitions. The memory
 //! accesses are the plain-RAM normal-word transfers the other memory forms
 //! lower (the addresses lie where a normal-word access is not mapped, a

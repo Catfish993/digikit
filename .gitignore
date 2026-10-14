@@ -22,24 +22,24 @@ snapshots/
 docs/refs/*.pdf
 docs/refs/rm.txt
 .coldtrace/
-tools/ghidra/SHARC/data/languages/*.sla
-tools/ghidra/ColdfireEMAC/data/languages/*.sla
-tools/ghidra/ColdfireEMAC/extension.properties
+tools/coldfire/ghidra/SHARC/data/languages/*.sla
+tools/coldfire/ghidra/ColdfireEMAC/data/languages/*.sla
+tools/coldfire/ghidra/ColdfireEMAC/extension.properties
 tools/nbdocs-scrape.py
 
-# tools/sharcspec: text extracts of the ADI manuals and generated renders and
+# tools/sharc_dev/sharcspec: text extracts of the ADI manuals and generated renders and
 # Ghidra language files. The PDFs themselves are covered by docs/refs/*.pdf.
 docs/refs/pgr.txt
 docs/refs/prm.txt
-tools/sharcspec/renders/
-tools/sharcspec/ghidra/SHARC_VISA/
+tools/sharc_dev/sharcspec/renders/
+tools/sharc_dev/sharcspec/ghidra/SHARC_VISA/
 
 # Session scratch: probe scripts and large intermediate dumps.
 scratch/
 
-# samples/: WAV files that become the emulated +Drive (tools/plusdrive.py).
+# samples/: WAV files that become the emulated +Drive (tools/firmware/plusdrive.py).
 # Never commit real recordings; the two test WAVs are also excluded and
-# regenerated on demand instead (tools/gen_test_samples.py, samples/README.md).
+# regenerated on demand instead (tools/emulator/gen_test_samples.py, samples/README.md).
 samples/*.wav
 
 # Rust build output for native/

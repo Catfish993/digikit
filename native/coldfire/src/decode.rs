@@ -1,6 +1,6 @@
 //! Instruction decoding: the hand-written part (effective addresses, the
 //! instruction record, text form). The per-form decoders and the dispatch
-//! are generated into `decode_gen.rs` from `tools/cfisa/coldfire.json`.
+//! are generated into `decode_gen.rs` from `tools/coldfire/cfisa/coldfire.json`.
 
 use core::fmt;
 
@@ -563,7 +563,7 @@ pub fn decode_at(image: &[u8], base: u32, offset: usize) -> Option<Insn> {
 // ---------------------------------------------------------------------------
 // Text form. Numbers are signed hex (sign-extended from their size),
 // registers lower case, no spaces: close to the Ghidra/SLEIGH listing so the
-// oracle comparison (tools/cfisa/oracle.py) needs little normalisation.
+// oracle comparison (tools/coldfire/cfisa/oracle.py) needs little normalisation.
 
 fn hex(v: i64) -> String {
     if v < 0 {

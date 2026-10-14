@@ -1,18 +1,16 @@
-"""tools/sharc_dn2_aot.py: argument checks, profile merging and the manifest
+"""tools/sharc_dev/sharc_dn2_aot.py: argument checks, profile merging and the manifest
 comparison, without firmware (the pipeline itself needs private inputs)."""
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-import sharc_dn2_aot as aot
-import sharc_rsgen as rg
+from tools.sharc_dev import sharc_dn2_aot as aot
+from tools.sharc_dev import sharc_rsgen as rg
 
 BASE = ["--state", "s.bin", "--capture", "c.dt2cap"]
 

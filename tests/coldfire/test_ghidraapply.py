@@ -1,14 +1,10 @@
-"""tools/ghidraapply.py name splitting (the Ghidra parts need a project)."""
+"""tools/coldfire/ghidraapply.py name splitting (the Ghidra parts need a project)."""
 
-import os
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import ghidraapply  # noqa: E402
+from tools.coldfire import ghidraapply  # noqa: E402
 
 
 class SplitNameTest(unittest.TestCase):

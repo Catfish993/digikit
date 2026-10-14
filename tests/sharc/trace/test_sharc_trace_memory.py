@@ -1,20 +1,17 @@
 """Symbolic tracer: memory transfer forms and DM canonicalization."""
 
-import os
 import struct
-import sys
 import unittest
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
-L = import_module("sharcldr")
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_trace_build import insn, loader_block, loader_memory  # noqa: E402
 
-_floats = import_module("sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
 
 from support.sharc_trace_build import TraceRunMixin  # noqa: E402
 
@@ -190,7 +187,7 @@ class TraceMemoryFormsTest(TraceRunMixin, unittest.TestCase):
                 self.assertEqual(state.trace[0]["action"], "i-modify-uncertain")
                 # A downstream DM store through the conditional I12 is not definite.
                 address = T._json_value(state.uregs[T.UREG_CODES["I12"]])
-                W = import_module("sharcwriters")
+                W = import_module("tools.sharc_dev.sharcwriters")
                 classification, _ = W.classify_store_address(
                     address, 4, 0x100, None, None
                 )
@@ -884,7 +881,7 @@ class TraceMemoryFormsTest(TraceRunMixin, unittest.TestCase):
 
     def test_type4a_store_and_type15b_load_of_the_same_normal_word_slot(self):
         """Type15b's own (non-lw) immediate modifier was already scaled the
-        same way as Type4a's (tools/sharc_trace.py's existing assume_nw32
+        same way as Type4a's (tools/sharc_dev/sharc_trace.py's existing assume_nw32
         handling for name == "15b"); this guards that the two stay in
         agreement now that Type15a's data32 is scaled too."""
         i6 = T.UREG_CODES["I6"]
@@ -1164,7 +1161,7 @@ class DmCanonicalizationTest(unittest.TestCase):
         # SW_ALIAS_BASE. sr.Watchpoint canonicalises its range at attach
         # time, so a watch on the raw address fires, and so does one built
         # from dm_write_range's (already canonical) range.
-        sr = import_module("sharc_run")
+        sr = import_module("tools.sharc_dev.sharc_run")
         memory = loader_memory()
         runner = sr.Runner(
             memory, 0x10, watchpoints=[sr.Watchpoint(self.ADDR, self.ADDR + 4)]

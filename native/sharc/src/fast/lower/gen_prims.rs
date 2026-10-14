@@ -1,5 +1,5 @@
 //! The primitives generated forms call (`gen_forms.rs`, written by
-//! `tools/sharc_lowergen.py` from `tools/sharc_core`).
+//! `tools/sharc_dev/sharc_lowergen.py` from `tools/sharc_dev/sharc_core`).
 //!
 //! A generated form is the decision tree the core's handler makes over the
 //! instruction's fields and MODE1, with the effects of each leaf in program

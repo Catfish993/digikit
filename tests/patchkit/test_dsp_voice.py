@@ -4,18 +4,16 @@ The wrapper and the sine routine are assembled from the module sources, linked a
 symbols stood in by test addresses, and run the way the engine calls them: R4 = voice record, R8 = output block, R14
 = loop counter, a frame built by the caller's CJUMP. The stock path must fall through with nothing but the displaced
 stack adjustment and R0-R2 / I4 changed; a registered type must run the routine (even voice) or copy its block (odd
-voice) and leave the callee-saved registers as found. The emulator proof is tools/pk_proof_voice.py. Skips when
+voice) and leave the callee-saved registers as found. The emulator proof is tools/patchkit/pk_proof_voice.py. Skips when
 Selache is not built."""
 
 import struct
-import sys
 
 import numpy as np
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
 from support.dsp_voice_rig import (  # noqa: E402
     OUT,
@@ -30,11 +28,11 @@ from support.dsp_voice_rig import (  # noqa: E402
     stops_at,
 )
 
-import pk_toolchains  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
-    reason="selache not built (tools/pk_toolchains.py selache)",
+    reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
 
 

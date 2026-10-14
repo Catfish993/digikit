@@ -1,6 +1,6 @@
 // The two halves of a two-worker coupled session, independent of the worker
 // API (browser module workers in dsp-worker.ts / cf-worker.ts, Node
-// worker_threads in tools/wasm_split.mjs):
+// worker_threads in tools/devtools/wasm_split.mjs):
 //
 //   ColdFire worker --digi_step--> DSPI2 frame --SharedArrayBuffer--> DSP worker
 //   (core instance 1)                                                 (core instance 2)
@@ -28,7 +28,7 @@ export interface DspSideOptions {
   statsEvery?: number;
 }
 
-/** Static fast-tier regions and cluster roots (tools/fast_regions.json), with optional run-time selection on top. */
+/** Static fast-tier regions and cluster roots (tools/emulator/fast_regions.json), with optional run-time selection on top. */
 export interface FastRegions {
   regions: number[];
   roots: number[];

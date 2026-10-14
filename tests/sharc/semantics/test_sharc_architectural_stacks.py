@@ -4,22 +4,20 @@ from __future__ import annotations
 
 import os
 import struct
-import sys
 from pathlib import Path
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-import sharc_diff as sd
-import sharc_harness
-import sharc_run as sr
-import sharc_trace as st
-import sharc_transpile_run as nr
-import sharcldr
-from sharc_core.state import _copy, _sync_pc_stack, _sync_status_stack
-from sharc_disasm import Instruction, get_type
+from tools.sharc_dev import sharc_diff as sd
+from tools.sharc_dev import sharc_harness
+from tools.sharc_dev import sharc_run as sr
+from tools.sharc_dev import sharc_trace as st
+from tools.sharc_dev import sharc_transpile_run as nr
+from tools.sharc_dev import sharcldr
+from tools.sharc_dev.sharc_core.state import _copy, _sync_pc_stack, _sync_status_stack
+from tools.sharc_dev.sharc_disasm import Instruction, get_type
 
 STACK = dict.fromkeys(
     (

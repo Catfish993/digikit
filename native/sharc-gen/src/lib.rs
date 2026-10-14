@@ -1,7 +1,7 @@
 //! The generated native SHARC+ core, apart from the engine so that editing
 //! the engine or the fast tier does not recompile it.
 //!
-//! `tools/sharc_transpile.py` and `tools/sharc_rsgen.py` write the code
+//! `tools/sharc_dev/sharc_transpile.py` and `tools/sharc_dev/sharc_rsgen.py` write the code
 //! under `out/` (the block part embeds firmware); build with
 //! `SHARC_GEN_DIR=<that directory>` to include it. Without it this crate
 //! holds only the runtime fallbacks.

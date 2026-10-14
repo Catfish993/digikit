@@ -1,4 +1,4 @@
-"""Tests for tools/live_audio.py, the ctypes wrapper around native/live.
+"""Tests for tools/emulator/live_audio.py, the ctypes wrapper around native/live.
 
 Skipped entirely if native/live hasn't been built (`cd native/live && cargo
 build --release`) -- these tests never build the crate themselves, matching
@@ -9,15 +9,13 @@ same convention as native/live's own ignored Rust tests.
 
 import os
 import struct
-import sys
 import wave
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT))
 
-from tools.live_audio import LiveAudio, LiveStats, _default_library_path  # noqa: E402
+from tools.emulator.live_audio import LiveAudio, LiveStats, _default_library_path  # noqa: E402
 
 LIBRARY_PATH = _default_library_path()
 
@@ -98,7 +96,7 @@ class TestOpenPlayStatsClose:
             assert after > before
 
     def test_play_wav_reports_missing_file(self, tmp_path):
-        from tools.live_audio import LiveAudioError
+        from tools.emulator.live_audio import LiveAudioError
 
         with LiveAudio() as audio, pytest.raises(LiveAudioError):
             audio.play(str(tmp_path / "does-not-exist.wav"))
@@ -120,7 +118,7 @@ class TestOpenPlayStatsClose:
     def test_operations_after_close_raise(self):
         audio = LiveAudio()
         audio.close()
-        from tools.live_audio import LiveAudioError
+        from tools.emulator.live_audio import LiveAudioError
 
         with pytest.raises(LiveAudioError):
             audio.stats()

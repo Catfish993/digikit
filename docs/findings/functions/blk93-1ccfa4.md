@@ -4,7 +4,7 @@
   (`15b` + `25c_rframe`) finish at `0x1cd136`. 180 instructions, exactly
   matching `sharcinv.py`'s boundary (`entry=0x1ccfa4 exit=0x1cd137
   n_insns=180`). **[V]** — independently re-derived by linearly
-  disassembling the exact byte range with `tools/sharc_disasm.py`'s
+  disassembling the exact byte range with `tools/sharc_dev/sharc_disasm.py`'s
   `disassemble()` (script in scratchpad, not `sharcflow.py`'s return list):
   it decodes cleanly, with no desync, from `0x1ccfa4` through the `9b_abs`
   at `0x1cd132` and its two delay-slot instructions, landing exactly on
@@ -12,7 +12,7 @@
   entry (confirmed separately as `blk93@0x1cd18b`'s second callee, see
   Callers below) — a real boundary, not a truncation artifact.
 - **Callers**: **two**, matching the inventory (`sharcinv.py`'s fresh run,
-  `tools/sharcinv.py out/sections/dt2-1.16/section_7_BLOB.bin`):
+  `tools/sharc_dev/sharcinv.py out/sections/dt2-1.16/section_7_BLOB.bin`):
   `blk93@0x1c642a` (the per-frame orchestrator named in the task) and
   `blk93@0x1cd18b` (a small 61-instruction, all-integer glue function, no
   float ops at all, itself called once from `blk93@0x1c6154`). Both call
@@ -55,7 +55,7 @@ counted from the linear disassembly: 42× `2a_short`, 22× `15b`, 17× `4a`,
 form present). This rules out any per-sample or per-iteration loop shape;
 whatever this computes, it computes once per call, unconditionally.
 
-**The first ~39 traced steps (`tools/sharc_trace.py --blob --start
+**The first ~39 traced steps (`tools/sharc_dev/sharc_trace.py --blob --start
 0x1ccfa4 --concrete-memory --assume-32bit-normal-words
 --follow-loaded-calls --json`, before it stops on an unsupported `2b`
 opcode — see "Tracer gap" below) show a textbook two-tap interpolated table
@@ -113,11 +113,11 @@ state.**
 
 ### Tracer gap: unsupported Type 2b at `0x1cd002`
 
-`tools/sharc_trace.py` stops at `0x1cd002` with `"unsupported form 2b"`.
+`tools/sharc_dev/sharc_trace.py` stops at `0x1cd002` with `"unsupported form 2b"`.
 This is a **new gap**, distinct from the two the task brief names
 (multifunction `0x1e`/`0x1f`, float ALU `0xd9`/`0xda`). Decoding the raw
 compute field by hand (`compute[22:16]=0x2b, compute[15:0]=0x186` ->
-23-bit field `0x2B0186`) against `tools/sharcspec/compute_table.json`'s
+23-bit field `0x2B0186`) against `tools/sharc_dev/sharcspec/compute_table.json`'s
 `single_function_selector` layout (`mf[22], cu[21:20], opcode[19:12],
 rn[11:8], rx[7:4], ry[3:0]`): `mf=0, cu=0b10` (**Shifter unit**, 32-bit
 fixed format), `opcode=0xB0`, `rn=1, rx=8, ry=6`. **`0xB0` does not appear
@@ -220,7 +220,7 @@ instructions carrying a full 32-bit immediate into an `I`-register):
 | `0x2c2018` | Table 2 base, 1024-entry gather (`I4`, `0x1cd027`) | no — RAM |
 | `0x2c0008` | fourth address literal, `0x1cd002` region | no — RAM |
 
-Checked with `tools/sharcldr.py out/sections/dt2-1.16/section_7_BLOB.bin
+Checked with `tools/sharc_dev/sharcldr.py out/sections/dt2-1.16/section_7_BLOB.bin
 --addr <addr> --addr-space byte`: all five report *"not covered by any
 loaded block"* — every buffer this function touches is runtime RAM, not
 loader-initialised ROM. **[V]**
@@ -316,7 +316,7 @@ different live state.
 
 - Bounds, instruction census and the Type 8a call scan were all produced by
   linearly disassembling the function's exact byte range with
-  `tools/sharc_disasm.py`'s `disassemble()` (via `sharcldr.LoadedMemory` +
+  `tools/sharc_dev/sharc_disasm.py`'s `disassemble()` (via `sharcldr.LoadedMemory` +
   `sw_to_byte` for the loader-aware byte lookup) — a script in the session
   scratchpad, not saved to the repo. It decoded the whole 180-instruction
   span, both caller regions, and the `0x1c1284` helper's ~30-instruction
@@ -329,7 +329,7 @@ different live state.
   48-bit frame, byte-swapped per 16-bit-little-endian-word rules), which
   found exactly 2 hits image-wide, matching both known callers exactly (no
   false positives).
-- `tools/sharc_trace.py --blob --start 0x1ccfa4 --concrete-memory
+- `tools/sharc_dev/sharc_trace.py --blob --start 0x1ccfa4 --concrete-memory
   --assume-32bit-normal-words --follow-loaded-calls --json` ran 39 steps
   before stopping on the unsupported `2b` form; its operation-naming
   (`float-multiply`, `float-max`, `trunc`, etc.) is the source for every
@@ -343,8 +343,8 @@ different live state.
 ## Open
 
 - **The `0x2b`/opcode-`0xB0` Shifter instruction at `0x1cd002`** is a real
-  gap in both `tools/sharc_trace.py` (form `2b` entirely unsupported) and
-  `tools/sharcspec/compute_table.json` (`shiftop_shiftimm` has no row for
+  gap in both `tools/sharc_dev/sharc_trace.py` (form `2b` entirely unsupported) and
+  `tools/sharc_dev/sharcspec/compute_table.json` (`shiftop_shiftimm` has no row for
   `0xB0`). Resolving it would let the tracer run substantially further
   into this function.
 - **What the ~6-block write sequence (`0x1cd0cd`-`0x1cd117`) actually
@@ -356,7 +356,7 @@ different live state.
   smoothing state" reading.
 - **The `0x2c0000`-`0x2c3000` RAM region** (5 literal addresses touched
   here) is not one of the task's named tables and was not matched to any
-  other documented buffer. Worth a `tools/refscan.py`-style search for
+  other documented buffer. Worth a `tools/coldfire/refscan.py`-style search for
   other static references into this range, or a runtime check of what
   populates it.
 - **`0x1c1284`** (the ln(10)-using helper) was disassembled but not traced

@@ -5,11 +5,11 @@ import sys
 
 from support.paths import REPO_ROOT
 
-TOOL = REPO_ROOT / "tools" / "native_target.py"
+TOOL = REPO_ROOT / "tools" / "emulator" / "native_target.py"
 _spec = importlib.util.spec_from_file_location("native_target", TOOL)
 assert _spec and _spec.loader
 nt = importlib.util.module_from_spec(_spec)
-sys.modules["native_target"] = nt
+sys.modules["tools.emulator.native_target"] = nt
 _spec.loader.exec_module(nt)
 
 

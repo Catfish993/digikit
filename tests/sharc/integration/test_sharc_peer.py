@@ -1,4 +1,4 @@
-"""emu/sharc_peer.py: the client half of the tools/sharc_proc.py protocol.
+"""emu/sharc_peer.py: the client half of the tools/sharc_dev/sharc_proc.py protocol.
 
 Most tests here launch the real server as a subprocess -- fast (process
 startup only, no firmware) since `--backend stub` needs nothing but the
@@ -22,7 +22,6 @@ from unittest.mock import patch
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT))
 
 from emu.sharc_peer import (  # noqa: E402
     SharcServerDied,

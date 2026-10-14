@@ -201,7 +201,7 @@ fn claim_slots(container: &[u8]) -> [usize; 16] {
 
 /// One input file: every reference, in the table and in the copies elsewhere
 /// in the container, becomes `reference`; the tracks keep their slots. This
-/// is the card the one-sample tools (`tools/dt2_sample_check.py`, `--dt2-card`)
+/// is the card the one-sample tools (`tools/emulator/dt2_sample_check.py`, `--dt2-card`)
 /// were pinned on, so it stays byte-identical.
 fn point_all_refs_at(
     mut container: Vec<u8>,

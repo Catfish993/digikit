@@ -1,12 +1,12 @@
 //! Q31 (1.31 fixed-point) <-> `f32` conversion.
 //!
-//! This is the same format `tools/sharc_dac.py`'s `q31_to_float`/
+//! This is the same format `tools/sharc_dev/sharc_dac.py`'s `q31_to_float`/
 //! `float_to_q31` define for ring A: a signed 32-bit integer, full scale
 //! `+-1.0`, `value = raw_i32 / 2**31`. The SHARC frame source converts Q31
 //! -> f32 here, in the producer thread, never in the real-time callback
 //! (`src/ring.rs` module docs).
 
-/// Full-scale divisor, `2**31` (`tools/sharc_dac.py` `Q31_FULL_SCALE`).
+/// Full-scale divisor, `2**31` (`tools/sharc_dev/sharc_dac.py` `Q31_FULL_SCALE`).
 pub const Q31_FULL_SCALE: f64 = 2_147_483_648.0; // 2**31
 
 /// One raw Q31 word to its `f32` value in `[-1.0, 1.0)`.
@@ -15,7 +15,7 @@ pub fn q31_to_f32(raw: i32) -> f32 {
 }
 
 /// The inverse: a float, clipped (not wrapped) to the representable Q31
-/// range, matching `tools/sharc_dac.py`'s `float_to_q31` (used by tests and
+/// range, matching `tools/sharc_dev/sharc_dac.py`'s `float_to_q31` (used by tests and
 /// by the test-tone source, which synthesizes in Q31 to exercise the same
 /// path a real SHARC frame source would).
 pub fn f32_to_q31(value: f32) -> i32 {
@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn known_values_match_sharc_dac_examples() {
-        // tools/sharc_dac.py's isolated-call test: L[k] = 0.1 + 0.01*k.
+        // tools/sharc_dev/sharc_dac.py's isolated-call test: L[k] = 0.1 + 0.01*k.
         let value = 0.1f32;
         let raw = f32_to_q31(value);
         let back = q31_to_f32(raw);

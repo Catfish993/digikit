@@ -11,11 +11,11 @@ import threading
 import pytest
 from support.paths import REPO_ROOT
 
-TOOL = str(REPO_ROOT / "tools" / "benchlock.py")
+TOOL = str(REPO_ROOT / "tools" / "devtools" / "benchlock.py")
 _spec = importlib.util.spec_from_file_location("benchlock", TOOL)
 assert _spec and _spec.loader
 benchlock = importlib.util.module_from_spec(_spec)
-sys.modules["benchlock"] = benchlock
+sys.modules["tools.devtools.benchlock"] = benchlock
 _spec.loader.exec_module(benchlock)
 
 

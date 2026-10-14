@@ -1,21 +1,18 @@
-"""Synthetic tests for tools/sharcwriters.py -- no firmware required for the
+"""Synthetic tests for tools/sharc_dev/sharcwriters.py -- no firmware required for the
 pure logic (census form rules, width tables, address classifier). A couple
 of integration tests exercise the real DT2 1.16 SHARC image and skip when
 it is not present (out/sections/... is never committed, see CLAUDE.md)."""
 
-import os
 import pathlib
-import sys
 import unittest
 from importlib import import_module
 from unittest.mock import patch
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 
-W = import_module("sharcwriters")
-Instruction = import_module("sharc_disasm").Instruction
-trace_mod = import_module("sharc_trace")
+W = import_module("tools.sharc_dev.sharcwriters")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+trace_mod = import_module("tools.sharc_dev.sharc_trace")
 
 BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 
@@ -430,8 +427,8 @@ class IntegrationTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        sharcfn = import_module("sharcfn")
-        sharcinv = import_module("sharcinv")
+        sharcfn = import_module("tools.sharc_dev.sharcfn")
+        sharcinv = import_module("tools.sharc_dev.sharcinv")
 
         cls.target = 0x254D9C
         cls.ctx = sharcfn.load_context(str(BLOB), (93,), 8)
@@ -509,7 +506,7 @@ class CircularModifyEndToEndTest(unittest.TestCase):
     """No firmware required: runs the two real instructions -- a circular
     Type19a_scaled MODIFY of I7 seeded exactly as seed_sets() seeds it (a
     bare entry symbol, B7/L7 not concrete), then a Type16a store through
-    the modified I7 -- via tools/sharc_trace.py's own single-instruction
+    the modified I7 -- via tools/sharc_dev/sharc_trace.py's own single-instruction
     executor, and checks the resulting store event classifies as
     EXCLUDED-STACK, over the CIRC_WRAP_SLACK-widened range. This is the
     out/sharcwriters/stack-invariant.md fix end to end: before it, the

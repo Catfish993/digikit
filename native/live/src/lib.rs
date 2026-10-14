@@ -5,7 +5,7 @@
 //! - `ring`: a lock-free SPSC ring buffer of stereo `f32` samples -- the
 //!   only thing the real-time cpal callback (`audio`) touches.
 //! - `q31`: Q31 (1.31 fixed-point, the SHARC ring-A/DAC format --
-//!   `tools/sharc_dac.py`) <-> `f32` conversion.
+//!   `tools/sharc_dev/sharc_dac.py`) <-> `f32` conversion.
 //! - `repeater`: the bounded FIFO of SPI2 TX frames, repeating the last
 //!   frame with its one-shot trig/release words cleared when it runs dry
 //!   (`scratchpad/sharc-trig-arm.md`).
@@ -17,7 +17,7 @@
 //! - `player`: `LivePlayer`, tying the above together.
 //! - `sharc_source`: the native SHARC core as a frame source (a capture's
 //!   frames rendered live); `sharc_lib` loads the core's shared library.
-//! - `abi`: the C ABI `tools/live_audio.py` calls over ctypes.
+//! - `abi`: the C ABI `tools/emulator/live_audio.py` calls over ctypes.
 
 pub mod abi;
 pub mod audio;

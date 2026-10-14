@@ -1,4 +1,4 @@
-//! The SHARC+ data memory as tools/sharc_core sees it: the loader image
+//! The SHARC+ data memory as tools/sharc_dev/sharc_core sees it: the loader image
 //! (`sharcldr.LoadedMemory`, immutable, a byte present or not) under a
 //! write overlay (`State.overlay`, the bytes a run wrote). Byte addresses
 //! are the loader's canonical 32-bit addresses; the alias rule that maps

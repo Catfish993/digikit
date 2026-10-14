@@ -1,12 +1,12 @@
 # pyright: reportMissingImports=false
-"""tools/sharcdb.py: pure helper functions on synthetic instructions, a full
+"""tools/sharc_dev/sharcdb.py: pure helper functions on synthetic instructions, a full
 build over a hand-built boot stream (tests/sharc/analysis/test_sharcfn.py's
 DossierIntegrationTest style), and the acceptance facts from the build task
 against the real firmware databases (skipped when the firmware is absent;
 marked slow since a full-image build takes real time).
 
 No real firmware is committed; synthetic instructions are built directly
-from tools/sharc_visa_tables.py the same way tests/sharc/analysis/test_sharcflow.py,
+from tools/sharc_dev/sharc_visa_tables.py the same way tests/sharc/analysis/test_sharcflow.py,
 tests/sharc/analysis/test_sharcinv.py and tests/sharc/analysis/test_sharcfn.py do.
 """
 
@@ -14,23 +14,18 @@ import collections
 import os
 import pathlib
 import sqlite3
-import sys
 import unittest
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(
-    0,
-    os.path.join(str(REPO_ROOT), "tools"),
-)
 
-import sharc  # noqa: E402
-import sharc_disasm  # noqa: E402
-import sharcdb  # noqa: E402
-import sharcfn  # noqa: E402
-import sharcinv  # noqa: E402
-import sharcldr  # noqa: E402
+from tools.sharc_dev import sharc  # noqa: E402
+from tools.sharc_dev import sharc_disasm  # noqa: E402
+from tools.sharc_dev import sharcdb  # noqa: E402
+from tools.sharc_dev import sharcfn  # noqa: E402
+from tools.sharc_dev import sharcinv  # noqa: E402
+from tools.sharc_dev import sharcldr  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_rel,
     cjump,
@@ -44,7 +39,7 @@ from support.sharc_encode import (  # noqa: E402
     words,
 )
 from support.sharc_encode import block as boot_block  # noqa: E402
-from sharc_trace import UREG_CODES  # noqa: E402
+from tools.sharc_dev.sharc_trace import UREG_CODES  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 DT2_116_SHA256 = "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2"
@@ -171,7 +166,7 @@ class ExtractMemAccessTest(unittest.TestCase):
 
     def test_indirect_15a_folds_the_dag2_bank_into_the_i_register(self):
         # g=1 selects PM/DAG2 (I8-I15), the same +8 fold
-        # tools/sharcfn.py's render_mem_direct() applies for display, so a
+        # tools/sharc_dev/sharcfn.py's render_mem_direct() applies for display, so a
         # Type15a mem_access row names the register the mnemonic actually
         # uses (e.g. i=4,g=1 -> I12, not I4).
         insn = insn_at(field_insn("15a", addr=8, ureg=0, g=1, d=0, i=4, l=0))
@@ -291,7 +286,7 @@ class ClassifyLiteralRangeTest(unittest.TestCase):
 class SyntheticBuildTest(unittest.TestCase):
     """Build a tiny single-block boot stream and run the whole build_database()
     pipeline over it, the way tests/sharc/analysis/test_sharcfn.py's DossierIntegrationTest
-    exercises tools/sharcfn.py's dossier pipeline."""
+    exercises tools/sharc_dev/sharcfn.py's dossier pipeline."""
 
     def _stream(self, base_sw):
         target = sharcldr.sw_to_byte(base_sw)
@@ -391,9 +386,9 @@ class SyntheticDatarefResolvedOffsetTest(unittest.TestCase):
     accesses the CURRENT (unmodified) I and only writes I+offset back
     afterwards (post-modify). So a same-block "I2 = <lit>" literal load
     followed by a u=1 Type4a access must resolve to the literal itself, not
-    literal+offset -- the bug this test's build found (tools/sharcdb.py's
+    literal+offset -- the bug this test's build found (tools/sharc_dev/sharcdb.py's
     IMMOFF resolved_offset arm ignored `u` and always added the offset,
-    unlike tools/sharc_trace.py's own "4a"/"4b" handlers and the `ptr`
+    unlike tools/sharc_dev/sharc_trace.py's own "4a"/"4b" handlers and the `ptr`
     table's _ptr_mem_form(), which already drew this distinction)."""
 
     def _stream(self, base_sw, u, i2_literal=0x3000, off=8):
@@ -619,7 +614,7 @@ class SyntheticDoLoopSuccTest(unittest.TestCase):
 class RegisterEffectsTest(unittest.TestCase):
     """register_effects(): def/use extraction per typed decode field, one
     case per form family the build task called out. Field dicts are hand-
-    built (tools/sharc_trace.py's State.uregs style), not decoded from
+    built (tools/sharc_dev/sharc_trace.py's State.uregs style), not decoded from
     bytes -- these are pure-function checks like ExtractLiteralTest above."""
 
     def test_alu_compute_binary_defines_rn_uses_rx_and_ry(self):
@@ -678,7 +673,7 @@ class RegisterEffectsTest(unittest.TestCase):
     def test_multifn_dual_addsub_defines_three_uses_four(self):
         # top3=6 (MULTIFN, dual, fixed int): rm=12,ra=8,rs=4,rxm=0,rym=4? --
         # built from the exact bit math in _compute_regdef_reguse's dual
-        # branch, mirroring tools/sharcfn.py's decode_multifn.
+        # branch, mirroring tools/sharc_dev/sharcfn.py's decode_multifn.
         field23 = (
             (6 << 20) | (0xB << 16) | (0xC << 12) | (0xA << 8)
             | (0x2 << 6) | (0x1 << 4) | (0x3 << 2) | 0x0
@@ -711,7 +706,7 @@ class RegisterEffectsTest(unittest.TestCase):
 
     def test_3c_load_defines_dreg_from_d_field_not_mnemonic(self):
         # The exact shape of the task's Type3c bug: d=0 is a LOAD (R6
-        # defined), even though tools/sharcfn.py's render_instruction prints
+        # defined), even though tools/sharc_dev/sharcfn.py's render_instruction prints
         # every Type3c as a store.
         defs, uses, _unknown = sharcdb.register_effects("3c", {"dmi": 4, "dmm": 5, "d": 0, "dreg": 6})
         self.assertEqual(defs, [("R6", "mem_load")])
@@ -1046,7 +1041,7 @@ class CrossImageMatchTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists() and DN2_111_BLOB.exists(),
                       "DT2 1.16 and DN2 1.11 SHARC blobs are not both available")
 class SharcApiGoldenFactsTest(unittest.TestCase):
-    """The tools/sharc.py analyze-pass golden facts, through the API rather
+    """The tools/sharc_dev/sharc.py analyze-pass golden facts, through the API rather
     than raw SQL: reachability from an RTOS root, a natural loop, a
     generically-detected code-pointer array, last_def and a cross-image
     func_hash match."""
@@ -1092,7 +1087,7 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
         self.assertEqual(rows[0][0], 15)
 
     def test_ivt_slot15_is_seci_at_1c0b7b(self):
-        # tools/sharcdb.py's DB_VERSION v7: the L1 hardware IVT at IVT_SW,
+        # tools/sharc_dev/sharcdb.py's DB_VERSION v7: the L1 hardware IVT at IVT_SW,
         # decoded generically from the 32x24-byte slot table -- slot 15
         # (SECI, sharc-plus-prm Table 4-46) targets 0x1c0b7b on DT2 1.16,
         # byte-exact against the raw image (docs/findings).
@@ -1138,7 +1133,7 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
 @pytest.mark.slow
 @unittest.skipUnless(DT2_116_GHIDRA_DUMP.exists(), "DT2 1.16 ColdFire Ghidra dump is not available")
 class ColdfireImportTest(unittest.TestCase):
-    """The task's ColdFire golden facts, through tools/sharc.py's own API
+    """The task's ColdFire golden facts, through tools/sharc_dev/sharc.py's own API
     against a real import-ghidra build: vector-191 calls the DSPI2 frame
     builder, that builder has exactly two callers, the machine-type-copy
     callers are found, the machine dispatch is inside its real (small)

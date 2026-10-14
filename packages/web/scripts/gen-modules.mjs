@@ -1,7 +1,7 @@
 // Build step of the patch gallery: writes public/modules/index.json (what the cards show) and
 // public/modules/bundle.json (what patchkit.wasm reads: ports + modules as texts) from the COMMITTED
 // devices/ports/ and modules/. Never reads out/modules (generated oracles hold firmware words).
-// The bundle equals `tools/patchkit.py bundle` (the node test compares them).
+// The bundle equals `tools/patchkit/patchkit.py bundle` (the node test compares them).
 //
 //   node scripts/gen-modules.mjs [--out DIR]
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';

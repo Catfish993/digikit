@@ -21,7 +21,6 @@ import os
 import struct
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dt2.container import sections
 from dt2.elz import depack_section

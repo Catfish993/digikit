@@ -35,9 +35,9 @@ test('index lists the committed modules with gallery metadata', () => {
   assert.ok(JSON.stringify(bundle).length < 2 * 1024 * 1024);
 });
 
-test('bundle equals tools/patchkit.py bundle', { skip: !existsSync(join(root, '.venv')) }, () => {
+test('bundle equals tools/patchkit/patchkit.py bundle', { skip: !existsSync(join(root, '.venv')) }, () => {
   const out = join(mkdtempSync(join(tmpdir(), 'gal-')), 'bundle.json');
-  py('tools/patchkit.py', 'bundle', '-o', out);
+  py('tools/patchkit/patchkit.py', 'bundle', '-o', out);
   assert.deepEqual(buildModuleData(root).bundle, JSON.parse(readFileSync(out, 'utf8')));
 });
 
@@ -79,7 +79,7 @@ test('worker core: check and apply equal the command line (fx/master-gain)', { s
     assert.ok(checked.port?.startsWith(name));
     assert.equal(checked.modules.find((m) => m.id === 'fx/master-gain').ok, true);
     const out = join(work, `${name}.syx`);
-    py('tools/patchkit.py', 'patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out);
+    py('tools/patchkit/patchkit.py', 'patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out);
     const r = kit.apply(fw, ['fx/master-gain']);
     assert.ok(Buffer.from(r.syx).equals(readFileSync(out)), `${name}: output differs from the CLI`);
     assert.equal(r.plan.record.modules[0].split('@')[0], 'fx/master-gain');

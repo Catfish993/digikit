@@ -1,7 +1,7 @@
 # 22. patchkit: fx/master-drive on both devices
 
 Plan: `docs/plans/patchkit.md` (Phase 4.1). Module: `modules/fx/master-drive` (README there). Tools:
-`tools/pk_proof_drive.py`, `tests/test_master_drive.py`, `tests/test_master_drive_emu.py`. Marks as in AGENTS.md. One
+`tools/patchkit/pk_proof_drive.py`, `tests/test_master_drive.py`, `tests/test_master_drive_emu.py`. Marks as in AGENTS.md. One
 agent, emulator only, not checked by a second agent: **[D]**. Nothing was flashed.
 
 ## What the chain is **[D]**
@@ -35,7 +35,7 @@ treats `0x5000` and below as no drive and maps `0x5000 .. 0x7f00` onto 0 .. 1. T
 ## Numbers **[D]**
 
 DT2: one-sample card (220 Hz sine), TRIG 1 held; DN2: the TRIG 1 note of `scenarios/dn2-sendfx.json`. Same panel
-script for every run (`tools/pk_proof_drive.py`), PCM from `pcm.tap`, left channel active part. "step" is the
+script for every run (`tools/patchkit/pk_proof_drive.py`), PCM from `pcm.tap`, left channel active part. "step" is the
 largest |x[n] - x[n-1]|.
 
 | run | word | DT2 RMS | DT2 non-fundamental | DT2 step/peak | DN2 RMS | DN2 non-fund. | DN2 step/peak |
@@ -69,7 +69,7 @@ that is 0.3 % and 0.2 %. The routine has no division and no RECIPS.
 ## Toolchain facts found on the way **[D]**
 
 - **Selache ignores the `(SW)`, `(SE)`, `(SWSE)` suffix of a direct load** (`R0 = DM(sym) (SWSE);`) and emits the
-  normal-word 14d form without a diagnostic. `tools/pk_sharc.py` now assembles such a line as the normal-word load and
+  normal-word 14d form without a diagnostic. `tools/patchkit/pk_sharc.py` now assembles such a line as the normal-word load and
   rewrites its first parcel pair to the short-word form (opcode 0x1a, bits 38 and 36), so the re-decode sees
   `R0 = DM(0x256008) (swse)` exactly as the firmware's instruction. `tests/test_master_drive.py` asserts the text.
 - An uninitialised `.VAR x;` is bss with no size: eight of them all got one address. Module data uses initialised

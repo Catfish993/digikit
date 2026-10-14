@@ -1,9 +1,9 @@
 """Oracle tests for the Digitakt II effects, rendered headless on the one-sample
-card (a 1 kHz sine, 1 s; tools/dt2_sample_check.py): run with ``--device dt2``.
+card (a 1 kHz sine, 1 s; tools/emulator/dt2_sample_check.py): run with ``--device dt2``.
 
     uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow --sweep
 
-Scenarios are scenarios/dt2-trackfx.json and dt2-sendfx.json (tools/gen_dt2fx.py).
+Scenarios are scenarios/dt2-trackfx.json and dt2-sendfx.json (tools/emulator/gen_dt2fx.py).
 Each is checked twice: the read-back of the live Sound and Fx arrays (the intended
 parameter reached its value, nothing else changed) and a relationship of the
 audio against the dry reference or against its neighbours in the sweep (the
@@ -71,7 +71,7 @@ def every_scenario() -> tuple[str, ...]:
 
 
 def dry_of(render: Any, r: Any) -> Any:
-    from fxcheck import reference_for
+    from tools.emulator.fxcheck import reference_for
 
     return render(reference_for(r.name, r.hold))
 
@@ -131,7 +131,7 @@ def test_healthy(render: Any, name: str) -> None:
 # tf-*, sf-dry-hold for sf-mst-*, sf-<fx>-ref for the other sf-*), by read-back
 # prefix, with the UI value (high byte of the s16) the firmware reached. The
 # encoder accelerates by the time between events, so the counts of
-# tools/gen_dt2fx.py were measured to land on these values (UPS).
+# tools/emulator/gen_dt2fx.py were measured to land on these values (UPS).
 INTENT: dict[str, dict[str, int]] = {
     "sf-del-time-d50": {'fx[32]': 0},
     "sf-del-time-u20": {'fx[32]': 30},

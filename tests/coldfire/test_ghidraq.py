@@ -6,7 +6,7 @@ from typing import cast
 from support.paths import REPO_ROOT
 
 spec = importlib.util.spec_from_file_location(
-    "ghidraq", REPO_ROOT / "tools/ghidraq.py"
+    "ghidraq", REPO_ROOT / "tools/coldfire/ghidraq.py"
 )
 assert spec is not None and spec.loader is not None
 ghidraq = importlib.util.module_from_spec(spec)

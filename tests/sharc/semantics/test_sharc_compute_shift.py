@@ -1,4 +1,4 @@
-"""Tests for the shifter's bit-FIFO model (tools/sharc_core/compute_shift.py's
+"""Tests for the shifter's bit-FIFO model (tools/sharc_dev/sharc_core/compute_shift.py's
 ``_bff_words``/``_bff_extract``/``_bff_deposit`` and the ShiftImm opcode
 0x14/0x16 BITEXT handler built on them).
 
@@ -19,16 +19,13 @@ Kept separate from tests/sharc/trace/test_sharc_trace_flags.py and tests/sharc/t
 edits do not collide with other agents' concurrent edits to those files.
 """
 
-import os
-import sys
 import unittest
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-compute_shift = import_module("sharc_core.compute_shift")
+T = import_module("tools.sharc_dev.sharc_trace")
+compute_shift = import_module("tools.sharc_dev.sharc_core.compute_shift")
 
 
 def shiftimm_fields(opcode, data8, rn, rx, dataex=0):
@@ -360,7 +357,7 @@ class BitextOpcodeTest(unittest.TestCase):
 # left bits" of the field FEXT would otherwise clear. Vectors below are the
 # ones the bug report recorded from dt2-1.16 sw 0x1c2607's block (function
 # 0x1c24e9), whose every fext-se there has pos=0, len=16 (confirmed via
-# tools/sharc.py against out/sharcdb/dt2-1.16.sqlite).
+# tools/sharc_dev/sharc.py against out/sharcdb/dt2-1.16.sqlite).
 # ---------------------------------------------------------------------------
 
 

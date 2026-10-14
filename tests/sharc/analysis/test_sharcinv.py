@@ -1,22 +1,18 @@
-"""tools/sharcinv.py: boundaries, feature vectors and labels on synthetic code.
+"""tools/sharc_dev/sharcinv.py: boundaries, feature vectors and labels on synthetic code.
 
 No real firmware is used (it is Elektron's copyright and is not committed);
-words are built directly from tools/sharc_visa_tables.py, the same way
+words are built directly from tools/sharc_dev/sharc_visa_tables.py, the same way
 tests/sharc/analysis/test_sharcflow.py builds calls and returns.
 """
 
-import os
 import struct
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import sharc_visa_tables as T  # noqa: E402
-import sharcflow  # noqa: E402
-import sharcinv  # noqa: E402
+from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
+from tools.sharc_dev import sharcflow  # noqa: E402
+from tools.sharc_dev import sharcinv  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_rel,
     cjump,
@@ -220,7 +216,7 @@ class SwBaseTest(unittest.TestCase):
 class LoopFeatureTest(unittest.TestCase):
     """loop_pow2_uniform and nested_loops -- the two new corroborating
     features derived (in finalize_vector) from Type12a's reladdr, the same
-    end_sw formula tools/sharc_trace.py uses at runtime, computed here
+    end_sw formula tools/sharc_dev/sharc_trace.py uses at runtime, computed here
     statically from the instruction alone."""
 
     def test_pow2_uniform_true_when_every_literal_count_is_a_power_of_two(self):

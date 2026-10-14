@@ -1,4 +1,4 @@
-//! System forms and system-register moves, as `tools/sharc_core` executes
+//! System forms and system-register moves, as `tools/sharc_dev/sharc_core` executes
 //! them (`forms_system.py`, `forms_move._type_17a`, `_type_5a_move`).
 //!
 //! * 17b: `Ureg = <16-bit immediate>`, sign-extended (`_signed(data, 16)`),

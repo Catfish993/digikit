@@ -1,26 +1,23 @@
 """Tests for the ALU (cu=0x0) and shifter (cu=0x2) full-compute opcodes,
 the MR data move generalization, two MUL/ALU multifunction categories, the
 MUL dual add/subtract multifunction form, and the bit-FIFO ShiftImm
-opcodes added to tools/sharc_trace.py -- everything this worktree's slice
+opcodes added to tools/sharc_dev/sharc_trace.py -- everything this worktree's slice
 of the coverage gap covers except multiplier (cu=0x1) opcodes.
 
 Each case is worked from the public-manual definition cited in the
 implementation (out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4 and
-out/refs/sharc-plus-prm), independently of tools/sharc_trace.py's own
+out/refs/sharc-plus-prm), independently of tools/sharc_dev/sharc_trace.py's own
 arithmetic, so a broken implementation cannot pass by construction.
 """
 
-import os
 import struct
-import sys
 import unittest
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 
 
 def f32(value):

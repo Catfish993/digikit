@@ -1,5 +1,5 @@
 //! Decode instructions of a raw big-endian image, for the oracle comparison
-//! (tools/cfisa/oracle.py). Reads hex addresses from stdin, one per line, and
+//! (tools/coldfire/cfisa/oracle.py). Reads hex addresses from stdin, one per line, and
 //! prints one line per address:
 //!
 //!     <addr> <len> <form> <text>        decoded

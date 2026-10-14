@@ -1,6 +1,6 @@
 //! Generic primitives for framework modules (phase 3b.1): image-copy sections (P1), registries and entries (P2),
 //! expressions in manifests (P3, `expr.rs`), the `hook` op (P4), device filters on every table (P5) and
-//! multi-site anchors for `write` (P6, with `tools/port_resolve.py`). `apply.rs` drives them; this file holds the
+//! multi-site anchors for `write` (P6, with `tools/patchkit/port_resolve.py`). `apply.rs` drives them; this file holds the
 //! manifest checks, the byte-level builders and the plan records.
 
 use crate::error::*;

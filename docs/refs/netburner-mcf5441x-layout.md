@@ -162,7 +162,7 @@ not encoded anywhere from this reading.
 
 ## Ghidra labeling
 
-`tools/ghidra/McfLabels.java` now cites `docs/contracts/mcf5441x-reference-v1.json`
+`tools/coldfire/ghidra/McfLabels.java` now cites `docs/contracts/mcf5441x-reference-v1.json`
 and both `docs/refs/linux-m5441x-893e1178.md` and this file in its header. Its
 eDMA rows (`EDMA_BASE`, `EDMA_SERQ`, `EDMA_TCD_BASE`) are still sourced from
 `emu/edma.py` and MCF5441XRM.pdf primarily, with the `EDMA_ERQL`/`EDMA_CINT`

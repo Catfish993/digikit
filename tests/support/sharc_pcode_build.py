@@ -1,10 +1,8 @@
 """Field and branch encoders for the SHARC+ p-code tests."""
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-import sharc_visa_tables as T  # noqa: E402
+from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
 from support.sharc_encode import encode  # noqa: E402
 
 

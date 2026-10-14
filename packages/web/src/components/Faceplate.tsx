@@ -29,7 +29,7 @@ function BenchStatus() {
   return <output id="bench-status">bench mode: see window.__bench</output>;
 }
 
-/** The emulator page: the bench (dev only, tools/browser_bench.mjs) or the panel. */
+/** The emulator page: the bench (dev only, tools/devtools/browser_bench.mjs) or the panel. */
 export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
   return <Show when={!(devEnabled() && benchRequested())} fallback={<BenchStatus />}><Panel runtime={props.runtime} /></Show>;
 }

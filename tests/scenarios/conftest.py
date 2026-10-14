@@ -21,14 +21,10 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 HERE = pathlib.Path(__file__).resolve().parent
 
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import audiocheck as ac
-    import coupled
-    import digi_env
-    import fxcheck
-finally:
-    sys.path.pop(0)
+from tools.emulator import audiocheck as ac
+from tools.emulator import coupled
+from tools.emulator import digi_env
+from tools.emulator import fxcheck
 
 # Scenario file by name prefix and device. The standard peeks (the Sound array
 # of track 1 and the Fx array of the kit) come from fxcheck, per device.

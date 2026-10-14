@@ -1,7 +1,7 @@
 """The smoke tour over the matrix (slow; needs digi-emud, the firmware and fresh ready inputs).
 
     uv run python -m pytest tests/patchkit/smoke --slow            # all cells, goldens compared
-    uv run python tools/pk_harness.py run --update                 # (re)record the goldens
+    uv run python -m tools.patchkit.pk_harness run --update                 # (re)record the goldens
 
 Plus the teeth: the harness must see a fault, a stall and a DSP halt when they happen (`mem.cf.poke` breaks the guest
 on purpose).
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-import pk_harness as h
+from tools.patchkit import pk_harness as h
 
 pytestmark = pytest.mark.slow
 

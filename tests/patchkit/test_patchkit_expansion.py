@@ -5,18 +5,16 @@ Slow (a ColdFire boot to ready per device, a few seconds each). Skips without th
 import json
 import struct
 import subprocess
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import native_target  # noqa: E402
-import pk_cfcall  # noqa: E402
-import pk_link  # noqa: E402
-import pk_toolchains  # noqa: E402
+from tools.emulator import native_target  # noqa: E402
+from tools.patchkit import pk_cfcall  # noqa: E402
+from tools.patchkit import pk_link  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
 DT2_117 = ROOT / "Digitakt_II_OS1.17.syx"
 DN2_112 = ROOT / "Digitone_II_OS1.12.syx"

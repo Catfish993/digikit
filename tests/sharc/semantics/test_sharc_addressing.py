@@ -1,20 +1,18 @@
 """Synthetic product-map regressions; no firmware or running state."""
 
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_run as sr
-import sharc_trace as trace
-import sharcldr
-from sharc_core import addressing as a
-from sharc_core import memory as m
-from sharc_core.encoding import UREG_CODES
-from sharc_core.state import Unknown
-from sharc_core.values import Const, _aconv
-from sharc_disasm import Instruction
+from tools.sharc_dev import sharc_run as sr
+from tools.sharc_dev import sharc_trace as trace
+from tools.sharc_dev import sharcldr
+from tools.sharc_dev.sharc_core import addressing as a
+from tools.sharc_dev.sharc_core import memory as m
+from tools.sharc_dev.sharc_core.encoding import UREG_CODES
+from tools.sharc_dev.sharc_core.state import Unknown
+from tools.sharc_dev.sharc_core.values import Const, _aconv
+from tools.sharc_dev.sharc_disasm import Instruction
 
 
 @pytest.mark.parametrize(

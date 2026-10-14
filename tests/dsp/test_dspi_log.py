@@ -6,11 +6,11 @@ import sys
 
 from support.paths import REPO_ROOT
 
-TOOL = REPO_ROOT / "tools" / "dspi_log.py"
+TOOL = REPO_ROOT / "tools" / "emulator" / "dspi_log.py"
 _spec = importlib.util.spec_from_file_location("dspi_log", TOOL)
 assert _spec and _spec.loader
 dl = importlib.util.module_from_spec(_spec)
-sys.modules["dspi_log"] = dl
+sys.modules["tools.emulator.dspi_log"] = dl
 _spec.loader.exec_module(dl)
 
 FRAMES = [

@@ -6,7 +6,7 @@
 //! is a section as stored in the container, with its 8-byte header. The bootstrap
 //! calls the depacker as `pea dst; pea src; jsr` (0x800005f0); this does
 //! the same on the native ColdFire core (ENTRY is the depacker's address; 0x80000436
-//! in the 1.16 and 1.11 bootstraps, found by tools/aplib_check.py from its prologue), with the stream at 0x40400000 (where the
+//! in the 1.16 and 1.11 bootstraps, found by tools/firmware/aplib_check.py from its prologue), with the stream at 0x40400000 (where the
 //! bootstrap stages a packed section) and the output at 0x40000400 (where MAIN OS
 //! goes). Prints one JSON line: bytes written (the routine's return value), the
 //! SHA-256 of the output and the instruction count.

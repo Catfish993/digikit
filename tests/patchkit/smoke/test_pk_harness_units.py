@@ -1,18 +1,16 @@
-"""Unit tests of the harness logic that need no daemon (tools/pk_harness.py)."""
+"""Unit tests of the harness logic that need no daemon (tools/patchkit/pk_harness.py)."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from pathlib import Path
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-import pk_harness as h  # noqa: E402
+from tools.patchkit import pk_harness as h  # noqa: E402
 
 
 def test_button_and_encoder_names():
@@ -152,7 +150,7 @@ def test_default_jobs_is_bounded():
 
 
 def test_proofkit_child_command_strips_job_options():
-    import pk_proofkit as k
+    from tools.patchkit import pk_proofkit as k
 
     argv = ["--quick", "--only", "a,b", "--jobs=4", "--out", "x", "--result", "r"]
     assert k._strip_options(argv, ("--only", "--jobs", "--result")) == [
@@ -166,7 +164,7 @@ def test_proofkit_runs_parts_and_reports(tmp_path, capsys):
     """Parts in one process: a crash is a failed check, not the end of the run; the verdict and exit code follow."""
     import argparse
 
-    import pk_proofkit as k
+    from tools.patchkit import pk_proofkit as k
 
     def good(p):
         p.check("fine", True, 1)

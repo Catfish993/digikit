@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_replay.py.
+"""Tests for tools/sharc_dev/sharc_replay.py.
 
 Two groups, the same convention tests/sharc/integration/test_sharc_harness_*.py use: pure
 helpers (describe_frame/_mono/parse_args) need no firmware and always run;
@@ -18,10 +18,9 @@ import unittest
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_harness as h  # noqa: E402
-import sharc_replay as replay_mod  # noqa: E402
-import sharc_run as sr  # noqa: E402
+from tools.sharc_dev import sharc_harness as h  # noqa: E402
+from tools.sharc_dev import sharc_replay as replay_mod  # noqa: E402
+from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
@@ -275,7 +274,7 @@ class ReplayIdleCaptureTest(unittest.TestCase):
     (sharc_harness.write_dma_transfer()/drive_dma_completion(), lane G1,
     2026-09-26) instead of poking RX_BASE/command_word directly -- and pins
     today's own result as a milestone, the same convention
-    tools/sharc_harness.py's FRAME_MILESTONE uses for a single bare frame
+    tools/sharc_dev/sharc_harness.py's FRAME_MILESTONE uses for a single bare frame
     call.
 
     This capture's own header word is 1 (docs/findings/04's "a header

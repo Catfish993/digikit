@@ -1,11 +1,9 @@
 import re
-import sys
 
 from support.paths import TOOLS
 
-sys.path.insert(0, str(TOOLS))
 
-import dsp_frames  # noqa: E402
+from tools.emulator import dsp_frames  # noqa: E402
 
 
 def write(path, lines):

@@ -1,5 +1,5 @@
 //! Fuzz test of the generated lowering (`fast/lower/gen_forms.rs`, written by
-//! tools/sharc_lowergen.py from tools/sharc_core): random encodings of each
+//! tools/sharc_dev/sharc_lowergen.py from tools/sharc_dev/sharc_core): random encodings of each
 //! generated form run on the interpreter and on the fast tier, one step at a
 //! time, and the machine state must agree. The hand-written lowering is run
 //! on the same vectors to count how many each accepts.

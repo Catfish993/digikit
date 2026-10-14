@@ -10,7 +10,7 @@ from emu.hwref import (
     resolve_dma_channel,
     resolve_vector,
 )
-from tools import hwlookup
+from tools.coldfire import hwlookup
 
 
 class AddressLookupTest(unittest.TestCase):

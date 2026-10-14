@@ -1,23 +1,17 @@
-"""tools/sharc_visa_tables.py, tools/sharc_disasm.py and tools/sharccompare.py on words built from the table."""
+"""tools/sharc_dev/sharc_visa_tables.py, tools/sharc_dev/sharc_disasm.py and tools/sharc_dev/sharccompare.py on words built from the table."""
 
-import os
 import struct
-import sys
 import unittest
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(
-    0,
-    os.path.join(str(REPO_ROOT), "tools"),
-)
 
 from support.sharc_encode import block, encode  # noqa: E402
 
-import sharc_disasm  # noqa: E402
-import sharc_visa_tables as T  # noqa: E402
-import sharccompare  # noqa: E402
-import sharcldr  # noqa: E402
+from tools.sharc_dev import sharc_disasm  # noqa: E402
+from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402
+from tools.sharc_dev import sharccompare  # noqa: E402
+from tools.sharc_dev import sharcldr  # noqa: E402
 
 
 def undecodable_word():
@@ -202,7 +196,7 @@ class ConfidentDecodeTest(unittest.TestCase):
     decode_confident() (flat buffer) and decode_confident_loaded() (loader-
     backed memory) -- both used by tools/sharc_core.sequencer.decode_at(), so
     a single-PC decode makes the identical width/form choice a whole-image
-    walk (tools/sharcimm.py's decode_all(), tests/sharc/analysis/test_sharcimm.py's
+    walk (tools/sharc_dev/sharcimm.py's decode_all(), tests/sharc/analysis/test_sharcimm.py's
     WidthPreferenceTest) makes. See docs/findings/05-sharc-isa-and-decoding.md,
     "One decode path"."""
 

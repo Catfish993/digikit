@@ -7,15 +7,13 @@ jump needs both elements, p.4-54).  The DN2 delay-send bug: a SIMD `btst`
 left ASTATY stale, so `JUMP IF SZ` (an AND of both elements) was not taken.
 """
 
-import sys
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_trace as st
-from sharc_core.encoding import AZ_BIT, BTF_BIT, SZ_BIT
-from sharc_disasm import Instruction
-from sharcldr import LoadedMemory
+from tools.sharc_dev import sharc_trace as st
+from tools.sharc_dev.sharc_core.encoding import AZ_BIT, BTF_BIT, SZ_BIT
+from tools.sharc_dev.sharc_disasm import Instruction
+from tools.sharc_dev.sharcldr import LoadedMemory
 
 U = st.UREG_CODES
 SIMD = st.Const(1 << 21)

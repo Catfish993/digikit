@@ -1,4 +1,4 @@
-//! C ABI (ctypes-friendly): the surface `tools/live_audio.py` calls.
+//! C ABI (ctypes-friendly): the surface `tools/emulator/live_audio.py` calls.
 //!
 //! Every exported function takes and returns only plain types (pointers,
 //! integers, floats, a fixed-layout struct) so `ctypes` can call it with no
@@ -307,7 +307,7 @@ fn rendered_input_destination_cannot_follow_symlink() {
 
 /// Opens the default output device playing a SHARC capture live: the
 /// native core library at `lib_path` renders the live pack at `pack_path`
-/// (`tools/sharc_transpile_run.py live-pack`), one SHARC frame per 32
+/// (`tools/sharc_dev/sharc_transpile_run.py live-pack`), one SHARC frame per 32
 /// samples. After the capture's last frame the last frame is held (its
 /// trig/release words cleared) for `gap_frames` frames and the capture
 /// loops, or, with `hold` != 0, held for ever. The stream starts once the
@@ -359,7 +359,7 @@ pub unsafe extern "C" fn live_open_capture(
 
 /// Opens the native SHARC core on the emulated ColdFire's frames, live:
 /// the core library at `lib_path` starts from the state pack at
-/// `pack_path` (`tools/sharc_transpile_run.py state-pack`) and renders
+/// `pack_path` (`tools/sharc_dev/sharc_transpile_run.py state-pack`) and renders
 /// every frame `live_push_frame` queues (wire order), one SHARC frame per
 /// 32 samples, repeating the last frame with its one-shot words cleared
 /// when none is queued (`src/repeater.rs`). `card_sha256` (NULL: not

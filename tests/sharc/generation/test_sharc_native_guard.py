@@ -1,6 +1,6 @@
 """The native SHARC+ library's staleness guard: a library carries the hash
-of the tools/sharc_core sources and the generator version its code was
-generated from (sharc_native_info), and tools/sharc_transpile_run.py
+of the tools/sharc_dev/sharc_core sources and the generator version its code was
+generated from (sharc_native_info), and tools/sharc_dev/sharc_transpile_run.py
 refuses one that does not match this tree (native/live checks the core
 hash against its live pack: cargo test in native/live).
 
@@ -10,18 +10,15 @@ without it.
 """
 
 import os
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-import sharc_transpile as tp  # noqa: E402
-import sharc_transpile_run as run  # noqa: E402
+from tools.sharc_dev import sharc_transpile as tp  # noqa: E402
+from tools.sharc_dev import sharc_transpile_run as run  # noqa: E402
 
 LIB = os.environ.get("SHARC_NATIVE_GUARD_LIB", run.DEFAULT_LIB)
 
@@ -46,7 +43,7 @@ def test_a_library_from_another_core_is_refused_naming_the_command(monkeypatch):
         run.check_build_info(info, "some/lib.dylib")
     msg = str(e.value)
     assert "some/lib.dylib" in msg and "0" * 64 in msg and tp.core_hash() in msg
-    assert "tools/sharc_rsgen.py" in msg and "cargo build --release" in msg
+    assert "tools/sharc_dev/sharc_rsgen.py" in msg and "cargo build --release" in msg
 
 
 def test_a_library_from_another_generator_version_is_refused(monkeypatch):

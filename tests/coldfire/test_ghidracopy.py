@@ -1,14 +1,10 @@
-"""tools/ghidracopy.py path splitting (the copy itself needs Ghidra projects)."""
+"""tools/coldfire/ghidracopy.py path splitting (the copy itself needs Ghidra projects)."""
 
-import os
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import ghidracopy  # noqa: E402
+from tools.coldfire import ghidracopy  # noqa: E402
 
 
 class SplitPathTest(unittest.TestCase):

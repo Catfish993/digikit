@@ -1,4 +1,4 @@
-"""tools/cffacts.py and tools/cfmatch.py: the masked instruction tokens, the
+"""tools/coldfire/cffacts.py and tools/coldfire/cfmatch.py: the masked instruction tokens, the
 matcher stages on a synthetic pair of images, and (when the dumps are present)
 the match of Digitakt II 1.15C -> 1.16 against the Version Tracking export."""
 
@@ -6,18 +6,13 @@ from __future__ import annotations
 
 import collections
 import json
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import cffacts
-    import cfmatch
-finally:
-    sys.path.pop(0)
+from tools.coldfire import cffacts
+from tools.coldfire import cfmatch
 
 BASE = 0x40000400
 HI = 0x40320000

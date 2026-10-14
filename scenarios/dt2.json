@@ -2,7 +2,7 @@
   "scenarios": [
     {
       "name": "dt2-sample-trig",
-      "description": "DT2 1.16 with a one-sample card (test-sine-1khz.wav, 48 kHz mono, 1 s): the QA prelude (NO at 0), then Trig 1 down at +60M and up at +100M, 3 s. Needs the card's ready state (tools/ready.py dt2 --card-image) and `coupled-run --card-image`; tools/dt2_sample_check.py runs it and checks the spectrum. The PCM hash is of this firmware, card and cold DSP state.",
+      "description": "DT2 1.16 with a one-sample card (test-sine-1khz.wav, 48 kHz mono, 1 s): the QA prelude (NO at 0), then Trig 1 down at +60M and up at +100M, 3 s. Needs the card's ready state (tools/emulator/ready.py dt2 --card-image) and `coupled-run --card-image`; tools/emulator/dt2_sample_check.py runs it and checks the spectrum. The PCM hash is of this firmware, card and cold DSP state.",
       "seconds": 3.0,
       "exact_events": true,
       "events": [

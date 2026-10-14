@@ -3,18 +3,16 @@
 import hashlib
 import os
 import struct
-import sys
 import unittest
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
-L = import_module("sharcldr")
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+L = import_module("tools.sharc_dev.sharcldr")
 
-_floats = import_module("sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
 
 
 class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):
@@ -39,7 +37,7 @@ class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):
     # Synthetic addresses for the caller-side frame/struct/table, matching
     # the wavetable6 scratch fixture's layout.py: word offsets from I4 are
     # scaled by 4 for --assume-32bit-normal-words, exactly like Type4a's own
-    # modifier (tools/sharc_trace.py's "4a" handling).
+    # modifier (tools/sharc_dev/sharc_trace.py's "4a" handling).
     I6 = 0x90001000
     I7 = I6 - 8
     R4_I4 = 0x90002000
@@ -161,7 +159,7 @@ class TypeCacheCompareRealBlobTest(unittest.TestCase):
     (M14), not the freshly-read per-track field the first store wrote.
 
     Moved out of the now-removed tools/sharcemu.py's test suite (this test
-    never exercised sharcemu itself, only tools/sharc_trace.py).
+    never exercised sharcemu itself, only tools/sharc_dev/sharc_trace.py).
     """
 
     BLOB = os.path.join(

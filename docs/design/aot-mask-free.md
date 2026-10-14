@@ -55,7 +55,7 @@ grep; counts include the duplicated MODE1 and `_unknown` bodies):
 One generated function per region (1665 regions, 2657 blocks, 38378 block instructions in the
 current DN2 core; 122 MB of Rust in 41 `blocks_NN.rs` plus 16 `spec_NN.rs`).
 
-Region prologue (once per region call, `tools/sharc_rsgen.py` `region_text`):
+Region prologue (once per region call, `tools/sharc_dev/sharc_rsgen.py` `region_text`):
 1. one `AND` over the `.m` of every register any body reads, `!= u32::MAX` -> exit
    (`EXIT_BUDGET`); `s.pending.is_some()` -> exit;
 2. `Rf::default()` (a 128-entry `r` and 128-entry `o` array of `V`, `allow_unknown`, pc,
@@ -106,7 +106,7 @@ of region time), kernel instruction 0.5 ns, interpreted instruction 105 ns, fast
 timed exclusive A/B of 2026-10-09 has trig1-taps at 1.424-1.430). Refit at 1.43: others about 0.49
 s, so **AOT is about 0.94 s = about 4.0 ns/insn**.
 
-Two things from earlier region microbenchmarks (`tools/sharc_regionbench.py`, warm cache, captured
+Two things from earlier region microbenchmarks (`tools/devtools/sharc_regionbench.py`, warm cache, captured
 entry states) change how the 4.4 should be read:
 
 1. **Warm AOT is already 1.4-2.3 ns/insn.** Hot loops in the production-style core: `1C399A`
@@ -154,7 +154,7 @@ not present or the access is not plain, as now `None`), `_dm_write_c`. `is_c()` 
 `PARTIAL` today), register 22 gets a "frame read failed" exit instead of `rf_put(.., V::UNK)`
 (cold, 452 variants). The interpreter-facing core (`core_i`/`core_g`) and the
 `allow_unknown` fallback region (`r_1C253F`) keep `V`; they are a second translation mode of the
-same Python core, so semantics stay in `tools/sharc_core`.
+same Python core, so semantics stay in `tools/sharc_dev/sharc_core`.
 
 Why exact. Today `rf_set` writes `V { b: v.b, m: u32::MAX }` only when `v.m == u32::MAX` and
 otherwise traps before any state is committed; reads of the 123 registers are `m == MAX` by the
@@ -226,7 +226,7 @@ new core is worth 5-8% by earlier retrains, 0.92-0.96 ratio **[D]**).
 
 ### 3.1 Code to change
 
-- `tools/sharc_transpile.py` (5311 lines): a block-concrete translation mode next to the `V`
+- `tools/sharc_dev/sharc_transpile.py` (5311 lines): a block-concrete translation mode next to the `V`
   mode (`Translator.blk`): type map `VAL -> U32` for ordinary registers, `Spec`/`VI` reduced to
   `u32`/`i128` addresses, calls to `bndc::*`; the ordering analysis (`variant_order`, next to
   `_can_trap` and `variant_logs`), the per-variant register class report (extends
@@ -234,26 +234,26 @@ new core is worth 5-8% by earlier retrains, 0.92-0.96 ratio **[D]**).
 - `native/sharc-rt/src/rt/bnd.rs` (1693 lines): new `rt/bndc.rs` with concrete helpers; `Rf` gets
   a concrete file (`rf.c`) plus the `V` file for registers 118-121 (and 22 when unproven). Editing
   `sharc-rt` rebuilds the generated core: use the mini gen (3.2).
-- `tools/sharc_rsgen.py` `region_text` / `body_lines`: concrete prologue (no `.m` AND, no
+- `tools/sharc_dev/sharc_rsgen.py` `region_text` / `body_lines`: concrete prologue (no `.m` AND, no
   `V { m: MAX }`), per-variant "no trap" and "no undo" emission already has the hook
   (`traps = TR.variant_traps.get(path, True)`; extend it with the ordering result), one shared
   trap tail per region, `rf.o` copies only where the form needs them. Flag `--concrete`
   (default off until the gate passes) so old and new cores can be generated from the same tree and
   A/B'd. The `_unknown` fallback region keeps the V path.
-- No change to `tools/sharc_core` semantics: golden hashes (`tests/sharc/integration/test_sharc_golden.py`) must
+- No change to `tools/sharc_dev/sharc_core` semantics: golden hashes (`tests/sharc/integration/test_sharc_golden.py`) must
   not move.
 
 ### 3.2 Build cost and fast iteration
 
 A full DN2 `sharc-gen` build is about 12 min now (it was about 4-5 min before the FX-profile
 core doubled the source; DT2 has its own). Do not iterate there.
-- `tools/sharc_regionbench.py gen --tools-dir DIR --only <regions>`: a mini gen of the selected
+- `tools/devtools/sharc_regionbench.py gen --tools-dir DIR --only <regions>`: a mini gen of the selected
   regions (about 16 s for rsgen, about 1 min of cargo; transpile inference is cached by transpiler
   source hash, 5 s), `capture` for entry states (shared by all variants), `bench` and `compare A B
   --rounds 9` (+-0.7%). A variant built from a git worktree's `tools/` (`--tools-dir`) keeps the
   old and new generators side by side. The `region_bench` example does not compile at the moment
   (missing `flat_windows` in its `Env`; finding 18, plan log 2026-10-09): fixing that is step 0.
-- A reduced production gen for in-situ checks: `tools/sharc_rsgen.py --only` the top 12 functions
+- A reduced production gen for in-situ checks: `tools/sharc_dev/sharc_rsgen.py --only` the top 12 functions
   (about 65% of executed instructions: `1C3911`, `B826C8`, `1C37B4`, `1C35A7`, `1C54C7`,
   `B8258F`, `1C244d`, `1C8EF1`, `B8A912`, `1C0C76`, `1C1738`, `B8AC4C`) built with the old and the
   new generator, run through `coupled-run`. The rest runs in the fast tier and interpreter, which
@@ -364,9 +364,9 @@ plus either B/C or alternative 1 to reach <= 1.0.
 
 ## 6. Slices 0-1 results (2026-10-10) **[D]**
 
-Tooling added: `tools/aot_mcount.py` (machine code per SHARC site from a binary and its gen),
-`tools/aot_dyntrace.py` (lldb single-step of one region call: machine instructions executed, code
-touched), `tools/xctrace_bottleneck.py` (CPU Counters bottleneck split per thread, no root),
+Tooling added: `tools/sharc_dev/aot_mcount.py` (machine code per SHARC site from a binary and its gen),
+`tools/sharc_dev/aot_dyntrace.py` (lldb single-step of one region call: machine instructions executed, code
+touched), `tools/devtools/xctrace_bottleneck.py` (CPU Counters bottleneck split per thread, no root),
 `sharc_regionbench.py --features/FEATURES` (cargo features per variant). The upper-bound
 experiment is the patch `out/native/regionbench/assume-known.patch` (features `assume-known` and
 `assume-flags` in sharc-rt, sharc-native, coupled; `rf_get` returns `assert_unchecked(m == MAX)`).
@@ -556,7 +556,7 @@ kept (`gen-pre-s2-20261010`) and `rsgen --step-budget` restores the old budget f
 
 ### 7.1 What changed, per item
 
-All in the files that make the generated core: `tools/sharc_rsgen.py`, `tools/sharc_transpile.py` (both are in
+All in the files that make the generated core: `tools/sharc_dev/sharc_rsgen.py`, `tools/sharc_dev/sharc_transpile.py` (both are in
 `CORE_FINGERPRINT`: the DN2, DT2 and shared cores were regenerated, backups `gen-pre-s2-20261010`) and the runtime
 `native/sharc-rt/src/{rt.rs,rt/bnd.rs,addressing.rs}`.
 
@@ -602,9 +602,9 @@ All in the files that make the generated core: `tools/sharc_rsgen.py`, `tools/sh
    call ends with no progress and the interpreter runs up to the limit, which is architecturally exact. This is
    **not** block-entry-identical (7.4); `rsgen --step-budget` restores the old form.
 
-Tools added: `tools/aot_attrib.py` (machine-code bytes and executed bytes per source function and per kind of
+Tools added: `tools/sharc_dev/aot_attrib.py` (machine-code bytes and executed bytes per source function and per kind of
 generated statement, from `llvm-objdump -l` and an `aot_dyntrace.py --dump`; needs
-`REGIONBENCH_DEBUG=1 tools/sharc_regionbench.py` and the target's `region_bench.dSYM`), `tools/coupled_ab.py`
+`REGIONBENCH_DEBUG=1 tools/devtools/sharc_regionbench.py` and the target's `region_bench.dSYM`), `tools/devtools/coupled_ab.py`
 (alternating exclusive A/B of `coupled-run` binaries). `aot_dyntrace.py --dump` writes the function start for
 `aot_attrib`. Test: `tests/sharc/generation/test_sharc_rsgen_density.py`.
 
@@ -655,12 +655,12 @@ now decline at the limit. That is the only difference and it is by design (item 
   table test); sharc-native 66 passed, 2 failed (`tests_gen::gen_programs_match_the_interpreter`,
   `gen_control_programs_match_the_interpreter`: "simd_loop: the fast tier never ran"): they fail the same way on the
   parent commit with the old core, so they are not from this change **[O]**.
-- DT2: `tools/dt2_sample_check.py` clean tone (peak share 0.99995 at 1008 Hz); the 3 s `dt2-sample-trig` render
+- DT2: `tools/emulator/dt2_sample_check.py` clean tone (peak share 0.99995 at 1008 Hz); the 3 s `dt2-sample-trig` render
   with the card has the same WAV hash `4bab8330915f0929` in AOT, no-AOT and AOT + fast tier.
 
 ### 7.6 Timing
 
-`tools/coupled_ab.py`, exclusive benchlock, alternating pairs, DSP thread CPU per audio s, default config, DN2 1.11,
+`tools/devtools/coupled_ab.py`, exclusive benchlock, alternating pairs, DSP thread CPU per audio s, default config, DN2 1.11,
 machine load average 2 to 4, PCM equal to the pins in every run. Cell = median (IQR).
 
 | scenario | old core | slice 2' | paired ratio |
@@ -737,7 +737,7 @@ the coupled run has, so the loop-slot code runs there as in situ.
 ### 8.2 What changed, per item
 
 Files: `native/sharc-rt/src/{addressing,mem}.rs`, `native/sharc-rt/src/rt/{bnd,periph}.rs`,
-`native/sharc/src/lib.rs`, `tools/sharc_transpile.py` (in `CORE_FINGERPRINT`: DN2, DT2 and shared cores regenerated,
+`native/sharc/src/lib.rs`, `tools/sharc_dev/sharc_transpile.py` (in `CORE_FINGERPRINT`: DN2, DT2 and shared cores regenerated,
 backups `gen-pre-s3-20261010`), tools `aot_entry_iter.py` (new), `aot_attrib.py`, `aot_dyntrace.py`.
 
 1. **Float helpers.** `_float_binary_add/sub` and `_float_multiply` flush both operands (`ftz32`), compute in `f32`
@@ -772,7 +772,7 @@ backups `gen-pre-s3-20261010`), tools `aot_entry_iter.py` (new), `aot_attrib.py`
    because a region has entries only at its block starts: 7.5M of the 13.2M interpreted instructions of trig1-taps
    were one 238-instruction routine (0xB8A9C4..0xB8AAB7), run 31,500 times. `diag_step` now also records, in the
    `entries` profile map, the PC after the first instruction of an interpreter run that began at a block entry (only
-   with the blocks on); `tools/aot_entry_iter.py` runs the 12 profile scenarios of the fxprof recipe with the current
+   with the blocks on); `tools/sharc_dev/aot_entry_iter.py` runs the 12 profile scenarios of the fxprof recipe with the current
    core and prints the new entries. Making them block starts lets the run end after one instruction. The new starts
    can be gated the same way, so the search was repeated (6 rounds: 19, 7, 3, 3, 3, 2 new PCs; the last round found
    only PCs with counts under 200): 2657 to 2692 blocks, 38,378 to 39,154 block instructions (+2%), 41 to 42 files. Interpreted
@@ -830,7 +830,7 @@ new/old (same entry states, 9 rounds, `sharc_regionbench.py compare`): 1C399A 0.
 
 ### 8.6 Timing
 
-`tools/coupled_ab.py`, exclusive benchlock, alternating pairs, DSP thread CPU per audio s, default config, DN2 1.11,
+`tools/devtools/coupled_ab.py`, exclusive benchlock, alternating pairs, DSP thread CPU per audio s, default config, DN2 1.11,
 load average 3 to 4, PCM equal to the pin in every run. Cell = median (IQR); 6 pairs each.
 
 | scenario | slice 2' | slice 3 | paired ratio |
@@ -854,7 +854,7 @@ the E form (6 pairs), 0.862 with the entry search.
 ### 8.7 Open, next step
 
 **[O]** DT2 was regenerated with the new transpiler but not given the entry search (its profile inputs are the
-old ones; the gating exists there too, `tools/aot_entry_iter.py` is DN2 scenarios only). The search is
+old ones; the gating exists there too, `tools/sharc_dev/aot_entry_iter.py` is DN2 scenarios only). The search is
 profile-driven: a core generated from other scenarios needs its own rounds. The loop end (`stk_set_loops`, the undo
 entry, `loop_slots`) is the largest named item left in the in-situ regions (about 8%); the idle probes (1.86M
 interpreted instructions) and the 0x1C06FE delay-slot declines (0.78M) are the largest interpreter items. The

@@ -146,7 +146,7 @@ impl DspPatch {
                     });
                 }
                 // APPEND: a new boot-stream block. Applied to a running engine it is
-                // the same write as BYTES; `tools/dsp_patch.py syx` makes the block.
+                // the same write as BYTES; `tools/patchkit/dsp_patch.py syx` makes the block.
                 "BYTES" | "APPEND" if t.len() == 3 => {
                     patch.ops.push(PatchOp::Bytes {
                         addr: hex_u32(t[1]).map_err(&err)?,

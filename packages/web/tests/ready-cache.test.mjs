@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { ReadyCache, memoryStore, sha256Hex, CORE_VERSION } from '../src/ready-cache.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const ready = path.resolve(root, process.env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/ready_inputs.json'), 'utf8')).ready_dir);
+const ready = path.resolve(root, process.env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
 const read = (n) => new Uint8Array(fs.readFileSync(path.join(ready, n)));
 const state = fs.existsSync(path.join(ready, 'digi-audio-m5.snap'))
   ? { image: read('digi-audio-dn2-image.bin'), dsp: read('digi-audio-m5.snap.dsp'), snapshot: read('digi-audio-m5.snap') }

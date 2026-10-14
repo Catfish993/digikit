@@ -1,6 +1,6 @@
 """The SHARC core's own tests, run under PyPy 3.11.
 
-tools/sharc_core and tools/sharc_run.py are written to also run under PyPy
+tools/sharc_dev/sharc_core and tools/sharc_dev/sharc_run.py are written to also run under PyPy
 (see [tool.mypy]'s python_version = "3.11" in pyproject.toml, checked by
 tests/devtools/test_types.py), since a symbolic trace or a concrete run is pure
 Python arithmetic that benefits from PyPy's JIT. This test proves that
@@ -9,7 +9,7 @@ in a subprocess, instead of just type-checking against 3.11.
 
 The file list below is every required test file that exercises sharc_core/
 sharc_trace/sharc_run without a CPython-only dependency (unicorn, capstone,
-pypcode); tools/sharc.py (imported by test_sharc_contract.py) needs
+pypcode); tools/sharc_dev/sharc.py (imported by test_sharc_contract.py) needs
 networkx, a pure-Python package that runs fine under PyPy, so it is
 installed alongside pytest.
 """

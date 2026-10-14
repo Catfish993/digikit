@@ -10,11 +10,11 @@ DSP (2026-09-28). The ColdFire side of the transfer is in
 
 Marks: **[V]** checked here and by a second agent against the image bytes
 (a separate verification lane, 2026-09-28, re-read each address with
-`tools/sharc.py`, the raw loader block and the manuals); **[D]** executed or
+`tools/sharc_dev/sharc.py`, the raw loader block and the manuals); **[D]** executed or
 read once; **[O]** open; **[C]** corrects an earlier claim.
 
-Tools that reproduce this: `tools/sharc_lp0.py` (wire decode and LP0
-feed), `tools/sharc_replay.py` (`--flexbus-log`, `--fields`,
+Tools that reproduce this: `tools/sharc_dev/sharc_lp0.py` (wire decode and LP0
+feed), `tools/sharc_dev/sharc_replay.py` (`--flexbus-log`, `--fields`,
 `--armed-voice-wav`, `--record-voice`, `--voices-wav`),
 `tools/sharc_capture_run.py` (`--press`, `--trig-hold`,
 `--settle-smoother`, `--poke-slot`), `tests/test_sharc_lp0.py`.
@@ -210,7 +210,7 @@ The copy gate: sharcdb's `ptr` table has one store to `0x2567dc`
 `0x1c2c88`.
 
 **The copy gate [V].** The only SHARC store to DM `0x2567dc` is the clear
-at sw `0x1c2c8b`. `tools/sharc_harness.py`'s `drive_dma_completion()` used
+at sw `0x1c2c8b`. `tools/sharc_dev/sharc_harness.py`'s `drive_dma_completion()` used
 to re-arm it every frame (a stand-in from lane G1), which made render_frame
 copy the landing ring at the start of every frame; the flag table and the
 trig test then read the same frame and step 3 was dead code. It now
@@ -236,7 +236,7 @@ Corrections to finding 06 (Lane J1, lanes K1/N2):
 
 ## Core fixes that the path needed
 
-Each was a real decode or semantics error in `tools/sharc_core/`, found on
+Each was a real decode or semantics error in `tools/sharc_dev/sharc_core/`, found on
 this path.
 
 - **Type 4b has no (lw) form [V][C].** PRM p.13-32 (Type 4b BH/BHSE encode
@@ -290,7 +290,7 @@ this path.
 - Golden hashes: only `trace_voice` changed (`4054c194...` ->
   `262d1e39...`), back to its value before `49cdbc5`. `FRAME_MILESTONE`
   (synthetic frame) 96,044 -> 213,247 instructions, same halt.
-  `tools/sharc_widthaudit.py --root frame`: 0 mismatches over 46,128
+  `tools/sharc_dev/sharc_widthaudit.py --root frame`: 0 mismatches over 46,128
   events.
 - Still open **[O]**: Type 16 immediate stores in SIMD (should duplicate);
   per-PE conditions for conditional 3a/5a in SIMD; `sharcdb`
@@ -303,7 +303,7 @@ this path.
 
 ## First listen: TRIG 1 plays hat through the SHARC **[D]**
 
-Source data, all from the firmware: `tools/plusdrive.py` built an image
+Source data, all from the firmware: `tools/firmware/plusdrive.py` built an image
 with hat.wav as a native sample and the built-in project pointing every
 slot at it (finding 14); a cold boot loaded it and the FlexBus stream was
 logged (finding 07); a capture of a panel TRIG 1 (track 0: ONESHOT, slot 7)
@@ -321,7 +321,7 @@ Capture (30 s wall, 1188 frames; TRIG at frame 77, never released):
 Replay (about 80 min, about 4.5 s per 32-sample frame, peak RSS about
 25 GB):
 
-    uv run python tools/sharc_replay.py dt2-1.16 \
+    uv run python -m tools.sharc_dev.sharc_replay dt2-1.16 \
       out/captures/drive3/dt2-1.16-drive3-trig1-settled.dt2cap \
       --armed-voice-wav --voice 0 --start-frame 74 --frames 1000 --extra-frames 0 \
       --record-voice 0 --record-voice 1 --flexbus-log out/captures/drive3/flexbus-drive3.raw \
@@ -329,7 +329,7 @@ Replay (about 80 min, about 4.5 s per 32-sample frame, peak RSS about
 
 `flexbus-drive3.raw` (not committed) is the byte log of the cold-boot run that saved `loaded.snap`
 (`tools/guirun.py --flexbus-log`; the file must end in `.raw`, or
-`tools/sharc_lp0.py` parses it as 6-byte records): 1940 transfers, 322
+`tools/sharc_dev/sharc_lp0.py` parses it as 6-byte records): 1940 transfers, 322
 pages, 1024 + 297 reset headers and 297 real headers.
 
 Arm events, from the firmware's own PCs, no voice pokes: frame 77 trig
@@ -443,7 +443,7 @@ prevents its audio tail from continuing to advance ColdFire instructions.
 The v3 frameless state pack was regenerated under ignored `out/` with
 `state-pack --rebuild --limit 2000000`: its complete pre-trailer body is identical
 to the previous v2 pack, its card hash matches the ready snapshot's sidecar,
-and its core-source hash matches both current `tools/sharc_core` and the
+and its core-source hash matches both current `tools/sharc_dev/sharc_core` and the
 selected native SHARC library. The `native/live` release library had to be
 rebuilt to load the v3 trailer.
 
@@ -488,7 +488,7 @@ after the Board register-slot import: DT2 353 sampled CPU boundaries,
 the new DSPI2 exchange or the live state.
 Passing the wire comparison would establish only the named replay window;
 independent boot, real device timing and later audio parity stay open.
-`tools/wiretrace.py EXPECTED.dtfr ACTUAL.dtfr [--prefix N]` now parses bounded
+`tools/emulator/wiretrace.py EXPECTED.dtfr ACTUAL.dtfr [--prefix N]` now parses bounded
 wire-order traces and reports the first mismatching frame/byte. Prefixes 1
 and 20 cover the initial frame and trig-plus-following-frame smoke before
 the full 68-frame check. A self-comparison of the Python-produced trace
@@ -554,21 +554,21 @@ Folded from a lane notebook; not re-checked by a second agent.
   parameter effect. SIMD (MODE1.PEYEN) executes a compute in both PEx and PEy, but Type 7a
   and the compute half of Type 9a/11a ran PEx only, so the S registers went stale and fed
   the reverb send (L scale 5.96e-6, R 0). After the fix L == R bit for bit and the tone
-  share is 0.9986. The fix is in `tools/sharc_core` only; the six golden hashes did not change.
-- `mise run perf:aot -- dt2 --card-image IMG` (`tools/aot_gen.py --cycles N`) profiles a
+  share is 0.9986. The fix is in `tools/sharc_dev/sharc_core` only; the six golden hashes did not change.
+- `mise run perf:aot -- dt2 --card-image IMG` (`tools/sharc_dev/aot_gen.py --cycles N`) profiles a
   trig run and generates a DT2 block library (1112 blocks after one cycle), registered by DSP
   image SHA-256 in `out/native/gen-index.json`. DSP CPU per audio s on `dt2-sample-trig`:
   interpreter 37.7, one cycle 3.07, two 1.83, three 1.76, same PCM. **[O]** There is no DT2
-  entry in `tools/fast_regions.json`: the hot DT2 loops are SIMD-mode code that the fast
+  entry in `tools/emulator/fast_regions.json`: the hot DT2 loops are SIMD-mode code that the fast
   tier did not lower.
 
 ## DT2 runs through coupled.py used the DN2 generated core (2026-10-08) **[V][C]**
 
-`tools/coupled.py` resolved its generated core with
+`tools/emulator/coupled.py` resolved its generated core with
 `digi_env.generated_dir()` and no image argument. It therefore built every
-DT2 run, including `tools/dt2_sample_check.py`, against the DN2 core
+DT2 run, including `tools/emulator/dt2_sample_check.py`, against the DN2 core
 `out/native/dn2-audio/gen`. That core was generated on 10-06, before the SIMD
-fix above. Only `tools/native_emu.py` looked the core up in `gen-index.json`
+fix above. Only `tools/emulator/native_emu.py` looked the core up in `gen-index.json`
 by the image.
 
 Results of `dt2_sample_check` with each core:
@@ -587,7 +587,7 @@ Fixes:
 
 - `coupled.py` now picks the core by the device's DSP image.
 - Every generated core carries `CORE_FINGERPRINT`, a hash of
-  `tools/sharc_core`, `sharc_transpile.py` and `sharc_rsgen.py`.
+  `tools/sharc_dev/sharc_core`, `sharc_transpile.py` and `sharc_rsgen.py`.
   `digi_env.check_generated` refuses a missing or different fingerprint
   before `coupled.py`, `native_emu.py` and `native_pgo.py` build.
   `DIGI_ALLOW_STALE_GEN=1` turns the error into a warning.
@@ -631,7 +631,7 @@ Manual (SHARC+ Core Programming Reference, `out/refs/sharc-plus-prm`):
   USTAT2 into ASTATY.BTF. The pairs are USTAT1/2, USTAT3/4, ASTATx/y and
   STKYx/y.
 
-Forms fixed in `tools/sharc_core`:
+Forms fixed in `tools/sharc_dev/sharc_core`:
 
 - `6b_shiftimm`: the shift (including BTST) runs on PEx and PEy
   (`compute._shift_immediate_simd`, `_shift_immediate_pey`); a conditional
@@ -686,7 +686,7 @@ statements in the SHARC+ Core Programming Reference:
 
 It also matched the implementation against them, and decoded 0xb840d2,
 0xb84225 and 0xb84228 from the DN2 1.11 image as stated above. The
-track-FX sweep (`scenarios/dn2-trackfx.json`, `tools/fxcheck.py`) then
+track-FX sweep (`scenarios/dn2-trackfx.json`, `tools/emulator/fxcheck.py`) then
 measured the delay with the fix: echoes 0.375 s apart, each about 6 dB
 quieter than the one before.
 
@@ -704,8 +704,8 @@ failure does not come from this change.
 
 ## DN2 1.11 send FX pages swept against expected behaviour (2026-10-08)
 
-Scenarios `scenarios/dn2-sendfx.json` (`tools/gen_sendfx.py`), measures
-`tools/fxcheck.py` (`sf-*`), runs `out/runs/sendfx/run1..run3`. All **[D]**:
+Scenarios `scenarios/dn2-sendfx.json` (`tools/emulator/gen_sendfx.py`), measures
+`tools/emulator/fxcheck.py` (`sf-*`), runs `out/runs/sendfx/run1..run3`. All **[D]**:
 one run, not yet compared with a device.
 
 - Navigation **[V]** (read-back of the kit Fx array): FUNC + FX opens Delay;
@@ -762,7 +762,7 @@ manual says "Digitone II", the emulated firmware is 1.11):
 ## Denormal flush: the core and the fast tier now follow the manual **[V]**
 
 Done 2026-10-09 on `work/scenario-oracles` (e8353a8); second-checked the same day (see the end of this section).
-Before this, `tools/sharc_core/floats.py` said flush-to-zero "is not modeled": a decayed filter or
+Before this, `tools/sharc_dev/sharc_core/floats.py` said flush-to-zero "is not modeled": a decayed filter or
 envelope state stuck at a 1-3 ulp denormal, the fast tier left its kernel at every denormal product,
 and the run got slower after a sound had decayed (finding 18, "Late-run slowdown"). The core now
 reads and returns denormals as the SHARC+ does. PCM did not change in any scenario we have (below).
@@ -798,7 +798,7 @@ then test the exponent. A magnitude in [2^-126 - 2^-151, 2^-126) rounds up to th
 and is returned as it; below that it is a flushed zero. The multiplier's "exact zero" (a zero
 operand) is not an underflow; whether the device sets MU for 0 x x is not stated **[O]**.
 
-### Audit of `tools/sharc_core` (before -> after)
+### Audit of `tools/sharc_dev/sharc_core` (before -> after)
 
 | Where | Before | After |
 |---|---|---|
@@ -837,7 +837,7 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
   2^-126 - 2^-151, exact zero is no underflow, the decayed filter reaches 0, a register move keeps the
   bits, PEy with ASTATY/STKYY). Existing core tests, `tests/test_sharc_golden.py` (six hashes) pass
   **unchanged**: no output of the golden runs touches a denormal.
-- Python core vs the native core built from it: `tools/sharc_transpile_run.py corpus --cases-per-op
+- Python core vs the native core built from it: `tools/sharc_dev/sharc_transpile_run.py corpus --cases-per-op
   200` 57,400 cases, 0 diverged (edge values now include 1.5 x 2^-126, 2^-100, 2^-63).
 - `native/sharc` `cargo test --lib --tests` (shared core): 65 passed, with the new
   `fast_denormal_float_ops_match_the_interpreter` (add, subtract, multiply with denormal operands,
@@ -854,7 +854,7 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
   The 23 scenarios it renders have the same PCM hash as in the runs before the change, in both
   configs. Not caused by this change (**[C]** fixed later: finding 18, "Tier mismatch: MODE1 read at entry"): `sf-del-time-u20` differs between the two configs in the
   old runs and the new (AOT `67e0ea5c3f9a7166`, no-AOT `c4688d57f9ef9aa9`, rms 0.0127184 vs 0.0127187).
-  DT2 `tools/dt2_sample_check.py`: clean tone, 1007.8 Hz, peak share 0.99995, rms 0.01572 as before.
+  DT2 `tools/emulator/dt2_sample_check.py`: clean tone, 1007.8 Hz, peak share 0.99995, rms 0.01572 as before.
 - Late-run step, no `SHARC_FAST_DENORM`, exclusive lock, `trig1-taps` 14 s, run time per audio s
   (DSP CPU minus compile and build) 3-8.5 s / 10-13.7 s, region calls per audio s; the machine was
   busy with other processes, so only the pairs are comparable:
@@ -882,7 +882,7 @@ Second check 2026-10-09: every spec row re-read in the manuals and confirmed (ro
 Em's DT2 1.16 app stopped with `sharc_peer: DSP halted: native-trap: sharc_core.compute._compute:359:
 raise ValueError at 0xb88e8b`. 0xb88e8b is `R13 = fext(R13, R4)` (form 2a_short, cu=2, shifter opcode
 0x40, bit6 = Ry[5:0], len6 = Ry[11:6]). The core's shifter table (`SHIFT_OPS` in
-`tools/sharc_core/compute_shift.py`) held only lshift/ashift/OR-lshift, leftz/lefto, the bit set/clear/
+`tools/sharc_dev/sharc_core/compute_shift.py`) held only lshift/ashift/OR-lshift, leftz/lefto, the bit set/clear/
 toggle/test group, the BFFWRP pair and two undocumented opcodes; every other register-form opcode of
 PRM Table 18-9 raised "unsupported full compute". The ShiftImm (Type 6) twins existed, which hid the gap.
 

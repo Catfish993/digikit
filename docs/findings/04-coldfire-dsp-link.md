@@ -4,7 +4,7 @@ The periodic DSPI2 frame the ColdFire sends the SHARC, the frame capture and the
 
 ## The ColdFire tells the SHARC through a periodic DSPI2 frame **[V][O]**
 
-Static reading only: Ghidra, the repo disassembler and `tools/refscan.py`.
+Static reading only: Ghidra, the repo disassembler and `tools/coldfire/refscan.py`.
 No emulator run. In this section **[V]** means a second agent re-checked the
 claim against the image bytes, and **[D]** means one agent read it from
 Ghidra or disassembly output and it was not re-checked.
@@ -364,7 +364,7 @@ This corrects "The ColdFire tells the SHARC through a periodic DSPI2 frame"
 above, which recorded that no link from a track's machine type into the frame
 could be found. The link exists. Earlier searches missed it because the frame
 handler never reads the machine-type field of a track object: it reads a
-**copy** of that byte in on-chip SRAM. No xref query and no `tools/refscan.py`
+**copy** of that byte in on-chip SRAM. No xref query and no `tools/coldfire/refscan.py`
 sweep for `+0xa2` could have found it. **[C]**
 
 Addresses are Digitakt II 1.16.
@@ -446,7 +446,7 @@ chain is:
   stored. A second byte review reproduced the image hash, exact instruction
   bytes and fields, scaled-address rule, compare and branch. **[V]**
 
-`tools/sharc_interface_probe.py` verifies the exact image hash, instruction
+`tools/sharc_dev/sharc_interface_probe.py` verifies the exact image hash, instruction
 bytes and fields, and runs bounded symbolic slices for tracks 0, 1 and 15.
 Those slices reach byte addresses `spi_rx+0x94`, `spi_rx+0x96`, and
 `spi_rx+0xb2`, followed by the compare and `EQ` branch. The slices seed
@@ -565,7 +565,7 @@ one-cycle-delayed double buffer, not build-then-send. **[D]**
 - The `0x9a`-stride per-track table is at **`0x80003cd0`**, not `0x80003340`.
   The handler addresses a row as `0x80003340 + i*0x9a` plus a `+0x990`
   displacement, and `0x80003340 + 0x990 = 0x80003cd0`; the base register, not
-  the table, sits at `0x80003340`. `tools/framelink.py`'s `TABLES` entry
+  the table, sits at `0x80003340`. `tools/sharc_dev/framelink.py`'s `TABLES` entry
   `(0x80003340, 0x9a, 16, 'track_9a')` therefore named the wrong 2,464 bytes:
   the rows run `0x80003cd0`-`0x80004670`; the tool now uses the corrected base.
   **[C][O]**
@@ -646,7 +646,7 @@ twice per interrupt when a queued parameter-edit event is present. **[V]**
 
 Every writer of the cache, found three ways -- Ghidra `data_refs`, a `disasm/`
 grep for both `8000 470c` and the `addi.l #0x4f3` displacement, and
-`tools/refscan.py` over the raw image at 96.78% coverage. Only six functions in
+`tools/coldfire/refscan.py` over the raw image at 96.78% coverage. Only six functions in
 the image hard-code the `0x4f3` displacement. **[V]**
 
 | address      | function              | writes                                                                            |
@@ -667,7 +667,7 @@ the handler would catch on its own, so it is a consistency fixup, not a
 machine-type path. **[V]**
 
 `FUN_4002da38` is the unconditional invalidate, and Ghidra lists **no** caller
-for it. That is an artifact: `tools/refscan.py` finds two real
+for it. That is an artifact: `tools/coldfire/refscan.py` finds two real
 `jsr $4002da38.l`, at `0x4004319c` and `0x400431d4`, with the bytes
 `4eb9 4002da38` at both. They lie in `0x40042fe2`-`0x4004335c`, a range no
 entry in `function_ranges` covers, so Ghidra never built a function there and
@@ -1063,14 +1063,14 @@ That front-half link remains open. **[O]**
   And the handler reads both MIDI flag arrays itself, `lea $80004684,a1` and
   `lea $800046c4,a0`, at `0x4002d70c` and `0x4002d720` in 1.15C and at
   `0x4002ddc6` and `0x4002ddda` in 1.16. **[V]**
-- `tools/framelink.py` holds these addresses per image, looked up by the
+- `tools/sharc_dev/framelink.py` holds these addresses per image, looked up by the
   SHA-256 of the MAIN OS image. `tools/sharcframe.py` takes its addresses
   from it and stops on an image without a profile; `--open-gate` writes 0 to
   the profile's gate. On `snapshots/boot400M.snap` (1.15C) with three passes,
   the tool before the change with `--poke 0x4094e4f4=0`, and the new tool
   with `--open-gate` or with the same poke, capture the same frames: pass 0
   `382e008e…`, passes 1 and 2 `5cc9772c…`. **[V]**
-- `tools/dspmap.py` lists the instructions that reference the frame tables,
+- `tools/sharc_dev/dspmap.py` lists the instructions that reference the frame tables,
   the gate variables and the pacing counter, with their functions and callers
   two levels up (`out/maps/`). It finds 186 sites in 19 functions on 1.15C
   and 187 in 20 on 1.16; the only new site is the installer's write. Its 115
@@ -1106,7 +1106,7 @@ That front-half link remains open. **[O]**
   when it reaches 0. With n == 0 it clears `0x4094e4f4` and `0x4094e4f0`
   with interrupts masked (`0x4002d61c`-`0x4002d630`). **[V]** An earlier
   reading here, that only `FUN_4002d5c4` clears the gate, was wrong. **[C]**
-- `tools/refscan.py` finds nine call and jump sites to `FUN_4002d602`
+- `tools/coldfire/refscan.py` finds nine call and jump sites to `FUN_4002d602`
   (96.75% of the image decoded); the argument is the last value pushed.
   Argument 1, stop after five passes: `0x40043692` and `0x40046008` in the
   two `OnScopeExit::ctor_dtor` functions (`0x40043654`, `0x40045fc4`), and
@@ -1175,7 +1175,7 @@ That front-half link remains open. **[O]**
 
 ## The SHARC side of the SPI frame link **[V][O]**
 
-- `tools/sharcimm.py` lists the immediates in DSP code. It decodes one
+- `tools/sharc_dev/sharcimm.py` lists the immediates in DSP code. It decodes one
   instruction at every even offset and marks each hit with the longest run
   of decoded instructions that ends there (depth) and with whether the
   linear sweep that steps past undecodable words reaches it. `--words` scans
@@ -1810,7 +1810,7 @@ above names `FUN_400cfd40`/`FUN_40146148`/`FUN_4014653c`/`FUN_401465a4`/
 resolve to a function in `out/ghidra/dt2-1.16-emac` (checked against
 `functions`/`function_ranges` in its `xrefs.sqlite`), so that bullet is
 1.15C-only and was never re-verified on 1.16 despite sitting in a `[D]`
-(not `[O]`) bullet. **[C]** Re-run on 1.16: `tools/refscan.py` over
+(not `[O]`) bullet. **[C]** Re-run on 1.16: `tools/coldfire/refscan.py` over
 `sections/section_3_MAIN_OS.bin` for `0x8c000000`-`0x8c000010` (96.78%
 coverage) finds 25 hits, all inside two functions, both reachable only from
 the boot path:
@@ -1931,7 +1931,7 @@ time (not attempted here -- out of this lane's bounded scope). **[O]**
 **Where a DSPI2-frame byte lands on the SHARC side, for a future lane.**
 Already established by execution, not re-derived here:
 `docs/findings/06-sharc-engine-and-startup.md`, "The ColdFire frame is
-mapped into SHARC DM at `0x2558dc`" and `tools/sharc_framemap.py`: ColdFire
+mapped into SHARC DM at `0x2558dc`" and `tools/sharc_dev/sharc_framemap.py`: ColdFire
 TX frame byte offset `O` (this file's own numbering, `tx_base + O`) lands at
 SHARC DM address `0x2558dc + O`, byte for byte, confirmed both by eleven
 independent literal per-track scalar bases matching exactly and by an
@@ -2322,7 +2322,7 @@ command header) IS `command_word`'s own low bytes, not a separate cell.
 The transfer never reaches `command_record_table` (`0x266220`/`0x267220`)
 -- that second ring is provisioned in hardware identically, but a 2,748-
 byte transfer is smaller than the 4,096-byte gap between the two rings.
-`tools/sharc_replay.py` now delivers a captured frame there
+`tools/sharc_dev/sharc_replay.py` now delivers a captured frame there
 (`sharc_harness.write_dma_transfer()`/`drive_dma_completion()`) and lets
 `render_frame`'s own execution do the 2,048-byte copy into `0x2558dc`,
 instead of poking `0x2558dc`/`command_word` directly -- see
@@ -2392,7 +2392,7 @@ fully explain this -- neither is fixed by this lane.**
    panel.py`, `emu/uiprobe.py`, `emu/run.py`, `tools/guirun.py`, `tools/
    addrtrace.py`, `tools/emucheck.py`, `tools/inputlag.py`, `tools/
    memdump.py`, `tools/bootcheck.py`, `tools/memfind.py`, `tools/
-   panelsweep.py`, `tools/machinepatch.py`, `tools/mmiotrace.py`, `tools/
+   panelsweep.py`, `tools/patchkit/machinepatch.py`, `tools/mmiotrace.py`, `tools/
    steptrace.py`, `tools/uidrive.py`): construct `Pits`/`Dtims` with
    `hold=intro_running(...)` and release them from a hook on
    `profile.intro_done`. **`tools/sharc_capture_run.py` is the one tool in
@@ -2633,7 +2633,7 @@ runs). Captures: `out/captures/dt2-1.16-running-{idle,idle2,play}.dt2cap`
 (not committed). **[V][O]**
 
 **Replay of the real PLAY capture reproduces the standing SHARC-side
-blocker exactly, unchanged.** `tools/sharc_replay.py dt2-1.16
+blocker exactly, unchanged.** `tools/sharc_dev/sharc_replay.py dt2-1.16
 out/captures/dt2-1.16-running-play.dt2cap --frames 4`: real per-track data
 appears from frame 1 onward (track 2 `machine_type=2`, matching the
 snapshot's own live memory), but `any_companding_gate_pointer_nonzero` is
@@ -2783,7 +2783,7 @@ touch those list globals in Ghidra's static data-ref table) -- either a
 different, unidentified function does it through addressing this image's
 static analysis does not attribute to those literals (this file already
 has one precedent for that, "`0x40042fe2`... an artifact:
-`tools/refscan.py` finds two real callers"), or the insert happens
+`tools/coldfire/refscan.py` finds two real callers"), or the insert happens
 synchronously inside the panel RX-vector ISR itself. (2) Why
 `_DAT_44e6b494` is empty on `running.snap` -- exhausted during the
 785,000,000-instruction boot this snapshot was built from, e.g. because
@@ -2810,7 +2810,7 @@ SHARC receive side is in [15](15-sharc-sample-path.md); the file format and
 the boot project in [14](14-plus-drive-format.md). Marks: **[V]** re-read
 against the image bytes by a second agent (verification lane, 2026-09-28);
 **[D]** read or executed once. *P0 check 2026-09-29:* claims marked
-"(P0)" were re-derived twice, from the Ghidra listing or `tools/cf.py` and
+"(P0)" were re-derived twice, from the Ghidra listing or `tools/coldfire/cf.py` and
 again from the raw `section_3_MAIN_OS.bin` bytes (capstone m68k decode, or
 a hand decode of the ColdFire-only opcodes such as `mvs`/`mvz`).
 
@@ -2872,7 +2872,7 @@ with DTRR = the argument and DTMR `0x841b` (prescale 133, bus clock), so
 
 **Observed on a cold boot [D]; the byte log [V] (P0).** `emu/dsp.py` `Fifo(log_path=...)` logs one
 byte per strobe write (`tools/guirun.py --flexbus-log PATH`; name the file
-`*.raw` so `tools/sharc_lp0.py` reads it as latched bytes). From
+`*.raw` so `tools/sharc_dev/sharc_lp0.py` reads it as latched bytes). From
 `snapshots/dt2-1.16-drive3/boot400M.snap` with the native hat image, a
 400M-instruction run made 1940 `FUN_400cd638` calls (7,954,000 bytes =
 1940 x 4100): 1024 reset headers (`FUN_40154358`, `{slot, 0xfffffc00,
@@ -2883,7 +2883,7 @@ count agreed (1,988,500 = 1940 x 1025). Rebuilt from the pages, both
 channels equal the file's PCM. The 100 us sleep never blocked: guirun's
 default `unblock` covers it (`real_sleep=False`). P0 re-parsed
 `out/captures/drive3/flexbus-drive3.raw` (7,954,000 bytes) as 1025
-little-endian words per transfer, independently of `tools/sharc_lp0.py`:
+little-endian words per transfer, independently of `tools/sharc_dev/sharc_lp0.py`:
 1321 reset headers, 297 real headers, 322 pages with tags 0..321, and the
 L and R halves (from sample-memory offsets 0x20 and 0xa1020, 0xa0b70 bytes
 each) equal the byte-swapped left and right PCM of the file at content page
@@ -2991,7 +2991,7 @@ halfword. Both are host calibration and are recorded in the capture header.
 "Modal windows take every key"). The handler's own trig gating state
 (`0x8000467c/80`, `0x800047c0/c2`, `0x40966834`, `0x47db4310[]`,
 `0x47db4560[]`) is the same in `running.snap` and `loaded.snap`.
-`tools/sharc_replay.py IMAGE CAP --fields` lists the frames with a trig or
+`tools/sharc_dev/sharc_replay.py IMAGE CAP --fields` lists the frames with a trig or
 release bit and the per-track fields (no SHARC run).
 
 ## DN2 1.11 TX frame: track blocks and the FX sends (2026-10-08) **[D]**
@@ -3038,17 +3038,17 @@ handler copies four mirror ranges out of the 0xca-stride mirror row:
 
 Audio: the delay send changes nothing in the DN2 output, while the reverb
 send, chorus send, overdrive and SRR do (`scenarios/dn2-fx.json`,
-`tools/fxcheck.py`). **[V]**
+`tools/emulator/fxcheck.py`). **[V]**
 
 ## Parameter path from a UI knob to a frame word the stock DSP ignores (spike 0.7 follow-up) **[D]**
 
 Lane fastweb, 2026-10-13, DT2 1.16 and DN2 1.11 (1.17 and 1.12 have the same DSP blob; the ColdFire side is a
-relink, `tools/cfport.py` ports the addresses). A second agent verified **[V]** against the image bytes: the frame copy bases (`0x2558dc`, DN2 `0x25c48c`), the fx[66]
+relink, `tools/coldfire/cfport.py` ports the addresses). A second agent verified **[V]** against the image bytes: the frame copy bases (`0x2558dc`, DN2 `0x25c48c`), the fx[66]
 readers (`DM(0x256008)` at `0x1c2f7d`, `DM(0x25ced8)` at `0x1c2f8f`), descriptor row `0x9d` (owner `0x16`, max `0x7f00`,
 default `0x5000`, "Sidechain Filter"/"SCF") and the formulas `0x6da + 2(k-25)` / `0x9fa + 2(k-25)` as address arithmetic.
 The per-parameter measured offsets stay **[D]**.
-Tools: `tools/frame_diff.py` (TX frame at the end of a scenario, diff against a reference), `tools/frame_poke_ab.py`
-(`DSP_FRAME_POKE` A/B of the PCM hash), `tools/sharcdb.py` tables `mem_access` and `ptr`.
+Tools: `tools/emulator/frame_diff.py` (TX frame at the end of a scenario, diff against a reference), `tools/emulator/frame_poke_ab.py`
+(`DSP_FRAME_POKE` A/B of the PCM hash), `tools/sharc_dev/sharcdb.py` tables `mem_access` and `ptr`.
 
 **The Fx array reaches the frame as one block.** The kit's Fx array (`*0x80004708` on DT2, `*0x800052a4` on DN2) is
 the mirror tail. `vector_191_handler` (`0x4002dd0c`) copies it with five `memcpy`s from the smoothed mirror
@@ -3069,7 +3069,7 @@ fx[65] `0x72a`, fx[66] `0x72c`, fx[67] `0x72e`. DN2: fx[25..27] `0x9fa..0x9fe`, 
 fx[65] `0xa4a`, fx[66] `0xa4c`. The DN2 DSP base `0x25c48c` is the `i_reg_base` literal at `0x1c2877` and `0x1c301a` (the
 DT2 pair is `0x2558dc` at `0x1c2c71` and `0x1c305a`); the reads of the Fx words in DN2 then sit at `0x25ce86 + 2*(k-25)`
 (`mem_access`), which fixes it. The mirror index of a UI parameter is the `mirror_index` field of its descriptor row
-(finding 02), so Fx index = mirror index for the chorus/delay/reverb/input/master pages (`tools/paramtable.py`:
+(finding 02), so Fx index = mirror index for the chorus/delay/reverb/input/master pages (`tools/coldfire/paramtable.py`:
 chorus 25-31, delay 32-40, reverb 41-48, input 49-59, master compressor 60-67, master overdrive 68, pattern volume 69).
 
 **Who reads the Fx words in the DSP.** Absolute loads in `0x1c2d69 .. 0x1c2f7d` (DT2) and `0x1c2daa .. 0x1c3000` (DN2),

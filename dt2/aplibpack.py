@@ -20,7 +20,7 @@ positions it covers are not expanded (the usual cut that keeps long zero and
 0xFF runs linear). `depth` is the chain length searched per position.
 
 Pure Python, no dependencies. On the MAIN OS section of a firmware (3.2 MB)
-it needs roughly a minute; see tools/aplib_check.py for measured numbers.
+it needs roughly a minute; see tools/firmware/aplib_check.py for measured numbers.
 """
 
 import struct

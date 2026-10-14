@@ -1,18 +1,13 @@
-"""Appending blocks to the SHARC boot stream (tools/dsp_patch.py Stream.append_block) on a synthetic stream."""
+"""Appending blocks to the SHARC boot stream (tools/patchkit/dsp_patch.py Stream.append_block) on a synthetic stream."""
 
 import struct
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import dsp_patch
-    import sharcldr
-finally:
-    sys.path.pop(0)
+from tools.patchkit import dsp_patch
+from tools.sharc_dev import sharcldr
 
 DATA, FIRST, FINAL = 0x0001, 0x4001, 0x8001
 

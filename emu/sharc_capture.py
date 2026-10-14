@@ -1,4 +1,4 @@
-"""Opt-in capture of real ColdFire<->SHARC traffic, for tools/sharc_replay.py.
+"""Opt-in capture of real ColdFire<->SHARC traffic, for tools/sharc_dev/sharc_replay.py.
 
 Four independent things a run can record, all off unless a caller wires
 them in (nothing here is installed by `emu.longrun.build()` on its own):
@@ -10,7 +10,7 @@ them in (nothing here is installed by `emu.longrun.build()` on its own):
   below -- since nothing in this repo yet runs a real SHARC to answer).
 - Every SSI0 "audio in" request (`emu/ssi.py`'s `peer.rx(nbytes)` hook):
   size and cadence only, again always silence, since real input hardware
-  is unmodeled (this matches `tools/sharc_proc.py`'s own
+  is unmodeled (this matches `tools/sharc_dev/sharc_proc.py`'s own
   `audio_mode="silence"` convention).
 - Every call to the DSPI1 driver (`FUN_400cd48a` on DT2 1.16, docs/findings/
   04-coldfire-dsp-link.md "eDMA and DSPI transfer inventory", channel 14):
@@ -29,7 +29,7 @@ them in (nothing here is installed by `emu.longrun.build()` on its own):
 - Any write into a watched raw memory range (`tools/sharc_capture_run.py`'s
   `--watch-mem LO:HI`): this lane's other candidate for a shared/bulk
   transport, the 16-byte FlexBus window at `0x8c000000` (docs/findings/04,
-  "Ruled out as the control link"; confirmed on 1.16 by `tools/refscan.py`
+  "Ruled out as the control link"; confirmed on 1.16 by `tools/coldfire/refscan.py`
   to be the SHARC program loader's own boot-time GPIO/status handshake,
   `FUN_400ccda0`/`FUN_400ccf74`, not a sample-data path -- see the finding's
   1.16 correction). Generic by address range, not tied to FlexBus, so the
@@ -298,7 +298,7 @@ class CapturingPeer:
     every call to WRITER.
 
     Never invents data -- `exchange()`/`rx()` always answer with zeros (the
-    same convention as `emu.dspi2.ZeroPeer` and `tools/sharc_proc.py`'s
+    same convention as `emu.dspi2.ZeroPeer` and `tools/sharc_dev/sharc_proc.py`'s
     `audio_mode="silence"`): this module exists to observe real ColdFire
     output, not to stand in for a SHARC that would answer it for real.
     `.tx()` (SSI0's captured-samples half) is not recorded: the task this

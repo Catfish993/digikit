@@ -11,11 +11,10 @@ import tempfile
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 from importlib import import_module
 
-sharcldr = import_module("sharcldr")
-sharcstrings = import_module("sharcstrings")
+sharcldr = import_module("tools.sharc_dev.sharcldr")
+sharcstrings = import_module("tools.sharc_dev.sharcstrings")
 
 
 def block(code, address, payload=b""):
@@ -119,7 +118,7 @@ class SharcStringsTest(unittest.TestCase):
             source.write(stream)
             path = source.name
         try:
-            command = [sys.executable, "tools/sharcstrings.py", path]
+            command = [sys.executable, "tools/sharc_dev/sharcstrings.py", path]
             no_match = subprocess.run(
                 command + ["--grep", "missing", "--json"],
                 text=True,

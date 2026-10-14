@@ -1,6 +1,6 @@
 # samples/
 
-WAV files here become the emulated Digitakt II's +Drive: `tools/plusdrive.py
+WAV files here become the emulated Digitakt II's +Drive: `tools/firmware/plusdrive.py
 build samples/ -o out/plusdrive/dt2.img` reads every `.wav` file directly in
 this folder (not recursively) and writes them into a card image in the
 firmware's own +Drive filesystem format
@@ -12,7 +12,7 @@ from (`--card-image out/plusdrive/dt2.img` on the runners that accept it).
 instead of expecting them to already be here:
 
 ```
-uv run python tools/gen_test_samples.py
+uv run python -m tools.emulator.gen_test_samples
 ```
 
 That writes:
@@ -25,7 +25,7 @@ That writes:
 Both are fully synthetic and safe to regenerate at any time; add your own
 `.wav` files alongside them for a real test.
 
-`tools/plusdrive.py` converts each input WAV to the drive's native sample
+`tools/firmware/plusdrive.py` converts each input WAV to the drive's native sample
 format (the one the firmware's recorder writes and its loader reads): 48 kHz,
 16-bit big-endian PCM, mono or stereo, behind a 64-byte header. Other rates
 are resampled and other bit depths (8/24/32-bit integer, 32/64-bit float) are

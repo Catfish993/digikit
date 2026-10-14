@@ -1,19 +1,16 @@
-"""tools/coupled_matrix.py: job planning, environments, aggregation, the report."""
+"""tools/emulator/coupled_matrix.py: job planning, environments, aggregation, the report."""
 
 import dataclasses
 import json
-import sys
 from pathlib import Path
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-import coupled_matrix as cm  # noqa: E402
-import native_target  # noqa: E402
+from tools.emulator import coupled_matrix as cm  # noqa: E402
+from tools.emulator import native_target  # noqa: E402
 
-sys.path.pop(0)
 
 
 def fake_report(name, dsp=1.9, rtf=0.5, over=1.0, ok=True, sha="ab" * 32):

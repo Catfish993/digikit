@@ -8,7 +8,7 @@ only the Digitakt SHA has QEMU evidence; Digitone is static-only.
 Analyze explicit user-supplied MAIN images (the command never writes stdout):
 
 ```sh
-uv run python -m tools.early_init_contract \
+uv run python -m tools.coldfire.early_init_contract \
   --main /path/to/digitakt-MAIN.bin --main /path/to/digitone-MAIN.bin \
   --qemu-seed /tmp/qemu-coldfire-spike/early-init-seed.json --out /tmp/early-init.json
 ```

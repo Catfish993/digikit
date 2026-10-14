@@ -1,30 +1,25 @@
 """A MAIN-patched firmware cold-boots with DSP audio in the control daemon (spike 0.6, finding 17).
 
 Needs a `digi-emud` built with coupled audio for the device's generated core (DIGI_EMUD_DN2 / DIGI_EMUD_DT2, else
-DIGI_EMUD; `tools/native_emu.py --daemon --build-only <syx>` prints it), the firmware and its ready inputs; run with
+DIGI_EMUD; `tools/emulator/native_emu.py --daemon --build-only <syx>` prints it), the firmware and its ready inputs; run with
 `--slow`. DN2 uses Digitone_II_OS1.12.syx and snapshots/dn2-112-ready, DT2 uses Digitakt_II_OS1.17.syx and
 snapshots/dt2-117-ready (override with DIGI_PATCHED_DN2_READY / DIGI_PATCHED_DT2_READY and the DIGI_PATCHED_*_SYX
-variables). Each test makes a harmless stock-size image (tools/patched_image.py).
+variables). Each test makes a harmless stock-size image (tools/patchkit/patched_image.py).
 """
 
 from __future__ import annotations
 
 import os
 import pathlib
-import sys
 import tempfile
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import l2canary
-    import patched_audio_check as pac
-    from digi_client import Emu, EmuError
-finally:
-    sys.path.pop(0)
+from tools.firmware import l2canary
+from tools.patchkit import patched_audio_check as pac
+from tools.control.digi_client import Emu, EmuError
 
 CASES = {
     "dn2": ("Digitone_II_OS1.12.syx", "snapshots/dn2-112-ready"),

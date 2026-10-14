@@ -1,6 +1,6 @@
 //! `explain`: a human-readable account of a patch: the modules in order, the allocation map, and the
 //! before and after of every patched site. ColdFire code is disassembled with `native/coldfire`; SHARC+
-//! words are listed as stream bytes with their pc (`tools/patchkit.py explain` adds a SHARC listing).
+//! words are listed as stream bytes with their pc (`tools/patchkit/patchkit.py explain` adds a SHARC listing).
 
 use crate::apply::{Applied, Plan, PlanWrite};
 use crate::error::*;

@@ -235,10 +235,10 @@ len = 6
 mark = "D"
 ```
 
-To write a SHARC rule for a site: `uv run python tools/port_resolve.py rule-sharc dt2-1.17 0x1c7734 --len 6` prints the
-hash and offset. ColdFire rules come from the function hashes of the `cfdb` database (`tools/cf.py`,
-`tools/pk_machine_rules.py` as an example generator). Then run `mise run port:resolve` and check that the diff of
-`devices/ports/` shows your anchors on every firmware you claim. Full syntax: the docstring of `tools/port_resolve.py`.
+To write a SHARC rule for a site: `uv run python -m tools.patchkit.port_resolve rule-sharc dt2-1.17 0x1c7734 --len 6` prints the
+hash and offset. ColdFire rules come from the function hashes of the `cfdb` database (`tools/coldfire/cf.py`,
+`tools/patchkit/pk_machine_rules.py` as an example generator). Then run `mise run port:resolve` and check that the diff of
+`devices/ports/` shows your anchors on every firmware you claim. Full syntax: the docstring of `tools/patchkit/port_resolve.py`.
 
 ### `[[registry]]` and `[[registry.field]]`
 
@@ -371,7 +371,7 @@ Actions: `tap` (a button name or a chord list), `hold` + `ms`, `turn` + `by` (+ 
 checks: `expect_frame` (a name; the golden is the frame's SHA-256, `differs_from` compares with another name),
 `expect_pcm_db`, `expect_no_fault`, `expect_mem = { addr, mask, eq }` (a ColdFire word), `expect_dsp = { addr, hex }`,
 `stress = { seed, actions }`; `device = "dt2"` on a step limits it. Every input also checks fault, DSP halt and
-main-loop stall. The complete list is the docstring of `tools/pk_harness.py`.
+main-loop stall. The complete list is the docstring of `tools/patchkit/pk_harness.py`.
 
 Workflow:
 
@@ -382,7 +382,7 @@ Workflow:
    `mise run patch:test -- --cell "dt2-1.17:category/name" --update` records the frame goldens (hashes only) once,
    and later runs compare against them. A change that is invisible on screen must give the stock frames.
 5. A module that changes sound needs a proof against a reference (PCM level, pitch, bit-identity at the neutral
-   setting). The proofs are `tools/pk_proof_*.py`; write one the same way and report numbers in a finding.
+   setting). The proofs are `tools/patchkit/pk_proof_*.py`; write one the same way and report numbers in a finding.
 6. `mise run patch:build -- --check` must pass (committed objects equal fresh builds).
 
 ## Worked example 1: `fx/master-gain` (SHARC+ only, both devices)
@@ -441,6 +441,6 @@ of its own: three frameworks do the firmware work, and the module only declares 
 
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and
-`modules/core/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/pk_cfunit.py`,
-`tests/patchkit/test_pk_machines_fw.py`, `tests/patchkit/test_pk_params_fw.py`), and the proofs are `tools/pk_proof_machines.py` and
-`tools/pk_proof_pluck.py`. Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).
+`modules/core/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,
+`tests/patchkit/test_pk_machines_fw.py`, `tests/patchkit/test_pk_params_fw.py`), and the proofs are `tools/patchkit/pk_proof_machines.py` and
+`tools/patchkit/pk_proof_pluck.py`. Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).

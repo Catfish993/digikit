@@ -24,7 +24,7 @@ conflicts = []
 #
 # The code of a parameter is `params.first + k` (symbol params.<id>.index); a machine's fields name it. Finding 02,
 # "core.params": the table is copied at patch time from the image (nothing of the firmware is stored here), the
-# references and bounds are anchors (cf.params.ref.N, cf.params.bound.N) found by tools/port_resolve.py.
+# references and bounds are anchors (cf.params.ref.N, cf.params.bound.N) found by tools/patchkit/port_resolve.py.
 # Digitone II: the same, with the slot = the sound-array slot itself (25 .. 64; a slot a machine's pages map with the
 # `pages` registry of core/machines), template a stock code of the 321 rows (e.g. 0xd5, A Env Decay: a plain 0 .. 127
 # word), and the table is 321 rows.

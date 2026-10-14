@@ -1,5 +1,5 @@
 //! `.dko.json`: a relocatable object in canonical JSON (sorted keys, integers only), made by
-//! `tools/pk_build.py` from a toolchain's output and consumed by the linker.
+//! `tools/patchkit/pk_build.py` from a toolchain's output and consumed by the linker.
 //!
 //! Units: ColdFire sections and symbols are bytes. SHARC+ text sections hold the instruction parcels in
 //! boot-stream order (each 16-bit parcel little endian); text symbol values and relocation offsets count

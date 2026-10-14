@@ -1,15 +1,13 @@
-"""tools/sharc_asm.py encodes the forms the DSP hooks need; the oracle is the
+"""tools/sharc_dev/sharc_asm.py encodes the forms the DSP hooks need; the oracle is the
 firmware's own words for the same instruction shapes (register and immediate
 fields differ only where the instruction does)."""
 
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import dsp_master_hook  # noqa: E402
-import sharc_asm  # noqa: E402
+from tools.patchkit import dsp_master_hook  # noqa: E402
+from tools.sharc_dev import sharc_asm  # noqa: E402
 
 
 def one(build):

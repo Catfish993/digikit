@@ -69,7 +69,7 @@ impl FrameSource for ToneSource {
 
 /// A minimal PCM WAV reader: enough for the mono/stereo, 16/24/32-bit
 /// integer or 32-bit float files this project writes
-/// (`tools/sharc_dac.py`'s `write_wav_stereo`, `tools/gen_test_samples.py`)
+/// (`tools/sharc_dev/sharc_dac.py`'s `write_wav_stereo`, `tools/emulator/gen_test_samples.py`)
 /// and the `out/listen/*.wav` capture outputs. No resampling: a WAV whose
 /// sample rate does not match the open device's output rate plays back at
 /// the wrong pitch/speed, same as ignoring resampling anywhere else in this

@@ -10,9 +10,8 @@ import unittest
 from importlib import import_module
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-S = import_module("sharc_seeddecode")
-L = import_module("sharcldr")
+S = import_module("tools.sharc_dev.sharc_seeddecode")
+L = import_module("tools.sharc_dev.sharcldr")
 
 
 def block(address, payload, code=0):
@@ -106,18 +105,18 @@ class SeedDecodeTest(unittest.TestCase):
         self.assertEqual(row["loader_source_block_index"], 1)
 
     def test_cli_errors_and_positive_limit(self):
-        command = [sys.executable, "tools/sharc_seeddecode.py", self.blob, self.dbpath]
+        command = [sys.executable, "tools/sharc_dev/sharc_seeddecode.py", self.blob, self.dbpath]
         invalid = subprocess.run(command + ["--limit", "0"], capture_output=True, text=True)
         self.assertNotEqual(invalid.returncode, 0)
         self.assertIn("must be positive", invalid.stderr)
-        bad_db = subprocess.run([sys.executable, "tools/sharc_seeddecode.py", self.blob,
+        bad_db = subprocess.run([sys.executable, "tools/sharc_dev/sharc_seeddecode.py", self.blob,
                                  os.path.join(self.tmp.name, "missing.sqlite")], capture_output=True, text=True)
         self.assertNotEqual(bad_db.returncode, 0)
         self.assertNotIn("Traceback", bad_db.stderr)
         malformed = os.path.join(self.tmp.name, "bad.bin")
         with open(malformed, "wb") as fh:
             fh.write(b"not a loader")
-        bad_blob = subprocess.run([sys.executable, "tools/sharc_seeddecode.py", malformed, self.dbpath],
+        bad_blob = subprocess.run([sys.executable, "tools/sharc_dev/sharc_seeddecode.py", malformed, self.dbpath],
                                   capture_output=True, text=True)
         self.assertNotEqual(bad_blob.returncode, 0)
         self.assertNotIn("Traceback", bad_blob.stderr)
@@ -125,7 +124,7 @@ class SeedDecodeTest(unittest.TestCase):
         with open(incomplete, "wb") as fh:
             fh.write(block(L.sw_to_byte(0x10), bytes.fromhex("0119")))
         partial_blob = subprocess.run(
-            [sys.executable, "tools/sharc_seeddecode.py", incomplete, self.dbpath],
+            [sys.executable, "tools/sharc_dev/sharc_seeddecode.py", incomplete, self.dbpath],
             capture_output=True,
             text=True,
         )

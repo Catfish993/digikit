@@ -1,15 +1,13 @@
-"""tools/sharc_bootcheck.py: the boot ROM rules (ADSP-2156x HWR chapter 40) on synthetic and stock streams."""
+"""tools/sharc_dev/sharc_bootcheck.py: the boot ROM rules (ADSP-2156x HWR chapter 40) on synthetic and stock streams."""
 
 import struct
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-import dsp_patch  # noqa: E402
-import sharc_bootcheck as bc  # noqa: E402
+from tools.patchkit import dsp_patch  # noqa: E402
+from tools.sharc_dev import sharc_bootcheck as bc  # noqa: E402
 
 FIRST, FINAL, IGNORE, FILL, INIT = 0x4000, 0x8000, 0x1000, 0x0100, 0x0800
 HDR = 16

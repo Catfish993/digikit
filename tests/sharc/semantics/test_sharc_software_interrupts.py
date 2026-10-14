@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from support.sharc_swi import native_core, runner, word
 
-import sharc_diff as sd
-import sharc_run as sr
-import sharcldr
-from sharc_core.sequencer import _software_interrupt_candidate
-from sharc_core.state import _bank_complete, _write_ureg
-from sharc_core.values import Const
-from sharc_disasm import decode_isa48
+from tools.sharc_dev import sharc_diff as sd
+from tools.sharc_dev import sharc_run as sr
+from tools.sharc_dev import sharcldr
+from tools.sharc_dev.sharc_core.sequencer import _software_interrupt_candidate
+from tools.sharc_dev.sharc_core.state import _bank_complete, _write_ureg
+from tools.sharc_dev.sharc_core.values import Const
+from tools.sharc_dev.sharc_disasm import decode_isa48
 
 
 @pytest.mark.parametrize("native", [False, True])

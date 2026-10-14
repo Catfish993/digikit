@@ -77,7 +77,7 @@ pub struct FirmwareProfile {
 /// The SHARC+ DSP behind the coupled audio of one firmware.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct DspProfile {
-    /// Image name of `tools/sharcdb.py` / `tools/sharc_pack_image.py`.
+    /// Image name of `tools/sharc_dev/sharcdb.py` / `tools/sharc_dev/sharc_pack_image.py`.
     pub image: String,
     /// RTOS idle task spin loop, short-word PCs: `[idle_start, idle_end)`.
     pub idle_start: u32,

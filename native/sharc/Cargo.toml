@@ -5,7 +5,7 @@ repository.workspace = true
 version = "0.0.1"
 edition = "2024"
 publish = false
-description = "Native SHARC+ core generated from tools/sharc_core (tools/sharc_transpile.py, tools/sharc_rsgen.py)"
+description = "Native SHARC+ core generated from tools/sharc_dev/sharc_core (tools/sharc_dev/sharc_transpile.py, tools/sharc_dev/sharc_rsgen.py)"
 
 # std only: no external crate dependencies. The runtime (sharc-rt) and the
 # generated core (sharc-gen, ~4 min to build) are separate crates, so editing

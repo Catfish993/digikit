@@ -26,7 +26,7 @@ def _ensure_paths():
 
 
 _ensure_paths()
-from sharc_transpile_run import NativeLibraryUnusable  # noqa: E402
+from tools.sharc_dev.sharc_transpile_run import NativeLibraryUnusable  # noqa: E402
 
 
 def pytest_addoption(parser):
@@ -48,7 +48,7 @@ def pytest_configure(config):
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item):
     """A test that needs the native SHARC library skips, with the reason, when
-    the library is missing symbols or stale (tools/sharc_transpile_run.py)."""
+    the library is missing symbols or stale (tools/sharc_dev/sharc_transpile_run.py)."""
     try:
         return (yield)
     except NativeLibraryUnusable as exc:

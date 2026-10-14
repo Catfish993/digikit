@@ -1,4 +1,4 @@
-//! The instruction table of an image (tools/sharc_rsgen.py insn_blob) and the
+//! The instruction table of an image (tools/sharc_dev/sharc_rsgen.py insn_blob) and the
 //! little-endian reader the canonical formats share.
 
 use crate::rt::*;
@@ -56,7 +56,7 @@ impl<'a> Rd<'a> {
     }
 }
 
-/// The decoded instructions of an image (tools/sharc_rsgen.py insn_blob),
+/// The decoded instructions of an image (tools/sharc_dev/sharc_rsgen.py insn_blob),
 /// by PC.
 pub struct InsnTable {
     /// Two levels over the 24-bit short-word PC: 4096-PC pages of

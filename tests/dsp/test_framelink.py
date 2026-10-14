@@ -1,16 +1,13 @@
 # pyright: reportMissingImports=false
-"""tools/framelink.py profiles."""
+"""tools/sharc_dev/framelink.py profiles."""
 
 import os
-import sys
 import tempfile
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import framelink  # noqa: E402
+from tools.sharc_dev import framelink  # noqa: E402
 
 KEYS = {'name', 'vector', 'handler', 'driver', 'counter', 'gate', 'countdown', 'mode',
         'stop', 'stop_writer', 'tables'}

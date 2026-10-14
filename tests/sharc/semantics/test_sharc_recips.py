@@ -12,18 +12,15 @@ from __future__ import annotations
 
 import os
 import struct
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
 TOOLS = os.path.join(
     str(REPO_ROOT), "tools"
 )
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-from sharc_core.compute_alu import _alu_recip_seed_impl  # noqa: E402
-from sharc_core.floats import Const  # noqa: E402
+from tools.sharc_dev.sharc_core.compute_alu import _alu_recip_seed_impl  # noqa: E402
+from tools.sharc_dev.sharc_core.floats import Const  # noqa: E402
 
 
 def f2b(x: float) -> int:

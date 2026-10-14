@@ -5,10 +5,10 @@ import sys
 
 from support.paths import REPO_ROOT
 
-TOOL = REPO_ROOT / "tools" / "blocktrans_coverage.py"
+TOOL = REPO_ROOT / "tools" / "sharc_dev" / "blocktrans_coverage.py"
 _spec = importlib.util.spec_from_file_location("blocktrans_coverage", TOOL)
 bc = importlib.util.module_from_spec(_spec)
-sys.modules["blocktrans_coverage"] = bc
+sys.modules["tools.sharc_dev.blocktrans_coverage"] = bc
 _spec.loader.exec_module(bc)
 
 LOG = """\

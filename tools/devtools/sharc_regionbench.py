@@ -1,0 +1,912 @@
+"""Region microbenchmark loop for the generated DSP block code.
+
+A codegen experiment on the hot DSP regions costs minutes through the coupled
+build. This tool makes a gen dir that holds only the selected regions
+(tools/sharc_dev/sharc_rsgen.py --only), captures the engine state at each region's
+entry from the DN2 note replay, and times the region's generated entry
+function from that state (native/sharc/examples/region_bench.rs).
+
+    sharc_regionbench.py gen [--variant base] [--tools-dir DIR] [-- RSGEN ARGS]
+    sharc_regionbench.py capture [--variant base]
+    sharc_regionbench.py bench [--variant base] [--regions PC,..] [--reps 5]
+        [--engine native|node|bun] [--agg] [--prod-gen]
+        [--engine-args "--liftoff-only"] [--engine-bin PATH]
+        [--rustflags "-C target-feature=+tail-call"] [--wasm-opt "-O3"]
+    sharc_regionbench.py ratio A.jsonl B.jsonl
+    sharc_regionbench.py compare A B [--rounds 5]
+    sharc_regionbench.py check [--variant base]
+    sharc_regionbench.py fast-bench [--variant base] [--regions PC,..] [--reps 5]
+    sharc_regionbench.py fresh-fast [--regions PC,..] [--calls 256] [--warm 16] [--reps 5]
+
+Everything lives under out/native/regionbench/: work-<hash>/ (the transpile
+inference, keyed by the transpiler sources so a generator-only change does not
+re-run it), states/ (captured entry states, shared by all variants so A/B
+compares the same inputs), variants/NAME/ (gen/, region_bench binary and its
+sha256, bench-*.jsonl). The cargo target dir is shared, keyed by the variant's
+gen (out/native/target/<gen-key>, tools/emulator/native_target.py); a PGO build uses its
+own pgo-<hash> subdir. The firmware-derived files stay under out/.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import re
+import shlex
+import shutil
+import statistics
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tools.emulator import digi_env  # noqa: E402
+
+BENCH = os.path.join(ROOT, "out", "native", "regionbench")
+PROV = os.path.join(ROOT, "out", "native", "gen-provenance-20261003")
+INPUTS = os.path.join(PROV, "inputs")
+FULL_GEN = os.path.join(PROV, "gen-A")
+PROD_GEN = os.path.join(ROOT, "out", "native", "dn2-audio", "gen")
+IMAGE_NAME = "dn2-1.11"
+FIXTURE = str(digi_env.READY)
+PACKED_IMAGE = os.path.join(FIXTURE, "digi-audio-dn2-image.bin")
+# The fresh DSP start state is only in the 2026-10-03 directory (docs/findings/14).
+STATE = os.path.join(
+    ROOT, "snapshots", "dn2-audio-ready-2026-10-03", "digi-audio-loop2-fresh.bin"
+)
+# Copied from /private/tmp/dn2-audio-restart-20261003/dsp-profile/ (DSPI2 TX
+# frames of the note capture).
+FRAMES = os.path.join(BENCH, "digi-audio-note.frames")
+# Hand-written versions of hot regions (firmware-derived: stays under out/,
+# compiled into region_bench only when present, see native/sharc/build.rs).
+SOL = os.path.join(BENCH, "sol", "sol.rs")
+DEFAULT_REGIONS = "1C399A,1C3862,1C364F,1C2484,1C5765,B823DB"
+TOOLCHAIN = "1.98.1"
+TRIPLE = "aarch64-apple-darwin"
+WASM_TRIPLE = "wasm32-wasip1"
+WASM_RUNNER = os.path.join(ROOT, "tools", "devtools", "wasm_regionbench.mjs")
+RSGEN_BASE = [
+    "--model-safe",
+    "--explicit-memory-model",
+    "0",
+    "--chain",
+    "--exclude",
+    "0xb88a49:0xb88abc",
+    "--unknown-fallbacks",
+    "0x1c253f",
+]
+# The app's release profile (root Cargo.toml), without LTO or PGO.
+PROFILE_ENV = {
+    "CARGO_PROFILE_RELEASE_OPT_LEVEL": "3",
+    "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "16",
+    "CARGO_PROFILE_RELEASE_LTO": "false",
+    "CARGO_PROFILE_RELEASE_DEBUG": "false",
+    "CARGO_PROFILE_RELEASE_INCREMENTAL": "false",
+}
+
+
+def sha256_files(paths: list[str]) -> str:
+    h = hashlib.sha256()
+    for p in sorted(paths):
+        h.update(p.encode() + b"\0")
+        with open(p, "rb") as fh:
+            h.update(fh.read())
+    return h.hexdigest()
+
+
+def tree_files(top: str, suffixes: tuple[str, ...]) -> list[str]:
+    out = []
+    for dirpath, _dirs, names in os.walk(top):
+        out += [os.path.join(dirpath, n) for n in names if n.endswith(suffixes)]
+    return out
+
+
+def variant_dir(name: str) -> str:
+    return os.path.join(BENCH, "variants", name)
+
+
+def python() -> str:
+    return os.path.join(ROOT, ".venv", "bin", "python")
+
+
+def run(cmd: list[str], **kw) -> float:
+    t = time.perf_counter()
+    subprocess.run(cmd, check=True, cwd=kw.pop("cwd", ROOT), **kw)
+    return time.perf_counter() - t
+
+
+# -- regions ---------------------------------------------------------------
+
+
+def region_blocks(names: list[str]) -> dict[str, list[str]]:
+    """Region name -> its block starts, read from the full generated core
+    (each block entry b_X calls its region r_NAME). Cached."""
+    cache = os.path.join(BENCH, "regions.json")
+    known: dict[str, list[str]] = {}
+    if os.path.exists(cache):
+        with open(cache) as fh:
+            known = json.load(fh)
+    if all(n in known for n in names):
+        return known
+    pat = re.compile(r"pub fn b_([0-9A-F]+)\(s: &mut St\) -> u32 \{\n(.*?)\n\}\n", re.S)
+    found: dict[str, list[str]] = {}
+    for path in sorted(tree_files(FULL_GEN, (".rs",))):
+        if not os.path.basename(path).startswith("blocks_"):
+            continue
+        with open(path) as fh:
+            text = fh.read()
+        for m in pat.finditer(text):
+            r = re.search(r"\br_([0-9A-F]+)\(s, ", m.group(2))
+            if r:
+                found.setdefault(r.group(1), []).append(m.group(1))
+    known.update(found)
+    os.makedirs(BENCH, exist_ok=True)
+    with open(cache, "w") as fh:
+        json.dump(known, fh, indent=1)
+    missing = [n for n in names if n not in known]
+    if missing:
+        sys.exit("regions not in the full gen: %s" % missing)
+    return known
+
+
+# -- gen -------------------------------------------------------------------
+
+
+def work_dir(tools_dir: str) -> str:
+    files = [os.path.join(tools_dir, "sharc_transpile.py")]
+    files += [
+        os.path.join(tools_dir, f)
+        for f in os.listdir(tools_dir)
+        if f.startswith("sharc_transpile") and f.endswith(".py")
+    ]
+    files += tree_files(os.path.join(tools_dir, "sharc_core"), (".py",))
+    return os.path.join(BENCH, "work-" + sha256_files(sorted(set(files)))[:12])
+
+
+def cmd_gen(args, extra: list[str]) -> None:
+    tools = os.path.abspath(args.tools_dir)
+    names = args.regions.split(",")
+    blocks = region_blocks(names)
+    only = ",".join(b for n in names for b in blocks[n])
+    work = work_dir(tools)
+    vdir = variant_dir(args.variant)
+    gen = os.path.join(vdir, "gen")
+    os.makedirs(gen, exist_ok=True)
+    timings = {}
+    if os.path.isdir(work) and os.path.exists(os.path.join(work, ".done")):
+        timings["transpile"] = 0.0
+    else:
+        timings["transpile"] = run(
+            [python(), os.path.join(tools, "sharc_transpile.py"), "--strict"]
+            + ["--out", os.path.join(work + "-tp-out"), "--work", work]
+            + shlex.split(args.transpile_args),
+            stdout=subprocess.DEVNULL,
+        )
+        open(os.path.join(work, ".done"), "w").close()
+    timings["rsgen"] = run(
+        [python(), os.path.join(tools, "sharc_rsgen.py"), IMAGE_NAME]
+        + ["--coverage", os.path.join(INPUTS, "cov6.txt")]
+        + ["--entries", os.path.join(INPUTS, "ent9.txt")]
+        + ["--transitions", os.path.join(INPUTS, "trans9.txt")]
+        + RSGEN_BASE
+        + ["--work", work, "--out", gen, "--only", only]
+        + extra,
+        stdout=subprocess.DEVNULL,
+    )
+    with open(os.path.join(vdir, "gen.json"), "w") as fh:
+        json.dump(
+            {
+                "regions": names,
+                "only": only,
+                "work": work,
+                "rsgen_extra": extra,
+                "tools_dir": tools,
+                "seconds": timings,
+            },
+            fh,
+            indent=1,
+        )
+    print("gen %s: transpile %.1fs rsgen %.1fs" % (args.variant, *timings.values()))
+
+
+# -- build -----------------------------------------------------------------
+
+
+def benchlock(mode: str, label: str):
+    """Lock for builds (shared) and timed runs (exclusive), see benchlock.py."""
+    from tools.devtools import benchlock as module
+    return module.hold(mode, label)
+
+
+def native_target():
+    """tools/emulator/native_target.py: cargo target dirs keyed by generated core."""
+    from tools.emulator import native_target as module
+    return module
+
+
+def cmd_build(args) -> str:
+    vdir = variant_dir(args.variant)
+    gen = PROD_GEN if getattr(args, "prod_gen", False) else os.path.join(vdir, "gen")
+    if not os.path.isdir(gen):
+        sys.exit("no gen for variant %s: run gen first" % args.variant)
+    digi_env.check_generated(pathlib.Path(gen))
+    src = tree_files(os.path.join(ROOT, "native", "sharc", "src"), (".rs",))
+    src += [
+        os.path.join(ROOT, "native", "sharc", "examples", "region_bench.rs"),
+        os.path.join(ROOT, "native", "sharc", "build.rs"),
+    ]
+    # Modules of the example (region_bench/*.rs) and the optional hand-written
+    # versions.
+    src += tree_files(
+        os.path.join(ROOT, "native", "sharc", "examples", "region_bench"), (".rs",)
+    )
+    if os.path.isfile(SOL) and not getattr(args, "prod_gen", False):
+        src.append(SOL)
+    # The fast tier's Cranelift backend (a dev-dependency of the example).
+    fast_cl = os.path.join(ROOT, "native", "sharc-fast-cl")
+    src += tree_files(os.path.join(fast_cl, "src"), (".rs",))
+    src += [
+        os.path.join(fast_cl, "Cargo.toml"),
+        os.path.join(ROOT, "native", "sharc", "Cargo.toml"),
+        os.path.join(ROOT, "Cargo.toml"),
+        os.path.join(ROOT, "Cargo.lock"),
+    ]
+    gen_files = [
+        os.path.join(gen, n)
+        for n in os.listdir(gen)
+        if n != "rsgen-report.json" and not n.startswith("transpile-report")
+    ]
+    pgo = getattr(args, "pgo", None)
+    # Cargo features of sharc-native: --features, else the variant's FEATURES file.
+    features = getattr(args, "features", None)
+    if not features and os.path.isfile(os.path.join(vdir, "FEATURES")):
+        with open(os.path.join(vdir, "FEATURES")) as fh:
+            features = fh.read().strip() or None
+    prod_gen = getattr(args, "prod_gen", False)
+    wasm = getattr(args, "wasm", False)
+    rustflags = getattr(args, "rustflags", "") if wasm else ""
+    # Production reuses the app cache only with its explicit profile.  Mini
+    # variants retain the historical benchmark profile overrides.
+    profile_env = {} if prod_gen else dict(PROFILE_ENV)
+    if os.environ.get("REGIONBENCH_DEBUG") and not prod_gen:
+        # Line tables for tools/sharc_dev/aot_attrib.py (code size and executed bytes
+        # per inlined helper).
+        profile_env["CARGO_PROFILE_RELEASE_DEBUG"] = "line-tables-only"
+        profile_env["CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO"] = "packed"
+    key = hashlib.sha256(
+        (
+            sha256_files(src + gen_files)
+            + repr(pgo)
+            + repr(features)
+            + repr(sorted(profile_env.items()))
+            + repr(rustflags)
+        ).encode()
+    ).hexdigest()
+    if wasm and pgo:
+        sys.exit("--wasm and --pgo do not combine")
+    exe = os.path.join(vdir, "region_bench.wasm" if wasm else "region_bench")
+    stamp = os.path.join(vdir, "build-wasm.json" if wasm else "build.json")
+    flags_tag = ""
+    if wasm and rustflags:
+        flags_tag = hashlib.sha256(rustflags.encode()).hexdigest()[:8]
+        exe = os.path.join(vdir, "region_bench-%s.wasm" % flags_tag)
+        stamp = os.path.join(vdir, "build-wasm-%s.json" % flags_tag)
+    # A variant with a FROZEN file keeps its binary whatever the sources do
+    # (an A/B against a build of older sources).
+    if os.path.exists(exe) and os.path.exists(os.path.join(vdir, "FROZEN")):
+        print("build %s: frozen" % args.variant)
+        return exe
+    if os.path.exists(exe) and os.path.exists(stamp):
+        with open(stamp) as fh:
+            if json.load(fh).get("key") == key:
+                print("build %s: up to date" % args.variant)
+                return exe
+    env = dict(os.environ)
+    # These flags change compiler fingerprints and can make a cached prod
+    # target silently rebuild.  Every invocation owns its flag environment.
+    for key_name in ("CARGO_ENCODED_RUSTFLAGS", "RUSTFLAGS", "LLVM_PROFILE_FILE"):
+        env.pop(key_name, None)
+    if prod_gen:
+        for key_name in list(env):
+            if key_name.startswith("CARGO_PROFILE_RELEASE_"):
+                env.pop(key_name)
+        env.pop("SHARC_REGIONBENCH_SOL", None)
+    env.update(SHARC_GEN_DIR=gen, **profile_env)
+    if os.path.isfile(SOL) and not prod_gen:
+        env["SHARC_REGIONBENCH_SOL"] = SOL
+    if pgo:
+        env["RUSTFLAGS"] = "-Cprofile-use=%s" % (os.path.abspath(pgo))
+    # RUSTFLAGS (PGO) builds take --target so the flags skip build scripts and
+    # get their own subdir; plain builds share the gen's key dir.
+    nt = native_target()
+    if pgo:
+        # The production PGO build is intentionally the launcher's pgo-use
+        # directory: this is an example-only rebuild against its cached
+        # generated core, with the launcher's exact profile-use flags.  Mini
+        # variants retain isolated pgo-<hash> targets for A/B work.
+        if getattr(args, "prod_gen", False):
+            target = os.path.join(ROOT, "out", "native", "target", "prod", "pgo-use")
+        else:
+            tag = hashlib.sha256(os.path.abspath(pgo).encode()).hexdigest()[:8]
+            target = str(nt.target_dir(gen, "pgo-" + tag))
+        target_args = ["--target", TRIPLE]
+        built_dir = os.path.join(target, TRIPLE, "release", "examples")
+    elif wasm:
+        if rustflags:
+            env["RUSTFLAGS"] = rustflags
+            target = str(nt.target_dir(gen, "wasm-" + flags_tag))
+        else:
+            target = str(nt.target_dir(gen))
+        target_args = ["--target", WASM_TRIPLE]
+        built_dir = os.path.join(target, WASM_TRIPLE, "release", "examples")
+    else:
+        target = str(nt.target_dir(gen))
+        target_args = []
+        built_dir = os.path.join(target, "release", "examples")
+    with benchlock("shared", "regionbench build"):
+        secs = run(
+            ["rustup", "run", TOOLCHAIN, "cargo", "build", "--release", "--locked"]
+            + ["--example", "region_bench"]
+            + (["--features", features] if features else [])
+            + target_args
+            + ["--manifest-path", os.path.join(ROOT, "native", "sharc", "Cargo.toml")]
+            + ["--target-dir", target],
+            env=env,
+        )
+    built = os.path.join(built_dir, "region_bench.wasm" if wasm else "region_bench")
+    with open(built, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    subprocess.run(["cp", built, exe], check=True)
+    with open(exe + ".sha256", "w") as fh:
+        fh.write("%s  %s\n" % (digest, os.path.basename(exe)))
+    stamp_data = {
+        "key": key,
+        "build_seconds": round(secs, 1),
+        "pgo": pgo,
+        "profile_env": profile_env,
+        "sha256": digest,
+    }
+    if wasm:
+        stamp_data["target"] = WASM_TRIPLE
+        stamp_data["rustflags"] = rustflags
+    with open(stamp, "w") as fh:
+        json.dump(stamp_data, fh)
+    print("build %s: %.1fs sha256 %s" % (args.variant, secs, digest[:12]))
+    return exe
+
+
+# -- capture / bench -------------------------------------------------------
+
+
+def states_dir() -> str:
+    return os.path.join(BENCH, "states")
+
+
+def cmd_capture(args) -> None:
+    exe = cmd_build(args)
+    names = args.regions.split(",")
+    blocks = region_blocks(names)
+    entries = [b for n in names for b in blocks[n]]
+    secs = run(
+        [exe, "capture", PACKED_IMAGE, STATE, FRAMES, states_dir(), ",".join(entries)]
+        + ["--min-frame", str(args.min_frame)]
+    )
+    print("capture: %.1fs" % secs)
+
+
+def read_meta(entry: str) -> dict[str, str] | None:
+    path = os.path.join(states_dir(), "r_%s.meta" % entry)
+    if not os.path.exists(path):
+        return None
+    with open(path) as fh:
+        return dict(line.rstrip("\n").split("=", 1) for line in fh if "=" in line)
+
+
+def pick_entries(names: list[str]) -> dict[str, str]:
+    """Region -> the entry block with the most instructions run in the
+    capture window (the hot way into the region)."""
+    blocks = region_blocks(names)
+    picked = {}
+    for n in names:
+        best = (0, "")
+        for b in blocks[n]:
+            meta = read_meta(b)
+            if meta and int(meta["total_insns_in_window"]) > best[0]:
+                best = (int(meta["total_insns_in_window"]), b)
+        if not best[1]:
+            sys.exit("region %s has no captured entry: run capture" % n)
+        picked[n] = best[1]
+    return picked
+
+
+def run_bench(
+    exe: str,
+    names: list[str],
+    reps: int,
+    calls: int,
+    engine: str = "native",
+    agg: bool = False,
+    engine_args: str = "",
+    engine_bin: str | None = None,
+) -> list[dict]:
+    """Rows keyed by region name (entry in row['entry'])."""
+    entries = pick_entries(names)
+    back = {e: n for n, e in entries.items()}
+    # node/bun run the wasm build of the example through tools/devtools/wasm_regionbench.mjs.
+    if engine == "native":
+        prefix = [exe]
+    else:
+        prefix = [engine_bin or engine, *shlex.split(engine_args)]
+        prefix += [WASM_RUNNER, exe]
+    command = (
+        prefix
+        + ["bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
+        + ["--reps", str(reps), "--calls", str(calls)]
+        + (["--agg"] if agg else [])
+    )
+    done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    if done.returncode != 0:
+        print("command: %s" % shlex.join(command), file=sys.stderr)
+        print("\n".join(done.stderr.splitlines()[-40:]), file=sys.stderr)
+        sys.exit("bench failed with exit code %d" % done.returncode)
+    out = done.stdout
+    rows = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
+    for r in rows:
+        r["entry"] = r["region"]
+        r["region"] = back[r["entry"]]
+        r["engine"] = engine
+        if engine != "native":
+            r["engine_args"] = engine_args
+    return rows
+
+
+def summarize(rows: list[dict]) -> list[tuple]:
+    by: dict[str, list[dict]] = {}
+    for r in rows:
+        by.setdefault(r["region"], []).append(r)
+    table = []
+    for reg, rs in by.items():
+        med = [r["trim_ns"] for r in rs]
+        m = statistics.median(med)
+        ins = statistics.mean(r["insns_mean"] for r in rs)
+        spread = (max(med) - min(med)) / m * 100 if m else 0.0
+        const = all(
+            r["insns_min"] == r["insns_max"] and not r["exit_varies"] for r in rs
+        )
+        table.append(
+            (
+                "%s/%s" % (reg, rs[0]["entry"]),
+                ins,
+                m,
+                m / ins if ins else 0.0,
+                spread,
+                statistics.median(r["p10_ns"] for r in rs),
+                statistics.median(r["p90_ns"] for r in rs),
+                const,
+            )
+        )
+    return table
+
+
+def print_table(table: list[tuple]) -> None:
+    print(
+        "region/entry    insns/call  ns/call(trim)  ns/insn  rep-spread%  p10..p90 ns   constant"
+    )
+    for reg, ins, m, per, spread, p10, p90, const in table:
+        print(
+            "%-15s %10.1f %13.0f %8.2f %12.2f  %6.0f..%-6.0f  %s"
+            % (reg, ins, m, per, spread, p10, p90, "yes" if const else "NO")
+        )
+
+
+def run_wasm_opt(exe: str, opt: str) -> str:
+    """Optimize the built wasm with binaryen's wasm-opt; returns the new path."""
+    if shutil.which("wasm-opt") is None:
+        sys.exit("wasm-opt not on PATH: run `mise install`")
+    tag = hashlib.sha256(opt.encode()).hexdigest()[:8]
+    base, ext = os.path.splitext(exe)
+    out = "%s.opt-%s%s" % (base, tag, ext)
+    run(
+        ["wasm-opt", *shlex.split(opt)]
+        + ["--enable-bulk-memory", "--enable-sign-ext", "--enable-mutable-globals"]
+        + ["--enable-nontrapping-float-to-int", "--enable-multivalue"]
+        + ["--enable-reference-types", exe, "-o", out]
+    )
+    print(
+        "wasm-opt %s: %d -> %d bytes"
+        % (opt, os.path.getsize(exe), os.path.getsize(out))
+    )
+    return out
+
+
+def cmd_bench(args) -> None:
+    args.wasm = args.engine != "native"
+    if args.prod_gen and args.variant == "base":
+        # Keep the production-gen binary apart from the mini-gen variant.
+        args.variant = "prod-bench"
+    os.makedirs(variant_dir(args.variant), exist_ok=True)
+    exe = cmd_build(args)
+    if args.wasm_opt:
+        exe = run_wasm_opt(exe, args.wasm_opt)
+    names = args.regions.split(",")
+    t = time.perf_counter()
+    with benchlock("exclusive", "regionbench bench"):
+        rows = run_bench(
+            exe,
+            names,
+            args.reps,
+            args.calls,
+            args.engine,
+            args.agg,
+            args.engine_args,
+            args.engine_bin,
+        )
+    secs = time.perf_counter() - t
+    if args.engine != "native":
+        for r in rows:
+            r["rustflags"] = args.rustflags
+            r["wasm_opt"] = args.wasm_opt
+        parts = [args.engine_args, args.rustflags, args.wasm_opt]
+        slug = re.sub(r"[^A-Za-z0-9_]+", "_", " ".join(p for p in parts if p))[:60]
+        stem = "bench-%s%s-%d.jsonl" % (
+            args.engine,
+            "-" + slug if slug else "",
+            int(time.time()),
+        )
+    elif args.agg:
+        stem = "bench-agg-%d.jsonl" % int(time.time())
+    else:
+        stem = "bench-%d.jsonl" % int(time.time())
+    path = os.path.join(variant_dir(args.variant), stem)
+    with open(path, "w") as fh:
+        fh.write("".join(json.dumps(r) + "\n" for r in rows))
+    print_table(summarize(rows))
+    print("bench run: %.1fs -> %s" % (secs, path))
+
+
+def read_rows(path: str) -> list[dict]:
+    with open(path) as fh:
+        return [json.loads(line) for line in fh if line.startswith("{")]
+
+
+def cmd_ratio(args) -> None:
+    """Per-region B/A of the median trimmed ns/call of two bench-*.jsonl files."""
+    a = {t[0]: t for t in summarize(read_rows(args.a))}
+    b = {t[0]: t for t in summarize(read_rows(args.b))}
+    common = [k for k in a if k in b]
+    both = [k for k in common if a[k][2] > 0 and b[k][2] > 0]
+    skipped = [k for k in common if k not in both]
+    lines = sorted(both, key=lambda k: b[k][2] / a[k][2], reverse=True)
+    print("region/entry    insns/call   A ns/call   B ns/call     B/A")
+    for k in lines:
+        print(
+            "%-15s %10.1f %11.1f %11.1f %7.3f"
+            % (k, a[k][1], a[k][2], b[k][2], b[k][2] / a[k][2])
+        )
+    if skipped:
+        print("skipped (<= 0 ns after restore subtraction): " + ", ".join(skipped))
+    sum_a = sum(a[k][2] for k in both)
+    sum_b = sum(b[k][2] for k in both)
+    print("overall B/A (weighted by A ns/call): %.3f" % (sum_b / sum_a))
+
+
+def cmd_fast_bench(args) -> None:
+    """Time the fast tier next to the generated region on the captured
+    entries (region_bench fast-bench): ns/call of the generated region
+    (aot), the fast kernel alone (fast_loop), the kernel plus the generated
+    block at the pc it stops at (fast_total), and Cranelift compile time."""
+    exe = cmd_build(args)
+    names = args.regions.split(",")
+    entries = pick_entries(names)
+    back = {e: n for n, e in entries.items()}
+    with benchlock("exclusive", "regionbench fast-bench"):
+        out = subprocess.run(
+            [exe, "fast-bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
+            + ["--reps", str(args.reps), "--calls", str(args.calls)],
+            check=True,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        ).stdout
+    rows = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
+    path = os.path.join(
+        variant_dir(args.variant), "fastbench-%d.jsonl" % int(time.time())
+    )
+    with open(path, "w") as fh:
+        fh.write("".join(json.dumps(r) + "\n" for r in rows))
+    print("region/entry      mode          ns/call(trim)  vs aot   compile us")
+    for entry, name in back.items():
+        aot = [
+            r["trim_ns"] for r in rows if r["region"] == entry and r["mode"] == "aot"
+        ]
+        base = statistics.median(aot)
+        for mode in ("aot", "fast_loop", "fast_total"):
+            v = [
+                r["trim_ns"] for r in rows if r["region"] == entry and r["mode"] == mode
+            ]
+            m = statistics.median(v)
+            cu = statistics.median(
+                r["compile_us"] for r in rows if r["region"] == entry
+            )
+            print(
+                "%-17s %-12s %12.0f %8.2fx %10.0f"
+                % ("%s/%s" % (name, entry), mode, m, base / m, cu)
+            )
+    print("rows -> %s" % path)
+
+
+def cmd_fresh_fast(args) -> None:
+    """Fresh full-production-gen fast/AOT comparison on captured entries.
+
+    The Rust mode emits a refusal row for every missing, unsupported, or
+    differential mismatch entry, then timing rows only for proved entries.
+    Reset/import happens outside every timed interval.
+    """
+    args.prod_gen = True
+    args.regions = ",".join(f"{int(pc, 16):X}" for pc in args.regions.split(","))
+    exe = cmd_build(args)
+    command = [
+        exe,
+        "fast-compare",
+        PACKED_IMAGE,
+        states_dir(),
+        args.regions,
+        "--calls",
+        str(args.calls),
+        "--warm",
+        str(args.warm),
+        "--reps",
+        str(args.reps),
+    ]
+    with benchlock("exclusive", "regionbench fresh-fast"):
+        completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    rows = [
+        json.loads(line)
+        for line in completed.stdout.splitlines()
+        if line.startswith("{")
+    ]
+    with open(exe, "rb") as fh:
+        binary_sha256 = hashlib.sha256(fh.read()).hexdigest()
+    gen_files = sorted(
+        os.path.join(PROD_GEN, name)
+        for name in os.listdir(PROD_GEN)
+        if os.path.isfile(os.path.join(PROD_GEN, name))
+    )
+    report = {
+        "kind": "fresh-fast-aot-captured-state",
+        "command": command,
+        "env": {
+            "SHARC_GEN_DIR": PROD_GEN,
+            "profile_env": {},
+            "RUSTFLAGS": (
+                "-Cprofile-use=%s" % os.path.abspath(args.pgo) if args.pgo else None
+            ),
+        },
+        "stderr": completed.stderr,
+        "returncode": completed.returncode,
+        "binary_sha256": binary_sha256,
+        "gen_sha256": sha256_files(gen_files),
+        "image_sha256": sha256_files([PACKED_IMAGE]),
+        "captured_states": {
+            pc: {
+                "state_sha256": sha256_files([state_path]),
+                "meta_sha256": sha256_files([meta_path]),
+            }
+            for pc in args.regions.split(",")
+            if os.path.isfile(
+                state_path := os.path.join(states_dir(), "r_%s.state" % pc.upper())
+            )
+            and os.path.isfile(
+                meta_path := os.path.join(states_dir(), "r_%s.meta" % pc.upper())
+            )
+        },
+        "source_sha256": sha256_files(
+            [
+                os.path.join(ROOT, "native", "sharc", "examples", "region_bench.rs"),
+                *tree_files(
+                    os.path.join(ROOT, "native", "sharc", "examples", "region_bench"),
+                    (".rs",),
+                ),
+                os.path.abspath(__file__),
+            ]
+        ),
+        "rows": rows,
+    }
+    requested = args.regions.split(",")
+    proved = {
+        str(row.get("region", "")).upper()
+        for row in rows
+        if row.get("status") == "proved"
+    }
+    measured = {
+        (str(row.get("region", "")).upper(), row.get("mode"), row.get("rep"))
+        for row in rows
+        if row.get("status") == "measured"
+    }
+    missing = []
+    for pc in requested:
+        if pc not in proved:
+            missing.append(f"{pc}:proved")
+        for mode in ("aot", "fast_total"):
+            for rep in range(args.reps):
+                if (pc, mode, rep) not in measured:
+                    missing.append(f"{pc}:{mode}:rep{rep}")
+    report["complete"] = (
+        completed.returncode == 0
+        and not missing
+        and not any(row.get("status") == "refused" for row in rows)
+    )
+    report["missing"] = missing
+    path = args.out or os.path.join(BENCH, "fresh-fast-%d.json" % int(time.time()))
+    with open(path, "w") as fh:
+        json.dump(report, fh, indent=2)
+        fh.write("\n")
+    proved = sum(r.get("status") == "proved" for r in rows)
+    measured = sum(r.get("status") == "measured" for r in rows)
+    refused = sum(r.get("status") == "refused" for r in rows)
+    print(
+        "fresh-fast: %d proved, %d measured rows, %d refusals, complete=%s -> %s"
+        % (proved, measured, refused, report["complete"], path)
+    )
+    if not report["complete"]:
+        raise SystemExit(1)
+
+
+def cmd_compare(args) -> None:
+    exes = {}
+    for v in (args.a, args.b):
+        args.variant = v
+        exes[v] = cmd_build(args)
+    names = args.regions.split(",")
+    meds: dict[str, dict[str, list[float]]] = {
+        n: {args.a: [], args.b: []} for n in names
+    }
+    with benchlock("exclusive", "regionbench compare"):
+        for i in range(args.rounds):
+            order = (args.a, args.b) if i % 2 == 0 else (args.b, args.a)
+            for v in order:
+                for r in run_bench(exes[v], names, 1, args.calls):
+                    meds[r["region"]][v].append(r["trim_ns"])
+    print("region   ratio B/A (median of paired)  min..max   A ns   B ns")
+    for n in names:
+        a, b = meds[n][args.a], meds[n][args.b]
+        ratios = [y / x for x, y in zip(a, b, strict=True)]
+        print(
+            "%-8s %8.4f  %.4f..%.4f  %8.0f %8.0f"
+            % (
+                n,
+                statistics.median(ratios),
+                min(ratios),
+                max(ratios),
+                statistics.median(a),
+                statistics.median(b),
+            )
+        )
+
+
+def cmd_check(args) -> None:
+    """Diff each region's generated body against the full generated core,
+    modulo variant ids and chain targets outside the mini gen."""
+    gen = os.path.join(variant_dir(args.variant), "gen")
+    names = args.regions.split(",")
+    blocks = region_blocks(names)
+    inside = {b for n in names for b in blocks[n]}
+
+    def norm(text: str) -> str:
+        text = re.sub(r"spec_\d+::(\w+?)__v\d+", r"\1__v#", text)
+        pat = r"crate::generated::image::blocks_\d+::b_([0-9A-F]+)|\bb_([0-9A-F]+)\b"
+        return re.sub(
+            pat,
+            lambda m: (
+                ("B_" + (m.group(1) or m.group(2)))
+                if (m.group(1) or m.group(2)) in inside
+                else "crate::no_block"
+            ),
+            text,
+        )
+
+    def body(path_dir: str, name: str) -> str:
+        for p in sorted(tree_files(path_dir, (".rs",))):
+            if not os.path.basename(p).startswith("blocks_"):
+                continue
+            with open(p) as fh:
+                t = fh.read()
+            i = t.find("pub fn r_%s(" % name)
+            if i >= 0:
+                return norm(t[i : t.index("\npub fn ", i + 10)])
+        sys.exit("no region %s in %s" % (name, path_dir))
+
+    for n in names:
+        same = body(FULL_GEN, n) == body(gen, n)
+        print("r_%s: %s" % (n, "identical" if same else "DIFFERENT"))
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    extra: list[str] = []
+    if "--" in argv:
+        i = argv.index("--")
+        argv, extra = argv[:i], argv[i + 1 :]
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def common(sp, variant=True):
+        if variant:
+            sp.add_argument("--variant", default="base")
+        sp.add_argument("--regions", default=DEFAULT_REGIONS)
+        sp.add_argument("--pgo", help="profdata for -Cprofile-use (default: none)")
+        sp.add_argument(
+            "--features",
+            help="cargo features of sharc-native (experiments: docs/design/aot-mask-free.md)",
+        )
+        sp.add_argument("--calls", type=int, default=4000)
+        return sp
+
+    g = common(sub.add_parser("gen", help="mini gen of the selected regions"))
+    g.add_argument("--tools-dir", default=os.path.join(ROOT, "tools"))
+    g.add_argument("--transpile-args", default="")
+    c = common(sub.add_parser("capture", help="capture entry states"))
+    c.add_argument("--min-frame", type=int, default=4620)
+    b = common(sub.add_parser("bench", help="build and time one variant"))
+    b.add_argument("--reps", type=int, default=5)
+    b.add_argument("--engine", choices=["native", "node", "bun"], default="native")
+    b.add_argument("--agg", action="store_true", help="one clock around all calls")
+    b.add_argument(
+        "--prod-gen",
+        action="store_true",
+        help="use the production DN2 core (variant prod-bench unless --variant)",
+    )
+    b.add_argument("--engine-args", default="", help="node/bun flags, shlex-split")
+    b.add_argument("--engine-bin", help="node/bun executable (default: on PATH)")
+    b.add_argument(
+        "--rustflags", default="", help="RUSTFLAGS of the wasm build (wasm engines)"
+    )
+    b.add_argument(
+        "--wasm-opt", default="", help="wasm-opt flags, shlex-split (wasm engines)"
+    )
+    r = sub.add_parser("ratio", help="per-region B/A of two bench jsonl files")
+    r.add_argument("a")
+    r.add_argument("b")
+    k = common(sub.add_parser("compare", help="alternating A/B"), variant=False)
+    k.add_argument("a")
+    k.add_argument("b")
+    k.add_argument("--rounds", type=int, default=5)
+    common(sub.add_parser("check", help="diff region bodies against the full gen"))
+    f = common(
+        sub.add_parser("fast-bench", help="fast tier next to the generated region")
+    )
+    f.add_argument("--reps", type=int, default=5)
+    x = common(
+        sub.add_parser(
+            "fresh-fast", help="full-production-gen, reset-per-call AOT/fast comparison"
+        )
+    )
+    x.set_defaults(variant="prod-fast", calls=16)
+    x.add_argument("--warm", type=int, default=2)
+    x.add_argument("--reps", type=int, default=3)
+    x.add_argument("--out", help="JSON report path (default: regionbench timestamp)")
+    args = p.parse_args(argv)
+    if args.cmd == "gen":
+        cmd_gen(args, extra)
+    elif args.cmd == "capture":
+        cmd_capture(args)
+    elif args.cmd == "bench":
+        cmd_bench(args)
+    elif args.cmd == "compare":
+        cmd_compare(args)
+    elif args.cmd == "ratio":
+        cmd_ratio(args)
+    elif args.cmd == "fast-bench":
+        cmd_fast_bench(args)
+    elif args.cmd == "fresh-fast":
+        cmd_fresh_fast(args)
+    else:
+        cmd_check(args)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

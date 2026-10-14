@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_calltrace.py.
+"""Tests for tools/sharc_dev/sharc_calltrace.py.
 
 Same two-group convention as tests/sharc/integration/test_sharc_replay.py: the register/
 stack-arg sampling helpers are pure (a hand-built sharc_core.state.State,
@@ -8,17 +8,14 @@ capture file (out/captures/, also never committed), and is skipped without
 either.
 """
 
-import os
 import pathlib
-import sys
 import unittest
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_calltrace as ct  # noqa: E402
-import sharc_trace as st  # noqa: E402
+from tools.sharc_dev import sharc_calltrace as ct  # noqa: E402
+from tools.sharc_dev import sharc_trace as st  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-running-idle.dt2cap")
@@ -123,7 +120,7 @@ class CalltraceIntegrationTest(unittest.TestCase):
     just that one entry is a cheap, deterministic smoke test that the
     breakpoint-attach/return-match machinery actually works end to end
     (entry recorded, its own return matched, R0 filled in) -- not a claim
-    about the specific numbers, which tools/sharc_calltrace.py's own module
+    about the specific numbers, which tools/sharc_dev/sharc_calltrace.py's own module
     docstring already documents as coming straight from real execution."""
 
     def test_voice_render_entry_and_return_are_matched(self):

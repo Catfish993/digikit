@@ -8,18 +8,14 @@ import pytest
 from support.paths import REPO_ROOT
 
 TOOLS = REPO_ROOT / "tools"
-sys.path.insert(0, str(TOOLS))
-try:
-    import digi_env
-finally:
-    sys.path.pop(0)
+from tools.emulator import digi_env
 
 
 def _load_coupled():
-    spec = importlib.util.spec_from_file_location("coupled", TOOLS / "coupled.py")
+    spec = importlib.util.spec_from_file_location("coupled", TOOLS / "emulator" / "coupled.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
-    sys.modules["coupled"] = module
+    sys.modules["tools.emulator.coupled"] = module
     spec.loader.exec_module(module)
     return module
 

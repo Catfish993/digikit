@@ -4,7 +4,7 @@
 //! `scratchpad/export_snap.py` from an `emu.snapshot` capture, and runs
 //! `Cpu::step` over it with a stub bus: RAM/flash pages come from the dump
 //! (a flat page-pointer table indexed by `addr >> 20`, at the snapshot's
-//! own 1 MiB page granularity, `tools/snapread.py`'s `PAGE`); any address
+//! own 1 MiB page granularity, `tools/emulator/snapread.py`'s `PAGE`); any address
 //! outside those pages is peripheral/MMIO space and is answered with a
 //! constant 0 on reads and silently accepted on writes (no recorded-MMIO-
 //! trace replay --
@@ -29,7 +29,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
-const PAGE_SIZE: usize = 0x0010_0000; // matches tools/snapread.py's PAGE
+const PAGE_SIZE: usize = 0x0010_0000; // matches tools/emulator/snapread.py's PAGE
 const PAGE_SHIFT: u32 = 20; // log2(PAGE_SIZE)
 const PAGE_MASK: u32 = !(PAGE_SIZE as u32 - 1);
 /// Perf step 2 (cf-interp-speed.md): `pages[addr >> PAGE_SHIFT]` covers the

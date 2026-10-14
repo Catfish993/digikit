@@ -16,13 +16,11 @@ Rules under test (page numbers are PDF pages of out/refs/sharc-plus-prm,
 """
 
 import struct
-import sys
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_trace as st
-from sharc_core.encoding import (
+from tools.sharc_dev import sharc_trace as st
+from tools.sharc_dev.sharc_core.encoding import (
     AI_BIT,
     AN_BIT,
     AS_BIT,
@@ -33,8 +31,8 @@ from sharc_core.encoding import (
     MU_BIT,
     MV_BIT,
 )
-from sharc_disasm import Instruction
-from sharcldr import LoadedMemory
+from tools.sharc_dev.sharc_disasm import Instruction
+from tools.sharc_dev.sharcldr import LoadedMemory
 
 U = st.UREG_CODES
 SIMD = st.Const(1 << 21)
@@ -226,7 +224,7 @@ def test_add_underflowing_result_flushes_with_sign_and_az():
 def test_post_rounded_boundary_of_the_flush():
     # The 24-bit value 2**-126 - 2**-150 is a denormal; 2**-126 - 2**-151 is
     # the tie that rounds up to 2**-126 (nearest even), which is normal.
-    from sharc_core.floats import _float32_result
+    from tools.sharc_dev.sharc_core.floats import _float32_result
 
     exact = 2.0**-126 - 2.0**-150
     tie = 2.0**-126 - 2.0**-151

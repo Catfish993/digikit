@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_framemap.py.
+"""Tests for tools/sharc_dev/sharc_framemap.py.
 
 Pure-Python pieces (marker_value, _unalias, _region_label, _apply_fingerprint,
 _load_frame_bytes) need neither the real firmware nor its program database.
@@ -10,16 +10,14 @@ available, matching tests/sharc/analysis/test_sharc_inputs.py; run() itself is m
 
 import os
 import pathlib
-import sys
 import unittest
 from importlib import import_module
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-fm = import_module("sharc_framemap")
-L = import_module("sharcldr")
+fm = import_module("tools.sharc_dev.sharc_framemap")
+L = import_module("tools.sharc_dev.sharcldr")
 
 DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")

@@ -6,16 +6,14 @@ post-modify wraps around B/L when MODE1.CBUFEN is set and L != 0; pre-modify
 neither updates I nor wraps; L is scaled by the access size in byte space.
 """
 
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_trace as T
-from sharc_core import memory as m
-from sharc_core.values import Const, Unknown
-from sharc_disasm import Instruction
+from tools.sharc_dev import sharc_trace as T
+from tools.sharc_dev.sharc_core import memory as m
+from tools.sharc_dev.sharc_core.values import Const, Unknown
+from tools.sharc_dev.sharc_disasm import Instruction
 
 CBUFEN = 1 << 24
 PEYEN = 1 << 21

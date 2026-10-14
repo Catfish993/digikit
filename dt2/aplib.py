@@ -241,7 +241,6 @@ if __name__ == '__main__':
     import os
     import time
 
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from dt2.elz import depack_section
     from emu import config
 

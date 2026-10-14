@@ -1,5 +1,5 @@
 //! A decoded instruction as the lowering reads it: the generic decoder's
-//! output (decode.rs) with `tools/sharc_core`'s field lookup rules
+//! output (decode.rs) with `tools/sharc_dev/sharc_core`'s field lookup rules
 //! (`encoding._field`: an exact key, else the first `stem[...]` key).
 
 use crate::decode::{DecodeKind, Decoded};

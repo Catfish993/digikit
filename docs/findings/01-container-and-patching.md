@@ -26,7 +26,7 @@ generation, and three things separate them from 1.15C/1.10E:
   the version word, and it reads `0x02000000` in 1.15C and 1.10E, `0x02010000`
   in 1.16 and 1.11. So installing either of the newer firmwares performs the
   bootstrap upgrade — the one irreversible operation on the device, and the
-  reason `tools/patchimg.py` refuses section 2 outright.
+  reason `tools/patchkit/patchimg.py` refuses section 2 outright.
 - **The Unicorn depacker cannot read them.** Every packed section of 1.16
   fails under `emu.extract --oracle`. The cause is the oracle, not the new
   section: the depacker is taken from the UPDATER, and 1.16's UPDATER differs
@@ -320,7 +320,7 @@ and filters are labels and parameter IDs on the ColdFire; audio runs on the DSP.
 decompressed with `dt2.elz.depack_section` (the oracle depacker's entry
 point moved on 1.16), and section 8 is stored like 2/3/7. A rebuild with no
 replacements re-extracts to six sections byte-identical to the stock
-extraction, and `tools/roundtrip.py`'s `check_authenticity()` passes
+extraction, and `tools/firmware/roundtrip.py`'s `check_authenticity()` passes
 (preamble checksum, HMAC trailer, framing count, 42508/42508 packet
 checksums). A one-byte replacement in section 3 survives the round trip as
 exactly that byte.
@@ -344,7 +344,7 @@ clear start. Checked by a second agent against the image bytes, and at
 runtime: a patched 1.16 image lost its `cave_b` bytes by the 60M rung of a
 fresh boot and kept its `0x403117c4` bytes.
 
-`tools/cavefind.py` (lost; `tools/regions.py` replaces it, see "RAM map" below)
+`tools/cavefind.py` (lost; `tools/coldfire/regions.py` replaces it, see "RAM map" below)
 finds caves that survive boot: it reads the copy and
 clear ranges from the reset code by signature, takes runs of 0x00/0xFF below
 the clear start, rejects any run with a pointer literal into it (or a table
@@ -369,7 +369,7 @@ before the caches are enabled, so it needs no cache maintenance.
 Section 2 (DT2 1.16 and 1.17 are byte-identical, version 0x0201) loads at 0x80000400
 (the file's first 4 bytes are a length word; the image's first two longwords are SP
 0x80010000 and PC 0x80000de8). `native/bootstrap` runs its real instructions on the
-native ColdFire core; `tools/bootstrap_run.py` drives it; `tests/test_bootstrap.py`
+native ColdFire core; `tools/emulator/bootstrap_run.py` drives it; `tests/test_bootstrap.py`
 pins the results. Modelled, not executed: the QSPI transport (flash read 0x8000f010,
 flash id 0x800024ec, sector erase 0x80002714, page program 0x8000227e), the panel UART
 (key banks, OLED records), the MIDI UART (one receive interrupt per byte), PLL, DDR
@@ -413,7 +413,7 @@ flipped: the per-message checksum fails, the receiver silently resets, the trans
 completes. In all three nothing is erased or written. Recovery: flash holding the
 faulting MAIN OS, FUNC, TRIG 4, stock .syx, reboot: stock MAIN OS runs. These are the
 bootstrap's own verifier functions accepting an image rebuilt by `dt2.build`/`dt2.inplace`
-and the patched test image (`tools/patched_image.py`).
+and the patched test image (`tools/patchkit/patched_image.py`).
 
 ### Bootstrap-upgrade gate **[V]**
 
@@ -476,16 +476,16 @@ sections literals-only: a store-only MAIN OS alone is about 3.7 MB, over the cap
 
 ## Harmless test image (static facts [V]; emulated boot [D])
 
-`uv run python tools/patched_image.py` writes `out/patch/dt2-1.16-harmless.syx` (+ .json,
+`uv run python -m tools.patchkit.patched_image` writes `out/patch/dt2-1.16-harmless.syx` (+ .json,
 .png; never committed): UNTITLED -> PATCHKIT at 0x4023b85f (7 bytes), the default project
 name shown at the top of the main screen of a new project. `check_authenticity` passes,
 only section 3 differs, container 1,484,096 B, the emulated bootstrap accepts, writes and
 boots it, and a cold ColdFire boot reaches the main screen with PATCHKIT in the title.
 ## RAM map, an expansion region and a loader hook (Phase 0.3 of the patchkit plan)
 
-Tools: `tools/regions.py` (`report`, `confirm`, `loader-test`), `tools/aplib_check.py`,
+Tools: `tools/coldfire/regions.py` (`report`, `confirm`, `loader-test`), `tools/firmware/aplib_check.py`,
 the native examples `regions_probe` and `depack_check` (native/boot/examples).
-`uv run python tools/regions.py report` prints everything below for dt2-1.16,
+`uv run python -m tools.coldfire.regions report` prints everything below for dt2-1.16,
 dt2-1.17, dn2-1.11 and dn2-1.12 from `out/sections/`.
 
 ### RAM map of MAIN OS (static facts [V]; DMA arena, task stacks, unreferenced gap, reset stack page [D])
@@ -520,7 +520,7 @@ dynamically from the top of RAM.
 
 ### Expansion region (static no-reference scan [V]; canary runs [D])
 
-`tools/regions.py` proposes the gap above the DMA arena: from the highest
+`tools/coldfire/regions.py` proposes the gap above the DMA arena: from the highest
 absolute reference into the arena plus 64 KiB, to 128 KiB below the stack top.
 It needs no change to the reset clear, because it lies above the bss end.
 
@@ -577,7 +577,7 @@ eight bytes with `4eb9 <cave> 4e71` (`jsr cave.l; nop`) and putting a 34-byte
 loader in `flash_cave` works: it reads `[u32 bytes][u32 dest][payload]` from the
 image end, copies the payload with a `move.l (a0)+,(a1)+` loop, then calls the
 two original helpers and returns. d0, d1, a0, a1 are free at that point.
-`tools/regions.py loader-test IMAGE --kib N` builds exactly this (segment, cave
+`tools/coldfire/regions.py loader-test IMAGE --kib N` builds exactly this (segment, cave
 code and hook, via `dt2.build.rebuild`), cold-boots the patched image and
 compares the region with a random payload at ready: 256 KiB and 1 MiB (aPLib)
 on DT2 1.16, 1 MiB (store-only) on DT2 1.17, 1 MiB (aPLib) on DN2 1.11 and
@@ -602,7 +602,7 @@ tighter limit than this one.
 `dt2/aplibpack.py` is a compressor for the stream `dt2/elz.py` decodes: hash
 chains over 4-byte keys, a forward dynamic program over the exact bit costs of
 the format (repeat offset taken from the best path), pure Python.
-`tools/aplib_check.py` packs every section of the four firmwares, reads the
+`tools/firmware/aplib_check.py` packs every section of the four firmwares, reads the
 result back with `dt2/elz.py` and runs it through the **bootstrap's own
 depacker** (`0x80000432`, found by its prologue; **[C]** earlier text said `0x80000436`, its second instruction) on the native ColdFire core
 (`depack_check.rs`; it also reproduces the stock DT2 section 8 byte for byte,

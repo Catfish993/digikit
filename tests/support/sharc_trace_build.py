@@ -1,13 +1,11 @@
 """Synthetic loader blocks, loaded memory and instructions for SHARC tracer tests."""
 
 import struct
-import sys
 from importlib import import_module
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
-L = import_module("sharcldr")
-T = import_module("sharc_trace")
+L = import_module("tools.sharc_dev.sharcldr")
+T = import_module("tools.sharc_dev.sharc_trace")
 
 
 def loader_block(code, address, count, arg=0, payload=b""):
@@ -26,7 +24,7 @@ def loader_memory(*blocks):
 
 
 def insn(name, fields, length=4, kind="confident"):
-    return import_module("sharc_disasm").Instruction(0, length, name, fields, kind=kind)
+    return import_module("tools.sharc_dev.sharc_disasm").Instruction(0, length, name, fields, kind=kind)
 
 
 def full_compute(cu, opcode, rn, rx, ry):

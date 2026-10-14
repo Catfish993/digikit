@@ -1,20 +1,17 @@
-"""Tests for tools/cf.py, the tools/cfdb.py query layer (mirrors
+"""Tests for tools/coldfire/cf.py, the tools/coldfire/cfdb.py query layer (mirrors
 tests/sharc/analysis/test_sharc_symbols.py's convention: skip, don't fail, when the
 firmware-derived database this repo never commits is absent)."""
 
 import os
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-import cf  # noqa: E402
-import cf_names  # noqa: E402
+from tools.coldfire import cf  # noqa: E402
+from tools.coldfire import cf_names  # noqa: E402
 
 IMAGE_NAME = "dt2-1.16-emac"
 DUMP_DIR = os.path.join(ROOT, "out", "ghidra", IMAGE_NAME)
@@ -50,7 +47,7 @@ def test_func_unknown_returns_none(img):
 
 
 def test_callers_include_jump_edges_not_just_call(img):
-    """tools/sharcdb.py's own module docstring documents a real JUMP-into-
+    """tools/sharc_dev/sharcdb.py's own module docstring documents a real JUMP-into-
     function edge that a CALL-only caller scan missed for weeks; callers()
     here must not repeat that mistake -- it should return edges of every
     kind by default, only filtering when `kinds` is passed explicitly."""

@@ -4,7 +4,7 @@
  * does (`tap(25)`), runs the worker flat out until N audio seconds exist and
  * publishes the result on `window.__bench` and as a `BENCH_JSON` console line.
  * No AudioContext: the PCM port is drained and counted. Driven by
- * tools/browser_bench.mjs (`mise run web:bench`).
+ * tools/devtools/browser_bench.mjs (`mise run web:bench`).
  */
 import { browserRuntime, type CoupledStats } from './runtime';
 import { fetchLocalFirmware, fetchLocalInputs } from './local-inputs';

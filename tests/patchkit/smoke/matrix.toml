@@ -1,5 +1,5 @@
-# The patchkit test matrix: device x firmware x module set (tools/pk_harness.py). An empty set is the stock firmware.
-# Ready inputs for each firmware must be fresh (tools/ready.py, SOURCE.json intc_force false): see the harness doc.
+# The patchkit test matrix: device x firmware x module set (tools/patchkit/pk_harness.py). An empty set is the stock firmware.
+# Ready inputs for each firmware must be fresh (tools/emulator/ready.py, SOURCE.json intc_force false): see the harness doc.
 
 [[cell]]
 device = "dt2"

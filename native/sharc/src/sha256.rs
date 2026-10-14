@@ -1,5 +1,5 @@
 //! SHA-256 (FIPS 180-4), for the harness's memory page hashes
-//! (tools/sharc_diff.py `_page_hashes`). std only.
+//! (tools/sharc_dev/sharc_diff.py `_page_hashes`). std only.
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,

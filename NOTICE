@@ -22,5 +22,5 @@ digikit is not affiliated with or endorsed by Elektron. Digitakt, Digitone and S
 Music Machines. This licence covers the code in this repository only and gives no rights to Elektron software or
 firmware.
 
-Third-party material: tools/ghidra/ColdfireEMAC contains files from Ghidra under the Apache License 2.0 (see the
+Third-party material: tools/coldfire/ghidra/ColdfireEMAC contains files from Ghidra under the Apache License 2.0 (see the
 LICENSE.txt in that directory).

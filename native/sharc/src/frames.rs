@@ -1,6 +1,6 @@
 //! Frame packs: replay capture frames through an [`Engine`] with no Python.
 //!
-//! A pack comes from `tools/sharc_transpile_run.py pack` (the image blob,
+//! A pack comes from `tools/sharc_dev/sharc_transpile_run.py pack` (the image blob,
 //! the start state, and each frame's DMA data). Every frame does what
 //! `NativeFrames.frame` does: the DMA transfer poke, the DMA completion
 //! call, then the block handler call, each run until the call returns.

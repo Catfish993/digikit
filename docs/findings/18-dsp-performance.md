@@ -11,7 +11,7 @@ SHARC insns per audio s, another 498M idle-skipped, free).
 ## How to measure
 
 - `mise run perf -- --config NAME [--config NAME ...] [--seconds S] [--timed] [--no-diag]`
-  (`tools/perf.py` on `tools/fastcov.py`). Per config: a clean run (DSP CPU per audio
+  (`tools/devtools/perf.py` on `tools/devtools/fastcov.py`). Per config: a clean run (DSP CPU per audio
   s, PCM sha, tier split, region calls) and a diagnostic run (SHARC_FAST_HIST and
   SHARC_FAST_COV: interpreted insns, calls and kernel insns per function) that ranks
   functions by estimated cost. Report: `out/runs/perf/<stamp>/report.md` and `perf.json` (see docs/INSTRUMENTATION.md).
@@ -81,9 +81,9 @@ Other measured points:
 - Per-range AOT invalidation **[D]**: a code patch bars only the regions with an
   entry in a bad range; trig1-tap-release with a patch kept 697M of 701M insns in AOT,
   CPU 4.53 vs 3.99 s unpatched (was: all AOT barred).
-- Generated lowering (laneF, `tools/sharc_lowergen*.py`, 24 forms) **[D]**: fast
+- Generated lowering (laneF, `tools/sharc_dev/sharc_lowergen*.py`, 24 forms) **[D]**: fast
   89.5 -> 93.4% (92.5% on 1.5 s) and interpreted insns -29%; one semantics source
-  (`tools/sharc_core`), fuzzed against the interpreter; on by default.
+  (`tools/sharc_dev/sharc_core`), fuzzed against the interpreter; on by default.
 - Region-call back-off after window declines **[D]**: calls 27.5M -> 16.6M/s, CPU
   11.13 -> 10.08 (-9%), PCM identical.
 - Class (e) volatile-M fix **[D]**: an M register that fails its baked value twice
@@ -160,8 +160,8 @@ Browser (no AOT possible without firmware; fast tier only):
 ## Per-FX coverage in the no-AOT config **[D]**
 
 Measured 2026-10-08 on branch `work/scenario-oracles` (DN2 1.11, shared generated core, no
-firmware blocks). Not re-checked by a second agent. Tools: `tools/perf.py --scenarios FILE
---scenario NAME... --seconds 0` (0 = each scenario's own length) and `tools/perf_agg.py DIR...`
+firmware blocks). Not re-checked by a second agent. Tools: `tools/devtools/perf.py --scenarios FILE
+--scenario NAME... --seconds 0` (0 = each scenario's own length) and `tools/devtools/perf_agg.py DIR...`
 (union and FX increase over the dry hold). Scenarios: `scenarios/dn2.json`,
 `dn2-trackfx.json`, `dn2-sendfx.json`.
 
@@ -214,7 +214,7 @@ What this shows:
   core was regenerated from the old inputs (cov6/ent9/trans9) plus `coupled-run
   --profile-execution` profiles of `tf-br/srr/over/del/rev/chr-127` and `sf-del-fb-d127`,
   `sf-rev-decay-u20`, `sf-chr-depth-d127`, `sf-mst-thr0` (default config, current core;
-  `tools/aot_fxprof.py`, merged by sum per key, same rsgen flags). Blocks 1751 -> 2657 (20722
+  `tools/sharc_dev/aot_fxprof.py`, merged by sum per key, same rsgen flags). Blocks 1751 -> 2657 (20722
   -> 38378 insns; gen 90 -> 122 MB, so the `sharc-gen` compile is longer). Default config,
   `perf.py --gen prod --config default`, interpreted share: br 1.24% -> 0.33%, srr 1.88% ->
   0.24%, dry hold 0.25% -> 0.25%. `FUN_b826c8` is now 0 interpreted; `FUN_b8258f` fell from
@@ -278,7 +278,7 @@ this config, but each remaining function is under 1%). Separately, `FUN_b8258f` 
 or hybrid arming of those two functions fixes the desktop.
 
 Batch 1 of the refusals (2026-10-09) **[D]**, no-AOT `static-insns+follow`, `trig1-taps`,
-shared core, first opt-in `SHARC_FAST_FLATAUTO=1` (config suffix `+flat` in `tools/fastcov.py`), default since the flip below. Not
+shared core, first opt-in `SHARC_FAST_FLATAUTO=1` (config suffix `+flat` in `tools/devtools/fastcov.py`), default since the flip below. Not
 re-checked by a second agent.
 - Root causes. The four "3a/3b cannot be lowered" stops were not one refusal. (1) Address
   range unknown: a pointer loaded from memory or passed in a register has no static range and
@@ -333,14 +333,14 @@ re-checked by a second agent.
 
 Measured 2026-10-09 on `work/scenario-oracles` (uncommitted), no-AOT `static-insns+follow`, shared
 core, DN2 `trig1-taps`, 10.5 audio s, flat fallback on (`SHARC_FAST_FLATAUTO=1`), PCM
-`e0e6c8af7a84c443` throughout. Not re-checked by a second agent. Tools: `tools/perf.py` (diagnostic
-run), new `tools/perf_calls.py` (call sources and exit kinds from its stderr), `xctrace` Time
-Profiler on `tools/sharc_build_dbg.py` output (`generic/dbg` target).
+`e0e6c8af7a84c443` throughout. Not re-checked by a second agent. Tools: `tools/devtools/perf.py` (diagnostic
+run), new `tools/devtools/perf_calls.py` (call sources and exit kinds from its stderr), `xctrace` Time
+Profiler on `tools/sharc_dev/sharc_build_dbg.py` output (`generic/dbg` target).
 
 Instrumentation added: every `cov run` exit now carries a kind (`ret`, `call`, `edge` = taken
 branch or loop-back to an address the kernel does not hold, `stop`, `guard`, `budget`; with
 SHARC_FAST_COV a guard is named by the source line that emitted it, `g@mem_addr.rs@207` is the
-dynamic-window guard). `tools/fastcov.py` `Diag.parse_run` split the `exits=` field on `,` while
+dynamic-window guard). `tools/devtools/fastcov.py` `Diag.parse_run` split the `exits=` field on `,` while
 the engine joins it with `;`, so it kept only roots with a single exit (it saw 82M of 196M calls);
 fixed.
 
@@ -440,7 +440,7 @@ compile cost of the bigger kernels in V8 is not measured.
 
 Measured 2026-10-09 on `work/scenario-oracles`, no-AOT `static-insns+follow` (flat fallback on),
 DN2 1.11, shared core, exclusive lock; new `SHARC_FAST_TL=1` timeline, summarised by
-`tools/fast_timeline.py`. Not re-checked by a second agent. Design: `docs/design/fast-compile-offload.md`.
+`tools/devtools/fast_timeline.py`. Not re-checked by a second agent. Design: `docs/design/fast-compile-offload.md`.
 
 - **Compile is a cold-start freeze, not a trickle.** `trig1-taps` 20 audio s, PCM `e1556053127f219c`:
   99.8 DSP-thread s = compile 19.8 + build 2.9 + run 77.1. 6789 of 8741 builds and 16.5 s of compile fall
@@ -483,7 +483,7 @@ a second agent. **Superseded 2026-10-09:** the core now flushes denormals as the
 `Req::StkyMus` were removed. The text below is the measurement that found the cause and the interim fix.
 
 **Characterisation.** "Calls" are fast-tier region calls per audio s, "run" is DSP CPU minus compile
-and build per audio s (`tools/fast_timeline.py` ticks, `SHARC_FAST_TL=1`).
+and build per audio s (`tools/devtools/fast_timeline.py` ticks, `SHARC_FAST_TL=1`).
 
 | case | step | calls/s before -> after | run before -> after |
 |---|---|---|---|
@@ -519,7 +519,7 @@ ASTATX.MU and the sticky MUS.
 **Why they appear and stay (verified for the persistence, inferred for the onset).** As a tail decays
 the recurrences pass through the denormal range (the ramp from 6.5 s) and then stick at 1-3 ulp:
 `x * g` with `g > 0.5` rounds back to the same denormal, so the state never reaches zero. The core
-does not flush denormals (`tools/sharc_core/floats.py` header: "not modeled"; the Rust runtime computes
+does not flush denormals (`tools/sharc_dev/sharc_core/floats.py` header: "not modeled"; the Rust runtime computes
 f32 in IEEE). `idle` has no excited state; `trig1-hold` stays normal.
 
 **Hardware: not genuine load [D].** SHARC+ PRM (`out/refs/sharc-plus-prm`, "Floating-Point Format" PDF p.100, "Denormal
@@ -611,10 +611,10 @@ brings the AOT run to its pre-step cost (1.41), so it is small.
 
 Folded from the lane F notebooks (not re-checked by a second agent).
 
-Design. `tools/sharc_lowergen.py` runs the real `tools/sharc_core/forms` handlers over a
+Design. `tools/sharc_dev/sharc_lowergen.py` runs the real `tools/sharc_dev/sharc_core/forms` handlers over a
 tracing state: decoded fields and lowering context (MODE1, `assume_nw32`) are static
 symbols, a test on one forks the trace, register contents and memory words are dynamic
-nodes, and a data-dependent branch refuses. `tools/sharc_lowergen_rs.py` value-numbers the
+nodes, and a data-dependent branch refuses. `tools/sharc_dev/sharc_lowergen_rs.py` value-numbers the
 leaf programs and folds the decision tree into `native/sharc/src/fast/lower/gen_forms.rs`
 (one method per form over the primitives of `gen_prims.rs`, hand-written once). Never edit
 `gen_forms.rs` by hand. Control transfers (calls, returns, loops, delayed branches) stay in
@@ -623,16 +623,16 @@ replayed at exit. MODE1 is static per program point. Compute bodies still come f
 hand-written `compute_full`/`compute_short`/`shiftimm`. 27 forms are generated.
 
 Add a family:
-- Trace and print a form: `uv run python tools/sharc_lowergen_survey.py FORM...` (no args:
-  all forms). One leaf: `tools/sharc_lowergen_leaf.py FORM field=value ...`.
-- A new intrinsic is an `i_*` function plus a `PATCHES` entry in `tools/sharc_lowergen.py`,
-  a case in `tools/sharc_lowergen_rs.py`, and a `g_*` primitive in `gen_prims.rs`.
+- Trace and print a form: `uv run python -m tools.sharc_dev.sharc_lowergen_survey FORM...` (no args:
+  all forms). One leaf: `tools/sharc_dev/sharc_lowergen_leaf.py FORM field=value ...`.
+- A new intrinsic is an `i_*` function plus a `PATCHES` entry in `tools/sharc_dev/sharc_lowergen.py`,
+  a case in `tools/sharc_dev/sharc_lowergen_rs.py`, and a `g_*` primitive in `gen_prims.rs`.
 - Regenerate with `mise run gen:regen -- --add FORM,...`. Add the form to
-  `tools/sharc_lowergen_vectors.py` (steer the random fields into the accepted region) and,
-  for sequences, to `tools/sharc_lowergen_programs.py`.
+  `tools/sharc_dev/sharc_lowergen_vectors.py` (steer the random fields into the accepted region) and,
+  for sequences, to `tools/sharc_dev/sharc_lowergen_programs.py`.
 - Check: `cargo test --lib gen_` in `native/sharc` (with `SHARC_GEN_DIR` set; about 75 s),
   `tests/test_sharc_lowergen.py` (fails when `gen_forms.rs` is stale), and
-  `tools/sharc_lowergen_bisect.sh` for PCM and coverage with a form subset.
+  `tools/sharc_dev/sharc_lowergen_bisect.sh` for PCM and coverage with a form subset.
 
 Results **[D]** (DN2 1.11, `trig1-taps`, 1.5 s, `static-insns+follow`, PCM
 `3bf3ba3026953c22` throughout): hand forms 89.5% fast; generated forms 92.5%; control forms
@@ -649,7 +649,7 @@ MODE1.CBUFEN says. A post-modify is exactly `candidate >= B+L ? -L : candidate <
 in unsigned 32 bits and needs no `|delta| <= L`. A return's last slot (`I7 = I6; I6 =
 DM(I6 + 0)`) is a tail write.
 
-Bug found with `tools/fast_ddmin.py` **[D]**: the halt at 0xb88ea8 (`fork`). `fast_ddmin`
+Bug found with `tools/sharc_dev/fast_ddmin.py` **[D]**: the halt at 0xb88ea8 (`fork`). `fast_ddmin`
 (with the `SHARC_FAST_ONLY` entry allow-list) shrank 2153 armed entries to three regions
 (0xb85a02, 0xb85a19, 0xb85a1f). The epilogue loads `DM(I6-3)`, `DM(I6-2)` and `DM(I6)` read
 through an absolute window, because I6 had been given its circular buffer's range without a
@@ -675,8 +675,8 @@ the default config, not AOT. The DSP thread loses 28-32% of its cycles to the fr
 (17.7% with PGO) against 1.5% warm (CPU Counters bottleneck split, calibrated with synthetic
 programs); AOT code is 208-283 machine instructions per SHARC instruction in the binary (832-1130
 B), 47-103 executed. Gate: no concrete-register mask-free; do the sound flag-known gate and hot-code
-density (cold-path outlining, shared trap tail) first. Tools: `tools/aot_mcount.py`,
-`tools/aot_dyntrace.py`, `tools/xctrace_bottleneck.py`.
+density (cold-path outlining, shared trap tail) first. Tools: `tools/sharc_dev/aot_mcount.py`,
+`tools/sharc_dev/aot_dyntrace.py`, `tools/devtools/xctrace_bottleneck.py`.
 
 DT2 AOT and the DT2 render are in finding 15.
 
@@ -741,7 +741,7 @@ to the interpreter), the normal-word range table out of line, a 32-bit plain-RAM
 | tf-dry-hold, no PGO / PGO | 1.510 / 1.161 | **1.282 / 1.059** |
 | tf-br-127, no PGO / PGO | 1.612 / 1.237 | **1.368 / 1.129** |
 
-Exclusive alternating A/B (`tools/coupled_ab.py`), 6 to 7 pairs, paired ratio 0.85 without PGO and 0.91 with PGO
+Exclusive alternating A/B (`tools/devtools/coupled_ab.py`), 6 to 7 pairs, paired ratio 0.85 without PGO and 0.91 with PGO
 (0.90 to 0.93 over all pairs); PCM equal to every pin; DN2 pins, oracle suites (default and no-AOT), the sweep, the
 134-scenario AOT against no-AOT comparison and DT2 (clean tone, AOT = no-AOT = AOT + fast WAV hash) unchanged.
 Block traps are identical in count and code in 25 scenarios; block entries grow 0.27% and interpreted instructions
@@ -750,7 +750,7 @@ gate of the design (<= 400 B per site, front end < 12% without PGO) was missed (
 (0.77 to 0.91). The undo-copy ordering analysis was not built: deleting every undo copy (unsound ablation) is worth
 2.4% of the bytes and 0 to 9% warm, and LLVM already drops the restores of Err paths it can prove dead. The
 desktop is at **1.06 (trig1-taps), 1.06 (tf-dry-hold), 1.13 (tf-br-127) with PGO: not yet 1.0**; it needs
-another 5 to 11%. Largest remaining items in `tools/aot_attrib.py`: the normal-word test (12.6% of the bytes), the
+another 5 to 11%. Largest remaining items in `tools/sharc_dev/aot_attrib.py`: the normal-word test (12.6% of the bytes), the
 memory fast paths (8.6%), the float helpers (19%), `rf_set` (3.8%), `s_set_special` (3.1%).
 
 ### `tests_gen` "the fast tier never ran" (2026-10-10) **[D]**
@@ -787,7 +787,7 @@ pin.
 What moved it, in order of size: (1) the interpreter ran 7.5 of 13.2M instructions as one 238-instruction routine
 because a block entry gated by a pending bank swap sends the whole block body to the interpreter (a region has entries
 only at block starts). The profile now records the PC after the first instruction of such a run, 35 more block starts
-(6 rounds of `tools/aot_entry_iter.py`) cut the interpreted instructions by half and the DSP time by about 7% (no PGO; the build before the search
+(6 rounds of `tools/sharc_dev/aot_entry_iter.py`) cut the interpreted instructions by half and the DSP time by about 7% (no PGO; the build before the search
 measured 0.926 against slice 2', after it 0.862). (2) The memory path was 34% of the dynamic instructions of the in-situ AOT regions (not the 8.6% and 12.6% of the
 bytes): aligned-word and narrow paths, fixed-size page tables, a two-compare normal-word band test, no `fast_mem` test
 and no 128-bit address mapping in the register load. (3) Float add, subtract and multiply flush the operands and
@@ -806,7 +806,7 @@ in trig1-taps (the new block starts), AOT instructions +0.26%. **[O]** DT2 has n
 
 ## Desktop app real time 2026-10-11 **[D]**
 
-Spike log (`DIGI_SPIKE_LOG`, `tools/spikes.py`, docs/INSTRUMENTATION.md) in the desktop app: DN2 1.11, Trig 1
+Spike log (`DIGI_SPIKE_LOG`, `tools/devtools/spikes.py`, docs/INSTRUMENTATION.md) in the desktop app: DN2 1.11, Trig 1
 on track 1 with send delay, a little reverb and track SRR, PGO launcher build, 1 s prefill, Rebuffer. Steady state
 (after the queue first reaches 900 ms), one run each; not re-checked by a second agent.
 
@@ -837,7 +837,7 @@ on track 1 with send delay, a little reverb and track SRR, PGO launcher build, 1
 Measured before building (trig1-taps, DN2, PGO `pgo-cr-s3b` and prod `coupled-run`, exclusive benchlock, busy
 machine; scripts and traces were in a session scratchpad, not kept). Not re-checked by a second agent.
 
-- Front end of the DSP thread (`tools/xctrace_bottleneck.py`): PGO 11.8%, no PGO 24.1%; discarded (mispredict
+- Front end of the DSP thread (`tools/devtools/xctrace_bottleneck.py`): PGO 11.8%, no PGO 24.1%; discarded (mispredict
   flush) 2.5% in both. The CPU Counters template gives no L1I/iTLB/resteer split.
 - 20% (PGO) and 15% (no PGO) of DSP samples are outside the binary (Cranelift kernels, system libraries); 73% of the
   in-binary samples are in `r_*` AOT regions.
@@ -847,7 +847,7 @@ machine; scripts and traces were in a session scratchpad, not kept). Not re-chec
 - Ceiling: an order file is function-granular. It can pack the pages (about 100 instead of 430-650, inside the L1
   iTLB reach) but not the cold blocks inside the region functions, so L1I capacity misses stay. Estimated 0-3% of
   DSP CPU with PGO, 1-4% without (1.10 -> 1.06-1.09); most of the no-PGO front-end excess is in-function layout.
-  Not built. Note: `tools/xctrace_bottleneck.py` needs the `record` options before OUT, or xctrace fails with
+  Not built. Note: `tools/devtools/xctrace_bottleneck.py` needs the `record` options before OUT, or xctrace fails with
   "Path not found '--time-limit'".
 
 ## LLVM hot-cold splitting with PGO 2026-10-11 **[D]**
@@ -855,7 +855,7 @@ machine; scripts and traces were in a session scratchpad, not kept). Not re-chec
 `-Cllvm-args=-hot-cold-split=true` added to the slice 3 PGO `coupled-run` build (same profile `a76e820c...profdata`,
 same DN2 gen; `out/native/target/prod/pgo-cr-hcs`). It outlined 1949 `.cold` functions and cut `__TEXT` from 46.4 to
 42.6 MB (-8.2%), but DSP CPU per audio s rose: trig1-taps 0.935 (A) against 0.943 (B), paired ratio 1.014 (0.985 to
-1.023), 6 exclusive alternating pairs (`tools/coupled_ab.py`), load average about 3, PCM equal to the pin in all 12
+1.023), 6 exclusive alternating pairs (`tools/devtools/coupled_ab.py`), load average about 3, PCM equal to the pin in all 12
 runs. Not adopted. Caveat: the profile was trained without the split, so its mapping onto outlined code is untested.
 
 ## Fast-over-AOT: per-region ceiling and stop reasons 2026-10-11 **[D]**
@@ -914,13 +914,13 @@ per-call counts on all 10 regions where a kernel already reaches a call (e.g. 0x
 ## DT2 parity 2026-10-11 **[D]**
 
 Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), prod core `out/native/dt2-audio/gen`, default config, scenario
-`dt2-sample-trig` (3 s, one-sample card of `tools/dt2_sample_check.py`; the only DT2 load scenario). The DT2 DSP image has
-no fast regions in `tools/fast_regions.json`, so the tiers are AOT block, idle skip and interpreter. `tools/aot_entry_iter.py`
+`dt2-sample-trig` (3 s, one-sample card of `tools/emulator/dt2_sample_check.py`; the only DT2 load scenario). The DT2 DSP image has
+no fast regions in `tools/emulator/fast_regions.json`, so the tiers are AOT block, idle skip and interpreter. `tools/sharc_dev/aot_entry_iter.py`
 now takes `--device dt2` (`aot_fxprof.py --dt2-card` runs on the card's ready state; the base profile is
 `prof-merged-c2`). Four rounds, each profiled with the core built from the previous round (rsgen about 50 s, build 1.5 min):
 new block starts 27, 8, 3, 1 (the fifth round finds one PC again, a 9000-count chain of one instruction per round, not
 worth a round). The hot one is 0x1c0885 (873,000 interpreter runs in 3 s: a gated entry whose body ran in the
-interpreter). Timing is `tools/coupled_ab.py --dt2-card --device dt2`: 6 exclusive alternating pairs, load average
+interpreter). Timing is `tools/devtools/coupled_ab.py --dt2-card --device dt2`: 6 exclusive alternating pairs, load average
 3.4 to 6.6 from other jobs (pair ratios stay within 0.870 to 0.874).
 
 | | prod core | with entry search (`gen-lane-entry`, not promoted) |
@@ -1008,7 +1008,7 @@ core was rebuilt for this lane (adds `digi_dsp_*`, `digi_load_coupled_remote`); 
   the DSP worker answers frame N after the SPI exchange and renders the period afterwards (`RemoteDsp::reply` /
   `render`, `digi_dsp_reply` / `digi_dsp_render`), so the ColdFire runs up to one frame ahead. The branch's
   `digi_dsp_exchange` (reply and render in one call) would have been serial; it is kept as reply then render.
-- **Exactness [V under Node, D in the browser].** `node tools/wasm_parity.mjs --scenario trig1-tap-release --split 1`
+- **Exactness [V under Node, D in the browser].** `node tools/devtools/wasm_parity.mjs --scenario trig1-tap-release --split 1`
   (ColdFire instance in the main thread, DSP instance in a `worker_threads` worker, frames over the same
   `sab-link.ts`) gives `883476213933333f0c5f4e2b343f65ed470fda0c50c8fa37905972457e819cdd`, the pinned native hash
   and the single-instance wasm hash (816000 values, 8.5 s). Wall 23.6 s against 30.6 s single. In Chromium the Trig
@@ -1019,7 +1019,7 @@ core was rebuilt for this lane (adds `digi_dsp_*`, `digi_load_coupled_remote`); 
   and the core exports `digi_dsp_reply`, else (or with `?split=0`) the single worker runs. The page compiles the core
   once and hands the `WebAssembly.Module` to both workers. `coi-serviceworker.js` from the parked branch is in
   `public/` but not loaded (GitHub Pages has no coupled core anyway). The generic-core build step of the branch's
-  `tools/native_wasm.py` was left out.
+  `tools/emulator/native_wasm.py` was left out.
 - **Why wasm is still about 2.5x the native DSP.** Not measured further here. Known from above: not tiering; the
   browser core has no fast tier (V8 runs the AOT blocks; native reaches 0.93-1.10 s per audio s with its fast tier
   and AOT), so the remaining gap is wasm codegen of the generated blocks (bounds checks, no SIMD in the generated
@@ -1028,17 +1028,17 @@ core was rebuilt for this lane (adds `digi_dsp_*`, `digi_load_coupled_remote`); 
 
 ## DT2 FX scenarios and profile 2026-10-11 **[D]**
 
-Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), the one-sample card of `tools/dt2_sample_check.py` (1 kHz sine,
+Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), the one-sample card of `tools/emulator/dt2_sample_check.py` (1 kHz sine,
 1 s), core `gen-lane-entry` as the baseline, new core `out/native/dt2-audio/gen-lane-fx` (PROVENANCE.txt there; neither is
 promoted). Two lanes' work on one machine: load average 3 to 130 during the runs, so every timing is a paired A/B.
 Not re-checked by a second agent.
 
-**Scenarios.** `scenarios/dt2-trackfx.json` (25) and `dt2-sendfx.json` (35), generator `tools/gen_dt2fx.py`, same names and
-layout as the DN2 files (`tf-*`, `sf-*`) so `tools/fxcheck.py` (`configure("dt2")`: F0 1 kHz, Sound array
+**Scenarios.** `scenarios/dt2-trackfx.json` (25) and `dt2-sendfx.json` (35), generator `tools/emulator/gen_dt2fx.py`, same names and
+layout as the DN2 files (`tf-*`, `sf-*`) so `tools/emulator/fxcheck.py` (`configure("dt2")`: F0 1 kHz, Sound array
 `*0x8000470c+0x14:142`, Fx array `*0x80004708:142`) and `tests/scenarios/conftest.py` (`--device dt2`) read them. The
 panel is the DN2's (finding 03, "DT2 1.16 FX pages"). Each run is 2 to 4 audio s: NO prelude, a 56-slot sweep (1M
 instructions per slot), Trig 1. `coupled.py scenario --device dt2 --dt2-card` (new flag, `DIGI_DT2_CARD=1`) runs them on the
-card's ready state; `tools/dt2fx.py render|check|tiers` renders both files with the peeks, prints the fxcheck tables and
+card's ready state; `tools/emulator/dt2fx.py render|check|tiers` renders both files with the peeks, prints the fxcheck tables and
 compares PCM hashes. Oracle tests: `tests/scenarios/test_dt2_fx.py` (146 cases, 106 s, `mise run scenarios:dt2`).
 
 - **Read-back [D].** The intended parameter lands on a calibrated UI value (BR/overdrive/SRR 22, 54, 127; sends 54, 127;
@@ -1063,7 +1063,7 @@ compares PCM hashes. Oracle tests: `tests/scenarios/test_dt2_fx.py` (146 cases, 
 
 **Tier equality [D].** All 60 scenarios give the same PCM sha in the default config, in `SHARC_AOT=0` (interpreter only; DT2
 has no fast regions, so that is the only other tier) and, on `gen-lane-fx`, in the default config again: 60 of 60 for both
-cores. The no-AOT render of 197 audio s took 2189 s on six jobs (about 67 CPU s per audio s). `tools/verify.py --full --dt2`
+cores. The no-AOT render of 197 audio s took 2189 s on six jobs (about 67 CPU s per audio s). `tools/devtools/verify.py --full --dt2`
 (step `dt2-tier-sweep`) does the same comparison with `coupled.py scenario --device dt2 --dt2-card`.
 
 **Profile and regeneration.** `aot_fxprof.py --device dt2 --dt2-card` over `dt2-sample-trig` and 18 FX scenarios, merged with
@@ -1096,7 +1096,7 @@ for the 3 s trig; equal in all 60 scenarios); the oracle tests pass on both core
 bail at 0x1c06fe (455,870 interpreter runs in the 3 s trig, a gated entry that is already a block start); the rest was not
 analysed.
 
-DT2 PGO, what it would need (measured by reading, nothing built): `tools/native_pgo.py` trains one profile for DN2 only
+DT2 PGO, what it would need (measured by reading, nothing built): `tools/emulator/native_pgo.py` trains one profile for DN2 only
 (state in `out/native/pgo/dn2/<triple>`; the workload is the `coupled_ready_exactness` gate run from the instrumented
 desktop app with `--pgo-train`, and the gate restores the DN2 ready snapshot). There is no DT2 training workload. It would
 need (1) a device argument for the state directory and `SHARC_GEN_DIR`, (2) a DT2 workload: the card's ready state
@@ -1108,7 +1108,7 @@ need (1) a device argument for the state directory and `SHARC_GEN_DIR`, (2) a DT
 ## Browser: why the wasm DSP is slower 2026-10-11 **[D]**
 
 Question: the dev page's AOT SHARC core in wasm costs about 2.6 DSP-worker s per audio s (DN2 1.11, headless Chromium
-150, split workers), native 0.93-1.21. Method: `tools/browser_bench.mjs` against a private dev server
+150, split workers), native 0.93-1.21. Method: `tools/devtools/browser_bench.mjs` against a private dev server
 (`--url`, below), `--seconds 10 --runs 2-3`, exclusive benchlock; native by `coupled.py scenario trig1-taps
 --seconds 10 --no-build` (prod core, no PGO) with and without `SHARC_FAST_REGIONS=`. One machine; other lanes run
 unlocked jobs, so consecutive identical runs differ by up to +-8% (base core: 2.46-2.71 over 7 runs). Not re-checked
@@ -1118,7 +1118,7 @@ by a second agent.
   16 codegen units, no debug, no overflow checks, panic=abort (forced on wasm32-unknown-unknown); the desktop
   build uses the same profile (plus PGO in the launcher). Target features at rustc 1.98.1: bulk-memory,
   multivalue, mutable-globals, nontrapping-fptoint, reference-types, sign-ext; not simd128, tail-call, atomics.
-  `tools/native_wasm.py` runs no `wasm-opt` (none installed) and passes no RUSTFLAGS. The core has a name section
+  `tools/emulator/native_wasm.py` runs no `wasm-opt` (none installed) and passes no RUSTFLAGS. The core has a name section
   (45 MB). Native differs only by PGO (0.93 against 1.10) and the fast tier.
 - **Tier split.** The browser core runs no fast tier, so the instructions the desktop runs as Cranelift kernels
   run in AOT blocks. Native, 10 audio s, per audio s: default 235M AOT + 267M kernel insns (0.50M kernel calls),
@@ -1145,7 +1145,7 @@ by a second agent.
 
 | change | audio s / wall s | DSP busy / audio s | parity |
 |---|---|---|---|
-| base (as `tools/native_wasm.py`) | 0.37-0.41 | 2.71 2.56 2.70 / 2.47 2.46 2.59 2.64 | match, split match |
+| base (as `tools/emulator/native_wasm.py`) | 0.37-0.41 | 2.71 2.56 2.70 / 2.47 2.46 2.59 2.64 | match, split match |
 | `lto=fat`, `codegen-units=1` (25 min build) | 0.36-0.37 | 2.75 2.70 2.77 | match |
 | `sharc-gen` opt-level `s` | 0.36-0.41 | 2.47 2.46 2.47 / 2.74 2.79 2.82 2.60 | match |
 | `-C target-feature=+simd128` | 0.37-0.44 | 2.40 2.30 2.30 / 2.53 2.64 2.60 2.76 | match, split match |
@@ -1161,7 +1161,7 @@ by a second agent.
   code for LLVM's wasm output against LLVM's arm64 output for the same Rust.
 - **Ceiling (b), the fast tier in the browser core: about 2.0 (1.8-2.3), confidence low.** Not measurable here:
   `digi_sharc_fast` panics on the first kernel build on `wasm32-unknown-unknown` (`std::time::Instant::now`; fixed
-  in `fast/mod.rs` by a clock shim), and with the DN2 static regions (`tools/fast_regions.json`, tried via a
+  in `fast/mod.rs` by a clock shim), and with the DN2 static regions (`tools/emulator/fast_regions.json`, tried via a
   temporary `threshold 0` seeding) it stops at `Op::Helper` (`unimplemented!`, `sharc-fast-wasm/src/lib.rs`).
   Auto selection (256,64,0) is exact (3 s hash equals the AOT-only 3 s hash `ae86d0b3...`) but arms only 19
   kernels worth 0.4% of the instructions. Model from the native numbers: AOT 235M x 5.4 ns = 1.27 s, plus the
@@ -1186,21 +1186,21 @@ second agent.
 - **`Op::Helper` in the wasm emitter.** A kernel with a helper call imports `env.helper(st, rec) -> status` (function 0,
   `k<i>` shift by one; only when a kernel needs it). The page links the import to the core's `digi_helper_exec(st, rec)`
   export (`native/boot/src/abi.rs`, `helper_exec` with `rec` as the wasm32 pointer), a wasm-to-wasm call with no JS
-  trampoline; `core-host.ts` and `tools/wasm_parity.mjs` pass it. A record above 32 bits is refused (`emit_function`
+  trampoline; `core-host.ts` and `tools/devtools/wasm_parity.mjs` pass it. A record above 32 bits is refused (`emit_function`
   returns Err; the region falls back to the interpreter). No helper kernel arises in the shipped DN2 config (helpers
   need `SHARC_FAST_HELPER`, which the browser core cannot set, or the `exit0` rebuild, which did not fire in
   these runs), so the path is tested apart: `cargo test -p sharc-fast-wasm` (module imports `helper`; wide record
   refused) and `node native/sharc-fast-wasm/helper_check.mjs` on the emitted module (V8 validates it; the stub sees
   `(st, rec)` per iteration; status 0 leaves with exit 3). **[O]** a real helper kernel in the browser, which needs a
   way to turn `SHARC_FAST_HELPER` on without an environment (`cfg.rs`).
-- **Build and seeding.** `tools/native_wasm.py` now builds the coupled core with `fast-wasm` (`--no-fast` leaves it out;
+- **Build and seeding.** `tools/emulator/native_wasm.py` now builds the coupled core with `fast-wasm` (`--no-fast` leaves it out;
   the tier stays off until the page asks). New ABI `digi_sharc_fast_regions(regions, n, roots, n, threshold, min_insns,
   follow)` = the desktop configuration: the static regions and the block-translator cluster roots of
-  `tools/fast_regions.json` for the firmware's SHA-256 (`FastEngine::new(..).with_clusters(..)`), optional run-time
+  `tools/emulator/fast_regions.json` for the firmware's SHA-256 (`FastEngine::new(..).with_clusters(..)`), optional run-time
   selection on top (`threshold != u32::MAX`). Page: `?fast=desktop|desktop+auto|auto|T,M,F`; `browser_bench.mjs --fast X`;
   `wasm_parity.mjs --fast desktop[+auto]` (also with `--split 1`). The bench reports the kernel host's counters and
   `digi_sharc_fast_report` (`dsp_kernels`, `dsp_fast`). The dev page is the only consumer: `?fast=` is off by default.
-- **Exactness [V under Node].** `node tools/wasm_parity.mjs --scenario trig1-tap-release --fast desktop` and
+- **Exactness [V under Node].** `node tools/devtools/wasm_parity.mjs --scenario trig1-tap-release --fast desktop` and
   `--fast desktop --split 1`: `883476213933333f0c5f4e2b343f65ed470fda0c50c8fa37905972457e819cdd` = the native pin
   (816000 values). Generic core, `--fast desktop+auto --split 1`: the same hash. In Chromium `pcm_peak` 0.0549 and
   `missing_blocks` 0 in every run. Web tests (`node --test`, 10) and `astro check` (0 errors) pass.
@@ -1482,11 +1482,11 @@ across the call; neither is a range question.
 Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), core `out/native/dt2-audio/gen-lane-entry` (the entry-search
 core; `gen` is not it and is unchanged), headless `coupled-run` on the one-sample card, default config (AOT, idle skip,
 interpreter; no DT2 fast regions). One machine, load average 2.2 to 3.2 (other lanes running), exclusive alternating pairs,
-6 per cell (`tools/coupled_ab.py --dt2-card --device dt2`). Not re-checked by a second agent.
+6 per cell (`tools/devtools/coupled_ab.py --dt2-card --device dt2`). Not re-checked by a second agent.
 
 **Workload: instrumented `coupled-run`, not the desktop app.** The app's `--pgo-train` runs the `coupled_ready_exactness`
 gate, which restores the DN2 ready snapshot and pins a DN2 PCM; DT2 would need a second gate, its own fixtures and an app
-mode to select them. `coupled-run` already runs DT2 on the card's ready state, so `tools/native_pgo.py train --device dt2`
+mode to select them. `coupled-run` already runs DT2 on the card's ready state, so `tools/emulator/native_pgo.py train --device dt2`
 builds it with `-Cprofile-generate` (target dir variant `pgo-dt2-instrument`), runs `dt2-sample-trig` (3 s), `tf-br-127`
 (2 s), `sf-del-ppwidth-u50`, `sf-rev-decay-u50` and `sf-mst-thr0` (4 s each; delay send, reverb send, master compressor)
 three times (42 s per pass, instrumented), and merges. Profile (8.2 MB):
@@ -1515,7 +1515,7 @@ fast tier: clean tone (peak share 0.99995) and WAV hash `4bab8330915f0929`.
 What dominates at 0.94 to 1.05. Interpreted code is 5.7M to 5.9M of about 950M instructions per run (0.6%), so the cost is
 the AOT blocks plus the ColdFire thread, which runs in parallel (0.44 to 0.55 per audio s). The trig is under 1.0 and runs
 in real time (1.06); a bit-reduction scene does not (DSP 1.05, real-time factor 0.90). A DT2 fast-region list
-(`tools/fast_regions.json` has only the DN2 1.11 entry) is not cheap: it needs a region profile of the DT2 DSP, a list per
+(`tools/emulator/fast_regions.json` has only the DN2 1.11 entry) is not cheap: it needs a region profile of the DT2 DSP, a list per
 firmware hash and an AOT = fast = no-AOT gate over the 60 FX scenarios; on DN2 the list is worth 19% over AOT without PGO.
 Not tried **[O]**. A promoted `gen` or a later entry round changes `sharc_gen`, so the profile needs a retrain
 (`check --device dt2` reports stale).
@@ -1550,7 +1550,7 @@ New: `DIGI_EMU_PGO_VARIANT=NAME` builds the launcher's profile-use binary in tar
 
 ## App soak: latency and DT2 2026-10-11 **[D]**
 
-Unattended app runs (`tools/app_soak.py`: Trig 1 every 2 s, TRIG/SRC/FLTR/AMP/FX page changes every 5 s, frame
+Unattended app runs (`tools/devtools/app_soak.py`: Trig 1 every 2 s, TRIG/SRC/FLTR/AMP/FX page changes every 5 s, frame
 revisions confirm the presses land), paced controller, spike log over the whole app life including boot.
 
 | run | prefill | DSP load overall / p99 window / max | queue min | underruns |
@@ -1698,7 +1698,7 @@ The five 64-trip loops are 8.7k of the 10.4k instructions.
   and the later loops read and filter these streams. The "16 changed words" seen in the voice record and the 0x24ebb0
   block are only the persistent state; the checker compares all memory, so the 64-sample stream stores must be
   reproduced bit for bit. No closed form exists (table lookup, linear interpolation, float rounding per sample).
-- All four loop heads (0x1c399a, 0x1c3862, 0x1c364f, 0x1c5765) are already in `tools/fast_regions.json`
+- All four loop heads (0x1c399a, 0x1c3862, 0x1c364f, 0x1c5765) are already in `tools/emulator/fast_regions.json`
   (`fast_regions`) and run as Cranelift kernels, with 0x1c369b and 0x1c5796 as `blocktrans` roots. So the work an HLE
   could not avoid is the work that already runs at kernel speed. From "HLE: first function and checker", a
   hand-written exact routine costs about 0.9 ns per replaced instruction (value-domain checks, flags), no better than a
@@ -1779,12 +1779,12 @@ function and checker" measured ~0.9 ns, so they do not hold.
 
 ## Browser: where the wasm penalty is 2026-10-12 **[D]**
 
-- **[D]** The page arms the fast tier `desktop` by default when tools/fast_regions.json has an entry for the firmware
+- **[D]** The page arms the fast tier `desktop` by default when tools/emulator/fast_regions.json has an entry for the firmware
   (DN2 1.11 only; a DT2 image arms nothing). `?fast=off` turns it off. DN2 in headless Chromium, 3 runs of 10 s: DSP
   worker 2.07-2.21 s per audio s and 0.471 audio s per wall s by default, against 2.45-2.48 and 0.411 with
   `?fast=off`.
-- **[D]** Region micro-benchmark under wasm: `tools/sharc_regionbench.py bench --agg --engine node|bun` runs the same
-  AOT region entries from the same captured states, built for wasm32-wasip1 and run by tools/wasm_regionbench.mjs.
+- **[D]** Region micro-benchmark under wasm: `tools/devtools/sharc_regionbench.py bench --agg --engine node|bun` runs the same
+  AOT region entries from the same captured states, built for wasm32-wasip1 and run by tools/devtools/wasm_regionbench.mjs.
   Instruction counts and exit PCs are equal on native, node and bun. `ratio A B` prints the per-region table.
 - **[D]** Production DN2 core, 24 regions (all 51 captured states), 16000 calls and 7 reps. For the 8 regions of at
   least 1 µs native: node (V8 13.6) is 1.57x native and bun (JavaScriptCore) 1.33x. Six default regions on the mini
@@ -1873,7 +1873,7 @@ function and checker" measured ~0.9 ns, so they do not hold.
   `abl-nosv` gave 0-3%).
 - **[O]** Fewer live values per function, by splitting regions, is the remaining code-shape lever for V8. It costs entry
   and exit work natively and is a redesign, so it is not pursued.
-- Tools: `tools/browser_bench.mjs --browser chrome|firefox|safari` (Firefox through WebDriver BiDi, Safari through
+- Tools: `tools/devtools/browser_bench.mjs --browser chrome|firefox|safari` (Firefox through WebDriver BiDi, Safari through
   safaridriver) and `--profile-out DIR` (raw `.cpuprofile` files, Chrome only); instruction-level V8 profiles:
   `samply record -- node --perf-prof --perf-prof-path=/tmp --no-liftoff ...` (samply pinned in mise.toml); disassemble
   the jitdump code bytes, since a `--print-wasm-code` run without `--perf-prof` compiles different code.
@@ -1936,7 +1936,7 @@ function and checker" measured ~0.9 ns, so they do not hold.
   - DN2 verify steps pass. The DT2 steps are blocked by the stale DT2 generated core.
   - The `Fields` intern pool never frees blocks; it is bounded by the number of distinct decoded instructions.
 
-## Why patched DSP images were slow (lane b, DT2 1.17, `tools/pk_tiers.py`) **[D]**
+## Why patched DSP images were slow (lane b, DT2 1.17, `tools/patchkit/pk_tiers.py`) **[D]**
 
 DT2 has no fast-tier regions (`fast_present` false), so the tiers are AOT blocks and the interpreter (about 70 ns per
 instruction against about 1 ns in AOT). Window of 1 audio s after the note started, one daemon per row, non-PGO build;
@@ -1967,7 +1967,7 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
   audio s for the hook alone (+0.7 s), +40 M with the selector patch (+3 s). Ceiling, measured with an engine run
   that bars only the regions that hold a changed word (`0x1c4ecf`, `0x1c2607`; experiment, not committed): core/dsp-voice
   2.0 to 1.52, PLUCK ringing 4.5 to 2.76 CPU per audio s. Exact barring needs per-region code extents from the
-  generator (`REGION_ENTRIES` lists entries only), that is a change of `tools/sharc_rsgen.py`, so a regeneration of
+  generator (`REGION_ENTRIES` lists entries only), that is a change of `tools/sharc_dev/sharc_rsgen.py`, so a regeneration of
   the DT2, DN2 and shared cores. (b) Appended code is interpreted (not in the AOT image): 1.1 to 3.3 M instructions per
   audio s, 0.1 to 0.25 s.
 - The fast-tier kernels still decline any store into a code-watched page (`mem_addr.rs` guards on the page's watch

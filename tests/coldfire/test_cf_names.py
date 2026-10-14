@@ -1,18 +1,15 @@
-"""Tests for tools/cf_names.py: the hand-curated named-ColdFire-address
+"""Tests for tools/coldfire/cf_names.py: the hand-curated named-ColdFire-address
 table for DT2 1.16. No firmware data needed -- this is a pure data/lookup
 module, so these always run."""
 
 import os
-import sys
 
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-import cf_names  # noqa: E402
+from tools.coldfire import cf_names  # noqa: E402
 
 _VALID_MARKS = {"[V]", "[D]", "[O]", "[C]", "unmarked"}
 

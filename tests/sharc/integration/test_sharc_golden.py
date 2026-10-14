@@ -77,8 +77,6 @@ def image_sha256():
 def output(name):
     """The case's CLI output, exactly as printed, run in-process."""
     module_name, argv = CASES[name]
-    if TOOLS not in sys.path:
-        sys.path.insert(0, TOOLS)
     module = importlib.import_module(module_name)
     text = io.StringIO()
     cwd = os.getcwd()

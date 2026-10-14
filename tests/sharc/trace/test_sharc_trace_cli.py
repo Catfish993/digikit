@@ -12,14 +12,13 @@ from unittest.mock import patch
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
-L = import_module("sharcldr")
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_encode import encode  # noqa: E402
 from support.sharc_trace_build import insn, loader_block, loader_memory  # noqa: E402
 
-_floats = import_module("sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
 
 from support.sharc_trace_build import TraceRunMixin  # noqa: E402
 
@@ -34,7 +33,7 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             valid = subprocess.run(
                 [
                     sys.executable,
-                    "tools/sharc_trace.py",
+                    "tools/sharc_dev/sharc_trace.py",
                     path,
                     "--base-sw",
                     "0",
@@ -49,7 +48,7 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             invalid = subprocess.run(
                 [
                     sys.executable,
-                    "tools/sharc_trace.py",
+                    "tools/sharc_dev/sharc_trace.py",
                     path,
                     "--base-sw",
                     "0",
@@ -63,7 +62,7 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             invalid_register = subprocess.run(
                 [
                     sys.executable,
-                    "tools/sharc_trace.py",
+                    "tools/sharc_dev/sharc_trace.py",
                     path,
                     "--base-sw",
                     "0",
@@ -156,7 +155,7 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
         with tempfile.NamedTemporaryFile("w", delete=False) as trace_file:
             trace_path = trace_file.name
         try:
-            command = [sys.executable, "tools/sharc_trace.py"]
+            command = [sys.executable, "tools/sharc_dev/sharc_trace.py"]
             missing_base = subprocess.run(
                 command + [stream_path, "--start", hex(pc)], capture_output=True
             )
@@ -469,7 +468,7 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             {"b": 0, "j": 0, "cond[4:0]": 1, "addr[23:16]": 0, "addr[15:0]": 20},
             6,
         )
-        with patch("sharc_trace.decode_at", return_value=branch):
+        with patch("tools.sharc_dev.sharc_trace.decode_at", return_value=branch):
             self.assertIn(
                 "max-states", [s.stopped for s in T.trace(b"", 0, 0, max_states=1)]
             )
@@ -484,7 +483,7 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
                 invalid = subprocess.run(
                     [
                         sys.executable,
-                        "tools/sharc_trace.py",
+                        "tools/sharc_dev/sharc_trace.py",
                         path,
                         "--base-sw",
                         "0",
@@ -502,7 +501,7 @@ class TraceBlobCliTest(TraceRunMixin, unittest.TestCase):
             out = subprocess.check_output(
                 [
                     sys.executable,
-                    "tools/sharc_trace.py",
+                    "tools/sharc_dev/sharc_trace.py",
                     path,
                     "--base-sw",
                     "0",
@@ -616,7 +615,7 @@ class PokeDmTest(unittest.TestCase):
         return subprocess.run(
             [
                 sys.executable,
-                "tools/sharc_trace.py",
+                "tools/sharc_dev/sharc_trace.py",
                 program_path,
                 "--blob",
                 "--start",
@@ -684,7 +683,7 @@ class ApproxRecipsCliTest(unittest.TestCase):
         try:
             base_command = [
                 sys.executable,
-                "tools/sharc_trace.py",
+                "tools/sharc_dev/sharc_trace.py",
                 path,
                 "--base-sw",
                 "0",

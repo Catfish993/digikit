@@ -1,16 +1,14 @@
 """core/params port rules: the Python scan that records the sites agrees with the recorded ports, and its pieces."""
 
 import os
-import sys
 import tomllib
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
 
-import port_resolve as pr  # noqa: E402
+from tools.patchkit import port_resolve as pr  # noqa: E402
 
 
 def test_the_site_scan_finds_references_and_clamp_bounds_but_not_loop_ends():

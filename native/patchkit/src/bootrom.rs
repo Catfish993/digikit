@@ -1,6 +1,6 @@
 //! The SHARC+ boot ROM's rules for a boot stream (firmware section 7), as far as the public ADSP-2156x
 //! Hardware Reference states them (chapter 40, "Boot Loader Stream"). A port of the error rules of
-//! `tools/sharc_bootcheck.py` (rule ids H1..H12, S1 are the same; that file cites each rule). The
+//! `tools/sharc_dev/sharc_bootcheck.py` (rule ids H1..H12, S1 are the same; that file cites each rule). The
 //! emulator never runs the ROM, so this is what stands in for "the ROM would reject it".
 
 use crate::error::*;

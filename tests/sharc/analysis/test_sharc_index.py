@@ -2,16 +2,14 @@
 import hashlib
 import pathlib
 import sqlite3
-import sys
 import tempfile
 import unittest
 from importlib import import_module
 from unittest.mock import patch
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-I = import_module("sharc_index")
-Instruction = import_module("sharc_disasm").Instruction
+I = import_module("tools.sharc_dev.sharc_index")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 
 
 class IndexContractTest(unittest.TestCase):
@@ -26,7 +24,7 @@ class IndexContractTest(unittest.TestCase):
              "reladdr[15:0]": 0x11},
         )
         guard = I.FiniteDomainGuard("R4", 0x100, 0x103, 0x109)
-        with patch("sharc_disasm.decode_loaded_at", side_effect=[shift, branch]):
+        with patch("tools.sharc_dev.sharc_disasm.decode_loaded_at", side_effect=[shift, branch]):
             audit = I._audit_finite_domain_guard(object(), guard)
         self.assertEqual(audit["values"], [0, 1, 2, 3])
         self.assertEqual(audit["evidence_class"], "strict-trace-derived-domain")
@@ -60,10 +58,10 @@ class IndexContractTest(unittest.TestCase):
             first = I.AnalysisIndex._fingerprint(blob, I.IndexConfig((1,), 8))
             self.assertEqual(first["contract"], I.CACHE_CONTRACT)
             paths = {item["path"] for item in first["dependencies"]}
-            self.assertTrue({"tools/sharc_isa.py", "tools/sharc_visa_tables.py", "tools/sharcimm.py", "tools/sharcspec/compute_table.json", "tools/sharc_static.py"} <= paths)
-            self.assertNotIn("tools/sharc_discover.py", paths)
-            self.assertNotIn("tools/sharc_index.py", paths)
-            self.assertNotIn("tools/sharc_selache.py", paths)
+            self.assertTrue({"tools/sharc_dev/sharc_isa.py", "tools/sharc_dev/sharc_visa_tables.py", "tools/sharc_dev/sharcimm.py", "tools/sharc_dev/sharcspec/compute_table.json", "tools/sharc_dev/sharc_static.py"} <= paths)
+            self.assertNotIn("tools/sharc_dev/sharc_discover.py", paths)
+            self.assertNotIn("tools/sharc_dev/sharc_index.py", paths)
+            self.assertNotIn("tools/sharc_dev/sharc_selache.py", paths)
             with patch.object(I, "_digest_file", return_value="0" * 64):
                 self.assertNotEqual(first, I.AnalysisIndex._fingerprint(blob, I.IndexConfig((1,), 8)))
 
@@ -74,8 +72,8 @@ class IndexContractTest(unittest.TestCase):
             def classify(_facts, targets, **kwargs):
                 calls.append((tuple(targets), kwargs)); return {target: {"target": target[0], "target_width": target[1], "coverage": "incomplete"} for target in targets}
             a, b = I.WriterTarget(0x100, 4), I.WriterTarget(0x100, 16)
-            with patch("sharcwriters.collect_trace_facts", return_value=facts) as collect, patch(
-                "sharcwriters.classify_trace_facts", side_effect=classify
+            with patch("tools.sharc_dev.sharcwriters.collect_trace_facts", return_value=facts) as collect, patch(
+                "tools.sharc_dev.sharcwriters.classify_trace_facts", side_effect=classify
             ):
                 cold = index.query(writer_targets=[b, a, a], jobs=1)
                 mtime_ns = index._path.stat().st_mtime_ns
@@ -100,7 +98,7 @@ class IndexContractTest(unittest.TestCase):
                 trace = []
                 stopped = "return without followed call"
 
-            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", return_value=[State()]):
+            with patch("tools.sharc_dev.sharcfn.load_context", return_value=context), patch("tools.sharc_dev.sharc_trace.trace", return_value=[State()]):
                 effect = index.query(register_effects=[I.RegisterEffectQuery(0x20, "R6")])["register_effects"][0]
             self.assertEqual(effect["status"], "preserved")
             self.assertEqual(effect["reasons"], [])
@@ -118,8 +116,8 @@ class IndexContractTest(unittest.TestCase):
                 provisional_used = ("6a_nomem",)
 
             query = I.RegisterEffectQuery(0x20, "R6", calibration_forms=("6a_nomem",))
-            with patch("sharcfn.load_context", return_value=context), patch(
-                "sharc_trace.trace", return_value=[State()]
+            with patch("tools.sharc_dev.sharcfn.load_context", return_value=context), patch(
+                "tools.sharc_dev.sharc_trace.trace", return_value=[State()]
             ) as trace:
                 effect = index.query(register_effects=[query])["register_effects"][0]
 
@@ -162,7 +160,7 @@ class IndexContractTest(unittest.TestCase):
             states = [State(stop) for stop in stops]
             states.append(State("return without followed call", [{"action": "unsupported"}]))
             context = {"mem": object(), "functions": [{"entry": 0x20 + number} for number in range(len(states))]}
-            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", side_effect=[[state] for state in states]):
+            with patch("tools.sharc_dev.sharcfn.load_context", return_value=context), patch("tools.sharc_dev.sharc_trace.trace", side_effect=[[state] for state in states]):
                 effects = index.query(register_effects=[I.RegisterEffectQuery(0x20 + number, "R6") for number in range(len(states))])["register_effects"]
             self.assertTrue(all(effect["status"] == "unknown" for effect in effects))
             self.assertTrue(any("unsupported" in effect["reasons"] for effect in effects))
@@ -176,7 +174,7 @@ class IndexContractTest(unittest.TestCase):
                 trace = [{"pc_sw": 0x24, "action": "ureg-write", "destination": "R6"}]
 
             context = {"mem": object(), "functions": [{"entry": 0x20}]}
-            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", return_value=[State()]):
+            with patch("tools.sharc_dev.sharcfn.load_context", return_value=context), patch("tools.sharc_dev.sharc_trace.trace", return_value=[State()]):
                 effect = index.query(register_effects=[I.RegisterEffectQuery(0x20, "R6")])["register_effects"][0]
             self.assertEqual(effect["status"], "written")
             self.assertEqual(effect["writer_pcs"], [0x24])
@@ -187,7 +185,7 @@ class IndexContractTest(unittest.TestCase):
             context = {"mem": object(), "functions": [{"entry": 2}, {"entry": 1}]}
             class State:
                 trace = []; stopped = "return"
-            with patch("sharcfn.load_context", return_value=context) as load, patch("sharc_trace.trace", return_value=[State()]) as trace:
+            with patch("tools.sharc_dev.sharcfn.load_context", return_value=context) as load, patch("tools.sharc_dev.sharc_trace.trace", return_value=[State()]) as trace:
                 result = index.query(register_effects=[I.RegisterEffectQuery(2, "R7"), I.RegisterEffectQuery(1, "R6"), I.RegisterEffectQuery(2, "R7")])
                 again = index.query(register_effects=[I.RegisterEffectQuery(1, "R6"), I.RegisterEffectQuery(2, "R7")])
             self.assertEqual(load.call_count, 1); self.assertEqual(trace.call_count, 2)
@@ -259,7 +257,7 @@ class IndexContractTest(unittest.TestCase):
                 stopped = "return without followed call"
 
             context = {"mem": object(), "functions": [{"entry": item.entry_sw}]}
-            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", return_value=[State()]) as trace:
+            with patch("tools.sharc_dev.sharcfn.load_context", return_value=context), patch("tools.sharc_dev.sharc_trace.trace", return_value=[State()]) as trace:
                 effect = index.query(register_effects=[item])["register_effects"][0]
             self.assertEqual(trace.call_count, 1)
             self.assertEqual(effect["status"], "preserved")
@@ -294,9 +292,9 @@ class IndexContractTest(unittest.TestCase):
             with sqlite3.connect(index._path) as con:
                 con.execute("INSERT INTO writer_results VALUES (?,?,?,?,?,?,1)", (key, index._static_key, I._payload(request), b"{bad", "0" * 64, 4))
             with patch(
-                "sharcwriters.collect_trace_facts", return_value={"contract": "test", "functions": []}
+                "tools.sharc_dev.sharcwriters.collect_trace_facts", return_value={"contract": "test", "functions": []}
             ) as collect, patch(
-                "sharcwriters.classify_trace_facts", return_value={(1, 4): {"target": 1}}
+                "tools.sharc_dev.sharcwriters.classify_trace_facts", return_value={(1, 4): {"target": 1}}
             ):
                 self.assertEqual(index.query(writer_targets=[item])["writer_targets"], [{"target": 1}])
             self.assertEqual(collect.call_count, 1)
@@ -329,7 +327,7 @@ class IndexContractTest(unittest.TestCase):
             # A handler revision invalidates only facts that used or stopped on
             # that form; this models a future Type11a semantic implementation.
             with patch.object(I, "WRITER_TRACE_POLICY", {**I.WRITER_TRACE_POLICY, "trace_policy": "strict/v1"}), patch(
-                "sharcwriters.TRACE_HANDLER_REVISIONS", {"default": "trace-handler/v1", "11a": "trace-handler/v2"}
+                "tools.sharc_dev.sharcwriters.TRACE_HANDLER_REVISIONS", {"default": "trace-handler/v1", "11a": "trace-handler/v2"}
             ):
                 semantic = index._writer_function_facts(request)
             self.assertIn("a", semantic)

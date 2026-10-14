@@ -1,14 +1,10 @@
-"""tools/dspmap.py regions and caller trees (the map needs an image and a dump)."""
+"""tools/sharc_dev/dspmap.py regions and caller trees (the map needs an image and a dump)."""
 
-import os
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import dspmap  # noqa: E402
+from tools.sharc_dev import dspmap  # noqa: E402
 
 PROF = {'counter': 0x40001000, 'gate': 0x40002004, 'countdown': 0x40002000,
         'mode': 0x40002008, 'stop': 0x40001ffc,

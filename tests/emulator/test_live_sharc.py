@@ -4,8 +4,8 @@ the Python replay.
 Needs firmware-derived files under out/ that these tests never build
 themselves (each is minutes of Python):
 
-    uv run python tools/sharc_transpile_run.py live-pack dt2-1.16 CAPTURE --lp0 LOG
-    uv run python tools/sharc_transpile_run.py live-ref dt2-1.16 CAPTURE --lp0 LOG --frames 24
+    uv run python -m tools.sharc_dev.sharc_transpile_run live-pack dt2-1.16 CAPTURE --lp0 LOG
+    uv run python -m tools.sharc_dev.sharc_transpile_run live-ref dt2-1.16 CAPTURE --lp0 LOG --frames 24
 
 plus the native core library (out/native/opt/target-final, or
 $SHARC_NATIVE_LIB) and ``cd native/live && cargo build --release``. The
@@ -16,7 +16,6 @@ import json
 import os
 import struct
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -24,11 +23,9 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "tools"))
 
-import sharc_transpile_run as tr  # noqa: E402
-from tools.live_audio import (  # noqa: E402
+from tools.sharc_dev import sharc_transpile_run as tr  # noqa: E402
+from tools.emulator.live_audio import (  # noqa: E402
     DEFAULT_SHARC_LIB,
     LiveAudio,
     _default_library_path,
@@ -51,7 +48,7 @@ def _cached_pack_and_ref() -> tuple[Path, Path]:
     ):
         if not path.is_file():
             pytest.skip("missing %s: %s" % (what, path))
-    import sharc_harness as h
+    from tools.sharc_dev import sharc_harness as h
 
     blob = tr.pack_image(h.load_image_memory(IMAGE))
     key = tr.live_key(blob, str(CAPTURE), str(LP0), START)

@@ -18,7 +18,7 @@ start.
 ### Measured: where compile and build time goes **[D]**
 
 No-AOT `static-insns+follow`, flat fallback on (default), 20 audio s, timed
-(`SHARC_FAST_TL=1`, summarised by `tools/fast_timeline.py`). PCM
+(`SHARC_FAST_TL=1`, summarised by `tools/devtools/fast_timeline.py`). PCM
 `e1556053127f219c`; the default AOT config gives the same PCM.
 
 Whole run: DSP thread 99.8 s = Cranelift compile 19.8 + region build 2.9 + run 77.1
@@ -298,7 +298,7 @@ pointer of the core is an address in that memory. The DSP worker blocks in
 `serve()` on `Atomics.wait` and never returns to its event loop. That last fact
 decides the design.
 
-**Measured V8 behaviour (Node 24.15, V8 13; `tools/wasm_compile_bench.mjs`, 4566
+**Measured V8 behaviour (Node 24.15, V8 13; `tools/devtools/wasm_compile_bench.mjs`, 4566
 kernels) [D]**
 
 | step | cost |
@@ -362,9 +362,9 @@ code with it if the worker has already run the function.
 | `native/sharc-fast-cl/src/lib.rs` | `compile_blob`, `load_blob` (exist now); helper from `ctx`; worker-local backend |
 | `native/sharc-fast-wasm/src/lib.rs` | async `HostBackend` (stage 4); `Op::Helper` import is done |
 | `native/boot/src/sharc_peer.rs`, `abi.rs` | per-period `FastTier::tick`; offload on for the app |
-| `native/coupled/src/bin/coupled_run.rs`, `tools/perf.py`, `tools/fastcov.py` | `--fast-offload N`, `SHARC_FAST_SYNC` default for tools |
+| `native/coupled/src/bin/coupled_run.rs`, `tools/devtools/perf.py`, `tools/devtools/fastcov.py` | `--fast-offload N`, `SHARC_FAST_SYNC` default for tools |
 | `packages/web/src/dsp-worker.ts`, new `kernel-compile-worker.ts`, `core-host.ts` | async waits, compile pool, imports |
-| `tools/fast_timeline.py`, `tools/wasm_compile_bench.mjs` | added now (measurement) |
+| `tools/devtools/fast_timeline.py`, `tools/devtools/wasm_compile_bench.mjs` | added now (measurement) |
 
 ## Risks
 
@@ -471,12 +471,12 @@ finding 18 plus what this measurement adds:
 - `SHARC_FAST_TL=1`: `tl build ...` per build and `tl tick ...` every 250M
   instructions on stderr, with `SHARC_FAST_TL_DUMP=DIR` writing the helper-free IR
   (`kernel-<hash>.bin`, input for `wasmgen`); `tl cl` lines from the Cranelift
-  backend (code bytes, relocations). Parser: `tools/fast_timeline.py ERRFILE`.
+  backend (code bytes, relocations). Parser: `tools/devtools/fast_timeline.py ERRFILE`.
 - `SHARC_FAST_DEFER=N`: interpret the first N to 4N calls of each new kernel.
 - `SHARC_FAST_RELOAD=1`: run every Cranelift kernel from a stored blob.
 - `SHARC_FAST_CL_OPT=none|speed_and_size`.
 - `native/sharc-fast-cl/examples/compile_par.rs KDUMP [THREADS...]`;
-  `tools/wasm_compile_bench.mjs WASM_DIR` (`ONLY=sync|async|worker|cross|cold|warm`).
+  `tools/devtools/wasm_compile_bench.mjs WASM_DIR` (`ONLY=sync|async|worker|cross|cold|warm`).
 - Checks with the hooks compiled in: default AOT `trig1-taps` 10.5 s timed, PCM
   `e0e6c8af7a84c443`, 1.429 and 1.423 DSP CPU per audio s (finding 18: 1.39-1.43);
   no-AOT 1.5 s `3bf3ba3026953c22` with TL on and with RELOAD on.

@@ -1,8 +1,8 @@
-"""Checks for tools/sharc.py's networkx graph layer (cfg/callgraph/defuse/
+"""Checks for tools/sharc_dev/sharc.py's networkx graph layer (cfg/callgraph/defuse/
 slice) against the real dt2-1.16 program database (out/sharcdb/
 dt2-1.16.sqlite -- see the worktree's `out`/`sections` symlinks). Skipped,
 not marked slow: it only opens the already-built database, the same thing
-tools/sharc.py itself does by default (see tests/sharc/analysis/test_sharc_contract.py).
+tools/sharc_dev/sharc.py itself does by default (see tests/sharc/analysis/test_sharc_contract.py).
 
 FUN_1c4f81 (0x1c4f81-0x1c5334, "interpolating table lookup / wavetable
 oscillator" per its `functions.label`) is used throughout: its two
@@ -12,15 +12,12 @@ a `leftz` a few instructions earlier -- a real slice question, not a
 synthetic one.
 """
 
-import os
 import pathlib
-import sys
 import unittest
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc  # noqa: E402
+from tools.sharc_dev import sharc  # noqa: E402
 
 DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
 
@@ -36,7 +33,7 @@ LIT_SW = 0x1C5002  # `M4 = 0x1bc`, defines the M4 the load above uses
 # `bit-test(MODE1STK, mask=0x10000) -> BTF` at BTF_WRITE_SW, consumed by
 # `JUMP IF TF non-delayed` at BTF_BRANCH_SW. Before this file's own
 # per-group ASTAT modelling, defuse()'s whole-register "ASTAT" rule had no
-# def at all for a Type18a bit-test (tools/sharcdb.py's register_effects
+# def at all for a Type18a bit-test (tools/sharc_dev/sharcdb.py's register_effects
 # records no regdef row for one -- it only reads a source into BTF, never
 # writes a data register), so slice(reg="ASTAT") here used to walk straight
 # past it to the last unrelated compute (BTF_UNRELATED_COMPUTE_SW, an R14
@@ -207,7 +204,7 @@ class DefuseAndSliceTest(unittest.TestCase):
 
     def test_defuse_models_astat_shift_group_for_leftz(self):
         # `leftz` (SHIFT compute unit, PRM p.521) only ever touches SS/SZ/SV
-        # (tools/sharc_core/flags.py's _astatx_leftz) -- CLEAR_SITE_1's own
+        # (tools/sharc_dev/sharc_core/flags.py's _astatx_leftz) -- CLEAR_SITE_1's own
         # SV-reading cond must resolve through the precise "ASTAT.SHIFT"
         # pseudo-register, exactly like the whole-register "ASTAT" one.
         g = self.img.defuse(FUN_1C4F81)

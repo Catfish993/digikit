@@ -1,7 +1,7 @@
 //! Replay capture frames through the native core without Python, for
 //! timing, profiling and a fast regression check.
 //!
-//! The pack comes from `tools/sharc_transpile_run.py pack` (the image blob,
+//! The pack comes from `tools/sharc_dev/sharc_transpile_run.py pack` (the image blob,
 //! the start state, and each frame's DMA data); every frame does what
 //! `NativeFrames.frame` does: the DMA transfer poke, the DMA completion
 //! call, then the block handler call, each run until the call returns.
@@ -11,7 +11,7 @@
 //!
 //! `--coverage` runs everything through the one-instruction interpreter
 //! and writes, per executed instruction, "pc MODE1 known count" (the
-//! block set and MODE1 facts tools/sharc_rsgen.py --coverage specialises).
+//! block set and MODE1 facts tools/sharc_dev/sharc_rsgen.py --coverage specialises).
 //!
 //! `--record` writes the SHA-256 of each frame's exported canonical state
 //! (the state `sharc_transpile_run.py frames` compares with Python);

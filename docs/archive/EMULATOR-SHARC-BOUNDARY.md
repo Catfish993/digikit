@@ -13,7 +13,7 @@ receive_buffer + 0x94 + 2 * track_index
 
 The emulator does **not** execute the SHARC firmware. It can prove what the
 ColdFire sends, when it sends it, and which ColdFire state produced it. Static
-SHARC decoding and `tools/sharc_trace.py` must prove how the DSP consumes it.
+SHARC decoding and `tools/sharc_dev/sharc_trace.py` must prove how the DSP consumes it.
 
 Firmware and firmware-derived bytes stay under ignored `out/` paths and must
 not be committed.
@@ -232,7 +232,7 @@ execution.
 
 - [ ] Identify the SHARC receive buffer or the earliest routine that receives
   its pointer using loader seeds, call sites, and the public hardware manuals.
-- [ ] Add an optional concrete-memory input to `tools/sharc_trace.py` or a
+- [ ] Add an optional concrete-memory input to `tools/sharc_dev/sharc_trace.py` or a
   small adapter around it; do not make firmware bytes a committed fixture.
 - [ ] Map the captured frame at an explicitly supplied SHARC address/base.
 - [ ] Preserve symbolic `track_index` while making invariant frame bytes

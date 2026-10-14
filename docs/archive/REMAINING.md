@@ -22,7 +22,7 @@ inherited from earlier docs. Claims inherited from earlier docs are marked.
 |---|---|---|
 | `.syx` → 8-in-7 decode → ELE3 → section table | `dt2/container.py` | works |
 | sections → decompressed blobs | `emu/extract.py` (`dt2/elz.py` by default, all four firmwares; `--oracle` runs the device's own depacker under Unicorn, 1.15C and 1.10E only) | works |
-| byte-exact, length-preserving edit of a decompressed section | `tools/patchimg.py` | works; validates old bytes, refuses overlaps, enforces `len(old)==len(new)` |
+| byte-exact, length-preserving edit of a decompressed section | `tools/patchkit/patchimg.py` | works; validates old bytes, refuses overlaps, enforces `len(old)==len(new)` |
 | CRC-32 oracle (`0x80001bd0`) | `emu/oracle.py` | works, byte-exact vs zlib |
 | depack oracle (`0x80000432`) | `emu/oracle.py` | works |
 | boot the patched image to a rendered UI | `emu/run.py` | works (DT2; DN2 does not boot) |
@@ -92,7 +92,7 @@ reverse engineering first.
 
 ### A.3 What "framework" means, and what is there today
 
-There is no patch framework — only a good single-shot CLI. `tools/patchimg.py`
+There is no patch framework — only a good single-shot CLI. `tools/patchkit/patchimg.py`
 takes `--str ADDR=OLD:NEW` / `--bytes ADDR=OLDHEX:NEWHEX` on the command line
 and *emits* a JSON manifest for audit, but nothing ever *reads* a manifest back.
 There is no patch file format, no named-patch catalogue, no versioning of a
@@ -145,7 +145,7 @@ SLICE`. The UI list length is not a numeral but a rodata range copied into a
 `std::vector<int>`: source list `0x401e1958`-`0x401e1974` = `{0,1,2,3,6,4,5}`,
 filter list `0x401e1940`-`0x401e1958` = `{0,1,4,3,5,2}`.
 
-On the SHARC side (container §7) `tools/sharcscan.py` finds, by literal
+On the SHARC side (container §7) `tools/sharc_dev/sharcscan.py` finds, by literal
 pattern-matching two cjump encodings, candidate indirect-call tables. Reproduced
 on this branch:
 
@@ -230,7 +230,7 @@ that would confirm or kill the 11-entry coincidence.
 
 ### B.4 The SHARC load map is now exact, not inferred
 
-`tools/sharcldr.py` had `FILL_BIT = 12`. In the ADI boot-stream flag set that
+`tools/sharc_dev/sharcldr.py` had `FILL_BIT = 12`. In the ADI boot-stream flag set that
 bit is `BFLAG_IGNORE`; `BFLAG_FILL` is bit 8 (`0x100`). A FILL block has no
 payload in the stream, so treating one as if it did desynchronised the parse at
 the fourth block. That is the whole reason 309,532 of 320,780 bytes were
@@ -256,7 +256,7 @@ is a width alias:
 Two independent confirmations, neither of them a fit: the declared entry point
 `0x1c1338` maps to byte `0x28382670`, which is *exactly* a loaded block's
 target address; and the base `0x28000000` is a round region base rather than a
-derived residual. `tools/sharcldr.py` now exposes this as `sw_to_byte()`,
+derived residual. `tools/sharc_dev/sharcldr.py` now exposes this as `sw_to_byte()`,
 `byte_to_sw()`, `offset_for_address()`, `address_for_offset()` and a
 `--addr` / `--addr-space` CLI.
 
@@ -360,7 +360,7 @@ question, not an open hunt.
 
 ### B.7 SHARC is now in Ghidra
 
-`tools/sharc_import.py` builds a Ghidra program from the loader's own block
+`tools/sharc_dev/sharc_import.py` builds a Ghidra program from the loader's own block
 targets. Three things the format does not advertise had to be handled: the
 boot stream writes some regions more than once (so blocks are merged and
 payloads replayed in stream order), a `byte_count` 0 block carries a
@@ -369,7 +369,7 @@ DDR clear has to be skipped rather than reserved.
 
 Nothing in the processor module knows where code starts, so auto-analysis
 alone disassembles **nothing**. Seeded at the entry point, the 11 handlers
-and the call targets `tools/sharcscan.py` recovers, it reaches **289
+and the call targets `tools/sharc_dev/sharcscan.py` recovers, it reaches **289
 functions** on Digitakt.
 
 The SLEIGH generator also grew real control flow. It emitted p-code for 2 of
@@ -393,7 +393,7 @@ to be measured rather than assumed:
 of the 48-bit returns appear in 224 KB of code, so most returns are the form
 the spec cannot see — which is why function bounds remain poor.
 
-`tools/ghidraq.py` queries either processor's program (strings, symbols,
+`tools/coldfire/ghidraq.py` queries either processor's program (strings, symbols,
 xrefs, callers, decompile, read), chaining queries through one JVM load.
 
 **What this does and does not buy.** It buys a browsable SHARC corpus with a

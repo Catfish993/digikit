@@ -1,7 +1,7 @@
 //! Region microbenchmark: capture the engine state at a generated region's
 //! entry during the DN2 note replay, then call that region's generated entry
 //! function over and over from the captured state and time it.
-//! `tools/sharc_regionbench.py` drives it against a gen dir holding only the
+//! `tools/devtools/sharc_regionbench.py` drives it against a gen dir holding only the
 //! selected regions (the rest of the code is interpreted, which is fine for
 //! capture).
 //!
@@ -36,7 +36,7 @@
 
 // The hand-written speed-of-light versions are a translation of firmware DSP
 // loops: they stay under out/ and are compiled in only when build.rs finds
-// them (SHARC_REGIONBENCH_SOL names the file, see tools/sharc_regionbench.py).
+// them (SHARC_REGIONBENCH_SOL names the file, see tools/devtools/sharc_regionbench.py).
 #[cfg(region_bench_sol)]
 mod sol {
     include!(env!("SHARC_REGIONBENCH_SOL_PATH"));

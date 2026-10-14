@@ -5,18 +5,16 @@ The expressions are evaluated by a small stand-in for patchkit's expression lang
 `image.u8|u16|u32(...)`, + - * / & | << >> and parentheses): lane a's evaluator is the real one, this keeps the
 manifest honest until it lands."""
 
-import sys
 import tomllib
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_cfunit  # noqa: E402
-import pk_toolchains  # noqa: E402
-from pk_expr import evaluate as eval_expr  # noqa: E402
+from tools.patchkit import pk_cfunit  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
+from tools.patchkit.pk_expr import evaluate as eval_expr  # noqa: E402
 
 SYX = ROOT / "Digitakt_II_OS1.17.syx"
 SRC = ROOT / "modules" / "core" / "params" / "src" / "cf" / "dt2" / "params.s"

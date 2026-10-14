@@ -3,14 +3,12 @@
 import os
 import pathlib
 import struct
-import sys
 import unittest
 import wave
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_harness as h  # noqa: E402
+from tools.sharc_dev import sharc_harness as h  # noqa: E402
 
 SCRATCH = (
     pathlib.Path(os.environ.get("CLAUDE_SCRATCHPAD", "/tmp")) / "test_sharc_harness"

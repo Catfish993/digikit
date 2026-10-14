@@ -1,4 +1,4 @@
-"""Client peer for `tools/sharc_proc.py`: launches the SHARC server as a
+"""Client peer for `tools/sharc_dev/sharc_proc.py`: launches the SHARC server as a
 subprocess and speaks its protocol (version 1; see that module's docstring
 for the message table) over its stdin/stdout.
 
@@ -13,7 +13,7 @@ for the message table) over its stdin/stdout.
 See `emu/dspi2.py`'s "Lockstep interface for a future SHARC stepper" and
 `emu/ssi.py`'s "SSI0 peer hook" -- this is the stepper those sections
 describe, backed by a process instead of in-process state. Today it talks to
-`tools/sharc_proc.py`'s `StubBackend`; nothing here changes when a real
+`tools/sharc_dev/sharc_proc.py`'s `StubBackend`; nothing here changes when a real
 runner backend replaces it (see that module's docstring).
 
 ## Launching the server
@@ -47,10 +47,10 @@ import threading
 import time
 from collections.abc import Sequence
 
-PROTOCOL_VERSION = 1  # keep in lockstep with tools/sharc_proc.py
+PROTOCOL_VERSION = 1  # keep in lockstep with tools/sharc_dev/sharc_proc.py
 
 # Message type constants and framing are intentionally duplicated from
-# tools/sharc_proc.py rather than imported -- see that module's docstring,
+# tools/sharc_dev/sharc_proc.py rather than imported -- see that module's docstring,
 # "Framing. Deliberately duplicated...": this file lives in the `emu`
 # package (CPython + Unicorn only), the server has to stay importable under
 # PyPy with no `emu` package on its path, and the two sides are small enough
@@ -70,8 +70,7 @@ _LEN = struct.Struct(">I")
 
 _DEFAULT_SERVER_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "tools",
-    "sharc_proc.py",
+    "tools", "sharc_dev", "sharc_proc.py",
 )
 
 
@@ -109,7 +108,7 @@ class _StderrTail:
 
 
 def default_command(server_path: str | None = None, prefer: str = "pypy") -> list[str]:
-    """-> argv to launch `tools/sharc_proc.py` (minus its own CLI args).
+    """-> argv to launch `tools/sharc_dev/sharc_proc.py` (minus its own CLI args).
 
     `prefer='pypy'` (default): a `pypy3.11` on `PATH`, else a uv-managed
     `pypy3.11` (via `uv run --no-project --python pypy3.11`), else CPython
@@ -145,7 +144,7 @@ def default_command(server_path: str | None = None, prefer: str = "pypy") -> lis
 
 
 class SharcServerPeer:
-    """Launches `tools/sharc_proc.py` and speaks protocol v1 to it.
+    """Launches `tools/sharc_dev/sharc_proc.py` and speaks protocol v1 to it.
 
     `advance_every`, if given, is a ColdFire-instruction cadence: `service()`
     (called by `emu.longrun.spin` at every chunk boundary when this object is
@@ -153,7 +152,7 @@ class SharcServerPeer:
     instructions of guest time. `None` (default) never sends one -- correct
     for `StubBackend`, whose replies do not depend on wall time between
     exchanges; how a real runner should map ColdFire instructions to SHARC
-    time is not decided (see `tools/sharc_proc.py`'s docstring, "Open
+    time is not decided (see `tools/sharc_dev/sharc_proc.py`'s docstring, "Open
     question").
     """
 

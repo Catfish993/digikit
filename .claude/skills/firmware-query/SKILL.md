@@ -1,9 +1,9 @@
 ---
 name: firmware-query
-description: Use before writing SQL or one-off scripts against the firmware databases (ColdFire cfdb, SHARC sharcdb) or when asking where a feature (machines, FX, parameters, menus, pattern and step storage, LFO, p-lock) is handled on a firmware version. Gives one compact query CLI, tools/fw.py, and the per-firmware atlas.
+description: Use before writing SQL or one-off scripts against the firmware databases (ColdFire cfdb, SHARC sharcdb) or when asking where a feature (machines, FX, parameters, menus, pattern and step storage, LFO, p-lock) is handled on a firmware version. Gives one compact query CLI, tools/coldfire/fw.py, and the per-firmware atlas.
 ---
 
-# Firmware queries with tools/fw.py
+# Firmware queries with tools/coldfire/fw.py
 
 Run from the repo root. `-i IMAGE` (dt2-1.17, dn2-1.12, dt2-1.16, dn2-1.11) or `export FW_IMAGE=dt2-1.17`.
 The CPU follows the address: 0x40000000 and up is ColdFire, below 0x1000000 is SHARC (`--cpu` overrides).
@@ -11,7 +11,7 @@ Output is capped at 60 lines (`--max N`, 0 = all). A call costs about 0.05 to 0.
 
 Use `batch` for more than one question: one process, one `## query` block each.
 
-    uv run python tools/fw.py batch - <<'Q'
+    uv run python -m tools.coldfire.fw batch - <<'Q'
     atlas machine
     class MachineListView --max 8
     fn 0x401be1be --max 20
@@ -22,7 +22,7 @@ Order of work:
 1. `atlas TERM` for "where is X handled" (terms: machine, fx, parameter, step, pattern, kit, sound, track,
    page, menu, lfo, p-lock, trig, retrig, song, chain, plus-drive, sample, filter, midi, project ...).
    Rows list the function that builds the table, UI classes, strings, descriptors, parameters and manual pages,
-   each with a provenance and confidence. Build with `uv run python tools/atlas.py build dt2-1.17`.
+   each with a provenance and confidence. Build with `uv run python -m tools.coldfire.atlas build dt2-1.17`.
 2. `search TERM` (names, strings, decompiled C, atlas; `--in names,strings,decomp,atlas`).
 3. `fn`, `class`, `callers`, `callees`, `xref`, `path`, `decomp`, `disasm` on what the search found.
 4. `port NAME --from dt2-1.16 --to dt2-1.17` carries a function between versions (cfmatch matches).
@@ -31,7 +31,7 @@ Order of work:
 Only then write a script, and put it under tools/ if it will be reused.
 
 An empty `callers` or `xref` is not evidence of dead code (Ghidra misses code outside functions and indirect
-calls through vtables); confirm with `tools/refscan.py`. Atlas rows marked `medium` are heuristic.
+calls through vtables); confirm with `tools/coldfire/refscan.py`. Atlas rows marked `medium` are heuristic.
 
 ## Examples (output trimmed)
 

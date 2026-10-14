@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from tools import sharc_render_replay
+from tools.sharc_dev import sharc_render_replay
 
 
 def test_exact_post_swap_input_requires_ordered_ordinals_and_digest(tmp_path):

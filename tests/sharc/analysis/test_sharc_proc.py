@@ -1,4 +1,4 @@
-"""tools/sharc_proc.py: framing, backends and the dispatch loop, in-process
+"""tools/sharc_dev/sharc_proc.py: framing, backends and the dispatch loop, in-process
 (no subprocess, no firmware). See tests/sharc/integration/test_sharc_peer.py for the
 subprocess-level client tests.
 
@@ -7,19 +7,13 @@ Run with: uv run --with pytest python -m pytest tests/sharc/analysis/test_sharc_
 
 import io
 import json
-import os
-import sys
 import unittest
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(
-    0,
-    os.path.join(str(REPO_ROOT), "tools"),
-)
 
-sharc_proc = import_module("sharc_proc")
+sharc_proc = import_module("tools.sharc_dev.sharc_proc")
 ADVANCE = sharc_proc.ADVANCE
 ADVANCE_OK = sharc_proc.ADVANCE_OK
 AUDIO_RX = sharc_proc.AUDIO_RX

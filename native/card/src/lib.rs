@@ -18,7 +18,7 @@ pub const SECTOR_SIZE: usize = 512;
 ///
 /// Use [`Card::read_into`] repeatedly with a reusable buffer for larger media.
 pub const MAX_TRANSFER_BYTES: usize = 1024 * 1024;
-/// Sectors of the +Drive image layout (`tools/plusdrive.py`, `native/plusdrive`).
+/// Sectors of the +Drive image layout (`tools/firmware/plusdrive.py`, `native/plusdrive`).
 /// This is the capacity of the legacy [`CardIdentity::Mlc4G`] card.
 pub const PLUSDRIVE_IMAGE_BLOCKS: u32 = 0x0076_0000;
 /// Legacy alias of [`PLUSDRIVE_IMAGE_BLOCKS`]; no longer the default identity.

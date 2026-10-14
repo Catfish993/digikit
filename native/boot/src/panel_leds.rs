@@ -1,6 +1,6 @@
 //! Front-panel LED state decoded from the UART8 TX stream (the firmware's own panel records).
 //!
-//! Framing is the one in `tools/panel_tx.py`: `0x10..=0x17 col d0..d7` (OLED page row, 9 data bytes),
+//! Framing is the one in `tools/emulator/panel_tx.py`: `0x10..=0x17 col d0..d7` (OLED page row, 9 data bytes),
 //! `b8` (frame present), `b9 idx val` (LED set), `b5 idx r g b` (RGB LED), `b7 x`, `bb a b c`, `bc x`,
 //! `0x40..=0x4f 0`; any other byte is skipped alone. A record may be split across drains, so the decoder
 //! keeps the partly received record between calls. Decoding has no effect on emulation.

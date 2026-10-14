@@ -1,7 +1,7 @@
 //! aPLib-shaped packer for the container's section streams.
 //!
 //! A line-for-line port of `dt2/aplibpack.py`: it must produce the same bytes as the Python packer
-//! (tools/pk_aplib_eq.py checks all stock sections). The format and the method are described there:
+//! (tools/patchkit/pk_aplib_eq.py checks all stock sections). The format and the method are described there:
 //! a forward dynamic program over hash-chain candidates, exact edge costs in bits, the repeat offset
 //! taken from the best path that reaches a node.
 

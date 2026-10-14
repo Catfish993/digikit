@@ -12,7 +12,7 @@ pub struct Manifest {
     pub targets: BTreeMap<String, String>,
     #[serde(default)]
     pub object: Vec<ObjectRef>,
-    /// Resolution rules for `tools/port_resolve.py`; patchkit does not read them.
+    /// Resolution rules for `tools/patchkit/port_resolve.py`; patchkit does not read them.
     #[serde(default)]
     pub anchor_rule: Vec<toml::Value>,
     #[serde(default)]
@@ -215,7 +215,7 @@ pub struct Op {
     #[serde(default)]
     pub anchor: String,
     /// write: `PREFIX.*` repeats the op for every anchor named `PREFIX.<number>` (a multi-site rule of
-    /// `tools/port_resolve.py`), in numeric order; `this` names the current anchor in expressions.
+    /// `tools/patchkit/port_resolve.py`), in numeric order; `this` names the current anchor in expressions.
     #[serde(default)]
     pub anchors: Option<String>,
     /// write: the new value (expression) and its width in bytes (1, 2 or 4), range checked

@@ -1,18 +1,16 @@
-"""tools/pk_proofs.py: the registry and the command line, without running a proof."""
+"""tools/patchkit/pk_proofs.py: the registry and the command line, without running a proof."""
 
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_proofs  # noqa: E402
+from tools.patchkit import pk_proofs  # noqa: E402
 
 
 def test_every_tool_script_exists() -> None:

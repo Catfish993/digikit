@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
 
-import digi_env  # noqa: E402
+from tools.emulator import digi_env  # noqa: E402
 
 
 def test_registered_core_is_found_by_image_content(monkeypatch, tmp_path):

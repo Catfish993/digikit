@@ -1,14 +1,10 @@
-"""tools/vtcheck.py on hand-made matches, functions and images."""
+"""tools/coldfire/vtcheck.py on hand-made matches, functions and images."""
 
-import os
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import vtcheck  # noqa: E402
+from tools.coldfire import vtcheck  # noqa: E402
 
 BASE = 0x40000400
 

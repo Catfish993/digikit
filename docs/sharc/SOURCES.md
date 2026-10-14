@@ -1,10 +1,10 @@
 # Public sources for the SHARC+ work
 
-Every document used for the SHARC+ instruction tables in `tools/sharcspec/`
+Every document used for the SHARC+ instruction tables in `tools/sharc_dev/sharcspec/`
 was published by Analog Devices on analog.com. No files from any vendor
 toolchain installation (bundled manuals, library sources, linker files,
 headers) were used, and no vendor tools were run. The PDFs are not
-committed: keep local copies in `docs/refs/` (git-ignored). `tools/refstext.py`
+committed: keep local copies in `docs/refs/` (git-ignored). `tools/devtools/refstext.py`
 extracts them to per-page text with each PDF's bookmarks in `out/refs/`. An earlier,
 independent list of SHARC+ manual sections is in `docs/refs/sharc-plus-isa.md`.
 
@@ -14,8 +14,8 @@ independent list of SHARC+ manual sections is in `docs/refs/sharc-plus-isa.md`.
 | `adsp-2136x_2137x_214xx_pgr_rev2.4.pdf` | SHARC Processor Programming Reference, Rev 2.4 (classic core) | 694 | Independent cross-check of opcode bits and computation tables; normal/short-word alias example (printed pp. 7-19--7-20) |
 | `adsp-21562-21563-21565-21566-21567-21569.pdf` | ADSP-2156x datasheet, Rev D | 102 | Memory map and peripheral address ranges, including L1 block-3 normal/short-word aliases |
 | `2156x_EZKIT_Manual.pdf` | ADZS-21569-EZKIT manual | 36 | Board context only |
-| `adsp-2156x-hwr.pdf` | ADSP-2156x SHARC+ Processor Hardware Reference, Rev 1.0 (December 2020) | 2331 | Boot stream block flags in `tools/sharcldr.py`; peripheral register addresses (Appendix A), DMA channel assignment (Table 27-2) and SEC ids (Table 6-5) in `tools/sharcimm.py` |
-| `sharc-plus-prm.pdf` | SHARC+ Core Programming Reference, Rev 1.4 | | Page citations in `tools/sharc_visa_tables.py` |
+| `adsp-2156x-hwr.pdf` | ADSP-2156x SHARC+ Processor Hardware Reference, Rev 1.0 (December 2020) | 2331 | Boot stream block flags in `tools/sharc_dev/sharcldr.py`; peripheral register addresses (Appendix A), DMA channel assignment (Table 27-2) and SEC ids (Table 6-5) in `tools/sharc_dev/sharcimm.py` |
+| `sharc-plus-prm.pdf` | SHARC+ Core Programming Reference, Rev 1.4 | | Page citations in `tools/sharc_dev/sharc_visa_tables.py` |
 | `ADSP-21160_isr_rev2.1.pdf` | ADSP-21160 SHARC DSP Instruction Set Reference, Rev 2.1 (April 2013) | 262 | Third opcode source; Table 1-21 records the Type 23/24/25 renumbering |
 | `50836807228561adsp2106xsharcprocessorusersmanual_revision2_1.pdf` | ADSP-2106x SHARC Processor User's Manual, Rev 2.1 (March 2004) | 698 | Third opcode source; documents Type 23 (`IDLE16`) and Type 24 (`CJUMP`/`RFRAME`) |
 | `3789835185494138226006565l_book_tr.pdf` | ADSP-21065L SHARC DSP Technical Reference, Rev 2.0 (July 2003) | 508 | Third opcode source; per-type opcode bit maps in its instruction-set appendix |
@@ -46,11 +46,11 @@ cell with a column number.
   figures keep a template's default digits or copy another figure.
 - Field names are attached by bracket lines drawn under bit ranges.
 
-`tools/sharcspec/extract_figures.py` reads the fill rectangles, bit-column
+`tools/sharc_dev/sharcspec/extract_figures.py` reads the fill rectangles, bit-column
 positions and bracket endpoints with PyMuPDF. Every figure was then checked by
 rendering it, and every opcode bit was compared against the classic core's
 tables (`compare_sources.py`); the conflicts and their resolution are in
-`tools/sharcspec/README.md`. Field value tables (`BH`, `BHSE`, `ACONV`,
+`tools/sharc_dev/sharcspec/README.md`. Field value tables (`BH`, `BHSE`, `ACONV`,
 `ALUOP`, register class codes) are ordinary text in the manual.
 
 Example (Type 2b, 32-bit VISA): bits 47–39 = `110000000`,

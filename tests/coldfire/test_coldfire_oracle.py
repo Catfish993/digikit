@@ -18,7 +18,7 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 FIXTURES = ROOT / "tests" / "fixtures" / "coldfire"
 EXPECTED = FIXTURES / "mcf54415-oracle.json"
-LANGUAGES = ROOT / "tools" / "ghidra" / "ColdfireEMAC" / "data" / "languages"
+LANGUAGES = ROOT / "tools" / "coldfire" / "ghidra" / "ColdfireEMAC" / "data" / "languages"
 
 
 def load_expected():

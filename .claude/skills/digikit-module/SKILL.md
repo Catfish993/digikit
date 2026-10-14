@@ -9,7 +9,7 @@ A module is our own code (ColdFire C, SHARC+ assembly) plus a manifest. patchkit
 (`native/patchkit`), places it in a port region, hooks a firmware site and writes a patched image under `out/patch/`.
 Plan and state: `docs/plans/patchkit.md`; usage and how it works: `docs/PATCHING.md`; the manifest reference and two
 worked examples: `modules/README.md`; the facts behind it: `docs/findings/21-patchkit-core.md`.
-Run everything from the repo root. Work in a lane only for long or parallel runs (`tools/lane.sh`).
+Run everything from the repo root. Work in a lane only for long or parallel runs (`tools/devtools/lane.sh`).
 
 ## Rules (not optional)
 
@@ -36,7 +36,7 @@ Run everything from the repo root. Work in a lane only for long or parallel runs
 | Build objects | `mise run patch:build -- modules/fx/my-drive` (`--check` fails when a committed `.dko.json` is stale) |
 | Patch | `mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/my-drive -o out/patch/x.syx` (writes `x.plan.json`; list required modules too, the command line does not add them) |
 | Explain | `mise run patch:explain -- --firmware ... --modules ...` (before/after listing of each site, allocation map) |
-| Verify | `uv run python tools/patchkit.py verify out/patch/x.syx` (also run by `patch`) |
+| Verify | `uv run python -m tools.patchkit.patchkit verify out/patch/x.syx` (also run by `patch`) |
 | Inject | `mise run inject -- out/patch/x.syx` (into a running daemon; DSP-only change hot, MAIN change by cached coupled cold boot) |
 | Edit loop | `mise run patch:dev -- --modules fx/my-drive [--device dt2\|dn2]`: watches `src/` and `module.toml`; per edit builds, patches, injects, runs the quick tests, prints one line with `edit->running` and `edit->tested` |
 | Test | `mise run patch:test` (matrix in `tests/patchkit/smoke/matrix.toml`; `-- --cell "dt2-1.17:fx/my-drive,test/cf-demo"` with the exact module set of a cell, joined by commas; a new set needs `-- --update` once to record frame goldens) |
@@ -83,11 +83,11 @@ optional `own_dsp`). the type number is permanent: its row in `modules/core/mach
 (`name`, `short`, `template`, `slot`, `min`, `max`, `default`); a machine names one as `fN = "params.<id>.index"`. A DSP
 object registers its routine with `[[entry]] registry = "voices"` (`type = "machines.<id>.index"`, `pc = "<symbol>"`).
 `modules/machines/pluck` is the worked example (machine, four parameters, voice). The sites, the routines and their tests:
-`modules/core/machines/src/cf/*/machines.s`, finding 02 ("core.machines ... as modules"), `tools/pk_cfunit.py`. Proofs:
-`tools/pk_proof_machines.py`, `pk_proof_pluck.py`, `pk_proof_machines_dn2.py`, `pk_proof_voice*.py` (about 15 minutes each).
+`modules/core/machines/src/cf/*/machines.s`, finding 02 ("core.machines ... as modules"), `tools/patchkit/pk_cfunit.py`. Proofs:
+`tools/patchkit/pk_proof_machines.py`, `pk_proof_pluck.py`, `pk_proof_machines_dn2.py`, `pk_proof_voice*.py` (about 15 minutes each).
 The emulator runs ColdFire code only from the MAIN image or the expansion region; framework code is in `cf.expansion`.
 
-## Tests (tools/pk_harness.py)
+## Tests (tools/patchkit/pk_harness.py)
 
 Steps, one action key each: `tap = "TRIG 1"`, `tap = ["TRK", "TRIG 2"]` (chord), `hold = "PLAY"` + `ms`,
 `turn = "ENC A"` + `by`, `wait_ms`, `expect_frame = "name"` (golden hash; `differs_from`), `expect_pcm_db = {min, max}`
@@ -95,9 +95,9 @@ Steps, one action key each: `tap = "TRIG 1"`, `tap = ["TRK", "TRIG 2"]` (chord),
 step. Every input asserts no fault, no DSP halt, no main-loop stall (controller events `fault`, `halt`, `stall`;
 `status.heartbeat`). Module tests join the smoke tour for the module set; goldens are keyed
 `DEV-FW/<module set>/<segment>/<checkpoint>`. A patched firmware that changes nothing visible must equal the stock
-frames. Ready inputs must be fresh (`tools/ready.py`, SOURCE.json `intc_force: false`); the harness refuses stale ones.
+frames. Ready inputs must be fresh (`tools/emulator/ready.py`, SOURCE.json `intc_force: false`); the harness refuses stale ones.
 
-Known emulator limit: none for the DSP halt in patterns 3 and 4 any more (conditional Type 7a is modelled; finding 05). The generated cores must be regenerated after a `tools/sharc_core` change (`CORE_FINGERPRINT`).
+Known emulator limit: none for the DSP halt in patterns 3 and 4 any more (conditional Type 7a is modelled; finding 05). The generated cores must be regenerated after a `tools/sharc_dev/sharc_core` change (`CORE_FINGERPRINT`).
 
 ## Worked example: fx/master-gain (SHARC, both devices)
 

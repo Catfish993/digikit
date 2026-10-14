@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
 
-import sharc_diff as sd
-import sharc_transpile_run as nr
-import sharcldr
-from sharc_core.encoding import UREG_CODES
-from sharc_core.memory import _dm_read, _dm_write
-from sharc_core.periph import (
+from tools.sharc_dev import sharc_diff as sd
+from tools.sharc_dev import sharc_transpile_run as nr
+from tools.sharc_dev import sharcldr
+from tools.sharc_dev.sharc_core.encoding import UREG_CODES
+from tools.sharc_dev.sharc_core.memory import _dm_read, _dm_write
+from tools.sharc_dev.sharc_core.periph import (
     DAI1_GBL_INT_EN,
     DAI1_GBL_SP_EN,
     SEC_CCTL,
@@ -33,9 +31,9 @@ from sharc_core.periph import (
     _sec_line,
     _sec_raise,
 )
-from sharc_core.state import State
-from sharc_core.values import Const
-from sharc_periph_host import (
+from tools.sharc_dev.sharc_core.state import State
+from tools.sharc_dev.sharc_core.values import Const
+from tools.sharc_dev.sharc_periph_host import (
     SPI2_RX_DMA,
     SPI2_TX_DMA,
     SPORT4A_DMA,

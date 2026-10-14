@@ -1,7 +1,7 @@
 //! Smoke test for the trace reader against the recorded windows under
 //! `out/mmio-trace/` (firmware-derived; never committed -- CLAUDE.md). Skips
 //! cleanly when the traces are not present (a fresh checkout, CI, or a
-//! worktree that has not run `tools/worktree-setup.sh`), so `cargo test`
+//! worktree that has not run `tools/devtools/worktree-setup.sh`), so `cargo test`
 //! never depends on them.
 //!
 //! This only exercises the reader itself (`periph::trace`); the actual
@@ -15,7 +15,7 @@ use periph::trace::Reader;
 
 fn trace_dir() -> std::path::PathBuf {
     // Traces live in the main tree's `out/`, linked into a worktree by
-    // `tools/worktree-setup.sh`; this crate's manifest dir is
+    // `tools/devtools/worktree-setup.sh`; this crate's manifest dir is
     // `<repo>/native/periph`.
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../out/mmio-trace")
 }
@@ -25,7 +25,7 @@ fn reads_every_recorded_window_header_and_a_few_records() {
     let dir = trace_dir();
     if !dir.is_dir() {
         eprintln!(
-            "skip: {} not present (see tools/worktree-setup.sh)",
+            "skip: {} not present (see tools/devtools/worktree-setup.sh)",
             dir.display()
         );
         return;

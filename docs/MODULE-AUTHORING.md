@@ -15,7 +15,7 @@ inject it into the running desktop emulator. Firmware files go in the repository
 (about 2 minutes) and stays under `out/`.
 
 ```sh
-uv run python tools/ready.py dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # once
+uv run python -m tools.emulator.ready dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # once
 ```
 
 Shell 1, the emulator on Digitakt II 1.17 (`DIGI_EMU_READY_DIR_DT2` points the app at that ready state; the default
@@ -71,7 +71,7 @@ mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules machines/p
 mise run inject -- Digitakt_II_OS1.17.syx
 ```
 
-If the app starts without audio it prints which ready inputs are missing; rebuild them with the `tools/ready.py` line
+If the app starts without audio it prints which ready inputs are missing; rebuild them with the `tools/emulator/ready.py` line
 above.
 
 ## Quick usage
@@ -85,7 +85,7 @@ Run every command from the repository root. Put your own stock firmware files in
 mise install
 mise run setup         # Python and web dependencies
 mise run toolchains    # pinned ColdFire gcc/binutils and the SHARC+ assembler, into out/tools (about 15 min)
-uv run python tools/ready.py dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # about 2 min
+uv run python -m tools.emulator.ready dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # about 2 min
 ```
 
 The last line builds the emulator's ready state for that firmware (it is derived from the firmware, so it stays under

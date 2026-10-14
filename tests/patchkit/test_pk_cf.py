@@ -1,26 +1,24 @@
-"""ColdFire patchkit toolchain: gcc (m68k-elf, -mcpu=54418) -> object prototype -> tools/pk_link.py -> our decoder
+"""ColdFire patchkit toolchain: gcc (m68k-elf, -mcpu=54418) -> object prototype -> tools/patchkit/pk_link.py -> our decoder
 -> the native ColdFire core runs the function on a DT2 1.17 ready state.
 
-Skips when the m68k toolchain (tools/pk_toolchains.py m68k) or the 1.17 image is absent."""
+Skips when the m68k toolchain (tools/patchkit/pk_toolchains.py m68k) or the 1.17 image is absent."""
 
 import json
-import sys
 import zlib
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_link  # noqa: E402
-import pk_toolchains  # noqa: E402
+from tools.patchkit import pk_link  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
 SYX = ROOT / "Digitakt_II_OS1.17.syx"
 SRC = ROOT / "tests" / "patchkit" / "pk_src"
 BASE = 0x47E8B000  # spike 0.3 expansion region (DT2)
 DATA = 0x47EC0000  # scratch data inside the region
-# Firmware 1.17 entries (tools/cf_names_dt2_1_17.py, tools/cfdb.py): object accessors at +0x10 and +0x0c.
+# Firmware 1.17 entries (tools/coldfire/cf_names_dt2_1_17.py, tools/coldfire/cfdb.py): object accessors at +0x10 and +0x0c.
 SYMS = {
     "fw_flag_bit": 0x40114A28,
     "fw_field_0c": 0x40114984,
@@ -29,7 +27,7 @@ SYMS = {
 
 needs_gcc = pytest.mark.skipif(
     pk_toolchains.m68k_bin("gcc") is None,
-    reason="m68k toolchain not installed (tools/pk_toolchains.py m68k)",
+    reason="m68k toolchain not installed (tools/patchkit/pk_toolchains.py m68k)",
 )
 
 
@@ -114,7 +112,7 @@ class TestOnTheCore:
     @pytest.fixture(scope="class")
     @classmethod
     def machine(cls):
-        from pk_cfcall import CfMachine
+        from tools.patchkit.pk_cfcall import CfMachine
 
         return CfMachine(SYX)
 

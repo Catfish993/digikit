@@ -1029,9 +1029,9 @@ hook-free. The gap is hook-induced translation-block fragmentation plus
     uv run python -m emu.probe <snap> <instrs>     # blocking sites, hot PCs
     uv run python -m dt2.coldfire sections/section_3_MAIN_OS.bin 0x40000400 <a> <b>
 
-    tools/ghidra.sh import                          # one-time, ~3 min
-    tools/ghidra.sh run Callers.java out.txt 0x...  # real xrefs, incl PC-relative
-    tools/ghidra.sh run Decompile.java out.txt 0x...
+    tools/coldfire/ghidra.sh import                          # one-time, ~3 min
+    tools/coldfire/ghidra.sh run Callers.java out.txt 0x...  # real xrefs, incl PC-relative
+    tools/coldfire/ghidra.sh run Decompile.java out.txt 0x...
 
 **Use Ghidra for anything structural.** `dt2/coldfire.py` is a linear sweep
 with no cross-references, and a byte search for the address constant misses
@@ -1044,12 +1044,12 @@ iterating:
 Open the existing project with `pyghidra.open_project()` +
 `pyghidra.program_context()` — **not** `open_program()`, which tries to
 re-import. Import `ghidra.*` only *after* `pyghidra.start()`. Scripts in
-`tools/ghidra/` must be Java; this Ghidra build has no PyGhidra. Note the
+`tools/coldfire/ghidra/` must be Java; this Ghidra build has no PyGhidra. Note the
 decompiler goes to garbage on some large functions (`0x40188b00`,
 `0x40146f54`) — fall back to `dt2.coldfire` for raw disassembly there.
 
-For grep and SQL, dump the program once with `tools/ghidradump.py` (about a
-minute, to `out/ghidra/<tag>/`); for live queries use `tools/ghidraq.py`,
+For grep and SQL, dump the program once with `tools/coldfire/ghidradump.py` (about a
+minute, to `out/ghidra/<tag>/`); for live queries use `tools/coldfire/ghidraq.py`,
 which chains queries in one JVM. See CLAUDE.md.
 
 **The manuals are in `docs/refs/`** (untracked, ~11 MB of NXP PDF — decide

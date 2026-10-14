@@ -1,4 +1,4 @@
-"""tools/fw.py and tools/atlas.py: pure helpers always, database queries when
+"""tools/coldfire/fw.py and tools/coldfire/atlas.py: pure helpers always, database queries when
 the derived databases exist (out/cfdb, out/sharcdb, out/sections)."""
 
 import os
@@ -9,10 +9,9 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
 
-import atlas  # noqa: E402
-import fw  # noqa: E402
+from tools.coldfire import atlas  # noqa: E402
+from tools.coldfire import fw  # noqa: E402
 
 CF_DB = os.path.join(ROOT, "out", "cfdb", "dt2-1.17-emac.sqlite")
 SHARC_DB = os.path.join(ROOT, "out", "sharcdb", "dt2-1.17.sqlite")

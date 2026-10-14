@@ -3,7 +3,7 @@
 // blocks like the native `ThreadedPeer`) and the DSP worker (the server).
 //
 // Only erasable TypeScript (it runs unchanged under Node's type stripping, see
-// tools/wasm_split.mjs). Both ends are workers: `Atomics.wait` is not allowed
+// tools/devtools/wasm_split.mjs). Both ends are workers: `Atomics.wait` is not allowed
 // on the main thread.
 
 /** Words of the control block (Int32). */

@@ -57,12 +57,10 @@ longrun.py and panel.py for the pattern.
     python -m emu.symbols [image]      # print the resolution report
 """
 import hashlib
-import os
 import re
 import struct
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 LOAD_ADDR = 0x40000400   # both known builds load MAIN OS here (see emu.config)
 

@@ -1,4 +1,4 @@
-"""Register-form shifter opcodes (cu=2) of tools/sharc_core/compute_shift.py:
+"""Register-form shifter opcodes (cu=2) of tools/sharc_dev/sharc_core/compute_shift.py:
 fext, fext (se), fdep, fdep (se), OR-fdep, OR-fdep (se), rot, OR-ashift, exp,
 exp (ex), funpack, bitdep and bitext (nu) with the count in a register.
 
@@ -8,15 +8,12 @@ Table 18-9 pp.431-433, Bit Field Manipulation p.3-17, instruction pages
 len6 = Ry[11:6].
 """
 
-import os
-import sys
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-encoding = import_module("sharc_core.encoding")
+T = import_module("tools.sharc_dev.sharc_trace")
+encoding = import_module("tools.sharc_dev.sharc_core.encoding")
 
 ASTATX = encoding.UREG_CODES["ASTATX"]
 

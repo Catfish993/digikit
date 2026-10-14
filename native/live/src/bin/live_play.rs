@@ -1,5 +1,5 @@
 //! CLI for the live audio path (device open -> ring -> producer ->
-//! callback), the same path `tools/live_audio.py` drives over the C ABI.
+//! callback), the same path `tools/emulator/live_audio.py` drives over the C ABI.
 //!
 //!     live_play [FILE]                   a WAV file, or a 440 Hz tone
 //!     live_play --capture CAPTURE [...]  the native SHARC core, live
@@ -25,7 +25,7 @@
 //!   --times PATH       with --bench: each frame's render time, ns, one per line
 //!
 //! `--capture` builds (or finds) the pack with
-//! `tools/sharc_transpile_run.py live-pack` (Python, cached under
+//! `tools/sharc_dev/sharc_transpile_run.py live-pack` (Python, cached under
 //! out/native/live/ by image, capture, LP0 log and core hashes); nothing in
 //! the audio path runs Python.
 
@@ -154,7 +154,7 @@ fn resolve_pack(a: &Args, capture: &str) -> PathBuf {
         c.args(["run", "python"]);
         c
     };
-    cmd.arg(root.join("tools/sharc_transpile_run.py"))
+    cmd.arg(root.join("tools/sharc_dev/sharc_transpile_run.py"))
         .arg("live-pack")
         .arg(a.image.as_deref().unwrap_or("dt2-1.16"))
         .arg(capture)

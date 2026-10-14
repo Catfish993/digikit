@@ -13,7 +13,7 @@ Real hardware never does this (Em). **[V]**
 
 - Deterministic: the same inputs give the same PCM. **[V]**
 - Identical on all DSP tiers (interpreter, AOT, fast). Note: the tiers share
-  semantics generated from `tools/sharc_core`, so agreement does not rule out
+  semantics generated from `tools/sharc_dev/sharc_core`, so agreement does not rule out
   a semantics bug. **[V]**
 - Not the playback path. **[V]**
 - CF to DSP frames are identical for a clean and a bad run, except the trigger
@@ -131,11 +131,11 @@ sharc-gen, no edits needed). Interpreter-only.
   register (S12) with the same data (SHARC+ Core Programming Reference,
   Type 17b, ch.15, extraction page 398: "provides parallel writes for the X
   and Y processing elements. The Y element uses the complementary Cureg").
-  `tools/sharc_core/forms_move.py::_type_17a` (name 17a and 17b) writes only
+  `tools/sharc_dev/sharc_core/forms_move.py::_type_17a` (name 17a and 17b) writes only
   the explicit ureg: no companion write. [C] The 0x1c29f2 remark was wrong: it precedes the PEYEN set at 0x1c2a11. The Python core and every tier
   generated or differentially tested against it share the omission. **[V]**
   for 17b at 0x1c2a1d; **[O]** whether other 17a/17b sites run under SIMD.
-- Fix location: `_type_17a` in tools/sharc_core/forms_move.py: when
+- Fix location: `_type_17a` in tools/sharc_dev/sharc_core/forms_move.py: when
   `_simd_active(state)` and the ureg has a complementary Cureg
   (`_cureg_code`), also write the Y element's register (S0..S15 for R0..R15)
   with the same value; then regenerate sharc-gen and update the golden hashes
@@ -152,23 +152,23 @@ extraction pp.396-398) gives the parallel X/Y write, but is silent on data16
 sign extension (inferred from the firmware use, -15); the fast tier declines
 regions entered with MODE1 bits 21-23, so it never ran 17a/b under PEYEN.
 
-Fix: `tools/sharc_core/forms_move.py::_type_17a` also writes the Cureg under
+Fix: `tools/sharc_dev/sharc_core/forms_move.py::_type_17a` also writes the Cureg under
 `_simd_active`; test `test_type17_immediate_load_writes_cureg_only_under_peyen`
 in tests/test_sharc_stack_registers.py. **[V]** A static scan found 57 Type 17
 R/S loads inside PEYEN spans in DN2 1.11 and 19 in DT2 1.16 (e.g. DN2
 0x1c1b5d, 0x1c209a, 0x1c248c, 0x1c2593, 0x1c4693): all were wrong before.
 
 Regeneration (backup `out/native/dn2-audio/gen.pre-type17`, never commit):
-`uv run python tools/sharc_transpile.py --strict --out out/native/dn2-audio/gen
+`uv run python -m tools.sharc_dev.sharc_transpile --strict --out out/native/dn2-audio/gen
 --work out/native/transpile-work-genbatch` (5 s) then `uv run python
-tools/sharc_rsgen.py dn2-1.11 --coverage $I/cov6.txt --entries $I/ent9.txt
+tools/sharc_dev/sharc_rsgen.py dn2-1.11 --coverage $I/cov6.txt --entries $I/ent9.txt
 --transitions $I/trans9.txt --model-safe --explicit-memory-model 0 --chain
 --exclude 0xb88a49:0xb88abc --unknown-fallbacks 0x1c253f --work
 out/native/transpile-work-genbatch --out out/native/dn2-audio/gen`, with
 `I=out/native/gen-provenance-20261003/inputs` (94 s). Same 1751 blocks and
 block starts; 773 regions (was 772), 259668 variants (was 258585).
-PROVENANCE.txt kept (not updated). `uv run python tools/coupled.py build`
-(3 m 25 s) and `tools/native_wasm.py` (a Python script; 3 m 57 s).
+PROVENANCE.txt kept (not updated). `uv run python -m tools.emulator.coupled build`
+(3 m 25 s) and `tools/emulator/native_wasm.py` (a Python script; 3 m 57 s).
 
 Results after the fix **[V]**:
 
@@ -188,7 +188,7 @@ Results after the fix **[V]**:
   `taps/wide.sh P...` + `an24.py` (scratchpad scripts, not in the repo).
 
 Pinned values in `coupled_ready_exactness` (native/coupled/src/lib.rs),
-updated for the fix **[V]** (gate passes; run as tools/native_pgo.py does,
+updated for the fix **[V]** (gate passes; run as tools/emulator/native_pgo.py does,
 manifest packages/desktop/src-tauri, absolute DIGI_COUPLED_FIXTURES):
 CF digest `fbace0f0..` -> `bc82b1996d75..0507` (the DSPI RX buffer at CF
 0x800053a4 is filled with DSP replies; replies differ in 1650 of 1652 frames
@@ -215,12 +215,12 @@ samples unchanged.
 
 ## Tools
 
-- `DIGI_DSPI_LOG` with `tools/dspi_log.py`: raw DSPI frames.
+- `DIGI_DSPI_LOG` with `tools/emulator/dspi_log.py`: raw DSPI frames.
 - `DIGI_DSP_WATCH` / `DIGI_DSP_WATCH_OUT`: CSV of `frame,pc,busy,pc_at_rx` and
   watched words after each frame.
 - `SHARC_WWATCH` / `SHARC_WWATCH_OUT`: writer PC per store. Run interpreter
   only (`SHARC_AOT=0 SHARC_FAST_REGIONS= SHARC_BLOCKTRANS=`) for exact PCs.
-- `DIGI_DSP_MODEL_LOG=path.csv` with `tools/dsp_frames.py`: per-frame deltas of
+- `DIGI_DSP_MODEL_LOG=path.csv` with `tools/emulator/dsp_frames.py`: per-frame deltas of
   tier and model counters, including interrupts taken (`irq_taken`,
   `irq_vectors` as `bit:count`, bit = IRPTL/IMASK bit number). `dsp_frames.py`
   has `diff`, `first` and `summary`, and also reads the watch CSV.
@@ -237,15 +237,15 @@ samples unchanged.
   NO press first and `DIGI_CARD_IDENTITY=mlc4g`.
 - Press-frame scan template: no tap at 0-1M; Trig 1 down at 60M, up at 100M;
   second Trig 1 down at 110M +/- k x 100k, up 40M later; about 1 s of run. Run
-  it with `uv run python tools/coupled.py scenario ...`, or with coupled-run
+  it with `uv run python -m tools.emulator.coupled scenario ...`, or with coupled-run
   `--scenarios FILE --scenario NAME --wav`.
 - 1 s write-watch pair (needs a `fine1s.json` with f00/f01 at `seconds` 0.9;
   scratch copy in the session scratchpad `taps/t1/`):
   `SHARC_AOT=0 SHARC_FAST_REGIONS= SHARC_BLOCKTRANS= SHARC_WWATCH=0x241704,0x241514,0x24151c,0x241520,...
-  SHARC_WWATCH_OUT=x.csv uv run python tools/coupled.py scenario f00 --no-build --out x.json -- --scenarios fine1s.json`
+  SHARC_WWATCH_OUT=x.csv uv run python -m tools.emulator.coupled scenario f00 --no-build --out x.json -- --scenarios fine1s.json`
   (about 3 min; max 64 words per run). Model log pair: same without the
   interpreter switches plus `DIGI_DSP_MODEL_LOG=m.csv`; compare absolute
-  frames with `tools/dsp_frames.py first A B --align 1000 1000 --after 400`.
+  frames with `tools/emulator/dsp_frames.py first A B --align 1000 1000 --after 400`.
 
 
 ## Reference state rebuilt from cold start (2026-10-07)
@@ -255,7 +255,7 @@ samples unchanged.
 DSP start state (`digi-audio-loop2-fresh.bin`) had the DC-blocker coefficient
 DM `0x24f378` (c22 of the record at `0x24f320`, read by `0xb809f2`) corrupted:
 the pre-ed02999 SIMD Type 17 bug left the S2 lane at -0.0 instead of -a/16.
-The reference is now `mise run emu:ready -- dn2` (tools/ready.py: CF cold boot
+The reference is now `mise run emu:ready -- dn2` (tools/emulator/ready.py: CF cold boot
 plus a DSP cold-start state from the .syx alone). New pins: exactness-100m
 `b3f5230f..`, trig1-taps `d60ad339..`, trig1-tap-release `88347621..`,
 trig1-noqa-40m `2861ce03..`, CF digest `55dc699e..`, DSP export `4dc48019..`
@@ -265,11 +265,11 @@ scans of this finding were made on the old state and are not repeated **[O]**.
 ### Why the old and the cold start state differ **[D]**
 
 Folded from a lane notebook. The DSP start state can be built from the `.syx` alone:
-`tools/sharc_cold_state.py` writes a cold state, `native/boot/examples/dsp_cold.rs` runs it
-without ColdFire to the idle range (about 563.75M instructions, 61 s), and `tools/ready.py`
+`tools/sharc_dev/sharc_cold_state.py` writes a cold state, `native/boot/examples/dsp_cold.rs` runs it
+without ColdFire to the idle range (about 563.75M instructions, 61 s), and `tools/emulator/ready.py`
 attaches it to the ColdFire cold boot.
 
-- The packed image from `tools/sharc_pack_image.py` equals the snapshot image byte for byte.
+- The packed image from `tools/sharc_dev/sharc_pack_image.py` equals the snapshot image byte for byte.
 - The only state difference that changes the audio is DM 0x24f378 (c22 of a first-order DC
   blocker, read by 0xb809f2): cold 0xbd7fd522 (-a/16, a = 1/(1+2*pi*5/48000) = 0.99935),
   old state 0x80000000 (-0.0). The init at 0xb80b4b computes -a with two divisions through
