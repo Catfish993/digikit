@@ -10,9 +10,10 @@ Usage:
 
 Run every test file in its own pytest process and record a baseline:
     uv run python tools/test_outcomes.py run --out DIR [--root PATH] [--jobs N] \
-        [--timeout SECONDS] [--pytest-arg ARG ...] PATHS...
+        [--timeout SECONDS] [--pytest-arg=ARG ...] [--check] PATHS...
 writes DIR/logs, DIR/xml, DIR/summary.tsv and DIR/all.xml (a hung or crashed file
-becomes one error testcase named __file__) and exits 0.
+becomes one error testcase named __file__) and exits 0; with --check it exits 1
+when any file failed.
 
 Exit status of the compare mode: 0 when the outcomes are the same, 1 when they differ, 2 on usage
 errors or unreadable XML.
@@ -254,8 +255,10 @@ def run_all(
     pytest_args: list[str],
     jobs: int,
     timeout: float,
-) -> None:
-    """Run every file, print one line each, write summary.tsv and all.xml."""
+) -> list[str]:
+    """Run every file, print one line each, write summary.tsv and all.xml.
+
+    Returns the sorted files that did not pass."""
     (out / "logs").mkdir(parents=True, exist_ok=True)
     (out / "xml").mkdir(parents=True, exist_ok=True)
     records: list[dict[str, object]] = []
@@ -314,6 +317,12 @@ def run_all(
     ET.ElementTree(suites).write(
         out / "all.xml", encoding="utf-8", xml_declaration=True
     )
+    bad: list[str] = []
+    for rec in records:
+        cnt = rec["counts"]
+        if rec["status"] != "OK" or (isinstance(cnt, tuple) and (cnt[1] or cnt[3])):
+            bad.append(str(rec["file"]))
+    return bad
 
 
 def run_main(argv: list[str]) -> int:
@@ -326,6 +335,7 @@ def run_main(argv: list[str]) -> int:
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--timeout", type=float, default=900)
     ap.add_argument("--pytest-arg", action="append", default=[], metavar="ARG")
+    ap.add_argument("--check", action="store_true")
     ap.add_argument("paths", nargs="+", metavar="PATHS")
     try:
         args = ap.parse_args(argv)
@@ -342,7 +352,16 @@ def run_main(argv: list[str]) -> int:
     if not files:
         print("test_outcomes: no test files found", file=sys.stderr)
         return 2
-    run_all(root, args.out.resolve(), files, args.pytest_arg, args.jobs, args.timeout)
+    bad = run_all(
+        root, args.out.resolve(), files, args.pytest_arg, args.jobs, args.timeout
+    )
+    if not args.check:
+        return 0
+    if bad:
+        shown = ", ".join(bad[:10]) + (", ..." if len(bad) > 10 else "")
+        print(f"test_outcomes: {len(bad)} files failed: {shown}")
+        return 1
+    print(f"test_outcomes: all {len(files)} files passed")
     return 0
 
 

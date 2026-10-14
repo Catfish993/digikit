@@ -126,16 +126,16 @@ description = "Fast checks for the tooling, the audio sink and the coupled runti
 
 [tasks.test]
 run = [
-  "uv run python -m pytest -q tests",
+  "uv run python tools/test_outcomes.py run --check --out out/runs/tests/latest tests",
   "uv run python tools/rust_ws.py test",
   "pnpm test",
   "uv run python tools/coupled.py scenario --all",
 ]
-description = "Everything except the slow gates: pytest, cargo test --workspace, web tests, every DN2 scenario pin"
+description = "Everything except the slow gates: Python tests (one pytest process per file, in parallel: tools/test_outcomes.py run; a single pytest process over all of tests/ is not clean, see docs/TESTING.md), cargo test --workspace, web tests, every DN2 scenario pin"
 
 [tasks."test:slow"]
 run = [
-  "uv run python -m pytest -q tests --slow",
+  "uv run python tools/test_outcomes.py run --check --timeout 3600 --out out/runs/tests/latest-slow --pytest-arg=--slow tests",
   "uv run python tools/rust_ws.py gates",
 ]
 description = "Slow pytest runs and the ignored Rust gates that have private fixtures (coupled_ready_exactness)"

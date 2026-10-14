@@ -128,6 +128,18 @@ class RunModeTest(unittest.TestCase):
             self.assertEqual(res[("test_skip.py", "::test_s")][0], "skipped")
             self.assertIn("TIMEOUT", all_xml.read_text())
 
+    def test_check(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "root"
+            root.mkdir()
+            (root / "test_ok.py").write_text("def test_a():\n    pass\n")
+            args = ["--root", str(root), "--check", "."]
+            rc = test_outcomes.main(["run", "--out", str(Path(tmp) / "o1"), *args])
+            self.assertEqual(rc, 0)
+            (root / "test_bad.py").write_text("def test_b():\n    assert False\n")
+            rc = test_outcomes.main(["run", "--out", str(Path(tmp) / "o2"), *args])
+            self.assertEqual(rc, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
