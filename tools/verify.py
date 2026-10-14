@@ -5,9 +5,14 @@
     uv run python tools/verify.py --full           # every step, with the full 134-scenario tier sweep
     uv run python tools/verify.py --full --dt2     # plus the full DT2 FX tier sweep
     uv run python tools/verify.py --only pins,check
-    uv run python tools/verify.py --jobs 1         # sequential (default: half the CPUs in parallel)
+    uv run python tools/verify.py --rerun-failed   # only the steps that failed in the last run
+    uv run python tools/verify.py --jobs 1        # sequential (default: half the CPUs in parallel)
     uv run python tools/verify.py --explain        # show the routing and the plan, run nothing
 
+python-tests runs one pytest process per file, in parallel (DIGI_PY_JOBS, default
+max(2, cpus // 4); DIGI_PY_TIMEOUT per file in seconds, default 3600), through tools/test_outcomes.py; a run that passed no test fails. The
+tier steps cut their (default/no-aot x file) groups into small chunks of scenarios and run
+them from one shared queue, longest first, on DIGI_TIER_JOBS workers (default cpus - 4).
 python-tests runs the PY_GATE files, the PY_SUITES whose trigger prefixes match a changed file,
 every changed tests/**/test_*.py (except tests/scenarios/, which has its own steps), and the
 test files that import a changed tests/support module. With
@@ -32,6 +37,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -331,6 +337,27 @@ def pytest_ran(text: str) -> str | None:
     return None if " passed" in last else f"nothing passed ({last})"
 
 
+def python_tests_passed(out_dir: Path) -> str | None:
+    """A python-tests run whose files passed no test at all is not a pass."""
+    summary = out_dir / "summary.tsv"
+    if not summary.exists():
+        return f"no {summary.name}"
+    rows = summary.read_text().splitlines()[1:]
+    passed = 0
+    for row in rows:
+        cols = row.split("\t")
+        if len(cols) > 4 and cols[4].isdigit():
+            passed += int(cols[4])
+    return None if passed > 0 else "nothing passed (0 tests passed)"
+
+
+def python_tests_command(out: Path, files: list[str]) -> list[str]:
+    """The per-file runner for the python-tests step (one pytest process per file)."""
+    cmd = [*PY, "tools/test_outcomes.py", "run", "--check", "--out", str(out)]
+    cmd = [*cmd, "--timeout", str(python_timeout())]
+    return [*cmd, "--jobs", str(python_jobs()), *files]
+
+
 class Gate:
     """Collects each step's output lines in a per-thread buffer, so parallel steps
     print whole and in order when they finish."""
@@ -381,6 +408,80 @@ class Gate:
         self.report(name, problem, time.monotonic() - start, text)
 
 
+def tier_jobs_budget() -> int:
+    """Coupled-run processes for all tier groups together: DIGI_TIER_JOBS, else
+    cpus - 4 (the performance cores of a 16-core machine)."""
+    env = os.environ.get("DIGI_TIER_JOBS")
+    if env:
+        jobs = int(env)
+        if jobs < 1:
+            raise SystemExit("verify: DIGI_TIER_JOBS must be at least 1")
+        return jobs
+    return max(1, (os.cpu_count() or 1) - 4)
+
+
+def python_jobs() -> int:
+    """Test files run at once in python-tests: DIGI_PY_JOBS, else max(2, cpus // 4)."""
+    env = os.environ.get("DIGI_PY_JOBS")
+    if env:
+        return max(1, int(env))
+    return max(2, (os.cpu_count() or 1) // 4)
+
+
+def python_timeout() -> int:
+    """Per-file timeout for python-tests: catches hangs, not slow files (test_pluck.py
+    takes ~450 s alone and more than 900 s under verify:full load)."""
+    env = os.environ.get("DIGI_PY_TIMEOUT")
+    if env:
+        seconds = int(env)
+        if seconds < 1:
+            raise SystemExit("verify: DIGI_PY_TIMEOUT must be at least 1")
+        return seconds
+    return 3600
+
+
+# no-AOT renders cost about 2x per simulated second (measured 1.9-2.0 on DN2 FX, 2026-10-14); weights chunk costs
+TIER_NO_AOT_COST = 2.0
+
+
+@dataclass(frozen=True)
+class Chunk:
+    """Consecutive scenarios of one (label, file) group, run by one coupled process."""
+
+    label: str
+    path: str
+    names: tuple[str, ...]
+    cost: float
+    index: int
+
+
+def plan_chunks(
+    groups: list[tuple[str, str, list[str], dict[str, float], float]], budget: int
+) -> list[Chunk]:
+    """Cut each group (label, path, names, seconds by name, cost factor) into consecutive
+    chunks of about total cost / (budget * 4), at least one scenario each; longest first."""
+    costs = [
+        [factor * seconds[n] for n in names] for _, _, names, seconds, factor in groups
+    ]
+    target = sum(sum(c) for c in costs) / (budget * 4)
+    chunks: list[Chunk] = []
+    for (label, path, names, _, _), group_costs in zip(groups, costs, strict=True):
+        index = 0
+        taken: list[str] = []
+        cost = 0.0
+        for name, c in zip(names, group_costs, strict=True):
+            taken.append(name)
+            cost += c
+            if cost >= target:
+                chunks.append(Chunk(label, path, tuple(taken), cost, index))
+                index += 1
+                taken, cost = [], 0.0
+        if taken:
+            chunks.append(Chunk(label, path, tuple(taken), cost, index))
+    chunks.sort(key=lambda c: -c.cost)
+    return chunks
+
+
 def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     """FX scenarios must give the same PCM in the default and no-AOT configurations.
 
@@ -388,32 +489,75 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
     interpreter alone (`SHARC_AOT=0`, about 80 s per audio second), as DT2 has no
     fast regions."""
     start = time.monotonic()
-    jobs = str(coupled.default_jobs())
     shas: dict[str, dict[str, str]] = {}
     dt2 = device == "dt2"
     no_aot = {**os.environ, "SHARC_AOT": "0"} if dt2 else no_aot_env()
-    for label, env in (("default", None), ("no-aot", no_aot)):
+    envs: dict[str, dict[str, str] | None] = {"default": None, "no-aot": no_aot}
+    groups: list[tuple[str, str, list[str], dict[str, float], float]] = []
+    for label in envs:
         for path in DT2_FX_FILES if dt2 else FX_FILES:
-            names = sorted(coupled.scenario_seconds(path))[::every]
-            report = gate.out / f"{name}-{label}-{Path(path).stem}" / "report.json"
-            report.parent.mkdir(parents=True, exist_ok=True)
-            cmd = [*PY, "tools/coupled.py", "scenario", "--scenarios", path, *names]
-            cmd += ["--no-build", "--jobs", jobs, "--out", str(report)]
-            if dt2:
-                cmd += ["--device", "dt2", "--dt2-card"]
-            with benchlock.hold("shared", f"verify {name}"):
-                proc = subprocess.run(
-                    cmd, cwd=ROOT, env=env, capture_output=True, text=True
-                )
-            text = proc.stdout + proc.stderr
-            (report.parent / "run.log").write_text(text)
-            # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
-            if proc.returncode not in (0, 2) or not report.exists():
-                problem = f"{label} {path}: exit {proc.returncode}"
-                gate.report(name, problem, time.monotonic() - start, text)
+            seconds = coupled.scenario_seconds(path)
+            names = sorted(seconds)[::every]
+            factor = TIER_NO_AOT_COST if label == "no-aot" else 1.0
+            groups.append((label, path, names, seconds, factor))
+    budget = tier_jobs_budget()
+    chunks = plan_chunks(groups, budget)
+
+    def report_of(chunk: Chunk) -> Path:
+        stem = Path(chunk.path).stem
+        return (
+            gate.out
+            / f"{name}-{chunk.label}-{stem}"
+            / f"chunk-{chunk.index:03d}"
+            / "report.json"
+        )
+
+    def run_chunk(chunk: Chunk) -> tuple[subprocess.CompletedProcess[str], float]:
+        report = report_of(chunk)
+        report.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [*PY, "tools/coupled.py", "scenario", "--scenarios", chunk.path]
+        cmd += [*chunk.names, "--no-build", "--jobs", "1", "--out", str(report)]
+        if dt2:
+            cmd += ["--device", "dt2", "--dt2-card"]
+        with benchlock.hold("shared", f"verify {name}"):
+            proc = subprocess.run(
+                cmd, cwd=ROOT, env=envs[chunk.label], capture_output=True, text=True
+            )
+        return proc, time.monotonic() - start
+
+    with ThreadPoolExecutor(max_workers=budget) as pool:
+        done = list(pool.map(run_chunk, chunks))
+    ended: dict[tuple[str, str], float] = {}
+    for chunk, (_, end) in zip(chunks, done, strict=True):
+        key = (chunk.label, chunk.path)
+        ended[key] = max(ended.get(key, 0.0), end)
+    for label, path, names, _, _ in groups:
+        count = sum(1 for c in chunks if (c.label, c.path) == (label, path))
+        gate.say(
+            f"     {label} {Path(path).stem}: {len(names)} scenarios in "
+            f"{count} chunks, {ended.get((label, path), 0.0):.0f} s"
+        )
+    gate.say(f"     budget {budget} jobs, {len(chunks)} chunks")
+    for chunk, (proc, _) in zip(chunks, done, strict=True):
+        report = report_of(chunk)
+        text = proc.stdout + proc.stderr
+        (report.parent / "run.log").write_text(text)
+        # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
+        if proc.returncode not in (0, 2) or not report.exists():
+            problem = (
+                f"{chunk.label} {chunk.path} chunk {chunk.index}: "
+                f"exit {proc.returncode}"
+            )
+            gate.report(name, problem, time.monotonic() - start, text)
+            return
+        for result in coupled.scenario_results(json.loads(report.read_text())):
+            shas.setdefault(result["name"], {})[chunk.label] = result["sha256"]
+    for label, path, names, _, _ in groups:
+        for n in names:
+            if label not in shas.get(n, {}):
+                problem = f"{label} {path}: no result for {n}"
+                gate.report(name, problem, time.monotonic() - start)
                 return
-            for result in coupled.scenario_results(json.loads(report.read_text())):
-                shas.setdefault(result["name"], {})[label] = result["sha256"]
     differ = [n for n, s in shas.items() if s.get("default") != s.get("no-aot")]
     problem = (
         f"{len(differ)} of {len(shas)} differ: {', '.join(differ[:5])}"
@@ -556,10 +700,11 @@ def run_step(gate: Gate, step: str) -> None:
     elif step == "tier-sweep":
         tier(gate, "tier-sweep", 1)
     elif step == "python-tests":
+        out = gate.out / "python-tests"
         gate.run(
             "python-tests",
-            [*PY, "-m", "pytest", "-q", *gate.py_tests],
-            check=pytest_ran,
+            python_tests_command(out, gate.py_tests),
+            check=lambda _text: python_tests_passed(out),
         )
     elif step == "rust-tests":
         gate.run("rust-tests", rust_tests_command())
@@ -624,6 +769,29 @@ def run_steps(gate: Gate, steps: tuple[str, ...], jobs: int) -> list[tuple[str, 
     return times
 
 
+def load_last_result(verify_dir: Path, exclude: Path | None) -> dict | None:
+    """The newest (by directory name) result.json under VERIFY_DIR, skipping EXCLUDE."""
+    if not verify_dir.is_dir():
+        return None
+    for run in sorted(verify_dir.iterdir(), key=lambda p: p.name, reverse=True):
+        if exclude is not None and run.resolve() == exclude.resolve():
+            continue
+        path = run / "result.json"
+        if run.is_dir() and not run.is_symlink() and path.is_file():
+            return json.loads(path.read_text())
+    return None
+
+
+def rerun_plan(result: dict) -> tuple[tuple[str, ...], list[str]]:
+    """(steps, python-tests files) to repeat the steps that failed in RESULT."""
+    failed = tuple(result.get("failed", []))
+    unknown = sorted(set(failed) - set(STEPS))
+    if unknown:
+        raise SystemExit(f"verify: unknown steps in last result: {', '.join(unknown)}")
+    steps = tuple(s for s in STEPS if s in failed)
+    return steps, list(result.get("py_tests", []))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Run the exactness gate for what changed, one line per step."
@@ -651,9 +819,35 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print the routing, the plan and the python-tests files; run nothing",
     )
+    ap.add_argument(
+        "--rerun-failed",
+        action="store_true",
+        help="only the steps that failed in the most recent run",
+    )
     args = ap.parse_args(argv)
+    if args.rerun_failed and (args.only or args.full):
+        ap.error("--rerun-failed cannot be combined with --only or --full")
     files: list[str] = []
-    if args.only:
+    full, dt2 = args.full, args.dt2
+    rerun_tests: list[str] | None = None
+    if args.rerun_failed:
+        last = load_last_result(Path(digi_env.RUNS_ROOT) / "verify", None)
+        if last is None:
+            print("verify: no previous run with a result.json")
+            return 2
+        if not last.get("failed"):
+            print("verify: the last run had no failed steps; nothing to do")
+            return 0
+        steps, rerun_tests = rerun_plan(last)
+        full, dt2 = bool(last.get("full")), bool(last.get("dt2"))
+        old, new = str(last.get("head", "?")), git_lines("rev-parse", "HEAD")[0]
+        if old != new:
+            print(
+                f"verify: code changed since the failed run ({old[:10]} -> "
+                f"{new[:10]}); re-running the failed steps on the current tree"
+            )
+        why = "--rerun-failed"
+    elif args.only:
         steps = tuple(args.only.split(","))
         unknown = sorted(set(steps) - set(STEPS))
         if unknown:
@@ -669,9 +863,17 @@ def main(argv: list[str] | None = None) -> int:
         files = changed_files(args.base)
         steps = steps_for(files)
         why = f"{len(files)} changed files since {args.base}"
-    py_plan = python_test_plan(files, args.full)
+    if rerun_tests is not None:
+        py_plan = [(path, "rerun") for path in rerun_tests]
+    else:
+        py_plan = python_test_plan(files, args.full)
     if args.explain:
-        explain(steps, files, py_plan, per_file=not (args.only or args.full))
+        explain(
+            steps,
+            files,
+            py_plan,
+            per_file=not (args.only or args.full or args.rerun_failed),
+        )
         return 0
     out = Path(digi_env.run_dir("verify"))
     out.mkdir(parents=True, exist_ok=True)
@@ -686,6 +888,16 @@ def main(argv: list[str] | None = None) -> int:
     for name, seconds in times:
         print(f"  {name:<16} {seconds:6.0f} s", flush=True)
     print(f"verify: wall {time.monotonic() - start:.0f} s with {jobs} jobs", flush=True)
+    result = {
+        "steps": list(steps),
+        "failed": [s for s in gate.failed if s in STEPS],
+        "full": full,
+        "dt2": dt2,
+        "base": args.base,
+        "head": git_lines("rev-parse", "HEAD")[0],
+        "py_tests": gate.py_tests,
+    }
+    (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     if gate.failed:
         print(f"verify: FAILED: {', '.join(gate.failed)}", flush=True)
         return 1
