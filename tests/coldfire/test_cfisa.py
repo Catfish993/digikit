@@ -1,21 +1,21 @@
-"""The ColdFire instruction table (tools/cfisa/coldfire.json), its generated
+"""The ColdFire instruction table (tools/coldfire/cfisa/coldfire.json), its generated
 decoder (native/coldfire/src/decode_gen.rs) and the decoder's agreement with
-Ghidra and SLEIGH on the firmware images (tools/cfisa/oracle.py)."""
+Ghidra and SLEIGH on the firmware images (tools/coldfire/cfisa/oracle.py)."""
 
 from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools" / "cfisa"))
 
-import gen  # noqa: E402
-import oracle  # noqa: E402
+from tools.coldfire.cfisa import (  # noqa: E402
+    gen,  # noqa: E402
+    oracle,  # noqa: E402
+)
 
 
 def test_generated_decoder_is_current():

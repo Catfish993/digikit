@@ -1,4 +1,4 @@
-"""Tests for tools/snapread.py: reading an emu snapshot without restoring a
+"""Tests for tools/emulator/snapread.py: reading an emu snapshot without restoring a
 Unicorn machine.
 
 Skips (not fails) when no .snap file is present under snapshots/ -- those
@@ -8,19 +8,14 @@ are firmware-derived and this repo never commits them (CLAUDE.md's Rules).
 import glob
 import os
 import struct
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
 
-from snapread import PAGE, Snapshot  # noqa: E402
+from tools.emulator.snapread import PAGE, Snapshot  # noqa: E402
 
 _CANDIDATES = ["snapshots/boot60M.snap", "snapshots/postintro.snap"]
 
@@ -120,8 +115,8 @@ def test_tasks_returns_list_of_dicts_or_empty(snap_path):
 
 
 def test_name_for_known_cf_names_address():
-    import cf_names
-    from snapread import name_for
+    from tools.coldfire import cf_names
+    from tools.emulator.snapread import name_for
 
     some_name, (addr, *_rest) = next(iter(cf_names.ADDRS.items()))
     assert name_for(addr) == some_name

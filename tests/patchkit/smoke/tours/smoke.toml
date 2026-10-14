@@ -1,4 +1,4 @@
-# The standard patchkit smoke tour (tools/pk_harness.py). Every segment starts from `restart` (the ready state).
+# The standard patchkit smoke tour (tools/patchkit/pk_harness.py). Every segment starts from `restart` (the ready state).
 # Pattern 2, not 3 or 4: on DT2 1.17 PLAY in pattern 3 or 4 halts the stock DSP core (finding 17, "DSP halt").
 
 [[segment]]

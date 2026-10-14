@@ -1,17 +1,12 @@
-"""Tests for tools/test_outcomes.py (no firmware needed)."""
+"""Tests for tools/devtools/test_outcomes.py (no firmware needed)."""
 
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from support.paths import TOOLS
-
-sys.path.insert(0, str(TOOLS))
-
-import test_outcomes  # noqa: E402
+from tools.devtools import test_outcomes  # noqa: E402
 
 
 def case(classname: str, name: str, child: str = "") -> str:

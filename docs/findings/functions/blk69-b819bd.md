@@ -8,11 +8,11 @@ short-word (`sw`) addresses in that space unless marked "byte".
 - **Bounds**: entry `0xb819bd`, exit `0xb81bae` (the `25c_rframe` return
   frame instruction; the return itself commits two instructions earlier, at
   the `9b_abs` indirect jump at `0xb81baa` — SHARC+ delay slots continue to
-  `0xb81bae`). **212 instructions**, matching `tools/sharcinv.py`'s count
+  `0xb81bae`). **212 instructions**, matching `tools/sharc_dev/sharcinv.py`'s count
   exactly. **[D]** — established by direct disassembly
-  (`tools/sharc_disasm.py` via the scratchpad's `blk69_list.py`,
+  (`tools/sharc_dev/sharc_disasm.py` via the scratchpad's `blk69_list.py`,
   `SW_BASE=0xB80000, POFF=83412`) from `0xb819bd` through `0xb81bae`, and
-  cross-checked against `tools/sharcflow.py --base-sw 0xb80000` run on the
+  cross-checked against `tools/sharc_dev/sharcflow.py --base-sw 0xb80000` run on the
   blk69 payload slice (`blk.json` block 69: `payload_offset=83412,
   payload_len=109436`, sha256 of `section_7_BLOB.bin` matches
   `0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`). The
@@ -23,14 +23,14 @@ short-word (`sw`) addresses in that space unless marked "byte".
 - **Callers**: exactly one call site in the whole block targets `0xb819bd`:
   `0xb82187` (a `25a_direct` absolute-call form, `addr = 0xb8<<16 | 0x19bd =
   0xb819bd`, linked, delay slots `3c`+`16a`, returns to `0xb8218e`). **[D]**
-  — from `tools/sharcflow.py`'s `calls` list (980 calls found over blk69).
+  — from `tools/sharc_dev/sharcflow.py`'s `calls` list (980 calls found over blk69).
   **Callees**: none. **[D]** — sharcflow's own call list shows none
   originating inside `[0xb819bd, 0xb81bae]`, and (per this task's Type 8a
   caveat) I decoded all ten `8a_rel` instructions in the function's body by
   hand: every one has `b=0` (plain conditional/unconditional branch, SHARC+
   PRM Type 8a table), none has `b=1` (hardware `CALL`). So the "no callees"
   claim survives the check that catches sharcflow's known blind spot.
-- **Label**: `tools/sharcinv.py` says "wavetable/indexed lookup (pointer
+- **Label**: `tools/sharc_dev/sharcinv.py` says "wavetable/indexed lookup (pointer
   table)". **Partially disagrees.** The dominant instruction pattern (see
   below) is the polynomial envelope saturator `x <- x*(2-|x|)`, applied
   repeatedly to fields of a small pointer-chased structure chain — not a
@@ -40,7 +40,7 @@ short-word (`sw`) addresses in that space unless marked "byte".
   small caller-supplied value, which reads like `base | selector`
   addressing into a fixed table region. That address is data-dependent on
   the caller's `R4` and could not be resolved to a concrete DM address from
-  static bytes or from `tools/sharc_trace.py` without a concrete seed for
+  static bytes or from `tools/sharc_dev/sharc_trace.py` without a concrete seed for
   `R4` (open, see below).
 
 ## What it computes
@@ -64,7 +64,7 @@ idiom already documented for blk93 (`docs/findings/functions/README.md`'s
 named shapes list, and `docs/findings/functions/blk93-1cb4b2.md`'s
 "Method-gap correction" section describing the same `float-clip` /
 `float-abs` / `float-subtract` / `float-multiply` sequence). Traced example
-(`tools/sharc_trace.py --blob --start 0xb819bd --concrete-memory
+(`tools/sharc_dev/sharc_trace.py --blob --start 0xb819bd --concrete-memory
 --assume-32bit-normal-words --follow-loaded-calls`, events at
 `0xb81a15`-`0xb81a3e`):
 
@@ -133,7 +133,7 @@ this corner of blk69. **[D]**, not independently re-checked.
   `reladdr=81` i.e. body extends to about `0xb81b1f`): trip count comes
   from **`R2` at runtime, not a literal** — this is the `12a_ureg` form,
   not `12a_imm`. **[D]**, confirmed dynamically: with
-  `tools/sharc_trace.py --max-states 64`, 2 of 26 explored paths stop with
+  `tools/sharc_dev/sharc_trace.py --max-states 64`, 2 of 26 explored paths stop with
   `"nonconcrete Type12a UREG loop count" at 0xb81ace` because the tracer
   cannot resolve `R2` without a concrete seed. The loop body repeats the
   same `+112`/`+120` treatment (not `+8`) on further chained nodes via `I3`,
@@ -169,7 +169,7 @@ this corner of blk69. **[D]**, not independently re-checked.
   fields, all `{"unknown": "In + k"}` register-relative expressions.
 - **No peripheral-register-shaped literals** (`0x310c93xx`/`0x310ca3xx`/
   `0x31089xxx`) appear anywhere in the function or its traced events, and
-  `tools/sharc_trace.py`'s `peripheral_accesses` list is empty across all
+  `tools/sharc_dev/sharc_trace.py`'s `peripheral_accesses` list is empty across all
   26 explored paths. This is **not** driver code. **[D]**
 - One address computation could not be resolved: `I5 <- I4 + 0x400004`
   (`19a` raw/unscaled add, `0xb819ec`) early in the prologue, feeding a
@@ -207,7 +207,7 @@ this corner of blk69. **[D]**, not independently re-checked.
 
 ## Caller and call chain
 
-Caller span: `0xb820b1`-`0xb821ee` (bounded by `tools/sharcflow.py`'s
+Caller span: `0xb820b1`-`0xb821ee` (bounded by `tools/sharc_dev/sharcflow.py`'s
 return list: previous return closes at `0xb820b0`, this caller's own
 return commits at `0xb821ea`/frame-close at `0xb821ee`). It makes eight
 calls in sequence:
@@ -227,7 +227,7 @@ All eight are `25a_direct`/`3a`-style linked absolute calls (delay slots
 `3c`+`16a` or `3a`+`16a`), i.e. genuine calls, not just literal-address data
 builds — `0xb82187` itself is the `25a_direct` instruction encoding
 `addr=0xb819bd`, matching our function exactly. **[D]**, from
-`tools/sharcflow.py`'s call list filtered to the caller's span. The call
+`tools/sharc_dev/sharcflow.py`'s call list filtered to the caller's span. The call
 chain from this function therefore **does reach into blk93** two hops up
 (via its caller), inside the same short burst of calls that includes this
 function — the strongest evidence found in this session that blk69's dense

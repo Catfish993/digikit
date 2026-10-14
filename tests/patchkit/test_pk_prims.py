@@ -6,17 +6,17 @@ Slow (one ColdFire boot to ready). Skips without the toolchain or the image."""
 import json
 import struct
 import subprocess
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import native_target  # noqa: E402
-import pk_cfcall  # noqa: E402
-import pk_toolchains  # noqa: E402
+from tools.emulator import native_target  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_cfcall,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 DT2_117 = ROOT / "Digitakt_II_OS1.17.syx"
 SETTER = 0x40035260  # Kit::vfunc_12(obj, v): if (v) obj->field20 = v

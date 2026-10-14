@@ -20,7 +20,7 @@ Two layers:
   the frame once it's built. The per-track stride, header size and mirror-index
   map are the same on every Digitakt-family image seen so far (`docs/findings/
   04-coldfire-dsp-link.md`), but the frame's *guest address* and the per-device
-  real-payload length are not -- they come from `tools/framelink.py`'s
+  real-payload length are not -- they come from `tools/sharc_dev/framelink.py`'s
   per-image, SHA-256-keyed profile (the DSPI2-frame analogue of what
   `emu/symbols.py` does for RTOS/boot symbols: resolve from the image rather
   than hardcode one build's addresses for every build). `tx_base_for()` /
@@ -99,7 +99,7 @@ def read_driver_call(uc, sp):
 # Known TX/RX frame guest addresses, keyed by device short name
 # (devices/*.toml's [device].short) -- for callers that already know which
 # device they're on and have no image to resolve a framelink profile against.
-# Same values as tools/framelink.py's TABLES 'tx_frame'/'rx_frame' entries for
+# Same values as tools/sharc_dev/framelink.py's TABLES 'tx_frame'/'rx_frame' entries for
 # Digitakt II (both 1.15C and 1.16 share them); Digitone II's are read from
 # docs/findings/04-coldfire-dsp-link.md, "Digitone II 1.11: the same link and
 # the same machine table shape" (FUN_400cf7be(0xa80, 0x80005e60, 0xabc,
@@ -171,7 +171,7 @@ def mirror_to_frame_offset(mirror_index):
 
 
 # --------------------------------------------------------------------------
-# Per-image guest addresses: reuse tools/framelink.py's SHA-256-keyed
+# Per-image guest addresses: reuse tools/sharc_dev/framelink.py's SHA-256-keyed
 # resolution (the DSPI2-frame analogue of emu/symbols.py's rule-based
 # resolution for RTOS/boot symbols) instead of hardcoding a build's addresses
 # a third time.

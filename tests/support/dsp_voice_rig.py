@@ -1,12 +1,10 @@
 """The core/dsp-voice test rig: stand-in addresses, `Rig` and `stops_at`."""
 
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_sharc  # noqa: E402
+from tools.patchkit import pk_sharc  # noqa: E402
 
 CORE = ROOT / "modules" / "core" / "dsp-voice" / "src" / "dsp" / "dsp-voice.s"
 SINE = ROOT / "modules" / "test" / "sine-voice" / "src" / "dsp" / "sine_voice.s"

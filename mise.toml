@@ -25,20 +25,20 @@ description = "Install the Python and web dependencies"
 # --- desktop emulator ---
 
 [tasks.emu]
-run = "uv run python tools/native_emu.py"
+run = "uv run python -m tools.emulator.native_emu"
 description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready); `-- --build-only` builds without launching"
 
 [tasks."emu:serve"]
-run = "uv run python tools/native_emu.py --daemon"
-description = "Run the emulator without a window, paused, serving the control socket (out/native/run/current.json); drive it with tools/digi_client.py. --free runs it live."
+run = "uv run python -m tools.emulator.native_emu --daemon"
+description = "Run the emulator without a window, paused, serving the control socket (out/native/run/current.json); drive it with tools/control/digi_client.py. --free runs it live."
 
 [tasks."emu:ctl"]
-run = "uv run python tools/digi_client.py"
+run = "uv run python -m tools.control.digi_client"
 description = "Control a running emulator: mise run emu:ctl status | inject PATCHED.syx | step N | tap CODE | frame out.png | call METHOD k=v | events"
 
 [tasks."emu:ready"]
 alias = "ready"
-run = "uv run python tools/ready.py"
+run = "uv run python -m tools.emulator.ready"
 description = "Build a device's ready snapshot from the .syx alone: mise run emu:ready -- dn2|dt2 [--card-image IMG] (cold DSP start; about 2 min)"
 
 # --- web panel ---
@@ -60,27 +60,27 @@ run = "pnpm test"
 description = "Run the web panel's audio-health tests (node --test)"
 
 [tasks."web:wasm"]
-run = "tools/native_wasm.py"
+run = "python3 -m tools.emulator.native_wasm"
 description = "Build only the browser emulator core (WASM); the coupled core goes through wasm-opt -O3 (--wasm-opt= turns it off)"
 
 [tasks."web:bench"]
-run = "uv run python tools/benchlock.py run --exclusive -- node tools/browser_bench.mjs"
+run = "uv run python -m tools.devtools.benchlock run --exclusive -- node tools/devtools/browser_bench.mjs"
 description = "Headless Chrome throughput bench of the coupled browser core (needs local inputs): mise run web:bench -- --seconds 10 --runs 3 [--js-flags=--no-liftoff] [--profile]"
 
 [tasks."web:parity"]
-run = "node tools/wasm_parity.mjs --scenario"
+run = "node tools/devtools/wasm_parity.mjs --scenario"
 description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run web:parity trig1-tap-release"
 
 # --- scenarios (scenarios/README.md) ---
 
 [tasks."scenario:build"]
-run = "uv run python tools/coupled.py build"
+run = "uv run python -m tools.emulator.coupled build"
 description = "Build the headless coupled runner (coupled-run)"
 
 [tasks.scenarios]
 depends = ["scenario:build"]
-run = "uv run python tools/coupled.py scenario --all --no-build"
-description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python tools/coupled.py scenario --all --device dt2"
+run = "uv run python -m tools.emulator.coupled scenario --all --no-build"
+description = "Run every DN2 scenario; exits non-zero when a pinned PCM hash differs. DT2: uv run python -m tools.emulator.coupled scenario --all --device dt2"
 
 [tasks."scenarios:check"]
 run = "uv run python -m pytest tests/scenarios --slow -q"
@@ -95,24 +95,24 @@ run = "uv run python -m pytest tests/scenarios --slow --sweep -q"
 description = "Oracle tests with the full sweeps (every track FX and send FX scenario, about 20 min)"
 
 [tasks.verify]
-run = "uv run python tools/verify.py"
-description = "Exactness gate for what changed (tools/verify.py; --base BRANCH in a lane, --only STEPS, --explain shows the routing and the plan without running); one PASS/FAIL line per step, logs in out/runs/verify/"
+run = "uv run python -m tools.devtools.verify"
+description = "Exactness gate for what changed (tools/devtools/verify.py; --base BRANCH in a lane, --only STEPS, --explain shows the routing and the plan without running); one PASS/FAIL line per step, logs in out/runs/verify/"
 
 [tasks."verify:full"]
-run = "uv run python tools/verify.py --full"
+run = "uv run python -m tools.devtools.verify --full"
 description = "Exactness gate, every step with the full 134-scenario tier sweep (about 20 min with warm builds): before merging to main"
 
 [tasks.scenario]
-run = "uv run python tools/coupled.py scenario"
+run = "uv run python -m tools.emulator.coupled scenario"
 description = "Run headless coupled scenarios: mise run scenario trig1-taps [--wav]"
 
 [tasks."scenario:replay"]
 alias = "replay"
-run = "uv run python tools/coupled.py replay"
+run = "uv run python -m tools.emulator.coupled replay"
 description = "Replay inputs recorded by the desktop app (Export diagnostics file) headless"
 
 [tasks."scenario:bisect"]
-run = "uv run python tools/coupled.py bisect"
+run = "uv run python -m tools.emulator.coupled bisect"
 description = "Find the DSP tier (fast region, cluster root, AOT) that changes a scenario's PCM"
 
 # --- tests ---
@@ -120,23 +120,23 @@ description = "Find the DSP tier (fast region, cluster root, AOT) that changes a
 [tasks."test:quick"]
 run = [
   "uv run python -m pytest -q tests/emulator/test_native_emu_launcher.py tests/emulator/test_native_pgo.py tests/emulator/test_native_target.py tests/emulator/test_coupled_tool.py",
-  "uv run python tools/coupled.py test-quick",
+  "uv run python -m tools.emulator.coupled test-quick",
 ]
 description = "Fast checks for the tooling, the audio sink and the coupled runtime"
 
 [tasks.test]
 run = [
-  "uv run python tools/test_outcomes.py run --check --out out/runs/tests/latest tests",
-  "uv run python tools/rust_ws.py test",
+  "uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests",
+  "uv run python -m tools.devtools.rust_ws test",
   "pnpm test",
-  "uv run python tools/coupled.py scenario --all",
+  "uv run python -m tools.emulator.coupled scenario --all",
 ]
-description = "Everything except the slow gates: Python tests (tools/test_outcomes.py run: one process per file, in parallel, so a state leak between files cannot fail unrelated tests, see docs/TESTING.md), cargo test --workspace, web tests, every DN2 scenario pin"
+description = "Everything except the slow gates: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, so a state leak between files cannot fail unrelated tests, see docs/TESTING.md), cargo test --workspace, web tests, every DN2 scenario pin"
 
 [tasks."test:slow"]
 run = [
-  "uv run python tools/test_outcomes.py run --check --timeout 3600 --out out/runs/tests/latest-slow --pytest-arg=--slow tests",
-  "uv run python tools/rust_ws.py gates",
+  "uv run python -m tools.devtools.test_outcomes run --check --timeout 3600 --out out/runs/tests/latest-slow --pytest-arg=--slow tests",
+  "uv run python -m tools.devtools.rust_ws gates",
 ]
 description = "Slow pytest runs and the ignored Rust gates that have private fixtures (coupled_ready_exactness)"
 
@@ -151,8 +151,8 @@ run = "pnpm lint"
 description = "Lint the web panel (oxlint with eslint-plugin-solid)"
 
 [tasks."lint:rust"]
-run = "uv run python tools/rust_ws.py fmt"
-description = "cargo fmt --check on the crates that are already clean (CLEAN_CRATES in tools/rust_ws.py)"
+run = "uv run python -m tools.devtools.rust_ws fmt"
+description = "cargo fmt --check on the crates that are already clean (CLEAN_CRATES in tools/devtools/rust_ws.py)"
 
 [tasks.lint]
 depends = ["lint:py", "lint:web", "lint:rust"]
@@ -165,58 +165,58 @@ description = "Quick local check (lint + test:quick), not the merge gate: use `m
 # --- performance ---
 
 [tasks.perf]
-run = "uv run python tools/perf.py"
+run = "uv run python -m tools.devtools.perf"
 description = "Standard DSP performance report (coverage, CPU per audio s, PCM, calls, per-function cost ranking): mise run perf -- [--config NAME] [--seconds S] [--timed] [--calibrate]"
 
 [tasks."perf:cov"]
 alias = "fastcov"
-run = "uv run python tools/fastcov.py"
+run = "uv run python -m tools.devtools.fastcov"
 description = "DSP CPU, tier split and fast-tier refusals/exits per tier config: mise run perf:cov -- --config default --config fast-auto"
 
 [tasks."pgo:dn2"]
-run = "uv run python tools/native_pgo.py train"
+run = "uv run python -m tools.emulator.native_pgo train"
 description = "Retrain the DN2 PGO profile against the current code and generated core"
 
 [tasks."pgo:dt2"]
-run = "uv run python tools/native_pgo.py train --device dt2"
+run = "uv run python -m tools.emulator.native_pgo train --device dt2"
 description = "Retrain the DT2 PGO profile against the current code and generated core"
 
 [tasks."perf:pgo"]
 alias = "pgo"
 run = [
-  "uv run python tools/native_pgo.py train",
-  "uv run python tools/native_pgo.py train --device dt2",
-  "uv run python tools/native_emu.py --build-only",
+  "uv run python -m tools.emulator.native_pgo train",
+  "uv run python -m tools.emulator.native_pgo train --device dt2",
+  "uv run python -m tools.emulator.native_emu --build-only",
 ]
 description = "Retrain DN2 and DT2 PGO profiles, then rebuild the launcher with PGO. Run after core or engine changes, when `mise run emu` reports a stale profile."
 
 [tasks."perf:aot"]
 alias = "aot-gen"
-run = "uv run python tools/aot_gen.py"
+run = "uv run python -m tools.sharc_dev.aot_gen"
 description = "Generate a firmware block library (AOT core) and register it by DSP image: mise run perf:aot -- dt2 --card-image IMG"
 
 # --- generated SHARC core ---
 
 [tasks."gen:core"]
 alias = "core"
-run = "uv run python tools/sharc_transpile.py --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
+run = "uv run python -m tools.sharc_dev.sharc_transpile --strict --out out/native/shared-core/gen --work out/native/shared-core/work"
 description = "Write the firmware-independent SHARC core (no blocks, no image) to out/native/shared-core/gen: build with SHARC_GEN_DIR pointing there"
 
 [tasks."sharc:native-lib"]
 depends = ["gen:core"]
-run = "uv run python tools/sharc_native_lib.py"
+run = "uv run python -m tools.sharc_dev.sharc_native_lib"
 description = "Build the firmware-free native SHARC library (shared core) that tests/sharc/semantics and generation load; no firmware needed; out/native/shared-core/target"
 
 [tasks."gen:regen"]
 alias = "regen"
-run = "uv run python tools/sharc_lowergen_regen.py"
-description = "Regenerate the shared core, native/sharc/src/fast/lower/gen_forms.rs, the fuzz vectors and the test programs from tools/sharc_core: mise run gen:regen [-- --add FORM,...]"
+run = "uv run python -m tools.sharc_dev.sharc_lowergen_regen"
+description = "Regenerate the shared core, native/sharc/src/fast/lower/gen_forms.rs, the fuzz vectors and the test programs from tools/sharc_dev/sharc_core: mise run gen:regen [-- --add FORM,...]"
 
 # --- developer tools ---
 
 [tasks."dev:boot"]
 alias = "boot"
-run = "tools/native_boot.py"
+run = "python3 -m tools.emulator.native_boot"
 description = "Run the bounded native Oracle boot diagnostic"
 
 [tasks."dev:plusdrive"]
@@ -228,45 +228,45 @@ description = "Build or inspect a standalone +Drive image"
 
 [tasks."toolchains"]
 run = [
-  "uv run python tools/pk_toolchains.py m68k",
-  "uv run python tools/pk_toolchains.py selache",
+  "uv run python -m tools.patchkit.pk_toolchains m68k",
+  "uv run python -m tools.patchkit.pk_toolchains selache",
 ]
 description = "Build the pinned m68k-elf binutils/gcc (about 15 min) and Selache into out/tools"
 
 # --- patchkit: firmware modules (docs/plans/patchkit.md) ---
 
 [tasks."patch"]
-run = "uv run python tools/patchkit.py patch"
+run = "uv run python -m tools.patchkit.patchkit patch"
 description = "Apply modules to a stock firmware: mise run patch -- --firmware X.syx --modules a,b [-o OUT.syx] (writes out/patch/ and plan.json)"
 
 [tasks."patch:build"]
-run = "uv run python tools/pk_build.py"
+run = "uv run python -m tools.patchkit.pk_build"
 description = "Compile module sources to build/*.dko.json: mise run patch:build [-- modules/fx/NAME] [--check]"
 
 [tasks."patch:explain"]
-run = "uv run python tools/patchkit.py explain"
+run = "uv run python -m tools.patchkit.patchkit explain"
 description = "Site-by-site account of a patch (disassembly before and after, allocation map): mise run patch:explain -- --firmware X.syx --modules a,b"
 
 [tasks."patch:new"]
-run = "uv run python tools/pk_new.py"
+run = "uv run python -m tools.patchkit.pk_new"
 description = "Create a module from a template: mise run patch:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, gallery/README.md; builds it)"
 
 [tasks."patch:dev"]
-run = "uv run python tools/pk_dev.py"
+run = "uv run python -m tools.patchkit.pk_dev"
 description = "Developer loop: mise run patch:dev -- --modules a,b [--device dt2|dn2] [--once]; watches src/ and module.toml, rebuilds, patches, injects into a running emulator, runs the quick tests, one summary line per edit"
 
 [tasks."patch:test"]
-run = "uv run python tools/pk_harness.py run"
+run = "uv run python -m tools.patchkit.pk_harness run"
 description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:fx/master-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
 
 [tasks."patch:proofs"]
-run = "uv run python tools/pk_proofs.py"
+run = "uv run python -m tools.patchkit.pk_proofs"
 description = "Every emulator proof on its quick tier, in sequence (DT2: gain, drive, voice, machines, pluck; DN2: gain, voice, machines, pages, pluck; drive runs on DT2 only): mise run patch:proofs [-- --only pluck,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"
 
 [tasks."port:resolve"]
-run = "uv run python tools/port_resolve.py"
+run = "uv run python -m tools.patchkit.port_resolve"
 description = "Resolve the anchors and regions of a firmware into devices/ports/*.toml: mise run port:resolve [-- X.syx] (no argument: the four supported firmwares)"
 
 [tasks."inject"]
-run = "uv run python tools/patchkit.py inject"
+run = "uv run python -m tools.patchkit.patchkit inject"
 description = "Load a patched image into the running emulator (emu:ctl inject): mise run inject [-- OUT.syx] [--hot]"

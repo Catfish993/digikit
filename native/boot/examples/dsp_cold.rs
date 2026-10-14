@@ -1,4 +1,4 @@
-//! Run a DSP cold-start state (tools/sharc_cold_state.py) with no ColdFire
+//! Run a DSP cold-start state (tools/sharc_dev/sharc_cold_state.py) with no ColdFire
 //! until the engine first rests in the DN2 idle range, then write its
 //! canonical state as a DT2DSP01 sidecar for `sharc_live` / `coupled-run`.
 //!

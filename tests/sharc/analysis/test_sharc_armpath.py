@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_armpath.py (lane H3, 2026-09-26).
+"""Tests for tools/sharc_dev/sharc_armpath.py (lane H3, 2026-09-26).
 
 Same two-group convention as tests/sharc/integration/test_sharc_replay.py: `analyze_iterations()`
 is pure grouping logic over a hand-built `hits` list and always runs;
@@ -7,18 +7,14 @@ copyright, never committed) and a real capture file (out/captures/, also
 never committed), and is skipped without either.
 """
 
-import os
 import pathlib
-import sys
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_armpath as armpath  # noqa: E402
-import sharc_harness as h  # noqa: E402
-import sharc_replay as replay_mod  # noqa: E402
+from tools.sharc_dev import sharc_armpath as armpath  # noqa: E402
+from tools.sharc_dev import sharc_harness as h  # noqa: E402
+from tools.sharc_dev import sharc_replay as replay_mod  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 FULLTX_CAPTURE = pathlib.Path("out/captures/dt2-1.16-play-pretracks-fulltx.dt2cap")

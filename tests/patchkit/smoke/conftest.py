@@ -1,16 +1,13 @@
 """Fixtures of the patchkit smoke suite: real daemons need the built `digi-emud`, the firmware and fresh ready inputs
-(see tools/pk_harness.py); the tests that need them skip, with the reason, when a setup problem is reported."""
+(see tools/patchkit/pk_harness.py); the tests that need them skip, with the reason, when a setup problem is reported."""
 
 from __future__ import annotations
-
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-import pk_harness  # noqa: E402
+from tools.patchkit import pk_harness  # noqa: E402
 
 
 @pytest.fixture(scope="module")

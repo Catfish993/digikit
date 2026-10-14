@@ -130,7 +130,7 @@ unsafe impl Send for LibCore {}
 
 impl LibCore {
     /// Load the library at PATH and create an engine over IMAGE (the pack's
-    /// image blob, `tools/sharc_transpile_run.py pack_image`).
+    /// image blob, `tools/sharc_dev/sharc_transpile_run.py pack_image`).
     pub fn open(path: &Path, image: &[u8]) -> Result<LibCore, String> {
         let api = Api::load(path)?;
         // SAFETY: IMAGE is IMAGE.len() readable bytes.

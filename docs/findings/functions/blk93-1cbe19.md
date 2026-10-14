@@ -1,12 +1,12 @@
 # blk93@0x1cbe19 — note/pitch-to-frequency converter with a new 128-entry response-curve table
 
 - **Bounds**: entry `0x1cbe19`, exit `0x1cbf07`, 100 instructions. **[V]** —
-  `tools/sharcflow.py --base-sw 0x1c13e6` over `blk93.bin` (re-run fresh this
+  `tools/sharc_dev/sharcflow.py --base-sw 0x1c13e6` over `blk93.bin` (re-run fresh this
   session): the return at `sw=0x1cbe14, after=0x1cbe19` opens this function,
   the next return `sw=0x1cbf02, after=0x1cbf07` closes it — exactly the
   boundary the task brief gives for the adjacent `FUN_1c71ec` stage 6
   (`0x1cbf07`), confirming this function's epilogue and that stage's entry
-  are the same address. Exact match to `tools/sharcinv.py`'s inventory
+  are the same address. Exact match to `tools/sharc_dev/sharcinv.py`'s inventory
   entry (`entry=1883673, exit=1883911, n_insns=100`). No call target lands
   inside `[0x1cbe19, 0x1cbf07)` (checked against the full call list below),
   so this is a genuine single function, not a split span.
@@ -39,7 +39,7 @@
 
 ## What it computes
 
-**[D]** — traced with `tools/sharc_trace.py --blob --start 0x1cbe19
+**[D]** — traced with `tools/sharc_dev/sharc_trace.py --blob --start 0x1cbe19
 --concrete-memory --assume-32bit-normal-words`, both with
 `--follow-loaded-calls` (to identify the two direct-call targets) and with
 `--continue-external-calls` (to see the whole 100-instruction body without
@@ -171,21 +171,21 @@ trace's `loop_setups: []`).
 
 The inventory's feature vector records `"calls": 2` and
 `callees: ["blk93@0x1cc6c4"]` / `unresolved_callees: [1838440]`. A fresh
-`tools/sharcflow.py --base-sw 0x1c13e6` run over `blk93.bin` finds **three**
+`tools/sharc_dev/sharcflow.py --base-sw 0x1c13e6` run over `blk93.bin` finds **three**
 call sites in `[0x1cbe19, 0x1cbf07)`: the two `25a_direct` calls the
 inventory already half-credits, plus an `8a_rel` (Type 8a, `b=1`) CALL at
 `0x1cbede` targeting `0x1c06ba`. This is the same gap `blk93-1cb4b2.md`
 documented for its own function: `sharcflow.py`'s call detector (and by
 extension `sharcinv.py`'s `calls`/`callees` counts) only recognises
 `25a_direct`/`25a_pcrel` and indirect `9b_abs`/`M5` calls, not the hardware
-Type 8a CALL. Confirmed independently by `tools/sharc_trace.py`, which does
+Type 8a CALL. Confirmed independently by `tools/sharc_dev/sharc_trace.py`, which does
 model the `b` bit correctly and shows the call as an `opaque-external-call`
 to `0x1c06ba` with a normal return.
 
 ## Call sites — the highest-value part
 
 Both sites are in `blk93@0x1c642a`, decoded from raw fields in
-`sw1c642a_insns.json` (cross-checked against `tools/sharc_trace.py --start
+`sw1c642a_insns.json` (cross-checked against `tools/sharc_dev/sharc_trace.py --start
 0x1c6d91`/`--start`-adjacent runs for the semantic register-copy
 confirmation) and independently against the `srcureg = (high<<2)|(low1<<1)|
 low0` field-combination formula (validated: `combined=37` → `M5`,
@@ -256,7 +256,7 @@ cosine `0x8055c440`/`0x8055c640`, the 1024-float pair, 829-float
 functions/*.md` notes (checked with `grep`). **This is a new table.**
 
 - **Base**: `0x26b338` (DM word address; byte alias `0x2826b338`).
-- **Storage**: `tools/sharcldr.py out/sections/dt2-1.16/section_7_BLOB.bin
+- **Storage**: `tools/sharc_dev/sharcldr.py out/sections/dt2-1.16/section_7_BLOB.bin
   --addr 0x2826b338 --addr-space byte` resolves it to file offset `0x66c8`
   inside **blk37** (`target_address=0x2826a2f8, cnt=12404`, **not** a FILL
   block) — real payload bytes baked into the image, i.e. **ROM**, not a

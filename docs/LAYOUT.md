@@ -1,38 +1,41 @@
 # Repository layout
 
-This file says who owns which part of the repository and which moves are planned but not done. Use the owner table to find code. File lists are patterns, not complete.
+This file says who owns which part of the repository and which moves are planned and their status. Use the owner table to find code. File lists are patterns, not complete.
 
 ## Owners
 
 | Owner | What | Where |
 | --- | --- | --- |
-| emulator | Native runtime, ColdFire and SHARC execution, coupled runner, launcher | `native/{coldfire,machine,periph,card,live,boot,coupled,bootstrap,device-profile,sharc-rt,sharc-gen,sharc,sharc-fast-cl,sharc-fast-wasm,host}`; `tools/native_*.py`, `coupled*.py`, `digi_env.py`, `ready.py`, `card_*.py`, `live_audio.py`; trace and snapshot readers (`snapread`, `dspi_log`, `dsp_frames`, `dspdiff`, `wireevents`, `wiretrace`); scenario generators and checkers (`gen_*fx.py`, `fxcheck.py`, `audiocheck.py`, `scenario_dsl.py`); `scenarios/`; `devices/*.toml` |
-| sharc-dev | SHARC+ semantics, tracing, analysis, generation | `tools/sharc_core/` (the single source of instruction semantics), `tools/sharcspec/` (encodings from the public manuals), `tools/sharc_*.py` and `tools/sharc*.py` (except profiling helpers), `tools/aot_*.py`, `selasm.py`, `dspmap.py`, `framelink.py`; `emu/sharc_capture.py`, `emu/sharc_peer.py` |
-| patchkit | Patch planning, building, validation, module builds | `native/patchkit`; `tools/patchkit.py`, `tools/pk_*.py`, `port_resolve.py`, `machine*.py`, `patched_*.py`, `pluck_ref.py`, `dsp_patch.py`, `tools/dsp_patches/`; `modules/`; `devices/ports/` |
-| control client | Control-socket protocol | `native/control` (crate `digi-control`: the `digi-emud` server and the `digi_control` library); `tools/digi_client.py` |
-| devtools | Verification, tests, locks, lanes, performance tooling | `tools/verify.py`, `test_outcomes.py`, `rust_ws.py`, `benchlock.py`, `lane.sh`, `worktree-setup.sh`, `perf*.py`, `fastcov.py`, `coupled_ab.py`, `spikes.py`, `app_soak.py`, `sharc_regionbench.py`, `sharc_prof_*.py`, `browser_bench.mjs`, `wasm_*.mjs` |
+| emulator | Native runtime, ColdFire and SHARC execution, coupled runner, launcher | `native/{coldfire,machine,periph,card,live,boot,coupled,bootstrap,device-profile,sharc-rt,sharc-gen,sharc,sharc-fast-cl,sharc-fast-wasm,host}`; `tools/emulator/native_*.py`, `coupled*.py`, `digi_env.py`, `ready.py`, `card_*.py`, `live_audio.py`; trace and snapshot readers (`snapread`, `dspi_log`, `dsp_frames`, `dspdiff`, `wireevents`, `wiretrace`); scenario generators and checkers (`gen_*fx.py`, `fxcheck.py`, `audiocheck.py`, `scenario_dsl.py`); `scenarios/`; `devices/*.toml` |
+| sharc-dev | SHARC+ semantics, tracing, analysis, generation | `tools/sharc_dev/sharc_core/` (the single source of instruction semantics), `tools/sharc_dev/sharcspec/` (encodings from the public manuals), `tools/sharc_dev/sharc*.py`, `tools/sharc_dev/aot_*.py`, `selasm.py`, `dspmap.py`, `framelink.py`; `emu/sharc_capture.py`, `emu/sharc_peer.py` |
+| patchkit | Patch planning, building, validation, module builds | `native/patchkit`; `tools/patchkit/patchkit.py`, `tools/patchkit/pk_*.py`, `port_resolve.py`, `machine*.py`, `patched_*.py`, `pluck_ref.py`, `dsp_patch.py`, `tools/patchkit/dsp_patches/`; `modules/`; `devices/ports/` |
+| control client | Control-socket protocol | `native/control` (crate `digi-control`: the `digi-emud` server and the `digi_control` library); `tools/control/digi_client.py` |
+| device | Tools for a real device over USB MIDI | `tools/device/` (`devrpc.py` runtime RPC, `midisniff.py` SysEx capture, `mmon.py` MIDI Monitor files) |
+| devtools | Verification, tests, locks, lanes, performance tooling | `tools/devtools/verify.py`, `test_outcomes.py`, `rust_ws.py`, `benchlock.py`, `lane.sh`, `worktree-setup.sh`, `perf*.py`, `fastcov.py`, `coupled_ab.py`, `spikes.py`, `app_soak.py`, `sharc_regionbench.py`, `sharc_prof_*.py`, `browser_bench.mjs`, `wasm_*.mjs` |
 | apps | Desktop and browser shells | `packages/desktop` (Tauri, crate `digiemu-desktop`), `packages/web` |
-| ColdFire analysis | ColdFire and Ghidra reverse-engineering tools | `tools/cf*.py`, `ghidra*.py`, `tools/ghidra/`, `tools/cfisa/`, `rttiscan.py`, `refscan.py`, `vtcheck.py`, `fw.py`, `atlas.py`, `entryhist.py`, `codeseeds.py`, `hwlookup.py` |
-| firmware | `.syx` container, extraction, repacking | `dt2/`, `emu/extract.py` and the other `emu/` modules, `native/loader` (crate `dt2-firmware-loader`), `native/plusdrive` (crate `plusdrive-format`), `tools/roundtrip.py`, `aplib_check.py` |
+| ColdFire analysis | ColdFire and Ghidra reverse-engineering tools | `tools/coldfire/cf*.py`, `ghidra*.py`, `tools/coldfire/ghidra/`, `tools/coldfire/cfisa/`, `rttiscan.py`, `refscan.py`, `vtcheck.py`, `fw.py`, `atlas.py`, `entryhist.py`, `codeseeds.py`, `hwlookup.py` |
+| firmware | `.syx` container, extraction, repacking | `dt2/`, `emu/extract.py` and the other `emu/` modules, `native/loader` (crate `dt2-firmware-loader`), `native/plusdrive` (crate `plusdrive-format`), `tools/firmware/roundtrip.py`, `aplib_check.py` |
 | tests | Python tests by owner | `tests/<owner directories>` (see `docs/TESTING.md`) |
 | docs | Results and history | `docs/findings` (results), `docs/design`, `docs/plans`, `docs/handovers` (history) |
 
-`native/sharc-gen` is generated by `tools/sharc_transpile.py` (sharc-dev) and is owned by the emulator.
+Python tools live in `tools/<owner>/`, one package per owner above. The repository root is the only import root: run a tool with `uv run python -m tools.<owner>.<module>` and import it with `from tools.<owner> import <module>`. `tools/coldfire/ghidra/` and `tools/sharc_dev/sharcspec/ghidra/` hold Ghidra scripts and language files, not Python packages.
+
+`native/sharc-gen` is generated by `tools/sharc_dev/sharc_transpile.py` (sharc-dev) and is owned by the emulator.
 
 ## What each app builds
 
 | App | Builds |
 | --- | --- |
 | Desktop | `digiemu-desktop` depends on `elektron-native-boot`, `emmc-card`, `digi-coupled` and `digi-control`. Through them it pulls in most emulator crates, the loader, plusdrive and patchkit. |
-| Web | `tools/native_wasm.py` builds `native/boot` (wasm32) and `native/patchkit` (C ABI). Output goes to `packages/web/.local` (not committed). |
+| Web | `tools/emulator/native_wasm.py` builds `native/boot` (wasm32) and `native/patchkit` (C ABI). Output goes to `packages/web/.local` (not committed). |
 
-## Planned moves (not done)
+## Planned moves
 
 | Today | Planned | Status and reason |
 | --- | --- | --- |
 | `native/` crates | `packages/emulator/` | Deferred. A move invalidates warm Rust builds, PGO profile paths, generated-core provenance and lane worktrees. |
 | `packages/desktop`, `packages/web` | `apps/desktop`, `apps/web` | Deferred. |
-| `tools/` | `packages/{sharc-dev,patchkit,control-client,devtools}`, split by owner | Deferred. `tools/` modules import each other through `sys.path`, and many mise tasks, docs and tests name `tools/` paths. |
+| `tools/` | `tools/<owner>/` | Done (R1, 2026-10-14): one package per owner under `tools/`. Old→new paths: `tools/devtools/relocate-r1.json` (applied with `tools/devtools/relocate.py`). |
 | `tests/` | Domain directories | Done. See `docs/TESTING.md`. |
 
 Until the moves are done, use the owner table to find code.
@@ -51,6 +54,6 @@ Committed generated files:
 
 | File | Generator | Regenerate |
 | --- | --- | --- |
-| `native/sharc/src/fast/gen_helpers.rs` | `tools/sharc_lowergen_helpers.py` from `tools/sharc_core` | `mise run gen:regen` |
-| `native/sharc/src/fast/lower/gen_forms.rs` | `tools/sharc_lowergen.py` from `tools/sharc_core` | `mise run gen:regen` |
+| `native/sharc/src/fast/gen_helpers.rs` | `tools/sharc_dev/sharc_lowergen_helpers.py` from `tools/sharc_dev/sharc_core` | `mise run gen:regen` |
+| `native/sharc/src/fast/lower/gen_forms.rs` | `tools/sharc_dev/sharc_lowergen.py` from `tools/sharc_dev/sharc_core` | `mise run gen:regen` |
 | `modules/*/*/build/*.dko.json` | Module builds (built module objects; no firmware bytes) | `mise run patch:build [-- modules/fx/NAME] [--check]` |

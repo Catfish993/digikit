@@ -1,20 +1,16 @@
 """Symbolic tracer: control flow, loops, system forms and state copies."""
 
-import os
 import struct
-import sys
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
-L = import_module("sharcldr")
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_trace_build import insn  # noqa: E402
 
-_floats = import_module("sharc_core.floats")  # _double_to_fixed isn't re-exported by T
+_floats = import_module("tools.sharc_dev.sharc_core.floats")  # _double_to_fixed isn't re-exported by T
 
 from support.sharc_trace_build import TraceRunMixin, f32, full_compute  # noqa: E402
 
@@ -636,7 +632,7 @@ class StateCopyPreservesEveryFieldTest(unittest.TestCase):
     """sharc_core.state._copy() used to build its State(...) with positional
     args that stopped before explicit_memory_model (and any field added
     after it), so a fork silently reset that field to its default -- see
-    tools/sharc_harness.py's _clone_state docstring, which worked around
+    tools/sharc_dev/sharc_harness.py's _clone_state docstring, which worked around
     this by not calling _copy() at all. Every conditional/predicated fork
     inside forms_move.py/sequencer.py/forms_flow.py/forms_compute.py/
     forms_dag.py goes through _copy(), so this was live on any run that set

@@ -1,9 +1,9 @@
 # pyright: reportMissingImports=false
-"""tools/sharcfn.py: dossier construction and mnemonic rendering on synthetic
+"""tools/sharc_dev/sharcfn.py: dossier construction and mnemonic rendering on synthetic
 code and a hand-built boot stream.
 
 No real firmware is used (it is Elektron's copyright and is not committed);
-instructions are built directly from tools/sharc_visa_tables.py the same way
+instructions are built directly from tools/sharc_dev/sharc_visa_tables.py the same way
 tests/sharc/analysis/test_sharcflow.py and tests/sharc/analysis/test_sharcinv.py do, and reuses their
 encoding helpers rather than duplicating them.
 """
@@ -12,21 +12,16 @@ import json
 import os
 import sqlite3
 import struct
-import sys
 import tempfile
 import unittest
 from collections import Counter
 from support.paths import REPO_ROOT
 
-sys.path.insert(
-    0,
-    os.path.join(str(REPO_ROOT), "tools"),
-)
 
-import sharc_disasm  # noqa: E402
-import sharcfn  # noqa: E402
-import sharcinv  # noqa: E402
-import sharcldr  # noqa: E402
+from tools.sharc_dev import sharc_disasm  # noqa: E402
+from tools.sharc_dev import sharcfn  # noqa: E402
+from tools.sharc_dev import sharcinv  # noqa: E402
+from tools.sharc_dev import sharcldr  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_rel,
     cjump,
@@ -378,7 +373,7 @@ class PerInstructionRenderingTest(unittest.TestCase):
 class Type19ModifyRenderingTest(unittest.TestCase):
     """render_modify()'s destination for the Type19 MODIFY family: PGR
     Table/Figure for Type 19 encodes it as Is XOR Idis, not as Is directly
-    (tools/sharc_trace.py's "19a"/"19a_scaled" _compute branch already does
+    (tools/sharc_dev/sharc_trace.py's "19a"/"19a_scaled" _compute branch already does
     this, citing the same figure)."""
 
     def setUp(self):
@@ -459,7 +454,7 @@ class Type6aRenderingTest(unittest.TestCase):
     """render_mem_indexed()'s destination register for 6a_mem (a plain
     "dreg" field, unlike 3a/3b/3d's wide "ureg"), and render_shiftimm()'s
     readable decode of the parallel ShiftImm sub-instruction PRM Type 6a/6b
-    share (PRM Table 18-9 pp.431-433; tools/sharc_trace.py's
+    share (PRM Table 18-9 pp.431-433; tools/sharc_dev/sharc_trace.py's
     _shift_immediate())."""
 
     def setUp(self):
@@ -513,7 +508,7 @@ class Type6aRenderingTest(unittest.TestCase):
 
     def test_render_shiftimm_unmodelled_opcode_falls_back_to_raw_dump(self):
         # opcode 0x02 ("rot") is in PRM's table but not implemented by
-        # tools/sharc_trace.py's _shift_immediate(); stays a raw dump
+        # tools/sharc_dev/sharc_trace.py's _shift_immediate(); stays a raw dump
         # rather than guessing at its field widths.
         shiftimm = (0x02 << 16) | (8 << 8) | (3 << 4) | 4
         mnemonic = self.render(
@@ -526,7 +521,7 @@ class ImmediateOffsetSignednessTest(unittest.TestCase):
     """render_mem_immoff()'s "data" displacement: Type15b's decode_table.json
     field is data[6:0] (7 bits), Type4a/4b/4d's is data[5:5]+data[4:0] (6
     bits); merge_fields() only concatenates the split pieces, it never
-    sign-extends. tools/sharc_trace.py's "15b"/"4a"/"4b" _execute branches
+    sign-extends. tools/sharc_dev/sharc_trace.py's "15b"/"4a"/"4b" _execute branches
     already treat the merged value as a signed twos-complement index
     modifier (_signed(..., 7) / _signed(..., 6)) before using it as an
     address delta -- this class checks the listing renderer agrees."""
@@ -590,7 +585,7 @@ class CondPrefixRenderingTest(unittest.TestCase):
     (p.10-33) names the 5-bit COND field's 32 codes. Type2a, 3a/3b/3d,
     4a/4b/4d, 5a/5b (move+swap) and 6b_shiftimm all carry a real "cond"
     field that gated the whole instruction (PRM p.7924's Type3a note,
-    cited in tools/sharc_trace.py) but that render_instruction() dropped
+    cited in tools/sharc_dev/sharc_trace.py) but that render_instruction() dropped
     on the floor entirely -- a predicated instruction looked identical to
     an unconditional one. Type2a_short/2c/2b are checked too, to confirm
     they are correctly left alone: decode_table.json gives them no COND
@@ -665,7 +660,7 @@ class CondPrefixRenderingTest(unittest.TestCase):
 class Type3cDirectionRenderingTest(unittest.TestCase):
     """Type3c's "d" field (decode_table.json bit 37; PGR Table 10-1 p.443,
     "D  Data direction  0 = Memory read  1 = Memory write") picks a load or
-    a store, exactly like tools/sharc_trace.py's "3c" _execute branch
+    a store, exactly like tools/sharc_dev/sharc_trace.py's "3c" _execute branch
     (store when d, else load). A previous version of render_instruction()'s
     "3c" branch never read "d" at all and always rendered a store."""
 
@@ -695,7 +690,7 @@ class DualMemDirectionRenderingTest(unittest.TestCase):
     """Type1a/1b's "dmd"/"pmd" fields (PGR Table 10-1 p.444: DMD "DAG1
     access direction", PMD "DAG2 access direction", each 0 = Read, 1 =
     Write -- the manual's own Type 1a Syntax on p.375 prints "DM(Ia,Mb) =
-    dreg" for a write and "dreg = DM(Ia,Mb)" for a read). tools/sharc_trace.py
+    dreg" for a write and "dreg = DM(Ia,Mb)" for a read). tools/sharc_dev/sharc_trace.py
     has no "1a"/"1b" _execute branch (an unimplemented form there), so
     this form is checked against the manual only, not against the tracer.
     A previous version of render_dual_mem() always put the memory term on
@@ -776,7 +771,7 @@ class RealBlobType19AndType6aRenderingTest(unittest.TestCase):
         self.assertIn("R0 = DM(I4, M5)", self.rows["0x1cbf84"])
 
     def test_type15b_immediate_offset_beyond_63_is_signed(self):
-        # 0x1cbf0c's raw data[6:0] is 115; tools/sharc_trace.py executes it
+        # 0x1cbf0c's raw data[6:0] is 115; tools/sharc_dev/sharc_trace.py executes it
         # as _signed(115, 7) == -13, so the listing must agree.
         self.assertIn("DM(I6 - 13) = R2", self.rows["0x1cbf0c"])
         self.assertNotIn("+ 115", self.rows["0x1cbf0c"])
@@ -793,7 +788,7 @@ class RealBlobType19AndType6aRenderingTest(unittest.TestCase):
 class RealBlobType3cRenderingTest(unittest.TestCase):
     """DT2 1.16 sw 0x1c653b (dmi=4, dmm=5, d=0, dreg=6): a Type3c load that
     a previous version of render_instruction()'s "3c" branch rendered as a
-    store, "DM(I4, M5) = R6", disagreeing with tools/sharc_trace.py's "3c"
+    store, "DM(I4, M5) = R6", disagreeing with tools/sharc_dev/sharc_trace.py's "3c"
     _execute branch, which executes d=0 as a LOAD R6 = DM(0x250738)."""
 
     @classmethod
@@ -822,7 +817,7 @@ class RealBlobType14dRenderingTest(unittest.TestCase):
     register-pair" rule. Per the PRM (out/refs/sharc-plus-prm pp.384-387,
     Figure 15-2's BHSE Encode Table), Type14d's "l" instead picks a
     sub-word width (byte/short), so l=1,x=0 is a short-word, zero-extended
-    load -- "(sw)" -- the same width tools/sharc_trace.py's "14d" _execute
+    load -- "(sw)" -- the same width tools/sharc_dev/sharc_trace.py's "14d" _execute
     branch actually reads, not a 32-bit long."""
 
     @classmethod

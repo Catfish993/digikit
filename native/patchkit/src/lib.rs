@@ -2,7 +2,7 @@
 //!
 //! One implementation for the command line and the browser (`wasm32`). It does everything at patch time:
 //! `.syx` decode and encode, aPLib pack, HMAC seal, port lockfiles, linking, apply, verify. Toolchains
-//! and firmware databases are used only when modules and ports are built (Python, `tools/pk_*.py`).
+//! and firmware databases are used only when modules and ports are built (Python, `tools/patchkit/pk_*.py`).
 
 #[macro_use]
 pub mod error;

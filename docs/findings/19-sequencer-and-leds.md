@@ -68,7 +68,7 @@ from 0.6 s on; PLAY alone steps too.
   bit positions; the rest of the names are not confirmed.
 
 Sweep (`dt2-led-sweep`, `dn2-led-sweep`: every code pressed 6M instructions, 12M apart, after NO; capture with
-`DIGI_PANEL_TX_LOG`, read with `tools/led_map.py`; 4M spacing was too tight, the UI queue lags by up to about
+`DIGI_PANEL_TX_LOG`, read with `tools/emulator/led_map.py`; 4M spacing was too tight, the UI queue lags by up to about
 one key): the key-to-LED map is `devices/digitakt-ii-leds.toml` and `devices/digitone-ii-leds.toml`.
 
 - Trig key code c (25-40) has LED idx c. Pressed: 0x11. Page keys 1-6 are a radio group on LEDs 0x13-0x18 (0x71).
@@ -79,7 +79,7 @@ one key): the key-to-LED map is `devices/digitakt-ii-leds.toml` and `devices/dig
 - Keys with no LED change in a plain press: YES, NO, UP, DOWN, LEFT, RIGHT (a view lights them, e.g. LEFT and
   RIGHT 0x71 under PATTERN), FUNC, PAGE; encoder pushes 41-48 and LEVEL 49 have no LED in the table. DN2: ARP
   0x31, PLUS 0x32, STACK 0x33, MINUS 0x34; STACK turns PLUS and MINUS to 0x66 and the stacked steps 0x86.
-- The firmware writes every record twice back to back; `tools/led_map.py` drops records that do not change the
+- The firmware writes every record twice back to back; `tools/emulator/led_map.py` drops records that do not change the
   shadow value.
 - `DIGI_PANEL_TX_LOG` also logs `icount @button CODE d|u` at each injected button, so a press can be placed in the
   LED stream.

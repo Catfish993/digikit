@@ -4,7 +4,7 @@ manual, rendered headless. A failure means the emulated DSP (or the
 translator) changed an effect.
 
 The fast subset runs by default; ``--sweep`` (or ``-m sweep``) adds the full
-sweeps. Analysis lives in tools/fxcheck.py and tools/audiocheck.py.
+sweeps. Analysis lives in tools/emulator/fxcheck.py and tools/emulator/audiocheck.py.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def series(fast: tuple[str, ...], full: tuple[str, ...]) -> list[Any]:
 
 
 def dry_of(render: Any, r: Any) -> Any:
-    from fxcheck import reference_for
+    from tools.emulator.fxcheck import reference_for
 
     return render(reference_for(r.name, r.hold))
 

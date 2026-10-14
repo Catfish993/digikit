@@ -1043,7 +1043,7 @@ reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00"
 offset = 0x248
 mark = "D"
 
-# Digitone II: the same framework with the sites of tools/pk_machine_rules_dn2.py (finding 02, "core.machines on Digitone II")
+# Digitone II: the same framework with the sites of tools/patchkit/pk_machine_rules_dn2.py (finding 02, "core.machines on Digitone II")
 [[anchor_rule]]
 name = "cf.machines.dispatch"
 devices = ["dn2"]

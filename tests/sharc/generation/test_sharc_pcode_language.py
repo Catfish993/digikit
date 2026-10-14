@@ -1,4 +1,4 @@
-"""The p-code of the generated SHARC+ language, and tools/sharcpcode.py.
+"""The p-code of the generated SHARC+ language, and tools/sharc_dev/sharcpcode.py.
 
 Generates the language from decode_table.json in a temporary directory,
 compiles it with the sleigh compiler bundled with pypcode, and lifts
@@ -11,19 +11,14 @@ import sys
 import tempfile
 import unittest
 
-from support.paths import REPO_ROOT
 
-sys.path.insert(
-    0,
-    os.path.join(str(REPO_ROOT), "tools"),
-)
 
 from support.sharc_encode import encode  # noqa: E402
 from support.sharc_pcode_build import branch, field  # noqa: E402
 
-import sharc_disasm  # noqa: E402  # pyright: ignore[reportMissingImports]
-import sharc_visa_tables as T  # noqa: E402  # pyright: ignore[reportMissingImports]
-import sharcpcode  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import sharc_disasm  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import sharc_visa_tables as T  # noqa: E402  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import sharcpcode  # noqa: E402  # pyright: ignore[reportMissingImports]
 
 TARGET_SW = 0x1C1400
 COND_EQ = 0x00
@@ -163,7 +158,7 @@ def eval_pcode(ops, registers=None):
     address_value is that op's memory-offset input (inputs[1]).
 
     This models exactly the opcodes the DM byte-address -> ram-unit
-    translation uses (tools/sharcspec/ghidra/gen_sleigh.py
+    translation uses (tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py
     dm_byte_addr_to_ram_unit): INT_ZEXT/INT_SEXT, INT_LEFT/INT_RIGHT,
     INT_OR/INT_AND, INT_ADD/INT_SUB/INT_MULT, INT_LESS/INT_LESSEQUAL,
     BOOL_AND/BOOL_NEGATE, COPY. `registers` seeds any register-space input
@@ -242,7 +237,7 @@ def run_pcode(ops, registers=None, max_steps=1000):
     """Execute a full p-code op list, including intra-instruction branching
     (CBRANCH/BRANCH to a relative op index, exactly what `goto <label>;`
     compiles to in this language's Type15b/4a/3a indexed-memory semantics --
-    see tools/sharcspec/ghidra/gen_sleigh.py's direction_branch,
+    see tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py's direction_branch,
     premodify_or_post/postmodify_update and compute_marker_lines). Unlike
     eval_pcode (which stops at the first LOAD/STORE and has no branch
     support, and stays as-is for the existing Type14a/Type3b tests), this
@@ -943,7 +938,7 @@ class GeneratedLanguage(unittest.TestCase):
                 self.assertEqual(registers.split()[code], register)
 
     def test_every_form_has_our_decoders_length(self):
-        """Each form, encoded with only its fixed bits, has the length tools/sharc_disasm.py gives it.
+        """Each form, encoded with only its fixed bits, has the length tools/sharc_dev/sharc_disasm.py gives it.
         Branch forms change here on purpose once delay slots join the branch (handover stage 3)."""
         missing, wrong = [], []
         for name in sorted(t["name"] for t in T.TYPES):

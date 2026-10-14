@@ -2,9 +2,9 @@
 
 - **Bounds**: entry `0x1cb4b2`, exit `0x1cb647` (return `9b_abs` at `0x1cb642`,
   delay slots `15b` load + `25c_rframe` at `0x1cb644`/`0x1cb646`). Matches
-  `tools/sharcinv.py`'s inventory entry exactly (`entry=1881266`,
+  `tools/sharc_dev/sharcinv.py`'s inventory entry exactly (`entry=1881266`,
   `exit=1881671`, `n_insns=183`). **[V]** — cross-checked against
-  `tools/sharcflow.py`'s return list on `blk93.bin` (`sharcflow.py` return at
+  `tools/sharc_dev/sharcflow.py`'s return list on `blk93.bin` (`sharcflow.py` return at
   `sw=0x1cb4ad, after=0x1cb4b2` closes the previous function — this is
   `0x1cb3d8`, stage 3 of `FUN_1c71ec` — and the next return
   `sw=0x1cb642, after=0x1cb647` closes this one, with no call target landing
@@ -21,7 +21,7 @@
   to write several, and it opens with a call to a shared math primitive, not
   a table lookup.
 
-## Method-gap correction: `tools/sharcflow.py` and `sharcinv.py` do not see Type 8a `CALL`
+## Method-gap correction: `tools/sharc_dev/sharcflow.py` and `sharcinv.py` do not see Type 8a `CALL`
 
 The call at `0x1cb4ee` decodes as `8a_rel` with fields
 `b=1, a=0, j=1, ci=0` — SHARC+ Core Programming Reference, "Type 8a
@@ -42,7 +42,7 @@ caller" (as `sharcinv.py` has it) but one of the most-called routines in the
 block. One of the 50 call sites, `0x1cb3ff`, is inside the *already
 documented* stage-3 envelope (`0x1cb3d8`, docs/findings/06, "on-the-fly
 polynomial envelope") — so stage 3 and this function share the same callee.
-`tools/sharc_trace.py`'s tracer (`_field(f, "b")` check, `tools/sharc_trace.py`
+`tools/sharc_dev/sharc_trace.py`'s tracer (`_field(f, "b")` check, `tools/sharc_dev/sharc_trace.py`
 around the Type 8/9/25 handling) already models the `b` bit correctly; only
 the static call-graph tools miss it. This is worth fixing in
 `sharcflow.py`/`sharcinv.py`, but that is out of scope for this note (no
@@ -52,7 +52,7 @@ other `docs/` file or tool was edited here).
 
 `0x1c06ba`–`~0x1c06fa`, labelled "IIR or recurrence" by the inventory
 (confidence 0.5) — **that label is wrong**. Traced with
-`tools/sharc_trace.py --start 0x1c06ba`: `float-recips-seed` (RECIPS) on
+`tools/sharc_dev/sharc_trace.py --start 0x1c06ba`: `float-recips-seed` (RECIPS) on
 entry, then three rounds of `float-multiply` + `float-mulalu-subtract`
 computing `2.0 - D*R` and multiplying it back in, before returning. This is
 the ADI-documented **iterative floating-point reciprocal** idiom verbatim
@@ -148,7 +148,7 @@ refreshes a whole run of values through a register-counted loop that blends
 a second input array via six dual-MAC ops before saturating again. If a
 second opinion is wanted, the open item to chase is exactly which physical
 registers back the `5a_move`/`2a_short` compute fields — this note trusts
-`tools/sharc_trace.py`'s operation naming and result-register attribution,
+`tools/sharc_dev/sharc_trace.py`'s operation naming and result-register attribution,
 not an independent raw-bit decode of every instruction.
 
 ## Structure summary

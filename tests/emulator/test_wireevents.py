@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-import tools.wireevents as wireevents
+from tools.emulator import wireevents
 
 
 def _trace(path, frames):

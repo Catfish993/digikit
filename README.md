@@ -105,7 +105,7 @@ folder of WAVs" when nothing is cached. A DT2 launch without `SHARC_GEN_DIR` use
 core its PGO profile was trained on (the launcher prints which core and why), so no environment
 settings are needed. The browser shows the button
 disabled ("desktop only for now"). Headless: the control socket's `card.load {dir}`,
-`card.status`; `uv run python tools/card_check.py` checks that trigs 1-3 play a 220 Hz sine, an
+`card.status`; `uv run python -m tools.emulator.card_check` checks that trigs 1-3 play a 220 Hz sine, an
 880 Hz sine and noise from three generated files.
 
 ## Web panel
@@ -123,11 +123,11 @@ The browser DSP is slow; the browser host is parked on the branch `wip/browser-h
 ```sh
 mise run emu:serve                      # headless, paused; serves the control socket
 mise run emu:ctl status                 # status, step N, tap CODE, frame out.png, events
-uv run python tools/digi_client.py inject PATCHED.syx   # hot DSP injection
-uv run python tools/dsp_patch.py syx BASE.syx tools/dsp_patches/dn2-1.11-master-half.patch OUT.syx
+uv run python -m tools.control.digi_client inject PATCHED.syx   # hot DSP injection
+uv run python -m tools.patchkit.dsp_patch syx BASE.syx tools/patchkit/dsp_patches/dn2-1.11-master-half.patch OUT.syx
 ```
 
-`tools/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched
+`tools/patchkit/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched
 `.syx`. Control socket reference: [docs/CONTROL.md](docs/CONTROL.md). The protocol design is in [docs/design/emulator-control.md](docs/design/emulator-control.md).
 
 ## Scenarios and tests
@@ -166,11 +166,11 @@ writes `out/runs/<scenario-or-kind>/<UTC stamp>/` (report, audio, logs);
 
 ## Analysis tools
 
-For the DSP, `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin`
-builds `out/sharcdb/<image>.sqlite`. `tools/sharc.py` queries it: `sharc.load("dt2-1.16")`
+For the DSP, `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin`
+builds `out/sharcdb/<image>.sqlite`. `tools/sharc_dev/sharc.py` queries it: `sharc.load("dt2-1.16")`
 gives `func`, `callers`, `callees`, `reach`, `last_def`, `refs`, `trace` and `sql`, and
-`uv run python tools/sharc.py dt2-1.16 "SQL"` runs one query. For the ColdFire OS, `tools/ghidradump.py` exports a
-Ghidra project, `tools/cfdb.py build` makes a database from the dump, and `tools/cf.py`
+`uv run python -m tools.sharc_dev.sharc dt2-1.16 "SQL"` runs one query. For the ColdFire OS, `tools/coldfire/ghidradump.py` exports a
+Ghidra project, `tools/coldfire/cfdb.py build` makes a database from the dump, and `tools/coldfire/cf.py`
 queries it. Decoding uses only public manuals ([docs/sharc/SOURCES.md](docs/sharc/SOURCES.md)).
 All tools are indexed in [docs/TOOLS.md](docs/TOOLS.md).
 
@@ -207,7 +207,7 @@ dt2/             .syx container: decode, rebuild, decompress
 emu/             firmware extraction and the shared helpers (config, symbols, SHARC capture)
 native/          Rust workspace: ColdFire core, SHARC+ engine, coupled runner (native/README.md)
 packages/web     browser panel (Astro + Solid); packages/desktop is the Tauri app
-tools/           analysis, run and measurement tools
+tools/           Python tools, one package per owner (tools/<owner>/, docs/LAYOUT.md)
 tests/           pytest suite (native tests live in the crates); see docs/TESTING.md
 scenarios/       scripted panel inputs and pinned PCM hashes
 modules/         patchkit modules
@@ -253,5 +253,5 @@ firmware. digikit is not affiliated with or endorsed by Elektron. Digitakt, Digi
 Syntakt are trademarks of Elektron Music Machines. Container format knowledge comes from
 `mischa85/elektron-firmware-tool` (MIT); some architecture facts from
 `lalzart/digitakt-ii-firmware-research-public`. The public SHARC+ assembler `js216/selache`
-is used only as a read-only cross-check. `tools/ghidra/ColdfireEMAC` contains files from
+is used only as a read-only cross-check. `tools/coldfire/ghidra/ColdfireEMAC` contains files from
 Ghidra under the Apache License 2.0.

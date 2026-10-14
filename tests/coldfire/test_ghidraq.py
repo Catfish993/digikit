@@ -1,16 +1,8 @@
-import importlib.util
 import sys
 import types
-from pathlib import Path
 from typing import cast
-from support.paths import REPO_ROOT
 
-spec = importlib.util.spec_from_file_location(
-    "ghidraq", REPO_ROOT / "tools/ghidraq.py"
-)
-assert spec is not None and spec.loader is not None
-ghidraq = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ghidraq)
+import tools.coldfire.ghidraq as ghidraq
 
 
 class Language:

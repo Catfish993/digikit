@@ -1,6 +1,6 @@
 //! Lowering: SHARC+ instructions to kernel IR.
 //!
-//! Each instruction follows the interpreter's own order (tools/sharc_core):
+//! Each instruction follows the interpreter's own order (tools/sharc_dev/sharc_core):
 //! operands are read from the register file as it was before the
 //! instruction; the transfer, the index update and the compute then write in
 //! that order, a later write to the same register winning. Here that is:

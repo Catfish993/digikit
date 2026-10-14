@@ -1344,7 +1344,7 @@ impl Actor {
     /// purpose to exercise `fault`/`stall`). Not part of the replay record.
     /// `card.overlay {path}`: write the guest's writes to the card as a sparse file: per touched sector
     /// `u64 le sector, [u8; 64] mask (bit i of byte i/8 names data byte i), [u8; 512] data`. Applied over the card's
-    /// base image it gives the card the guest sees (`tools/card_overlay.py`).
+    /// base image it gives the card the guest sees (`tools/emulator/card_overlay.py`).
     fn rpc_card_overlay(&mut self, p: &Params) -> RpcResult {
         let path = p.str("path")?.to_string();
         let sectors = self.with_runtime(|r| Ok(r.card_overlay()))?;

@@ -1,4 +1,4 @@
-"""The control protocol client (tools/digi_client.py) and, when a built
+"""The control protocol client (tools/control/digi_client.py) and, when a built
 `digi-emud` and a firmware are present, the P1 acceptance checks of
 docs/design/emulator-control.md against a real daemon.
 
@@ -14,7 +14,6 @@ import json
 import os
 import pathlib
 import socket
-import sys
 import tempfile
 import threading
 
@@ -22,13 +21,8 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import digi_client
-finally:
-    sys.path.pop(0)
-
-from digi_client import Emu, EmuError  # noqa: E402
+from tools.control import digi_client  # noqa: E402
+from tools.control.digi_client import Emu, EmuError  # noqa: E402
 
 
 @pytest.fixture()
@@ -259,17 +253,14 @@ def test_quit_ends_the_daemon_and_removes_its_socket():
 
 # ----- firmware injection ------------------------------------------------------
 
-PATCH = ROOT / "tools" / "dsp_patches" / "dn2-1.11-master-half.patch"
+PATCH = ROOT / "tools" / "patchkit" / "dsp_patches" / "dn2-1.11-master-half.patch"
 
 
 @pytest.fixture(scope="module")
 def patched_dsp_syx():
     """The stock .syx with the master-half DSP patch written into its DSP stream."""
-    sys.path.insert(0, str(ROOT / "tools"))
-    try:
-        import dsp_patch
-    finally:
-        sys.path.pop(0)
+    from tools.patchkit import dsp_patch
+
     with tempfile.TemporaryDirectory(prefix="dgp") as name:
         out = pathlib.Path(name) / "master-half.syx"
         parsed = dsp_patch.parse_for_stream(PATCH.read_text(), SYX)
@@ -295,14 +286,9 @@ def test_a_dsp_only_change_without_audio_is_reported_and_not_applied(patched_dsp
 @needs_daemon
 @pytest.mark.slow
 def test_a_patched_main_cold_boots_once_then_hits_the_snapshot_cache():
-    sys.path.insert(0, str(ROOT))
-    sys.path.insert(0, str(ROOT / "tools"))
-    try:
-        import dsp_patch
-        from dt2.build import rebuild
-    finally:
-        sys.path.pop(0)
-        sys.path.pop(0)
+    from dt2.build import rebuild
+    from tools.patchkit import dsp_patch
+
     main = bytearray(dsp_patch.section_blob(SYX, 3))
     at = main.find(b"UNTITLED")
     assert at >= 0
@@ -336,11 +322,8 @@ def test_hot_dsp_inject_halves_the_master_level_and_the_original_restores_it(
 ):
     """The master-half patch (-6 dB) injected into the running DSP halves the
     PCM level; injecting the original .syx gives the reference PCM back."""
-    sys.path.insert(0, str(ROOT / "tools"))
-    try:
-        import digi_env
-    finally:
-        sys.path.pop(0)
+    from tools.emulator import digi_env
+
     env = {**os.environ, "DIGI_EMU_SYX": str(SYX)}
     ready = digi_env.ready_inputs(env)
     if not all(p.is_file() for p in ready.values()):

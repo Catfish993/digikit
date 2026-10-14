@@ -1,7 +1,7 @@
 // The generated-code crate. Generated code lives under out/ (the block code is firmware-derived),
 // never under native/. SHARC_GEN_DIR names a directory written by
-// tools/sharc_transpile.py (syms.rs, tables.rs, core_i.rs, core_g.rs) and
-// optionally tools/sharc_rsgen.py (image.rs and the block files it
+// tools/sharc_dev/sharc_transpile.py (syms.rs, tables.rs, core_i.rs, core_g.rs) and
+// optionally tools/sharc_dev/sharc_rsgen.py (image.rs and the block files it
 // includes). Without it the crate builds the runtime only.
 use std::env;
 use std::path::Path;

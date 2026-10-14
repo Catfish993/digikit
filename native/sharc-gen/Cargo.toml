@@ -7,8 +7,8 @@ edition = "2024"
 publish = false
 description = "The generated native SHARC+ core (SHARC_GEN_DIR), compiled once apart from the engine"
 
-# Only the include!s of the files tools/sharc_transpile.py and
-# tools/sharc_rsgen.py write, plus the glue that lets them say `crate::rt`,
+# Only the include!s of the files tools/sharc_dev/sharc_transpile.py and
+# tools/sharc_dev/sharc_rsgen.py write, plus the glue that lets them say `crate::rt`,
 # `crate::EXIT_NEXT` and so on. Without SHARC_GEN_DIR this crate is empty
 # apart from the runtime fallbacks.
 [dependencies]

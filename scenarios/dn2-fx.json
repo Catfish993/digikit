@@ -6476,7 +6476,7 @@
     },
     {
       "name": "fx-dmp-del",
-      "description": "DN2: open the track FX page, turn encoder 5 (Delay send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "description": "DN2: open the track FX page, turn encoder 5 (Delay send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/emulator/dspdiff.py).",
       "seconds": 2.44,
       "exact_events": true,
       "events": [
@@ -7254,7 +7254,7 @@
     },
     {
       "name": "fx-dmp-rev",
-      "description": "DN2: open the track FX page, turn encoder 6 (Reverb send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "description": "DN2: open the track FX page, turn encoder 6 (Reverb send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/emulator/dspdiff.py).",
       "seconds": 2.44,
       "exact_events": true,
       "events": [
@@ -8032,7 +8032,7 @@
     },
     {
       "name": "fx-dmp-dry",
-      "description": "DN2: open the track FX page, turn encoder 5 +4 detents 75 times then -4 detents 75 times (ends at 0), then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "description": "DN2: open the track FX page, turn encoder 5 +4 detents 75 times then -4 detents 75 times (ends at 0), then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -rev, -dry so `--dump-dsp` states are at the same instruction count (tools/emulator/dspdiff.py).",
       "seconds": 2.44,
       "exact_events": true,
       "events": [
@@ -8810,7 +8810,7 @@
     },
     {
       "name": "fx-dmp-chr",
-      "description": "DN2: open the track FX page, turn encoder 7 (Chorus send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -chr, -dry so `--dump-dsp` states are at the same instruction count (tools/dspdiff.py).",
+      "description": "DN2: open the track FX page, turn encoder 7 (Chorus send) +4 detents 150 times to its maximum, then hold Trig 1 to the end of the run (about 1 s into the note). Same event times in fx-dmp-del, -chr, -dry so `--dump-dsp` states are at the same instruction count (tools/emulator/dspdiff.py).",
       "seconds": 2.44,
       "exact_events": true,
       "events": [

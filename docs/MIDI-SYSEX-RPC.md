@@ -195,7 +195,7 @@ terminated, ≤255 bytes). The write path resizes a heap buffer to the caller's
 length then `memcpy`s (`FUN_401dcd40`); the read length is clamped to bytes
 remaining in the SysEx buffer, so it cannot over-read the message.
 
-Liveness, by `tools/refscan.py` over the raw image (96.78% instruction
+Liveness, by `tools/coldfire/refscan.py` over the raw image (96.78% instruction
 coverage), checking each class's RTTI typeinfo for a `dynamic_cast` site:
 
 - **`FsRaw*` (12 request classes): 0 hits — apparently dead on the 1.16 receive
@@ -218,7 +218,7 @@ load; the FsSample dispatch call site itself was not located, so whether
 MidiRpc commands. `MidiRpcOsUpgradeWriteRequest` (`0x401e0e22`) has the same
 `{slot, offset, length, data}` shape as the file-write primitives. This is the
 same content the offline `.syx` container carries (`dt2/build.py`,
-`tools/roundtrip.py`), delivered over MIDI instead of as a file. It is the
+`tools/firmware/roundtrip.py`), delivered over MIDI instead of as a file. It is the
 natural target for pushing a rebuilt image to hardware.
 
 Nothing sent over **USB** can reach the irreversible bootstrap upgrade: the
@@ -298,7 +298,7 @@ status, `0xEC07000C` data). Commands include `#HELLO`, `#READ`, `#WRITE`,
 
 This is the path Elektron Transfer uses and the one we can drive from a host.
 Confirmed two ways: a firmware trace of the `0x10` descriptor, and a live
-round-trip against the real device on 2026-09-20 (`tools/devrpc.py`).
+round-trip against the real device on 2026-09-20 (`tools/device/devrpc.py`).
 
 ### Frame
 
@@ -426,15 +426,15 @@ non-MIDI transport — pending the specifics.
 
 ### Live, self-driven (verified against hardware)
 
-With Transfer **not** running, `tools/devrpc.py` sends
+With Transfer **not** running, `tools/device/devrpc.py` sends
 `F0 00 20 3C 10 00 00 00 01 00 00 01 F7` (Ping) and the device replies. Also
 confirmed live: SoftwareVersion (`"1.16"`), DeviceUID, StorageSpace (with the
 `0x01` arg), and ReadDir `/` (returns the sample-pack directory listing). No
 session or handshake is needed — the earlier "only replies when Transfer is
 connected" was our malformed byte-9, not a session.
 
-Tools: `tools/midisniff.py` (passive capture, transmits nothing),
-`tools/devrpc.py` (read-only queries + `--readdir PATH`), `tools/mmon.py`
+Tools: `tools/device/midisniff.py` (passive capture, transmits nothing),
+`tools/device/devrpc.py` (read-only queries + `--readdir PATH`), `tools/device/mmon.py`
 (parse a MIDI Monitor `.mmon` capture; `--endpoints` shows direction).
 Nothing on the USB path can reach the irreversible bootstrap (DIN-only, §7).
 

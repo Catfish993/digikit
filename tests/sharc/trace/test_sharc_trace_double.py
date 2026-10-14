@@ -5,24 +5,19 @@ opcodes 0x11-0x1f (ADSP-SC58x/2158x PRM Table 18-6, "ALUOP Encoding
 opcode 0xe0 (still undocumented; only checked here for "does not raise").
 
 Each case is worked from the manual definition cited in the implementation
-(out/refs/sc58x-2158x-prm), independently of tools/sharc_core's own
+(out/refs/sc58x-2158x-prm), independently of tools/sharc_dev/sharc_core's own
 arithmetic, so a broken implementation cannot pass by construction. Every
 expected register-pair bit pattern is computed here with a hand-rolled
 ``f64`` helper (plain struct pack/unpack), not by importing anything from
-tools/sharc_core/floats.py.
+tools/sharc_dev/sharc_core/floats.py.
 """
 
-import os
 import struct
-import sys
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 
 
 def f64(value):
@@ -311,7 +306,7 @@ class DoubleMultTests(ComputeHelperMixin, unittest.TestCase):
 
 class ReservedCu3Tests(ComputeHelperMixin, unittest.TestCase):
     """0xd6 and 0xe0 are the only two cu=3 opcodes this project's static
-    census (tools/sharc.py, lane F1) finds in real, in-function code across
+    census (tools/sharc_dev/sharc.py, lane F1) finds in real, in-function code across
     dt2-1.16/1.15C/dn2-1.11/1.10E; neither is explained by the SC58x/2158x
     PRM's 64-bit floating-point chapters (see compute.py's CU3_OPS
     docstring). This only checks that both still decode -- as Unknown, not

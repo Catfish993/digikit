@@ -1,5 +1,5 @@
 """Tests for the multiplier (cu=0x1) full-compute opcodes added to
-tools/sharc_trace.py: PRM Table 17-7 "MULOP Encode Table" (out/refs/
+tools/sharc_dev/sharc_trace.py: PRM Table 17-7 "MULOP Encode Table" (out/refs/
 sharc-plus-prm/all.txt, p.17-7/17-8) rows this tracer did not previously
 decode.
 
@@ -8,16 +8,11 @@ opcode-set's edits do not collide with other agents' concurrent edits to
 that file.
 """
 
-import os
-import sys
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 
 
 def insn(name, fields, length=4, kind="confident"):

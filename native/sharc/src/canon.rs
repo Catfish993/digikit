@@ -1,8 +1,8 @@
-//! The harness's canonical machine-state format (tools/sharc_diff.py,
+//! The harness's canonical machine-state format (tools/sharc_dev/sharc_diff.py,
 //! module docstring: `pack_state`/`unpack_state`, STATE_FORMAT_VERSION 4).
 //! Versions 1/2 remain readable with physical stacks disabled; v1 also
 //! disables banking and supplies unknown shadows.
-//! and the image blob tools/sharc_transpile_run.py `pack_image` writes.
+//! and the image blob tools/sharc_dev/sharc_transpile_run.py `pack_image` writes.
 
 use crate::CfgRefresh;
 use crate::mem::Mem;

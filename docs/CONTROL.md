@@ -28,7 +28,7 @@ flags. `--scenario` needs a coupled-audio build.
 
 ## Command line
 
-`mise run emu:ctl -- <subcommand>` runs `uv run python tools/digi_client.py <subcommand>`.
+`mise run emu:ctl -- <subcommand>` runs `uv run python -m tools.control.digi_client <subcommand>`.
 
 | Subcommand | Does |
 |---|---|
@@ -44,11 +44,11 @@ flags. `--scenario` needs a coupled-audio build.
 
 Global options: `--socket PATH` (default: discover), `--run-dir DIR` (where to look for `current.json`).
 
-`mise run inject -- OUT.syx [--hot]` loads a patched image through `tools/patchkit.py inject`.
+`mise run inject -- OUT.syx [--hot]` loads a patched image through `tools/patchkit/patchkit.py inject`.
 
 ## Methods
 
-Wrapper is the `Emu` method in `tools/digi_client.py`. `hello` reports an incomplete method list (it omits
+Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports an incomplete method list (it omits
 `mem.cf.peek`, `mem.cf.poke`, `card.*` and `watchdog.config`); use this table.
 
 | Method | Wrapper | CLI |

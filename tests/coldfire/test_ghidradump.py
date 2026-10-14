@@ -1,17 +1,13 @@
-"""tools/ghidradump.py helpers (the Ghidra parts need a project)."""
+"""tools/coldfire/ghidradump.py helpers (the Ghidra parts need a project)."""
 
 import json
 import os
 import sqlite3
-import sys
 import tempfile
 import unittest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import ghidradump  # noqa: E402
+from tools.coldfire import ghidradump  # noqa: E402
 
 
 def fact(name, stem, refs=()):

@@ -1,4 +1,4 @@
-"""Synthetic tests for tools/sharc_run.py, the concrete single-path runner.
+"""Synthetic tests for tools/sharc_dev/sharc_run.py, the concrete single-path runner.
 
 Follows the tests/sharc/trace/ convention: build tiny synthetic loader
 streams and Instruction records by hand rather than reading real firmware
@@ -9,7 +9,6 @@ copyright and must never end up here).
 import os
 import pathlib
 import struct
-import sys
 import tempfile
 import unittest
 from importlib import import_module
@@ -18,19 +17,18 @@ from unittest.mock import patch
 import pytest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-sr = import_module("sharc_run")
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
-L = import_module("sharcldr")
+sr = import_module("tools.sharc_dev.sharc_run")
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+L = import_module("tools.sharc_dev.sharcldr")
 # Only for the two firmware-backed watchpoint regression tests below
-# (WatchpointFirmwareTest): tools/sharc_harness.py owns voice-record layout
+# (WatchpointFirmwareTest): tools/sharc_dev/sharc_harness.py owns voice-record layout
 # and setup_voice()/call_render(), which this file must not hand-duplicate
 # (see InitSnapshotFirmwareTest's own docstring for why a different, earlier
 # firmware test here chose to duplicate rather than import it -- that
 # reasoning was about a module edited by a *different* concurrent lane at
-# the time; tools/sharc_harness.py is not being edited by anyone else here).
-h = import_module("sharc_harness")
+# the time; tools/sharc_dev/sharc_harness.py is not being edited by anyone else here).
+h = import_module("tools.sharc_dev.sharc_harness")
 
 ROOT = str(REPO_ROOT)
 DT2_116_BLOB = pathlib.Path(ROOT) / "out/sections/dt2-1.16/section_7_BLOB.bin"
@@ -440,7 +438,7 @@ class RunnerStepTest(unittest.TestCase):
     def test_diagnose_unknown_names_last_writer_pc(self):
         # A real prior write to ASTATX (a Type2a ALU "pass" whose source is
         # Unknown, forgetting every ALU_FLAGS_MASK bit including AZ -- see
-        # tools/sharc_core/flags.py's _astatx_alu_logical) followed by an
+        # tools/sharc_dev/sharc_core/flags.py's _astatx_alu_logical) followed by an
         # EQ-conditioned branch reading AZ: the fork's diagnosis should name
         # not just "ASTATX.AZ" but the earlier step's own pc_sw as the last
         # writer -- Runner(diagnose_unknown=True)'s self._last_writer,
@@ -847,13 +845,15 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
     """Runs the real init routine (FUN_1c15e3, ~1.24M instructions -- see
     docs/findings/06) to its return and checks that a snapshot saved there
     restores byte-for-byte into a fresh Runner. Slow (~15s): run with
-    --slow. Talks to sharc_run.py only (not tools/sharc_harness.py, edited
+    --slow. Talks to sharc_run.py only (not tools/sharc_dev/sharc_harness.py, edited
     by another lane concurrently), duplicating its _make_runner() options
     (explicit_memory_model/approx_recips) and the documented init address
     directly.
     """
 
-    INIT_SW = 0x1C15E3  # tools/sharc_symbols.py's REQUIRED_DT2 'init' FuncMatch
+    INIT_SW = (
+        0x1C15E3  # tools/sharc_dev/sharc_symbols.py's REQUIRED_DT2 'init' FuncMatch
+    )
 
     def test_snapshot_round_trip_matches_a_full_init_run(self):
         memory = sr._load_image_memory("dt2-1.16")
@@ -884,7 +884,7 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 SHARC loader is not available")
 class WatchpointFirmwareTest(unittest.TestCase):
     """Both watchpoint bugs this lane fixed, reproduced against the real
-    DT2 1.16 image via tools/sharc_harness.py's voice-record layout and
+    DT2 1.16 image via tools/sharc_dev/sharc_harness.py's voice-record layout and
     setup_voice()/call_render() -- sharc_run.py owns none of that record
     layout, and hand-duplicating its Q31/field pokes here would risk
     silently drifting from it. Neither test is slow: both run one bare-state

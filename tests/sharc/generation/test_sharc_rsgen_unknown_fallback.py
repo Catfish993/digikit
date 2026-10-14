@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,9 +12,8 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import sharc_rsgen as rg  # noqa: E402
+from tools.sharc_dev import sharc_rsgen as rg  # noqa: E402
 
 
 @pytest.mark.slow

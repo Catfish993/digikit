@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_diff.py, the Python/native differential test
+"""Tests for tools/sharc_dev/sharc_diff.py, the Python/native differential test
 harness.
 
 Three groups, the same convention tests/sharc/integration/test_sharc_replay.py uses:
@@ -19,17 +19,15 @@ Three groups, the same convention tests/sharc/integration/test_sharc_replay.py u
 
 import os
 import pathlib
-import sys
 import unittest
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
 
-import sharc_diff as sd  # noqa: E402
-import sharc_trace as st  # noqa: E402
+from tools.sharc_dev import sharc_diff as sd  # noqa: E402
+from tools.sharc_dev import sharc_trace as st  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
@@ -178,7 +176,7 @@ class ComputeCorpusTest(unittest.TestCase):
     def test_a_single_alu_case_is_deterministic_given_a_seed(self):
         import random
 
-        from sharc_core.compute_alu import ALU_OPS
+        from tools.sharc_dev.sharc_core.compute_alu import ALU_OPS
 
         opcode = sorted(ALU_OPS)[0]
         fields = sd._full_compute_fields(0, opcode, 1, 2, 3)
@@ -188,7 +186,7 @@ class ComputeCorpusTest(unittest.TestCase):
         self.assertIsNone(case_a.error)
 
     def test_short_compute_case_runs_via_form_2c(self):
-        from sharc_core.compute_multi import SHORT_OPS
+        from tools.sharc_dev.sharc_core.compute_multi import SHORT_OPS
 
         opcode = sorted(SHORT_OPS)[0]
         fields = sd._short_compute_fields(opcode, 1, 2)
@@ -238,8 +236,8 @@ class FrameLockstepTest(unittest.TestCase):
     primitives sharc_replay.replay()'s own frame loop uses."""
 
     def test_two_engines_agree_over_two_real_frames(self):
-        import sharc_harness as h
         from emu import sharc_capture
+        from tools.sharc_dev import sharc_harness as h
 
         image = "dt2-1.16"
         memory = h.load_image_memory(image)

@@ -10,7 +10,7 @@
 //!   audio queue.
 //!
 //! Both stamp records with one process clock ([`now_ns`]), so
-//! `tools/spikes.py` can join them.
+//! `tools/devtools/spikes.py` can join them.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};

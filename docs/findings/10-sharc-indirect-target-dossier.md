@@ -60,7 +60,7 @@ non-delayed branch directly to `0x1c65bd`; its preserved seeded context
 includes `R4=0x2412c8` and `R8=0x42700000`. The natural value of `M4` and the
 runtime dispatch choice remain **[O]**.
 
-The deterministic `tools/sharc_discover.py` composition harness checks the
+The deterministic `tools/sharc_dev/sharc_discover.py` composition harness checks the
 blob hash and final loader marker, applies final loader-memory provenance to
 non-fill pointer words, and expands the manifest's all-entry `M4=0..19`,
 `M13=0` hypothesis sweep directly from its in-memory dispatch/table join. It

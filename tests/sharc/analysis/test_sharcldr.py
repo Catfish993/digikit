@@ -1,20 +1,11 @@
-"""tools/sharcldr.py main_program() on a hand-built boot stream."""
+"""tools/sharc_dev/sharcldr.py main_program() on a hand-built boot stream."""
 
-import os
-import sys
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(
-    0,
-    os.path.join(str(REPO_ROOT), "tools"),
-)
-
 from support.sharc_encode import block  # noqa: E402
 
-sharcldr = import_module("sharcldr")
+sharcldr = import_module("tools.sharc_dev.sharcldr")
 
 
 class LoadedMemoryTest(unittest.TestCase):

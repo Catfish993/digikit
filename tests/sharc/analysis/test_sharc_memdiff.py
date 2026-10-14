@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_memdiff.py.
+"""Tests for tools/sharc_dev/sharc_memdiff.py.
 
 Same two-group convention as tests/sharc/integration/test_sharc_replay.py: the labelling/
 coalescing helpers are pure and always run; memdiff() itself needs the real
@@ -7,16 +7,12 @@ real capture file (out/captures/, also never committed), and is skipped
 without either.
 """
 
-import os
 import pathlib
-import sys
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_memdiff as md  # noqa: E402
+from tools.sharc_dev import sharc_memdiff as md  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 IDLE_CAPTURE = pathlib.Path("out/captures/dt2-1.16-idle.dt2cap")
@@ -27,18 +23,18 @@ class CanonTest(unittest.TestCase):
         self.assertEqual(md._canon(0x2412CC), 0x2412CC)
 
     def test_aliased_address_is_folded_down(self):
-        from sharcldr import SW_ALIAS_BASE
+        from tools.sharc_dev.sharcldr import SW_ALIAS_BASE
 
         self.assertEqual(md._canon(SW_ALIAS_BASE + 0x2412CC), 0x2412CC)
 
     def test_boundary_address_is_treated_as_aliased(self):
-        from sharcldr import SW_ALIAS_BASE
+        from tools.sharc_dev.sharcldr import SW_ALIAS_BASE
 
         self.assertEqual(md._canon(SW_ALIAS_BASE), 0)
 
 
 class RegionsTest(unittest.TestCase):
-    """build_regions() needs a resolved symbol Profile (tools/sharc_symbols.py),
+    """build_regions() needs a resolved symbol Profile (tools/sharc_dev/sharc_symbols.py),
     which in turn needs the real firmware bytes -- but the region *shape* for
     the parts this lane's brief gives as literal addresses (special voices,
     the guard arrays) does not depend on any symbol resolution, so those are
@@ -101,12 +97,12 @@ class MmrRenderTest(unittest.TestCase):
         self.assertIsNone(md._mmr_render(None))
 
     def test_const_renders_as_hex(self):
-        import sharc_trace as st
+        from tools.sharc_dev import sharc_trace as st
 
         self.assertEqual(md._mmr_render(st.Const(0x1234)), "0x1234")
 
     def test_unknown_renders_with_its_reason(self):
-        import sharc_trace as st
+        from tools.sharc_dev import sharc_trace as st
 
         self.assertEqual(
             md._mmr_render(st.Unknown("uninitialized")), "unknown:uninitialized"
@@ -142,7 +138,7 @@ class MemdiffSelfCompareTest(unittest.TestCase):
     difference -- both runners see byte-identical TX content at every
     frame, from the same deterministic post-init/post-setup start. This is
     a strong regression test for diff_states()'s own candidate-key
-    restriction (tools/sharc_memdiff.py's own module note: state.overlay is
+    restriction (tools/sharc_dev/sharc_memdiff.py's own module note: state.overlay is
     never scanned in full): if that restriction ever missed a real write,
     the two runners could drift apart even though their real inputs never
     did, but they never should here."""

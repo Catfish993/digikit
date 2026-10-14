@@ -2,7 +2,7 @@
 //! rendered live, one SHARC frame per 32 output samples.
 //!
 //! Three layers:
-//! - [`LivePack`]: the pack `tools/sharc_transpile_run.py live-pack` writes
+//! - [`LivePack`]: the pack `tools/sharc_dev/sharc_transpile_run.py live-pack` writes
 //!   (the image blob, the start state as SHRD, its options, the host
 //!   constants of a frame, the capture's frames, and a trailer naming the
 //!   voice records to read).
@@ -101,7 +101,7 @@ pub struct LivePack {
     /// state came from (trailer version 2; None in a version 1 pack or when
     /// the builder named no card).
     pub card: Option<String>,
-    /// SHA-256 (hex) of the tools/sharc_core sources the start state was
+    /// SHA-256 (hex) of the tools/sharc_dev/sharc_core sources the start state was
     /// built with (trailer version 3; None before). A library generated
     /// from other sources is refused (`check_library`).
     pub core: Option<String>,
@@ -233,7 +233,7 @@ impl LivePack {
     }
 
     /// Refuse a native library (its `sharc_native_info` JSON) generated
-    /// from other tools/sharc_core sources than the ones this pack's start
+    /// from other tools/sharc_dev/sharc_core sources than the ones this pack's start
     /// state was built with: it would run the old semantics. A pack before
     /// trailer version 3 carries no hash and is not checked.
     pub fn check_library(&self, info: &str) -> Result<(), String> {
@@ -245,9 +245,9 @@ impl LivePack {
             return Ok(());
         }
         Err(format!(
-            "stale native SHARC library: generated from tools/sharc_core {lib}, but live pack {} \
+            "stale native SHARC library: generated from tools/sharc_dev/sharc_core {lib}, but live pack {} \
              was built with {core}; regenerate and rebuild it (the command is in \
-             tools/sharc_transpile_run.py REGENERATE_HINT: tools/sharc_rsgen.py, then \
+             tools/sharc_dev/sharc_transpile_run.py REGENERATE_HINT: tools/sharc_dev/sharc_rsgen.py, then \
              cargo build --release --manifest-path native/sharc/Cargo.toml with SHARC_GEN_DIR)",
             self.key
         ))
@@ -365,7 +365,7 @@ impl<C: SharcCore> SharcRenderer<C> {
         let reason = String::from_utf8_lossy(&self.halt_buf[..n]);
         if reason.starts_with("native-trap: unmodeled MMR") {
             // UREG I0 = 16, I2 = 18, M1 = 33, M5 = 37
-            // (tools/sharc_core/encoding.py). I0 is last defined by
+            // (tools/sharc_dev/sharc_core/encoding.py). I0 is last defined by
             // `I0 = modify(I2, M1)` before the observed 0x1c1cd7 stop.
             // These are post-trap registers, not a claim about the address:
             // the instruction may have already modified I0 when it trapped.

@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from tools import wiretrace
+from tools.emulator import wiretrace
 
 
 def make_trace(*frames: bytes) -> bytes:

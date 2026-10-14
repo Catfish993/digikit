@@ -5,7 +5,7 @@ program in the Elektron Digitakt II and Digitone II firmware updates. Written to
 be portable into another repository.
 
 Imported from Em's sharc-spec work on 2026-09-15. Script paths below are
-relative to `tools/sharcspec/`. The firmware extracts (`fw/out/`), analysis
+relative to `tools/sharc_dev/sharcspec/`. The firmware extracts (`fw/out/`), analysis
 dumps and Ghidra projects were not imported. The firmware analysed here is
 Digitakt II OS 1.16 and Digitone II OS 1.11.
 
@@ -30,7 +30,7 @@ reimplemented independently.
 
 > Note: the SHARC processor module inside the local Ghidra install is NOT stock
 > Ghidra (stock Ghidra has no SHARC). It is prior art generated from this
-> repo's `tools/sharc_visa_tables.py` (`tools/ghidra/SHARC/`). It was deliberately not used as a source; a clean Ghidra
+> repo's `tools/sharc_dev/sharc_visa_tables.py` (`tools/coldfire/ghidra/SHARC/`). It was deliberately not used as a source; a clean Ghidra
 > module would be generated from `decode_table.json` instead.
 
 ---
@@ -280,7 +280,7 @@ here; the firmware is the arbiter.
 
 ### 3.8 The same rule over the rest of the table
 
-- `tools/sharcspec/audit_bits.py` lists, per form, the bits the PRM figure
+- `tools/sharc_dev/sharcspec/audit_bits.py` lists, per form, the bits the PRM figure
   prints that the table does not fix. Ranked by how many: Type22a 38,
   Type26a 32, Type20a 28, Type3d and Type4d 16, Type2a 12, Type13a 11,
   Type11a 9.
@@ -452,7 +452,7 @@ against PGR ch.12:
 
 ---
 
-## 6b. File manifest (`tools/sharcspec/`)
+## 6b. File manifest (`tools/sharc_dev/sharcspec/`)
 
 Encoding pipeline:
 - `extract_figures.py` → `figures.json` (PRM figures, by geometry)
@@ -466,7 +466,7 @@ Encoding pipeline:
 Firmware pipeline, as imported into this repo:
 - `.syx` → container: `dt2/container.py`
 - section depack: `dt2/elz.py` (was `fw/elz.py`; used by `emu/extract.py`)
-- boot stream walk: `tools/sharcldr.py` (in place of `fw/bootstream.py`)
+- boot stream walk: `tools/sharc_dev/sharcldr.py` (in place of `fw/bootstream.py`)
 - `fw/validate.py` (linear sweep and recursive trace over a program region)
 
 ## 7. Firmware structure (Digitakt II OS 1.16, from Ghidra analysis)

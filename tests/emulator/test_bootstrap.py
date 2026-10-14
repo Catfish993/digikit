@@ -1,4 +1,4 @@
-"""The real Digitakt II bootstrap on the native ColdFire core (tools/bootstrap_run.py, native/bootstrap).
+"""The real Digitakt II bootstrap on the native ColdFire core (tools/emulator/bootstrap_run.py, native/bootstrap).
 
 Each test runs unmodified bootstrap code with a modelled flash, panel and MIDI UART. They need the Digitakt II 1.16
 firmware in the repo root and a cargo toolchain (the first call builds native/bootstrap, no generated core).
@@ -15,10 +15,8 @@ pytestmark = pytest.mark.skipif(
     not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in the repo root"
 )
 
-import sys  # noqa: E402
 
-sys.path.insert(0, str(ROOT / "tools"))
-import bootstrap_run as br  # noqa: E402
+from tools.emulator import bootstrap_run as br  # noqa: E402
 
 
 @pytest.fixture(scope="module")

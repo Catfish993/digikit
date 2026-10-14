@@ -1,16 +1,12 @@
-"""tools/entryhist.py on a hand-made function list."""
+"""tools/coldfire/entryhist.py on a hand-made function list."""
 
 import json
 import os
-import sys
 import tempfile
 import unittest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import entryhist  # noqa: E402
+from tools.coldfire import entryhist  # noqa: E402
 
 BASE = 0x40000400
 # (entry, end): two entries in bucket 0, one in bucket 1, none in 2-3, one in 4.

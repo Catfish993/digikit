@@ -1,5 +1,5 @@
 """core/machines (Digitakt II) as a module: the ColdFire routines against a model of the Rust generator's behaviour
-(native/patchkit/src/machines.rs), on the native core with hand-built tables (tools/pk_cfunit.py).
+(native/patchkit/src/machines.rs), on the native core with hand-built tables (tools/patchkit/pk_cfunit.py).
 
 Skips when the m68k toolchain or the DT2 1.17 image is absent."""
 
@@ -9,10 +9,11 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_cfunit  # noqa: E402
-import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_cfunit,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 SYX = ROOT / "Digitakt_II_OS1.17.syx"
 SRC = ROOT / "modules" / "core" / "machines" / "src" / "cf" / "dt2" / "machines.s"
@@ -397,7 +398,7 @@ def test_stock_table_copies_append_the_clones_row():
     DSP selector word."""
     import tomllib
 
-    from pk_expr import evaluate
+    from tools.patchkit.pk_expr import evaluate
 
     m = tomllib.loads(
         (ROOT / "modules" / "core" / "machines" / "module.toml").read_text()

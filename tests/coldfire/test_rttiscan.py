@@ -1,15 +1,10 @@
-"""tools/rttiscan.py on a hand-built image with two classes."""
+"""tools/coldfire/rttiscan.py on a hand-built image with two classes."""
 
-import os
 import struct
-import sys
 import unittest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import rttiscan  # noqa: E402
+from tools.coldfire import rttiscan  # noqa: E402
 
 BASE = 0x1000
 CODE = [(0x1000, 0x1100)]

@@ -5,11 +5,11 @@ app's `--scenario` mode and the browser parity check). One file per device:
 
 - `dn2.json` is embedded into `coupled-run` as its default set.
 - `dt2.json` is passed with `--scenarios` (done for you by `--device dt2`).
-- `dt2-trackfx.json` and `dt2-sendfx.json` are DT2 FX sweeps (generator `tools/gen_dt2fx.py`).
+- `dt2-trackfx.json` and `dt2-sendfx.json` are DT2 FX sweeps (generator `tools/emulator/gen_dt2fx.py`).
   They need the one-sample card: `coupled.py scenario --device dt2 --dt2-card
   --scenarios scenarios/dt2-trackfx.json --all` (or `DIGI_DT2_CARD=1`), and a peek of
-  the Sound and Fx arrays (finding 18, "DT2 FX scenarios"). `tools/dt2fx.py render|check|tiers`
-  renders both files with the peeks, prints the `tools/fxcheck.py` tables and compares the
+  the Sound and Fx arrays (finding 18, "DT2 FX scenarios"). `tools/emulator/dt2fx.py render|check|tiers`
+  renders both files with the peeks, prints the `tools/emulator/fxcheck.py` tables and compares the
   PCM hashes of two renders; the oracle tests are `mise run scenarios:dt2`.
 
 ## Format
@@ -42,7 +42,7 @@ app's `--scenario` mode and the browser parity check). One file per device:
 ```
 mise run scenarios                      # every DN2 scenario, exit 1/2 on a bad pin
 mise run scenario trig1-taps [--wav]    # named scenarios
-uv run python tools/coupled.py scenario --all --device dt2
+uv run python -m tools.emulator.coupled scenario --all --device dt2
 mise run scenario:replay FILE           # a desktop "Export diagnostics" file
 mise run scenario:bisect NAME           # which DSP tier changes the PCM
 ```
@@ -93,7 +93,7 @@ inputs, the generated core or the MAIN OS image are missing.
 Every scenario restores the ready snapshot, so nothing is shared. The session
 fixture `emulator` builds `coupled-run` once. The fixture `render(name, ...)`
 returns `Rendered` objects (rate, `x`, report entry, decoded read-back, the
-`tools/fxcheck.py` row) and renders all scenarios that the selected tests
+`tools/emulator/fxcheck.py` row) and renders all scenarios that the selected tests
 declare with `@pytest.mark.scn(...)` in one `coupled-run` process per scenario
 file, together with their dry references (`fxcheck.reference_for`).
 
@@ -115,8 +115,8 @@ under `dn2`. `verify.py --full --dt2` also checks that every DT2 FX scenario giv
 PCM with and without AOT (about 40 min).
 
 Add a test: put the scenario in `scenarios/dn2-*.json` (generators in
-`tools/gen_*.py`), add its name to the fast or sweep list in
+`tools/emulator/gen_*.py`), add its name to the fast or sweep list in
 `tests/scenarios/test_dn2_fx.py` (`params(...)`, `series(...)`, or a
 `@pytest.mark.scn(name)` on the test), and assert on `render(name).row`
-(a measure from `tools/fxcheck.py`; add new measures there, not in the test).
+(a measure from `tools/emulator/fxcheck.py`; add new measures there, not in the test).
 A known-bad case gets `xfail(strict=True)`.

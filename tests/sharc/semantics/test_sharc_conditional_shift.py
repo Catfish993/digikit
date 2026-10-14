@@ -1,15 +1,12 @@
 """Bounded SISD conditional Type6a shift-plus-memory and Type6b shift coverage."""
 
-import sys
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_trace as st
-from sharc_disasm import Instruction
-from sharcldr import LoadedMemory
+from tools.sharc_dev import sharc_trace as st
+from tools.sharc_dev.sharc_disasm import Instruction
+from tools.sharc_dev.sharcldr import LoadedMemory
 
 
 def synthetic_fields(*, store=True):
@@ -142,8 +139,8 @@ def test_fresh_dn2_decimal_fields_take_the_known_eq_sisd_path():
 def test_native_conditional_shift_matches_reference(az, fields):
     import os
 
-    import sharc_diff as sd
-    import sharc_transpile_run as nr
+    from tools.sharc_dev import sharc_diff as sd
+    from tools.sharc_dev import sharc_transpile_run as nr
 
     library = os.environ.get("SHARC_NATIVE_LIB", nr.DEFAULT_LIB)
     if not Path(library).exists():

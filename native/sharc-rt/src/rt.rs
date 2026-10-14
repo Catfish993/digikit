@@ -1,7 +1,7 @@
 //! The hand-written runtime under the transpiled SHARC+ core.
 //!
-//! `tools/sharc_transpile.py` translates `tools/sharc_core` into Rust that
-//! calls this module for the boundary `tools/sharc_core/SUBSET.md` declares:
+//! `tools/sharc_dev/sharc_transpile.py` translates `tools/sharc_dev/sharc_core` into Rust that
+//! calls this module for the boundary `tools/sharc_dev/sharc_core/SUBSET.md` declares:
 //! the value lattice (`values.py`), the register and accumulator access in
 //! `state.py`, the byte store under `memory.py` (loader image plus write
 //! overlay), and the float primitives in `floats.py`. Each function in
@@ -20,7 +20,7 @@ pub type Sym = u16;
 pub type FnId = u16;
 pub type TblId = u16;
 
-/// Interned strings the runtime itself needs. `tools/sharc_transpile.py`
+/// Interned strings the runtime itself needs. `tools/sharc_dev/sharc_transpile.py`
 /// interns these first, in this order.
 pub const S_EMPTY: Sym = 0;
 pub const SYM_DYN: Sym = 1;
@@ -318,7 +318,7 @@ pub struct Pending {
 /// state.Loop: a hardware DO loop stack entry.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Loop {
-    // i64, not Int: 32-bit machine values (tools/sharc_transpile.py
+    // i64, not Int: 32-bit machine values (tools/sharc_dev/sharc_transpile.py
     // NARROW_FIELDS converts at every access).
     pub start_sw: i64,
     pub end_sw: i64,
@@ -813,7 +813,7 @@ pub struct Cfg {
     /// provisional_forms.
     pub provisional_forms: Vec<Sym>,
     /// The configuration is the one block code was generated for
-    /// (tools/sharc_transpile.py GEN_CFG_DEFAULT); block code runs only then.
+    /// (tools/sharc_dev/sharc_transpile.py GEN_CFG_DEFAULT); block code runs only then.
     pub block_ok: bool,
     /// The configuration is block code's apart from the opt-in models
     /// (bank, stack, core timer, peripheral): the Engine may then run blocks
@@ -1554,7 +1554,7 @@ impl RegView {
     pub const PEY: u8 = 2;
 }
 
-/// Block code's register file (tools/sharc_rsgen.py). A block loads the
+/// Block code's register file (tools/sharc_dev/sharc_rsgen.py). A block loads the
 /// registers it uses from `St` at entry and writes back the ones it wrote
 /// at every exit; in between they live here, a local every access of
 /// which has a constant index, so LLVM keeps them in host registers. `o`

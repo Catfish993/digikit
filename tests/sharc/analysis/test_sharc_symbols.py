@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_symbols.py, the SHARC+ program-address resolver.
+"""Tests for tools/sharc_dev/sharc_symbols.py, the SHARC+ program-address resolver.
 
 Two kinds of test here:
 
@@ -13,18 +13,17 @@ Two kinds of test here:
 """
 
 import os
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-import sharc  # noqa: E402
-import sharc_symbols  # noqa: E402
+from tools.sharc_dev import (  # noqa: E402
+    sharc,  # noqa: E402
+    sharc_symbols,  # noqa: E402
+)
 
 DB_DIR = os.path.join(ROOT, "out", "sharcdb")
 IMAGE_NAMES = ["dt2-1.16", "dn2-1.11", "dt2-1.15C", "dn2-1.10E"]
@@ -51,7 +50,7 @@ def images():
 
 
 class _FakeRef:
-    """Enough of tools/sharc.py's Image to drive FuncMatch.resolve() in
+    """Enough of tools/sharc_dev/sharc.py's Image to drive FuncMatch.resolve() in
     isolation: `.name` plus a canned `.match()` result."""
 
     def __init__(self, name, matches):
@@ -63,7 +62,7 @@ class _FakeRef:
 
 
 class _FakeImg:
-    """Enough of tools/sharc.py's Image to drive the sql()-based rules in
+    """Enough of tools/sharc_dev/sharc.py's Image to drive the sql()-based rules in
     isolation: `.name` plus a callback deciding what `.sql()` returns."""
 
     def __init__(self, name, sql_fn):
@@ -146,7 +145,7 @@ def test_literalat_checks_the_expected_form():
 
 
 def test_literalat_masks_a_sign_extended_value_to_unsigned_32_bit():
-    # tools/sharcdb.py's extract_literal sign-extends; float_table_a
+    # tools/sharc_dev/sharcdb.py's extract_literal sign-extends; float_table_a
     # (0x8045a6c8) reads back negative from a signed column.
     tgt = _FakeImg("x", lambda q, a: [(0x8045A6C8 - (1 << 32), "17a")])
     value, detail = sharc_symbols.LiteralAt("base", 4, form="17a").resolve(
@@ -214,7 +213,7 @@ def test_device_of_recognizes_both_products():
 
 # Known-good DT2 1.16 addresses (docs/findings/06-sharc-engine-and-startup.md
 # and docs/findings/11-sharc-cross-image-comparison.md), cross-checked
-# against out/sharcdb/dt2-1.16.sqlite while tools/sharc_symbols.py's table
+# against out/sharcdb/dt2-1.16.sqlite while tools/sharc_dev/sharc_symbols.py's table
 # was built. Kept in lockstep with SYMBOLS by test_every_symbol_is_checked.
 KNOWN_DT2_116 = {
     "audio_task_fn": 0x1C75D8,

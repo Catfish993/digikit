@@ -5,7 +5,7 @@ repository.workspace = true
 version = "0.0.1"
 edition = "2024"
 publish = false
-description = "ColdFire V4e core (ISA_C, EMAC): decoder generated from tools/cfisa/coldfire.json, hand-written semantics"
+description = "ColdFire V4e core (ISA_C, EMAC): decoder generated from tools/coldfire/cfisa/coldfire.json, hand-written semantics"
 
 # std only: no crate dependencies. The library does no I/O and starts no
 # threads, so it can build for wasm32 later.

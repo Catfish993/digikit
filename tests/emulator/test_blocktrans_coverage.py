@@ -1,15 +1,6 @@
 """blocktrans_coverage: log parsing, reason families and ranking (no emulator)."""
 
-import importlib.util
-import sys
-
-from support.paths import REPO_ROOT
-
-TOOL = REPO_ROOT / "tools" / "blocktrans_coverage.py"
-_spec = importlib.util.spec_from_file_location("blocktrans_coverage", TOOL)
-bc = importlib.util.module_from_spec(_spec)
-sys.modules["blocktrans_coverage"] = bc
-_spec.loader.exec_module(bc)
+import tools.sharc_dev.blocktrans_coverage as bc
 
 LOG = """\
 fast: noise line

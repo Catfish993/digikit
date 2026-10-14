@@ -1,7 +1,7 @@
 //! The DSP boot stream (firmware section 7, an ADI boot stream) as loaded
 //! memory, and the difference between two of them as a DSP patch.
 //!
-//! This is the Rust side of `tools/sharcldr.py` (`parse_blocks`,
+//! This is the Rust side of `tools/sharc_dev/sharcldr.py` (`parse_blocks`,
 //! `LoadedMemory`): 16-byte little-endian headers (block code, target
 //! address, byte count, argument) with a zero XOR over the 16 bytes and a core
 //! signature in the top byte; a FILL block (bit 8) has no payload and repeats

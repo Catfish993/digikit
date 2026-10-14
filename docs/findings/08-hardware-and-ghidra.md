@@ -25,9 +25,9 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
   in this file, that Ghidra stops at every EMAC word, was wrong. **[V][C]**
 - The image has 96 `movclr` words (Digitakt II 1.15C) and 112 (Digitone II
   1.11), mostly in accumulator saves at handler entry. **[D]**
-- `tools/ghidra/ColdfireEMAC/` is a separate language,
+- `tools/coldfire/ghidra/ColdfireEMAC/` is a separate language,
   `68000:BE:32:ColdfireEMAC`, with those instructions fixed; see its
-  README and `tools/ghidra/install-coldfire-emac.sh`. Imported with it
+  README and `tools/coldfire/ghidra/install-coldfire-emac.sh`. Imported with it
   (`~/ghidra-projects/dt2-emac`, 98 s), `FUN_4002d652` is a 5796-byte
   function whose decompile shows
   `FUN_400cf9c4(0x802,&DAT_80005348,0xabc,0x8000488c)`. `FUN_400cf9c4`
@@ -54,8 +54,8 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
 
 ## Names from RTTI and code seeds in the EMAC Ghidra project **[V][D]**
 
-- `tools/codeseeds.py` finds 31016 `jsr`/`bsr` calls to 5685 targets in
-  the code ranges and 22 vector-table writes. `tools/rttiscan.py` finds
+- `tools/coldfire/codeseeds.py` finds 31016 `jsr`/`bsr` calls to 5685 targets in
+  the code ranges and 22 vector-table writes. `tools/coldfire/rttiscan.py` finds
   1052 typeinfo objects (class 122, si_class 728, vmi_class 125, pointer
   50, fundamental 23, function 4), 1883 vtables with 12349 slots, 4802
   instructions that load a vtable, and 47 `Class::method` strings, 41 of
@@ -63,10 +63,10 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
   `out/symbols/`. **[V]**
 - Ghidra's own `RecoverClassesFromRTTIScript` refuses the program until its
   compiler is set to gcc, and then recovers no classes. **[D]**
-- `tools/ghidraapply.py seeds --analyze` on `~/ghidra-projects/dt2-emac`
+- `tools/coldfire/ghidraapply.py seeds --analyze` on `~/ghidra-projects/dt2-emac`
   created 32 functions, rolled back 34 (an Error bookmark or no function),
   skipped 466 targets inside data, and named 19 interrupt handlers
-  `vector_<n>_handler`. `tools/ghidraapply.py rtti` created 3677 functions
+  `vector_<n>_handler`. `tools/coldfire/ghidraapply.py rtti` created 3677 functions
   from vtable slots and renamed 6811: 5774 `Class::vfunc_N`, 1016
   `Class::ctor_dtor`, and 21 from `Class::method` strings, such as
   `Project::updateMirror` and the other seven `updateMirror` methods. 152
@@ -91,18 +91,18 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
   `out/sections/dn2-1.11/` and `out/sections/dn2-1.10E/`. **[V]**
 - `~/ghidra-projects/elektron-emac` holds two programs.
   `/dt2-1.15C/section_3_MAIN_OS.bin` is a copy of the `dt2-emac` program made
-  by `tools/ghidracopy.py`; a dump of the copy matches
+  by `tools/coldfire/ghidracopy.py`; a dump of the copy matches
   `out/ghidra/dt2-1.15C-emac/` in every count and in each function's entry,
   name, size, body, signature, callers and callees.
   `/dt2-1.16/section_3_MAIN_OS.bin` is a ColdfireEMAC import
-  (`GHIDRA_FOLDER=dt2-1.16 tools/ghidra.sh import`, 115 s), and
+  (`GHIDRA_FOLDER=dt2-1.16 tools/coldfire/ghidra.sh import`, 115 s), and
   `McfLabels.java` added 87 labels and 19 blocks to it. `dt2-emac` stays the
   1.15C project. **[V]**
 - A headless `-postScript` cannot pack the program it processes:
   `saveToPackedFile` fails with "Unable to lock due to active transaction",
   and the analyzer then saves the program anyway. That happened once to
   `dt2-emac`; a dump made afterwards matched the 2026-09-14 dump exactly.
-  `tools/ghidracopy.py` packs the stored file and never opens the program. **[V]**
+  `tools/coldfire/ghidracopy.py` packs the stored file and never opens the program. **[V]**
 - The image has the 1.15C layout, moved. Main code ends with an `rts` at
   `0x401e97a8` (1.15C `0x401d6108`), and the next `0x400` bytes are a
   numeric table with no `rts` or `link` word. The typeinfos and vtables start
@@ -110,21 +110,21 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
   `0x4030ccfc` equal those from `0x402f4c4c` in 1.15C, a shift of `+0x180b0`;
   they hold the 60 functions at `0x4030cd04-0x4030f89e`. The last byte that
   is neither `0x00` nor `0xff` is at `0x403117c3` (1.15C `0x402f9c13`). **[V]**
-- `tools/entryhist.py` over a dump made before the seeds gives the code
+- `tools/coldfire/entryhist.py` over a dump made before the seeds gives the code
   ranges `0x40000400-0x401f0400` and `0x40300400-0x40310400`: 10915
   functions, none in between. On the 1.15C dump it gives
   `0x40000400-0x401e0400` and `0x402f0400-0x40300400`. The 1.15C defaults in
-  `tools/codeseeds.py` are wider, and their `0x402c0400-0x402f4400` holds no
+  `tools/coldfire/codeseeds.py` are wider, and their `0x402c0400-0x402f4400` holds no
   `rts` or `link` word. **[V]**
 - Before the seeds, the 1.16 program has 10915 functions and 40 Error
-  bookmarks. With the ranges above, `tools/codeseeds.py` finds 31726 calls to
-  5345 targets and 22 vector-table writes, and `tools/rttiscan.py` finds 1066
+  bookmarks. With the ranges above, `tools/coldfire/codeseeds.py` finds 31726 calls to
+  5345 targets and 22 vector-table writes, and `tools/coldfire/rttiscan.py` finds 1066
   typeinfo objects (class 122, si_class 738, vmi_class 129, pointer 50,
   fundamental 23, function 4), 1933 vtables, 4852 vtable loads, and 47
   `Class::method` strings, 41 of them loaded by code. **[V]**
-- `tools/ghidraapply.py seeds --analyze` created 32 functions, rolled back 7,
+- `tools/coldfire/ghidraapply.py seeds --analyze` created 32 functions, rolled back 7,
   skipped 56 targets inside data, and named 19 interrupt handlers (1.15C,
-  with its wider ranges: 32, 34, 466, 19). `tools/ghidraapply.py rtti` created
+  with its wider ranges: 32, 34, 466, 19). `tools/coldfire/ghidraapply.py rtti` created
   3773 functions and renamed 6970: 5918 `Class::vfunc_N`, 1032
   `Class::ctor_dtor`, and 20 from `Class::method` strings, among them all
   eight `updateMirror` methods. 153 slot functions shared by several classes
@@ -142,7 +142,7 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
 
 ## Version Tracking carries 1.15C addresses to 1.16 **[V][D][O]**
 
-- `tools/ghidravt.py run` runs Ghidra's AutoVersionTrackingTask from
+- `tools/coldfire/ghidravt.py run` runs Ghidra's AutoVersionTrackingTask from
   pyghidra with the options of `AutoVersionTrackingScript.java` and a 32 GB
   heap, and exports the matches. The headless script, with its 2 GB heap, ran
   out of memory after 30 minutes in the duplicate function correlator on
@@ -164,7 +164,7 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
 
   **[V]** All three runs end "with some apply markup errors", and the task
   logs nothing more about them in headless mode. **[D]**
-- `tools/vtcheck.py` checks the associations against the images and against
+- `tools/coldfire/vtcheck.py` checks the associations against the images and against
   dumps made before Version Tracking. For 1.15C -> 1.16, 2365 function bodies
   are byte-identical, 7332 differ at the same size, and 81 changed size. Ten
   sampled same-size pairs differ only in addresses and in branch targets that
@@ -253,10 +253,10 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   parameter values (`tf-br-22` reads 37, `tf-over-127` reads 97). The RAM and SRAM addresses of the
   peeks did not move (below), so this is a behaviour change or a different UI state at the ready
   point, not a stale address. **[D][O]**
-- **Matcher.** `tools/cffacts.py` hashes the instruction stream of each function with the repo's
+- **Matcher.** `tools/coldfire/cffacts.py` hashes the instruction stream of each function with the repo's
   ColdFire decoder (`cfdis --ranges`): strict (relink-moved addresses and branch targets masked),
-  loose (all numbers masked), mnemonics only. `tools/cfdb.py` stores them (`func_hash`, DB_VERSION
-  2, plus RTTI `typeinfos` / `vtables`). `tools/cfmatch.py` pairs unique hashes, then strings, then
+  loose (all numbers masked), mnemonics only. `tools/coldfire/cfdb.py` stores them (`func_hash`, DB_VERSION
+  2, plus RTTI `typeinfos` / `vtables`). `tools/coldfire/cfmatch.py` pairs unique hashes, then strings, then
   vtable slots, call-graph neighbours and address-order gaps, repeating until nothing changes.
   It runs in about 8 s; Version Tracking took 1092 s with a 32 GB heap.
 
@@ -278,22 +278,22 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   of 67 on 1.11 -> 1.12, none wrong, the rest unmapped (fixed RTOS addresses outside any function,
   two char* tables, one address inside a rewritten function); on 1.15C -> 1.16 one is wrong
   (`transport`, which `emu/symbols.py` itself says is unverified). (c) the 86 addresses of
-  `tools/cf_names.py`: 85 carry to 1.17 (`tools/cf_names_dt2_1_17.py`, generated, all [D]); 45 moved,
+  `tools/coldfire/cf_names.py`: 85 carry to 1.17 (`tools/coldfire/cf_names_dt2_1_17.py`, generated, all [D]); 45 moved,
   40 did not. SRAM (`0x8000xxxx`) and the heap-side globals (`0x43...`, `0x44...`, `0x47...`,
   `0x405b...`) are at the same address in 1.17; only data inside the image moved.
   `machine_display_name_table` is not carried (no instruction refers to it by a literal). **[D]**
-- Pipeline for a new firmware, all serial in one JVM: `tools/ghidra.sh import` (the program in its
-  own folder of `elektron-emac`), `tools/entryhist.py` on a `--limit 1` dump for the code ranges,
+- Pipeline for a new firmware, all serial in one JVM: `tools/coldfire/ghidra.sh import` (the program in its
+  own folder of `elektron-emac`), `tools/coldfire/entryhist.py` on a `--limit 1` dump for the code ranges,
   `codeseeds.py` / `rttiscan.py`, `ghidraapply.py seeds --analyze` and `rtti`, `ghidradump.py --rtti`,
   `cfdb.py build`. 1.17: 10921 functions after import, 11098 after seeds, 14877 after RTTI; 1.12:
   10261 -> 14155. The matcher needs the dump only for function boundaries; the names it ports
   (`cfmatch.py port`) go into the `ported` table of the destination cfdb. `pyghidra` is not in the
   venv: run the dump and apply tools with `uv run --with <ghidra>/Ghidra/Features/PyGhidra/pypkg/dist/pyghidra-3.1.0-py3-none-any.whl
-  --with .../jpype1-1.5.2-cp312-cp312-macosx_10_9_universal2.whl python tools/ghidradump.py ...`. **[D]**
+  --with .../jpype1-1.5.2-cp312-cp312-macosx_10_9_universal2.whl python -m tools.coldfire.ghidradump ...`. **[D]**
 - **[C] The 36 DT2 FX oracle failures are not a 1.17 change** (lane fastweb, 2026-10-13). DT2 1.16 fails the
   same 36 tests when its ready state is rebuilt today, and for 1.16 and 1.17 all 60 FX scenarios give identical
-  decoded Sound/Fx read-backs and identical PCM hashes on the same recipe (`tools/dt2fx_compare.py`). **[V]**
-  The cause is the ready state. The oracle intents (encoder-turn counts, `UPS` in `tools/gen_dt2fx.py`) were
+  decoded Sound/Fx read-backs and identical PCM hashes on the same recipe (`tools/emulator/dt2fx_compare.py`). **[V]**
+  The cause is the ready state. The oracle intents (encoder-turn counts, `UPS` in `tools/emulator/gen_dt2fx.py`) were
   calibrated on a DT2 ready snapshot booted before software-forced INTC delivery became the default
   (b8d45a7, 2026-10-13 07:27). A snapshot booted with it on has a different CPU phase at ready; the encoder
   acceleration depends on the phase (ladder for `lad-N`, Bit Reduction after N events of +4, N = 12, 14, ...
@@ -305,13 +305,13 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   and 272,149,997 guest instructions, a fresh one gives 37 and 271,899,997. A DT2 ready state booted with
   `DIGI_INTC_FORCE=0` and run with the default (forced delivery on) passes all 146 tests of
   `test_dt2_fx.py --device dt2 --slow --sweep` on 1.16 and on 1.17. **[V]**
-  Fix: `tools/ready.py` boots ready states with `DIGI_INTC_FORCE=0` (recorded as `intc_force: false` in
+  Fix: `tools/emulator/ready.py` boots ready states with `DIGI_INTC_FORCE=0` (recorded as `intc_force: false` in
   SOURCE.json). The DN2 1.12 ready state built that way also keeps all four pins of 1.11
   (`exactness-100m 826db0d1`, `trig1-noqa-40m d56d8f4b`, `trig1-taps 8b26c70c`, `trig1-tap-release f4f6d19f`), so
   the "3 of 4 pins" above had the same cause. **[V]** Existing ready directories built before the fix
   (`snapshots/dt2-117-ready`, `dn2-112-ready`, the 1.16 `by-card/*-278541e4`) must be rebuilt
-  (`tools/ready.py ... --force`) to pass; a rebuilt 1.17 DT2 set is in `out/ready-fix-117`. No oracle or pin was
-  changed. `tools/dt2_sample_check.py` takes `DIGI_DT2_CARD` to pin a card image. The mislabelled
+  (`tools/emulator/ready.py ... --force`) to pass; a rebuilt 1.17 DT2 set is in `out/ready-fix-117`. No oracle or pin was
+  changed. `tools/emulator/dt2_sample_check.py` takes `DIGI_DT2_CARD` to pin a card image. The mislabelled
   `by-card/1c1fed346ea9/SOURCE.json` (says 1.17, holds the 1.16 Oct-8 snapshot) comes from `ready.py` rewriting
   SOURCE.json when it reuses an existing snapshot. **[D]**
 - **`dt2-sample-trig-noqa` had an empty PCM hash** on a ready state booted without forced delivery and run with
@@ -469,7 +469,7 @@ stack at 0x48000000 would wrap) **[V]**:
 
 Addresses `0x48000000-0x4fffffff` are an uncached alias of the same DDR (ACR0
 does not cover them); the firmware's DMA buffers are reached through it (see
-01, "RAM map"). `tools/ddr_geometry.py` now uses 16 as the maximum row bits and
+01, "RAM map"). `tools/coldfire/ddr_geometry.py` now uses 16 as the maximum row bits and
 prints 128 MiB for both devices. A second check would read the DDR_CR15 field
 width off the MCF5441x part's own register table, or find a write above
 `0x44000000` that a 64 MiB part would alias onto the image.
@@ -508,7 +508,7 @@ created, so it gets no decompilation and does not appear in `decomp/` at all --
 a blind spot that is silent rather than noisy, because a `rg` over the dump
 returns nothing and looks like a clean negative. Two hours were lost to this on
 2026-09-16 before the dispatcher at `0x40042fe2` was found by
-`tools/refscan.py`.
+`tools/coldfire/refscan.py`.
 
 Measured on Digitakt II 1.16, MAIN OS sha-256 `57bb4dfa…`:
 
@@ -530,7 +530,7 @@ Measured on Digitakt II 1.16, MAIN OS sha-256 `57bb4dfa…`:
   in-code gaps, none look like data and at least eleven open with a prologue.
 
 - **Ghidra's own analyzers recover none of them.** On a copy, with
-  `tools/ghidraopts.py`, `Function Start Search` was already on;
+  `tools/coldfire/ghidraopts.py`, `Function Start Search` was already on;
   `Function Start Search.Search Data Blocks` and `Aggressive Instruction
   Finder` were off. Turning both on and re-analysing: functions 14,743 ->
   14,743, and the two entry sets are identical in both directions. Code
@@ -539,21 +539,21 @@ Measured on Digitakt II 1.16, MAIN OS sha-256 `57bb4dfa…`:
 
 ### Seeding them from the pointers **[V]**
 
-`tools/codeseeds.py` gained a third candidate kind, `pointers`: an address
+`tools/coldfire/codeseeds.py` gained a third candidate kind, `pointers`: an address
 taken as an immediate (`#$X` in any instruction) or by `pea $X.l`, which lands
 in a code range on a function prologue -- `lea -N(a7),a7` (`0x4fef` with a
 negative displacement), `link.w aN,#-d` (`0x4e50`-`0x4e57`), or a `movem.l`
-save (`0x48e7`, `0x48d7`). `tools/ghidraapply.py seeds` applies them through
+save (`0x48e7`, `0x48d7`). `tools/coldfire/ghidraapply.py seeds` applies them through
 the same `ensure_function` guards as the call targets, which skip a target
 inside defined data or mid-instruction and roll the edit back if it raises an
 Error bookmark.
 
 ```
-uv run python tools/codeseeds.py out/sections/dt2-1.16/section_3_MAIN_OS.bin \
+uv run python -m tools.coldfire.codeseeds out/sections/dt2-1.16/section_3_MAIN_OS.bin \
   --base 0x40000400 \
   --code 0x40000400 0x401e97a8 --code 0x4030cd04 0x4030f89d \
   --json out/symbols/dt2-1.16-seeds.json
-uv run python tools/ghidraapply.py seeds out/symbols/dt2-1.16-seeds.json \
+uv run python -m tools.coldfire.ghidraapply seeds out/symbols/dt2-1.16-seeds.json \
   --project ~/ghidra-projects/elektron-emac --project-name elektron-emac \
   --program /dt2-1.16-seeded/section_3_MAIN_OS.bin --analyze
 ```
@@ -593,20 +593,20 @@ patterns above do not match. **[O]**
 ## A queryable ColdFire database and a snapshot reader **[D]**
 
 2026-09-28. Two read-only helpers, the ColdFire counterparts of
-`tools/sharcdb.py`/`tools/sharc.py` (usage in CLAUDE.md):
+`tools/sharc_dev/sharcdb.py`/`tools/sharc_dev/sharc.py` (usage in CLAUDE.md):
 
-- `tools/cfdb.py build out/ghidra/dt2-1.16-emac` imports a
-  `tools/ghidradump.py` dump into `out/cfdb/<image>.sqlite` (functions,
-  call/jump edges, data references, strings). `tools/cf.py` queries it
+- `tools/coldfire/cfdb.py build out/ghidra/dt2-1.16-emac` imports a
+  `tools/coldfire/ghidradump.py` dump into `out/cfdb/<image>.sqlite` (functions,
+  call/jump edges, data references, strings). `tools/coldfire/cf.py` queries it
   (`cf.load("dt2-1.16-emac")`: `func`, `callers`, `callees`, `reach`,
   `paths`, `refs_to`, `decomp`, `sql`). Ghidra's tables miss code outside
   functions (for example the "Load all samples" invoker `0x40030ce8`), so an
-  empty caller list still needs `tools/refscan.py`.
-- `tools/cf_names.py` is a hand-curated table of 1.16 addresses (live
+  empty caller list still needs `tools/coldfire/refscan.py`.
+- `tools/coldfire/cf_names.py` is a hand-curated table of 1.16 addresses (live
   kit/track records, FlexBus, sample loader, boot UI) with a mark and a
-  source for each; `tools/cf.py` and `tools/snapread.py` resolve names
+  source for each; `tools/coldfire/cf.py` and `tools/emulator/snapread.py` resolve names
   against it. Entries are **[D]** unless a finding marks them **[V]**.
-- `tools/snapread.py` reads registers, memory and task state from a `.snap`
+- `tools/emulator/snapread.py` reads registers, memory and task state from a `.snap`
   without building a Machine (`Snapshot(path).u32(addr)`, `.read`, `.regs`,
   `.tasks()`, or the CLI). `tools/snapeq.py A B` checks two snapshots for
   equal guest state (finding 07, cold-boot ladder speed).

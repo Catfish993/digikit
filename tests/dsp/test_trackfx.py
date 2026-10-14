@@ -4,20 +4,14 @@ read-back decoding. Images are skipped when absent."""
 from __future__ import annotations
 
 import struct
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import fxcheck
-    import gen_trackfx
-    import paramtable
-    import scenario_dsl as d
-finally:
-    sys.path.pop(0)
+from tools.coldfire import paramtable  # noqa: E402
+from tools.emulator import fxcheck, gen_trackfx  # noqa: E402
+from tools.emulator import scenario_dsl as d  # noqa: E402
 
 DN2 = ROOT / "out" / "sections" / "dn2-1.11" / "section_3_MAIN_OS.bin"
 DT2 = ROOT / "out" / "sections" / "dt2-1.16" / "section_3_MAIN_OS.bin"

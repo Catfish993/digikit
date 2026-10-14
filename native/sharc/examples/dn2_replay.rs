@@ -1,11 +1,11 @@
 //! DN2 note-capture replay without Python, for timing and profiling the
-//! block path (what `tools/sharc_dn2_replay.py` does, with the option set of
+//! block path (what `tools/sharc_dev/sharc_dn2_replay.py` does, with the option set of
 //! `native/boot`'s `open_dn2_engine`).
 //!
 //!     cargo run --release --example dn2_replay -- IMAGE STATE FRAMES \
 //!         [START END [MEAS_START MEAS_END]]
 //!
-//! IMAGE is the packed image blob (`tools/sharc_pack_image.py`), STATE a
+//! IMAGE is the packed image blob (`tools/sharc_dev/sharc_pack_image.py`), STATE a
 //! canonical state blob, FRAMES the capture's DSPI2 TX frames as
 //! `u32 count` then `u32 length, bytes` each. Per frame: the SPI2
 //! exchange, 667,000 instructions, one SPORT4 block. It prints the PCM

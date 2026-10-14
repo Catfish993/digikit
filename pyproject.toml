@@ -31,8 +31,8 @@ package = false
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-# tools/ modules import each other as top-level modules (sys.path setup).
-src = [".", "tools"]
+# The repository root is the only import root (tools/ is a package).
+src = ["."]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM"]
@@ -45,7 +45,7 @@ ignore = [
 # also runs under PyPy, which supports Python 3.11, so check against 3.11.
 [tool.mypy]
 python_version = "3.11"
-mypy_path = "tools"
+mypy_path = "."
 ignore_missing_imports = true
 check_untyped_defs = true
 follow_imports = "silent"
@@ -55,3 +55,7 @@ warn_unused_ignores = true
 module = ["numpy", "numpy.*", "matplotlib", "matplotlib.*"]
 follow_imports = "skip"
 follow_imports_for_stubs = true
+
+[tool.pytest.ini_options]
+# The repository root is the import root (tools/ is a package); tests/ holds support/.
+pythonpath = [".", "tests"]

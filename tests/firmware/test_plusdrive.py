@@ -1,4 +1,4 @@
-"""Tests for tools/plusdrive.py.
+"""Tests for tools/firmware/plusdrive.py.
 
 The ``hashlittle`` golden vectors below are not textbook lookup3.c test
 vectors -- this firmware's variant seeds differently (no length folded into
@@ -17,15 +17,10 @@ would need a snapshot and is not needed to trust these numbers again.
 import math
 import os
 import struct
-import sys
 import tempfile
 import unittest
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, str(REPO_ROOT))
-
-import tools.plusdrive as pd  # noqa: E402
+from tools.firmware import plusdrive as pd  # noqa: E402
 
 SEED = 0x31323334
 

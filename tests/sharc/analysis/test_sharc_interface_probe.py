@@ -1,14 +1,11 @@
 import pathlib
-import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
-from support.paths import REPO_ROOT
 
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_interface_probe as P  # pyright: ignore[reportMissingImports]
+from tools.sharc_dev import sharc_interface_probe as P  # pyright: ignore[reportMissingImports]
 
 BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 

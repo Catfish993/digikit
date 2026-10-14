@@ -1,14 +1,11 @@
-"""tools/regions.py static analysis on the extracted sections (skipped without them)."""
-
-import sys
+"""tools/coldfire/regions.py static analysis on the extracted sections (skipped without them)."""
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import regions  # noqa: E402
+from tools.coldfire import regions  # noqa: E402
 
 
 def _need(image):

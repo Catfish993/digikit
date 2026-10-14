@@ -1,21 +1,15 @@
-"""DT2 FX scenario files: they are what tools/gen_dt2fx.py writes, every
+"""DT2 FX scenario files: they are what tools/emulator/gen_dt2fx.py writes, every
 scenario is well formed, and fxcheck switches between the devices cleanly."""
 
 from __future__ import annotations
 
 import json
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-try:
-    import fxcheck
-    import gen_dt2fx
-finally:
-    sys.path.pop(0)
+from tools.emulator import fxcheck, gen_dt2fx  # noqa: E402
 
 FILES = {
     "dt2-trackfx.json": gen_dt2fx.trackfx,

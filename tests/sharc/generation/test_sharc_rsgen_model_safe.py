@@ -1,6 +1,6 @@
 """Which instructions block code may run with the native core's models on.
 
-tools/sharc_rsgen.py classifies each instruction (model_unsafe_reason): block
+tools/sharc_dev/sharc_rsgen.py classifies each instruction (model_unsafe_reason): block
 code does not do what the engine does between instructions (bank and PC-stack
 completion, the core timer, interrupt entry, EMUCLK, peripheral stepping), so
 a block may only hold instructions that cannot make those matter. The tests
@@ -9,15 +9,10 @@ pin the classification on decoded fields, with no firmware.
 
 from __future__ import annotations
 
-import sys
 from types import SimpleNamespace
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-
-import sharc_rsgen as rg
-from sharc_core.encoding import UREG_CODES
+from tools.sharc_dev import sharc_rsgen as rg
+from tools.sharc_dev.sharc_core.encoding import UREG_CODES
 
 
 def _insn(type_name: str, **fields: int) -> SimpleNamespace:

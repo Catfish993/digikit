@@ -5,7 +5,7 @@
 Status: P0, P1 and the injection part of P3 are implemented (2026-10-07); P2
 and the rest of P3 are design. Scope: the desktop app (`mise run emu`), the
 headless daemon `digi-emud` (`mise run emu:serve`), the Python client
-`tools/digi_client.py` (`mise run emu:ctl`), and later the browser worker.
+`tools/control/digi_client.py` (`mise run emu:ctl`), and later the browser worker.
 Marks: **[V]** read in the code for this design, **[O]** open.
 
 ## What is built
@@ -215,7 +215,7 @@ and stop on `PcmPlayer` **[O]**; `dspi_log` and `dsp_watch` via a new worker
 
 1. Same MAIN, DSP stream changed (the dev loop): no restart. The two boot
    streams are loaded as memory (`elektron_native_boot::dsp_stream`, the Rust
-   twin of `tools/sharcldr.py`), the changed bytes become `BYTES` patch
+   twin of `tools/sharc_dev/sharcldr.py`), the changed bytes become `BYTES` patch
    operations, and the DSP worker applies them between two frames
    (`Msg::Patch`; the report carries `at_frame`). The engine's code-identity
    checks do the rest: generated blocks of regions that touch a changed range
@@ -248,7 +248,7 @@ and stop on `PcmPlayer` **[O]**; `dspi_log` and `dsp_watch` via a new worker
 4. `base_sha256` is optional: it defaults to the running firmware's base and
    must match it when given. The first load of a patched file needs it.
 
-A patched .syx comes from `tools/dsp_patch.py syx BASE.syx PATCH OUT.syx`
+A patched .syx comes from `tools/patchkit/dsp_patch.py syx BASE.syx PATCH OUT.syx`
 (applies a patch file to the DSP stream and rebuilds the container with
 `dt2/build.py`, store-only packing so the file is about 3x larger), or the
 patch file goes straight in with `firmware.load {syx: BASE, dsp_patch: FILE}`.
@@ -276,7 +276,7 @@ the same patch. **[O]**
 - Reads at a boundary have no side effects; `diagnostics` and exact counters
   cost wall time only.
 
-## Python client (`tools/digi_client.py`)
+## Python client (`tools/control/digi_client.py`)
 
 Standard library only; on the `CLEAN` and `TYPED` lists.
 
@@ -326,9 +326,9 @@ with Emu.spawn("--auto-coupled", "--audio-buffer", "1") as emu:
 
 ## mise tasks
 
-- `emu:serve`: `tools/native_emu.py --daemon` (builds `digi-emud` with the same
+- `emu:serve`: `tools/emulator/native_emu.py --daemon` (builds `digi-emud` with the same
   target dir, PGO and fast-env rules as `emu`).
-- `emu:ctl`: `uv run python tools/digi_client.py` CLI (`status`, `tap 25`,
+- `emu:ctl`: `uv run python -m tools.control.digi_client` CLI (`status`, `tap 25`,
   `load FILE`, `capture pcm out.wav --seconds 10`, `events`).
 - `emu` gains `--control` (default on: question 3).
 
@@ -364,7 +364,7 @@ with Emu.spawn("--auto-coupled", "--audio-buffer", "1") as emu:
   gitignored `packages/web/.local/` and is served only by the dev server.
 - The user supplies their own .syx at run time; it stays in the browser.
 - The DSP image must be derived from the .syx inside the wasm (Rust port of
-  the boot-stream parse and flatten done by `tools/sharc_pack_image.py`; the
+  the boot-stream parse and flatten done by `tools/sharc_dev/sharc_pack_image.py`; the
   ELZ decoder is already Rust).
 - DSP state: the snapshot's DSP state came from a diagnostic chain and cannot
   be rebuilt. The browser needs (a) a modelled DSP boot (boot ROM/INIT handoff,

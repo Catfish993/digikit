@@ -38,7 +38,7 @@ can be p-locked like any other.
 
 - Claims: `dsp.master.hook` (also claimed by `fx/master-gain`, so the two modules are refused together),
   `frame.fx66`, `cf.param.master_sidechain_filter`.
-- Anchors, all resolved by rules in `module.toml` (`tools/port_resolve.py`), none typed: the call and the entry of
+- Anchors, all resolved by rules in `module.toml` (`tools/patchkit/port_resolve.py`), none typed: the call and the entry of
   the converter and the master buffer (as `fx/master-gain`), `dsp.fx.sidechain_filter_word` (the address inside the
   stock reader's short-word load: DT2 0x256008, DN2 0x25ced8) and `cf.param.master_sidechain_filter` (the 60-byte
   descriptor row, found by its masked words: mirror index 66, range 0 to 0x7f00, default 0x5000).
@@ -47,5 +47,5 @@ can be p-locked like any other.
 
 - `tests/patchkit/test_master_drive.py`: the routine on the concrete SHARC+ core against a float32 reference (140 blocks of
   ramp, release to exact bypass, saved registers, instruction counts).
-- `tools/pk_proof_drive.py dt2|dn2`: the whole chain in the emulator (patch, coupled cold boot, knob, PCM).
+- `tools/patchkit/pk_proof_drive.py dt2|dn2`: the whole chain in the emulator (patch, coupled cold boot, knob, PCM).
   Numbers: finding 22.

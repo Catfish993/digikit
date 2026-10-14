@@ -1,16 +1,16 @@
 # 17. Emulator control protocol and firmware injection
 
 Design: `docs/design/emulator-control.md`. Code: `native/control`,
-`native/boot/src/dsp_stream.rs`, `tools/digi_client.py`, `tools/dsp_patch.py syx`.
+`native/boot/src/dsp_stream.rs`, `tools/control/digi_client.py`, `tools/patchkit/dsp_patch.py syx`.
 Marks as in CLAUDE.md. Nothing here was re-checked by a second agent yet, so
 the numbers are **[D]** (measured here, one machine, other lanes running).
 
 ## Hot DSP injection (DN2 1.11, ready inputs of 2026-10-06, fast regions on)
 
 Scenario: `trig1-tap-release` events, 3 s of audio, DSP output hashed in the
-controller (`pcm.tap`). Patch: `tools/dsp_patches/dn2-1.11-master-half.patch`
+controller (`pcm.tap`). Patch: `tools/patchkit/dsp_patches/dn2-1.11-master-half.patch`
 (`R2 = 0x1f` -> `0x1e` at 0x1c9d51, master Q31 scale, -6 dB), written into a
-.syx with `tools/dsp_patch.py syx` (one changed byte in section 7).
+.syx with `tools/patchkit/dsp_patch.py syx` (one changed byte in section 7).
 
 | run | rms | peak | PCM sha256 (prefix) | wall |
 |---|---|---|---|---|
@@ -63,7 +63,7 @@ controller (`pcm.tap`). Patch: `tools/dsp_patches/dn2-1.11-master-half.patch`
 `coupled-run --dsp-patch FILE` (also the desktop launcher and `firmware.load`) overlays
 word-level edits on the imported DSP state after the snapshot import, because a `.snap.dsp`
 carries its own copy of code and data. Format (`native/boot/src/dsp_patch.rs`,
-`tools/dsp_patch.py check|show|apply|syx`): `BASE <sha256 of the unpatched .syx>`, then
+`tools/patchkit/dsp_patch.py check|show|apply|syx`): `BASE <sha256 of the unpatched .syx>`, then
 `PM <pc> <hex> [was <hex>]` (a 16, 32 or 48-bit instruction at a short-word PC), `SW`,
 `DM <addr> <hex32> [was ..]` and `BYTES <addr> <hex>`. `was` is checked against live memory.
 A wrong BASE is refused. A no-op patch gives the identical PCM hash; `R2 = 0x1f -> 0x1e` at
@@ -81,7 +81,7 @@ attached** and installs a runtime with DSP audio (`native/control/src/controller
 `native/coupled/src/cold.rs` `boot_patched_to_ready`). Semantics and the cache layout are in
 `docs/design/emulator-control.md` ("Firmware injection", item 3). Summary: the DSP is the ready inputs' image and
 cold-idle state (the DSP section of the base .syx; a MAIN patch never changes it); the boot runs on a worker thread
-until the panel is ready (DT2: until link port 0 is quiet, as `tools/ready.py` does) and writes the ready pair
+until the panel is ready (DT2: until link port 0 is quiet, as `tools/emulator/ready.py` does) and writes the ready pair
 (`digi-audio-m5.snap` and `.snap.dsp`) under `<run_dir>/patched/<MAIN sha16>-<key>/`; the key hashes the MAIN digest,
 the DSP image file, the cold-idle file and the card file (path, size, mtime). A DSP section that differs from the
 base's is diffed and injected hot after the install, so the cache does not depend on it. `start auto|snapshot|cold`
@@ -90,7 +90,7 @@ presses NO when the new runtime is ready, because a DT2 booted with a card waits
 inputs, without `cold-idle.dsp`, or when `SOURCE.json` next to the DSP image names another .syx, the ColdFire-only
 path of the section above runs and the report says why (`coupled_note`).
 
-Measured through the socket, `tools/patched_audio_check.py` (stock-size test image of `tools/patched_image.py`, the
+Measured through the socket, `tools/patchkit/patched_audio_check.py` (stock-size test image of `tools/patchkit/patched_image.py`, the
 default project name UNTITLED becomes PATCHKIT; machine loaded by other lanes, load average 20 to 25, so wall times
 are upper bounds). **[D]**
 
@@ -120,7 +120,7 @@ Tests: `tests/test_coupled_patched.py` (slow; DN2 1.12 and DT2 1.17 cold/cached/
 without a pair, `start cold` rebuild, hot inject of an appended block), the Rust unit test `patched_pair_key`, and
 `tests/test_digi_client.py` (the ColdFire-only fallback and its note).
 
-**ColdFire canary with the DSP running.** `tools/regions.py confirm IMAGE --dsp READY_DIR` runs the spike 0.3 canary
+**ColdFire canary with the DSP running.** `tools/coldfire/regions.py confirm IMAGE --dsp READY_DIR` runs the spike 0.3 canary
 probe with the ready directory's DSP on the DSPI2 link from reset (the expansion region filled with an
 address-dependent pattern after the reset clear; digest compared with a zero-filled run). All PASS with
 `bad_words=0`, equal digests and a running DSP (no halt): **[D]**
@@ -148,7 +148,7 @@ Not covered: a card other than the one-sample card, and the DSP side of patched 
   0.17 s, one `BYTES` op, `changed_bytes 211600`, the engine accepts the write into memory the image never had, the
   block reads back intact and the PCM is unchanged; injecting the stock .syx again reports `dropped_bytes 211600`
   (a patch cannot undo a write).
-- Trap for later harnesses: `tools/ready.py` boots the ColdFire from `--syx`, and a container 0.8 MB larger (the
+- Trap for later harnesses: `tools/emulator/ready.py` boots the ColdFire from `--syx`, and a container 0.8 MB larger (the
   stream-append image) reaches ready at a different instruction count, so the DSP clock at the snapshot is one frame
   (666,667 DSP instructions) earlier and every PCM hash changes, canary or not. Ready inputs for a DSP-only change
   must keep the stock ColdFire boot: `ready.py --syx STOCK --dsp-syx CHANGED` (new; the DSP image and cold state now
@@ -158,7 +158,7 @@ Not covered: a card other than the one-sample card, and the DSP side of patched 
 
 ## Health events, heartbeat and the watchdog (patchkit Phase 2, 2026-10-13) **[D]**
 
-Code: `native/control/src/health.rs` (pure logic, 6 unit tests), `controller.rs` (`Actor::watch`), `tools/digi_client.py`
+Code: `native/control/src/health.rs` (pure logic, 6 unit tests), `controller.rs` (`Actor::watch`), `tools/control/digi_client.py`
 (`subscribe`, `drain_events`, `peek32`, `poke32`, `watchdog`).
 
 - **`fault`** event (once per runtime): the ColdFire step error (`Status.error`, phase `fault`), with `error`, `pc`,
@@ -193,7 +193,7 @@ Code: `native/control/src/health.rs` (pure logic, 6 unit tests), `controller.rs`
   therefore shows only as a `stall` here; on hardware the unconfigured CWT is off after reset (CWCR[CWE] cleared). **[D]**
 - **DSP halt in a stock run** **[D]** **[C]**: DT2 1.17 stock, pattern 3 or 4 (`PTN` + `TRIG 3`/`4`) then PLAY halted the DSP
   on a conditional Type 7a (`native-trap: sharc_core.forms_dag._type_7a:63: stop: unsupported Type7a predicate at
-  0x1cbc93`, `IF EQ modify(I4, M4)`). Fixed in `tools/sharc_core` (finding 05, "Conditional Type 7a"); with the
+  0x1cbc93`, `IF EQ modify(I4, M4)`). Fixed in `tools/sharc_dev/sharc_core` (finding 05, "Conditional Type 7a"); with the
   regenerated cores PLAY in patterns 3 and 4 runs clean on DT2 1.17 and 1.16
   (`test_play_in_patterns_3_and_4_runs_clean`), and `test_a_dsp_halt_is_a_failure` now provokes the halt with an
   undecodable word at that address (`dsp.patch`).

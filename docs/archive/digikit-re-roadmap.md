@@ -128,7 +128,7 @@ replay default without that producer path.
 preconditioned DT2/DN2 machine extension and deliver it through the software
 path?
 
-1. Thread `tools/machineprofile.py` profiles through `machinepatch.py`; remove
+1. Thread `tools/patchkit/machineprofile.py` profiles through `machinepatch.py`; remove
    build-specific constants while retaining existing synthetic plan tests.
 2. Generalize stock machine counts and table widths from the selected profile.
 3. Make product-specific tables optional and keep DN2 parameter-page work

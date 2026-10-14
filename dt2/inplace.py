@@ -10,7 +10,7 @@ the container grows by a few kilobytes at most.
 
 The result is checked by depacking it and comparing with the stock output plus exactly the requested edits. The
 encoder writes the end marker the way `dt2.aplib` does (gamma 2**24 + 2, byte 0xFF); the device's depacker accepts it
-(the emulated bootstrap depacks these streams, tools/bootstrap_run.py).
+(the emulated bootstrap depacks these streams, tools/emulator/bootstrap_run.py).
 """
 
 import struct

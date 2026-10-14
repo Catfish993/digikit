@@ -1,8 +1,8 @@
 """fx/master-drive end to end in the emulator (slow: a coupled cold boot and six renders per device).
 
 Skips without the inputs: DIGI_EMUD (the digi-emud binary of the device's core), the ready inputs
-`out/ready-md-dt2` / `out/ready-md-dn2` (`tools/ready.py dt2|dn2 --syx ... --out ... --force`), the stock firmware
-and Selache (the patched image is built here). The checks are the ones of tools/pk_proof_drive.py."""
+`out/ready-md-dt2` / `out/ready-md-dn2` (`tools/emulator/ready.py dt2|dn2 --syx ... --out ... --force`), the stock firmware
+and Selache (the patched image is built here). The checks are the ones of tools/patchkit/pk_proof_drive.py."""
 
 import os
 import subprocess
@@ -12,9 +12,9 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_toolchains  # noqa: E402
+from tools import python_env  # noqa: E402
+from tools.patchkit import pk_toolchains  # noqa: E402
 
 CASES = {
     "dt2": ("Digitakt_II_OS1.17.syx", "ready-md-dt2"),
@@ -32,7 +32,7 @@ def test_proof(device, tmp_path):
     if pk_toolchains.selache_dir() is None:
         pytest.skip("selache not built")
     patched = tmp_path / f"md-{device}.syx"
-    run = [sys.executable, str(ROOT / "tools" / "patchkit.py"), "patch"]
+    run = [sys.executable, "-m", "tools.patchkit.patchkit", "patch"]
     done = subprocess.run(
         [
             *run,
@@ -44,6 +44,7 @@ def test_proof(device, tmp_path):
             str(patched),
         ],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )
@@ -51,7 +52,8 @@ def test_proof(device, tmp_path):
     proof = subprocess.run(
         [
             sys.executable,
-            str(ROOT / "tools" / "pk_proof_drive.py"),
+            "-m",
+            "tools.patchkit.pk_proof_drive",
             device,
             "--patched",
             str(patched),
@@ -59,6 +61,7 @@ def test_proof(device, tmp_path):
             str(tmp_path / "proof"),
         ],
         cwd=ROOT,
+        env=python_env(),
         capture_output=True,
         text=True,
     )

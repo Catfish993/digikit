@@ -1,18 +1,14 @@
 """sharc_harness frame, ring and capture rendering."""
 
 import hashlib
-import os
 import pathlib
 import struct
-import sys
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_harness as h  # noqa: E402
-import sharc_run as sr  # noqa: E402
+from tools.sharc_dev import sharc_harness as h  # noqa: E402
+from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 DEFAULT_CAPTURE = pathlib.Path(h.DEFAULT_CAPTURE_PATH)
@@ -30,7 +26,7 @@ class FrameRenderTest(unittest.TestCase):
         cls.memory = h.load_image_memory("dt2-1.16")
 
     def test_setup_frame_pokes_command_dispatch_and_returns_block_handler(self):
-        import sharc_symbols as ss
+        from tools.sharc_dev import sharc_symbols as ss
 
         runner = h.new_runner(self.memory, "dt2-1.16")
         entry = h.setup_frame(runner.state, "dt2-1.16", command=3, ring_flag=1)
@@ -84,10 +80,10 @@ class FrameRenderFromInitTest(unittest.TestCase):
         halt = results[0].halt
         # Originally the first of the known stops for an (almost) empty
         # synthetic frame was 0xB88E4B (FIX-of-NaN/infinity, unsaturated),
-        # fixed by lane G2 (tools/sharc_core/floats.py's _float_to_fixed);
+        # fixed by lane G2 (tools/sharc_dev/sharc_core/floats.py's _float_to_fixed);
         # then 0x1C4969, the supposed BITEXT(BITLEN12>32) gap. 2026-09-28:
         # that "BITEXT" was ShiftImm 0x19, Rn = Rn or fdep (PGR Table
-        # 12-11; tools/sharc_core/compute_shift.py), so the frame now runs
+        # 12-11; tools/sharc_dev/sharc_core/compute_shift.py), so the frame now runs
         # to block_handler's own return with no patch at all, and
         # FRAME_PATCH_TABLE is empty.
         self.assertEqual(h.FRAME_PATCH_TABLE, {})
@@ -125,7 +121,7 @@ class FrameRenderFromInitTest(unittest.TestCase):
         # (I12/M14's idiom included) never touches it, so this was always
         # a software convention, not a literal hardware return -- and nothing
         # rules out a different free DAG2 index register per callee. A
-        # tools/sharcdb census of dt2-1.16's Type9a_abs/9b_abs population
+        # tools/sharc_dev/sharcdb census of dt2-1.16's Type9a_abs/9b_abs population
         # confirms this reading: 1051 of 1052 cond=0x1F/b=0/j=1/pmm=6
         # (M14) instructions use pmi=4 (I12); exactly one (0x1c0cb5) uses
         # pmi=5 (I13). sequencer._check_return_target now takes pmi and
@@ -142,18 +138,18 @@ class FrameRenderFromInitTest(unittest.TestCase):
         # the (LW) modifier, PRM p.2-4), and the frame now runs on past that
         # pc instead of stopping there. It reaches a genuine RETURN, not
         # another gap: "return without followed call" is how
-        # tools/sharc_run.py's fresh_call()/fresh_call_state() (see their
+        # tools/sharc_dev/sharc_run.py's fresh_call()/fresh_call_state() (see their
         # own docstrings) signal a call that started with an empty
         # call_stack unwinding through its own entry point's RTS -- since
         # call_frame() enters at block_handler (0x1c74cd) with no real
         # caller pushed, and the halt pc (0x1c75d3) is inside block_handler
-        # itself (tools/sharc.py's img.func: entry 0x1c74cd, end 0x1c75d8),
+        # itself (tools/sharc_dev/sharc.py's img.func: entry 0x1c74cd, end 0x1c75d8),
         # this is block_handler's own return firing, i.e. the whole frame
         # render call chain (block_handler -> command_dispatch_fn ->
         # cmd_handler_3 -> render_frame -> ...) completed.
-        # tools/sharc_widthaudit.py --root frame independently confirms 0
+        # tools/sharc_dev/sharc_widthaudit.py --root frame independently confirms 0
         # access-width mismatches across this run's 17,468 load/store
-        # events. See tools/sharc_harness.py's FRAME_MILESTONE docstring.
+        # events. See tools/sharc_dev/sharc_harness.py's FRAME_MILESTONE docstring.
         self.assertEqual(halt.reason, h.FRAME_MILESTONE["reason"])
         self.assertEqual(halt.pc_sw, h.FRAME_MILESTONE["pc_sw"])
         self.assertEqual(results[0].instructions, h.FRAME_MILESTONE["instructions"])
@@ -175,7 +171,7 @@ class RingAMilestoneTest(unittest.TestCase):
     **Updated (lane B2, 2026-09-25): now a genuinely continuous Runner, not
     N independent post-init renders.** render_frames_to_ring_a() runs all
     frames on one Runner and applies CONTINUOUS_MIX_SCALAR_PATCH (see that
-    constant's own docstring in tools/sharc_harness.py for the full
+    constant's own docstring in tools/sharc_dev/sharc_harness.py for the full
     evidence): without it, ring A goes silent from frame 1 onward given
     this lane's blank synthetic mix configuration -- real firmware
     behaviour, not an emulator bug, per that investigation.
@@ -185,7 +181,7 @@ class RingAMilestoneTest(unittest.TestCase):
     per-track dispatch never carries a track's sample values into the
     master mix under any state this lane found (see the "why the track
     buffer never reaches the master mix as audio" module note above
-    `MASTER_MIX_INJECT_PC` in tools/sharc_harness.py) -- what
+    `MASTER_MIX_INJECT_PC` in tools/sharc_dev/sharc_harness.py) -- what
     `inject_track_buffer()` alone produced there was a sparse,
     compressor-envelope-shaped signal, not the injected tone. This test
     now checks `ring_a_left`/`ring_a_right` (not `ring_a_mono`): ring A's
@@ -370,9 +366,9 @@ class RealFrameRingAMilestoneTest(unittest.TestCase):
     stays: its remaining fork (`0x1c4965`, unrelated to per-track mixing)
     is still open (lane G2, docs/findings/06's own "Lane G2" section --
     the BITEXT(BITLEN12>32) result it forces is architecturally
-    undocumented, not a `tools/sharc_core` gap this project may guess at).
+    undocumented, not a `tools/sharc_dev/sharc_core` gap this project may guess at).
     `0x1c2fec`'s own entry is gone (lane G2 fixed the underlying
-    `tools/sharc_core` FIX-of-NaN/infinity saturation gap instead: a real,
+    `tools/sharc_dev/sharc_core` FIX-of-NaN/infinity saturation gap instead: a real,
     documented `0xFFFFFFFF` FIX result now reaches this render instead of
     the entry's own arbitrary `0x4000` override). This test's own digest
     below is UNCHANGED even so -- checked by running this exact

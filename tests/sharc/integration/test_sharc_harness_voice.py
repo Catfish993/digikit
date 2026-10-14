@@ -1,15 +1,10 @@
 """sharc_harness voice and init rendering on the DT2 1.16 image."""
 
-import os
 import pathlib
-import sys
 import unittest
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_harness as h  # noqa: E402
-import sharc_run as sr  # noqa: E402
+from tools.sharc_dev import sharc_harness as h  # noqa: E402
+from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 
@@ -206,7 +201,7 @@ class FirmwareBackedTest(unittest.TestCase):
         # reads record+0 (FIELD_SAMPLE_PTR) exactly -- with the old
         # record+4 bug this instruction would have read record+4 (the
         # work buffer) instead, latching garbage.
-        from sharc_core.encoding import UREG_CODES
+        from tools.sharc_dev.sharc_core.encoding import UREG_CODES
 
         sample_ptr = 0x310000
         runner = h.new_runner(self.memory, "dt2-1.16")
@@ -271,7 +266,7 @@ class FirmwareBackedTest(unittest.TestCase):
         # check_correctness()'s own docstring); (3) sample_format="int16"
         # samples were packed at the wrong byte stride (2 bytes, not 4 --
         # see _SAMPLE_STRIDE_BYTES's docstring, corrected again once the
-        # MODIFY (sw)/(nw) fix landed in tools/sharc_core/forms_dag.py) and
+        # MODIFY (sw)/(nw) fix landed in tools/sharc_dev/sharc_core/forms_dag.py) and
         # read_coeff_table() assumed 128 phases instead of the table's real
         # 256; (4) reference_render() centered its 6 taps around the
         # interpolation point (``base - half + 1 + t``) when the firmware's
@@ -285,7 +280,7 @@ class FirmwareBackedTest(unittest.TestCase):
         # each 4-byte slot is a single 32-bit Q31 fraction, and the real
         # multiplier consumes the whole 32-bit register, not either half --
         # see read_coeff_table()'s own docstring for the register-level MAC
-        # trace that pinned this down). ``tools/sharc_core``'s MR-
+        # trace that pinned this down). ``tools/sharc_dev/sharc_core``'s MR-
         # accumulator housekeeping (sw 0x1c50df) and ``float_by`` (sw
         # 0x1c50e3) were both directly verified correct in the process
         # (register-level traces reproduce the PRM-documented bits-63:32
@@ -381,7 +376,7 @@ class FirmwareBackedTest(unittest.TestCase):
         # prior call_render()) happened to leave the register at -- poke a
         # distinctive value there and confirm it reaches R12 by the time
         # the callee spills its doubled copy (sw 0x1c4f1b).
-        from sharc_core.encoding import UREG_CODES
+        from tools.sharc_dev.sharc_core.encoding import UREG_CODES
 
         runner = h.new_runner(self.memory, "dt2-1.16")
         state = runner.state
@@ -425,7 +420,7 @@ class FirmwareBackedTest(unittest.TestCase):
         #
         # ACTIVE (+0x1b8) now stays 1 across every wrap (this lane's own
         # call_render() fixup -- see its docstring's "Loop-wrap ACTIVE
-        # fixup" section for the root cause: a tools/sharc_core Type3d
+        # fixup" section for the root cause: a tools/sharc_dev/sharc_core Type3d
         # access-width bug, confirmed by register-level single-stepping
         # both wrap sites, made the wrap's own read always see 0 instead of
         # FIELD_LOOP's real value). An earlier version of this test found

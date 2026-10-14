@@ -1,17 +1,8 @@
-"""coupled: pure helpers of tools/coupled.py (no cargo, no emulator)."""
+"""coupled: pure helpers of tools/emulator/coupled.py (no cargo, no emulator)."""
 
-import importlib.util
-import sys
 from pathlib import Path
 
-from support.paths import REPO_ROOT
-
-TOOL = REPO_ROOT / "tools" / "coupled.py"
-_spec = importlib.util.spec_from_file_location("coupled", TOOL)
-assert _spec and _spec.loader
-coupled = importlib.util.module_from_spec(_spec)
-sys.modules["coupled"] = coupled
-_spec.loader.exec_module(coupled)
+import tools.emulator.coupled as coupled
 
 
 def test_bisect_configs_labels_and_overrides():

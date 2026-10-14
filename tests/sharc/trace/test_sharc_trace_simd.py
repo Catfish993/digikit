@@ -1,4 +1,4 @@
-"""SIMD (PEx + PEy) execution tests for tools/sharc_trace.py.
+"""SIMD (PEx + PEy) execution tests for tools/sharc_dev/sharc_trace.py.
 
 Companion to the other tests/sharc/trace/ files (not edited here, per instructions):
 synthetic instruction-level tests for the PEy register file, per-PE
@@ -9,16 +9,14 @@ real-image test over the render path's actual SIMD-enabled region
 
 import hashlib
 import os
-import sys
 import unittest
 from importlib import import_module
 
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
-L = import_module("sharcldr")
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+L = import_module("tools.sharc_dev.sharcldr")
 from support.sharc_trace_build import (  # noqa: E402  (shared fixtures)
     insn,
     loader_memory,

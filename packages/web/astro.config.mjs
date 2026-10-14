@@ -7,13 +7,13 @@ import solid from '@astrojs/solid-js';
 // Dev-only (`apply: 'serve'`): these files are firmware-derived and are never part of a build.
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const readyDir = process.env.DIGI_EMU_READY_DIR
-  || JSON.parse(fs.readFileSync(path.join(repoRoot, 'tools', 'ready_inputs.json'), 'utf8')).ready_dir;
+  || JSON.parse(fs.readFileSync(path.join(repoRoot, 'tools', 'emulator', 'ready_inputs.json'), 'utf8')).ready_dir;
 const localDir = path.resolve(repoRoot, readyDir);
 const localFiles = {
   'dsp-image': process.env.DIGI_EMU_DSP_IMAGE || path.join(localDir, 'digi-audio-dn2-image.bin'),
   'dsp-state': process.env.DIGI_EMU_DSP_STATE || path.join(localDir, 'digi-audio-m5.snap.dsp'),
   'cf-snapshot': process.env.DIGI_EMU_CF_SNAPSHOT || path.join(localDir, 'digi-audio-m5.snap'),
-  // Used only by the headless bench (`?bench=1`, tools/browser_bench.mjs): the page cannot pick a file there.
+  // Used only by the headless bench (`?bench=1`, tools/devtools/browser_bench.mjs): the page cannot pick a file there.
   firmware: process.env.DIGI_EMU_SYX || path.join(repoRoot, 'Digitone_II_OS1.11.syx'),
 };
 const coupledCore = process.env.DIGI_EMU_SHARC_CORE || fileURLToPath(new URL('./.local/emulator-core-sharc.wasm', import.meta.url));

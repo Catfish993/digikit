@@ -1,14 +1,14 @@
 # blk93@0x1cddff — the "else" branch of blk93@0x1cdd8b, not a standalone function
 
-- **Bounds**: `tools/sharcinv.py` records entry `0x1cddff`, exit `0x1cdecb`
+- **Bounds**: `tools/sharc_dev/sharcinv.py` records entry `0x1cddff`, exit `0x1cdecb`
   (91 instructions), with `tail_split_into: blk93@0x1cdecb` and a
   `boundary_note` saying the split is because `0x1cdecb` is itself an
   interior call target. That accounting is byte-range-correct but
   functionally misleading (see below): **[V]** for the 91-instruction byte
-  span (cross-checked against `tools/sharcflow.py`'s return list — nearest
+  span (cross-checked against `tools/sharc_dev/sharcflow.py`'s return list — nearest
   prior return `0x1cddfa`/after `0x1cddff`, nearest following return
   `0x1cdf33`/after `0x1cdf38` — and against a fresh disassembly of the same
-  span with `tools/sharc_disasm.py`, 91 instructions, no desync); **[C]** for
+  span with `tools/sharc_dev/sharc_disasm.py`, 91 instructions, no desync); **[C]** for
   treating `0x1cddff` as an independent function with its own entry and exit.
   It is not one. It is the out-of-line "else" body of **`blk93@0x1cdd8b`**
   (inventory: entry `0x1cdd8b`, exit `0x1cddff`, 55 instructions, label
@@ -52,7 +52,7 @@
 
 ## What it computes
 
-**[D]**, traced with `tools/sharc_trace.py --blob --start 0x1cddff
+**[D]**, traced with `tools/sharc_dev/sharc_trace.py --blob --start 0x1cddff
 --concrete-memory --assume-32bit-normal-words --follow-loaded-calls
 --summary` (stops after 44 steps at the first unmodelled multifunction
 category, a known tracer gap — see Method) and cross-checked with a manual,
@@ -61,7 +61,7 @@ symbolic registers (scratchpad `pseudo2_1cddff.py`), which decodes every
 instruction in the span except 7: 3 multifunction ops in unmodelled
 categories `0x1a`/`0x1e`, and 4 single-function float-ALU ops with the
 unmodelled opcode `0xda`. Both gaps are filled by hand from
-`tools/sharcspec/compute_table.json` (built from the public ADI manuals,
+`tools/sharc_dev/sharcspec/compute_table.json` (built from the public ADI manuals,
 never the vendor toolchain): `aluop_32_40bit` row `11011010` is
 **`FN = float RX by RY`** (register-scaled fixed→float convert) and row
 `11011001` is `RN = fix FX by RY` (the inverse); `multifn_mul_alu` row

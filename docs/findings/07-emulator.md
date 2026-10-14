@@ -1490,10 +1490,10 @@ Support used to reach the "one voice renders correctly" result in finding
 06: run `FUN_1c15e3` (init) to its return, then apply setup, to get a
 post-init snapshot to start a render from, instead of a full cold boot.
 Register/memory watchpoints and `diagnose_unknown` (both in
-`tools/sharc_harness.py`) narrow a stuck or wrong-value run to the
-instruction that produced it. `tools/sharc_survey.py` runs a bounded batch
+`tools/sharc_dev/sharc_harness.py`) narrow a stuck or wrong-value run to the
+instruction that produced it. `tools/sharc_dev/sharc_survey.py` runs a bounded batch
 of these probes over a function or region in one pass. `Image.cfg`,
-`callgraph`, `defuse` and `slice` (`tools/sharc.py`) give the control-flow
+`callgraph`, `defuse` and `slice` (`tools/sharc_dev/sharc.py`) give the control-flow
 graph, static call graph, def/use chains and a backward slice for a
 register at an address, used here to trace the record fields and the
 past-limit `R12` doubling back to their writers before trusting the
@@ -1526,7 +1526,7 @@ handed to display: False`, `main_os_running: False` throughout;
 two initial CMD18 reads (blocks 0 and `0x800`) the whole run. **This proves
 the stall is not specific to +Drive sample content** (task item 1's
 discriminator): a card with nothing but a *valid, already-formatted* header
-stalls identically to one with a full `tools/plusdrive.py` image.
+stalls identically to one with a full `tools/firmware/plusdrive.py` image.
 
 **Root cause, traced statically to a specific branch.** The Main-OS task
 (`FUN_400337ba`, `out/ghidra/dt2-1.16-emac/decomp/400337ba_FUN_400337ba.c`,
@@ -1601,7 +1601,7 @@ absolute sector `0x5D8000` that neither this file nor
 that file's new section for the full layout and checksum.
 
 **Update, a later session:** that superblock is now implemented
-(`tools/plusdrive.py`'s `hashlittle()`/`build_superblock()`, checked against
+(`tools/firmware/plusdrive.py`'s `hashlittle()`/`build_superblock()`, checked against
 44 real firmware executions) and confirmed self-consistent in a rebuilt
 `out/plusdrive/dt2.img`. `FUN_400cc864` gates `FUN_4015a450`/`FUN_4015a424`
 behind `_DAT_42940a48 == 0`, set from an eMMC-identity whitelist check
@@ -1652,7 +1652,7 @@ structure at sector `0x458000` (a "MaGj"-tagged, two-stage-CRC-32-checked
 32 KiB record `FUN_4015a124` reads via `FUN_4002cd6a`/`FUN_4002ccd0`) was
 fully pinned down by disassembly (not the decompile, which had misread two
 of its fields as one overlapping 32-bit read) and a valid record built
-(`tools/plusdrive.py`'s `build_factory_table_record()`) -- confirmed
+(`tools/firmware/plusdrive.py`'s `build_factory_table_record()`) -- confirmed
 against the real firmware with a bounded isolated call
 (`tests/test_factory_table.py`), same technique as the eMMC-identity
 fix's own test.
@@ -1724,7 +1724,7 @@ card's real, larger size) because encoding the correct, larger capacity
 through EXT_CSD's own `SEC_COUNT` field "made a real cold boot hang
 outright" in that earlier session. **`0x5D8000` (the +Drive superblock
 sector) is `0x1FD000` sectors past `0x3B0000`** -- i.e. every sector
-`tools/plusdrive.py`'s real filesystem uses (superblock at `0x5D8000`,
+`tools/firmware/plusdrive.py`'s real filesystem uses (superblock at `0x5D8000`,
 records from `0x5D8180`, content from `0x5EE180`) sits entirely outside the
 capacity this build's identity fix tells the firmware the card has, so
 `FUN_4012deda` rejects every read of it, unconditionally, regardless of
@@ -1742,7 +1742,7 @@ before the dma_sem fix existed and may well have been the very same bug,
 in which case reporting the card's real, larger capacity through
 `SEC_COUNT` (or any row/encoding that both passes the whitelist and covers
 at least `0x5EE180`+ sectors) would remove this bound entirely, without
-needing to touch `tools/plusdrive.py` or the mount code at all.
+needing to touch `tools/firmware/plusdrive.py` or the mount code at all.
 
 **[C]: fixed, in a later session -- confirmed by execution, not just
 re-reading the decompile.** The re-test above was right that the dma_sem fix
@@ -1752,7 +1752,7 @@ flagged as "not yet located" is `FUN_4012dca0` (found via `xrefs.sqlite`),
 which busy-waits on `PRSSTAT` bit `0x18` after issuing raw CMD6/SWITCH
 commands whenever EXT_CSD's `SLC_OK` byte isn't `1` -- a real hang risk this
 model doesn't implement, but only reachable, on the evidence gathered
-(`tools/refscan.py` over the whole image; see
+(`tools/coldfire/refscan.py` over the whole image; see
 `docs/findings/14-plus-drive-format.md`'s new section), from the debug
 console, not the normal boot path. Separately, the CSD-1.0 fallback formula
 (the mechanism this project used for the *smaller* constant) turns out to
@@ -2144,7 +2144,7 @@ The three-method proof that `FUN_401879dc`/`FUN_40187a20`/`FUN_40187b08`
 cache:
 
 1. `xrefs.sqlite`'s `calls` table: zero rows targeting any of the three.
-2. `tools/refscan.py` (96.78% byte coverage) over the whole image: 0 hits
+2. `tools/coldfire/refscan.py` (96.78% byte coverage) over the whole image: 0 hits
    on any of the three function addresses, or on `0x44f37030`/`0x44f37034`,
    outside the six functions implementing the unwinder itself
    (`0x401879b4`-`0x40187d58`).
@@ -2170,8 +2170,8 @@ something this exact screen's own code tries to read from the card live.
 its follow-ups above. Marks: **[V]** re-read against the image bytes and
 snapshot memory by a second agent (verification lane, 2026-09-28);
 **[D]** read or run once. Static sources: `out/ghidra/dt2-1.16-emac`
-(`tools/cf.py`), raw `section_3_MAIN_OS.bin` (loaded at `0x40000400`),
-snapshot memory through `tools/snapread.py`.
+(`tools/coldfire/cf.py`), raw `section_3_MAIN_OS.bin` (loaded at `0x40000400`),
+snapshot memory through `tools/emulator/snapread.py`.
 
 **Vector 208 [V].** VBR = `0x40000000` (`0x400019b0`/`0x400019b6`);
 `FUN_40001992` fills the 256 slots with `0x40001252`. The literal
@@ -2246,7 +2246,7 @@ screen in earlier GUI runs was the intro gate, not missing firmware work.
 2026-09-28. With the native-format image (finding 14) the firmware loads the
 boot project's samples on a cold boot, with no UI.
 
-    uv run python tools/plusdrive.py build samples -o out/plusdrive/native/dt2.img
+    uv run python -m tools.firmware.plusdrive build samples -o out/plusdrive/native/dt2.img
     DT2_SYX=Digitakt_II_OS1.16.syx uv run python tools/plusdrive_check.py out/plusdrive/native/dt2.img
     DT2_SYX=Digitakt_II_OS1.16.syx uv run python -m emu.checkpoint make \
       280000000,400000000 snapshots/dt2-1.16-drive3/boot \
@@ -2539,7 +2539,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   DMA still need explicit invalidation when the machine bus is integrated.
 
 - **[V]** `snapshots/boot280M.snap` has word `0x7381` at `0x401768a6`
-  (independently read with `tools/snapread.py`; the drive3 boot280M snapshot
+  (independently read with `tools/emulator/snapread.py`; the drive3 boot280M snapshot
   instead has `0x4e75` there). `0x7381` decodes as `mvz.b d1,d1`;
   CFPRM p.125 specifies that MVZ **always clears N**. **[D]** At this
   instruction patched Unicorn returned SR `0x2008`, while the Rust core
@@ -2855,12 +2855,12 @@ boundaries, so coalescing (few boundaries) under-reads it.
   The original local capture passed twice using a legacy v1 pack, without a
   core-source compatibility check. A fresh v3 pack was then built into ignored
   `out/native/live/v3/` from the same captured frames and LP0 log with
-  `tools/sharc_transpile_run.py live-pack --limit 2000000`; that limit bounds
+  `tools/sharc_dev/sharc_transpile_run.py live-pack --limit 2000000`; that limit bounds
   initialization, while LP0 callbacks are separately bounded. The selected
   DT2 sections' source SHA-256 matched the local `.syx`, the pack's image
   bytes matched those sections, and the rebuilt pack body was byte-identical
   to the legacy pack body. Its v3 core-source hash matched both the current
-  `tools/sharc_core` and the selected generated native library. Two fresh
+  `tools/sharc_dev/sharc_core` and the selected generated native library. Two fresh
   v3 debug renders again each produced 160 clean frames and 5120 stereo
   samples with FNV-1a64 `e89d808cd7de9585`. These checks establish local
   source compatibility and repeatability, **not authentication** of the
@@ -2934,7 +2934,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   authenticate the fixture or establish the LP0 input's origin.
 - **[C] [D]** The imported auto-ready DT2 state produced its **first native
   ColdFire DSPI2 wire frame**: 2,748 bytes after **30,464 actual native
-  instructions**. `tools/wiretrace.py --prefix 1` matched its wire-order bytes
+  instructions**. `tools/emulator/wiretrace.py --prefix 1` matched its wire-order bytes
   against frame 0 of the accepted 68-frame **Python-ColdFire** DTFR. A
   source-checked `tools/autoirq.py` reference also matched 33 CPU boundaries
   and 34 ordered guest RAM/MMIO effects over the first 32 instructions after
@@ -3022,7 +3022,7 @@ The earlier native self-scheduler forced ordinals 50–54 at 10,113,640;
 corresponding Python offer is **after** it: this accounts for the one-shot
 words moving from Python frame 51 to native frame 53 without requiring a
 release-word encoding defect. Native offer 52 led by 303,564 clock units;
-Python and native delivery clocks were identical. `tools/wireevents.py`
+Python and native delivery clocks were identical. `tools/emulator/wireevents.py`
 reports the first differing wire byte at frame 51 offset `0x25`, with
 the frame-51/53 release windows and local force-clock deltas. This is an
 observed host scheduling separation, **not** an explanation for all of its
@@ -3064,7 +3064,7 @@ instructions**. This is a **synthetic** replay, not the integrated desktop
 audio callback's actual repeat cadence or proof that the intermittent
 `0x1c1cd7` stop is fixed. The prior intermittent stop remains **[O]**.
 
-**[C] [D]** `tools/sharc_render_replay.py` then imported the same checked
+**[C] [D]** `tools/sharc_dev/sharc_render_replay.py` then imported the same checked
 state-pack SHRD bytes into the **independent Python SHARC interpreter**,
 verified the packed image against the locally loaded SHARC section, and
 replayed the 90 **exact recorded post-swap DMA byte sequences** without a
@@ -3083,7 +3083,7 @@ sequences. No failed-frame native read/write trace was captured.
 `DM(0x254d94)` records a *real writer* at **SHARC PC `0x1c2c64`** on 89
 of 90 rendered frames, before the subsequent reads at `0x1c1ca8`.
 `0x1c2c64`'s explicit disassembly is `DM(0x254d90) = R12`; in SIMD mode,
-`tools/sharc_core/forms_move.py` writes its PEy companion at `+4`, i.e.
+`tools/sharc_dev/sharc_core/forms_move.py` writes its PEy companion at `+4`, i.e.
 `0x254d94`. This accounts for the previously empty **resolved static
 store** list: the current SHARC DB indexes the explicit operand but not
 this SIMD companion. The watch's canonical address is `0x28254d94`.
@@ -3250,7 +3250,7 @@ agreement, Device state, or a fix for the stop; the zero-stop gate still fails.
 
 The diagnostic's initial parser and ordinal-0 DMA failures are excluded:
 trailer hashes are length-prefixed ASCII hex, and importing
-`tools.sharc_core.state.Const` supplied a different class from the native
+`tools.sharc_dev.sharc_core.state.Const` supplied a different class from the native
 wrapper's `tr.st.Const`. Its setter silently selected Unknown for R8, causing
 an invalid first-frame fork. Corrected harnesses assert the native R8 readback
 before executing. Those failures were parent-recipe errors, not evidence of
@@ -3882,7 +3882,7 @@ To enable PC/event diagnostics for a native diagnostic build, use
 `--features diagnostic-profile,diagnostic-events` on `native/boot/Cargo.toml`.
 For the desktop, use `pnpm --filter @digi/desktop dev --features diagnostics`;
 the desktop feature forwards PC/event features without detailed bus tracing.
-For a browser diagnostic asset, run `tools/native_wasm.py --diagnostics`, then
+For a browser diagnostic asset, run `tools/emulator/native_wasm.py --diagnostics`, then
 reload the page. Running it without the flag restores the default build.
 The WASM build script now copies from the actual `CARGO_TARGET_DIR` when set,
 resolving the previous stale external-target copy trap. All Cargo work still
@@ -4123,16 +4123,16 @@ entries. It is an interpreter diagnostic build, not an audio throughput
 optimization or a replacement for the existing hot AOT library. Reproduce:
 
 ```sh
-.venv/bin/python tools/sharc_rsgen.py dt2-1.16 \
+.venv/bin/python -m tools.sharc_dev.sharc_rsgen dt2-1.16 \
   --decode-range 0x1c0000:0x1ce400 --decode-range 0xb80000:0xb8d5c0 \
   --out out/native/fresh-reset-20261002/interpreter-gen
 SHARC_GEN_DIR="$PWD/out/native/fresh-reset-20261002/interpreter-gen" \
   CARGO_TARGET_DIR=/private/tmp/digi-reset-core \
   rustup run 1.98.1 cargo build --manifest-path native/sharc/Cargo.toml \
   --release --locked --offline --lib
-.venv/bin/python tools/sharc_reset_check.py dt2-1.16 \
+.venv/bin/python -m tools.sharc_dev.sharc_reset_check dt2-1.16 \
   --lib /private/tmp/digi-reset-core/release/libsharc_native.dylib --steps 100000
-.venv/bin/python tools/sharc_reset_check.py dt2-1.16 \
+.venv/bin/python -m tools.sharc_dev.sharc_reset_check dt2-1.16 \
   --lib /private/tmp/digi-reset-core/release/libsharc_native.dylib \
   --steps 7543 --compare --report /private/tmp/digi-reset-comparison.json
 ```
@@ -4219,7 +4219,7 @@ addressed. Synthetic tests cover alias coherence, window endpoints, absent
 memory, modifier units and native instruction rollback; numeric addresses
 alone no longer imply a normal-word transfer.
 
-**[D]** `tools/sharc_decode_rsgen.py` generates an ISA-only Rust decoder from
+**[D]** `tools/sharc_dev/sharc_decode_rsgen.py` generates an ISA-only Rust decoder from
 our public-manual decode table. An engine can select runtime decoding with
 C ABI option 4, rather than requiring a firmware-specific instruction table.
 Instruction fields and cached metadata are owned. Cache hits revalidate the
@@ -4268,12 +4268,12 @@ boundaries, excluding a requested interval's unexecuted remainder after a halt.
 A reproducible bounded invocation is:
 
 ```sh
-.venv/bin/python tools/sharc_transpile.py --out out/native/runtime-core/gen
+.venv/bin/python -m tools.sharc_dev.sharc_transpile --out out/native/runtime-core/gen
 SHARC_GEN_DIR="$PWD/out/native/runtime-core/gen" \
   CARGO_TARGET_DIR=/private/tmp/digi-runtime-core \
   rustup run 1.98.1 cargo build --manifest-path native/sharc/Cargo.toml \
   --release --locked --offline --lib
-.venv/bin/python tools/sharc_reset_check.py dn2-1.11 \
+.venv/bin/python -m tools.sharc_dev.sharc_reset_check dn2-1.11 \
   --lib /private/tmp/digi-runtime-core/release/libsharc_native.dylib \
   --runtime-decode --mmr-resets out/refs/adsp-2156x-hwr/all.txt \
   --approx-recips --instruction-clock --steps 100000 \
@@ -4684,7 +4684,7 @@ it touches no MMR. Only an interrupt that readies a task can move it on.
   the indirect jump at `0x1c9dbf` through `0x268a68`.
 
 **[D]** `State.peripheral_model`, native option 22, models two blocks (sources
-in tools/sharc_core/periph.py, twin native/sharc/src/rt/periph.rs):
+in tools/sharc_dev/sharc_core/periph.py, twin native/sharc/src/rt/periph.rs):
 - The SEC core interface: SCTL.SEN/IEN, SSTAT PND/ACT, CSID/CSTAT.SIDV,
   acknowledge by a SHDBG_SECI_ID or CSID write, END and RAISE.
 - Descriptor-list DMA for DMA26/27/10/11: the fetch order is NXT, ADDRSTART,
@@ -4903,7 +4903,7 @@ that owns the native SHARC engine. Per 2748-byte DSPI2 frame: SPI2 exchange
 (noting the first chunk that ends in the DN2 idle range `0xb88a49..0xb88abb`),
 then one SPORT4 block (-Q31 to f32 stereo). Driver:
 `native/boot/examples/sharc_live.rs` (needs `SHARC_GEN_DIR`; image blob from
-`tools/sharc_pack_image.py`; DSP state is a private canonical blob).
+`tools/sharc_dev/sharc_pack_image.py`; DSP state is a private canonical blob).
 
 **[D]** DN2 1.11, SSI paced, NOTE_EVENTS=trig, ready+250M (1.1015G ColdFire
 instructions, 7,574 frames, 5.05 s audio, 5.05G DSP instructions): no halt,
@@ -5089,7 +5089,7 @@ before this is marked **[V]**; the cost of re-hashing when a data store shares a
 one-command pipeline and the WASM and `sharc_live` builds of a DN2 library are
 done (below).
 
-**[D]** `tools/sharc_dn2_aot.py` builds the DN2 block library from scratch in
+**[D]** `tools/sharc_dev/sharc_dn2_aot.py` builds the DN2 block library from scratch in
 one command: strict transpile, a core-only build, `--cycles` (3) profiling
 replays (cycle 0 interpreter-only, then rsgen + build + replay with blocks),
 the final rsgen on all cycles' profiles merged (counts summed per key,
@@ -5161,7 +5161,7 @@ word on every interpreted instruction. Changes:
   engine's own `Mem::read_sw`); the boundary skips `begin`/`commit_host`
   when the SEC line is idle (`periph::sec_line_active`); `bank_codes` is
   static; `normal_word_to_byte` brackets its ranges first (also in
-  `tools/sharc_core/addressing.py`, same mapping); `Stk::index` has a
+  `tools/sharc_dev/sharc_core/addressing.py`, same mapping); `Stk::index` has a
   one-compare path.
 - **Generator** (`GENERATOR_VERSION` 10): model-safe bodies now hold calls,
   the (DB) return idiom, RTS (Type 11a/11c with x=0; RTI stays out), CJUMP,
@@ -5204,7 +5204,7 @@ profiles: 1,751 blocks, 20,722 instructions.
 
 Results, same machine, runs alternated (the machine was shared, so
 instructions retired from `time -l` back the wall times):
-- Gates: the 5-way replay (`tools/sharc_dn2_replay.py`, frames 4600..5600)
+- Gates: the 5-way replay (`tools/sharc_dev/sharc_dn2_replay.py`, frames 4600..5600)
   matches every state hash and PCM `581339b3...` in all five
   configurations; the coupled run (snapshot m5, trig, ready+100M,
   `DSP_THREAD=1` and synchronous) gives ColdFire `fbace0f0...`, DSP export
@@ -5307,7 +5307,7 @@ wasm32-unknown-unknown. Not re-checked against the device.
 ### Merged speed streams: integration notes (2026-10-03)
 
 **[D]** The ColdFire speed-up (fused loops, 32-byte `Insn`), the DSP block
-speed-up (generator 10, `step_until_in`) and `tools/sharc_dn2_aot.py` were
+speed-up (generator 10, `step_until_in`) and `tools/sharc_dev/sharc_dn2_aot.py` were
 merged on `e5f61f0`. The merged generator, run with the DSP stream's coverage,
 entries and transitions inputs, reproduces that stream's DN2 gen tree
 byte for byte (`0e73c5c1...`, 1751 blocks, 20,722 instructions; sha256 of the
@@ -5323,7 +5323,7 @@ and `--exclude 0xb88a49:0xb88abc` (the idle loop). `Engine::step_until_in`
 stops at the first idle-range boundary only if no block or route enters that
 range; nothing records or checks the exclusion in the library (build info and
 `GENERATOR_VERSION` do not carry it). Without it only the busy and per-frame
-diagnostics can change, not state or PCM. `tools/sharc_dn2_aot.py` therefore
+diagnostics can change, not state or PCM. `tools/sharc_dev/sharc_dn2_aot.py` therefore
 takes `--chain` and `--exclude` (both recorded in the manifest settings); its
 earlier 931-block gen (no chaining) predates generator 10 and is stale.
 **[O]** carry the excluded ranges in the library build info and make
@@ -5497,7 +5497,7 @@ For that future full generation, use the project database
 `out/sharcdb/dn2-1.11.sqlite` and section blob
 `out/sections/dn2-1.11/section_7_BLOB.bin` with a fresh work and output
 directory:
-`tools/sharc_rsgen.py dn2-1.11 --coverage /private/tmp/digi-r1-pipeline-a/prof/merged-final --entries /private/tmp/digi-r1-pipeline-a/prof/merged-final.entries --transitions /private/tmp/digi-r1-pipeline-a/prof/merged-final.trans --model-safe --explicit-memory-model 0 --chain --exclude 0xb88a49:0xb88abc --region-insns 120 --region-regs 36 --work FRESHscratch --out FRESHscratch`.
+`tools/sharc_dev/sharc_rsgen.py dn2-1.11 --coverage /private/tmp/digi-r1-pipeline-a/prof/merged-final --entries /private/tmp/digi-r1-pipeline-a/prof/merged-final.entries --transitions /private/tmp/digi-r1-pipeline-a/prof/merged-final.trans --model-safe --explicit-memory-model 0 --chain --exclude 0xb88a49:0xb88abc --region-insns 120 --region-regs 36 --work FRESHscratch --out FRESHscratch`.
 The current canonical generated-tree report records 1,751 blocks and 20,722
 block instructions. It was made from a different accumulated profile set, so it
 is not a baseline for the controlled fresh generation below.
@@ -5627,7 +5627,7 @@ so the 21.6% saving applies to the DSP replay window, not a measured integrated
 percentage. Browser/WASM and Windows have not been performance-tested for this
 change; the implementation uses portable Rust.
 
-`tools/sharc_rsgen.py` and `tools/sharc_dn2_aot.py` expose
+`tools/sharc_dev/sharc_rsgen.py` and `tools/sharc_dev/sharc_dn2_aot.py` expose
 `--unknown-fallbacks 0x1c253f`. It selects regions containing the named block;
 it is opt-in, not a global removal of knownness guards. The AOT manifest records
 this choice. Generator version 11 identifies the new runtime register-file
@@ -5940,13 +5940,13 @@ before changing generated inputs or flags.
 
 ### Underrun work: app PGO, aligned period stop, gen provenance (2026-10-04)
 
-**[V]** Native PGO now reaches the desktop app. `tools/native_pgo.py train`
+**[V]** Native PGO now reaches the desktop app. `tools/emulator/native_pgo.py train`
 builds an instrumented `cargo test` binary of `digiemu-desktop`
 (`--features coupled-audio --target aarch64-apple-darwin`, rustup 1.98.1),
 runs `coupled_ready_exactness` four times and merges the profile into
 `out/native/pgo/dn2/<triple>/profiles/<sha256>.profdata`. The manifest key
 covers every local crate in the build graph, the generated cache, `rustc -vV`,
-the target and features; `check` takes about 0.02 s. `tools/native_emu.py`
+the target and features; `check` takes about 0.02 s. `tools/emulator/native_emu.py`
 uses the profile on the coupled path when the key matches, through
 `rustup run 1.98.1 cargo run ... --target aarch64-apple-darwin --target-dir
 out/native/pgo/dn2/<triple>/target` with `-Cprofile-use`; otherwise it prints
@@ -5977,8 +5977,8 @@ is about 632 ms of the same 1.075 s, and ColdFire waits on DSP replies for
 about 40% of it.
 
 **[V]** The accepted cache `out/native/dn2-audio/gen` is reproducible. At HEAD
-`eecf7b8`, `tools/sharc_transpile.py --strict` followed by
-`tools/sharc_rsgen.py dn2-1.11 --coverage cov6.txt --entries ent9.txt
+`eecf7b8`, `tools/sharc_dev/sharc_transpile.py --strict` followed by
+`tools/sharc_dev/sharc_rsgen.py dn2-1.11 --coverage cov6.txt --entries ent9.txt
 --transitions trans9.txt --model-safe --explicit-memory-model 0 --chain
 --exclude 0xb88a49:0xb88abc --unknown-fallbacks 0x1c253f` (same `--work` and
 `--out`) regenerates 50 of 52 files byte for byte. `blocks_05.rs` differs by
@@ -6001,7 +6001,7 @@ regions (`r_1C399A`, `r_1C3862`, `r_1C364F`) are 64-trip FP DO loops at about
   blocks that start at bank-switch, PCSTK/loop-register or RTI instructions.
   Adding `0x1c2518,0x1c254e` to `--unknown-fallbacks` cut replay interpreted
   steps by 17.4% but the coupled workload only by 0.9% (wall 0.991, five
-  pairs). Tool: `tools/sharc_entries_merge.py`; trees under
+  pairs). Tool: `tools/sharc_dev/sharc_entries_merge.py`; trees under
   `out/native/gen-entries-20261003/`.
 - Float fast paths in generated code: i64 truncation in `_trunc_int` (1.012,
   slower), a NaN-check collapse for add/sub/mul (0.984 alone) and a normal-result
@@ -6024,7 +6024,7 @@ The hand versions are firmware-derived and kept under `out/`.
 
 **[V]** Float add, subtract and multiply in generated code now use native
 f32 arithmetic (`rt/bnd.rs` `_float_binary_*`, redirected by
-`tools/sharc_transpile.py` `fast_float_call`). A double result of two f32
+`tools/sharc_dev/sharc_transpile.py` `fast_float_call`). A double result of two f32
 operands rounds once to the same f32, so the results are identical; NaN
 results run the original sequence. Differential tests: 40,203,392 and
 18,017,865 comparisons, 0 mismatches. Coupled, plain release, 21 pairs:
@@ -6094,7 +6094,7 @@ Not investigated.
 
 ### Circular buffers: regenerated core and fast-tier wrap (2026-10-05)
 
-**[V]** Regenerating the DN2 core with the circular-buffer rules (004ba01; recipe in `out/native/dn2-audio/gen/PROVENANCE.txt`) changes none of the pinned hashes: coupled ColdFire `fbace0f0...`, DSP export `05ac2ac2...`, PCM `38d2a322...` (72,896 samples) still hold. `tools/sharc_circstats.py` counts the workload's circular post-modifies in an instrumented copy of the gen: 5,766,932, all on I7 (the stack: B/L words `0x269170/0xc2`, `0x26f000/0x1fd`, `0x2d08c0/0x3e2`, modifier -1 word), and none reaches the end of its buffer. So the wrap is not exercised by this workload; the old "delay line" reading of L7=0x3e2/0x1fd was the stack.
+**[V]** Regenerating the DN2 core with the circular-buffer rules (004ba01; recipe in `out/native/dn2-audio/gen/PROVENANCE.txt`) changes none of the pinned hashes: coupled ColdFire `fbace0f0...`, DSP export `05ac2ac2...`, PCM `38d2a322...` (72,896 samples) still hold. `tools/sharc_dev/sharc_circstats.py` counts the workload's circular post-modifies in an instrumented copy of the gen: 5,766,932, all on I7 (the stack: B/L words `0x269170/0xc2`, `0x26f000/0x1fd`, `0x2d08c0/0x3e2`, modifier -1 word), and none reaches the end of its buffer. So the wrap is not exercised by this workload; the old "delay line" reading of L7=0x3e2/0x1fd was the stack.
 
 **[C]** "The tier requires L == 0 because the interpreter does not wrap" no longer holds. The tier now lowers the interpreter's rule exactly (`Lower::post_update`, `modify_update`): post-modify with MODE1.CBUFEN set and L != 0, and 19a_scaled / 7b MODIFY (they wrap on the source's B/L whatever CBUFEN says). One +-L step on the unsigned sum; L and B are baked (`Req::Eq`), the index must lie in `[B, B+L)` at entry (new `Req::Within`), so the window is the buffer, not base + stride*t. Refused: |M| > L, CBUFEN clear with L != 0, 7a and 19a (the interpreter does not wrap them), 7b with a negative M (the interpreter reads M unsigned and returns Unknown). `SHARC_FAST_NOCIRC=1` restores the old behaviour for A/B runs.
 
@@ -6702,7 +6702,7 @@ every arm has identical PCM, gates and interpreter count.
   has a fixed cost of about 100 ns (`out/native/runs/20261005-fast-percall/`).
   M300 is now the launcher default.
 - PGO retrained on M300 (profile `02eee750...`, through
-  `tools/native_pgo.py train`): the new-to-old ratio is 0.921 idle and
+  `tools/emulator/native_pgo.py train`): the new-to-old ratio is 0.921 idle and
   0.936 chord16, giving about 1.256 DSP CPU s per audio s
   (`out/native/runs/20261005-chain-pgo/`).
 - Stopping chains only at fast-region entries would need a generator
@@ -6849,7 +6849,7 @@ Change (`native/boot/src/runtime.rs`; the core `native/coldfire` needed none):
   executes the new instruction; `step_once` x 60 and `step_chunk(60)` leave identical CPU state; PC `0xfc000000` still
   gives `UnsupportedGuestPc`. Without the change the first `step_once` stops with that error.
 
-Performance (DN2 1.12 image, coupled-run, `tools/coupled_ab.py`, scenario `trig1-taps`, 10.5 audio s, 8 alternating
+Performance (DN2 1.12 image, coupled-run, `tools/devtools/coupled_ab.py`, scenario `trig1-taps`, 10.5 audio s, 8 alternating
 pairs, machine load 4 to 7 from other lanes, binaries built with and without the change): ceiling first. The change adds
 one compare-and-branch on the `run_fast` per-instruction path that was already there (`outside` replaces the old
 `> last_pc_offset` test; `watched()` is skipped for RAM PCs) and nothing to the fused or HLE paths, so at the CF

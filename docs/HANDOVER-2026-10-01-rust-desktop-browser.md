@@ -74,7 +74,7 @@ See **Outer timer-service gate** in the findings for tests and timing caveats.
 
 Fresh DSP/audio follow-up (2026-10-02): DT2 sends a byte-exact section-7
 loader over direct DSPI2 and 69 LP0 slot-header transfers during no-card boot.
-Added explicit generator decode ranges and `tools/sharc_reset_check.py`. Pure
+Added explicit generator decode ranges and `tools/sharc_dev/sharc_reset_check.py`. Pure
 native startup now matches all 7,543 completed Python reference instructions
 before both stop on an unknown boot-source read at `0x10000000`. The stream's
 earlier INIT callback at `0x120230` and ROM handoff context are not reproduced
@@ -181,7 +181,7 @@ firmware DAC/master-FX output.
 The first 100-frame attempt **refused a stale pack before rendering**:
 `out/native/live/v3/59095b644e12a4e3656c70b5.pack` records core `124ec4db...`,
 while current native/core hash is `4b25379c...`. Rebuild a matching pack from
-the original capture/FlexBus inputs using `tools/sharc_transpile_run.py
+the original capture/FlexBus inputs using `tools/sharc_dev/sharc_transpile_run.py
 live-pack`; inspect existing `--rebuild`, `--limit` and `--out-dir` options.
 Do not bypass stale guards or merely retag old state. Captured-state rendering
 is an explicitly separate benchmark, not a substitute for full emulator boot.
@@ -459,7 +459,7 @@ or MMIO trace, and times CPU steps excluding idle spins. Reproduce it only as
 a separate CPU baseline:
 
 ```sh
-python tools/cf_snapdump.py snapshots/dt2-1.16-drive3/boot280M.snap out/coldfire-bench/boot280M.cfdump
+python -m tools.coldfire.cf_snapdump snapshots/dt2-1.16-drive3/boot280M.snap out/coldfire-bench/boot280M.cfdump
 cd native/coldfire
 cargo build --release --bin cfrealmix
 target/release/cfrealmix ../../out/coldfire-bench/boot280M.cfdump 100000000

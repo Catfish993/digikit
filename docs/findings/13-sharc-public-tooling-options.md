@@ -1,7 +1,7 @@
 # Public SHARC+ tooling options **[D][O]**
 
 This is a bounded tooling assessment, not a firmware or runtime finding. The
-project's typed ISA (`tools/sharc_isa.py`) remains the encoding authority;
+project's typed ISA (`tools/sharc_dev/sharc_isa.py`) remains the encoding authority;
 generated SLEIGH and p-code are adapters. No speedup was benchmarked here.
 
 ## Decision
@@ -9,7 +9,7 @@ generated SLEIGH and p-code are adapters. No speedup was benchmarked here.
 - **[D] Reuse the existing pinned Selache adapter for *differential encoding
   checks*, not architectural semantics.** Its public `selinstr` component
   encodes and disassembles SHARC+ instructions, including VISA; the repository
-  already has `tools/sharc_selache.py` and `tools/selasm.py`. Compare instruction
+  already has `tools/sharc_dev/sharc_selache.py` and `tools/sharc_dev/selasm.py`. Compare instruction
   extent, operand fields and predicate rendering on synthetic fixtures. Its
   disassembler is not an independent execution model for ShiftImm side effects
   or MODE1/SIMD. Selache's public README says its tools are GPL-3.0; keep it
@@ -19,7 +19,7 @@ generated SLEIGH and p-code are adapters. No speedup was benchmarked here.
 - **[D] Keep SLEIGH + pypcode for cheap lift probes, not as an independent
   semantic oracle.** Ghidra documents SLEIGH as the bit-to-p-code translator;
   pypcode uses SLEIGH, so agreement between them does not independently
-  establish SHARC+ behavior. Use the existing `tools/sharcpcode.py measure`
+  establish SHARC+ behavior. Use the existing `tools/sharc_dev/sharcpcode.py measure`
   (without `--ghidra`) and `compare`, and query its SQLite outputs before any
   serialized Ghidra run. [Ghidra SLEIGH reference](https://github.com/NationalSecurityAgency/ghidra/blob/master/GhidraDocs/languages/html/sleigh.html),
   [pypcode README](https://github.com/angr/pypcode/blob/master/README.md).
@@ -45,6 +45,6 @@ Independent lanes can check public manual/opcode mapping, loaded-byte
 provenance, and cached function impact in parallel. Serialize shared semantic
 edits, cache publication, language installation and Ghidra project access.
 In particular, the observed conditional Type6a ShiftImm opcode `0x04` is not
-handled by `tools/sharc_trace.py`; neither a predicate-only patch nor a new
+handled by `tools/sharc_dev/sharc_trace.py`; neither a predicate-only patch nor a new
 disassembler would close that semantic gap. The byte-backed conditional Type7a
 frontier in finding 06 is a better immediate target for this report. **[O]**

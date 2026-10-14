@@ -1,22 +1,22 @@
-"""SHARC+ patchkit toolchain: Selache assembles, tools/pk_sharc.py links, our decoder re-decodes, the core runs.
+"""SHARC+ patchkit toolchain: Selache assembles, tools/patchkit/pk_sharc.py links, our decoder re-decodes, the core runs.
 
-Skips when Selache is not built (uv run python tools/pk_toolchains.py selache)."""
+Skips when Selache is not built (uv run python -m tools.patchkit.pk_toolchains selache)."""
 
 import struct
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_sharc  # noqa: E402
-import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_sharc,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
-    reason="selache not built (tools/pk_toolchains.py selache)",
+    reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
 
 SRC = ROOT / "tests" / "patchkit" / "pk_src"

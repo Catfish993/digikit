@@ -1,19 +1,16 @@
 """Architectural PC-stack writes, with synthetic instructions only."""
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_diff as sd
-import sharc_run as sr
-import sharc_trace as st
-import sharc_transpile_run as nr
-import sharcldr
-from sharc_disasm import Instruction
+from tools.sharc_dev import sharc_diff as sd
+from tools.sharc_dev import sharc_run as sr
+from tools.sharc_dev import sharc_trace as st
+from tools.sharc_dev import sharc_transpile_run as nr
+from tools.sharc_dev import sharcldr
+from tools.sharc_dev.sharc_disasm import Instruction
 
 PUSH = {
     k: 0

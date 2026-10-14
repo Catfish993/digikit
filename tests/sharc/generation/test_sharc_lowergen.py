@@ -1,5 +1,5 @@
 """The generated lowering (native/sharc/src/fast/lower/gen_forms.rs) is what
-tools/sharc_lowergen.py makes of tools/sharc_core today.
+tools/sharc_dev/sharc_lowergen.py makes of tools/sharc_dev/sharc_core today.
 
 Exactness against the interpreter is the Rust test `gen_lowering_matches_the_
 interpreter` (cargo test --lib gen_, with the shared generated core); this one
@@ -9,14 +9,12 @@ only keeps the checked-in file from going stale when the semantics change.
 from __future__ import annotations
 
 import pathlib
-import sys
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import sharc_lowergen as g  # noqa: E402
-import sharc_lowergen_rs as r  # noqa: E402
+from tools.sharc_dev import sharc_lowergen as g  # noqa: E402
+from tools.sharc_dev import sharc_lowergen_rs as r  # noqa: E402
 
 GEN = ROOT / "native" / "sharc" / "src" / "fast" / "lower" / "gen_forms.rs"
 
@@ -56,10 +54,10 @@ def test_simd_leaves_exist() -> None:
 
 def test_shared_core_is_not_stale() -> None:
     """The transpiled core the Rust tests build against must come from the
-    current tools/sharc_core (`mise run regen`)."""
+    current tools/sharc_dev/sharc_core (`mise run regen`)."""
     import re
 
-    import sharc_transpile
+    from tools.sharc_dev import sharc_transpile
 
     tables = ROOT / "out" / "native" / "shared-core" / "gen" / "tables.rs"
     if not tables.exists():

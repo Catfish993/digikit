@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_inputs.py.
+"""Tests for tools/sharc_dev/sharc_inputs.py.
 
 Pure-Python pieces (ring_label, _is_plausible, init_write_info against a
 synthetic loader stream, the to_json() shapes) need neither the real
@@ -9,22 +9,18 @@ run_init()/dynamic_view() are additionally marked slow (~1.24M instructions
 for init alone), like tests/sharc/integration/test_sharc_harness_voice.py's own equivalents.
 """
 
-import os
 import pathlib
-import sys
 import unittest
 from importlib import import_module
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-si = import_module("sharc_inputs")
-sharc = import_module("sharc")
-C = import_module("sharc_contract")
-sr = import_module("sharc_run")
-st = import_module("sharc_trace")
-L = import_module("sharcldr")
+si = import_module("tools.sharc_dev.sharc_inputs")
+sharc = import_module("tools.sharc_dev.sharc")
+C = import_module("tools.sharc_dev.sharc_contract")
+sr = import_module("tools.sharc_dev.sharc_run")
+st = import_module("tools.sharc_dev.sharc_trace")
+L = import_module("tools.sharc_dev.sharcldr")
 
 DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
@@ -270,7 +266,7 @@ class BuildStaticTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class BuildWithInitTest(unittest.TestCase):
     """build() against a real post-init overlay (~1.24M instructions, several
-    seconds -- see tools/sharc_harness.py's own InitStateRenderTest)."""
+    seconds -- see tools/sharc_dev/sharc_harness.py's own InitStateRenderTest)."""
 
     @classmethod
     def setUpClass(cls):
@@ -288,7 +284,7 @@ class BuildWithInitTest(unittest.TestCase):
         self.assertEqual(by_addr[0x252D78].label, "init")
 
     def test_per_track_record_defaults_are_init_written(self):
-        # docs/findings/06's "Init writes" / tools/sharc_harness.py's own
+        # docs/findings/06's "Init writes" / tools/sharc_dev/sharc_harness.py's own
         # notes on FUN_1c15e3 filling every voice record with defaults.
         # 2026-09-28 re-pin, 0x3f800000 -> 0x3f000000 (0.5f): the only
         # init writer of 0x2506ec is now sw 0x1c60cc (0.5f). The old 1.0f
@@ -308,14 +304,14 @@ class BuildWithInitTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class DynamicViewTest(unittest.TestCase):
     """dynamic_view() against the real frame call (setup_voice() +
-    setup_frame() + fresh_call(block_handler), tools/sharc_harness.py's own
+    setup_frame() + fresh_call(block_handler), tools/sharc_dev/sharc_harness.py's own
     call chain), with FRAME_PATCH_TABLE so it reaches the same known
-    stop tools/sharc_harness.py pins as FRAME_MILESTONE -- run_init() alone is several
+    stop tools/sharc_dev/sharc_harness.py pins as FRAME_MILESTONE -- run_init() alone is several
     seconds; a Watchpoint-logged run is slower still, so this is its own
     slow test rather than folded into BuildWithInitTest."""
 
     def test_reaches_the_known_return_mismatch_and_logs_reads(self):
-        import sharc_harness as h
+        from tools.sharc_dev import sharc_harness as h
 
         view = si.dynamic_view("dt2-1.16", patch_table=h.FRAME_PATCH_TABLE)
         self.assertEqual(view.instructions, h.FRAME_MILESTONE["instructions"])
@@ -328,7 +324,7 @@ class DynamicViewTest(unittest.TestCase):
         self.assertTrue(all(a < L.SW_ALIAS_BASE for a in view.unexplained_reads))
 
     def test_unexplained_reads_cross_check_a_known_static_no_writer_address(self):
-        import sharc_harness as h
+        from tools.sharc_dev import sharc_harness as h
 
         img = sharc.load("dt2-1.16")
         static = si.build(img, 0x1C2B24)
@@ -353,7 +349,7 @@ class DynamicViewCaptureTest(unittest.TestCase):
     the idle capture, real per-frame command dispatch and all: frame 0's
     own header is command 1 (a trivial clear, 192 instructions), frame 1 is
     the first real render (95982 instructions, the same "frame-returned"
-    count tools/sharc_replay.py's own milestone test pins for its own
+    count tools/sharc_dev/sharc_replay.py's own milestone test pins for its own
     frame 1), and frame 2 -- the second real render -- returns
     cleanly (since the 2026-10-02 width-resolver fix it no longer hits the
     old 0x1c32b0 opcode, which was a mis-decode).

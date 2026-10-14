@@ -1,14 +1,9 @@
-"""tools/ghidravt.py match summary and arguments (the run itself needs Ghidra)."""
+"""tools/coldfire/ghidravt.py match summary and arguments (the run itself needs Ghidra)."""
 
-import os
-import sys
 import unittest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import ghidravt  # noqa: E402
+from tools.coldfire import ghidravt  # noqa: E402
 
 
 class SummarizeTest(unittest.TestCase):

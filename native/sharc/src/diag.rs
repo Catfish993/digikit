@@ -1,6 +1,6 @@
 //! Where diagnostic output goes. Each diagnostic has an `*_OUT` variable; when
 //! it is unset but `DIGI_DIAG_DIR` is set, the output is `$DIGI_DIAG_DIR/<name>`
-//! (the directory is created). tools/digi_env.py `diag_env` sets both.
+//! (the directory is created). tools/emulator/digi_env.py `diag_env` sets both.
 
 use std::ffi::OsString;
 use std::path::PathBuf;

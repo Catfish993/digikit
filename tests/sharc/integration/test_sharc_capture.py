@@ -10,13 +10,8 @@ Run with: uv run python -m pytest tests/sharc/integration/test_sharc_capture.py 
 """
 
 import os
-import sys
 import tempfile
 import unittest
-
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, str(REPO_ROOT))
 
 from emu.sharc_capture import (  # noqa: E402
     MAGIC,

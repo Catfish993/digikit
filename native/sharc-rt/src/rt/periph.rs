@@ -1,6 +1,6 @@
 //! Opt-in system peripherals: the SEC core interface and descriptor DMA.
 //!
-//! Hand-written twin of tools/sharc_core/periph.py; keep the two in step.
+//! Hand-written twin of tools/sharc_dev/sharc_core/periph.py; keep the two in step.
 //! Register state lives in St::mmrs, so canonical snapshots need no new
 //! fields. A rejected case traps with TRAP_PERIPHERAL (the Python core then
 //! raises ValueError for the same case).

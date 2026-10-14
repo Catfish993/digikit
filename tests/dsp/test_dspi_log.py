@@ -1,17 +1,8 @@
 """dspi_log: reading and querying the DSPI frame log."""
 
-import importlib.util
 import struct
-import sys
 
-from support.paths import REPO_ROOT
-
-TOOL = REPO_ROOT / "tools" / "dspi_log.py"
-_spec = importlib.util.spec_from_file_location("dspi_log", TOOL)
-assert _spec and _spec.loader
-dl = importlib.util.module_from_spec(_spec)
-sys.modules["dspi_log"] = dl
-_spec.loader.exec_module(dl)
+import tools.emulator.dspi_log as dl
 
 FRAMES = [
     (0, 1, b"\x00\x03\x00\x00\x00\x00", b"\xaa\xaa"),

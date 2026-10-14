@@ -7,7 +7,7 @@ edition = "2024"
 publish = false
 description = "Cranelift backend for the SHARC fast tier's kernel IR (native/sharc/src/fast)"
 
-# Build with SHARC_GEN_DIR (a tools/sharc_transpile.py output): the tests and
+# Build with SHARC_GEN_DIR (a tools/sharc_dev/sharc_transpile.py output): the tests and
 # examples drive the full interpreter next to the fast tier.
 [dependencies]
 sharc-native = { path = "../sharc" }

@@ -1,7 +1,7 @@
 # fmt: off
 """The container's 32-byte trailer: HMAC-SHA256, keyed from section 2.
 
-    CLI: tools/content_hmac.py
+    CLI: tools/firmware/content_hmac.py
 
 Traced from the depacked bootstrap (`sections/section_2_DSP.bin`, base
 0x80000400 once its 4-byte length prefix is stripped) via Ghidra, and

@@ -3,7 +3,7 @@
 //!
 //! usage: sharc_live SYX DSP_STATE DSP_IMAGE OUT.wav [EXTRA_AFTER_READY=250000000]
 //!   DSP_STATE  canonical SHRD state blob (a DN2 continuation; private)
-//!   DSP_IMAGE  packed loader image: `uv run python tools/sharc_pack_image.py dn2-1.11 OUT`
+//!   DSP_IMAGE  packed loader image: `uv run python -m tools.sharc_dev.sharc_pack_image dn2-1.11 OUT`
 //!   OUT.wav    48 kHz stereo 32-bit float; OUT.q31 raw words; OUT.csv per frame
 //! env: NOTE_EVENTS=trig|play (see common/mod.rs), DSP_PERIOD (instructions
 //!   per frame, default 666667), DSP_CLOCK_BASE (default 573627620),
@@ -21,7 +21,7 @@
 //!   ColdFire runs the next frame (`ThreadedPeer`); results are identical to
 //!   the default synchronous run (compare CF_DIGEST output).
 //!   DSP_PROFILE=PREFIX (synchronous runs only): the DSP interpreter profile
-//!   (coverage, .entries, .trans, .exits) for tools/sharc_rsgen.py, so blocks
+//!   (coverage, .entries, .trans, .exits) for tools/sharc_dev/sharc_rsgen.py, so blocks
 //!   can be generated for what the coupled run executes. DSP_EXPORT=PATH:
 //!   write the DSP's canonical state at the end.
 //!   AUDIO=1 (needs `--features play`): play the PCM through the default
@@ -222,7 +222,7 @@ fn main() {
     } else {
         let d = SharedDsp::new(open_engine_patched(&image, &state, base, None, idle).expect("DSP engine"));
         if env::var_os("DSP_PROFILE").is_some() {
-            // The interpreter profile for tools/sharc_rsgen.py (option 26).
+            // The interpreter profile for tools/sharc_dev/sharc_rsgen.py (option 26).
             d.0.borrow_mut().set_option(26, 1);
         }
         let (mut p, sh) = SharcPeer::new(d.clone(), period);
@@ -352,7 +352,7 @@ fn main() {
     }
     if let (Some(prefix), DspCtl::Local(d)) = (env::var_os("DSP_PROFILE"), &dsp) {
         // PREFIX (coverage), PREFIX.entries, .trans, .exits: the inputs of
-        // tools/sharc_rsgen.py --coverage/--entries/--transitions.
+        // tools/sharc_dev/sharc_rsgen.py --coverage/--entries/--transitions.
         let prefix = prefix.to_string_lossy().into_owned();
         let e = d.0.borrow();
         for (kind, suffix) in ["", ".entries", ".trans", ".exits"].iter().enumerate() {

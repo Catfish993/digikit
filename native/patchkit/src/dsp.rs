@@ -1,6 +1,6 @@
 //! The SHARC+ boot stream (container section 7): a chain of 16-byte block headers (code, target address,
 //! byte count, argument; little endian, XOR of the 16 bytes zero) each followed by its payload unless the
-//! FILL flag is set. Port of the parts of `tools/sharcldr.py` and `tools/dsp_patch.py` (`Stream`) that
+//! FILL flag is set. Port of the parts of `tools/sharc_dev/sharcldr.py` and `tools/patchkit/dsp_patch.py` (`Stream`) that
 //! patching needs: reads with last-writer-wins, in-place writes, and `append_block`.
 
 use crate::error::*;
@@ -206,7 +206,7 @@ impl Stream {
 }
 
 /// Loader byte address of short-word pc (the 0x20000000 L2 alias for the 0xb80000 window when the low alias
-/// is empty), as `tools/dsp_patch.py pc_address`.
+/// is empty), as `tools/patchkit/dsp_patch.py pc_address`.
 pub fn pc_to_byte(pc: u32, stream: &Stream) -> u32 {
     let low = SW_ALIAS_BASE + pc * 2;
     if (0xB8_0000..0xC0_0000).contains(&pc) && !stream.present(low) {

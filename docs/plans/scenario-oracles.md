@@ -28,7 +28,7 @@ ends:
   returns the PCM, the read-back parameters and the report. Today a render
   is one `coupled-run` process. A long-lived daemon with restore may replace
   it later without changing the tests.
-- **`tools/coupled.py` stays as the CLI** (bisect, replay, perf). Its build,
+- **`tools/emulator/coupled.py` stays as the CLI** (bisect, replay, perf). Its build,
   ready-input and run code moves into a shared module that both it and the
   fixtures use.
 - **No state shared between tests.** Restore costs about 0.2 s, and audio
@@ -62,19 +62,19 @@ ends:
 - Runner: `native/coupled/src/bin/coupled_run.rs`. Report `pcm` and
   `gates` at about l.666-700. `--wav` writes float WAV; the channel count
   is not confirmed (check the writer, about l.489-560). 48 kHz.
-- Ready inputs: `tools/digi_env.py` `ready_inputs(device)`; built by
-  `tools/ready.py` (`mise run emu:ready -- dn2|dt2`, about 2 min).
+- Ready inputs: `tools/emulator/digi_env.py` `ready_inputs(device)`; built by
+  `tools/emulator/ready.py` (`mise run emu:ready -- dn2|dt2`, about 2 min).
 - NO press before Trig 1 is NOT needed on the current DN2 ready state
   (finding 16, l.233-237). It was needed only with the 2026-10-03 snapshot
   (SLC dialog). DT2 with a card shows "FILE SYSTEM OK / PRESS Y/N" and
   needs one NO (finding 14, l.1148).
-- DT2 samples: `tools/plusdrive.py build DIR -o IMG` builds a +Drive card.
+- DT2 samples: `tools/firmware/plusdrive.py build DIR -o IMG` builds a +Drive card.
   With `--main-os` it writes an active project in which every sample
   reference points at the first input file. The ready state is cached per
-  card (`tools/ready.py dt2 --card-image IMG`). `tools/dt2_sample_check.py`
+  card (`tools/emulator/ready.py dt2 --card-image IMG`). `tools/emulator/dt2_sample_check.py`
   does this for a 1 kHz sine. Kit and slot layout: finding 14 (about l.43,
   l.136-141).
-- Control socket (`native/control`, `tools/digi_client.py`) has inputs but
+- Control socket (`native/control`, `tools/control/digi_client.py`) has inputs but
   no sample capture and no state save/load.
 - MIDI input is not modelled.
 - Panel button codes (DT2, `docs/handovers/HANDOVER-2026-09-13.md:127-145`,
@@ -89,7 +89,7 @@ ends:
   unverified). Use +/-1 detent events spaced apart, and read back.
 - WAV from `--wav`: stereo, 32-bit float, 48 kHz, interleaved L,R
   (`native/boot/src/wav.rs`, created at `native/coupled/src/lib.rs:541`).
-- DT2 1.16 parameter descriptors (`tools/paramtable.py --codes ...`;
+- DT2 1.16 parameter descriptors (`tools/coldfire/paramtable.py --codes ...`;
   range 0..0x7f00, value in the high byte):
   0x43 Chorus Send, 0x44 Delay Send (mirror 55), 0x45 Reverb Send
   (mirror 56), all owner FX, default 0; 0x71 Delay Time (owner Delay,
@@ -124,10 +124,10 @@ ends:
   0x401d0acc. Not needed for read-back.
 - `trig1-noqa-40m` (Trig 1, no prelude) sounds on the current DN2 ready
   state: rms 0.032, pin matches (run 2026-10-08).
-- Hand-named 1.16 addresses (live kit and track records): `tools/cf_names.py`.
+- Hand-named 1.16 addresses (live kit and track records): `tools/coldfire/cf_names.py`.
 - Existing audio checks: whole-PCM sha256, rms, peak, non-finite, 100 ms
   window RMS. No FFT, echo, L/R or DC analysis exists.
-- Perf: `tools/perf.py` (`mise run perf`), configs listed in finding 18.
+- Perf: `tools/devtools/perf.py` (`mise run perf`), configs listed in finding 18.
 
 ## Minimal path (do this first)
 
@@ -137,12 +137,12 @@ Token-saving route to the first verdicts, for the two FX Em heard:
 2. Phase 3 (no firmware knowledge needed: Sonnet, Haiku or another tool;
    can run in parallel in a worktree).
 3. Phase 4, fixture only: `tests/scenarios/conftest.py` imports
-   `tools/coupled.py` functions directly; scenarios are hand-written JSON.
+   `tools/emulator/coupled.py` functions directly; scenarios are hand-written JSON.
 4. Phase 5, delay and bit reduction only.
 
 Deferred until needed: the per-track project record (use one card per test
 signal; each ready state is cached), the shared-module refactor,
-`tools/scenario_dsl.py`, and the `--diag` identity test (do it in Phase 6).
+`tools/emulator/scenario_dsl.py`, and the `--diag` identity test (do it in Phase 6).
 
 Working rules for agents: start from the file:line references here instead
 of exploring; read `features.json`, not plots or WAVs (Em views those);
@@ -167,7 +167,7 @@ Sizes: S = under an hour of agent work, M = one session, L = open-ended.
       diagnostics, and `mise run replay FILE` reproduces it. Document the
       map in `scenarios/README.md`.
 - [ ] Find the DT2 1.16 addresses of the FX parameters in the live
-      kit/track records (`tools/cf_names.py`, the cfdb). Add a report field
+      kit/track records (`tools/coldfire/cf_names.py`, the cfdb). Add a report field
       to `coupled-run` that reads named addresses at the end of a run
       (`params`).
 - [x] Confirm the WAV channel count and layout from the writer.
@@ -176,7 +176,7 @@ Sizes: S = under an hour of agent work, M = one session, L = open-ended.
 - [x] Second agent checked the table signatures and FX entries against the
       image bytes; recorded in finding 02 ("The parameter descriptor table
       by signature, and where FX values live").
-- [ ] Make `tools/paramtable.py` find the table by signature (both devices).
+- [ ] Make `tools/coldfire/paramtable.py` find the table by signature (both devices).
 - [x] Find the runtime addresses of the Sound and Fx arrays: pointer
       chains from fixed globals, finding 02 (DT2 `*0x80004704` kit_t,
       `*0x80004708` Fx array; DN2 `*0x800052a0`, `*0x800052a4`).
@@ -185,12 +185,12 @@ Sizes: S = under an hour of agent work, M = one session, L = open-ended.
       `report.json`; the Python side resolves names to mirror indices
       (paramtable) and decodes values.
 - [ ] Promote the scratch `DT2SNP01` snapshot reader
-      (scratchpad `readback/snap2.py`) into `tools/snapread.py`, which
+      (scratchpad `readback/snap2.py`) into `tools/emulator/snapread.py`, which
       currently fails on Rust snapshots.
 - [ ] `ready_inputs("dt2")` names `snapshots/dt2-audio-ready-cold-2026-10-07/
       digi-audio-m5.snap`, which does not exist; the file is under
       `by-card/8ef11b5b8fc1/`. Check how coupled.py resolves DT2.
-- [ ] The DT2 card ready kit ("KIT 1", written by `tools/plusdrive.py`'s
+- [ ] The DT2 card ready kit ("KIT 1", written by `tools/firmware/plusdrive.py`'s
       project record) has non-default, non-round values (master overdrive
       0x7f00, compressor on, reverb decay 0, chorus depth 0x475a). A DT2 cold
       boot without a card (desktop dropdown) shows all FX at 0 (Em,
@@ -203,9 +203,9 @@ the value read back from firmware memory.
 
 ### Phase 2: test card (M)
 
-- [ ] Extend the project record written by `tools/plusdrive.py` so track N
+- [ ] Extend the project record written by `tools/firmware/plusdrive.py` so track N
       plays input file N (instead of every reference pointing at file 1).
-- [ ] Generate test signals (extend `tools/gen_test_samples.py`): single
+- [ ] Generate test signals (extend `tools/emulator/gen_test_samples.py`): single
       click, slow full-scale ramp, sines at chosen frequencies, log sweep,
       left-only and right-only, unity-level reference.
 - [ ] Build the card and its ready state; check each trig key plays its
@@ -216,7 +216,7 @@ state.
 
 ### Phase 3: analysis tool (M)
 
-- [x] `tools/audiocheck.py`: load the run WAV, compute features (envelope,
+- [x] `tools/emulator/audiocheck.py`: load the run WAV, compute features (envelope,
       onsets and echo spacing, echo level ratio, decay time, distinct levels,
       spectrum and alias products, L-R difference, DC, non-finite, growth),
       write `features.json` and PNGs (waveform, envelope, spectrogram) into
@@ -228,8 +228,8 @@ state.
 ### Phase 4: harness (M)
 
 - [ ] Move the build, ready-input, run and report code out of
-      `tools/coupled.py` into a shared module; `coupled.py` keeps its CLI.
-- [ ] `tools/scenario_dsl.py`: builders that emit scenario JSON
+      `tools/emulator/coupled.py` into a shared module; `coupled.py` keeps its CLI.
+- [ ] `tools/emulator/scenario_dsl.py`: builders that emit scenario JSON
       (`trig(n)`, `fx_page()`, `turn(enc, n)`, per-FX setters).
 - [x] `tests/scenarios/conftest.py`: session fixture `emulator(device)`;
       skip when the ready inputs are missing or the firmware hash differs;
@@ -254,13 +254,13 @@ state.
 
 ### Phase 6: fixes (L)
 
-- [ ] For each wrong verdict, trace the writers (`tools/sharc.py`,
+- [ ] For each wrong verdict, trace the writers (`tools/sharc_dev/sharc.py`,
       `SHARC_WWATCH`, `SHARC_PCDUMP`). Suspects from the handover: circular
       buffer wrap (B/L registers, post-modify), float/Q31 conversion,
       rounding, saturation.
-- [ ] Unit tests on `tools/sharc_core` taken from the ADI manuals' worked
+- [ ] Unit tests on `tools/sharc_dev/sharc_core` taken from the ADI manuals' worked
       examples (`out/refs/`) for those suspects.
-- [ ] Fix in `tools/sharc_core` only; `mise run gen:regen`; update golden
+- [ ] Fix in `tools/sharc_dev/sharc_core` only; `mise run gen:regen`; update golden
       hashes with a reason; flip the matching `xfail` tests.
 - [ ] Write accepted feature baselines.
 
@@ -273,10 +273,10 @@ state.
 
 ### Phase 8: performance per scenario (S)
 
-- [x] `tools/perf.py` takes a scenario; report the no-AOT config per FX
+- [x] `tools/devtools/perf.py` takes a scenario; report the no-AOT config per FX
       scenario: DSP CPU-s per audio s, interpreted share, uncovered
       functions ranked by cost. Done: `--scenarios FILE --scenario NAME...`,
-      `tools/perf_agg.py`; results in finding 18 ("Per-FX coverage").
+      `tools/devtools/perf_agg.py`; results in finding 18 ("Per-FX coverage").
 
 ### Phase 9: hardware reference (M, Em)
 
@@ -298,7 +298,7 @@ state.
 - 2026-10-08: plan agreed; branch created; minimal path added. Phase 1:
   stale NO-press notes fixed; button/encoder map, WAV format and FX
   parameter codes recorded above. numpy and matplotlib added to the dev
-  group. Phase 3 done: tools/audiocheck.py + tests/dsp/test_audiocheck.py (17
+  group. Phase 3 done: tools/emulator/audiocheck.py + tests/dsp/test_audiocheck.py (17
   pass, on CLEAN and TYPED); mypy stays at 3.11 with numpy/matplotlib
   stubs skipped (pyproject override). Parameter tables found by signature on
   both devices (unverified).
@@ -308,17 +308,17 @@ state.
   against the stale DN2 core (finding 15). DN2 and DT2 cores regenerated
   (backups `gen-pre-simd-20261008`); DN2 pins unchanged. Added the
   CORE_FINGERPRINT guard and per-image core selection. Not yet guarded:
-  `tools/ready.py:68-70`, `tools/perf.py:416`, `tools/native_wasm.py:47-51,
-  133`, `tools/rust_ws.py:69`, `tools/sharc_regionbench.py:299,555`,
-  `tools/sharc_build_dbg.py:22`. `out/native/shared-core/gen` (browser/wasm
+  `tools/emulator/ready.py:68-70`, `tools/devtools/perf.py:416`, `tools/emulator/native_wasm.py:47-51,
+  133`, `tools/devtools/rust_ws.py:69`, `tools/devtools/sharc_regionbench.py:299,555`,
+  `tools/sharc_dev/sharc_build_dbg.py:22`. `out/native/shared-core/gen` (browser/wasm
   core?) is stale and has no fingerprint. Next: Em listens to DN2 delay and
   bit reduction in `mise run emu`.
 - 2026-10-08 (cont.): DT2 card kit fixed (factory "KIT 1" replaced by
   "PRESET 1"; finding 02), new card ready state `by-card/1c1fed346ea9`,
-  card-less DT2 ready state built at the default path. `tools/snapread.py`
+  card-less DT2 ready state built at the default path. `tools/emulator/snapread.py`
   reads DT2SNP01. `coupled-run --peek` and `coupled.py scenario --scenarios
   FILE --peek NAME=SPEC` added; `scenarios/dn2-fx.json` (6 scenarios) and
-  `tools/fxcheck.py`. DN2 results (run dir `out/runs/all/20261008-041331/`):
+  `tools/emulator/fxcheck.py`. DN2 results (run dir `out/runs/all/20261008-041331/`):
   bit reduction plausible (error and THD grow with the setting; output not
   on a lattice, so the level count cannot confirm it); **delay send produces
   no echo at all** (send stored as 0x0d00/0x1b00, audio bit-identical to dry
@@ -337,7 +337,7 @@ state.
   only, so `btst` left ASTATY stale and the SIMD `JUMP IF SZ` at 0xb84228
   (AND of both PEs) was never taken; the saturator epilogue in FUN_b84099
   then doubled the delay write position (0x80459234) every frame. Fixed in
-  tools/sharc_core (also 18a BTF for USTAT pairs); 11 new tests; golden
+  tools/sharc_dev/sharc_core (also 18a BTF for USTAT pairs); 11 new tests; golden
   hashes unchanged; cores regenerated (fingerprint 535b23f8..., backups
   gen-pre-6b-20261008). Delay now audible: first echo +0.375 s after note
   start (delay time 24 x 15.6 ms at 120 BPM), tail falls ~6 dB per repeat
@@ -350,12 +350,12 @@ state.
 
 - 2026-10-08 (cont.): send FX sweep (Delay, Reverb, Chorus pages, Master
   compressor): navigation map, laws and verdicts in finding 15 (last
-  section). `tools/gen_sendfx.py`, `scenarios/dn2-sendfx.json`, `sf-*` measures
-  in `tools/fxcheck.py`, three new generic measures in `tools/audiocheck.py`.
+  section). `tools/emulator/gen_sendfx.py`, `scenarios/dn2-sendfx.json`, `sf-*` measures
+  in `tools/emulator/fxcheck.py`, three new generic measures in `tools/emulator/audiocheck.py`.
   Runs: `out/runs/sendfx/run1..run3`. Open: Master Overdrive page, routing
   parameters, hardware A/B for feedback gain, mix taper and Width.
 
-Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools/native_wasm.py (coupled browser core), tools/rust_ws.py, tools/sharc_regionbench.py (cmd_build), tools/sharc_build_dbg.py, tools/native_pgo.py (cmd_build), on top of coupled.py, native_emu.py and native_pgo.py require_inputs.
+Fingerprint guard now covers: tools/emulator/ready.py, tools/devtools/perf.py (shared core), tools/emulator/native_wasm.py (coupled browser core), tools/devtools/rust_ws.py, tools/devtools/sharc_regionbench.py (cmd_build), tools/sharc_dev/sharc_build_dbg.py, tools/emulator/native_pgo.py (cmd_build), on top of coupled.py, native_emu.py and native_pgo.py require_inputs.
 - 2026-10-08 (cont.): Phase 4 oracle suite: `tests/scenarios/` (conftest
   `emulator`/`render` fixtures, `test_dn2_fx.py`), `coupled.run_batch`,
   `fxcheck.reference_for`/`companions`, mise `scenarios:check` (61 tests, 173 s)
@@ -363,13 +363,13 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   alarm (sf-del-time-u127: an echo in the last tenth of the run) is checked by
   peak instead. Not done: PCM-identical-with-`--diag` test, shared module
   refactor, `--update-baselines`.
-- 2026-10-08 (cont.): Phase 8: `tools/perf.py` takes `--scenarios FILE
-  --scenario NAME...` (`--seconds 0` = scenario length); `tools/perf_agg.py`
+- 2026-10-08 (cont.): Phase 8: `tools/devtools/perf.py` takes `--scenarios FILE
+  --scenario NAME...` (`--seconds 0` = scenario length); `tools/devtools/perf_agg.py`
   aggregates. No-AOT config (`static-insns+follow`): 5.4-5.6% interpreted in all
   12 scenarios, timed 6.52 (trig1-taps) and 7.26 (sf-chr-depth-d127) CPU s per
   audio s; the FX add no new cold code except br (`FUN_b8258f`) and srr
   (`FUN_b826c8`) in the AOT core. Ranked list in finding 18.
-- 2026-10-09: DN2 AOT core regenerated with FX-active profiles (`tools/aot_fxprof.py`;
+- 2026-10-09: DN2 AOT core regenerated with FX-active profiles (`tools/sharc_dev/aot_fxprof.py`;
   tf/sf *-127 scenarios merged into cov6/ent9/trans9). 1751 -> 2657 blocks. Default-config
   interpreted: br 1.24 -> 0.33%, srr 1.88 -> 0.24%, dry 0.25%. `mise run scenarios` pins
   unchanged, `mise run scenarios:check` 61 passed. Backup: `gen-pre-fxprof-20261009`. See
@@ -396,14 +396,14 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   `SHARC_FAST_DYNFLAT=1` rebuilds such regions with flat accesses: calls 18.66M -> 13.21M, DSP CPU
   5.099 -> 4.599 (run time 2.942 -> 2.306), 3 exclusive pairs, PCM `e0e6c8af7a84c443` in all 18 runs;
   oracle suite 61 passed in the no-AOT config with the flag on, `cargo test --lib --tests` in
-  native/sharc 64 passed. Default stays off. New `tools/perf_calls.py` (call sources and exit kinds);
-  `tools/fastcov.py` `parse_run` now reads every exit of a root (`;` separated).
+  native/sharc 64 passed. Default stays off. New `tools/devtools/perf_calls.py` (call sources and exit kinds);
+  `tools/devtools/fastcov.py` `parse_run` now reads every exit of a root (`;` separated).
 - 2026-10-09: compile offload design (`docs/design/fast-compile-offload.md`, finding 18 "Compile timeline and
   offload premises"). No-AOT trig1-taps 20 s: 19.8 s compile + 2.9 s build of 99.8 DSP s, 16.5 s of it in the
   first 0.1 audio s, worst call 64 ms; AOT default compiles 0.02 s. Switch point between interpreter and kernel
   proven PCM-neutral (`SHARC_FAST_DEFER`, 8 runs); machine code has no relocations and reloads from bytes (PCM
   equal). Nothing built beyond measurement hooks (`SHARC_FAST_TL`, `_DEFER`, `_RELOAD`, `_CL_OPT`,
-  `tools/fast_timeline.py`, `tools/wasm_compile_bench.mjs`, `compile_par` example); default PCM pins unchanged.
+  `tools/devtools/fast_timeline.py`, `tools/devtools/wasm_compile_bench.mjs`, `compile_par` example); default PCM pins unchanged.
   Next, if agreed: stage 1 native background compile.
 - 2026-10-09: late-run slowdown found (finding 18 "Late-run slowdown", **[D]**). Cause: denormal filter/envelope
   state (the core does not flush denormals as the SHARC+ does) makes the fast tier's float-multiply result guard
@@ -422,7 +422,7 @@ Fingerprint guard now covers: tools/ready.py, tools/perf.py (shared core), tools
   native/sharc 64 passed (needs the shared-core `SHARC_GEN_DIR`), native/sharc-fast-cl and `cargo check --examples`
   clean, golden 6 passed, DT2 sample check clean tone. Decisions: `docs/design/fast-compile-offload.md`.
 - 2026-10-09: denormal flush in the core (finding 15, "Denormal flush", **[D]**): denormal operands read as zero,
-  post-rounded denormal results returned as zero, multiplier MU from the underflow (`tools/sharc_core` floats,
+  post-rounded denormal results returned as zero, multiplier MU from the underflow (`tools/sharc_dev/sharc_core` floats,
   compute_mult, compute_multi), `bnd.rs` fast paths and the fast tier (`rd_f_op`, `flush_denormal_result`,
   `result_no_underflow`) follow; `SHARC_FAST_DENORM` and `Req::StkyMus` removed (not needed: the late-run step is
   gone, no-AOT run time 2.695 / 2.697 per audio s before/after 9 s, region calls 11.7M / 11.6M; AOT 2.187 / 2.171,

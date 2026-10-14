@@ -14,7 +14,7 @@ mise run emu               # build and run it (DN2 audio when the ready inputs e
 mise run scenario:build    # build the headless runner coupled-run
 mise run scenarios         # run every DN2 scenario against its pinned PCM hash
 mise run test:quick        # fast checks; mise run test runs cargo test --workspace too
-uv run python tools/rust_ws.py check    # cargo check --workspace --all-targets
+uv run python -m tools.devtools.rust_ws check    # cargo check --workspace --all-targets
 mise run web:wasm          # browser cores
 ```
 
@@ -28,7 +28,7 @@ root). The directory name is not always the package name; use the package name w
 
 | directory | package | role |
 |---|---|---|
-| `native/coldfire` | `coldfire` | ColdFire V4e core (ISA_C, EMAC); decoder generated from `tools/cfisa/coldfire.json`. Pure, builds for wasm32. |
+| `native/coldfire` | `coldfire` | ColdFire V4e core (ISA_C, EMAC); decoder generated from `tools/coldfire/cfisa/coldfire.json`. Pure, builds for wasm32. |
 | `native/periph` | `periph` | MCF5441x timer, interrupt controller, eDMA, DSPI and SSI models. |
 | `native/card` | `emmc-card` | Minimal eMMC card identity and media model (sparse write overlay). |
 | `native/machine` | `machine` | The board seam: guest RAM, MMIO, eMMC DMA, timers. |
@@ -67,7 +67,7 @@ the default thread stack). Use `release`.
 
 `sharc-gen` (the generated SHARC+ core, 80 MB of Rust) takes minutes to compile
 and cargo recompiles it for each target dir and each `SHARC_GEN_DIR`. So tools
-build into `out/native/target/<gen-key>` (`tools/native_target.py`):
+build into `out/native/target/<gen-key>` (`tools/emulator/native_target.py`):
 
 | key        | generated core                                         |
 |------------|--------------------------------------------------------|
@@ -84,7 +84,7 @@ never touches another gen's build.
 
 ```
 export SHARC_GEN_DIR=$PWD/out/native/dn2-audio/gen
-T=$(uv run python tools/native_target.py dir)
+T=$(uv run python -m tools.emulator.native_target dir)
 cargo build --release --locked --target-dir "$T" -p sharc-fast-cl --examples
 ```
 
@@ -95,7 +95,7 @@ invalidate each other). A worktree cannot reuse the main tree's compiled
 it -- so it pays one compile per gen, then reuses its own dir.
 
 A plain `cargo build` without `--target-dir` uses `./target` (ignored by git).
-Wrap heavy builds in `uv run python tools/benchlock.py run --shared -- ...`.
+Wrap heavy builds in `uv run python -m tools.devtools.benchlock run --shared -- ...`.
 
 ## Headless coupled runner (`coupled-run`) and the matrix
 
@@ -112,7 +112,7 @@ old names (`desktop_runtime::coupled::tests::...`), with the same asserted hashe
 
 ```
 export SHARC_GEN_DIR=$PWD/out/native/dn2-audio/gen
-T=$(uv run python tools/native_target.py dir)
+T=$(uv run python -m tools.emulator.native_target dir)
 cargo build --release --locked --target-dir "$T" -p digi-coupled --features coupled-audio --bin coupled-run
 SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509 "$T"/release/coupled-run \
   --syx Digitone_II_OS1.11.syx \
@@ -123,11 +123,11 @@ SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdce
 ```
 
 The launcher also exports `SHARC_BLOCKTRANS` for DN2 OS 1.11: 12 block-translator
-cluster roots (`0xb8276c,0x1c369b,...`, `BLOCKTRANS_ROOTS` in `tools/native_emu.py`,
+cluster roots (`0xb8276c,0x1c369b,...`, `BLOCKTRANS_ROOTS` in `tools/emulator/native_emu.py`,
 keyed by the .syx SHA-256 like `FAST_REGIONS`). Measured A/B on DSP CPU per audio
 second without PGO: 0.958 idle, 0.963 chord16, PCM identical. A user-set
 `SHARC_BLOCKTRANS` wins, `DIGI_EMU_FAST=0` turns it off with the fast regions, and
-other firmware gets neither. The PGO key (`tools/native_pgo.py`) includes the roots.
+other firmware gets neither. The PGO key (`tools/emulator/native_pgo.py`) includes the roots.
 Without the launcher, add `SHARC_BLOCKTRANS=0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5`
 to the command above.
 
@@ -186,16 +186,16 @@ once at the start and once at the end of a run. Measured A/B on `prod` (6 s
 second by under 0.01 (0.64 against 0.64); the link timers cost 0-3% of DSP CPU
 (1.98 against 1.94 on average), inside the 1.84-2.07 run-to-run spread.
 
-### Matrix (`tools/coupled_matrix.py`)
+### Matrix (`tools/emulator/coupled_matrix.py`)
 
 ```
-uv run python tools/coupled_matrix.py                       # full default matrix
-uv run python tools/coupled_matrix.py --configs prod --scenarios idle --repeats 1
-uv run python tools/coupled_matrix.py --pgo out/pgo/x.profdata
+uv run python -m tools.emulator.coupled_matrix                       # full default matrix
+uv run python -m tools.emulator.coupled_matrix --configs prod --scenarios idle --repeats 1
+uv run python -m tools.emulator.coupled_matrix --pgo out/pgo/x.profdata
 ```
 
 It builds `coupled-run` once per configuration (the cargo target dir from
-`tools/native_target.py`, under a shared benchlock), runs every scenario under the
+`tools/emulator/native_target.py`, under a shared benchlock), runs every scenario under the
 exclusive benchlock, one process per run, repeats outermost so drift spreads over
 all configurations, and writes `out/native/runs/<timestamp>/{report.json,
 summary.md,raw/}`. Configurations: `prod` (`out/native/dn2-audio/gen`,
@@ -216,13 +216,13 @@ kernels are wasm modules the page compiles (`native/sharc-fast-wasm`, `packages/
 `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables, which
 wasm32-unknown-unknown does not have, so the page passes the regions in
 (`digi_sharc_fast_regions`). With no `?fast=` query it uses the `desktop` regions
-of `tools/fast_regions.json` for a listed firmware (AOT blocks present), or
-run-time selection `4,2,1` on the generic core. `node tools/wasm_parity.mjs --scenario NAME` (or
+of `tools/emulator/fast_regions.json` for a listed firmware (AOT blocks present), or
+run-time selection `4,2,1` on the generic core. `node tools/devtools/wasm_parity.mjs --scenario NAME` (or
 `mise run web:parity NAME`) checks that the browser PCM is byte-identical to
 the native `expect_sha256`.
 
 The coupled core (`emulator-core-sharc.wasm`) contains firmware-derived DSP code.
-`tools/native_wasm.py` writes it to `packages/web/.local/`, which is gitignored
+`tools/emulator/native_wasm.py` writes it to `packages/web/.local/`, which is gitignored
 and served only by the dev server. It is never in `dist/`: a build guard fails
 the build if it appears in the output. The CF-only core stays in
 `packages/web/public/`.

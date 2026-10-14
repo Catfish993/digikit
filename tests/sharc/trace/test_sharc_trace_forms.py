@@ -1,26 +1,21 @@
 """Tests for the Group I forms and circular-buffer wrap this session added
-to tools/sharc_trace.py's ``_execute``: 1a, 7b, 22c, 26a, 5a_swap, 4d, 3d,
+to tools/sharc_dev/sharc_trace.py's ``_execute``: 1a, 7b, 22c, 26a, 5a_swap, 4d, 3d,
 the 8p_undoc48/21p_undoc16/22p_undoc48 "no confirmed semantics" stops, and
 the Type19a_scaled/Type7a/Type7b circular-modify wrap.
 
 Field values marked "real SW <addr>" are copied verbatim from
-out/sharcdb/dt2-1.16.sqlite (tools/sharc.py dt2-1.16 "SELECT sw, fields
+out/sharcdb/dt2-1.16.sqlite (tools/sharc_dev/sharc.py dt2-1.16 "SELECT sw, fields
 FROM insn WHERE form='<form>'") so each form is exercised with a shape the
 firmware actually contains, not just an invented encoding. A few tests
 zero out an unrelated "compute" sub-field (noted inline) to stay
 independent of the parallel compute-opcode work landing in the same file.
 """
 
-import os
-import sys
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-Instruction = import_module("sharc_disasm").Instruction
+T = import_module("tools.sharc_dev.sharc_trace")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 from support.sharc_trace_build import loader_memory  # noqa: E402  (shared fixture)
 
 
@@ -351,7 +346,9 @@ class LongWordModifierScaleTest(unittest.TestCase):
     space."""
 
     def test_long_word_scales_like_a_normal_word(self):
-        scale = import_module("sharc_core.memory")._access_modifier_scale
+        scale = import_module(
+            "tools.sharc_dev.sharc_core.memory"
+        )._access_modifier_scale
         self.assertEqual(scale("long-word", True), 4)
         self.assertEqual(scale("normal-word", True), 4)
         self.assertEqual(scale("long-word", False), 1)
@@ -499,7 +496,7 @@ class Type3dTest(unittest.TestCase):
     def test_byte_access_load_pre_modify_real_instance(self):
         # real SW 0xb7febf (12059647): d=0 load into R2 (ureg 2), ex=0,
         # w=0, l=0, x=0, u=0 pre-modify. This is dt2-1.16's single most
-        # common Type3d encoding (46/72 occurrences, tools/sharc.py's
+        # common Type3d encoding (46/72 occurrences, tools/sharc_dev/sharc.py's
         # insn table: `select fields, count(*) from insn where form='3d'
         # group by fields`), which rules out "l/x unused, always
         # normal-word" for this (ex, w) = (0, 0) group: a spread of 46
@@ -507,7 +504,7 @@ class Type3dTest(unittest.TestCase):
         # (a real compiler using every l/x combination) only makes sense
         # if l/x actually select the access width, exactly as
         # ACCESS_WIDTHS[(l, x, 0)] already does for Type3b/Type4d -- see
-        # _type_3d's own docstring (tools/sharc_core/forms_move.py) for
+        # _type_3d's own docstring (tools/sharc_dev/sharc_core/forms_move.py) for
         # the PRM citation. l=0, x=0 -> "byte" (ACCESS_WIDTHS[(0, 0, 0)]),
         # not "normal-word" as this test asserted before that fix.
         fields = {
@@ -670,7 +667,7 @@ class Type3aLongWordTest(unittest.TestCase):
 
     def test_pair_load_post_modify_real_instance(self):
         # real SW 0x1c2920 (1845536), the frame-render stop this fixed
-        # (tools/sharc_harness.py's FRAME_MILESTONE docstring):
+        # (tools/sharc_dev/sharc_harness.py's FRAME_MILESTONE docstring):
         # {"compute": 0, "cond": 31, "d": 0, "g": 0, "i": 1, "l": 1,
         # "m": 4, "u": 1, "ureg": 0} -- an unconditional (cond=31), no-op
         # compute, DM (g=0) load into the R0:R1 pair, post-modify (u=1) by

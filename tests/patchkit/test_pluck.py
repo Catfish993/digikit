@@ -1,28 +1,28 @@
-"""machines/pluck on the concrete SHARC+ core, against the float32 model of tools/pluck_ref.py.
+"""machines/pluck on the concrete SHARC+ core, against the float32 model of tools/patchkit/pluck_ref.py.
 
 The wrapper (core/dsp-voice) and the routine are assembled from the module sources and run block by block the way
 the engine calls them (see tests/patchkit/test_dsp_voice.py). The routine's delay line (reserved, unloaded L2 on the
 device) is carried from call to call as DM words. Skips when Selache is not built."""
 
 import struct
-import sys
 
 import numpy as np
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
 import support.dsp_voice_rig as dv  # noqa: E402
 
-import pk_sharc  # noqa: E402
-import pk_toolchains  # noqa: E402
-import pluck_ref  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_sharc,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+    pluck_ref,  # noqa: E402
+)
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
-    reason="selache not built (tools/pk_toolchains.py selache)",
+    reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
 
 PLUCK = ROOT / "modules" / "machines" / "pluck" / "src" / "dsp" / "pluck.s"

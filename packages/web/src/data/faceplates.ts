@@ -3,7 +3,7 @@
 import { parse } from 'smol-toml';
 import dt2Source from './faceplates/digitakt-ii.toml?raw';
 import dn2Source from './faceplates/digitone-ii.toml?raw';
-// Key code -> LED index, from the firmware sweep (devices/*-leds.toml, tools/gen_led_toml.py).
+// Key code -> LED index, from the firmware sweep (devices/*-leds.toml, tools/emulator/gen_led_toml.py).
 import dt2Leds from '../../../../devices/digitakt-ii-leds.toml?raw';
 import dn2Leds from '../../../../devices/digitone-ii-leds.toml?raw';
 

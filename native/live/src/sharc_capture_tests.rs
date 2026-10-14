@@ -5,7 +5,7 @@
 //! - the core library: $SHARC_NATIVE_LIB, else
 //!   out/native/opt/target-final/release/libsharc_native.dylib;
 //! - the live pack: $LIVE_SHARC_PACK, else the newest capture pack
-//!   out/native/live/*.pack (`tools/sharc_transpile_run.py live-pack`; the
+//!   out/native/live/*.pack (`tools/sharc_dev/sharc_transpile_run.py live-pack`; the
 //!   frameless state packs, `state-*.pack`, are skipped);
 //! - for the bit-exact check, the Python replay's reference for that pack:
 //!   out/native/live/ref-<key>-<frames>.json (`... live-ref`).
@@ -146,7 +146,7 @@ fn voices_equal_the_python_replay_bit_for_bit() {
                 .is_some_and(|n| n.starts_with(&prefix))
         })
     }) else {
-        eprintln!("skipped: no {prefix}*.json (tools/sharc_transpile_run.py live-ref)");
+        eprintln!("skipped: no {prefix}*.json (tools/sharc_dev/sharc_transpile_run.py live-ref)");
         return;
     };
     let text = std::fs::read_to_string(&refp).expect("reference");

@@ -1,6 +1,6 @@
-"""Tests for the multiplier's 80-bit MR accumulator (tools/sharc_core/
+"""Tests for the multiplier's 80-bit MR accumulator (tools/sharc_dev/sharc_core/
 state.py's ``MR``/``_mr_from_signed``/``_mr_read_word``/``_mr_write_word``,
-and tools/sharc_core/compute_mult.py's ops built on it): manual-derived
+and tools/sharc_dev/sharc_core/compute_mult.py's ops built on it): manual-derived
 numeric cases per operation (PRM Table 17-7/3-5/3-7, out/refs/
 sharc-plus-prm/all.txt) -- overflow, saturation edges, rounding ties, MR2's
 sign extension, fractional vs integer format, and SIMD PEy (MSF/MSB).
@@ -10,17 +10,12 @@ dispatch table itself) so this lane's edits do not collide with other
 agents' concurrent edits to that file.
 """
 
-import os
-import sys
 import unittest
 from importlib import import_module
 
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-T = import_module("sharc_trace")
-compute_mult = import_module("sharc_core.compute_mult")
-Instruction = import_module("sharc_disasm").Instruction
+T = import_module("tools.sharc_dev.sharc_trace")
+compute_mult = import_module("tools.sharc_dev.sharc_core.compute_mult")
+Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 
 
 def insn(name, fields, length=4, kind="confident"):

@@ -1,14 +1,14 @@
-"""Cross-checks tools/sharc_core/compute.py's dispatch tables (split out of
+"""Cross-checks tools/sharc_dev/sharc_core/compute.py's dispatch tables (split out of
 the old monolithic _compute if-chain into compute_alu.py, compute_mult.py,
 compute_shift.py and compute_multi.py) against two independent sources:
 
-1. tools/sharcspec/compute_table.json, the project's single public-manual
+1. tools/sharc_dev/sharcspec/compute_table.json, the project's single public-manual
    (PRM/PGR) transcription of these encodings: every dispatch key must
    either match a row there, or be in this file's UNDOCUMENTED set (with a
    reason -- each one also carries a citation in its own handler's
    docstring explaining why the manuals do not cover it).
 2. A frozen snapshot of every selector-bit combination the pre-refactor
-   if-chain (tools/sharc_core/compute.py at commit 7f03aa5) accepted
+   if-chain (tools/sharc_dev/sharc_core/compute.py at commit 7f03aa5) accepted
    without raising, built by probing that old _compute over every
    (cu, opcode)/category/short-opcode/mrdatamove combination -- see
    OLD_ACCEPTED below. Every one of those must still dispatch (not raise)
@@ -19,32 +19,32 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-from sharc_core.compute import CU3_OPS, _compute  # noqa: E402
-from sharc_core.compute_alu import ALU_OPS  # noqa: E402
-from sharc_core.compute_mult import (  # noqa: E402
+from tools.sharc_dev.sharc_core.compute import CU3_OPS, _compute  # noqa: E402
+from tools.sharc_dev.sharc_core.compute_alu import ALU_OPS  # noqa: E402
+from tools.sharc_dev.sharc_core.compute_mult import (  # noqa: E402
     MR_DATAMOVE_REGISTERS,
     MULT_FIXED_OPS,
     MULT_OPS,
 )
-from sharc_core.compute_multi import MULTIFN_MUL_ALU_OPS, SHORT_OPS  # noqa: E402
-from sharc_core.compute_shift import SHIFT_OPS  # noqa: E402
-from sharc_core.values import Const  # noqa: E402
+from tools.sharc_dev.sharc_core.compute_multi import (  # noqa: E402
+    MULTIFN_MUL_ALU_OPS,
+    SHORT_OPS,
+)
+from tools.sharc_dev.sharc_core.compute_shift import SHIFT_OPS  # noqa: E402
+from tools.sharc_dev.sharc_core.values import Const  # noqa: E402
 
 # The cu=1 opcode space: handler functions plus the fixed-point opcodes
 # held as MultSpec data (compute_mult.py).
 assert not (set(MULT_OPS) & set(MULT_FIXED_OPS))
 MULT_ALL = {**MULT_OPS, **MULT_FIXED_OPS}
 
-with open(os.path.join(TOOLS, "sharcspec", "compute_table.json")) as _fh:
+with open(os.path.join(TOOLS, "sharc_dev", "sharcspec", "compute_table.json")) as _fh:
     COMPUTE_TABLE = json.load(_fh)
 
 
@@ -73,7 +73,7 @@ def _documented(rows, field_name, value, width) -> bool:
 
 
 # Encodings absent from both public manuals this project cites (PRM and
-# PGR, as transcribed into tools/sharcspec/compute_table.json) for the
+# PGR, as transcribed into tools/sharc_dev/sharcspec/compute_table.json) for the
 # compute unit named. Each is still decoded, with its result and flags
 # left Unknown, so the instruction walk does not desync -- see the
 # handler's own docstring (cited here) for the page-by-page absence.

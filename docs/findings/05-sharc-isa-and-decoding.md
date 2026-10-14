@@ -4,24 +4,24 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 
 ## SHARC+ instruction tables from the public ADI manuals **[D][O]**
 
-- `tools/sharcspec/` builds the SHARC+ instruction decode table from two
+- `tools/sharc_dev/sharcspec/` builds the SHARC+ instruction decode table from two
   public Analog Devices manuals: the bit-layout figures in the SHARC+ Core
   Programming Reference Rev 1.5, read from the PDF's vector drawings, checked
   bit by bit against the classic SHARC Processor Programming Reference Rev
   2.4. The method and the manual errata it found are in
-  `tools/sharcspec/README.md`; the documents are listed in
+  `tools/sharc_dev/sharcspec/README.md`; the documents are listed in
   `docs/sharc/SOURCES.md`; the results are in `docs/sharc/SPEC-FINDINGS.md`.
   It came from Em's separate sharc-spec work. **[D]**
 - On the 1.15C DSP main program (104,848 bytes at `0x28382670`) its decoder
-  leaves 1.1% of words unknown. `tools/sharc_disasm.py` stops at its first
+  leaves 1.1% of words unknown. `tools/sharc_dev/sharc_disasm.py` stops at its first
   unknown word, 4.4% in; forced to continue, it cannot name 9.6%. One cause is
   traced: our `15b` entry fixes 3 bits where the manual fixes 7, so 1,928
   words decode as `17b`. **[D]**
-- `tools/sharc_visa_tables.py` now loads `tools/sharcspec/decode_table.json`
+- `tools/sharc_dev/sharc_visa_tables.py` now loads `tools/sharc_dev/sharcspec/decode_table.json`
   and picks a form by the same rule as the sharc-spec decoder, and
-  `tools/sharc_disasm.py` still stops at the first word it cannot classify.
-  `tools/sharcldr.py --main` writes the final application's code, and
-  `tools/sharccompare.py` sweeps a region with both decoders. The main
+  `tools/sharc_dev/sharc_disasm.py` still stops at the first word it cannot classify.
+  `tools/sharc_dev/sharcldr.py --main` writes the final application's code, and
+  `tools/sharc_dev/sharccompare.py` sweeps a region with both decoders. The main
   programs of 1.15C and 1.16 are both 104,848 bytes at `0x28382670`, from
   the same five blocks, with the entry at offset 0. The two decoders agree
   on the length and form of all 22,147 instructions that both decode:
@@ -40,23 +40,23 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   whose 6 bytes run past the region: the rebuilt decoder refuses it, the
   sharc-spec decoder pads with zeros. After `15b`, the old decoder's largest
   confusions are `5a_move` for `5b_move` (797) and `18a` for `19a` (442).
-  `tools/ghidra/gen-sharc-slaspec.py` still expects the old form names
+  `tools/coldfire/ghidra/gen-sharc-slaspec.py` still expects the old form names
   (`8a`, `9a`, `9b`) and fails on the rebuilt table; the SHARC language is to
-  be regenerated from `tools/sharcspec/ghidra/gen_sleigh.py`. A second
+  be regenerated from `tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py`. A second
   check rebuilt both regions from the boot-stream blocks, counted the mask
   bits, and reproduced the sharc-spec decoder's counts, first unknown and
   last instruction with its own sweep. **[V]** The old decoder's numbers
-  come from `tools/sharccompare.py` alone. **[D]**
-- `tools/ghidra/install-sharc.sh` now generates the language from
-  `decode_table.json` with `tools/sharcspec/ghidra/gen_sleigh.py` and
+  come from `tools/sharc_dev/sharccompare.py` alone. **[D]**
+- `tools/coldfire/ghidra/install-sharc.sh` now generates the language from
+  `decode_table.json` with `tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py` and
   installs `SHARC_VISA:LE:32:default`; the generated module equals the copy
   already installed from the sharc-spec work, except the stack pointer, now
   I7 as the call convention in `docs/sharc/structure-1.16.md` uses. The old
-  generator and `tools/ghidra/SHARC/` are removed; the installed
+  generator and `tools/coldfire/ghidra/SHARC/` are removed; the installed
   `Processors/SHARC` stays for the `dt2_SHARC` program in `~/ghidra-projects/dt2`.
   The code space has wordsize 2, so byte offset `0x382670` shows as
   short-word address `0x1c1338`. **[D]**
-- `tools/sharc_import.py --seed-calls --analyze` imports section 7 into
+- `tools/sharc_dev/sharc_import.py --seed-calls --analyze` imports section 7 into
   `~/ghidra-projects/elektron-sharc`:
 
   | | 1.16 | 1.15C |
@@ -116,10 +116,10 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 ## The DSP programs of Digitakt II 1.16 and Digitone II 1.11 in Ghidra **[V][C][O]**
 
 - Digitone II 1.11's section 7 is a boot stream of 95 blocks. Its main
-  program starts at SW `0x1c12e2` and is 105,016 bytes (`tools/sharcldr.py
+  program starts at SW `0x1c12e2` and is 105,016 bytes (`tools/sharc_dev/sharcldr.py
   --main`). It also loads 54,792 bytes at `0x8045a6c8` and 283,032 bytes at
   `0x80467cf4` in external memory; Digitakt II 1.16 loads 3,316 bytes at
-  `0x8045a6c8`. `tools/sharc_import.py --seed-calls --analyze` imports it as
+  `0x8045a6c8`. `tools/sharc_dev/sharc_import.py --seed-calls --analyze` imports it as
   `/dn2-1.11_SHARC` in `~/ghidra-projects/elektron-sharc`, with 257
   functions. **[D]**
 - A software call is CJUMP followed by its two delay slots, not a push and
@@ -154,9 +154,9 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   `JUMP (M14, I12) (DB)`, not I4/M6. The same correction applies to the other
   "I4/M6" mentions in this file. See "Tracer decode and call-model
   corrections" below.
-- `tools/sharcspec/ghidra/gen_sleigh.py` now emits Type25a as `call`. Its
+- `tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py` now emits Type25a as `call`. Its
   delay slots are not modelled: they follow the call in the listing.
-  `tools/sharcflow.py` lists the calls, indirect calls and returns with their
+  `tools/sharc_dev/sharcflow.py` lists the calls, indirect calls and returns with their
   delay slots; with `--cover --analyze --save` it sets FlowOverride.CALL on
   the indirect calls, disassembles every aligned instruction Ghidra has not
   reached, starts a function after each return's delay slots and at each run
@@ -215,10 +215,10 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   with no fall-through. In the 1.16 main program 499 such instructions have a
   cond other than TRUE (`8a_rel` 404, `11a` 37, `8a_abs` 22, `9a_abs` 15,
   `9a_rel` 15, `11c` 5, `9b_rel` 1); in Digitone II 1.11, 478. **[D]**
-- `tools/sharcspec/ghidra/gen_sleigh.py` now gives each of these forms two
+- `tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py` now gives each of these forms two
   constructors: cond TRUE keeps the old p-code, and any other cond tests
   `condition(cond)`, a user-defined p-code op, and falls through when it
-  does not hold. `tools/sharcpcode.py` measured the old and new language back
+  does not hold. `tools/sharc_dev/sharcpcode.py` measured the old and new language back
   to back, each in a throwaway project (`sharc_import.py --seed-calls
   --analyze`, then `sharcflow.py --cover --analyze`):
 
@@ -239,12 +239,12 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 
 ## Where the new Error bookmarks and overlap warnings come from **[D][O]**
 
-- `tools/sharcpcode.py measure --ghidra` writes `OUT/<image>.sqlite`: our
+- `tools/sharc_dev/sharcpcode.py measure --ghidra` writes `OUT/<image>.sqlite`: our
   decoder at every decodable offset of the main program (form, fields, depth,
   aligned, computed target, the pypcode lift) and Ghidra's instructions,
   references, bookmarks, functions, decompiled C and decompiler warnings. Two
   runs compare with sqlite's `ATTACH`; the queries below are
-  `tools/sharcpcode.sql`. **[D]**
+  `tools/sharc_dev/sharcpcode.sql`. **[D]**
 - The conditional-flow change does not create the new Error bookmarks. Ghidra
   reaches more code, and that code meets decode problems the old language
   never walked into. Of the 53 new bookmarks inside the 1.16 main program: 23
@@ -268,7 +268,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   those words are shorter instructions, `21a` swallows the one or two that
   follow, which would explain both the mid-instruction targets and the
   fall-throughs that do not decode. Check Type21a and the `21a`/`22c`
-  crossing resolver in `tools/sharcspec/ghidra/gen_sleigh.py` against the PRM.
+  crossing resolver in `tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py` against the PRM.
   Not checked. **[O]**
 
 ## Type21a was swallowing the two words after it **[C][D][O]**
@@ -276,11 +276,11 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 - Corrects the open item above. `Type21a` matched any first word `0x0000` to
   `0x007f` and constrained nothing in the other two words, so it absorbed the
   short instructions that followed: 904 matches in 1.16, only 44 of them the
-  all-zero word the PRM draws (1.11: 31 of 898). `tools/sharcspec/build_table.py`
+  all-zero word the PRM draws (1.11: 31 of 898). `tools/sharc_dev/sharcspec/build_table.py`
   now takes every bit from the figure for Type21a and Type21c, and the
   left-over first words are the provisional 16-bit `Type21p_undoc16`
   (`docs/sharc/SPEC-FINDINGS.md` 3.7). **[D]**
-- Measured with `tools/sharcpcode.py measure --ghidra` before and after, both
+- Measured with `tools/sharc_dev/sharcpcode.py measure --ghidra` before and after, both
   images, same machine: **[D]**
 
 | | DT2 1.16 | DN2 1.11 |
@@ -309,7 +309,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 ## Type22a is idle, and neither image contains one **[D][O]**
 
 - The same merge rule over every other form, audited with the new
-  `tools/sharcspec/audit_bits.py`: Type22a (idle/emuidle) and Type26a (`sync`)
+  `tools/sharc_dev/sharcspec/audit_bits.py`: Type22a (idle/emuidle) and Type26a (`sync`)
   print every bit in their figures but matched on a nine- and sixteen-bit
   prefix, taking 220 and 2 instructions across the two images, while their
   strict words appear in neither. Both are tightened; the words they took are
@@ -369,7 +369,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 
 ## A third opcode source: Type 7a confirmed, Type 19a's bit 39 settled **[D][C]**
 
-- `tools/sharcspec/compare_sources.py` diffs two sources, the PRM figures and
+- `tools/sharc_dev/sharcspec/compare_sources.py` diffs two sources, the PRM figures and
   the classic PGR grid. The three manuals added on 2026-09-16 give a third for
   every form the classic core had, which is enough to break the ties the two-way
   diff left open in `docs/sharc/SPEC-FINDINGS.md` 3.2 and 3.3. **[D]**
@@ -381,7 +381,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   bits, not nine. **[D]**
 - `decode_table.json` already has this right: `Type7a` is `mask
   0xff0000000000`, `fixed_bits 8`, bit 39 unconstrained, because
-  `tools/sharcspec/build_table.py` 273-275 declines to fix a bit the PRM shades
+  `tools/sharc_dev/sharcspec/build_table.py` 273-275 declines to fix a bit the PRM shades
   where the PGR leaves a blank. The third source confirms that merge rule rather
   than correcting it. Type 7a decodes 311 times in 1.16 and 369 in 1.11. **[D]**
 - Type 19a: bit 39 is the bit-reverse flag, `0` for `MODIFY` and `1` for
@@ -394,8 +394,8 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 
 ## Type19a's mask is two bits short, and 757 instructions live in the gap **[V][O]**
 
-- `tools/sharcfields.py`, new here, is the mirror of
-  `tools/sharcspec/audit_bits.py`: where that lists bits a PRM figure prints
+- `tools/sharc_dev/sharcfields.py`, new here, is the mirror of
+  `tools/sharc_dev/sharcspec/audit_bits.py`: where that lists bits a PRM figure prints
   that the table does not fix, this tallies what values the fields the table
   *declares* actually take across the aligned instructions of both images, and
   flags any field sitting on bits the classic PGR grid fixes. Three fields
@@ -405,7 +405,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   `Type20a` `00010111`. The PRM's Figure 17-2 shades only six and declares bits
   41-40 a SHARC+ field `sc[1:0]` and bit 39 a field `w`, while the classic grid
   and all three older manuals fix bits 44-40 at `10110`
-  (`tools/sharcspec/classic.json` "Type 19a", pattern `000101100...`). **[D]**
+  (`tools/sharc_dev/sharcspec/classic.json` "Type 19a", pattern `000101100...`). **[D]**
 - So `Type19a` claims the whole `000101` block and, by longest-leading-prefix,
   keeps whatever its tighter neighbours leave: its own `10110` with `w=0`, and
   the whole of `10101`. Of its 1,935 matches across the two images, 1,178 are
@@ -440,10 +440,10 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 - Done, and it holds. `Type19a` now fixes the nine bits the classic grid fixes,
   `000101100` (`mask 0xff8000000000`), with its `sc[1:0]` and `w` field
   declarations removed through a new `DROP_FIELDS` table in
-  `tools/sharcspec/build_table.py` -- an override there, not an edit to
+  `tools/sharc_dev/sharcspec/build_table.py` -- an override there, not an edit to
   `figures.json`, which `extract_figures.py` regenerates. The provisional 48-bit
   `Type19p_undoc48` (`00010101`, eight fixed bits) takes the gap. **[V]**
-- `tools/sharcpcode.py compare out/sharcpcode/t23 out/sharcpcode/t24` reports
+- `tools/sharc_dev/sharcpcode.py compare out/sharcpcode/t23 out/sharcpcode/t24` reports
   **0 regressions**. Aligned and decoded counts identical (1.16 21,792 of
   21,792; 1.11 21,361 of 21,361); 1,170 and 1,049 main-program functions with
   the same size histogram; 296 and 343 functions truncated at bad instruction
@@ -454,9 +454,9 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   per cent in both directions. **[V]**
 - Only the per-form split moved, and both sums are exact: 1.16 `19a` 969 ->
   559 plus `19p_undoc48` 410; 1.11 `19a` 966 -> 619 plus 347. That is 757 words
-  across the two images, the same 757 `tools/sharcfields.py` found. `18a`,
+  across the two images, the same 757 `tools/sharc_dev/sharcfields.py` found. `18a`,
   `20a` and `19a_bitrev` are untouched, `19p_undoc48` has no undecoded words and
-  no length mismatches, `tools/sharccompare.py` still has both decoders agreeing
+  no length mismatches, `tools/sharc_dev/sharccompare.py` still has both decoders agreeing
   on every offset of 1.16, and `sharcfields` no longer flags Type19a. **[V]**
 - So 757 words keep their length, their neighbours and every flow metric, and
   only stop being called Type 19. That is the strongest evidence available short
@@ -470,7 +470,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 
 ## The decode table now records which classic tables it merged **[V][C]**
 
-- `tools/sharcfields.py` guessed a form's classic.json table from its name, and
+- `tools/sharc_dev/sharcfields.py` guessed a form's classic.json table from its name, and
   the guess is wrong for every split form: `Type8a_rel` resolves to `Type 8a`
   where the merge really used `Type 8a #2`. `build_table.py` knew the answer and
   threw it away, so every emitted form now carries `classic_keys`, and
@@ -484,7 +484,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   24 is a second such selector. Neither was a conflict; the count of fields
   sitting on bits the classic grid fixes goes 3 to 0. **[V][C]**
 - No form's decode changed: masks, values, widths and fields are identical, and
-  `tools/sharccompare.py` still has both decoders agreeing on all 22,886
+  `tools/sharc_dev/sharccompare.py` still has both decoders agreeing on all 22,886
   offsets of 1.16. **[V]**
 
 ## The Type 8a branch forms were taking words that are not branches **[V][C]**
@@ -542,15 +542,15 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 
 ## The two decoders disagreed on one word, past the end of the file **[V]**
 
-- `tools/sharccompare.py` had them agreeing on all 22,886 offsets of 1.16 but
+- `tools/sharc_dev/sharccompare.py` had them agreeing on all 22,886 offsets of 1.16 but
   differing by one on Digitone II 1.11: `unknown only in ours 1`. It is the last
   word of the image. `out/sharc/dn2-1.11-main.bin` is 105,016 bytes and ends on
   an all-zero word at byte offset `0x19a36`, where only two of the six bytes a
   48-bit instruction needs exist. **[V]**
 - Both decoders zero-pad the missing words before matching, and an all-zero
   frame trivially satisfies `Type21a`, whose figure fixes every one of its 48
-  bits. `tools/sharc_disasm.py` 108 checks the matched form's width against how
-  many real words were read and refuses; `tools/sharcspec/sharc_decode.py`'s
+  bits. `tools/sharc_dev/sharc_disasm.py` 108 checks the matched form's width against how
+  many real words were read and refuses; `tools/sharc_dev/sharcspec/sharc_decode.py`'s
   `linear()` had no such check and reported a phantom 48-bit instruction sitting
   on four bytes that are not in the file. It now makes the same check. **[V]**
 - It predates today's work: the same single offset and form reproduce with
@@ -561,8 +561,8 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
 
 ## Every measurement here was of a stale language until it wasn't **[V][C]**
 
-- `tools/sharcpcode.py measure` compiles the slaspec sitting in
-  `tools/sharcspec/ghidra/SHARC_VISA/data/languages/` (`sharcpcode.py` 66,
+- `tools/sharc_dev/sharcpcode.py measure` compiles the slaspec sitting in
+  `tools/sharc_dev/sharcspec/ghidra/SHARC_VISA/data/languages/` (`sharcpcode.py` 66,
   215-235). Nothing regenerates it, and it is git-ignored (`.gitignore` 34), so
   editing `decode_table.json` leaves it behind with no sign. **[V]**
 - The guard that exists cannot catch this. `sharcpcode.py` 791-796 compares the
@@ -574,7 +574,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   bookmarks, decompiler warnings, probe verdicts -- are of a language without
   those forms. **[C]**
 - Their decoder numbers are unaffected: `aligned`, the per-form counts,
-  `tools/sharcfields.py` and `tools/sharccompare.py` all read
+  `tools/sharc_dev/sharcfields.py` and `tools/sharc_dev/sharccompare.py` all read
   `decode_table.json` directly. Lengths agreed by luck -- the stale `Type19a`
   and `Type8a_rel` are 48 bits wide, like the forms that replaced them -- which
   is why nothing tripped. **[V]**
@@ -582,7 +582,7 @@ The SHARC+ instruction tables built from the public ADI manuals, the run of Type
   run, excluding the `SHARC_VISA` output tree from its copy. That is why the
   test caught the unreferenced-table warning and four measurements did not.
   **[V]**
-- Measured properly, after `tools/ghidra/install-sharc.sh` and a fresh
+- Measured properly, after `tools/coldfire/ghidra/install-sharc.sh` and a fresh
   generation (slaspec `ca2362aa…`, 80 constructors), against the session's
   starting point `out/sharcpcode/t23`: **0 regressions**, and the flow metrics
   improve. **[V]**
@@ -616,7 +616,7 @@ to it needs a small harness, because `seldump` only accepts ELF.
 The blocking detail: **selache reads VISA parcels big-endian** (its
 `selinstr/src/visa.rs` `read_16_be`, documented as "VISA parcels are always
 big-endian ... regardless of ELF endianness") while `section_7_BLOB.bin` and
-`tools/sharc_disasm.py` are **little-endian per 16-bit parcel** (the boot-stream
+`tools/sharc_dev/sharc_disasm.py` are **little-endian per 16-bit parcel** (the boot-stream
 convention). Fed unswapped, selache desyncs after the first instruction. Swapped,
 it tracks our decoder for hundreds of consecutive instructions.
 
@@ -627,7 +627,7 @@ non-agreements are one mutual "uncertain" and one selache table gap, neither a
 contradiction). Assembling 15 hand-transcribed instructions with `selas`
 (`-proc ADSP-21569`) and comparing to the image: **14/15 byte-identical**.
 
-This is meaningful three-way corroboration of `tools/sharc_visa_tables.py` --
+This is meaningful three-way corroboration of `tools/sharc_dev/sharc_visa_tables.py` --
 an independently authored decoder built from the public PRM reaches the same
 instruction boundaries. Two selache bugs found, both isolated, and in both cases
 our reading is the one consistent with the image bytes:
@@ -645,11 +645,11 @@ Tier-2 injection-seam problem, which remains the hard part.
 
 Round trip re-run on 2026-09-22 with parcels swapped: a `selas` snippet
 (16-bit computes, compressed DM store/load, a 48-bit immediate load, a
-fused compute+DM form, a delayed jump) decodes in `tools/sharc_disasm.py`
+fused compute+DM form, a delayed jump) decodes in `tools/sharc_dev/sharc_disasm.py`
 to the same eleven instruction boundaries, and runs in
-`tools/sharc_trace.py` with all seven expected results (the jump target was
+`tools/sharc_dev/sharc_trace.py` with all seven expected results (the jump target was
 patched by hand, as `selas` leaves relocations unresolved).
-`tools/selasm.py` assembles a file, swaps parcels and prints both listings.
+`tools/sharc_dev/selasm.py` assembles a file, swaps parcels and prints both listings.
 Two more Selache decode bugs, both checked against the bits of code we
 assembled: `decode_32_group4()` merges two adjacent 16-bit Type3c
 instructions (`90 34 90 15`) into one bogus 32-bit instruction and drops
@@ -661,7 +661,7 @@ reports M5 for M1. **[V]**
 
 The generated SLEIGH emits an empty `{}` body, never `unimpl;`, for every
 constructor without hand-written semantics
-(`tools/sharcspec/ghidra/gen_sleigh.py`, `Constructor.emit`). pypcode therefore
+(`tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py`, `Constructor.emit`). pypcode therefore
 decodes such an instruction and returns zero p-code ops rather than raising.
 Two forms are correctly empty and are not gaps: Type21a (NOP) and
 Type9a/9b_abs with `b==1` (register-indirect call, left empty on purpose).
@@ -722,7 +722,7 @@ DM literal and reads zero there, and an external literal such as
 `read` compare against the caller's value and stay self-consistent, but
 `xrefs`, `callers` and `range`'s referenced addresses read Ghidra's reference
 table and are wrong for DM literals. Fixing this means giving data its own
-byte-addressed space in the language, measured with `tools/sharcpcode.py`.
+byte-addressed space in the language, measured with `tools/sharc_dev/sharcpcode.py`.
 **[O]**
 
 ## DM literals now reach their own bytes **[V][C]**
@@ -733,11 +733,11 @@ before each DM access: `unit = (addr >> 1) + isl2 * 0xF0B80000`, where `isl2`
 is 1 inside the L2 byte window `0x20000000..0x20020000`, so L2 lands on the
 importer's short-word alias (`0x20000010` -> unit `0xB80008`). Both current
 DM sites use it, the Type14a scalar forms and the exact Type3b reader; PM
-accesses are unchanged. `tools/sharc_import.py` now shifts only the L1 alias
+accesses are unchanged. `tools/sharc_dev/sharc_import.py` now shifts only the L1 alias
 window `0x28000000..0x28400000` down by `0x28000000`, so external memory sits
 at its own address (`0x82a00008` stays `0x82a00008`, unit `0x41500004`).
 All 646 Type14a DM literals in the DT2 1.16 main program are even, so the
-shift loses nothing. `tools/sharcpcode.py compare` of the language before and
+shift loses nothing. `tools/sharc_dev/sharcpcode.py compare` of the language before and
 after shows no regression; decompiler warnings about globals overlapping
 smaller symbols fell from about 90 to about 11 per image. **[V]**
 
@@ -775,15 +775,15 @@ reference allows circular buffering only with post-modify addressing. PM
 A second agent lifted all 6,535 DT2 1.16 instances of the three forms with
 the installed language, ran them through its own p-code interpreter under
 several register scenarios, and found no mismatch against a reference written
-from the public manual. pypcode and `tools/sharc_disasm.py` agree on the
+from the public manual. pypcode and `tools/sharc_dev/sharc_disasm.py` agree on the
 length of all 22,668 aligned instructions. 105 instances load into the I
 register they address through (`I4 = DM(M5, I4)`); all are pre-modify, so no
 update competes with the load. In the emulator a 15b load, a 15b store and a
 4a post-modify store behaved exactly as predicted. **[V]**
 
-Coverage measured with `tools/sharc_worklist.py` rose from 22.09% to 51.02%
+Coverage measured with `tools/sharc_dev/sharc_worklist.py` rose from 22.09% to 51.02%
 of the image and from 31.19% to 72.94% of `FUN_001c18a6`.
-`tools/sharcpcode.py compare` shows no decompile failure or timeout;
+`tools/sharc_dev/sharcpcode.py compare` shows no decompile failure or timeout;
 decompile time rose from 1.6 s to 6.9 s, and the constant-folded guards
 produce 6,534 "Removing unreachable block" warnings. Stepping `FUN_001c18a6`
 now runs 210 instructions and stops mostly at `compute` (139 of 301 faults)
@@ -797,13 +797,13 @@ None is resolved to `0x252658` yet. **[D][O]**
 
 ## Type3d, Type4d and Type14d promoted to confident; Type15a's mem_access/dataref address bug fixed **[V]**
 
-- Types 3d, 4d and 14d were on `tools/sharcspec/README.md`'s "SHARC+-only
+- Types 3d, 4d and 14d were on `tools/sharc_dev/sharcspec/README.md`'s "SHARC+-only
   encodings with no second source" list: the PRM (`sc58x-2158x-prm.pdf`) is
   the only manual that documents them at all, so `decode_table.json` carried
   `unconfirmed_bits` equal to every one of their fixed bits (3d 7, 4d 8, 14d
-  7) and `tools/sharc_coverage.py`'s tracer/runner refused every instance as
+  7) and `tools/sharc_dev/sharc_coverage.py`'s tracer/runner refused every instance as
   "decode confidence uncertain". On the render path from `0x1c2b24`: 14d 56,
-  4d 16, 3d 15 instances (`tools/sharc_coverage.py dt2-1.16 --root
+  4d 16, 3d 15 instances (`tools/sharc_dev/sharc_coverage.py dt2-1.16 --root
   0x1c2b24`); whole-image dt2-1.16: 14d 80, 4d 20, 3d 58.
 - Checked two ways, independently, then re-checked by a second agent with no
   access to this session's own numbers:
@@ -832,7 +832,7 @@ None is resolved to `0x252658` yet. **[D][O]**
     matching `decode_table.json` and the database exactly, with one caveat:
     the PRM prints Type3d/Type4d's low 16 bits as an unlabelled all-zero row
     that `decode_table.json`'s mask leaves unconstrained rather than
-    fixed-zero. That is the same 16 bits `tools/sharcspec/audit_bits.py`
+    fixed-zero. That is the same 16 bits `tools/sharc_dev/sharcspec/audit_bits.py`
     already found and the "Type22a is idle" section above already resolved:
     restoring them as fixed changes nothing measurable on real code, so the
     merge rule (ignore a PRM figure's stale template defaults) correctly
@@ -852,7 +852,7 @@ None is resolved to `0x252658` yet. **[D][O]**
     stack-relative offsets, the shape a compiler's spilled-argument reads
     take. Every one of the 158 whole-image instances (87 on the render path)
     has a clean, aligned, non-gap successor instruction starting exactly 3
-    short words later (`tools/sharc.py`'s `insn` table, `aligned=1`); none
+    short words later (`tools/sharc_dev/sharc.py`'s `insn` table, `aligned=1`); none
     lands on a form the decoder had to guess at. **[V]**
   - Both checks agree for all three forms, so `decode_table.json` now sets
     `unconfirmed_bits` to 0 for Type3d/Type4d/Type14d (`source` records the
@@ -860,12 +860,12 @@ None is resolved to `0x252658` yet. **[D][O]**
     14d/4d/3d: decode confidence uncertain" gaps are gone (see counts below).
 - **Database bug, form 15a: `mem_access.abs_address` was the I-register
   offset, not an address.** `extract_mem_access()`'s `DIRECT_MEM_FORMS`
-  branch (`tools/sharcdb.py`) treated Type15a the same as the genuinely
+  branch (`tools/sharc_dev/sharcdb.py`) treated Type15a the same as the genuinely
   absolute Type14a/14d, storing its raw `addr` field straight into
   `abs_address`. The PRM is explicit that Type15a is `DM(<data32>,Ia) =
   Ureg` / `PM(<data32>,Ic) = Ureg` (pp.387-390, Figure 16-3, worked example
   `DM(24,I5)=TCOUNT;`): an I-register-relative access the core never updates
-  I for, not a direct address -- `tools/sharcfn.py`'s `render_mem_direct`
+  I for, not a direct address -- `tools/sharc_dev/sharcfn.py`'s `render_mem_direct`
   already documents this correction for the disassembler's own mnemonic
   rendering and `_ptr_mem_form` already models it correctly for the `ptr`
   table; only `extract_mem_access` (mem_access) and the `extract_literal`
@@ -898,7 +898,7 @@ None is resolved to `0x252658` yet. **[D][O]**
     only Type15a's presence in the `DIRECT_MEM_FORMS` grouping (alongside
     the genuinely-absolute 14a/14d) caused this bug, and it was isolated to
     that one form. **[V]**
-- `DB_VERSION` 11 -> 12 (`tools/sharcdb.py`, both changes as one bump).
+- `DB_VERSION` 11 -> 12 (`tools/sharc_dev/sharcdb.py`, both changes as one bump).
   Rebuilt `out/sharcdb/dt2-1.16.sqlite` (private per-lane copy) before/after,
   same `section_7_BLOB.bin` (image sha256 unchanged):
 
@@ -925,7 +925,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   `5a_move` full-compute, `26a`, `21p_undoc16`, `8p_undoc48`) is
   byte-identical before and after. `run_frame`/`trace_frame` (root
   `0x1c2b24`) now run past the point the confidence gate used to stop them:
-  the concrete runner (`tools/sharc_run.py dt2-1.16 --start 0x1c2b24
+  the concrete runner (`tools/sharc_dev/sharc_run.py dt2-1.16 --start 0x1c2b24
   --json`) went from halting after 130 instructions on a refused Type14d at
   sw `0x1c2c41` to running 13,895 instructions (touching 14d x97, 4d
   x1,024, and every other form along the way -- deeper execution reaches
@@ -942,19 +942,19 @@ None is resolved to `0x252658` yet. **[D][O]**
   instruction and continues 1,037 more steps to the same external-call site
   the other branch already reached, landing at 1,192 steps. No `15a` bug fix
   effect appears in any of the six golden cases: `mem_access`/`dataref`/`ptr` are
-  read only by `tools/sharc.py`'s `Image.refs`/`writers`/`readers`, not by
+  read only by `tools/sharc_dev/sharc.py`'s `Image.refs`/`writers`/`readers`, not by
   the live tracer/runner, so that fix is silent here and only changes
-  `tools/sharc.py` query results. Updated with `uv run python
+  `tools/sharc_dev/sharc.py` query results. Updated with `uv run python
   tests/test_sharc_golden.py --update`. **[V]**
 
 ## One decode path: `decode_at()` now makes the database's own width/form choice **[V]**
 
 - Instruction decoding used to happen two ways that disagreed. The program
-  database (`tools/sharcdb.py build`, via `tools/sharcimm.py`'s
+  database (`tools/sharc_dev/sharcdb.py build`, via `tools/sharc_dev/sharcimm.py`'s
   `decode_all()`) walks a whole code block and re-checks a wide form's own
   width choice against its successors (`_prefer_confident_widths`, see the
   "Type22a is idle"-era `_WIDTH_LOOKAHEAD` comment this section's history
-  carries): a wide form that only wins `tools/sharc_isa.py`'s
+  carries): a wide form that only wins `tools/sharc_dev/sharc_isa.py`'s
   `select_frame()` on a leading-fixed-bits tie is rejected in favour of a
   narrower form when the narrower reading decodes confidently for
   `WIDTH_LOOKAHEAD` (8) more instructions where the wide reading does not,
@@ -963,7 +963,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   concrete runner's only decode entry -- instead called `select_frame()`
   once, with no successor context, so it kept the wide form in exactly the
   cases the database's second pass exists to reject.
-- **Measured first** (`tools/sharc_coverage.py <image> --compare-decode-at`,
+- **Measured first** (`tools/sharc_dev/sharc_coverage.py <image> --compare-decode-at`,
   now a permanent, reusable check -- `compare_decode_at()` in that file):
   for every `aligned=1` row of the `insn` table in all four images, decode
   at that row's `sw` with `decode_at()` against this image's own
@@ -983,13 +983,13 @@ None is resolved to `0x252658` yet. **[D][O]**
   the wide-wins-a-leading-bits-tie pattern the database's second pass
   already corrects; none was a form choice among same-width candidates or
   a fields-only difference. DT2 1.16's two `2c`/`2b` instances at `sw
-  0x1c502b` and `sw 0x1c59ce` are exactly `tools/sharc_harness.py`'s
+  0x1c502b` and `sw 0x1c59ce` are exactly `tools/sharc_dev/sharc_harness.py`'s
   `_KNOWN_BAD_DECODE_PCS` workaround (that module's own docstring already
   named this "a systematic decode-table/disassembler bug, not two isolated
   ones" and asked for it to be reported rather than patched locally) -- the
   fix below makes that workaround unnecessary, though `sharc_harness.py`
   is lane A2's file and was not edited here. **[V]**
-- **Fix: one function.** `tools/sharc_disasm.py` gained
+- **Fix: one function.** `tools/sharc_dev/sharc_disasm.py` gained
   `resolve_confident_width(pos, insn, raw_at, narrow_at, lookahead)`, the
   width/form decision itself, position- and source-agnostic (a byte offset
   into a flat buffer, or twice a short-word PC for loader-backed memory);
@@ -1012,7 +1012,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   `tools/sharc_core.sequencer.decode_at()` (the only file this task
   was allowed to change in `sharc_core/`) now calls these instead of a bare
   `disassemble()`/`decode_loaded_at()` call -- no database access at decode
-  time, exactly the emulator's own constraint. `tools/sharcimm.py`'s
+  time, exactly the emulator's own constraint. `tools/sharc_dev/sharcimm.py`'s
   `decode_all()` was refactored to call `resolve_confident_width()` too,
   passing its own memoized `table.get` as `raw_at` so a whole-image walk
   stays O(n) instead of re-decoding each lookahead step; `_NEVER_ALIGNED_
@@ -1046,14 +1046,14 @@ None is resolved to `0x252658` yet. **[D][O]**
   stream by later blocks (mostly one large 86,216-byte `FILL` of zeros,
   block 18, plus a few small `data` patches) before `LoadedMemory`'s
   documented last-write-wins resolution reaches a final answer -- so the
-  bytes `tools/sharcdb.py`'s per-block scan decoded were never resident in
+  bytes `tools/sharc_dev/sharcdb.py`'s per-block scan decoded were never resident in
   the image the emulator (or `decode_at()`) actually runs from. DN2 1.11/
   1.10E's larger counts are the same block-1 pattern (2,269 rows) plus a
   second, larger, not-yet-characterized block (block 57, 10,392/9,806
   rows) -- open. `compare_decode_at()` treats this as a third outcome
   (`stale_bytes`), skipped rather than compared, so it cannot masquerade
   as a decode mismatch; the check first appends `raw` bytes to the query
-  (`_raw_le_bytes()`, the 16-bit-little-endian-word packing `tools/sharc_isa.py`'s
+  (`_raw_le_bytes()`, the 16-bit-little-endian-word packing `tools/sharc_dev/sharc_isa.py`'s
   `frame_of()`/`DecodedInstruction.raw` use) and compares against
   `read_sw()` before ever calling `decode_at()`. **[V][C]** (real and
   reproducible; resolved below, "Loader block 1 is not code: decoding from
@@ -1073,7 +1073,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   this case's own `--max-states 64` cap instead. No other state, and no
   other case, differs. Updated with `uv run python
   tests/test_sharc_golden.py --update`. **[V]**
-- **Gap triage** (`tools/sharc_coverage.py dt2-1.16 --root 0x1c2b24` /
+- **Gap triage** (`tools/sharc_dev/sharc_coverage.py dt2-1.16 --root 0x1c2b24` /
   `--all-roots`, unchanged counts before and after the fix -- render path 3
   gap instructions, all roots 11):
   - **`sw 0x1c32b0` (`21p_undoc16`, 2 bytes) and `sw 0x1c32b4`
@@ -1094,7 +1094,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   - **`sw 0x1c32b1` (`1a`, `cu=3 opcode=0xe0`) and, all-roots only, `sw
     0xb88e8b` (`2a_short`, `cu=2 opcode=0x40`) / `sw 0xb88edb`
     (`5a_move`, `cu=2 opcode=0x40`, both in loader block 69, the L2
-    decimator region -- `tools/sharc_harness.py`'s `ADDRESSES["decimator"]
+    decimator region -- `tools/sharc_dev/sharc_harness.py`'s `ADDRESSES["decimator"]
     = 0xb80000`).** Real code, bytes match, decode already confident and
     already agrees with the database. `sharc_coverage.py`'s "compute" gap
     kind means exactly what it says: `sharc_trace._compute`/`sharc_core.
@@ -1116,7 +1116,7 @@ None is resolved to `0x252658` yet. **[D][O]**
     that never reach the final image. The one-decode-path fix cannot
     "resolve" this (there is no live candidate to choose differently
     between; the input itself differs), and fixing it for real means
-    teaching `tools/sharcdb.py`'s block scan to skip -- or teaching
+    teaching `tools/sharc_dev/sharcdb.py`'s block scan to skip -- or teaching
     `sharc_coverage.py`'s gap report to exclude -- a `code` block a later
     block in the same stream fully overwrites, which is a database/
     lifecycle change, not a decoder one. **[V][C]** (resolved below, "Loader
@@ -1143,7 +1143,7 @@ The previous section's own "Stale-bytes" note left two things open: block 1's
 role, and DN2's larger, uncharacterized stale-bytes count on block 57. Both
 are now resolved. The model decided on: the database describes the program
 **as loaded** -- one code block's `insn`/`functions`/edges rows are decoded
-from `tools/sharcldr.py`'s `LoadedMemory` (the whole boot stream's merged,
+from `tools/sharc_dev/sharcldr.py`'s `LoadedMemory` (the whole boot stream's merged,
 last-write-wins final image), not from that block's own raw stream payload.
 This is the same input `tools/sharc_core.sequencer.decode_at()` already used
 (no database access, `LoadedMemory` only) -- the "One decode path" section
@@ -1184,7 +1184,7 @@ block's index is higher than block 1's (no contradiction of "only a later
 write can override"). **[V]**
 
 What block 1 actually is: the boot stream's docstring convention already
-established (see `tools/sharcldr.py`'s module docstring) that a
+established (see `tools/sharc_dev/sharcldr.py`'s module docstring) that a
 `BFLAG_FIRST` block's `target_address` names the start of "an application"
 and that a stream can carry more than one, with only the *last* one being
 the application the core actually boots into (`0x1c1338` for DT2, matching
@@ -1199,7 +1199,7 @@ enters block 1's range; the ~82 "functions" and dense `dataref_code_pointer`
 roots the pre-v13 database found inside it were themselves artifacts of
 decoding these dead, self-overlapping bytes as if they were live code
 (literal fields that happen to encode addresses back inside the same dead
-range). `tools/sharcinv.py`'s `CODE_BLOCKS` and this file's
+range). `tools/sharc_dev/sharcinv.py`'s `CODE_BLOCKS` and this file's
 `KNOWN_CODE_BLOCKS` no longer include it on any of the four images; its
 `blocks` row now reports `kind='data'` (matching what the final image
 actually holds there) with `overwritten_bytes=10304`. **[V]**
@@ -1210,9 +1210,9 @@ matches drawn from it (e.g. "blk1 82" functions, "literal 0x60 occurs in
 blk1, blk69 and blk88", reload counts "across blk1/..."). Those specific
 blk1-derived claims no longer have a `blocks`/`insn`/`functions` row to point
 to after this fix and should be reviewed by whoever owns finding 06 -- not
-done here (docs/findings/06 and `tools/sharcinv.py`'s own module docstring
+done here (docs/findings/06 and `tools/sharc_dev/sharcinv.py`'s own module docstring
 are outside this task's file ownership; only the `CODE_BLOCKS` line and the
-`--blocks` usage example were corrected in `tools/sharcinv.py`, since the bug
+`--blocks` usage example were corrected in `tools/sharc_dev/sharcinv.py`, since the bug
 lives in the code that file defines). **[O]**
 
 ### Loader block 57 was never stale: a too-small L2_BYTE_LIMIT **[V]**
@@ -1223,7 +1223,7 @@ byte-for-byte identical between its own declared range and `LoadedMemory` at
 every address (checked directly with `mem.read()` against the raw
 byte-address, not through the sw-based accessor), independently confirmed
 with `LoadedMemory.owner_runs()` showing 0 bytes owned by anything but block
-57 itself. It was reported "stale" only because `tools/sharcldr.py`'s
+57 itself. It was reported "stale" only because `tools/sharc_dev/sharcldr.py`'s
 `L2_BYTE_LIMIT` (`0x20020000`, one 128 KB L2 SRAM bank) was too small:
 `read_sw()`'s L2 fallback bounds-checks against it and returned `None` for
 any sw past the bank boundary, while block 57 itself extends to
@@ -1231,7 +1231,7 @@ any sw past the bank boundary, while block 57 itself extends to
 ADSP-2156x hardware reference (`out/refs/adsp-2156x-hwr`) documents the real
 size: "L2CTL0 contains 1M byte of RAM grouped into eight banks, 128K bytes
 each and 96K bytes of boot ROM" -- the old bound modeled one bank of eight.
-`L2_BYTE_LIMIT` is now `0x20100000` (the full 1 MB), and `tools/sharcfn.py`'s
+`L2_BYTE_LIMIT` is now `0x20100000` (the full 1 MB), and `tools/sharc_dev/sharcfn.py`'s
 `base_sw_note()` (which quoted the old bound in a diagnostic string) now
 formats it from the live constants instead of a hardcoded literal. Block 57
 stays in `KNOWN_CODE_BLOCKS`, now resolved end to end (0 stale bytes,
@@ -1243,21 +1243,21 @@ correspondence method never named it) and is left out of
 `KNOWN_CODE_BLOCKS` for that reason alone -- a known, unverified gap, not
 re-added by this task. **[V][O]**
 
-**Collateral, not fixed here:** `tools/sharcspec/ghidra/gen_sleigh.py`
+**Collateral, not fixed here:** `tools/sharc_dev/sharcspec/ghidra/gen_sleigh.py`
 (SLEIGH language generation, not owned by this task) independently
 hardcodes the *old* `0x20020000` L2 boundary in generated code (its own
 `isl2` predicate, `addr_name < 0x20020000`) rather than reading
 `sharcldr.L2_BYTE_LIMIT`; it is now inconsistent with the widened Python-side
 bound. This affects only the Ghidra SLEIGH import path
-(`tools/sharc_import.py`'s own `ghidra_addr()`/`mapped_segments()` already
+(`tools/sharc_dev/sharc_import.py`'s own `ghidra_addr()`/`mapped_segments()` already
 read the live constants and needed no change, confirmed by
 `tests/test_sharc_import.py`), not this database/decode pipeline. Flagged
-for whoever owns `tools/sharcspec/ghidra/`. **[O]**
+for whoever owns `tools/sharc_dev/sharcspec/ghidra/`. **[O]**
 
 ### DB_VERSION 12 -> 13, before/after **[V]**
 
 Rebuilt all four private per-lane databases
-(`uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin`).
+(`uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin`).
 "Before" below is a faithful v12 rebuild from a clean checkout of this
 task's changed files (not a stale number): its aligned-instruction/
 stale-bytes counts reproduce the "One decode path" section's own already-`[V]`
@@ -1271,7 +1271,7 @@ baseline this section's "after" is measured against.
 | dn2-1.11 | 65,372 -> 63,100 | 1,157 -> 1,076 | 1,901 -> 1,821 | 59,454 -> 57,597 | 12,661 -> 0 |
 | dn2-1.10E | 64,586 -> 62,314 | 1,151 -> 1,070 | 1,916 -> 1,836 | 58,965 -> 57,108 | 12,075 -> 0 |
 
-`tools/sharc_coverage.py --compare-decode-at` now reports 0 stale-bytes *and*
+`tools/sharc_dev/sharc_coverage.py --compare-decode-at` now reports 0 stale-bytes *and*
 0 decode_at mismatches on all four images (previously 0 mismatches, nonzero
 stale-bytes -- see the "One decode path" table above). Every image's drop in
 aligned instructions is a few rows larger than its own stale-bytes count
@@ -1282,7 +1282,7 @@ consistent -3-row edge effect from the two tiny 4-byte survivor spans no
 longer contributing their own boundary-adjacent aligned rows once block 1
 is not scanned at all, not a new discrepancy.
 
-Coverage gaps (`tools/sharc_coverage.py <image> --root 0x1c2b24` /
+Coverage gaps (`tools/sharc_dev/sharc_coverage.py <image> --root 0x1c2b24` /
 `--all-roots`):
 
 | image | scope | gaps (before -> after) | not-executable instructions (before -> after) |
@@ -1302,7 +1302,7 @@ and is byte-for-byte unchanged. All remaining gaps (`1c32b0`/`1c32b1`/
 are real code, unrelated to this fix, and stay open per the existing gap
 triage above. **[V]**
 
-`uv run python -m tools.sharc_symbols dt2-1.16` still resolves every symbol
+`uv run python -m tools.sharc_dev.sharc_symbols dt2-1.16` still resolves every symbol
 to the same value as before this change (no `FAILED`/`missing`/`mismatch`
 output) -- none of the profile's required symbols live in block 1's or
 block 57's address ranges, so this is an unsurprising but checked pass.
@@ -1314,13 +1314,13 @@ distinct gaps 6 -> 5 (the removed `26a` group) -- exactly the coverage-gap
 table above. `cov_render`, `run_frame`, `run_voice`, `trace_frame` and
 `trace_voice` are byte-identical (none of their roots or traced paths ever
 reached block 1). Updated with
-`uv run python tests/test_sharc_golden.py --update`. **[V]**
+`PYTHONPATH=tests uv run python -m tests.sharc.integration.test_sharc_golden --update`. **[V]**
 
-**Files touched outside this task's listed ownership.** `tools/sharcinv.py`
+**Files touched outside this task's listed ownership.** `tools/sharc_dev/sharcinv.py`
 (`analyze_block()`, `build_inventory()`, `CODE_BLOCKS`) was edited because
 the stale-input bug lives in its `analyze_block()`/`build_inventory()`
-functions, which `tools/sharcfn.py`'s `load_context()` and
-`tools/sharcdb.py`'s `_fill_database()` both call into for function
+functions, which `tools/sharc_dev/sharcfn.py`'s `load_context()` and
+`tools/sharc_dev/sharcdb.py`'s `_fill_database()` both call into for function
 boundaries and call/jump/return sites -- fixing only this task's own files'
 decode loop would have left `functions`/`edges`/`bblocks` still built from
 block 1's stale bytes, an incoherent database. The edit is minimal (the
@@ -1329,10 +1329,10 @@ payload source inside `analyze_block()`, and removing block 1 from
 `blk1@0x1201f8` as an example were left mostly alone (see the "Collateral"
 note above). `tests/test_sharc_import.py` needed one test fixed (a
 hardcoded `0xFFFF` L2-window-size literal tied to the old, narrower
-`L2_BYTE_LIMIT`) to keep passing after the widening; `tools/sharc_import.py`
+`L2_BYTE_LIMIT`) to keep passing after the widening; `tools/sharc_dev/sharc_import.py`
 itself needed no change (already reads the live constants). **[O]** for a
 maintainer check that these out-of-list edits don't conflict with other
-lanes' work on `tools/sharcinv.py` (last touched by unrelated commits
+lanes' work on `tools/sharc_dev/sharcinv.py` (last touched by unrelated commits
 `a286b20`/`8cccd2e`, well before this wave's work).
 
 **Tests.** `uv run python -m pytest tests/test_sharc_golden.py
@@ -1378,7 +1378,7 @@ conditional Type 7a with a condition other than `NOT SV` (0x17) in the audio cod
 - **Rule (PRM p.14-47, "Type 7a ISA/VISA (cond + comp + index modify)").** "If a condition is specified, it affects the
   entire instruction": compute and index modify alike. SISD tests PEx's condition. In SIMD the compute runs in each
   PE whose own condition is true; "the index register modify ... occurs based on the logical ORing of the outcome of
-  the conditions tested on both PEs". Implemented in `tools/sharc_core/forms_dag.py` for every condition the core
+  the conditions tested on both PEs". Implemented in `tools/sharc_dev/sharc_core/forms_dag.py` for every condition the core
   evaluates (`_predicate`, `_predicate_pe`): a modify whose condition is false in every active PE is skipped (no
   circular wrap, no compute); PEx unresolved with SIMD unresolved keeps the old behaviour (Unknown outcome); a
   conditional compute with SIMD unresolved is refused (`unresolved SIMD conditional Type7a compute`). Tests:
@@ -1403,7 +1403,7 @@ conditional Type 7a with a condition other than `NOT SV` (0x17) in the audio cod
   undecodable word at `0x1cbc93` (`dsp.patch`) still halts, so the detector keeps its teeth
   (`test_a_dsp_halt_is_a_failure`). DN2 pins, 61 scenario oracles, no-AOT oracles, tier-quick (20 of 20 equal) and the
   DT2 tone, oracles and tier-quick (9 of 9 equal) all pass against the `gen-next` cores (`SHARC_GEN_DIR=...
-  tools/verify.py --only ...`, one device per run because `SHARC_GEN_DIR` is global). PyPy is not installed on this
+  tools/devtools/verify.py --only ...`, one device per run because `SHARC_GEN_DIR` is global). PyPy is not installed on this
   machine, so `tests/test_pypy.py` (which includes `test_sharc_trace.py`) could not run here **[O]**; the change uses
   only constructs the transpiler already accepts (it transpiled with 0 untranslated functions).
 
@@ -1423,8 +1423,8 @@ Does silicon do the same? Public programming reference (`sc58x-2158x-prm`, print
 - Table 6-13 (p.6-33): a SISD normal-word access has no alignment restriction; in SIMD it needs a normal-word
   boundary.
 - Our core: `_access_modifier_scale` returns 4 for a normal-word access when the address is concrete and not in a
-  normal-word alias (`tools/sharc_core/addressing.py`, from the product datasheet tables) and `assume_nw32` holds (it
-  is true in `tools/sharc_run.py` and the generated cores), 1 for an address inside a normal-word alias; the circular
+  normal-word alias (`tools/sharc_dev/sharc_core/addressing.py`, from the product datasheet tables) and `assume_nw32` holds (it
+  is true in `tools/sharc_dev/sharc_run.py` and the generated cores), 1 for an address inside a normal-word alias; the circular
   length is scaled alike (`_post_modify_index`). That is the manual's rule. selcc's `0x2xxxxxxx` pointers with index
   steps of 4 therefore address the same words on silicon.
 - Not covered: banks with the IMDW (40-bit) bit set scale by 6 (PRM p.7-7); no DT2/DN2 code path in this work sets it

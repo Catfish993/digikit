@@ -1,10 +1,9 @@
-"""tools/sharc_lp0.py: the FlexBus wire decode, and a feed through the DSP's
+"""tools/sharc_dev/sharc_lp0.py: the FlexBus wire decode, and a feed through the DSP's
 own link-port-0 receive callback on DT2 1.16."""
 
 import json
 import os
 import struct
-import sys
 import tempfile
 import unittest
 
@@ -12,9 +11,8 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import sharc_lp0 as lp  # noqa: E402
+from tools.sharc_dev import sharc_lp0 as lp  # noqa: E402
 
 DT2_116_BLOB = ROOT / "out/sections/dt2-1.16/section_7_BLOB.bin"
 
@@ -109,7 +107,7 @@ class FeedTest(unittest.TestCase):
     """The DSP's own callback fills the slot table and sample memory."""
 
     def test_feed_fills_slot_table_and_sample_memory(self):
-        import sharc_harness as h
+        from tools.sharc_dev import sharc_harness as h
 
         frames = 3000
         native = native_stereo(frames)

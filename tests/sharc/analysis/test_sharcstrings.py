@@ -9,13 +9,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from support.paths import REPO_ROOT
+from tools import python_env
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 from importlib import import_module
 
-sharcldr = import_module("sharcldr")
-sharcstrings = import_module("sharcstrings")
+sharcldr = import_module("tools.sharc_dev.sharcldr")
+sharcstrings = import_module("tools.sharc_dev.sharcstrings")
 
 
 def block(code, address, payload=b""):
@@ -119,21 +118,22 @@ class SharcStringsTest(unittest.TestCase):
             source.write(stream)
             path = source.name
         try:
-            command = [sys.executable, "tools/sharcstrings.py", path]
+            command = [sys.executable, "-m", "tools.sharc_dev.sharcstrings", path]
             no_match = subprocess.run(
                 command + ["--grep", "missing", "--json"],
+                env=python_env(),
                 text=True,
                 capture_output=True,
             )
             self.assertEqual(no_match.returncode, 0)
             self.assertEqual(json.loads(no_match.stdout), [])
             invalid = subprocess.run(
-                command + ["--min-length", "0"], text=True, capture_output=True
+                command + ["--min-length", "0"], env=python_env(), text=True, capture_output=True
             )
             self.assertNotEqual(invalid.returncode, 0)
             self.assertIn("must be positive", invalid.stderr)
             bad_regex = subprocess.run(
-                command + ["--grep", "["], text=True, capture_output=True
+                command + ["--grep", "["], env=python_env(), text=True, capture_output=True
             )
             self.assertNotEqual(bad_regex.returncode, 0)
             self.assertIn("invalid --grep regex", bad_regex.stderr)

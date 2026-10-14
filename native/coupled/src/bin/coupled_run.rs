@@ -1,6 +1,6 @@
 //! `coupled-run`: the desktop app's coupled run loop without Tauri or a webview.
 //!
-//! It restores the same DN2 ready session as the launcher (`tools/native_emu.py`
+//! It restores the same DN2 ready session as the launcher (`tools/emulator/native_emu.py`
 //! `--auto-coupled`), steps the emulator in the app's [`STEP_CHUNK`]-instruction
 //! chunks as fast as it can with optional native playback (the PCM is also measured), and
 //! plays a scenario of guest-clock-driven panel events. For each scenario it
@@ -20,14 +20,14 @@
 //! ```
 //!
 //! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
-//! scenario's report (`dsp_peek`), read after the scenario ends; `tools/l2canary.py` uses it.
+//! scenario's report (`dsp_peek`), read after the scenario ends; `tools/firmware/l2canary.py` uses it.
 //!
 //! `--replay FILE` runs only the scenario in FILE (a scenario object, or a desktop
 //! diagnostics export carrying a `recorded_scenario`); it ignores `--scenario` and
 //! the scenarios file. `--wav PATH` writes the emulator's own PCM to PATH (a float
 //! WAV for `.wav`, else raw f32le); with several scenarios `-<name>` goes before the
 //! extension. `--dump-dsp PATH` writes the DSP's canonical state blob (`SHRD`, all
-//! memory written since the image; read it with `tools/dspdiff.py`) at the end of
+//! memory written since the image; read it with `tools/emulator/dspdiff.py`) at the end of
 //! each scenario to `PATH` with `-<name>` before the extension. `--audio-mode` is
 //! the underrun recovery of `--playback`.
 //!

@@ -1,22 +1,17 @@
-"""Unit tests for tools/machinepatch.py's pure planner, `plan_b`."""
+"""Unit tests for tools/patchkit/machinepatch.py's pure planner, `plan_b`."""
 
 import dataclasses
 import os
 import struct
-import sys
 import unittest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
 from emu import config
 
-# tools/machinepatch.py inserts these same two paths itself, but they need
+# tools/patchkit/machinepatch.py inserts these same two paths itself, but they need
 # to be present before the import statement below runs.
-import machinepatch as mp
-import machineprofile
+from tools.patchkit import machinepatch as mp
+from tools.patchkit import machineprofile
 
 MAIN_IMAGE_BASE = 0x40000400
 

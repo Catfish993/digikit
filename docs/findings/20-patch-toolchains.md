@@ -2,14 +2,14 @@
 
 Goal: compile patchkit modules ahead of time into relocatable objects, link them into the firmware at patch
 time with our own code, and unit-test them on the emulated cores. Plan: `docs/plans/patchkit.md`, item 0.5.
-Tools: `tools/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.py`, `pk_sharc.py`; tests
+Tools: `tools/patchkit/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.py`, `pk_sharc.py`; tests
 `tests/test_pk_cf.py`, `tests/test_pk_sharc.py` (sources in `tests/pk_src/`). Both tool chains install under
 `out/tools/` (gitignored; `mise run toolchains`); the tests skip when a toolchain or the 1.17 image is absent.
 
 ## ColdFire (MCF5441x, ISA_C + EMAC, no FPU)
 
 - **Toolchain [D].** GNU binutils 2.47 (tarball snapshot `2.47.20260726`, sha256 `154ab23b...`) and GCC 16.2.0
-  (sha256 `e6738e29...`) built from source for `m68k-elf` by `tools/pk_toolchains.py m68k`: about 15 minutes on
+  (sha256 `e6738e29...`) built from source for `m68k-elf` by `tools/patchkit/pk_toolchains.py m68k`: about 15 minutes on
   16 cores (binutils 3, gcc 11; the two tarballs are 135 MB), C only, no libc, no multilib, prefix `out/tools/m68k-elf`.
   Homebrew also has bottles of both versions (`m68k-elf-gcc` 16.2.0, `m68k-elf-binutils` 2.47); the source
   script is the pinned, local-only route. `as` and GCC know `-mcpu=54418` directly (GCC: `isa_c`, hardware
@@ -26,7 +26,7 @@ Tools: `tools/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.py`, `pk_
   to an extern). A `bsr.w` from the expansion region to the firmware does not fit (132 MB apart): the linker
   reports the out-of-range relocation instead of truncating.
 - **ISA check [D].** `pk_link.check_isa` decodes every instruction of the executable sections with our decoder
-  (`native/coldfire` `cfdis`, generated from `tools/cfisa/coldfire.json`) and fails on an illegal word, a form
+  (`native/coldfire` `cfdis`, generated from `tools/coldfire/cfisa/coldfire.json`) and fails on an illegal word, a form
   outside `isa_a`/`isa_b`/`isa_c`/`emac`, or a privileged form. The test module (55 instructions, 22 forms)
   passes; an assembly file built with `-m68020` (`bfextu`) is rejected.
 - **Running on the core [D].** `Emulator::call_function` (`native/boot/src/runtime/call.rs`, example
@@ -50,7 +50,7 @@ Tools: `tools/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.py`, `pk_
 ## SHARC+ (ADSP-2156x)
 
 - **Toolchain [D].** Selache at `2b26d3b7` (GPLv3, public), `cargo build --release`, built by
-  `tools/pk_toolchains.py selache` into `out/tools/selache` in under a minute. `selas -proc ADSP-21569`.
+  `tools/patchkit/pk_toolchains.py selache` into `out/tools/selache` in under a minute. `selas -proc ADSP-21569`.
 - **Object facts [D].** Section `seg_pmco` (assembly, 48-bit forms) or `seg_swco` (selcc). Symbol values and
   relocation offsets are in 16-bit parcels (the PC unit). Two relocation types: **11** = absolute 24-bit target
   of a 48-bit jump/call (low 24 bits of the instruction), **12** = absolute 32-bit immediate or address (low 32
@@ -59,12 +59,12 @@ Tools: `tools/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.py`, `pk_
   (selcc writes `-1` for a return label: `jump (m14,i12)` adds 1). `pk_sharc.link` accepts a field of 0 or the
   addend and fails otherwise. Locals (`.L_...`) appear as symbols.
 - **Re-decode gate [D].** After linking, parcels are swapped to boot order and every instruction is decoded by
-  `tools/sharc_isa.py`: the form must exist, its extent must equal the extent Selache chose, and each relocated
+  `tools/sharc_dev/sharc_isa.py`: the form must exist, its extent must equal the extent Selache chose, and each relocated
   field must read back as the intended value. A corrupted word fails the build (tested). Known Selache encode
   bug (`LSHIFT ... BY -n`, finding 05) is refused at assembly time. Selache's *disassembler* prints `m4` for
   `dm(i0,m0)` stores (finding 05 bug 2 class); the bytes are right, our decoder reads M0.
 - **Running on the core [D].** `pk_sharc.run_call` builds a `LoadedMemory` from the linked bytes (at the short
-  word alias `0x28000000 + 2*sw`), pokes normal-word DM, runs `tools/sharc_run.py` to a breakpoint. Scale-in-place
+  word alias `0x28000000 + 2*sw`), pokes normal-word DM, runs `tools/sharc_dev/sharc_run.py` to a breakpoint. Scale-in-place
   (`F2 = F2*F1` in a `DO` loop, local `CALL`, tail `JUMP` to an extern) over four floats gives exactly
   `x * 2.5`; one word past the buffer is untouched.
 
@@ -124,6 +124,6 @@ One agent; each item was met as a build failure or a wrong result and fixed in t
 - **Immediate arithmetic.** `Rn = Rx + 1` assembles; `Rn = Rx + 26` and `Rn = Rx - 64` do not (load the constant into
   a register). `INC R5` is read as a symbol. `MODIFY(I7, -26) (NW);` assembles to the firmware's own
   `1587 ffff ffe6`; without `(NW)` the immediate is in bytes (`1607 ...`).
-- **`CALL (M13, I12)` is not followed by the tracer** (`tools/sharc_core` ends the callee's `RTS` with "return
+- **`CALL (M13, I12)` is not followed by the tracer** (`tools/sharc_dev/sharc_core` ends the callee's `RTS` with "return
   without followed call") and the firmware has no indirect call. core/dsp-voice enters a registered routine with
   `JUMP (M13, I12)` and a return address in `I13`.

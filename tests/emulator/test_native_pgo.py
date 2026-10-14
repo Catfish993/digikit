@@ -3,17 +3,15 @@
 import hashlib
 import json
 import subprocess
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-import digi_env  # noqa: E402
-import native_pgo  # noqa: E402
-
-sys.path.pop(0)
+from tools.emulator import (  # noqa: E402
+    digi_env,  # noqa: E402
+    native_pgo,  # noqa: E402
+)
 
 PACKAGES = ["native/sharc", "native/machine"]
 

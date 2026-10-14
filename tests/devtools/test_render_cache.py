@@ -1,17 +1,15 @@
-"""Tests for tools/render_cache.py (firmware-free)."""
+"""Tests for tools/devtools/render_cache.py (firmware-free)."""
 
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
 
-import render_cache as rc  # noqa: E402
+from tools.devtools import render_cache as rc  # noqa: E402
 
 
 @pytest.fixture

@@ -515,7 +515,7 @@ pub struct FastEngine {
     follow: bool,
     follow_queue: Vec<u32>,
     /// `SHARC_FAST_ONLY=pc,pc,..|@file`: only these PCs may become entries
-    /// at run time (`arm`, `add_entry`); `tools/fast_ddmin.py` shrinks a set
+    /// at run time (`arm`, `add_entry`); `tools/sharc_dev/fast_ddmin.py` shrinks a set
     /// of regions that reproduces a divergence with it.
     only: Option<std::collections::HashSet<u32>>,
     /// `SHARC_FAST_NOBACKOFF` turns the window-decline back-off off.
@@ -531,7 +531,7 @@ pub struct FastEngine {
     /// lowering (`Env::guarded_dyn`).
     clusters: Vec<u32>,
     /// `SHARC_FAST_COV`: coverage report lines (`cov ...`, see
-    /// `tools/blocktrans_coverage.py`); off by default.
+    /// `tools/sharc_dev/blocktrans_coverage.py`); off by default.
     cov: bool,
     /// The last kernel exit awaiting the gap to the next fast-tier call:
     /// (slot, exit pc, exit kind, icount at exit).
@@ -627,7 +627,7 @@ impl FastEngine {
             pcs: list,
             ctx: glue::Ctx::default(),
             stats: FastStats::default(),
-            // SHARC_FAST_LOG=summary: only the reports at exit (tools/fastcov.py);
+            // SHARC_FAST_LOG=summary: only the reports at exit (tools/devtools/fastcov.py);
             // any other value also logs every event and run.
             log: {
                 let v = std::env::var("SHARC_FAST_LOG").ok();

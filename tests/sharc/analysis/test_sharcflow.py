@@ -1,14 +1,9 @@
-"""tools/sharcflow.py call and return recognition (the Ghidra pass needs a project)."""
+"""tools/sharc_dev/sharcflow.py call and return recognition (the Ghidra pass needs a project)."""
 
-import os
-import sys
 import unittest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import sharcflow  # noqa: E402
+from tools.sharc_dev import sharcflow  # noqa: E402
 from support.sharc_encode import (  # noqa: E402
     call8a_abs,
     call8a_rel,

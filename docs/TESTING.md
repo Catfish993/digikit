@@ -7,32 +7,32 @@ tests live with their code.
 
 | Directory | What it tests | Main code under test |
 | --- | --- | --- |
-| `tests/sharc/semantics` | SHARC+ instruction semantics; interpreter against native lockstep | `tools/sharc_core`, `tools/sharc_run.py` |
-| `tests/sharc/trace` | The symbolic tracer | `tools/sharc_trace.py` |
-| `tests/sharc/generation` | Assembler, transpiler, Rust generator, lowering, generated p-code language | `tools/sharc_transpile*.py`, `tools/sharc_rsgen.py`, `tools/sharc_lowergen*.py`, `tools/sharcpcode.py`, `tools/sharcspec` |
-| `tests/sharc/analysis` | Loader, disassembler, sharcdb and the other analysis tools | `tools/sharcldr.py`, `tools/sharc_disasm.py`, `tools/sharcdb.py`, `tools/sharc*.py` |
-| `tests/sharc/integration` | Firmware-backed harness, replay, golden hashes, capture and peer | `tools/sharc_harness.py`, `tools/sharc_replay.py`, `emu/sharc_capture.py`, `emu/sharc_peer.py` |
-| `tests/patchkit` | Patchkit, module primitives, DSP voice rig, PLUCK, master drive, proofs runner. `smoke/` is the emulator smoke tour (`matrix.toml`, `tours/`, `goldens.json`). `pk_src/` holds small patch sources. | `tools/patchkit.py`, `tools/pk_*.py`, `tools/pk_harness.py` |
-| `tests/coldfire` | ColdFire analysis: cf/cfdb, Ghidra tools, symbols, RTTI, vtables, the ISA oracle | `tools/cf.py`, `tools/cfdb.py`, Ghidra tools |
-| `tests/emulator` | Launcher, PGO, target directories, coupled runner helpers, live audio, wire traces, bootstrap | `tools/native_emu.py`, `tools/native_pgo.py`, `tools/coupled.py` |
-| `tests/control` | The control-socket client: fake-socket contract tests and daemon tests (`DIGI_EMUD`) | `tools/digi_client.py` |
+| `tests/sharc/semantics` | SHARC+ instruction semantics; interpreter against native lockstep | `tools/sharc_dev/sharc_core`, `tools/sharc_dev/sharc_run.py` |
+| `tests/sharc/trace` | The symbolic tracer | `tools/sharc_dev/sharc_trace.py` |
+| `tests/sharc/generation` | Assembler, transpiler, Rust generator, lowering, generated p-code language | `tools/sharc_dev/sharc_transpile*.py`, `tools/sharc_dev/sharc_rsgen.py`, `tools/sharc_dev/sharc_lowergen*.py`, `tools/sharc_dev/sharcpcode.py`, `tools/sharc_dev/sharcspec` |
+| `tests/sharc/analysis` | Loader, disassembler, sharcdb and the other analysis tools | `tools/sharc_dev/sharcldr.py`, `tools/sharc_dev/sharc_disasm.py`, `tools/sharc_dev/sharcdb.py`, `tools/sharc_dev/sharc*.py` |
+| `tests/sharc/integration` | Firmware-backed harness, replay, golden hashes, capture and peer | `tools/sharc_dev/sharc_harness.py`, `tools/sharc_dev/sharc_replay.py`, `emu/sharc_capture.py`, `emu/sharc_peer.py` |
+| `tests/patchkit` | Patchkit, module primitives, DSP voice rig, PLUCK, master drive, proofs runner. `smoke/` is the emulator smoke tour (`matrix.toml`, `tours/`, `goldens.json`). `pk_src/` holds small patch sources. | `tools/patchkit/patchkit.py`, `tools/patchkit/pk_*.py`, `tools/patchkit/pk_harness.py` |
+| `tests/coldfire` | ColdFire analysis: cf/cfdb, Ghidra tools, symbols, RTTI, vtables, the ISA oracle | `tools/coldfire/cf.py`, `tools/coldfire/cfdb.py`, Ghidra tools |
+| `tests/emulator` | Launcher, PGO, target directories, coupled runner helpers, live audio, wire traces, bootstrap | `tools/emulator/native_emu.py`, `tools/emulator/native_pgo.py`, `tools/emulator/coupled.py` |
+| `tests/control` | The control-socket client: fake-socket contract tests and daemon tests (`DIGI_EMUD`) | `tools/control/digi_client.py` |
 | `tests/firmware` | `.syx` container, aPLib/ELZ, device profiles, firmware atlas, snapshots, machine patch planning, +Drive format | `dt2/`, `emu/` |
 | `tests/dsp` | DSP maps and diffs, FX scenario generators, audio checks | DSP tools |
-| `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/verify.py`, `tools/benchlock.py`, `tools/test_outcomes.py` |
-| `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenarios:*`. | `scenarios/`, `tools/coupled.py` |
+| `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/devtools/verify.py`, `tools/devtools/benchlock.py`, `tools/devtools/test_outcomes.py` |
+| `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenarios:*`. | `scenarios/`, `tools/emulator/coupled.py` |
 | `tests/support` | Helpers shared by tests. No `test_` prefix, not collected. `tests/support/paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS`. | |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures | |
 
 Other tests:
 
 - `packages/web/tests` holds the web app's node tests (`pnpm test`).
-- Rust tests live in their crates (`cargo test`, run through `tools/rust_ws.py`).
+- Rust tests live in their crates (`cargo test`, run through `tools/devtools/rust_ws.py`).
 
 ## Writing a test
 
 - Put the test in the directory of the code it tests.
 - Import repo paths from `support.paths`. Never count parent directories.
-- Import `tools/` modules directly. `tests/conftest.py` puts `tools/` and `tests/` on `sys.path`.
+- Import tools as `from tools.<owner> import <module>`. pytest puts the repository root and `tests/` on `sys.path` (`pythonpath` in pyproject.toml); never change `sys.path` in a test. A test that runs a tool in a subprocess uses `[sys.executable, "-m", "tools.<owner>.<module>", ...]` with `env=python_env()` (`from tools import python_env`).
 - Share helpers through `tests/support`. Never import another test module.
 - Test file basenames must be unique across `tests/`. pytest uses its default import mode and there is no `__init__.py`.
 - Mark long firmware runs `@pytest.mark.slow`. They are skipped unless `--slow` is given.
@@ -48,27 +48,27 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | --- | --- | --- | --- |
 | Stock firmware `.syx` in the repo root (DT2 1.16/1.17, DN2 1.11/1.12; 1.15C/1.10E for old analysis) | "needs Digitakt_II_OS1.16.syx in the repo root", "stock firmware images not present" | README "Firmware" (files come from Elektron's support site; `DIGI_EMU_SYX` and `DIGI_EMU_SYX_DT2` override paths) | `tests/firmware`, `tests/patchkit`, `tests/emulator/test_bootstrap.py` |
 | Extracted sections `out/sections/<image>/` | "out/sections/dt2-1.16/section_7_BLOB.bin is not available", "no extracted sections", "DT2 1.16 image absent" | `uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16` (likewise `dn2-1.11`; README "Extract the firmware") | `tests/sharc/*`, `tests/coldfire`, `tests/dsp` |
-| SHARC program database `out/sharcdb/<image>.sqlite` | "out/sharcdb/dt2-1.16.sqlite is not available", "no program database" | `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin` (needs the sections) | `tests/sharc/analysis` |
-| ColdFire Ghidra dump `out/ghidra/<image>-emac` and its cfdb | "out/ghidra/dt2-1.16-emac missing", "no cfdb for dt2-1.17" | Needs Ghidra: a `tools/ghidradump.py` dump, then `uv run python tools/cfdb.py build out/ghidra/<image>-emac` (AGENTS.md "Static analysis") | `tests/coldfire`, `tests/firmware/test_fw.py` |
-| Native SHARC library (`DEFAULT_LIB` in `tools/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (native/sharc)" | `mise run sharc:native-lib` (firmware-free; builds the shared core first; output in `out/native/shared-core/target`). The shared-core library is preferred when present; else the image-specific library at `out/native/opt/target-final` (perf/AOT work; may be stale, and an old one that lacks symbols makes the tests skip); `SHARC_NATIVE_LIB` overrides. | `tests/sharc/semantics`, `tests/sharc/generation` |
+| SHARC program database `out/sharcdb/<image>.sqlite` | "out/sharcdb/dt2-1.16.sqlite is not available", "no program database" | `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin` (needs the sections) | `tests/sharc/analysis` |
+| ColdFire Ghidra dump `out/ghidra/<image>-emac` and its cfdb | "out/ghidra/dt2-1.16-emac missing", "no cfdb for dt2-1.17" | Needs Ghidra: a `tools/coldfire/ghidradump.py` dump, then `uv run python -m tools.coldfire.cfdb build out/ghidra/<image>-emac` (AGENTS.md "Static analysis") | `tests/coldfire`, `tests/firmware/test_fw.py` |
+| Native SHARC library (`DEFAULT_LIB` in `tools/sharc_dev/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (native/sharc)" | `mise run sharc:native-lib` (firmware-free; builds the shared core first; output in `out/native/shared-core/target`). The shared-core library is preferred when present; else the image-specific library at `out/native/opt/target-final` (perf/AOT work; may be stale, and an old one that lacks symbols makes the tests skip); `SHARC_NATIVE_LIB` overrides. | `tests/sharc/semantics`, `tests/sharc/generation` |
 | Generated shared core `out/native/shared-core/gen` | "no shared core generated here" | `mise run gen:core` | `tests/sharc/generation/test_sharc_lowergen.py` |
-| Module toolchains in `out/tools` (m68k gcc/binutils, Selache) | "selache not built (tools/pk_toolchains.py selache)", "m68k toolchain not installed" | `mise run toolchains` (about 15 min; `uv run python tools/pk_toolchains.py status` shows what is present; docs/PATCHING.md) | `tests/patchkit` |
-| `digi-emud` daemon | "needs DIGI_EMUD (a built digi-emud) and the DN2 .syx" | Build it with `mise run emu:serve -- --build-only` (per `tools/digi_client.py`), set `DIGI_EMUD` to the binary (`DIGI_EMUD_DN2` / `DIGI_EMUD_DT2` for coupled runs; `tools/native_emu.py --daemon --build-only <syx>` prints the path), and have the `.syx` (`DIGI_EMU_SYX`) | `tests/control`, `tests/patchkit/test_master_drive_emu.py`, `tests/emulator/test_coupled_patched.py` |
+| Module toolchains in `out/tools` (m68k gcc/binutils, Selache) | "selache not built (tools/patchkit/pk_toolchains.py selache)", "m68k toolchain not installed" | `mise run toolchains` (about 15 min; `uv run python -m tools.patchkit.pk_toolchains status` shows what is present; docs/PATCHING.md) | `tests/patchkit` |
+| `digi-emud` daemon | "needs DIGI_EMUD (a built digi-emud) and the DN2 .syx" | Build it with `mise run emu:serve -- --build-only` (per `tools/control/digi_client.py`), set `DIGI_EMUD` to the binary (`DIGI_EMUD_DN2` / `DIGI_EMUD_DT2` for coupled runs; `tools/emulator/native_emu.py --daemon --build-only <syx>` prints the path), and have the `.syx` (`DIGI_EMU_SYX`) | `tests/control`, `tests/patchkit/test_master_drive_emu.py`, `tests/emulator/test_coupled_patched.py` |
 | Ready inputs, `snapshots/*.snap` | "no snapshots/*.snap present", patched ready inputs missing | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min; needs the `.syx`; README) | `tests/firmware/test_snapread.py`, `tests/emulator/test_coupled_patched.py` |
 | Captures `out/captures/*.dt2cap` | "the fulltx play capture is not available", "no drive3 capture" | Not reproducible from the repository alone; these tests stay skipped for most contributors. | `tests/sharc/integration`, `tests/sharc/generation` |
-| Opt-in switches | "set LIVE_AUDIO_DEVICE_TESTS=1 to open a real output device", "native/live not built: cd native/live && cargo build --release" | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `cd native/live && cargo build --release` builds the live library; `--slow` runs the long firmware runs. A `SELACHE_DIR` oracle switch is not confirmed (see `tools/pk_toolchains.py`, which defines `SELACHE_DIR` as a path, not an environment variable). | `tests/emulator/test_live_audio.py`, tests marked `slow` |
+| Opt-in switches | "set LIVE_AUDIO_DEVICE_TESTS=1 to open a real output device", "native/live not built: cd native/live && cargo build --release" | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `cd native/live && cargo build --release` builds the live library; `--slow` runs the long firmware runs. A `SELACHE_DIR` oracle switch is not confirmed (see `tools/patchkit/pk_toolchains.py`, which defines `SELACHE_DIR` as a path, not an environment variable). | `tests/emulator/test_live_audio.py`, tests marked `slow` |
 
 ## Commands
 
 | Command | What runs | When |
 | --- | --- | --- |
-| `mise run test:quick` | Launcher, PGO, target and coupled-tool tests in `tests/emulator`, then `tools/coupled.py test-quick` | Fast check of the tooling, audio sink and coupled runtime |
-| `mise run test` | `uv run python tools/test_outcomes.py run --check --out out/runs/tests/latest tests` (each test file in its own process, 4 in parallel by default, exits 1 when a file fails), then `tools/rust_ws.py test`, `pnpm test`, every DN2 scenario pin | Everything except the slow gates |
-| `mise run test:slow` | The same runner with `--pytest-arg=--slow` and a one-hour per-file timeout, then `tools/rust_ws.py gates` | Slow runs and the ignored Rust gates that need private fixtures |
+| `mise run test:quick` | Launcher, PGO, target and coupled-tool tests in `tests/emulator`, then `tools/emulator/coupled.py test-quick` | Fast check of the tooling, audio sink and coupled runtime |
+| `mise run test` | `uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests` (each test file in its own process, 4 in parallel by default, exits 1 when a file fails), then `tools/devtools/rust_ws.py test`, `pnpm test`, every DN2 scenario pin | Everything except the slow gates |
+| `mise run test:slow` | The same runner with `--pytest-arg=--slow` and a one-hour per-file timeout, then `tools/devtools/rust_ws.py gates` | Slow runs and the ignored Rust gates that need private fixtures |
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run check` | `lint` and `test:quick` | Quick local check. Not the merge gate. |
-| `mise run verify` | The gate steps the changed files need (`tools/verify.py`). The `python-tests` step runs `PY_GATE`, the `PY_SUITES` whose trigger prefixes match, changed `tests/**/test_*.py` files, and users of a changed `tests/support` module. `--explain` shows the plan without running. `--rerun-failed` re-runs only the steps that failed last time (reads the run's result.json). | Before a commit; a lane passes `--base BRANCH` |
+| `mise run verify` | The gate steps the changed files need (`tools/devtools/verify.py`). The `python-tests` step runs `PY_GATE`, the `PY_SUITES` whose trigger prefixes match, changed `tests/**/test_*.py` files, and users of a changed `tests/support` module. `--explain` shows the plan without running. `--rerun-failed` re-runs only the steps that failed last time (reads the run's result.json). | Before a commit; a lane passes `--base BRANCH` |
 | `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 7 min with a warm render cache, about 20 min when DSP/native code changed) | Before merging to `main` |
 | `mise run scenarios` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
 | `mise run scenarios:check` | `pytest tests/scenarios --slow`: DN2 FX oracles, fast subset (about 3 min) | After DSP or scenario changes |
@@ -76,22 +76,22 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run scenarios:sweep` | Oracles with the full sweeps (about 20 min) | Before a merge |
 | `mise run patch:test` | Smoke tour and module tests over `tests/patchkit/smoke/matrix.toml` | After patchkit or module changes |
 | `mise run patch:proofs` | Every emulator proof on its quick tier, in sequence | After patchkit or module changes |
-| `uv run python tools/test_outcomes.py run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
-| `uv run python tools/test_outcomes.py BEFORE.xml AFTER.xml --renames-from REF` | Compares outcomes and skip reasons test by test, following git renames | After moving or refactoring tests |
+| `uv run python -m tools.devtools.test_outcomes run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
+| `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` | Compares outcomes and skip reasons test by test, following git renames | After moving or refactoring tests |
 
 ## Render cache
 
-Scenario renders are cached per scenario under `out/cache/renders/` (`record.json` and `audio.wav`, about 1.6 MB per entry; `tools/render_cache.py`).
+Scenario renders are cached per scenario under `out/cache/renders/` (`record.json` and `audio.wav`, about 1.6 MB per entry; `tools/devtools/render_cache.py`).
 The key hashes the coupled-run binary, the input files (firmware .syx, DSP image, DSP state, CF snapshot, card image, any other existing-file argument), the scenario JSON object (all fields, including `expect_sha256`), the peek specs, the device, the device TOMLs (`devices/*.toml` or `$DIGI_DEVICES_DIR`), and every `SHARC_*`, `DIGI_*` and `DSP_*` environment variable except a denylist of non-semantic ones (job counts, timeouts, log and diagnostic outputs, path selectors whose files are hashed, build-only variables). `@FILE` values are hashed by content.
 A hit restores the report entry and the WAV; a miss renders as before and stores the result. Runs with `--diag` bypass the cache.
-`--no-cache` (`tools/coupled.py scenario`) or `DIGI_RENDER_CACHE=0` disables it; `uv run python tools/coupled.py cache stats|clear` shows or empties it.
+`--no-cache` (`tools/emulator/coupled.py scenario`) or `DIGI_RENDER_CACHE=0` disables it; `uv run python -m tools.emulator.coupled cache stats|clear` shows or empties it.
 Effect: pins, check, check-no-aot and tier-sweep render only scenarios whose inputs changed. A change to DSP or native code changes the binary hash, so everything renders again.
 
 Only emulator output is cached (the report entry and the WAV). Everything that judges a render runs fresh: check's Python oracles analyse the cached WAV, tier compares hashes, and the pins' expected hashes are part of the key.
 
 Two guards protect against a stale hit:
 
-- Fail-closed audit: `tests/devtools/test_render_inputs.py` scans the crates linked into coupled-run. Every environment read must be in the key, in `DENYLIST` or in `IGNORED_ENV` (`tools/render_cache.py`). Computed-name env reads and runtime file reads are counted per file against `tests/devtools/render_inputs.json`. Adding a render input fails the test until it is classified; after review, regenerate the counts with `uv run python tests/devtools/test_render_inputs.py --scan`.
+- Fail-closed audit: `tests/devtools/test_render_inputs.py` scans the crates linked into coupled-run. Every environment read must be in the key, in `DENYLIST` or in `IGNORED_ENV` (`tools/devtools/render_cache.py`). Computed-name env reads and runtime file reads are counted per file against `tests/devtools/render_inputs.json`. Adding a render input fails the test until it is classified; after review, regenerate the counts with `uv run python -m tests.devtools.test_render_inputs --scan`.
 - Spot checks: `DIGI_RENDER_CACHE_CHECK=p` re-renders each hit with probability p and fails with "stale render cache ..." on any sha256 or peek difference. `verify` sets p=0.03 (about 10 fresh re-renders per full gate).
 
 Both guards were proven by mutation: an unclassified env read fails the audit, and a tampered cache entry fails the spot check.
@@ -128,15 +128,14 @@ A checkout without them skips more.
 
 ## Known issues and deferred work
 
-- `tests/sharc/generation/test_sharc_transpile.py::test_native_compute_corpus_matches` fails once a current native library is built (`mise run sharc:native-lib`); before, it was always skipped because the old library in out/native/opt/target-final lacks a symbol. The native core matches on all 1201 comparable cases; the failure is on the Python side: 3 edge-value cases of shift opcode 0x50, form 2a, raise `AssertionError: PEy tuple RN must be int-only` in tools/sharc_core. Reproduce: `uv run python -c "import sys; sys.path.insert(0,'tools'); import sharc_transpile_run as r; print([(i, c.error) for i, c in enumerate(r.corpus_cases(7, 4)) if c.error])"`. A fix changes tools/sharc_core, so CORE_FINGERPRINT changes and every generated core is regenerated; it is left for a separate SHARC task.
+- `tests/sharc/generation/test_sharc_transpile.py::test_native_compute_corpus_matches` fails once a current native library is built (`mise run sharc:native-lib`); before, it was always skipped because the old library in out/native/opt/target-final lacks a symbol. The native core matches on all 1201 comparable cases; the failure is on the Python side: 3 edge-value cases of shift opcode 0x50, form 2a, raise `AssertionError: PEy tuple RN must be int-only` in tools/sharc_dev/sharc_core. Reproduce: `uv run python -c "from tools.sharc_dev import sharc_transpile_run as r; print([(i, c.error) for i, c in enumerate(r.corpus_cases(7, 4)) if c.error])"`. A fix changes tools/sharc_dev/sharc_core, so CORE_FINGERPRINT changes and every generated core is regenerated; it is left for a separate SHARC task.
 - State shared between test files:
   - One pytest process over all of `tests/` used to fail (`TraceTest`) and then stall in tracer code. Three causes, all fixed:
-    1. Ghidra tools (ghidraapply, ghidraq, ghidravt, ghidradump, ghidracopy, ghidraopts, sharc_import) remove `tools/` from `sys.path` when imported, so PyGhidra's `ghidra` package is not shadowed. `tests/conftest.py` now restores `tools/` and `tests/` before each collection and test.
-    2. `tools/native_emu.py` sets `SHARC_GEN_DIR` with `os.environ.setdefault`. `test_native_emu_launcher.py` now restores it after every test.
-    3. `tools/sharc_lowergen.py` patched `sharc_core` for good on the first trace. It now patches only inside `installed()` and restores on exit.
+    1. Ghidra tools removed `tools/` from `sys.path` when imported (so PyGhidra's `ghidra` package was not shadowed), and `tests/conftest.py` restored it. Since the package layout (R1) `tools/` is never on `sys.path`; the strip and the conftest guard are gone.
+    2. `tools/emulator/native_emu.py` sets `SHARC_GEN_DIR` with `os.environ.setdefault`. `test_native_emu_launcher.py` now restores it after every test.
+    3. `tools/sharc_dev/sharc_lowergen.py` patched `sharc_core` for good on the first trace. It now patches only inside `installed()` and restores on exit.
   - `mise run test` still runs one process per file: it is faster and a new leak between files cannot fail unrelated tests. To check for leaks, run `uv run python -m pytest -q tests` (about 18 minutes).
-  - Deferred: the Ghidra tools still strip `sys.path` at import. Moving the strip into their `main()` would remove the need for the conftest guard. They need a Ghidra run to verify, so this is left for a Ghidra session.
-- Comments in `tools/sharc_core/*.py` and `native/sharc-rt/src/decode.rs` still name old test paths (`tests/test_*.py`). Editing them changes `CORE_FINGERPRINT` or rebuilds the generated core, so they change with the next core regeneration.
+- Comments in `tools/sharc_dev/sharc_core/*.py` and `native/sharc-rt/src/decode.rs` still name old test paths (`tests/test_*.py`). Editing them changes `CORE_FINGERPRINT` or rebuilds the generated core, so they change with the next core regeneration.
 - `docs/findings` and `docs/handovers` keep the old test paths (historical records). `git log --follow -- tests/<new path>` shows a file's history across the move (commit "tests: move test files into domain directories").
 - Not done yet:
   - The TypeScript runner for regression and module tests.

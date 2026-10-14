@@ -48,7 +48,7 @@ card capacity or a superblock pointer):
    pair and a generic `elektron::MidiRpcFsSample*` MIDI SysEx RPC family used
    by companion software (e.g. Transfer) to browse/read/write it remotely.
    **This is where +Drive sample files live**, and it's the one this finding
-   and `tools/plusdrive.py` targets.
+   and `tools/firmware/plusdrive.py` targets.
 
 Nothing found ties the two regions together at the code level (a `MmcFs`
 vtable scan for the filesystem's sector constants came up empty), only by
@@ -153,7 +153,7 @@ those strings in `docs/findings/02`/`03`. No literal "2,120 erase groups"
 (`docs/findings/07`) was found compiled in along this path; it's presumably
 read from the card's own CSD/EXT_CSD at erase time — **[O]**, not chased.
 
-## Region 2: the real filesystem — what `tools/plusdrive.py` writes **[D]**
+## Region 2: the real filesystem — what `tools/firmware/plusdrive.py` writes **[D]**
 
 Two record kinds:
 
@@ -272,7 +272,7 @@ through to decode whatever stale cursor state it already had). The
 conclusion for the tool is unchanged and, if anything, stronger: **a
 directory missing its `0x10001` index page is not a graceful "shows up
 empty" case, it's undefined behaviour / a likely crash**, so
-`tools/plusdrive.py` must always write this page for the root directory.
+`tools/firmware/plusdrive.py` must always write this page for the root directory.
 
 Page `0x10001` layout, inferred from the read pattern (u16 count at offset
 0, then a 4-byte gap, then one 4-byte packed pointer per entry starting at
@@ -341,7 +341,7 @@ through `vfunc_45`, 0x40023e84-0x4002c794, and `SampleLoaderBgWorker`'s own
 read path, 0x400f0d30/0x401cbb1c/0x401cbb42, are the untraced candidates),
 or (b) any WAV→internal conversion happens entirely on companion desktop
 software before the bytes ever reach this filesystem, and firmware always
-treats sample-file content as an opaque blob. **`tools/plusdrive.py` stores
+treats sample-file content as an opaque blob. **`tools/firmware/plusdrive.py` stores
 each input WAV file's bytes verbatim (whole file, including its RIFF
 header)** — the only choice consistent with the proven write-path behaviour,
 and the one to falsify or confirm with an emulator run against a real SRC
@@ -353,7 +353,7 @@ browser/loader trace.
 > the loader's key check and is read as garbage. See "Native sample files
 > and a boot project" at the end of this file.
 
-## What `tools/plusdrive.py` builds
+## What `tools/firmware/plusdrive.py` builds
 
 Given the above, a minimal image that should make the root directory
 enumerate and be loadable:
@@ -399,7 +399,7 @@ misclassifies our sample entries, trace `FileSystemDirectory::vfunc_7/9/14`
 
 ## Region 2 has a third, undocumented on-disk structure: a superblock at sector 0x5D8000 **[V]**
 
-Neither this document nor `tools/plusdrive.py` accounted for this before now.
+Neither this document nor `tools/firmware/plusdrive.py` accounted for this before now.
 The real filesystem's mount routine, `FUN_4015a450`
 (`out/ghidra/dt2-1.16-emac/decomp/4015a450_FUN_4015a450.c`, called from the
 boot task `FUN_400cc864` at call site `0x400ccc00`, guarded by
@@ -469,13 +469,13 @@ reimplementation has not yet been written or round-tripped against a real
 firmware-computed checksum (needs a card that actually reaches this code
 path -- see finding 07's new stall section -- to capture ground truth).
 
-**Consequence for `tools/plusdrive.py`:** even once the finding-07 boot
+**Consequence for `tools/firmware/plusdrive.py`:** even once the finding-07 boot
 stall is fixed, `FUN_4015a450` will reject any image this tool builds today,
 because sector `0x5D8000` is all zero (never written). The tool needs to
 also write this superblock, with a byte-exact `hashlittle` implementation,
 for the real mount path to ever set `_DAT_44f2bd68 = 1`.
 
-**Implemented.** `tools/plusdrive.py`'s `hashlittle()`/`build_superblock()`
+**Implemented.** `tools/firmware/plusdrive.py`'s `hashlittle()`/`build_superblock()`
 now write this sector; `build()` calls it unconditionally. The checksum
 routine was transliterated instruction-for-instruction from
 `FUN_4015aa20`/`FUN_4015a6dc` (not reconstructed from the textbook
@@ -534,7 +534,7 @@ project".
 
 **The fix is not simply "increase the capacity constant".** The first
 attempt tried reaching `0x00760000` sectors (the whitelist's other literal
-constant, `tools/plusdrive.py`'s own default image size) through the CSD-1.0
+constant, `tools/firmware/plusdrive.py`'s own default image size) through the CSD-1.0
 fallback formula `FUN_4012d4b2` already used for the smaller constant, by
 raising `READ_BL_LEN` from 10 to 11. This is wrong, confirmed by an
 instrumented live cold boot, not just by reading the decompile:
@@ -565,7 +565,7 @@ any boot path that reaches it with `SLC_OK != 1` would spin forever. Both of
 `FUN_4012dca0`'s own static callers are either debug-console-only
 (`FUN_400cae8c`, the same "resample raw PCM" console handler this file
 already names) or an indirect function-pointer reference with no resolved
-static call site (`FUN_4010a54e`; `tools/refscan.py` over the whole image
+static call site (`FUN_4010a54e`; `tools/coldfire/refscan.py` over the whole image
 found only internal branches and the address-load itself, no call
 instruction) -- consistent with `FUN_4012dca0` not being part of the normal
 boot path. An instrumented live cold boot with `SLC_OK=0` (required to
@@ -594,7 +594,7 @@ model defaults to) and the CSD-1.0 fallback fields (for the smaller,
 `0x003B0000`-sector constant, kept at their original, already-verified
 encoding) can never drift out of sync. `Card.from_file()` derives
 `capacity_blocks` from the image file's own size, so a default
-`tools/plusdrive.py` build (exactly `0x00760000` sectors) reports the
+`tools/firmware/plusdrive.py` build (exactly `0x00760000` sectors) reports the
 capacity the whitelist demands automatically; any other size now raises a
 clear `ValueError` instead of silently booting a card the real whitelist
 would reject.
@@ -643,7 +643,7 @@ comment says it "loads the vtables of SampleManager,
 constructs **both**:
 
 - a `FileSystemDirectory` (the real, path-addressable filesystem this
-  document and `tools/plusdrive.py` target -- region 2), stored at
+  document and `tools/firmware/plusdrive.py` target -- region 2), stored at
   `this+0x81`/`+0x82` (a `shared_ptr` pair), and
 - a `SamplePoolDirectory` (a *different* class from the `MmcFs` pools --
   region 1), stored at `this+0x83`/`+0x84`,
@@ -703,12 +703,12 @@ nothing about mount state; readdir only happens on actual navigation
   (`0x5d8040`, `0x5d80c0`-`0x5d8180`) against record/extent data outside the
   allocator (a mount-time consistency check) — not searched for.
 - The sector-`0x5D8000` superblock's fields beyond magic/version, and a
-  byte-exact `hashlittle` implementation for `tools/plusdrive.py` to write
+  byte-exact `hashlittle` implementation for `tools/firmware/plusdrive.py` to write
   a valid one — **answered**, see the new section above: implemented and
   checked bit-for-bit against 44 real firmware executions. `out/plusdrive/dt2.img`
   now carries a superblock that self-verifies (`build_superblock()`'s own
   checksum recomputes to the same value; confirmed against a freshly
-  rebuilt image with `tools/plusdrive.py ls`).
+  rebuilt image with `tools/firmware/plusdrive.py ls`).
 - **`FUN_4015a450` (mount) was never called at all on a `--card-image`
   boot, independent of the superblock's correctness — this is now fixed
   and verified, but a separate, deeper emulator hang was uncovered right
@@ -860,7 +860,7 @@ nothing about mount state; readdir only happens on actual navigation
   CRC -- solved for (not guessed) via a GF(2) linear-algebra CRC inversion
   (`crc32_ieee_raw` is linear in its input bits for a fixed starting state,
   the same property CRC-combine tools use): `0xA7,0x27,0x55,0x8C`.
-  **Verified against the real firmware**: `tools/plusdrive.py`'s
+  **Verified against the real firmware**: `tools/firmware/plusdrive.py`'s
   `build_factory_table_record()` builds this record (the rest of the 32
   KiB left zero), and `tests/test_factory_table.py` (`DT2_SYX`-gated) makes
   a bounded, isolated call to the real `FUN_4002ccd0` with this exact
@@ -938,7 +938,7 @@ nothing about mount state; readdir only happens on actual navigation
 
 ## Native sample files and a boot project (1.16) **[V][D][C]**
 
-2026-09-28. `tools/plusdrive.py` now writes samples in the firmware's own
+2026-09-28. `tools/firmware/plusdrive.py` now writes samples in the firmware's own
 format and a boot project whose slots reference them, and
 `tools/plusdrive_check.py` checks an image with bounded calls of the
 firmware's own functions. Marks: **[V]** re-read against the image bytes by
@@ -947,7 +947,7 @@ once. How the loader streams a file to the SHARC is in finding 04 ("Sample
 data crosses FlexBus to link port 0 on 1.16") and
 [15](15-sharc-sample-path.md).
 
-    uv run python tools/plusdrive.py build samples -o out/plusdrive/native/dt2.img
+    uv run python -m tools.firmware.plusdrive build samples -o out/plusdrive/native/dt2.img
     DT2_SYX=Digitakt_II_OS1.16.syx uv run python tools/plusdrive_check.py out/plusdrive/native/dt2.img   # ~80 s
 
 ### The native sample file **[V]**
@@ -987,7 +987,7 @@ wire swap (finding 04).
 computes a hash over the file (seeds `0x43fa243a` x3, `FUN_4015aa20` /
 `FUN_4015a6dc`) and stores `hash|1` in record word +0x0C and in the hash
 table at sector `0x5ee980 + (id >> 13) * 0x40`, word `id & 0x1fff`.
-`tools/plusdrive.py` computes the same value (the firmware's own
+`tools/firmware/plusdrive.py` computes the same value (the firmware's own
 `FUN_4015af0c` rewrote hat's entry with the image's value).
 
 ### References and ids
@@ -1057,7 +1057,7 @@ table at sector `0x5ee980 + (id >> 13) * 0x40`, word `id & 0x1fff`.
   copy of the slot's reference at `+0x129`. Kit 0 ("KIT 1") is active; its
   track 1 uses slot 7 **[D]**.
 
-### What `tools/plusdrive.py` builds now **[D]**
+### What `tools/firmware/plusdrive.py` builds now **[D]**
 
 For `samples/hat.wav` (24-bit stereo 44.1 kHz, 302,401 frames): 24 -> 16
 bit by rounding, 44.1 -> 48 kHz by a Kaiser-windowed sinc (beta 8.6, 32
@@ -1139,7 +1139,7 @@ selects it (`slc32g` default, `mlc4g`, `small`).
 
 **Cold boot with the new default (native, ColdFire only).** **[V]**
 
-- DN2 1.11, `--card-image` a +Drive image (`tools/plusdrive.py build samples`),
+- DN2 1.11, `--card-image` a +Drive image (`tools/firmware/plusdrive.py build samples`),
   `mise run boot`-style bounds: ready at 847,327,131 instructions, 106 s;
   completed main frame at 842,799,246 (sha256 `c7f7475b..`): LIGHTHOUSE main
   screen, no dialog. With `mlc4g` the same boot shows "MMC NOT IN SLC MODE".
@@ -1177,7 +1177,7 @@ target dir). Wall time 5.5 s (6.9 s with the build lock): ready at
 card capacity differs from the running card and names `DIGI_CARD_IDENTITY`. The
 2026-10-03 snapshot needs `DIGI_CARD_IDENTITY=mlc4g`.
 
-Checks with the new snapshot (`tools/digi_env.py` `READY` now points at it):
+Checks with the new snapshot (`tools/emulator/digi_env.py` `READY` now points at it):
 
 - `trig1-tap-release` without the NO prelude (Trig 1 down 60M, up 100M, 8.5 s):
   rms 0.1245, PCM sha256 `aa1dbd9e..`, the same hash as the standard scenario
@@ -1191,7 +1191,7 @@ Checks with the new snapshot (`tools/digi_env.py` `READY` now points at it):
 - Fine retrigger scan of finding 16 (f00..f24 at six DSP periods, 150 runs, the
   `taps/sweep.sh` + `an22.py` scratch scripts pointed at the new snapshot):
   0 bad, tone 94.3-95.2%. **[V]**
-- `coupled_ready_exactness` (run as `tools/native_pgo.py` runs it, absolute
+- `coupled_ready_exactness` (run as `tools/emulator/native_pgo.py` runs it, absolute
   `DIGI_COUPLED_FIXTURES`): 72,896 samples and PCM `3b600f6d..` unchanged. Two
   pins moved: CF digest `bc82b199..` -> `ab27c5c9ed6e..db23` (the card and
   DSPI RX state differ), DSP export `06980a01..` -> `c24a3040..00ff`. The old
@@ -1200,7 +1200,7 @@ Checks with the new snapshot (`tools/digi_env.py` `READY` now points at it):
   numbers; that the 2026-10-03 snapshot predates the Type 17 fix, and that this
   explains the 433 bytes, is **[O]** (not traced).
 - `mise run pgo` (263 s, 1139 frames in every training run), `mise run
-  emu:build` and `tools/native_pgo.py verify` pass. **[V]**
+  emu:build` and `tools/emulator/native_pgo.py verify` pass. **[V]**
 - `desktop_trig1_capture_without_qa_script` with
   `DIGI_DESKTOP_TRIG1_REQUIRE_NONZERO=1` passes (it was silent before). **[V]**
 - Finding 16, "Reproduce", says the ready snapshot has the SLC dialog open and
@@ -1214,7 +1214,7 @@ this section moved (see finding 16, "Reference state rebuilt from cold start").
 
 Folded from a lane notebook; measured on DT2 1.16, not re-checked by a second agent.
 
-- `mise run emu -- --cf-only --samples DIR SYX` (`tools/native_emu.py`) builds
+- `mise run emu -- --cf-only --samples DIR SYX` (`tools/emulator/native_emu.py`) builds
   `native/plusdrive`, runs `plusdrive build DIR -o img --syx SYX` and passes the image as
   `--card-image`. The image is cached in `out/plusdrive/native/<key12>/dt2.img`; the key is
   the SHA-256 of the firmware, the plusdrive binary and each sample name and bytes. Project
@@ -1253,7 +1253,7 @@ table slot and its own file, `refs[t % n]` with the files in sorted-name order:
   makes the same 297 `load_sample` calls. With one file the table equals the old seeding.
 
 Checked with three generated 48 kHz mono files (220 Hz sine, 880 Hz sine, noise), card built in
-process (`tools/card_check.py`, `native/control/src/cards.rs`): the boot project's table slots and
+process (`tools/emulator/card_check.py`, `native/control/src/cards.rs`): the boot project's table slots and
 track copies read back from the image as designed; at ready the DSP slot table (DM `0x257810`)
 holds `{0x40, 0x18040, 0x30040}` for slots 7, 1, 3 and the SDRAM bytes at those starts are the
 220 Hz sine, the 880 Hz sine and the noise (checked with `coupled-run --dump-dsp`); the UI shows
@@ -1273,7 +1273,7 @@ controller's `card.load` runs both on a worker thread while the running guest wa
 restores the pair and presses NO (button 12). Cached under `<run dir>/cards/<key12>/`; the key
 hashes the firmware, the format tag `dt2-card-v2-track-n-file-n` and every file name and content.
 Measured on this machine (loaded, load average about 5): three 1 s files, card build 1.2 s,
-cold boot to ready 11.6 s (fast tier on; `tools/ready.py` takes about 2 min with the interpreter),
+cold boot to ready 11.6 s (fast tier on; `tools/emulator/ready.py` takes about 2 min with the interpreter),
 cached restore 0.3 s. **[O]** The in-app snapshot is made with the fast tier where `ready.py`
 sets `SHARC_FAST_REGIONS=`; the exactness of the two ready states was not compared.
 

@@ -2,7 +2,7 @@
 
 Native code linked into coupled-run reads environment variables and files. Each
 environment variable must be decided: in the render cache key
-(tools/render_cache.py semantic_env), in DENYLIST / DENY_PREFIXES, or in
+(tools/devtools/render_cache.py semantic_env), in DENYLIST / DENY_PREFIXES, or in
 IGNORED_ENV. Each file read is counted per source file and compared with
 tests/devtools/render_inputs.json, so a new read gets reviewed.
 """
@@ -17,9 +17,8 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "tools"))
 
-import render_cache  # noqa: E402
+from tools.devtools import render_cache  # noqa: E402
 
 NATIVE = ROOT / "native"
 COUPLED = NATIVE / "coupled"
@@ -151,7 +150,7 @@ class RenderInputsTest(unittest.TestCase):
             self.fail(
                 "\n".join(problems)
                 + "\nclassify it: if it can change a render, make sure the key"
-                " includes it (tools/render_cache.py semantic_env); if not, add"
+                " includes it (tools/devtools/render_cache.py semantic_env); if not, add"
                 " it to DENYLIST or IGNORED_ENV with a reason"
             )
 
@@ -175,7 +174,7 @@ class RenderInputsTest(unittest.TestCase):
                 "\n".join(diffs)
                 + "\nan env read with a computed name was added in code linked"
                 " into coupled-run: make sure every name it can take is"
-                " classified (tools/render_cache.py), then update"
+                " classified (tools/devtools/render_cache.py), then update"
                 " dynamic_env_reads"
             )
 
@@ -192,7 +191,7 @@ class RenderInputsTest(unittest.TestCase):
                 "\n".join(diffs)
                 + "\na file read changed in code linked into coupled-run: if it"
                 " reads a render input that is not a coupled-run argument, add it"
-                " to the render cache key (tools/render_cache.py); then update"
+                " to the render cache key (tools/devtools/render_cache.py); then update"
                 " tests/devtools/render_inputs.json"
             )
 

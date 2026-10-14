@@ -1,24 +1,21 @@
 """The SHARC core stays inside its translatable subset.
 
-tools/sharc_subset_lint.py counts violations of tools/sharc_core/SUBSET.md
-per module; tools/sharc_core/subset_allowlist.json holds what is still
+tools/sharc_dev/sharc_subset_lint.py counts violations of tools/sharc_dev/sharc_core/SUBSET.md
+per module; tools/sharc_dev/sharc_core/subset_allowlist.json holds what is still
 allowed. A count above its allowance is a regression. A count below it
 means the allowance must come down: run
 
-    uv run python tools/sharc_subset_lint.py --update
+    uv run python -m tools.sharc_dev.sharc_subset_lint --update
 """
 
 import os
-import sys
 
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-import sharc_subset_lint as lint  # noqa: E402
+from tools.sharc_dev import sharc_subset_lint as lint  # noqa: E402
 
 
 def rules(source, module="demo.py"):

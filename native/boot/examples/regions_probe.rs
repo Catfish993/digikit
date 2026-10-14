@@ -1,4 +1,4 @@
-//! Canary probe for candidate RAM regions (driven by tools/regions.py --confirm).
+//! Canary probe for candidate RAM regions (driven by tools/coldfire/regions.py --confirm).
 //!
 //! usage: regions_probe SYX [--card IMG] [--base-sha HEX] [--fill START:LEN]...
 //!        [--extra N] [--report-every N] [--event T:CODE:down|up]... [--turn T:ENC:DETENTS]...
@@ -6,7 +6,7 @@
 //!
 //! Boots SYX with the ColdFire emulator (no DSP, unless built with the `sharc`
 //! feature and given --dsp IMAGE --dsp-idle COLD_IDLE: then the DSP of
-//! `tools/ready.py` runs on the DSPI2 link as in `coupled::cold`, and the
+//! `tools/emulator/ready.py` runs on the DSPI2 link as in `coupled::cold`, and the
 //! final report gains a `dsp` line). Every --fill region is
 //! filled with an address-dependent nonzero pattern just after the reset
 //! clear returns (pc 0x40000546 on the images we know), so the firmware sees

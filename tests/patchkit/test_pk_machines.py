@@ -1,16 +1,14 @@
 """core/machines support tools: the card overlay applier and the anchor rules of the framework."""
 
 import os
-import sys
 import tomllib
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
-sys.path.insert(0, os.path.join(ROOT, "tools"))
 
-import card_overlay  # noqa: E402
+from tools.emulator import card_overlay  # noqa: E402
 
 
 def record(sector: int, mask_bytes: dict[int, int]) -> bytes:
@@ -92,7 +90,7 @@ def test_framework_rules_are_declared_once_per_site():
     reason="needs the 1.16 and 1.17 cfdb",
 )
 def test_rules_match_one_function_on_1_17():
-    import pk_machine_rules
+    from tools.patchkit import pk_machine_rules
 
     rules = pk_machine_rules.build_rules("dt2-1.16")
     assert pk_machine_rules.check(rules, "dt2-1.17") == []

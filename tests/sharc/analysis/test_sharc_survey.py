@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_survey.py.
+"""Tests for tools/sharc_dev/sharc_survey.py.
 
 Pure-Python pieces (load_patch_table, apply_patches, category
 classification, the ASTAT-group-from-unknowns mapping) are tested against
@@ -14,20 +14,17 @@ import io
 import json
 import os
 import pathlib
-import sys
 import tempfile
 import unittest
 from importlib import import_module
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-sv = import_module("sharc_survey")
-sr = import_module("sharc_run")
-T = import_module("sharc_trace")
-L = import_module("sharcldr")
-sharc = import_module("sharc")
+sv = import_module("tools.sharc_dev.sharc_survey")
+sr = import_module("tools.sharc_dev.sharc_run")
+T = import_module("tools.sharc_dev.sharc_trace")
+L = import_module("tools.sharc_dev.sharcldr")
+sharc = import_module("tools.sharc_dev.sharc")
 
 DT2_116_DB = pathlib.Path("out/sharcdb/dt2-1.16.sqlite")
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
@@ -147,7 +144,7 @@ class RunWithPatchesTest(unittest.TestCase):
 
 
 def _insn(name, fields, length=4, kind="confident"):
-    Instruction = import_module("sharc_disasm").Instruction
+    Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
     return Instruction(0, length, name, fields, kind=kind)
 
 
@@ -178,7 +175,7 @@ class AstatGroupsFromUnknownsTest(unittest.TestCase):
         self.assertEqual(sv._astat_groups_from_unknowns(()), set())
 
     def test_reason_and_last_writer_notes_are_not_mistaken_for_bits(self):
-        # note_reason()/note_writer() text (tools/sharc_run.py) never
+        # note_reason()/note_writer() text (tools/sharc_dev/sharc_run.py) never
         # matches _UNKNOWN_RE, so it must not spuriously contribute a group.
         unknowns = (
             "cond=AC",
@@ -267,7 +264,7 @@ class CollectStopJsonTest(unittest.TestCase):
 # followed call" at 0x1c3284.
 #
 # --no-explicit-memory-model (an existing sv.survey()/collect_all() option,
-# documented in tools/sharc_survey.py's own --help; not a new tool
+# documented in tools/sharc_dev/sharc_survey.py's own --help; not a new tool
 # behaviour) leaves an unwritten cell Unknown instead, which reintroduces a
 # real fork: FUN_1c2b24+0x1e7 (0x1c2d08, "R1 = leftz(R1, R0)") computes its
 # SV (shift overflow) flag from R1 = DM(I4, M0), a read of a cell this bare
@@ -484,7 +481,7 @@ class CollectAllEndToEndTest(unittest.TestCase):
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class CollectAllFrameRunTest(unittest.TestCase):
     """run_collect_all() against the real block_handler dispatch (setup_frame()
-    + fresh_call(), like tools/sharc_harness.py's own FrameRenderFromInitTest)
+    + fresh_call(), like tools/sharc_dev/sharc_harness.py's own FrameRenderFromInitTest)
     -- this lane's own validation that --collect-all finds every stop on the
     frame-render path a single survey()/run_with_patches() run only ever
     reports one of at a time. run_init() is ~1.24M instructions (several
@@ -492,7 +489,9 @@ class CollectAllFrameRunTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import sharc_harness as h  # noqa: PLC0415 -- only this slow test needs it
+        from tools.sharc_dev import (
+            sharc_harness as h,  # noqa: PLC0415 -- only this slow test needs it
+        )
 
         cls.h = h
         cls.img = sharc.load("dt2-1.16")
@@ -511,7 +510,7 @@ class CollectAllFrameRunTest(unittest.TestCase):
         # FRAME_PATCH_TABLE's two register hypotheses already avoid every
         # fork on this path (docs/findings/06, this lane's handover): the
         # only stop collect-all records is the same FRAME_MILESTONE stop
-        # tools/sharc_harness.py's own FrameRenderFromInitTest pins -- a
+        # tools/sharc_dev/sharc_harness.py's own FrameRenderFromInitTest pins -- a
         # genuine RETURN since the Y1 lane's Type3a (LW) fix (2026-09-25):
         # sv._categorize maps "return without followed call" to its own
         # "frame-returned" category (see that function), not the raw halt
@@ -534,7 +533,7 @@ class CollectAllFrameRunTest(unittest.TestCase):
             self._fresh_call(), {}, max_steps=4_000_000, img=self.img
         )
         # 2026-09-28 re-pin, "more than 5 guesses" -> none: every fork this
-        # run used to guess through came from tools/sharc_core bugs fixed
+        # run used to guess through came from tools/sharc_dev/sharc_core bugs fixed
         # since (ShiftImm 0x19 read as BITEXT gave Unknown operands to
         # FUN_1c4914's fcomp, the reason FRAME_PATCH_TABLE had its last
         # entry; Type4b/(lw)/MODIFY addressing). FRAME_PATCH_TABLE is empty

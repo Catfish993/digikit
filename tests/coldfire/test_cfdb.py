@@ -1,5 +1,5 @@
-"""Tests for tools/cfdb.py: building a ColdFire image database from a
-tools/ghidradump.py dump directory.
+"""Tests for tools/coldfire/cfdb.py: building a ColdFire image database from a
+tools/coldfire/ghidradump.py dump directory.
 
 Skips (not fails) when out/ghidra/<image>/manifest.json is absent, the same
 convention tests/sharc/analysis/test_sharc_symbols.py uses for firmware-derived data this
@@ -8,17 +8,14 @@ repo never commits.
 
 import json
 import os
-import sys
 
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = str(REPO_ROOT)
 TOOLS = os.path.join(ROOT, "tools")
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
 
-import cfdb  # noqa: E402
+from tools.coldfire import cfdb  # noqa: E402
 
 IMAGE_NAME = "dt2-1.16-emac"
 DUMP_DIR = os.path.join(ROOT, "out", "ghidra", IMAGE_NAME)
@@ -66,7 +63,7 @@ def test_build_produces_expected_tables_and_counts(db_path):
 def test_function_end_uses_own_contiguous_range(db_path):
     """A function's `end` is its entry's own contiguous range, not the max
     across every disjoint chunk a scattered function can have (see the
-    module docstring's cross-reference to tools/sharcdb.py's identical
+    module docstring's cross-reference to tools/sharc_dev/sharcdb.py's identical
     concern for the SHARC side)."""
     import sqlite3
 

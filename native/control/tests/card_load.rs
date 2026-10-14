@@ -1,7 +1,7 @@
 //! `card.load` through the controller: a folder of WAV files becomes a card
 //! and the DT2 runtime restarts on it. Without coupled-audio inputs the
 //! runtime is ColdFire-only (no ready snapshot to build); the coupled cold
-//! boot and the trig audio are checked by `tools/card_check.py`.
+//! boot and the trig audio are checked by `tools/emulator/card_check.py`.
 
 use std::{fs, path::PathBuf};
 

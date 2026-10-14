@@ -1,14 +1,11 @@
 """Type5b SIMD predicates must select each register-file transfer separately."""
 
-import sys
 from pathlib import Path
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-import sharc_trace as st
-from sharc_disasm import Instruction
+from tools.sharc_dev import sharc_trace as st
+from tools.sharc_dev.sharc_disasm import Instruction
 
 
 def move(state, src, dst):
@@ -114,8 +111,8 @@ def test_conditional_compute_uses_preinstruction_predicates_for_each_pe(x, y):
 def test_native_conditional_move_and_compute_match_reference():
     import os
 
-    import sharc_diff as sd
-    import sharc_transpile_run as nr
+    from tools.sharc_dev import sharc_diff as sd
+    from tools.sharc_dev import sharc_transpile_run as nr
 
     library = os.environ.get("SHARC_NATIVE_LIB", nr.DEFAULT_LIB)
     if not Path(library).exists():

@@ -1,6 +1,6 @@
-//! Block test vectors (tools/sharc_rsvec.py): a machine state at a block
+//! Block test vectors (tools/sharc_dev/sharc_rsvec.py): a machine state at a block
 //! entry, the memory the block reads, and what the Python reference
-//! (tools/sharc_core) left at the block exit. Firmware-derived, under
+//! (tools/sharc_dev/sharc_core) left at the block exit. Firmware-derived, under
 //! out/. Plain text, one record per line:
 //!
 //! ```text

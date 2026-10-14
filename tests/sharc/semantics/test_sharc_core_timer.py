@@ -1,18 +1,12 @@
 """Public core timer clocks, write priority and timer interrupt vectors."""
 
-import sys
-
 import pytest
-from support.paths import REPO_ROOT
-
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-
 from support.sharc_swi import native_core, runner, word
 
-import sharc_diff as sd
-from sharc_core.sequencer import _core_timer_tick
-from sharc_core.state import _write_ureg
-from sharc_core.values import Const
+from tools.sharc_dev import sharc_diff as sd
+from tools.sharc_dev.sharc_core.sequencer import _core_timer_tick
+from tools.sharc_dev.sharc_core.state import _write_ureg
+from tools.sharc_dev.sharc_core.values import Const
 
 
 def timer(enabled=True, handler=None):
@@ -137,7 +131,7 @@ def test_failed_timer_event_retains_completed_instruction_without_partial_tick()
     ref.state.pc_sw = 0x80
     ref.state.uregs[111] = Const(1)
     core = native_core(ref)
-    import sharc_run as sr
+    from tools.sharc_dev import sharc_run as sr
 
     with pytest.raises(sr.Halt, match="timer"):
         ref.step()

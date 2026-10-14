@@ -1,4 +1,4 @@
-"""`tools/machinepatch.py` planning against a profile, not against 1.15C.
+"""`tools/patchkit/machinepatch.py` planning against a profile, not against 1.15C.
 
 `tests/firmware/test_machinepatch_plan.py` pins the exact 18 writes `plan_b` produces on
 Digitakt II 1.15C, and that golden is what proves the profile refactor changed
@@ -15,16 +15,12 @@ is the case that caught exactly that, in `build_trampoline`, which sits outside
 
 import os
 import struct
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import machinepatch as mp
-import machineprofile as prof
+from tools.patchkit import machinepatch as mp
+from tools.patchkit import machineprofile as prof
 
 REPO = str(REPO_ROOT)
 IMAGES = {

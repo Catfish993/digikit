@@ -4,7 +4,7 @@
 //!
 //! `-` boots a stock firmware (`Emulator::new`); a SHA-256 boots a patched build of that known
 //! firmware (`Emulator::new_patched`). The frame is the raw 128x64 OLED as the emulator keeps it
-//! (byte (7 - y/8) + 8*x, bit y%8); `tools/patched_image.py` turns it into a PNG.
+//! (byte (7 - y/8) + 8*x, bit y%8); `tools/patchkit/patched_image.py` turns it into a PNG.
 //! Prints `ready_at=N` and a final `end ...` line like `card_boot`.
 
 use elektron_native_boot::Emulator;

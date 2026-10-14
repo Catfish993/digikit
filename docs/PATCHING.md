@@ -33,7 +33,7 @@ mise run toolchains   # pinned m68k-elf gcc/binutils and the public SHARC+ assem
 
 `mise run toolchains` is needed only to build module sources (`patch:build`, `patch:new`, `patch:dev`). Applying
 modules that are already built needs no toolchain. Put your firmware files in the repository root
-(`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`, ...). `uv run python tools/pk_toolchains.py status` prints the
+(`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`, ...). `uv run python -m tools.patchkit.pk_toolchains status` prints the
 installed versions.
 
 ### Patch a firmware
@@ -61,10 +61,10 @@ mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck -o 
 ### Inspect, check, explain, verify
 
 ```sh
-uv run python tools/patchkit.py list                                   # modules and ports
-uv run python tools/patchkit.py inspect out/patch/mg.syx               # device, sha256, port, patch record, sections
-uv run python tools/patchkit.py check --firmware Digitakt_II_OS1.17.syx           # which modules fit this firmware
-uv run python tools/patchkit.py verify out/patch/mg.syx --base Digitakt_II_OS1.17.syx   # re-decode and check
+uv run python -m tools.patchkit.patchkit list                                   # modules and ports
+uv run python -m tools.patchkit.patchkit inspect out/patch/mg.syx               # device, sha256, port, patch record, sections
+uv run python -m tools.patchkit.patchkit check --firmware Digitakt_II_OS1.17.syx           # which modules fit this firmware
+uv run python -m tools.patchkit.patchkit verify out/patch/mg.syx --base Digitakt_II_OS1.17.syx   # re-decode and check
 mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain
 ```
 
@@ -95,7 +95,7 @@ argument it takes the newest image under `out/patch/`. The report says how the i
 
 `--hot` passes `--start snapshot`: it never cold boots and fails when no saved state fits.
 
-Headless daemon with DSP audio (the flags `tools/digi_client.py` uses for its own daemons):
+Headless daemon with DSP audio (the flags `tools/control/digi_client.py` uses for its own daemons):
 
 ```sh
 R=out/ready-pk-dt2-117
@@ -105,8 +105,8 @@ mise run emu:serve -- --auto-coupled --audio-profile-syx Digitakt_II_OS1.17.syx 
 mise run emu:ctl status       # from another shell; `mise run emu:ctl quit` stops the daemon
 ```
 
-The ready inputs come from `uv run python tools/ready.py dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117
---force` (about 2 minutes). The test harness looks for them in the table at the top of `tools/pk_harness.py`;
+The ready inputs come from `uv run python -m tools.emulator.ready dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117
+--force` (about 2 minutes). The test harness looks for them in the table at the top of `tools/patchkit/pk_harness.py`;
 `DIGI_PK_READY_<DEV>_<VER>` (for example `DIGI_PK_READY_DT2_117`) overrides the directory. The harness refuses ready
 inputs that are stale or belong to another `.syx`.
 
@@ -134,7 +134,7 @@ MAIN hash). The daemon takes 1 to 2 minutes to start.
 mise run patch:test                                                    # the whole matrix (about 1 minute per cell)
 mise run patch:test -- --cell "dt2-1.17:fx/master-gain,test/cf-demo"   # one cell; modules joined with a comma
 mise run patch:test -- --cell "..." --update                           # record frame goldens for a new module set
-uv run python tools/pk_harness.py list                                 # the cells of tests/patchkit/smoke/matrix.toml
+uv run python -m tools.patchkit.pk_harness list                                 # the cells of tests/patchkit/smoke/matrix.toml
 cargo test -p patchkit                                                 # the patching library
 uv run python -m pytest tests/patchkit/test_patchkit.py tests/patchkit/test_pk_prims.py  # codec, linker, primitives (about 2 minutes)
 uv run python -m pytest tests/patchkit/smoke --slow                    # the matrix through pytest
@@ -145,8 +145,8 @@ runs the smoke tour (boot, track and pattern change, audition, play and stop, ma
 a seeded 40-input stress) plus the `tests/*.toml` files of the modules in the set. After every input it asserts no
 fault, no DSP halt and no main-loop stall. Frames are compared by SHA-256 against
 `tests/patchkit/smoke/goldens.json`, keyed by device, firmware and module set (hashes only). A module set with no
-recorded goldens fails with "no golden"; record them with `--update`. Details: the docstring of `tools/pk_harness.py`
-and [finding 17](findings/17-emulator-control.md). The proof tools `tools/pk_proof_*.py` (PCM and behaviour proofs per
+recorded goldens fails with "no golden"; record them with `--update`. Details: the docstring of `tools/patchkit/pk_harness.py`
+and [finding 17](findings/17-emulator-control.md). The proof tools `tools/patchkit/pk_proof_*.py` (PCM and behaviour proofs per
 module family) are slower and are run before a merge, not in the loop.
 
 ### Create a module
@@ -216,7 +216,7 @@ Modules never contain addresses. A firmware site is a named **anchor** (`dsp.mas
 The lockfile stores, per anchor, the address, the length and the SHA-256 of the bytes, never the bytes. At patch time
 patchkit checks every anchor a module uses against the user's image; a mismatch refuses the patch. This is why one
 module works on 1.16 and 1.17 although the 1.17 ColdFire image is relinked and every address moves. The full syntax of
-the rules is the docstring of `tools/port_resolve.py`.
+the rules is the docstring of `tools/patchkit/port_resolve.py`.
 
 ### Module layout and manifest
 
@@ -281,7 +281,7 @@ stored size at most `0x100000`, decompressed size at most `0xfffff`; usable appe
 
 ### Linking and `.dko` objects
 
-`tools/pk_build.py` compiles a module's sources with the pinned toolchain and writes a `.dko.json` object in
+`tools/patchkit/pk_build.py` compiles a module's sources with the pinned toolchain and writes a `.dko.json` object in
 canonical JSON: sections as hex, symbols, relocations with explicit addends (`cf.32`, `cf.pc32`, `cf.pc16`,
 `cf.pc8`, `sharc.abs24`, `sharc.abs32`), the source hash and the toolchain version. Our own decoders re-decode every
 instruction at build time, so a toolchain encoding error cannot reach an image. At patch time patchkit links the
@@ -356,7 +356,7 @@ The full table of 14 risks, with evidence and mitigation, is in [docs/plans/patc
 
 1. **The real SHARC boot ROM may reject a patched DSP stream** (it could apply a rule the manual does not state). A
    rejected stream is a boot hang: the ColdFire waits for the DSP with no timeout. Flash in this order: the harmless
-   image that changes nothing (`tools/patched_image.py`), then a DSP change without an appended block, then an
+   image that changes nothing (`tools/patchkit/patched_image.py`), then a DSP change without an appended block, then an
    appended block. Keep the stock `.syx` and the recovery steps at hand.
 2. **Cycle cost.** The emulator counts instructions, silicon counts cycles. Keep a module small (at most a quarter of
    the idle instructions per block) and listen for clicks at the first run.

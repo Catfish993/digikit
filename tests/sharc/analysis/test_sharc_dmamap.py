@@ -1,4 +1,4 @@
-"""Tests for tools/sharc_dmamap.py.
+"""Tests for tools/sharc_dev/sharc_dmamap.py.
 
 Two groups, the same convention tests/sharc/integration/test_sharc_replay.py uses: pure
 helpers (the CLI's own key=value parsers, MmrWrite's own to_json/__str__)
@@ -7,18 +7,14 @@ DT2 1.16 SHARC+ image bytes (out/sections/dt2-1.16/section_7_BLOB.bin --
 Elektron's copyright, never committed here) and is skipped without them.
 """
 
-import os
 import pathlib
-import sys
 import unittest
 
 import pytest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-import sharc_dmamap as dm  # noqa: E402
-import sharc_harness as h  # noqa: E402
-import sharc_run as sr  # noqa: E402
+from tools.sharc_dev import sharc_dmamap as dm  # noqa: E402
+from tools.sharc_dev import sharc_harness as h  # noqa: E402
+from tools.sharc_dev import sharc_run as sr  # noqa: E402
 
 DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 
@@ -90,7 +86,7 @@ class TraceMmrWritesTest(unittest.TestCase):
     """FUN_1c7bd4 (the SPI2 driver's own descriptor-ring setup, called from
     FUN_1c7ff9 at 0x1c80a2 with R4=0xabc -- HANDOVER-2026-09-26-sharc-audio.md's
     "Update (J1, J2, K1 and static reading)") resets and configures DMA
-    channels 26/27 (SPI2 TX/RX, tools/sharcimm.py's DMA_CHANNELS table)
+    channels 26/27 (SPI2 TX/RX, tools/sharc_dev/sharcimm.py's DMA_CHANNELS table)
     before this project's tracer hits an unmodeled 64-bit ("long") memory
     access inside a nested driver-table-scan helper -- see this module's
     own docstring and this lane's own report for the full trace. This test
@@ -116,7 +112,7 @@ class TraceMmrWritesTest(unittest.TestCase):
         self.assertIsInstance(halt, sr.Halt)
         addresses = {w.address for w in writes}
         # DSCPTR_NXT for DMA26 (SPI2 TX) and DMA27 (SPI2 RX) -- see
-        # tools/sharcimm.py's DMA_REGS/DMA_CHANNELS tables.
+        # tools/sharc_dev/sharcimm.py's DMA_REGS/DMA_CHANNELS tables.
         self.assertIn(0x3102D200, addresses)  # DMA26 DSCPTR_NXT
         self.assertIn(0x3102D280, addresses)  # DMA27 DSCPTR_NXT
         for address in (0x3102D200, 0x3102D280):
@@ -126,7 +122,7 @@ class TraceMmrWritesTest(unittest.TestCase):
     def test_configures_spi2_register_block(self):
         writes, _ = dm.trace_mmr_writes(self._runner(), limit=20_000)
         by_address = {w.address: w for w in writes}
-        # SPI2 CTL (tools/sharcimm.py's SPI_REGS offset 0x04 inside the
+        # SPI2 CTL (tools/sharc_dev/sharcimm.py's SPI_REGS offset 0x04 inside the
         # 0x31030000 SPI2 block) -- the driver's own slave-mode enable word.
         self.assertIn(0x31030004, by_address)
         self.assertEqual(by_address[0x31030004].new_value, 0x50)

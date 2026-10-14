@@ -8,10 +8,9 @@ import sys
 import tempfile
 import unittest
 from importlib import import_module
-from support.paths import REPO_ROOT
+from tools import python_env
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
-C = import_module("sharc_candidates")
+C = import_module("tools.sharc_dev.sharc_candidates")
 
 
 class CandidatesTest(unittest.TestCase):
@@ -109,7 +108,8 @@ class CandidatesTest(unittest.TestCase):
         self.candidate(101)
         self.db.commit()
         output = subprocess.run(
-            [sys.executable, "tools/sharc_candidates.py", self.file.name, "--json"],
+            [sys.executable, "-m", "tools.sharc_dev.sharc_candidates", self.file.name, "--json"],
+            env=python_env(),
             capture_output=True,
             text=True,
             check=True,
@@ -134,11 +134,13 @@ class CandidatesTest(unittest.TestCase):
             invalid = subprocess.run(
                 [
                     sys.executable,
-                    "tools/sharc_candidates.py",
+                    "-m",
+                    "tools.sharc_dev.sharc_candidates",
                     self.file.name,
                     option,
                     "0",
                 ],
+                env=python_env(),
                 capture_output=True,
                 text=True,
             )

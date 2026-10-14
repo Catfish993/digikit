@@ -236,7 +236,7 @@ fn parse_watch(spec: &str) -> Result<Vec<u32>, String> {
     Ok(addrs)
 }
 
-/// `DIGI_DSP_WATCH_OUT`, else `$DIGI_DIAG_DIR/dspwatch.csv` (tools/digi_env.py
+/// `DIGI_DSP_WATCH_OUT`, else `$DIGI_DIAG_DIR/dspwatch.csv` (tools/emulator/digi_env.py
 /// `diag_env` sets the directory; the variables that switch a log on carry
 /// their own path).
 fn watch_out() -> Option<String> {
@@ -1809,7 +1809,7 @@ fn frame_poke(tx: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Build the DN2 continuation engine from a packed image blob
-/// (`tools/sharc_pack_image.py`) and a canonical state blob, with the option
+/// (`tools/sharc_dev/sharc_pack_image.py`) and a canonical state blob, with the option
 /// set the audio runs use. `clock_base` seeds the diagnostic instruction
 /// clock (EMUCLK).
 pub fn open_dn2_engine(

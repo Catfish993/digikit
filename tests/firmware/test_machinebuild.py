@@ -1,4 +1,4 @@
-"""`tools/machinebuild.py`'s `audit_literals` static check.
+"""`tools/patchkit/machinebuild.py`'s `audit_literals` static check.
 
 `build_rank_shim` once tail-jumped to 1.15C's `RANK_INSERT` on every image
 (fixed to take the profile's own address); `audit_literals` is the guard that
@@ -6,17 +6,13 @@ would have caught that in milliseconds instead of a hung boot.
 """
 
 import os
-import sys
 import unittest
 from support.paths import REPO_ROOT
 
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import machinebuild as mb
-import machinepatch as mp
-import machineprofile as prof
+from tools.patchkit import machinebuild as mb
+from tools.patchkit import machinepatch as mp
+from tools.patchkit import machineprofile as prof
 
 REPO = str(REPO_ROOT)
 DT2_116_IMAGE = os.path.join(REPO, 'out', 'sections', 'dt2-1.16',

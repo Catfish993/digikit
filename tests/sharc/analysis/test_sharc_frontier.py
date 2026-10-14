@@ -1,18 +1,14 @@
 """Tests for the bounded exploratory SHARC frontier driver."""
 
 import hashlib
-import os
 import struct
-import sys
 import unittest
 from importlib import import_module
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(str(REPO_ROOT), "tools"))
 
-F = import_module("sharc_frontier")
-T = import_module("sharc_trace")
-L = import_module("sharcldr")
+F = import_module("tools.sharc_dev.sharc_frontier")
+T = import_module("tools.sharc_dev.sharc_trace")
+L = import_module("tools.sharc_dev.sharcldr")
 
 
 def loader_block(code, address, count, arg=0, payload=b""):

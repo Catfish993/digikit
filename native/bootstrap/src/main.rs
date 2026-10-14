@@ -7,7 +7,7 @@
 //!     [--flash-out FILE] [--panel-out FILE]
 //! ```
 //!
-//! See `lib.rs` for what is executed and what is modelled. Driven by `tools/bootstrap_run.py`.
+//! See `lib.rs` for what is executed and what is modelled. Driven by `tools/emulator/bootstrap_run.py`.
 
 use std::collections::BTreeMap;
 use std::fs;

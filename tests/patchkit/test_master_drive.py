@@ -3,24 +3,24 @@
 The routine is assembled from the module source, linked at a test base with the buffer in normal-word L2 and the
 drive word at the byte address of a poked normal word, and run block by block with the module's own data words
 carried from one call to the next. Skips when Selache is not built. The emulator proof (both devices) is
-tools/pk_proof_drive.py."""
+tools/patchkit/pk_proof_drive.py."""
 
 import struct
-import sys
 
 import numpy as np
 import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
 
-import pk_sharc  # noqa: E402
-import pk_toolchains  # noqa: E402
+from tools.patchkit import (  # noqa: E402
+    pk_sharc,  # noqa: E402
+    pk_toolchains,  # noqa: E402
+)
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.selache_dir() is None,
-    reason="selache not built (tools/pk_toolchains.py selache)",
+    reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
 )
 
 SRC = ROOT / "modules" / "fx" / "master-drive" / "src" / "dsp" / "master_drive.s"
@@ -43,7 +43,7 @@ def val(x: int) -> float:
 
 class Rig:
     def __init__(self) -> None:
-        import sharc_core.memory as mem
+        from tools.sharc_dev.sharc_core import memory as mem
 
         self.obj = pk_sharc.assemble(SRC.read_text())
         self.addr = {n: DATA_NW + i for i, n in enumerate(self.obj.data_symbols)}
@@ -118,8 +118,7 @@ def rig_cls():
 def test_every_word_redecodes_and_the_short_word_load_is_the_swse_form(rig_cls):
     rig = rig_cls()
     assert rig.linked.checked >= 80
-    import sharc_asm
-    import sharc_isa
+    from tools.sharc_dev import sharc_asm, sharc_isa
 
     isa = sharc_isa.load_instruction_set()
     d = rig.linked.code_boot

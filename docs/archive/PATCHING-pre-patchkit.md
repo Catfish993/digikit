@@ -8,7 +8,7 @@ additionally needs the container repacked, which is not built yet.
 ## The rules
 
 MAIN OS is position-dependent ColdFire code full of absolute addresses, so
-**bytes may be replaced, never inserted or deleted**. `tools/patchimg.py`
+**bytes may be replaced, never inserted or deleted**. `tools/patchkit/patchimg.py`
 enforces that, and also refuses any patch whose expected original bytes are
 not present -- a patch landing on the wrong address usually still boots and
 is wrong in a way no test catches.
@@ -45,7 +45,7 @@ an enable flag, two 32-bit slot bitmaps and a counter, written from
 stray static; a subsystem.
 
 Scanning the whole image for absolute references into the range
-(`tools/refscan.py`, 975,501 instructions, 96.75% byte coverage, 0% undecoded
+(`tools/coldfire/refscan.py`, 975,501 instructions, 96.75% byte coverage, 0% undecoded
 inside the cave itself) finds **119 real references to ~120 distinct cells**,
 clustered rather than scattered. Ghidra's own reference database independently
 agrees on 91 addresses and finds zero code anywhere in the range. The usable
@@ -60,7 +60,7 @@ map:
 | `0x40303e5c`-`0x40307f60` | 16,644 | free — 0 references, nothing lives after it |
 
 Use `0x40303e5c`-`0x40307f60` as the primary region. `0x402f9c14` is also
-clean and is where `tools/machinepatch.py` puts its table, but it has only
+clean and is where `tools/patchkit/machinepatch.py` puts its table, but it has only
 1,004 bytes before live allocator state.
 
 **On method.** Three checks with different blind spots, in increasing order of
@@ -70,10 +70,10 @@ strength:
   during the boot you observed. It cannot establish that space is free, only
   that it is not *currently* in use on one path. Treat a clean dump as a
   falsification test that failed, not as evidence.
-- a static immediate scan (`tools/refscan.py --range`) is exhaustive over
+- a static immediate scan (`tools/coldfire/refscan.py --range`) is exhaustive over
   decodable code, but is blind by construction to computed and
   register-relative addressing.
-- Ghidra's data-flow references (`tools/ghidraq.py ... range LO HI`) catch some
+- Ghidra's data-flow references (`tools/coldfire/ghidraq.py ... range LO HI`) catch some
   of what the immediate scan cannot — `0x402fcbf8` is referenced only via an
   index-computed `movea.l $8(a1),a0`, invisible to an immediate scan and found
   only this way.
@@ -130,7 +130,7 @@ Verified on Digitone, redirecting the `jsr task_create` at `0x400d1044`
 
 22 bytes changed in total. Applied with:
 
-    uv run python tools/patchimg.py --image IN.bin --out OUT.bin \
+    uv run python -m tools.patchkit.patchimg --image IN.bin --out OUT.bin \
       --bytes 0x402e1bf4=<32 zeros>:23fcc0de0001402e1c804ef9400012c8 \
       --bytes 0x400d1044=4eb9400012c8:4eb9402e1bf4
 

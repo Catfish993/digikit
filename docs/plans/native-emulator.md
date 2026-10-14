@@ -52,7 +52,7 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
 | Area | State | Where |
 |---|---|---|
 | Live play (desktop) | Works: a TRIG in the GUI plays through the ahead-of-time SHARC core. The ColdFire (Unicorn + Python) runs at 0.22x, so the UI and sequencer are slow. | `uv run python tools/dt2gui.py --live-audio`; finding 15 |
-| SHARC, ahead of time | 411-467 us per frame of 667, exact vs Python. The library carries a `sharc_core` hash and refuses a stale build. | `native/sharc`; rebuild command = `REGENERATE_HINT` in `tools/sharc_transpile_run.py`; DN2 block library from scratch, gated and reproducible: `tools/sharc_dn2_aot.py` (finding 07) |
+| SHARC, ahead of time | 411-467 us per frame of 667, exact vs Python. The library carries a `sharc_core` hash and refuses a stale build. | `native/sharc`; rebuild command = `REGENERATE_HINT` in `tools/sharc_dev/sharc_transpile_run.py`; DN2 block library from scratch, gated and reproducible: `tools/sharc_dev/sharc_dn2_aot.py` (finding 07) |
 | SHARC JIT (P2) | Paused. Correct (91/91 drive3 frames) and deterministic, but 2.5-3.3 ms/frame under wasmtime. On resume: diff its WebAssembly for one hot loop against the ahead-of-time code compiled to wasm32 (630-720 us/frame), fix the differences, and measure with counters (region entries/frame, bytes/instruction, spills). | `native/sharc-jit` (build with `SHARC_GEN_DIR=$PWD/out/native/opt/gen-final`) |
 | ColdFire core (P3) | All 101 used forms; fuzz and EMAC lockstep pass, and bounded DT2 snapshot windows pass under the known Unicorn MVZ-N exemption. The decode cache reaches **80.8–82.2M useful instr/s** with the accepted state hash. Broader windows, DN2 exception boundaries and oracle-exempt EMAC behavior remain open. | `native/coldfire`; `tools/cf_lockstep.py {snap,fuzz,emac}` |
 | Peripherals (P4) | Timers, INTC, eDMA, SSI0, DSPI and DSP FIFO have replay gates; focused early GPIO/eSDHC/card traces and bounded channel-59 transfer effects also pass. Broad peripheral coverage and real trace gates remain for late DMA delivery, UART, panel and display. | `native/periph` (`mmio-replay <trace> [--limit N] [--verbose]`); traces in `out/mmio-trace/` from `tools/mmio_record.py` |
@@ -62,7 +62,7 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
 ### Benchmarks and gates
 
 - ColdFire speed:
-  1. `PYTHONPATH=. uv run python tools/cf_snapdump.py snapshots/dt2-1.16-drive3/boot280M.snap out/coldfire-bench/boot280M.cfdump` (once);
+  1. `PYTHONPATH=. uv run python -m tools.coldfire.cf_snapdump snapshots/dt2-1.16-drive3/boot280M.snap out/coldfire-bench/boot280M.cfdump` (once);
   2. in `native/coldfire`, `cargo build --release --bin cfrealmix && ./target/release/cfrealmix ../../out/coldfire-bench/boot280M.cfdump 100000000`.
 
   Gate: the state hash stays `0x0bb544e65d49266b` and instructions/s are reported. (That dump is byte-identical to the one the baseline used.)
@@ -147,11 +147,11 @@ progress and migration gates below.
 
 | Part | State |
 |---|---|
-| SHARC semantics | `tools/sharc_core` is the source of truth. Current bounded state-pack gates require regenerating the initial pack after a semantic change. |
+| SHARC semantics | `tools/sharc_dev/sharc_core` is the source of truth. Current bounded state-pack gates require regenerating the initial pack after a semantic change. |
 | Native SHARC | The current 204/256 bounded replays are exact state/stop gates, not full instruction-parity or realtime claims. Historical AOT timing and compile-only modules remain separately qualified. |
 | Live audio | `native/live` (cpal); `emu/gui.py --live-audio` plays TRIGs live. |
 | Current live ColdFire path | Unicorn with 5 patches plus about 30 Python peripheral models and hooks. 0.22x real time with the audio clock running; about 0.4x is the ceiling of this design. The Rust ColdFire core and native-machine probes are recorded separately in the current status table; they are not yet wired into this live path. |
-| Oracles available | Python SHARC core, `tools/sharc_diff.py` lockstep harness, patched Unicorn, the Python machine, `.snap` snapshots, `tools/snapeq.py`, `.dt2cap` captures, the FlexBus log. |
+| Oracles available | Python SHARC core, `tools/sharc_dev/sharc_diff.py` lockstep harness, patched Unicorn, the Python machine, `.snap` snapshots, `tools/snapeq.py`, `.dt2cap` captures, the FlexBus log. |
 
 ## Lessons from this round
 
@@ -194,8 +194,8 @@ progress and migration gates below.
 - **One owner per file:** lanes own whole crates or files, and shared lists
   (`tests/devtools/test_lint.py`, `tests/devtools/test_types.py`, `CLAUDE.md`) are edited only at
   merge time.
-- **Reuse the tools:** `tools/cf.py` (cfdb), `tools/snapread.py`,
-  `tools/sharc.py`, `tools/sharc_diff.py` and `tools/snapeq.py` come before any
+- **Reuse the tools:** `tools/coldfire/cf.py` (cfdb), `tools/emulator/snapread.py`,
+  `tools/sharc_dev/sharc.py`, `tools/sharc_dev/sharc_diff.py` and `tools/snapeq.py` come before any
   new script. A new kind of fact goes into one of them.
 - **Hand-backs:** at most 15 lines, with the full report in the scratchpad.
   One handover per phase.
@@ -219,12 +219,12 @@ native/
   machine/      board wiring + per-product profile (DT2, DN2): memory map,
                 which peripherals, symbols; snapshot import from emu/*.snap
   loader/       .syx extraction (port of dt2/elz.py), +Drive builder (port
-                of tools/plusdrive.py)
+                of tools/firmware/plusdrive.py)
   live/         desktop audio (cpal), threads, frame queue
   web/          wasm32 bindings: Web Worker, AudioWorklet, file picker
 ```
 
-The Python emulator (`emu/`, `tools/sharc_core`) stays as the frozen oracle.
+The Python emulator (`emu/`, `tools/sharc_dev/sharc_core`) stays as the frozen oracle.
 
 ## Phases
 
@@ -246,7 +246,7 @@ instruction, in the browser as well as on the desktop?
 - **B. WebAssembly per block,** measured under wasmtime (desktop) and in
   Chrome, for the phase-0 hot set and a full drive3 frame. Two ways to
   generate it:
-  1. Port the block specialiser (`tools/sharc_rsgen.py`) to Rust, emitting
+  1. Port the block specialiser (`tools/sharc_dev/sharc_rsgen.py`) to Rust, emitting
      WebAssembly with the `wasm-encoder` crate.
   2. Copy-and-patch: compile per-form templates ahead of time (firmware
      free), then stitch them at run time with the decoded fields patched in.
@@ -270,11 +270,11 @@ optional desktop speed-up. The output is a decision note with the numbers.
 
 ### P3: ColdFire core in Rust (runs in parallel with P1 and P2)
 
-1. **Instruction census** (`tools/cf.py`) over both images: which ColdFire
+1. **Instruction census** (`tools/coldfire/cf.py`) over both images: which ColdFire
    instructions, EMAC and FPU forms, MMU and cache use, and supervisor
    operations are actually present.
 2. **Decoder** generated from an instruction table taken from the public
-   manuals, as `tools/sharcspec` is for the SHARC. The semantics are written
+   manuals, as `tools/sharc_dev/sharcspec` is for the SHARC. The semantics are written
    by hand in concrete Rust; they are short for this ISA.
 3. **Oracle:** patched Unicorn, per-instruction lockstep on random states and
    on real firmware traces from snapshots of both images.

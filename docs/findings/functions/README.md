@@ -3,7 +3,7 @@
 One file per function, named `<block>-<sw-address>.md` (e.g. `blk93-1c18a6.md`).
 One function per file so parallel readers never conflict.
 
-`tools/sharcinv.py` inventories **1228 functions** across the nine SHARC code
+`tools/sharc_dev/sharcinv.py` inventories **1228 functions** across the nine SHARC code
 blocks. These notes record the ones that have actually been *read*. The
 inventory gives a feature vector for every function; a note here means someone
 decoded it and understood what it computes.
@@ -63,7 +63,7 @@ touch of a named table or the audio rings.>
   raw bytes; `19a_scaled` scales by normal-word; `dm(K,I)` scales K by **4**
   under 32-bit normal words; M-indexed scales by 2 if short-word tagged, else 4.
   Determine the form before converting, and quote the instruction.
-- **`tools/sharc_trace.py` models float compute** as of this session. Run it
+- **`tools/sharc_dev/sharc_trace.py` models float compute** as of this session. Run it
   with `--blob --start <sw> --concrete-memory --assume-32bit-normal-words
   --follow-loaded-calls --summary`.
 - A function can sit **inside** another's return-delimited span, so a direct-call

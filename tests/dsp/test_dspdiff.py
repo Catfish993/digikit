@@ -1,16 +1,14 @@
-"""tools/dspdiff.py on synthetic memory dumps."""
+"""tools/emulator/dspdiff.py on synthetic memory dumps."""
 
 from __future__ import annotations
 
 import io
 import struct
-import sys
 
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
-sys.path.insert(0, str(ROOT / "tools"))
-import dspdiff as dd  # noqa: E402
+from tools.emulator import dspdiff as dd  # noqa: E402
 
 BASE = 0x28000000 + 0x25C5E0
 

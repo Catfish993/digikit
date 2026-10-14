@@ -1,4 +1,4 @@
-//! The boundary of tools/sharc_core, hand-written (SUBSET.md section 2).
+//! The boundary of tools/sharc_dev/sharc_core, hand-written (SUBSET.md section 2).
 //!
 //! One function per Python function, same name, same parameters (after
 //! the state `s`), concrete specialisation only: `Const` is a known

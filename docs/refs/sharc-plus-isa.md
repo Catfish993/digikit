@@ -1,10 +1,10 @@
 # SHARC+ instruction set: sources, and what they actually contain
 
-Companion to `tools/sharcldr.py`. The PDFs themselves are gitignored
+Companion to `tools/sharc_dev/sharcldr.py`. The PDFs themselves are gitignored
 (`.gitignore:21`, `docs/refs/*.pdf`); this note is the committed part, and
 cites chapter/page numbers so the claims can be re-checked.
 
-For the documents and method behind `tools/sharcspec/`, see
+For the documents and method behind `tools/sharc_dev/sharcspec/`, see
 `docs/sharc/SOURCES.md`.
 
 ## Why this matters here
@@ -68,7 +68,7 @@ all there but needs reading, not scraping.
 
 ## Why VISA and not classic 48-bit SHARC
 
-Measured, not assumed -- see `tools/sharcldr.py --align` and the commit that
+Measured, not assumed -- see `tools/sharc_dev/sharcldr.py --align` and the commit that
 added it. Repeated code motifs in the 10,312-byte loader payload land on even
 offsets exclusively (`f29fc09f1200` 56 times, all at `offset % 2 == 0`) while
 spreading uniformly across mod 4, mod 6 and mod 8. A fixed 48-bit encoding

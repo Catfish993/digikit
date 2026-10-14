@@ -1,9 +1,9 @@
 # Digitone II OS 1.11: panel key code -> LED index (the `idx` of a `b9 idx val` front-panel record, UART8).
 #
 # Source: scenario `dn2-led-sweep` (every control code pressed 6M instructions, released, 12M apart), captured with
-# DIGI_PANEL_TX_LOG and read with tools/led_map.py, on the emulated Digitone II OS 1.11, 2026-10-13. The LED index is
+# DIGI_PANEL_TX_LOG and read with tools/emulator/led_map.py, on the emulated Digitone II OS 1.11, 2026-10-13. The LED index is
 # (firmware LED logical id - 1); the names are the firmware's LED-name table. Regenerate with
-# tools/gen_led_toml.py. Analysis and caveats: docs/findings/19-sequencer-and-leds.md.
+# tools/emulator/gen_led_toml.py. Analysis and caveats: docs/findings/19-sequencer-and-leds.md.
 #
 # `seen` is how the LED was observed: own = the key's own press lights it or changes it; radio = pressing the key
 # selects it and the previous group member goes out; context = the index comes from the firmware table but a plain

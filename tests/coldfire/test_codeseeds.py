@@ -1,14 +1,9 @@
-"""tools/codeseeds.py on a hand-assembled image."""
+"""tools/coldfire/codeseeds.py on a hand-assembled image."""
 
-import os
-import sys
 import unittest
-from support.paths import REPO_ROOT
 
-sys.path.insert(0, os.path.join(
-    str(REPO_ROOT), 'tools'))
 
-import codeseeds  # noqa: E402
+from tools.coldfire import codeseeds  # noqa: E402
 
 BASE = 0x40000400
 IMAGE = bytes.fromhex(
