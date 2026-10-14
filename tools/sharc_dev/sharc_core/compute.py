@@ -14,7 +14,7 @@ Three encodings are undocumented in both public sources this project cites
 absence): multiplier opcode 0x10, shifter opcodes 0x14 and 0xb0, and the
 cu=3 reserved unit's only observed opcode 0xd6. Each is still decoded (so
 the instruction walk does not desync) with its result and flags left
-Unknown; tests/test_sharc_compute_table.py's cross-check against
+Unknown; tests/sharc/semantics/test_sharc_compute_table.py's cross-check against
 tools/sharc_dev/sharcspec/compute_table.json treats exactly this set as expected
 gaps, not as table entries the JSON has to justify.
 

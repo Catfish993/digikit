@@ -12,12 +12,9 @@ from unittest.mock import patch
 W = import_module("tools.sharc_dev.sharcwriters")
 Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
 trace_mod = import_module("tools.sharc_dev.sharc_trace")
+from support.sharc_trace_build import insn  # noqa: E402
 
 BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
-
-
-def insn(form, fields, length=4, kind="confident"):
-    return Instruction(0, length, form, fields, kind=kind)
 
 
 class StoreSpaceAndDirectionTest(unittest.TestCase):

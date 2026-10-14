@@ -1,7 +1,6 @@
 """Tests for the bounded exploratory SHARC frontier driver."""
 
 import hashlib
-import struct
 import unittest
 from importlib import import_module
 
@@ -9,16 +8,7 @@ from importlib import import_module
 F = import_module("tools.sharc_dev.sharc_frontier")
 T = import_module("tools.sharc_dev.sharc_trace")
 L = import_module("tools.sharc_dev.sharcldr")
-
-
-def loader_block(code, address, count, arg=0, payload=b""):
-    header = bytearray(struct.pack("<IIII", code | 0xAD000000, address, count, arg))
-    header[2] = 0
-    checksum = 0
-    for byte in header:
-        checksum ^= byte
-    header[2] = checksum
-    return bytes(header) + payload
+from support.sharc_trace_build import loader_block  # noqa: E402
 
 
 def memory(payload, start=0x10):

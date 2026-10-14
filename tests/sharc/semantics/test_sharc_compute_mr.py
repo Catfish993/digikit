@@ -15,18 +15,7 @@ from importlib import import_module
 
 T = import_module("tools.sharc_dev.sharc_trace")
 compute_mult = import_module("tools.sharc_dev.sharc_core.compute_mult")
-Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
-
-
-def insn(name, fields, length=4, kind="confident"):
-    return Instruction(0, length, name, fields, kind=kind)
-
-
-def full_compute(cu, opcode, rn, rx, ry):
-    """PRM Figure 18-1 (p.423): mf=0, cu[21:20], opcode[19:12], rn[11:8],
-    rx[7:4], ry[3:0]."""
-    field = (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry
-    return {"compute[22:16]": field >> 16, "compute[15:0]": field & 0xFFFF}
+from support.sharc_trace_build import full_compute, insn  # noqa: E402
 
 
 def compute(fields, values, special=None):

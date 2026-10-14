@@ -17,7 +17,7 @@ import unittest
 from importlib import import_module
 
 T = import_module("tools.sharc_dev.sharc_trace")
-Instruction = import_module("tools.sharc_dev.sharc_disasm").Instruction
+from support.sharc_trace_build import full_compute  # noqa: E402
 
 
 def f64(value):
@@ -26,12 +26,6 @@ def f64(value):
     2158x PRM p.3-35 pair-alias convention)."""
     bits = struct.unpack(">Q", struct.pack(">d", value))[0]
     return (bits >> 32) & 0xFFFFFFFF, bits & 0xFFFFFFFF
-
-
-def full_compute(cu, opcode, rn, rx, ry):
-    """A full-compute field dict for _compute(f, short=False, ...)."""
-    field = (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry
-    return {"compute[22:16]": field >> 16, "compute[15:0]": field & 0xFFFF}
 
 
 class ComputeHelperMixin:

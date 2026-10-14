@@ -1,10 +1,12 @@
 # Digitone II 1.10E — handover
 
+Historical (1.10E, Unicorn era). The Python Unicorn reference emulator described here was removed; its last state is the git tag `unicorn-reference-final`. Current emulator: docs/LAYOUT.md and docs/findings/07-emulator.md.
+
 Status: **Main OS executing and rendering.** The patched Unicorn 2.1.4 is
 required (two patches: CCR sync and EMAC MAC/MSAC with load; see
-`docs/UNICORN.md`); stock Unicorn's destructive SR read prevents this
+git tag `unicorn-reference-final`); stock Unicorn's destructive SR read prevents this
 path. This is deliberately conservative, not a claim of full
-hardware-equivalent boot. See [UNICORN.md](UNICORN.md). Timer-stepped execution
+hardware-equivalent boot. See git tag `unicorn-reference-final`. Timer-stepped execution
 permits deadline boundaries only; arbitrary cap boundaries are unsupported.
 
 Digitakt II 1.15C is **unregressed** — see Regression below.
@@ -277,7 +279,7 @@ literal (checked byte by byte over `0x400015a0`–`0x40001710`).
 **The validated fix** is the checked-in one-line patch to official Unicorn
 2.1.4. It makes SR reads materialise lazy condition codes without first
 claiming they are already materialised. The reverted guest-IPL shadow must not
-be restored: it broke both firmwares. See `docs/UNICORN.md` for installation
+be restored: it broke both firmwares. See git tag `unicorn-reference-final` for installation
 and the semantic compatibility check.
 
 With the patched runtime and deadline-only stepping, repeated 120M-instruction

@@ -190,7 +190,7 @@ def _bff_deposit(
     (step 2, BFFWRP += bitlen, is the caller's job). BITDEP is shifter
     opcode 0111 0100 (PGR Table 12-11, pp.12-10/12-11), ShiftImm 0x1d;
     _shift_immediate wires it (dt2-1.16 sw 0xb8863c/0xb8863f). Shares
-    _bff_extract's 64-bit-int model; tests/test_sharc_compute_shift.py
+    _bff_extract's 64-bit-int model; tests/sharc/semantics/test_sharc_compute_shift.py
     checks it against the PRM/PGR's BITDEP+BITEXT pairing
     (out/refs/sharc-plus-prm/all.txt:3495-3545)."""
     if bitlen == 0:

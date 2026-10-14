@@ -114,7 +114,7 @@ def _canonical_dm_address(
     two different-width accesses to the identical address disagree about
     which physical location it names -- reproduced directly (a 1-byte write
     then a 2-byte read at the same fresh low address;
-    tests/test_sharc_memory.py's ``test_family_choice_is_width_independent``)
+    tests/sharc/trace/test_sharc_trace_memory.py's ``test_family_choice_is_width_independent``)
     -- which is exactly backwards for a universal byte-addressed space where
     every access size names the same underlying bytes.
     """

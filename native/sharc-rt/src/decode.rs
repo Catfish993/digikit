@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn short_compute_resolves_when_next_short_compute_is_also_ambiguous() {
-        // Synthetic words, mirrored by tests/test_sharc_disasm.py.
+        // Synthetic words, mirrored by tests/sharc/analysis/test_sharc_disasm.py.
         let mut words = vec![
             0x473e, 0x403d, 0xc029, 0x023e, 0x0000, 0x0801, 0x023e, 0x0000, 0x0823, 0xc020, 0x9a08,
             0x0220,

@@ -5,6 +5,7 @@ Skips when the m68k toolchain or the DT2 1.17 image is absent."""
 
 import pytest
 from support.paths import REPO_ROOT
+from support.words import be32
 
 ROOT = REPO_ROOT
 
@@ -78,10 +79,6 @@ ENTRIES = [
     ("Mid Clone", "MCL", 4, 255, 0),
 ]
 COUNT = len(ENTRIES)
-
-
-def be32(x):
-    return (x & 0xFFFFFFFF).to_bytes(4, "big")
 
 
 def tables():

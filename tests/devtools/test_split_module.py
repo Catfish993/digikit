@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from support.git_repo import git, make_repo
+
 from tools.devtools import split_module
 
 SOURCE = '''\
@@ -98,26 +100,6 @@ class Box:
     def total(self) -> int:
         return scaled(2) + len(sys.argv) * 0
 '''
-
-
-def git(root: Path, *args: str) -> str:
-    done = subprocess.run(
-        ["git", "-C", str(root), *args], check=True, capture_output=True, text=True
-    )
-    return done.stdout
-
-
-def make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
-    root = tmp_path / "repo"
-    for rel, text in files.items():
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-    git(root, "init", "-q")
-    git(root, "add", "-A")
-    commit = ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=0"]
-    git(root, *commit, "commit", "-qm", "x")
-    return root
 
 
 def run(

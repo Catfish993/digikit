@@ -16,6 +16,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from unittest.mock import patch
 from support.paths import REPO_ROOT
+from support.sharc_trace_build import loader_block
 from tools import python_env
 
 
@@ -27,16 +28,6 @@ sharcldr = importlib.import_module("tools.sharc_dev.sharcldr")
 
 BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 MANIFEST = pathlib.Path("tools/sharc_dev/sharc-discovery/dt2-1.16.json")
-
-
-def loader_block(code, address, count, arg=0, payload=b""):
-    header = bytearray(struct.pack("<IIII", code | 0xAD000000, address, count, arg))
-    header[2] = 0
-    checksum = 0
-    for byte in header:
-        checksum ^= byte
-    header[2] = checksum
-    return bytes(header) + payload
 
 
 def instruction(name, **fields):
