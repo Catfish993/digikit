@@ -29,8 +29,8 @@ links=(
   sections
   snapshots
   .venv
-  packages/web/.local
-  packages/web/dist
+  apps/web/.local
+  apps/web/dist
   tools/coldfire/ghidra/SHARC
   tools/coldfire/ghidra/ColdfireEMAC/data/languages/coldfire_emac.sla
   tools/coldfire/ghidra/ColdfireEMAC/extension.properties

@@ -1,4 +1,4 @@
-// Run the wasm32-wasip1 build of native/sharc/examples/region_bench.rs under node or bun.
+// Run the wasm32-wasip1 build of packages/emulator/sharc/examples/region_bench.rs under node or bun.
 // Rows on stdout are the same JSON as the native example.
 //   node tools/devtools/wasm_regionbench.mjs REGION_BENCH.wasm ARGS...
 import { readFile } from 'node:fs/promises';

@@ -35,10 +35,10 @@ BLOCKTRANS_ROOTS = {
 }
 PANEL_STAMP = ROOT / "out" / "native" / "panel-stamp.json"
 PANEL_INPUTS = (
-    "packages/web/src",
-    "packages/web/public",
-    "packages/web/package.json",
-    "packages/web/astro.config.mjs",
+    "apps/web/src",
+    "apps/web/public",
+    "apps/web/package.json",
+    "apps/web/astro.config.mjs",
     "pnpm-lock.yaml",
 )
 
@@ -257,7 +257,7 @@ def cargo_command(args: list[str], pgo: object | None = None) -> list[str]:
         "--release",
         "--locked",
         "--manifest-path",
-        "packages/desktop/src-tauri/Cargo.toml",
+        "apps/desktop/src-tauri/Cargo.toml",
     ]
     if "--coupled" in args or "--auto-coupled" in args:
         command.extend(["--features", "coupled-audio"])
@@ -412,7 +412,7 @@ def verify_pgo(command: list[str], env: dict[str, str], device: str = "dn2") -> 
 
 
 def daemon_command(args: list[str]) -> list[str]:
-    """`cargo run` for the windowless daemon `digi-emud` (native/control).
+    """`cargo run` for the windowless daemon `digi-emud` (packages/emulator/control).
 
     Same target-dir rules as the desktop app, so a coupled daemon and the app
     share one compiled copy of the generated core. No PGO: the profile is
@@ -424,7 +424,7 @@ def daemon_command(args: list[str]) -> list[str]:
         "--release",
         "--locked",
         "--manifest-path",
-        "native/control/Cargo.toml",
+        "packages/emulator/control/Cargo.toml",
         "--bin",
         "digi-emud",
     ]
@@ -478,7 +478,7 @@ def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
     DIGI_EMU_PANEL=1 forces the build.
     """
     digest = panel_digest()
-    dist = ROOT / "packages" / "web" / "dist"
+    dist = ROOT / "apps" / "web" / "dist"
     try:
         same = json.loads(PANEL_STAMP.read_text()).get("digest") == digest
     except (OSError, ValueError):
@@ -499,7 +499,7 @@ def plusdrive_card(
 ) -> pathlib.Path:
     """Build (or reuse) a +Drive card image from a folder of WAV files.
 
-    Uses the native `plusdrive build` (native/plusdrive). The image lives in
+    Uses the native `plusdrive build` (packages/emulator/plusdrive). The image lives in
     out/plusdrive/native/<key12>/dt2.img, keyed by the SHA-256 of the firmware,
     the plusdrive binary and every sample's name and bytes, so unchanged
     inputs reuse the image.
@@ -511,7 +511,7 @@ def plusdrive_card(
     )
     if not names:
         raise SystemExit(f"--samples: no .wav files directly in {samples}")
-    manifest = ROOT / "native" / "plusdrive" / "Cargo.toml"
+    manifest = ROOT / "packages" / "emulator" / "plusdrive" / "Cargo.toml"
     # Share the CF-only target dir with the desktop app: one dependency build.
     target = target_dir_for(None)
     done = subprocess.run(

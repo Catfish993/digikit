@@ -22,7 +22,7 @@ plumbing and moves (38 points) plus about 10 points of memory work takes AOT fro
 category rules were folded away; the categories were assigned by symbol and source line, not by a
 counter experiment. Nothing in the repo re-measures them.
 
-"Mask" is the known-bit mask of the value lattice. `rt::V { b, m }` (native/sharc-rt/src/rt.rs)
+"Mask" is the known-bit mask of the value lattice. `rt::V { b, m }` (packages/emulator/sharc-rt/src/rt.rs)
 is a 32-bit register value known bit by bit: `m` has a 1 at every known bit. `Const` is
 `m = !0`, `Unknown` is `m = 0`, `PartialConst` is anything between. The transpiler maps the
 Python core's `Const/Unknown/PartialConst` to `V`, so every ALU, address and memory helper
@@ -231,7 +231,7 @@ new core is worth 5-8% by earlier retrains, 0.92-0.96 ratio **[D]**).
   `u32`/`i128` addresses, calls to `bndc::*`; the ordering analysis (`variant_order`, next to
   `_can_trap` and `variant_logs`), the per-variant register class report (extends
   `variant_putregs`).
-- `native/sharc-rt/src/rt/bnd.rs` (1693 lines): new `rt/bndc.rs` with concrete helpers; `Rf` gets
+- `packages/emulator/sharc-rt/src/rt/bnd.rs` (1693 lines): new `rt/bndc.rs` with concrete helpers; `Rf` gets
   a concrete file (`rf.c`) plus the `V` file for registers 118-121 (and 22 when unproven). Editing
   `sharc-rt` rebuilds the generated core: use the mini gen (3.2).
 - `tools/sharc_dev/sharc_rsgen.py` `region_text` / `body_lines`: concrete prologue (no `.m` AND, no
@@ -278,7 +278,7 @@ Layered, cheapest first:
    --jobs 6`; `coupled.py bisect` on any difference. Tier-equivalence gate: the AOT tier and the
    interpreter render identical PCM (134 of 134 scenarios equal today).
 4. `tests/sharc/integration/test_sharc_golden.py` unchanged; DT2 sample check when the DT2 core is regenerated;
-   `cargo test --lib --tests` in `native/sharc`.
+   `cargo test --lib --tests` in `packages/emulator/sharc`.
 Rule: any PCM change is a bug, not an intended change; no pin is updated.
 
 ### 3.4 Staged slice proof (go/no-go after each)
@@ -558,7 +558,7 @@ kept (`gen-pre-s2-20261010`) and `rsgen --step-budget` restores the old budget f
 
 All in the files that make the generated core: `tools/sharc_dev/sharc_rsgen.py`, `tools/sharc_dev/sharc_transpile/` (both are in
 `CORE_FINGERPRINT`: the DN2, DT2 and shared cores were regenerated, backups `gen-pre-s2-20261010`) and the runtime
-`native/sharc-rt/src/{rt.rs,rt/bnd.rs,addressing.rs}`.
+`packages/emulator/sharc-rt/src/{rt.rs,rt/bnd.rs,addressing.rs}`.
 
 1. **Flag-known gate.** `rsgen` no longer takes ASTATX, ASTATY, STKYX, STKYY out of the registers that must be
    fully known at region entry (`region_text` and `body_lines`: `known` is every register a body reads), and the
@@ -736,8 +736,8 @@ the coupled run has, so the loop-slot code runs there as in situ.
 
 ### 8.2 What changed, per item
 
-Files: `native/sharc-rt/src/{addressing,mem}.rs`, `native/sharc-rt/src/rt/{bnd,periph}.rs`,
-`native/sharc/src/lib.rs`, `tools/sharc_dev/sharc_transpile/` (in `CORE_FINGERPRINT`: DN2, DT2 and shared cores regenerated,
+Files: `packages/emulator/sharc-rt/src/{addressing,mem}.rs`, `packages/emulator/sharc-rt/src/rt/{bnd,periph}.rs`,
+`packages/emulator/sharc/src/lib.rs`, `tools/sharc_dev/sharc_transpile/` (in `CORE_FINGERPRINT`: DN2, DT2 and shared cores regenerated,
 backups `gen-pre-s3-20261010`), tools `aot_entry_iter.py` (new), `aot_attrib.py`, `aot_dyntrace.py`.
 
 1. **Float helpers.** `_float_binary_add/sub` and `_float_multiply` flush both operands (`ftz32`), compute in `f32`

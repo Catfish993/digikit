@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the firmware-free native SHARC library (crate native/sharc).
+"""Build the firmware-free native SHARC library (crate packages/emulator/sharc).
 
     uv run python -m tools.sharc_dev.sharc_native_lib
 
@@ -50,7 +50,7 @@ def main(argv: list[str]) -> int:
         "--release",
         "--locked",
         "--manifest-path",
-        "native/sharc/Cargo.toml",
+        "packages/emulator/sharc/Cargo.toml",
         "--target-dir",
         str(SHARED / "target"),
     ]

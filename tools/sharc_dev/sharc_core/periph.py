@@ -11,7 +11,7 @@ Not modeled: the SEC preemption stack, CPMSK/CGMSK masking, re-assertion of
 a still-asserted level source after END (a source is raised once per event),
 DMA timing, 2D, autobuffer and array flows. Unsupported cases raise
 ValueError instead of guessing. These functions are hand-written twins of
-native/sharc/src/rt/periph.rs (tools/sharc_dev/sharc_transpile.py BOUNDARY).
+packages/emulator/sharc/src/rt/periph.rs (tools/sharc_dev/sharc_transpile.py BOUNDARY).
 """
 
 from __future__ import annotations

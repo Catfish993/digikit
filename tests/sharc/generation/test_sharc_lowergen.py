@@ -1,4 +1,4 @@
-"""The generated lowering (native/sharc/src/fast/lower/gen_forms.rs) is what
+"""The generated lowering (packages/emulator/sharc/src/fast/lower/gen_forms.rs) is what
 tools/sharc_dev/sharc_lowergen.py makes of tools/sharc_dev/sharc_core today.
 
 Exactness against the interpreter is the Rust test `gen_lowering_matches_the_
@@ -15,7 +15,9 @@ ROOT = REPO_ROOT
 from tools.sharc_dev import sharc_lowergen as g  # noqa: E402
 from tools.sharc_dev import sharc_lowergen_rs as r  # noqa: E402
 
-GEN = ROOT / "native" / "sharc" / "src" / "fast" / "lower" / "gen_forms.rs"
+GEN = (
+    ROOT / "packages" / "emulator" / "sharc" / "src" / "fast" / "lower" / "gen_forms.rs"
+)
 
 
 def checked_in_forms() -> list[str]:

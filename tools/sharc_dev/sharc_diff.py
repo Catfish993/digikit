@@ -1,6 +1,6 @@
 """Differential test harness for the SHARC+ core: Python (tools/sharc_dev/sharc_core,
 driven concretely through tools/sharc_run.Runner) against a future native
-implementation (a Rust crate, ``native/sharc/``, built as a C-ABI cdylib and
+implementation (a Rust crate, ``packages/emulator/sharc/``, built as a C-ABI cdylib and
 loaded with ctypes -- see scratchpad/rt-native-core-design.md section 4).
 
 The native core does not exist yet in this tree. This module builds the
@@ -922,7 +922,7 @@ _NATIVE_FUNCTIONS = (
 
 
 class NativeEngine:
-    """ctypes adapter for the future ``native/sharc/`` cdylib.
+    """ctypes adapter for the future ``packages/emulator/sharc/`` cdylib.
 
     Raises ``FileNotFoundError`` (no library at LIBRARY_PATH) or
     ``OSError``/``AttributeError`` (present but missing an expected export)
@@ -934,7 +934,7 @@ class NativeEngine:
     def __init__(self, library_path: str, image: bytes) -> None:
         if not os.path.isfile(library_path):
             raise FileNotFoundError(
-                "no native SHARC+ core at %r (native/sharc/ has not been "
+                "no native SHARC+ core at %r (packages/emulator/sharc/ has not been "
                 "built yet, or LIBRARY_PATH is wrong)" % library_path
             )
         self._lib = ctypes.CDLL(library_path)

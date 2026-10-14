@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the generated ColdFire decoder (native/coldfire, from
+"""Check the generated ColdFire decoder (packages/emulator/coldfire, from
 tools/coldfire/cfisa/coldfire.json) against independent decoders, and count which
 instruction forms the firmware uses.
 
@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-CRATE = ROOT / "native" / "coldfire"
+CRATE = ROOT / "packages" / "emulator" / "coldfire"
 # The native crates form one cargo workspace; its default target dir is ROOT/target.
 CFDIS = ROOT / "target" / "release" / "cfdis"
 LANG_DIR = (
@@ -93,7 +93,7 @@ def build_cfdis() -> Path:
 
 
 def ours(image: Path, base: int, addrs: list[int]) -> dict[int, tuple[int, str, str]]:
-    """{address: (length, form id, text)} from native/coldfire's cfdis; length 0 = illegal."""
+    """{address: (length, form id, text)} from packages/emulator/coldfire's cfdis; length 0 = illegal."""
     exe = build_cfdis()
     inp = "".join("%08x\n" % a for a in addrs)
     res = subprocess.run(

@@ -4,7 +4,7 @@ A codegen experiment on the hot DSP regions costs minutes through the coupled
 build. This tool makes a gen dir that holds only the selected regions
 (tools/sharc_dev/sharc_rsgen.py --only), captures the engine state at each region's
 entry from the DN2 note replay, and times the region's generated entry
-function from that state (native/sharc/examples/region_bench.rs).
+function from that state (packages/emulator/sharc/examples/region_bench.rs).
 
     sharc_regionbench.py gen [--variant base] [--tools-dir DIR] [-- RSGEN ARGS]
     sharc_regionbench.py capture [--variant base]
@@ -62,7 +62,7 @@ STATE = os.path.join(
 # frames of the note capture).
 FRAMES = os.path.join(BENCH, "digi-audio-note.frames")
 # Hand-written versions of hot regions (firmware-derived: stays under out/,
-# compiled into region_bench only when present, see native/sharc/build.rs).
+# compiled into region_bench only when present, see packages/emulator/sharc/build.rs).
 SOL = os.path.join(BENCH, "sol", "sol.rs")
 DEFAULT_REGIONS = "1C399A,1C3862,1C364F,1C2484,1C5765,B823DB"
 TOOLCHAIN = "1.98.1"
@@ -250,24 +250,29 @@ def cmd_build(args) -> str:
     if not os.path.isdir(gen):
         sys.exit("no gen for variant %s: run gen first" % args.variant)
     digi_env.check_generated(pathlib.Path(gen))
-    src = tree_files(os.path.join(ROOT, "native", "sharc", "src"), (".rs",))
+    src = tree_files(
+        os.path.join(ROOT, "packages", "emulator", "sharc", "src"), (".rs",)
+    )
     src += [
-        os.path.join(ROOT, "native", "sharc", "examples", "region_bench.rs"),
-        os.path.join(ROOT, "native", "sharc", "build.rs"),
+        os.path.join(
+            ROOT, "packages", "emulator", "sharc", "examples", "region_bench.rs"
+        ),
+        os.path.join(ROOT, "packages", "emulator", "sharc", "build.rs"),
     ]
     # Modules of the example (region_bench/*.rs) and the optional hand-written
     # versions.
     src += tree_files(
-        os.path.join(ROOT, "native", "sharc", "examples", "region_bench"), (".rs",)
+        os.path.join(ROOT, "packages", "emulator", "sharc", "examples", "region_bench"),
+        (".rs",),
     )
     if os.path.isfile(SOL) and not getattr(args, "prod_gen", False):
         src.append(SOL)
     # The fast tier's Cranelift backend (a dev-dependency of the example).
-    fast_cl = os.path.join(ROOT, "native", "sharc-fast-cl")
+    fast_cl = os.path.join(ROOT, "packages", "emulator", "sharc-fast-cl")
     src += tree_files(os.path.join(fast_cl, "src"), (".rs",))
     src += [
         os.path.join(fast_cl, "Cargo.toml"),
-        os.path.join(ROOT, "native", "sharc", "Cargo.toml"),
+        os.path.join(ROOT, "packages", "emulator", "sharc", "Cargo.toml"),
         os.path.join(ROOT, "Cargo.toml"),
         os.path.join(ROOT, "Cargo.lock"),
     ]
@@ -369,7 +374,10 @@ def cmd_build(args) -> str:
             + ["--example", "region_bench"]
             + (["--features", features] if features else [])
             + target_args
-            + ["--manifest-path", os.path.join(ROOT, "native", "sharc", "Cargo.toml")]
+            + [
+                "--manifest-path",
+                os.path.join(ROOT, "packages", "emulator", "sharc", "Cargo.toml"),
+            ]
             + ["--target-dir", target],
             env=env,
         )
@@ -722,9 +730,18 @@ def cmd_fresh_fast(args) -> None:
         },
         "source_sha256": sha256_files(
             [
-                os.path.join(ROOT, "native", "sharc", "examples", "region_bench.rs"),
+                os.path.join(
+                    ROOT, "packages", "emulator", "sharc", "examples", "region_bench.rs"
+                ),
                 *tree_files(
-                    os.path.join(ROOT, "native", "sharc", "examples", "region_bench"),
+                    os.path.join(
+                        ROOT,
+                        "packages",
+                        "emulator",
+                        "sharc",
+                        "examples",
+                        "region_bench",
+                    ),
                     (".rs",),
                 ),
                 os.path.abspath(__file__),

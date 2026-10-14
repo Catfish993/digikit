@@ -1396,7 +1396,7 @@ conditional Type 7a with a condition other than `NOT SV` (0x17) in the audio cod
   driver. **[D]**
 - **Proof.** Cores regenerated into `gen-next` dirs (DT2 `out/native/dt2-audio/gen-next`, DN2
   `out/native/dn2-audio/gen-next`, shared `out/native/shared-core/gen-next`, each with PROVENANCE.txt); the generated
-  lowering `native/sharc/src/fast/lower/gen_forms.rs` regenerated (`g_7a` only), and the workspace Rust tests pass
+  lowering `packages/emulator/sharc/src/fast/lower/gen_forms.rs` regenerated (`g_7a` only), and the workspace Rust tests pass
   (they run the fast tier against the interpreter on random encodings of every generated form, conditions included).
   `tests/patchkit_smoke` `test_play_in_patterns_3_and_4_runs_clean`: DT2 1.17 and 1.16, PLAY after `PTN` + `TRIG 3`
   and `TRIG 4`, no halt. Control run with the old core: the same test fails with the old message. A deliberately

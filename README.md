@@ -205,8 +205,8 @@ mise run web                            # the gallery at /patch: patch in the br
 ```
 dt2/             .syx container: decode, rebuild, decompress
 emu/             firmware extraction and the shared helpers (config, symbols, SHARC capture)
-native/          Rust workspace: ColdFire core, SHARC+ engine, coupled runner (native/README.md)
-packages/web     browser panel (Astro + Solid); packages/desktop is the Tauri app
+packages/emulator/  Rust workspace: runtime, ColdFire and SHARC execution, runners
+apps/            desktop (Tauri) and web shells (browser panel: Astro + Solid)
 tools/           Python tools, one package per owner (tools/<owner>/, docs/LAYOUT.md)
 tests/           pytest suite (native tests live in the crates); see docs/TESTING.md
 scenarios/       scripted panel inputs and pinned PCM hashes
@@ -225,7 +225,7 @@ Who owns what, and planned moves: [docs/LAYOUT.md](docs/LAYOUT.md).
   the newest to continue the work.
 - [docs/design/](docs/design/), [docs/plans/](docs/plans/): designs and plans.
   [docs/archive/](docs/archive/): superseded documents, kept for history.
-  [native/README.md](native/README.md): crate map and the coupled runner.
+  [packages/emulator/README.md](packages/emulator/README.md): crate map and the coupled runner.
 
 Record results in `docs/findings/`, not in handovers. Marks: **[V]** verified here,
 **[D]** documented or read once, **[O]** open, **[C]** corrects an earlier claim.

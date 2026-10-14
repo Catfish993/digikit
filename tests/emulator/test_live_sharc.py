@@ -1,4 +1,4 @@
-"""The native SHARC core played live (native/live's capture source) against
+"""The native SHARC core played live (packages/emulator/live's capture source) against
 the Python replay.
 
 Needs firmware-derived files under out/ that these tests never build
@@ -8,7 +8,7 @@ themselves (each is minutes of Python):
     uv run python -m tools.sharc_dev.sharc_transpile_run live-ref dt2-1.16 CAPTURE --lp0 LOG --frames 24
 
 plus the native core library (out/native/opt/target-final, or
-$SHARC_NATIVE_LIB) and ``cd native/live && cargo build --release``. The
+$SHARC_NATIVE_LIB) and ``cd packages/emulator/live && cargo build --release``. The
 device test also needs LIVE_AUDIO_DEVICE_TESTS=1.
 """
 
@@ -44,7 +44,7 @@ def _cached_pack_and_ref() -> tuple[Path, Path]:
         (CAPTURE, "the drive3 capture"),
         (LP0, "the drive3 FlexBus log"),
         (DEFAULT_SHARC_LIB, "the native core library"),
-        (LIVE_PLAY, "live_play (cd native/live && cargo build --release)"),
+        (LIVE_PLAY, "live_play (cd packages/emulator/live && cargo build --release)"),
     ):
         if not path.is_file():
             pytest.skip("missing %s: %s" % (what, path))
@@ -109,7 +109,7 @@ def test_live_voices_equal_the_python_replay():
 def test_capture_plays_live_on_the_device():
     pack, _ = _cached_pack_and_ref()
     if not _default_library_path().is_file():
-        pytest.skip("native/live not built")
+        pytest.skip("packages/emulator/live not built")
     with LiveAudio(pack=pack) as audio:
         time.sleep(2.0)
         stats = audio.stats()

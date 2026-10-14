@@ -10,7 +10,7 @@ Marks: **[V]** read in the code for this design, **[O]** open.
 
 ## What is built
 
-Crate `native/control` (`digi-control`): `proto` (JSON-RPC types, error codes,
+Crate `packages/emulator/control` (`digi-control`): `proto` (JSON-RPC types, error codes,
 no I/O), `controller` (the former desktop `actor()`; one owner thread, jobs and
 run modes), `dispatch` (one request object in, one response out: the
 transport-independent entry a browser worker feeds too), `server` (Unix socket,
@@ -105,7 +105,7 @@ Written before the build: items 7, 8 and 10 are now handled by `firmware.load`
                  ◀── events: bounded channel, drop-oldest + counter ─────┘
 ```
 
-- New crate `native/control` (`digi-control`):
+- New crate `packages/emulator/control` (`digi-control`):
   - `proto`: request, response and event types (serde), `SCHEMA_VERSION`,
     error codes; no I/O; builds for wasm.
   - `controller`: today's desktop `actor()` moved here; owns
@@ -360,8 +360,8 @@ with Emu.spawn("--auto-coupled", "--audio-buffer", "1") as emu:
 - The public build ships only firmware-free code: no .syx, sections,
   snapshots, DSP image or state, generated core, or coupled wasm built with it.
   `astro build` fails if a firmware-derived file reaches the output (build
-  guard in `packages/web/astro.config.mjs`); the coupled core lives in the
-  gitignored `packages/web/.local/` and is served only by the dev server.
+  guard in `apps/web/astro.config.mjs`); the coupled core lives in the
+  gitignored `apps/web/.local/` and is served only by the dev server.
 - The user supplies their own .syx at run time; it stays in the browser.
 - The DSP image must be derived from the .syx inside the wasm (Rust port of
   the boot-stream parse and flatten done by `tools/sharc_dev/sharc_pack_image.py`; the

@@ -1,10 +1,10 @@
 """Tests for tools/emulator/live_audio.py, the ctypes wrapper around native/live.
 
-Skipped entirely if native/live hasn't been built (`cd native/live && cargo
+Skipped entirely if packages/emulator/live hasn't been built (`cd packages/emulator/live && cargo
 build --release`) -- these tests never build the crate themselves, matching
 "Python wrapper tests skipped without the built library". A device-opening
 test additionally needs LIVE_AUDIO_DEVICE_TESTS=1 (see test_open_and_close),
-same convention as native/live's own ignored Rust tests.
+same convention as packages/emulator/live's own ignored Rust tests.
 """
 
 import os
@@ -23,7 +23,7 @@ LIBRARY_PATH = _default_library_path()
 
 pytestmark = pytest.mark.skipif(
     not LIBRARY_PATH.is_file(),
-    reason="native/live not built: cd native/live && cargo build --release",
+    reason="packages/emulator/live not built: cd packages/emulator/live && cargo build --release",
 )
 
 DEVICE_TESTS_ENABLED = os.environ.get("LIVE_AUDIO_DEVICE_TESTS") == "1"

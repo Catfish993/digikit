@@ -46,7 +46,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_RUN_DIR = ROOT / "out" / "native" / "run"
 SCHEMA_VERSION = 1
 
-# Error codes (native/control/src/proto.rs).
+# Error codes (packages/emulator/control/src/proto.rs).
 NO_FIRMWARE, STALE_SESSION, BUSY, REJECTED, AUDIO, FAULT, DSP_HALTED, IO, TIMEOUT = (
     range(1, 10)
 )

@@ -6,7 +6,7 @@ description: Use when creating, building, patching, injecting, testing or explai
 # patchkit modules
 
 A module is our own code (ColdFire C, SHARC+ assembly) plus a manifest. patchkit links it into a stock `.syx`
-(`native/patchkit`), places it in a port region, hooks a firmware site and writes a patched image under `out/patch/`.
+(`packages/emulator/patchkit`), places it in a port region, hooks a firmware site and writes a patched image under `out/patch/`.
 Plan and state: `docs/plans/patchkit.md`; usage and how it works: `docs/PATCHING.md`; the manifest reference and two
 worked examples: `modules/README.md`; the facts behind it: `docs/findings/21-patchkit-core.md`.
 Run everything from the repo root. Work in a lane only for long or parallel runs (`tools/devtools/lane.sh`).

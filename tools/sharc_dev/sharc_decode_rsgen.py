@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_INPUT = ROOT / "tools" / "sharc_dev" / "sharcspec" / "decode_table.json"
-DEFAULT_OUTPUT = ROOT / "native" / "sharc" / "src" / "decode_table.rs"
+DEFAULT_OUTPUT = ROOT / "packages" / "emulator" / "sharc" / "src" / "decode_table.rs"
 
 
 def form_id(name: str) -> str:

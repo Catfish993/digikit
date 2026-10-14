@@ -2,9 +2,9 @@
 """Run the device bootstrap (OS section 2) on the native ColdFire core and drive its recovery path.
 
 The Digitakt II bootstrap is the code that loads MAIN OS, offers the STARTUP menu ([FUNC] held at power-on) and
-receives an OS upgrade over MIDI DIN ([TRIG 4]). native/bootstrap executes its real instructions with a minimal
+receives an OS upgrade over MIDI DIN ([TRIG 4]). packages/emulator/bootstrap executes its real instructions with a minimal
 board: NOR flash (SPI transport replaced), panel UART (keys, display records), MIDI UART. See
-native/bootstrap/src/lib.rs for what is modelled and docs/findings/01-container-and-patching.md ("Recovery").
+packages/emulator/bootstrap/src/lib.rs for what is modelled and docs/findings/01-container-and-patching.md ("Recovery").
 
     uv run python -m tools.emulator.bootstrap_run verify IMAGE.syx [--base STOCK.syx] [--png OUT.png]
         Flash holds BASE (default Digitakt_II_OS1.16.syx). Boot with [FUNC] held, press [TRIG 4], send IMAGE over
@@ -68,7 +68,7 @@ def binary() -> pathlib.Path:
 
 
 def build_binary() -> pathlib.Path:
-    """cargo build of native/bootstrap (no generated SHARC core needed), under the shared bench lock."""
+    """cargo build of packages/emulator/bootstrap (no generated SHARC core needed), under the shared bench lock."""
     env = digi_env.rust_env()
     env.pop("SHARC_GEN_DIR", None)
     cmd = ["rustup", "run", digi_env.TOOLCHAIN, "cargo", "build", "--release", "-p", "bootstrap-emu",

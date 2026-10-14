@@ -388,7 +388,7 @@ The earlier `--inject-real-sample`, `setup_voice` pokes and
 
 ## Live: a GUI pad press through the native core **[D]**
 
-`emu.gui --live-audio` (`emu/livesharc.py`, `native/live`) runs this path
+`emu.gui --live-audio` (`emu/livesharc.py`, `packages/emulator/live`) runs this path
 live: `emu.dspi2.Dspi2Link` hands every TX frame to the native SHARC core,
 which renders it in real time. Checked by execution on 2026-09-29 with
 `tools/live_gui_check.py` (emu.gui's own worker, no window, no output
@@ -398,7 +398,7 @@ device) from a `tools/dt2gui.py` ready snapshot, TRIG 1 pressed:
   entries) equal the driver's own TX buffer, the capture format, over the
   whole 0x802-byte payload in all 39 frames of a 12M-instruction run: the
   ColdFire's big-endian halfwords. They need the same 16-bit swap as the
-  capture packs before the SHARC's receive ring; `native/live`'s
+  capture packs before the SHARC's receive ring; `packages/emulator/live`'s
   `LiveSource` does it, the only place. A cargo test renders the capture's
   frames, un-swapped to wire order, through that path and gets the capture
   path's output bit for bit. **[D]**
@@ -444,7 +444,7 @@ The v3 frameless state pack was regenerated under ignored `out/` with
 `state-pack --rebuild --limit 2000000`: its complete pre-trailer body is identical
 to the previous v2 pack, its card hash matches the ready snapshot's sidecar,
 and its core-source hash matches both current `tools/sharc_dev/sharc_core` and the
-selected native SHARC library. The `native/live` release library had to be
+selected native SHARC library. The `packages/emulator/live` release library had to be
 rebuilt to load the v3 trailer.
 
 The bounded wire trace `out/native/integrated-auto-smoke/auto-wire-ack.dtfr`
@@ -471,7 +471,7 @@ delivery clocks from `run-ack.log` (press at 3,516,425, release at 10,552,659
 instructions), then compare ordered full wire-order DSPI2 TX frames against
 `auto-wire-ack.dtfr`. Wall-time-triggered reruns can deliver the pad input at
 different guest clocks, so their whole-trace hashes need not match this one.
-`native/live` already accepts these wire buffers. **[C]** `native/machine`'s
+`packages/emulator/live` already accepts these wire buffers. **[C]** `packages/emulator/machine`'s
 `Board` already owned the peripheral `DmaLink`, which in turn holds a
 `Dspi2Link`; the missing piece was Board's handling of its eDMA SERQ effect,
 not the peripheral model itself. Board now imports its eDMA/DSPI register
@@ -503,7 +503,7 @@ headless run stopped at SHARC frame 252 with `native-trap: unmodeled MMR at
 retained in ignored `out/native/integrated-auto-smoke/diagnose-13.dtfr`.
 This is a PC, **not** proof of the accessed MMR address or root cause; the
 separately observed `0x30000` load at `0x1c1cf9` above may be related but
-has not been connected to this stop. `native/live` now exposes the first
+has not been connected to this stop. `packages/emulator/live` now exposes the first
 frame-stop index/reason through `live_first_stop`, and the headless report
 fails closed when `render.stopped` is nonzero. Clean later runs do not fix
 this intermittent stop.
@@ -543,7 +543,7 @@ frame-build gate open (item 2 above), the LP0 model (item 4) and
 Folded from a lane notebook; not re-checked by a second agent.
 
 - The DT2 idle loop is the DN2 code moved by -0x26dc (range 0xb8636d..0xb863df, head
-  0xb863cf). `devices/*.toml` and `native/device-profile` carry `dsp = { image, idle_start,
+  0xb863cf). `devices/*.toml` and `packages/emulator/device-profile` carry `dsp = { image, idle_start,
   idle_end, idle_head, sample_link }` per firmware.
 - ColdFire FlexBus bytes (falling edge of bit 7 of a halfword write to 0x8C000002) become
   0x401-word work units (4100 bytes), up to 4 per frame, delivered to the LP0 DMA channel
@@ -813,14 +813,14 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
 
 ### Runtime and fast tier
 
-- `native/sharc-rt/src/rt/bnd.rs`: hand-written fast paths for add, subtract (`float_binary_fast!`)
+- `packages/emulator/sharc-rt/src/rt/bnd.rs`: hand-written fast paths for add, subtract (`float_binary_fast!`)
   and the new `_float_multiply` flush operands and results (a zero-exponent f32 result is a flushed
   zero; the smallest-normal result is the one value that can come from either side of the cut, so
   it and NaN take the slow path), `_float32_result`, `_astatx_mult_float` with the underflow
   argument. `sharc_transpile.py` maps `_float_multiply` to it and drops the old multiply entry and the
   dead `_multifn_fm_value`. The differential test (`float_binary_fast_paths_match_reference`,
   30M comparisons, operands near the smallest-normal cut) passes.
-- Fast tier (`native/sharc/src/fast/lower`): float ops read their operands through `rd_f_op`, which
+- Fast tier (`packages/emulator/sharc/src/fast/lower`): float ops read their operands through `rd_f_op`, which
   exits to the interpreter at a nonzero denormal (`guard_not_denormal`, 4 IR ops, once per value per
   block: `ftz_ok`); add and subtract results are flushed in the kernel (exact, so the native result
   is the exact one: `flush_denormal_result`); a multiply whose product is below the smallest normal
@@ -839,10 +839,10 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
   **unchanged**: no output of the golden runs touches a denormal.
 - Python core vs the native core built from it: `tools/sharc_dev/sharc_transpile_run.py corpus --cases-per-op
   200` 57,400 cases, 0 diverged (edge values now include 1.5 x 2^-126, 2^-100, 2^-63).
-- `native/sharc` `cargo test --lib --tests` (shared core): 65 passed, with the new
+- `packages/emulator/sharc` `cargo test --lib --tests` (shared core): 65 passed, with the new
   `fast_denormal_float_ops_match_the_interpreter` (add, subtract, multiply with denormal operands,
   denormal and underflowing results, a negative one, a flag-reading `IF MS`, 8 chunk sizes);
-  `native/sharc-rt` 12 passed.
+  `packages/emulator/sharc-rt` 12 passed.
 - PCM in the three tiers is identical and also equal to the hashes before the change:
   `trig1-taps` 1.5 s `3bf3ba3026953c22` (interpreter only, default AOT, no-AOT
   `static-insns+follow`), 14 s `18e5204f2015f2eb` (AOT, no-AOT), `sf-del-fb-d127`

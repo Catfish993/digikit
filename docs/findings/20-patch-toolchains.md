@@ -26,10 +26,10 @@ Tools: `tools/patchkit/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.
   to an extern). A `bsr.w` from the expansion region to the firmware does not fit (132 MB apart): the linker
   reports the out-of-range relocation instead of truncating.
 - **ISA check [D].** `pk_link.check_isa` decodes every instruction of the executable sections with our decoder
-  (`native/coldfire` `cfdis`, generated from `tools/coldfire/cfisa/coldfire.json`) and fails on an illegal word, a form
+  (`packages/emulator/coldfire` `cfdis`, generated from `tools/coldfire/cfisa/coldfire.json`) and fails on an illegal word, a form
   outside `isa_a`/`isa_b`/`isa_c`/`emac`, or a privileged form. The test module (55 instructions, 22 forms)
   passes; an assembly file built with `-m68020` (`bfextu`) is rejected.
-- **Running on the core [D].** `Emulator::call_function` (`native/boot/src/runtime/call.rs`, example
+- **Running on the core [D].** `Emulator::call_function` (`packages/emulator/boot/src/runtime/call.rs`, example
   `cf_call`, wrapper `CfMachine`): boots a ready image once (7 s CPU, DT2 1.17), caches the `save_state` blob
   (73 MB) in `out/cache/pk_cfcall/`, afterwards 0.75 s per test process. A call pushes the arguments and a
   return sentinel, runs with SR 0x2700, stops when the PC reaches the sentinel, and reports D0-D7/A0-A7; the

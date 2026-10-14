@@ -1102,7 +1102,7 @@ inputs raise).
 
 ## The pSLC card identity: no "MMC NOT IN SLC MODE" dialog (2026-10-06)
 
-**Identity model.** `native/card` (`CardIdentity`) and `emu/esdhc.py`
+**Identity model.** `packages/emulator/card` (`CardIdentity`) and `emu/esdhc.py`
 (`IDENTITIES`) now model three firmware-whitelisted eMMCs; the identity, not
 the backing image length, sets CID, EXT_CSD and capacity. `DIGI_CARD_IDENTITY`
 selects it (`slc32g` default, `mlc4g`, `small`).
@@ -1131,11 +1131,11 @@ selects it (`slc32g` default, `mlc4g`, `small`).
   mode (0x2e1a000) does. **[D]** for the reasoning.
 - The 1.16 identity check accepts the default card: `DT2_SYX=Digitakt_II_OS1.16.syx
   uv run python -m pytest tests/test_esdhc_identity.py` passed. **[V]**
-- `native/card`, `native/machine`, `native/boot` (default and `diagnostics`),
-  `native/host`, `packages/desktop/src-tauri` (`cargo check` with and without
+- `packages/emulator/card`, `packages/emulator/machine`, `packages/emulator/boot` (default and `diagnostics`),
+  `packages/emulator/host`, `apps/desktop/src-tauri` (`cargo check` with and without
   `coupled-audio`) and the Python tests build and pass. Two mechanical fixes:
-  `native/card/tests/dma.rs` now expects SEC_COUNT bytes `02 e1 a0 00` for the
-  default card, and one `mut` was dropped in `native/card/tests/card.rs`. **[V]**
+  `packages/emulator/card/tests/dma.rs` now expects SEC_COUNT bytes `02 e1 a0 00` for the
+  default card, and one `mut` was dropped in `packages/emulator/card/tests/card.rs`. **[V]**
 
 **Cold boot with the new default (native, ColdFire only).** **[V]**
 
@@ -1215,10 +1215,10 @@ this section moved (see finding 16, "Reference state rebuilt from cold start").
 Folded from a lane notebook; measured on DT2 1.16, not re-checked by a second agent.
 
 - `mise run emu -- --cf-only --samples DIR SYX` (`tools/emulator/native_emu.py`) builds
-  `native/plusdrive`, runs `plusdrive build DIR -o img --syx SYX` and passes the image as
+  `packages/emulator/plusdrive`, runs `plusdrive build DIR -o img --syx SYX` and passes the image as
   `--card-image`. The image is cached in `out/plusdrive/native/<key12>/dt2.img`; the key is
   the SHA-256 of the firmware, the plusdrive binary and each sample name and bytes. Project
-  seeding is DT2-only. `native/boot/examples/card_boot.rs` boots a card headless
+  seeding is DT2-only. `packages/emulator/boot/examples/card_boot.rs` boots a card headless
   (`ready_at=914986053`, `main_ui=true`, `fs_verified=Some(true)`, both sample names found
   in guest state).
 - A card built with `--no-project` lists "Factory" and the samples in ASSIGN SAMPLE
@@ -1229,15 +1229,15 @@ Folded from a lane notebook; measured on DT2 1.16, not re-checked by a second ag
   vector 86, handler 0x400ccd74) runs a callback; the peer then raises IRQ1 (EPORT, INTC0
   source 1, vector 65, handler 0x400ccd1c), and `FUN_40012500` reads 0x300 bytes back and
   gives semaphore 0x40965b84. Without both, the first `load_sample` never finished and held
-  mutex 0x450d1b10, so the UI task blocked. Fix: `native/machine/src/board.rs` retires the
-  channel-14 major loop and zero-fills the destination; `native/boot/src/runtime.rs`
+  mutex 0x450d1b10, so the UI task blocked. Fix: `packages/emulator/machine/src/board.rs` retires the
+  channel-14 major loop and zero-fills the destination; `packages/emulator/boot/src/runtime.rs`
   (`service_dspi1`) delivers vector 86, then vector 65. With it the seeded card calls
   `load_sample` 297 times and the SRC and FLTR pages draw. **[O]** The peer's identity;
   zero responses are enough.
 
 ## Track N plays file N: per-track project seeding (2026-10-12) **[D]**
 
-`native/plusdrive` (`project.rs`) no longer points all 297 slot references at the first file.
+`packages/emulator/plusdrive` (`project.rs`) no longer points all 297 slot references at the first file.
 `point_refs_at(container, refs)` gives each of the 16 tracks of the active kit (kit 0) its own
 table slot and its own file, `refs[t % n]` with the files in sorted-name order:
 
@@ -1253,7 +1253,7 @@ table slot and its own file, `refs[t % n]` with the files in sorted-name order:
   makes the same 297 `load_sample` calls. With one file the table equals the old seeding.
 
 Checked with three generated 48 kHz mono files (220 Hz sine, 880 Hz sine, noise), card built in
-process (`tools/emulator/card_check.py`, `native/control/src/cards.rs`): the boot project's table slots and
+process (`tools/emulator/card_check.py`, `packages/emulator/control/src/cards.rs`): the boot project's table slots and
 track copies read back from the image as designed; at ready the DSP slot table (DM `0x257810`)
 holds `{0x40, 0x18040, 0x30040}` for slots 7, 1, 3 and the SDRAM bytes at those starts are the
 220 Hz sine, the 880 Hz sine and the noise (checked with `coupled-run --dump-dsp`); the UI shows
@@ -1266,7 +1266,7 @@ the DSP.
 
 ### In-process card and ready boot **[D]**
 
-`native/control/src/cards.rs` builds the card (no Python); `native/coupled/src/cold.rs` is the
+`packages/emulator/control/src/cards.rs` builds the card (no Python); `packages/emulator/coupled/src/cold.rs` is the
 `sharc_live` cold boot (ColdFire plus the DSP from `cold-idle.dsp` on the DSPI2 link, snapshot at
 ready once link port 0 has been quiet for 400 frames, `digi-audio-m5.snap` and `.snap.dsp`). The
 controller's `card.load` runs both on a worker thread while the running guest waits, then
@@ -1287,5 +1287,5 @@ image exists (with audio, the cached ready state too: a cold boot is never start
 the controller mounts it before the first frame (the cached restore, about 0.3 s). `card.status`
 then reports `state ready, auto true, name, samples`, and the toolbar shows "Samples: NAME (N
 files)"; with nothing cached it shows "Choose samples to load a folder of WAVs". DN2 is
-unchanged. Test: `native/control/tests/card_load.rs`
+unchanged. Test: `packages/emulator/control/tests/card_load.rs`
 (`the_last_card_is_mounted_again_when_the_dt2_starts`).

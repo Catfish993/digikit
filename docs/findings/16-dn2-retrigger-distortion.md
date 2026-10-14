@@ -140,7 +140,7 @@ sharc-gen, no edits needed). Interpreter-only.
   (`_cureg_code`), also write the Y element's register (S0..S15 for R0..R15)
   with the same value; then regenerate sharc-gen and update the golden hashes
   (expect the DN2 retrigger result to change). Fast tier lowering of 17b
-  (`native/sharc-fast-cl` lower::sysops) must get the same companion write.
+  (`packages/emulator/sharc-fast-cl` lower::sysops) must get the same companion write.
   **[O]** not applied here.
 
 ## Fix and verification (Task 3)
@@ -187,9 +187,9 @@ Results after the fix **[V]**:
 - Reproduce scans: `taps/sweep.sh P` (fine, per period) + `an22.py`;
   `taps/wide.sh P...` + `an24.py` (scratchpad scripts, not in the repo).
 
-Pinned values in `coupled_ready_exactness` (native/coupled/src/lib.rs),
+Pinned values in `coupled_ready_exactness` (packages/emulator/coupled/src/lib.rs),
 updated for the fix **[V]** (gate passes; run as tools/emulator/native_pgo.py does,
-manifest packages/desktop/src-tauri, absolute DIGI_COUPLED_FIXTURES):
+manifest apps/desktop/src-tauri, absolute DIGI_COUPLED_FIXTURES):
 CF digest `fbace0f0..` -> `bc82b1996d75..0507` (the DSPI RX buffer at CF
 0x800053a4 is filled with DSP replies; replies differ in 1650 of 1652 frames
 of f06 before/after, TX identical, CF instruction counts identical), PCM
@@ -265,7 +265,7 @@ scans of this finding were made on the old state and are not repeated **[O]**.
 ### Why the old and the cold start state differ **[D]**
 
 Folded from a lane notebook. The DSP start state can be built from the `.syx` alone:
-`tools/sharc_dev/sharc_cold_state.py` writes a cold state, `native/boot/examples/dsp_cold.rs` runs it
+`tools/sharc_dev/sharc_cold_state.py` writes a cold state, `packages/emulator/boot/examples/dsp_cold.rs` runs it
 without ColdFire to the idle range (about 563.75M instructions, 61 s), and `tools/emulator/ready.py`
 attaches it to the ColdFire cold boot.
 

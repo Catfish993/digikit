@@ -43,7 +43,7 @@ def test_unknown_fallback_preserves_masks_budgets_and_trap_rollback(
     emitted = rg.region_text("strict_copy_region", [body], None)
     emitted += rg.region_text("copy_region", [body], None, unknown_fallback=True)
     (tmp_path / "src").mkdir()
-    native = (ROOT / "native/sharc").as_posix()
+    native = (ROOT / "packages/emulator/sharc").as_posix()
     (tmp_path / "Cargo.toml").write_text(
         '[package]\nname = "fallback-check"\nversion = "0.0.0"\nedition = "2024"\n'
         f'[dependencies]\nsharc-native = {{ path = "{native}" }}\n[workspace]\n'

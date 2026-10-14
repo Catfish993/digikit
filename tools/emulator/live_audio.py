@@ -1,11 +1,11 @@
-"""ctypes wrapper for ``native/live``, the live audio output path (a cpal
+"""ctypes wrapper for ``packages/emulator/live``, the live audio output path (a cpal
 real-time callback, a lock-free ring and the SPI2 TX frame repeater --
-``native/live/src/lib.rs`` module docs; not the SHARC core itself, see
-``native/sharc``, a separate lane).
+``packages/emulator/live/src/lib.rs`` module docs; not the SHARC core itself, see
+``packages/emulator/sharc``, a separate lane).
 
 Build the library first::
 
-    cd native/live && cargo build --release
+    cd packages/emulator/live && cargo build --release
 
 Then::
 
@@ -55,7 +55,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-_CRATE_DIR = _ROOT / "native" / "live"
+_CRATE_DIR = _ROOT / "packages" / "emulator" / "live"
 DEFAULT_SHARC_LIB = Path(
     os.environ.get(
         "SHARC_NATIVE_LIB",
@@ -79,13 +79,13 @@ def _default_library_path() -> Path:
 
 
 class LiveAudioError(RuntimeError):
-    """A ``native/live`` C ABI call failed. ``str(exc)`` is the message
+    """A ``packages/emulator/live`` C ABI call failed. ``str(exc)`` is the message
     ``live_last_error`` reported, if any."""
 
 
 @dataclass(frozen=True)
 class LiveStats:
-    """Mirrors ``native/live/src/abi.rs``'s ``LiveStats`` (repr(C))."""
+    """Mirrors ``packages/emulator/live/src/abi.rs``'s ``LiveStats`` (repr(C))."""
 
     sample_rate: int
     requested_sample_rate: int
@@ -115,7 +115,7 @@ class _CLiveStats(ctypes.Structure):
 
 @dataclass(frozen=True)
 class RenderStats:
-    """Mirrors ``native/live/src/abi.rs``'s ``LiveRenderStats``: the SHARC
+    """Mirrors ``packages/emulator/live/src/abi.rs``'s ``LiveRenderStats``: the SHARC
     source's per-frame render times (µs; frame 0, the cold start, is
     ``first_us`` and left out of the percentiles) and interpreter use."""
 
@@ -162,8 +162,8 @@ class _CRenderStats(ctypes.Structure):
 
 @dataclass(frozen=True)
 class FrameStats:
-    """Mirrors ``native/live/src/abi.rs``'s ``LiveFrameStats``: the frame
-    queue's counters (``native/live/src/repeater.rs``)."""
+    """Mirrors ``packages/emulator/live/src/abi.rs``'s ``LiveFrameStats``: the frame
+    queue's counters (``packages/emulator/live/src/repeater.rs``)."""
 
     pushed: int
     trig_pushed: int
@@ -179,7 +179,7 @@ class _CFrameStats(ctypes.Structure):
     _fields_ = [(name, ctypes.c_uint64) for name in FrameStats.__dataclass_fields__]
 
 
-# (export name, argtypes, restype) -- see native/live/src/abi.rs's own
+# (export name, argtypes, restype) -- see packages/emulator/live/src/abi.rs's own
 # per-function doc comments for the full contract each one implements.
 _FUNCTIONS = (
     ("live_open", [ctypes.c_uint32], ctypes.c_void_p),
@@ -274,7 +274,7 @@ _FUNCTIONS = (
     ),
 )
 
-# Samples per SHARC frame (native/live's FRAME_LEN).
+# Samples per SHARC frame (packages/emulator/live's FRAME_LEN).
 FRAME_SAMPLES = 32
 
 
@@ -328,7 +328,7 @@ _NAME_BUF_SIZE = 256
 
 class LiveAudio:
     """One open output device plus its producer/ring/repeater, driven
-    through ``native/live``'s C ABI. Not thread-safe to call from more
+    through ``packages/emulator/live``'s C ABI. Not thread-safe to call from more
     than one Python thread at a time (the native side has its own
     real-time thread and producer thread; this wrapper's calls are all
     plain, quick ABI calls, never on the audio path itself)."""
@@ -370,8 +370,8 @@ class LiveAudio:
         )
         if not path.is_file():
             raise FileNotFoundError(
-                "no native/live library at %r -- build it first: "
-                "cd native/live && cargo build --release" % str(path)
+                "no packages/emulator/live library at %r -- build it first: "
+                "cd packages/emulator/live && cargo build --release" % str(path)
             )
         self._lib = ctypes.CDLL(str(path))
         for name, argtypes, restype in _FUNCTIONS:
@@ -485,7 +485,7 @@ class LiveAudio:
 
     def push_frame(self, frame: bytes) -> None:
         """Queue one SPI2 TX frame, wire order (big-endian halfwords, as
-        ``emu/dspi2.py`` hands it over; see ``native/live/src/repeater.rs``)."""
+        ``emu/dspi2.py`` hands it over; see ``packages/emulator/live/src/repeater.rs``)."""
         self._check_open()
         rc = self._lib.live_push_frame(self._handle, frame, len(frame))
         if rc != 0:
@@ -509,7 +509,7 @@ class LiveAudio:
 
     def frame_stats(self) -> FrameStats:
         """The frame queue's counters (frames pushed, rendered, repeated,
-        merged; see ``native/live/src/repeater.rs``)."""
+        merged; see ``packages/emulator/live/src/repeater.rs``)."""
         self._check_open()
         c = _CFrameStats()
         rc = self._lib.live_frame_stats(self._handle, ctypes.byref(c))

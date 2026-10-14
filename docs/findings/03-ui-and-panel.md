@@ -480,7 +480,7 @@ SYSTEM OK / PRESS Y/N TO CLOSE" is up, rotation does nothing; after NO, rotation
 OLED on the FLTR, AMP, FX and MOD pages. The display lags a page change: the first turn
 afterwards can show 0 changed pixels until the page animation ends. Dead-looking encoders
 in the desktop app were therefore the modal, or (before the DSPI1 fix in finding 14) the
-SRC-page hang. `native/boot/examples/turn_probe.rs` boots, taps buttons, turns encoders and
+SRC-page hang. `packages/emulator/boot/examples/turn_probe.rs` boots, taps buttons, turns encoders and
 reports OLED pixel changes (`CARD=img`; `b:CODE` tap, `d:ENC:DET:COUNT:GAP` drag,
 `c:HOLD:TAP` chord, `w:M` wait). The web faceplate knob drag was checked in Chromium only;
 WebKit was not tested **[O]**.

@@ -18,7 +18,7 @@ Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
 
 DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
 has no DT2 workload (its gate restores the DN2 ready snapshot), so the profile is
-trained on an instrumented ``coupled-run`` (native/coupled) on the one-sample
+trained on an instrumented ``coupled-run`` (packages/emulator/coupled) on the one-sample
 card's ready state (tools/emulator/dt2_sample_check.py): ``dt2-sample-trig`` plus the FX
 scenarios of :data:`DT2_WORKLOAD` (bit reduction, delay send, reverb send, master
 compressor). State lives in ``out/native/pgo/dt2/<triple>/`` (own manifest and
@@ -33,7 +33,7 @@ cross-device check) and tools/devtools/coupled_ab.py times it::
 
 DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
 has no DT2 workload (the gate restores the DN2 ready snapshot), so the profile is
-trained on an instrumented ``coupled-run`` (native/coupled) on the one-sample
+trained on an instrumented ``coupled-run`` (packages/emulator/coupled) on the one-sample
 card's ready state (tools/emulator/dt2_sample_check.py): ``dt2-sample-trig`` plus the FX
 scenarios of :data:`DT2_WORKLOAD` (bit reduction, delay send, reverb send,
 master compressor), a few seconds each. State lives in
@@ -53,7 +53,7 @@ cargo gives the test target's dependencies other crate hashes than the app's,
 so a profile trained on it never matched the app). It needs the private ready fixtures and a generated DSP core (``SHARC_GEN_DIR``).
 The launcher (``tools/emulator/native_emu.py``) does not retrain: it warns about a stale
 profile and uses it anyway. Retrain with ``mise run pgo`` or by launching with
-DIGI_EMU_PGO_TRAIN=1. The key covers the emulation crates only (not packages/),
+DIGI_EMU_PGO_TRAIN=1. The key covers the emulation crates only (not apps/),
 so a desktop-crate edit leaves the profile current; the fast-region lists are
 read at run time and are not part of the key.
 
@@ -82,7 +82,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.emulator import digi_env  # noqa: E402
 
-MANIFEST_PATH = "packages/desktop/src-tauri/Cargo.toml"
+MANIFEST_PATH = "apps/desktop/src-tauri/Cargo.toml"
 DEFAULT_GENERATED = digi_env.DEFAULT_GENERATED
 READY = digi_env.READY
 TOOLCHAIN = digi_env.TOOLCHAIN
@@ -211,14 +211,14 @@ DESKTOP_DIR = str(pathlib.PurePosixPath(MANIFEST_PATH).parent)
 
 
 def is_emulation_package(rel: str) -> bool:
-    """True for a crate that shapes hot code; the UI shell under packages/ does not.
+    """True for a crate that shapes hot code; the UI shell under apps/ does not.
 
     The profile is keyed by the emulation code only. A slightly stale profile is
     safe: LLVM ignores profile data for functions whose CFG hash changed, so a
     desktop-crate edit costs nothing, while a profile treated as stale makes the
     launcher fall back to a non-PGO build (about 30% slower DSP).
     """
-    return pathlib.PurePosixPath(rel).parts[:1] != ("packages",)
+    return pathlib.PurePosixPath(rel).parts[:1] != ("apps",)
 
 
 def local_package_dirs() -> list[str]:
@@ -1004,7 +1004,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
 # --- DT2: instrumented coupled-run on the one-sample card -----------------------
 
-COUPLED_MANIFEST = "native/coupled/Cargo.toml"
+COUPLED_MANIFEST = "packages/emulator/coupled/Cargo.toml"
 # (scenario file, scenario names): 3 s trig of the card's sample, then FX.
 DT2_WORKLOAD: list[tuple[str, list[str]]] = [
     ("scenarios/dt2.json", ["dt2-sample-trig"]),
@@ -1039,7 +1039,7 @@ def build_coupled(
     gen: pathlib.Path,
     log: pathlib.Path,
 ) -> pathlib.Path:
-    """Build native/coupled's ``coupled-run`` (RUSTFLAGS builds use --target)."""
+    """Build packages/emulator/coupled's ``coupled-run`` (RUSTFLAGS builds use --target)."""
     env = base_env(gen)
     if rustflags:
         env["RUSTFLAGS"] = rustflags

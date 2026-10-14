@@ -12,7 +12,7 @@ Pipeline (the same one patchkit's module build and patch-time linker follow):
      time needs no ELF parser and no toolchain.
   3. ``link``: place the sections at a base address (text, rodata, data, then bss as zeros), resolve extern
      symbols from a symbol map (for example tools/coldfire/cf_names_dt2_1_17.py ADDRS), apply the relocations.
-  4. ``check_isa``: decode every instruction of the executable sections with our own decoder (native/coldfire
+  4. ``check_isa``: decode every instruction of the executable sections with our own decoder (packages/emulator/coldfire
      ``cfdis``, generated from tools/coldfire/cfisa/coldfire.json); anything that is not ISA_A/B/C or EMAC (a 68020+
      form, an FPU form, a privileged form, an illegal word) fails.
 

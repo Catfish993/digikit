@@ -3,7 +3,7 @@
 lowering, in one step (`mise run regen`):
 
 1. the shared transpiled core (`mise run core`: out/native/shared-core/gen),
-2. native/sharc/src/fast/lower/gen_forms.rs for the forms in its GENERATED
+2. packages/emulator/sharc/src/fast/lower/gen_forms.rs for the forms in its GENERATED
    list (add a form by listing it in FORMS_EXTRA, or on the command line),
 3. the fuzz vectors and the test programs.
 
@@ -18,7 +18,7 @@ import re
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-GEN = ROOT / "native/sharc/src/fast/lower/gen_forms.rs"
+GEN = ROOT / "packages/emulator/sharc/src/fast/lower/gen_forms.rs"
 
 from tools import python_env  # noqa: E402
 from tools.sharc_dev import sharc_lowergen_rs as r  # noqa: E402
@@ -61,15 +61,15 @@ def main() -> None:
     print("wrote", GEN.relative_to(ROOT), len(forms), "forms")
     run(
         "uv", "run", "python", "-m", "tools.sharc_dev.sharc_lowergen_vectors",
-        "--out", "native/sharc/src/tests_gen_vectors.rs", "--n", "24", *forms,
+        "--out", "packages/emulator/sharc/src/tests_gen_vectors.rs", "--n", "24", *forms,
     )  # fmt: skip
     run(
         "uv", "run", "python", "-m", "tools.sharc_dev.sharc_lowergen_helpers",
-        "native/sharc/src/fast/gen_helpers.rs", ",".join(HELPER_FORMS),
+        "packages/emulator/sharc/src/fast/gen_helpers.rs", ",".join(HELPER_FORMS),
     )  # fmt: skip
     run(
         "uv", "run", "python", "-m", "tools.sharc_dev.sharc_lowergen_programs",
-        "--out", "native/sharc/src/tests_gen_programs.rs",
+        "--out", "packages/emulator/sharc/src/tests_gen_programs.rs",
     )  # fmt: skip
 
 

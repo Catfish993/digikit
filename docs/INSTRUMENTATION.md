@@ -86,11 +86,11 @@ sequencer step ISRs; on by default since 2026-10-13, always on in wasm; for A/B 
 
 | crate | feature | effect |
 |---|---|---|
-| `native/sharc` (`coupled`: same names) | `fast-dump` | `SHARC_FAST_DUMP` capture hooks |
+| `packages/emulator/sharc` (`coupled`: same names) | `fast-dump` | `SHARC_FAST_DUMP` capture hooks |
 | | `region-profile` | per-entry wall time (`perf.py --regions`; needs `DIGI_COUPLED_FEATURES=coupled-audio,region-profile`) |
-| `native/boot` | `cf-profile` | host-time and PC profile of ColdFire |
+| `packages/emulator/boot` | `cf-profile` | host-time and PC profile of ColdFire |
 | | `diagnostic-profile`, `-events` | boot event records and profile |
-| `native/periph` | `trace` (default) | DT2MMIO trace reader and `mmio-replay`; no runtime hook. Every product crate (`boot`, `card`, `host`, `machine`) takes periph with `default-features = false`, so a product build does not compile it. Turning the default off changes only a direct `cargo build -p periph`. Left as is. |
+| `packages/emulator/periph` | `trace` (default) | DT2MMIO trace reader and `mmio-replay`; no runtime hook. Every product crate (`boot`, `card`, `host`, `machine`) takes periph with `default-features = false`, so a product build does not compile it. Turning the default off changes only a direct `cargo build -p periph`. Left as is. |
 
 ## Tuning switches (not diagnostics)
 
@@ -128,12 +128,12 @@ Headless Chrome/Chromium throughput of the coupled browser core (DN2, local
 inputs): `mise run web:bench -- --seconds 10 --runs 3 [--js-flags "..."]
 [--profile]` (exclusive bench lock, own `astro dev` on port 4399;
 `tools/devtools/browser_bench.mjs`, page mode `/?bench=1&seconds=N` in
-`packages/web/src/runtime/bench.ts`). Prints JSON: audio s per wall s (whole
+`apps/web/src/runtime/bench.ts`). Prints JSON: audio s per wall s (whole
 run, first and last half, per audio second), worker busy time inside the step
 call, DSP and ColdFire instructions per audio s. `--profile` adds a CDP CPU
 profile of the worker (DSP / ColdFire / idle split by wasm function name, top
 functions). Needs the firmware at the repo root or `DIGI_EMU_SYX`, and
-`packages/web/.local/emulator-core-sharc.wasm`. Chrome is used if installed,
+`apps/web/.local/emulator-core-sharc.wasm`. Chrome is used if installed,
 else Chromium or Edge (`--chrome PATH`).
 
 The page runs the ColdFire and the DSP in two workers (SharedArrayBuffer link,

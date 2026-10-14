@@ -8,7 +8,7 @@ cores, exclusive benchmark lock, shared generated core (no firmware blocks).
 
 ## Problem
 
-The fast tier (`native/sharc/src/fast`) builds a region and compiles its kernel on
+The fast tier (`packages/emulator/sharc/src/fast`) builds a region and compiles its kernel on
 the DSP thread, at the first call that reaches the entry (`FastEngine::build` from
 `run_inner`). In the AOT desktop build that is nothing (22 builds, 0.02 s per run,
 worst 2.3 ms **[D]**). In the no-AOT config, which is what the browser and a patched
@@ -204,7 +204,7 @@ the V8 side is measured in Chrome.
 
 ## Design: native
 
-New `native/sharc/src/fast/offload.rs`; changes in `mod.rs` and the backend trait.
+New `packages/emulator/sharc/src/fast/offload.rs`; changes in `mod.rs` and the backend trait.
 
 **Pieces**
 
@@ -289,7 +289,7 @@ cache lookup and load 0.1 s, no compile. Steady state unchanged.
 ## Design: browser
 
 State of the code: the browser core (`emulator-core-sharc.wasm`) has no fast tier in
-`dist`; `native/README.md` says so. The parked branch `wip/browser-host` shows the
+`dist`; `packages/emulator/README.md` says so. The parked branch `wip/browser-host` shows the
 shape that worked under Node: two wasm instances, DSP worker and ColdFire worker over
 a `SharedArrayBuffer` link, `HostBackend` in `sharc-fast-wasm` with three imports
 (`host_wasm_compile(ptr,len) -> id`, `host_wasm_run(id, ctx, st)`, `host_wasm_free`).
@@ -336,7 +336,7 @@ code with it if the worker has already run the function.
   Safari **[O]**) or yields through a `MessageChannel` turn after each frame batch
   while jobs are pending (about 20-50 us per yield; not the 4 ms of `setTimeout`).
   When no job is pending it keeps the blocking `Atomics.wait` path.
-- `Op::Helper` is implemented in the wasm emitter now (`native/sharc-fast-wasm/src/lib.rs`,
+- `Op::Helper` is implemented in the wasm emitter now (`packages/emulator/sharc-fast-wasm/src/lib.rs`,
   `helper_exec` as the imported function 0). The original plan, kept for the record: for
   the first version `Env` gets a `helpers_ok` flag set false for wasm, so those
   instructions end the region as refused; the follow-on is the stage-3 helper table
@@ -354,16 +354,16 @@ code with it if the worker has already run the function.
 
 | file | change |
 |---|---|
-| `native/sharc/src/fast/offload.rs` (new) | pool, queue, job/result, priority, worker QoS |
-| `native/sharc/src/fast/cache.rs` (new) | pack file, key derivation, engine fingerprint, verify |
-| `native/sharc/src/fast/mod.rs` | slot `pending/next/gen`; `build()` split into lower + submit; `poll_installs`; sync mode; build budget; dry entry check |
-| `native/sharc/src/fast/ir.rs` | `Send` bounds; blob methods on the trait; canonical `Kernel::key`; stage 3: `Op::Helper(slot)` |
-| `native/sharc/src/fast/glue.rs`, `lower/helper.rs`, `helper.rs` | stage 3: helper table in `ctx`; dry entry check (stage 2) |
-| `native/sharc-fast-cl/src/lib.rs` | `compile_blob`, `load_blob` (exist now); helper from `ctx`; worker-local backend |
-| `native/sharc-fast-wasm/src/lib.rs` | async `HostBackend` (stage 4); `Op::Helper` import is done |
-| `native/boot/src/sharc_peer.rs`, `abi.rs` | per-period `FastTier::tick`; offload on for the app |
-| `native/coupled/src/bin/coupled_run.rs`, `tools/devtools/perf.py`, `tools/devtools/fastcov.py` | `--fast-offload N`, `SHARC_FAST_SYNC` default for tools |
-| `packages/web/src/dsp-worker.ts`, new `kernel-compile-worker.ts`, `core-host.ts` | async waits, compile pool, imports |
+| `packages/emulator/sharc/src/fast/offload.rs` (new) | pool, queue, job/result, priority, worker QoS |
+| `packages/emulator/sharc/src/fast/cache.rs` (new) | pack file, key derivation, engine fingerprint, verify |
+| `packages/emulator/sharc/src/fast/mod.rs` | slot `pending/next/gen`; `build()` split into lower + submit; `poll_installs`; sync mode; build budget; dry entry check |
+| `packages/emulator/sharc/src/fast/ir.rs` | `Send` bounds; blob methods on the trait; canonical `Kernel::key`; stage 3: `Op::Helper(slot)` |
+| `packages/emulator/sharc/src/fast/glue.rs`, `lower/helper.rs`, `helper.rs` | stage 3: helper table in `ctx`; dry entry check (stage 2) |
+| `packages/emulator/sharc-fast-cl/src/lib.rs` | `compile_blob`, `load_blob` (exist now); helper from `ctx`; worker-local backend |
+| `packages/emulator/sharc-fast-wasm/src/lib.rs` | async `HostBackend` (stage 4); `Op::Helper` import is done |
+| `packages/emulator/boot/src/sharc_peer.rs`, `abi.rs` | per-period `FastTier::tick`; offload on for the app |
+| `packages/emulator/coupled/src/bin/coupled_run.rs`, `tools/devtools/perf.py`, `tools/devtools/fastcov.py` | `--fast-offload N`, `SHARC_FAST_SYNC` default for tools |
+| `apps/web/src/dsp-worker.ts`, new `kernel-compile-worker.ts`, `core-host.ts` | async waits, compile pool, imports |
 | `tools/devtools/fast_timeline.py`, `tools/devtools/wasm_compile_bench.mjs` | added now (measurement) |
 
 ## Risks
@@ -475,7 +475,7 @@ finding 18 plus what this measurement adds:
 - `SHARC_FAST_DEFER=N`: interpret the first N to 4N calls of each new kernel.
 - `SHARC_FAST_RELOAD=1`: run every Cranelift kernel from a stored blob.
 - `SHARC_FAST_CL_OPT=none|speed_and_size`.
-- `native/sharc-fast-cl/examples/compile_par.rs KDUMP [THREADS...]`;
+- `packages/emulator/sharc-fast-cl/examples/compile_par.rs KDUMP [THREADS...]`;
   `tools/devtools/wasm_compile_bench.mjs WASM_DIR` (`ONLY=sync|async|worker|cross|cold|warm`).
 - Checks with the hooks compiled in: default AOT `trig1-taps` 10.5 s timed, PCM
   `e0e6c8af7a84c443`, 1.429 and 1.423 DSP CPU per audio s (finding 18: 1.39-1.43);

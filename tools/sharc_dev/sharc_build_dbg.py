@@ -28,7 +28,7 @@ env = {
 cmd = coupled.cargo(
     [
         "build", "--release", "--locked",
-        "--manifest-path", "native/coupled/Cargo.toml",
+        "--manifest-path", "packages/emulator/coupled/Cargo.toml",
         "--features", coupled.FEATURES,
         "--bin", coupled.BINARY_NAME,
         "--target-dir", str(target),

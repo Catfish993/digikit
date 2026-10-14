@@ -2,7 +2,7 @@
 // The two-worker browser session under Node (V8), on the DN2 ready inputs:
 // the ColdFire core instance runs in this thread, the DSP core instance in a
 // worker_threads worker, and DSPI2 frames cross a SharedArrayBuffer
-// (packages/web/src/sab-link.ts, split-session.ts: the same code the browser
+// (apps/web/src/sab-link.ts, split-session.ts: the same code the browser
 // workers run). Prints the CPU split and the PCM hash, which must equal
 // tools/devtools/wasm_parity.mjs's for the same scenario length (`idle`).
 //
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
-const web = path.join(root, 'packages/web/src');
+const web = path.join(root, 'apps/web/src');
 const { createDspSide, createCfSide } = {
   ...(await import(path.join(web, 'split-session.ts'))),
 };

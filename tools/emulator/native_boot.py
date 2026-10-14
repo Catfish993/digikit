@@ -77,7 +77,7 @@ def main(argv: list[str]) -> int:
             "cargo",
             "build",
             "--manifest-path",
-            str(ROOT / "native/boot/Cargo.toml"),
+            str(ROOT / "packages/emulator/boot/Cargo.toml"),
             "--release",
             "--locked",
             "--offline",

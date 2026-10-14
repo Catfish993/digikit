@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 from tools.devtools import render_cache  # noqa: E402
 
-NATIVE = ROOT / "native"
+NATIVE = ROOT / "packages" / "emulator"
 COUPLED = NATIVE / "coupled"
 COUPLED_RUN = COUPLED / "src" / "bin" / "coupled_run.rs"
 COUNTS = Path(__file__).with_name("render_inputs.json")

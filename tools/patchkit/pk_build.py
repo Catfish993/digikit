@@ -6,7 +6,7 @@
 
 For every `[[object]]` of a module's `module.toml` that lists `sources`, the sources are compiled by the
 pinned toolchain (SHARC+: Selache `selas`; ColdFire: m68k-elf gcc/as, tools/patchkit/pk_link.py), turned into the
-canonical object JSON (sorted keys, integers only; format in native/patchkit/src/dko.rs) and written to the
+canonical object JSON (sorted keys, integers only; format in packages/emulator/patchkit/src/dko.rs) and written to the
 object's `path`. Every instruction is re-decoded by our own decoders (SHARC: tools/patchkit/pk_sharc.py `verify`;
 ColdFire: tools/patchkit/pk_link.py `check_isa`), so a toolchain encoding bug cannot reach an image.
 

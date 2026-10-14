@@ -2,7 +2,7 @@
 
 Integers, symbols (dotted names), ``$field`` (a field of the entry a registry row is made for), ``image.u8|u16|u32(expr)``
 (a big-endian value read from the firmware image), ``u8:expr`` / ``u16:expr`` / ``u32:expr`` (a typed row word, value only),
-the operators ``+ - * / & | << >>`` and parentheses. The real evaluator is native/patchkit; this one keeps the
+the operators ``+ - * / & | << >>`` and parentheses. The real evaluator is packages/emulator/patchkit; this one keeps the
 manifests honest in Python.
 """
 

@@ -2,7 +2,7 @@
 
 ## Native loader and host checkpoint (2026-09-30) **[V]**
 
-`native/loader` decodes the SysEx 8-in-7 transport, ELE3 entries and ELZ
+`packages/emulator/loader` decodes the SysEx 8-in-7 transport, ELE3 entries and ELZ
 sections without filesystem APIs. Its decoded DT2 1.16 and DN2 1.11 sections
 byte-match `dt2/elz.py`; its library also compiles for `wasm32-unknown-unknown`.
 The native host's `--syx` input selects section 3, the MAIN_OS at
@@ -2526,7 +2526,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
 
 ## Native ColdFire real-mix gate (2026-09-29)
 
-- **[D]** The pure Rust interpreter (`native/coldfire`) now uses 256 tagged,
+- **[D]** The pure Rust interpreter (`packages/emulator/coldfire`) now uses 256 tagged,
   direct-mapped decode pages instead of a per-hit `HashMap` lookup. With the
   same `boot280M.cfdump` (100M instructions, no idle passes), uninstrumented
   `cfrealmix` rose from 47.0M to 80.8–82.2M useful instructions/s; an
@@ -2554,7 +2554,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
 ## Native GPIO SD gate, bounded oracle replay (2026-09-29)
 
 - **[D]** The existing Python `emu/gpio.py` and `emu/esdhc.py` remain the
-  oracles. `native/periph/src/gpio.rs` implements only the board continuity
+  oracles. `packages/emulator/periph/src/gpio.rs` implements only the board continuity
   loopback: write D4 high through `PPDSDR_D` (`0xec09401b`), clear it through
   `PCLRR_D` (`0xec094027`), and sense C3 through `PPDSDR_C` (`0xec09401a`).
   The rest of GPIO remains a register file. The late boot/ready MMIO traces
@@ -2576,7 +2576,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
 
 ## Native eSDHC and bounded eMMC card slice (2026-09-29)
 
-- **[D]** The pure `native/periph/src/esdhc.rs` controller models early
+- **[D]** The pure `packages/emulator/periph/src/esdhc.rs` controller models early
   command/register effects with a card-port interface. The explicit Oracle
   register policy matches `emu/esdhc.py`'s plain-RAM guest writes to IRQSTAT;
   Device policy implements the RM's write-one-to-clear behavior. On each
@@ -2585,7 +2585,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   reads), 111 predicted host register writes, zero read mismatches and zero
   unmodeled eSDHC operations, with a clean recorder END. This focused mode
   reports but excludes the existing 2/3 vector-207 replay mismatches.
-- **[D]** `native/card/` carries the card's synthetic command/identity state,
+- **[D]** `packages/emulator/card/` carries the card's synthetic command/identity state,
   sector-addressed reads and sparse write overlay. Its random-access backing
   is supplied by the caller, not opened or copied by the core; transfers
   require an explicit size of at most 1 MiB or fail before allocation. The
@@ -2618,7 +2618,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   gate (20) and eSDHC gate (74) also pass. Original v1 ready-state traces
   continue to pass with one explicit legacy SR exemption each. This only
   establishes parity for the captured early windows, not late +Drive boot.
-- **[D]** `native/periph` now supplies `transfer_dma59`, a pure CMD8/CMD18
+- **[D]** `packages/emulator/periph` now supplies `transfer_dma59`, a pure CMD8/CMD18
   card-to-guest and CMD25 guest-to-card helper. It uses caller-provided
   windows bounded to 1 MiB, validates addresses before mutating payloads,
   returns a detached TCD effect, and restricts TCD completion writeback to
@@ -2626,7 +2626,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   32-KiB transfers and a real `Card` media/overlay round-trip. The first
   512-byte `_dma_out` at clock 70562053 in the DT2 late trace is **CMD18**
   (XFERTYP `0x123a0036`), not evidence of CMD8 merely because of its size.
-- **[D]** The new `native/card/src/dma.rs` adapter takes a caller-owned guest
+- **[D]** The new `packages/emulator/card/src/dma.rs` adapter takes a caller-owned guest
   RAM window, reusable bounded staging buffer and live eDMA register bank.
   It selects real card CMD8/18/25 data, transfers via the pure helper, and
   applies the TCD writeback only after a successful operation. A synthetic
@@ -2641,7 +2641,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
 ### Late v2 DMA: native board and bounded CPU stepping
 
 - **[C]** Correct the preceding **[O]** only at Board/synthetic CPU scope:
-  `native/machine` Board now arms channel59 on SERQ, dispatches eSDHC XFERTYP
+  `packages/emulator/machine` Board now arms channel59 on SERQ, dispatches eSDHC XFERTYP
   through live `Esdhc<Card>`, sparse guest RAM and TCD. Oracle policy posts
   configured semaphores directly; Device only queues events. Bounded
   `Machine::step` executes actual ColdFire synthetic guest MMIO instructions,
@@ -2655,7 +2655,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   compare identical (DT2 134 mapped pages, DN2 110, plus
   registers/MMIO/control/counters). Legacy v1 late vector208 timing residue
   is not evidence of v2 timer parity.
-- **[D]** Explicit ignored native board-gate invocation `cd native/machine &&
+- **[D]** Explicit ignored native board-gate invocation `cd packages/emulator/machine &&
   cargo test --release --features trace --test late_dma -- --ignored` with
   the operator's own ignored DT2/DN2 traces and DT2 card image. Bounded
   windows compare guest RAM byte-for-byte against all captured CMD18 output
@@ -2678,7 +2678,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
 ### Native portable state and bounded checkpoint smoke (2026-09-30)
 
 - **[C]** The preceding open item now has a **narrow** real-firmware CPU
-  execution gate, not a full native boot. `native/machine` imports portable
+  execution gate, not a full native boot. `packages/emulator/machine` imports portable
   MSTATE v1 through a bounded parser and restores CPU registers, selector-keyed
   control state, mapped-zero and nonzero RAM pages, and Oracle forced-read
   words. Python alone converts trusted local `.snap` pickles; Rust does not
@@ -2744,7 +2744,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   disabled for ordinary long-running stepping to avoid an unbounded log.
   These checks do not compare final
   whole-RAM contents, host/DMA writes, peripheral state or later execution.
-- **[D]** `native/machine::timer_state::import_timers` exposes a separate,
+- **[D]** `packages/emulator/machine::timer_state::import_timers` exposes a separate,
   synthetic-tested **component-only** Python v1 `Timers` importer. It checks
   ordered PIT/DTIM source configurations, rebases finite deadlines against
   the checkpoint-relative clock, retains pending/held/counters and DTIM stale
@@ -2843,7 +2843,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   whole window. The bounded late CPU/RAM comparison below does not cover
   later timer/IRQ execution; integrated DSP playback remains **[O]**.
 - **[D]** An ignored **DSP-only headless audio gate** in
-  `native/live/src/sharc_capture_tests.rs` takes explicit absolute
+  `packages/emulator/live/src/sharc_capture_tests.rs` takes explicit absolute
   `LIVE_SHARC_PACK` and `SHARC_NATIVE_LIB` paths under ignored `out/`. It
   checks native core source compatibility **only for v3 packs** (older local
   packs lack that field), renders 160 frames (5120 stereo samples) through
@@ -2945,7 +2945,7 @@ boundaries, so coalescing (few boundaries) under-reads it.
   was **not** the accepted GUI's scheduling policy. This is an **Oracle
   playback smoke test**, not autonomous Device timing or passing full-order
   native parity. Its
-  ignored `native/machine/tests/auto_wire.rs` probe replays the accepted GUI
+  ignored `packages/emulator/machine/tests/auto_wire.rs` probe replays the accepted GUI
   policy: open the frame gate, clear its counter, offer vector 191 at its
   configured level after GUI-like idle-entry/timer boundaries when due, and
   yield vector 32
@@ -3029,7 +3029,7 @@ observed host scheduling separation, **not** an explanation for all of its
 underlying clock drift or a Device timer model.
 
 **[D]** In a second, distinct **partial host-event replay** mode,
-`native/machine/tests/auto_replay.rs` injects exactly the recorded Python
+`packages/emulator/machine/tests/auto_replay.rs` injects exactly the recorded Python
 frame-force and panel-delivery events (bounded by `DT2_NATIVE_LIMIT` and
 `DT2_NATIVE_FRAMES`), retaining *native* timer and idle-yield scheduling.
 From the same locally checked ready state, a release-built replay emitted
@@ -3095,7 +3095,7 @@ sequence remain **[O]**. Post-trap `M1/I0` alone is not provenance.
 
 **[D]** A bounded native self-scheduling diagnostic (ignored
 `diagnose_first_autonomous_force_clock_drift` in
-`native/machine/tests/auto_replay.rs`) reproduced six forced-vector offers
+`packages/emulator/machine/tests/auto_replay.rs`) reproduced six forced-vector offers
 over **1,200,000 actual native ColdFire instructions**, using locally
 source-checked DT2 1.16 inputs. Its first meaningful difference is offer 2:
 native actual clock `224382` versus Python **fast-observed credited** clock
@@ -3285,7 +3285,7 @@ change was added.
 
 ### Native suffix diagnostic PC accessor (2026-09-30)
 
-**[D]** `native/sharc` now exports the read-only
+**[D]** `packages/emulator/sharc` now exports the read-only
 `sharc_native_get_pc(handle) -> i64` diagnostic accessor. It returns the
 architectural next `pc_sw`, rather than the separately modelled UREG `PC`;
 null returns `-1`. `tools/sharc_transpile_run.NativeCore.pc()` binds it only
@@ -3431,7 +3431,7 @@ diagnostic-service run reached the captured main UI described in the next
 section. Full Device/autonomous DT2/DN2 boot, UART RX, audio, realtime JIT,
 and browser runtime are unfinished.
 
-**[D]** `native/boot` is the promoted bounded Oracle diagnostic runner. It
+**[D]** `packages/emulator/boot` is the promoted bounded Oracle diagnostic runner. It
 uses the embedded firmware registry and image-resolved marks before creating
 an output directory; `--diagnostic-services` explicitly enables its scratch
 compatibility bundle. Its JSON/progress artifacts describe a bounded
@@ -3576,7 +3576,7 @@ test passed; active LSP checks of the changed Rust paths reported no errors.
 ColdFire DSPI2 frames to the native SHARC renderer, but uses forced SSI0
 interrupts, zero DSP RX replies, and repeated command frames. Audio-buffer
 pacing is not a shared CPU/DSP clock. The new Rust boot/desktop/browser paths
-have no SHARC/audio integration. `native/live` does execute real SHARC frame
+have no SHARC/audio integration. `packages/emulator/live` does execute real SHARC frame
 work via its native library; its 32-sample, requested-48-kHz output gives a
 nominal 0.667-ms render budget, not demonstrated full-device timing.
 
@@ -3610,13 +3610,13 @@ distributed AOT work; its top entry `0x1c06ba` accounted for about 6.4% of
 profiled block time. Profiling adds overhead and does not provide comparable
 unprofiled deadline measurements.
 
-**[D]** `native/sharc/src/canon.rs` now stores the 103,289 decoded
+**[D]** `packages/emulator/sharc/src/canon.rs` now stores the 103,289 decoded
 instructions, their field descriptors and field entries in three contiguous
 process-lifetime arrays, replacing roughly three heap allocations per
 instruction. Lookup pages, field order, signed values, duplicate-PC behavior
 and unknown-PC handling are preserved. Parsing completes before publishing
 the arrays, so a truncated decode does not leak partial instructions.
-`native/sharc/src/lib.rs` initializes this host-only table during engine
+`packages/emulator/sharc/src/lib.rs` initializes this host-only table during engine
 construction, before rendering starts. This executes no guest instructions
 and changes no guest counters; it moves initialization cost into library/core
 loading. Code-page faults and other first-use costs can still affect rendering.
@@ -3665,7 +3665,7 @@ ignored `out/native/audio-perf-20261002-yed29asm/`. Firmware-derived artifacts
 are not commit candidates. Reproduce the bounded device-free render with:
 
 ```sh
-native/live/target/release/live_play \
+packages/emulator/live/target/release/live_play \
   --pack out/native/audio-perf-20261002-yed29asm/2cf652cf46d0d2b45bab69a3.pack \
   --lib out/native/audio-perf-20261002-yed29asm/libsharc_native.dylib \
   --bench 100 --times /private/tmp/digi-audio-100.times
@@ -3674,7 +3674,7 @@ native/live/target/release/live_play \
 Rebuild the library with `SHARC_GEN_DIR` naming the current matching generated
 sources (`out/native/opt/gen-final` here), an external `CARGO_TARGET_DIR`, and
 `rustup run 1.98.1 cargo build --release --locked --offline --manifest-path
-native/sharc/Cargo.toml --lib --bin sharc-frames`. Regenerate those sources
+packages/emulator/sharc/Cargo.toml --lib --bin sharc-frames`. Regenerate those sources
 first if their core/generator provenance differs.
 
 **[O]** This is captured-state DSP rendering of voice work-buffer taps.
@@ -3691,7 +3691,7 @@ to this DSP renderer.
 **[O]** The user's actual desktop DT2 and DN2 boots were slow before the main
 UI, and the Elektron intro flickered. Main page buttons were responsive after
 boot. This is a different path from the captured-state SHARC renderer above:
-the Tauri host and browser WASM both use `native/boot::Emulator`, which still
+the Tauri host and browser WASM both use `packages/emulator/boot::Emulator`, which still
 has no SHARC/audio integration.
 
 **[O]** A bounded, fresh-firmware native QA harness sampled with macOS `sample`
@@ -3798,7 +3798,7 @@ SHA-256 `fc6c0df3c364515e4f62c1904b77f01494c8a5c8a6df1e66ea7bce935d98abad`.
 The new WASM SHA-256 is
 `bf3902913fd5f22c487ff13af15103507f1481db772d3f223dc95a225fef218d`;
 the tested external build was explicitly copied to
-`packages/web/public/emulator-core.wasm`. An existing browser worker retains
+`apps/web/public/emulator-core.wasm`. An existing browser worker retains
 its instantiated module, so refresh the page to use the new core. Relaunch
 via `pnpm --filter @digi/desktop dev` to rebuild/use the changed native core;
 the existing desktop process was not replaced. The external desktop release
@@ -3807,8 +3807,8 @@ No actual GUI visual/input session was exercised in this follow-up; native
 host release compilation and shared runtime/ABI replay are the evidence.
 
 
-**[O]** Final full `native/machine` suite: 90 passed, 13 existing fixture tests
-ignored; `native/boot`: 30 passed. Changed-file rustfmt checks and the Astro
+**[O]** Final full `packages/emulator/machine` suite: 90 passed, 13 existing fixture tests
+ignored; `packages/emulator/boot`: 30 passed. Changed-file rustfmt checks and the Astro
 static build pass. The static output and public WASM hashes match. Curated
 logs, native/WASM captures, harness sources and receipts are also retained in
 ignored `out/native/desktop-perf-20261002/`; large target directories and the
@@ -3879,7 +3879,7 @@ sampling and carries a larger cost. Default builds have none of these three
 optional features, while retaining milestones and export.
 
 To enable PC/event diagnostics for a native diagnostic build, use
-`--features diagnostic-profile,diagnostic-events` on `native/boot/Cargo.toml`.
+`--features diagnostic-profile,diagnostic-events` on `packages/emulator/boot/Cargo.toml`.
 For the desktop, use `pnpm --filter @digi/desktop dev --features diagnostics`;
 the desktop feature forwards PC/event features without detailed bus tracing.
 For a browser diagnostic asset, run `tools/emulator/native_wasm.py --diagnostics`, then
@@ -3891,7 +3891,7 @@ uses the pinned toolchain, offline/locked dependencies and external targets.
 **[O]** Audio audit: neither current host attaches a SHARC engine or consumes
 PCM. Board DSPI2 transport currently uses the captured-trace-compatible
 `ZeroPeer`; the FlexBus FIFO models ready/bookkeeping and discards transferred
-words. `native/periph::ssi` is not connected to the active renderer. The native
+words. `packages/emulator/periph::ssi` is not connected to the active renderer. The native
 SHARC/live infrastructure can execute a matching captured state and tap voice
 work buffers; the Python live path forces SSI0/vector 191, returns zero RX and
 repeats frames under independent pacing. This is not validated coupled device
@@ -4128,7 +4128,7 @@ optimization or a replacement for the existing hot AOT library. Reproduce:
   --out out/native/fresh-reset-20261002/interpreter-gen
 SHARC_GEN_DIR="$PWD/out/native/fresh-reset-20261002/interpreter-gen" \
   CARGO_TARGET_DIR=/private/tmp/digi-reset-core \
-  rustup run 1.98.1 cargo build --manifest-path native/sharc/Cargo.toml \
+  rustup run 1.98.1 cargo build --manifest-path packages/emulator/sharc/Cargo.toml \
   --release --locked --offline --lib
 .venv/bin/python -m tools.sharc_dev.sharc_reset_check dt2-1.16 \
   --lib /private/tmp/digi-reset-core/release/libsharc_native.dylib --steps 100000
@@ -4271,7 +4271,7 @@ A reproducible bounded invocation is:
 .venv/bin/python -m tools.sharc_dev.sharc_transpile --out out/native/runtime-core/gen
 SHARC_GEN_DIR="$PWD/out/native/runtime-core/gen" \
   CARGO_TARGET_DIR=/private/tmp/digi-runtime-core \
-  rustup run 1.98.1 cargo build --manifest-path native/sharc/Cargo.toml \
+  rustup run 1.98.1 cargo build --manifest-path packages/emulator/sharc/Cargo.toml \
   --release --locked --offline --lib
 .venv/bin/python -m tools.sharc_dev.sharc_reset_check dn2-1.11 \
   --lib /private/tmp/digi-runtime-core/release/libsharc_native.dylib \
@@ -4684,7 +4684,7 @@ it touches no MMR. Only an interrupt that readies a task can move it on.
   the indirect jump at `0x1c9dbf` through `0x268a68`.
 
 **[D]** `State.peripheral_model`, native option 22, models two blocks (sources
-in tools/sharc_dev/sharc_core/periph.py, twin native/sharc/src/rt/periph.rs):
+in tools/sharc_dev/sharc_core/periph.py, twin packages/emulator/sharc/src/rt/periph.rs):
 - The SEC core interface: SCTL.SEN/IEN, SSTAT PND/ACT, CSID/CSTAT.SIDV,
   acknowledge by a SHDBG_SECI_ID or CSID write, END and RAISE.
 - Descriptor-list DMA for DMA26/27/10/11: the fetch order is NXT, ADDRSTART,
@@ -4822,7 +4822,7 @@ evidence of synthesis, no note/command-3 protocol yet **[O]**.
 never completes, so vector 170, the forced vector 191 and the DSPI2 driver
 never run. The UI still reaches the main page without them.
 
-**[D]** DN2 1.11 runs with `native/boot/examples/dspi2_capture.rs` (opt-in
+**[D]** DN2 1.11 runs with `packages/emulator/boot/examples/dspi2_capture.rs` (opt-in
 `Emulator::record_dspi2`, writing .dt2cap files with zero replies) and
 `SSI_HZ=96000` (`ssi::AUDIO_SSI0_REQUEST_HZ`). Results:
 - Ready at 851,236,347 instructions (847,486,347 without SSI pacing).
@@ -4896,13 +4896,13 @@ command 2 is a copy/loopback.
 
 ## Live ColdFire/SHARC+ coupling (2026-10-02)
 
-**[D]** `native/boot` feature `sharc` (off by default; no effect on the
+**[D]** `packages/emulator/boot` feature `sharc` (off by default; no effect on the
 default or WASM build) adds `sharc_peer::SharcPeer`, a `periph::dspi::Peer`
 that owns the native SHARC engine. Per 2748-byte DSPI2 frame: SPI2 exchange
 (reply returned to the ColdFire), `step(666_667)` in 1024-instruction chunks
 (noting the first chunk that ends in the DN2 idle range `0xb88a49..0xb88abb`),
 then one SPORT4 block (-Q31 to f32 stereo). Driver:
-`native/boot/examples/sharc_live.rs` (needs `SHARC_GEN_DIR`; image blob from
+`packages/emulator/boot/examples/sharc_live.rs` (needs `SHARC_GEN_DIR`; image blob from
 `tools/sharc_dev/sharc_pack_image.py`; DSP state is a private canonical blob).
 
 **[D]** DN2 1.11, SSI paced, NOTE_EVENTS=trig, ready+250M (1.1015G ColdFire
@@ -4921,7 +4921,7 @@ audio is bit-identical between two runs and matches the zero-reply replay
 
 ### ColdFire ready snapshot (native)
 
-**[V]** `Emulator::save_state` / `load_state` (`native/boot/src/runtime.rs`,
+**[V]** `Emulator::save_state` / `load_state` (`packages/emulator/boot/src/runtime.rs`,
 format `DT2SNP01`) serialize the mutable ColdFire machine at a `step_chunk`
 boundary: CPU, board RAM (zero 4 KiB blocks elided, 62 MB for DN2 at ready),
 DMA/DSPI2/SSI link, eSDHC and card overlay, PIT/DTIM/INTC, SD gate, input
@@ -5122,7 +5122,7 @@ each frame in order when the ColdFire thread next looks (`ThreadedHandle::sync`
 and per-frame csv are byte-identical to the synchronous run. Wall 68.4 s sync,
 63.6 s threaded; the ColdFire alone is 5.3 s, so the DSP is the bound and
 threading hides only the ColdFire share (about 7%).
-- `--features play`: `pcm_play::PcmPlayer` feeds `native/live`'s `SpscRing` and
+- `--features play`: `pcm_play::PcmPlayer` feeds `packages/emulator/live`'s `SpscRing` and
   cpal output from a feeder thread (linear resampling to the device rate
   outside the callback; the producer never blocks). `AUDIO=1` plays as
   produced (silence on underrun); `AUDIO_BUFFER=SECONDS` holds the audio back,
@@ -5188,7 +5188,7 @@ word on every interpreted instruction. Changes:
   `busy` (and the per-frame csv) is unchanged; blocks cut short at every
   chunk end ran their tails one instruction at a time (+26% host
   instructions on the replay window).
-- **Tools**: `native/sharc/examples/dn2_replay.rs` (the replay without
+- **Tools**: `packages/emulator/sharc/examples/dn2_replay.rs` (the replay without
   Python; `SAVE_AT`/`CLOCK` continue from a saved state, `CHUNK` imitates the
   old peer); `sharc_live` `DSP_PROFILE=PREFIX` (synchronous runs: coverage,
   entries, transitions for `sharc_rsgen.py`) and `DSP_EXPORT=PATH`.
@@ -5234,7 +5234,7 @@ entries for interrupt return points without listing hot PCs by hand; a
 one-command pipeline; the WASM build of a DN2 library.
 ### ColdFire interpreter round 2: compact decode, split handlers, fused loops (2026-10-03) **[D]**
 
-Exact speedups of the native ColdFire path (`native/coldfire`, `machine`,
+Exact speedups of the native ColdFire path (`packages/emulator/coldfire`, `machine`,
 `periph`, `boot`). No guest-visible state changes; every gate below is
 byte-identical to the previous build.
 
@@ -5450,7 +5450,7 @@ Evidence is under `/private/tmp/dn2-audio-restart-20261003/{cross-link-profile,d
 Reproduce only with the private fixture and generated-tree environment used by
 the handover: pinned Rust 1.98.1, offline/locked Cargo, `SHARC_GEN_DIR`,
 `NOTE_EVENTS=trig`, `DIGI_COUPLED_FIXTURES` and `DIGI_COUPLED_SYX`, then run
-`cargo test --release --offline --locked --manifest-path packages/desktop/src-tauri/Cargo.toml --features coupled-audio desktop_runtime::coupled::tests::coupled_ready_exactness -- --ignored --nocapture --test-threads=1`.
+`cargo test --release --offline --locked --manifest-path apps/desktop/src-tauri/Cargo.toml --features coupled-audio desktop_runtime::coupled::tests::coupled_ready_exactness -- --ignored --nocapture --test-threads=1`.
 No hardware is involved.
 
 ### DSP replay CPU sampling and rejected inlining experiments (2026-10-03)
@@ -5957,7 +5957,7 @@ runs the measured code. A plain control rebuilt from the same tree matched the
 archived control byte for byte (sha256 `875e2331…`). Five pairs, profile-use
 over control: workload wall 0.811, DSP wall 0.809, user+sys 0.868.
 
-**[V]** `Core::run_period` (`native/boot/src/sharc_peer.rs`) stepped in
+**[V]** `Core::run_period` (`packages/emulator/boot/src/sharc_peer.rs`) stepped in
 1,024-instruction chunks after the first idle entry until a chunk end fell in
 the idle range. Each chunk end cut a generated block, and the interpreter ran
 until the next block entry. `Engine::step_until_in_aligned` now stops only at
@@ -6031,8 +6031,8 @@ results run the original sequence. Differential tests: 40,203,392 and
 workload wall 0.941. A branchless ASTAT/STKY merge and `fcvtzs` truncation
 were tested and dropped (within noise).
 
-**[V]** A prototype fast tier (`native/sharc/src/fast/`, Cranelift backend
-in `native/sharc-fast-cl/`, design notes in `out/native/fasttier/DESIGN.md`)
+**[V]** A prototype fast tier (`packages/emulator/sharc/src/fast/`, Cranelift backend
+in `packages/emulator/sharc-fast-cl/`, design notes in `out/native/fasttier/DESIGN.md`)
 translates a DO-loop body region of the loaded image at run time into a
 typed kernel: plain u32/f32 values, one entry guard, memory through windows
 bounded once per call, flags replayed from their last writers at exit,
@@ -6776,11 +6776,11 @@ Nothing here was re-checked by a second agent, so the lane results are **[D]**.
   Not bumping it for that port (`periph::dsp::Fifo` keeps a poll counter and an echo
   register) drops this to 0.14M. Digests and PCM are unchanged. DT2 0.099 -> 0.088 and
   DN2 0.750 -> 0.744 CPU s per emulated s; wasm (CF-only, Node) DT2 0.339 -> 0.279.
-- The ColdFire core is our own interpreter (`native/coldfire`). Fused loops
-  (`native/coldfire/src/fused.rs`: MacA 0x400db160, MacB 0x400db1f4, word copy
+- The ColdFire core is our own interpreter (`packages/emulator/coldfire`). Fused loops
+  (`packages/emulator/coldfire/src/fused.rs`: MacA 0x400db160, MacB 0x400db1f4, word copy
   0x401344a6, interleave 0x400cf918) took 2.2 of 8.2 CF CPU s on `trig1-taps`; the other
   5.1 s is 393M unfused instructions at 13 ns. Writing out the MacA and MacB bodies took
-  MacA from 6.0 to 2.4 ns/insn. `native/coldfire/tests/fused.rs` compares fused against
+  MacA from 6.0 to 2.4 ns/insn. `packages/emulator/coldfire/tests/fused.rs` compares fused against
   stepping. CF CPU per audio s on `trig1-taps`: 0.617 -> 0.521. **[O]** The next lever is
   interpreter speed (a decode-cache copy of the 40-byte `Insn`, per-instruction bus
   bookkeeping in `run_fast`), not more leaf routines.
@@ -6827,7 +6827,7 @@ not run in the full emulator (the CF-only call harness `Emulator::call_function`
 is why `test/cf-demo` ran there). `core/machines` therefore squeezed its shims into the 2,108-byte `flash_cave`.
 Hardware executes from any DDR (ACR0 covers `0x40000000..0x47ffffff`, copyback cacheable).
 
-Change (`native/boot/src/runtime.rs`; the core `native/coldfire` needed none):
+Change (`packages/emulator/boot/src/runtime.rs`; the core `packages/emulator/coldfire` needed none):
 
 - **Fetch window.** A PC is executable if the whole instruction lies in MAIN, or anywhere in the board's RAM window
   (SDRAM and internal SRAM, `0x40000000..0x8c000000`, `RAM_EXEC_START/END`). Other PCs (MMIO, anything outside the window)

@@ -6,7 +6,7 @@ listed block, records up to N entries: the machine state at the block
 entry, every memory byte the block reads before writing it, and the state,
 written bytes, exit PC and instruction count when control leaves the block
 (a native DO-loop back edge to the block start stays inside). The Rust
-side (native/sharc, sharc-check and sharc-bench) loads these with
+side (packages/emulator/sharc, sharc-check and sharc-bench) loads these with
 sharc_native::vectors. The file is firmware-derived: write it under out/.
 
     tools/sharc_dev/sharc_rsvec.py dt2-1.16 CAPTURE --blocks-from out/native/gen/report.json \\

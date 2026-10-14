@@ -3,7 +3,7 @@
 
 Boots a ready DT2/DN2 image once (state cached under out/cache/pk_cfcall/), pokes linked module bytes into
 RAM, then runs functions with the gcc m68k ABI (arguments on the stack, result in D0, D2-D7/A2-A6 callee-saved)
-and returns the registers and requested memory. Backed by native/boot/examples/cf_call.rs.
+and returns the registers and requested memory. Backed by packages/emulator/boot/examples/cf_call.rs.
 
     from pk_cfcall import CfMachine
     m = CfMachine("Digitakt_II_OS1.17.syx")

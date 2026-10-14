@@ -24,7 +24,7 @@ says about its RAM:
   * the expansion candidate: the top-of-RAM gap between the DMA arena (plus a
     margin) and the stack reserve. Nothing in the linker map owns it.
 
-`confirm` runs the ColdFire emulator (native/boot example regions_probe, built
+`confirm` runs the ColdFire emulator (packages/emulator/boot example regions_probe, built
 on first use) on the image's .syx with the region filled by an
 address-dependent pattern right after the reset clear returns, in both the
 cached view and the +0x08000000 alias (the emulator keeps them as separate

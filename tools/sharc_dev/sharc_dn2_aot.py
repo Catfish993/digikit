@@ -13,7 +13,7 @@ One command runs the whole profile-guided pipeline and writes a manifest:
    its build (``OUT/lib/``); optionally the wasm32 ``--features sharc`` core.
 4. The replay gate (``tools/sharc_dev/sharc_dn2_replay.py``): blocks on/off times idle
    skip on/off plus a repeat; every state hash and the PCM hash must agree.
-   Optionally the coupled ``native/boot`` ``sharc_live`` run (threaded and
+   Optionally the coupled ``packages/emulator/boot`` ``sharc_live`` run (threaded and
    ColdFire-only), which prints its digests.
 
 The profiles given to rsgen are the cycles' profiles merged: coverage and
@@ -409,11 +409,11 @@ class Pipeline:
         (self.out / MARKER).write_text("written by tools/sharc_dev/sharc_dn2_aot.py\n")
 
     def build_lib(self, stage: str, gen: Path, name: str) -> Path:
-        """``cargo build --lib`` of native/sharc, made independent of where
+        """``cargo build --lib`` of packages/emulator/sharc, made independent of where
         GEN and the target directory are: the gen path is remapped in the
         crate's own file names, and on macOS the install name (else the
         target path) is fixed. Two runs then give the same library bytes."""
-        # The generated code is its own crate (native/sharc-gen), so the remap
+        # The generated code is its own crate (packages/emulator/sharc-gen), so the remap
         # goes in RUSTFLAGS: `cargo rustc -- ARGS` reaches only the last crate.
         env = dict(
             self.env,
@@ -426,7 +426,7 @@ class Pipeline:
         ext = ".dylib" if platform.system() == "Darwin" else ".so"
         if ext == ".dylib":
             cmd += ["--", "-Clink-arg=-Wl,-install_name,@rpath/libsharc_native.dylib"]
-        self.run(stage, cmd, cwd=ROOT / "native" / "sharc", env=env)
+        self.run(stage, cmd, cwd=ROOT / "packages" / "emulator" / "sharc", env=env)
         lib = self.out / "lib" / (name + ext)
         shutil.copyfile(self.target / "release" / ("libsharc_native" + ext), lib)
         return lib
@@ -510,10 +510,10 @@ class Pipeline:
 
         paths = [
             "tools",
-            "native/sharc",
-            "native/sharc-rt",
-            "native/sharc-gen",
-            "native/boot",
+            "packages/emulator/sharc",
+            "packages/emulator/sharc-rt",
+            "packages/emulator/sharc-gen",
+            "packages/emulator/boot",
             "emu",
         ]
         rustc = subprocess.run(
@@ -540,7 +540,12 @@ class Pipeline:
         env = dict(self.env, SHARC_GEN_DIR=str(gen), CARGO_TARGET_DIR=str(target))
         cmd = [str(self.tc / "bin" / "cargo"), "build", "--release", "--offline", "--locked",
                "--features", "sharc", "--example", "sharc_live"]  # fmt: skip
-        self.run("build-sharc_live", cmd, cwd=ROOT / "native" / "boot", env=env)
+        self.run(
+            "build-sharc_live",
+            cmd,
+            cwd=ROOT / "packages" / "emulator" / "boot",
+            env=env,
+        )
         binary = target / "release" / "examples" / "sharc_live"
         result: dict[str, Any] = {}
         for name, extra in (
@@ -653,7 +658,7 @@ class Pipeline:
                 RUSTFLAGS="--remap-path-prefix=%s=/sharc-gen --remap-path-prefix=%s=/src"
                 % (gen, ROOT),
             )
-            cmd2 = [str(self.tc / "bin" / "cargo"), "build", "--manifest-path", str(ROOT / "native/boot/Cargo.toml"),
+            cmd2 = [str(self.tc / "bin" / "cargo"), "build", "--manifest-path", str(ROOT / "packages/emulator/boot/Cargo.toml"),
                     "--locked", "--offline", "--release", "--lib", "--target", "wasm32-unknown-unknown",
                     "--features", "sharc"]  # fmt: skip
             self.run("build-wasm", cmd2, env=env)

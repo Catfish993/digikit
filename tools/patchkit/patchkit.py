@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Front end for the patchkit command line (native/patchkit): builds it when stale and runs it from the repo root.
+"""Front end for the patchkit command line (packages/emulator/patchkit): builds it when stale and runs it from the repo root.
 
     uv run python -m tools.patchkit.patchkit bin                       print the path of the built binary
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/

@@ -19,7 +19,7 @@ Checks, all reported in OUT.json next to the image:
   * the container size against the stock one;
   * the real bootstrap (tools/emulator/bootstrap_run.py) accepts the image over emulated MIDI DIN: content checksum and HMAC
     pass, the flash is written, the reboot loads the patched MAIN OS;
-  * a cold ColdFire boot of the image in the emulator (native/boot example boot_frame) reaches the main screen, and
+  * a cold ColdFire boot of the image in the emulator (packages/emulator/boot example boot_frame) reaches the main screen, and
     the saved frame is written as a PNG.
 
 Output goes under out/ and is never committed. Flashing it is Em's decision.

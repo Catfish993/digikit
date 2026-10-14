@@ -5448,7 +5448,7 @@ code can be placed, run and verified; the rest is mapping.
 The emulator flattens the block list (`sharcldr.LoadedMemory`, `dsp_stream.rs`) and never runs the boot ROM, and its
 parsers stop silently at the first bad header. Rules below come from the public ADSP-2156x Hardware Reference
 (`out/refs/adsp-2156x-hwr`, chapter 40, printed pages "HWR 40-nn"); `tools/sharc_dev/sharc_bootcheck.py` applies them to a
-stream (rule ids H1 to H13, S1 in its docstring), `native/patchkit/src/bootrom.rs` is the Rust port of the error
+stream (rule ids H1 to H13, S1 in its docstring), `packages/emulator/patchkit/src/bootrom.rs` is the Rust port of the error
 rules. Marks: ROM = stated by the manual, CONV = not stated as a ROM check but true of every stock stream. A second agent
 verified **[V]** rules H1, H2, H3, H4/H5, H8, H9 and H12.
 
@@ -5491,7 +5491,7 @@ Results.
   ever: there is no timeout. A bad stream is a boot hang, not a returned error. The bootstrap's STARTUP menu and
   recovery do not depend on it (0.2). **[D]**
 - **Emulator enforcement.** The ROM rules now run where the emulator takes a stream: `tools/emulator/ready.py` (building a
-  ready state from a `.syx`), `firmware.load` (`Analysis::of` in `native/control/src/firmware.rs`, through
+  ready state from a `.syx`), `firmware.load` (`Analysis::of` in `packages/emulator/control/src/firmware.rs`, through
   `patchkit::bootrom::require`) and `patchkit verify` (every `patch`). They refuse a stream with any H-rule error.
 - **Open [O], hardware or a datasheet.** (a) Rules the ROM applies and the manual does not state (the manual
   documents `ROM_BOOT_ERR_NEXTDXE` 0x14 without saying when it fires; H12 keeps the stock invariant so that case

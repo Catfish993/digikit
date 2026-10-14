@@ -31,7 +31,7 @@ app's `--scenario` mode and the browser parity check). One file per device:
 - Events fire at chunk boundaries, before the chunk that follows, so a run is
   a function of its inputs. `clip_last_chunk` ends an `instructions` run exactly at its count. `exact_events` shortens the chunk so an `at_instr`
   event fires at exactly that count.
-- `qa_script` also plays the shared QA sequence of `native/boot/examples/common`
+- `qa_script` also plays the shared QA sequence of `packages/emulator/boot/examples/common`
   (NO, NO, encoder A).
 - `expect_sha256` pins the SHA-256 of the PCM. A mismatch fails the run with
   exit code 2. Update a pin only for an intended change, and say why in the

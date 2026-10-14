@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared cargo target dirs for the native workspace, keyed by generated core.
 
-The generated SHARC core (``native/sharc-gen``, includes ``SHARC_GEN_DIR``) is
+The generated SHARC core (``packages/emulator/sharc-gen``, includes ``SHARC_GEN_DIR``) is
 80 MB of Rust and takes minutes to compile. Cargo recompiles it for every
 distinct target dir and every distinct ``SHARC_GEN_DIR``, so every tool picks
 its target dir from here:

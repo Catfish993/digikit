@@ -1,31 +1,31 @@
 {
   "dynamic_env_reads": {
-    "native/boot/src/sharc_peer.rs": {
+    "packages/emulator/boot/src/sharc_peer.rs": {
       "count": 2,
       "reason": "unit-test helpers read caller-named fixture variables (name, k); test code inside the file"
     },
-    "native/sharc/src/diag.rs": {
+    "packages/emulator/sharc/src/diag.rs": {
       "count": 1,
       "reason": "forwards the caller-provided output-dir variable name (DIGI_DIAG_DIR-style, diagnostics only)"
     }
   },
   "file_reads": {
-    "native/boot/src/capture.rs": 1,
-    "native/boot/src/card_file.rs": 1,
-    "native/boot/src/dsp_patch.rs": 1,
-    "native/boot/src/runtime.rs": 11,
-    "native/boot/src/sharc_peer.rs": 3,
-    "native/boot/src/wav.rs": 1,
-    "native/coupled/src/bin/coupled_run.rs": 3,
-    "native/coupled/src/cold.rs": 2,
-    "native/coupled/src/lib.rs": 5,
-    "native/coupled/src/scenario.rs": 1,
-    "native/device-profile/src/lib.rs": 5,
-    "native/live/src/sharc_source.rs": 1,
-    "native/live/src/source.rs": 1,
-    "native/loader/src/lib.rs": 1,
-    "native/periph/src/trace.rs": 1,
-    "native/plusdrive/src/project.rs": 2,
-    "native/sharc/src/fast/mod.rs": 3
+    "packages/emulator/boot/src/capture.rs": 1,
+    "packages/emulator/boot/src/card_file.rs": 1,
+    "packages/emulator/boot/src/dsp_patch.rs": 1,
+    "packages/emulator/boot/src/runtime.rs": 11,
+    "packages/emulator/boot/src/sharc_peer.rs": 3,
+    "packages/emulator/boot/src/wav.rs": 1,
+    "packages/emulator/coupled/src/bin/coupled_run.rs": 3,
+    "packages/emulator/coupled/src/cold.rs": 2,
+    "packages/emulator/coupled/src/lib.rs": 5,
+    "packages/emulator/coupled/src/scenario.rs": 1,
+    "packages/emulator/device-profile/src/lib.rs": 5,
+    "packages/emulator/live/src/sharc_source.rs": 1,
+    "packages/emulator/live/src/source.rs": 1,
+    "packages/emulator/loader/src/lib.rs": 1,
+    "packages/emulator/periph/src/trace.rs": 1,
+    "packages/emulator/plusdrive/src/project.rs": 2,
+    "packages/emulator/sharc/src/fast/mod.rs": 3
   }
 }

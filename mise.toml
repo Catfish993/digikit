@@ -210,7 +210,7 @@ description = "Build the firmware-free native SHARC library (shared core) that t
 [tasks."gen:regen"]
 alias = "regen"
 run = "uv run python -m tools.sharc_dev.sharc_lowergen_regen"
-description = "Regenerate the shared core, native/sharc/src/fast/lower/gen_forms.rs, the fuzz vectors and the test programs from tools/sharc_dev/sharc_core: mise run gen:regen [-- --add FORM,...]"
+description = "Regenerate the shared core, packages/emulator/sharc/src/fast/lower/gen_forms.rs, the fuzz vectors and the test programs from tools/sharc_dev/sharc_core: mise run gen:regen [-- --add FORM,...]"
 
 # --- developer tools ---
 

@@ -1,7 +1,7 @@
-"""The real Digitakt II bootstrap on the native ColdFire core (tools/emulator/bootstrap_run.py, native/bootstrap).
+"""The real Digitakt II bootstrap on the native ColdFire core (tools/emulator/bootstrap_run.py, packages/emulator/bootstrap).
 
 Each test runs unmodified bootstrap code with a modelled flash, panel and MIDI UART. They need the Digitakt II 1.16
-firmware in the repo root and a cargo toolchain (the first call builds native/bootstrap, no generated core).
+firmware in the repo root and a cargo toolchain (the first call builds packages/emulator/bootstrap, no generated core).
 """
 
 import struct

@@ -25,7 +25,7 @@ tests live with their code.
 
 Other tests:
 
-- `packages/web/tests` holds the web app's node tests (`pnpm test`).
+- `apps/web/tests` holds the web app's node tests (`pnpm test`).
 - Rust tests live in their crates (`cargo test`, run through `tools/devtools/rust_ws.py`).
 
 ## Writing a test
@@ -50,13 +50,13 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | Extracted sections `out/sections/<image>/` | "out/sections/dt2-1.16/section_7_BLOB.bin is not available", "no extracted sections", "DT2 1.16 image absent" | `uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16` (likewise `dn2-1.11`; README "Extract the firmware") | `tests/sharc/*`, `tests/coldfire`, `tests/dsp` |
 | SHARC program database `out/sharcdb/<image>.sqlite` | "out/sharcdb/dt2-1.16.sqlite is not available", "no program database" | `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin` (needs the sections) | `tests/sharc/analysis` |
 | ColdFire Ghidra dump `out/ghidra/<image>-emac` and its cfdb | "out/ghidra/dt2-1.16-emac missing", "no cfdb for dt2-1.17" | Needs Ghidra: a `tools/coldfire/ghidradump.py` dump, then `uv run python -m tools.coldfire.cfdb build out/ghidra/<image>-emac` (AGENTS.md "Static analysis") | `tests/coldfire`, `tests/firmware/test_fw.py` |
-| Native SHARC library (`DEFAULT_LIB` in `tools/sharc_dev/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (native/sharc)" | `mise run sharc:native-lib` (firmware-free; builds the shared core first; output in `out/native/shared-core/target`). The shared-core library is preferred when present; else the image-specific library at `out/native/opt/target-final` (perf/AOT work; may be stale, and an old one that lacks symbols makes the tests skip); `SHARC_NATIVE_LIB` overrides. | `tests/sharc/semantics`, `tests/sharc/generation` |
+| Native SHARC library (`DEFAULT_LIB` in `tools/sharc_dev/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (packages/emulator/sharc)" | `mise run sharc:native-lib` (firmware-free; builds the shared core first; output in `out/native/shared-core/target`). The shared-core library is preferred when present; else the image-specific library at `out/native/opt/target-final` (perf/AOT work; may be stale, and an old one that lacks symbols makes the tests skip); `SHARC_NATIVE_LIB` overrides. | `tests/sharc/semantics`, `tests/sharc/generation` |
 | Generated shared core `out/native/shared-core/gen` | "no shared core generated here" | `mise run gen:core` | `tests/sharc/generation/test_sharc_lowergen.py` |
 | Module toolchains in `out/tools` (m68k gcc/binutils, Selache) | "selache not built (tools/patchkit/pk_toolchains.py selache)", "m68k toolchain not installed" | `mise run toolchains` (about 15 min; `uv run python -m tools.patchkit.pk_toolchains status` shows what is present; docs/PATCHING.md) | `tests/patchkit` |
 | `digi-emud` daemon | "needs DIGI_EMUD (a built digi-emud) and the DN2 .syx" | Build it with `mise run emu:serve -- --build-only` (per `tools/control/digi_client.py`), set `DIGI_EMUD` to the binary (`DIGI_EMUD_DN2` / `DIGI_EMUD_DT2` for coupled runs; `tools/emulator/native_emu.py --daemon --build-only <syx>` prints the path), and have the `.syx` (`DIGI_EMU_SYX`) | `tests/control`, `tests/patchkit/test_master_drive_emu.py`, `tests/emulator/test_coupled_patched.py` |
 | Ready inputs, `snapshots/*.snap` | "no snapshots/*.snap present", patched ready inputs missing | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min; needs the `.syx`; README) | `tests/firmware/test_snapread.py`, `tests/emulator/test_coupled_patched.py` |
 | Captures `out/captures/*.dt2cap` | "the fulltx play capture is not available", "no drive3 capture" | Not reproducible from the repository alone; these tests stay skipped for most contributors. | `tests/sharc/integration`, `tests/sharc/generation` |
-| Opt-in switches | "set LIVE_AUDIO_DEVICE_TESTS=1 to open a real output device", "native/live not built: cd native/live && cargo build --release" | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `cd native/live && cargo build --release` builds the live library; `--slow` runs the long firmware runs. A `SELACHE_DIR` oracle switch is not confirmed (see `tools/patchkit/pk_toolchains.py`, which defines `SELACHE_DIR` as a path, not an environment variable). | `tests/emulator/test_live_audio.py`, tests marked `slow` |
+| Opt-in switches | "set LIVE_AUDIO_DEVICE_TESTS=1 to open a real output device", "packages/emulator/live not built: cd packages/emulator/live && cargo build --release" | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `cd packages/emulator/live && cargo build --release` builds the live library; `--slow` runs the long firmware runs. A `SELACHE_DIR` oracle switch is not confirmed (see `tools/patchkit/pk_toolchains.py`, which defines `SELACHE_DIR` as a path, not an environment variable). | `tests/emulator/test_live_audio.py`, tests marked `slow` |
 
 ## Commands
 
@@ -98,7 +98,7 @@ Both guards were proven by mutation: an unclassified env read fails the audit, a
 
 Use `verify --no-cache` (or `DIGI_RENDER_CACHE=0`) for release and publication gates: it renders everything.
 
-Measured `verify:full`: 1188 s (19.8 min) with a cold cache, 428 s (7.1 min) with a warm cache. Warm: pins 0 s, tier-sweep 3 s, check 12 s, check-no-aot 12 s. The critical path is now python-tests (`test_pluck.py`), then rust-tests (two serialized differential tests in `native/sharc/src/tests_gen.rs`).
+Measured `verify:full`: 1188 s (19.8 min) with a cold cache, 428 s (7.1 min) with a warm cache. Warm: pins 0 s, tier-sweep 3 s, check 12 s, check-no-aot 12 s. The critical path is now python-tests (`test_pluck.py`), then rust-tests (two serialized differential tests in `packages/emulator/sharc/src/tests_gen.rs`).
 
 ## Baseline (2026-10-14)
 
@@ -134,8 +134,7 @@ A checkout without them skips more.
     2. `tools/emulator/native_emu.py` sets `SHARC_GEN_DIR` with `os.environ.setdefault`. `test_native_emu_launcher.py` now restores it after every test.
     3. `tools/sharc_dev/sharc_lowergen.py` patched `sharc_core` for good on the first trace. It now patches only inside `installed()` and restores on exit.
   - `mise run test` still runs one process per file: it is faster and a new leak between files cannot fail unrelated tests. To check for leaks, run `uv run python -m pytest -q tests` (about 18 minutes).
-- Comments in `tools/sharc_dev/sharc_core/*.py` and `native/sharc-rt/src/decode.rs` still name old test paths (`tests/test_*.py`). Editing them changes `CORE_FINGERPRINT` or rebuilds the generated core, so they change with the next core regeneration.
+- Comments in `tools/sharc_dev/sharc_core/*.py` and `packages/emulator/sharc-rt/src/decode.rs` still name old test paths (`tests/test_*.py`). Editing them changes `CORE_FINGERPRINT` or rebuilds the generated core, so they change with the next core regeneration.
 - `docs/findings` and `docs/handovers` keep the old test paths (historical records). `git log --follow -- tests/<new path>` shows a file's history across the move (commit "tests: move test files into domain directories").
 - Not done yet:
   - The TypeScript runner for regression and module tests.
-  - Moving `native/` and `packages/{web,desktop}` into the planned `packages/emulator` and `apps/` layout.
