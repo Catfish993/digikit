@@ -94,6 +94,8 @@ def test_context_key_ignores(world):
     assert _key(world, argv=other) == base
     assert _key(world, argv=[str(inp), "--scenarios", "q"]) == base
     assert _key(world, argv=[str(inp)], env={"DIGI_JOBS": "8"}) == base
+    chk = {"DIGI_RENDER_CACHE_CHECK": "0.5"}
+    assert _key(world, argv=[str(inp)], env=chk) == base
 
 
 def test_scenario_key():

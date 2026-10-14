@@ -40,6 +40,7 @@ DENYLIST: frozenset[str] = frozenset(
         "DIGI_PY_JOBS",
         "DIGI_PY_TIMEOUT",
         "DIGI_RENDER_CACHE",
+        "DIGI_RENDER_CACHE_CHECK",  # cache controls, not render inputs
         "DIGI_DIAG_DIR",
         "DIGI_SPIKE_LOG",
         "DIGI_DSPI_LOG",
