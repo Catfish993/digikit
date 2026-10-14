@@ -35,7 +35,7 @@ plusdrive_project_contract = "dt2-v3-default-1.16"
 readiness_contract = "main-panel-fs-check-v1"
 # The softfloat ABI shortcuts (native/boot softfloat) are verified on this MAIN OS.
 softfloat_abi = true
-# The SHARC+ DSP the coupled audio runs. image: tools/sharc_dev/sharcdb.py name. The idle
+# The SHARC+ DSP the coupled audio runs. image: tools/sharc_dev/sharcdb/ name. The idle
 # loop is the RTOS idle task's spin loop (same code as DN2, moved by -0x26dc:
 # function hashes of 0xb88a49/0xb88aa6 match 0xb8636d/0xb863ca). sample_link:
 # how card samples reach the DSP (findings 15): ColdFire FlexBus writes to link

@@ -3048,7 +3048,7 @@ readers (`DM(0x256008)` at `0x1c2f7d`, `DM(0x25ced8)` at `0x1c2f8f`), descriptor
 default `0x5000`, "Sidechain Filter"/"SCF") and the formulas `0x6da + 2(k-25)` / `0x9fa + 2(k-25)` as address arithmetic.
 The per-parameter measured offsets stay **[D]**.
 Tools: `tools/emulator/frame_diff.py` (TX frame at the end of a scenario, diff against a reference), `tools/emulator/frame_poke_ab.py`
-(`DSP_FRAME_POKE` A/B of the PCM hash), `tools/sharc_dev/sharcdb.py` tables `mem_access` and `ptr`.
+(`DSP_FRAME_POKE` A/B of the PCM hash), `tools/sharc_dev/sharcdb/` tables `mem_access` and `ptr`.
 
 **The Fx array reaches the frame as one block.** The kit's Fx array (`*0x80004708` on DT2, `*0x800052a4` on DN2) is
 the mirror tail. `vector_191_handler` (`0x4002dd0c`) copies it with five `memcpy`s from the smoothed mirror

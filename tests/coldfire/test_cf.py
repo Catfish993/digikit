@@ -49,7 +49,7 @@ def test_func_unknown_returns_none(img):
 
 
 def test_callers_include_jump_edges_not_just_call(img):
-    """tools/sharc_dev/sharcdb.py's own module docstring documents a real JUMP-into-
+    """tools/sharc_dev/sharcdb/'s own module docstring documents a real JUMP-into-
     function edge that a CALL-only caller scan missed for weeks; callers()
     here must not repeat that mistake -- it should return edges of every
     kind by default, only filtering when `kinds` is passed explicitly."""

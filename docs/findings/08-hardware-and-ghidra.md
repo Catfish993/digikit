@@ -593,7 +593,7 @@ patterns above do not match. **[O]**
 ## A queryable ColdFire database and a snapshot reader **[D]**
 
 2026-09-28. Two read-only helpers, the ColdFire counterparts of
-`tools/sharc_dev/sharcdb.py`/`tools/sharc_dev/sharc.py` (usage in CLAUDE.md):
+`tools/sharc_dev/sharcdb/`/`tools/sharc_dev/sharc.py` (usage in CLAUDE.md):
 
 - `tools/coldfire/cfdb.py build out/ghidra/dt2-1.16-emac` imports a
   `tools/coldfire/ghidradump.py` dump into `out/cfdb/<image>.sqlite` (functions,

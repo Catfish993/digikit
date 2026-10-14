@@ -104,7 +104,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - SHARC: `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin` writes
   `out/sharcdb/<image>.sqlite`; use it through tools/sharc_dev/sharc.py (`img = sharc.load("dt2-1.16")`, then `func`,
   `callers`, `callees`, `reach`, `xref_table`, `trace`, `img.sql(...)`) before writing a script. New kinds of fact
-  go into tools/sharc_dev/sharcdb.py. SHARC+ encodings: tools/sharc_dev/sharcspec/ (from the public ADI manuals).
+  go into tools/sharc_dev/sharcdb/. SHARC+ encodings: tools/sharc_dev/sharcspec/ (from the public ADI manuals).
 - SHARC+ instruction semantics live once, in tools/sharc_dev/sharc_core/; tools/sharc_dev/sharc_trace.py (symbolic) and
   tools/sharc_dev/sharc_run.py (concrete) are drivers only.
 - ColdFire (MAIN OS): a `uv run python -m tools.coldfire.ghidradump` dump (out/ghidra/<image>-emac/), then

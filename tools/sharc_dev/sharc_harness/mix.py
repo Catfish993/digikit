@@ -366,7 +366,7 @@ def inject_track_buffer(state, record: int, *, track: int = 0) -> list[float]:
 #      touched at all.
 #   2. Bit clear in (1), then `btst(R4, R2)` bit clear -> `JUMP IF SZ`
 #      (`0x1c20f9`) falls through into `FUN_1c238a` (`0x1c245b`, reached by
-#      a plain in-function JUMP, not a CALL -- `tools/sharc_dev/sharcdb.py`'s own
+#      a plain in-function JUMP, not a CALL -- `tools/sharc_dev/sharcdb/`'s own
 #      function-boundary split puts it in a *different* `functions` row,
 #      which is why an earlier pass of this lane's own pc-range filter
 #      wrongly reported zero track-buffer activity here). This is the

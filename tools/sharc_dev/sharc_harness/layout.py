@@ -90,7 +90,7 @@ COEFF_TABLE_STRIDE_BYTES = 24
 # of the call. Evidence:
 #
 #   sw 0x1c6501  R13 = pass(R2); R15 = DM(I2, M5)   -- I2 resolves (ptr
-#                table, tools/sharc_dev/sharcdb.py) to SESSION_TICK_ADDR; this read
+#                table, tools/sharc_dev/sharcdb/) to SESSION_TICK_ADDR; this read
 #                happens once per FUN_1c642a call, before the 32-voice
 #                dispatch loop, so it is loop-invariant across every voice
 #                that loop calls.

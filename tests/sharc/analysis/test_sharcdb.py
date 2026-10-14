@@ -1,5 +1,5 @@
 # pyright: reportMissingImports=false
-"""tools/sharc_dev/sharcdb.py: pure helper functions on synthetic instructions, a full
+"""tools/sharc_dev/sharcdb/: pure helper functions on synthetic instructions, a full
 build over a hand-built boot stream (tests/sharc/analysis/test_sharcfn.py's
 DossierIntegrationTest style), and the acceptance facts from the build task
 against the real firmware databases (skipped when the firmware is absent;
@@ -165,7 +165,7 @@ class ExtractMemAccessTest(unittest.TestCase):
 
     def test_indirect_15a_folds_the_dag2_bank_into_the_i_register(self):
         # g=1 selects PM/DAG2 (I8-I15), the same +8 fold
-        # tools/sharc_dev/sharcfn.py's render_mem_direct() applies for display, so a
+        # tools/sharc_dev/sharcfn/'s render_mem_direct() applies for display, so a
         # Type15a mem_access row names the register the mnemonic actually
         # uses (e.g. i=4,g=1 -> I12, not I4).
         insn = insn_at(field_insn("15a", addr=8, ureg=0, g=1, d=0, i=4, l=0))
@@ -285,7 +285,7 @@ class ClassifyLiteralRangeTest(unittest.TestCase):
 class SyntheticBuildTest(unittest.TestCase):
     """Build a tiny single-block boot stream and run the whole build_database()
     pipeline over it, the way tests/sharc/analysis/test_sharcfn.py's DossierIntegrationTest
-    exercises tools/sharc_dev/sharcfn.py's dossier pipeline."""
+    exercises tools/sharc_dev/sharcfn/'s dossier pipeline."""
 
     def _stream(self, base_sw):
         target = sharcldr.sw_to_byte(base_sw)
@@ -385,7 +385,7 @@ class SyntheticDatarefResolvedOffsetTest(unittest.TestCase):
     accesses the CURRENT (unmodified) I and only writes I+offset back
     afterwards (post-modify). So a same-block "I2 = <lit>" literal load
     followed by a u=1 Type4a access must resolve to the literal itself, not
-    literal+offset -- the bug this test's build found (tools/sharc_dev/sharcdb.py's
+    literal+offset -- the bug this test's build found (tools/sharc_dev/sharcdb/'s
     IMMOFF resolved_offset arm ignored `u` and always added the offset,
     unlike tools/sharc_dev/sharc_trace.py's own "4a"/"4b" handlers and the `ptr`
     table's _ptr_mem_form(), which already drew this distinction)."""
@@ -672,7 +672,7 @@ class RegisterEffectsTest(unittest.TestCase):
     def test_multifn_dual_addsub_defines_three_uses_four(self):
         # top3=6 (MULTIFN, dual, fixed int): rm=12,ra=8,rs=4,rxm=0,rym=4? --
         # built from the exact bit math in _compute_regdef_reguse's dual
-        # branch, mirroring tools/sharc_dev/sharcfn.py's decode_multifn.
+        # branch, mirroring tools/sharc_dev/sharcfn/'s decode_multifn.
         field23 = (
             (6 << 20) | (0xB << 16) | (0xC << 12) | (0xA << 8)
             | (0x2 << 6) | (0x1 << 4) | (0x3 << 2) | 0x0
@@ -705,7 +705,7 @@ class RegisterEffectsTest(unittest.TestCase):
 
     def test_3c_load_defines_dreg_from_d_field_not_mnemonic(self):
         # The exact shape of the task's Type3c bug: d=0 is a LOAD (R6
-        # defined), even though tools/sharc_dev/sharcfn.py's render_instruction prints
+        # defined), even though tools/sharc_dev/sharcfn/'s render_instruction prints
         # every Type3c as a store.
         defs, uses, _unknown = sharcdb.register_effects("3c", {"dmi": 4, "dmm": 5, "d": 0, "dreg": 6})
         self.assertEqual(defs, [("R6", "mem_load")])
@@ -1086,7 +1086,7 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
         self.assertEqual(rows[0][0], 15)
 
     def test_ivt_slot15_is_seci_at_1c0b7b(self):
-        # tools/sharc_dev/sharcdb.py's DB_VERSION v7: the L1 hardware IVT at IVT_SW,
+        # tools/sharc_dev/sharcdb/'s DB_VERSION v7: the L1 hardware IVT at IVT_SW,
         # decoded generically from the 32x24-byte slot table -- slot 15
         # (SECI, sharc-plus-prm Table 4-46) targets 0x1c0b7b on DT2 1.16,
         # byte-exact against the raw image (docs/findings).

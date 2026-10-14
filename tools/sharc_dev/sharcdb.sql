@@ -1,4 +1,4 @@
--- Canned queries for tools/sharc_dev/sharcdb.py databases (out/sharcdb/<image>.sqlite).
+-- Canned queries for tools/sharc_dev/sharcdb/ databases (out/sharcdb/<image>.sqlite).
 -- Addresses are short words (sw). One image at a time:
 --   sqlite3 -header -column out/sharcdb/dt2-1.16.sqlite
 -- Substitute the 0x... literals for your own address; SQLite accepts hex
@@ -73,7 +73,7 @@ WHERE a.entry_sw = 0x1cbf07 AND b.entry_sw = 0xb806f5;
 -- --- basic blocks / succ (control flow) --------------------------------
 --
 -- bblocks/succ are scoped to one loader code block at a time (see
--- tools/sharc_dev/sharcdb.py's _build_blocks_and_succ docstring): a branch whose
+-- tools/sharc_dev/sharcdb/'s _build_blocks_and_succ docstring): a branch whose
 -- target this pass never disassembled gets a succ row whose to_block
 -- matches no bblocks row, same shape as edges.to_function's NULL.
 
@@ -159,14 +159,14 @@ SELECT printf('%x', sw) sw, form, role FROM dataref WHERE value = 0x8055c840 ORD
 -- --- roots / reach / callgraph / idom / loops / unentered (DB_VERSION 3) --
 --
 -- `sharcdb analyze` (folded into `build`) fills these from edges/succ/
--- dataref/literals with networkx; see tools/sharc_dev/sharcdb.py's analyze_image()
+-- dataref/literals with networkx; see tools/sharc_dev/sharcdb/'s analyze_image()
 -- docstring for the detection heuristics. tools/sharc_dev/sharc.py's API is the
 -- preferred way to query them from Python; these are for ad hoc sqlite3 use.
 
 -- Every root, grouped by kind.
 SELECT kind, count(*) n FROM roots GROUP BY kind ORDER BY n DESC;
 
--- The hardware interrupt vector table (DB_VERSION 7 -- tools/sharc_dev/sharcdb.py's
+-- The hardware interrupt vector table (DB_VERSION 7 -- tools/sharc_dev/sharcdb/'s
 -- IVT_SW/_detect_interrupt_vector_roots), by slot number (note is 'slot N
 -- NAME', N first for a numeric sort rather than the default text sort).
 SELECT CAST(substr(note, 6, instr(substr(note, 6), ' ') - 1) AS INTEGER) slot,
@@ -200,7 +200,7 @@ SELECT cluster, count(*) n FROM unentered GROUP BY cluster ORDER BY n DESC LIMIT
 --
 -- _build_ptr_rows() (called from analyze_image(), so `sharcdb analyze` alone
 -- backfills this on an older database) fills this from a per-function
--- forward constant-propagation pass -- see tools/sharc_dev/sharcdb.py's own long
+-- forward constant-propagation pass -- see tools/sharc_dev/sharcdb/'s own long
 -- module note just above that function for what is and is not modelled.
 -- tools/sharc_dev/sharc.py's Image.writers()/readers() are the preferred way to query
 -- this (they add the "base known, address not" fallback below); these are

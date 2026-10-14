@@ -1,4 +1,4 @@
-"""tools/sharc_dev/sharc_coverage.py's compare_decode_at(): tools/sharc_dev/sharcdb.py's own
+"""tools/sharc_dev/sharc_coverage.py's compare_decode_at(): tools/sharc_dev/sharcdb/'s own
 decode (the `insn` table) against tools/sharc_core.sequencer.decode_at() at
 the same PC. See docs/findings/05-sharc-isa-and-decoding.md, "One decode
 path"."""

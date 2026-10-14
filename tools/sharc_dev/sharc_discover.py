@@ -1368,7 +1368,7 @@ def discover(
             "tools": {
                 path.name: _sha256(path.read_bytes())
                 for path in sorted(
-                    (_HERE / "sharc_discover.py", _HERE / "sharc_static.py", _HERE / "sharc_trace.py", _HERE / "sharcinv.py", _HERE / "sharcfn.py")
+                    (_HERE / "sharc_discover.py", _HERE / "sharc_static.py", _HERE / "sharc_trace.py", _HERE / "sharcinv.py", *(_HERE / "sharcfn").rglob("*.py"))
                 )
             },
             "dump": dump,

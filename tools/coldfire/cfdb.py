@@ -7,11 +7,11 @@ disasm/).
     uv run python -m tools.coldfire.cfdb build out/ghidra/dt2-1.16-emac
         [--name dt2-1.16] [--out out/cfdb/dt2-1.16.sqlite] [--force]
 
-This exists for the same reason tools/sharc_dev/sharcdb.py does for the SHARC+ side
+This exists for the same reason tools/sharc_dev/sharcdb/ does for the SHARC+ side
 (see that file's module docstring): "who calls 0x400caf48" or "what writes
 0x80004704" should be a `sqlite3` query in milliseconds against a database
 built once, not a fresh xrefs.sqlite scan and a throwaway script every time.
-It is a separate tool from tools/sharc_dev/sharcdb.py (which also has an
+It is a separate tool from tools/sharc_dev/sharcdb/ (which also has an
 `import-ghidra` subcommand, built for the same xrefs.sqlite/manifest.json
 shape) rather than a second image type sharing that file's schema and
 DB_VERSION: sharcdb.py's DB_VERSION and code-block bookkeeping exist for the
@@ -25,7 +25,7 @@ Ghidra's call/data-ref tables miss code outside functions (small trampolines,
 raw branch targets never turned into a function) -- an empty `callers()`
 here is not evidence of dead code; confirm with tools/coldfire/refscan.py on the raw
 image before recording "no caller" (see CLAUDE.md's Ghidra section and
-tools/sharc_dev/sharcdb.py's own "empty Ghidra caller list" note).
+tools/sharc_dev/sharcdb/'s own "empty Ghidra caller list" note).
 
 Decompiled C and disassembly text are NOT copied into the database (60 MB /
 72 MB for the current dt2-1.16-emac dump -- see functions.decomp_path/
@@ -188,7 +188,7 @@ def _table_exists(db, name):
 def _function_end(entry, size, ranges_by_func):
     """The entry's own contiguous end address: the range whose lo == entry
     when the dump recorded one (a function can have disjoint chunks, e.g. a
-    switch's case bodies far from the entry -- see tools/sharc_dev/sharcdb.py's
+    switch's case bodies far from the entry -- see tools/sharc_dev/sharcdb/'s
     build_ghidra_database for the same situation on the SHARC side), else a
     size-based fallback."""
     spans = ranges_by_func.get(entry)

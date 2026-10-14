@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One small Python API over a tools/sharc_dev/sharcdb.py database: build/analyze once,
+"""One small Python API over a tools/sharc_dev/sharcdb/ database: build/analyze once,
 then query in-process instead of a fresh CLI round trip per question.
 
     from tools.sharc_dev import sharc
@@ -100,7 +100,7 @@ _FUNC_COLUMNS = (
 
 # Known DM structures, addresses in this repo's own bare convention (the same
 # one literals.value/dataref.value/ptr.address already use -- see
-# tools/sharc_dev/sharcdb.py's DB_VERSION v7 comment for how that was pinned down
+# tools/sharc_dev/sharcdb/'s DB_VERSION v7 comment for how that was pinned down
 # against IVT_DISPATCH_TABLES). Used by Image.card() to label a resolved
 # memory access by structure instead of a bare hex address. Strided arrays
 # first (a fixed-size record repeated N times), then flat ranges; the first
@@ -116,7 +116,7 @@ _KNOWN_RANGES = (
     (0x2412C8, 0x2412C8 + 0x10000, "per-frame workspace"),
     (0x261CC8, 0x264200, "rings"),
     (0x252D78, 0x252D78 + 4, "mix table base"),
-    # tools/sharc_dev/sharcdb.py's IVT_DISPATCH_TABLES, in the same address convention;
+    # tools/sharc_dev/sharcdb/'s IVT_DISPATCH_TABLES, in the same address convention;
     # both are boot-time FILL blocks on every image checked so far (DB_VERSION
     # v7's comment) -- labelled here anyway so a resolved access there (e.g.
     # once startup code is traced) still gets a name instead of a bare hex.
@@ -196,13 +196,13 @@ def _astat_groups_written(t, f):
     """Which of _ASTAT_GROUPS aligned instruction (type_name t, its own
     merged decode fields f -- tools/sharc_dev/sharcinv.py's merge_fields() over the
     `insn.fields` this row's build already stored, never mnemonic text, per
-    tools/sharc_dev/sharcdb.py's own Type3c rule) writes, cross-checked against
+    tools/sharc_dev/sharcdb/'s own Type3c rule) writes, cross-checked against
     tools/sharc_dev/sharc_core/flags.py/compute_alu.py/compute_mult.py/
     compute_shift.py/compute_multi.py/forms_system.py, which is where each
     of these actually gets applied:
 
       - A COMPUTE_FORMS instruction's parallel compute field: classified
-        exactly the way tools/sharc_dev/sharcdb.py's own `_compute_regdef_reguse`
+        exactly the way tools/sharc_dev/sharcdb/'s own `_compute_regdef_reguse`
         does, through the same tools/sharcinv.classify_compute() (PRM Table
         18-5/18-9/18-18/18-19 by the field's own cu/opcode bits) --
         'ALU'/'MULT'/'SHIFT' map directly; 'MULTIFN' (a MUL+ALU or
@@ -210,7 +210,7 @@ def _astat_groups_written(t, f):
         (the ALU sub-op's own flags, PRM's "flags from the ALU op") and
         MULT (compute_multi.py always also forgets MN/MV/MU/MI, since the
         multiplier result format is unmodelled for a multifunction op too)
-        -- including a MULTIFN row tools/sharc_dev/sharcdb.py itself leaves as
+        -- including a MULTIFN row tools/sharc_dev/sharcdb/ itself leaves as
         `unknown: multifn_alu_compute` for its DATA effect (the ALU sub-op's
         variable-width operand table isn't modelled there), since the flags
         effect is unconditional regardless of whether the data effect could
@@ -222,21 +222,21 @@ def _astat_groups_written(t, f):
         SHIFT for a recognised opcode (tools/sharcfn._SHIFTIMM_MNEMONICS),
         including btst (register bit-test sets SZ, PRM p.513 -- an entirely
         different flag from Type18a's BTF below) and the "[status only]"
-        case tools/sharc_dev/sharcdb.py's own `_shiftimm_regdef_reguse` leaves with no
+        case tools/sharc_dev/sharcdb/'s own `_shiftimm_regdef_reguse` leaves with no
         data regdef row at all.
       - Type18a's system bit-test/xor-test (bop 4/5, forms_system.py's
-        `_type_18a`): BTF. tools/sharc_dev/sharcdb.py's `register_effects` records no
+        `_type_18a`): BTF. tools/sharc_dev/sharcdb/'s `register_effects` records no
         regdef row for this case either (it only reads its source register
         into BTF, never writes one) -- the gap the frame-render survey
         found: a slice for a BTF-reading branch used to walk back through
         the block's last *unrelated* compute (any kind='compute' regdef, on
         the old whole-ASTAT rule) instead of the real Type18a bit-test.
 
-    Returns () for a compute field this file/tools/sharc_dev/sharcdb.py doesn't model
+    Returns () for a compute field this file/tools/sharc_dev/sharcdb/ doesn't model
     at all (field absent/zero, or an sharcinv.classify_compute() cu this
     table has no PRM-sourced group for -- 'CU3' -- or a Type6a_mem opcode
     outside _SHIFTIMM_MNEMONICS): left unmodelled, not guessed, exactly like
-    tools/sharc_dev/sharcdb.py's own regdef/reguse `unknown` tags.
+    tools/sharc_dev/sharcdb/'s own regdef/reguse `unknown` tags.
     """
     if t in sharcinv.COMPUTE_FORMS:
         field23 = f.get("compute")
@@ -303,7 +303,7 @@ def load(
     force=False,
 ):
     """Open `db_dir`/<name>.sqlite, building (or rebuilding, if the blob's
-    sha256 or tools/sharc_dev/sharcdb.py's DB_VERSION has moved on) from
+    sha256 or tools/sharc_dev/sharcdb/'s DB_VERSION has moved on) from
     `sections_dir`/<name>/section_7_BLOB.bin first when needed. If the blob
     is gone but an up-to-date database is already on disk, that's fine --
     only a build or rebuild requires the blob."""
@@ -405,7 +405,7 @@ class Image:
     def callers(self, sw, kinds=None):
         """Every edge (of any kind, or only `kinds`) targeting sw -- a CALL,
         JUMP or COND_JUMP into the middle of a function all count, not just
-        CALL (see tools/sharc_dev/sharcdb.py's module docstring)."""
+        CALL (see tools/sharc_dev/sharcdb/'s module docstring)."""
         query = "SELECT kind, from_sw, from_function, cond, delayed, note FROM edges WHERE image=? AND to_sw=?"
         args = [self.name, sw]
         if kinds:
@@ -475,7 +475,7 @@ class Image:
     # --- graphs (networkx layer) -------------------------------------------------
     #
     # cfg()/callgraph()/defuse() build small networkx graphs in-process from
-    # tables tools/sharc_dev/sharcdb.py already fills (bblocks/succ/edges/regdef/
+    # tables tools/sharc_dev/sharcdb/ already fills (bblocks/succ/edges/regdef/
     # reguse/insn/mem_access/ptr/literals), the same reasoning that file's
     # own _detect_callgraph/_detect_dominators_and_loops already apply
     # internally at build time -- exposed here, cached per Image, so an
@@ -528,7 +528,7 @@ class Image:
     def callgraph(self):
         """The whole image's function-level CALL graph (edges.kind='call'),
         built once and cached -- the same construction cards() and
-        tools/sharc_dev/sharcdb.py's own _detect_callgraph use, now shared instead of
+        tools/sharc_dev/sharcdb/'s own _detect_callgraph use, now shared instead of
         each building its own copy."""
         if self._callgraph_cache is not None:
             return self._callgraph_cache
@@ -552,7 +552,7 @@ class Image:
     # A family of pseudo-registers standing in for ASTATX/ASTATY: SCHEMA's
     # `regdef` has no flags entry at all (see sharcdb.py's own comment on
     # regdef.kind -- compute/mem_load/literal/move/swap/dag_modify/unknown,
-    # never a condition-code register), because tools/sharc_dev/sharcdb.py's
+    # never a condition-code register), because tools/sharc_dev/sharcdb/'s
     # register_effects never models one. But PGR Table 10-4's IF-cond field
     # (insn.cond, see sharcfn.COND_NAMES) reads ASTATX/ASTATY, and PRM:
     # every ALU/MULT/SHIFT compute updates its own group of those bits as a
@@ -593,7 +593,7 @@ class Image:
         each sw's own decoded form/fields write -- a handful of range-scan
         queries instead of one query per instruction. `insn`'s already-
         stored `form`/`fields` columns (the same typed decode
-        tools/sharc_dev/sharcdb.py's own register_effects() used to build regdef/
+        tools/sharc_dev/sharcdb/'s own register_effects() used to build regdef/
         reguse) are reused here rather than re-decoding the image bytes."""
         insn_rows = self.db.execute(
             "SELECT sw, cond, mnemonic, form, fields FROM insn "
@@ -1029,13 +1029,13 @@ class Image:
         return [{"sw": _hex(sw), "form": form, "role": role} for sw, form, role in rows]
 
     def _ptr_hits(self, addr, size, direction):
-        """Every tools/sharc_dev/sharcdb.py `ptr` row for `direction` whose resolved
+        """Every tools/sharc_dev/sharcdb/ `ptr` row for `direction` whose resolved
         [address, address+width) range overlaps [addr, addr+size) ('kind':
         'resolved'), plus every row whose base is known but whose address
         isn't (an indexed I,M form with an untracked modifier) and whose
         base sits within 0x10000 bytes below addr ('kind': 'base_only') --
         a plausible hit for a runtime-indexed struct/array write this static
-        pass can't fully resolve, not a proof. See tools/sharc_dev/sharcdb.py's
+        pass can't fully resolve, not a proof. See tools/sharc_dev/sharcdb/'s
         _build_ptr_rows module note for what the `ptr` table does and does
         not cover."""
         hi = addr + size
@@ -1061,7 +1061,7 @@ class Image:
         ]
 
     def writers(self, addr, size=4):
-        """Every store tools/sharc_dev/sharcdb.py's constant-pointer propagation (the
+        """Every store tools/sharc_dev/sharcdb/'s constant-pointer propagation (the
         `ptr` table) can place at or partly inside [addr, addr+size)."""
         return self._ptr_hits(addr, size, "store")
 
@@ -1095,7 +1095,7 @@ class Image:
     #
     # A human/agent-written note per function, kept in a sidecar database
     # (out/sharcdb/<name>.notes.sqlite, ATTACHed here on first use) rather
-    # than in the main .sqlite: tools/sharc_dev/sharcdb.py's build_database() always
+    # than in the main .sqlite: tools/sharc_dev/sharcdb/'s build_database() always
     # replaces out_path wholesale (see its own "build into a temp file" note),
     # so a note living there would be wiped by the next `sharcdb build
     # --force`. This file never touches the sidecar's path.
@@ -1438,7 +1438,7 @@ class Image:
         `root`, only those in `reach` from that root sw or sws), in
         callee-first ('bottom_up', the default) or caller-first
         ('top_down') topological order over the CALL-edge graph (SCC-
-        condensed, same construction as tools/sharc_dev/sharcdb.py's
+        condensed, same construction as tools/sharc_dev/sharcdb/'s
         _detect_callgraph, so a recursive cluster is yielded as one group)."""
         if order not in ("bottom_up", "top_down"):
             raise ValueError(

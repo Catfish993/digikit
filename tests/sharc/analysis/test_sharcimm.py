@@ -13,7 +13,7 @@ from support.sharc_encode import block, encode  # noqa: E402
 
 def pack48(value):
     """Little-endian bytes of a raw 48-bit word, bypassing sharc_visa_tables
-    (used for Type10a_rel/10a_abs below, which -- per tools/sharc_dev/sharcfn.py's
+    (used for Type10a_rel/10a_abs below, which -- per tools/sharc_dev/sharcfn/'s
     module docstring -- are absent from that table's VISA form set)."""
     words = [(value >> (48 - 16 * (i + 1))) & 0xFFFF for i in range(3)]
     return struct.pack('<3H', *words)
@@ -83,7 +83,7 @@ class ScanTest(unittest.TestCase):
 class NeverAlignedFormsTest(unittest.TestCase):
     """decode_all() must never treat Type10a_rel/10a_abs as a real decoded
     instruction (tools/sharc_dev/sharcimm.py's _NEVER_ALIGNED_FORMS comment):
-    tools/sharc_dev/sharcfn.py's module docstring says both are absent from the real
+    tools/sharc_dev/sharcfn/'s module docstring says both are absent from the real
     VISA form set entirely, so any bit-pattern match is a disassembler
     desync, not a genuine instruction. Before this fix, decode_all() fed
     such a match straight into the depth/sweep alignment sweep, which is

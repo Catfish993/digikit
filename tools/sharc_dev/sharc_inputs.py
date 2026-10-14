@@ -43,7 +43,7 @@ Static labels, checked in this order (the first that applies wins):
                       ColdFire "no caller" claim on the raw image (CLAUDE.md's
                       Ghidra rule) -- but the SHARC-side equivalent of that
                       raw scan is already sitting in the program database:
-                      tools/sharc_dev/sharcdb.py's own exhaustive per-instruction
+                      tools/sharc_dev/sharcdb/'s own exhaustive per-instruction
                       decode already built img.refs() (every literal
                       reference to a value, anywhere) and img.writers() /
                       img.readers() (resolved AND base-only/unresolved-index

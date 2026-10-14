@@ -1,5 +1,5 @@
 # pyright: reportMissingImports=false
-"""tools/sharc_dev/sharcfn.py: dossier construction and mnemonic rendering on synthetic
+"""tools/sharc_dev/sharcfn/: dossier construction and mnemonic rendering on synthetic
 code and a hand-built boot stream.
 
 No real firmware is used (it is Elektron's copyright and is not committed);

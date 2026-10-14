@@ -11,7 +11,7 @@ filled fill/zero block, or nobody this pass can find).
     img = sharc.load("dt2-1.16")
     contract = sharc_contract.build(img, 0x1c2b24)
 
-This is a purely static contract, built on top of tools/sharc_dev/sharcdb.py's `ptr`
+This is a purely static contract, built on top of tools/sharc_dev/sharcdb/'s `ptr`
 table (constant-pointer propagation over aligned instructions only -- see
 its own module note for what is and is not modelled). It is not proof an
 address is genuinely live at runtime, and a resolved hit is only as good as
@@ -29,7 +29,7 @@ from there instead.
 
 Reach is call+jump edges from the root's own function entry (every `edges`
 row with a resolved `to_function`, of any kind -- call, jump, cond_jump, a
-resolved indirect), not the narrower CALL-only `reach` table tools/sharc_dev/sharcdb.py
+resolved indirect), not the narrower CALL-only `reach` table tools/sharc_dev/sharcdb/
 already fills: that table is seeded from `roots` alone, so an arbitrary
 function used as a root here (FUN_1c2b24 is not itself in `roots`) has no
 rows there. See docs/findings/06's own "Reach from 0x1c2b24 ... 154
@@ -53,7 +53,7 @@ from tools.sharc_dev import sharc  # noqa: E402
 SYSTEM_MMR_RANGE = (0x31000000, 0x31100000)
 CORE_MMR_RANGE = (0x00030000, 0x00032000)
 
-# tools/sharc_dev/sharcdb.py's `ptr` constant-propagation pass resolves some non-
+# tools/sharc_dev/sharcdb/'s `ptr` constant-propagation pass resolves some non-
 # address values (a float bit pattern, a loop count, anything else that
 # happens to sit in an I register at the wrong moment) into implausible
 # "addresses" -- e.g. 0x40000000 (the ColdFire MAIN load address, not
@@ -76,7 +76,7 @@ def _is_plausible(addr):
     return any(_is_in(addr, band) for band in _PLAUSIBLE_DM_BANDS)
 
 
-# The two RTOS task roots this repo has already named (tools/sharc_dev/sharcdb.py's
+# The two RTOS task roots this repo has already named (tools/sharc_dev/sharcdb/'s
 # rtos_task root note carries 'helper=... call_site=...'); told apart here
 # by call site rather than re-deriving them, since they're the only two
 # roots.kind='rtos_task' rows in dt2-1.16 (docs/findings/06, "Audio Task"
@@ -226,7 +226,7 @@ def _label_and_span(addr):
 def block_kind_for(img, addr):
     """('data'|'fill'|'code'|None, block_idx|None) for the loader block
     covering addr in the bare-sw convention (blocks.base_sw + byte_count/2,
-    see tools/sharc_dev/sharcdb.py's own base_sw column comment)."""
+    see tools/sharc_dev/sharcdb/'s own base_sw column comment)."""
     rows = img.sql(
         "SELECT idx, target_address, byte_count, kind, base_sw FROM blocks WHERE image=? AND base_sw IS NOT NULL",
         img.name,
