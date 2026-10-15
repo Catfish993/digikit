@@ -6888,3 +6888,33 @@ before enabling).
 Open **[O]**: other scenarios (sample browsing, kit load, MIDI) are not yet compared. A DT2 card loaded in zero mode is
 built, but its mount in the running firmware is not yet checked.
 
+## ColdFire instruction rate: behaviour does not depend on it from 99M to 264M per second (2026-10-15) **[D]**
+
+- The emulator runs one ColdFire instruction per 132 MHz bus tick (132M instructions per emulated second). The real
+  core runs at 264 MHz (bus = core/2, section "The rate rises automatically after the intro" in
+  03-ui-and-panel.md); at 1.5 to 3 core cycles per instruction that is about 90M to 175M instructions per second.
+- `DIGI_CF_IPS` (default 132000000; native builds) sets the rate. Timers (PIT, DTIM) and SSI pacing follow it; the bus
+  clock does not. Ready snapshots are taken at 132M; a load rescales their deadlines to the set rate, keeping their
+  emulated time. Scenario `instructions` and `at_instr` are authored at 132M and scaled. `save_state` refuses another
+  rate. Tool: `uv run python -m tools.devtools.clock_sweep` (out/clock/sweep.json, sweep.md, REPORT.md).
+- Sweep over 93 scenario entries (DN2 oracles and pins, DT2 oracles) at 33, 66, 76, 80, 99, 132, 198 and 264M:
+
+  | M instr/s | oracle failures DN2/61, DT2/146 | result |
+  |---|---|---|
+  | 33, 66 | 49, 107 | PCM silent, CPU 100 % interpreted |
+  | 76 | 46, 5 | late (trig1-hold onset 1.5 s instead of 0.4 s) |
+  | 80 | 2, 0 | two DN2 delay tests fail |
+  | 99 to 264 | 0, 0 | all pass; no late, silent or halted scenario |
+
+- From 99M to 264M most PCM hashes change (89 of 93 at 99M, 68 at 264M), but onset, active 100 ms windows and level
+  match 132M; the largest rms change is 0.5 %. The changes are sub-frame phase shifts (`trig1-noqa-40m` is a pure 2 ms
+  shift). `missing_blocks` is 0 and nothing halts at any rate: a slow CPU shows as a late or silent guest, not as DSP
+  underruns.
+- Load: interpreted instructions per emulated second fit I = W + p * rate with W median 70.7M (54 % of 132M) and p
+  median 0.018, so the load is real work, not polling that scales with the rate. Saturation W / (1 - p): median 72M,
+  worst typical 87M (DN2 chorus/delay), one outlier 122M (`pins/exactness-100m`, a short run). At 132M the emulated CPU
+  has about 1.5x to 1.8x headroom.
+- `softfloat_hle_calls` is 0 in every scenario: the 1-tick cost of a soft-float HLE call is not exercised.
+
+Open **[O]**: every run restores the 132M ready snapshot and rescales; no cold boot at another rate. Idle loops that the
+idle detector misses would overstate W. The real instruction rate of the hardware is not measured.
