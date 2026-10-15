@@ -60,9 +60,10 @@ def test_misc_emac_and_flow():
 
 
 def test_bcc_cycles():
-    # Table 3-20: folded when taken and predicted (0), 1 when not taken, 8 when mispredicted.
+    # Table 3-20: folded when taken and predicted (0), 1 when not taken;
+    # a mispredicted Bcc costs 8 in total (1 + 7).
     assert t.bcc_cycles(10, 5, 0) == (5, 15)
-    assert t.bcc_cycles(10, 5, 2) == (5, 31)
+    assert t.bcc_cycles(10, 5, 2) == (5, 29)
 
 
 def test_stall_rules():

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Timing:
     """One instruction: cycles C, operand reads R and writes W, and the cycles under the least
-    favourable reading of the manual (`hi`: branch acceleration 3, RTS not predicted 8)."""
+    favourable reading of the manual (`hi`: branch acceleration 3, RTS mispredicted 9)."""
 
     c: int
     r: int = 0
@@ -359,8 +359,8 @@ def timing(row: dict) -> Timing | None:
 def bcc_cycles(taken: int, not_taken: int, mispredicted: int) -> tuple[int, int]:
     """(low, nominal) cycles of a Bcc run `taken` + `not_taken` times with `mispredicted` of them
     mispredicted (Table 3-20, p.118): low assumes every taken branch folds in the branch cache (0)
-    and nothing mispredicts; nominal costs 1 per branch and 8 per misprediction."""
-    return not_taken, taken + not_taken + 8 * mispredicted
+    and nothing mispredicts; nominal costs 1 per correctly predicted branch and 8 per misprediction (1 + 7)."""
+    return not_taken, taken + not_taken + 7 * mispredicted
 
 
 _OPREG = re.compile(r"^(dn|an|ind|post|pre|disp):(\d+)$")
