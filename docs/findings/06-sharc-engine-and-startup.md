@@ -5813,11 +5813,12 @@ real load is 8 (DN2) and 5 (DT2) points higher at nominal, 19 and 14 at the high
   (code), the rest from L2; data accesses are L1 blocks 0 and 1 and DDR (25,700 / 30,700 per block, 51 / 55 data-cache
   misses).
 - **Modules.** master-gain (the spike hook `dsp_master_hook.py`, the same routine as the module, run in the engine on both
-  devices): +196.0 instructions and +195 (DN2) / +197 (DT2) cycles per block, 0.03 % of the block. Pluck (not run in the
-  engine; instruction count from the concrete core rig, stalls scaled by the stock ratio, code fill of 65 lines at 24 cycles
-  once per block): 1,199 instructions and about 1,300 cycles per voice and block (4,201 instructions on the first block of a
-  note), +1,218 / 2,867 / 4,618 cycles for one voice (0.43 % nominal), +19,500 / 22,500 / 27,100 for 16 voices (3.4 %): DT2
-  total 39.5 % nominal with 16 plucks, DN2 61.5 %.
+  devices): +196.0 instructions and +195 (DN2) / +197 (DT2) cycles per block, 0.03 % of the block. Pluck, measured in the engine (DT2 1.17, `pk_tiers`, busy
+  instructions per block): one ringing voice adds +901 in the first 0.3 s after the note-on and +561 on average over 2 s
+  (it decays), against 1,199 estimated earlier from the concrete core rig; the module set itself adds +928 per block with the
+  sample voice playing (`pk_harness` DSP budget gate). One voice at +901 is 0.20 % of the block at the DT2 high factor; 16
+  voices (about 14,400) 3.1 % high, 2.5 % nominal, which replaces the 3.4 % estimate. Master-gain through the harness gate:
+  +196 (DT2 1.17), +192 (DN2 1.12; resolution about 5).
 - **Assumed, not in the manual [O]:** the instruction and data caches are on with 16 KB each (statically read: the DSP
   startup's cache-configuration routine builds `0x414141` for SHL1C_CFG; core MMRs are not modelled so it is not observed);
   the BTB set index (low seven PC bits); L2, DDR and system-MMR latencies (per line fill 12 / 24 / 48, 30 / 60 / 120 and 2 /

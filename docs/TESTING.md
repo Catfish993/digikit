@@ -79,6 +79,21 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `uv run python -m tools.devtools.test_outcomes run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
 | `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` | Compares outcomes and skip reasons test by test, following git renames | After moving or refactoring tests |
 
+## DSP budget gate (patchkit smoke)
+
+`pk_harness run` ends every cell with a DSP measurement: TRIG 1 held (the default voice) for 1 s of audio after the
+usual settling, then the mean (and the maximum of ten 100 ms windows) of the DSP busy instructions per block, from the
+`status.audio.dsp_tiers` counters (executed minus idle-skipped, per 1500 blocks per audio second). The stock baseline of
+the same device and OS is measured by the same code (cached in `out/runs/patchkit/dsp/stock-DEV-FW.json`, keyed by the
+daemon binary). Added instructions per block = cell minus stock. Projected real load = busy x factor / 666,667 (1 GHz /
+1500 blocks per second). The factors are real cycles per block over busy instructions per block of the cycle model
+(`out/clock/sharc.json`, `tools/sharc_dev/sharc_cpi.py`, finding at the end of `docs/findings/06-sharc-engine-and-startup.md`):
+DN2 1.158 nominal / 1.365 high, DT2 1.155 / 1.448 (`tools/patchkit/pk_dsp_budget.py`). The cell fails when the projected
+high load exceeds `--dsp-budget` (default 85 %); `--no-dsp-budget` skips the step. The table is printed at the end and
+written to `out/runs/patchkit/dsp-budget.json`. The default note exercises the always-on cost of a module; the cost of a
+module's own voice needs its own run (`tools/patchkit/pk_tiers.py`). Resolution is about 5 instructions per block.
+Unit test: `tests/patchkit/test_pk_dsp_budget.py`.
+
 ## Render cache
 
 Scenario renders are cached per scenario under `out/cache/renders/` (`record.json` and `audio.wav`, about 1.6 MB per entry; `tools/devtools/render_cache.py`).
