@@ -1,4 +1,4 @@
-# digitakt2: agent instructions
+# digikit: agent instructions
 
 Reverse engineering and emulation of the Elektron Digitakt II (OS 1.16) and Digitone II (OS 1.11): a ColdFire
 MCF5441x main CPU and a SHARC+ DSP, run natively (desktop app) and in the browser (wasm). The device on the desk is

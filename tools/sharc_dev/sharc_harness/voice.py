@@ -421,9 +421,7 @@ def read_coeff_table(memory, image: str, phases: int = 256) -> list[list[float]]
     than the Q31 reading once several taps sum together (this lane's own
     ``check_correctness()`` run: max error dropped from ~1.1e-4 to ~3e-5,
     the SAT floor's own ~1-ULP-of-Q15 floor this module's tests assert
-    once this fix landed). See
-    ``/private/tmp/claude-501/-Users-em-src-digi-digitakt2/89c5e6c8-2a58-496e-84a0-527f96e6f55a/scratchpad/verify_fixedpoint.py``
-    and ``verify_q31.py`` for the traces this is drawn from. This was the
+    once this fix landed). The traces came from one-off scripts that are not kept. This was the
     residual this lane's task brief pointed at ("this lane's evidence
     points at tools/sharc_dev/sharc_core's MR-accumulator housekeeping ... and/or
     float_by ... not at this harness's own sample encoding or

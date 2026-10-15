@@ -1,5 +1,5 @@
 [project]
-name = "digitakt2"
+name = "digikit"
 version = "0.1.0"
 description = "Digitakt II / Digitone II firmware tooling: container, ColdFire and SHARC+ analysis, and the build tools for the native emulator"
 license = "AGPL-3.0-or-later"

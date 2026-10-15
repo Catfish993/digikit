@@ -245,10 +245,10 @@ Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
-digikit ([github.com/m-dwyer/digikit](https://github.com/m-dwyer/digikit)) is licensed under
+digikit ([github.com/ElekLabs/digikit](https://github.com/ElekLabs/digikit)) is licensed under
 AGPL-3.0-or-later ([LICENSE](LICENSE)), with additional terms under section 7 of the AGPL
 (attribution, origin and names) in [NOTICE](NOTICE). Keep NOTICE and the attribution
-"digikit by Em D - https://github.com/m-dwyer/digikit" in copies and modified versions; a
+"digikit by Em D - https://github.com/ElekLabs/digikit" in copies and modified versions; a
 user interface of a covered work shows it in its About, credits or footer area.
 
 The licence covers the code here only; it gives no rights to Elektron's software or

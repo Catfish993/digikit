@@ -58,7 +58,7 @@ PACKED_IMAGE = os.path.join(FIXTURE, "digi-audio-dn2-image.bin")
 STATE = os.path.join(
     ROOT, "out", "snapshots", "dn2-audio-ready-2026-10-03", "digi-audio-loop2-fresh.bin"
 )
-# Copied from /private/tmp/dn2-audio-restart-20261003/dsp-profile/ (DSPI2 TX
+# Copied from the 2026-10-03 DN2 audio-restart profiling run (dsp-profile/) (DSPI2 TX
 # frames of the note capture).
 FRAMES = os.path.join(BENCH, "digi-audio-note.frames")
 # Hand-written versions of hot regions (firmware-derived: stays under out/,

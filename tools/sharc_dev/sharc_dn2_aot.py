@@ -29,7 +29,7 @@ on macOS, fixes the install name, so the bytes do not depend on OUT).
 Everything under OUT is firmware-derived (profiles, generated code, libraries):
 OUT must lie outside the repository.
 
-    uv run python -m tools.sharc_dev.sharc_dn2_aot --out /private/tmp/dn2-aot \\
+    uv run python -m tools.sharc_dev.sharc_dn2_aot --out out/dn2-aot \\
         --state STATE.bin --capture NOTE.dt2cap \\
         [--syx firmware/Digitone_II_OS1.11.syx --cf-snapshot M5.snap \\
          --dsp-image DN2-IMAGE.bin] [--wasm] [--compare OLD/manifest.json]
