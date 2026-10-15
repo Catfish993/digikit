@@ -611,6 +611,16 @@ impl Emulator {
             .map(|frame| (self.frame_revision, frame))
     }
 
+    /// The panel LED revision and values (`Snapshot::leds` and `rgb` hex),
+    /// without marking them as delivered, like `current_frame`.
+    pub fn current_leds(&self) -> (u32, String, Option<String>) {
+        (
+            self.panel_leds.revision,
+            self.panel_leds.leds_hex(),
+            self.panel_leds.rgb_hex(),
+        )
+    }
+
     /// Export observations without stepping, reading guest memory, or consuming a frame.
     pub fn diagnostics(&self) -> DiagnosticReport {
         DiagnosticReport {

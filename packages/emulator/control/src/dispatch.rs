@@ -23,6 +23,7 @@ pub const METHODS: &[&str] = &[
     "input.schedule",
     "inputs.recorded",
     "framebuffer.get",
+    "leds.get",
     "diagnostics",
     "audio.report",
     "state.digest",

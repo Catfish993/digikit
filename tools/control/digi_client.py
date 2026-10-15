@@ -414,6 +414,14 @@ class Emu:
         result = self.call("framebuffer.get")
         return int(result["revision"]), base64.b64decode(result["data_b64"])
 
+    def frame_hash(self) -> str:
+        """SHA-256 (hex) of the 1024 raw OLED bytes, without transferring them."""
+        return str(self.call("framebuffer.get", hash=True, data=False)["sha256"])
+
+    def leds(self) -> dict[str, Any]:
+        """`{led_revision, leds, rgb}`: 128 hex digits of LED values, 384 of RGB (None until set)."""
+        return self.call("leds.get")
+
     def frame_png(self) -> bytes:
         return oled_png(self.frame()[1])
 

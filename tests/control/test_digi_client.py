@@ -78,6 +78,27 @@ def test_call_returns_results_and_raises_error_answers(tmp_path):
     emu.close()
 
 
+def test_leds_and_frame_hash_send_the_documented_params(tmp_path):
+    seen = {}
+
+    def responder(request):
+        method = request["method"]
+        seen[method] = request.get("params")
+        if method == "hello":
+            result = {"schema_version": 1}
+        elif method == "leds.get":
+            result = {"led_revision": 3, "leds": "00" * 64, "rgb": None}
+        else:
+            result = {"revision": 1, "sha256": "ab" * 32}
+        yield {"jsonrpc": "2.0", "id": request["id"], "result": result}
+
+    emu = Emu.connect(_serve(responder, tmp_path))
+    assert emu.leds()["led_revision"] == 3
+    assert emu.frame_hash() == "ab" * 32
+    assert seen["framebuffer.get"] == {"hash": True, "data": False}
+    emu.close()
+
+
 def test_events_arriving_during_a_call_are_kept_for_events(tmp_path):
     def responder(request):
         if request["method"] == "hello":

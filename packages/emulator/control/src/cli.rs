@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use digi_coupled::{AudioMode, AudioOptions};
 
-pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE] [--control|--no-control] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]]";
+pub const USAGE: &str = "usage: digiemu [SYX] [--card-image FILE] [--control|--no-control] [--paused] [--run-dir DIR] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--dsp-patch FILE] [--audio-buffer SECONDS] [--audio-mode rebuffer|stretch|gap] [--scenario NAME_OR_FILE] [--report PATH] [--no-audio]] [--dsp zero --cf-snapshot FILE]";
 
 #[derive(Clone, Debug, Default)]
 pub struct StartupArgs {
@@ -30,6 +30,7 @@ pub fn parse_values(
         (None, None, None, None, None);
     let mut audio_profile_syx = None;
     let mut coupled = false;
+    let mut zero = false;
     let mut automatic = false;
     let mut buffer = None;
     let mut no_audio = false;
@@ -70,6 +71,13 @@ pub fn parse_values(
             state = Some(path("--dsp-state")?);
         } else if value == "--cf-snapshot" {
             snapshot = Some(path("--cf-snapshot")?);
+        } else if value == "--dsp" {
+            let mode = values.next().ok_or("--dsp requires zero or sharc")?;
+            zero = match mode.to_str() {
+                Some("zero") => true,
+                Some("sharc") => false,
+                _ => return Err("--dsp is zero or sharc".into()),
+            };
         } else if value == "--dsp-patch" {
             dsp_patch = Some(path("--dsp-patch")?);
         } else if value == "--no-audio" {
@@ -109,7 +117,19 @@ pub fn parse_values(
     if !coupled_build && (scenario.is_some() || report.is_some()) {
         return Err("--scenario needs a coupled-audio build".into());
     }
-    let audio = if coupled {
+    let audio = if zero {
+        if coupled || image.is_some() || state.is_some() || dsp_patch.is_some() {
+            return Err(
+                "--dsp zero takes only --cf-snapshot (no --coupled, --dsp-image, --dsp-state or --dsp-patch)"
+                    .into(),
+            );
+        }
+        Some(AudioOptions {
+            snapshot: snapshot.take().ok_or("--dsp zero requires --cf-snapshot")?,
+            zero: true,
+            ..Default::default()
+        })
+    } else if coupled {
         if syx.is_none() {
             return Err("--coupled requires a startup SYX".into());
         }
@@ -132,6 +152,7 @@ pub fn parse_values(
             link_timing: false,
             audio_mode: audio_mode.unwrap_or_default(),
             dsp_patch: dsp_patch.take(),
+            zero: false,
         })
     } else {
         if image.is_some()
@@ -175,5 +196,17 @@ mod tests {
         assert_eq!(a.run_dir, Some("d".into()));
         assert_eq!(parse(&["--no-control"]).unwrap().control, Some(false));
         assert_eq!(parse(&[]).unwrap().control, None);
+    }
+
+    #[test]
+    fn dsp_zero_needs_only_the_cf_snapshot() {
+        let a = parse(&["x.syx", "--dsp", "zero", "--cf-snapshot", "s.snap"]).unwrap();
+        let audio = a.audio.unwrap();
+        assert!(audio.zero);
+        assert_eq!(audio.snapshot, PathBuf::from("s.snap"));
+        assert!(parse(&["--dsp", "zero"]).is_err());
+        assert!(parse(&["--dsp", "zero", "--cf-snapshot", "s", "--dsp-image", "i"]).is_err());
+        assert!(parse(&["--dsp", "other"]).is_err());
+        assert!(parse(&["--dsp", "sharc"]).unwrap().audio.is_none());
     }
 }

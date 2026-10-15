@@ -658,6 +658,7 @@ mod cli_tests {
             link_timing: false,
             audio_mode: AudioMode::default(),
             dsp_patch: None,
+            zero: false,
         };
         let (handle, controller) = spawn(Config::new(Some(audio)));
         let sender = handle.sender().clone();

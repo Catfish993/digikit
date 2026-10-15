@@ -861,7 +861,8 @@ impl Actor {
             return None;
         }
         let paths = CardPaths::new(&self.run_dir, &last.key);
-        let whole = paths.image.is_file() && (self.audio.is_none() || paths.ready_cached());
+        let whole = paths.image.is_file()
+            && (self.audio.as_ref().is_none_or(|a| a.zero) || paths.ready_cached());
         whole.then_some((last, paths))
     }
 
@@ -1191,7 +1192,8 @@ impl Actor {
             "input.tap" => self.rpc_tap(&p).map(Some),
             "input.schedule" => self.rpc_schedule(&p).map(Some),
             "inputs.recorded" => self.rpc_recorded().map(Some),
-            "framebuffer.get" => self.rpc_framebuffer().map(Some),
+            "framebuffer.get" => self.rpc_framebuffer(&p).map(Some),
+            "leds.get" => self.rpc_leds().map(Some),
             "mem.cf.peek" => self.rpc_mem_peek(&p).map(Some),
             "mem.cf.poke" => self.rpc_mem_poke(&p).map(Some),
             "card.overlay" => self.rpc_card_overlay(&p).map(Some),
@@ -1307,10 +1309,17 @@ impl Actor {
         };
         let cf = serde_json::to_value(runtime.status()).unwrap_or(Value::Null);
         let audio = summarize_audio(runtime);
+        let dsp = if runtime.has_audio() {
+            "sharc"
+        } else if runtime.is_zero() {
+            "zero"
+        } else {
+            "none"
+        };
         let frame = runtime.current_frame().map(|(revision, _)| revision);
         Ok(json!({
             "controller_cpu_ns": elektron_native_boot::thread_cpu_ns(),
-            "firmware": loaded, "cf": cf, "audio": audio, "job": job,
+            "firmware": loaded, "cf": cf, "audio": audio, "dsp": dsp, "job": job,
             "scheduled_inputs": scheduled, "frame_revision": frame,
             "heartbeat": {"mainloop_hits": cf["mainloop_hits"], "stalled": self.health.stalled(),
                           "stall_count": self.health.stall_count, "stall_ms": self.health.stall_ms,
@@ -1327,9 +1336,11 @@ impl Actor {
             self.health.stall_ms = ms;
         }
         let hits = self.runtime.as_mut().map(|r| r.status().mainloop_hits);
-        Ok(json!({"stall_ms": self.health.stall_ms, "stalled": self.health.stalled(),
+        Ok(
+            json!({"stall_ms": self.health.stall_ms, "stalled": self.health.stalled(),
                   "stall_count": self.health.stall_count,
-                  "mainloop_hits": hits}))
+                  "mainloop_hits": hits}),
+        )
     }
 
     /// `mem.cf.peek {addr}`: one guest longword, read without side effects.
@@ -1506,18 +1517,37 @@ impl Actor {
         self.with_runtime(|r| Ok(json!({"scenario": r.recorded_scenario()})))
     }
 
-    fn rpc_framebuffer(&mut self) -> RpcResult {
+    /// `framebuffer.get {hash?, data?}`: the frame; `hash: true` adds the SHA-256
+    /// of its bytes, `data: false` omits them.
+    fn rpc_framebuffer(&mut self, p: &Params) -> RpcResult {
+        let hash = p.opt_bool("hash")?.unwrap_or(false);
+        let data = p.opt_bool("data")?.unwrap_or(true);
         self.with_runtime(|r| {
             let (revision, bytes) = r
                 .current_frame()
                 .map(|(revision, bytes)| (revision, bytes.to_vec()))
                 .ok_or_else(|| RpcError::new(code::GUEST_FAULT, "no frame yet"))?;
-            Ok(json!({
+            let mut frame = json!({
                 "revision": revision, "width": 128, "height": 64,
                 "format": "oled-1bpp-column-major",
                 "note": "byte (7 - y/8) + 8*x, bit y%8",
-                "data_b64": base64(&bytes),
-            }))
+            });
+            if data {
+                frame["data_b64"] = base64(&bytes).into();
+            }
+            if hash {
+                frame["sha256"] = firmware::sha256_hex(&bytes).into();
+            }
+            Ok(frame)
+        })
+    }
+
+    /// `leds.get`: the panel LEDs as the emulator holds them now, read without
+    /// consuming them from the UI.
+    fn rpc_leds(&mut self) -> RpcResult {
+        self.with_runtime(|r| {
+            let (led_revision, leds, rgb) = r.current_leds();
+            Ok(json!({"led_revision": led_revision, "leds": leds, "rgb": rgb}))
         })
     }
 
@@ -1811,8 +1841,8 @@ impl Actor {
         let (runtime, error) = runtime_from(&bytes, card.clone(), self.audio.as_ref())
             .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, e))?;
         report["audio"] = runtime.has_audio().into();
-        report["snapshot_ok"] = runtime.has_audio().into();
-        report["start_used"] = if runtime.has_audio() {
+        report["snapshot_ok"] = (runtime.has_audio() || runtime.is_zero()).into();
+        report["start_used"] = if runtime.has_audio() || runtime.is_zero() {
             "snapshot"
         } else {
             "cold"
@@ -1849,8 +1879,8 @@ impl Actor {
         let (runtime, error) = runtime_from(&base_bytes, card.clone(), self.audio.as_ref())
             .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, e))?;
         report["audio"] = runtime.has_audio().into();
-        report["snapshot_ok"] = runtime.has_audio().into();
-        report["start_used"] = if runtime.has_audio() {
+        report["snapshot_ok"] = (runtime.has_audio() || runtime.is_zero()).into();
+        report["start_used"] = if runtime.has_audio() || runtime.is_zero() {
             "snapshot"
         } else {
             "cold"
@@ -2440,7 +2470,9 @@ fn run_card_job(
     #[allow(unused_mut)] // assigned only with the coupled-audio feature
     let mut boot_seconds = 0.0;
     let mut ready = None;
-    if let Some(audio) = &audio {
+    // Zero DSP has no DSP image and no card ready pair: the runtime restores
+    // the base snapshot and attaches the card on the ColdFire side only.
+    if let Some(audio) = audio.as_ref().filter(|a| !a.zero) {
         if ready_cached {
             set_status(
                 status,
