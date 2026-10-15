@@ -14,6 +14,7 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools import python_env  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_toolchains  # noqa: E402
 
 CASES = {
@@ -27,8 +28,8 @@ def test_proof(device, tmp_path):
     syx, ready = CASES[device]
     if not os.environ.get("DIGI_EMUD"):
         pytest.skip("DIGI_EMUD not set")
-    if not (ROOT / syx).is_file() or not (ROOT / "out" / ready).is_dir():
-        pytest.skip(f"{syx} or out/{ready} missing")
+    if not config.stock(syx).is_file() or not (ROOT / "out" / ready).is_dir():
+        pytest.skip(f"firmware/{syx} or out/{ready} missing")
     if pk_toolchains.selache_dir() is None:
         pytest.skip("selache not built")
     patched = tmp_path / f"md-{device}.syx"
@@ -37,7 +38,7 @@ def test_proof(device, tmp_path):
         [
             *run,
             "--firmware",
-            str(ROOT / syx),
+            str(config.stock(syx)),
             "--modules",
             "fx/master-drive",
             "-o",

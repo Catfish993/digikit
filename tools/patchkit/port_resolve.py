@@ -72,6 +72,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+from tools.firmware import config
+
 ROOT = Path(__file__).resolve().parents[2]
 
 RESOLVED_BY = "tools/patchkit/port_resolve.py 1"
@@ -703,7 +705,10 @@ def main() -> int:
         if a.cmd == "rule-sharc":
             return cmd_rule_sharc(a)
         files = (
-            [Path(f) if Path(f).exists() else ROOT / f for f in FIRMWARE.values()]
+            [
+                Path(f) if Path(f).exists() else config.stock(f)
+                for f in FIRMWARE.values()
+            ]
             if a.cmd == "resolve-all"
             else [a.syx]
         )

@@ -317,3 +317,38 @@ def test_unused_allow_entries_fail_a_full_scan(tmp_path: Path) -> None:
     assert [e["token"] for e in report["unused_allow"]] == ["tools/zzz.py"]
     # a partial scan cannot tell
     assert run(root, cfg, "--paths", "tools")[0] == 0
+
+
+def test_moved_local_roots(tmp_path: Path) -> None:
+    root = make_repo(
+        tmp_path,
+        {
+            "tools/a.py": "x\n",
+            "docs/findings/f.md": "old sections/section_3.bin and .coldtrace/x\n",
+            "docs/n.md": (
+                "live sections/.source-sha256 and .coldtrace/t.log, "
+                "snapshots/a/b.snap.\n"
+                "not out/sections/x or apps/x/sections/y or the sections word\n"
+            ),
+        },
+    )
+    cfg: dict[str, Any] = {
+        "generated": ["out/"],
+        "moved_local": {
+            "sections/": "out/sections/dt2-1.16/",
+            ".coldtrace/": "out/coldtrace/",
+            "snapshots/": "out/snapshots/",
+        },
+    }
+    code, rows = run(root, cfg)
+    assert code == 1
+    assert [(r["token"], r["fix"]) for r in rows] == [
+        ("sections/.source-sha256", "out/sections/dt2-1.16/.source-sha256"),
+        (".coldtrace/t.log", "out/coldtrace/t.log"),
+        ("snapshots/a/b.snap", "out/snapshots/a/b.snap"),
+    ]
+    report = json.loads((root.parent / "out.json").read_text())
+    assert [r["token"] for r in report["historical"]] == [
+        "sections/section_3.bin",
+        ".coldtrace/x",
+    ]

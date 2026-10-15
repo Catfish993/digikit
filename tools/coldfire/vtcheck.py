@@ -1,7 +1,7 @@
 """Check Version Tracking matches against the image bytes and the Ghidra dumps.
 
     uv run python -m tools.coldfire.vtcheck out/vt/dt2-1.15C_to_dt2-1.16.json \\
-        --source-image sections/section_3_MAIN_OS.bin --source-dump out/ghidra/dt2-1.15C-emac \\
+        --source-image out/sections/section_3_MAIN_OS.bin --source-dump out/ghidra/dt2-1.15C-emac \\
         --dest-image out/sections/dt2-1.16/section_3_MAIN_OS.bin --dest-dump out/ghidra/dt2-1.16-emac \\
         [--base 0x40000400] [--sample 20] [--seed 1] [--lookup ADDR ...] [--json OUT]
 

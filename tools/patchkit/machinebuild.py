@@ -31,13 +31,13 @@ changes.
     an already-resumed snapshot -- see `tools/patchkit/machinepatch.py`.
 
 Usage:
-    uv run python -m tools.patchkit.machinebuild --syx Digitakt_II_OS1.16.syx \\
-        --profile dt2-1.16 --fields-from snapshots/dt2-1.16/boot400M.snap \\
+    uv run python -m tools.patchkit.machinebuild --syx firmware/Digitakt_II_OS1.16.syx \\
+        --profile dt2-1.16 --fields-from out/snapshots/dt2-1.16/boot400M.snap \\
         --out out/Digitakt_II_OS1.16.eighth.syx
 
     # Only a subset of the nine parts (see machinepatch.PARTS):
-    uv run python -m tools.patchkit.machinebuild --syx Digitakt_II_OS1.16.syx \\
-        --profile dt2-1.16 --fields-from snapshots/dt2-1.16/boot400M.snap \\
+    uv run python -m tools.patchkit.machinebuild --syx firmware/Digitakt_II_OS1.16.syx \\
+        --profile dt2-1.16 --fields-from out/snapshots/dt2-1.16/boot400M.snap \\
         --parts list,dispatch,group,name,rank --out out/eighth.syx
 """
 

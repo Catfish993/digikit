@@ -40,6 +40,7 @@ Python tools live in `tools/<owner>/`, one package per owner above. The reposito
 | `emu/`, `dt2/` | `tools/firmware/`, `tools/coldfire/`, `tools/sharc_dev/` | Done (pre-publication, 2026-10-16). |
 | `packages/emulator/patchkit` | `packages/patchkit` | Done (2026-10-16): a module toolchain, not an emulator crate. |
 | `scenarios/` | `tests/scenarios/` | Done (2026-10-16): the scenario files are test oracles. |
+| Root firmware files, `sections/`, `snapshots/`, `scratch/` | `firmware/`, `out/sections/<image>/`, `out/snapshots/`, `out/scratch/` | Done (2026-10-16): local data in one place; tools resolve firmware through `tools/firmware/config.py`. |
 
 Use the owner table to find code.
 
@@ -47,11 +48,10 @@ Use the owner table to find code.
 
 Never committed (firmware and anything derived from it):
 
-- `out/` (builds, runs, caches)
-- `sections/` (extracted firmware)
-- `snapshots/`
+- `out/` (builds, runs, caches, `out/sections/<image>`, `out/snapshots`, `out/scratch`)
+- `firmware/` (stock images you supply; only `firmware/README.md` is tracked)
 - `apps/web/.local`
-- `*.syx`
+- `*.syx` anywhere
 
 Committed generated files:
 

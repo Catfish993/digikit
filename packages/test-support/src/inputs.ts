@@ -38,7 +38,7 @@ export function resolveInputs(device: Device, firmware: string): ReadyInputs {
   let syx: string;
   let readyDir: string;
   if (spec) {
-    syx = path.join(root, spec.syx);
+    syx = path.join(root, "firmware", spec.syx);
     const env = process.env[`DIGI_PK_READY_${device.toUpperCase()}_${firmware.replace(".", "")}`];
     readyDir = env ?? path.join(root, spec.ready);
   } else {

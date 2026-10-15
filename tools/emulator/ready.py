@@ -16,7 +16,7 @@ Steps (each skipped when its output exists and --force is not given):
                                port 0 fed by the ColdFire's sample loads); saves
                                both at ready
 
-The DSP files live in --out (default snapshots/<device>-audio-ready-cold-...,
+The DSP files live in --out (default out/snapshots/<device>-audio-ready-cold-...,
 git-ignored). With --card-image the CF snapshot depends on the card (its
 sample list is in the restored RAM), so it goes to <out>/by-card/<sha12>/
 next to links to the shared DSP files; the last line printed is
@@ -45,12 +45,12 @@ EXTRA_AFTER_READY = "1000000"
 DEVICES = {
     "dn2": {
         "image": "dn2-1.11",
-        "out": "snapshots/dn2-audio-ready-cold-2026-10-07",
+        "out": "out/snapshots/dn2-audio-ready-cold-2026-10-07",
         "env": {},
     },
     "dt2": {
         "image": "dt2-1.16",
-        "out": "snapshots/dt2-audio-ready-cold-2026-10-07",
+        "out": "out/snapshots/dt2-audio-ready-cold-2026-10-07",
         "env": {
             "DSP_DEVICE": "dt2",
             "DSP_SAMPLE_LINK": "lp0",
@@ -202,8 +202,11 @@ def main(argv: list[str]) -> int:
     if snap_dir != out:
         for name in ("digi-audio-dn2-image.bin",):
             link = snap_dir / name
+            if link.is_symlink() and not link.exists():
+                link.unlink()
             if not link.exists():
-                link.symlink_to(out / name)
+                # relative, so the ready directory can move
+                link.symlink_to(os.path.relpath(out / name, snap_dir))
     (snap_dir / "SOURCE.json").write_text(
         json.dumps(
             {

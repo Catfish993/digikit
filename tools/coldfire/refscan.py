@@ -29,7 +29,7 @@ run into data/a jump table/a desync, and its hits should be treated with
 more suspicion than a byte range with none.
 
 Usage:
-    uv run python -m tools.coldfire.refscan sections/section_3_MAIN_OS.bin \\
+    uv run python -m tools.coldfire.refscan out/sections/section_3_MAIN_OS.bin \\
         --base 0x40000400 --range 0x402f9c14 0x40307f60
 
     # Restrict the sweep itself (default: the whole image):
@@ -123,7 +123,7 @@ def main(argv=None):
     )
     ap.add_argument(
         "image",
-        help="path to a raw firmware section, e.g. sections/section_3_MAIN_OS.bin",
+        help="path to a raw firmware section, e.g. out/sections/section_3_MAIN_OS.bin",
     )
     ap.add_argument(
         "--base",

@@ -10,8 +10,8 @@ from pathlib import Path
 
 from tools.coldfire import semscan, symbols
 
-# The pinned per-version extracts, not the shared sections/ directory, which
-# holds whichever firmware was extracted last (see tests/coldfire/test_symbols_real.py).
+# The pinned per-version extracts in out/sections/<image>/ (see
+# tests/coldfire/test_symbols_real.py).
 DT15 = Path("out/sections/dt2-1.15C/section_3_MAIN_OS.bin")
 DT16 = Path("out/sections/dt2-1.16/section_3_MAIN_OS.bin")
 DN11 = Path("out/sections/dn2-1.11/section_3_MAIN_OS.bin")
@@ -65,7 +65,7 @@ class SemscanTest(unittest.TestCase):
         # sites against a full, unrestricted linear disassembly of the
         # image (which desyncs and only finds 22 of them -- see the module
         # docstring's note on why _find_vectors does not just disassemble
-        # the whole image) and against scratch/semscan.py's Ghidra-based
+        # the whole image) and against out/scratch/semscan.py's Ghidra-based
         # xrefs for the 7 that carry a give/give_b poster.
         data = DT16.read_bytes()
         vectors = semscan._find_vectors(data, symbols.LOAD_ADDR)

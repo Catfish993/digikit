@@ -26,7 +26,7 @@ tool is untested -- proceed at your own risk.
 not a pass on the real thing.
 
     uv run python -m tools.firmware.roundtrip FIRMWARE.syx
-        [--sections DIR]      default: sections/
+        [--sections DIR]      default: out/sections/<image key>/ of FIRMWARE.syx
         [--out FILE]          also write the rebuilt .syx here
         [--accept-sections]   skip the provenance check against FIRMWARE.syx
         [--quick]             skip section 3 (MAIN OS); partial gate only
@@ -39,7 +39,7 @@ import struct
 import sys
 import tempfile
 
-from tools.firmware import build
+from tools.firmware import build, config
 from tools.firmware.authcode import DEVICE_BY_ID, DEVICES, compute_trailer, derive_key
 from tools.firmware.container import container as C
 from tools.firmware.container import decode_syx
@@ -163,8 +163,7 @@ def main(argv=None):
     ap.add_argument("syx", help="the firmware .syx to round-trip")
     ap.add_argument(
         "--sections",
-        default="sections",
-        help="directory of extracted sections (default: sections/)",
+        help="directory of extracted sections (default: out/sections/<image key>/)",
     )
     ap.add_argument("--out", help="also write the rebuilt .syx here")
     ap.add_argument(
@@ -179,6 +178,7 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
+    args.sections = args.sections or str(config.sections_for(args.syx))
     check_provenance(args.syx, args.sections, args.accept_sections)
     orig = load_sections(args.sections)
 

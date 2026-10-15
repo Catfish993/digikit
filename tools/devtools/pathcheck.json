@@ -1,11 +1,5 @@
 {
-  "retired_roots": [
-    "native",
-    "emu",
-    "dt2",
-    "scenarios",
-    "experiments"
-  ],
+  "retired_roots": ["native", "emu", "dt2", "scenarios", "experiments"],
   "exclude": [
     ".gitignore",
     "tools/devtools/pathcheck.json",
@@ -18,8 +12,6 @@
   ],
   "generated": [
     "out/",
-    "sections/",
-    "snapshots/",
     "target/",
     "node_modules/",
     "apps/web/.local",
@@ -220,5 +212,11 @@
       "token": "tools/sharc_transpile_run.check_build_info",
       "reason": "CORE_FINGERPRINT input: editing it forces a core regeneration; fix at the next one"
     }
-  ]
+  ],
+  "moved_local": {
+    "sections/": "out/sections/dt2-1.16/",
+    "snapshots/": "out/snapshots/",
+    "scratch/": "out/scratch/",
+    ".coldtrace/": "out/coldtrace/"
+  }
 }

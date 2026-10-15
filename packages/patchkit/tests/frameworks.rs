@@ -12,7 +12,7 @@ fn root() -> PathBuf {
 }
 
 fn image(name: &str) -> Option<Vec<u8>> {
-    std::fs::read(root().join(name)).ok()
+    std::fs::read(root().join("firmware").join(name)).ok()
 }
 
 const DT2_117: &str = "Digitakt_II_OS1.17.syx";

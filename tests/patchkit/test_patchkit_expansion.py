@@ -12,14 +12,15 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.emulator import native_target  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_cfcall,  # noqa: E402
     pk_link,  # noqa: E402
     pk_toolchains,  # noqa: E402
 )
 
-DT2_117 = ROOT / "Digitakt_II_OS1.17.syx"
-DN2_112 = ROOT / "Digitone_II_OS1.12.syx"
+DT2_117 = config.stock("Digitakt_II_OS1.17.syx")
+DN2_112 = config.stock("Digitone_II_OS1.12.syx")
 
 pytestmark = pytest.mark.skipif(
     pk_toolchains.m68k_bin("gcc") is None
@@ -140,7 +141,7 @@ def test_patched_image_boots_and_the_module_runs_in_place(fw, base_sha, tmp_path
 def test_machines_shims_live_in_the_expansion_region_not_the_cave(fw, tmp_path):
     """The native core executes from DDR (finding 07): core/machines keeps its code in cf.expansion and the flash cave holds
     the expansion loader only (56 bytes), however many machines are added."""
-    firmware = ROOT / fw
+    firmware = config.stock(fw)
     if not firmware.exists():
         pytest.skip(f"{fw} missing")
     plan_path = tmp_path / "plan.json"

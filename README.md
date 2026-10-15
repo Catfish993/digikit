@@ -17,8 +17,8 @@ The goal is to understand the firmware well enough to add new machines and sound
 to test DSP changes without hardware.
 
 **No Elektron firmware is in this repository.** The firmware is copyright Elektron. You
-supply your own `.syx` file. `.gitignore` keeps the firmware, the extracted sections,
-the snapshots and the databases (`out/`) out of git.
+supply your own `.syx` file. `.gitignore` keeps the firmware (`firmware/`) and the
+extracted sections, snapshots and databases (`out/`) out of git.
 
 ## Firmware
 
@@ -36,7 +36,8 @@ site for your device; the repository never includes them.
 | Digitakt II | 1.15C | `Digitakt_II_OS1.15C.syx` | `62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c` |
 | Digitone II | 1.10E | `Digitone_II_OS1.10E.syx` | `9881ee5ca4624be2b833e5eb94e294f2f8425371e6729781baccd1c256cac504` |
 
-Put the files in the repository root; the tools look there first. `DIGI_EMU_SYX`
+Put the files in `firmware/`; the tools look there first (`tools/firmware/config.py`).
+`firmware/README.md` lists the images and their SHA-256 values. `DIGI_EMU_SYX`
 (Digitone II) and `DIGI_EMU_SYX_DT2` (Digitakt II) override the paths.
 
 ## Setup
@@ -54,13 +55,13 @@ mise run setup      # uv sync, pnpm install
 ## Extract the firmware
 
 ```sh
-uv run python -m tools.firmware.extract Digitone_II_OS1.11.syx -o out/sections/dn2-1.11
-uv run python -m tools.firmware.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16
+uv run python -m tools.firmware.extract firmware/Digitone_II_OS1.11.syx -o out/sections/dn2-1.11
+uv run python -m tools.firmware.extract firmware/Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16
 ```
 
 Keep each firmware in its own directory (`out/sections/dt2-1.16`, ...): the analysis
 tools find images by these names. A sections directory records the SHA-256 of its
-`.syx` in `.source-sha256`, and the tools refuse to mix firmwares. Compare it with
+`.syx` in `out/sections/<image>/.source-sha256`, and the tools refuse to mix firmwares. Compare it with
 `shasum -a 256 <the .syx>` before you trust a run.
 
 ## Ready states
@@ -73,13 +74,13 @@ mise run emu:ready -- dn2                     # Digitone II 1.11 (about 2 minute
 mise run emu:ready -- dt2 [--card-image IMG]  # Digitakt II 1.16, optionally with a +Drive image
 ```
 
-The files go to `snapshots/<device>-audio-ready-cold-*`. Git ignores them.
+The files go to `out/snapshots/<device>-audio-ready-cold-*`. Git ignores them.
 
 ## Desktop emulator
 
 ```sh
 mise run emu                      # build once and run (`mise run emu -- --build-only` builds only)
-mise run emu -- --cf-only --samples DIR Digitakt_II_OS1.16.syx   # your .wav files on the DT2 +Drive
+mise run emu -- --cf-only --samples DIR firmware/Digitakt_II_OS1.16.syx   # your .wav files on the DT2 +Drive
 mise run emu -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
 mise run emu -- --cf-only         # ColdFire only: no DSP, no audio
 ```
@@ -124,7 +125,7 @@ The browser DSP is slow; the browser host is parked on the branch `wip/browser-h
 mise run emu:serve                      # headless, paused; serves the control socket
 mise run emu:ctl status                 # status, step N, tap CODE, frame out.png, events
 uv run python -m tools.control.digi_client inject PATCHED.syx   # hot DSP injection
-uv run python -m tools.patchkit.dsp_patch syx BASE.syx tools/patchkit/dsp_patches/dn2-1.11-master-half.patch OUT.syx
+uv run python -m tools.patchkit.dsp_patch syx firmware/BASE.syx tools/patchkit/dsp_patches/dn2-1.11-master-half.patch OUT.syx
 ```
 
 `tools/patchkit/dsp_patch.py` edits DSP code or data by SHARC+ address and writes a patched
@@ -181,7 +182,7 @@ patchkit applies modules (new machines, parameters, master-bus effects) to your 
 
 ```sh
 mise run toolchains    # once: pinned ColdFire and SHARC+ toolchains for building modules
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
 mise run inject -- out/patch/mg.syx     # into a running emulator (mise run emu, or emu:serve)
 mise run web                            # the gallery at /patch: patch in the browser, nothing is uploaded
 ```
@@ -203,16 +204,18 @@ mise run web                            # the gallery at /patch: patch in the br
 ## Repository layout
 
 ```
-dt2/             .syx container: decode, rebuild, decompress
-emu/             firmware extraction and the shared helpers (config, symbols, SHARC capture)
-packages/emulator/  Rust workspace: runtime, ColdFire and SHARC execution, runners
-apps/            desktop (Tauri) and web shells (browser panel: Astro + Solid)
-tools/           Python tools, one package per owner (tools/<owner>/, docs/LAYOUT.md)
-tests/           pytest suite (native tests live in the crates); see docs/TESTING.md
-tests/scenarios/ scripted panel inputs and pinned PCM hashes
-modules/         patchkit modules
-devices/         device profiles (firmware hashes, panel layout), LED maps, and ports/ (patchkit firmware ports)
-docs/            findings, designs, handovers
+firmware/          stock firmware images you supply (ignored; see firmware/README.md)
+apps/              desktop (Tauri) and web shells (browser panel: Astro + Solid)
+packages/emulator/ Rust workspace: runtime, ColdFire and SHARC execution, runners
+packages/patchkit/ patch toolchain: port lockfiles, linker, apply, verify (CLI and wasm)
+packages/*         TypeScript control client and test support
+tools/             Python tools, one package per owner (tools/<owner>/, docs/LAYOUT.md)
+tests/             pytest suite (native tests live in the crates); see docs/TESTING.md
+tests/scenarios/   scripted panel inputs and pinned PCM hashes
+modules/           patchkit modules
+devices/           device profiles (firmware hashes, panel layout), LED maps, and ports/
+docs/              findings, designs, handovers
+out/               everything generated locally (ignored): builds, runs, caches, out/sections/<image>, out/snapshots
 ```
 
 Who owns what, and planned moves: [docs/LAYOUT.md](docs/LAYOUT.md).

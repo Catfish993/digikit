@@ -44,7 +44,7 @@ Algorithm, in the order the functions below run it:
      which instruction addresses.
   3. `_find_call_sites` / `_immediate_arg` find every give/give_b call site
      with a literal (`pea #imm32`) semaphore operand -- copied from
-     scratch/semscan.py, which used the same byte patterns against a
+     out/scratch/semscan.py, which used the same byte patterns against a
      Ghidra-derived caller graph instead of this module's own reachability
      walk.
   4. A poster site not reachable from any vector is a task poster. One
@@ -55,7 +55,7 @@ Algorithm, in the order the functions below run it:
 
 Known blind spot, inherent to walking forward from ISR entry points instead
 of walking callers backward from each give site (which is what
-scratch/semscan.py's Ghidra-based `classify()` does): if a subroutine is
+out/scratch/semscan.py's Ghidra-based `classify()` does): if a subroutine is
 reachable from BOTH an ISR and ordinary task code, this scan only sees the
 ISR path and classifies a give inside it by that path alone. Ghidra's
 caller-graph walk would correctly call such a give "task" (any non-ISR
@@ -65,7 +65,7 @@ direction is: a genuinely task-reachable give site could be missed if its
 only *discovered* path happens to be through an ISR, i.e. it could be left
 out of never_fake when it should be in it. Not observed on any of DT2
 1.15C, DT2 1.16 or DN2 1.11 (this module's classification of every
-literal-operand give/give_b site matched scratch/semscan.py's Ghidra-based
+literal-operand give/give_b site matched out/scratch/semscan.py's Ghidra-based
 one exactly on all three), but a build where it matters would need the
 Ghidra-based tool to catch it.
 
@@ -90,7 +90,7 @@ RTS = 0x4e75
 MAX_ISR_DEPTH = 3
 SPAN_MAX_BYTES = 0x4000    # bound on one ISR/callee body scan (largest seen: well under 1K)
 
-# Byte-level heuristics. Both mirror scratch/semscan.py's own approximations
+# Byte-level heuristics. Both mirror out/scratch/semscan.py's own approximations
 # (see its SCAN_BACK / immediate_arg): a fixed backward byte window rather
 # than a true instruction-boundary walk, justified there and here by the
 # instruction sequences involved being short and straight-line.
@@ -258,7 +258,7 @@ def _isr_reachable(data, base, vectors):
 
 
 # --------------------------------------------------------------------------
-# Step 3: give/give_b post sites (copied from scratch/semscan.py).
+# Step 3: give/give_b post sites (copied from out/scratch/semscan.py).
 # --------------------------------------------------------------------------
 
 def _find_call_sites(data, base, target):
@@ -322,7 +322,7 @@ def never_fake_semaphores(image, load_addr=symbols.LOAD_ADDR, modeled_vectors=fr
     ordinary task code, or an ISR whose vector is in `modeled_vectors`.
 
     This is the image-only replacement for the give/give_b half of
-    scratch/semscan.py's methodology (see that module and the docstring
+    out/scratch/semscan.py's methodology (see that module and the docstring
     above for the Ghidra-based version this reproduced exactly on DT2
     1.15C, DT2 1.16 and DN2 1.11). It does NOT find:
 

@@ -658,7 +658,7 @@ SYMBOLS = [
     ('worker_done_sem', Offset('display_sem', 8), False),
 
     # A second semaphore pair, found by the give/give_b post-site audit (see
-    # longrun.py's `unblock` docstring and scratch/semscan.py): two
+    # longrun.py's `unblock` docstring and out/scratch/semscan.py): two
     # neighbouring routines near the eSDHC bring-up code implement what
     # reads like a bounded producer/consumer handshake -- one pends
     # bq_free_sem, does work, gives bq_ready_sem+8's neighbour; the other

@@ -98,8 +98,8 @@ Decompress a firmware .syx into its sections.
 
   firmware.syx   the firmware to extract; resolved like every other path in
                  this project -- this argument, then DT2_SYX, then the only
-                 .syx present (see tools/firmware/config.py)
-  -o DIR         where to write them; overrides DT2_SECTIONS
+                 .syx in firmware/ (see tools/firmware/config.py)
+  -o DIR         where to write them; overrides DT2_SECTIONS (default out/sections/<image key>/)
   --help         this"""
 
 
@@ -119,8 +119,8 @@ def main(argv):
     rest = [a for a in argv if not a.startswith("-")]
     syx = config.firmware(rest[0] if rest else None)
     # -o is the "explicit argument" tier of config.py's resolution order, so
-    # without it this must fall through to DT2_SECTIONS rather than a literal.
-    outdir = outdir or config.sections_dir()
+    # without it this must fall through to DT2_SECTIONS, then out/sections/<image key>.
+    outdir = outdir or config.sections_dir(syx)
     print("Extracting %s -> %s/\n" % (syx, outdir.rstrip("/")), flush=True)
 
     def started(sid, kind, name):

@@ -5,7 +5,7 @@ docs/design/emulator-control.md against a real daemon.
     DIGI_EMUD=out/native/target/nogen/release/digi-emud uv run python -m pytest tests/control/test_digi_client.py
 
 The daemon tests boot a CF-only emulator (no private DSP inputs); they skip
-without DIGI_EMUD or the .syx (DIGI_EMU_SYX, else Digitone_II_OS1.11.syx).
+without DIGI_EMUD or the .syx (DIGI_EMU_SYX, else firmware/Digitone_II_OS1.11.syx).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 from tools.control import digi_client  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
+from tools.firmware import config  # noqa: E402
 
 
 @pytest.fixture()
@@ -181,13 +182,9 @@ def test_describe_load_summarises_a_hot_inject():
 # ----- against a real daemon ---------------------------------------------------
 
 EMUD = os.environ.get("DIGI_EMUD", "")
-SYX = pathlib.Path(os.environ.get("DIGI_EMU_SYX") or ROOT / "Digitone_II_OS1.11.syx")
-if not SYX.is_file():
-    # A worktree's root has no firmware: the main tree's does.
-    for parent in ROOT.parents:
-        if (parent / "Digitone_II_OS1.11.syx").is_file():
-            SYX = parent / "Digitone_II_OS1.11.syx"
-            break
+SYX = pathlib.Path(
+    os.environ.get("DIGI_EMU_SYX") or config.stock("Digitone_II_OS1.11.syx")
+)
 needs_daemon = pytest.mark.skipif(
     not (EMUD and pathlib.Path(EMUD).is_file() and SYX.is_file()),
     reason="needs DIGI_EMUD (a built digi-emud) and the DN2 .syx",

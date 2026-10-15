@@ -549,7 +549,7 @@ mod cli_tests {
     fn tap_holds_for_the_requested_guest_instructions_across_chunks() {
         let syx = std::env::var_os("DIGI_COUPLED_SYX")
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("../../../Digitone_II_OS1.11.syx"));
+            .unwrap_or_else(|| PathBuf::from("../../../firmware/Digitone_II_OS1.11.syx"));
         let Ok(bytes) = std::fs::read(syx) else {
             return;
         };
@@ -607,7 +607,7 @@ mod cli_tests {
 
         let syx = std::env::var_os("DIGI_COUPLED_SYX")
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("../../../Digitone_II_OS1.11.syx"));
+            .unwrap_or_else(|| PathBuf::from("../../../firmware/Digitone_II_OS1.11.syx"));
         let Ok(bytes) = std::fs::read(syx) else {
             drop((sender, handle));
             controller.join().unwrap();

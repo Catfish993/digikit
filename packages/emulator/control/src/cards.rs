@@ -354,7 +354,7 @@ mod tests {
         assert!(!paths.ready_cached());
     }
 
-    /// With the DT2 1.16 .syx (`DT2_SYX`, or the repository root's): three
+    /// With the DT2 1.16 .syx (`DT2_SYX`, or the one in `firmware/`): three
     /// WAV files build a card whose track N sample is file N, and a second
     /// call reuses the cache.
     #[test]
@@ -364,7 +364,7 @@ mod tests {
             .or_else(|| {
                 Path::new(env!("CARGO_MANIFEST_DIR"))
                     .ancestors()
-                    .map(|dir| dir.join("Digitakt_II_OS1.16.syx"))
+                    .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.16.syx"))
                     .find(|path| path.exists())
             })
             .and_then(|path| fs::read(path).ok())

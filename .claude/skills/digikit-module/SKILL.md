@@ -34,13 +34,13 @@ Run everything from the repo root. Work in a lane only for long or parallel runs
 |---|---|
 | New module | `mise run patch:new -- fx/my-drive` (`--cf`, `--dsp`; builds the stubs so the template is known to compile) |
 | Build objects | `mise run patch:build -- modules/fx/my-drive` (`--check` fails when a committed `.dko.json` is stale) |
-| Patch | `mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/my-drive -o out/patch/x.syx` (writes `x.plan.json`; list required modules too, the command line does not add them) |
+| Patch | `mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/my-drive -o out/patch/x.syx` (writes `x.plan.json`; list required modules too, the command line does not add them) |
 | Explain | `mise run patch:explain -- --firmware ... --modules ...` (before/after listing of each site, allocation map) |
 | Verify | `uv run python -m tools.patchkit.patchkit verify out/patch/x.syx` (also run by `patch`) |
 | Inject | `mise run inject -- out/patch/x.syx` (into a running daemon; DSP-only change hot, MAIN change by cached coupled cold boot) |
 | Edit loop | `mise run patch:dev -- --modules fx/my-drive [--device dt2\|dn2]`: watches `src/` and `module.toml`; per edit builds, patches, injects, runs the quick tests, prints one line with `edit->running` and `edit->tested` |
 | Test | `mise run patch:test` (matrix in `tests/patchkit/smoke/matrix.toml`; `-- --cell "dt2-1.17:fx/my-drive,test/cf-demo"` with the exact module set of a cell, joined by commas; a new set needs `-- --update` once to record frame goldens) |
-| Port | `mise run port:resolve [-- X.syx]` rewrites `devices/ports/*.toml` from the `[[anchor_rule]]`s (deterministic) |
+| Port | `mise run port:resolve [-- firmware/X.syx]` rewrites `devices/ports/*.toml` from the `[[anchor_rule]]`s (deterministic) |
 | pytest | `uv run python -m pytest tests/patchkit/smoke --slow` |
 
 Measured edit to running (DT2 1.17): DSP-only change about 3 s; a ColdFire (MAIN) change about 13 s (cold boot with DSP;
@@ -111,8 +111,8 @@ The source scales the 64-float master block by a gain word and tail-jumps to the
 use is justified in the file header (docs/findings/06). Gain 1.0 is bit-identical to stock; 0.5 is -6.0206 dB.
 
     mise run patch:build -- modules/fx/master-gain --check
-    mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
-    mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain
+    mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
+    mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain
     mise run patch:dev -- --modules fx/master-gain            # edit the .s, watch the summary line
     mise run patch:test -- --cell dt2-1.17:fx/master-gain,test/cf-demo
 

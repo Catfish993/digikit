@@ -68,6 +68,7 @@ ROOT = HERE.parent.parent
 from tools import python_env  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
 from tools.emulator import card_check  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_dsp_budget  # noqa: E402
 
 MS = 132_000  # ColdFire instructions per emulated millisecond (the oracle clock)
@@ -250,7 +251,7 @@ def firmware_inputs(cell: Cell) -> tuple[Path, Path]:
         raise HarnessError(
             f"no firmware entry for {cell.device} {cell.firmware}"
         ) from None
-    syx = ROOT / spec["syx"]
+    syx = config.stock(spec["syx"])
     env = os.environ.get(
         f"DIGI_PK_READY_{cell.device.upper()}_{cell.firmware.replace('.', '')}"
     )

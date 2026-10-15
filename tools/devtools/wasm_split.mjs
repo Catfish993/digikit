@@ -51,7 +51,7 @@ const env = process.env;
 const ready = path.resolve(root, env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
 const read = (p) => new Uint8Array(fs.readFileSync(p));
 const wasm = read(args.core);
-const syx = read(args.syx ?? env.DIGI_EMU_SYX ?? path.join(root, 'Digitone_II_OS1.11.syx'));
+const syx = read(args.syx ?? env.DIGI_EMU_SYX ?? path.join(root, 'firmware', 'Digitone_II_OS1.11.syx'));
 const image = read(path.join(ready, 'digi-audio-dn2-image.bin'));
 const state = read(path.join(ready, 'digi-audio-m5.snap.dsp'));
 const snapshot = read(path.join(ready, 'digi-audio-m5.snap'));

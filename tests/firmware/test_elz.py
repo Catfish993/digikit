@@ -7,16 +7,16 @@ import unittest
 
 from support.paths import REPO_ROOT
 
-from tools.firmware import aplib, elz
+from tools.firmware import aplib, config, elz
 from tools.firmware.container import sections
 
 ROOT = str(REPO_ROOT)
-SYX = os.path.join(ROOT, "Digitakt_II_OS1.15C.syx")
-SECTIONS = os.path.join(ROOT, "sections")
+SYX = str(config.stock("Digitakt_II_OS1.15C.syx"))
+SECTIONS = str(config.sections_for(SYX))
 
 
 def sections_from_syx():
-    """True when sections/ was extracted from the 1.15C .syx in the repo root."""
+    """True when out/sections/dt2-1.15C was extracted from the 1.15C .syx in firmware/."""
     marker = os.path.join(SECTIONS, ".source-sha256")
     if not (os.path.exists(SYX) and os.path.exists(marker)):
         return False
@@ -38,7 +38,8 @@ class ElzTest(unittest.TestCase):
             elz.depack_section(bytes(packed) + bytes(4))
 
     @unittest.skipUnless(
-        sections_from_syx(), "needs the 1.15C .syx and sections/ extracted from it"
+        sections_from_syx(),
+        "needs the 1.15C .syx and out/sections/dt2-1.15C extracted from it",
     )
     def test_matches_the_device_depacker_on_1_15c(self):
         c, secs = sections(SYX)

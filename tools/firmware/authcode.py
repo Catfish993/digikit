@@ -3,7 +3,7 @@
 
     CLI: tools/firmware/content_hmac.py
 
-Traced from the depacked bootstrap (`sections/section_2_DSP.bin`, base
+Traced from the depacked bootstrap (`out/sections/section_2_DSP.bin`, base
 0x80000400 once its 4-byte length prefix is stripped) via Ghidra, and
 confirmed byte-exact against both real firmwares below.
 

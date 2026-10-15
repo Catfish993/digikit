@@ -1,6 +1,6 @@
 """Find GCC C++ RTTI, vtables and Class::method strings in a ColdFire image.
 
-    uv run python -m tools.coldfire.rttiscan sections/section_3_MAIN_OS.bin
+    uv run python -m tools.coldfire.rttiscan out/sections/section_3_MAIN_OS.bin
         [--base 0x40000400] [--code LO HI]...
         --json out/symbols/dt2-1.15C-rtti.json
 

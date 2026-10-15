@@ -17,6 +17,10 @@ The config (default tools/devtools/pathcheck.json) has:
   exclude        files not scanned: a path prefix, or an fnmatch pattern
   generated      paths that are valid although untracked (prefix or fnmatch
                  pattern, matched on every leading part of the token)
+  moved_local    {old prefix: new prefix} for ignored local directories that
+                 moved (sections/ -> out/sections/dt2-1.16/). The old prefix
+                 is a path root; a token under it is historical in history_docs
+                 files and elsewhere stale with the new path as suggestion
   history_docs   files (path prefix or fnmatch pattern) that may cite paths that
                  once existed: there a stale token that was ever tracked in the
                  history of HEAD and has no suggestion is "historical", not stale
@@ -131,6 +135,10 @@ class Config:
         self.retired = [str(r).strip("/") for r in spec.get("retired_roots", [])]
         self.exclude = [str(p) for p in spec.get("exclude", [])]
         self.generated = [str(p).rstrip("/") for p in spec.get("generated", [])]
+        self.moved = {
+            str(k).rstrip("/") + "/": str(v).rstrip("/") + "/"
+            for k, v in spec.get("moved_local", {}).items()
+        }
         self.history_docs = [str(p) for p in spec.get("history_docs", HISTORY_DOCS)]
         self.allow: list[dict[str, Any]] = []
         self.used: set[int] = set()
@@ -171,6 +179,13 @@ class Config:
 
     def unused_allows(self) -> list[dict[str, Any]]:
         return [e["item"] for i, e in enumerate(self.allow) if i not in self.used]
+
+    def moved_target(self, path: str) -> str:
+        """The new place of a path under a moved local root ("" if none)."""
+        for old, new in self.moved.items():
+            if path.startswith(old):
+                return new + path[len(old) :]
+        return ""
 
     def is_history_doc(self, rel: str) -> bool:
         return any(matches(rel, e) for e in self.history_docs)
@@ -447,6 +462,7 @@ class Scan:
         self.index = Index(files)
         self.moves = load_moves(root, self.index.files)
         roots = self.index.roots() | set(cfg.retired)
+        roots |= {o.rstrip("/") for o in cfg.moved}
         self.tok = token_regex(roots)
         self.plain = re.compile(
             self.tok.pattern.replace(rf"(?:({REF_CHARS}):)?", "(?:())?", 1)
@@ -514,7 +530,9 @@ def find_stale(
     unresolved = [
         c["path"].rstrip("/")
         for rel, c in cands
-        if not c["ref"] and not resolves(scan.index, cfg, c["path"])
+        if not c["ref"]
+        and not resolves(scan.index, cfg, c["path"])
+        and not cfg.moved_target(c["path"])
     ]
     ignored = scan.git.ignored(unresolved + [p + "/" for p in unresolved])
     stale: list[dict[str, Any]] = []
@@ -527,6 +545,13 @@ def find_stale(
             if cfg.is_allowed(rel, c["token"]):
                 continue
             stale.append(row)
+            continue
+        if tracked_resolves(scan.index, c["path"]) or cfg.is_allowed(rel, c["path"]):
+            continue
+        moved = cfg.moved_target(c["path"])
+        if moved:
+            row["suggestion"], row["fix"] = f"{moved} (moved)", moved
+            (historical if cfg.is_history_doc(rel) else stale).append(row)
             continue
         if (
             resolves(scan.index, cfg, c["path"])

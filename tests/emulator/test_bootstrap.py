@@ -1,7 +1,7 @@
 """The real Digitakt II bootstrap on the native ColdFire core (tools/emulator/bootstrap_run.py, packages/emulator/bootstrap).
 
 Each test runs unmodified bootstrap code with a modelled flash, panel and MIDI UART. They need the Digitakt II 1.16
-firmware in the repo root and a cargo toolchain (the first call builds packages/emulator/bootstrap, no generated core).
+firmware in firmware/ and a cargo toolchain (the first call builds packages/emulator/bootstrap, no generated core).
 """
 
 import struct
@@ -9,10 +9,12 @@ import struct
 import pytest
 from support.paths import REPO_ROOT
 
+from tools.firmware import config
+
 ROOT = REPO_ROOT
-SYX = ROOT / "Digitakt_II_OS1.16.syx"
+SYX = config.stock("Digitakt_II_OS1.16.syx")
 pytestmark = pytest.mark.skipif(
-    not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in the repo root"
+    not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in firmware/"
 )
 
 

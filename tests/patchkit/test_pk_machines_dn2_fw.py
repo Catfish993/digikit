@@ -9,12 +9,13 @@ from support.words import be32
 
 ROOT = REPO_ROOT
 
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_cfunit,  # noqa: E402
     pk_toolchains,  # noqa: E402
 )
 
-SYX = ROOT / "Digitakt_II_OS1.17.syx"
+SYX = config.stock("Digitakt_II_OS1.17.syx")
 SRC = ROOT / "modules" / "core" / "machines" / "src" / "cf" / "dn2" / "machines.s"
 ROWSIZE = 64
 FIRST = 5
@@ -69,7 +70,9 @@ pytestmark = [
     pytest.mark.skipif(
         pk_toolchains.m68k_bin("gcc") is None, reason="m68k toolchain not installed"
     ),
-    pytest.mark.skipif(not SYX.exists(), reason="Digitakt_II_OS1.17.syx not present"),
+    pytest.mark.skipif(
+        not SYX.exists(), reason="firmware/Digitakt_II_OS1.17.syx not present"
+    ),
 ]
 
 # (name, short, clone_of, position, own_dsp)

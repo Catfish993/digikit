@@ -5,10 +5,12 @@ import pathlib
 import pytest
 from support.paths import REPO_ROOT
 
+from tools.firmware import config  # noqa: E402
+
 ROOT = REPO_ROOT
-SYX = ROOT / "Digitakt_II_OS1.16.syx"
+SYX = config.stock("Digitakt_II_OS1.16.syx")
 pytestmark = pytest.mark.skipif(
-    not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in the repo root"
+    not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in firmware/"
 )
 
 from tools.firmware import container, inplace  # noqa: E402

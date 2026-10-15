@@ -45,6 +45,7 @@ ROOT = HERE.parent.parent
 
 from tools import python_env  # noqa: E402
 from tools.emulator import card_overlay  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import hook_ab  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit import pk_proofkit as K  # noqa: E402
@@ -284,7 +285,7 @@ class Proof(K.Proof):
 
         src = ROOT / "out" / "patch" / f"proof-xslice-{FW}.syx"
         r = subprocess.run(
-            [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
+            [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(config.stock(f"Digitakt_II_OS{FW}.syx")),
              "--modules", ",".join(MODS_ONE), "-o", str(src)],
             capture_output=True, text=True, cwd=ROOT, env=python_env(),
         )  # fmt: skip
@@ -383,7 +384,7 @@ class Proof(K.Proof):
         ):
             img = ROOT / "out" / "patch" / f"proof-two-{name}-{FW}.syx"
             r = subprocess.run(
-                [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(ROOT / f"Digitakt_II_OS{FW}.syx"),
+                [sys.executable, "-m", "tools.patchkit.patchkit", "patch", "--firmware", str(config.stock(f"Digitakt_II_OS{FW}.syx")),
                  "--modules", ",".join(mods), "-o", str(img)],
                 capture_output=True, text=True, cwd=ROOT, env=python_env(),
             )  # fmt: skip

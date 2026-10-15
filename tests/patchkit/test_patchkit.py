@@ -17,12 +17,13 @@ ROOT = REPO_ROOT
 
 from tools import python_env  # noqa: E402
 from tools.emulator import native_target  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import port_resolve  # noqa: E402
 
-DT2_116 = ROOT / "Digitakt_II_OS1.16.syx"
-DT2_117 = ROOT / "Digitakt_II_OS1.17.syx"
-DN2_111 = ROOT / "Digitone_II_OS1.11.syx"
-DN2_112 = ROOT / "Digitone_II_OS1.12.syx"
+DT2_116 = config.stock("Digitakt_II_OS1.16.syx")
+DT2_117 = config.stock("Digitakt_II_OS1.17.syx")
+DN2_111 = config.stock("Digitone_II_OS1.11.syx")
+DN2_112 = config.stock("Digitone_II_OS1.12.syx")
 XSLICE_SECTION3 = "cdbd772639d22c8a06231958e00a600fd7fd29df3b057e33ff4d76f837ecb86a"
 
 pytestmark = pytest.mark.skipif(
@@ -88,7 +89,7 @@ def test_aplib_packer_equals_python_on_small_sections(patchkit):
     assert rust.exists()
     r = subprocess.run(
         [sys.executable, "-m", "tools.patchkit.pk_aplib_eq", "--only", "2,7,8", "--rust", str(rust),
-         "Digitakt_II_OS1.16.syx", "Digitone_II_OS1.12.syx"],
+         str(config.stock("Digitakt_II_OS1.16.syx")), str(config.stock("Digitone_II_OS1.12.syx"))],
         cwd=ROOT,
         env=python_env(),
         capture_output=True,

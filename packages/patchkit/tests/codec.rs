@@ -1,4 +1,4 @@
-//! Codec checks against the stock images in the repository root (skipped when absent).
+//! Codec checks against the stock images in `firmware/` (skipped when absent).
 
 use patchkit::firmware::Firmware;
 
@@ -10,7 +10,7 @@ const FILES: [&str; 4] = [
 ];
 
 fn read(name: &str) -> Option<Vec<u8>> {
-    std::fs::read(format!("{}/../../{name}", env!("CARGO_MANIFEST_DIR"))).ok()
+    std::fs::read(format!("{}/../../firmware/{name}", env!("CARGO_MANIFEST_DIR"))).ok()
 }
 
 #[test]

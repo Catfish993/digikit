@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a harmless test image: stock Digitakt II firmware plus one visible string change in MAIN OS.
 
-    uv run python -m tools.patchkit.patched_image [--syx Digitakt_II_OS1.16.syx] [--string OLD=NEW]
+    uv run python -m tools.patchkit.patched_image [--syx firmware/Digitakt_II_OS1.16.syx] [--string OLD=NEW]
         [--out out/patch/dt2-1.16-harmless.syx] [--png FRAME.png] [--no-boot] [--no-bootstrap]
 
 The string must occur exactly once in section 3, NUL-delimited, and keep its length. The default turns the default
@@ -41,6 +41,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.control import digi_client  # noqa: E402
 from tools.emulator import bootstrap_run  # noqa: E402
 from tools.firmware import (  # noqa: E402
+    config,
     container,
     inplace,
     roundtrip,  # noqa: E402
@@ -142,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--syx", default=str(ROOT / "Digitakt_II_OS1.16.syx"))
+    ap.add_argument("--syx", default=str(config.stock("Digitakt_II_OS1.16.syx")))
     ap.add_argument(
         "--string", default="=".join(DEFAULT_STRING), help="OLD=NEW, same length"
     )

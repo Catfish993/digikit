@@ -31,7 +31,7 @@ OUT must lie outside the repository.
 
     uv run python -m tools.sharc_dev.sharc_dn2_aot --out /private/tmp/dn2-aot \\
         --state STATE.bin --capture NOTE.dt2cap \\
-        [--syx Digitone_II_OS1.11.syx --cf-snapshot M5.snap \\
+        [--syx firmware/Digitone_II_OS1.11.syx --cf-snapshot M5.snap \\
          --dsp-image DN2-IMAGE.bin] [--wasm] [--compare OLD/manifest.json]
 """
 

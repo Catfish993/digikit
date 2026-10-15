@@ -20,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import machinebuild  # noqa: E402
 from tools.patchkit import machinepatch as mp  # noqa: E402
 
@@ -37,7 +38,7 @@ def main() -> int:
     a = ap.parse_args()
     from tools.patchkit import port_resolve
 
-    secs = port_resolve.sections_of(ROOT / "Digitakt_II_OS1.16.syx")
+    secs = port_resolve.sections_of(config.stock("Digitakt_II_OS1.16.syx"))
     import tempfile
 
     with tempfile.NamedTemporaryFile(suffix=".bin") as f:

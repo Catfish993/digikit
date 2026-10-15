@@ -39,8 +39,11 @@ GOLDEN_ALL5 = (
 
 
 # These plans pin 1.15C bytes, so prefer the pinned 1.15C extract over
-# config.main_image(), which follows whichever firmware sections/ holds.
-PINNED_1_15C = os.path.join("out", "sections", "dt2-1.15C", "section_3_MAIN_OS.bin")
+# config.main_image(), which follows whichever firmware config.firmware() picks.
+PINNED_1_15C = os.path.join(
+    config.sections_for(config.stock("Digitakt_II_OS1.15C.syx")),
+    "section_3_MAIN_OS.bin",
+)
 
 
 def _try_main_image():

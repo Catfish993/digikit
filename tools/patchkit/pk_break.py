@@ -27,6 +27,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import patchkit  # noqa: E402
 
 # kind -> (module manifest, old text, new text); the old text must occur exactly once
@@ -66,7 +67,7 @@ def build(kind: str, mods: str, device: str, fw: str, out: Path) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     plan = out.with_suffix(".plan.json")
     r = subprocess.run(
-        [str(patchkit.binary()), "--root", str(root), "apply", "--firmware", str(ROOT / FIRMWARE[(device, fw)]),
+        [str(patchkit.binary()), "--root", str(root), "apply", "--firmware", str(config.stock(FIRMWARE[(device, fw)])),
          "--modules", mods, "-o", str(out), "--plan", str(plan)],
         cwd=ROOT, capture_output=True, text=True,
     )  # fmt: skip

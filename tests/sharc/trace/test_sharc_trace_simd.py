@@ -1350,7 +1350,7 @@ class RealBlobSimdRegionTest(unittest.TestCase):
     """dt2-1.16's render path enables SIMD around 0xb80105 (called from
     FUN_1c642a at 0x1c65b3/0x1c6c72): MODE1.PEYEN is set at 0xb8012f and
     cleared at 0xb80150. Skips cleanly when the firmware isn't present
-    (CLAUDE.md: never commit sections/out; matches this repo's
+    (CLAUDE.md: never commit out/ or firmware/; matches this repo's
     skip-not-fail convention, e.g. tests/sharc/trace/test_sharc_trace_realblob.py's
     RealBlobStage6NormalWordAddressingTest)."""
 

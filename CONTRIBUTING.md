@@ -8,8 +8,8 @@ Read [README.md](README.md) (setup), [docs/LAYOUT.md](docs/LAYOUT.md) (who owns 
 
 ## Never commit
 
-- Firmware (`*.syx`) or anything derived from it: `sections/`, `out/`, `snapshots/`,
-  `apps/web/.local`, card images.
+- Firmware (`*.syx`) or anything derived from it: `firmware/` holds the images and
+  is ignored; `out/` (sections, snapshots), `apps/web/.local`, card images.
 - Users' sample audio.
 - Secrets.
 

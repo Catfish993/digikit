@@ -1,23 +1,32 @@
 """Where the firmware, its sections and the snapshots live.
 
-Nothing in this project should hardcode a firmware filename. It did, in
+Nothing in this project should hardcode a firmware filename or directory. It did, in
 thirteen files, and the cost was concrete: `unicorn-reference-final:emu/run.py` accepted a `.syx`
 argument, passed it to nothing, and cheerfully ran a *different* firmware's
 image and snapshots while printing the name you asked for. A hardcoded default
 that silently wins over an explicit argument is worse than no default.
 
+Layout (all relative to the repository root, never the working directory):
+
+    firmware/                  your own .syx files (see firmware/README.md)
+    out/sections/<image-key>/  extracted sections of one image, e.g. dt2-1.16
+    out/snapshots/             boot snapshots
+
+`stock(name)` is the path of a named image in `firmware/`. `image_key(syx)`
+names an image by its device file (`devices/*.toml`): `<short>-<version>`.
+
 Every path here resolves in the same order:
 
     1. an explicit argument, if the caller passed one
     2. the environment variable
-    3. discovery in the working directory
+    3. discovery in `firmware/`
     4. an error that says what it looked for and how to tell it
 
 Environment variables:
 
     DT2_SYX        the firmware .syx
-    DT2_SECTIONS   the directory of extracted sections   (default: sections)
-    DT2_SNAPSHOTS  the directory of boot snapshots        (default: snapshots)
+    DT2_SECTIONS   the directory of extracted sections   (default: out/sections/<image-key>)
+    DT2_SNAPSHOTS  the directory of boot snapshots        (default: out/snapshots)
     DT2_MAIN_IMG   the decompressed MAIN OS image
 
 Discovery is by pattern, not by literal name, so another Elektron device's
@@ -27,9 +36,12 @@ device's naming, not a law.
 
 import glob
 import os
+import pathlib
 
-SECTIONS_DEFAULT = "sections"
-SNAPSHOTS_DEFAULT = "snapshots"
+REPO = pathlib.Path(__file__).resolve().parents[2]
+FIRMWARE_DIR = REPO / "firmware"
+SECTIONS_ROOT = REPO / "out" / "sections"
+SNAPSHOTS_DEFAULT = REPO / "out" / "snapshots"
 
 # The build this project was reverse-engineered against. It breaks a tie when
 # several firmware files are present, and it never overrides an explicit
@@ -42,18 +54,56 @@ class NotFound(SystemExit):
     """A path could not be resolved. The message says how to resolve it."""
 
 
-def sections_dir():
-    return os.environ.get("DT2_SECTIONS", SECTIONS_DEFAULT)
+def stock(name: str) -> pathlib.Path:
+    """-> the path of a named image in firmware/ (it may not exist)."""
+    return FIRMWARE_DIR / name
+
+
+def image_key(syx) -> str:
+    """-> "<device short>-<version>" (dt2-1.16, dn2-1.10E) of a firmware file.
+
+    Identified by content hash through devices/*.toml. A file that is not
+    there is keyed by the filename hint in the device files, so paths can be
+    computed before the image is present. An image no device file knows (for
+    example another product) is keyed by its file stem.
+    """
+    from tools.firmware import device
+
+    devdir = str(REPO / "devices")
+    try:
+        dev, fw = device.identify(str(syx), devdir)
+    except OSError:
+        name = pathlib.Path(syx).name
+        for d in device.load_all(devdir):
+            for f in d.firmwares:
+                if f.filename == name:
+                    return "%s-%s" % (d.short, f.version)
+        return pathlib.Path(syx).stem
+    except SystemExit:
+        return pathlib.Path(syx).stem
+    return "%s-%s" % (dev.short, fw.version)
+
+
+def sections_for(syx) -> pathlib.Path:
+    """-> the directory of extracted sections of one image."""
+    return SECTIONS_ROOT / image_key(syx)
+
+
+def sections_dir(syx=None):
+    env = os.environ.get("DT2_SECTIONS")
+    if env:
+        return env
+    return str(sections_for(syx or firmware()))
 
 
 def snapshots_dir():
-    return os.environ.get("DT2_SNAPSHOTS", SNAPSHOTS_DEFAULT)
+    return os.environ.get("DT2_SNAPSHOTS", str(SNAPSHOTS_DEFAULT))
 
 
 def firmware(explicit=None):
     """-> the .syx path.
 
-    An explicit argument wins, then DT2_SYX, then the only `.syx` present.
+    An explicit argument wins, then DT2_SYX, then the only `.syx` in firmware/.
     With several present the tested build breaks the tie -- every address in
     this project targets it, so that is a stated preference rather than a
     guess -- and several with none of them tested is a refusal. What must
@@ -68,21 +118,21 @@ def firmware(explicit=None):
         if not os.path.exists(env):
             raise NotFound("DT2_SYX points at a missing file: %s" % env)
         return env
-    found = sorted(glob.glob("*.syx"))
+    found = [str(p) for p in sorted(FIRMWARE_DIR.glob("*.syx"))]
     if len(found) == 1:
         return found[0]
     # Several present: prefer the build this project is keyed to, which keeps
     # the many commands that have no firmware argument working. Only a real tie --
     # several, none of them tested -- refuses.
-    if TESTED_SYX in found:
-        return TESTED_SYX
+    if str(stock(TESTED_SYX)) in found:
+        return str(stock(TESTED_SYX))
     if not found:
         raise NotFound(
             "No firmware found.\n\n"
             "No Elektron firmware ships with this repository and none ever\n"
             "should -- it is copyright Elektron. Put your own lawfully-obtained\n"
-            ".syx in the working directory, pass it as an argument, or set\n"
-            "DT2_SYX. Only %s has been tested." % TESTED_NAME
+            ".syx in %s (see firmware/README.md), pass it as an argument,\n"
+            "or set DT2_SYX. Only %s has been tested." % (FIRMWARE_DIR, TESTED_NAME)
         )
     raise NotFound(
         "Several firmware files here, so which one is ambiguous:\n\n%s\n\n"
@@ -111,7 +161,7 @@ def main_image(explicit=None):
         raise NotFound(
             "No MAIN OS image in %s/.\n\n"
             "The sections inside a .syx are compressed. Decompress them once:\n\n"
-            "    uv run python -m tools.firmware.extract <firmware.syx> -o %s/\n\n"
+            "    uv run python -m tools.firmware.extract firmware/<image>.syx -o %s/\n\n"
             "Or set DT2_MAIN_IMG to an image you already have." % (d, d)
         )
     raise NotFound(

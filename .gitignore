@@ -3,14 +3,17 @@
 *.syx
 *.zip
 *_readme.html
-sections/
+# Your own images go in firmware/ (see firmware/README.md); only its README is committed.
+/firmware/*
+!/firmware/README.md
 out/
 venv/
 __pycache__/
 *.pyc
 vendor/
-snapshots/
+# Firmware-derived data, never committed; it lives under out/ (sections, snapshots).
 *.snap
+section_*.bin
 *.mstate
 
 # uv
@@ -21,7 +24,6 @@ snapshots/
 # (docs/refs/*.md) are committed and cite chapter and table numbers.
 docs/refs/*.pdf
 docs/refs/rm.txt
-.coldtrace/
 tools/coldfire/ghidra/SHARC/data/languages/*.sla
 tools/coldfire/ghidra/ColdfireEMAC/data/languages/*.sla
 tools/coldfire/ghidra/ColdfireEMAC/extension.properties
@@ -33,9 +35,6 @@ docs/refs/pgr.txt
 docs/refs/prm.txt
 tools/sharc_dev/sharcspec/renders/
 tools/sharc_dev/sharcspec/ghidra/SHARC_VISA/
-
-# Session scratch: probe scripts and large intermediate dumps.
-scratch/
 
 # Local +Drive sample input (see docs/SAMPLES.md); never committed
 samples/

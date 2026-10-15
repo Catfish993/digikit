@@ -2,8 +2,8 @@
 
 Needs a `digi-emud` built with coupled audio for the device's generated core (DIGI_EMUD_DN2 / DIGI_EMUD_DT2, else
 DIGI_EMUD; `tools/emulator/native_emu.py --daemon --build-only <syx>` prints it), the firmware and its ready inputs; run with
-`--slow`. DN2 uses Digitone_II_OS1.12.syx and snapshots/dn2-112-ready, DT2 uses Digitakt_II_OS1.17.syx and
-snapshots/dt2-117-ready (override with DIGI_PATCHED_DN2_READY / DIGI_PATCHED_DT2_READY and the DIGI_PATCHED_*_SYX
+`--slow`. DN2 uses firmware/Digitone_II_OS1.12.syx and out/snapshots/dn2-112-ready, DT2 uses firmware/Digitakt_II_OS1.17.syx and
+out/snapshots/dt2-117-ready (override with DIGI_PATCHED_DN2_READY / DIGI_PATCHED_DT2_READY and the DIGI_PATCHED_*_SYX
 variables). Each test makes a harmless stock-size image (tools/patchkit/patched_image.py).
 """
 
@@ -18,19 +18,21 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
-from tools.firmware import l2canary  # noqa: E402
+from tools.firmware import config, l2canary  # noqa: E402
 from tools.patchkit import patched_audio_check as pac  # noqa: E402
 
 CASES = {
-    "dn2": ("Digitone_II_OS1.12.syx", "snapshots/dn2-112-ready"),
-    "dt2": ("Digitakt_II_OS1.17.syx", "snapshots/dt2-117-ready"),
+    "dn2": ("Digitone_II_OS1.12.syx", "out/snapshots/dn2-112-ready"),
+    "dt2": ("Digitakt_II_OS1.17.syx", "out/snapshots/dt2-117-ready"),
 }
 
 
 def inputs(device: str, monkeypatch: pytest.MonkeyPatch):
     syx_name, ready = CASES[device]
     up = device.upper()
-    syx = pathlib.Path(os.environ.get(f"DIGI_PATCHED_{up}_SYX") or ROOT / syx_name)
+    syx = pathlib.Path(
+        os.environ.get(f"DIGI_PATCHED_{up}_SYX") or config.stock(syx_name)
+    )
     ready = pathlib.Path(os.environ.get(f"DIGI_PATCHED_{up}_READY") or ROOT / ready)
     emud = os.environ.get(f"DIGI_EMUD_{up}") or os.environ.get("DIGI_EMUD")
     if not (emud and pathlib.Path(emud).is_file() and syx.is_file()):

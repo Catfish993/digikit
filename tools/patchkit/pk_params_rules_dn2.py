@@ -22,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_machine_rules as base  # noqa: E402
 from tools.patchkit import port_resolve as pr  # noqa: E402
 
@@ -63,7 +64,7 @@ def check_image(rules: list[dict], image: str) -> list[str]:
     syx = {"dn2-1.11": "Digitone_II_OS1.11.syx", "dn2-1.12": "Digitone_II_OS1.12.syx"}[
         image
     ]
-    main = pr.sections_of(ROOT / syx)[3]
+    main = pr.sections_of(config.stock(syx))[3]
 
     class F:  # the two members the T1 helpers use
         pass

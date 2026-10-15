@@ -27,7 +27,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 from tools import python_env  # noqa: E402
-from tools.firmware import aplibpack, elz  # noqa: E402
+from tools.firmware import aplibpack, config, elz  # noqa: E402
 from tools.firmware.container import sections  # noqa: E402
 
 IMAGES = {
@@ -97,7 +97,7 @@ def firmware_depack(binary, bootstrap_path, stream: bytes) -> dict:
 
 def check_image(image: str, ids: list[int], binary) -> int:
     sdir = ROOT / "out" / "sections" / image
-    _, table = sections(str(ROOT / IMAGES[image]))
+    _, table = sections(str(config.stock(IMAGES[image])))
     stock = {sid: clen for sid, _, clen, _ in table}
     bootstrap = sdir / "section_2_DSP.bin"
     failures = 0

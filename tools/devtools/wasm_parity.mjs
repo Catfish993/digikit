@@ -12,7 +12,7 @@
 //
 // Options (defaults match tools/emulator/digi_env.py; DIGI_EMU_* variables are honoured):
 //   --core PATH        apps/web/.local/emulator-core-sharc.wasm
-//   --syx PATH         Digitone_II_OS1.11.syx            (DIGI_EMU_SYX)
+//   --syx PATH         firmware/Digitone_II_OS1.11.syx            (DIGI_EMU_SYX)
 //   (READY = ready_dir of tools/emulator/ready_inputs.json, or DIGI_EMU_READY_DIR)
 //   --dsp-image PATH   READY/digi-audio-dn2-image.bin (DIGI_EMU_DSP_IMAGE)
 //   --dsp-state PATH   READY/digi-audio-m5.snap.dsp   (DIGI_EMU_DSP_STATE)
@@ -47,7 +47,7 @@ const env = process.env;
 const ready = path.resolve(root, env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
 const paths = {
   core: args.core ?? path.join(root, 'apps/web/.local/emulator-core-sharc.wasm'),
-  syx: args.syx ?? env.DIGI_EMU_SYX ?? env.DIGI_COUPLED_SYX ?? path.join(root, 'Digitone_II_OS1.11.syx'),
+  syx: args.syx ?? env.DIGI_EMU_SYX ?? env.DIGI_COUPLED_SYX ?? path.join(root, 'firmware', 'Digitone_II_OS1.11.syx'),
   image: args['dsp-image'] ?? env.DIGI_EMU_DSP_IMAGE ?? path.join(ready, 'digi-audio-dn2-image.bin'),
   dsp: args['dsp-state'] ?? env.DIGI_EMU_DSP_STATE ?? path.join(ready, 'digi-audio-m5.snap.dsp'),
   snap: args['cf-snapshot'] ?? env.DIGI_EMU_CF_SNAPSHOT ?? path.join(ready, 'digi-audio-m5.snap'),

@@ -19,16 +19,19 @@ import unittest
 
 from support.paths import REPO_ROOT
 
+from tools.firmware import config
 from tools.patchkit import machinepatch as mp
 from tools.patchkit import machineprofile as prof
 
 REPO = str(REPO_ROOT)
 IMAGES = {
     "6a6a887b0573a557b71badf32cd9392777c60b4d1f33dfae12bb8346a014a37b": os.path.join(
-        REPO, "sections", "section_3_MAIN_OS.bin"
+        config.sections_for(config.stock("Digitakt_II_OS1.15C.syx")),
+        "section_3_MAIN_OS.bin",
     ),
     "57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d": os.path.join(
-        REPO, "out", "sections", "dt2-1.16", "section_3_MAIN_OS.bin"
+        config.sections_for(config.stock("Digitakt_II_OS1.16.syx")),
+        "section_3_MAIN_OS.bin",
     ),
 }
 # The five parts that do not need anchors Digitone II lacks.

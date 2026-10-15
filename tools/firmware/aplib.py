@@ -64,11 +64,11 @@ hand-built streams:
     (see this file's __main__). Whether Elektron's own encoder ends its
     streams the same way is NOT known -- a real compressed stream is not
     available to compare against (only decompressed sections are, in
-    sections/) -- so this is flagged as found-but-unexplained, not assumed.
+    out/sections/<image>/) -- so this is flagged as found-but-unexplained, not assumed.
 
 Everything in the module docstring above is a hypothesis this module tests
 against the real device, not documentation trusted on faith: run this file's
-__main__ against a sections/ directory to see it re-confirmed.
+__main__ against an out/sections/<image>/ directory to see it re-confirmed.
 """
 
 import struct
@@ -254,7 +254,10 @@ if __name__ == "__main__":
     from tools.firmware import config
     from tools.firmware.elz import depack_section
 
-    sections_dir = sys.argv[1] if len(sys.argv) > 1 else config.sections_dir()
+    try:
+        sections_dir = sys.argv[1] if len(sys.argv) > 1 else config.sections_dir()
+    except config.NotFound:
+        sections_dir = "(no firmware)"
 
     paths = sorted(glob.glob(os.path.join(sections_dir, "section_*.bin")))
     if not paths:

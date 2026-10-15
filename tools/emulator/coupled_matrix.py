@@ -43,6 +43,7 @@ from tools.emulator import (  # noqa: E402
     digi_env,  # noqa: E402
     native_target,  # noqa: E402
 )
+from tools.firmware import config  # noqa: E402
 
 TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
@@ -52,7 +53,7 @@ SCENARIO_FILE = ROOT / "tests" / "scenarios" / "dn2.json"
 RUNS_DIR = ROOT / "out" / "native" / "runs"
 PROD_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen"
 GENERIC_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen-generic"
-DEFAULT_SYX = ROOT / "Digitone_II_OS1.11.syx"
+DEFAULT_SYX = config.stock("Digitone_II_OS1.11.syx")
 # Environment the runner reads; cleared first so a run depends on its config only.
 CLEARED_ENV = (
     "SHARC_FAST_REGIONS",

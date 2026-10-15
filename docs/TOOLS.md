@@ -9,11 +9,11 @@ full command line. Run output and diagnostics (`out/runs/`, `--diag`) are in
 ## Generated-file rule
 
 Firmware and anything derived from it must stay out of git. This includes
-`.syx` files, extracted `sections/`, snapshots, Ghidra dumps, measurement
+`.syx` files (`firmware/`), extracted sections (`out/sections/`), snapshots, Ghidra dumps, measurement
 databases, disassembly reports, and mapped string output. Put repeatable
 results under `out/`; commit the tool and synthetic tests, not its output.
 
-Before trusting an emulator run, confirm that `sections/.source-sha256`
+Before trusting an emulator run, confirm that `out/sections/<image>/.source-sha256`
 matches the source `.syx`. Bound emulator runs with an instruction limit.
 
 The full test suite is:
@@ -158,7 +158,7 @@ each has a module docstring with its full command line.
 | `tools/devtools/rust_ws.py` | `mise run test` / `test:slow` / `lint:rust` helper: cargo over the whole workspace with the pinned toolchain. |
 | `tools/emulator/digi_env.py` | Paths, firmware lookup, ready-input lookup, the generated-core registry and fast-region tables (`tools/emulator/fast_regions.json`). |
 | `tools/devtools/wasm_parity.mjs` | `mise run web:parity NAME`: check the browser core renders a scenario's PCM byte-identical to native. |
-| `tools/devtools/worktree-setup.sh` | Link `out/`, `sections/`, `snapshots/`, `.venv` and generated language files into an agent worktree. |
+| `tools/devtools/worktree-setup.sh` | Link `out/`, `.venv`, each `firmware/*.syx` and generated language files into an agent worktree. |
 
 Generated fast-tier lowering (see finding 18 for the design):
 

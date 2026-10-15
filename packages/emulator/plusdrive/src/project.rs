@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn finds_the_builtin_stream_in_relinked_firmware() {
         let main_of = |file: &str| {
-            let syx = std::fs::read(format!("../../../{file}")).ok()?;
+            let syx = std::fs::read(format!("../../../firmware/{file}")).ok()?;
             let parsed = dt2_firmware_loader::parse(&syx).ok()?;
             parsed.sections.into_iter().find(|s| s.id == 3).map(|s| s.bytes)
         };
@@ -434,7 +434,7 @@ mod tests {
             .or_else(|| {
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                     .ancestors()
-                    .map(|dir| dir.join("Digitakt_II_OS1.16.syx"))
+                    .map(|dir| dir.join("firmware").join("Digitakt_II_OS1.16.syx"))
                     .find(|path| path.exists())
             })?;
         let bytes = std::fs::read(path).ok()?;

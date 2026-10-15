@@ -1,7 +1,7 @@
 """Tests for tools/emulator/snapread.py: reading an emu snapshot without restoring a
 Unicorn machine.
 
-Skips (not fails) when no .snap file is present under snapshots/ -- those
+Skips (not fails) when no .snap file is present under out/snapshots/ -- those
 are firmware-derived and this repo never commits them (CLAUDE.md's Rules).
 """
 
@@ -17,7 +17,7 @@ TOOLS = os.path.join(ROOT, "tools")
 
 from tools.emulator.snapread import PAGE, Snapshot  # noqa: E402
 
-_CANDIDATES = ["snapshots/boot60M.snap", "snapshots/postintro.snap"]
+_CANDIDATES = ["out/snapshots/boot60M.snap", "out/snapshots/postintro.snap"]
 
 
 def _find_snapshot():
@@ -25,7 +25,9 @@ def _find_snapshot():
         path = os.path.join(ROOT, rel)
         if os.path.exists(path):
             return path
-    found = glob.glob(os.path.join(ROOT, "snapshots", "**", "*.snap"), recursive=True)
+    found = glob.glob(
+        os.path.join(ROOT, "out", "snapshots", "**", "*.snap"), recursive=True
+    )
     return found[0] if found else None
 
 
@@ -33,7 +35,7 @@ def _find_snapshot():
 def snap_path():
     path = _find_snapshot()
     if path is None:
-        pytest.skip("no snapshots/*.snap present")
+        pytest.skip("no out/snapshots/*.snap present")
     return path
 
 

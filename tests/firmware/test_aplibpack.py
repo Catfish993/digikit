@@ -6,7 +6,7 @@ import random
 import pytest
 from support.paths import REPO_ROOT
 
-from tools.firmware import aplibpack, build, elz
+from tools.firmware import aplibpack, build, config, elz
 from tools.firmware.container import sections
 
 ROOT = REPO_ROOT
@@ -43,7 +43,7 @@ def test_compresses_repetitive_data():
 
 
 def test_rebuild_keeps_untouched_sections_verbatim():
-    syx = ROOT / "Digitakt_II_OS1.16.syx"
+    syx = config.stock("Digitakt_II_OS1.16.syx")
     if not syx.exists():
         pytest.skip("needs the 1.16 .syx")
     cont, secs = sections(str(syx))

@@ -8,7 +8,7 @@ stack". This reads the Rust DT2SNP01 format and the old pickled Python
 format with a plain read/u32/u16/u8/regs/tasks API, no machine.
 
     from tools.emulator.snapread import Snapshot
-    s = Snapshot("snapshots/dt2-1.16-drive3/loaded.snap")
+    s = Snapshot("out/snapshots/dt2-1.16-drive3/loaded.snap")
     s.u32(0x80004704)                  # -> int or None (unmapped)
     s.read(0x80003cd0, 0x9a)           # -> bytes or None
     s.regs["pc"]                       # -> int
@@ -102,7 +102,7 @@ def name_for(addr: int) -> str | None:
 class Snapshot:
     """A read-only view of one unicorn-reference-final:emu/snapshot.py .snap file: registers, mapped
     memory (pages decompressed lazily and cached, since a capture like
-    snapshots/dt2-1.16-drive3/loaded.snap can hold well over a hundred MB
+    out/snapshots/dt2-1.16-drive3/loaded.snap can hold well over a hundred MB
     once decompressed), MMIO/control-register shadow state, and whatever
     `extra` the capturing tool stored (task_create hits, instruction count,
     ...). Reads the pickled blob with _load_blob
