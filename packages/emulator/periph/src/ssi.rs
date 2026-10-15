@@ -159,6 +159,13 @@ impl Ssi0Dma {
         self.ips = ips;
     }
 
+    /// [`Self::rescale`] at an explicit instruction count (a restore point, where `now`
+    /// still holds the last serviced tick).
+    pub fn rescale_at(&mut self, now: u64, ips: u64) {
+        self.now = now;
+        self.rescale(ips);
+    }
+
     /// `step`: instructions until the next request is due (no coalescing).
     pub fn step(&mut self, done: u64, remaining: Option<u64>) -> u64 {
         self.now = done;

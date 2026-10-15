@@ -22,7 +22,7 @@
 //! `--dsp zero` runs without a DSP: the DSPI2 peer answers zeros, SSI is paced and the ColdFire
 //! side is restored from `--cf-snapshot` alone (`--dsp-image` and `--dsp-state` are not needed).
 //! No PCM is produced (PCM report fields are null, `missing_blocks` is 0) and `seconds` / `at_s`
-//! count ColdFire instructions at 132 MHz (`seconds * 132e6`). `--trace` adds `trace` to each scenario's report: one entry per
+//! count ColdFire instructions at `DIGI_CF_IPS` (default 132 MHz: `seconds * 132e6`; `at_instr` and `instructions` in scenario files are authored at 132e6 and scaled). `--trace` adds `trace` to each scenario's report: one entry per
 //! chunk with the instruction count, PC, ready flag, framebuffer and LED hashes, main-loop hits,
 //! CPU state and error. The report carries `"dsp": "zero"|"sharc"`.
 //!
@@ -52,8 +52,8 @@ use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,
     WorkerReport, common,
     scenario::{
-        CF_INSTRUCTIONS_PER_SECOND, DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When,
-        find_scenario, fire, parse_scenario, parse_scenarios,
+        DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When,
+        cf_instructions_per_second, find_scenario, fire, parse_scenario, parse_scenarios,
     },
 };
 #[cfg(feature = "region-profile")]
@@ -749,7 +749,7 @@ fn run_scenario(
     let until_instr = if args.zero {
         // No DSP frame clock: seconds count ColdFire instructions.
         match seconds {
-            Some(s) => Some((s * CF_INSTRUCTIONS_PER_SECOND).round() as u64),
+            Some(s) => Some((s * cf_instructions_per_second()).round() as u64),
             None => sc.instructions,
         }
     } else if args.seconds.is_some() {
@@ -773,7 +773,7 @@ fn run_scenario(
     if args.zero {
         for e in &mut events {
             if let Some(s) = e.at_s {
-                e.when = When::Instr((s * CF_INSTRUCTIONS_PER_SECOND).round() as u64);
+                e.when = When::Instr((s * cf_instructions_per_second()).round() as u64);
             }
         }
     }
@@ -962,6 +962,8 @@ fn run_scenario(
         "audio_health_end": { "elapsed_wall_seconds": wall, "source_pcm_frames": health["source_pcm_frames"], "health": health },
         "playback_observations": playback_observations,
         "guest_instructions": cf_total, "frames": end.frames - start.frames,
+        "cf_ips": elektron_native_boot::clock::cf_ips(),
+        "softfloat_hle_calls": st(&end, "softfloat_hle_calls") - st(&start, "softfloat_hle_calls"),
         "cpu": {
             "dsp_thread_s": dsp_cpu, "cf_thread_s": cf_cpu,
             "dsp_thread_per_audio_s": per(dsp_cpu), "cf_thread_per_audio_s": per(cf_cpu),

@@ -228,7 +228,7 @@ impl Emulator {
         }
         self.bus
             .board
-            .enable_ssi_diagnostic(request_hz, 132_000_000)
+            .enable_ssi_diagnostic(request_hz, periph::clock::cf_ips())
             .then_some(())
             .ok_or_else(|| "SSI diagnostic is already enabled".into())
     }
@@ -378,7 +378,7 @@ impl Emulator {
             TimerPolicy::Oracle,
             vec![3, 2, 0],
             vec![3, 1],
-            132_000_000.0,
+            periph::clock::cf_ips() as f64,
         ));
         for base in [0xfc04_8000, 0xfc04_c000, 0xfc05_0000] {
             board
@@ -2261,6 +2261,10 @@ impl Emulator {
         if self.error.is_some() {
             return Err("cannot snapshot a faulted emulator".into());
         }
+        if periph::clock::cf_ips() != periph::clock::BASE_IPS {
+            // Snapshots hold deadlines at the base rate; load_state rescales from it.
+            return Err("save_state needs DIGI_CF_IPS unset (snapshots are taken at 132 MHz)".into());
+        }
         if self.irq1_pending {
             return Err("a DSPI1 peer interrupt is pending".into());
         }
@@ -2424,6 +2428,7 @@ impl Emulator {
         if r.raw(8)? != SNAPSHOT_MAGIC {
             return Err("not a DT2SNP01 snapshot".into());
         }
+        self.snapshot_time_base();
         let main_sha = r.bytes()?;
         let device = r.bytes()?;
         let version = r.bytes()?;
@@ -2607,7 +2612,39 @@ impl Emulator {
         }
         self.rebuild_watch();
         self.replay_restored_frame = true;
+        self.rescale_to_cf_ips();
         Ok(())
+    }
+
+    /// Snapshots hold timer and SSI deadlines at [`periph::clock::BASE_IPS`]. While one loads,
+    /// the clocks run at that base so the SSI check and the deadlines agree.
+    fn snapshot_time_base(&mut self) {
+        let base = periph::clock::BASE_IPS;
+        if periph::clock::cf_ips() == base {
+            return;
+        }
+        if let Some(time) = self.bus.board.time_mut() {
+            time.set_ips(base as f64);
+        }
+        if let Some(ssi) = self.bus.board.dma.ssi.as_mut() {
+            ssi.ips = base;
+        }
+    }
+
+    /// After a load: move every deadline from the snapshot's base rate to `DIGI_CF_IPS`,
+    /// keeping its emulated time.
+    fn rescale_to_cf_ips(&mut self) {
+        let ips = periph::clock::cf_ips();
+        if ips == periph::clock::BASE_IPS {
+            return;
+        }
+        let now = self.cpu.icount.saturating_add(self.softfloat.counts.calls());
+        if let Some(time) = self.bus.board.time_mut() {
+            time.rescale(now as f64, ips as f64);
+        }
+        if let Some(ssi) = self.bus.board.dma.ssi.as_mut() {
+            ssi.rescale_at(now, ips);
+        }
     }
 
     /// SHA-256 of the serialized machine state: a deterministic digest of

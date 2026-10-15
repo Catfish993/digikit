@@ -24,6 +24,7 @@ mod telemetry;
 pub mod wav;
 
 pub use capture::Dspi2Capture;
+pub use periph::clock;
 pub use cputime::thread_cpu_ns;
 pub use guard::{GUARD_HIT_LIMIT, GuardHit, GuardRange, GuardReport, parse_guard_spec};
 pub use telemetry::DiagnosticReport;
