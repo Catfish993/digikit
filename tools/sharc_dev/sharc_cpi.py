@@ -227,9 +227,10 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
     res["btb"]["mispredicted_fraction_of_conditional"] = nmis / max(1, ncond)
     sorted_pcs = sorted(insns)
     for p in busy_pcs:
-        ins = insns.get(p)
-        if ins is None or ins.branch != "loop":
+        loop_ins = insns.get(p)
+        if loop_ins is None or loop_ins.branch != "loop":
             continue
+        ins = loop_ins
         end = ins.loop_end
         body = [q for q in sorted_pcs if ins.next_pc <= q <= end]
         tail = body[-11:]

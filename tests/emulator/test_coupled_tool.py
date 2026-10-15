@@ -99,7 +99,9 @@ def test_default_jobs(monkeypatch):
 
 def test_feature_variant_keeps_default_dir(monkeypatch):
     assert coupled.feature_variant("coupled-audio") == ""
-    assert coupled.feature_variant("coupled-audio,cf-mix") == "feat-cf-mix+coupled-audio"
+    assert (
+        coupled.feature_variant("coupled-audio,cf-mix") == "feat-cf-mix+coupled-audio"
+    )
     # order does not matter
     assert coupled.feature_variant("cf-mix,coupled-audio") == coupled.feature_variant(
         "coupled-audio,cf-mix"

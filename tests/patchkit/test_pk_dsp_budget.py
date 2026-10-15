@@ -9,7 +9,9 @@ def tiers(audio_s, instructions, idle):
 
 def test_busy_per_block_is_executed_minus_idle_over_blocks():
     # 2 s of audio = 3000 blocks; 1,000,000 executed, 400,000 idle-skipped -> 200 busy per block
-    assert b.busy_per_block(tiers(1.0, 100, 50), tiers(3.0, 1_000_100, 400_050)) == 200.0
+    assert (
+        b.busy_per_block(tiers(1.0, 100, 50), tiers(3.0, 1_000_100, 400_050)) == 200.0
+    )
     assert b.busy_per_block(tiers(1.0, 0, 0), tiers(1.0, 5, 0)) is None
 
 

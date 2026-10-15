@@ -937,7 +937,9 @@ class Session:
             else:
                 raise HarnessError(f"step without an action: {step}")
 
-    def measure_dsp(self, window_ms: int = 1000, parts: int = 10) -> tuple[float, float]:
+    def measure_dsp(
+        self, window_ms: int = 1000, parts: int = 10
+    ) -> tuple[float, float]:
         """(mean, max over PARTS sub-windows) of the DSP busy instructions per block with TRIG 1 held (the default
         voice), after the same settling as every segment. Counters: status.audio.dsp_tiers (idle skip excluded)."""
         emu = self.emu
@@ -963,7 +965,9 @@ class Session:
         self.health("dsp budget window")
         mean = pk_dsp_budget.busy_per_block(first, last)
         if mean is None:
-            raise HarnessError("no DSP block ran in the budget window (status.audio.dsp_tiers)")
+            raise HarnessError(
+                "no DSP block ran in the budget window (status.audio.dsp_tiers)"
+            )
         return mean, worst
 
     def run_segment(self, name: str, steps: list[dict[str, Any]]) -> bool:
@@ -1023,12 +1027,16 @@ def stock_busy(cell: Cell, cache_dir: Path = SHARED_CACHE) -> float:
         if rec.get("key") == key:
             return float(rec["busy_mean"])
     stock = Cell(cell.device, cell.firmware, [], cell.stall_ms)
-    with Session(stock, Goldens(), run_name=f"dsp-stock-{stock.slug}", cache_dir=cache_dir) as session:
+    with Session(
+        stock, Goldens(), run_name=f"dsp-stock-{stock.slug}", cache_dir=cache_dir
+    ) as session:
         session.open()
         mean, worst = session.measure_dsp()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(f".{os.getpid()}.tmp")
-    tmp.write_text(json.dumps({"key": key, "busy_mean": mean, "busy_max_window": worst}))
+    tmp.write_text(
+        json.dumps({"key": key, "busy_mean": mean, "busy_max_window": worst})
+    )
     tmp.replace(path)
     return mean
 
@@ -1135,7 +1143,12 @@ def _run_one(
 ) -> tuple[bool, str, list[str]]:
     """A cell in this process; (passed, summary line, failed check lines)."""
     ok, line, session = run_cell(
-        cell, goldens, a.update, a.tests, a.seed, a.stress_actions,
+        cell,
+        goldens,
+        a.update,
+        a.tests,
+        a.seed,
+        a.stress_actions,
         dsp_budget=None if a.no_dsp_budget else a.dsp_budget,
     )
     bad = [f"{c.name}: {c.detail}" for c in session.checks if not c.ok]
@@ -1250,7 +1263,9 @@ def main(argv: list[str]) -> int:
         default=pk_dsp_budget.DEFAULT_BUDGET_PCT,
         help="fail a cell whose projected real DSP load (high bound, held note) exceeds this percent (default 85)",
     )
-    r.add_argument("--no-dsp-budget", action="store_true", help="skip the DSP budget measurement")
+    r.add_argument(
+        "--no-dsp-budget", action="store_true", help="skip the DSP budget measurement"
+    )
     r.add_argument("--result", type=Path, help=argparse.SUPPRESS)
     r.add_argument(
         "--index", type=int, help=argparse.SUPPRESS
@@ -1309,7 +1324,9 @@ def _dsp_table(cells: list[Cell], a: argparse.Namespace) -> None:
             rows.append(json.loads((OUT / "dsp" / f"{c.slug}.json").read_text()))
     if not rows:
         return
-    print("DSP budget (busy instructions per block; projected real load = busy x cycles/instruction factor / 666,667):")
+    print(
+        "DSP budget (busy instructions per block; projected real load = busy x cycles/instruction factor / 666,667):"
+    )
     print(f"  {'cell':<58} {'busy':>8} {'added':>7} {'nominal':>8} {'high':>7}  gate")
     for r in rows:
         print(

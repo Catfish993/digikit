@@ -15,7 +15,9 @@ from __future__ import annotations
 from typing import Any
 
 BLOCK_RATE = 1500  # DSPI2 frames (blocks) per audio second
-BLOCK_CYCLES = 1_000_000_000 // BLOCK_RATE  # 666,666 whole cycles; the finding rounds up to 666,667
+BLOCK_CYCLES = (
+    1_000_000_000 // BLOCK_RATE
+)  # 666,666 whole cycles; the finding rounds up to 666,667
 BLOCK_CYCLES_EXACT = 1_000_000_000 / BLOCK_RATE
 DEFAULT_BUDGET_PCT = 85.0
 
@@ -31,7 +33,9 @@ def busy_per_block(before: dict[str, Any], after: dict[str, Any]) -> float | Non
     blocks = (after["audio_s"] - before["audio_s"]) * BLOCK_RATE
     if blocks <= 0:
         return None
-    busy = (after["instructions"] - before["instructions"]) - (after["idle_skip"] - before["idle_skip"])
+    busy = (after["instructions"] - before["instructions"]) - (
+        after["idle_skip"] - before["idle_skip"]
+    )
     return busy / blocks
 
 
