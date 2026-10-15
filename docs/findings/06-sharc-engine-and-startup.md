@@ -5821,9 +5821,10 @@ real load is 7 (DN2) and 4 (DT2) points higher at nominal, 16 and 13 at the high
 - **Assumed, not in the manual [O]:** the instruction and data caches are on with 16 KB each (statically read: the DSP
   startup's cache-configuration routine builds `0x414141` for SHL1C_CFG; core MMRs are not modelled so it is not observed);
   the BTB set index (low seven PC bits); L2, DDR and system-MMR latencies (per line fill 12 / 24 / 48, 30 / 60 / 120 and 2 /
-  10 / 20 cycles); the core clock (1 GHz is the part's maximum; the init code's PLL setup is not resolved); no interrupt
-  entry (11 cycles), DMA contention, stalls over more than two instructions or dual-forwarding. With the instruction cache
-  off every L2 instruction (86,700 / 34,800 per block) pays an unknown fetch time: each extra cycle is 13 / 5 points.
+  10 / 20 cycles); the core clock (programmed to 1 GHz, see "The DSP core clock is programmed to 1 GHz" below;
+  SYS_CLKIN is the firmware's value); no interrupt entry (11 cycles), DMA contention, stalls over more than two
+  instructions or dual-forwarding. With the instruction cache off every L2 instruction (86,700 / 34,800 per block) pays
+  an unknown fetch time: each extra cycle is 13 / 5 points.
 - **For charging cycles in the engines** a static weight per PC (1 + the adjacent-pair stalls, which depend only on the
   instruction pair, + branch and fetch-region constants) would cover the manual's stall rules at the nominal level; the
   parts that depend on history (BTB hit and misprediction, I-cache and D-cache misses: 50 to 60 % of the added cycles on DN2)
@@ -5853,3 +5854,20 @@ real load is 7 (DN2) and 4 (DT2) points higher at nominal, 16 and 13 at the high
   conditional-store-to-load), Table 4-44 (memory-to-memory ordering), the data-bus rows of Table 4-35 other than the PM
   conflict cache and same-block arbitration, DMA contention and interrupt entry. The manual's DM and PM cache sizes
   (DMCASIZ, PMCASIZ) and the SHL1C_CFG value stay assumed.
+
+## The DSP core clock is programmed to 1 GHz (2026-10-16) **[D]**
+
+- The INIT block (loader block 1, software PC 0x1201f8 to 0x121618; block 8 overwrites it later, so it is not in
+  sharcdb) programs CGU0. DT2 1.16 and DN2 1.11 have identical INIT code and data.
+- Stores: CGU0_CTL = 0x00026400 at 0x12096c (MSEL 100, DF 0, S1SELEXEN 1); CGU0_DIV = 0x04034482 with UPDT (CSEL 2,
+  S0SEL 4, SYSSEL 4, S1SEL 2, DSEL 3, OSEL 16); CGU0_DIVEX = 0x00060030 (S1SELEX 6); CGU0_PLLCTL = 2 at 0x120bbf
+  (leave bypass, only if CGU0_STAT.PLLBP is set). The CTL value was observed in the reference interpreter; DIV and
+  DIVEX were read statically from the arguments of the call at 0x12087b. CGU1 is not programmed.
+- INIT passes SYS_CLKIN = 20,000,000 to the CGU routine (at 0x120230 and 0x120551). With the HWR formula
+  CCLK = SYS_CLKIN / (DF + 1) x MSEL / CSEL (HWR CGU_DIV.CSEL) that is 20 MHz x 100 / 2 = 1000 MHz; SYSCLK 500, SCLK0
+  125, SCLK1 333.3, DCLK 666.7, OCLK 125 MHz.
+- The main program sets the core timer TPERIOD = TCOUNT = 1,000,000 (software PC 0xb88c8d): 1 ms at 1 GHz.
+- So the firmware is built for a 1 GHz core, the maximum of the ADSP-21569 (speed grade 10; grade 8 is 800 MHz).
+  `dsp_clock_hz` in devices/cycle-factors.json and the emulator's 666,667 instructions per 1500 Hz block match it.
+- Open **[O]**: SYS_CLKIN = 20 MHz is the firmware's value, not a board measurement; the chip marking (speed grade)
+  is not read. Details and disassembly: scratchpad report of 2026-10-16 (not committed).
