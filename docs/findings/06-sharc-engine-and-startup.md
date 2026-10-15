@@ -5781,3 +5781,55 @@ Emulator only, one agent, not second-checked. `modules/machines/pluck/src/dsp/pl
   string whose peak stayed below 2^-16 for 8 blocks returns to phase 0.
 - State is 2 KiB (16 rows of 32 words) plus 16 delay lines of 4,096 samples (256 KiB of reserved L2, the same as the Digitakt
   routine); the excitation written at a note-on equals `tools/patchkit/pluck_ref.py` bit for bit (finding 02, "PLUCK on Digitone II").
+
+## Real cycles per DSP block from the manual's stall rules (lane cputime, 2026-10-15) **[D]**
+
+The coupled runner steps the DSP 666,667 instructions per 1500 Hz block (1 GHz, 1 cycle per instruction). Counting every
+executed instruction and costing it with the SHARC+ Core Programming Reference's stall tables gives (cycles of the same
+busy instructions at 1 GHz, share of 666,667; low / nominal / high):
+
+| device, scenario | emulator | real |
+|---|---:|---|
+| DN2 1.11 `trig1-hold` (idle, `kb-chord16`, `dn2-rec-play` within 0.1 points) | 50 % (334,500) | 52 / **58** / 69 % |
+| DT2 1.16 `dt2-sample-trig` (`dt2-rec-play` the same) | 31 % (208,600) | 33 / **36** / 45 % |
+
+At 800 MHz the nominal load is 73 % (DN2) and 45 % (DT2). The "Headroom" figures above stand as instruction counts; the
+real load is 8 (DN2) and 5 (DT2) points higher at nominal, 19 and 14 at the high bound.
+
+- **Method.** `SHARC_CYCMIX=1` (packages/emulator/sharc/src/cycmix.rs; off by default, one flag test per interpreted
+  instruction as the other diagnostics; PCM pins unchanged, DN2 `trig1-hold` and DT2 `dt2-sample-trig-noqa` `ok=True`)
+  counts every executed PC and every executed (previous PC, PC) pair, the address region of the data accesses (DAG base
+  register at the instruction), and simulates online a 2-way L1 instruction cache (L2 code), a 2-way data cache (L2 and DDR
+  data) and a 128 x 2 branch target buffer. The run is interpreter-only (`SHARC_AOT=0 SHARC_FAST_REGIONS= SHARC_BLOCKTRANS=`,
+  about 50 s of wall per audio second; the idle loop is skipped analytically and not counted). Instruction decode (registers
+  read and written, memory access, branch kind) comes from the program database. `tools/sharc_dev/sharc_timing.py` holds the
+  rules with their table and page numbers (5 unit tests, tests/sharc/analysis/test_sharc_timing.py);
+  `tools/sharc_dev/sharc_cpi.py` runs and costs (`run`, `memspec`, `report`).
+- **Where the extra cycles are** (nominal, per block, DN2 / DT2): float compute to dependent compute 18,800 / 5,900 (Table
+  4-36 row 1); L2 code through the I-cache 14,400 / 9,800 (the code of a block touches 26.7 / 19.8 KB of L2 against a 16 KB
+  cache: 599 / 409 misses per block, 288 / 236 at 32 KB, 0 at 64 KB); conditional branches 5,900 / 7,400 (BTB hit 93 % / 91 %,
+  2.2 % / 3.1 % mispredicted); system MMR accesses 5,400 / 200; DDR data 3,100 / 3,300; DAG load to use 2,400 / 2,500;
+  unconditional branches 1,200 / 2,000; loop exits 1,500 / 1,200. 74 % / 83 % of the instructions run from L1 block 3
+  (code), the rest from L2; data accesses are L1 blocks 0 and 1 and DDR (25,700 / 30,700 per block, 51 / 55 data-cache
+  misses).
+- **Modules.** master-gain (the spike hook `dsp_master_hook.py`, the same routine as the module, run in the engine on both
+  devices): +196.0 instructions and +195 (DN2) / +197 (DT2) cycles per block, 0.03 % of the block. Pluck (not run in the
+  engine; instruction count from the concrete core rig, stalls scaled by the stock ratio, code fill of 65 lines at 24 cycles
+  once per block): 1,199 instructions and about 1,300 cycles per voice and block (4,201 instructions on the first block of a
+  note), +1,218 / 2,867 / 4,618 cycles for one voice (0.43 % nominal), +19,500 / 22,500 / 27,100 for 16 voices (3.4 %): DT2
+  total 39.5 % nominal with 16 plucks, DN2 61.5 %.
+- **Assumed, not in the manual [O]:** the instruction and data caches are on with 16 KB each (statically read: the DSP
+  startup's cache-configuration routine builds `0x414141` for SHL1C_CFG; core MMRs are not modelled so it is not observed);
+  the BTB set index (low seven PC bits); L2, DDR and system-MMR latencies (per line fill 12 / 24 / 48, 30 / 60 / 120 and 2 /
+  10 / 20 cycles); the core clock (1 GHz is the part's maximum; the init code's PLL setup is not resolved); no interrupt
+  entry (11 cycles), DMA contention, stalls over more than two instructions or dual-forwarding. With the instruction cache
+  off every L2 instruction (86,700 / 34,800 per block) pays an unknown fetch time: each extra cycle is 13 / 5 points.
+- **For charging cycles in the engines** a static weight per PC (1 + the adjacent-pair stalls, which depend only on the
+  instruction pair, + branch and fetch-region constants) would cover the manual's stall rules at the nominal level; the
+  parts that depend on history (BTB hit and misprediction, I-cache and D-cache misses: 50 to 60 % of the added cycles on DN2)
+  need either a profile-derived mean weight per PC or an online model as in cycmix.rs. Hooks: the interpreter adds one to
+  `St::icount` per instruction (sharc-rt rt.rs, step); generated blocks add a block constant at exit (a prefix table for a
+  mid-block exit and a loop count for DO loops); the fast tier's kernels return `completed` instructions (sharc fast/glue.rs)
+  and the JIT backends (sharc-fast-cl, sharc-fast-wasm) would need the cumulative weight per exit; the idle skip multiplies a
+  loop's weight by the iteration count; the period and chunk limits compare `icount` with a budget
+  (`SharcPeer::run_for`, `Engine::step`), which would become a cycle budget.

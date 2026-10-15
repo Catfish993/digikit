@@ -27,6 +27,7 @@
 //! caller then lets the Python core execute it (tools/sharc_dev/sharc_transpile_run.py).
 
 pub mod canon;
+mod cycmix;
 mod diag;
 pub mod fast;
 pub mod frames;
@@ -310,6 +311,8 @@ pub struct Engine {
     wwatch: Option<Box<write_watch::WriteWatch>>,
     /// SHARC_PCDUMP / SHARC_PCDUMP_OUT (diagnostic): see `pc_dump`.
     pcdump: Option<Box<pc_dump::PcDump>>,
+    /// SHARC_CYCMIX (diagnostic): see `cycmix`.
+    cycmix: Option<Box<cycmix::CycMix>>,
     /// Any of `cov`, `hist`, `wwatch`, `pcdump` is set: the interpreter loop
     /// tests this one flag per instruction and nothing else when it is off.
     diag_on: bool,
@@ -690,6 +693,7 @@ impl Engine {
             live_capture: live_capture::LiveCapture::from_env(),
             wwatch: write_watch::WriteWatch::from_env(),
             pcdump: pc_dump::PcDump::from_env(),
+            cycmix: cycmix::CycMix::from_env(),
             diag_on: false,
         };
         engine.refresh_diag();
@@ -701,7 +705,8 @@ impl Engine {
         self.diag_on = self.cov.is_some()
             || self.hist.is_some()
             || self.wwatch.is_some()
-            || self.pcdump.is_some();
+            || self.pcdump.is_some()
+            || self.cycmix.is_some();
     }
 
     /// Instruction counts by tier since the engine was created.
@@ -1556,6 +1561,10 @@ impl Engine {
         }
         if let Some(d) = &mut self.pcdump {
             d.hit(&self.s, pc_before as u64, self.s.icount);
+        }
+        if let Some(c) = &mut self.cycmix {
+            c.idle = (self.idle_lo, self.idle_hi, self.idle_head.unwrap_or(0));
+            c.hit(&self.s, pc_before as u32);
         }
     }
 
