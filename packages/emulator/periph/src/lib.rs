@@ -14,6 +14,7 @@
 //! `trace`'s module docs for the format and `bin/replay.rs` for the
 //! comparison method.
 
+pub mod clock;
 pub mod dsp;
 pub mod dspi;
 pub mod dtim;

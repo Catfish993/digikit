@@ -8,8 +8,10 @@
 //! boot. Events are emitted once per episode (a stall ends when the
 //! heartbeat advances again, which emits `stall.end`).
 
-/// Emulated ColdFire instructions per millisecond (the oracle clock, 132 MIPS).
-pub const INSTR_PER_MS: u64 = 132_000;
+/// Emulated ColdFire instructions per millisecond (132,000 unless `DIGI_CF_IPS` is set).
+pub fn instr_per_ms() -> u64 {
+    elektron_native_boot::clock::cf_ips() / 1000
+}
 /// Default stall threshold in emulated milliseconds.
 pub const DEFAULT_STALL_MS: u64 = 1000;
 
@@ -118,7 +120,7 @@ impl Health {
             // Not expected to beat: keep the anchor current.
             self.last_advance = obs.elapsed;
         } else if self.stall_ms > 0 && !self.stalled {
-            let ms = (obs.elapsed - self.last_advance) / INSTR_PER_MS;
+            let ms = (obs.elapsed - self.last_advance) / instr_per_ms();
             if ms >= self.stall_ms {
                 self.stalled = true;
                 self.stall_count += 1;
@@ -138,7 +140,7 @@ mod tests {
 
     fn obs(elapsed_ms: u64, hits: u64) -> Observation {
         Observation {
-            elapsed: elapsed_ms * INSTR_PER_MS,
+            elapsed: elapsed_ms * instr_per_ms(),
             hits,
             main_ui: true,
             cpu_running: true,
@@ -177,13 +179,13 @@ mod tests {
         let mut o = obs(0, 0);
         o.main_ui = false;
         assert!(h.observe(1, &o).is_empty());
-        o.elapsed = 10_000 * INSTR_PER_MS;
+        o.elapsed = 10_000 * instr_per_ms();
         assert!(h.observe(1, &o).is_empty(), "booting");
         // reaching the main panel starts the clock then
         o.main_ui = true;
         assert!(h.observe(1, &o).is_empty());
         o.cpu_running = false;
-        o.elapsed = 20_000 * INSTR_PER_MS;
+        o.elapsed = 20_000 * instr_per_ms();
         assert!(h.observe(1, &o).is_empty(), "STOP waits for an interrupt");
         let mut off = Health::new(0);
         assert!(off.observe(1, &obs(0, 1)).is_empty());

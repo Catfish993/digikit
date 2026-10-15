@@ -120,6 +120,22 @@ impl Time {
         }
     }
 
+    /// Set the bank clocks without moving any deadline. Used before a snapshot load, whose
+    /// saved deadlines are in the base-rate time base.
+    pub fn set_ips(&mut self, ips: f64) {
+        self.pit.set_ips(ips);
+        self.dtim.set_ips(ips);
+    }
+
+    /// Change the instruction rate at tick `now`, keeping each armed deadline's emulated
+    /// time (remaining instructions scale by `new/old`).
+    pub fn rescale(&mut self, now: f64, new_ips: f64) {
+        self.pit.rescale(now, new_ips);
+        self.dtim.rescale(now, new_ips);
+        self.service_not_before = None;
+        self.blocked = None;
+    }
+
     /// Apply validated Python v1 scheduling state without losing already
     /// loaded PIT/DTIM/INTC register pages. Failed validation changes none of
     /// these banks (`import_timers` validates both sources before mutation).

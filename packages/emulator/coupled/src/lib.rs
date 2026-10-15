@@ -397,7 +397,11 @@ impl CoupledRuntime {
         if self.inputs.len() >= INPUT_LOG_LIMIT {
             return;
         }
-        event["at_instr"] = self.elapsed_instructions().into();
+        event["at_instr"] = elektron_native_boot::clock::unscale_instr(
+            self.elapsed_instructions(),
+            elektron_native_boot::clock::cf_ips(),
+        )
+        .into();
         #[cfg(feature = "coupled-audio")]
         if let Some(audio) = &self.audio {
             event["dsp_frame"] = audio.handle.frames_sent().into();
@@ -411,7 +415,11 @@ impl CoupledRuntime {
         json!({
             "name": "recorded",
             "description": "Inputs recorded from an interactive session",
-            "instructions": self.elapsed_instructions().max(1),
+            "instructions": elektron_native_boot::clock::unscale_instr(
+                self.elapsed_instructions(),
+                elektron_native_boot::clock::cf_ips(),
+            )
+            .max(1),
             "exact_events": true,
             "events": self.inputs,
         })
