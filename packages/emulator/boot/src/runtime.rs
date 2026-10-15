@@ -991,6 +991,12 @@ impl Emulator {
             Ok(_) => self.set_error("unexpected interrupt during reset RAM-clear batch"),
             Err(error) => self.set_error(error),
         }
+        #[cfg(feature = "cf-mix")]
+        for off in [0, 4, 8, 10] {
+            // MOVEM, LEA, SUBQ, BNE (taken every batched iteration).
+            let taken = if off == 10 { u64::from(count) } else { 0 };
+            self.mix_add(clear.loop_pc + off, 3, u64::from(count), None, taken);
+        }
         instructions
     }
 
@@ -1065,6 +1071,8 @@ impl Emulator {
             Ok(_) => self.set_error("unexpected interrupt before idle advance deadline"),
             Err(error) => self.set_error(error),
         }
+        #[cfg(feature = "cf-mix")]
+        self.mix_add(previous_pc, 2, n, None, n);
         count
     }
 
@@ -1228,6 +1236,11 @@ impl Emulator {
             self.bus.clear();
             self.bus.current_pc = pc;
             let result = self.cpu.step_inline(&mut self.bus);
+            #[cfg(feature = "cf-mix")]
+            {
+                let next = self.cpu.pc;
+                self.mix_add(pc, 0, 1, Some(next), 0);
+            }
             n += 1;
             let done = self.cpu.icount.wrapping_add(calls);
             if result.is_err()
@@ -1329,6 +1342,12 @@ impl Emulator {
         if iterations == 0 {
             return 0;
         }
+        #[cfg(feature = "cf-mix")]
+        for (k, &o) in offsets.iter().enumerate() {
+            // The loop's conditional branch is the last instruction and is taken every iteration.
+            let taken = if k + 1 == offsets.len() { u64::from(iterations) } else { 0 };
+            self.mix_add(head + o, 1, u64::from(iterations), None, taken);
+        }
         let last = self.cpu.icount - 1;
         if let Some(capture) = &self.dspi2_capture {
             capture.set_icount(last);
@@ -1336,6 +1355,31 @@ impl Emulator {
         self.bus.current_icount = last + calls;
         self.bus.current_pc = head + offsets[offsets.len() - 1];
         iterations * per
+    }
+
+    #[cfg(feature = "cf-mix")]
+    fn mix_add(&mut self, pc: u32, path: usize, n: u64, next: Option<u32>, taken: u64) {
+        let board = &mut self.bus.board;
+        crate::cfmix::add(pc, path, n, next, taken, || {
+            let mut w = |a: u32| board.fetch16(a).unwrap_or(0);
+            coldfire::decode(pc, [w(pc), w(pc.wrapping_add(2)), w(pc.wrapping_add(4))])
+        });
+    }
+
+    /// The exact instruction mix (feature `cf-mix`).
+    #[cfg(feature = "cf-mix")]
+    pub fn cf_mix(&self) -> serde_json::Value {
+        let mut v = crate::cfmix::report();
+        let c = &self.cpu.ctrl;
+        v["ctrl"] = serde_json::json!({
+            "cacr": c.cacr, "acr": c.acr, "rambar": c.rambar, "vbr": c.vbr,
+        });
+        v
+    }
+
+    #[cfg(feature = "cf-mix")]
+    pub fn cf_mix_reset(&self) {
+        crate::cfmix::reset();
     }
 
     fn step_once(&mut self) {
@@ -1489,6 +1533,11 @@ impl Emulator {
             self.interpreted_instructions += self.cpu.icount.saturating_sub(before);
             result
         };
+        #[cfg(feature = "cf-mix")]
+        {
+            let next = self.cpu.pc;
+            self.mix_add(pc, 0, 1, Some(next), 0);
+        }
         self.finish_step(result);
     }
 

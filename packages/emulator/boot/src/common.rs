@@ -706,6 +706,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
+        #[cfg(feature = "cf-mix")]
+        crate::cfmix::data_ref(addr, false);
         let r = self.board.read8(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
             // zero_page() is false and log() a no-op: the board's result.
@@ -715,6 +717,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
+        #[cfg(feature = "cf-mix")]
+        crate::cfmix::data_ref(addr, false);
         let r = self.board.read16(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
             // zero_page() is false and log() a no-op: the board's result.
@@ -724,6 +728,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
+        #[cfg(feature = "cf-mix")]
+        crate::cfmix::data_ref(addr, false);
         let r = self.board.read32(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
             // zero_page() is false and log() a no-op: the board's result.
@@ -739,6 +745,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn write8(&mut self, addr: u32, value: u8) -> Result<(), BusError> {
+        #[cfg(feature = "cf-mix")]
+        crate::cfmix::data_ref(addr, true);
         // docs/contracts/early-init-v1.json identifies these as write-only
         // SCM PPM clear registers; accepting writes is enough for this narrow
         // probe and intentionally models no other SCM register.
@@ -760,6 +768,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
+        #[cfg(feature = "cf-mix")]
+        crate::cfmix::data_ref(addr, true);
         self.note_guard_write(addr, 2);
         self.note_timer_write(addr, 2, u32::from(value));
         self.note_uart8_write(addr, 2, u32::from(value));
@@ -773,6 +783,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
+        #[cfg(feature = "cf-mix")]
+        crate::cfmix::data_ref(addr, true);
         self.note_guard_write(addr, 4);
         self.note_timer_write(addr, 4, value);
         self.note_uart8_write(addr, 4, value);

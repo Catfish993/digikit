@@ -758,6 +758,8 @@ fn run_scenario(
         sc.instructions
     };
 
+    #[cfg(feature = "cf-mix")]
+    rt.cf_mix_reset();
     let start = probe(&mut rt)?;
     let initial_audio_health = rt.audio_report().unwrap_or(Value::Null);
     let start_health = json!({
@@ -856,6 +858,22 @@ fn run_scenario(
         }
     }
     let end = probe(&mut rt)?;
+    #[cfg(feature = "cf-mix")]
+    if let Ok(dir) = std::env::var("DIGI_CF_MIX_OUT") {
+        let mut mix = rt.cf_mix();
+        let st = |p: &Probe, k: &str| p.status[k].as_u64().unwrap_or(0);
+        mix["scenario"] = json!(sc.name);
+        mix["guest_instructions"] = json!(st(&end, "icount") - st(&start, "icount"));
+        mix["interpreted"] = json!(st(&end, "interpreted_instructions") - st(&start, "interpreted_instructions"));
+        mix["idle_fast_forward"] = json!(st(&end, "idle_fast_forwarded_instructions") - st(&start, "idle_fast_forwarded_instructions"));
+        mix["ram_clear"] = json!(st(&end, "ram_clear_fast_forwarded_instructions") - st(&start, "ram_clear_fast_forwarded_instructions"));
+        mix["softfloat_hle_calls"] = json!(st(&end, "softfloat_hle_calls") - st(&start, "softfloat_hle_calls"));
+        mix["cf_ips"] = json!(elektron_native_boot::clock::cf_ips());
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = Path::new(&dir).join(format!("{}.json", sc.name.replace('/', "_")));
+        std::fs::write(&path, serde_json::to_vec(&mix).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+    }
     let peek = do_peeks(&mut rt, &args.peeks);
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
     let dsp_dump = match &args.dump_dsp {
