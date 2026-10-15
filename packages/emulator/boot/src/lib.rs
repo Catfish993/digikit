@@ -6,6 +6,8 @@ pub mod card_file;
 mod capture;
 #[cfg(feature = "cf-profile")]
 pub mod cfprof;
+#[cfg(feature = "cf-mix")]
+pub mod cfmix;
 mod common;
 mod cputime;
 mod guard;

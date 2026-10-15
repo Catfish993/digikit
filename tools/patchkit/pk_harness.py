@@ -68,6 +68,7 @@ ROOT = HERE.parent.parent
 from tools import python_env  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
 from tools.emulator import card_check  # noqa: E402
+from tools.patchkit import pk_dsp_budget  # noqa: E402
 
 MS = 132_000  # ColdFire instructions per emulated millisecond (the oracle clock)
 OUT = ROOT / "out" / "runs" / "patchkit"
@@ -936,6 +937,39 @@ class Session:
             else:
                 raise HarnessError(f"step without an action: {step}")
 
+    def measure_dsp(
+        self, window_ms: int = 1000, parts: int = 10
+    ) -> tuple[float, float]:
+        """(mean, max over PARTS sub-windows) of the DSP busy instructions per block with TRIG 1 held (the default
+        voice), after the same settling as every segment. Counters: status.audio.dsp_tiers (idle skip excluded)."""
+        emu = self.emu
+        assert emu is not None
+
+        def tiers() -> dict[str, Any]:
+            return (emu.status().get("audio") or {}).get("dsp_tiers") or {}
+
+        self.reset()
+        self.run_ms(1500)
+        emu.button(button("TRIG 1"), True)
+        self.run_ms(100)  # the note-on settles
+        first = last = tiers()
+        worst = 0.0
+        for _ in range(parts):
+            self.run_ms(window_ms / parts)
+            now = tiers()
+            part = pk_dsp_budget.busy_per_block(last, now)
+            if part is not None:
+                worst = max(worst, part)
+            last = now
+        emu.button(button("TRIG 1"), False)
+        self.health("dsp budget window")
+        mean = pk_dsp_budget.busy_per_block(first, last)
+        if mean is None:
+            raise HarnessError(
+                "no DSP block ran in the budget window (status.audio.dsp_tiers)"
+            )
+        return mean, worst
+
     def run_segment(self, name: str, steps: list[dict[str, Any]]) -> bool:
         """One segment from a fresh `restart`; True when every check passed."""
         self.segment = name
@@ -980,6 +1014,53 @@ def module_tests(
             )
 
 
+def stock_busy(cell: Cell, cache_dir: Path = SHARED_CACHE) -> float:
+    """Mean busy DSP instructions per block of the stock firmware of this device and OS, same window. Cached per
+    daemon binary in OUT/dsp/stock-DEV-FW.json (the engine changes the number; the key is the binary's size and
+    mtime)."""
+    exe = daemon_binary(cell.device, firmware_inputs(cell)[0])
+    st = exe.stat()
+    key = f"{exe}:{st.st_size}:{st.st_mtime_ns}"
+    path = OUT / "dsp" / f"stock-{cell.device}-{cell.firmware}.json"
+    with contextlib.suppress(OSError, ValueError):
+        rec = json.loads(path.read_text())
+        if rec.get("key") == key:
+            return float(rec["busy_mean"])
+    stock = Cell(cell.device, cell.firmware, [], cell.stall_ms)
+    with Session(
+        stock, Goldens(), run_name=f"dsp-stock-{stock.slug}", cache_dir=cache_dir
+    ) as session:
+        session.open()
+        mean, worst = session.measure_dsp()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(
+        json.dumps({"key": key, "busy_mean": mean, "busy_max_window": worst})
+    )
+    tmp.replace(path)
+    return mean
+
+
+def dsp_budget_check(session: Session, budget_pct: float) -> dict[str, Any]:
+    """Measure the cell, judge it against the stock baseline, record the check and OUT/dsp/CELL.json."""
+    cell = session.cell
+    session.segment = "dsp-budget"
+    try:
+        mean, worst = session.measure_dsp()
+        stock = mean if not cell.modules else stock_busy(cell)
+        report = pk_dsp_budget.judge(cell.device, mean, worst, stock, budget_pct)
+    except (Failure, EmuError, HarnessError) as e:
+        session.check("measure", False, str(e))
+        session.segment = ""
+        return {}
+    report["cell"] = cell.name
+    session.check("projected high load", report["ok"], pk_dsp_budget.summary(report))
+    session.segment = ""
+    (OUT / "dsp").mkdir(parents=True, exist_ok=True)
+    (OUT / "dsp" / f"{cell.slug}.json").write_text(json.dumps(report, indent=1))
+    return report
+
+
 def run_cell(
     cell: Cell,
     goldens: Goldens,
@@ -988,6 +1069,7 @@ def run_cell(
     seed: int | None = None,
     stress_actions: int | None = None,
     log_dir: Path = OUT,
+    dsp_budget: float | None = pk_dsp_budget.DEFAULT_BUDGET_PCT,
 ) -> tuple[bool, str, Session]:
     """Run a cell; (passed, one-line summary, session). The session's `checks` hold the detail."""
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -1022,6 +1104,11 @@ def run_cell(
             for name, steps in segments:
                 if not session.run_segment(name, steps):
                     failed.append(name)
+            if dsp_budget is not None:
+                before = len(session.checks)
+                dsp_budget_check(session, dsp_budget)
+                if not all(c.ok for c in session.checks[before:]):
+                    failed.append("dsp-budget")
     except HarnessError as e:
         return False, f"FAIL {cell.name}: setup: {e}", session
     except LoadFailure as e:
@@ -1056,7 +1143,13 @@ def _run_one(
 ) -> tuple[bool, str, list[str]]:
     """A cell in this process; (passed, summary line, failed check lines)."""
     ok, line, session = run_cell(
-        cell, goldens, a.update, a.tests, a.seed, a.stress_actions
+        cell,
+        goldens,
+        a.update,
+        a.tests,
+        a.seed,
+        a.stress_actions,
+        dsp_budget=None if a.no_dsp_budget else a.dsp_budget,
     )
     bad = [f"{c.name}: {c.detail}" for c in session.checks if not c.ok]
     return ok, line, bad
@@ -1164,6 +1257,15 @@ def main(argv: list[str]) -> int:
         default=0,
         help="cells in parallel processes (default: free cores / 2, at most 6; 1 runs them here, in order)",
     )
+    r.add_argument(
+        "--dsp-budget",
+        type=float,
+        default=pk_dsp_budget.DEFAULT_BUDGET_PCT,
+        help="fail a cell whose projected real DSP load (high bound, held note) exceeds this percent (default 85)",
+    )
+    r.add_argument(
+        "--no-dsp-budget", action="store_true", help="skip the DSP budget measurement"
+    )
     r.add_argument("--result", type=Path, help=argparse.SUPPRESS)
     r.add_argument(
         "--index", type=int, help=argparse.SUPPRESS
@@ -1203,12 +1305,35 @@ def main(argv: list[str]) -> int:
             for b in bad[:6]:
                 print(f"    {b}")
     complete = len(results) == len(cells)
+    _dsp_table(cells, a)
     print(
         f"{'PASS' if passed == len(cells) and complete else 'FAIL'}: {passed} of {len(cells)} cells passed"
         f"{'' if complete else f' ({len(cells) - len(results)} did not run)'}, wall {time.monotonic() - started:.0f} s",
         flush=True,
     )
     return 0 if passed == len(cells) and complete else 1
+
+
+def _dsp_table(cells: list[Cell], a: argparse.Namespace) -> None:
+    """The DSP budget of every cell that ran: a table on stdout and OUT/dsp-budget.json."""
+    if getattr(a, "no_dsp_budget", False):
+        return
+    rows = []
+    for c in cells:
+        with contextlib.suppress(OSError, ValueError):
+            rows.append(json.loads((OUT / "dsp" / f"{c.slug}.json").read_text()))
+    if not rows:
+        return
+    print(
+        "DSP budget (busy instructions per block; projected real load = busy x cycles/instruction factor / 666,667):"
+    )
+    print(f"  {'cell':<58} {'busy':>8} {'added':>7} {'nominal':>8} {'high':>7}  gate")
+    for r in rows:
+        print(
+            f"  {r['cell']:<58} {r['busy_mean']:>8.0f} {r['added_instructions_per_block']:>+7.0f} "
+            f"{r['load_nominal_pct']:>7.1f}% {r['load_high_pct']:>6.1f}%  {'ok' if r['ok'] else 'FAIL'} (<= {r['budget_pct']:g}%)"
+        )
+    (OUT / "dsp-budget.json").write_text(json.dumps(rows, indent=1))
 
 
 def _announce_signals(cells: list[Cell], done: list[str]) -> None:

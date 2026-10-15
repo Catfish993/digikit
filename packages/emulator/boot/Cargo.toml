@@ -18,6 +18,8 @@ diagnostic-profile = []
 diagnostic-events = []
 # Host-time and PC profile of the ColdFire execution paths (src/cfprof.rs).
 cf-profile = []
+# Exact executed-instruction mix per PC and operand references per region (src/cfmix.rs).
+cf-mix = []
 # Opt-in live ColdFire<->SHARC+ coupling (SharcPeer). Needs SHARC_GEN_DIR at
 # build time for real DSP execution (see packages/emulator/sharc/build.rs).
 sharc = ["dep:sharc-native"]

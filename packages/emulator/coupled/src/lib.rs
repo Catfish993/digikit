@@ -296,6 +296,15 @@ impl CoupledRuntime {
             Err("--coupled requires the coupled-audio build feature".into())
         }
     }
+    /// The exact ColdFire instruction mix since the last reset (feature `cf-mix`).
+    #[cfg(feature = "cf-mix")]
+    pub fn cf_mix(&self) -> Value {
+        self.emulator.cf_mix()
+    }
+    #[cfg(feature = "cf-mix")]
+    pub fn cf_mix_reset(&self) {
+        self.emulator.cf_mix_reset();
+    }
     pub fn step_chunk(&mut self, budget: u32) -> Snapshot {
         #[cfg(feature = "coupled-audio")]
         let cf_step_start = self
@@ -966,7 +975,9 @@ mod coupled {
             self.shared.borrow().halted.clone()
         }
         pub(super) fn sink_underruns(&self) -> Option<u64> {
-            self.player.as_ref().map(|p| p.queue_state().underrun_events)
+            self.player
+                .as_ref()
+                .map(|p| p.queue_state().underrun_events)
         }
         pub(super) fn queue_ahead(&self) -> bool {
             self.player.as_ref().is_some_and(|p| {
