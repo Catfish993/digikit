@@ -635,3 +635,131 @@ def test_apply_needs_clean_tree(tmp_path: Path, capsys: Any) -> None:
     assert run(root, moves, apply=True)[0] == 1
     assert "uncommitted" in capsys.readouterr().err
     assert (root / "tools/x.py").exists()
+
+
+ROOT_FILES = {
+    "pk/__init__.py": "",
+    "pk/ext.py": "from . import cfg\nfrom .cfg import LIMIT\nfrom pk import cfg as c2\nVALUE = 1\n",
+    "pk/cfg.py": "LIMIT = 1\n",
+    "pk/dis.py": "OPS = 1\n",
+    "pk/old.py": "X = 1\n",
+    "tools/fw/__init__.py": "",
+    "tests/test_pk.py": """\
+import importlib
+from unittest import mock
+import pk.ext as e
+import pk.ext
+import pk
+from pk import ext, cfg
+from pk import dis
+from pk import dis as d2, ext as e2
+from pk.dis import OPS
+from pk import old
+from pk.old import X
+from pk import nothing
+
+mod = importlib.import_module("pk.ext")
+with mock.patch("pk.ext.helper"):
+    pass
+argv = ["python", "-m", "pk.cfg", "--x"]
+note = "see pk.ext and pk.zzz"  # pk.dis here
+other = self.pk.ext
+""",
+    "docs/guide.md": "Run `python -m pk.ext`, edit pk/cfg.py and pk/old.py; pk/ here.\n"
+    "Also `python pk/ext.py` and pk.dis.OPS, pk-1.2 and a/pk/cfg.py.\n",
+}
+ROOT_MOVES: dict[str, str | None] = {
+    "pk/ext.py": "tools/fw/ext.py",
+    "pk/cfg.py": "tools/fw/cfg.py",
+    "pk/dis.py": "tools/other/disasm.py",
+    "pk/__init__.py": None,
+    "pk/old.py": None,
+}
+
+
+def run_any(
+    root: Path, moves: dict[str, str | None], *, apply: bool = False
+) -> tuple[int, dict[str, Any]]:
+    spec = {"moves": moves, "packages": {}, "exclude_text": []}
+    map_path = root.parent / "map.json"
+    map_path.write_text(json.dumps(spec))
+    report = root.parent / "report.json"
+    report.unlink(missing_ok=True)
+    args = [str(map_path), "--root", str(root), "--report", str(report)]
+    if apply:
+        args.append("--apply")
+    code = relocate.main(args)
+    return code, json.loads(report.read_text()) if report.exists() else {}
+
+
+def test_root_package_imports(tmp_path: Path) -> None:
+    root = make_repo(tmp_path, ROOT_FILES)
+    code, data = run_any(root, ROOT_MOVES, apply=True)
+    assert code == 0
+    assert data["deletes"] == ["pk/__init__.py", "pk/old.py"]
+    assert not (root / "pk").exists()
+    assert lines(root, "tools/fw/ext.py") == [
+        "from tools.fw import cfg",
+        "from tools.fw.cfg import LIMIT",
+        "from tools.fw import cfg as c2",
+        "VALUE = 1",
+    ]
+    out = lines(root, "tests/test_pk.py")
+    assert out[2] == "from tools.fw import ext as e"
+    assert out[3:5] == ["import pk.ext", "import pk"]
+    assert out[5] == "from tools.fw import ext, cfg"
+    assert out[6] == "from tools.other import disasm as dis"
+    assert out[7:9] == [
+        "from tools.other import disasm as d2",
+        "from tools.fw import ext as e2",
+    ]
+    assert out[9] == "from tools.other.disasm import OPS"
+    assert out[10:13] == [
+        "from pk import old",
+        "from pk.old import X",
+        "from pk import nothing",
+    ]
+    assert out[14:] == [
+        'mod = importlib.import_module("tools.fw.ext")',
+        'with mock.patch("tools.fw.ext.helper"):',
+        "    pass",
+        'argv = ["python", "-m", "tools.fw.cfg", "--x"]',
+        'note = "see tools.fw.ext and pk.zzz"  # tools.other.disasm here',
+        "other = self.pk.ext",
+    ]
+    assert [r["line"] for r in found(data, "dotted-import")] == [4]
+    assert [r["line"] for r in found(data, "root-import")] == [5]
+    assert [r["line"] for r in found(data, "import-of-deleted")] == [10, 11]
+    assert [r["text"] for r in found(data, "from-root-unknown")] == ["nothing"]
+    assert {"I1", "I3", "I5", "string", "T4"} <= kinds(data)
+
+
+def test_root_package_text(tmp_path: Path) -> None:
+    root = make_repo(tmp_path, ROOT_FILES)
+    code, data = run_any(root, ROOT_MOVES, apply=True)
+    assert code == 0
+    assert lines(root, "docs/guide.md") == [
+        "Run `python -m tools.fw.ext`, edit tools/fw/cfg.py and pk/old.py; pk/ here.",
+        "Also `python -m tools.fw.ext` and tools.other.disasm.OPS, pk-1.2 and a/pk/cfg.py.",
+    ]
+    assert [r["text"] for r in found(data, "deleted-ref")] == ["pk/old.py"]
+    assert [r["line"] for r in found(data, "bare-root")] == [1]
+
+
+def test_root_package_checks(tmp_path: Path, capsys: Any) -> None:
+    root = make_repo(tmp_path, ROOT_FILES)
+    code, _ = run_any(root, {"pk/__init__.py": None, "pk/ext.py": "tools/fw/ext.py"})
+    assert code == 1
+    assert "is deleted but" in capsys.readouterr().err
+    code, _ = run_any(root, {"pk/nope.py": None})
+    assert code == 1
+    assert "not a tracked file" in capsys.readouterr().err
+
+
+def test_root_package_relative_unresolved(tmp_path: Path) -> None:
+    files = {**ROOT_FILES, "pk/ext.py": "from .old import X\nfrom . import old\n"}
+    root = make_repo(tmp_path, files)
+    code, data = run_any(root, ROOT_MOVES)
+    assert code == 0
+    hits = found(data, "import-of-deleted")
+    assert [r["line"] for r in hits if r["file"] == "tools/fw/ext.py"] == [1, 2]

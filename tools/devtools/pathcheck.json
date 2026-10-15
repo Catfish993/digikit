@@ -1,0 +1,33 @@
+{
+  "retired_roots": ["native"],
+  "exclude": [
+    "docs/handovers/",
+    "uv.lock",
+    "Cargo.lock",
+    "pnpm-lock.yaml",
+    "tools/devtools/relocate-*.json",
+    "tools/devtools/move-*.json",
+    "tests/devtools/test_relocate.py",
+    "tests/devtools/test_move_dirs.py",
+    "tests/devtools/test_test_outcomes.py",
+    "tests/devtools/test_split_module.py",
+    "tests/devtools/test_pathcheck.py"
+  ],
+  "generated": [
+    "out/",
+    "sections/",
+    "snapshots/",
+    "target/",
+    "node_modules/",
+    "apps/web/.local",
+    "apps/web/dist",
+    "apps/web/public/patchkit.wasm",
+    "apps/web/public/modules/"
+  ],
+  "allow": [
+    {
+      "pattern": "docs/findings/\\d\\d",
+      "reason": "NN shorthand for the findings files numbered NN-*"
+    }
+  ]
+}

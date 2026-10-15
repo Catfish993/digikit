@@ -13,7 +13,18 @@ Usage:
 
 MAP.json has "moves" (old to new path), "packages" (directory to the docstring
 of its new __init__.py) and "exclude_text" (path prefixes the text rewrites
-skip). Without --apply nothing changes: every edit and report is computed in
+skip). A move whose target is null deletes the file (git rm) instead; the
+importers of a deleted module and the references to its path are reported, not
+edited. A top-level directory other than tools/ that has a tracked __init__.py
+and moved .py files in the map is a root package and is handled like tools/:
+"emu/__init__.py": null removes the package once all its modules are moved or
+deleted (the map is refused when other tracked files stay in the directory).
+For a root package the tool rewrites "from emu.x import y", "from emu import
+x, z" (one line per destination package; a renamed module keeps its old name
+through "as"), "import emu.x as e", relative imports inside the moved files
+(made absolute), and the dotted module names and "emu/x.py" paths in comments,
+strings, docs and scripts. A plain "import emu.x" is reported as a dotted
+import. Without --apply nothing changes: every edit and report is computed in
 memory, written to the report file and summarised. With --apply, and only when
 every check passes, the files are moved with git mv, the edited contents are
 written to the new paths and the package files are created.
@@ -42,6 +53,7 @@ from typing import Any
 
 SELF = "tools/devtools/relocate.py"
 SUMMARY_LIMIT = 10
+LINE_LIMIT = 88
 
 CALL_SITES = {
     "importlib.import_module",
@@ -229,6 +241,46 @@ def find_units(moves: dict[str, str], tracked: set[str]) -> dict[str, str]:
     return units
 
 
+def find_roots(
+    moves: dict[str, str], deletes: frozenset[str], tracked: set[str]
+) -> list[str]:
+    """Top-level packages other than tools/ that have moved or deleted modules."""
+    tops = {
+        p.split("/")[0] for p in (*moves, *deletes) if p.endswith(".py") and "/" in p
+    }
+    tops.discard("tools")
+    return sorted(t for t in tops if f"{t}/__init__.py" in tracked)
+
+
+@dataclass(frozen=True)
+class RootPatterns:
+    """Text patterns for the root packages, built from their names."""
+
+    cmd: re.Pattern[bytes]
+    path: re.Pattern[bytes]
+    dotted: re.Pattern[bytes]
+    bare: re.Pattern[bytes]
+
+
+def root_patterns(roots: list[str]) -> RootPatterns | None:
+    if not roots:
+        return None
+    alt = "|".join(re.escape(r) for r in roots).encode()
+    return RootPatterns(
+        re.compile(
+            rb"(?P<py>\bpython3?)(?P<flags>(?:[ \t]+-[A-Za-z]\S*)*)[ \t]+"
+            rb"(?P<rel>(?:\.{1,2}/)*)(?P<root>" + alt + rb")/(?P<path>[\w./-]+?\.py)\b"
+        ),
+        re.compile(
+            rb"(?<![\w./-])(?P<pre>(?:\.\./)*)(?P<root>"
+            + alt
+            + rb")/(?P<rest>[\w.*/-]+)"
+        ),
+        re.compile(rb"(?<![\w./-])(?:" + alt + rb")(?:\.[A-Za-z_]\w*)+"),
+        re.compile(rb"(?<![\w.-])(?:" + alt + rb")/(?![\w.*/-])"),
+    )
+
+
 def new_dir(new: str | None, rel: str) -> str | None:
     if new is None or not new.endswith("/" + rel):
         return None
@@ -239,9 +291,17 @@ def new_dir(new: str | None, rel: str) -> str | None:
 class Ctx:
     """Tables derived from the move map, and the collected reports."""
 
-    def __init__(self, moves: dict[str, str], tracked: set[str]) -> None:
+    def __init__(
+        self,
+        moves: dict[str, str],
+        tracked: set[str],
+        deletes: frozenset[str] = frozenset(),
+    ) -> None:
         self.moves = moves
         self.tracked = tracked
+        self.deletes = deletes
+        self.roots = find_roots(moves, deletes, tracked)
+        self.pkgroots = {"tools", *self.roots}
         self.reports: list[tuple[str, int, str, str]] = []
         self.stale_docs = 0
         self.py_moves = {o: n for o, n in moves.items() if o.endswith(".py")}
@@ -254,29 +314,41 @@ class Ctx:
         self.stems: set[str] = set()
         for old, new in self.py_moves.items():
             self.index_module(old, new)
+        self.deleted_mods = {
+            ".".join(mod_parts(o))
+            for o in deletes
+            if o.endswith(".py") and o.split("/")[0] in self.roots
+        }
+        self.root_res = root_patterns(self.roots)
         self.modmap = dict(self.modfiles)
         for old, new in self.units.items():
             key = old.replace("/", ".")
             names = key.split(".")
             if key not in self.modmap and all(p.isidentifier() for p in names):
                 self.modmap[key] = new.replace("/", ".")
-        self.toplevel = {k.split(".")[1] for k in self.modmap if k.count(".") == 1}
-        self.oldnames = self.flat_top | {"tools"}
+        self.toplevel = {
+            k.split(".")[1]
+            for k in self.modmap
+            if k.count(".") == 1 and k.startswith("tools.")
+        }
+        self.oldnames = self.flat_top | self.pkgroots
         if "tools.sharc_core" in self.modfiles:
             self.oldnames.add("sharc_core")
         self.basenames = {o.rsplit("/", 1)[-1] for o in moves}
         self.basenames |= {d.rsplit("/", 1)[-1] for d in self.units}
-        self.old_py_tools = sorted(o for o in self.py_moves if o.startswith("tools/"))
+        self.old_py_tools = sorted(
+            o for o in self.py_moves if o.split("/")[0] in self.pkgroots
+        )
 
     def index_module(self, old: str, new: str) -> None:
         parts = old.split("/")
         stem = parts[-1].removesuffix(".py")
         if stem != "__init__":
             self.stems.add(stem)
-        if parts[0] != "tools":
+        if parts[0] != "tools" and parts[0] not in self.roots:
             return
         self.modfiles[".".join(mod_parts(old))] = ".".join(mod_parts(new))
-        if stem == "__init__":
+        if stem == "__init__" or parts[0] != "tools":
             return
         if len(parts) == 2:
             self.flat_top.add(stem)
@@ -298,9 +370,11 @@ class Ctx:
         cut = len(unit)
         return self.units[unit] + path[cut:]
 
-    def rewrite_path(self, rest: str) -> tuple[str, str]:
-        """New path for tools/REST, or ("", category) when it cannot be edited."""
-        old = "tools/" + rest
+    def rewrite_path(self, rest: str, root: str = "tools") -> tuple[str, str]:
+        """New path for ROOT/REST, or ("", category) when it cannot be edited."""
+        old = root + "/" + rest
+        if old in self.deletes:
+            return "", "deleted-ref"
         if old in self.moves:
             return self.moves[old], ""
         unit = self.unit_of(old)
@@ -597,6 +671,8 @@ class PyFile:
                 self.do_import(node)
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 self.do_from(node)
+            elif isinstance(node, ast.ImportFrom) and self.in_root():
+                self.do_relative(node)
         for node in self.nodes:
             target = site_target(node)
             if isinstance(target, ast.Constant) and isinstance(target.value, str):
@@ -655,10 +731,10 @@ class PyFile:
         x = comps[0]
         n = 1
         rule2 = False
-        if x == "tools":
-            if len(comps) < 2 or f"tools.{comps[1]}" not in ctx.modmap:
+        if x in ctx.pkgroots:
+            if len(comps) < 2 or f"{x}.{comps[1]}" not in ctx.modmap:
                 return None
-            cur, n = f"tools.{comps[1]}", 2
+            cur, n = f"{x}.{comps[1]}", 2
         elif x == "sharc_core":
             if "tools.sharc_core" not in ctx.modmap:
                 return None
@@ -685,6 +761,17 @@ class PyFile:
                 return f"tools.{sub}.{x}"
         return ""
 
+    def in_root(self) -> bool:
+        return self.src.old.split("/")[0] in self.ctx.roots
+
+    def is_deleted(self, comps: list[str], line: int) -> bool:
+        """Report an import of a module the map deletes."""
+        mods = self.ctx.deleted_mods
+        if any(".".join(comps[:i]) in mods for i in range(2, len(comps) + 1)):
+            self.report(line, "import-of-deleted", ".".join(comps))
+            return True
+        return False
+
     def note_unresolved(self, name: str, line: int) -> None:
         if name in self.ctx.stems:
             self.report(line, "unresolved-flat-import", name)
@@ -696,11 +783,16 @@ class PyFile:
             comps = alias.name.split(".")
             res = self.resolve(comps)
             tail = f" as {alias.asname}" if alias.asname else ""
-            if res is None:
+            root = comps[0] in self.ctx.roots
+            if self.is_deleted(comps, node.lineno):
+                pass
+            elif res is None:
                 self.note_unresolved(comps[0], node.lineno)
+                if root and len(comps) == 1:
+                    self.report(node.lineno, "root-import", alias.name)
             elif res.stdlib:
                 self.report(node.lineno, "stdlib-shadow", alias.name)
-            elif len(comps) > 1:
+            elif len(comps) > 1 and not (root and alias.asname and res.n == len(comps)):
                 self.report(node.lineno, "dotted-import", alias.name)
             else:
                 pkg, _, leaf = res.new.rpartition(".")
@@ -724,7 +816,12 @@ class PyFile:
         if node.module == "tools":
             self.do_from_tools(node)
             return
+        if node.module in self.ctx.roots:
+            self.do_from_root(node, node.module)
+            return
         comps = node.module.split(".")
+        if self.is_deleted(comps, node.lineno):
+            return
         res = self.resolve(comps)
         if res is None:
             self.note_unresolved(comps[0], node.lineno)
@@ -754,6 +851,62 @@ class PyFile:
             lines.append(f"from {pkg} import {leaf}{tail}")
         if not unknown:
             self.replace_statement(node, lines, "I3")
+
+    def do_from_root(self, node: ast.ImportFrom, pkg: str) -> None:
+        """from ROOT import a, b: one statement per destination package."""
+        groups: dict[str, list[str]] = {}
+        unknown = False
+        for alias in node.names:
+            name = f"{pkg}.{alias.name}"
+            new = self.ctx.modmap.get(name)
+            if alias.name == "*" or new is None:
+                gone = name in self.ctx.deleted_mods
+                self.report(
+                    node.lineno,
+                    "import-of-deleted" if gone else "from-root-unknown",
+                    alias.name,
+                )
+                unknown = True
+                continue
+            dest, _, leaf = new.rpartition(".")
+            bind = alias.asname or (alias.name if leaf != alias.name else "")
+            groups.setdefault(dest, []).append(f"{leaf} as {bind}" if bind else leaf)
+        if unknown:
+            return
+        ind = self.indent(node)
+        lines = []
+        for dest, items in groups.items():
+            line = f"from {dest} import {', '.join(items)}"
+            if len(ind) + len(line) > LINE_LIMIT:
+                body = "".join(f"\n{ind}    {item}," for item in items)
+                line = f"from {dest} import ({body}\n{ind})"
+            lines.append(line)
+        self.replace_statement(node, lines, "I3")
+
+    def do_relative(self, node: ast.ImportFrom) -> None:
+        """Make a relative import inside a moved root-package file absolute."""
+        pkg = self.src.old.split("/")[:-1]
+        if node.level > len(pkg):
+            self.report(node.lineno, "relative-import", self.seg(node))
+            return
+        base = pkg[: len(pkg) - node.level + 1] + (
+            node.module.split(".") if node.module else []
+        )
+        if not node.module:
+            if len(base) == 1 and base[0] in self.ctx.roots:
+                self.do_from_root(node, base[0])
+            else:
+                self.report(node.lineno, "relative-import", self.seg(node))
+            return
+        res = None if self.is_deleted(base, node.lineno) else self.resolve(base)
+        start, end = self.span(node)
+        found = re.match(rb"from[ \t]+(\.+[\w.]*)", self.src.data[start:end])
+        if res is None or found is None:
+            self.report(node.lineno, "relative-import", self.seg(node))
+            return
+        new = ".".join([res.new, *base[res.n :]])
+        first, last = start + found.start(1), start + found.end(1)
+        self.src.add(first, last, new, "I5")
 
     def rewrite_string(self, node: ast.Constant) -> None:
         self.handled.add(id(node))
@@ -1212,7 +1365,7 @@ class PyFile:
                 self.report(node.lineno, "tools-literal", value)
 
     def path_literal(self, node: ast.Constant, value: str) -> None:
-        if "tools/" not in value:
+        if not any(r + "/" in value for r in self.ctx.pkgroots):
             return
         hits = [p for p in self.ctx.old_py_tools if p in value]
         if hits:
@@ -1225,6 +1378,8 @@ class PyFile:
         comps = value.split(".")
         if comps[0] not in self.ctx.oldnames or comps[-1] in EXTENSIONS:
             return
+        if comps[0] in self.ctx.roots and self.resolve(comps) is not None:
+            return  # rewritten by the dotted text rewrite
         core = value.startswith("sharc_core.")
         core = core and any(fnmatch.fnmatchcase(self.src.old, g) for g in CORE_FILES)
         self.report(node.lineno, "core-logical" if core else "dotted-literal", value)
@@ -1234,16 +1389,68 @@ def note(ctx: Ctx, src: Source, offset: int, category: str, text: str) -> None:
     ctx.reports.append((src.new, src.line_of(offset), category, clip(text)))
 
 
+def py_regions(src: Source) -> list[tuple[int, int]]:
+    """Byte spans of the comments and strings of a Python file."""
+    fmid = getattr(tokenize, "FSTRING_MIDDLE", -1)
+    kinds = {tokenize.COMMENT, tokenize.STRING, fmid}
+    rows = src.data.split(b"\n")
+
+    def offset(row: int, col: int) -> int:
+        line = rows[row - 1].decode("utf-8", "replace")
+        return src.starts[row - 1] + len(line[:col].encode())
+
+    out: list[tuple[int, int]] = []
+    try:
+        for tok in tokenize.tokenize(io.BytesIO(src.data).readline):
+            if tok.type in kinds:
+                out.append((offset(*tok.start), offset(*tok.end)))
+    except (tokenize.TokenError, SyntaxError, IndexError):
+        pass
+    return out
+
+
+def dotted_rewrite(
+    ctx: Ctx,
+    src: Source,
+    pattern: re.Pattern[bytes],
+    regions: list[tuple[int, int]] | None,
+) -> None:
+    """Dotted module names of the root packages (emu.x.y) in text."""
+    for m in pattern.finditer(src.data):
+        start, stop = m.start(), m.end()
+        if regions is not None and not any(
+            a <= start and stop <= b for a, b in regions
+        ):
+            continue
+        if any(e.start < stop and start < e.end for e in src.edits):
+            continue
+        comps = m[0].decode().split(".")
+        cur, n = comps[0], 1
+        while n < len(comps) and f"{cur}.{comps[n]}" in ctx.modmap:
+            cur += "." + comps[n]
+            n += 1
+        if any(".".join(comps[:i]) in ctx.deleted_mods for i in range(2, n + 2)):
+            note(ctx, src, start, "deleted-ref", m[0].decode())
+            continue
+        if n == 1:
+            continue
+        end = start + len(".".join(comps[:n]))
+        src.add(start, end, ctx.modmap[cur], "T4", 2)
+
+
 def text_rewrite(ctx: Ctx, src: Source) -> None:
     """T1 command, T2 path and T3 dotted rewrites on the original bytes."""
     is_py = src.old.endswith(".py")
     spans: list[tuple[int, int]] = []
-    for m in T1_RE.finditer(src.data):
+    rp = ctx.root_res
+    cmds = [T1_RE, rp.cmd] if rp else [T1_RE]
+    for m in (m for pat in cmds for m in pat.finditer(src.data)):
         text = m[0].decode()
         if m["rel"]:
             note(ctx, src, m.start(), "cmd-relative", text)
             continue
-        new_path = ctx.py_moves.get("tools/" + m["path"].decode())
+        root = m["root"].decode() if "root" in m.re.groupindex else "tools"
+        new_path = ctx.py_moves.get(root + "/" + m["path"].decode())
         if new_path is None:
             continue
         mod = mod_parts(new_path)
@@ -1254,7 +1461,8 @@ def text_rewrite(ctx: Ctx, src: Source) -> None:
         spans.append((m.start(), m.end()))
         if is_py:
             note(ctx, src, m.start(), "cmd-in-py", text)
-    for m in T2_RE.finditer(src.data):
+    paths = [T2_RE, rp.path] if rp else [T2_RE]
+    for m in (m for pat in paths for m in pat.finditer(src.data)):
         if any(s <= m.start() < e for s, e in spans):
             continue
         rest = m["rest"].decode()
@@ -1262,7 +1470,8 @@ def text_rewrite(ctx: Ctx, src: Source) -> None:
         cut = len(core)
         if not core:
             continue
-        new, category = ctx.rewrite_path(core)
+        root = m["root"].decode() if "root" in m.re.groupindex else "tools"
+        new, category = ctx.rewrite_path(core, root)
         if new:
             text = m["pre"].decode() + new + rest[cut:]
             src.add(m.start(), m.end(), text, "T2", 2)
@@ -1270,6 +1479,8 @@ def text_rewrite(ctx: Ctx, src: Source) -> None:
             ctx.stale_docs += 1
         elif category:
             note(ctx, src, m.start(), category, m[0].decode())
+    if rp:
+        dotted_rewrite(ctx, src, rp.dotted, py_regions(src) if is_py else None)
     if is_py:
         return
     for m in T3_RE.finditer(src.data):
@@ -1278,6 +1489,9 @@ def text_rewrite(ctx: Ctx, src: Source) -> None:
             src.add(m.start(), m.end(), ctx.modmap[f"tools.{name}"], "T3", 2)
     for m in BARE_RE.finditer(src.data):
         note(ctx, src, m.start(), "bare-tools", m[0].decode())
+    if rp:
+        for m in rp.bare.finditer(src.data):
+            note(ctx, src, m.start(), "bare-root", m[0].decode())
 
 
 def is_text(data: bytes) -> bool:
@@ -1360,9 +1574,27 @@ def check_moves(root: Path, ctx: Ctx, apply: bool) -> list[str]:
             problems.append(f"destination exists: {new}")
         if len(new.split("/")) != len(old.split("/")) + 1:
             problems.append(f"not exactly one directory deeper: {old} -> {new}")
+    for old in sorted(ctx.deletes):
+        if old not in ctx.tracked:
+            problems.append(f"source is not a tracked file: {old}")
+        if old in ctx.moves:
+            problems.append(f"both moved and deleted: {old}")
+        if old.endswith("/__init__.py"):
+            left = package_leftovers(ctx, old.removesuffix("__init__.py"))
+            if left:
+                problems.append(f"package {old} is deleted but {left[0]} stays")
     if apply and git(root, "status", "--porcelain", "--untracked-files=no").strip():
         problems.append("working tree has uncommitted changes to tracked files")
     return problems
+
+
+def package_leftovers(ctx: Ctx, prefix: str) -> list[str]:
+    """Tracked files under a package directory that the map neither moves nor deletes."""
+    return sorted(
+        f
+        for f in ctx.tracked
+        if f.startswith(prefix) and f not in ctx.moves and f not in ctx.deletes
+    )
 
 
 def pending_packages(
@@ -1380,7 +1612,7 @@ def pending_packages(
 
 def read_sources(root: Path, ctx: Ctx, skip: set[str]) -> dict[str, Source]:
     srcs: dict[str, Source] = {}
-    for rel in sorted(ctx.tracked - skip):
+    for rel in sorted(ctx.tracked - skip - ctx.deletes):
         path = root / rel
         if path.is_symlink() or not path.is_file():
             continue
@@ -1394,6 +1626,8 @@ def apply_plan(
     for old, new in sorted(ctx.moves.items()):
         (root / new).parent.mkdir(parents=True, exist_ok=True)
         git(root, "mv", old, new)
+    for old in sorted(ctx.deletes):
+        git(root, "rm", "-q", "--", old)
     for src in srcs.values():
         if src.edits:
             (root / src.new).write_bytes(src.out)
@@ -1416,11 +1650,16 @@ def build_report(ctx: Ctx, srcs: dict[str, Source]) -> dict[str, Any]:
     ]
     reports.sort(key=lambda r: (r["file"], r["line"], r["category"], r["text"]))
     moves = [[old, new] for old, new in sorted(ctx.moves.items())]
-    return {"moves": moves, "edits": edits, "reports": reports}
+    report: dict[str, Any] = {"moves": moves, "edits": edits, "reports": reports}
+    if ctx.deletes:
+        report["deletes"] = sorted(ctx.deletes)
+    return report
 
 
 def summary(report: dict[str, Any], packages: int, stale_docs: int) -> str:
     lines = [f"moves: {len(report['moves'])}", f"packages created: {packages}"]
+    if report.get("deletes"):
+        lines.append(f"deleted: {len(report['deletes'])}")
     lines.append("edits:")
     kinds = Counter(e["kind"] for e in report["edits"])
     for kind, count in sorted(kinds.items()):
@@ -1448,7 +1687,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         spec = json.loads(args.map.read_text(encoding="utf-8"))
-        moves = {str(k): str(v) for k, v in spec["moves"].items()}
+        raw = spec["moves"]
+        moves = {str(k): str(v) for k, v in raw.items() if v is not None}
+        deletes = frozenset(str(k) for k, v in raw.items() if v is None)
         packages = {str(k): str(v) for k, v in spec.get("packages", {}).items()}
         exclude = tuple(str(p) for p in spec.get("exclude_text", []))
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
@@ -1465,7 +1706,7 @@ def main(argv: list[str] | None = None) -> int:
         map_rel = args.map.resolve().relative_to(root).as_posix()
     except ValueError:
         map_rel = ""
-    ctx = Ctx(moves, tracked)
+    ctx = Ctx(moves, tracked, deletes)
     problems = check_moves(root, ctx, args.apply)
     srcs = read_sources(root, ctx, {SELF, map_rel})
     for src in srcs.values():

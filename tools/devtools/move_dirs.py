@@ -9,7 +9,8 @@ from the repository.
 
 Usage:
     uv run python tools/devtools/move_dirs.py MAP.json [--apply]
-        [--report REPORT.json] [--root DIR]
+        [--report REPORT.json] [--root DIR] [--rewrite-only] [--skip-missing]
+        [--exclude PREFIX ...]
 
 MAP.json has "moves" (old to new path) and "exclude_text" (path prefixes whose
 files are not rewritten; occurrences in them are only counted). Without
@@ -25,6 +26,14 @@ so a replacement is never scanned again. Reports (no edits): relative-ref
 (OLD after ../ or ./), glob-ref (PARENT/*), bare-parent (PARENT/ as a token,
 or the quoted name of a parent path component in a source file) and the
 counts per excluded file.
+
+--rewrite-only replays the rewrites of moves that are already done: nothing is
+moved. Every entry needs its old path gone (not tracked, not on disk) and its
+new path tracked, else a check fails (--skip-missing instead drops entries whose new path is not
+tracked, for example a module that became a package, and lists them). The map may carry other keys (for
+example "packages"); they are ignored. The map files tools/devtools/
+{relocate,move}-*.json are never rewritten in this mode. --exclude PREFIX adds
+a path prefix to "exclude_text" for this run (repeatable).
 
 Exit status: 0 on success, 1 when a check fails (nothing is changed), 2 on
 usage errors.
@@ -45,6 +54,7 @@ SELF = "tools/devtools/move_dirs.py"
 SUMMARY_LIMIT = 10
 CODE_SUFFIXES = {".py", ".rs", ".mjs", ".ts", ".js", ".json", ".toml"}
 CLIP = 300
+MAP_FILES = re.compile(r"tools/devtools/(?:relocate|move)-[^/]*\.json")
 
 
 class Patterns:
@@ -102,6 +112,22 @@ def new_path(moves: dict[str, str], moves_by_len: list[str], path: str) -> str:
         if covers(old, path):
             return moves[old] + path[len(old) :]
     return path
+
+
+def check_done_moves(root: Path, moves: dict[str, str], tracked: set[str]) -> list[str]:
+    problems: list[str] = []
+    seen: dict[str, str] = {}
+    for old, new in sorted(moves.items()):
+        # An untracked or ignored leftover directory (build output) is not a source.
+        left = root / old
+        if any(covers(old, f) for f in tracked) or left.is_file() or left.is_symlink():
+            problems.append(f"source still exists: {old}")
+        if not any(covers(new, f) for f in tracked):
+            problems.append(f"destination is not tracked: {new}")
+        if new in seen:
+            problems.append(f"duplicate destination {new}: {seen[new]} and {old}")
+        seen[new] = old
+    return problems
 
 
 def check_moves(
@@ -167,8 +193,12 @@ def rewrite_file(scan: Scan, pats: Patterns, moves: dict[str, str]) -> None:
             scan.report(m, "bare-parent")
 
 
-def apply_plan(root: Path, moves: dict[str, str], scans: dict[str, Scan]) -> None:
+def apply_plan(
+    root: Path, moves: dict[str, str], scans: dict[str, Scan], rewrite_only: bool
+) -> None:
     for old, new in sorted(moves.items()):
+        if rewrite_only:
+            break
         (root / new).parent.mkdir(parents=True, exist_ok=True)
         git(root, "mv", old, new)
     # git mv staged the renames. Stage only the rewritten files (all tracked), so
@@ -232,6 +262,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("map", type=Path, help="JSON map file")
     parser.add_argument("--apply", action="store_true", help="move and edit files")
     parser.add_argument("--report", type=Path, help="write the JSON report here")
+    parser.add_argument(
+        "--rewrite-only",
+        action="store_true",
+        help="rewrite references for moves that are already done; move nothing",
+    )
+    parser.add_argument(
+        "--skip-missing",
+        action="store_true",
+        help="with --rewrite-only: drop entries whose new path is not tracked",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="also leave files under this path prefix alone (repeatable)",
+    )
     parser.add_argument("--root", type=Path, help="repository root")
     args = parser.parse_args(argv)
     try:
@@ -239,7 +286,9 @@ def main(argv: list[str] | None = None) -> int:
         moves = {
             str(k).rstrip("/"): str(v).rstrip("/") for k, v in spec["moves"].items()
         }
-        exclude = tuple(str(p) for p in spec.get("exclude_text", []))
+        exclude = tuple(str(p) for p in spec.get("exclude_text", [])) + tuple(
+            args.exclude
+        )
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         print(f"move_dirs: cannot read the map: {exc}", file=sys.stderr)
         return 2
@@ -253,7 +302,23 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, subprocess.CalledProcessError) as exc:
         print(f"move_dirs: not a git repository: {exc}", file=sys.stderr)
         return 2
-    problems = check_moves(root, moves, tracked, args.apply)
+    if args.rewrite_only and args.skip_missing:
+        for old, new in sorted(moves.items()):
+            if not any(covers(new, f) for f in tracked):
+                print(f"move_dirs: skipped, new path not tracked: {old} -> {new}")
+                del moves[old]
+        if not moves:
+            print("move_dirs: nothing left to rewrite", file=sys.stderr)
+            return 2
+    if args.rewrite_only:
+        problems = check_done_moves(root, moves, tracked)
+        if (
+            args.apply
+            and git(root, "status", "--porcelain", "--untracked-files=no").strip()
+        ):
+            problems.append("working tree has uncommitted changes to tracked files")
+    else:
+        problems = check_moves(root, moves, tracked, args.apply)
     if problems:
         for problem in sorted(problems):
             print(f"move_dirs: {problem}", file=sys.stderr)
@@ -266,7 +331,10 @@ def main(argv: list[str] | None = None) -> int:
     by_len = sorted(moves, key=lambda o: (-len(o), o))
     scans: dict[str, Scan] = {}
     excluded: dict[str, int] = {}
-    for rel in sorted(tracked - {SELF, map_rel}):
+    skip = {SELF, map_rel}
+    if args.rewrite_only:
+        skip |= {f for f in tracked if MAP_FILES.fullmatch(f)}
+    for rel in sorted(tracked - skip):
         path = root / rel
         if path.is_symlink() or not path.is_file():
             continue
@@ -279,12 +347,13 @@ def main(argv: list[str] | None = None) -> int:
             if count:
                 excluded[rel] = count
             continue
-        scan = Scan(rel, new_path(moves, by_len, rel), text)
+        here = rel if args.rewrite_only else new_path(moves, by_len, rel)
+        scan = Scan(rel, here, text)
         rewrite_file(scan, pats, moves)
         scans[rel] = scan
     if args.apply:
         try:
-            apply_plan(root, moves, scans)
+            apply_plan(root, moves, scans, args.rewrite_only)
         except (OSError, subprocess.CalledProcessError) as exc:
             print(f"move_dirs: apply failed: {exc}", file=sys.stderr)
             return 1

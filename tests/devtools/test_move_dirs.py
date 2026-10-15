@@ -187,3 +187,97 @@ def test_dirty_tree_fails_only_on_apply(tmp_path: Path) -> None:
     assert not (root / "apps").exists()
     code, _ = run(root)
     assert code == 0
+
+
+def done_repo(tmp_path: Path) -> Path:
+    files = {
+        "packages/emulator/boot/b.txt": "plain\n",
+        "apps/web/index.html": "see native/boot and packages/web/x\n",
+        "docs/notes.md": "native/boot; native/bootstrap; out/native/boot; ../native/boot\n",
+        "docs/handovers/h.md": "native/boot\n",
+        "docs/LAYOUT.md": "native/boot\n",
+        "tools/devtools/move-r9.json": '{"moves": {"native/boot": "x"}}\n',
+        "blob.bin": "native/boot\0",
+    }
+    return make_repo(tmp_path, files)
+
+
+DONE = {"native/boot": "packages/emulator/boot", "packages/web": "apps/web"}
+
+
+def run_only(
+    root: Path,
+    moves: dict[str, Any] = DONE,
+    *extra: str,
+    extra_keys: dict[str, Any] | None = None,
+) -> tuple[int, dict[str, Any]]:
+    map_path = root.parent / "map.json"
+    spec = {"moves": moves, "exclude_text": EXCLUDE, **(extra_keys or {})}
+    map_path.write_text(json.dumps(spec))
+    report = root.parent / "report.json"
+    report.unlink(missing_ok=True)
+    args = [str(map_path), "--root", str(root), "--report", str(report), *extra]
+    code = move_dirs.main(["--rewrite-only", *args])
+    return code, json.loads(report.read_text()) if report.exists() else {}
+
+
+def test_rewrite_only_dry_run_and_apply(tmp_path: Path) -> None:
+    root = done_repo(tmp_path)
+    code, data = run_only(root, extra_keys={"packages": {"x": "y"}})
+    assert code == 0
+    assert git(root, "status", "--porcelain").strip() == ""
+    assert {e["file"] for e in data["edits"]} == {
+        "apps/web/index.html",
+        "docs/notes.md",
+        "docs/LAYOUT.md",
+    }
+    assert data["excluded"] == {"docs/handovers/h.md": 1}
+    code, _ = run_only(root, DONE, "--apply")
+    assert code == 0
+    read = lambda rel: (root / rel).read_text()  # noqa: E731
+    assert read("apps/web/index.html") == "see packages/emulator/boot and apps/web/x\n"
+    assert read("docs/notes.md") == (
+        "packages/emulator/boot; native/bootstrap; out/native/boot; ../native/boot\n"
+    )
+    assert read("docs/handovers/h.md") == "native/boot\n"
+    assert read("tools/devtools/move-r9.json").startswith('{"moves": {"native/boot"')
+    assert (root / "blob.bin").read_bytes() == b"native/boot\0"
+    assert not git(root, "diff").strip()  # staged
+    assert git(root, "status", "--porcelain").strip()
+
+
+def test_rewrite_only_exclude_flag(tmp_path: Path) -> None:
+    root = done_repo(tmp_path)
+    _, data = run_only(root, DONE, "--exclude", "docs/LAYOUT.md")
+    assert data["excluded"]["docs/LAYOUT.md"] == 1
+    assert "docs/LAYOUT.md" not in {e["file"] for e in data["edits"]}
+    _, data = run_only(root)
+    assert "docs/LAYOUT.md" in {e["file"] for e in data["edits"]}
+
+
+def test_rewrite_only_refuses_unfinished_moves(tmp_path: Path) -> None:
+    root = done_repo(tmp_path)
+    assert run_only(root, {"apps/web": "elsewhere"})[0] == 1  # old still exists
+    assert run_only(root, {"native/boot": "packages/missing"})[0] == 1
+    dup = {"native/boot": "apps/web", "native/x": "apps/web"}
+    assert run_only(root, dup)[0] == 1
+    assert git(root, "status", "--porcelain").strip() == ""
+
+
+def test_rewrite_only_dirty_tree_fails_only_on_apply(tmp_path: Path) -> None:
+    root = done_repo(tmp_path)
+    (root / "docs/LAYOUT.md").write_text("changed\n")
+    assert run_only(root, DONE, "--apply")[0] == 1
+    assert run_only(root)[0] == 0
+
+
+def test_rewrite_only_skip_missing_and_leftover_dir(tmp_path: Path) -> None:
+    root = done_repo(tmp_path)
+    (root / "native/boot").mkdir(parents=True)  # untracked leftover directory
+    (root / "native/boot/cache.bin").write_text("x")
+    moves = {**DONE, "native/gone.py": "packages/emulator/gone.py"}
+    assert run_only(root, moves)[0] == 1
+    code, data = run_only(root, moves, "--skip-missing")
+    assert code == 0
+    assert ["native/gone.py", "packages/emulator/gone.py"] not in data["moves"]
+    assert len(data["moves"]) == 2

@@ -67,6 +67,8 @@ TYPED = [
     "tools/sharc_dev/sharc_widthaudit.py",
     "tools/sharc_dev/sharcldr.py",
     "tools/emulator/snapread.py",
+    "tools/devtools/pathcheck.py",
+    "tests/devtools/test_pathcheck.py",
 ]
 
 
