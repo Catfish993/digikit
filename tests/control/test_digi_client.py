@@ -307,7 +307,7 @@ def test_a_dsp_only_change_without_audio_is_reported_and_not_applied(patched_dsp
 @needs_daemon
 @pytest.mark.slow
 def test_a_patched_main_cold_boots_once_then_hits_the_snapshot_cache():
-    from dt2.build import rebuild
+    from tools.firmware.build import rebuild
     from tools.patchkit import dsp_patch
 
     main = bytearray(dsp_patch.section_blob(SYX, 3))

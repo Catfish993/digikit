@@ -10,7 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from dt2.coldfire import disasm
+from tools.coldfire.disasm import disasm
 
 LOAD_ADDRESS = 0x40000400
 START, END = 0x400004E8, 0x40000530
@@ -92,7 +92,7 @@ def _event(pc, address, width, direction, value, register, **extra):
 def analyze_bytes(image, *, contract=None):
     """Return the seven PPM writes and one unknown read, or raise ValueError.
 
-    Existing ``dt2.coldfire`` decoding supplies instruction boundaries.  The
+    Existing ``tools.coldfire.disasm`` decoding supplies instruction boundaries.  The
     matching intentionally retains no data-flow beyond this fixed bootstrap:
     a different sequence requires a new reviewed contract instead of inference.
     """

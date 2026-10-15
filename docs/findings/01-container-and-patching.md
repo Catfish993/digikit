@@ -28,11 +28,11 @@ generation, and three things separate them from 1.15C/1.10E:
   bootstrap upgrade — the one irreversible operation on the device, and the
   reason `tools/patchkit/patchimg.py` refuses section 2 outright.
 - **The Unicorn depacker cannot read them.** Every packed section of 1.16
-  fails under `emu.extract --oracle`. The cause is the oracle, not the new
+  fails under `tools.firmware.extract --oracle`. The cause is the oracle, not the new
   section: the depacker is taken from the UPDATER, and 1.16's UPDATER differs
   from 1.15C's by **43.4%** (14,231 of 32,776 bytes, first difference at
   offset `0x9b`), so the entry point at `0x80000432` has moved. **[V]**
-  `dt2/elz.py`, a byte-level decoder that `emu.extract` now uses by default,
+  `tools/firmware/elz.py`, a byte-level decoder that `tools.firmware.extract` now uses by default,
   reads them. On 1.15C and 1.10E it matches the device routine byte for byte
   on every packed section; on 1.16 and 1.11 every stream ends exactly at its
   declared length. **[V]**
@@ -133,7 +133,7 @@ version is strictly greater. Re-flashing 1.15C over 1.15C never triggers it. **[
 
 `0x71F9` is `mvz.w`, a ColdFire-only opcode Capstone cannot decode — a naive
 sweep desynchronises directly on top of this instruction and reads the gate as
-garbage. Use Ghidra's `68000:BE:32:Coldfire` or `dt2/coldfire.py`.
+garbage. Use Ghidra's `68000:BE:32:Coldfire` or `tools/coldfire/disasm.py`.
 
 The later "VERSION CHECK" screen at `0x80001e52` is a milder equality check that
 the decompressed image declares the version its header claimed. **[V]**
@@ -192,7 +192,7 @@ That found it in 3 of the 4 images checked, with no false positives.
 
 The floor is not a barrier to reinstalling Digitakt II 1.15C after 1.16. The
 BUILD string at container `+0x08` is `0071` for 1.15C and `0079` for 1.16, read
-from the two `.syx` files with `dt2/container.py`, and the floor is `"006/"`, so
+from the two `.syx` files with `tools/firmware/container.py`, and the floor is `"006/"`, so
 1.15C clears it by eleven builds. The bootstrap version gate above is a separate
 mechanism, and it is the one that does not allow going back. **[V]**
 
@@ -316,8 +316,8 @@ and filters are labels and parameter IDs on the ColdFire; audio runs on the DSP.
 
 ## Digitakt II 1.16: rebuild, and cave space that survives a cold boot **[V]**
 
-`dt2/build.py` rebuilds 1.16 after two changes: packed sections are
-decompressed with `dt2.elz.depack_section` (the oracle depacker's entry
+`tools/firmware/build.py` rebuilds 1.16 after two changes: packed sections are
+decompressed with `tools.firmware.elz.depack_section` (the oracle depacker's entry
 point moved on 1.16), and section 8 is stored like 2/3/7. A rebuild with no
 replacements re-extracts to six sections byte-identical to the stock
 extraction, and `tools/firmware/roundtrip.py`'s `check_authenticity()` passes
@@ -412,7 +412,7 @@ HMAC; one byte flipped and checksum recomputed: aborted at the HMAC; one transpo
 flipped: the per-message checksum fails, the receiver silently resets, the transfer never
 completes. In all three nothing is erased or written. Recovery: flash holding the
 faulting MAIN OS, FUNC, TRIG 4, stock .syx, reboot: stock MAIN OS runs. These are the
-bootstrap's own verifier functions accepting an image rebuilt by `dt2.build`/`dt2.inplace`
+bootstrap's own verifier functions accepting an image rebuilt by `tools.firmware.build`/`tools.firmware.inplace`
 and the patched test image (`tools/patchkit/patched_image.py`).
 
 ### Bootstrap-upgrade gate **[V]**
@@ -461,11 +461,11 @@ recognises: S25FL127S-class 512-byte pages / 256 KiB sectors; other vendors 256 
 (0x800024ec). DSP blob limits: section 7 stored size <= 0x100000 and depacked size
 <= 0x100000 (checked at 0x400cd1d4 / 0x400cd20c), about 700 KB free for the SHARC append. **[V]**
 
-### [C] `dt2.build.rebuild` is not a size to flash
+### [C] `tools.firmware.build.rebuild` is not a size to flash
 
 It stores every section literals-only: 4,293,296 B for 1.16 (stock 1,484,064), written to
 flash up to 0x4c0000, past 0x380000: it would erase the record sectors at 0x380000 and
-0x3c0000 (the emulated receive of such an image erases 17 sectors to 0x4c0000). Never flash a `rebuild` output of MAIN OS. `dt2/inplace.py` decodes the
+0x3c0000 (the emulated receive of such an image erases 17 sectors to 0x4c0000). Never flash a `rebuild` output of MAIN OS. `tools/firmware/inplace.py` decodes the
 stock stream into tokens, applies the edit and re-encodes only the tokens it touches:
 with no edit it reproduces the stock .syx **byte for byte** (so the token encoder, layout
 at 0x90, HMAC, checksums and framing are exact); the one-string image is +32 bytes.
@@ -578,7 +578,7 @@ loader in `flash_cave` works: it reads `[u32 bytes][u32 dest][payload]` from the
 image end, copies the payload with a `move.l (a0)+,(a1)+` loop, then calls the
 two original helpers and returns. d0, d1, a0, a1 are free at that point.
 `tools/coldfire/regions.py loader-test IMAGE --kib N` builds exactly this (segment, cave
-code and hook, via `dt2.build.rebuild`), cold-boots the patched image and
+code and hook, via `tools.firmware.build.rebuild`), cold-boots the patched image and
 compares the region with a random payload at ready: 256 KiB and 1 MiB (aPLib)
 on DT2 1.16, 1 MiB (store-only) on DT2 1.17, 1 MiB (aPLib) on DN2 1.11 and
 512 KiB on DN2 1.12, zero mismatching words each time, and ready is reached. Code placed this way is in DDR before the
@@ -590,7 +590,7 @@ zeroed by the reset (the region is outside the clear): the loader must do it.
 (`pea 0x40400000` at `0x800005c6` and `0x80000636`) and unpacks to `0x40000400`, so an image longer
 than `0x3FFC00` = 4,193,280 bytes writes over the staged stream while it is still
 being read. That is harmless while the stream is read ahead of the write point:
-`dt2.aplibpack.inplace_margin(stream)` returns the smallest slack. For a DT2 1.16
+`tools.firmware.aplibpack.inplace_margin(stream)` returns the smallest slack. For a DT2 1.16
 image with 1 MiB of incompressible payload appended it is 2.1 MB with the
 packer below and 4.7 MB store-only. It is a hard limit if a section is stored
 with a ratio near 1 and the image is much longer. The flash side is in "NOR flash
@@ -599,11 +599,11 @@ tighter limit than this one.
 
 ### aPLib packer (DT2 1.16 size rows [V]; DN2 rows and native depack harness [D])
 
-`dt2/aplibpack.py` is a compressor for the stream `dt2/elz.py` decodes: hash
+`tools/firmware/aplibpack.py` is a compressor for the stream `tools/firmware/elz.py` decodes: hash
 chains over 4-byte keys, a forward dynamic program over the exact bit costs of
 the format (repeat offset taken from the best path), pure Python.
 `tools/firmware/aplib_check.py` packs every section of the four firmwares, reads the
-result back with `dt2/elz.py` and runs it through the **bootstrap's own
+result back with `tools/firmware/elz.py` and runs it through the **bootstrap's own
 depacker** (`0x80000432`, found by its prologue; **[C]** earlier text said `0x80000436`, its second instruction) on the native ColdFire core
 (`depack_check.rs`; it also reproduces the stock DT2 section 8 byte for byte,
 so the harness is faithful). All 16 sections pass both. Sizes in bytes (stored
@@ -620,7 +620,7 @@ including the 8-byte header; stock from the .syx table):
 
 dt2-1.17 and dn2-1.12 are within 0.1% of their predecessors (MAIN 1,108,851 and
 1,097,013). The MAIN OS stream is 3.4% under stock, the other sections 1.2% to
-4% over. `dt2.build.rebuild(..., pack='aplib')` uses it (the default stays
+4% over. `tools.firmware.build.rebuild(..., pack='aplib')` uses it (the default stays
 store-only until reviewed). **[C]** `rebuild` used to decompress and re-store
 every section; a section that is not in `replacements` now keeps its stored
 bytes from the source verbatim, so only replaced sections change size (a DT2

@@ -4,12 +4,12 @@
     uv run python -m tools.content_hmac Digitakt_II_OS1.15C.syx
     uv run python -m tools.content_hmac Digitone_II_OS1.10E.syx --device dn2
 
-See dt2/authcode.py for the format, derivation and provenance details.
+See tools/firmware/authcode.py for the format, derivation and provenance details.
 """
 import argparse
 import sys
 
-from dt2.authcode import DEVICES, verify
+from tools.firmware.authcode import DEVICES, verify
 
 
 def main(argv):

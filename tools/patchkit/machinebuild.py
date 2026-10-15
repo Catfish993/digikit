@@ -17,7 +17,7 @@ that `plan_b` documents but does not do itself:
      `test_every_patch_site_belongs_to_this_image` checks, run here as a
      precondition before rebuilding anything.
 
-Then it rebuilds the .syx (`dt2.build.rebuild`, replacing section 3 with the
+Then it rebuilds the .syx (`tools.firmware.build.rebuild`, replacing section 3 with the
 patched bytes), and re-extracts the result to confirm section 3 equals the
 patched copy and every other section is untouched -- the same shape as
 `tools/firmware/roundtrip.py`'s acceptance gate, scoped to the one section this tool
@@ -222,7 +222,7 @@ def rebuild_and_check(
     section 3 equals the patched bytes (and, if `stock_sections_dir` is
     given, every other section still equals stock). -> True if everything
     checked passes."""
-    from dt2 import build as dbuild
+    from tools.firmware import build as dbuild
     from tools.firmware import roundtrip as rt
 
     out_bytes = dbuild.rebuild(
@@ -239,14 +239,14 @@ def rebuild_and_check(
 
     os.makedirs(extract_dir, exist_ok=True)
     rc = os.system(
-        "cd %s && uv run python -m emu.extract %s -o %s >/dev/null"
+        "cd %s && uv run python -m tools.firmware.extract %s -o %s >/dev/null"
         % (REPO_ROOT, out_path, extract_dir)
     )
     if rc != 0:
         print("machinebuild: re-extract failed (exit %d)" % rc)
         return False
 
-    from emu.extract import NAMES
+    from tools.firmware.extract import NAMES
 
     all_ok = ok
     for sid, name in NAMES.items():
@@ -366,7 +366,7 @@ def main(argv=None):
         )
         os.makedirs(scratch, exist_ok=True)
         rc = os.system(
-            "cd %s && uv run python -m emu.extract %s -o %s >/dev/null"
+            "cd %s && uv run python -m tools.firmware.extract %s -o %s >/dev/null"
             % (REPO_ROOT, args.syx, scratch)
         )
         if rc != 0:

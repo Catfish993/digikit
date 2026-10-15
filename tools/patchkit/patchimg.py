@@ -17,7 +17,7 @@ a way no test catches. Verifying the original bytes before touching them is
 what turns an address typo loud instead of silent.
 
 Addresses are given as guest load addresses (default base 0x40000400), not
-file offsets, because that is what Ghidra and `emu/symbols.py` report. This
+file offsets, because that is what Ghidra and `tools/coldfire/symbols.py` report. This
 tool converts load address to file offset by subtracting the base.
 
 Patching the extracted section is enough to boot the result in the

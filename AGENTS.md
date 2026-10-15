@@ -88,7 +88,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   benchmarks). tools/devtools/coupled_ab.py, native_pgo.py and sharc_regionbench.py take the lock themselves (wrapping them
   deadlocks).
 - The shell is zsh: an unquoted `$VAR` is one word. There is no `timeout` binary.
-- Extract firmware: `uv run python -m emu.extract SYX -o DIR`.
+- Extract firmware: `uv run python -m tools.firmware.extract SYX -o DIR`.
 - The Python Unicorn reference emulator was removed; the last commit with it is tagged `unicorn-reference-final`.
 - Manuals: read `out/refs/<pdf stem>/` (`toc.md`, `pages/pNNNN.txt`, `all.txt`), built with
   `uv run --with pymupdf python -m tools.devtools.refstext`.

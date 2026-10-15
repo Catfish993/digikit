@@ -687,7 +687,7 @@ def loader_code(cave: int, seg: int, copy_helper: int, clear_helper: int) -> byt
 def loader_test(image: str, kib: int, pack: str) -> int:
     import random
 
-    from dt2 import build as dbuild
+    from tools.firmware import build as dbuild
 
     a = analyse(image)
     f = a["reset"]

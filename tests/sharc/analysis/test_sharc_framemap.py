@@ -111,11 +111,11 @@ class LoadFrameBytesTest(unittest.TestCase):
         self.assertEqual(frame, bytearray(fm.FRAME_LEN))
 
     def test_short_capture_frame_is_padded(self):
-        # emu.sharc_capture.load() needs a real capture file; build a tiny
+        # tools.sharc_dev.sharc_capture.load() needs a real capture file; build a tiny
         # one directly instead of depending on out/captures/.
         import tempfile
 
-        from emu.sharc_capture import CaptureWriter
+        from tools.sharc_dev.sharc_capture import CaptureWriter
 
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "short.dt2cap")
@@ -129,7 +129,7 @@ class LoadFrameBytesTest(unittest.TestCase):
     def test_bad_frame_index_raises(self):
         import tempfile
 
-        from emu.sharc_capture import CaptureWriter
+        from tools.sharc_dev.sharc_capture import CaptureWriter
 
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "one.dt2cap")

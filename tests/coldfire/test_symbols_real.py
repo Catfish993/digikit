@@ -3,7 +3,7 @@
 import unittest
 from pathlib import Path
 
-from emu import symbols
+from tools.coldfire import symbols
 
 # The pinned per-version extracts, not the shared sections/ directory, which
 # holds whichever firmware was extracted last.

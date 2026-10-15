@@ -26,13 +26,13 @@ uv run --with pytest python -m pytest tests -q
 
 | Tool | Purpose |
 | --- | --- |
-| `python -m emu.extract` | Extract all sections from a supplied `.syx`. This is the normal entry point. |
+| `python -m tools.firmware.extract` | Extract all sections from a supplied `.syx`. This is the normal entry point. |
 | `tools/firmware/roundtrip.py` | Rebuild and re-extract a container as an acceptance gate for the repack chain. |
 | `tools/firmware/content_hmac.py` | Inspect or calculate the container's content-authentication trailer. |
 | `tools/patchkit/patchimg.py` | Apply byte-exact, preconditioned patches to an extracted section image. |
 | `tools/coldfire/ddr_geometry.py` | Derive DDR geometry from the bootstrap's initialization sequence. |
 | `tools/coldfire/regions.py` | RAM map of a MAIN OS image, flash caves and the expansion region per image; `confirm` canary-fills a region and runs the emulator; `loader-test` boots a patched image with a reset-path loader. |
-| `tools/firmware/aplib_check.py` | Pack every section of the four firmwares with `dt2/aplibpack.py` and check it with `dt2/elz.py` and the bootstrap's own depacker on the native core. |
+| `tools/firmware/aplib_check.py` | Pack every section of the four firmwares with `tools/firmware/aplibpack.py` and check it with `tools/firmware/elz.py` and the bootstrap's own depacker on the native core. |
 
 Never patch the bootstrap or updater sections. See
 [`PATCHING.md`](PATCHING.md) before producing an image intended for hardware.

@@ -4,7 +4,7 @@
         [--base 0x40000400] [--code LO HI]...
         --json out/symbols/dt2-1.15C-seeds.json
 
-A linear sweep with the repo disassembler (dt2.coldfire) over the code
+A linear sweep with the repo disassembler (tools.coldfire.disasm) over the code
 ranges. It records
   calls    each jsr or bsr whose resolved target is in a code range;
   vectors  a handler written to the RAM vector table (VBR 0x40000000):
@@ -34,7 +34,7 @@ import os
 import re
 import sys
 
-from dt2.coldfire import disasm  # noqa: E402
+from tools.coldfire.disasm import disasm  # noqa: E402
 
 BASE = 0x40000400
 VBR = 0x40000000

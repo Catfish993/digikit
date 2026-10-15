@@ -29,9 +29,9 @@ import tempfile
 from dataclasses import dataclass, field
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from dt2 import build, container  # noqa: E402
-from dt2.elz import depack_section  # noqa: E402
-from emu.extract import classify  # noqa: E402
+from tools.firmware import build, container  # noqa: E402
+from tools.firmware.elz import depack_section  # noqa: E402
+from tools.firmware.extract import classify  # noqa: E402
 from tools.devtools import benchlock  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
 
@@ -112,7 +112,7 @@ def ensure_binary() -> pathlib.Path:
 
 
 def extract_boot(syx: pathlib.Path | str) -> bytes:
-    """The depacked bootstrap (section 2) of a .syx, as emu.extract writes it."""
+    """The depacked bootstrap (section 2) of a .syx, as tools.firmware.extract writes it."""
     c, secs = container.sections(syx)
     for sid, off, clen, _dest in secs:
         if sid == 2:

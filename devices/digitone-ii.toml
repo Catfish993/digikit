@@ -2,7 +2,7 @@
 #
 # This file deliberately contains NO control names and NO guest addresses.
 # Names come from the firmware's own factory-test tables, resolved at run time
-# through emu/symbols.py and read by emu/panelin.py's control_names(), so they
+# through tools/coldfire/symbols.py and read by emu/panelin.py's control_names(), so they
 # cannot drift out of sync with the image and a firmware version nobody has
 # seen still names itself. Addresses are derived by signature for the same
 # reason -- freezing either here would mean a new file per firmware release.
@@ -15,7 +15,7 @@ name = "Digitone II"
 short = "dn2"
 
 # Identity is the hash. The filename is a hint for error messages only:
-# people rename firmware files, and emu/config.py resolving one BY NAME is
+# people rename firmware files, and tools/firmware/config.py resolving one BY NAME is
 # exactly how a tie between two firmwares silently picks the wrong product.
 [[firmware]]
 version = "1.10E"

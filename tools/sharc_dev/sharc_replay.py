@@ -116,7 +116,7 @@ from collections.abc import Callable
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from emu import sharc_capture  # noqa: E402
+from tools.sharc_dev import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_lp0 as lp0  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
@@ -135,7 +135,7 @@ from tools.sharc_dev import sharc_trace as st  # noqa: E402
 # which are relative to this same base either way.
 RX_BASE = 0x2558DC
 
-# emu/dspiframe.py's TX_PAYLOAD_BYTES["dt2"]: the real-payload length the
+# tools/sharc_dev/dspiframe.py's TX_PAYLOAD_BYTES["dt2"]: the real-payload length the
 # ColdFire driver copies out of its own TX source buffer before padding the
 # rest of the FRAME_BYTES=0xabc (2,748) byte wire frame with tag-only PUSHR
 # entries (docs/findings/04-coldfire-dsp-link.md, "TX length ... are not two

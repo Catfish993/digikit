@@ -14,7 +14,7 @@ not present -- a patch landing on the wrong address usually still boots and
 is wrong in a way no test catches.
 
 Addresses are guest load addresses (base `0x40000400`), which is what Ghidra
-and `emu/symbols.py` report.
+and `tools/coldfire/symbols.py` report.
 
 ## Free space
 

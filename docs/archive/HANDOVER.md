@@ -1027,13 +1027,13 @@ hook-free. The gap is hook-induced translation-block fragmentation plus
     uv run python -m emu.frame <snap> <instrs>     # one frame, ASCII + PNG
     uv run python -m emu.tasks <snap>              # parked PC per task
     uv run python -m emu.probe <snap> <instrs>     # blocking sites, hot PCs
-    uv run python -m dt2.coldfire sections/section_3_MAIN_OS.bin 0x40000400 <a> <b>
+    uv run python -m tools.coldfire.disasm sections/section_3_MAIN_OS.bin 0x40000400 <a> <b>
 
     tools/coldfire/ghidra.sh import                          # one-time, ~3 min
     tools/coldfire/ghidra.sh run Callers.java out.txt 0x...  # real xrefs, incl PC-relative
     tools/coldfire/ghidra.sh run Decompile.java out.txt 0x...
 
-**Use Ghidra for anything structural.** `dt2/coldfire.py` is a linear sweep
+**Use Ghidra for anything structural.** `tools/coldfire/disasm.py` is a linear sweep
 with no cross-references, and a byte search for the address constant misses
 every PC-relative call. Batch many addresses per invocation — each one costs
 1–2 minutes, which is why `pyghidra` 3.1.0 (in the venv) is better for
@@ -1046,7 +1046,7 @@ Open the existing project with `pyghidra.open_project()` +
 re-import. Import `ghidra.*` only *after* `pyghidra.start()`. Scripts in
 `tools/coldfire/ghidra/` must be Java; this Ghidra build has no PyGhidra. Note the
 decompiler goes to garbage on some large functions (`0x40188b00`,
-`0x40146f54`) — fall back to `dt2.coldfire` for raw disassembly there.
+`0x40146f54`) — fall back to `tools.coldfire.disasm` for raw disassembly there.
 
 For grep and SQL, dump the program once with `tools/coldfire/ghidradump.py` (about a
 minute, to `out/ghidra/<tag>/`); for live queries use `tools/coldfire/ghidraq.py`,

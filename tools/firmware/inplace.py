@@ -1,23 +1,23 @@
 """Change bytes of a section without repacking it from scratch: keep the stock compressed stream, change only
 the tokens an edit touches.
 
-`dt2.build.rebuild` stores every section with a literals-only packer, which grows the container to about three times
-its stock size (4.29 MB against 1.48 MB for Digitakt II 1.16). Here the section's stream (dt2/elz.py: aPLib-shaped,
+`tools.firmware.build.rebuild` stores every section with a literals-only packer, which grows the container to about three times
+its stock size (4.29 MB against 1.48 MB for Digitakt II 1.16). Here the section's stream (tools/firmware/elz.py: aPLib-shaped,
 literal or match tokens) is decoded into tokens, the edits are applied to the output, and the tokens are written out
 again: a literal takes its new byte, a match whose source bytes no longer give the right output is replaced by a
 match from elsewhere or by literals, every other token is kept. Every other section keeps its stock stored bytes, so
 the container grows by a few kilobytes at most.
 
 The result is checked by depacking it and comparing with the stock output plus exactly the requested edits. The
-encoder writes the end marker the way `dt2.aplib` does (gamma 2**24 + 2, byte 0xFF); the device's depacker accepts it
+encoder writes the end marker the way `tools.firmware.aplib` does (gamma 2**24 + 2, byte 0xFF); the device's depacker accepts it
 (the emulated bootstrap depacks these streams, tools/emulator/bootstrap_run.py).
 """
 
 import struct
 
-from dt2 import aplib, build, container
-from dt2.authcode import DEVICE_BY_ID, seal
-from dt2.elz import BIAS, FAR, REUSE, Bits, depack_section
+from tools.firmware import aplib, build, container
+from tools.firmware.authcode import DEVICE_BY_ID, seal
+from tools.firmware.elz import BIAS, FAR, REUSE, Bits, depack_section
 
 NEAR_WINDOW = 0x20000
 

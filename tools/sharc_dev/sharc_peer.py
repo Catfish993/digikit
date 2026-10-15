@@ -69,7 +69,7 @@ ERROR = 255
 _LEN = struct.Struct(">I")
 
 _DEFAULT_SERVER_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "tools",
     "sharc_dev",
     "sharc_proc.py",

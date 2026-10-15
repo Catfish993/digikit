@@ -61,8 +61,8 @@ must block were satisfied and vice versa. All four now resolve per build.
 
 ## 2. Verified address map
 
-Every value below is resolved from the image by `emu/symbols.py`, and every
-Digitakt value equals the literal it replaced. `python -m emu.symbols <image>`
+Every value below is resolved from the image by `tools/coldfire/symbols.py`, and every
+Digitakt value equals the literal it replaced. `python -m tools.coldfire.symbols <image>`
 prints the table for either build.
 
 | symbol | Digitakt 1.15C | Digitone 1.10E | how resolved |
@@ -336,10 +336,10 @@ stable panel images.
 `sections/` holds exactly one firmware at a time, so keep two directories:
 
 ```sh
-uv run python -m emu.extract Digitakt_II_OS1.15C.syx -o /tmp/sec-dt
-uv run python -m emu.extract Digitone_II_OS1.10E.syx -o /tmp/sec-dn
+uv run python -m tools.firmware.extract Digitakt_II_OS1.15C.syx -o /tmp/sec-dt
+uv run python -m tools.firmware.extract Digitone_II_OS1.10E.syx -o /tmp/sec-dn
 
-DT2_SECTIONS=/tmp/sec-dn uv run python -m emu.symbols /tmp/sec-dn/section_3_MAIN_OS.bin
+DT2_SECTIONS=/tmp/sec-dn uv run python -m tools.coldfire.symbols /tmp/sec-dn/section_3_MAIN_OS.bin
 
 # the intro, headless, with the panel as ASCII + PNG
 DT2_SECTIONS=/tmp/sec-dn uv run python -m emu.panel \
@@ -367,7 +367,7 @@ much quicker to reach for.
 ## 8. Regression — Digitakt must stay exactly this
 
 ```
-DT2_SECTIONS=/tmp/sec-dt uv run python -m emu.symbols
+DT2_SECTIONS=/tmp/sec-dt uv run python -m tools.coldfire.symbols
   -> every symbol resolves, values as in the table above
 
 DT2_SECTIONS=/tmp/sec-dt uv run python emu/oracle.py

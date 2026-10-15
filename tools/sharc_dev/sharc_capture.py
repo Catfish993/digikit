@@ -36,7 +36,7 @@ them in (nothing here is installed by `emu.longrun.build()` on its own):
   same mechanism can watch any other candidate window later.
 
 `CapturingPeer` implements both `emu.dspi2`'s peer contract (`.exchange`)
-and `emu.ssi`'s (`.rx`/`.tx`), the same way `emu.sharc_peer.SharcServerPeer`
+and `emu.ssi`'s (`.rx`/`.tx`), the same way `tools.sharc_dev.sharc_peer.SharcServerPeer`
 answers both with one object -- so one instance can be wired to both
 `emu.longrun.build(dspi2_peer=..., ssi0_peer=...)` parameters, or driven
 directly from a hand-installed driver-call hook (see

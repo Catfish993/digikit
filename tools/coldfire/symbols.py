@@ -54,14 +54,14 @@ OPTIONAL symbol is simply None on the Profile; every caller of one must
 degrade gracefully (install no hook) rather than crash -- see dspboot.py,
 longrun.py and panel.py for the pattern.
 
-    python -m emu.symbols [image]      # print the resolution report
+    python -m tools.coldfire.symbols [image]      # print the resolution report
 """
 import hashlib
 import re
 import struct
 import sys
 
-LOAD_ADDR = 0x40000400   # both known builds load MAIN OS here (see emu.config)
+LOAD_ADDR = 0x40000400   # both known builds load MAIN OS here (see tools.firmware.config)
 
 # Sig masks out any inlined abs32 that relocates between builds. The default
 # window is the loaded image itself; DATA_HI widens it to cover the RAM
@@ -944,7 +944,7 @@ SYMBOLS = [
     # wait for the scheduler's timer tick to preempt me". dspboot.py already
     # computes this itself with the same algorithm (find_idle_spins), because
     # it is needed even when nothing else in this file is -- kept here too so
-    # `python -m emu.symbols` reports it and every caller has one place to
+    # `python -m tools.coldfire.symbols` reports it and every caller has one place to
     # get it from.
     ('idle_spins', ScanAll('60fe', step=2), False),
 ]
@@ -1029,7 +1029,7 @@ def resolve(image, load_addr=LOAD_ADDR):
 
 
 if __name__ == '__main__':
-    from emu import config
+    from tools.firmware import config
 
     path = sys.argv[1] if len(sys.argv) > 1 else config.main_image()
     with open(path, 'rb') as fh:

@@ -190,7 +190,7 @@ pub(crate) fn unique_signature(
     }
 }
 
-// emu.symbols.Sig(..., hi=DATA_HI): mask only abs32 operands already present
+// tools.coldfire.symbols.Sig(..., hi=DATA_HI): mask only abs32 operands already present
 // in the signature's [MAIN_LOAD, DATA_HI) window, plus an explicit wildcard.
 pub(crate) fn unique_signature_data(
     image: &[u8],

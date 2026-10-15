@@ -22,7 +22,7 @@ Two layers:
   04-coldfire-dsp-link.md`), but the frame's *guest address* and the per-device
   real-payload length are not -- they come from `tools/sharc_dev/framelink.py`'s
   per-image, SHA-256-keyed profile (the DSPI2-frame analogue of what
-  `emu/symbols.py` does for RTOS/boot symbols: resolve from the image rather
+  `tools/coldfire/symbols.py` does for RTOS/boot symbols: resolve from the image rather
   than hardcode one build's addresses for every build). `tx_base_for()` /
   `rx_base_for()` below pull the guest address out of a resolved profile
   instead of a third hardcoded copy; `TX_BASE_DT2` / `TX_BASE_DN2` are the
@@ -172,7 +172,7 @@ def mirror_to_frame_offset(mirror_index):
 
 # --------------------------------------------------------------------------
 # Per-image guest addresses: reuse tools/sharc_dev/framelink.py's SHA-256-keyed
-# resolution (the DSPI2-frame analogue of emu/symbols.py's rule-based
+# resolution (the DSPI2-frame analogue of tools/coldfire/symbols.py's rule-based
 # resolution for RTOS/boot symbols) instead of hardcoding a build's addresses
 # a third time.
 # --------------------------------------------------------------------------

@@ -6,7 +6,7 @@ does not sit blocked waiting for hardware nothing here emulates. That is
 wrong for any semaphore with a poster that CAN run in the emulator: faking a
 pend whose real poster would eventually post anyway just races ahead of it
 instead of waiting for it, which was the display_sem/worker_done_sem bug
-class (see their comments below and in emu/symbols.py) -- found by chasing
+class (see their comments below and in tools/coldfire/symbols.py) -- found by chasing
 one hang at a time. This module generalises that to "enumerate every
 give/give_b post site in the image and classify it", by direct inspection of
 the bytes, with no Ghidra project required.
@@ -73,13 +73,13 @@ Covers literal-operand posters only. A give/give_b call whose semaphore
 argument is a register (a computed address, not `pea #imm32`) is not found
 here at all -- e.g. worker_done_sem's post and the eSDHC driver's
 sd_cmd_sem/sd_data_sem/sd_dma_sem posts. Those still need the existing
-Sig/Operand resolution in emu/symbols.py and stay hand-added by the caller.
+Sig/Operand resolution in tools/coldfire/symbols.py and stay hand-added by the caller.
 """
 import hashlib
 import struct
 
-from dt2.coldfire import disasm
-from emu import symbols
+from tools.coldfire.disasm import disasm
+from tools.coldfire import symbols
 
 GIVE = 0x4000148c
 GIVE_B = 0x400014fc
@@ -336,7 +336,7 @@ def never_fake_semaphores(image, load_addr=symbols.LOAD_ADDR, modeled_vectors=fr
         that needs the caller's own dynamic handling, not a static set.
 
     Cached per (image sha256, load_addr, modeled_vectors) the way
-    emu.symbols.resolve caches per image sha256 -- this scan reruns a
+    tools.coldfire.symbols.resolve caches per image sha256 -- this scan reruns a
     handful of times per process otherwise, on the same handful of images.
     """
     h = hashlib.sha256(image).hexdigest()

@@ -1,4 +1,4 @@
-"""emu/sharc_capture.py: capture file format round-trip and CapturingPeer.
+"""tools/sharc_dev/sharc_capture.py: capture file format round-trip and CapturingPeer.
 
 No firmware image or Unicorn required -- this only exercises the file
 format and the peer contract (emu.dspi2's `.exchange`, emu.ssi's
@@ -13,7 +13,7 @@ import os
 import tempfile
 import unittest
 
-from emu.sharc_capture import (  # noqa: E402
+from tools.sharc_dev.sharc_capture import (  # noqa: E402
     MAGIC,
     CaptureWriter,
     CapturingPeer,

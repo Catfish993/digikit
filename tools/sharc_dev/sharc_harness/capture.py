@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from emu import sharc_capture
+from tools.sharc_dev import sharc_capture
 
 from .runner import _poke
 
@@ -129,9 +129,9 @@ DEFAULT_CAPTURE_TRACK = 2
 
 
 def load_capture(path: str = DEFAULT_CAPTURE_PATH) -> sharc_capture.Capture:
-    """``emu.sharc_capture.load(path)`` -- re-exported so a caller (this
+    """``tools.sharc_dev.sharc_capture.load(path)`` -- re-exported so a caller (this
     module's own CLI, a test, a caller script) does not need its own
-    ``sys.path``/import dance for ``emu.sharc_capture`` just to load one
+    ``sys.path``/import dance for ``tools.sharc_dev.sharc_capture`` just to load one
     capture file."""
     return sharc_capture.load(path)
 

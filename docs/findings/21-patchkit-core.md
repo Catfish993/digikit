@@ -8,7 +8,7 @@ second agent, so it is **[D]** (measured here once). No patched image has been f
 
 The four stock images (DT2 1.16, 1.17, DN2 1.11, 1.12) place the first section payload at container offset
 `0x90` (the table area is `0x80` bytes and 16 more are left zero), each later payload on the next 16-byte
-boundary, then 16-byte padding and the 32-byte HMAC trailer. `dt2/build.py` starts at `0x80`, so
+boundary, then 16-byte padding and the 32-byte HMAC trailer. `tools/firmware/build.py` starts at `0x80`, so
 `build.rebuild(stock)` with no replacement is **not** the stock file: every section offset in the table is 16
 bytes lower, the preamble checksum, the HMAC and 1.69 M of 1.88 M file bytes differ (it still passes
 `roundtrip.check_authenticity`, which checks the container's own checksums and HMAC, not equality with stock). patchkit keeps the first
@@ -18,7 +18,7 @@ patched section differs from stock only in that section, the table and the check
 
 ## aPLib packer in Rust equals the Python packer **[D]**
 
-`packages/emulator/patchkit/src/aplib.rs` is a line-for-line port of `dt2/aplibpack.py` (same hash chains, same cost
+`packages/emulator/patchkit/src/aplib.rs` is a line-for-line port of `tools/firmware/aplibpack.py` (same hash chains, same cost
 model, same tie breaks). `tools/patchkit/pk_aplib_eq.py` packs every packed section (2, 3, 7, 8) of the four firmwares with
 both and compares the stored bytes: 16 of 16 equal. Rust takes 1.0 s for MAIN OS where Python takes 24 to 27 s.
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 CONTRACT_PATH = (
-    Path(__file__).resolve().parent.parent
+    Path(__file__).resolve().parent.parent.parent
     / "docs"
     / "contracts"
     / "mcf5441x-reference-v1.json"

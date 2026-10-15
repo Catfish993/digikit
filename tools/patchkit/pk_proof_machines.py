@@ -279,7 +279,7 @@ class Proof(K.Proof):
         """Control: the same image with the persistence immediate put back (one byte): the type must NOT survive."""
         import tomllib
 
-        from dt2 import build as dbuild
+        from tools.firmware import build as dbuild
         from tools.patchkit import port_resolve as pr
 
         src = ROOT / "out" / "patch" / f"proof-xslice-{FW}.syx"

@@ -1,8 +1,8 @@
 """Extract a firmware .syx into decompressed sections, with no outside tool.
 
-    uv run python -m emu.extract [firmware.syx] [-o DIR]
+    uv run python -m tools.firmware.extract [firmware.syx] [-o DIR]
 
-Packed sections are decompressed with dt2/elz.py, a byte-level decoder for
+Packed sections are decompressed with tools/firmware/elz.py, a byte-level decoder for
 the device's aPLib-style codec. It reads every firmware in the repo root,
 Digitakt II 1.16 and Digitone II 1.11 included, in about a second. (The
 former --oracle option ran the updater's own depacker under the Python
@@ -22,11 +22,11 @@ import os
 import struct
 import sys
 
-from dt2.container import sections
-from dt2.elz import depack_section
+from tools.firmware.container import sections
+from tools.firmware.elz import depack_section
 
 # The names elektron-firmware-tool uses, so a directory extracted either way
-# looks the same to emu/config.py's globs. Section 2 is the bootstrap, not the
+# looks the same to tools/firmware/config.py's globs. Section 2 is the bootstrap, not the
 # DSP -- that name is the tool's mistake, kept here for compatibility.
 NAMES = {2: "DSP", 3: "MAIN_OS", 4: "UPDATER", 5: "META", 7: "BLOB"}
 
@@ -92,19 +92,19 @@ def record_source(syx, outdir):
         fh.write(h.hexdigest() + "\n")
 
 
-USAGE = """usage: python -m emu.extract [firmware.syx] [-o DIR]
+USAGE = """usage: python -m tools.firmware.extract [firmware.syx] [-o DIR]
 
 Decompress a firmware .syx into its sections.
 
   firmware.syx   the firmware to extract; resolved like every other path in
                  this project -- this argument, then DT2_SYX, then the only
-                 .syx present (see emu/config.py)
+                 .syx present (see tools/firmware/config.py)
   -o DIR         where to write them; overrides DT2_SECTIONS
   --help         this"""
 
 
 def main(argv):
-    from emu import config
+    from tools.firmware import config
 
     if "--help" in argv or "-h" in argv:
         print(USAGE)

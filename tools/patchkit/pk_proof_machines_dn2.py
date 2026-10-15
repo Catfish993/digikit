@@ -329,7 +329,7 @@ class Proof(K.Proof):
         import subprocess
         import tomllib
 
-        from dt2 import build as dbuild
+        from tools.firmware import build as dbuild
         from tools.patchkit import port_resolve as pr
 
         src = ROOT / "out" / "patch" / "proof-dn2-clone.syx"

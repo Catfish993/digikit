@@ -3,7 +3,7 @@
 There is no LZ77 match-finder here on purpose. Byte-exact compression was
 never the requirement: the device's own depacker (emu/oracle.py:depack,
 0x80000432; the updater carries an identical copy at 0x80005710, see
-emu/extract.py) accepts any stream that is a *valid* encoding of the bytes it
+tools/firmware/extract.py) accepts any stream that is a *valid* encoding of the bytes it
 should produce -- nothing anywhere in the acceptance path hashes or compares
 the compressed bytes, only the decompressed result. So a "compressor" that
 emits every input byte as a literal is sufficient. It makes the output a
@@ -18,8 +18,8 @@ hand-built streams:
   * The 8-byte section header ([u32 compressed_len][u32 byte_sum], big
     endian, sum over the bytes following the header) is skipped unconditionally
     (`addq.l #8,a0`) by the depacker itself. This module does not re-derive
-    that convention -- it was already established by dt2/container.py and
-    emu/extract.py -- but every round-trip below exercises it.
+    that convention -- it was already established by tools/firmware/container.py and
+    tools/firmware/extract.py -- but every round-trip below exercises it.
 
   * Tag bits are read MSB-first from a byte, refilled one byte at a time, via
     a classic "sentinel bit" shift register (not a separate bit counter).
@@ -138,7 +138,7 @@ def pack_section(data):
     [u32 compressed_len][u32 byte_sum], where compressed_len is the packed
     stream's length (not counting this header) and byte_sum is the plain sum,
     mod 2**32, of the packed stream's bytes. Matches the convention
-    dt2/container.py and emu/extract.py already use to read sections."""
+    tools/firmware/container.py and tools/firmware/extract.py already use to read sections."""
     body = pack(data)
     return struct.pack(">II", len(body), sum(body) & 0xFFFFFFFF) + body
 
@@ -231,11 +231,11 @@ def _self_test():
     print("aplib self_test OK")
 
 
-USAGE = """usage: uv run python -m dt2.aplib [sections_dir]
+USAGE = """usage: uv run python -m tools.firmware.aplib [sections_dir]
 
 Runs the offline self-test, then -- if a sections/ directory (as produced by
-emu/extract.py) is given or found via DT2_SECTIONS -- round-trips every
-section through pack_section() and dt2/elz.py's depack_section."""
+tools/firmware/extract.py) is given or found via DT2_SECTIONS -- round-trips every
+section through pack_section() and tools/firmware/elz.py's depack_section."""
 
 
 if __name__ == "__main__":
@@ -251,8 +251,8 @@ if __name__ == "__main__":
     import os
     import time
 
-    from dt2.elz import depack_section
-    from emu import config
+    from tools.firmware.elz import depack_section
+    from tools.firmware import config
 
     sections_dir = sys.argv[1] if len(sys.argv) > 1 else config.sections_dir()
 

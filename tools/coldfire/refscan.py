@@ -4,7 +4,7 @@ of a ColdFire firmware image.
 
 Answers one general question: "what, if anything, in this image's code
 statically references address range [LO, HI)?" -- by linearly disassembling
-a span of the image with `dt2.coldfire.disasm` (Capstone m68k + this repo's
+a span of the image with `tools.coldfire.disasm.disasm` (Capstone m68k + this repo's
 own ColdFire MVS/MVZ and FF1.L patches, so a scripted sweep does not
 silently desync on those two opcodes -- see that module's docstring) and
 regex-extracting every operand that looks like a 32-bit absolute address:
@@ -54,7 +54,7 @@ import json
 import re
 import sys
 
-from dt2.coldfire import disasm  # noqa: E402
+from tools.coldfire.disasm import disasm  # noqa: E402
 
 # A bare "$hex" token not immediately followed by "(" -- that "(" case is a
 # displacement operand like "$14(a7)" or "-$14(a7)", not an absolute address.

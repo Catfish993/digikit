@@ -1,7 +1,7 @@
 # pyright: reportMissingImports=false
 """Device files: identity by hash, and the wire mapping.
 
-`emu/config.py` settles a tie between firmware files by hardcoded FILENAME,
+`tools/firmware/config.py` settles a tie between firmware files by hardcoded FILENAME,
 which is how one product silently runs under another's name. A device file
 keys on the firmware's SHA-256 instead. These tests cover that, the
 (channel, bit) <-> control-code mapping including each product's non-linear
@@ -17,7 +17,7 @@ import unittest
 
 from support.paths import REPO_ROOT
 
-from emu import device
+from tools.firmware import device
 
 REPO = str(REPO_ROOT)
 DEVICES = os.path.join(REPO, "devices")

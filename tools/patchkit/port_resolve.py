@@ -127,9 +127,9 @@ def module_rules(root: Path) -> list[dict]:
 
 
 def sections_of(syx: Path) -> dict[int, bytes]:
-    from dt2.container import sections
-    from dt2.elz import depack_section
-    from emu.extract import classify
+    from tools.firmware.container import sections
+    from tools.firmware.elz import depack_section
+    from tools.firmware.extract import classify
 
     c, table = sections(str(syx))
     out = {}

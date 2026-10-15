@@ -21,13 +21,13 @@ fn register_map_table_40_3() {
 fn sr_eoqf_bit_28_table_40_7() {
     // RM Table 40-7 p.1189: EOQF (bit 28) "set when the TX FIFO entry has
     // the EOQ bit set... and after the last incoming databit is sampled" --
-    // `FUN_400cd2bc`'s own "link idle" poll (`emu/dspiframe.py`'s naming).
+    // `FUN_400cd2bc`'s own "link idle" poll (`tools/sharc_dev/dspiframe.py`'s naming).
     assert_eq!(dspi::SR_LINK_IDLE, 1 << 28);
 }
 
 #[test]
 fn channel_roles_and_vectors() {
-    // emu/dspiframe.py: TX_CHAN, RX_CHAN = 29, 28; vector = channel + 120.
+    // tools/sharc_dev/dspiframe.py: TX_CHAN, RX_CHAN = 29, 28; vector = channel + 120.
     assert_eq!(dspi::TX_CHAN, 29);
     assert_eq!(dspi::RX_CHAN, 28);
     assert_eq!(dspi::TX_VECTOR, 149);

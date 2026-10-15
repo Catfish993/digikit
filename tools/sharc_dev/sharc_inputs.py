@@ -481,7 +481,7 @@ def dynamic_view_capture(
     never miscounted just because this tool, not SHARC code, supplied the
     byte.
     """
-    from emu import sharc_capture
+    from tools.sharc_dev import sharc_capture
     from tools.sharc_dev import (
         sharc_harness as h,  # lazy: only this path needs the harness
     )

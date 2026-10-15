@@ -796,7 +796,7 @@ def parse_native_header(data):
 def builtin_project(main_os):
     """-> the depacked v3 built-in project container from a DT2 1.16 MAIN OS
     image (bytes). Refuses any other image: every offset here is 1.16's."""
-    from dt2.elz import depack_section
+    from tools.firmware.elz import depack_section
 
     digest = hashlib.sha256(main_os).hexdigest()
     if digest != MAIN_OS_116_SHA256:
@@ -1273,7 +1273,7 @@ def main(argv=None):
             if not os.path.exists(args.main_os):
                 p.error(
                     "no MAIN OS image at %s: extract DT2 1.16 with "
-                    "`uv run python -m emu.extract SYX -o out/sections/dt2-1.16`, "
+                    "`uv run python -m tools.firmware.extract SYX -o out/sections/dt2-1.16`, "
                     "pass --main-os, or build without a project (--no-project)"
                     % args.main_os
                 )

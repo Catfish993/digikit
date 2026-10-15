@@ -1,6 +1,6 @@
 """A compressor for this firmware's aPLib-shaped container streams.
 
-The stream format is the one dt2/elz.py decodes and the bootstrap's depacker
+The stream format is the one tools/firmware/elz.py decodes and the bootstrap's depacker
 accepts (docs/findings/01-container-and-patching.md): tag bits MSB first from
 tag bytes fetched lazily, 1 = literal byte, 0 = match. A match is an
 interlaced Elias-gamma g followed by, for g > 2, one raw byte; the offset is
@@ -9,7 +9,7 @@ Then two bits give a short length 1..3, or 00 and a gamma value v >= 2 for a
 length of v + 2. Past offset 3328 the length gains 1, and a match copies
 length + 1 bytes. The stream ends with the offset marker 767, which only the
 32-bit wrap of g = 2**24 + 2, byte 0xFF reaches (the stock streams end the same
-way). dt2/aplib.py is the store-only encoder; this module compresses.
+way). tools/firmware/aplib.py is the store-only encoder; this module compresses.
 
 Method: hash chains over 4-byte keys (plus the last position of each 3-byte
 key) find candidate matches; a forward dynamic program picks the cheapest
@@ -267,9 +267,9 @@ def inplace_margin(stream, dest=0x40000400, stage=0x40400000):
     both counted after each token; it is negative when a write would land on a
     stream byte not read yet. None when the output never reaches `stage`.
     """
-    from dt2.elz import BIAS as ELZ_BIAS
-    from dt2.elz import FAR as ELZ_FAR
-    from dt2.elz import Bits
+    from tools.firmware.elz import BIAS as ELZ_BIAS
+    from tools.firmware.elz import FAR as ELZ_FAR
+    from tools.firmware.elz import Bits
 
     (length,) = struct.unpack_from(">I", stream, 0)
     s = Bits(stream, 8, 8 + length)

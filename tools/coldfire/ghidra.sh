@@ -1,7 +1,7 @@
 #!/bin/sh
-# Ghidra headless over the MAIN OS image, for the things dt2/coldfire.py cannot do.
+# Ghidra headless over the MAIN OS image, for the things tools/coldfire/disasm.py cannot do.
 #
-# dt2/coldfire.py is a linear sweep. It has no cross-references, no function
+# tools/coldfire/disasm.py is a linear sweep. It has no cross-references, no function
 # boundaries and no decompiler, and its "xref" substitute -- searching the image
 # for the big-endian address constant -- silently misses PC-relative calls. That
 # is not a corner case: `jsr $401772cc(pc)` at 0x4017845e encodes as 4eba ee6c

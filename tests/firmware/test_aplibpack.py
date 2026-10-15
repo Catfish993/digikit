@@ -1,13 +1,13 @@
-"""dt2/aplibpack.py: the compressor round-trips through dt2/elz.py, and
-dt2.build.rebuild keeps untouched sections verbatim."""
+"""tools/firmware/aplibpack.py: the compressor round-trips through tools/firmware/elz.py, and
+tools.firmware.build.rebuild keeps untouched sections verbatim."""
 
 import random
 
 import pytest
 from support.paths import REPO_ROOT
 
-from dt2 import aplibpack, build, elz
-from dt2.container import sections
+from tools.firmware import aplibpack, build, elz
+from tools.firmware.container import sections
 
 ROOT = REPO_ROOT
 

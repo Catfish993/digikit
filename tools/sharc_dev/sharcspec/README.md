@@ -119,11 +119,11 @@ The Elektron updates are the real-code reference. In this repo, from `.syx`
 to DSP memory:
 
 ```sh
-uv run python -m emu.extract Digitakt_II_OS1.16.syx -o DIR   # sections, via dt2/elz.py
+uv run python -m tools.firmware.extract Digitakt_II_OS1.16.syx -o DIR   # sections, via tools/firmware/elz.py
 uv run python -m tools.sharc_dev.sharcldr DIR/section_7_BLOB.bin       # boot stream blocks
 ```
 
-- **`dt2/elz.py`** (was `fw/elz.py`): the section codec (LZ77 + interlaced
+- **`tools/firmware/elz.py`** (was `fw/elz.py`): the section codec (LZ77 + interlaced
   Elias-gamma, offset bias 767, reuse code, far bonus above 3328). Written
   from the format in mischa85/elektron-firmware-tool `aplib.c` (MIT). Every
   compressed section of DT2 1.16 and DN2 1.11 ends exactly on its end marker,

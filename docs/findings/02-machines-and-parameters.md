@@ -257,7 +257,7 @@ likely rendering fix, not as a boot fix. **[C][O]**
 
 Worth recording as a near-miss: the trampoline's two branch displacements were
 wrong on the first attempt — `bne.b` landed on the `rts` rather than the block
-after it. Disassembling the emitted bytes back with `dt2.coldfire.disasm` and
+after it. Disassembling the emitted bytes back with `tools.coldfire.disasm.disasm` and
 checking each branch target lands on an instruction boundary caught it before
 it ever ran. The corrected `bcs.b` displacement came out as `65 10`, byte-
 identical to the original function's, which is its own confirmation.

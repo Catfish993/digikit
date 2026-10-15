@@ -37,7 +37,7 @@ reimplemented independently.
 
 ## 1. Firmware transport & container
 
-### 1.1 SysEx wrapper (in this repo: `dt2/container.py`)
+### 1.1 SysEx wrapper (in this repo: `tools/firmware/container.py`)
 
 - Each `.syx` is a stream of `F0 … F7` messages. Manufacturer id `00 20 3C`
   (Elektron); device id byte **0x14 = Digitakt II**, **0x15 = Digitone II**.
@@ -464,8 +464,8 @@ Encoding pipeline:
 - `README.md` (methodology + errata); the documents are listed in `docs/sharc/SOURCES.md`
 
 Firmware pipeline, as imported into this repo:
-- `.syx` → container: `dt2/container.py`
-- section depack: `dt2/elz.py` (was `fw/elz.py`; used by `emu/extract.py`)
+- `.syx` → container: `tools/firmware/container.py`
+- section depack: `tools/firmware/elz.py` (was `fw/elz.py`; used by `tools/firmware/extract.py`)
 - boot stream walk: `tools/sharc_dev/sharcldr.py` (in place of `fw/bootstream.py`)
 - `fw/validate.py` (linear sweep and recursive trace over a program region)
 

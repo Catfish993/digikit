@@ -1,6 +1,6 @@
 """Which product is this firmware, and what is on its front panel?
 
-`emu/config.py` answers "which file", and `emu/symbols.py` answers "which
+`tools/firmware/config.py` answers "which file", and `tools/coldfire/symbols.py` answers "which
 addresses". Neither answers "which DEVICE" -- config settles a tie between
 firmware files by hardcoded FILENAME, which is how running one product under
 another's name happens silently.
@@ -17,7 +17,7 @@ image cannot tell us:
     not what they are.
 
 Deliberately NOT here: control names and guest addresses. Names come from the
-firmware's own factory-test tables via `emu/symbols.py`, and addresses are
+firmware's own factory-test tables via `tools/coldfire/symbols.py`, and addresses are
 resolved by signature. Freezing either into a data file would mean a new file
 per firmware release and would lose exactly the property that makes both
 products work from one code path.

@@ -1,5 +1,5 @@
 """SHARC coprocessor server: the process peer at the far end of
-``emu/sharc_peer.py``.
+``tools/sharc_dev/sharc_peer.py``.
 
 Runs the SHARC core as its own OS process so it can be stepped in lockstep
 with the ColdFire emulator (CPython + patched Unicorn) across a process
@@ -19,7 +19,7 @@ This module is pure standard library (plus, for a future runner backend,
 `tools/sharc_dev/sharc_core`/`tools/sharc_dev/sharc_run` -- see ``RunnerBackend``): no `unicorn`,
 `capstone` or `pypcode`, so it starts under PyPy. Everything CPython-only
 (Unicorn, the DSPI2/SSI0 models themselves) stays on the client side, in
-``emu/sharc_peer.py``.
+``tools/sharc_dev/sharc_peer.py``.
 
 ## Protocol (version 1)
 
@@ -30,7 +30,7 @@ byte payload (``EXCHANGE``/``EXCHANGE_OK``, ``AUDIO_RX_OK``, ``AUDIO_TX``) or
 a UTF-8 JSON object (everything else, including ``ERROR``). No pickle, so a
 message is safe to log or replay without executing anything. stdout carries
 *only* this framing; all diagnostics go to stderr (see
-``emu.sharc_peer.SharcServerDied``, which reads stderr's tail on a crash).
+``tools.sharc_dev.sharc_peer.SharcServerDied``, which reads stderr's tail on a crash).
 
 | type | name         | direction | body | meaning                                |
 |-----:|--------------|-----------|------|-----------------------------------------|
@@ -61,7 +61,7 @@ nothing to gain by forcing them into one round trip.
 
 ``ADVANCE`` lets a caller step the SHARC side's own clock independently of
 frame/audio traffic (`emu.longrun.spin`'s `async_events` calls `service()` at
-every chunk boundary; see `emu.sharc_peer.SharcServerPeer.step`/`service`).
+every chunk boundary; see `tools.sharc_dev.sharc_peer.SharcServerPeer.step`/`service`).
 **Open question, not settled by this module**: what ColdFire-instruction- or
 DSPI2-frame-cadence should map to how many `ADVANCE` samples/instructions.
 `StubBackend` does not need an answer (nothing here depends on wall time
@@ -143,7 +143,7 @@ _LEN = struct.Struct(">I")  # 4-byte big-endian body length
 
 
 # ---------------------------------------------------------------------------
-# Framing. Deliberately duplicated (not imported) in emu/sharc_peer.py: this
+# Framing. Deliberately duplicated (not imported) in tools/sharc_dev/sharc_peer.py: this
 # module has to stay stdlib-only to start under PyPy, and the client lives in
 # the emu/ package that many other CPython-only (Unicorn) modules import at
 # package scope -- importing across that boundary would tie two things that
@@ -302,7 +302,7 @@ class RunnerBackend(Backend):
     getting one voice to render correctly (`tools/sharc_dev/sharc_run.py`'s
     ``sharc_run`` harness / `tools/sharc_dev/sharc_harness/`), and the server-process
     split is orthogonal to that work -- this class exists so the protocol
-    and the client (`emu/sharc_peer.py`) are already exercised against the
+    and the client (`tools/sharc_dev/sharc_peer.py`) are already exercised against the
     exact shape a finished runner will need, not so the runner is ready now.
     Every method raises the same ``NotImplementedError``; the server turns
     that into an ``ERROR`` reply (see ``Server.handle_one``) rather than

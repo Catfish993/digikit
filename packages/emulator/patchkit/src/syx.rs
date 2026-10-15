@@ -1,5 +1,5 @@
 //! The write side of the `.syx` transport: ELE3 container build, HMAC seal, content checksum, 8-in-7
-//! framing and per-packet checksums. A port of `dt2/build.py` and `dt2/authcode.py`.
+//! framing and per-packet checksums. A port of `tools/firmware/build.py` and `tools/firmware/authcode.py`.
 
 use crate::aplib;
 use crate::error::*;
@@ -135,7 +135,7 @@ pub fn encode_8in7(data: &[u8]) -> Vec<u8> {
 
 /// `[(id, dest, stored)]` -> container bytes with a zeroed 32-byte trailer slot.
 ///
-/// `first_offset` is where the first payload starts (0x80 in `dt2/build.py`; the stock images use 0x90, and
+/// `first_offset` is where the first payload starts (0x80 in `tools/firmware/build.py`; the stock images use 0x90, and
 /// patchkit keeps the source image's value so that an unchanged image is rebuilt byte for byte).
 pub fn build_container(
     header: &[u8],
@@ -241,7 +241,7 @@ pub fn messages(syx: &[u8]) -> Result<Vec<&[u8]>> {
     Ok(v)
 }
 
-/// Section storage rules (dt2/build.py `store_for_section`).
+/// Section storage rules (tools/firmware/build.py `store_for_section`).
 pub fn store_for_section(id: u32, data: &[u8]) -> Result<Vec<u8>> {
     match id {
         2 | 3 | 7 | 8 => Ok(aplib::pack_section(data)),

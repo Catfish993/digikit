@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Check dt2/aplibpack.py against the stock streams and the firmware's depacker.
+"""Check tools/firmware/aplibpack.py against the stock streams and the firmware's depacker.
 
     uv run python -m tools.firmware.aplib_check [IMAGE ...] [--no-native] [--sections 2,3,7,8]
 
 For each image (dt2-1.16, dt2-1.17, dn2-1.11, dn2-1.12) and each packed
-section, from out/sections/IMAGE/: pack it, read it back with dt2/elz.py, and
+section, from out/sections/IMAGE/: pack it, read it back with tools/firmware/elz.py, and
 run the same bytes through the bootstrap's own depacker (section 2, found by
 its prologue) on the native ColdFire core (packages/emulator/boot example depack_check,
 built on first use). The bootstrap stages a packed section at 0x40400000 and
@@ -26,8 +26,8 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
-from dt2 import aplibpack, elz  # noqa: E402
-from dt2.container import sections  # noqa: E402
+from tools.firmware import aplibpack, elz  # noqa: E402
+from tools.firmware.container import sections  # noqa: E402
 from tools import python_env  # noqa: E402
 
 IMAGES = {

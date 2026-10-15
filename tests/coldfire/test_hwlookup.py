@@ -3,7 +3,7 @@ import contextlib
 import io
 import unittest
 
-from emu.hwref import (
+from tools.coldfire.hwref import (
     decode_register_value,
     load_reference,
     resolve_address,

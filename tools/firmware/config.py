@@ -111,7 +111,7 @@ def main_image(explicit=None):
         raise NotFound(
             "No MAIN OS image in %s/.\n\n"
             "The sections inside a .syx are compressed. Decompress them once:\n\n"
-            "    uv run python -m emu.extract <firmware.syx> -o %s/\n\n"
+            "    uv run python -m tools.firmware.extract <firmware.syx> -o %s/\n\n"
             "Or set DT2_MAIN_IMG to an image you already have." % (d, d)
         )
     raise NotFound(

@@ -314,7 +314,7 @@ patchkit stores a `DKPR` record in the image: format version, the SHA-256 of the
 
 - The codec reproduces all four stock images byte for byte (framing, 8-in-7 coding, packet checksums, content
   checksum, HMAC trailer). Sections that a patch does not change keep their stored bytes. Changed sections are packed
-  with an aPLib packer that produces the same bytes as `dt2/aplibpack.py` and runs about 25 times faster.
+  with an aPLib packer that produces the same bytes as `tools/firmware/aplibpack.py` and runs about 25 times faster.
 - **Sections 2 (bootstrap), 4 (updater) and 8 never change.** patchkit has no override. The bootstrap is what lets you
   recover from a bad MAIN OS.
 - The container is at most `0x300000` (3 MiB). The OS container is written to flash at `0x80000`; the record sectors
@@ -322,7 +322,7 @@ patchkit stores a `DKPR` record in the image: format version, the SHA-256 of the
   Stock images are about 1.5 MB.
 - patchkit re-decodes and verifies every output before it reports success: checksums, HMAC, size limits, the patch
   record, and (with a base) that sections 2, 4 and 8 equal the stock image.
-- Never flash the output of `dt2.build.rebuild`: it stores sections without compression and exceeds the cap
+- Never flash the output of `tools.firmware.build.rebuild`: it stores sections without compression and exceeds the cap
   ([finding 01](findings/01-container-and-patching.md)).
 
 ### What is never stored in the repository

@@ -2,7 +2,7 @@
 #
 # Positions are centres in millimetres from the panel's top-left corner.
 # Legends are the printed silkscreen; the firmware's own control names
-# still come from its factory-test table (emu/symbols.py). `code` is the
+# still come from its factory-test table (tools/coldfire/symbols.py). `code` is the
 # control code from ../digitone-ii.toml.
 
 [faceplate]

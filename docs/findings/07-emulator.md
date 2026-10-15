@@ -4,7 +4,7 @@
 
 `packages/emulator/loader` decodes the SysEx 8-in-7 transport, ELE3 entries and ELZ
 sections without filesystem APIs. Its decoded DT2 1.16 and DN2 1.11 sections
-byte-match `dt2/elz.py`; its library also compiles for `wasm32-unknown-unknown`.
+byte-match `tools/firmware/elz.py`; its library also compiles for `wasm32-unknown-unknown`.
 The native host's `--syx` input selects section 3, the MAIN_OS at
 `0x40000400`, rather than section 2, which is the bootstrap/version record.
 
@@ -19,7 +19,7 @@ Bringing the ColdFire emulation up: display, DSP bring-up, making it run, the pe
 
 ## The emulator boots Digitakt II 1.16 **[V][D][O]**
 
-- `emu/symbols.py` resolves all seven required symbols on 1.16, and 57 of
+- `tools/coldfire/symbols.py` resolves all seven required symbols on 1.16, and 57 of
   72 in all. Its `transport` signature matches the wrong function there,
   `0x40134200`; Version Tracking maps 1.15C's `0x40128c7c` to `0x40136268`.
   `call_sites` therefore lists 25 sites instead of 4; the cold boot only
@@ -98,7 +98,7 @@ was wrong.**
 confirmed by `0x84020003 -> DSPI0_PUSHR`, whose low byte `0x03` is the NOR READ
 command. Its callers scan the ELE3 section table at flash offset `0x80020`. The
 flash content it wants at boot **is the staged OS container**, which is exactly
-what `dt2.container` decodes out of the `.syx` we already have.
+what `tools.firmware.container` decodes out of the `.syx` we already have.
 
 High-level-emulating that one function and backing it with the container (see
 `emu/flashboot.py`) makes boot progress immediately, and the reads it issues
@@ -1791,7 +1791,7 @@ LED/knob-grid clearing. **None of them writes vector 208, `PIT3_PMR` or
 The "Update MMC Caches" job body itself (`LAB_400333e6`, a small trampoline
 at `0x400333e6`-`0x400333fa` between two registered functions -- Ghidra
 does not give it its own symbol; read directly from
-`sections/section_3_MAIN_OS.bin` via `dt2.coldfire.disasm`, per CLAUDE.md's
+`sections/section_3_MAIN_OS.bin` via `tools.coldfire.disasm.disasm`, per CLAUDE.md's
 warning that Ghidra misses small trampolines) is just:
 
 ```
@@ -2186,7 +2186,7 @@ gives `0x44e460d8`) and arms PIT3 with PMR `0x4323`. The task draws a
 spinner and a bar from the bitmaps at `0x402b4b80`/`0x402b4cf8` and flushes
 with `FUN_4013390e`. `FUN_40133626` (PIT3 off, `INTC2_SIMR = 0x10`, post
 `0x44e460e0`) ends it, called at `0x400335b6`, `0x40033618` (factory reset
-job) and `0x400334a0` (migrate job). `emu/symbols.py` already names it the
+job) and `0x400334a0` (migrate job). `tools/coldfire/symbols.py` already names it the
 progress screen.
 
 **The intro is the same pattern [V].** `FUN_400d12e4` (called at

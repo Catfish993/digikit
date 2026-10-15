@@ -68,11 +68,11 @@ pub const RX_VECTOR: u16 = (RX_CHAN + 120) as u16; // 148
 /// DSPIx_SR bit 28 (`EOQF`, RM Table 40-7 p.1189: "End of queue flag...
 /// set when the TX FIFO entry has the EOQ bit set... and after the last
 /// incoming databit is sampled"). `FUN_400cd2bc` polls this bit
-/// (`emu/dspiframe.py`'s naming, `SR_LINK_IDLE`) to see whether the
+/// (`tools/sharc_dev/dspiframe.py`'s naming, `SR_LINK_IDLE`) to see whether the
 /// previous transfer finished before arming a new one.
 pub const SR_LINK_IDLE: u32 = 1 << 28;
 
-pub const FRAME_BYTES: usize = 0xABC; // 2,748 bytes, emu/dspiframe.py
+pub const FRAME_BYTES: usize = 0xABC; // 2,748 bytes, tools/sharc_dev/dspiframe.py
 pub const PUSHR_TAG: u16 = 0x8001;
 
 /// The SHARC side of the link: outside this machine (see the module docs).

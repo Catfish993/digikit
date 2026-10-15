@@ -1,4 +1,4 @@
-"""dt2/elz.py against the repo's own packer and, when present, 1.15C's sections."""
+"""tools/firmware/elz.py against the repo's own packer and, when present, 1.15C's sections."""
 
 import hashlib
 import os
@@ -7,8 +7,8 @@ import unittest
 
 from support.paths import REPO_ROOT
 
-from dt2 import aplib, elz
-from dt2.container import sections
+from tools.firmware import aplib, elz
+from tools.firmware.container import sections
 
 ROOT = str(REPO_ROOT)
 SYX = os.path.join(ROOT, "Digitakt_II_OS1.15C.syx")

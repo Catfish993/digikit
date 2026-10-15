@@ -5,7 +5,7 @@ import os
 import struct
 import unittest
 
-from emu import config
+from tools.firmware import config
 
 # tools/patchkit/machinepatch.py inserts these same two paths itself, but they need
 # to be present before the import statement below runs.
@@ -77,7 +77,7 @@ class StaticImage:
 
 
 @unittest.skipUnless(
-    _MAIN_IMAGE is not None, "no MAIN OS image available (see emu.config.main_image)"
+    _MAIN_IMAGE is not None, "no MAIN OS image available (see tools.firmware.config.main_image)"
 )
 class PlanBTest(unittest.TestCase):
     def setUp(self):

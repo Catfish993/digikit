@@ -290,7 +290,7 @@ state.
   so no firmware-derived code ships and patched firmware needs no rebuild.
 - ColdFire in the browser (1.3 s per audio s): measure the idle and
   RAM-clear share first; idle skipping is likely the cheapest win.
-- MIDI input modelling (eDMA channel 34 ring, `emu/symbols.py:830`): exact
+- MIDI input modelling (eDMA channel 34 ring, `tools/coldfire/symbols.py:830`): exact
   parameter setting by CC, and WebMIDI in the browser.
 
 ## Status log

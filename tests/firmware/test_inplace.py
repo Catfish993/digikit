@@ -1,4 +1,4 @@
-"""dt2.inplace: edit a section by re-encoding only the tokens the edit touches (needs the 1.16 firmware)."""
+"""tools.firmware.inplace: edit a section by re-encoding only the tokens the edit touches (needs the 1.16 firmware)."""
 
 import pathlib
 
@@ -11,7 +11,7 @@ pytestmark = pytest.mark.skipif(
     not SYX.exists(), reason="needs Digitakt_II_OS1.16.syx in the repo root"
 )
 
-from dt2 import container, inplace  # noqa: E402
+from tools.firmware import container, inplace  # noqa: E402
 from tools.patchkit import patched_image  # noqa: E402
 
 

@@ -8,9 +8,9 @@ The string must occur exactly once in section 3, NUL-delimited, and keep its len
 project name UNTITLED, shown at the top of the main screen of a new project, into PATCHKIT. Every other section is
 re-stored from its depacked bytes (sections 2, 4 and 8 are never changed; patchimg refuses them).
 
-The image is made by dt2.inplace: the stock compressed stream of section 3 is decoded into tokens, the edit is applied
+The image is made by tools.firmware.inplace: the stock compressed stream of section 3 is decoded into tokens, the edit is applied
 and only the tokens it touches are re-encoded, so the container keeps (within bytes) its stock size and the other
-sections keep their stock stored bytes. (dt2.build.rebuild stores every section literals-only: 4.29 MB, three times
+sections keep their stock stored bytes. (tools.firmware.build.rebuild stores every section literals-only: 4.29 MB, three times
 the stock container, which is not a size to flash. See docs/findings/01-container-and-patching.md.)
 
 Checks, all reported in OUT.json next to the image:
@@ -38,9 +38,9 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from dt2 import container, inplace  # noqa: E402
-from dt2.elz import depack_section  # noqa: E402
-from emu.extract import classify  # noqa: E402
+from tools.firmware import container, inplace  # noqa: E402
+from tools.firmware.elz import depack_section  # noqa: E402
+from tools.firmware.extract import classify  # noqa: E402
 from tools.control import digi_client  # noqa: E402
 from tools.emulator import bootstrap_run  # noqa: E402
 from tools.firmware import roundtrip  # noqa: E402

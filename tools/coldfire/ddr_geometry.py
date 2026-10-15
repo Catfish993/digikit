@@ -32,7 +32,7 @@ so the physical size is
 Reproduce the disassembly by hand:
 
     uv run python -c "
-    from dt2.coldfire import disasm
+    from tools.coldfire.disasm import disasm
     data = open('sections/section_2_DSP.bin','rb').read()
     for pc, raw, mn, ops in disasm(data, 0x80000400, 0x800006c0, 0x800008a0):
         print(hex(pc), raw, mn, ops)"
@@ -45,7 +45,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from dt2.coldfire import disasm
+from tools.coldfire.disasm import disasm
 
 LOAD_ADDRESS = 0x80000400
 START, END = 0x800006C0, 0x800008A0

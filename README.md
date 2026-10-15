@@ -54,8 +54,8 @@ mise run setup      # uv sync, pnpm install
 ## Extract the firmware
 
 ```sh
-uv run python -m emu.extract Digitone_II_OS1.11.syx -o out/sections/dn2-1.11
-uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16
+uv run python -m tools.firmware.extract Digitone_II_OS1.11.syx -o out/sections/dn2-1.11
+uv run python -m tools.firmware.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16
 ```
 
 Keep each firmware in its own directory (`out/sections/dt2-1.16`, ...): the analysis

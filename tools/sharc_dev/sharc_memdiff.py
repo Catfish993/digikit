@@ -104,7 +104,7 @@ import time  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from emu import sharc_capture  # noqa: E402
+from tools.sharc_dev import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_dac  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay  # noqa: E402

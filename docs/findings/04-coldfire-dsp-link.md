@@ -255,7 +255,7 @@ Ghidra or disassembly output and it was not re-checked.
 
 ## Digitone II 1.11: the same link and the same machine table shape **[V][D][O]**
 
-- The sections come from `uv run python -m emu.extract
+- The sections come from `uv run python -m tools.firmware.extract
 Digitone_II_OS1.11.syx -o DIR`. 1.11 also has a section 8 (159,948
   bytes, mostly `0xFF`) that 1.10E does not have. **[D]**
 - Dispatcher `FUN_400c248e`: `moveq #4,d1`, a bound check, `muls` by
@@ -1791,7 +1791,7 @@ is its third byte. A whole-image `refscan` finds exactly one literal reference t
 ## Note trigger and sample data: DSPI2, DSPI1 and FlexBus all show no signal in a bounded run **[V][C][O]**
 
 Lane Z1, 2026-09-25, `tools/sharc_capture_run.py` extended to also observe the
-DSPI1 driver call and a watched raw-address range (`emu/sharc_capture.py`'s
+DSPI1 driver call and a watched raw-address range (`tools/sharc_dev/sharc_capture.py`'s
 `REC_DSPI1_CALL`/`REC_MEM_WRITE`), then run against `snapshots/dt2-1.16/
 boot400M.snap` with the real `Digitakt_II_OS1.16.syx` (sha-256
 `278541e4...`, matching `sections/.source-sha256`).
@@ -1821,7 +1821,7 @@ the boot path:
 - `FUN_400ccf74` (`0x400ccf74`-`0x400cd28f`, the 1.16 relocation of the
   documented "boot routine `FUN_400cf67c`"): programs GPIO and `0xec038000`
   (DSPI2's own MCR/CTAR/PUSHR, `PUSHR_TAG=0x8001` at the same offsets
-  `emu/dspiframe.py` documents for the frame link), reads a boot section
+  `tools/sharc_dev/dspiframe.py` documents for the frame link), reads a boot section
   (`FUN_401361b6(7, ...)`), decompresses it (`FUN_40136cea`), then bit-bangs
   it out over DSPI2 with a GPIO handshake per byte
   (`MCF5441X_MMIO::GPIO_PPDSDR_A & 0x10`) before writing `0x18000000` to
@@ -2056,7 +2056,7 @@ gitignored).
 
 `tools/sharc_capture_run.py`'s driver hook previously read only `tx_len`
 (`0x802`, `TX_PAYLOAD_BYTES["dt2"]`) bytes from the TX buffer at
-`emu/dspiframe.py`'s `TX_BASE_DT2` (`0x80005348`). This lane changed it to
+`tools/sharc_dev/dspiframe.py`'s `TX_BASE_DT2` (`0x80005348`). This lane changed it to
 read the whole `dspiframe.FRAME_BYTES` (`0xabc`, 2,748 bytes) instead, since
 that buffer is one persistent on-chip-SRAM region (`RX_BASE_DT2` is exactly
 `0xabc` bytes before it, back to back, no gap) and the eDMA word count is
@@ -2131,7 +2131,7 @@ uv run python tools/sharc_capture_run.py snapshots/dt2-1.16/boot400M.snap \
 ```
 
 then compare `frame.tx[0x802:]` across both captures with
-`emu/sharc_capture.py`'s `load()`. Captures not committed (`out/` is
+`tools/sharc_dev/sharc_capture.py`'s `load()`. Captures not committed (`out/` is
 gitignored).
 
 ## Lane D2: DM(0x261a10) is a small SPI-slave driver control block, not the frame payload **[D][O]**
@@ -2697,7 +2697,7 @@ offset 0 of the RX (channel 48) bank it just completed for the literal
 `0x007fffff`; only while present does its counter at `0x43153a20`
 advance, and only once it exceeds 63 does it replace vector 170's own RAM
 vector slot (`0x400002a8` -- vector 170 = INTC1 source 42, `170*4`) with
-`0x4002d322` (`emu.symbols.ssi0_dma_force_rte`'s anchor). `RxHandoverPeer`
+`0x4002d322` (`tools.coldfire.symbols.ssi0_dma_force_rte`'s anchor). `RxHandoverPeer`
 answers this through the model's existing, generic `peer.rx()` hook
 instead of a host poke: it reads the RX channel's own live CITER/BITER
 before each minor (the same registers `Ssi0Dma._run_minor` itself reads),

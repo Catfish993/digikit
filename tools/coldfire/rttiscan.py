@@ -5,7 +5,7 @@
         --json out/symbols/dt2-1.15C-rtti.json
 
 Raw and deterministic: it reads the image and uses the repo disassembler
-(dt2.coldfire), not Ghidra. Ghidra's RecoverClassesFromRTTIScript recovers
+(tools.coldfire.disasm), not Ghidra. Ghidra's RecoverClassesFromRTTIScript recovers
 no classes from this image, even with the program's compiler set to gcc.
 
 Itanium C++ ABI, 32-bit big-endian; the objects are 4-byte aligned:
@@ -38,7 +38,7 @@ import struct
 import subprocess
 import sys
 
-from dt2.coldfire import disasm  # noqa: E402
+from tools.coldfire.disasm import disasm  # noqa: E402
 from tools.coldfire.codeseeds import BASE, CODE, in_code  # noqa: E402
 
 KINDS = {

@@ -1,7 +1,7 @@
 """Decoder for the LZ codec used in Elektron ELE3 firmware sections.
 
 Brought in from Em's sharc-spec work (fw/elz.py) on 2026-09-15.
-emu/extract.py uses it by default. It matches the device's own depacker byte
+tools/firmware/extract.py uses it by default. It matches the device's own depacker byte
 for byte on every packed section of Digitakt II 1.15C and Digitone II 1.10E,
 and it also reads 1.16 and 1.11, whose depacker the Unicorn path cannot use.
 

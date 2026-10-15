@@ -1,17 +1,17 @@
 # fmt: off
 """Export a resolved symbol profile to JSON, so Ghidra and anything else that
-needs firmware addresses can reuse what emu/symbols.py already worked out
+needs firmware addresses can reuse what tools/coldfire/symbols.py already worked out
 instead of re-deriving or re-hardcoding it.
 
     uv run python -m tools.coldfire.export_profile <image> --device LABEL --out FILE.json
                                            [--load-addr 0x40000400] [--syx FILE]
 
 `image` is either a firmware `.syx` (extracted the same way emu.run does, via
-emu.extract.extract -- this file does NOT reimplement depacking) or an
+tools.firmware.extract.extract -- this file does NOT reimplement depacking) or an
 already-extracted `section_3_MAIN_OS.bin`-style image, read directly. In the
 second case the source `.syx` sha256 is recovered from the sibling
-`.source-sha256` marker emu.extract.record_source leaves next to it (see
-emu/extract.py), or pass --syx to hash a specific file, or --syx-sha256 to
+`.source-sha256` marker tools.firmware.extract.record_source leaves next to it (see
+tools/firmware/extract.py), or pass --syx to hash a specific file, or --syx-sha256 to
 supply it literally. None of these change what gets resolved; they only
 affect what provenance the JSON records.
 
@@ -48,7 +48,8 @@ import json
 import os
 import sys
 
-from emu import extract, symbols
+from tools.firmware import extract
+from tools.coldfire import symbols
 
 SOURCE_MARKER = extract.SOURCE_MARKER  # '.source-sha256'
 
@@ -68,7 +69,7 @@ def md5_bytes(data):
 def load_main_os(image_path, syx_override=None, syx_sha256_override=None):
     """-> (main_os_bytes, source_syx_sha256_or_None).
 
-    Reuses emu.extract.extract when given a `.syx`; reads a pre-extracted section_3
+    Reuses tools.firmware.extract.extract when given a `.syx`; reads a pre-extracted section_3
     directly otherwise. Never reimplements the depack/checksum logic itself.
     """
     if syx_sha256_override:
@@ -90,7 +91,7 @@ def load_main_os(image_path, syx_override=None, syx_sha256_override=None):
         raise SystemExit('no section 3 (MAIN OS) found in %s' % image_path)
 
     # Already-extracted image: read as-is, recover provenance from the
-    # sibling marker emu.extract.record_source wrote when it was extracted.
+    # sibling marker tools.firmware.extract.record_source wrote when it was extracted.
     with open(image_path, 'rb') as fh:
         img = fh.read()
     syx_sha = forced_sha
@@ -116,7 +117,7 @@ def symbol_entry(name, required, value, detail):
 
 
 def build_profile_json(device, img, load_addr, syx_sha256):
-    """Resolve every symbol and shape the JSON. Prefers emu.symbols.resolve()
+    """Resolve every symbol and shape the JSON. Prefers tools.coldfire.symbols.resolve()
     (the real entry point); if a REQUIRED symbol is unresolved that raises,
     so this falls back to running the same per-rule loop resolve() uses
     internally (nothing firmware-specific, just orchestration already public

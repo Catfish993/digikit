@@ -200,7 +200,7 @@ class TraceArmPathTest(unittest.TestCase):
         transfer" verdict)."""
         image = "dt2-1.16"
         cap_path = str(FULLTX_CAPTURE)
-        from emu import sharc_capture
+        from tools.sharc_dev import sharc_capture
 
         cap = sharc_capture.load(cap_path)
         memory = h.load_image_memory(image)

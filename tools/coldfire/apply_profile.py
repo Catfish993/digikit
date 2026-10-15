@@ -1,7 +1,7 @@
 # fmt: off
 """Apply a resolved symbol profile (from tools/coldfire/export_profile.py) as labels
 onto a Ghidra program, via PyGhidra -- so Ghidra's cross-references and
-decompiler benefit from the same names emu/symbols.py already resolved,
+decompiler benefit from the same names tools/coldfire/symbols.py already resolved,
 without re-deriving them by hand in the GUI.
 
     GHIDRA_INSTALL_DIR=/opt/homebrew/Cellar/ghidra/12.1.3/libexec \

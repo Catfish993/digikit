@@ -1,4 +1,4 @@
-"""emu/semscan.py against the pinned per-version extracts.
+"""tools/coldfire/semscan.py against the pinned per-version extracts.
 
 Same skip-if-image-absent pattern as tests/coldfire/test_symbols_real.py: each image
 is optional, so each test method is individually skipped when its own
@@ -8,7 +8,7 @@ extract is not present rather than skipping the whole module.
 import unittest
 from pathlib import Path
 
-from emu import semscan, symbols
+from tools.coldfire import semscan, symbols
 
 # The pinned per-version extracts, not the shared sections/ directory, which
 # holds whichever firmware was extracted last (see tests/coldfire/test_symbols_real.py).
@@ -18,7 +18,7 @@ DN11 = Path("out/sections/dn2-1.11/section_3_MAIN_OS.bin")
 
 # emu/pit.py: PIT3 is the display frame timer, claimed by the display
 # module partway through boot and modelled from then on -- see
-# emu/symbols.py:display_sem and emu/pit.py's own module docstring.
+# tools/coldfire/symbols.py:display_sem and emu/pit.py's own module docstring.
 PIT3_VECTOR = 208
 
 
@@ -27,7 +27,7 @@ class SemscanTest(unittest.TestCase):
         profile = symbols.resolve(path.read_bytes())
         never_fake = semscan.never_fake_semaphores(path.read_bytes())
         # bq_free_sem/bq_ready_sem are plain task-code posters (neither give
-        # is inside an ISR at all) -- see emu/symbols.py's bq_free_giver
+        # is inside an ISR at all) -- see tools/coldfire/symbols.py's bq_free_giver
         # comment -- so the scan must find both with no modeled_vectors at
         # all.
         self.assertEqual(never_fake, {profile.bq_free_sem, profile.bq_ready_sem})

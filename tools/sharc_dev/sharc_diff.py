@@ -1201,7 +1201,7 @@ def run_frame_lockstep(
     img=None,
 ) -> LockstepResult:
     """Per-frame lockstep: deliver each of FRAMES (``.tx`` DSPI2 bytes, as
-    ``emu.sharc_capture``'s frame records have) to both runners with
+    ``tools.sharc_dev.sharc_capture``'s frame records have) to both runners with
     exactly the primitives ``sharc_replay.replay()``'s own frame loop uses
     (``sharc_harness.write_dma_transfer``/``drive_dma_completion``/
     ``call_frame_collect_all``), then compares full exported state.  Stops

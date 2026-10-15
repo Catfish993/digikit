@@ -1,19 +1,19 @@
-"""Write-side inverse of dt2/container.py: build an ELE3 container and a
+"""Write-side inverse of tools/firmware/container.py: build an ELE3 container and a
 .syx transport around it.
 
     Both checksums and the HMAC trailer are now recovered, verified
     byte-exact against all four firmwares in the repo root, and computed by
     this module (see content_checksum(), packet_checksum() and
-    dt2/authcode.py). What genuinely remains before flashing:
+    tools/firmware/authcode.py). What genuinely remains before flashing:
       - the final chunk's zero padding is still an inference -- no sample
         file has a partial final chunk to confirm it against;
       - store-only aPLib packing (the default) makes the image ~3x larger
-        than stock; pack='aplib' (dt2/aplibpack.py) gives about the stock
+        than stock; pack='aplib' (tools/firmware/aplibpack.py) gives about the stock
         size, and no device-side size limit is known from hardware (the
         receive code imposes none);
       - no rebuilt image has been flashed to hardware.
 
-Layer cake, innermost first (mirrors dt2/container.py, in reverse):
+Layer cake, innermost first (mirrors tools/firmware/container.py, in reverse):
 
   1. ELE3        -- magic, then a section table of 16-byte entries, built
                     by build_container(). Per-section storage quirks
@@ -23,7 +23,7 @@ Layer cake, innermost first (mirrors dt2/container.py, in reverse):
                     the total length and content_checksum(), not carried
                     from the source.
   3. 8-in-7      -- MIDI carries 7-bit bytes; encode_8in7() is the exact
-                    inverse of the decode loop in dt2/container.py.
+                    inverse of the decode loop in tools/firmware/container.py.
   4. MIDI SysEx  -- 128-byte messages, built by encode_syx(). The first
                     and last messages are the file's 16-byte framing
                     messages; those carry the data-message count, which
@@ -39,18 +39,18 @@ module cannot build new ones from scratch.
 
 import struct
 
-from dt2 import aplib, aplibpack
-from dt2.container import COUNT_OFF, ENTRY_SZ, MFR, TABLE_OFF, decode_syx, sections
+from tools.firmware import aplib, aplibpack
+from tools.firmware.container import COUNT_OFF, ENTRY_SZ, MFR, TABLE_OFF, decode_syx, sections
 
 # The first data message's counter value; see the module docstring in
-# dt2/container.py and the format facts this was built from.
+# tools/firmware/container.py and the format facts this was built from.
 FIRST_COUNTER = 242
 CHUNK_SIZE = 101  # decoded bytes carried by one 128-byte message
 
 
 def encode_8in7(data):
     """bytes -> 8-in-7 encoded bytes. Exact inverse of the decode loop in
-    dt2/container.py:37-44: one marker byte per up-to-7 data bytes, holding
+    tools/firmware/container.py:37-44: one marker byte per up-to-7 data bytes, holding
     their high bits MSB-first, followed by those bytes with the high bit
     stripped. A short final group is handled the same way as a full one."""
     out = bytearray()
@@ -101,9 +101,9 @@ PACKERS = {
 
 def store_for_section(section_id, data, pack="store"):
     """Decompressed section bytes -> stored bytes, applying the per-section
-    storage rule dt2/container.py and emu/extract.py already document.
+    storage rule tools/firmware/container.py and tools/firmware/extract.py already document.
     `pack` picks the packer for the aPLib sections: 'store' (the default, until
-    the compressor is reviewed) or 'aplib' (dt2/aplibpack.py).
+    the compressor is reviewed) or 'aplib' (tools/firmware/aplibpack.py).
     Raises on an unknown section id rather than guessing its rule."""
     if section_id in (2, 3, 7, 8):  # 8 is 1.16 and later
         return PACKERS[pack](data)
@@ -122,12 +122,12 @@ def build_container(header, entries):
     observed u32, the 16-byte product string, four zero bytes) -- normally
     copied verbatim from a source container. Payloads are laid out starting
     at 0x80, 16-byte aligned between sections, matching the observed layout
-    in dt2/container.py's module docstring / the format facts this was
+    in tools/firmware/container.py's module docstring / the format facts this was
     built from. The section count is written at 0x1C, the table at 0x20.
 
     The returned container ends with 16-byte alignment padding after the
     last section, followed by a 32-byte zeroed trailer slot (no table
-    entry), which the caller fills via dt2.authcode.compute_trailer (or
+    entry), which the caller fills via tools.firmware.authcode.compute_trailer (or
     seal()). Confirmed on all four firmwares in the repo root: 1347692+4+32
     = 1347728; 1484024+8+32 = 1484064; 1743084+4+32 = 1743120;
     1885144+8+32 = 1885184.
@@ -258,7 +258,7 @@ def rebuild(
     destinations, substitutes any section whose id appears in
     `replacements` (a dict of id -> DECOMPRESSED bytes) and decompresses
     every other section via the same device-verified depacker
-    emu/extract.py uses, re-stores every section with store_for_section(),
+    tools/firmware/extract.py uses, re-stores every section with store_for_section(),
     rebuilds the container, seals it with the HMAC trailer, computes
     total_len and the content checksum for a fresh preamble, and re-encodes
     to .syx reusing the source's own first and last framing messages.
@@ -275,7 +275,7 @@ def rebuild(
     per-message checksum function; the default leaves it at encode_syx's
     own default (packet_checksum()).
     """
-    from dt2.authcode import DEVICE_BY_ID, seal
+    from tools.firmware.authcode import DEVICE_BY_ID, seal
 
     replacements = replacements or {}
 
@@ -325,7 +325,7 @@ def _self_test():
     for n in (0, 1, 6, 7, 8, 13, 14, 15, 101, 116, 250):
         data = os.urandom(n)
         encoded = encode_8in7(data)
-        # Decode with the exact loop from dt2/container.py, to check
+        # Decode with the exact loop from tools/firmware/container.py, to check
         # encode_8in7 against that logic rather than against itself.
         decoded = bytearray()
         k = 0
@@ -359,7 +359,7 @@ def _self_test():
 
     import tempfile
 
-    from dt2 import container as containermod
+    from tools.firmware import container as containermod
 
     fd, path = tempfile.mkstemp(suffix=".syx")
     os.close(fd)
@@ -379,7 +379,7 @@ def _self_test():
     print("build self_test OK")
 
 
-USAGE = """usage: uv run python -m dt2.build firmware.syx
+USAGE = """usage: uv run python -m tools.firmware.build firmware.syx
 
 Rebuilds a .syx from itself (no replacements) and prints each section's
 original and new stored length. See the module docstring for what still
@@ -404,7 +404,7 @@ if __name__ == "__main__":
     import os
     import tempfile
 
-    from dt2 import container as containermod
+    from tools.firmware import container as containermod
 
     fd, tmp_path = tempfile.mkstemp(suffix=".syx")
     os.close(fd)

@@ -13,7 +13,7 @@ uv run python -m tools.coldfire.early_init_contract \
   --qemu-seed /tmp/qemu-coldfire-spike/early-init-seed.json --out /tmp/early-init.json
 ```
 
-The analyzer uses the existing narrow `dt2.coldfire` decoder and emits stable,
+The analyzer uses the existing narrow `tools.coldfire.disasm` decoder and emits stable,
 sorted JSON. It rejects a changed or ambiguous bootstrap sequence. `emu.Machine`
 can optionally observe explicit MMIO ranges with `install_mmio_trace(sink,
 ranges=..., registers=...)`; it installs no trace hooks without a sink and

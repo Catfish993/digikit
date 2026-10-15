@@ -44,7 +44,7 @@ Backlog for patchkit itself (the rest lives in the plans named above):
 
 ## Facts this design rests on
 
-- Container: checksum, HMAC trailer and per-packet checksums are reproduced; `dt2.build.rebuild` repacks and
+- Container: checksum, HMAC trailer and per-packet checksums are reproduced; `tools.firmware.build.rebuild` repacks and
   `roundtrip.check_authenticity` verifies (finding 01). No patched image has been flashed to a device.
 - 1.17 (DT2) and 1.12 (DN2) change only MAIN OS (section 3) and META (section 5). Sections 2 (bootstrap), 4
   (updater), 7 (SHARC blob) and 8 are byte-identical to 1.16 / 1.11. DT2 1.17 MAIN is the same size as 1.16 but
@@ -87,7 +87,7 @@ resources fit. `targets` in the manifest records only test status (`stable`, `ex
 
 - Live in `devices/ports/<short>-<version>.toml`, next to the device files, referenced by firmware sha256.
 - Built by `mise run port:resolve -- FILE.syx` from resolution rules (masked signatures, xref shapes, SHARC
-  `reloc_hash`), the same approach as `emu/symbols.py` and `tools/sharc_dev/sharc_symbols.py`. Never hand-typed.
+  `reloc_hash`), the same approach as `tools/coldfire/symbols.py` and `tools/sharc_dev/sharc_symbols.py`. Never hand-typed.
 - Each anchor stores address, length and the **sha256 of the expected bytes**, not the bytes, so no firmware bytes
   are committed.
 - Regions: `flash_cave` (loader only), the ColdFire expansion region, free SHARC L2, each with capacity and
@@ -190,7 +190,7 @@ enough, audio is an offline render.
   touched, the STARTUP menu comes up over a faulting MAIN OS, the bootstrap's checksum/HMAC accepts rebuilt images
   and rejects corrupt ones, recovery to stock works, and a 1.16/1.17 image does not rewrite the bootstrap [V].
   `tools/patchkit/patched_image.py` builds the harmless stock-size test image. Open: MAIN OS validator (0x400d9e4c) not run.
-- 0.3: RAM map, expansion region and loader hook as above; `tools/coldfire/regions.py` replaces cavefind; `dt2/aplibpack.py`
+- 0.3: RAM map, expansion region and loader hook as above; `tools/coldfire/regions.py` replaces cavefind; `tools/firmware/aplibpack.py`
   passes the bootstrap's own depacker on all 16 sections; `rebuild` keeps untouched sections verbatim and has a
   `max_container` guard.
 
@@ -260,7 +260,7 @@ Spec (decided 2026-10-13):
   module-build and port-resolve time (toolchains, cfdb/sharcdb queries): `tools/patchkit/pk_build.py` (src -> `.dko`),
   `tools/patchkit/port_resolve.py` (rules -> port lockfile). `tools/patchkit/patchkit.py` wraps the Rust CLI for mise.
 - **Codec.** Untouched sections keep their stored bytes verbatim; changed sections are packed with an aPLib packer
-  ported from `dt2/aplibpack.py` that produces the **same bytes** as the Python packer (test on all 16 stock
+  ported from `tools/firmware/aplibpack.py` that produces the **same bytes** as the Python packer (test on all 16 stock
   sections). Hard limits from the port (`container_max` 0x300000, section 7 stored <= 0x100000 and depacked <=
   0xfffff, MAIN staged image <= 0x3ffc00); sections 2, 4, 8 can never change. Every output is re-decoded and
   checked (checksum, HMAC, packet checksums, limits, record).
@@ -320,7 +320,7 @@ dn2-1.11 and dn2-1.12, modules `core/expansion`, `fx/master-gain`, `test/cf-demo
 
 - The codec rebuilds all four stock images byte for byte; the Rust aPLib packer equals the Python one on all 16
   packed sections (and is 25 times faster). Stock payloads start at container offset 0x90, not 0x80 as
-  `dt2/build.py` writes [C].
+  `tools/firmware/build.py` writes [C].
 - `fx/master-gain` on DT2 1.17 and DN2 1.12, injected through `firmware.load`: bit-identical at gain 1.0,
   -6.0206 dB at 0.5, from the same ready state.
 - Oracles: DN2 master half (all decoded sections equal `dsp_patch.py syx`), XSLICE (section 3 sha256

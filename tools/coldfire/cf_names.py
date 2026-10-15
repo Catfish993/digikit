@@ -1,11 +1,11 @@
 """Named ColdFire addresses for Digitakt II OS 1.16 (MAIN OS only).
 
 A small, hand-curated table -- not a general cross-firmware resolver like
-emu/symbols.py (which derives addresses from signatures so they survive a
+tools/coldfire/symbols.py (which derives addresses from signatures so they survive a
 firmware rebuild). These are literal 1.16 addresses, good for exactly this
 build, collected while reverse-engineering track state, sample loading, the
 FlexBus link to the SHARC, and the boot-time UI sequence. Putting them in
-emu/symbols.py's Fixed()/Sig() machinery would require reference bytes and a
+tools/coldfire/symbols.py's Fixed()/Sig() machinery would require reference bytes and a
 second firmware to verify against, which this table doesn't have -- so they
 live here instead, read by tools/emulator/snapread.py (to label a raw address) and
 tools/coldfire/cfdb.py and cf.py (to look up a function by name).

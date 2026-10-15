@@ -88,7 +88,7 @@ pub const RELEASE_MASK_OFFSET: usize = 0x24;
 /// OR-merged when a full FIFO merges two frames.
 pub const ONE_SHOT_OFFSETS: [usize; 5] = [0x22, 0x24, 0x26, 0x28, 0x2a];
 
-/// The full DSPI2 TX frame size (`emu/dspiframe.py` `FRAME_BYTES`, 0xABC =
+/// The full DSPI2 TX frame size (`tools/sharc_dev/dspiframe.py` `FRAME_BYTES`, 0xABC =
 /// 2,748 bytes). Frames of any length are accepted.
 pub const FRAME_BYTES: usize = 0xABC;
 

@@ -7,7 +7,7 @@ Traced from the depacked bootstrap (`sections/section_2_DSP.bin`, base
 0x80000400 once its 4-byte length prefix is stripped) via Ghidra, and
 confirmed byte-exact against both real firmwares below.
 
-LAYOUT. `dt2.container.decode_syx()` returns [u32 total_len][u32 checksum]
+LAYOUT. `tools.firmware.container.decode_syx()` returns [u32 total_len][u32 checksum]
 then the ELE3 container. The container's last 32 bytes, once its length has
 been padded to a 16-byte boundary, are this trailer; `total_len` covers the
 container *including* the trailer (confirmed: 1347728 = 1347692 + 4 pad + 32
@@ -62,7 +62,7 @@ import hashlib
 import hmac
 import struct
 
-from dt2.container import decode_syx
+from tools.firmware.container import decode_syx
 
 DEVICES = {
     'dt2': dict(string=b'Master Overdrive',

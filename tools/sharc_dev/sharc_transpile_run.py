@@ -1247,7 +1247,7 @@ def run_frames(
     set-up, cached in SNAPSHOT); the two exported states are compared
     after every frame in FRAMES. SAVE_AT/SAVE_TO keep the Python state
     after that frame (a later run's SNAPSHOT)."""
-    from emu import sharc_capture
+    from tools.sharc_dev import sharc_capture
     from tools.sharc_dev import sharc_harness as h
     from tools.sharc_dev import sharc_survey as sv
 
@@ -1338,7 +1338,7 @@ def pack_frames(
     one ring). Frames start at the snapshot's own frame."""
     import struct
 
-    from emu import sharc_capture
+    from tools.sharc_dev import sharc_capture
     from tools.sharc_dev import sharc_harness as h
 
     if lp0 and snapshot and not os.path.exists(snapshot):
@@ -1509,9 +1509,8 @@ def live_pack(
     its path, key and how long building took."""
     import struct
 
-    from emu import sharc_capture
+    from tools.sharc_dev import sharc_capture, sharc_transpile
     from tools.sharc_dev import sharc_harness as h
-    from tools.sharc_dev import sharc_transpile
 
     memory = h.load_image_memory(image)
     img = pack_image(memory)
