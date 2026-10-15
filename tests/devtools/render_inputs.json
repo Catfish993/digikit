@@ -26,6 +26,7 @@
     "packages/emulator/loader/src/lib.rs": 1,
     "packages/emulator/periph/src/trace.rs": 1,
     "packages/emulator/plusdrive/src/project.rs": 2,
+    "packages/emulator/sharc/src/cycmix.rs": 1,
     "packages/emulator/sharc/src/fast/mod.rs": 3
   }
 }
