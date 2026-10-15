@@ -51,6 +51,12 @@ export interface NativeAudioStatus {
   audio_seconds_per_session_wall_second?: number;
   audio_mode?: string;
   halted?: string | null;
+  /** CPU meters of the last window, percent (docs/CONTROL.md `status.load`); the `real_*` values are estimates. */
+  load?: {
+    window_s: number;
+    cf: { model_pct: number; real_pct: number; real_high_pct: number };
+    dsp: { busy_per_block: number; model_pct: number; real_pct: number; real_high_pct: number } | null;
+  } | null;
   dsp_tiers?: {
     worker_cpu_s: number; audio_s?: number; dsp_cpu_per_audio_s?: number | null;
     instructions: number; interpreter: number; fast_tier: number; aot_block: number;
