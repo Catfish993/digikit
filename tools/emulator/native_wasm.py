@@ -3,7 +3,7 @@
 
 Writes three files:
   apps/web/public/patchkit.wasm
-      The patch tool of packages/emulator/patchkit (C ABI, no firmware inside: ports and modules are passed in at run time).
+      The patch tool of packages/patchkit (C ABI, no firmware inside: ports and modules are passed in at run time).
   apps/web/public/emulator-core.wasm
       CF-only core (small), used for the normal boot.
   apps/web/.local/emulator-core-sharc.wasm
@@ -158,7 +158,7 @@ def build_patchkit() -> None:
         "cargo",
         "build",
         "--manifest-path",
-        "packages/emulator/patchkit/Cargo.toml",
+        "packages/patchkit/Cargo.toml",
         "--locked",
         "--offline",
         "--release",

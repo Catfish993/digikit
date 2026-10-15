@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render and check the DT2 FX scenarios (scenarios/dt2-trackfx.json, dt2-sendfx.json).
+"""Render and check the DT2 FX scenarios (tests/scenarios/dt2-trackfx.json, dt2-sendfx.json).
 
     uv run python -m tools.emulator.dt2fx render [--out DIR] [--jobs N] [--env K=V ...] [NAME ...]
     uv run python -m tools.emulator.dt2fx check DIR [DIR ...]
@@ -41,7 +41,7 @@ def render(
     binary = coupled.ensure_binary(no_build, "dt2")
     reports = {}
     for kind in FILES:
-        scn = ROOT / "scenarios" / f"dt2-{kind}.json"
+        scn = ROOT / "tests" / "scenarios" / f"dt2-{kind}.json"
         todo = [
             sc["name"]
             for sc in json.loads(scn.read_text())["scenarios"]

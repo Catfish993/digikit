@@ -991,20 +991,6 @@ name = "dt2-firmware-loader"
 version = "0.1.0"
 
 [[package]]
-name = "dt2-native-host"
-version = "0.0.1"
-dependencies = [
- "coldfire",
- "dt2-firmware-loader",
- "emmc-card",
- "live-audio",
- "machine",
- "periph",
- "serde_json",
- "sharc-native",
-]
-
-[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"

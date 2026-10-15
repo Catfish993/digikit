@@ -300,7 +300,11 @@ def run_and_report(binary: pathlib.Path, selection: list[str], args) -> int:
     if scenario_file:
         extra = ["--scenarios", str(pathlib.Path(scenario_file).resolve()), *extra]
     elif device != "dn2":
-        extra = ["--scenarios", str(ROOT / "scenarios" / f"{device}.json"), *extra]
+        extra = [
+            "--scenarios",
+            str(ROOT / "tests" / "scenarios" / f"{device}.json"),
+            *extra,
+        ]
     for spec in getattr(args, "peek", None) or []:
         extra += ["--peek", spec]
     if getattr(args, "dump_dsp", False):
@@ -359,7 +363,7 @@ def merge_reports(reports: list[dict], names: list[str]) -> dict:
 
 def default_jobs() -> int:
     """Parallel coupled-run processes for tests: DIGI_JOBS, else
-    min(cpus - 2, 6) (scenarios/README.md, "Parallel rendering")."""
+    min(cpus - 2, 6) (tests/scenarios/README.md, "Parallel rendering")."""
     env = os.environ.get("DIGI_JOBS")
     if env:
         return max(1, int(env))
@@ -581,7 +585,9 @@ def run_parallel(binary: pathlib.Path, args) -> int:
             "coupled: --jobs does not combine with --seconds/--dump-dsp/--"
         )
     device = getattr(args, "device", "dn2")
-    scn = pathlib.Path(args.scenarios or ROOT / "scenarios" / f"{device}.json")
+    scn = pathlib.Path(
+        args.scenarios or ROOT / "tests" / "scenarios" / f"{device}.json"
+    )
     names = args.names or list(scenario_seconds(scn))
     run_dir = (
         pathlib.Path(args.out).parent

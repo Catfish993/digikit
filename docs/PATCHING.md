@@ -204,7 +204,7 @@ first `mise run web` in a fresh tree compiles the browser cores and takes severa
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
 | Content module | Own code and declarative registry entries. No addresses. | `fx/master-gain`, `machines/pluck` |
 
-patchkit itself (`packages/emulator/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
+patchkit itself (`packages/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
 frameworks are modules built on them. One implementation serves the command line and `patchkit.wasm`.
 
 ### Ports and anchors
@@ -283,7 +283,7 @@ The region is above the bss end, so the reset clear does not touch it, and a can
 free L2. The ColdFire boot routine sends the whole decompressed section, so no ColdFire change is needed. Limits:
 stored size at most `0x100000`, decompressed size at most `0xfffff`; usable appended payload 727,540 B (DT2) and
 211,600 B (DN2). patchkit checks every output stream against the boot-ROM rules that the public manual states
-(`packages/emulator/patchkit/src/bootrom.rs`, [finding 06](findings/06-sharc-engine-and-startup.md), "Boot ROM conformance").
+(`packages/patchkit/src/bootrom.rs`, [finding 06](findings/06-sharc-engine-and-startup.md), "Boot ROM conformance").
 
 ### Linking and `.dko` objects
 

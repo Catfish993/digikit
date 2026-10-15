@@ -37,7 +37,7 @@ export function canSplit(): boolean {
  * ready with the DSP attached, and take the three products (packed DSP image
  * from the .syx's SHARC section, DSP state, ColdFire snapshot). NOT BUILT YET:
  * the pieces exist natively (packages/emulator/loader decodes the .syx and is wasm32
- * clean; packages/emulator/host's `--syx` mode boots to ready), not in the browser core.
+ * clean; the removed dt2-native-host crate booted a .syx to ready natively), not in the browser core.
  */
 export async function coldBoot(_syx: Uint8Array, _progress?: (fraction: number) => void): Promise<ReadyState> {
   throw new Error('cold boot from a .syx is not built in the browser core yet (see docs/notes/laneB.md)');

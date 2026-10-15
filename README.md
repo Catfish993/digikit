@@ -134,7 +134,7 @@ uv run python -m tools.patchkit.dsp_patch syx BASE.syx tools/patchkit/dsp_patche
 
 A scenario is a list of panel inputs (button presses, encoder turns) that the headless
 runner plays against a ready state. It reports the PCM hash and level
-([scenarios/README.md](scenarios/README.md)).
+([tests/scenarios/README.md](tests/scenarios/README.md)).
 
 ```sh
 mise run scenarios            # every DN2 scenario; fails when a pinned PCM hash differs
@@ -209,7 +209,7 @@ packages/emulator/  Rust workspace: runtime, ColdFire and SHARC execution, runne
 apps/            desktop (Tauri) and web shells (browser panel: Astro + Solid)
 tools/           Python tools, one package per owner (tools/<owner>/, docs/LAYOUT.md)
 tests/           pytest suite (native tests live in the crates); see docs/TESTING.md
-scenarios/       scripted panel inputs and pinned PCM hashes
+tests/scenarios/ scripted panel inputs and pinned PCM hashes
 modules/         patchkit modules
 devices/         device profiles (firmware hashes, panel layout), LED maps, and ports/ (patchkit firmware ports)
 docs/            findings, designs, handovers
@@ -236,7 +236,7 @@ Record results in `docs/findings/`, not in handovers. Marks: **[V]** verified he
 - The browser DSP is slow; the browser host is parked on the branch `wip/browser-host`.
 - No patched firmware has been installed on a device.
 - The control socket is a Unix socket ([docs/design/emulator-control.md](docs/design/emulator-control.md)).
-- Some scenario PCM pins need the private ready inputs ([scenarios/README.md](scenarios/README.md)).
+- Some scenario PCM pins need the private ready inputs ([tests/scenarios/README.md](tests/scenarios/README.md)).
 
 Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 

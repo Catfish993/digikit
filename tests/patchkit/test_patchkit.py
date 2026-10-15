@@ -1,4 +1,4 @@
-"""patchkit (packages/emulator/patchkit): the codec, the linker and the oracles, against the Python reference tools.
+"""patchkit (packages/patchkit): the codec, the linker and the oracles, against the Python reference tools.
 
 Needs the stock images in the repository root and a built `patchkit` binary (built here with cargo, offline).
 """

@@ -5,7 +5,7 @@
 
 Builds a card with one 1 kHz mono sine (`test-sine-1khz.wav`, 48 kHz, 1 s), its
 ready state (`tools/emulator/ready.py dt2 --card-image`, cached by card), runs the
-`dt2-sample-trig` scenario of scenarios/dt2.json headless
+`dt2-sample-trig` scenario of tests/scenarios/dt2.json headless
 (`coupled-run --card-image`, interpreter only: about 80 s per audio second) and
 analyses the left channel while the note sounds: the strongest partial, the
 share of the power near it, and the two harmonics above it.
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
             "--dsp-image", str(ready_dir / "digi-audio-dn2-image.bin"),
             "--dsp-state", str(ready_dir / "digi-audio-m5.snap.dsp"),
             "--cf-snapshot", str(ready_dir / "digi-audio-m5.snap"),
-            "--scenarios", str(ROOT / "scenarios/dt2.json"),
+            "--scenarios", str(ROOT / "tests/scenarios/dt2.json"),
             "--scenario", "dt2-sample-trig", "--seconds", str(a.seconds),
             "--wav", str(wav),
         ],

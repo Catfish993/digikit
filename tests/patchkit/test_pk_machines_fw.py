@@ -1,5 +1,5 @@
 """core/machines (Digitakt II) as a module: the ColdFire routines against a model of the Rust generator's behaviour
-(packages/emulator/patchkit/src/machines.rs), on the native core with hand-built tables (tools/patchkit/pk_cfunit.py).
+(packages/patchkit/src/machines.rs), on the native core with hand-built tables (tools/patchkit/pk_cfunit.py).
 
 Skips when the m68k toolchain or the DT2 1.17 image is absent."""
 

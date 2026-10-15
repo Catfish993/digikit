@@ -7,7 +7,7 @@ app's `--scenario` mode and the browser parity check). One file per device:
 - `dt2.json` is passed with `--scenarios` (done for you by `--device dt2`).
 - `dt2-trackfx.json` and `dt2-sendfx.json` are DT2 FX sweeps (generator `tools/emulator/gen_dt2fx.py`).
   They need the one-sample card: `coupled.py scenario --device dt2 --dt2-card
-  --scenarios scenarios/dt2-trackfx.json --all` (or `DIGI_DT2_CARD=1`), and a peek of
+  --scenarios tests/scenarios/dt2-trackfx.json --all` (or `DIGI_DT2_CARD=1`), and a peek of
   the Sound and Fx arrays (finding 18, "DT2 FX scenarios"). `tools/emulator/dt2fx.py render|check|tiers`
   renders both files with the peeks, prints the `tools/emulator/fxcheck.py` tables and compares the
   PCM hashes of two renders; the oracle tests are `mise run scenarios:dt2`.

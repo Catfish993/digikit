@@ -9,7 +9,7 @@ Vitest suite that drives the emulator daemon (`emud`) through `@digi/test-suppor
   `[[region]]` blocks of `devices/ports/<device>-<fw>.toml` (`cf.flash_cave`, `cf.expansion`, minus
   `excludes`), with an empty `allow_pc`, and asserts `guard.report` has total 0.
 - Frame (SHA-256) and LED goldens in `goldens/dt2-1.16.json`: `dt2/rec-play` (scenario `dt2-rec-play` of
-  `scenarios/dt2.json`, exact instruction counts, 6 s; reference is `coupled-run --dsp zero --trace` on the
+  `tests/scenarios/dt2.json`, exact instruction counts, 6 s; reference is `coupled-run --dsp zero --trace` on the
   same scenario), `dt2/pages` (SRC, FLTR, AMP, FX, MOD), `dt2/transport` (PLAY, STOP).
 
 Each test file starts one daemon (`withSession` in `support.ts`) and restarts it before each test.

@@ -58,8 +58,8 @@ from tools.emulator import (  # noqa: E402
 )
 
 PY = ["uv", "run", "python"]
-FX_FILES = ("scenarios/dn2-trackfx.json", "scenarios/dn2-sendfx.json")
-DT2_FX_FILES = ("scenarios/dt2-trackfx.json", "scenarios/dt2-sendfx.json")
+FX_FILES = ("tests/scenarios/dn2-trackfx.json", "tests/scenarios/dn2-sendfx.json")
+DT2_FX_FILES = ("tests/scenarios/dt2-trackfx.json", "tests/scenarios/dt2-sendfx.json")
 # python-tests always runs PY_GATE. A suite of PY_SUITES, (name, trigger prefixes, test
 # paths), runs when a changed file starts with one of its prefixes (all suites with
 # --full). Test paths may be globs or directories; one that matches nothing is an error.
@@ -76,7 +76,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
         "patchkit",
         (
-            "packages/emulator/patchkit/",
+            "packages/patchkit/",
             "modules/",
             "devices/ports/",
             "tools/patchkit/pk_",
@@ -149,10 +149,10 @@ EVERYTHING = tuple(s for s in STEPS if s not in ("tier-sweep", "dt2-tier-sweep")
 FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
-    (("docs/", "README", "AGENTS.md", "CLAUDE.md", "scenarios/README"), ()),
+    (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
     (
         (
-            "scenarios/dt2-",
+            "tests/scenarios/dt2-",
             "tests/scenarios/test_dt2",
             "tools/emulator/gen_dt2fx.py",
             "tools/emulator/dt2fx.py",
@@ -195,7 +195,7 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     ),
     (
         (
-            "packages/emulator/patchkit/",
+            "packages/patchkit/",
             "modules/",
             "devices/ports/",
             "tools/patchkit/pk_",
@@ -223,7 +223,6 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     ),
     (
         (
-            "scenarios/",
             "tests/scenarios/",
             "tools/emulator/fxcheck.py",
             "tools/emulator/audiocheck.py",

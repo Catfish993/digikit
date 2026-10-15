@@ -162,7 +162,7 @@ Browser (no AOT possible without firmware; fast tier only):
 Measured 2026-10-08 on branch `work/scenario-oracles` (DN2 1.11, shared generated core, no
 firmware blocks). Not re-checked by a second agent. Tools: `tools/devtools/perf.py --scenarios FILE
 --scenario NAME... --seconds 0` (0 = each scenario's own length) and `tools/devtools/perf_agg.py DIR...`
-(union and FX increase over the dry hold). Scenarios: `scenarios/dn2.json`,
+(union and FX increase over the dry hold). Scenarios: `tests/scenarios/dn2.json`,
 `dn2-trackfx.json`, `dn2-sendfx.json`.
 
 Config: **`static-insns+follow`** is the translator-only, no-AOT configuration (finding 18's
@@ -495,7 +495,7 @@ and build per audio s (`tools/devtools/fast_timeline.py` ticks, `SHARC_FAST_TL=1
 | run length | none: the 12, 14 and 20 s runs and the 4/8/12/16 s diagnostic runs agree at equal audio time | | |
 
 - The taps are at 0.06-0.10, 0.21-0.25 and 0.36-0.40 audio s (events at 60M-400M instructions,
-  `scenarios/dn2.json`). The step comes 9 s after the last release, so it is not an event time. It
+  `tests/scenarios/dn2.json`). The step comes 9 s after the last release, so it is not an event time. It
   needs a sound that has decayed (`idle` never made one, `trig1-hold` never lets it decay) and it is
   independent of config and run length.
 - **The firmware executes the same instructions.** Non-idle instructions per audio s are 497M before and
@@ -570,7 +570,7 @@ brings the AOT run to its pre-step cost (1.41), so it is small.
 
 ## Tier mismatch: MODE1 read at entry **[D]**
 
-`sf-del-time-u20` (scenarios/dn2-sendfx.json) rendered `67e0ea5c3f9a7166` in the default config
+`sf-del-time-u20` (tests/scenarios/dn2-sendfx.json) rendered `67e0ea5c3f9a7166` in the default config
 (AOT core and fast tier) and `c4688d57f9ef9aa9` in no-AOT `static-insns+follow` (rms 0.0127184 vs
 0.0127187); finding 15 recorded it as open.
 
@@ -945,7 +945,7 @@ DT2 FX scenarios, plan (not built). (1) Find the DT2 FX page button and encoder 
 value per encoder event by read-back of the live kit Fx array (`*0x80004708`) and Sound array, as DN2 did (`UPS` in
 `gen_trackfx.py`). Parameter codes are known (finding 02: sends 0x44/0x45/0x43, delay time 0x71, feedback 0x74, reverb
 decay 0x7c, BR/SRR/routing/overdrive 0xff..0x102). (2) Check the DT2 values of `FX_PAGE` and `TRIG1` in
-`scenario_dsl.py` (TRIG1 = 25 and the NO prelude already work in `dt2.json`). (3) Generate `scenarios/dt2-trackfx.json`
+`scenario_dsl.py` (TRIG1 = 25 and the NO prelude already work in `dt2.json`). (3) Generate `tests/scenarios/dt2-trackfx.json`
 (BR, SRR, overdrive, delay, reverb, chorus sweeps on a card sample, so the DSP is loaded) and `dt2-sendfx.json` (send
 FX and master). (4) Run them on the card's ready state (`--card-image`, as `aot_fxprof.py --dt2-card` now does;
 `coupled.py scenario --device dt2` has no card option yet). (5) Profile with `aot_fxprof.py --device dt2 --dt2-card`,
@@ -1033,7 +1033,7 @@ Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), the one-sample card 
 promoted). Two lanes' work on one machine: load average 3 to 130 during the runs, so every timing is a paired A/B.
 Not re-checked by a second agent.
 
-**Scenarios.** `scenarios/dt2-trackfx.json` (25) and `dt2-sendfx.json` (35), generator `tools/emulator/gen_dt2fx.py`, same names and
+**Scenarios.** `tests/scenarios/dt2-trackfx.json` (25) and `dt2-sendfx.json` (35), generator `tools/emulator/gen_dt2fx.py`, same names and
 layout as the DN2 files (`tf-*`, `sf-*`) so `tools/emulator/fxcheck.py` (`configure("dt2")`: F0 1 kHz, Sound array
 `*0x8000470c+0x14:142`, Fx array `*0x80004708:142`) and `tests/scenarios/conftest.py` (`--device dt2`) read them. The
 panel is the DN2's (finding 03, "DT2 1.16 FX pages"). Each run is 2 to 4 audio s: NO prelude, a 56-slot sweep (1M

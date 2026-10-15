@@ -658,7 +658,7 @@ Regenerated 2026-10-08 (same block sets as before: DN2 1751 blocks, DT2 1202):
 the shared core, then the DN2 and DT2 per-firmware cores (previous cores in
 `gen-pre-6b-20261008`). `dt2_sample_check` still reports a clean tone.
 
-Measured with `scenarios/dn2-fx.json` (`fx-dry-tap` is the reference), 48 kHz,
+Measured with `tests/scenarios/dn2-fx.json` (`fx-dry-tap` is the reference), 48 kHz,
 note held 0.30..0.60 s: the delay is audible now. `fx-del-127` is identical to
 dry while the note plays (the dry path is untouched) and the first echo arrives
 at +0.96 s (onset 1.26 s) at about the dry level (-29 dB). Later repeats start
@@ -671,7 +671,7 @@ from the later 0.38 s, so the repeat pattern is not yet explained. **[O]**
 DN2 scenario pins after the fix: only the two scenarios that hit the fixed forms
 moved. `trig1-taps` `d60ad339` -> `e0e6c8af` (rms 0.01038 -> 0.01007, -3 %),
 `kb-chord16` (unpinned) `e0964600` -> `6d97fd57` (rms 0.10607 -> 0.10178,
--4 %). The `trig1-taps` pin in `scenarios/dn2.json` is not updated yet.
+-4 %). The `trig1-taps` pin in `tests/scenarios/dn2.json` is not updated yet.
 
 Second check, 2026-10-08: an independent agent confirmed the manual
 statements in the SHARC+ Core Programming Reference:
@@ -686,7 +686,7 @@ statements in the SHARC+ Core Programming Reference:
 
 It also matched the implementation against them, and decoded 0xb840d2,
 0xb84225 and 0xb84228 from the DN2 1.11 image as stated above. The
-track-FX sweep (`scenarios/dn2-trackfx.json`, `tools/emulator/fxcheck.py`) then
+track-FX sweep (`tests/scenarios/dn2-trackfx.json`, `tools/emulator/fxcheck.py`) then
 measured the delay with the fix: echoes 0.375 s apart, each about 6 dB
 quieter than the one before.
 
@@ -704,7 +704,7 @@ failure does not come from this change.
 
 ## DN2 1.11 send FX pages swept against expected behaviour (2026-10-08)
 
-Scenarios `scenarios/dn2-sendfx.json` (`tools/emulator/gen_sendfx.py`), measures
+Scenarios `tests/scenarios/dn2-sendfx.json` (`tools/emulator/gen_sendfx.py`), measures
 `tools/emulator/fxcheck.py` (`sf-*`), runs `out/runs/sendfx/run1..run3`. All **[D]**:
 one run, not yet compared with a device.
 

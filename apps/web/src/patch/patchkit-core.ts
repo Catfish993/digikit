@@ -1,4 +1,4 @@
-// A thin, host-neutral wrapper over patchkit.wasm (packages/emulator/patchkit/src/wasm.rs). Used by the patch
+// A thin, host-neutral wrapper over patchkit.wasm (packages/patchkit/src/wasm.rs). Used by the patch
 // worker in the browser and by the node tests, so both run the same code. Everything stays in memory:
 // the firmware is never sent anywhere. Written without TS-only runtime syntax so node can import it.
 

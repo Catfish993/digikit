@@ -19,7 +19,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 sweep = pytest.mark.sweep
-SCENARIOS = REPO_ROOT / "scenarios"
+SCENARIOS = REPO_ROOT / "tests" / "scenarios"
 
 # --- scenario sets ------------------------------------------------------------
 

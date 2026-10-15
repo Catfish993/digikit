@@ -48,7 +48,7 @@ TOOLCHAIN = "1.98.1"
 TRIPLE = "aarch64-apple-darwin"
 PGO_FLAGS = "-Cprofile-use={profdata}"
 READY = digi_env.READY
-SCENARIO_FILE = ROOT / "scenarios" / "dn2.json"
+SCENARIO_FILE = ROOT / "tests" / "scenarios" / "dn2.json"
 RUNS_DIR = ROOT / "out" / "native" / "runs"
 PROD_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen"
 GENERIC_GEN = ROOT / "out" / "native" / "dn2-audio" / "gen-generic"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builders for scenario event lists (scenarios/README.md), DN2/DT2 panel codes.
+"""Builders for scenario event lists (tests/scenarios/README.md), DN2/DT2 panel codes.
 
     tl = Timeline()
     open_page(tl, FX_PAGE)                      # button down at 1M, up at 3M

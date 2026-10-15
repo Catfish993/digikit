@@ -3,7 +3,7 @@ card (a 1 kHz sine, 1 s; tools/emulator/dt2_sample_check.py): run with ``--devic
 
     uv run python -m pytest tests/scenarios/test_dt2_fx.py --device dt2 --slow --sweep
 
-Scenarios are scenarios/dt2-trackfx.json and dt2-sendfx.json (tools/emulator/gen_dt2fx.py).
+Scenarios are tests/scenarios/dt2-trackfx.json and dt2-sendfx.json (tools/emulator/gen_dt2fx.py).
 Each is checked twice: the read-back of the live Sound and Fx arrays (the intended
 parameter reached its value, nothing else changed) and a relationship of the
 audio against the dry reference or against its neighbours in the sweep (the
@@ -23,7 +23,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 sweep = pytest.mark.sweep
-SCENARIOS = REPO_ROOT / "scenarios"
+SCENARIOS = REPO_ROOT / "tests" / "scenarios"
 
 TF_FAST = (
     "tf-dry-hold", "tf-dry-tap", "tf-dry-flt",

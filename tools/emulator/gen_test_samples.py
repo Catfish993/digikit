@@ -2,7 +2,7 @@
 """Generate the two synthetic test WAVs used by tools/firmware/plusdrive.py's tests
 and by an emulator +Drive image, into samples/.
 
-Nothing under samples/*.wav is committed (see samples/README.md) -- these
+Nothing under samples/*.wav is committed (see docs/SAMPLES.md) -- these
 are small, fully synthetic, and regenerated on demand instead:
 
     uv run python -m tools.emulator.gen_test_samples

@@ -1,14 +1,15 @@
-# samples/
+# Samples for the emulated +Drive
 
-WAV files here become the emulated Digitakt II's +Drive: `tools/firmware/plusdrive.py
+Put WAV files in a local `samples/` directory at the repository root (ignored by git; create it if it is missing).
+WAV files there become the emulated Digitakt II's +Drive: `tools/firmware/plusdrive.py
 build samples/ -o out/plusdrive/dt2.img` reads every `.wav` file directly in
 this folder (not recursively) and writes them into a card image in the
 firmware's own +Drive filesystem format
 (`docs/findings/14-plus-drive-format.md`), which the emulator can then boot
 from (`--card-image out/plusdrive/dt2.img` on the runners that accept it).
 
-**No `.wav` file in this folder is committed** (`.gitignore` excludes
-`samples/*.wav`), including the two test files below -- generate them
+**Nothing in `samples/` is committed** (`.gitignore` excludes the
+directory), including the two test files below -- generate them
 instead of expecting them to already be here:
 
 ```
@@ -35,5 +36,3 @@ Unless `--no-project` is given, the image also carries an active project (the
 firmware's built-in one, taken from `out/sections/dt2-1.16/` at build time)
 whose sample references all point at the first file in name order, so the
 firmware loads that file into every track's slot at boot with no UI.
-`uv run python tools/plusdrive_check.py IMAGE` checks an image against the
-firmware's own mount, project decode and sample loader.

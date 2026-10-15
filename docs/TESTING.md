@@ -19,7 +19,7 @@ tests live with their code.
 | `tests/firmware` | `.syx` container, aPLib/ELZ, device profiles, firmware atlas, snapshots, machine patch planning, +Drive format | `dt2/`, `emu/` |
 | `tests/dsp` | DSP maps and diffs, FX scenario generators, audio checks | DSP tools |
 | `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/devtools/verify.py`, `tools/devtools/benchlock.py`, `tools/devtools/test_outcomes.py` |
-| `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenarios:*`. | `scenarios/`, `tools/emulator/coupled.py` |
+| `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenarios:*`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
 | `tests/support` | Helpers shared by tests. No `test_` prefix, not collected. `tests/support/paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS`. | |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures | |
 

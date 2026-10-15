@@ -354,7 +354,7 @@ def use_dt2(args) -> None:
         "DSP state": ready / "digi-audio-m5.snap.dsp",
         "CF snapshot": ready / "digi-audio-m5.snap",
     }
-    extra = ["--scenarios", str(args.scenarios or ROOT / "scenarios/dt2.json")]
+    extra = ["--scenarios", str(args.scenarios or ROOT / "tests/scenarios/dt2.json")]
     if args.card_image:
         extra += ["--card-image", args.card_image]
     coupled.inputs = lambda: inputs

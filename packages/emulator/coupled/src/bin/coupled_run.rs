@@ -46,7 +46,7 @@
 //! chunk that follows, so a run is a function of its inputs; with `exact_events` the
 //! chunk is shortened so an `at_instr` event fires at exactly that count. `qa_script` also plays
 //! the shared QA sequence of `packages/emulator/boot/examples/common` (NO, NO, encoder A).
-//! The default scenarios are `scenarios/dn2.json`.
+//! The default scenarios are `tests/scenarios/dn2.json`.
 
 use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,

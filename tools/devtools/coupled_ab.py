@@ -8,7 +8,7 @@ is rebuilt in place). Default config: the fast tier and the AOT core, as
 scenario's PCM hash against the file's pin (or against the first run).
 
     uv run python -m tools.devtools.coupled_ab A=BIN_A B=BIN_B -s trig1-taps -s tf-br-127 \\
-        [--pairs 6] [--scenarios scenarios/dn2-trackfx.json] [--out OUT.json]
+        [--pairs 6] [--scenarios tests/scenarios/dn2-trackfx.json] [--out OUT.json]
     uv run python -m tools.devtools.coupled_ab A=BIN --pairs 5 -s trig1-taps     # one binary: N runs
 
 The report prints, per scenario and binary, the median DSP CPU per audio s

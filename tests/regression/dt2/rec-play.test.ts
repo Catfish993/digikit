@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { golden } from "@digi/test-support";
 import { armFreeRegionGuard, expectNoGuardHits, withSession } from "../support.ts";
 
-// Replays scenarios/dt2.json "dt2-rec-play" (exact_events: events land at their at_instr). The reference is
+// Replays tests/scenarios/dt2.json "dt2-rec-play" (exact_events: events land at their at_instr). The reference is
 // `coupled-run --dsp zero --trace` on the same scenario (out/c4/proof-B.json trace).
 const GOLDENS = path.join(import.meta.dirname, "..", "goldens", "dt2-1.16.json");
 const TOTAL = 792_000_000; // 6 s
@@ -19,7 +19,7 @@ describe("dt2 rec-play", () => {
     await c.restart(true);
     await armFreeRegionGuard(session);
 
-    const scenario = (await import("../../../scenarios/dt2.json", { with: { type: "json" } })).default as {
+    const scenario = (await import("../../scenarios/dt2.json", { with: { type: "json" } })).default as {
       scenarios: { name: string; events: { at_instr: number }[] }[];
     };
     const events = scenario.scenarios.find((s) => s.name === "dt2-rec-play")!.events;

@@ -30,7 +30,6 @@ CLEAN_CRATES = [
     "device-profile",
     "digiemu-desktop",
     "dt2-firmware-loader",
-    "dt2-native-host",
     "live-audio",
     "patchkit",
     "periph",

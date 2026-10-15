@@ -50,7 +50,7 @@ def test_moved_paths_route() -> None:
     assert "tier-quick" in verify.steps_for(
         ["packages/emulator/sharc-fast-cl/src/lib.rs"]
     )
-    assert "web" in verify.steps_for(["packages/emulator/patchkit/src/lib.rs"])
+    assert "web" in verify.steps_for(["packages/patchkit/src/lib.rs"])
     assert "card" in verify.steps_for(["packages/emulator/plusdrive/src/lib.rs"])
     assert "dt2-tone" in verify.steps_for(["packages/emulator/machine/src/lib.rs"])
 
@@ -93,7 +93,7 @@ def _group(
 ) -> tuple[str, str, list[str], dict[str, float], float]:
     names = [f"{stem}-{i:03d}" for i in range(count)]
     seconds = {n: 4.0 + (i % 3) for i, n in enumerate(names)}
-    return label, f"scenarios/{stem}.json", names, seconds, factor
+    return label, f"tests/scenarios/{stem}.json", names, seconds, factor
 
 
 def test_plan_chunks() -> None:

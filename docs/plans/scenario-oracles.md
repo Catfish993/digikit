@@ -56,7 +56,7 @@ ends:
 
 ## Known facts (with sources)
 
-- Scenario format: `scenarios/README.md`. Events are `button` or
+- Scenario format: `tests/scenarios/README.md`. Events are `button` or
   `turn` (`{"turn": ENCODER, "detents": N}`) at `at_instr` or `at_s`.
   `exact_events` fires at the exact count. No scenario uses `turn` yet.
 - Runner: `packages/emulator/coupled/src/bin/coupled_run.rs`. Report `pcm` and
@@ -156,7 +156,7 @@ Sizes: S = under an hour of agent work, M = one session, L = open-ended.
 ### Phase 1: groundwork (M)
 
 - [x] Fix the stale NO-press notes: descriptions of `trig1-hold`,
-      `trig1-taps` and the scenario at about l.211 in `scenarios/dn2.json`;
+      `trig1-taps` and the scenario at about l.211 in `tests/scenarios/dn2.json`;
       `packages/emulator/README.md` l.155-159 (l.155 also calls `trig1-noqa-40m`
       silent; it sounds, rms 0.60).
 - [ ] Em: does the DT2 "FILE SYSTEM OK" window appear on hardware after
@@ -165,7 +165,7 @@ Sizes: S = under an hour of agent work, M = one session, L = open-ended.
 - [ ] Map encoder numbers and the FX page buttons. Em records one session in
       the desktop app (set delay, reverb, bit and rate reduction), exports
       diagnostics, and `mise run replay FILE` reproduces it. Document the
-      map in `scenarios/README.md`.
+      map in `tests/scenarios/README.md`.
 - [ ] Find the DT2 1.16 addresses of the FX parameters in the live
       kit/track records (`tools/coldfire/cf_names.py`, the cfdb). Add a report field
       to `coupled-run` that reads named addresses at the end of a run
@@ -317,7 +317,7 @@ state.
   "PRESET 1"; finding 02), new card ready state `by-card/1c1fed346ea9`,
   card-less DT2 ready state built at the default path. `tools/emulator/snapread.py`
   reads DT2SNP01. `coupled-run --peek` and `coupled.py scenario --scenarios
-  FILE --peek NAME=SPEC` added; `scenarios/dn2-fx.json` (6 scenarios) and
+  FILE --peek NAME=SPEC` added; `tests/scenarios/dn2-fx.json` (6 scenarios) and
   `tools/emulator/fxcheck.py`. DN2 results (run dir `out/runs/all/20261008-041331/`):
   bit reduction plausible (error and THD grow with the setting; output not
   on a lattice, so the level count cannot confirm it); **delay send produces
@@ -350,7 +350,7 @@ state.
 
 - 2026-10-08 (cont.): send FX sweep (Delay, Reverb, Chorus pages, Master
   compressor): navigation map, laws and verdicts in finding 15 (last
-  section). `tools/emulator/gen_sendfx.py`, `scenarios/dn2-sendfx.json`, `sf-*` measures
+  section). `tools/emulator/gen_sendfx.py`, `tests/scenarios/dn2-sendfx.json`, `sf-*` measures
   in `tools/emulator/fxcheck.py`, three new generic measures in `tools/emulator/audiocheck.py`.
   Runs: `out/runs/sendfx/run1..run3`. Open: Master Overdrive page, routing
   parameters, hardware A/B for feedback gain, mix taper and Width.

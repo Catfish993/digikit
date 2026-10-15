@@ -2996,7 +2996,7 @@ release bit and the per-track fields (no SHARC run).
 
 ## DN2 1.11 TX frame: track blocks and the FX sends (2026-10-08) **[D]**
 
-Measured from `--diag dspi` logs on the `scenarios/dn2-fx.json` scenarios.
+Measured from `--diag dspi` logs on the `tests/scenarios/dn2-fx.json` scenarios.
 This has not been second-checked.
 
 **Sending.** The DN2 vector-191 handler (`0x40025e36`) sends the frame with
@@ -3037,7 +3037,7 @@ handler copies four mirror ranges out of the 0xca-stride mirror row:
   only for the Python cold start.
 
 Audio: the delay send changes nothing in the DN2 output, while the reverb
-send, chorus send, overdrive and SRR do (`scenarios/dn2-fx.json`,
+send, chorus send, overdrive and SRR do (`tests/scenarios/dn2-fx.json`,
 `tools/emulator/fxcheck.py`). **[V]**
 
 ## Parameter path from a UI knob to a frame word the stock DSP ignores (spike 0.7 follow-up) **[D]**

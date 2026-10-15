@@ -44,7 +44,6 @@ root). The directory name is not always the package name; use the package name w
 | `packages/emulator/live` | `live-audio` | Live audio output: SPSC ring, frame repeater, cpal callback. |
 | `packages/emulator/coupled` | `digi-coupled` | The coupled ColdFire + SHARC+ run loop shared by the app and `coupled-run`; the fixture gates. |
 | `packages/emulator/control` | `digi-control` | Controller and control protocol (JSON-RPC over NDJSON); the `digi-emud` daemon. Design: `docs/design/emulator-control.md`. |
-| `packages/emulator/host` | `dt2-native-host` | Offline ColdFire to DSPI2 to SHARC host from the first native lane. Unused: nothing depends on it. |
 | `apps/desktop/src-tauri` | `digiemu-desktop` | The desktop app (Tauri), a thin shell over `digi-control` and `digi-coupled`. |
 
 Left out of the workspace: `.claude/` (agent worktrees live inside the tree and must
@@ -136,7 +135,7 @@ skips the PCM hash and statistics and `--no-link-timing` the per-period and link
 timers (to A/B their cost). Exit code 2 means a gate
 failed (missing blocks, halt, step error, non-finite PCM, wrong expected hash).
 
-### Scenarios (`scenarios/dn2.json`)
+### Scenarios (`tests/scenarios/dn2.json`)
 
 A scenario is a length (`seconds` of audio, or `instructions` of ColdFire) and a
 list of panel events. Times count from the restored ready point: `at_instr` in

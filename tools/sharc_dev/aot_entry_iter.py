@@ -32,21 +32,21 @@ from tools.sharc_dev import aot_fxprof  # noqa: E402
 
 # The DN2 scenarios of the fxprof profile (out/native/dn2-audio/PROVENANCE.txt).
 SCENARIOS = [
-    "scenarios/dn2.json:trig1-taps",
-    "scenarios/dn2.json:kb-chord16",
+    "tests/scenarios/dn2.json:trig1-taps",
+    "tests/scenarios/dn2.json:kb-chord16",
     *(
-        f"scenarios/dn2-trackfx.json:tf-{fx}-127"
+        f"tests/scenarios/dn2-trackfx.json:tf-{fx}-127"
         for fx in ("br", "srr", "over", "del", "rev", "chr")
     ),
-    "scenarios/dn2-sendfx.json:sf-del-fb-d127",
-    "scenarios/dn2-sendfx.json:sf-rev-decay-u20",
-    "scenarios/dn2-sendfx.json:sf-chr-depth-d127",
-    "scenarios/dn2-sendfx.json:sf-mst-thr0",
+    "tests/scenarios/dn2-sendfx.json:sf-del-fb-d127",
+    "tests/scenarios/dn2-sendfx.json:sf-rev-decay-u20",
+    "tests/scenarios/dn2-sendfx.json:sf-chr-depth-d127",
+    "tests/scenarios/dn2-sendfx.json:sf-mst-thr0",
 ]
 
 
 # The DT2 scenario (one-sample card, tools/emulator/dt2_sample_check.py).
-DT2_SCENARIOS = ["scenarios/dt2.json:dt2-sample-trig"]
+DT2_SCENARIOS = ["tests/scenarios/dt2.json:dt2-sample-trig"]
 
 
 def read_entries(path: pathlib.Path) -> dict[str, int]:

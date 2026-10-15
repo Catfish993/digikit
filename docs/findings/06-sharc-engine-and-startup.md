@@ -5259,7 +5259,7 @@ open point below). **[D]**
 |---|---|---|
 | appended block | 727,540 bytes at `0x2001ab7c` | 211,600 bytes at `0x2008823c` |
 | present at the ready state | yes, byte exact (`dsp.peek`; DN2 checked at ready) | yes |
-| scenarios run with it | 5 (`scenarios/dt2.json`) | 10 (`scenarios/dn2.json`) |
+| scenarios run with it | 5 (`tests/scenarios/dt2.json`) | 10 (`tests/scenarios/dn2.json`) |
 | canary after each scenario | intact (SHA-256 of the range equal) | intact |
 | PCM against the same ready built without the block | equal in all 5 | equal in all 10 |
 
@@ -5448,7 +5448,7 @@ code can be placed, run and verified; the rest is mapping.
 The emulator flattens the block list (`sharcldr.LoadedMemory`, `dsp_stream.rs`) and never runs the boot ROM, and its
 parsers stop silently at the first bad header. Rules below come from the public ADSP-2156x Hardware Reference
 (`out/refs/adsp-2156x-hwr`, chapter 40, printed pages "HWR 40-nn"); `tools/sharc_dev/sharc_bootcheck.py` applies them to a
-stream (rule ids H1 to H13, S1 in its docstring), `packages/emulator/patchkit/src/bootrom.rs` is the Rust port of the error
+stream (rule ids H1 to H13, S1 in its docstring), `packages/patchkit/src/bootrom.rs` is the Rust port of the error
 rules. Marks: ROM = stated by the manual, CONV = not stated as a ROM check but true of every stock stream. A second agent
 verified **[V]** rules H1, H2, H3, H4/H5, H8, H9 and H12.
 

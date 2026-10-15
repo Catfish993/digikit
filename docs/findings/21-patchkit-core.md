@@ -1,6 +1,6 @@
 # 21. patchkit core: codec, ports, linker, expansion loader, wasm
 
-Plan: `docs/plans/patchkit.md` (Phase 1). Code: `packages/emulator/patchkit`, `tools/patchkit/pk_build.py`, `tools/patchkit/port_resolve.py`,
+Plan: `docs/plans/patchkit.md` (Phase 1). Code: `packages/patchkit`, `tools/patchkit/pk_build.py`, `tools/patchkit/port_resolve.py`,
 `tools/patchkit/patchkit.py`, `modules/`, `devices/ports/`. Marks as in AGENTS.md. Nothing here has been checked by a
 second agent, so it is **[D]** (measured here once). No patched image has been flashed to hardware.
 
@@ -18,7 +18,7 @@ patched section differs from stock only in that section, the table and the check
 
 ## aPLib packer in Rust equals the Python packer **[D]**
 
-`packages/emulator/patchkit/src/aplib.rs` is a line-for-line port of `tools/firmware/aplibpack.py` (same hash chains, same cost
+`packages/patchkit/src/aplib.rs` is a line-for-line port of `tools/firmware/aplibpack.py` (same hash chains, same cost
 model, same tie breaks). `tools/patchkit/pk_aplib_eq.py` packs every packed section (2, 3, 7, 8) of the four firmwares with
 both and compares the stored bytes: 16 of 16 equal. Rust takes 1.0 s for MAIN OS where Python takes 24 to 27 s.
 

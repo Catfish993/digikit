@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Does the DSP ignore a TX-frame word? A/B of scenario PCM with DSP_FRAME_POKE.
 
-    uv run python -m tools.emulator.frame_poke_ab dt2 --file scenarios/dt2-sendfx.json \\
+    uv run python -m tools.emulator.frame_poke_ab dt2 --file tests/scenarios/dt2-sendfx.json \\
         --scenario sf-del-ref --scenario sf-rev-ref --poke 0x6f8=0x7f00 --poke 0x6f8=0
 
 Each scenario runs unpatched and once per --poke (OFF=VAL[/TRACKS], see DSP_FRAME_POKE in

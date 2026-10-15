@@ -41,7 +41,7 @@ state and next steps, not results.
 - New Python files join the ruff `CLEAN` list in `tests/devtools/test_lint.py`, and the mypy
   `TYPED` list in `tests/devtools/test_types.py` where practical.
 - Python tools go in the owner's package under `tools/` (docs/LAYOUT.md); run them with `uv run python -m tools.<owner>.<module>` and never change `sys.path`.
-- PCM pins in `scenarios/*.json` and the SHARC golden hashes change only with the
+- PCM pins in `tests/scenarios/*.json` and the SHARC golden hashes change only with the
   maintainer's approval and a stated reason.
 
 ## Hardware

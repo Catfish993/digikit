@@ -71,7 +71,7 @@ description = "Headless Chrome throughput bench of the coupled browser core (nee
 run = "node tools/devtools/wasm_parity.mjs --scenario"
 description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run web:parity trig1-tap-release"
 
-# --- scenarios (scenarios/README.md) ---
+# --- scenarios (tests/scenarios/README.md) ---
 
 [tasks."scenario:build"]
 run = "uv run python -m tools.emulator.coupled build"
