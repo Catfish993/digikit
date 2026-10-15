@@ -38,9 +38,13 @@ FLOAT_FORWARD = 1
 # a move of the result to a register outside the PE: 1.
 FLOAT_TO_MOVE = 1
 # Table 4-35 (p. 4-64): conflict-cache miss on a PM data access: 1; two accesses to the same L1 block in one cycle: 1
-# (block arbitration, printed p. 7-13: the instruction "may take two or three core clock cycles").
+# (block arbitration, printed p. 7-14: the instruction "may take two or three core clock cycles").
 PM_CONFLICT_MISS = 1
-SAME_BLOCK = (0, 1, 2)
+SAME_BLOCK = (
+    1,
+    1,
+    2,
+)  # Table 4-35: 1; the arbitration text allows two or three cycles for the instruction
 CONFLICT_CACHE_ENTRIES = (
     32  # 16 sets x 2 ways (p. 4-49 "Instruction Data Bus Conflicts")
 )
@@ -58,7 +62,6 @@ COND_MISPREDICT_NOT_PREDICTED = (
     11,
     9,
 )  # predicted not taken, was taken: Table 4-4, 11/9
-COND_MISPREDICT = (11, 10)  # the mean of the two for a delayed branch
 COND_TAKEN_NO_BTB = (11, 9)  # Table 4-39 row 2 and Table 4-4: without a BTB hit
 RTI_FLUSH = (
     7  # p. 4-67 footnote ** ("RTI (DB) and RTI cause 7 cycles of pipeline flush")
@@ -77,8 +80,10 @@ BTB_SETS = 128
 # Caches (SHL1C_CFG, printed pp. 32-2 to 32-4, and "L1 Cache Controller", chapter 8).
 ICACHE_BYTES = 16 * 1024  # SHL1C_CFG.ICASIZ = 0 selects 128 Kbit
 ICACHE_WAYS = 2
-ICACHE_LINE = 32  # "last five bits of the range register must be 0 for the instruction cache" (p. 8-9)
-DCACHE_BYTES = 16 * 1024
+ICACHE_LINE = 64  # Table 8-1 (p. 8-1): "Line size 512 bits"; the p. 8-9 five zero bits are short-word address bits (32 x 2 B)
+DCACHE_BYTES = (
+    16 * 1024
+)  # per cache: two data caches per core, DM and PM (p. 8-7, DMCASIZ and PMCASIZ), same size assumed
 DCACHE_WAYS = 2
 DCACHE_LINE = 64  # Table 8-3: a six-bit offset
 
@@ -132,6 +137,20 @@ class Ins:
         return not self.always
 
     @property
+    def is_multiplier(self) -> bool:
+        """A multiplier operation (fixed or floating point): `*` in the compute field."""
+        return "*" in self.text
+
+    @property
+    def is_rti(self) -> bool:
+        """RTI or RTI (DB): text, or an undecoded Type 11a/11c with the x bit (RTS is 0, RTI is 1)."""
+        return bool(RTI_TEXT.search(self.text))
+
+    @property
+    def is_idle(self) -> bool:
+        return bool(IDLE_TEXT.search(self.text))
+
+    @property
     def is_float(self) -> bool:
         """A floating-point compute: a destination written as Fn."""
         return bool(FLOAT_DEST.search(self.text))
@@ -141,6 +160,8 @@ class Ins:
 
 
 FLOAT_DEST = re.compile(r"\bF\d+\s*=")
+RTI_TEXT = re.compile(r"\bRTI\b|^\[11[ac]\].*\bx=0x1\b")
+IDLE_TEXT = re.compile(r"\bIDLE\b")
 DAG_REG = re.compile(r"^[IMBL]\d+$")
 SYS_REG_DEST = re.compile(
     r"^(?:[IMBL]\d+|USTAT\d|MODE\d|FLAGS|PX\d?|LCNTR|CCNTR|ASTAT[XY]|STKY[XY]|IMASK\w*|IRPTL)$"
@@ -184,9 +205,9 @@ def float_forward(prev: Ins, cur: Ins) -> Cost:
 
 
 def float_to_move(prev: Ins, cur: Ins) -> Cost:
-    """Table 4-43 row 1: a float compute followed by a move of the result to a register outside the PE
-    (a DAG, system or program-control register): 1 stall."""
-    if not prev.is_float:
+    """Table 4-43 row 1: a float compute or any multiplier operation (fixed point too) followed by a move of the
+    result to a register outside the PE (a DAG, system or program-control register): 1 stall."""
+    if not (prev.is_float or prev.is_multiplier):
         return ZERO
     dest = prev.writes(("compute",))
     for r, k in cur.defs:
@@ -231,7 +252,7 @@ def loop_exit_cost(
     ins: Ins, body_insns: int, has_cof_in_tail: bool, iterations: float, executions: int
 ) -> Cost:
     """Table 4-41 and p. 4-35, 4-37: counter loops run F1-active (no cost) unless the last eleven instructions of
-    the body hold a change of flow or the loop unrolls to fewer than eleven instructions; arithmetic loops and
+    the body hold a change of flow or an IDLE, or the loop unrolls to fewer than eleven instructions; arithmetic loops and
     E2-active loops flush on termination (11). Low: every counter loop F1-active; nominal: the rule above; high:
     every loop E2-active."""
     e = executions

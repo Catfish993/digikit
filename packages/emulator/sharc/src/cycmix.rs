@@ -6,8 +6,8 @@
 //! from the program database; without it only the per-PC counts and pairs are written.
 //!
 //! Besides the counts the profile simulates, online, three structures whose hit rates depend on the order of
-//! execution: the 2-way L1 instruction cache for code in L2 (line 32 bytes), the 2-way data cache for L2 and
-//! external data (line 64 bytes), each at 16, 32 and 64 KB, and the branch target buffer (128 sets x 2 ways,
+//! execution: the 2-way L1 instruction cache for code in L2 (line 64 bytes, PRM Table 8-1: 512 bits), the two 2-way data
+//! caches (DM, kind `d`, and PM, kind `p`; PRM p. 8-7) for L2 and external data (line 64 bytes), each at 16, 32 and 64 KB, and the branch target buffer (128 sets x 2 ways,
 //! set = low seven bits of the short-word PC, 2-bit counter, LRU). Sizes and indexing are the manual's where it
 //! gives them and assumptions where it does not (see tools/sharc_dev/sharc_timing.py).
 //!
@@ -18,7 +18,7 @@
 //! Output lines (tab separated): `P pc count`, `T from to count` (every executed
 //! instruction pair, previous PC -> this PC), `M pc slot b0..b7` (data accesses by address
 //! bucket, see `bucket`), `S pc n` (instructions whose two accesses fell in the same bucket),
-//! `C kind KB accesses misses` (kind i or d), `B pc n taken hit_t hit_n mis_pt mis_pn miss_t miss_n` (branch
+//! `C kind KB accesses misses` (kind i, d for DM or p for PM), `B pc n taken hit_t hit_n mis_pt mis_pn miss_t miss_n` (branch
 //! outcomes against the BTB), `U pc raw>>16 n` (accesses that no bucket claims), `L pc slot n` (L2/external accesses whose
 //! 64-byte line differs from the previous access of the same instruction slot), `R raw>>20 n`
 //! (L2/external accesses by 1 MiB region), `I lo hi head` (the idle-skip window).
@@ -94,6 +94,7 @@ pub struct CycMix {
     spec: HashMap<u32, Spec>,
     icache: Vec<(u32, SetAssoc)>,
     dcache: Vec<(u32, SetAssoc)>,
+    pcache: Vec<(u32, SetAssoc)>,
     btb: Btb,
     branches: HashMap<u32, [u64; 8]>,
     pending: Option<Pending>,
@@ -168,9 +169,13 @@ impl CycMix {
             spec,
             icache: [16u32, 32, 64]
                 .iter()
-                .map(|k| (*k, SetAssoc::new(k * 1024, 32)))
+                .map(|k| (*k, SetAssoc::new(k * 1024, 64)))
                 .collect(),
             dcache: [16u32, 32, 64]
+                .iter()
+                .map(|k| (*k, SetAssoc::new(k * 1024, 64)))
+                .collect(),
+            pcache: [16u32, 32, 64]
                 .iter()
                 .map(|k| (*k, SetAssoc::new(k * 1024, 64)))
                 .collect(),
@@ -261,8 +266,8 @@ impl CycMix {
             return;
         };
         if (0xb80000..0xc0c000).contains(&pc) {
-            let first = pc * 2 / 32;
-            let last = (pc * 2 + spec.nbytes as u32 - 1) / 32;
+            let first = pc * 2 / 64;
+            let last = (pc * 2 + spec.nbytes as u32 - 1) / 64;
             if first != self.last_iline {
                 for (_, c) in &mut self.icache {
                     c.access(first);
@@ -309,14 +314,26 @@ impl CycMix {
                 }
                 if b >= 5 && b <= 6 {
                     *self.far.entry(a >> 20).or_default() += 1;
-                    // 64-byte lines: 16 normal words, or 64 bytes.
-                    let line = if a < 0x60000000 { a >> 4 } else { a >> 6 };
+                    // 64-byte lines: 32 short words, 16 normal words, or 64 bytes.
+                    let line = if (0xb80000..0xc0c000).contains(&a) {
+                        a >> 5
+                    } else if a < 0x60000000 {
+                        a >> 4
+                    } else {
+                        a >> 6
+                    };
                     let e = self.lines.entry((pc, k)).or_insert((u32::MAX, 0));
                     if e.0 != line {
                         e.0 = line;
                         e.1 += 1;
                     }
-                    for (_, c) in &mut self.dcache {
+                    // DM accesses use I0..I7, PM accesses I8..I15: one data cache each.
+                    let caches = if spec.regs[k] < 8 {
+                        &mut self.dcache
+                    } else {
+                        &mut self.pcache
+                    };
+                    for (_, c) in caches {
                         c.access(line);
                     }
                 }
@@ -374,7 +391,11 @@ impl Drop for CycMix {
         for (hi, n) in v {
             let _ = writeln!(w, "R\t{hi:#x}\t{n}");
         }
-        for (kind, set) in [("i", &self.icache), ("d", &self.dcache)] {
+        for (kind, set) in [
+            ("i", &self.icache),
+            ("d", &self.dcache),
+            ("p", &self.pcache),
+        ] {
             for (kb, c) in set.iter() {
                 let _ = writeln!(w, "C\t{kind}\t{kb}\t{}\t{}", c.accesses, c.misses);
             }

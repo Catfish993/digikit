@@ -212,6 +212,9 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
     ncond = nmis = 0
     for p in branch_pcs:
         ins = insns[p]
+        if ins.is_rti:  # Table 4-40 footnote **: 7 cycles of flush, no BTB
+            acc("branch_uncond", (float(T.RTI_FLUSH * prof.btb[p][1]),) * 3)
+            continue
         acc(
             "branch_cond"
             if ins.conditional or ins.branch == "cond_jump"
@@ -232,6 +235,7 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
         tail = body[-11:]
         cof = any(
             insns[q].branch in ("jump", "call", "return", "indirect", "cond_jump")
+            or insns[q].is_idle
             for q in tail
         )
         executions = prof.counts[p]
@@ -249,7 +253,7 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
     acc("pm_conflict_cache", T.conflict_cache_misses(len(pm_pcs), pm_exec))
     same = sum(v for p, v in prof.same.items() if p in busy_pcs)
     acc("same_block", T.scale(T.SAME_BLOCK, same))
-    # instruction fetch from L2 through the I-cache (engine side: 2 ways, 32-byte lines)
+    # instruction fetch from L2 through the I-cache (engine side: 2 ways, 64-byte lines)
     ic = {kb: m for (k, kb), m in prof.cache.items() if k == "i"}
     res["icache"] = {
         "accesses_per_block": {kb: a / blocks for kb, (a, _) in ic.items()},
@@ -266,7 +270,12 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
             far["l2"] += slot[5]
             far["ext"] += slot[6]
             far["mmr"] += slot[7]
-    dc = {kb: m for (k, kb), m in prof.cache.items() if k == "d"}
+    # two data caches per core, DM ("d") and PM ("p"), 16 KB each assumed
+    dc: dict[int, tuple[int, int]] = {}
+    for (k, kb), (a, m) in prof.cache.items():
+        if k in ("d", "p"):
+            da, dm = dc.get(kb, (0, 0))
+            dc[kb] = (da + a, dm + m)
     d_acc, d_miss = dc.get(16, (0, 0))
     share_ext = far["ext"] / max(1, far["l2"] + far["ext"])
     far["accesses"] = d_acc
@@ -274,6 +283,8 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
     res["dcache"] = {
         "accesses_per_block": {kb: a / blocks for kb, (a, _) in dc.items()},
         "misses_per_block": {kb: m / blocks for kb, (_, m) in dc.items()},
+        "misses_16kb_dm": prof.cache.get(("d", 16), (0, 0))[1] / blocks,
+        "misses_16kb_pm": prof.cache.get(("p", 16), (0, 0))[1] / blocks,
     }
     # high: each miss may also write a dirty line back (two line transfers)
     acc(

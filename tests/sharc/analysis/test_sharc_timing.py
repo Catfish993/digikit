@@ -97,3 +97,21 @@ def test_regions():
     assert t.region_of_pc(0x1C4ECF) == "l1"
     assert t.region_of_pc(0xB80239) == "l2"
     assert t.region_of_pc(0x400000) == "other"
+
+
+def test_check_fixes():
+    # Table 8-1: the L1 instruction cache line is 512 bits.
+    assert t.ICACHE_LINE == 64
+    # Table 4-43 row 1 also counts a fixed-point multiplier result moved outside the PE.
+    mul = ins(0x100, "R1 = R2 * R3 (SSI)", defs=[("R1", "compute")], uses=["R2", "R3"])
+    mv = ins(0x103, "I0 = R1", defs=[("I0", "move")], uses=["R1"])
+    assert t.float_to_move(mul, mv) == (1.0, 1.0, 1.0)
+    add = ins(0x100, "R1 = R2 + R3", defs=[("R1", "compute")], uses=["R2", "R3"])
+    assert t.float_to_move(add, mv) == t.ZERO
+    # RTI and IDLE are recognised from the text, an undecoded 11a/11c return by its x bit.
+    assert ins(0x100, "RTI (DB)").is_rti
+    assert ins(0x100, "[11c] cond=0x1f j=0x1 lr=0x0 x=0x1").is_rti
+    assert not ins(0x100, "[11c] cond=0x1f j=0x1 lr=0x0 x=0x0").is_rti
+    assert ins(0x100, "IDLE").is_idle
+    assert t.RTI_FLUSH == 7
+    assert t.SAME_BLOCK == (1, 1, 2)
