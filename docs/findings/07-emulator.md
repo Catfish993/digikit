@@ -6866,3 +6866,25 @@ that forgets a cache flush after writing code at run time works here and could f
 it runs before the caches are enabled; a module that writes code later must use the firmware's own flush or write it
 before enabling).
 
+## Zero DSP replies for UI scenarios (2026-10-15) **[D]**
+
+- The ColdFire ignores the DSPI2 replies in UI use. Scenario `dt2-rec-play` (DT2 1.16: NO, RECORD, trigs 1/5/9/13,
+  RECORD, PLAY; 6 s of guest time, 3183 chunks of 250k instructions) was run two ways: coupled with the SHARC, and
+  restored from the same ColdFire ready snapshot with SSI paced (`enable_ssi_diagnostic(96_000)`) and zero replies (the
+  default `ZeroPeer`). The per-chunk traces are identical: pc, ready, framebuffer hash, LEDs, RGB, mainloop hits, CPU
+  state, error. The DSPI2 TX stream is byte-equal (9048 frames).
+- Real SHARC replies: all frames are nonzero, but only 36 of 2748 byte offsets are ever nonzero and 4 of them change
+  (2, 3, 0xa9c, 0xa9d). There are 13 distinct payloads.
+- Without SSI pacing the UI does not progress normally (4 distinct screens instead of 12), so the zero mode keeps SSI
+  paced.
+- Cost: SHARC mode 0.94x real time (6.4 s wall; the coupled-run took 141 s on a loaded machine). Zero mode 2.2x real
+  time (2.8 to 2.9 s). ColdFire-only without SSI is about 17x but not behaviour-equivalent. Snapshot restore takes 0.2
+  to 0.4 s.
+- Tools: `coupled-run --dsp zero --cf-snapshot SNAP [--trace]` and `digi-emud --dsp zero --cf-snapshot SNAP`. Scenario
+  `seconds` and `at_s` map to instructions at 132,000,000 per second (one instruction per 132 MHz tick; 88,000 per
+  DSPI2 frame at 1500 Hz).
+- Use: UI and behaviour regression scenarios. PCM is not produced.
+
+Open **[O]**: other scenarios (sample browsing, kit load, MIDI) are not yet compared. A DT2 card loaded in zero mode is
+built, but its mount in the running firmware is not yet checked.
+
