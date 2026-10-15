@@ -5,6 +5,8 @@
 
 mod common;
 mod diagnostics;
+#[allow(dead_code, reason = "shared with the library; the CLI never sets guards")]
+mod guard;
 
 use common::*;
 use diagnostics::*;

@@ -64,7 +64,8 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `input.tap` | `tap` | `tap` |
 | `input.schedule` | `schedule` | `call` |
 | `inputs.recorded` | `recorded` | `call` |
-| `framebuffer.get` | `frame`, `frame_png` | `frame` |
+| `framebuffer.get` | `frame`, `frame_png`, `frame_hash` | `frame` |
+| `leds.get` | `leds` | `call` |
 | `mem.cf.peek`, `mem.cf.poke` | `peek32`, `poke32` | `call` |
 | `card.overlay`, `card.load`, `card.status`, `card.cancel` | | `call` |
 | `watchdog.config` | `watchdog` | `call` |
@@ -75,15 +76,37 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `cf.profile` | | `call`; only with the `cf-profile` feature |
 | `dsp.peek` | `dsp_peek` | `call` |
 | `dsp.patch` | `patch` | `call` |
+| `guard.set`, `guard.report`, `guard.clear` | | `call` |
 | `events.subscribe` | `events`, `subscribe`, `drain_events` | `events` |
 | `quit` | `quit` | `quit` |
+
+`framebuffer.get {hash?, data?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
+(the bytes `data_b64` carries; the hash the patchkit smoke goldens use); `data: false` omits `data_b64`.
+
+`leds.get` returns `{led_revision, leds, rgb}`: `leds` is 128 hex digits (64 LED values), `rgb` 384 hex digits
+(64 x r, g, b) or null until any is set. It reads the emulator's current state and does not consume it from the UI.
+
+`--dsp zero --cf-snapshot FILE` (on `digi-emud` and the app) starts without a DSP: SSI paced, the DSPI2 peer
+answers zeros, the ColdFire state restored from the snapshot (about 2.2x real time). `status.dsp` is `"zero"`,
+`"sharc"` or `"none"`. `run_until {frames|audio_s}` is refused (no DSP session); `elapsed`, `icount` and `step`
+work. No PCM is produced.
+
+`guard.set {protect: [{lo, hi, label}], allow_pc: [{lo, hi}]}` arms write-range guards (addresses are integers or
+`"0x..."` strings, `hi` exclusive; an empty `protect` disarms). A ColdFire store (8, 16 or 32 bit) that overlaps a
+protected range while the PC is outside every `allow_pc` range is a hit. `guard.report` returns `{total, hits}`
+(the first 64 hits: `pc`, `addr`, `size`, `label`, `icount`); `guard.clear` forgets the hits and keeps the guards.
+`status.cf.guard_hits` is the total. The `guard` event is sent once per protected range on its first hit (`label`,
+`pc`, `addr`, `size`, `hit_icount`, `total`). The run is never stopped. Armed guards turn off the fused-loop and
+reset-clear shortcuts. Not checked: eDMA and other peripheral writes, and host writes (`mem.cf.poke`, card load,
+`dsp.patch`). `coupled-run --guard FILE.json` takes the same object and adds `guard: {total, hits}` and the gate
+`guard_ok` to the scenario report.
 
 `pcm.tap` needs the coupled-audio build and a DSP session. `capture` and `capture_stop` have no wrapper.
 
 ## Events
 
 `halt`, `stall.end`, `underrun`, `session.changed`, `scenario.done`, `firmware.loaded` (`ok`, `seconds`), `mode`,
-`card.started`, `card.ready`, `card.error`.
+`guard`, `card.started`, `card.ready`, `card.error`.
 
 ## Error codes
 

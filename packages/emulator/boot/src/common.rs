@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, VecDeque};
 use coldfire::{Bus, BusError, Cpu, InterruptPolicy};
 use machine::{Board, SemaphoreAddresses, Time};
 use serde::Serialize;
+
+use crate::guard::WriteGuards;
 use sha2::{Digest, Sha256};
 
 pub(crate) const MAIN_LOAD: u32 = 0x4000_0400;
@@ -502,6 +504,8 @@ pub(crate) struct LoggingBus<const TRACE: bool = true> {
     pub(crate) last_cmdarg: u32,
     pub(crate) command_trace: Vec<(u64, u32, u32, u32)>,
     pub(crate) gpio_trace: Vec<(u64, u32, &'static str, u32)>,
+    /// Write-range guards; empty (the default) costs one branch per store.
+    pub(crate) guards: WriteGuards,
 }
 impl<const TRACE: bool> LoggingBus<TRACE> {
     pub(crate) fn new(
@@ -533,6 +537,7 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
             last_cmdarg: 0,
             command_trace: Vec::new(),
             gpio_trace: Vec::new(),
+            guards: WriteGuards::default(),
         }
     }
 
@@ -641,6 +646,15 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
         });
         true
     }
+    /// Record a CPU store that overlaps a protected range from outside the
+    /// allowed-writer PC ranges (see `WriteGuards`).
+    #[inline(always)]
+    fn note_guard_write(&mut self, addr: u32, size: u8) {
+        if !self.guards.is_empty() {
+            self.guards
+                .note(self.current_pc, addr, size, self.current_icount);
+        }
+    }
     #[inline]
     fn note_timer_write(&mut self, addr: u32, size: u8, value: u32) {
         if TRACE && Time::owns(addr) && self.timer_writes.len() < 64 {
@@ -687,7 +701,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     /// A traced bus records every access per instruction: never plain.
     #[inline]
     fn plain_ram(&self, addr: u32, len: u32) -> bool {
-        !TRACE && self.board.plain_ram(addr, len)
+        // Fused loops store with a stale `current_pc`: guards keep them off.
+        !TRACE && self.guards.is_empty() && self.board.plain_ram(addr, len)
     }
     #[inline(always)]
     fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
@@ -732,6 +747,7 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
             self.log_write("ppmcr-contract-write", addr, 1, u32::from(value), &r);
             return r;
         }
+        self.note_guard_write(addr, 1);
         self.note_timer_write(addr, 1, u32::from(value));
         self.note_uart8_write(addr, 1, u32::from(value));
         self.note_dspi2_dma_write(addr, 1, u32::from(value));
@@ -744,6 +760,7 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
+        self.note_guard_write(addr, 2);
         self.note_timer_write(addr, 2, u32::from(value));
         self.note_uart8_write(addr, 2, u32::from(value));
         self.note_dspi2_dma_write(addr, 2, u32::from(value));
@@ -756,6 +773,7 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     }
     #[inline(always)]
     fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
+        self.note_guard_write(addr, 4);
         self.note_timer_write(addr, 4, value);
         self.note_uart8_write(addr, 4, value);
         self.note_dspi2_dma_write(addr, 4, value);

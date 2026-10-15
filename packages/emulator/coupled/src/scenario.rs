@@ -3,6 +3,8 @@ use serde_json::Value;
 
 /// DSPI2 frames per audio second (one 32-sample block each).
 pub const FRAMES_PER_SECOND: f64 = 1500.0;
+/// ColdFire instructions per second: one instruction per 132 MHz tick, so 88,000 per DSPI2 frame at 1500 Hz.
+pub const CF_INSTRUCTIONS_PER_SECOND: f64 = 132_000_000.0;
 pub const DEFAULT_SCENARIOS: &str = include_str!("../../../../scenarios/dn2.json");
 
 #[derive(Clone, Copy, Debug)]
@@ -20,6 +22,8 @@ pub enum Action {
 #[derive(Clone, Copy, Debug)]
 pub struct Event {
     pub when: When,
+    /// The `at_s` the event was written with (zero DSP turns it into instructions).
+    pub at_s: Option<f64>,
     pub action: Action,
 }
 
@@ -81,7 +85,11 @@ pub fn parse_scenario(v: &Value) -> Result<Scenario, String> {
         } else {
             return Err(err("an event needs \"button\" or \"turn\""));
         };
-        events.push(Event { when, action });
+        events.push(Event {
+            when,
+            at_s: e["at_s"].as_f64(),
+            action,
+        });
     }
     Ok(Scenario {
         description: v["description"].as_str().unwrap_or("").to_string(),

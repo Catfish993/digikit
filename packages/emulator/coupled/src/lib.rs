@@ -91,6 +91,9 @@ pub struct AudioOptions {
     /// A DSP patch file (`elektron_native_boot::dsp_patch`) overlaid on the
     /// imported DSP state. Its BASE line, if any, must match the firmware's SHA-256.
     pub dsp_patch: Option<PathBuf>,
+    /// The DSP side answers zeros: no SHARC engine, SSI paced, restored from the
+    /// ColdFire ready snapshot (`snapshot`). No PCM is produced.
+    pub zero: bool,
 }
 
 pub struct CoupledRuntime {
@@ -99,6 +102,9 @@ pub struct CoupledRuntime {
     audio: Option<coupled::AudioSession>,
     inputs: Vec<Value>,
     input_base: u64,
+    /// Zero-DSP mode (`AudioOptions::zero`): restored from the ColdFire
+    /// snapshot, the DSP side answers zeros, no audio session.
+    zero: bool,
 }
 fn matches_automatic_profile(options: &AudioOptions, syx: &[u8]) -> bool {
     !options.automatic
@@ -137,6 +143,7 @@ impl CoupledRuntime {
             audio: None,
             inputs: Vec::new(),
             input_base: 0,
+            zero: false,
         };
         runtime.attach(options)?;
         runtime.input_base = runtime.emulator.icount();
@@ -152,6 +159,7 @@ impl CoupledRuntime {
             audio: None,
             inputs: Vec::new(),
             input_base: 0,
+            zero: false,
         };
         runtime.input_base = runtime.emulator.icount();
         Ok(runtime)
@@ -173,6 +181,7 @@ impl CoupledRuntime {
             audio: None,
             inputs: Vec::new(),
             input_base: 0,
+            zero: false,
         };
         runtime.attach(Some(options))?;
         runtime.input_base = runtime.emulator.icount();
@@ -208,6 +217,11 @@ impl CoupledRuntime {
         {
             false
         }
+    }
+
+    /// Whether this runtime is in zero-DSP mode (`AudioOptions::zero`).
+    pub fn is_zero(&self) -> bool {
+        self.zero
     }
 
     /// True when the queued output audio has reached the pace target; the
@@ -260,6 +274,16 @@ impl CoupledRuntime {
         let Some(options) = options else {
             return Ok(());
         };
+        if options.zero {
+            // The default DSPI2 peer answers zeros; no audio session.
+            let snapshot =
+                std::fs::read(&options.snapshot).map_err(|e| format!("CF snapshot: {e}"))?;
+            self.emulator.enable_ssi_diagnostic(96_000)?;
+            self.emulator.load_state(&snapshot)?;
+            self.zero = true;
+            self.input_base = self.emulator.icount();
+            return Ok(());
+        }
         #[cfg(feature = "coupled-audio")]
         {
             self.audio = Some(coupled::AudioSession::new(&mut self.emulator, options)?);
@@ -1181,6 +1205,7 @@ mod coupled {
                 link_timing: false,
                 audio_mode: crate::AudioMode::default(),
                 dsp_patch: None,
+                zero: false,
             }
         }
         pub fn syx() -> Vec<u8> {
@@ -1520,7 +1545,38 @@ mod profile_tests {
             link_timing: false,
             audio_mode: AudioMode::default(),
             dsp_patch: None,
+            zero: false,
         }
+    }
+
+    /// Zero-DSP mode restores the ColdFire ready snapshot and steps without an
+    /// audio session. Skipped without DIGI_COUPLED_FIXTURES and DIGI_COUPLED_SYX.
+    #[test]
+    fn zero_dsp_restores_and_steps() {
+        let (Some(dir), Some(syx)) = (
+            std::env::var_os("DIGI_COUPLED_FIXTURES"),
+            std::env::var_os("DIGI_COUPLED_SYX"),
+        ) else {
+            return;
+        };
+        let snapshot = PathBuf::from(dir).join("digi-audio-m5.snap");
+        let Ok(syx) = std::fs::read(syx) else {
+            return;
+        };
+        if !snapshot.is_file() {
+            return;
+        }
+        let options = AudioOptions {
+            snapshot,
+            zero: true,
+            ..Default::default()
+        };
+        let mut runtime = CoupledRuntime::new(&syx, None, Some(&options)).unwrap();
+        assert!(runtime.is_zero() && !runtime.has_audio());
+        let before = runtime.icount();
+        let snap = runtime.step_chunk(STEP_CHUNK);
+        assert!(snap.status.error.is_none());
+        assert!(snap.status.icount > before);
     }
 
     #[test]

@@ -19,6 +19,13 @@
 //!   [--replay FILE.json] [--wav PATH] [--dump-dsp PATH] [--audio-mode rebuffer|stretch|gap]
 //! ```
 //!
+//! `--dsp zero` runs without a DSP: the DSPI2 peer answers zeros, SSI is paced and the ColdFire
+//! side is restored from `--cf-snapshot` alone (`--dsp-image` and `--dsp-state` are not needed).
+//! No PCM is produced (PCM report fields are null, `missing_blocks` is 0) and `seconds` / `at_s`
+//! count ColdFire instructions at 132 MHz (`seconds * 132e6`). `--trace` adds `trace` to each scenario's report: one entry per
+//! chunk with the instruction count, PC, ready flag, framebuffer and LED hashes, main-loop hits,
+//! CPU state and error. The report carries `"dsp": "zero"|"sharc"`.
+//!
 //! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
 //! scenario's report (`dsp_peek`), read after the scenario ends; `tools/firmware/l2canary.py` uses it.
 //!
@@ -45,8 +52,8 @@ use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,
     WorkerReport, common,
     scenario::{
-        DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When, find_scenario, fire,
-        parse_scenario, parse_scenarios,
+        CF_INSTRUCTIONS_PER_SECOND, DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When,
+        find_scenario, fire, parse_scenario, parse_scenarios,
     },
 };
 #[cfg(feature = "region-profile")]
@@ -90,6 +97,22 @@ struct Args {
     peeks: Vec<(String, Peek)>,
     /// `--dsp-peek NAME=ADDR:LEN`: DSP memory ranges hashed at the end of each scenario.
     dsp_peeks: Vec<(String, u32, usize, usize)>,
+    /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
+    zero: bool,
+    /// `--trace`: one entry per chunk in each scenario's `trace`.
+    trace: bool,
+    /// `--guard FILE.json`: write-range guards (the `guard.set` shape), armed at scenario start.
+    guard: Option<Value>,
+}
+
+/// First 8 bytes of the SHA-256 of `bytes` as 16 hex digits.
+fn hex8(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .take(8)
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// A guest read taken at the end of a run: `ADDR:LEN` or `*ADDR+OFF:LEN`
@@ -239,6 +262,9 @@ fn parse_args() -> Result<Args, String> {
         card: None,
         peeks: Vec::new(),
         dsp_peeks: Vec::new(),
+        zero: false,
+        trace: false,
+        guard: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -273,10 +299,36 @@ fn parse_args() -> Result<Args, String> {
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
+            "--dsp" => {
+                a.zero = match value("--dsp")?.as_str() {
+                    "zero" => true,
+                    "sharc" => false,
+                    other => return Err(format!("unknown --dsp {other:?} (zero or sharc)")),
+                }
+            }
+            "--trace" => a.trace = true,
+            "--guard" => {
+                let path = value("--guard")?;
+                let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+                let spec: Value =
+                    serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
+                elektron_native_boot::parse_guard_spec(&spec).map_err(|e| format!("{path}: {e}"))?;
+                a.guard = Some(spec);
+            }
             other => return Err(format!("unknown option {other}")),
         }
     }
-    if !a.list
+    if a.zero {
+        if a.playback || a.profile_regions || a.profile_execution {
+            return Err(
+                "--dsp zero has no DSP: --playback, --profile-regions and --profile-execution need the SHARC"
+                    .into(),
+            );
+        }
+        if !a.list && a.snapshot.as_os_str().is_empty() {
+            return Err("--cf-snapshot is required".into());
+        }
+    } else if !a.list
         && (a.image.as_os_str().is_empty()
             || a.state.as_os_str().is_empty()
             || a.snapshot.as_os_str().is_empty())
@@ -611,8 +663,15 @@ struct Probe {
 fn probe(rt: &mut CoupledRuntime) -> Result<Probe, String> {
     // snapshot() synchronises the DSP: every frame sent is rendered and drained.
     let snap = rt.snapshot();
-    let worker = rt.worker_report().ok_or("DSP worker stopped")?;
-    let report = rt.audio_report().ok_or("no native audio session")?;
+    let (worker, report) = if rt.has_audio() {
+        (
+            rt.worker_report().ok_or("DSP worker stopped")?,
+            rt.audio_report().ok_or("no native audio session")?,
+        )
+    } else {
+        // Zero DSP: no worker and no audio session.
+        (WorkerReport::default(), Value::Null)
+    };
     Ok(Probe {
         wall: Instant::now(),
         cf_cpu_ns: thread_cpu_ns(),
@@ -651,6 +710,7 @@ fn run_scenario(
         link_timing: args.link_timing,
         audio_mode: args.audio_mode,
         dsp_patch: args.dsp_patch.clone(),
+        zero: args.zero,
     };
     let card = args
         .card
@@ -658,6 +718,10 @@ fn run_scenario(
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
     let mut rt = CoupledRuntime::new(syx, card, Some(&options))?;
+    if let Some(spec) = &args.guard {
+        let (protect, allow_pc) = elektron_native_boot::parse_guard_spec(spec)?;
+        rt.set_write_guards(protect, allow_pc);
+    }
     if let Some(path) = wav {
         rt.capture_pcm(path)?;
     }
@@ -682,7 +746,13 @@ fn run_scenario(
     }
     let seconds = args.seconds.or(sc.seconds);
     let target_frames = seconds.map(|s| (s * FRAMES_PER_SECOND).ceil() as u64);
-    let until_instr = if args.seconds.is_some() {
+    let until_instr = if args.zero {
+        // No DSP frame clock: seconds count ColdFire instructions.
+        match seconds {
+            Some(s) => Some((s * CF_INSTRUCTIONS_PER_SECOND).round() as u64),
+            None => sc.instructions,
+        }
+    } else if args.seconds.is_some() {
         None
     } else {
         sc.instructions
@@ -699,12 +769,21 @@ fn run_scenario(
     let (mut next, mut icount, mut step_error) = (0usize, initial.icount, None);
     let mut playback_observations = Vec::new();
     let mut next_playback_observation = 0.1_f64;
-    let mut events: Vec<&Event> = sc.events.iter().collect();
+    let mut events: Vec<Event> = sc.events.clone();
+    if args.zero {
+        for e in &mut events {
+            if let Some(s) = e.at_s {
+                e.when = When::Instr((s * CF_INSTRUCTIONS_PER_SECOND).round() as u64);
+            }
+        }
+    }
     events.sort_by_key(|e| match e.when {
         When::Instr(n) => (0, n),
         When::Frames(n) => (1, n),
     });
     let mut chunks = 0u64;
+    let mut trace = Vec::new();
+    let (mut last_fb, mut last_leds, mut last_rgb) = (String::new(), String::new(), String::new());
     loop {
         while let Some(e) = events.get(next) {
             let due = match e.when {
@@ -736,8 +815,27 @@ fn run_scenario(
         {
             budget = budget.min((n - elapsed).min(u64::from(u32::MAX)) as u32);
         }
-        let status = rt.step_chunk(budget).status;
+        let snap = rt.step_chunk(budget);
+        let status = snap.status;
         chunks += 1;
+        if args.trace {
+            if let Some(f) = &snap.frame {
+                last_fb = hex8(f);
+            }
+            if let Some(l) = &snap.leds {
+                last_leds.clone_from(l);
+            }
+            if let Some(l) = &snap.rgb {
+                last_rgb = hex8(l.as_bytes());
+            }
+            trace.push(json!({
+                "el": status.icount - initial.icount, "pc": status.pc, "ready": status.ready,
+                "fb": last_fb, "frev": status.frame_revision, "leds": last_leds,
+                "rgb": last_rgb, "ledrev": status.led_revision,
+                "mainloop_hits": status.mainloop_hits, "cpu_state": status.cpu_state,
+                "err": status.error,
+            }));
+        }
         if args.playback && start.wall.elapsed().as_secs_f64() >= next_playback_observation {
             let elapsed = start.wall.elapsed().as_secs_f64();
             let health = rt.audio_report().unwrap_or(Value::Null);
@@ -810,7 +908,11 @@ fn run_scenario(
     let cf_clear = st(&end, "ram_clear_fast_forwarded_instructions")
         - st(&start, "ram_clear_fast_forwarded_instructions");
     let health = rt.audio_report().unwrap_or(Value::Null);
-    let missing = health["missing_blocks"].as_u64().unwrap_or(u64::MAX);
+    let missing = if args.zero {
+        0
+    } else {
+        health["missing_blocks"].as_u64().unwrap_or(u64::MAX)
+    };
     let halted = health["halted"].clone();
     let pcm = tap.map_or(Value::Null, |t| {
         json!({
@@ -822,7 +924,7 @@ fn run_scenario(
     });
     let hash_match = match (&sc.expect_sha256, tap) {
         (Some(want), Some(t)) => Some(*want == t.sha256_hex()),
-        (Some(_), None) => Some(false),
+        (Some(_), None) if !args.zero => Some(false),
         _ => None,
     };
     #[cfg(feature = "region-profile")]
@@ -833,6 +935,8 @@ fn run_scenario(
     };
     #[cfg(not(feature = "region-profile"))]
     let region_profile = Value::Null;
+    let guard = rt.guard_report();
+    let guard_ok = guard.total == 0;
     let playback_ok = !args.playback
         || (health["sink_connected"].as_bool() == Some(true)
             && health["sink"]["stream_started"].as_bool() == Some(true)
@@ -844,8 +948,10 @@ fn run_scenario(
         "pcm_non_finite": tap.map_or(0, |t| t.non_finite),
         "pcm_hash_expected": sc.expect_sha256, "pcm_hash_match": hash_match,
         "ok": missing == 0 && halted.is_null() && step_error.is_none()
-            && tap.is_none_or(|t| t.non_finite == 0) && hash_match != Some(false) && playback_ok,
+            && tap.is_none_or(|t| t.non_finite == 0) && hash_match != Some(false) && playback_ok
+            && guard_ok,
         "playback_health_ok": playback_ok,
+        "guard_ok": guard_ok,
     });
     Ok(json!({
         "name": sc.name, "description": sc.description,
@@ -882,6 +988,8 @@ fn run_scenario(
         "dsp_peek": dsp_peek,
         "dsp_dump": dsp_dump,
         "gates": gates,
+        "guard": guard,
+        "trace": if args.trace { Value::Array(trace) } else { Value::Null },
     }))
 }
 
@@ -971,6 +1079,7 @@ fn real_main() -> Result<bool, String> {
             "SHARC_GEN_DIR": std::env::var("SHARC_GEN_DIR").ok(),
             "DSP_IDLE_SKIP": std::env::var("DSP_IDLE_SKIP").ok(),
         },
+        "dsp": if args.zero { "zero" } else { "sharc" },
         "audio_mode": args.audio_mode.name(),
         "pcm_tap": args.pcm_tap,
         "link_timing": args.link_timing,

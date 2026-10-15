@@ -23,6 +23,7 @@ pub const METHODS: &[&str] = &[
     "input.schedule",
     "inputs.recorded",
     "framebuffer.get",
+    "leds.get",
     "diagnostics",
     "audio.report",
     "state.digest",
@@ -30,6 +31,9 @@ pub const METHODS: &[&str] = &[
     "cf.profile",
     "dsp.patch",
     "dsp.peek",
+    "guard.set",
+    "guard.report",
+    "guard.clear",
     "events.subscribe",
     "quit",
 ];

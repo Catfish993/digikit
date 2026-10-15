@@ -1,5 +1,7 @@
 packages:
   - apps/*
+  - packages/*
+  - tests/regression
 allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:

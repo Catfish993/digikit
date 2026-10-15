@@ -1,0 +1,21 @@
+{
+  "name": "@digi/regression",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:update": "UPDATE_GOLDENS=1 vitest run"
+  },
+  "dependencies": {
+    "@digi/control-client": "workspace:*",
+    "@digi/test-support": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
