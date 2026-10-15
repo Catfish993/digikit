@@ -1,4 +1,4 @@
-"""Replay two tools/sharc_capture_run.py captures in lockstep from the same
+"""Replay two unicorn-reference-final:tools/sharc_capture_run.py captures in lockstep from the same
 post-init state (tools/sharc_dev/sharc_replay.py's own setup convention: one hand-set-up
 voice, real DMA delivery) and diff the two runners' DM state after every
 frame.
@@ -9,11 +9,11 @@ frame.
 Both captures are replayed continuously from frame 0 (no start_frame
 shortcut: this tool always executes every frame up to the top of --frames,
 or the whole capture if --frames is not given -- only *reporting* is
-windowed), through the exact same setup tools/sharc_replay.replay() uses
+windowed), through the exact same setup tools/sharc_dev/sharc_replay.replay() uses
 (sharc_harness.run_init() -> sharc_harness.new_runner() -> one hand-set-up
 voice 0 with a --freq Hz sine -> sharc_harness.setup_frame_dma()) and the
 exact same per-frame delivery (sharc_harness.write_dma_transfer()/
-drive_dma_completion(), then tools/sharc_replay.call_frame_collect_all_with_hits()
+drive_dma_completion(), then tools/sharc_dev/sharc_replay.call_frame_collect_all_with_hits()
 under sharc_harness.FRAME_PATCH_TABLE) -- two independent Runners, one per
 capture, advanced one frame at a time so a diff at frame N compares state
 built from exactly N+1 frames of each capture's own real TX content on top
@@ -104,8 +104,10 @@ import time  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from tools.sharc_dev import sharc_capture  # noqa: E402
-from tools.sharc_dev import sharc_dac  # noqa: E402
+from tools.sharc_dev import (  # noqa: E402
+    sharc_capture,
+    sharc_dac,
+)
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
@@ -308,7 +310,7 @@ def diff_states(
 
 
 def _setup_runner(image: str, tone_freq: float, sample_len: int) -> sr.Runner:
-    """The exact post-init setup tools/sharc_replay.replay() uses: one
+    """The exact post-init setup tools/sharc_dev/sharc_replay.replay() uses: one
     hand-set-up voice (voice 0) with a --freq Hz sine, so both runners start
     from an otherwise identical state before either capture's own frames
     are delivered."""

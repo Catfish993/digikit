@@ -2,16 +2,16 @@
 subprocess and speaks its protocol (version 1; see that module's docstring
 for the message table) over its stdin/stdout.
 
-`SharcServerPeer` implements every peer shape `emu/dspi2.py` and
-`emu/ssi.py`'s docstrings already specify, plus `emu.longrun.spin`'s
-`async_events` pair, so one instance plugs into all three at once:
+`SharcServerPeer` implements every peer shape `unicorn-reference-final:emu/dspi2.py` and
+`unicorn-reference-final:emu/ssi.py`'s docstrings already specify, plus `unicorn-reference-final:emu/longrun.py`'s
+`spin` `async_events` pair, so one instance plugs into all three at once:
 
     Dspi2Link(m, peer=p)                       # p.exchange(tx) -> bytes
     Ssi0Dma(m, ..., peer=p)                    # p.rx(n) -> bytes, p.tx(data)
     spin(m, pc, n, pits=pits, async_events=(p,))  # p.step/p.service
 
-See `emu/dspi2.py`'s "Lockstep interface for a future SHARC stepper" and
-`emu/ssi.py`'s "SSI0 peer hook" -- this is the stepper those sections
+See `unicorn-reference-final:emu/dspi2.py`'s "Lockstep interface for a future SHARC stepper" and
+`unicorn-reference-final:emu/ssi.py`'s "SSI0 peer hook" -- this is the stepper those sections
 describe, backed by a process instead of in-process state. Today it talks to
 `tools/sharc_dev/sharc_proc.py`'s `StubBackend`; nothing here changes when a real
 runner backend replaces it (see that module's docstring).
@@ -149,7 +149,7 @@ class SharcServerPeer:
     """Launches `tools/sharc_dev/sharc_proc.py` and speaks protocol v1 to it.
 
     `advance_every`, if given, is a ColdFire-instruction cadence: `service()`
-    (called by `emu.longrun.spin` at every chunk boundary when this object is
+    (called by `unicorn-reference-final:emu/longrun.py`'s `spin` at every chunk boundary when this object is
     in `async_events`) sends one `ADVANCE` message per `advance_every`
     instructions of guest time. `None` (default) never sends one -- correct
     for `StubBackend`, whose replies do not depend on wall time between
@@ -282,7 +282,7 @@ class SharcServerPeer:
             )
         return json.loads(payload.decode("utf-8"))
 
-    # -- emu.dspi2 peer: exchange(tx: bytes) -> bytes -------------------
+    # -- unicorn-reference-final:emu/dspi2.py peer: exchange(tx: bytes) -> bytes -------------------
 
     def exchange(self, tx: bytes) -> bytes:
         t0 = time.perf_counter()
@@ -300,7 +300,7 @@ class SharcServerPeer:
         self.frames += 1
         return payload
 
-    # -- emu.ssi peer: rx(nbytes) -> bytes, tx(data) -> None ------------
+    # -- unicorn-reference-final:emu/ssi.py peer: rx(nbytes) -> bytes, tx(data) -> None ------------
 
     def rx(self, nbytes: int) -> bytes:
         self._send_json(AUDIO_RX, {"nbytes": nbytes})
@@ -334,7 +334,7 @@ class SharcServerPeer:
     def stats(self) -> dict:
         return self._roundtrip_json(STATS, {}, STATS_OK)
 
-    # -- emu.longrun.spin async_events: step/service ---------------------
+    # -- unicorn-reference-final:emu/longrun.py spin async_events: step/service ---------------------
 
     def step(self, done: int, remaining: int | None = None) -> int | None:
         """-> instructions until this peer's next deadline, or None.

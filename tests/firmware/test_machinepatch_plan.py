@@ -77,7 +77,8 @@ class StaticImage:
 
 
 @unittest.skipUnless(
-    _MAIN_IMAGE is not None, "no MAIN OS image available (see tools.firmware.config.main_image)"
+    _MAIN_IMAGE is not None,
+    "no MAIN OS image available (see tools.firmware.config.main_image)",
 )
 class PlanBTest(unittest.TestCase):
     def setUp(self):

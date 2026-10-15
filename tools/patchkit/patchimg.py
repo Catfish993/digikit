@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Apply byte-exact patches to an extracted firmware section image.
 
-This is the "patch" half of a patch-then-verify loop; `emu/checkpoint.py`
-and `tools/bootcheck.py` are the "verify" half. This tool does not run
+This is the "patch" half of a patch-then-verify loop; `unicorn-reference-final:emu/checkpoint.py`
+and `unicorn-reference-final:tools/bootcheck.py` are the "verify" half. This tool does not run
 anything or claim a patch is correct -- it only applies bytes and reports
 what it changed.
 

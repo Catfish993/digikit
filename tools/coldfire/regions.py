@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """RAM and flash-cave regions of a MAIN OS image: the facts, the candidates, the canary.
 
-Replaces the lost tools/cavefind.py. Per image (out/sections/IMAGE/section_3_MAIN_OS.bin):
+Replaces the lost unicorn-reference-final:tools/cavefind.py. Per image (out/sections/IMAGE/section_3_MAIN_OS.bin):
 
     uv run python -m tools.coldfire.regions report [IMAGE ...] [--json]
     uv run python -m tools.coldfire.regions confirm IMAGE [--region flash_cave|expansion|START:LEN]

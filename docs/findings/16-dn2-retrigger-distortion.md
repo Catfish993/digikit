@@ -154,7 +154,7 @@ regions entered with MODE1 bits 21-23, so it never ran 17a/b under PEYEN.
 
 Fix: `tools/sharc_dev/sharc_core/forms_move.py::_type_17a` also writes the Cureg under
 `_simd_active`; test `test_type17_immediate_load_writes_cureg_only_under_peyen`
-in tests/test_sharc_stack_registers.py. **[V]** A static scan found 57 Type 17
+in tests/sharc/semantics/test_sharc_stack_registers.py. **[V]** A static scan found 57 Type 17
 R/S loads inside PEYEN spans in DN2 1.11 and 19 in DT2 1.16 (e.g. DN2
 0x1c1b5d, 0x1c209a, 0x1c248c, 0x1c2593, 0x1c4693): all were wrong before.
 
@@ -179,7 +179,7 @@ Results after the fix **[V]**:
   output changed on purpose); trig1-noqa-40m unchanged (a50586e8..). New:
   trig1-taps 1ca0ae84.., tap-release aa1dbd9e.., exactness-100m 3b600f6d... All
   taps in the three changed scenarios are clean (tone 94.7-95.1%).
-- tests/test_sharc_golden.py: all six hashes unchanged (they use DT2 1.16 and
+- tests/sharc/integration/test_sharc_golden.py: all six hashes unchanged (they use DT2 1.16 and
   coverage/run paths that do not hit this case): no `--update`.
 - `pytest -k "sharc and not slow"`: 45 failed (all the stale native dylib
   tests, same count as before), 1703 passed: no new failures.

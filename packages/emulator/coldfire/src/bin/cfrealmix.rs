@@ -1,7 +1,7 @@
 //! Real-firmware-mix speed for the ColdFire interpreter (cfbench.rs's
 //! straight-line loop is a ceiling, not a real-code number). Loads a real
 //! machine state (registers + every mapped RAM/flash page) exported by
-//! `scratchpad/export_snap.py` from an `emu.snapshot` capture, and runs
+//! `scratchpad/export_snap.py` from a `unicorn-reference-final:emu/snapshot.py` capture, and runs
 //! `Cpu::step` over it with a stub bus: RAM/flash pages come from the dump
 //! (a flat page-pointer table indexed by `addr >> 20`, at the snapshot's
 //! own 1 MiB page granularity, `tools/emulator/snapread.py`'s `PAGE`); any address

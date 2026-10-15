@@ -1,5 +1,5 @@
 // Generated code lives under out/ (the block code is firmware-derived),
-// never under native/, and is compiled by native/sharc-gen. This crate only
+// never under native/, and is compiled by packages/emulator/sharc-gen. This crate only
 // needs to know whether SHARC_GEN_DIR names one, to match sharc-gen's cfgs
 // (sharc_gen, sharc_image, sharc_gen_version); the files themselves are not
 // tracked here, so editing the engine never depends on them.

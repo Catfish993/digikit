@@ -3,6 +3,7 @@ import contextlib
 import io
 import unittest
 
+from tools.coldfire import hwlookup
 from tools.coldfire.hwref import (
     decode_register_value,
     load_reference,
@@ -10,7 +11,6 @@ from tools.coldfire.hwref import (
     resolve_dma_channel,
     resolve_vector,
 )
-from tools.coldfire import hwlookup
 
 
 class AddressLookupTest(unittest.TestCase):

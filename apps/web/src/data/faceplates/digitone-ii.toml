@@ -1,4 +1,4 @@
-# Front-panel drawing for Digitone II, read by emu/faceplate.py.
+# Front-panel drawing for Digitone II, read by apps/web/src/data/faceplates.ts.
 #
 # Positions are centres in millimetres from the panel's top-left corner.
 # Legends are the printed silkscreen; the firmware's own control names

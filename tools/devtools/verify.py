@@ -69,6 +69,7 @@ PY_GATE = (
     "tests/sharc/generation/test_sharc_rsgen_density.py",
     "tests/devtools/test_lint.py",
     "tests/devtools/test_types.py",
+    "tests/devtools/test_pathcheck_repo.py",
     "tests/patchkit/test_patchkit.py",
     "tests/patchkit/test_patchkit_expansion.py",
 )

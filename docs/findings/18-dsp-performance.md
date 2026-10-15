@@ -631,7 +631,7 @@ Add a family:
   `tools/sharc_dev/sharc_lowergen_vectors.py` (steer the random fields into the accepted region) and,
   for sequences, to `tools/sharc_dev/sharc_lowergen_programs.py`.
 - Check: `cargo test --lib gen_` in `packages/emulator/sharc` (with `SHARC_GEN_DIR` set; about 75 s),
-  `tests/test_sharc_lowergen.py` (fails when `gen_forms.rs` is stale), and
+  `tests/sharc/generation/test_sharc_lowergen.py` (fails when `gen_forms.rs` is stale), and
   `tools/sharc_dev/sharc_lowergen_bisect.sh` for PCM and coverage with a form subset.
 
 Results **[D]** (DN2 1.11, `trig1-taps`, 1.5 s, `static-insns+follow`, PCM

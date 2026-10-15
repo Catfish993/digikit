@@ -916,7 +916,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   The remaining `sharc_coverage.py` gaps (26a `decode confidence uncertain`,
   a handful of unsupported full-compute opcodes, `21p_undoc16`/`8p_undoc48`)
   are untouched -- they are separate, already-open items.
-- `tests/test_sharc_golden.py`'s six cases were compared output-for-output
+- `tests/sharc/integration/test_sharc_golden.py`'s six cases were compared output-for-output
   (`output(name)`), not just by hash, both before (original code, original
   database) and after: `run_voice`/`trace_voice` (root `0x1c4ecf`, a
   different function) are byte-identical, since that path never touches
@@ -945,7 +945,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   read only by `tools/sharc_dev/sharc.py`'s `Image.refs`/`writers`/`readers`, not by
   the live tracer/runner, so that fix is silent here and only changes
   `tools/sharc_dev/sharc.py` query results. Updated with `uv run python
-  tests/test_sharc_golden.py --update`. **[V]**
+  tests/sharc/integration/test_sharc_golden.py --update`. **[V]**
 
 ## One decode path: `decode_at()` now makes the database's own width/form choice **[V]**
 
@@ -959,7 +959,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   narrower form when the narrower reading decodes confidently for
   `WIDTH_LOOKAHEAD` (8) more instructions where the wide reading does not,
   or independently rejoins one of the wide reading's own successor
-  boundaries. `tools/sharc_core.sequencer.decode_at()` -- the tracer's and
+  boundaries. `tools/sharc_dev/sharc_core/sequencer.decode_at()` -- the tracer's and
   concrete runner's only decode entry -- instead called `select_frame()`
   once, with no successor context, so it kept the wide form in exactly the
   cases the database's second pass exists to reject.
@@ -1009,7 +1009,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   legitimate use `decode_at()` never promised to refuse). The database has
   no opinion on such a PC at all, not a "definitely not code" one, so
   `decode_confident()`/`decode_confident_loaded()` do not either.
-  `tools/sharc_core.sequencer.decode_at()` (the only file this task
+  `tools/sharc_dev/sharc_core/sequencer.decode_at()` (the only file this task
   was allowed to change in `sharc_core/`) now calls these instead of a bare
   `disassemble()`/`decode_loaded_at()` call -- no database access at decode
   time, exactly the emulator's own constraint. `tools/sharc_dev/sharcimm.py`'s
@@ -1072,7 +1072,7 @@ None is resolved to `0x252658` yet. **[D][O]**
   add(R0, R0)`), advances to `sw 0x1c502c`, and keeps going until it hits
   this case's own `--max-states 64` cap instead. No other state, and no
   other case, differs. Updated with `uv run python
-  tests/test_sharc_golden.py --update`. **[V]**
+  tests/sharc/integration/test_sharc_golden.py --update`. **[V]**
 - **Gap triage** (`tools/sharc_dev/sharc_coverage.py dt2-1.16 --root 0x1c2b24` /
   `--all-roots`, unchanged counts before and after the fix -- render path 3
   gap instructions, all roots 11):
@@ -1122,19 +1122,19 @@ None is resolved to `0x252658` yet. **[D][O]**
     lifecycle change, not a decoder one. **[V][C]** (resolved below, "Loader
     block 1 is not code: decoding from LoadedMemory", DB_VERSION v13 -- the
     lifecycle change this bullet asked for).
-- **Tests.** `tests/test_sharc_coverage.py` (new): `_raw_le_bytes()`
+- **Tests.** `tests/sharc/analysis/test_sharc_coverage.py` (new): `_raw_le_bytes()`
   against a real DT2 1.16 example; `compare_decode_at()`'s four
   classifications (agreeing, stale-bytes, width, form, fields mismatch) on
   hand-built images; `RealImageAgreementTest` asserts 0 mismatches on the
   real DT2 1.16 database (skipped when the blob is absent -- the
-  acceptance fact behind this section). `tests/test_sharc_disasm.py`
+  acceptance fact behind this section). `tests/sharc/analysis/test_sharc_disasm.py`
   gained `ConfidentDecodeTest`: `decode_confident()`/`decode_confident_
-  loaded()` reproduce `tests/test_sharcimm.py`'s existing
+  loaded()` reproduce `tests/sharc/analysis/test_sharcimm.py`'s existing
   `WidthPreferenceTest` fixture; both still decode a `NEVER_ALIGNED_FORMS`
   pattern landed on directly (`_raw_at_flat`/`_raw_at_loaded` exclude it
   only from a successor chain, checked directly too); `decode_confident_
   loaded()` fails closed on a genuinely unmapped loader PC.
-  `tests/test_sharcimm.py`'s own tests (unchanged) still pass, since
+  `tests/sharc/analysis/test_sharcimm.py`'s own tests (unchanged) still pass, since
   `decode_all()`'s behaviour is unchanged. **[V]**
 
 ## One decode INPUT, not just one decode function: DB_VERSION v13 **[V]**
@@ -1145,7 +1145,7 @@ are now resolved. The model decided on: the database describes the program
 **as loaded** -- one code block's `insn`/`functions`/edges rows are decoded
 from `tools/sharc_dev/sharcldr.py`'s `LoadedMemory` (the whole boot stream's merged,
 last-write-wins final image), not from that block's own raw stream payload.
-This is the same input `tools/sharc_core.sequencer.decode_at()` already used
+This is the same input `tools/sharc_dev/sharc_core/sequencer.decode_at()` already used
 (no database access, `LoadedMemory` only) -- the "One decode path" section
 above unified the decode *function*; this unifies the decode *input* the
 same way, for the same reason: a block whose own bytes never persist into
@@ -1176,7 +1176,7 @@ in the same stream overwrites an earlier one", not a parsing artifact.
 fresh agent, given no access to this finding's numbers or to
 `LoadedMemory.owner_runs()`, wrote its own parser and two independent
 ownership computations (a byte-by-byte scan and an interval sweep) directly
-against `tools/sharcldr.parse_blocks()` on the raw `section_7_BLOB.bin` of
+against `tools/sharc_dev/sharcldr.parse_blocks()` on the raw `section_7_BLOB.bin` of
 all four images. Its numbers matched exactly: same overlapping-block lists,
 same 99.9224% (10304/10312), same two surviving 4-byte ranges including the
 DT2-vs-DN2 difference in the second range, and confirmed every overlapping
@@ -1251,7 +1251,7 @@ hardcodes the *old* `0x20020000` L2 boundary in generated code (its own
 bound. This affects only the Ghidra SLEIGH import path
 (`tools/sharc_dev/sharc_import.py`'s own `ghidra_addr()`/`mapped_segments()` already
 read the live constants and needed no change, confirmed by
-`tests/test_sharc_import.py`), not this database/decode pipeline. Flagged
+`tests/sharc/analysis/test_sharc_import.py`), not this database/decode pipeline. Flagged
 for whoever owns `tools/sharc_dev/sharcspec/ghidra/`. **[O]**
 
 ### DB_VERSION 12 -> 13, before/after **[V]**
@@ -1327,7 +1327,7 @@ block 1's stale bytes, an incoherent database. The edit is minimal (the
 payload source inside `analyze_block()`, and removing block 1 from
 `CODE_BLOCKS`); the module's own docstring and a comment referencing
 `blk1@0x1201f8` as an example were left mostly alone (see the "Collateral"
-note above). `tests/test_sharc_import.py` needed one test fixed (a
+note above). `tests/sharc/analysis/test_sharc_import.py` needed one test fixed (a
 hardcoded `0xFFFF` L2-window-size literal tied to the old, narrower
 `L2_BYTE_LIMIT`) to keep passing after the widening; `tools/sharc_dev/sharc_import.py`
 itself needed no change (already reads the live constants). **[O]** for a
@@ -1335,14 +1335,14 @@ maintainer check that these out-of-list edits don't conflict with other
 lanes' work on `tools/sharc_dev/sharcinv.py` (last touched by unrelated commits
 `a286b20`/`8cccd2e`, well before this wave's work).
 
-**Tests.** `uv run python -m pytest tests/test_sharc_golden.py
-tests/test_lint.py tests/test_types.py tests/test_sharcdb.py
-tests/test_sharcfn.py tests/test_sharcimm.py tests/test_sharcldr.py
-tests/test_sharc_disasm.py tests/test_sharc_coverage.py
-tests/test_sharc_symbols.py tests/test_sharc_contract.py
-tests/test_sharc_index.py tests/test_sharc_discover.py
-tests/test_sharcwriters.py tests/test_sharcinv.py tests/test_sharc_import.py
-tests/test_sharcflow.py -q --slow`: 444 passed, 5 subtests passed. **[V]**
+**Tests.** `uv run python -m pytest tests/sharc/integration/test_sharc_golden.py
+tests/devtools/test_lint.py tests/devtools/test_types.py tests/sharc/analysis/test_sharcdb.py
+tests/sharc/analysis/test_sharcfn.py tests/sharc/analysis/test_sharcimm.py tests/sharc/analysis/test_sharcldr.py
+tests/sharc/analysis/test_sharc_disasm.py tests/sharc/analysis/test_sharc_coverage.py
+tests/sharc/analysis/test_sharc_symbols.py tests/sharc/analysis/test_sharc_contract.py
+tests/sharc/analysis/test_sharc_index.py tests/sharc/analysis/test_sharc_discover.py
+tests/sharc/analysis/test_sharcwriters.py tests/sharc/analysis/test_sharcinv.py tests/sharc/analysis/test_sharc_import.py
+tests/sharc/analysis/test_sharcflow.py -q --slow`: 444 passed, 5 subtests passed. **[V]**
 
 ## Type 7a MODIFY was missing its `(sw)`/`(nw)` scale bits **[V][C]**
 
@@ -1382,9 +1382,9 @@ conditional Type 7a with a condition other than `NOT SV` (0x17) in the audio cod
   evaluates (`_predicate`, `_predicate_pe`): a modify whose condition is false in every active PE is skipped (no
   circular wrap, no compute); PEx unresolved with SIMD unresolved keeps the old behaviour (Unknown outcome); a
   conditional compute with SIMD unresolved is refused (`unresolved SIMD conditional Type7a compute`). Tests:
-  `tests/test_sharc_type7a_cond.py` (SISD true/false, `NE`, SIMD OR of the two PEs, per-PE compute, unconditional SIMD
+  `tests/sharc/semantics/test_sharc_type7a_cond.py` (SISD true/false, `NE`, SIMD OR of the two PEs, per-PE compute, unconditional SIMD
   compute) and the changed fail-closed cases in `tests/test_sharc_trace.py`. Golden hashes
-  (`tests/test_sharc_golden.py`) did not change.
+  (`tests/sharc/integration/test_sharc_golden.py`) did not change.
 - **Audit of the other refusals reachable in the images.** `forms_dag` and the sibling forms refuse conditions the
   core cannot evaluate (`_predicate` has no FLAGx_IN, BM or LCE codes: cond 9 to 12, 14, 15, 25 to 28, 30). The
   sharcdb instruction table (`insn`, aligned, inside a function) for dt2-1.16, dt2-1.17, dn2-1.11 and dn2-1.12 holds
@@ -1404,7 +1404,7 @@ conditional Type 7a with a condition other than `NOT SV` (0x17) in the audio cod
   (`test_a_dsp_halt_is_a_failure`). DN2 pins, 61 scenario oracles, no-AOT oracles, tier-quick (20 of 20 equal) and the
   DT2 tone, oracles and tier-quick (9 of 9 equal) all pass against the `gen-next` cores (`SHARC_GEN_DIR=...
   tools/devtools/verify.py --only ...`, one device per run because `SHARC_GEN_DIR` is global). PyPy is not installed on this
-  machine, so `tests/test_pypy.py` (which includes `test_sharc_trace.py`) could not run here **[O]**; the change uses
+  machine, so `tests/devtools/test_pypy.py` (which includes `test_sharc_trace.py`) could not run here **[O]**; the change uses
   only constructs the transpiler already accepts (it transpiled with 0 untranslated functions).
 
 ## A normal-word access through a byte-address pointer matches the manual **[D]**

@@ -72,7 +72,7 @@ may share compiler and firmware ancestry. **[D][O]**
 An exact-byte check of the six wavetable stages in
 `docs/findings/06-sharc-engine-and-startup.md` ("Reading the DSP"), separate
 from the signature-bucket method above. Both blobs were read with
-`tools/sharcldr.LoadedMemory`:
+`tools/sharc_dev/sharcldr.LoadedMemory`:
 
 | stage | DT2 1.16 `sw` (bytes) | DN2 1.11 address | match |
 | --- | --- | --- | --- |
@@ -87,7 +87,7 @@ Stages 1, 2 and 4 are byte-identical. Every differing byte in stages 3, 5
 and 6 has one of two causes:
 
 - A `Type8a` delayed `CALL` whose PC-relative offset differs only because
-  the instruction sits at a different address. `tools/sharcflow.pcrel_target`
+  the instruction sits at a different address. `tools/sharc_dev/sharcflow.pcrel_target`
   resolves all of them (stage 3 at DT2 `sw 0x1cb3ff` / DN2 `sw 0x1cdb7d`;
   stage 5 at DT2 `sw 0x1cc7f5` / DN2 `sw 0xb80f85`; stage 6 at DT2
   `sw 0x1cbf4d` / DN2 `sw 0xb8073b`) to the same target, `sw 0x1c06ba`, the

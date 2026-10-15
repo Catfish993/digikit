@@ -1,23 +1,23 @@
 //! SSI0/eDMA 48/50: the audio-clocked sample DMA producer chain -- a port of
-//! `emu/ssi.py`'s `Ssi0Dma`, the *exact* (non-coalescing) path only. See
+//! `unicorn-reference-final:emu/ssi.py`'s `Ssi0Dma`, the *exact* (non-coalescing) path only. See
 //! that module's docstring for the full hardware reasoning (request
 //! cadence, the `SSI_CLKIN` assumption, coalescing) -- this file omits
 //! `coalesce=True` and its `_run_block` fast path entirely: both are pure
 //! performance optimizations over the exact model below (same bytes, same
-//! boundaries, `emu/ssi.py`'s own docs: "Same bytes, same order... instead
+//! boundaries, `unicorn-reference-final:emu/ssi.py`'s own docs: "Same bytes, same order... instead
 //! of one per request"), and **none of the four traces this crate replays
 //! against ever installs an `Ssi0Dma` at all** (`ssi0_request_hz` is never
-//! passed to `tools/mmio_record.py`'s runs -- `scratchpad/
-//! p4-mmio-recorder.md`: "SSI0 (`emu.ssi`) is not exercised: none of the
+//! passed to `unicorn-reference-final:tools/mmio_record.py`'s runs -- `scratchpad/
+//! p4-mmio-recorder.md`: "SSI0 (`unicorn-reference-final:emu/ssi.py`) is not exercised: none of the
 //! snapshots carry an `ssi0_dma` component"). This module is therefore
-//! built and unit-tested from the manual and from `emu/ssi.py`'s own
+//! built and unit-tested from the manual and from `unicorn-reference-final:emu/ssi.py`'s own
 //! recovered facts, but is not wired into `bin/replay.rs`'s active
 //! dispatch -- there is no recorded trace to check a coalescing-free port
 //! of it against, and wiring it in unexercised would be exactly the
 //! unverified-speculation risk `docs/plans/native-emulator.md` warns against
 //! (see this crate's `machine.rs` module docs, "SSI0" note).
 //!
-//! Register addresses (RM Chapter 35, cited in full in `emu/ssi.py`'s own
+//! Register addresses (RM Chapter 35, cited in full in `unicorn-reference-final:emu/ssi.py`'s own
 //! docstring: SSIn_CCR/TMASK/RMASK/FCSR, p.1080-1090) are not re-derived
 //! here; `AUDIO_SSI0_REQUEST_HZ` and the eDMA channel/vector assignment are
 //! carried over unchanged from that module.
@@ -33,12 +33,12 @@ pub const FORCE_VECTOR: u16 = 191;
 pub const INTFRCH1: u32 = 0xFC04C010;
 pub const INTFRCH1_SOURCE63: u32 = 0x8000_0000;
 
-/// `emu/ssi.py`'s recovered opt-in default: 2 requests/SSI-audio-frame x
+/// `unicorn-reference-final:emu/ssi.py`'s recovered opt-in default: 2 requests/SSI-audio-frame x
 /// 48 kHz (see that module's docstring for the three independent
 /// corroborations).
 pub const AUDIO_SSI0_REQUEST_HZ: u64 = 96_000;
 
-/// The audio peer: RX samples in, TX samples out -- `emu/ssi.py`'s "SSI0
+/// The audio peer: RX samples in, TX samples out -- `unicorn-reference-final:emu/ssi.py`'s "SSI0
 /// peer hook", the audio-side counterpart of `dspi::Peer`.
 pub trait SsiPeer {
     /// -> exactly `nbytes` bytes, this period's RX samples.
@@ -59,7 +59,7 @@ impl SsiPeer for NoPeer {
     fn tx(&mut self, _data: &[u8]) {}
 }
 
-/// `RxHandoverPeer` (`emu/ssi.py`): supplies the `0x007FFFFF` marker the
+/// `RxHandoverPeer` (`unicorn-reference-final:emu/ssi.py`): supplies the `0x007FFFFF` marker the
 /// generic vector-170 handler scans for at each RX major-loop start, so
 /// vector 170 can hand itself over to the real per-block ISR. See that
 /// module's class docs for the full mechanism; `at_major_start` mirrors its
@@ -424,7 +424,7 @@ impl Ssi0Dma {
     /// `_on_intfrch1`: observe a write into INTC1's INTFRCH register (owned
     /// by `intc::IntcBank`'s register file elsewhere -- this bank only
     /// watches bit 31 to track the software-forced vector 191 source,
-    /// exactly as `emu.ssi.Ssi0Dma._on_intfrch1` does; it never stores the
+    /// exactly as `unicorn-reference-final:emu/ssi.py`'s `Ssi0Dma._on_intfrch1` does; it never stores the
     /// register itself).
     pub fn on_intfrch1(&mut self, current_value: u32) {
         let asserted = current_value & INTFRCH1_SOURCE63 != 0;

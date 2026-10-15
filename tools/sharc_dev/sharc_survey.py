@@ -889,7 +889,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     start.add_argument(
         "--run-init",
         action="store_true",
-        help="run tools/sharc_harness.run_init() first",
+        help="run tools/sharc_dev/sharc_harness.run_init() first",
     )
     p.add_argument(
         "--reg",

@@ -14,7 +14,7 @@ WAV, all under the root.
     uv run python -m tools.firmware.plusdrive build samples/ -o out/plusdrive/dt2.img
     uv run python -m tools.firmware.plusdrive ls out/plusdrive/dt2.img
 
-``tools/plusdrive_check.py`` runs the firmware's own mount, directory,
+``unicorn-reference-final:tools/plusdrive_check.py`` runs the firmware's own mount, directory,
 reference, project-decode and sample-loader code on a built image.
 
 ``build`` also doubles as the only writer of this format, and ``ls`` as a
@@ -22,8 +22,8 @@ reader for any card image in it (including one dumped from a real firmware
 card overlay), since both share the same decode/encode tables below.
 
 The former Python emulator booted from a built image given as ``card_image=`` to
-``emu.dspboot.run``/``emu.longrun.build`` and read it via
-``emu.esdhc.Card.from_file`` (removed; see tag unicorn-reference-final), which mmapped the file read-only -- writes during
+``unicorn-reference-final:emu/dspboot.py``'s ``run``/``unicorn-reference-final:emu/longrun.py``'s ``build`` and read it via
+``unicorn-reference-final:emu/esdhc.py``'s ``Card.from_file``, which mmapped the file read-only -- writes during
 emulation go to the in-RAM overlay (already how snapshots capture +Drive
 writes; see ``Esdhc.checkpoint_state``), and this file is never modified.
 
@@ -100,7 +100,7 @@ POOL_TABLE_SECTOR = 0x800
 # rewrite this sector" repair path (FUN_400f04e2) that issues on the order
 # of 28,000 CMD25 writes -- confirmed, by an instrumented cold boot, to be
 # where a real boot task ends up permanently pending on `sd_dma_sem`
-# (unposted in this build's Esdhc model either way; see emu/esdhc.py) far
+# (unposted in this build's Esdhc model either way; see unicorn-reference-final:emu/esdhc.py) far
 # short of completing that many writes. Writing a minimal, self-consistent
 # valid record here instead (matching FUN_400c0e54's own check) skips that
 # whole unrelated repair path, the same way the region-1 header above is
@@ -273,7 +273,7 @@ V3_TRACK_SLOT = 0x64
 V3_TRACK_REF = 0x129
 # The kit the built-in project decodes as active: FUN_4004e598 (the slot
 # list "Load all samples" walks) run on the decoded project lists kit 0's
-# track slots first (7, 1, 3, 8, ...), tools/plusdrive_check.py.
+# track slots first (7, 1, 3, 8, ...), unicorn-reference-final:tools/plusdrive_check.py.
 ACTIVE_KIT = 0
 # The built-in project's kit 0 is a factory demo kit ("SOUND 1" tracks with
 # edited FX, compressor on, odd tuning). Kits 32.. are the untouched "PRESET 1"
@@ -480,7 +480,7 @@ def crc32_ieee_raw(seed, data):
     firmware's caller does that XOR-in explicitly, by passing
     `seed=0xFFFFFFFF` itself, and never XORs the result back out, so the
     raw register value is what gets compared). Confirmed against the real
-    firmware with a bounded call in `tests/test_factory_table.py`.
+    firmware with a bounded call in `unicorn-reference-final:tests/test_factory_table.py`.
     """
     table = _crc32_table()
     crc = seed & 0xFFFFFFFF
@@ -501,7 +501,7 @@ def build_factory_table_record():
     `target XOR A = M @ x` over GF(2) for the 32 unknown bits of `V` (a
     32x32 system, always solvable since the map is a bijection) gives a
     valid `V` directly, verified by re-running the forward computation
-    below and, live, in `tests/test_factory_table.py`.
+    below and, live, in `unicorn-reference-final:tests/test_factory_table.py`.
 
     The rest of the 32 KiB (everything after the checked/checksummed
     header) is left zero: `FUN_4002cd6a`'s own success path (reached once
@@ -534,7 +534,7 @@ def content_hash(data):
     state seeded a = b = c = CONTENT_HASH_STATE. The firmware streams the
     file through FUN_4015aa20 in 32 KiB reads; hashing it in one piece gives
     the same value (checked against FUN_4015af0c itself, see
-    tools/plusdrive_check.py)."""
+    unicorn-reference-final:tools/plusdrive_check.py)."""
     return hashlittle(data, (CONTENT_HASH_STATE - 0xDEADBEEF) & _MASK32)
 
 

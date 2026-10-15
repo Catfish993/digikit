@@ -7,8 +7,7 @@ import struct
 import time
 from collections.abc import Callable, Mapping, Sequence
 
-from tools.sharc_dev import sharc_capture
-from tools.sharc_dev import sharc_dac
+from tools.sharc_dev import sharc_capture, sharc_dac
 from tools.sharc_dev import sharc_run as sr
 from tools.sharc_dev import sharc_survey as sv
 from tools.sharc_dev import sharc_trace as st

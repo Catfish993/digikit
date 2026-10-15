@@ -69,6 +69,7 @@ TYPED = [
     "tools/emulator/snapread.py",
     "tools/devtools/pathcheck.py",
     "tests/devtools/test_pathcheck.py",
+    "tests/devtools/test_pathcheck_repo.py",
 ]
 
 

@@ -15,7 +15,7 @@ Base: `5396f9a`. Sources read: `docs/plans/native-emulator.md`, `packages/emulat
 
 The machine has two interrupt/idle policies behind one stepping loop:
 
-- **`Mode::Oracle`** reproduces the Python machine exactly (`emu.longrun.spin` in pits mode, exact,
+- **`Mode::Oracle`** reproduces the Python machine exactly (`unicorn-reference-final:emu/longrun.py`'s `spin` in pits mode, exact,
   not `fast`): interrupts are offered only at service boundaries, with the Python HLEs (IdleSpin
   vector 32, UART8 wait-loop delivery, FrameForcer, forced MMIO reads, `raise_vector`'s
   handler==0 / >=0x48000000 refusal). This is the only mode that can match `tools/snapeq.py`.
@@ -102,7 +102,7 @@ One struct owns RAM and all peripheral models, so DMA effects run inside the bus
 where Python's write hooks run them.
 
 Memory map (bases fixed by the MCF5441x; sizes from the profile, cross-checked against a snapshot's
-`all_mapped`, 1 MiB pages = `emu.harness.PAGE`):
+`all_mapped`, 1 MiB pages = `unicorn-reference-final:emu/harness.py`'s `PAGE`):
 
 | range | region |
 |---|---|
@@ -181,7 +181,7 @@ Python snapshots are pickles (`emu/snapshot.py save`): `regs` (d0-7, a0-7, pc, s
 (zlib, 1 MiB), `all_mapped`, `mmio` (forced reads), `ctlregs`, `ff1_count`, `movec_count`, `extra`,
 `components` (timers, ssi0, ...), `manifest`.
 
-- `tools/snapconv.py` (Python, reuses `emu.snapshot._load_blob`): `.snap <-> .mstate`.
+- `tools/snapconv.py` (Python, reuses `unicorn-reference-final:emu/snapshot.py`'s `_load_blob`): `.snap <-> .mstate`.
   `.mstate` = magic, JSON header (everything but pages), then `(base u32, len u32, zlib bytes)` records.
 - `packages/emulator/machine/src/state.rs`: `MachineState` and `read/write`. Import fills fields the snapshot
   lacks (EMAC, inactive A7, CACR/RAMBAR not in `ctlregs`) with what a Python restore leaves them
@@ -226,8 +226,8 @@ packages/emulator/machine/            pure, std only, builds for wasm32 (--no-de
   state.rs    MachineState, .mstate;  profile.rs  Profile + ImageFacts;  input.rs  input events + log
   trace.rs    (feature) DT2MMIO writer;  bin/mrun.rs  import, run N, export, trace, stats
 packages/emulator/live/               desktop host: QueueLink, InlineLink, pacing, CF thread, cpal (exists)
-native/desktop/ (bin)      window + local webview (HTML canvas UI), wiring
-native/web/ (P6)           Web Worker host, AudioWorklet + SharedArrayBuffer ring
+apps/desktop/ (bin)        window + local webview (HTML canvas UI), wiring
+apps/web/ (P6)             Web Worker host, AudioWorklet + SharedArrayBuffer ring
 ```
 
 ```rust
@@ -268,7 +268,7 @@ Each step ends on an oracle check and a commit.
 |---|---|---|---|
 | 1 | `.mstate` + `snapconv`; `Board` map; import then export with no execution | snapeq identical (round trip), dt2 and dn2 snaps | mechanical |
 | 2 | `Cpu::run`, `take_interrupt`, PC bitmap | existing Unicorn lockstep plus unit tests for frame/SR/IPL | mechanical |
-| 3 | Oracle loop: Timers, IdleSpin, UART8, forced MMIO; dt2-ready window 1M, 10M, 100M | snapeq vs `emu.longrun` exact pits mode at equal clock; mmio-diff on mismatch; resolves or refutes the P4a vec-208 "handler==0" hypothesis | design (loop), then mechanical fixes |
+| 3 | Oracle loop: Timers, IdleSpin, UART8, forced MMIO; dt2-ready window 1M, 10M, 100M | snapeq vs `unicorn-reference-final:emu/longrun.py` exact pits mode at equal clock; mmio-diff on mismatch; resolves or refutes the P4a vec-208 "handler==0" hypothesis | design (loop), then mechanical fixes |
 | 4 | DSPI2 + DSP FIFO + FrameForcer, `RecordLink`; dt2-ready-trig1 window | TX frames byte-equal to the capture; FlexBus log equal; snapeq | mechanical |
 | 5 | SSI0 in Oracle mode (96 kHz), no forcer | Python with `ssi0_request_hz` on: snapeq, same 170->191 sequence and frame list | mechanical |
 | 6 | DN2 windows (boot400M) | snapeq | mechanical |

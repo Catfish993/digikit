@@ -1,7 +1,7 @@
 # fmt: off
 """Image-only derivation of the emulator's never-fake semaphore set.
 
-`emu/longrun.py`'s `unblock` force-satisfies most semaphore pends so a run
+`unicorn-reference-final:emu/longrun.py`'s `unblock` force-satisfies most semaphore pends so a run
 does not sit blocked waiting for hardware nothing here emulates. That is
 wrong for any semaphore with a poster that CAN run in the emulator: faking a
 pend whose real poster would eventually post anyway just races ahead of it
@@ -15,7 +15,7 @@ Two things run in the emulator and must therefore never be faked:
 
   * ordinary task code -- any `give`/`give_b` call not reachable from an
     interrupt vector at all;
-  * an ISR of a source THIS BUILD models -- e.g. PIT3 (see emu/pit.py),
+  * an ISR of a source THIS BUILD models -- e.g. PIT3 (see unicorn-reference-final:emu/pit.py),
     which really does fire in the emulator, so its post really does happen.
     The caller passes the vectors it actually raises as `modeled_vectors`;
     a give inside an ISR whose vector is NOT in that set (e.g. give_b's
@@ -78,8 +78,8 @@ Sig/Operand resolution in tools/coldfire/symbols.py and stay hand-added by the c
 import hashlib
 import struct
 
-from tools.coldfire.disasm import disasm
 from tools.coldfire import symbols
+from tools.coldfire.disasm import disasm
 
 GIVE = 0x4000148c
 GIVE_B = 0x400014fc
@@ -331,7 +331,7 @@ def never_fake_semaphores(image, load_addr=symbols.LOAD_ADDR, modeled_vectors=fr
         the existing way and add them to the caller's never-fake set
         separately;
       * a semaphore that must be fakeable for PART of a run and protected
-        for the rest, like emu/longrun.py's frame_sem (fakeable during the
+        for the rest, like unicorn-reference-final:emu/longrun.py's frame_sem (fakeable during the
         intro, never-fake after intro_done switches its poster away) --
         that needs the caller's own dynamic handling, not a static set.
 

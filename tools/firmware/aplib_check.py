@@ -26,9 +26,9 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
+from tools import python_env  # noqa: E402
 from tools.firmware import aplibpack, elz  # noqa: E402
 from tools.firmware.container import sections  # noqa: E402
-from tools import python_env  # noqa: E402
 
 IMAGES = {
     "dt2-1.16": "Digitakt_II_OS1.16.syx",

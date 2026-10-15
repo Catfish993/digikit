@@ -1,14 +1,14 @@
 """Opt-in capture of real ColdFire<->SHARC traffic, for tools/sharc_dev/sharc_replay.py.
 
 Four independent things a run can record, all off unless a caller wires
-them in (nothing here is installed by `emu.longrun.build()` on its own):
+them in (nothing here is installed by `unicorn-reference-final:emu/longrun.py`'s `build()` on its own):
 
 - Every DSPI2 frame the ColdFire's driver call builds and sends toward the
   SHARC (docs/findings/04-coldfire-dsp-link.md, "The ColdFire tells the
   SHARC through a periodic DSPI2 frame"): the TX bytes it actually built,
   and the RX bytes it got back (always silence here -- see `CapturingPeer`
   below -- since nothing in this repo yet runs a real SHARC to answer).
-- Every SSI0 "audio in" request (`emu/ssi.py`'s `peer.rx(nbytes)` hook):
+- Every SSI0 "audio in" request (`unicorn-reference-final:emu/ssi.py`'s `peer.rx(nbytes)` hook):
   size and cadence only, again always silence, since real input hardware
   is unmodeled (this matches `tools/sharc_dev/sharc_proc.py`'s own
   `audio_mode="silence"` convention).
@@ -21,12 +21,12 @@ them in (nothing here is installed by `emu.longrun.build()` on its own):
   the driver uses a *different* physical DSPI block, `0xfc03c034`, than the
   SHARC's own `0xec038034`) -- kept as a record type so a future run can
   reopen the question with evidence instead of re-deriving the address.
-  Observational only (`tools/sharc_capture_run.py`'s hook does not alter
+  Observational only (`unicorn-reference-final:tools/sharc_capture_run.py`'s hook does not alter
   control flow, unlike the DSPI2 driver hook below, which must fake a reply
   since nothing here answers as a real SHARC would): logs the call's own
   three arguments (length, source pointer or 0, completion callback), never
   the peripheral's behaviour.
-- Any write into a watched raw memory range (`tools/sharc_capture_run.py`'s
+- Any write into a watched raw memory range (`unicorn-reference-final:tools/sharc_capture_run.py`'s
   `--watch-mem LO:HI`): this lane's other candidate for a shared/bulk
   transport, the 16-byte FlexBus window at `0x8c000000` (docs/findings/04,
   "Ruled out as the control link"; confirmed on 1.16 by `tools/coldfire/refscan.py`
@@ -35,13 +35,14 @@ them in (nothing here is installed by `emu.longrun.build()` on its own):
   1.16 correction). Generic by address range, not tied to FlexBus, so the
   same mechanism can watch any other candidate window later.
 
-`CapturingPeer` implements both `emu.dspi2`'s peer contract (`.exchange`)
-and `emu.ssi`'s (`.rx`/`.tx`), the same way `tools.sharc_dev.sharc_peer.SharcServerPeer`
+`CapturingPeer` implements both `unicorn-reference-final:emu/dspi2.py`'s peer contract
+(`.exchange`) and `unicorn-reference-final:emu/ssi.py`'s (`.rx`/`.tx`), the same way
+`tools.sharc_dev.sharc_peer.SharcServerPeer`
 answers both with one object -- so one instance can be wired to both
-`emu.longrun.build(dspi2_peer=..., ssi0_peer=...)` parameters, or driven
+`unicorn-reference-final:emu/longrun.py`'s `build(dspi2_peer=..., ssi0_peer=...)` parameters, or driven
 directly from a hand-installed driver-call hook (see
-`tools/sharc_capture_run.py`, which does the latter: hooking the DSPI2
-driver call directly, the way `tools/sharcframe.py` already does, rather
+`unicorn-reference-final:tools/sharc_capture_run.py`, which does the latter: hooking the DSPI2
+driver call directly, the way `unicorn-reference-final:tools/sharcframe.py` already does, rather
 than the eDMA/DSPI2 register model, since nothing about capturing needs the
 transport modeled -- only what crossed it).
 
@@ -73,7 +74,7 @@ transport modeled -- only what crossed it).
 `instr` is whatever the caller's `counter` callable returns, e.g. a
 `spin()`-driven run's `pits.now` -- accurate to the last scheduling
 deadline the writer's own run stepped to, not to the exact instruction (see
-`tools/sharc_capture_run.py`), which is enough to place a frame in the
+`unicorn-reference-final:tools/sharc_capture_run.py`), which is enough to place a frame in the
 run's rough timeline without paying for an instruction-exact hook.
 """
 
@@ -159,7 +160,7 @@ class CaptureWriter:
     ) -> None:
         """Record one observed call to the DSPI1 driver (see the module
         docstring): the call's own arguments only, never a reply -- this
-        record type is observational (`tools/sharc_capture_run.py`'s hook
+        record type is observational (`unicorn-reference-final:tools/sharc_capture_run.py`'s hook
         does not intercept the call), unlike a DSPI2 TX/RX pair."""
         self._write(
             REC_DSPI1_CALL, instr_count, _DSPI1_CALL.pack(length, src, callback)
@@ -168,7 +169,7 @@ class CaptureWriter:
 
     def write_mem_write(self, instr_count, address: int, data: bytes) -> None:
         """Record one write the guest made into a watched raw address range
-        (`tools/sharc_capture_run.py --watch-mem`)."""
+        (`unicorn-reference-final:tools/sharc_capture_run.py --watch-mem`)."""
         self._write(
             REC_MEM_WRITE, instr_count, _MEM_WRITE_ADDR.pack(address) + bytes(data)
         )
@@ -293,12 +294,13 @@ def load(path: str) -> Capture:
 
 
 class CapturingPeer:
-    """Implements both `emu.dspi2`'s peer contract (`.exchange(tx) -> bytes`)
-    and `emu.ssi`'s (`.rx(nbytes) -> bytes`, `.tx(data) -> None`), recording
+    """Implements both `unicorn-reference-final:emu/dspi2.py`'s peer contract
+    (`.exchange(tx) -> bytes`) and `unicorn-reference-final:emu/ssi.py`'s
+    (`.rx(nbytes) -> bytes`, `.tx(data) -> None`), recording
     every call to WRITER.
 
     Never invents data -- `exchange()`/`rx()` always answer with zeros (the
-    same convention as `emu.dspi2.ZeroPeer` and `tools/sharc_dev/sharc_proc.py`'s
+    same convention as `unicorn-reference-final:emu/dspi2.py`'s `ZeroPeer` and `tools/sharc_dev/sharc_proc.py`'s
     `audio_mode="silence"`): this module exists to observe real ColdFire
     output, not to stand in for a SHARC that would answer it for real.
     `.tx()` (SSI0's captured-samples half) is not recorded: the task this
@@ -306,7 +308,7 @@ class CapturingPeer:
 
     `counter`, if given, is a zero-arg callable returning the current
     ColdFire instruction count (the same convention as
-    `emu.dspi2.RecordingPeer`'s own `counter` parameter) -- called fresh at
+    `unicorn-reference-final:emu/dspi2.py`'s `RecordingPeer`'s own `counter` parameter) -- called fresh at
     every request, so a caller may swap in a real clock (e.g. a `Pits`'s
     `.now`) after construction by mutating whatever the closure reads.
     """

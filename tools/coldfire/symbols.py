@@ -571,11 +571,11 @@ SYMBOLS = [
     # from these two operands -- which is exactly what makes them
     # resolvable: `movea.l <CURRENT_TCB>,a0` at +8 and `movea.l
     # <READY_CURSOR>,a1` at +0x14, whose abs32 operands start two bytes
-    # into each. emu/tasks.py and emu/gui.py used to hardcode Digitakt's.
+    # into each. unicorn-reference-final:emu/tasks.py and unicorn-reference-final:emu/gui.py used to hardcode Digitakt's.
     # ----------------------------------------------------------------
     ('ctx_switch', Fixed(0x40000410, verify='46fc27002f48fffc2079'), False),
     # move.l a0,current_tcb inside ctx_switch: the variable still holds the
-    # outgoing task, A0 the incoming one (emu/taskprof.py).
+    # outgoing task, A0 the incoming one (unicorn-reference-final:emu/taskprof.py).
     # The store back to current_tcb is at a stable RTOS address, but its
     # abs32 operand relocates with the application's RAM layout.  Resolve the
     # instruction rather than verifying 1.15C's embedded operand.
@@ -588,7 +588,7 @@ SYMBOLS = [
     # vector 208 until it switches the timer off on its way out, at which
     # point the display module claims the same vector -- so "vector 208
     # still points at the intro's handler" is precisely the window in which
-    # the intro is live, and emu/pit.py:intro_running tests exactly that.
+    # the intro is live, and unicorn-reference-final:emu/pit.py:intro_running tests exactly that.
     # It hardcoded Digitakt's handler address, so on any other build it
     # answered False throughout the intro and the GUI released the timers
     # into the middle of it.
@@ -736,7 +736,7 @@ SYMBOLS = [
     # The soft-float routines. This ColdFire has no FPU, so every float
     # operation is a libgcc-style routine and the intro's particle
     # simulation spends ~93% of all executed instructions in them --
-    # emu/softfloat.py intercepts each entry and returns the host's answer
+    # unicorn-reference-final:emu/softfloat.py intercepts each entry and returns the host's answer
     # instead. It named all seven by literal Digitakt address, so on any
     # other build the HLE simply never fired and the guest ground through
     # the real arithmetic: measured on Digitone, the intro could not
@@ -783,7 +783,7 @@ SYMBOLS = [
     #
     # sd_flag is that flag: the `clr.l (abs).l` operand 28 bytes into the
     # routine, which is also the driver-struct base. sd_status is the
-    # driver's own status word at base+0x30, which emu/esdhc.py has to write
+    # driver's own status word at base+0x30, which unicorn-reference-final:emu/esdhc.py has to write
     # on command completion; it was previously hardcoded to Digitakt's
     # 0x44E26F1C, which on Digitone left every command looking permanently
     # in-progress.
@@ -821,7 +821,7 @@ SYMBOLS = [
 
     # ----------------------------------------------------------------
     # The front-panel serial link. There is no memory-mapped key matrix to
-    # find: tools/mmiotrace.py measured 60M post-intro instructions on each
+    # find: unicorn-reference-final:tools/mmiotrace.py measured 60M post-intro instructions on each
     # build and saw zero GPIO, zero DSPI and zero unclaimed MMIO. The panel
     # is a separate microcontroller on UART8, and button and encoder events
     # arrive the way MIDI would -- eDMA channel 34 into a 1024-byte ring,
@@ -844,7 +844,7 @@ SYMBOLS = [
     #     +0x30  consume index
     #     +0x40  receive callback pointer
     #
-    # emu/serial.py hardcoded Digitakt's 0x4094CD84 / 0x4094CDA4 /
+    # unicorn-reference-final:emu/serial.py hardcoded Digitakt's 0x4094CD84 / 0x4094CDA4 /
     # 0x4094CDB4 for these three. On Digitone they read 0xFFFFFFFF, so
     # feeding that build through it would have written into unmapped memory
     # rather than a ring.
@@ -854,7 +854,7 @@ SYMBOLS = [
            verify='2f02740f41f9ec09404b1210202f000843f9ec07000042b9'), False),
     ('_uart8_globals', Operand('uart8_init', at=0x18), False),
     # The globals block begins with the firmware's "TX transfer armed"
-    # flag.  emu.edma's legacy-snapshot kick must read this image-relative
+    # flag.  unicorn-reference-final:emu/edma.py's legacy-snapshot kick must read this image-relative
     # address: it is 0x4094cd74 on DT2 1.15C and 0x40964d74 on 1.16.
     ('uart8_tx_state', Offset('_uart8_globals', 0), False),
     ('uart8_ring_ptr', Offset('_uart8_globals', 0x10), False),
@@ -897,7 +897,7 @@ SYMBOLS = [
 
     # ----------------------------------------------------------------
     # Post-intro progress markers. These are what tells you whether the OS
-    # actually took over, and emu/gui.py reports them on its status line --
+    # actually took over, and unicorn-reference-final:emu/gui.py reports them on its status line --
     # it named all three by Digitakt address, so on Digitone the line read
     # "mainloop 0  jobs 0" no matter what the firmware was doing.
     #
@@ -926,7 +926,7 @@ SYMBOLS = [
     # ----------------------------------------------------------------
     # UI-trace hook points: the UI queue, key dispatch to views, and view
     # activate/close. Verified by disassembly on Digitakt II 1.15C (see
-    # emu/uitrace.py).
+    # unicorn-reference-final:emu/uitrace.py).
     # ----------------------------------------------------------------
     ('queue_send',       Fixed(0x40001896, verify='2f0a2f02206f000c'), False),
     ('ui_queue',         Operand('mainloop', at=2), False),

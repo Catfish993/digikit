@@ -1,6 +1,6 @@
-//! Reader for the `DT2MMIO` v1/v2 trace format `emu/mmiotrace.py` writes.
+//! Reader for the `DT2MMIO` v1/v2 trace format `unicorn-reference-final:emu/mmiotrace.py` writes.
 //!
-//! Format (`emu/mmiotrace.py`'s module docstring is the full spec; this is
+//! Format (`unicorn-reference-final:emu/mmiotrace.py`'s module docstring is the full spec; this is
 //! the subset this crate needs):
 //!
 //! ```text
@@ -15,7 +15,7 @@
 //! Every record is a `u8` tag then a fixed little-endian layout, some with
 //! trailing bytes whose length is the layout's last field. A `TIME` record
 //! sets the clock for every record after it (this reader tracks it and
-//! attaches it to each [`Record`], the same convenience `emu.mmiotrace.Reader`
+//! attaches it to each [`Record`], the same convenience `unicorn-reference-final:emu/mmiotrace.py`'s `Reader`
 //! gives Python callers). An unrecognised tag is a hard error: a record's
 //! length is determined by its tag, so nothing can be skipped past it.
 

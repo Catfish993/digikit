@@ -369,7 +369,7 @@ before the caches are enabled, so it needs no cache maintenance.
 Section 2 (DT2 1.16 and 1.17 are byte-identical, version 0x0201) loads at 0x80000400
 (the file's first 4 bytes are a length word; the image's first two longwords are SP
 0x80010000 and PC 0x80000de8). `packages/emulator/bootstrap` runs its real instructions on the
-native ColdFire core; `tools/emulator/bootstrap_run.py` drives it; `tests/test_bootstrap.py`
+native ColdFire core; `tools/emulator/bootstrap_run.py` drives it; `tests/emulator/test_bootstrap.py`
 pins the results. Modelled, not executed: the QSPI transport (flash read 0x8000f010,
 flash id 0x800024ec, sector erase 0x80002714, page program 0x8000227e), the panel UART
 (key banks, OLED records), the MIDI UART (one receive interrupt per byte), PLL, DDR

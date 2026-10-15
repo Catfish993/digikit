@@ -1,7 +1,7 @@
 """Where the firmware, its sections and the snapshots live.
 
 Nothing in this project should hardcode a firmware filename. It did, in
-thirteen files, and the cost was concrete: `emu.run` accepted a `.syx`
+thirteen files, and the cost was concrete: `unicorn-reference-final:emu/run.py` accepted a `.syx`
 argument, passed it to nothing, and cheerfully ran a *different* firmware's
 image and snapshots while printing the name you asked for. A hardcoded default
 that silently wins over an explicit argument is worse than no default.

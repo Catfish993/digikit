@@ -54,14 +54,14 @@ Start with current findings and narrow plans, not old phase labels:
 - `HANDOVER-2026-09-16-machine-to-dsp.md` — latest root handover baseline for
   machine-to-DSP work, not unqualified current state or order. Later
   `docs/FINDINGS.md` corrections, current source, and
-  `docs/plans/EMULATOR-SHARC-BOUNDARY.md` override it where they conflict,
+  `docs/archive/EMULATOR-SHARC-BOUNDARY.md` override it where they conflict,
   especially its pre-queue-correction 1a/1b model.
 - `docs/FINDINGS.md` — especially machine type at TX `0x94 + 2i`, row refresh,
   queue-drain correction, LFOs/modulation, and the SHARC side of SPI.
-- `docs/TOOLS.md`, `docs/plans/EMULATOR-SHARC-BOUNDARY.md`, and
+- `docs/TOOLS.md`, `docs/archive/EMULATOR-SHARC-BOUNDARY.md`, and
   `docs/PATCHING.md` — executable methods and guardrails.
 
-Older `README`, `docs/HANDOVER.md`, and `docs/NEXT.md` may also be stale.
+Older `README`, `docs/archive/HANDOVER.md`, and `docs/archive/NEXT.md` may also be stale.
 
 ## 2. Capability baseline: established, bounded, and incomplete
 
@@ -110,7 +110,7 @@ not substitutes for the input-driven provenance.
 
 The byte-checked static producer/wire chain remains the baseline check, but the
 blocked SHARC receive seed is deliberately behind A0–A2 dynamic emulator
-evidence. The bounded plan is `docs/plans/EMULATOR-SHARC-BOUNDARY.md`; extend
+evidence. The bounded plan is `docs/archive/EMULATOR-SHARC-BOUNDARY.md`; extend
 it rather than duplicating its commands here.
 
 The current SSI peer investigation has identified DAI1 pins 1-3 as PCG C
@@ -318,7 +318,7 @@ A3 remains blocked until this input-driven provenance exists.
 > until that input-driven provenance is recorded. Read
 > `HANDOVER-2026-09-16-machine-to-dsp.md`, current headings in
 > `docs/FINDINGS.md`, `docs/TOOLS.md`, and
-> `docs/plans/EMULATOR-SHARC-BOUNDARY.md` before consulting stale plans.
+> `docs/archive/EMULATOR-SHARC-BOUNDARY.md` before consulting stale plans.
 > The mission is safe DT2/DN2 modification surfaces, not wholesale
 > decompilation.
 >

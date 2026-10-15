@@ -50,8 +50,8 @@ as reads with no destination rather than guessed at), and an unrelated
 write that happens to carry the same small integer would false-positive.
 Matches are grouped against the known destination structures this run's own
 address falls in: the 32 voice records (`0x2412cc + k*0x1d8`,
-tools/sharc_harness.VOICE_RECORD_STRIDE/COUNT), the four DMA output rings
-(tools/sharc_inputs.RING_BUFFERS), or a bare workspace address.
+tools/sharc_dev/sharc_harness.{VOICE_RECORD_STRIDE,VOICE_RECORD_COUNT}), the four DMA output rings
+(tools/sharc_dev/sharc_inputs.RING_BUFFERS), or a bare workspace address.
 
 Setting the machine-type field (offset 0x94) to a nonzero marker
 deliberately forces the NOT-EQUAL side of FUN_001c2b24's own change-test at
@@ -83,7 +83,7 @@ from tools.sharc_dev.sharcldr import SW_ALIAS_BASE  # noqa: E402
 FRAME_BASE = 0x2558DC
 FRAME_LEN = 0x802  # docs/findings/04: the ColdFire's own TX payload length.
 
-# tools/sharc_inputs.DYNAMIC_DM_RANGE: the same SHARC-visible workspace band
+# tools/sharc_dev/sharc_inputs.DYNAMIC_DM_RANGE: the same SHARC-visible workspace band
 # sharc_inputs.py's own dynamic_view() already watches.
 WORKSPACE_RANGE = si.DYNAMIC_DM_RANGE
 
@@ -112,11 +112,10 @@ TRACK_COUNT = 16
 VOICE_RECORDS_BASE = 0x2412CC
 VOICE_RECORD_STRIDE = h.VOICE_RECORD_STRIDE
 VOICE_RECORD_COUNT = h.VOICE_RECORD_COUNT
-# tools/sharc_harness.FRAME_PATCH_TABLE's own hand-patched "per-track mixer/
-# gain parameter mirror" (0x2560b8) sits inside this span -- named here as a
-# structure, not re-derived: this tool did not identify its exact bounds,
-# it reuses the ones docs/HANDOVER-2026-09-25-sharc-emulator.md's state
-# already recorded (0x255fb6-0x2560d0).
+# tools/sharc_dev/sharc_harness.FRAME_PATCH_TABLE's own hand-patched
+# "per-track mixer/gain parameter mirror" (0x2560b8) sits inside this span --
+# named here as a structure, not re-derived: this tool did not identify its
+# exact bounds, it reuses the ones already recorded (0x255fb6-0x2560d0).
 GAIN_TABLE_RANGE = (0x255FB6, 0x2560D0)
 
 
@@ -198,7 +197,7 @@ def _natural_markers(frame: bytes | bytearray) -> dict[int, tuple[int, int]]:
     """Like _apply_fingerprint(), but reads back whatever value a REAL
     capture already carries at the eleven known scalar bases instead of
     overwriting it -- for a run that wants destination correlation without
-    touching a real frame's own content (e.g. tools/sharc_capture_run.py's
+    touching a real frame's own content (e.g. unicorn-reference-final:tools/sharc_capture_run.py's
     ``--poke-track-type``, which already puts a genuine, firmware-copied
     nonzero value at frame offset 0x94). Only a NONZERO field is registered
     (zero would match nearly every write in the run and drown any real

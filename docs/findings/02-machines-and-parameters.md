@@ -423,7 +423,7 @@ in `tools/patchkit/machinepatch.py` and selectable part by part with `--patch-ma
 names, the stock type to copy fields from, list position, optional fields),
 and `plan_b` computes every write from a `read(addr, n)` function. With the
 default spec it produces the same 18 writes as the verified run, live and
-against the static image (`tests/test_machinepatch_plan.py`). With
+against the static image (`tests/firmware/test_machinepatch_plan.py`). With
 `--machine=Lofi:LOF:3:0` the list becomes `{7,0,1,2,3,6,4,5}`, the rank pairs
 follow it, boot completes with no exception, and MACHINE SEL shows LOFI as its
 first row. The fields copied live from REPITCH's descriptor are
@@ -1003,7 +1003,7 @@ a bounded emulator confirmation (load a hand-edited project with type 7 on stock
 
 ## core.machines: N added machine types on Digitakt II 1.17 (patchkit Phase 3)
 
-Plan: `docs/plans/patchkit.md` (Phase 3). Code: `packages/patchkit/src/machines.rs`, `modules/core/machines`,
+Plan: `docs/plans/patchkit.md` (Phase 3). Code: `a1cf1df^:native/patchkit/src/machines.rs` (the Rust generator, removed in a1cf1df), `modules/core/machines`,
 `modules/machines/xslice`, `modules/test/machine-clone`, `tools/patchkit/pk_machine_rules.py`, `tools/patchkit/pk_proof_machines.py`,
 `tools/emulator/card_overlay.py`. One agent, emulator only, nothing flashed, not checked by a second agent: **[D]** unless
 stated. A second agent verified **[V]** the static facts: the 24-site count, the list allocation sites (`pea 0x1c` and
@@ -1048,7 +1048,7 @@ DT2 1.17 with `core/machines` + `machines/xslice` + `test/machine-clone`: `cf.fl
 before: about 316 B of shim code for one type and about 80 B more per added type, 372 and 452 B with the loader, and the
 cave capped the number of types), `cf.expansion` 744 B (code and tables). Evidence **[D]**: `tools/patchkit/pk_proof_machines.py` on
 1.17 and on 1.16 passes 33 of 34 checks each (the one failure is below), the smoke goldens of the XSLICE and XClone cells on 1.17 and 1.16 are unchanged
-(frame hashes equal to the cave version), `tests/test_patchkit_expansion.py` asserts the placement.
+(frame hashes equal to the cave version), `tests/patchkit/test_patchkit_expansion.py` asserts the placement.
 
 ### Corrections to the earlier XSLICE work **[C]**
 
@@ -1133,7 +1133,7 @@ the eMMC as sparse sectors) so a card with a patched firmware's project can be m
 
 ## core.params: parameter descriptors for added machines (patchkit) **[D]**
 
-Plan: `docs/plans/patchkit.md` (Phase 3 and 4.2 results). Code: `packages/patchkit/src/params.rs` (with `tests/params.rs`, 5
+Plan: `docs/plans/patchkit.md` (Phase 3 and 4.2 results). Code: `a1cf1df^:native/patchkit/src/params.rs` (with `a1cf1df^:native/patchkit/tests/params.rs`, 5
 integration tests on the real ports and images, 3 unit tests), `[[param]]` in `module.rs`, `modules/core/params`,
 `tools/patchkit/port_resolve.py` (three rule kinds), `modules/machines/pluck`, `tools/patchkit/pk_proof_pluck.py`. One agent, emulator only,
 nothing flashed, not checked by a second agent: **[D]** unless stated. A second agent verified **[V]** the static site
@@ -1245,10 +1245,10 @@ emulator (health asserted after every input; the numbers below are 1.17):
 ## core.machines on Digitone II 1.12 (patchkit, lane fastweb) **[D]**
 
 Emulator only, nothing flashed, one agent, not checked by a second one: **[D]** unless marked. Code:
-`packages/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
+`a1cf1df^:native/patchkit/src/machines/dn2.rs` (the Digitone II part of `machines.rs`: the Digitakt code paths for rank,
 per-type byte, clone tests and the DSP selector table are skipped on `dn2`), rules `tools/patchkit/pk_machine_rules_dn2.py`
 (`cf_func` hashes, 1.12 reference, 1.11 resolves every one), module `modules/test/dn2-clone` (a clone of FM TONE as
-type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `packages/patchkit/tests/machines.rs`
+type 5), proof `tools/patchkit/pk_proof_machines_dn2.py` (a, b, c, c2, d: all pass), tests in `a1cf1df^:native/patchkit/tests/machines.rs`
 (DN2 1.12 and 1.11 patch; the Digitakt output is byte-identical to the previous patchkit for `core/machines` +
 `machines/xslice` + `test/machine-clone` on 1.16 and 1.17). Addresses are 1.12; 1.11 is the same by function hash.
 
@@ -1426,7 +1426,7 @@ moves the slot's word; before any note no block changes). See finding 06, "DN2 v
 
 ## core.machines, core.params and core.dsp-voice as modules (patchkit 3b.2/3b.3, lane b) **[D]**
 
-**[C]** to the code references above: `packages/patchkit/src/machines.rs`, `machines/dn2.rs`, `params.rs`, their tests, and the
+**[C]** to the code references above: `a1cf1df^:native/patchkit/src/machines.rs`, `machines/dn2.rs`, `params.rs`, their tests, and the
 manifest keys `[[machine]]`, `[[param]]`, `[[table]]`, `op = "register"` and `op = "jump"` were deleted. The frameworks are
 ordinary modules now: ColdFire assembly (`modules/core/machines/src/cf/dt2/machines.s`, `.../dn2/machines.s`,
 `modules/core/params/src/cf/dt2/params.s`), a manifest with registries (`machines`, `params`, `voices`), P1 copies of the
@@ -1448,7 +1448,7 @@ the behaviour and the evidence above stand; what changed is who builds the table
   function answers 2 for type 5 and 1 for 0..4 before it), so `bcs` with the raised bound changes the answer for added types
   only; no stock type changes.
 - **Unit tests:** `tools/patchkit/pk_cfunit.py` runs one hook routine on the native core with chosen registers, flags and stack (tails and
-  exits are stubs that report where the routine left); `tests/test_pk_machines_fw.py`, `test_pk_machines_dn2_fw.py`,
+  exits are stubs that report where the routine left); `tests/patchkit/test_pk_machines_fw.py`, `test_pk_machines_dn2_fw.py`,
   `test_pk_params_fw.py`; the manifest row expressions are evaluated by `tools/patchkit/pk_expr.py` and compared with the old Rust
   row builders' formulas. Integration: `packages/patchkit/tests/frameworks.rs` (real modules on the real images).
 - **Hot-path cost matters to the proofs [D]:** the Digitone II hooks on the frame builder (vector 191), the type reader and the
@@ -1463,7 +1463,7 @@ Emulator only, one agent, not checked by a second one: **[D]**. Realises "DN2 pa
 there stands except where marked **[C]**. Code: `modules/core/machines` (DN2 assembly `src/cf/dn2/machines.s`, registry `pages`),
 `modules/core/params` (the Digitone II side: registry, `pf_table` section, hooks and writes for 321 rows, rules in
 `modules/core/params/module.toml`), `modules/test/dn2-pages` (the content proof), `tools/patchkit/pk_proof_pages_dn2.py` (quick and full),
-`tests/test_pk_machines_dn2_fw.py` (the routines on the ColdFire call harness, 5 new tests). No change in `packages/patchkit`.
+`tests/patchkit/test_pk_machines_dn2_fw.py` (the routines on the ColdFire call harness, 5 new tests). No change in `packages/patchkit`.
 
 **What a content module writes.** Parameters as on the Digitakt (`registry = "params"`: `name`, `short`, `template` = a stock code
 of the same value class, `slot` = the **sound-array slot itself** 25..64, `min`, `max`, `default`) and one row per page:
@@ -1575,7 +1575,7 @@ one row per gap (4 to 64 bytes each).
 
 **Evidence.** `cargo test -p patchkit` (prims: numbers follow the table, not the selection order, a subset keeps its numbers,
 gap rows take `[registry.gap]`, the five refusals; frameworks: PLUCK alone is 9 with gaps `[7, 8]`, the descriptor row holds
-the module's parameter codes, row 7 is a clone of type 0 and hidden); `tests/test_pk_types.py` (every machine entry has a number
+the module's parameter codes, row 7 is a clone of type 0 and hidden); `tests/patchkit/test_pk_types.py` (every machine entry has a number
 on each device it targets, numbers unique and in range, `pk_new.allocate`); the ColdFire call harness tests of the list
-builder (`tests/test_pk_machines_fw.py`, `_dn2_fw.py`) pass unchanged. Emulator: see the results note in
+builder (`tests/patchkit/test_pk_machines_fw.py`, `_dn2_fw.py`) pass unchanged. Emulator: see the results note in
 docs/plans/patchkit.md (quick-tier proofs and the smoke matrix on the permanent numbers).

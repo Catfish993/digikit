@@ -162,7 +162,7 @@ def coldfire_region(addr: int) -> tuple[str, str] | None:
 
 
 def run_init_state(image: str):
-    """A real post-init State (tools/sharc_harness.run_init(), lazily
+    """A real post-init State (tools/sharc_dev/sharc_harness.run_init(), lazily
     imported -- only a caller that wants label (a) checked against a live
     overlay needs the harness at all) to check ADDR's own write-overlay
     membership against. Raises RuntimeError if init does not reach its
@@ -347,7 +347,7 @@ def build(img: sharc.Image, root: int, *, init_state=None) -> InputsReport:
 # The static labels above are a purely static answer (sharc_contract's own
 # `ptr` constant-propagation pass); this instead runs the real firmware path
 # once (setup_voice() + setup_frame() + fresh_call(block_handler), the same
-# call tools/sharc_harness.call_frame() makes) with a non-stopping Watchpoint
+# call tools/sharc_dev/sharc_harness.call_frame() makes) with a non-stopping Watchpoint
 # over the whole SHARC-visible workspace, and reports every address actually
 # read that this same run never wrote and that run_init() did not write
 # either -- a live cross-check for the static "no writer found" bucket that a
@@ -387,7 +387,7 @@ def dynamic_view(
     voice: int = 0,
 ) -> DynamicView:
     """Run one real frame (command 3, docs/findings/06's "Task loop") from a
-    fresh run_init(), with one voice set up (tools/sharc_harness.setup_voice())
+    fresh run_init(), with one voice set up (tools/sharc_dev/sharc_harness.setup_voice())
     so render_frame finds at least one active voice, and a log-only
     Watchpoint over DM_RANGE attached to the fresh_call(block_handler)
     Runner. Returns every byte address read during that run that the SAME
@@ -458,7 +458,7 @@ def dynamic_view_capture(
     sample_len: int = 4096,
 ) -> DynamicView:
     """Like `dynamic_view()`, but drives N frames of a real
-    tools/sharc_capture_run.py capture through the real per-frame command
+    unicorn-reference-final:tools/sharc_capture_run.py capture through the real per-frame command
     dispatch (`tools/sharc_dev/sharc_replay.py`'s own `RX_BASE`/`frame_command()`
     convention -- lane C2, 2026-09-25) on one continuous Runner, instead of
     one bare default-command-3 frame with no captured frame content at all.
@@ -640,7 +640,7 @@ def main(argv=None) -> int:
     )
     p.add_argument(
         "--capture",
-        help="cross-check against a real tools/sharc_capture_run.py capture "
+        help="cross-check against a real unicorn-reference-final:tools/sharc_capture_run.py capture "
         "replayed through the real per-frame command dispatch "
         "(dynamic_view_capture()) instead of one bare command-3 frame",
     )

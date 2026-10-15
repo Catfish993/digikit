@@ -2,7 +2,7 @@
 #
 # This file deliberately contains NO control names and NO guest addresses.
 # Names come from the firmware's own factory-test tables, resolved at run time
-# through tools/coldfire/symbols.py and read by emu/panelin.py's control_names(), so they
+# through tools/coldfire/symbols.py and read by unicorn-reference-final:emu/panelin.py's control_names(), so they
 # cannot drift out of sync with the image and a firmware version nobody has
 # seen still names itself. Addresses are derived by signature for the same
 # reason -- freezing either here would mean a new file per firmware release.
@@ -54,7 +54,7 @@ dsp = { image = "dn2-1.12", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_hea
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
 # Channels 0..5 are linear -- code = channel * 8 + bit + 1, codes 1..48 --
-# measured on this build with tools/panelsweep.py by reading the event
+# measured on this build with unicorn-reference-final:tools/panelsweep.py by reading the event
 # records the firmware emits.
 linear_channels = 6
 encoders = 9

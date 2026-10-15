@@ -13,7 +13,7 @@ boundary, then 16-byte padding and the 32-byte HMAC trailer. `tools/firmware/bui
 bytes lower, the preamble checksum, the HMAC and 1.69 M of 1.88 M file bytes differ (it still passes
 `roundtrip.check_authenticity`, which checks the container's own checksums and HMAC, not equality with stock). patchkit keeps the first
 offset of the source image: `Firmware::parse` then `build` reproduces all four stock `.syx` files **byte for
-byte** (framing, 8-in-7, packet checksums, content checksum, HMAC; `tests/test_patchkit.py`). An image with a
+byte** (framing, 8-in-7, packet checksums, content checksum, HMAC; `tests/patchkit/test_patchkit.py`). An image with a
 patched section differs from stock only in that section, the table and the checksums.
 
 ## aPLib packer in Rust equals the Python packer **[D]**
@@ -51,7 +51,7 @@ against our instruction starts.
 Module `modules/fx/master-gain`: the spike 0.7 routine as Selache source, its gain word in its own data section,
 the CALL of the Q31 converter retargeted by `patchkit` (op `retarget`), placed first-fit in `dsp.l2` (DT2
 `0x2001ab80`, gain word `0x2001abb0`; DN2 `0x20088240`). Patched from the stock images, verified by
-`patchkit verify` and `tools/roundtrip.check_authenticity`, injected hot (`firmware.load`, `start_used: hot-dsp`)
+`patchkit verify` and `tools/firmware/roundtrip.check_authenticity`, injected hot (`firmware.load`, `start_used: hot-dsp`)
 into a coupled daemon on the ready inputs of the stock firmware; each run starts from `restart`
 (`tools/patchkit/pk_proof_gain.py`):
 

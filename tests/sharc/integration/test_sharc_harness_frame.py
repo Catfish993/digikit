@@ -250,7 +250,7 @@ class RingAMilestoneTest(unittest.TestCase):
 )
 class CaptureFrameBytesTest(unittest.TestCase):
     """Lane E1's capture-loading helpers: pure parsing/slicing over a real
-    tools/sharc_capture_run.py capture, no firmware image needed."""
+    unicorn-reference-final:tools/sharc_capture_run.py capture, no firmware image needed."""
 
     @classmethod
     def setUpClass(cls):

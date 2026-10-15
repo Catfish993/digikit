@@ -1,7 +1,7 @@
 # Handover: the main OS boots and draws; the job pipeline is what stalls
 
 Cold-start document, written for someone with no memory of the sessions that
-produced it. `docs/NEXT.md` is the project overview, `docs/FINDINGS.md` is the
+produced it. `docs/archive/NEXT.md` is the project overview, `docs/FINDINGS.md` is the
 older evidence, this file is the current state and what to do next.
 
 **One-line status:** with `build(weakptr=True, slc=True)` the Digitakt II main

@@ -299,7 +299,7 @@ unsupported `9b_abs` form; it is not a general SHARC emulator.
 ### `tools/sharc_dev/sharc_run.py`
 
 A concrete, single-path SHARC+ runner built on `sharc_trace.py`, replacing
-the removed `tools/sharcemu.py` (a Ghidra `EmulatorHelper` p-code harness;
+the removed `87df16d^:tools/sharcemu.py` (a Ghidra `EmulatorHelper` p-code harness;
 its arithmetic already came from `sharc_trace.py`, and this runner covers
 the same "run this one routine forward with real inputs" need without a
 Ghidra JVM). `sharc_trace.py` is symbolic and forks on an unresolved

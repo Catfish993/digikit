@@ -38,8 +38,8 @@ import struct
 import subprocess
 import sys
 
-from tools.coldfire.disasm import disasm  # noqa: E402
 from tools.coldfire.codeseeds import BASE, CODE, in_code  # noqa: E402
+from tools.coldfire.disasm import disasm  # noqa: E402
 
 KINDS = {
     "class": "N10__cxxabiv117__class_type_infoE",

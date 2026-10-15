@@ -30,7 +30,7 @@ from tools.firmware.elz import depack_section
 # DSP -- that name is the tool's mistake, kept here for compatibility.
 NAMES = {2: "DSP", 3: "MAIN_OS", 4: "UPDATER", 5: "META", 7: "BLOB"}
 
-# The same file emu/run.py reads; see MARKER there.
+# The same file unicorn-reference-final:emu/run.py reads; see MARKER there.
 SOURCE_MARKER = ".source-sha256"
 
 
@@ -56,7 +56,7 @@ def extract(syx, outdir, progress=None):
     """Decompress every section of `syx` into `outdir`.
 
     -> [(id, kind, path, nbytes, dest)], one entry per section. Also records
-    which .syx these came from, which emu/run.py checks before pairing them
+    which .syx these came from, which unicorn-reference-final:emu/run.py checks before pairing them
     with a firmware. `progress(sid, kind, filename)` is called before each
     section is decompressed.
     """

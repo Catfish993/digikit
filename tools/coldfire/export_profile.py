@@ -6,7 +6,7 @@ instead of re-deriving or re-hardcoding it.
     uv run python -m tools.coldfire.export_profile <image> --device LABEL --out FILE.json
                                            [--load-addr 0x40000400] [--syx FILE]
 
-`image` is either a firmware `.syx` (extracted the same way emu.run does, via
+`image` is either a firmware `.syx` (extracted the same way unicorn-reference-final:emu/run.py does, via
 tools.firmware.extract.extract -- this file does NOT reimplement depacking) or an
 already-extracted `section_3_MAIN_OS.bin`-style image, read directly. In the
 second case the source `.syx` sha256 is recovered from the sibling
@@ -48,8 +48,8 @@ import json
 import os
 import sys
 
-from tools.firmware import extract
 from tools.coldfire import symbols
+from tools.firmware import extract
 
 SOURCE_MARKER = extract.SOURCE_MARKER  # '.source-sha256'
 

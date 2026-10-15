@@ -12,9 +12,9 @@ from tools.coldfire import symbols
 DT16 = Path("out/sections/dt2-1.16/section_3_MAIN_OS.bin")
 DN11 = Path("out/sections/dn2-1.11/section_3_MAIN_OS.bin")
 
-# Read only from emu/uitrace.py's UiTrace, which tools/guirun.py constructs
+# Read only from unicorn-reference-final:emu/uitrace.py's UiTrace, which unicorn-reference-final:tools/guirun.py constructs
 # only under --trace-ui / --trace-ui-verbose / --trace-ui-json (see
-# tools/guirun.py around `trace = uitrace.UiTrace(...)`). Unresolved here
+# unicorn-reference-final:tools/guirun.py around `trace = uitrace.UiTrace(...)`). Unresolved here
 # degrades trace output, never boot, so the audit does not fail on it. Also
 # covers queue_send/ui_queue, which UiTrace is the only outside reader of.
 TRACE_UI_ONLY = frozenset({
@@ -27,7 +27,7 @@ TRACE_UI_ONLY = frozenset({
 # which timeout argument a call site pushed; changes no register or memory
 # state). tools/coldfire/symbols.py's own comment on `transport` documents it as
 # "NOT verified to resolve on Digitone" and every caller degrades with
-# `profile.call_sites or ()` (see emu/dspboot.py) rather than requiring it.
+# `profile.call_sites or ()` (see unicorn-reference-final:emu/dspboot.py) rather than requiring it.
 DIAGNOSTIC_ONLY = frozenset({'transport', 'call_sites'})
 
 ALLOWED_NONE = TRACE_UI_ONLY | DIAGNOSTIC_ONLY

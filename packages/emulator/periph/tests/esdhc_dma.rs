@@ -1,4 +1,4 @@
-//! Pure channel-59 eSDHC transfer effects, ported from `emu.esdhc`.
+//! Pure channel-59 eSDHC transfer effects, ported from `unicorn-reference-final:emu/esdhc.py`.
 
 use periph::{
     edma::{ATTR, CSR_D_REQ, CSR_INT_MAJOR, NBYTES, SADDR, TCD_BASE, TcdSnapshot, TcdView},

@@ -1,4 +1,4 @@
-//! Replay a `DT2MMIO` trace (`emu/mmiotrace.py`) against this crate's
+//! Replay a `DT2MMIO` trace (`unicorn-reference-final:emu/mmiotrace.py`) against this crate's
 //! timer/INTC models and report the first mismatch, with context.
 //!
 //! Usage: `mmio-replay <trace-file> [--limit N] [--verbose] [--gpio-gate-only N]`
@@ -34,7 +34,7 @@
 //!   the oracle, so mirroring the guest's own writes is what makes reads
 //!   match, by construction, everywhere this crate does not add real
 //!   scheduling logic).
-//! * `HWR` records from `emu.dtim`/`emu.pit` (DTIM's DTER REF-bit
+//! * `HWR` records from `unicorn-reference-final:emu/dtim.py`/`unicorn-reference-final:emu/pit.py` (DTIM's DTER REF-bit
 //!   read-modify-write; PIT never writes guest memory, see `pit.rs`) are
 //!   checked against the host writes `Timers::service` reports performing.
 //! * SR/IPL, which `deliver_pending`'s masking check needs and this
@@ -62,7 +62,7 @@
 //!   this crate cannot see.
 //! * **PC-triggered completions are not predicted.** Channel 35's
 //!   completion vector (155) is delivered from a Python code hook at a
-//!   fixed firmware PC (`emu/edma.py`'s `wait_loop`), not from a clock
+//!   fixed firmware PC (`unicorn-reference-final:emu/edma.py`'s `wait_loop`), not from a clock
 //!   deadline a peripheral-only replay can compute -- unlike PIT/DTIM, an
 //!   instruction-count boundary for it does not exist here to predict. This
 //!   replay tracks `TxChannel::pending`/`consume_pending` and checks
@@ -257,7 +257,7 @@ fn esdhc_gate_failure(counters: &Counters, expected: u64, end: &EndStatus) -> Op
     None
 }
 
-/// Replay-only generic eMMC port matching `emu.esdhc.Card`'s public early
+/// Replay-only generic eMMC port matching `unicorn-reference-final:emu/esdhc.py`'s `Card` public early
 /// command contract. It contains no firmware data or storage image.
 #[derive(Default)]
 struct EarlyCard {
@@ -366,9 +366,9 @@ fn apply_state(
         return;
     };
     // Every `STATE` record carries the live forced-MMIO table
-    // (`emu.harness.Machine.mmio`, `emu/mmiotrace.py`'s `machine_state`) --
+    // (`unicorn-reference-final:emu/harness.py`'s `Machine.mmio`,`unicorn-reference-final:emu/mmiotrace.py`'s `machine_state`) --
     // see `spilink.rs`'s module docs. Applied on every resync, not just the
-    // first, since a run can change it after restore (`emu/longrun.py`'s
+    // first, since a run can change it after restore (`unicorn-reference-final:emu/longrun.py`'s
     // `dspi2_peer` re-apply, see its own comment).
     if let Some(mmio) = v.get("mmio").and_then(|m| m.as_object()) {
         for (k, val) in mmio {
@@ -1001,7 +1001,7 @@ fn main() -> ExitCode {
                     }
                 } else {
                     // Any other host write into one of this link's slots
-                    // (e.g. `emu.panelin.feed` advancing TCD34's DADDR --
+                    // (e.g. `unicorn-reference-final:emu/panelin.py`'s `feed` advancing TCD34's DADDR --
                     // owned by a different P4 lane, see `spilink.rs`'s
                     // `mirror_write` docs) still has to land in the register
                     // bytes a later `RD` checks against, even though this

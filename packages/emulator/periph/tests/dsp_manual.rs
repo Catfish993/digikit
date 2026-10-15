@@ -1,7 +1,7 @@
-//! Unit tests for `dsp::Fifo`, a port of `emu/dsp.py`'s FlexBus coprocessor
+//! Unit tests for `dsp::Fifo`, a port of `unicorn-reference-final:emu/dsp.py`'s FlexBus coprocessor
 //! port model -- no manual chapter covers this custom port (the vendor's
 //! own protocol, not documented in the MCF5441XRM), so these tests check
-//! the port against `emu/dsp.py`'s own documented behaviour instead.
+//! the port against `unicorn-reference-final:emu/dsp.py`'s own documented behaviour instead.
 
 use periph::dsp::{Fifo, LATCH, READY, STATUS};
 
@@ -14,9 +14,9 @@ fn addresses_match_the_python_model() {
 
 #[test]
 fn poll_delay_zero_is_always_ready() {
-    // `emu/dsp.py`: `ready = READY if self.polls > self.poll_delay else 0`,
+    // `unicorn-reference-final:emu/dsp.py`: `ready = READY if self.polls > self.poll_delay else 0`,
     // and `polls` is incremented before the check -- at the default
-    // `poll_delay=0` (every trace `tools/mmio_record.py` records uses),
+    // `poll_delay=0` (every trace `unicorn-reference-final:tools/mmio_record.py` records uses),
     // `polls` is always >= 1 immediately, so every read is READY.
     let mut fifo = Fifo::new(0);
     for _ in 0..5 {

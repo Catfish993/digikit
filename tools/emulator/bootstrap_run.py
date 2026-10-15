@@ -29,11 +29,11 @@ import tempfile
 from dataclasses import dataclass, field
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+from tools.devtools import benchlock  # noqa: E402
+from tools.emulator import digi_env, native_target  # noqa: E402
 from tools.firmware import build, container  # noqa: E402
 from tools.firmware.elz import depack_section  # noqa: E402
 from tools.firmware.extract import classify  # noqa: E402
-from tools.devtools import benchlock  # noqa: E402
-from tools.emulator import digi_env, native_target  # noqa: E402
 
 DEFAULT_SYX = ROOT / "Digitakt_II_OS1.16.syx"
 FLASH_SIZE = 0x100_0000

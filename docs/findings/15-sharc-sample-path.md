@@ -17,7 +17,7 @@ Tools that reproduce this: `tools/sharc_dev/sharc_lp0.py` (wire decode and LP0
 feed), `tools/sharc_dev/sharc_replay.py` (`--flexbus-log`, `--fields`,
 `--armed-voice-wav`, `--record-voice`, `--voices-wav`),
 `tools/sharc_capture_run.py` (`--press`, `--trig-hold`,
-`--settle-smoother`, `--poke-slot`), `tests/test_sharc_lp0.py`.
+`--settle-smoother`, `--poke-slot`), `tests/sharc/analysis/test_sharc_lp0.py`.
 
 ## Link port 0 receives the sample pages **[V]**
 
@@ -650,7 +650,7 @@ Other compute-bearing forms already ran both PEs (2a, 2a_short, 2b, 2c, 1a, 3a,
 4a, 5a/5b move, 5a swap, 7a, 9a, 11a); 4a with a SIMD condition still stops.
 Forms without a compute or flag write need no change.
 
-Tests: `tests/test_sharc_simd_shift.py` (R and S results, ASTATX/ASTATY SZ, the
+Tests: `tests/sharc/semantics/test_sharc_simd_shift.py` (R and S results, ASTATX/ASTATY SZ, the
 firmware pattern `btst` then `JUMP IF SZ`, 6a store/load with the companion,
 per-element conditions, USTAT BIT TST). The golden hashes did not change.
 
@@ -831,11 +831,11 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
 
 ### Results
 
-- `tests/test_sharc_denormal.py` (22 tests, also under PyPy): one test per rule above (inputs to
+- `tests/sharc/semantics/test_sharc_denormal.py` (22 tests, also under PyPy): one test per rule above (inputs to
   add/sub/avg, compare, pass/neg/abs, min/max/clip/copysign/rnd/scalb, fix/trunc, mant/logb, multiply
   and infinity x denormal; underflowing results, sign of the zero, AZ/AN/MU/MUS, the cut at
   2^-126 - 2^-151, exact zero is no underflow, the decayed filter reaches 0, a register move keeps the
-  bits, PEy with ASTATY/STKYY). Existing core tests, `tests/test_sharc_golden.py` (six hashes) pass
+  bits, PEy with ASTATY/STKYY). Existing core tests, `tests/sharc/integration/test_sharc_golden.py` (six hashes) pass
   **unchanged**: no output of the golden runs touches a denormal.
 - Python core vs the native core built from it: `tools/sharc_dev/sharc_transpile_run.py corpus --cases-per-op
   200` 57,400 cases, 0 diverged (edge values now include 1.5 x 2^-126, 2^-100, 2^-63).
@@ -875,7 +875,7 @@ operand) is not an underflow; whether the device sets MU for 0 x x is not stated
   **[O]**.
 - The 64-bit ops keep denormals (rule 15).
 
-Second check 2026-10-09: every spec row re-read in the manuals and confirmed (row 12 and the "general" rows remain inferences, as marked; the exact 2^-126 - 2^-151 cut is derived from "post-rounded" plus nearest-even, the manuals do not state the number; row 14's threshold is stated in the ALU "32-bit and 40-bit" entries, PRM pp.453-473, not on p.100); `_float32`, `_float32_result`, `_float_multiply`, `_astatx_mult_float` and `compute_multi._float_multiply_parts` match the rules including the cut and the zero sign; `tests/test_sharc_denormal.py` and `tests/test_sharc_golden.py`: 28 passed. Not modelled: MODE1.TRUNCATE=1 float results (the core rounds to nearest only, so the truncating cut, exactly 2^-126, is absent).
+Second check 2026-10-09: every spec row re-read in the manuals and confirmed (row 12 and the "general" rows remain inferences, as marked; the exact 2^-126 - 2^-151 cut is derived from "post-rounded" plus nearest-even, the manuals do not state the number; row 14's threshold is stated in the ALU "32-bit and 40-bit" entries, PRM pp.453-473, not on p.100); `_float32`, `_float32_result`, `_float_multiply`, `_astatx_mult_float` and `compute_multi._float_multiply_parts` match the rules including the cut and the zero sign; `tests/sharc/semantics/test_sharc_denormal.py` and `tests/sharc/integration/test_sharc_golden.py`: 28 passed. Not modelled: MODE1.TRUNCATE=1 float results (the core rounds to nearest only, so the truncating cut, exactly 2^-126, is absent).
 
 ## Register-form shifter ops: FEXT in the DT2 64/64 divide halted the DSP (2026-10-12) **[D]**
 
@@ -907,9 +907,9 @@ PRM Table 18-9 raised "unsupported full compute". The ShiftImm (Type 6) twins ex
   leading-zero rule has no leading one to find). The register BITEXT takes its count from Rx[5:0] and
   BITDEP from Ry[5:0] as the manual says ("lower 6 bits"). ROT uses Ry[4:0] as the left-rotate count.
   OR-ashift leaves SS unknown, as the immediate OR-ashift does (its manual entry has no SS line).
-- **Check.** `tests/test_sharc_udiv64.py` runs the routine in the concrete runner against Python's
+- **Check.** `tests/sharc/semantics/test_sharc_udiv64.py` runs the routine in the concrete runner against Python's
   `divmod` (40 + 80 random cases on the two FEXT paths): it fails with the ValueError on the old core and
-  passes now. `tests/test_sharc_shift_register_forms.py` holds the per-op cases worked by hand
+  passes now. `tests/sharc/semantics/test_sharc_shift_register_forms.py` holds the per-op cases worked by hand
   (`fext(0x1234abcd, bit6 = 4, len6 = 8)` = 0xbc, len6 = 0, bit6 >= 32, flags).
 - **Generated cores.** The change alters `CORE_FINGERPRINT`: the generated DN2, DT2 and shared cores must
   be regenerated (`gen-fext` next to each `gen`).

@@ -49,7 +49,7 @@ earlier claim.
 | document | holds |
 | --- | --- |
 | [`PATCHING.md`](PATCHING.md) | patchkit: usage, how it works, safety and recovery (the pre-patchkit notes are in `archive/PATCHING-pre-patchkit.md`) |
-| [`DIGITONE.md`](DIGITONE.md) | Digitone II 1.10E bring-up in the emulator (older text) |
+| [`handovers/HANDOVER-2026-09-09-digitone-1.10e.md`](handovers/HANDOVER-2026-09-09-digitone-1.10e.md) | Digitone II 1.10E bring-up in the emulator (history) |
 | [`CONTRACTS.md`](CONTRACTS.md), [`contracts/`](contracts/) | The early-init and MCF5441x reference contracts (hand-authored evidence, JSON) |
 | [`MIDI-SYSEX-RPC.md`](MIDI-SYSEX-RPC.md) | The live MIDI SysEx / MidiRpc protocol of MAIN OS 1.16 |
 | [`SHARC-ADDRESS-MAP.md`](SHARC-ADDRESS-MAP.md) | SHARC execution addresses and which parts of the blob are code (DN2 1.11) |

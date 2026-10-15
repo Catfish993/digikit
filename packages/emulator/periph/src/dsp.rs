@@ -1,12 +1,12 @@
 //! The `0x8C00_0000` FlexBus-attached coprocessor port's ready line -- a
-//! direct port of `emu/dsp.py`'s `Fifo`. See that module's docstring for
+//! direct port of `unicorn-reference-final:emu/dsp.py`'s `Fifo`. See that module's docstring for
 //! the hardware reasoning (the firmware's `0x400cf4a8`/`0x400cfd40`
 //! transfer primitives, the ready-bit poll at `0x400cf4ec`).
 //!
 //! Only the ready line is modelled, exactly as the Python oracle models it:
 //! a 16-bit read of `STATUS` (`0x8C00_0002`) increments a poll counter and
 //! writes back `READY` (bit 0) once `polls > poll_delay` -- with the
-//! recorded traces' `poll_delay=0` default (`emu.longrun.build`'s
+//! recorded traces' `poll_delay=0` default (`unicorn-reference-final:emu/longrun.py`'s `build`'s
 //! `install_dsp(m, ev, log_path=dsp_log)` never overrides it), `polls` is
 //! always `>= 1` immediately after the read hook's own increment, so
 //! **every** `STATUS` read returns `READY` unconditionally; the poll
@@ -63,8 +63,8 @@ impl Fifo {
     /// A guest read of `STATUS` (any other address in this bank's range is
     /// plain RAM, matching the oracle -- nothing else here is modelled).
     /// -> `Some(ready_value)` -- also the value the host echo-write puts
-    /// back into `STATUS` (`on_read`'s `uc.mem_write`, `emu/dsp.py`), which
-    /// a trace records as an `HWR` from `emu.dsp.Fifo.__init__.<locals>.on_read`.
+    /// back into `STATUS` (`on_read`'s `uc.mem_write`, `unicorn-reference-final:emu/dsp.py`), which
+    /// a trace records as an `HWR` from `unicorn-reference-final:emu/dsp.py`'s `Fifo.__init__.<locals>.on_read`.
     pub fn read_status(&mut self, addr: u32) -> Option<u16> {
         if !(STATUS..STATUS + 2).contains(&addr) {
             return None;
@@ -78,7 +78,7 @@ impl Fifo {
     }
 
     /// A guest write anywhere in this bank's range: bookkeeping only, no
-    /// guest-visible effect (`emu/dsp.py`'s `on_write`/`on_latch`).
+    /// guest-visible effect (`unicorn-reference-final:emu/dsp.py`'s `on_write`/`on_latch`).
     pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
         if (STATUS..STATUS + 2).contains(&addr) {
             self.words += 1;

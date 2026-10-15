@@ -1,7 +1,7 @@
 """One definition of the ColdFire<->SHARC DSPI2 frame link.
 
-This used to be scattered: `tools/sharcframe.py` (frame capture),
-`tools/machinecheck.py` (frame-word addressing), `emu/dspi2.py` (the eDMA/DSPI2
+This used to be scattered: `unicorn-reference-final:tools/sharcframe.py` (frame capture),
+`unicorn-reference-final:tools/machinecheck.py` (frame-word addressing), `unicorn-reference-final:emu/dspi2.py` (the eDMA/DSPI2
 transport model) and `docs/findings/04-coldfire-dsp-link.md` each carried a
 partial, independently-phrased copy of the same facts. This module is the one
 place they live now; the other three import from here instead of restating
@@ -27,7 +27,7 @@ Two layers:
   `rx_base_for()` below pull the guest address out of a resolved profile
   instead of a third hardcoded copy; `TX_BASE_DT2` / `TX_BASE_DN2` are the
   known values for callers that already know which device they're on and have
-  no image to resolve against (`tools/machinecheck.py`'s pure-function tests,
+  no image to resolve against (`unicorn-reference-final:tools/machinecheck.py`'s pure-function tests,
   which build addresses with no snapshot or image present).
 """
 
@@ -81,8 +81,8 @@ PUSHR_TAG = 0x8001
 
 # The DSPI2 driver's own calling convention -- (tx_len, tx, rx_len, rx) --
 # reached via `jsr`, so on entry the stack holds the return address below the
-# four arguments. Shared by tools/sharcframe.py's capture and
-# tools/machinecheck.py's capture_frame(), which both intercept this call the
+# four arguments. Shared by unicorn-reference-final:tools/sharcframe.py's capture and
+# unicorn-reference-final:tools/machinecheck.py's capture_frame(), which both intercept this call the
 # same way.
 DRIVER_CALL_FORMAT = ">IIIII"  # ret, tx_len, tx, rx_len, rx
 
@@ -187,7 +187,7 @@ def _table_base(profile, name):
 
 def tx_base_for(profile):
     """-> the TX frame's guest address from a framelink-shaped profile
-    (`tools/framelink.profile_for()`'s return value)."""
+    (`tools/sharc_dev/framelink.profile_for()`'s return value)."""
     return _table_base(profile, "tx_frame")
 
 

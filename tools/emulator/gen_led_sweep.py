@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the panel LED sweep scenarios to tests/scenarios/dt2.json and scenarios/dn2.json.
+"""Add the panel LED sweep scenarios to tests/scenarios/dt2.json and tests/scenarios/dn2.json.
 
     uv run python -m tools.emulator.gen_led_sweep
 

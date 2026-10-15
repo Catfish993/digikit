@@ -1,6 +1,6 @@
 """Compare bounded, wire-order DSPI2 TX traces; do not render SHARC audio.
 
-DTFR v1 is the format emitted by tools/live_gui_check.py --frames-out:
+DTFR v1 is the format emitted by unicorn-reference-final:tools/live_gui_check.py --frames-out:
 ``DTFR``, little-endian version/count, then length-prefixed TX buffers.
 The comparison is an Oracle gate only when both producers start from the
 same state and receive input at the same guest instruction clocks.

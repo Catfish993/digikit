@@ -37,9 +37,9 @@ filled in. A call that never returns before its own frame ends (or before
 --max-hits) simply keeps `return_value: None`.
 
 Like tools/sharc_dev/sharc_armpath.py, this tool never edits sharc_core, emu/, or
-any other lane's tools/sharc_harness.FRAME_PATCH_TABLE: it only drives
+any other lane's tools/sharc_dev/sharc_harness.FRAME_PATCH_TABLE: it only drives
 tools/sharc_dev/sharc_replay.py's existing write_dma_transfer()/
-drive_dma_completion() delivery and tools/sharc_survey.run_collect_all()
+drive_dma_completion() delivery and tools/sharc_dev/sharc_survey.run_collect_all()
 with its own breakpoint set.
 """
 
@@ -159,7 +159,7 @@ def _run_frame_calltrace(
     max_events: int = 4000,
 ) -> tuple[sr.Runner, sv.CollectAllResult, list[dict]]:
     """Run one frame's own block_handler call (a fresh_call() off RUNNER,
-    like tools/sharc_replay.call_frame_collect_all_with_hits()) with
+    like tools/sharc_dev/sharc_replay.call_frame_collect_all_with_hits()) with
     ENTRY_PCS attached as breakpoints, plus every entry hit's own return
     address (state.call_stack[-1] at the moment of the hit -- see the
     module docstring), added to the breakpoint set as soon as it is known
@@ -229,7 +229,7 @@ def _run_frame_calltrace(
 
 def _setup_runner(image: str, tone_freq: float, sample_len: int) -> sr.Runner:
     """Same post-init setup as tools/sharc_dev/sharc_memdiff.py's own copy (and
-    tools/sharc_replay.replay()'s): one hand-set-up voice 0 with a --freq
+    tools/sharc_dev/sharc_replay.replay()'s): one hand-set-up voice 0 with a --freq
     Hz sine."""
     memory = h.load_image_memory(image)
     init = h.run_init(memory, image)
@@ -260,7 +260,7 @@ def calltrace(
     max_events_per_frame: int = 4000,
 ) -> dict:
     """Replay CAPTURE_PATH continuously from frame 0 (real DMA delivery,
-    tools/sharc_harness.FRAME_PATCH_TABLE) through frame_hi (or the whole
+    tools/sharc_dev/sharc_harness.FRAME_PATCH_TABLE) through frame_hi (or the whole
     capture if None), reporting only frames in [frame_lo, frame_hi]
     (inclusive) -- execution is never skipped ahead of frame_lo, only
     reporting is windowed, same convention as tools/sharc_dev/sharc_memdiff.py."""

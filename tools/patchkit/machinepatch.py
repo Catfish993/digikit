@@ -403,7 +403,7 @@ def validate_spec(spec, count=7):
 
 
 # These describe DEFAULT_SPEC only -- kept as module constants because
-# tools/uidrive.py reads them.
+# unicorn-reference-final:tools/uidrive.py reads them.
 LONG_NAME = DEFAULT_SPEC.desc_name
 SHORT_NAME = DEFAULT_SPEC.desc_short
 LONGSTR = DEFAULT_SPEC.name.encode("ascii") + b"\x00"

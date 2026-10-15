@@ -28,7 +28,7 @@ Log format (the input to `feed`, and what `synth` writes). One record per
   byte.
 - binary (`.bin`): 6-byte records, little-endian `u32 addr, u16 value`.
 - raw (`.raw`): the latched bytes themselves, in wire order, as
-  `tools/guirun.py --flexbus-log` records them (`emu/dsp.py`).
+  `unicorn-reference-final:tools/guirun.py --flexbus-log` records them (`unicorn-reference-final:emu/dsp.py`).
 
 Records for other addresses (such as the `0x8C00000A` latch writes) are
 skipped. A byte is latched on the clock's falling edge (a write with bit 7

@@ -40,7 +40,14 @@ module cannot build new ones from scratch.
 import struct
 
 from tools.firmware import aplib, aplibpack
-from tools.firmware.container import COUNT_OFF, ENTRY_SZ, MFR, TABLE_OFF, decode_syx, sections
+from tools.firmware.container import (
+    COUNT_OFF,
+    ENTRY_SZ,
+    MFR,
+    TABLE_OFF,
+    decode_syx,
+    sections,
+)
 
 # The first data message's counter value; see the module docstring in
 # tools/firmware/container.py and the format facts this was built from.

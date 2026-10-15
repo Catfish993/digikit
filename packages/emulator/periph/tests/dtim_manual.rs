@@ -1,4 +1,4 @@
-//! Unit tests against MCF5441XRM chapter 39 (DMA Timers) and `emu/dtim.py`'s
+//! Unit tests against MCF5441XRM chapter 39 (DMA Timers) and `unicorn-reference-final:emu/dtim.py`'s
 //! documented rates, independent of any trace.
 
 use periph::dtim::{BASES, DtimBank, F_BUS, VECTORS};
@@ -34,7 +34,7 @@ fn write_dtmr_dtrr(bank: &mut DtimBank, ch: usize, dtmr: u16, dtxmr: u8, dtrr: u
 
 #[test]
 fn dtim3_main_loop_tick_is_30_hz() {
-    // emu/dtim.py's module docstring: DTMR3 = 0x001d (PS=0, CLK=10=bus/16,
+    // unicorn-reference-final:emu/dtim.py's module docstring: DTMR3 = 0x001d (PS=0, CLK=10=bus/16,
     // ORRI, FRR, RST), DTRR3 = 0x43238, at 132 MHz -> ~30 Hz (the docstring
     // says 30.05; this checks the formula lands in the same neighbourhood,
     // not the last digit of a hand-transcribed hex constant).
@@ -81,7 +81,7 @@ fn dmaen_disables_the_timer() {
 fn due_tick_sets_ref_bit_in_guest_memory() {
     // Unlike PIT's PIF (never asserted by the model, see pit.rs), DTIM's
     // service DOES write DTER's REF bit (`Dtims.service`'s read-modify-write,
-    // recorded as an HWR from `emu.dtim.Dtims.service`).
+    // recorded as an HWR from `unicorn-reference-final:emu/dtim.py`'s `Dtims.service`).
     let intc = intc_with_level(VECTORS[3], 2);
     let mut sr = SrTracker::new();
     let mut bank = DtimBank::new(vec![3], F_BUS, false);
@@ -137,7 +137,7 @@ fn highest_source_first_dtim3_before_dtim1() {
     // RM SS17.3.1 (Table 17-19): highest source number first within a
     // level. DTIM3 is INTC0 source 35, DTIM1 is source 33. Taking DTIM3's
     // interrupt raises IPL to its own level (2), which then refuses DTIM1's
-    // same-level request until DTIM3's handler returns (`emu.pit.Pits`'
+    // same-level request until DTIM3's handler returns (`unicorn-reference-final:emu/pit.py`'s `Pits`'
     // class docs, "the first one taken raises IPL to its own level, which
     // refuses any later one at the same level") -- so only DTIM3 delivers
     // this call; DTIM1 stays pending for the next boundary.

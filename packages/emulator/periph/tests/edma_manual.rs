@@ -1,6 +1,6 @@
 //! Unit tests against MCF5441XRM chapter 19 (eDMA), independent of any
 //! trace: register semantics as the manual specifies them, plus
-//! `TxChannel`'s port of `emu/edma.py`'s `TxChannel.run`.
+//! `TxChannel`'s port of `unicorn-reference-final:emu/edma.py`'s `TxChannel.run`.
 
 use periph::edma::{self, TcdView, TxChannel};
 use periph::regfile::RegFile;
@@ -38,7 +38,7 @@ fn tcd_csr_bit_positions_table_19_31() {
 #[test]
 fn tcd_field_offsets_figure_19_24() {
     // RM Figure 19-24 p.384: the ColdFire word order (CITER at +0x14,
-    // BITER at +0x1C -- NOT the Kinetis order, `emu/edma.py`'s own comment).
+    // BITER at +0x1C -- NOT the Kinetis order, `unicorn-reference-final:emu/edma.py`'s own comment).
     assert_eq!(edma::SADDR, 0x00);
     assert_eq!(edma::ATTR, 0x04);
     assert_eq!(edma::SOFF, 0x06);
@@ -62,7 +62,7 @@ fn signed_sign_extends() {
 }
 
 /// Programs TCD35 exactly as `docs/plans/native-emulator.md`'s cited layout
-/// for the console UART8 TX ring (`emu/edma.py`'s module docstring):
+/// for the console UART8 TX ring (`unicorn-reference-final:emu/edma.py`'s module docstring):
 /// `SADDR=ring`, `ATTR=0x6000` (SMOD 12), `NBYTES=1`, `DADDR=UDR8`, `DOFF=0`.
 fn program_uart8_tx(regs: &mut RegFile, chan: usize, ring: u32, citer: u16) {
     let mut tcd = TcdView::new(regs, chan);
@@ -78,10 +78,10 @@ fn program_uart8_tx(regs: &mut RegFile, chan: usize, ring: u32, citer: u16) {
 
 #[test]
 fn tx_channel_run_advances_saddr_with_smod_wraparound() {
-    // A 4096-byte ring at 0x4FE1B000 (`emu/edma.py`'s `TX_STATE`/`WAIT_LOOP`
+    // A 4096-byte ring at 0x4FE1B000 (`unicorn-reference-final:emu/edma.py`'s `TX_STATE`/`WAIT_LOOP`
     // docstring), SMOD 12 -> mask 0xFFF: SADDR wraps within the ring instead
     // of running off the end, exactly like `Pits`' channel bookkeeping wraps
-    // -- see `emu/edma.py::TxChannel.run`.
+    // -- see `unicorn-reference-final:emu/edma.py::TxChannel.run`.
     let mut regs = RegFile::new();
     let ring = 0x4FE1B000u32;
     program_uart8_tx(&mut regs, 35, ring + 0xFFE, 4); // 2 bytes from wraparound

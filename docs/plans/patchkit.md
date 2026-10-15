@@ -398,7 +398,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pat
 ### Phase 3 results (2026-10-13, lane `b`)
 
 Details, evidence and the DSP binding contract: `docs/findings/02-machines-and-parameters.md` ("core.machines").
-Built: `packages/patchkit/src/machines.rs` (the generator, 4 unit tests, `tests/machines.rs` with 6 integration tests on the
+Built: `a1cf1df^:native/patchkit/src/machines.rs` (the generator, removed in a1cf1df; 4 unit tests, `a1cf1df^:native/patchkit/tests/machines.rs` with 6 integration tests on the
 real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (24 ColdFire anchor rules of the new kind
 `cf_func`, one DSP rule), `modules/machines/xslice`, `modules/test/machine-clone`, `tools/patchkit/pk_machine_rules.py`,
 `tools/patchkit/pk_proof_machines.py`, `tools/emulator/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
@@ -453,7 +453,7 @@ the same, but DN2's machines are FM engines, so new DN2 machines need the DSP vo
 
 ### Phase 3 results (wave 6, 2026-10-14, lane `b`): core.params and PLUCK end to end
 
-Built: `packages/patchkit/src/params.rs` (3 unit tests, `tests/params.rs` 5 integration tests), `[[param]]` and `fields` that
+Built: `a1cf1df^:native/patchkit/src/params.rs` (3 unit tests, `a1cf1df^:native/patchkit/tests/params.rs` 5 integration tests), `[[param]]` and `fields` that
 name parameters in the manifest, `modules/core/params`, three port rule kinds in `tools/patchkit/port_resolve.py` (`cf_params_t1`,
 `cf_params_sites`: count and hash of 111 sites, plus a `cf_func` for the second table), `modules/machines/pluck` (machine,
 four parameters, the DSP row now registers `machines.pluck.type`), `tools/patchkit/pk_proof_pluck.py`, harness helpers
@@ -477,7 +477,7 @@ four parameters, the DSP row now registers `machines.pluck.type`), `tools/patchk
 Details and evidence: findings 02 ("core.machines on Digitone II 1.12") and 06 ("Per-voice hook on DN2 1.11/1.12: built").
 Emulator only; nothing flashed; one agent.
 
-- **core.machines on DN2 1.12** (took about a day, not the assessed 3 to 4): `packages/patchkit/src/machines/dn2.rs` is the
+- **core.machines on DN2 1.12** (took about a day, not the assessed 3 to 4): `a1cf1df^:native/patchkit/src/machines/dn2.rs` is the
   Digitone part of the generator (the Digitakt-only parts are skipped on `dn2`; the Digitakt output is byte-identical to
   before for `core/machines` + `machines/xslice` + `test/machine-clone` on 1.16 and 1.17); 31 DN2 anchors by function hash
   (`tools/patchkit/pk_machine_rules_dn2.py`, 1.11 and 1.12 resolve). The parameter-page layer needs no table growth for a clone: three
@@ -633,8 +633,8 @@ Problem: `core/machines` numbered machines `first + k` in module order, and a pr
   devices); an unknown module, a missing requirement and a `requires` cycle are refused with the module names. `Library::with_requires`.
 - Small: the PLUCK gallery README uses lists (the gallery renders no tables); `fw:onboard` is marked not built (backlog).
 
-Verified (quick proof tier, no full tiers): `cargo test -p patchkit` (all; new: allocation and gap tests in `tests/prims.rs`,
-requires/cycle test, PLUCK-is-9 in `tests/frameworks.rs`), 82 Python tests of the patchkit files (new `tests/patchkit/test_pk_types.py`,
+Verified (quick proof tier, no full tiers): `cargo test -p patchkit` (all; new: allocation and gap tests in `packages/patchkit/tests/prims.rs`,
+requires/cycle test, PLUCK-is-9 in `packages/patchkit/tests/frameworks.rs`), 82 Python tests of the patchkit files (new `tests/patchkit/test_pk_types.py`,
 a gap-row case in `tests/patchkit/test_pk_machines_fw.py`), `pnpm --dir apps/web test` 29 of 29, `mise run patch:proofs` 10 of 10
 (gain dt2/dn2, drive, voice dt2/dn2, machines dt2/dn2, pages dn2, pluck dt2/dn2; the PLUCK and PAGES proofs now expect types 9 and 6,
 the others did not change), smoke matrix 15 of 15 cells (DT2 1.17 and 1.16, DN2 1.12; 11 on the first run, the other 4 after the `expect_mem` / `expect_dsp` type
@@ -646,7 +646,7 @@ changed and none was re-recorded: the machine list shows the same entries in the
 Built: `packages/patchkit/src/expr.rs` (P3), `prim.rs` (manifest checks, registry and section builders, ColdFire site
 decoding and tail re-encoding, plan records), wiring in `apply.rs` and `module.rs`, `explain` sections for registries,
 copied sections and hooks, `cf_params_refs` / `cf_params_bounds` in `tools/patchkit/port_resolve.py`. Tests: 7 unit tests
-(`expr`, `prim`), `tests/prims.rs` (18 integration tests over the real ports and stock images: typed writes and their
+(`expr`, `prim`), `packages/patchkit/tests/prims.rs` (18 integration tests over the real ports and stock images: typed writes and their
 errors, multi-site writes, registry rows/symbols/strings, canonical order, entry errors, sections on ColdFire and SHARC,
 hook on ColdFire and SHARC, non-boundary, re-encoded PC-relative instructions, device filters, explain, plan.json),
 `tests/patchkit/test_pk_prims.py` and `modules/test/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the

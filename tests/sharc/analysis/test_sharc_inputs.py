@@ -75,7 +75,7 @@ class FrameLabelTest(unittest.TestCase):
         self.assertEqual(si.frame_label(0x2558DC + 0x73C), "coldfire TX frame +0x73c")
 
     def test_gain_table_is_inside_the_frame(self):
-        # tools/sharc_harness.FRAME_PATCH_TABLE's own hand-patched
+        # tools/sharc_dev/sharc_harness.FRAME_PATCH_TABLE's own hand-patched
         # "per-track mixer/gain parameter mirror" at 0x2560b8.
         self.assertIsNotNone(si.frame_label(0x2560B8))
 

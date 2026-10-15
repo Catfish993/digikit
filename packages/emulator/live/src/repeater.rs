@@ -23,7 +23,7 @@
 //!   one after, `scratchpad/sharc-trig-arm.md` section 2).
 //!
 //! Frames are kept in wire order (big-endian halfwords, as the ColdFire
-//! sends them and `emu/dspi2.py` hands them over); the one-shot offsets
+//! sends them and `unicorn-reference-final:emu/dspi2.py` hands them over); the one-shot offsets
 //! below are wire offsets. The byte swap into the SHARC's receive ring
 //! happens at the SHARC edge (`sharc_source::LiveSource`), not here.
 //!

@@ -59,7 +59,7 @@ def sha256(path):
 
 def check_provenance(syx, sections_dir, accept):
     """Refuse to run against sections that were extracted from a different
-    .syx -- see emu/run.py's need_matching_sections, which this follows."""
+    .syx -- see unicorn-reference-final:emu/run.py's need_matching_sections, which this follows."""
     if accept:
         return
     marker_path = os.path.join(sections_dir, SOURCE_MARKER)

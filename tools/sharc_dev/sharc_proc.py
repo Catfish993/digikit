@@ -16,7 +16,7 @@ CPython for Unicorn:
     uv run --no-project --python pypy3.11 python -m tools.sharc_dev.sharc_proc
 
 This module is pure standard library (plus, for a future runner backend,
-`tools/sharc_dev/sharc_core`/`tools/sharc_dev/sharc_run` -- see ``RunnerBackend``): no `unicorn`,
+`tools/sharc_dev/sharc_core`/`tools/sharc_dev/sharc_run.py` -- see ``RunnerBackend``): no `unicorn`,
 `capstone` or `pypcode`, so it starts under PyPy. Everything CPython-only
 (Unicorn, the DSPI2/SSI0 models themselves) stays on the client side, in
 ``tools/sharc_dev/sharc_peer.py``.
@@ -38,11 +38,11 @@ message is safe to log or replay without executing anything. stdout carries
 |    2 | HELLO_OK     | s -> c    | json | ``{version, backend, device, pid}``     |
 |    3 | RESET        | c -> s    | json | ``{}``                                  |
 |    4 | RESET_OK     | s -> c    | json | ``{}``                                  |
-|    5 | EXCHANGE     | c -> s    | raw  | DSPI2 frame TX bytes (`emu.dspi2` peer) |
+|    5 | EXCHANGE     | c -> s    | raw  | DSPI2 frame TX bytes (`unicorn-reference-final:emu/dspi2.py` peer) |
 |    6 | EXCHANGE_OK  | s -> c    | raw  | DSPI2 frame RX bytes, same length       |
-|    7 | AUDIO_RX     | c -> s    | json | ``{nbytes}`` -- this period's `emu.ssi` `peer.rx` request |
+|    7 | AUDIO_RX     | c -> s    | json | ``{nbytes}`` -- this period's `unicorn-reference-final:emu/ssi.py` `peer.rx` request |
 |    8 | AUDIO_RX_OK  | s -> c    | raw  | `nbytes` of RX/DAC sample bytes         |
-|    9 | AUDIO_TX     | c -> s    | raw  | this period's captured TX/codec sample bytes (`emu.ssi` `peer.tx`) |
+|    9 | AUDIO_TX     | c -> s    | raw  | this period's captured TX/codec sample bytes (`unicorn-reference-final:emu/ssi.py` `peer.tx`) |
 |   10 | AUDIO_TX_OK  | s -> c    | json | ``{}``                                  |
 |   11 | ADVANCE      | c -> s    | json | ``{unit: "instructions" or "samples", count}`` |
 |   12 | ADVANCE_OK   | s -> c    | json | ``{executed}``                          |
@@ -52,7 +52,7 @@ message is safe to log or replay without executing anything. stdout carries
 |   16 | SHUTDOWN_OK  | s -> c    | json | ``{}`` (server exits after replying)    |
 |  255 | ERROR        | s -> c    | json | ``{message}`` -- sent instead of the OK reply for whatever request failed; the server keeps serving afterwards |
 
-``AUDIO`` is two message types, not one, because ``emu/ssi.py``'s peer hook
+``AUDIO`` is two message types, not one, because ``unicorn-reference-final:emu/ssi.py``'s peer hook
 already is two independent calls per DMA period -- ``peer.rx(nbytes)`` before
 the RX channel's destination is written, ``peer.tx(data)`` after the TX
 channel's source is captured (see that module's "SSI0 peer hook") -- and RX
@@ -60,7 +60,7 @@ for period N does not causally depend on TX for period N, so there is
 nothing to gain by forcing them into one round trip.
 
 ``ADVANCE`` lets a caller step the SHARC side's own clock independently of
-frame/audio traffic (`emu.longrun.spin`'s `async_events` calls `service()` at
+frame/audio traffic (`unicorn-reference-final:emu/longrun.py`'s `spin` `async_events` calls `service()` at
 every chunk boundary; see `tools.sharc_dev.sharc_peer.SharcServerPeer.step`/`service`).
 **Open question, not settled by this module**: what ColdFire-instruction- or
 DSPI2-frame-cadence should map to how many `ADVANCE` samples/instructions.
@@ -198,7 +198,7 @@ class Backend(ABC):
 
     A backend answers in guest instruction/byte terms only; it knows nothing
     about the wire protocol above, or about the DSPI2/SSI0 peer contracts on
-    the ColdFire side -- see ``emu/dspi2.py`` and ``emu/ssi.py`` for those.
+    the ColdFire side -- see ``unicorn-reference-final:emu/dspi2.py`` and ``unicorn-reference-final:emu/ssi.py`` for those.
     """
 
     @abstractmethod

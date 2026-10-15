@@ -1,5 +1,5 @@
 """Differential test harness for the SHARC+ core: Python (tools/sharc_dev/sharc_core,
-driven concretely through tools/sharc_run.Runner) against a future native
+driven concretely through tools/sharc_dev/sharc_run.Runner) against a future native
 implementation (a Rust crate, ``packages/emulator/sharc/``, built as a C-ABI cdylib and
 loaded with ctypes -- see scratchpad/rt-native-core-design.md section 4).
 

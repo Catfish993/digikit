@@ -1375,7 +1375,7 @@ From `snapshots/dt2-1.16/boot400M.snap` the main screen is up by about 300M
 instructions, and from `snapshots/dn2-1.11/boot400M.snap` (a new ladder)
 likewise. `tools/emucheck.py` passes both at 700M. The only pends still faked
 are 175 in the intro's exit park (`0x400d1930` on 1.16, `0x400d4038` on
-1.15C). `tests/test_symbol_audit.py` fails if any symbol the harness uses is
+1.15C). `tests/coldfire/test_symbol_audit.py` fails if any symbol the harness uses is
 `None` on DT2 1.16 or DN2 1.11; eight trace-only symbols are still fixed 1.15C
 addresses. **[D][O]**
 
@@ -3146,7 +3146,7 @@ remain **[O]**.
 The first stop is reproducible without GUI timing: re-import the same
 locally checked state pack (`state-82cf380735390258438540a4.pack`,
 SHA-256 `cbb6de7e9e732edf085dc3ba47b7760fc2db52c7595827027266d71f8e6f9bfc`)
-through offline `tools/live_audio.LiveAudio`, verify each recorded
+through offline `tools/emulator/live_audio.LiveAudio`, verify each recorded
 `bytes_hex` hash, swap each adjacent byte pair *back* to queue wire order,
 then `push_frame`/`render(1)` once for each of ordinals 0..198. These
 199 **actual native SHARC** renders take **41,661,645 instructions**, with
@@ -3288,7 +3288,7 @@ change was added.
 **[D]** `packages/emulator/sharc` now exports the read-only
 `sharc_native_get_pc(handle) -> i64` diagnostic accessor. It returns the
 architectural next `pc_sw`, rather than the separately modelled UREG `PC`;
-null returns `-1`. `tools/sharc_transpile_run.NativeCore.pc()` binds it only
+null returns `-1`. `tools/sharc_dev/sharc_transpile_run.NativeCore.pc()` binds it only
 when present, so the accepted original library remains loadable and a request
 against that legacy library fails explicitly without a full-state-export
 fallback. A scratch diagnostic rebuild used the accepted generated directory
@@ -4684,7 +4684,7 @@ it touches no MMR. Only an interrupt that readies a task can move it on.
   the indirect jump at `0x1c9dbf` through `0x268a68`.
 
 **[D]** `State.peripheral_model`, native option 22, models two blocks (sources
-in tools/sharc_dev/sharc_core/periph.py, twin packages/emulator/sharc/src/rt/periph.rs):
+in tools/sharc_dev/sharc_core/periph.py, twin packages/emulator/sharc-rt/src/rt/periph.rs):
 - The SEC core interface: SCTL.SEN/IEN, SSTAT PND/ACT, CSID/CSTAT.SIDV,
   acknowledge by a SHDBG_SECI_ID or CSID write, END and RAISE.
 - Descriptor-list DMA for DMA26/27/10/11: the fetch order is NXT, ADDRSTART,
@@ -4861,7 +4861,7 @@ one word the odd lane kept its old value, the voice mix fed it back (gain about
 all loads keep one word. **[D]** The PRM text does not say this; the evidence is
 the compiler-shaped clear loop. After the fix the same run gives no NaN
 (blocks 4896-4899 are a short finite transient, then 0). Test:
-`tests/test_sharc_trace_simd.py::test_type15_dag_register_store_writes_both_words_in_simd`.
+`tests/sharc/trace/test_sharc_trace_simd.py::test_type15_dag_register_store_writes_both_words_in_simd`.
 The earlier "real cmd3 output from frame 4896" in that run was this blow-up.
 
 ## DN2 command-3 synthesis path (2026-10-02)
@@ -6757,7 +6757,7 @@ regeneration and PGO retrain.
 - Process note: rebuilding into `out/native/target/prod/pgo-use` with a
   different PGO profile forced a 7 min rebuild of the generated core at the
   next launch. Experiments must use their own target dirs.
-- **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and scenarios/dn2.json.
+- **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and tests/scenarios/dn2.json.
 
 ## Folded from the lane notebooks and early handovers (2026-10-08)
 

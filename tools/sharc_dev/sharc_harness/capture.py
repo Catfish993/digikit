@@ -21,7 +21,7 @@ from .runner import _poke
 # (offsets 0x6da-0x7f4 and 0x2c-0x72e respectively) -- so every prior
 # "reads all zero" finding about those tables was reading an RX frame this
 # project never populated, not a property of the firmware. The functions
-# below load real RX frame bytes from a tools/sharc_capture_run.py capture
+# below load real RX frame bytes from a unicorn-reference-final:tools/sharc_capture_run.py capture
 # (a real device's own DSPI2 traffic) and write them at the same address a
 # real transfer would, so a frame render sees whatever a real device
 # actually put in its own mixer/gate tables.

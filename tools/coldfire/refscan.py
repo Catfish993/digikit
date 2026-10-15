@@ -100,7 +100,7 @@ def build_map(hits, lo, hi):
 
     Treats each distinct referenced target address as a single occupied
     point (this is a static scan; real object sizes are not known without
-    a runtime dump or Ghidra data-type info -- see tools/memdump.py and
+    a runtime dump or Ghidra data-type info -- see unicorn-reference-final:tools/memdump.py and
     tools/coldfire/ghidraq.py for that). Gaps are computed between consecutive
     distinct target addresses, and from lo to the first / last to hi.
     """

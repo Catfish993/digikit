@@ -27,7 +27,7 @@ under out/native/live/; nothing in the audio path runs Python)::
 or ``uv run python -m tools.emulator.live_audio --capture CAPTURE [--seconds S]``.
 
 The native SHARC core on frames pushed live (the emulator's DSPI2 frames,
-``emu/livesharc.py``): a frameless state pack (``state_pack``) and
+``unicorn-reference-final:emu/livesharc.py``): a frameless state pack (``state_pack``) and
 ``push_frame`` for every TX frame, in wire order::
 
     pack = state_pack("out/captures/drive3/flexbus-drive3.raw", card_sha256)
@@ -485,7 +485,7 @@ class LiveAudio:
 
     def push_frame(self, frame: bytes) -> None:
         """Queue one SPI2 TX frame, wire order (big-endian halfwords, as
-        ``emu/dspi2.py`` hands it over; see ``packages/emulator/live/src/repeater.rs``)."""
+        ``unicorn-reference-final:emu/dspi2.py`` hands it over; see ``packages/emulator/live/src/repeater.rs``)."""
         self._check_open()
         rc = self._lib.live_push_frame(self._handle, frame, len(frame))
         if rc != 0:

@@ -6,7 +6,7 @@ firmware, and both silently desynchronise a linear sweep:
   MVS/MVZ  0111 ddd1 ss mmmrrr   e.g. 0x71F9 -- sits directly on the bootstrap
                                  version gate; misreading it inverts the answer.
   FF1.L    0000 0100 11 000rrr   (0x04C0-0x04C7) -- also unimplemented in
-                                 Unicorn, see emu/boot.py.
+                                 Unicorn, see unicorn-reference-final:emu/boot.py.
 
 Prefer Ghidra's 68000:BE:32:Coldfire for real work. This module exists so
 scripted sweeps do not lie to you.

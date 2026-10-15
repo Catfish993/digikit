@@ -15,14 +15,14 @@
 //! DTMRn bits: 15-8 PS (prescaler, divides by PS+1), 7-6 CE, 5 OM, 4 ORRI,
 //! 3 FRR, 2-1 CLK (00 stop, 01 bus/1, 10 bus/16, 11 external pin), 0 RST.
 //!
-//! Vectors 96-99 (INTC0 sources 32-35) for DTIM0-3 (`emu/dtim.py`).
+//! Vectors 96-99 (INTC0 sources 32-35) for DTIM0-3 (`unicorn-reference-final:emu/dtim.py`).
 //! Highest-source-first within a level (RM SS17.3.1): DTIM3 (source 35)
-//! before DTIM1 (source 33), matching `emu.dtim.Dtims`' own tie-break.
+//! before DTIM1 (source 33), matching `unicorn-reference-final:emu/dtim.py`'s `Dtims` own tie-break.
 //!
-//! A direct, field-for-field port of `emu.dtim.Dtims`, including the one
+//! A direct, field-for-field port of `unicorn-reference-final:emu/dtim.py`'s `Dtims`, including the one
 //! difference from `Pits`: on a due tick this **writes DTER's REF bit**
 //! into the register file (`Dtims.service`'s `mem_read`/`mem_write` pair,
-//! recorded as an `HWR` from `emu.dtim.Dtims.service`), so a guest read of
+//! recorded as an `HWR` from `unicorn-reference-final:emu/dtim.py`'s `Dtims.service`), so a guest read of
 //! DTER after a tick sees REF=1 -- unlike PIT's PIF, which the Python model
 //! never asserts in guest memory at all (see `pit.rs`). [`DtimBank::service`]
 //! returns that write alongside any raised vectors so a replay can check it
@@ -67,7 +67,7 @@ pub struct DtimBank {
     regs: [RegFile; 4],
     /// See `PitBank::channels`: only these get scheduling logic; an
     /// unlisted DTIM channel's registers are plain RAM (matches
-    /// `emu.dtim.Dtims`' default `channels=(3,)` -- DTIM0/1/2 are never
+    /// `unicorn-reference-final:emu/dtim.py`'s `Dtims` default `channels=(3,)` -- DTIM0/1/2 are never
     /// serviced in the recorded configuration even though DTIM1 is
     /// physically armed in some windows, see the finding on DTIM1).
     channels: Vec<usize>,

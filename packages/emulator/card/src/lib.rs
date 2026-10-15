@@ -3,7 +3,7 @@
 //! This is the card side of the protocol only: it neither performs I/O nor
 //! owns an image file. A host supplies a [`RandomAccessRead`] implementation
 //! when it wants base media; card writes remain in the sparse in-memory
-//! overlay. The command responses and synthetic identity match `emu/esdhc.py`
+//! overlay. The command responses and synthetic identity match `unicorn-reference-final:emu/esdhc.py`
 //! `Card`, rather than attempting to implement unobserved eMMC features.
 
 use std::collections::BTreeMap;

@@ -100,7 +100,7 @@ def name_for(addr: int) -> str | None:
 
 
 class Snapshot:
-    """A read-only view of one emu.snapshot .snap file: registers, mapped
+    """A read-only view of one unicorn-reference-final:emu/snapshot.py .snap file: registers, mapped
     memory (pages decompressed lazily and cached, since a capture like
     snapshots/dt2-1.16-drive3/loaded.snap can hold well over a hundred MB
     once decompressed), MMIO/control-register shadow state, and whatever
@@ -158,7 +158,7 @@ class Snapshot:
 
     def _page(self, base: int) -> bytes | None:
         """The decompressed PAGE-sized page at `base`, or None if `base` is
-        mapped but was an all-zero page at capture time (emu.snapshot.save()
+        mapped but was an all-zero page at capture time (unicorn-reference-final:emu/snapshot.py's save()
         only stores a page whose bytes aren't all zero -- see its own `if
         data.strip(b"\\x00")` check). Caller must confirm `base` is mapped
         first; this returns None for that case too, so a bare call can't
@@ -218,12 +218,12 @@ class Snapshot:
 
     def tasks(self) -> list[dict]:
         """One dict per TASK_CREATE hit this capture recorded (see
-        emu/dspboot.py's do_task_create): call_site, tcb, entry, prio, stack,
+        unicorn-reference-final:emu/dspboot.py's do_task_create): call_site, tcb, entry, prio, stack,
         stacksize, n (instruction count at capture), plus entry_name/
         call_site_name from tools/coldfire/cf_names.py when known. [] if this
         snapshot's `extra` has no 'tasks' key (most snapshots don't -- only
         ones taken with task-tracking state threaded through, see
-        emu.snapshot.restore_into's own st['task_create_hits'] merge),
+        unicorn-reference-final:emu/snapshot.py's restore_into's own st['task_create_hits'] merge),
         sorted by prio like the scratch queries that came before this did."""
         raw = self.extra.get("tasks")
         if not raw:

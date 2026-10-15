@@ -626,7 +626,7 @@ decoder applies this width rule to every `0x01` word (`selinstr/src/visa.rs`,
 `decode_32_type2b`). The PRM has no 32-bit form for this prefix. Its Type2b
 (prefix `0xc0`) is a different encoding.
 
-In the aligned Digitakt II 1.16 sweep (`tools/sharcflow.aligned`, minimum
+In the aligned Digitakt II 1.16 sweep (`tools/sharc_dev/sharcflow.aligned`, minimum
 depth 8), 1,880 of 2,396 Type2a words have bit 39 set. For them, the next
 word decodes confidently 4 bytes later in 99.1% of cases and 6 bytes later
 in 49.0%. For the 516 words with bit 39 clear, the 48-bit reading gives
@@ -1860,7 +1860,7 @@ IEEE-754 float immediates, and touches of the known named tables. It runs over
 the whole image in about 1.4 s and reuses `sharcldr.py` for blocks,
 `sharcflow.py` for calls and returns, `sharc_disasm.py` for decode and
 `sharcspec/compute_table.json` for opcode semantics (PRM Tables 18-2, 18-5,
-18-7, 18-9, 18-10). 19 synthetic tests in `tests/test_sharcinv.py`.
+18-7, 18-9, 18-10). 19 synthetic tests in `tests/sharc/analysis/test_sharcinv.py`.
 
 ```
 uv run python -m tools.sharc_dev.sharcinv out/sections/dt2-1.16/section_7_BLOB.bin --top 25 --json OUT
@@ -2584,7 +2584,7 @@ restore via `PM(I3+74)`/`PM(I3+73)`/`PM(I3+72)` at `sw
 `DM(I3+82)`/`DM(I3+81)`/`DM(I3+80)` at `sw
 0xb88582`/`0xb88585`/`0xb88588`, matching `DM(I7+80/81/82)` saves at `sw
 0xb88304-0xb8830a` -- a second, DM-space save/restore pair. An independent
-aligned/depth>=8 whole-image scan (all nine `tools/sharcinv.CODE_BLOCKS`
+aligned/depth>=8 whole-image scan (all nine `tools/sharc_dev/sharcinv.CODE_BLOCKS`
 blocks, 50,976 confidently decoded instructions -- the same count
 `docs/findings/11-sharc-cross-image-comparison.md` reports for this image
 -- checked every `17a`/`17b`/`5a_move`/`5b_move`/`3a`/`3b`/`3d`/`14a`/
@@ -3917,7 +3917,7 @@ exactly: 64 output words, word `2k == round(L[k]*2**31)`, word
 `2k+1 == round(R[k]*2**31)`, both sign and magnitude correct. This rules
 out a sign/stride bug in the conversion routine itself (`fix_by`'s
 execution in `tools/sharc_dev/sharc_core`, and `FUN_1c74a1`'s own addressing).
-`tools/test_sharc_dac.py`'s own tests exercise `sharc_dac`'s pure-Python
+`tests/sharc/analysis/test_sharc_dac.py`'s own tests exercise `sharc_dac`'s pure-Python
 format logic against this same isolated-test data; the isolated-call
 transcript itself lives in this lane's own report, not committed as a
 script (per this repo's rule against ad hoc probe scripts -- the
@@ -4143,12 +4143,12 @@ breakpoint (`Runner.breakpoints`, checked natively inside
 `tools/sharc_dev/sharc_survey.py`'s `run_collect_all()` loop before an instruction
 decodes -- not a memory watch on a write target `FUN_1c60a2` is only
 *believed* to touch) instead of the watch-based probe D2 used. New,
-reusable entry point: `tools/sharc_replay.call_frame_collect_all_with_hits()`
+reusable entry point: `tools/sharc_dev/sharc_replay.call_frame_collect_all_with_hits()`
 (installs the breakpoint set on the fresh_call runner -- `Runner.fresh_call()`
 already carries `breakpoints` forward -- records every hit's own
 instruction count, steps exactly one instruction past each hit, and
 resumes, so a function called several times per frame does not truncate
-the render). Covered by `tests/test_sharc_replay.py`'s
+the render). Covered by `tests/sharc/integration/test_sharc_replay.py`'s
 `CallFrameCollectAllWithHitsTest`.
 
 **Reachability, corrected [V].** Replaying frames 0-1 of
@@ -4498,7 +4498,7 @@ complete on its own, but is NOT the frame-path pitch bug's cause.**
 candidates cannot even be told apart); no `tools/sharc_dev/sharc_core` change was
 made (no citable PRM/PGR value exists for `BITLEN12>32`, and the one
 testable candidate would not have fixed the actual bug regardless). One
-regression test added, `tests/test_sharc_compute_shift.py`'s
+regression test added, `tests/sharc/semantics/test_sharc_compute_shift.py`'s
 `test_bitext_over_32_forces_unknown_even_when_fifo_is_known`, pinning that
 `over_32` forces `Unknown` unconditionally even with a fully concrete
 FIFO -- the exact behaviour this lane had to bypass live to run the one
@@ -4711,9 +4711,9 @@ without re-deriving this lane's own plumbing.
 
 ### Tests / lint / types
 
-`uv run python -m pytest tests/test_sharc_replay.py tests/test_sharc_harness.py
-tests/test_sharc_inputs.py tests/test_lint.py tests/test_types.py
-tests/test_sharc_golden.py -q --slow`: all passing. `ReplayIdleCaptureTest`'s
+`uv run python -m pytest tests/sharc/integration/test_sharc_replay.py tests/test_sharc_harness.py
+tests/sharc/analysis/test_sharc_inputs.py tests/devtools/test_lint.py tests/devtools/test_types.py
+tests/sharc/integration/test_sharc_golden.py -q --slow`: all passing. `ReplayIdleCaptureTest`'s
 own pin is updated (both real-render frames now reach `frame-returned`
 instead of the second one hitting `0x1c32b0`) with the new numbers and why,
 per this file's own `FRAME_MILESTONE` convention. `RealFrameRingAMilestoneTest`
@@ -4740,7 +4740,7 @@ either craft a transfer that arms a voice or say why not.
 lane's own contribution is running them and reading the real register/ASTATX
 state at each one (`tools/sharc_dev/sharc_armpath.py`'s own `_sample()`, a register
 snapshot at a pc-hit breakpoint -- the same technique Lane E2 used, extended
-with a `sample_fn` hook on `tools/sharc_replay.
+with a `sample_fn` hook on `tools/sharc_dev/sharc_replay.py.
 call_frame_collect_all_with_hits()`, this lane's own small, backward-
 compatible addition to that function):
 
@@ -4884,7 +4884,7 @@ no other change:
 
 This closes the loop this lane's task opened with: the guard's own
 semantics, decoded from the disassembly, exactly predict what execution
-does once its input changes. `tests/test_sharc_armpath.py`'s
+does once its input changes. `tests/sharc/analysis/test_sharc_armpath.py`'s
 `test_forcing_the_second_guard_byte_arms_and_renders_a_voice` pins this.
 
 ### No trigger encoding found -- consistent with Lane E2's own conclusion, for the same reason
@@ -4909,7 +4909,7 @@ instead of a fixed 0/1 pair.
   optional `sample_fn` parameter (called with `(runner, pc)` right when a
   hit is recorded, before that pc's own instruction executes; merged under
   the hit's own `"sample"` key). `None` by default -- every existing
-  caller's hit-dict shape, and `tests/test_sharc_replay.py`'s own
+  caller's hit-dict shape, and `tests/sharc/integration/test_sharc_replay.py`'s own
   assertions on it, are unchanged. No other change to this file.
 - `tools/sharc_dev/sharc_armpath.py` (new): `trace_arm_path()` (the per-frame,
   per-voice-iteration trace this section reports), `analyze_iterations()`
@@ -4918,7 +4918,7 @@ instead of a fixed 0/1 pair.
   see its own docstring for the delay-slot correction above), and the named
   pc constants this section cites. On the lint `CLEAN` list; not on the
   mypy `TYPED` list (same as `tools/sharc_dev/sharc_replay.py`).
-- `tests/test_sharc_armpath.py` (new): `AnalyzeIterationsTest` (4 tests,
+- `tests/sharc/analysis/test_sharc_armpath.py` (new): `AnalyzeIterationsTest` (4 tests,
   pure grouping logic, no firmware needed) and `TraceArmPathTest` (2 tests,
   `@pytest.mark.slow`, gated on the real image/capture: the real-capture
   "never arms" pin, and the diagnostic-poke "arms and renders" proof above).
@@ -4926,8 +4926,8 @@ instead of a fixed 0/1 pair.
 
 ### Tests / lint / types
 
-`uv run python -m pytest tests/test_sharc_armpath.py tests/test_sharc_replay.py
-tests/test_lint.py tests/test_types.py tests/test_sharc_golden.py -q --slow`:
+`uv run python -m pytest tests/sharc/analysis/test_sharc_armpath.py tests/sharc/integration/test_sharc_replay.py
+tests/devtools/test_lint.py tests/devtools/test_types.py tests/sharc/integration/test_sharc_golden.py -q --slow`:
 24 passed (6 new + 18 existing `sharc_replay` tests, unaffected). No
 `sharc_core` change; no golden hash touched.
 
@@ -4995,7 +4995,7 @@ diff already put in doubt -- and change only for frames 303-374 (72
 frames, consistent with some ColdFire-side envelope/decay counter, not
 examined further here).
 
-**2. `tools/sharc_armpath.trace_arm_path()` gained `start_frame`** (skip N
+**2. `tools/sharc_dev/sharc_armpath.trace_arm_path()` gained `start_frame`** (skip N
 captured frames without replaying them at all, keeping `per_frame[i]
 ["index"]` as the real capture index) so a caller can bracket a rare event
 deep into a long capture instead of paying to replay every frame from 0 --
@@ -5109,7 +5109,7 @@ above, not guessed at.
   item 2 above); `--start-frame` CLI flag; `per_frame[i]["index"]` now
   `start_frame + i`.
 - `tests/test_sharc_capture_run.py`: `TrigChannelBitTest` (4 tests, pure).
-- `tests/test_sharc_armpath.py`: `test_start_frame_skips_without_shifting_
+- `tests/sharc/analysis/test_sharc_armpath.py`: `test_start_frame_skips_without_shifting_
   reported_index` (1 test, `@pytest.mark.slow`, firmware-gated).
 - `docs/findings/06-sharc-engine-and-startup.md`: this section.
 - `docs/FINDINGS.md`: index line update.
@@ -5118,9 +5118,9 @@ Not committed (firmware-derived): `out/captures/dt2-1.16-running-trig.dt2cap`.
 
 ### Tests
 
-`uv run python -m pytest tests/test_sharc_capture_run.py tests/test_sharc_armpath.py
-tests/test_sharc_replay.py tests/test_lint.py tests/test_types.py
-tests/test_sharc_golden.py -q --slow`. No `sharc_core` change; no golden
+`uv run python -m pytest tests/test_sharc_capture_run.py tests/sharc/analysis/test_sharc_armpath.py
+tests/sharc/integration/test_sharc_replay.py tests/devtools/test_lint.py tests/devtools/test_types.py
+tests/sharc/integration/test_sharc_golden.py -q --slow`. No `sharc_core` change; no golden
 hash touched.
 
 ### Open
@@ -5190,9 +5190,9 @@ manual is silent or self-inconsistent on (lw) scaling, PM scaling and
 Changed: one helper `memory._post_modify_index` used by 3a, 3b, 3c, 3d, 4a, 4b,
 4d, 1a (DM and PM halves), 16a and 6a_mem. A bounded or unknown I with wrap
 active becomes a `circ_` symbol or Unknown, as for 19a. L or MODE1 unknown
-stays linear. Tests: `tests/test_sharc_circular_buffers.py` (100 cases: both
+stays linear. Tests: `tests/sharc/semantics/test_sharc_circular_buffers.py` (100 cases: both
 ends, exact lap, L=0, CBUFEN off, pre-modify, M>L, nw/sw/byte/lw scaling,
-SIMD, second DAG, symbols); `tests/test_sharc_golden.py` hashes unchanged.
+SIMD, second DAG, symbols); `tests/sharc/integration/test_sharc_golden.py` hashes unchanged.
 
 **[V]** DN2 1.11 cold start, Python only (`tools/sharc_dev/sharc_circ_census.py`, 5M
 instructions, spin at `0x1c1128`): 751 post-modifies ran with wrapping active
@@ -5343,7 +5343,7 @@ L2 byte `0x200a0000` (pc `0xbd0000`; pc = `0xb80000` + (byte - `0x20000000`) / 2
 loader writes (DT2 `0x2001ab7b`, DN2 `0x2008823b`). 200 instructions per block.
 `tools/sharc_dev/sharc_asm.py` builds the words from `tools/sharc_dev/sharcspec/decode_table.json` and re-decodes each with the
 repository decoder; the forms it emits were checked against the firmware's own words
-(`tests/test_sharc_asm.py`). A first version used the short-word access bits by mistake (`l,x,w = 1,0,0`
+(`tests/sharc/generation/test_sharc_asm.py`). A first version used the short-word access bits by mistake (`l,x,w = 1,0,0`
 instead of `0,1,1`): the decoder accepted both, the PCM showed it, so check access width in the listing.
 
 **PCM evidence.** `tools/patchkit/hook_ab.py run` / `compare`, same ready inputs, one audio render each:
@@ -5455,7 +5455,7 @@ verified **[V]** rules H1, H2, H3, H4/H5, H8, H9 and H12.
 | Rule | Source | Check |
 |---|---|---|
 | H1 HDRSIGN | 40-39, 40-60 | byte 3 is `0xAD` for core 0 (`0xAC`, `0xAB` are other cores; error `HDRSGN` 0xA) |
-| H2 HDRCHK | 40-39, 40-60 | XOR of the 16 header bytes is 0 (error 0xC). Table 40-27 says "XOR of the other 24 bits"; only the whole-header reading holds on stock headers (the three-byte reading (byte 2 = byte 0 ^ byte 1 ^ byte 3) holds for 0 of the 104 DT2 headers, `tests/test_sharc_bootcheck.py`) |
+| H2 HDRCHK | 40-39, 40-60 | XOR of the 16 header bytes is 0 (error 0xC). Table 40-27 says "XOR of the other 24 bits"; only the whole-header reading holds on stock headers (the three-byte reading (byte 2 = byte 0 ^ byte 1 ^ byte 3) holds for 0 of the 104 DT2 headers, `tests/sharc/analysis/test_sharc_bootcheck.py`) |
 | H3 alignment | 40-39 | BYTE_COUNT and a load TARGET_ADDRESS are multiples of 4. FIRST/FINAL blocks carry the entry pc (DN2: `0x1c12e2`, 2-byte aligned) and boot on the real device, so the address rule is applied to blocks that load memory only |
 | H4/H5 FIRST | 40-40 | the first block of the stream has BFLAG_FIRST; FIRST cannot be a FILL block |
 | H6/H7 FILL, IGNORE | 40-42 | FILL: no payload, ARGUMENT is the word; IGNORE: payload present and skipped; INIT, CALLBACK, FINAL, AUX are cleared on an IGNORE block |
@@ -5511,7 +5511,7 @@ of DT2 1.16 and 1.17 are byte-identical, so every address below holds on both; n
 verified **[V]** the voice hook entry (`1587 ffff ffe6` at `0x1c4ecf`, next instruction `0x1c4ed2`), the DN2
 `FUN_b8251b` entry (`1587 ffff ffee`) and the selector words 0..13, 14/15 = 0 and 16..21 pointers; PCM, headroom, register
 liveness and note-on contracts stay **[D]**. Modules:
-`core/dsp-voice`, `test/sine-voice`, `machines/pluck`. Tests: `tests/test_dsp_voice.py`, `tests/test_pluck.py`;
+`core/dsp-voice`, `test/sine-voice`, `machines/pluck`. Tests: `tests/patchkit/test_dsp_voice.py`, `tests/patchkit/test_pluck.py`;
 proof: `tools/patchkit/pk_proof_voice.py`.
 
 **[C] The hook is the first instruction of `0x1c4ecf`, not the call at `0x1c6b00`.** Retargeting the call patches

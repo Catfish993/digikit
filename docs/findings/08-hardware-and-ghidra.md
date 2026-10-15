@@ -232,7 +232,7 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   `plusdrive_project_contract` for DT2). All signature-resolved anchors of the boot path resolve
   on both with no code change (`boot_anchors_resolve_on_every_supported_firmware`: softfloat ABI,
   RAM clear, fused loops, idle spins); `tools/coldfire/symbols.py` leaves the same nine (DT2) / eleven (DN2)
-  symbols unresolved as on 1.16 / 1.11, all on `tests/test_symbol_audit.py`'s allow-list. Both boot
+  symbols unresolved as on 1.16 / 1.11, all on `tests/coldfire/test_symbol_audit.py`'s allow-list. Both boot
   to ready natively: DT2 1.17 ready at 1,114,985,926 ColdFire instructions, DN2 1.12 at
   851,236,338. **[D]**
 - **Two things were version-keyed and are not any more.** `supported_softfloat` was a

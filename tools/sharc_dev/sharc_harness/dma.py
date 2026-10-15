@@ -138,8 +138,8 @@ def _swap16(data: bytes) -> bytes:
 def write_dma_transfer(
     state, image: str, payload: bytes, *, swap16: bool = True
 ) -> int:
-    """Write PAYLOAD (a captured frame's own raw TX bytes, `emu/sharc_
-    capture.py`'s `Dspi2Frame.tx`, the SAME big-endian wire order
+    """Write PAYLOAD (a captured frame's own raw TX bytes, `tools/sharc_dev/sharc_capture.py`'s
+    `Dspi2Frame.tx`, the SAME big-endian wire order
     `describe_frame()`/`frame_command()` already parse with `_u16be()`) at
     `dma_landing_address()` -- the real hardware receive-DMA landing zone
     this module's own section note traces, not `0x2558dc`/`command_word`

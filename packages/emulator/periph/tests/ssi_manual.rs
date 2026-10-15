@@ -1,5 +1,5 @@
 //! Unit tests against MCF5441XRM chapter 35 (SSI) facts already recovered
-//! and cited in `emu/ssi.py`'s own docstring, plus `ssi::Ssi0Dma`'s exact
+//! and cited in `unicorn-reference-final:emu/ssi.py`'s own docstring, plus `ssi::Ssi0Dma`'s exact
 //! (non-coalescing) port of it. No trace exercises this bank (see `ssi.rs`'s
 //! module docs), so these are the only check it gets.
 
@@ -9,7 +9,7 @@ use periph::ssi::{self, RX_CHAN, RxHandoverPeer, Ssi0Dma, TX_CHAN};
 
 #[test]
 fn channel_roles_and_vectors() {
-    // emu/ssi.py: RX_CHAN, TX_CHAN = 48, 50; RX_VECTOR/TX_VECTOR/FORCE_VECTOR
+    // unicorn-reference-final:emu/ssi.py: RX_CHAN, TX_CHAN = 48, 50; RX_VECTOR/TX_VECTOR/FORCE_VECTOR
     // = 168/170/191.
     assert_eq!(RX_CHAN, 48);
     assert_eq!(TX_CHAN, 50);
@@ -20,7 +20,7 @@ fn channel_roles_and_vectors() {
 
 #[test]
 fn audio_request_rate_derivation() {
-    // emu/ssi.py's docstring: FCSR watermark 8 of 16 active slots -> 2
+    // unicorn-reference-final:emu/ssi.py's docstring: FCSR watermark 8 of 16 active slots -> 2
     // requests per SSI audio frame; 48 kHz frame rate (assumed, not
     // recovered) -> 2 * 48,000 = 96,000 Hz. TCD major loop 64 minors -> the
     // TX major interrupt at 96,000/64 = 1,500 Hz, matching the SHARC's own
@@ -33,7 +33,7 @@ fn audio_request_rate_derivation() {
 #[test]
 fn rx_handover_marker_at_major_loop_start_only() {
     // `RxHandoverPeer`: `0x007FFFFF` written only when this call is the
-    // major loop's first request (`emu/ssi.py`'s `_at_major_start`).
+    // major loop's first request (`unicorn-reference-final:emu/ssi.py`'s `_at_major_start`).
     let mut peer = RxHandoverPeer;
     let first = peer.rx_major(32, true);
     assert_eq!(&first[0..4], &RxHandoverPeer::MARKER.to_be_bytes());

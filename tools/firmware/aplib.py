@@ -1,7 +1,7 @@
 """A store-only encoder for this firmware's aPLib-shaped container streams.
 
 There is no LZ77 match-finder here on purpose. Byte-exact compression was
-never the requirement: the device's own depacker (emu/oracle.py:depack,
+never the requirement: the device's own depacker (unicorn-reference-final:emu/oracle.py:depack,
 0x80000432; the updater carries an identical copy at 0x80005710, see
 tools/firmware/extract.py) accepts any stream that is a *valid* encoding of the bytes it
 should produce -- nothing anywhere in the acceptance path hashes or compares
@@ -12,7 +12,7 @@ bytes, plus a ~16-byte terminator) -- that is expected and fine.
 
 WHAT WAS EMPIRICALLY CONFIRMED, by single-stepping the real depacker under
 Unicorn (see the disassembly at 0x80000432 in section 2 -- 354 bytes, one
-`rts`) and cross-checking every claim below against emu/oracle.py:depack() on
+`rts`) and cross-checking every claim below against unicorn-reference-final:emu/oracle.py:depack() on
 hand-built streams:
 
   * The 8-byte section header ([u32 compressed_len][u32 byte_sum], big
@@ -251,8 +251,8 @@ if __name__ == "__main__":
     import os
     import time
 
-    from tools.firmware.elz import depack_section
     from tools.firmware import config
+    from tools.firmware.elz import depack_section
 
     sections_dir = sys.argv[1] if len(sys.argv) > 1 else config.sections_dir()
 

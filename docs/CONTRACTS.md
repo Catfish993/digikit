@@ -17,7 +17,7 @@ The analyzer uses the existing narrow `tools.coldfire.disasm` decoder and emits 
 sorted JSON. It rejects a changed or ambiguous bootstrap sequence. `emu.Machine`
 can optionally observe explicit MMIO ranges with `install_mmio_trace(sink,
 ranges=..., registers=...)`; it installs no trace hooks without a sink and
-writes read-only JSONL events. `emu.longrun.build` accepts `trace_path`,
+writes read-only JSONL events. `unicorn-reference-final:emu/longrun.py`'s `build` accepts `trace_path`,
 `trace_ranges`, and `trace_registers` for the same narrow observer. A sink
 created by `trace_path` is owned by its `Machine`; call `m.close()` (or use it
 as a context manager) to close and flush that JSONL file.

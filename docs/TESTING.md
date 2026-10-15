@@ -38,6 +38,7 @@ Other tests:
 - Mark long firmware runs `@pytest.mark.slow`. They are skipped unless `--slow` is given.
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - A new Python file joins the `CLEAN` list in `tests/devtools/test_lint.py`.
+- `tests/devtools/test_pathcheck_repo.py` (in the verify gate) runs `uv run python -m tools.devtools.pathcheck`: every path-like token in tracked text files must name a tracked file or directory, a generated or git-ignored path, or an allowed token. A deleted file is cited as `REF:path`, checked with `git cat-file` (`unicorn-reference-final:emu/edma.py`, `<commit>^:path`). Files under `history_docs` (findings, plans, design, archive, refs, contracts) may name paths that were once tracked. Add an exception to `allow` in `tools/devtools/pathcheck.json` with a required reason; an allow that matches nothing fails the run. `--fix` and `--fix-deleted REF` rewrite stale tokens (dry run unless `--apply`).
 
 ## Inputs tests need
 
@@ -133,7 +134,7 @@ Per-file run (`test_outcomes.py run --jobs 6`) of the non-slow suite at
 | File | Time |
 | --- | --- |
 | `tests/patchkit/test_pluck.py` | 453 s |
-| `tests/sharc/integration/test_sharc_harness.py` (before the split into test_sharc_harness_{audio,voice,frame,cli}.py) | 210 s |
+| `tests/sharc/integration/test_sharc_harness_*.py` (before the split into test_sharc_harness_{audio,voice,frame,cli}.py) | 210 s |
 | `tests/patchkit/test_patchkit.py` | 111 s |
 | `tests/coldfire/test_regions.py` | 86 s |
 | `tests/patchkit/test_dsp_voice.py` | 73 s |

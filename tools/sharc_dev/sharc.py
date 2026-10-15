@@ -197,13 +197,13 @@ def _astat_groups_written(t, f):
     merged decode fields f -- tools/sharc_dev/sharcinv.py's merge_fields() over the
     `insn.fields` this row's build already stored, never mnemonic text, per
     tools/sharc_dev/sharcdb/'s own Type3c rule) writes, cross-checked against
-    tools/sharc_dev/sharc_core/flags.py/compute_alu.py/compute_mult.py/
-    compute_shift.py/compute_multi.py/forms_system.py, which is where each
+    tools/sharc_dev/sharc_core/{flags,compute_alu,compute_mult,
+    compute_shift,compute_multi,forms_system}.py, which is where each
     of these actually gets applied:
 
       - A COMPUTE_FORMS instruction's parallel compute field: classified
         exactly the way tools/sharc_dev/sharcdb/'s own `_compute_regdef_reguse`
-        does, through the same tools/sharcinv.classify_compute() (PRM Table
+        does, through the same tools/sharc_dev/sharcinv.classify_compute() (PRM Table
         18-5/18-9/18-18/18-19 by the field's own cu/opcode bits) --
         'ALU'/'MULT'/'SHIFT' map directly; 'MULTIFN' (a MUL+ALU or
         MUL+dual-add/subtract multifunction op) always touches both ALU
@@ -219,7 +219,7 @@ def _astat_groups_written(t, f):
         opcode 0x7/0xF (mul_ssi/fmul) is MULT; every other opcode there
         (add/sub/pass/comp/not/inc/dec/fadd/fsub/float/fcomp) is ALU.
       - Type6a_mem's ShiftImm sub-instruction (PRM Table 18-9): always
-        SHIFT for a recognised opcode (tools/sharcfn._SHIFTIMM_MNEMONICS),
+        SHIFT for a recognised opcode (tools/sharc_dev/sharcfn._SHIFTIMM_MNEMONICS),
         including btst (register bit-test sets SZ, PRM p.513 -- an entirely
         different flag from Type18a's BTF below) and the "[status only]"
         case tools/sharc_dev/sharcdb/'s own `_shiftimm_regdef_reguse` leaves with no
@@ -577,7 +577,7 @@ class Image:
     # group plus the whole-register pseudo-register, not just one.
     # Known gap: a compute this file's classifier does not recognise (an
     # sharcinv.classify_compute() cu of 'CU3', or a Type6a_mem opcode
-    # outside tools/sharcfn._SHIFTIMM_MNEMONICS) is not seen as any ASTAT
+    # outside tools/sharc_dev/sharcfn._SHIFTIMM_MNEMONICS) is not seen as any ASTAT
     # source; not silently declared correct, just not modelled -- see the
     # module docstring's "never from mnemonic text" rule, which rules out
     # falling back to scanning the rendered mnemonic instead.

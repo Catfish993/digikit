@@ -16,9 +16,9 @@ DT15 = Path("out/sections/dt2-1.15C/section_3_MAIN_OS.bin")
 DT16 = Path("out/sections/dt2-1.16/section_3_MAIN_OS.bin")
 DN11 = Path("out/sections/dn2-1.11/section_3_MAIN_OS.bin")
 
-# emu/pit.py: PIT3 is the display frame timer, claimed by the display
+# unicorn-reference-final:emu/pit.py: PIT3 is the display frame timer, claimed by the display
 # module partway through boot and modelled from then on -- see
-# tools/coldfire/symbols.py:display_sem and emu/pit.py's own module docstring.
+# tools/coldfire/symbols.py:display_sem and unicorn-reference-final:emu/pit.py's own module docstring.
 PIT3_VECTOR = 208
 
 

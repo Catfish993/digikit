@@ -38,12 +38,15 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from tools.firmware import container, inplace  # noqa: E402
-from tools.firmware.elz import depack_section  # noqa: E402
-from tools.firmware.extract import classify  # noqa: E402
 from tools.control import digi_client  # noqa: E402
 from tools.emulator import bootstrap_run  # noqa: E402
-from tools.firmware import roundtrip  # noqa: E402
+from tools.firmware import (  # noqa: E402
+    container,
+    inplace,
+    roundtrip,  # noqa: E402
+)
+from tools.firmware.elz import depack_section  # noqa: E402
+from tools.firmware.extract import classify  # noqa: E402
 from tools.patchkit import patchimg  # noqa: E402
 
 MAIN_LOAD = 0x4000_0400

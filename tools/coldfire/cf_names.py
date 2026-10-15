@@ -11,7 +11,7 @@ live here instead, read by tools/emulator/snapread.py (to label a raw address) a
 tools/coldfire/cfdb.py and cf.py (to look up a function by name).
 
 Each entry: NAME -> (address, mark, description, source). `mark` follows
-docs/findings/FINDINGS.md's convention (see CLAUDE.md's Rules): '[V]'
+docs/FINDINGS.md's convention (see CLAUDE.md's Rules): '[V]'
 verified against the image bytes, '[D]' documented/read once but not
 re-checked, '[O]' open, '[C]' corrects an earlier claim, or 'unmarked' where
 the source note gave no explicit mark for that specific claim. `source` is

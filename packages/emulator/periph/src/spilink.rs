@@ -15,10 +15,10 @@
 //! - `dsp::Fifo`, the FlexBus coprocessor port's ready line, backed by a
 //!   `RegFile` for its own slot (`0x8C00_0000`) for anything besides
 //!   `STATUS`/`LATCH`, which `Fifo` computes dynamically (see its docs).
-//! - a generic "forced MMIO" map: `emu.harness.Machine.install_mmio` forces
+//! - a generic "forced MMIO" map: `unicorn-reference-final:emu/harness.py`'s `Machine.install_mmio` forces
 //!   a fixed 32-bit value on every read of a handful of addresses
-//!   (`DSPI0_SR`, `DSPI2_SR` -- `emu/longrun.py` sets both unconditionally;
-//!   `emu/mmiotrace.py`'s `STATE` records carry the live table as
+//!   (`DSPI0_SR`, `DSPI2_SR` -- `unicorn-reference-final:emu/longrun.py` sets both unconditionally;
+//!   `unicorn-reference-final:emu/mmiotrace.py`'s `STATE` records carry the live table as
 //!   `state["mmio"]`, keyed by hex address string). A replay loads this map
 //!   from each `STATE` record (`bin/replay.rs`); a live machine would
 //!   instead pass in whatever `m.mmio` it starts with. Checked before any
@@ -28,8 +28,8 @@
 //! ## SERQ/CINT: the multi-model dispatch, and the two-step capture
 //!
 //! `EDMA_SERQ`/`EDMA_CINT` are one address each, but in Python multiple
-//! independent models install a `UC_HOOK_MEM_WRITE` on them (`emu/edma.py`'s
-//! `TxChannel`, `emu/dspi2.py`'s `Dspi2Link`; `emu/ssi.py`'s `Ssi0Dma` too,
+//! independent models install a `UC_HOOK_MEM_WRITE` on them (`unicorn-reference-final:emu/edma.py`'s
+//! `TxChannel`, `unicorn-reference-final:emu/dspi2.py`'s `Dspi2Link`; `unicorn-reference-final:emu/ssi.py`'s `Ssi0Dma` too,
 //! not wired in here), each deciding for itself whether the channel number
 //! written is one of its own. [`DmaLink::write`] does the same: one guest
 //! write can trigger more than one model.
@@ -179,7 +179,7 @@ impl DmaLink {
                 && let Some(v) = self.dsp.read_status(addr)
             {
                 // The oracle's own echo write (`on_read`'s `uc.mem_write`,
-                // recorded as an HWR from `emu.dsp.Fifo.__init__.<locals>.
+                // recorded as an HWR from `unicorn-reference-final:emu/dsp.py`'s `Fifo.__init__.<locals>.
                 // on_read`) -- mirrored here so the returned bytes and
                 // what a later plain read of this slot would see agree.
                 self.dsp_regs.write((STATUS_OFFSET) as u32, 2, v as u32);
@@ -212,7 +212,7 @@ impl DmaLink {
             let mut hw = None;
             if addr == edma::SERQ {
                 let v = value as u8;
-                // `emu/edma.py`'s `on_serq`: no size or NOP-bit check at
+                // `unicorn-reference-final:emu/edma.py`'s `on_serq`: no size or NOP-bit check at
                 // all -- but `run()` itself no-ops (and reads nothing but
                 // its own TCD's CITER) when CITER is 0, so no `HRD` for the
                 // big block read is coming in that case either; checked
@@ -222,7 +222,7 @@ impl DmaLink {
                 {
                     effect = SerqEffect::Tx35Capture;
                 }
-                // `emu/dspi2.py`'s `_on_serq`: requires a single byte write
+                // `unicorn-reference-final:emu/dspi2.py`'s `_on_serq`: requires a single byte write
                 // with the NOP bit clear.
                 if size == 1 && v & 0x80 == 0 && self.dspi2.touches(v) {
                     if self.dspi2.arms_tx(v) {
@@ -280,14 +280,14 @@ impl DmaLink {
     }
 
     /// Complete a [`SerqEffect::Tx35Capture`]: `source` is the trace's `HRD`
-    /// payload for `emu.edma.TxChannel.run`'s read (or a live bus's own
+    /// payload for `unicorn-reference-final:emu/edma.py`'s `TxChannel.run` read (or a live bus's own
     /// read, for a future caller).
     pub fn finish_tx35_capture(&mut self, source: &[u8]) {
         self.tx35.run(&mut self.edma_regs, source);
     }
 
     /// Complete a [`SerqEffect::Dspi2Capture`]: `source` is the trace's
-    /// `HRD` payload for `emu.dspi2.Dspi2Link._capture`'s read. -> the
+    /// `HRD` payload for `unicorn-reference-final:emu/dspi2.py`'s `Dspi2Link._capture` read. -> the
     /// logical TX frame (PUSHR tags stripped) -- the gate's "byte-exact"
     /// check is a caller comparing this against the known TRIG-mask bytes.
     pub fn finish_dspi2_capture(&mut self, source: &[u8]) -> Vec<u8> {
@@ -313,8 +313,8 @@ impl DmaLink {
     }
 
     /// Mirror an arbitrary host write (`HWR`) from a source this link does
-    /// not itself model (e.g. `emu.panelin.feed` advancing TCD34's DADDR --
-    /// eDMA channel 34, the panel-input UART ring, owned by `emu/panelin.py`,
+    /// not itself model (e.g. `unicorn-reference-final:emu/panelin.py`'s `feed` advancing TCD34's DADDR --
+    /// eDMA channel 34, the panel-input UART ring, owned by `unicorn-reference-final:emu/panelin.py`,
     /// not this crate) into whichever slot owns `addr`, byte for byte,
     /// exactly like a guest write would be stored -- so a later `RD` of that
     /// same register still matches the oracle. A no-op for any address

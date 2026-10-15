@@ -22,7 +22,7 @@ Three separate bugs, all the same shape: an address hardcoded to Digitakt.
 
 ### 1.1 The soft-float HLE never fired (the big one)
 
-`emu/softfloat.py` named all seven libgcc float routines by literal Digitakt
+`unicorn-reference-final:emu/softfloat.py` named all seven libgcc float routines by literal Digitakt
 address. On Digitone the block sits at `0x401685fc`–`0x40169f5c`, not
 `0x40174134`–`0x40175a94`, so **the HLE installed no hooks that could ever
 fire** and the guest ground through the real arithmetic — which is 93% of the
@@ -42,7 +42,7 @@ rather than defaulted back to the Digitakt literal.
 
 ### 1.2 `intro_running()` answered False for the whole intro
 
-`emu/pit.py` compared vector 208 against a hardcoded `INTRO_PIT3_ISR =
+`unicorn-reference-final:emu/pit.py` compared vector 208 against a hardcoded `INTRO_PIT3_ISR =
 0x400d2d70`. Digitone's intro handler is `0x400d4fb8`, so the test never
 matched: the GUI concluded the intro was over before it started, released the
 timers into the middle of it and picked the wrong render path.
@@ -152,7 +152,7 @@ GUI holds PIT3 for as long as the intro owns vector 208 — so the one thing tha
 could post the semaphore is switched off. The run sits there and the panel
 stays black. That is what `boot400M.snap` does on Digitone.
 
-`emu/run.py:usable_rung` now picks by state instead of by number: newest rung
+`unicorn-reference-final:emu/run.py:usable_rung` now picks by state instead of by number: newest rung
 first, take the first one whose intro is live and not already parked. Digitakt
 qualifies at every rung and still gets 400M, unchanged; Digitone gets 280M.
 
@@ -262,7 +262,7 @@ uc.emu_start(pc, 0, count=2)            # beq is NOT taken
 | `reg_read(SR)` from inside a UC_HOOK_CODE, during execution | taken (correct) |
 
 Unicorn's m68k keeps condition codes lazily; reading SR at an `emu_start`
-boundary materialises them wrongly. `emu/pit.py:Pits.service` reads SR at every
+boundary materialises them wrongly. `unicorn-reference-final:emu/pit.py:Pits.service` reads SR at every
 chunk boundary to check the IPL before delivering a timer — so every timer
 service is a chance to corrupt the flags of the instruction that just ran.
 
@@ -370,7 +370,7 @@ much quicker to reach for.
 DT2_SECTIONS=/tmp/sec-dt uv run python -m tools.coldfire.symbols
   -> every symbol resolves, values as in the table above
 
-DT2_SECTIONS=/tmp/sec-dt uv run python emu/oracle.py
+DT2_SECTIONS=/tmp/sec-dt uv run python unicorn-reference-final:emu/oracle.py
   -> CRC + residue pass
 
 DT2_SECTIONS=/tmp/sec-dt uv run python -m emu.softfloat

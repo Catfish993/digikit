@@ -237,7 +237,7 @@ def decode_loaded_at(reader: ShortWordReader, pc_sw: int) -> Instruction:
 #
 # resolve_confident_width() is the one function that decides this, so a
 # single-PC decode (decode_confident()/decode_confident_loaded() below, used
-# by tools/sharc_core.sequencer.decode_at()) and a whole-image walk
+# by tools/sharc_dev/sharc_core/sequencer.decode_at()) and a whole-image walk
 # (tools/sharc_dev/sharcimm.py's decode_all(), which calls resolve_confident_width()
 # directly with its own memoized table as raw_at, for speed over a whole
 # image) make the identical choice -- see docs/findings/05-sharc-isa-and-
@@ -331,7 +331,7 @@ def resolve_confident_width(
     pos, insn, raw_at, narrow_at, lookahead=WIDTH_LOOKAHEAD, _resolved_successors=True
 ):
     """The one width/form choice both tools/sharc_dev/sharcimm.py's decode_all() and
-    tools/sharc_core.sequencer.decode_at() make: prefer a narrower form over
+    tools/sharc_dev/sharc_core/sequencer.decode_at() make: prefer a narrower form over
     a wider one at the same position when the narrower form's own successor
     chain decodes confidently for LOOKAHEAD instructions where the wider
     form's does not, or independently rejoins one of the wider form's own
@@ -466,7 +466,7 @@ def _raw_at_loaded(reader: ShortWordReader, pos: int) -> Instruction | None:
 
 def decode_confident_loaded(reader: ShortWordReader, pc_sw: int) -> Instruction:
     """Same correction as decode_confident(), for loader-backed memory
-    addressed by a short-word PC -- tools/sharc_core.sequencer.decode_at()'s
+    addressed by a short-word PC -- tools/sharc_dev/sharc_core/sequencer.decode_at()'s
     LoadedMemory path, the tracer's and concrete runner's only decode entry.
     Fails closed exactly as decode_loaded_at() does; see decode_confident()'s
     docstring for why a NEVER_ALIGNED_FORMS decode landed on directly is not

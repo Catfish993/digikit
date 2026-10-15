@@ -1,5 +1,5 @@
 #!/bin/zsh
-# usage: tools/sharc_sample.sh OUT [CONFIG]: run the fastcov scenario and sample the DSP process.
+# usage: tools/devtools/archive/sharc_sample.sh OUT [CONFIG]: run the fastcov scenario and sample the DSP process.
 export DIGI_EMU_SYX=${DIGI_EMU_SYX:-$(cd "$(dirname "$0")/../../.." && pwd)/Digitone_II_OS1.11.syx}
 out=$1
 config=${2:-default}

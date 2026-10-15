@@ -617,7 +617,7 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
         value: u32,
         failed: bool,
     ) -> bool {
-        // The former Python harness (emu.harness (removed; see tag unicorn-reference-final); its _fault) mapped a zeroed
+        // The former Python harness (`unicorn-reference-final:emu/harness.py`'s `_fault`) mapped a zeroed
         // page for any unmapped guest access.  This is a diagnostic compatibility policy only: it never
         // supplies a device value. Owned-device errors still fail their retry.
         if !failed || !self.zero_page_mmio {
@@ -979,7 +979,7 @@ pub(crate) fn service_timers<const TRACE: bool>(
     ))
 }
 
-// Exact Python emu.edma.py completion boundary: channel 35 is offered only
+// Exact Python unicorn-reference-final:emu/edma.py completion boundary: channel 35 is offered only
 // at its firmware queue-space wait loop. Unlike a generic IRQ scheduler, this
 // checks the programmed INTC1 source-27 level/mask and the live CPU IPL.
 pub(crate) fn service_tx35_wait<const TRACE: bool>(
@@ -1034,7 +1034,7 @@ pub(crate) fn service_tx35_wait<const TRACE: bool>(
     }
 }
 
-// The flash_read ABI of the former emu.longrun (removed; see tag unicorn-reference-final): [return, offset, length, destination]
+// The flash_read ABI of the former unicorn-reference-final:emu/longrun.py: [return, offset, length, destination]
 // at A7; copy only an in-range request, return D0=0, pop return address.
 pub(crate) fn hle_flash_read<const TRACE: bool>(
     bus: &mut LoggingBus<TRACE>,

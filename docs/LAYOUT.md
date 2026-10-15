@@ -33,9 +33,9 @@ Python tools live in `tools/<owner>/`, one package per owner above. The reposito
 
 | Today | Planned | Status and reason |
 | --- | --- | --- |
-| `native/` crates | `packages/emulator/` | Done (R3, 2026-10-15). The move needed cold Rust rebuilds and a PGO retrain. Old→new paths: `tools/devtools/move-r3.json` (applied with `tools/devtools/move_dirs.py`). |
+| `native/` crates | `packages/emulator/` | Done (R3, 2026-10-15). The move needed cold Rust rebuilds and a PGO retrain. Old→new paths: `23a03a8:tools/devtools/move-r3.json` (applied with `23a03a8:tools/devtools/move_dirs.py`). |
 | `packages/desktop`, `packages/web` | `apps/desktop`, `apps/web` | Done (R3, 2026-10-15). Same map file and tool. |
-| `tools/` | `tools/<owner>/` | Done (R1, 2026-10-14): one package per owner under `tools/`. Old→new paths: `tools/devtools/relocate-r1.json` (applied with `tools/devtools/relocate.py`). |
+| `tools/` | `tools/<owner>/` | Done (R1, 2026-10-14): one package per owner under `tools/`. Old→new paths: `23a03a8:tools/devtools/relocate-r1.json` (applied with `23a03a8:tools/devtools/relocate.py`). |
 | `tests/` | Domain directories | Done. See `docs/TESTING.md`. |
 | `emu/`, `dt2/` | `tools/firmware/`, `tools/coldfire/`, `tools/sharc_dev/` | Done (pre-publication, 2026-10-16). |
 | `packages/emulator/patchkit` | `packages/patchkit` | Done (2026-10-16): a module toolchain, not an emulator crate. |

@@ -65,6 +65,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
   `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
   (`tests/devtools/test_pypy.py`, slow).
+- Paths: tools/devtools/pathcheck.py fails on references to missing paths; cite a deleted file as `REF:path` (e.g. `unicorn-reference-final:emu/edma.py`).
 - `tests/sharc/integration/test_sharc_golden.py` hashes six SHARC core outputs: a refactor keeps them; an intended change updates
   them with `--update` and says why. PCM pins in `tests/scenarios/*.json` change only with Em's approval.
 
