@@ -23,8 +23,8 @@ DEFAULT_BUDGET_PCT = 85.0
 
 # real cycles per block / emulator busy instructions per block (stock, held note), from out/clock/sharc.json
 FACTORS: dict[str, dict[str, float]] = {
-    "dn2": {"nominal": 1.157613, "high": 1.364831},
-    "dt2": {"nominal": 1.154954, "high": 1.447858},
+    "dn2": {"nominal": 1.138261, "high": 1.326075},
+    "dt2": {"nominal": 1.134327, "high": 1.406521},
 }
 
 
