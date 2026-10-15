@@ -975,7 +975,9 @@ mod coupled {
             self.shared.borrow().halted.clone()
         }
         pub(super) fn sink_underruns(&self) -> Option<u64> {
-            self.player.as_ref().map(|p| p.queue_state().underrun_events)
+            self.player
+                .as_ref()
+                .map(|p| p.queue_state().underrun_events)
         }
         pub(super) fn queue_ahead(&self) -> bool {
             self.player.as_ref().is_some_and(|p| {

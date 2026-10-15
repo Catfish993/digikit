@@ -1345,7 +1345,11 @@ impl Emulator {
         #[cfg(feature = "cf-mix")]
         for (k, &o) in offsets.iter().enumerate() {
             // The loop's conditional branch is the last instruction and is taken every iteration.
-            let taken = if k + 1 == offsets.len() { u64::from(iterations) } else { 0 };
+            let taken = if k + 1 == offsets.len() {
+                u64::from(iterations)
+            } else {
+                0
+            };
             self.mix_add(head + o, 1, u64::from(iterations), None, taken);
         }
         let last = self.cpu.icount - 1;

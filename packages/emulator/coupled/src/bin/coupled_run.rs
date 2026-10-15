@@ -864,10 +864,18 @@ fn run_scenario(
         let st = |p: &Probe, k: &str| p.status[k].as_u64().unwrap_or(0);
         mix["scenario"] = json!(sc.name);
         mix["guest_instructions"] = json!(st(&end, "icount") - st(&start, "icount"));
-        mix["interpreted"] = json!(st(&end, "interpreted_instructions") - st(&start, "interpreted_instructions"));
-        mix["idle_fast_forward"] = json!(st(&end, "idle_fast_forwarded_instructions") - st(&start, "idle_fast_forwarded_instructions"));
-        mix["ram_clear"] = json!(st(&end, "ram_clear_fast_forwarded_instructions") - st(&start, "ram_clear_fast_forwarded_instructions"));
-        mix["softfloat_hle_calls"] = json!(st(&end, "softfloat_hle_calls") - st(&start, "softfloat_hle_calls"));
+        mix["interpreted"] =
+            json!(st(&end, "interpreted_instructions") - st(&start, "interpreted_instructions"));
+        mix["idle_fast_forward"] = json!(
+            st(&end, "idle_fast_forwarded_instructions")
+                - st(&start, "idle_fast_forwarded_instructions")
+        );
+        mix["ram_clear"] = json!(
+            st(&end, "ram_clear_fast_forwarded_instructions")
+                - st(&start, "ram_clear_fast_forwarded_instructions")
+        );
+        mix["softfloat_hle_calls"] =
+            json!(st(&end, "softfloat_hle_calls") - st(&start, "softfloat_hle_calls"));
         mix["cf_ips"] = json!(elektron_native_boot::clock::cf_ips());
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let path = Path::new(&dir).join(format!("{}.json", sc.name.replace('/', "_")));
