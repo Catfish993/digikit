@@ -6918,3 +6918,42 @@ built, but its mount in the running firmware is not yet checked.
 
 Open **[O]**: every run restores the 132M ready snapshot and rescales; no cold boot at another rate. Idle loops that the
 idle detector misses would overstate W. The real instruction rate of the hardware is not measured.
+
+## ColdFire cycles per instruction of the firmware's executed mix, from the manual's timing tables (2026-10-15) **[D]**
+
+- Method: an exact executed-instruction counter (feature `cf-mix`, packages/emulator/boot/src/cfmix.rs, off by default;
+  `DIGI_CF_MIX_OUT=DIR` makes `coupled-run` write one JSON per scenario) counts every executed PC per path (interpreted,
+  fused loop, analytic idle skip, RAM-clear batch), taken branches, a 128-entry 2-bit Bcc predictor estimate and operand
+  references per 64 KiB page. The counts add up exactly to `guest_instructions` in all 11 scenarios (6 DN2, 5 DT2).
+  `tools/coldfire/cf_timing.py` holds the manual's section 3.3.5 C(R/W) tables (Tables 3-12 to 3-20) and the stall rules;
+  `tools/coldfire/cf_cpi.py` applies them. Default builds are unchanged: the 10 DN2 pin scenarios give the same hashes
+  with and without the feature.
+- Zero wait states, no dual issue credited, Bcc mispredicts at 8 cycles from the simulated table, adjacent-instruction
+  address-register stalls (2 or 3 cycles): busy (non-idle, interpreted or fused) CPI **1.38 to 1.43**, median 1.40
+  (without stalls 1.12 to 1.20, with every branch-accelerated jump at 3 cycles, RTS at 9 and every taken Bcc at 8:
+  1.96 to 2.07). At 264 MHz that is **185 to 192M busy instructions per second** (133M for the pessimistic reading).
+  Idle `bra *` loops cost 1 cycle each. `softfloat_hle_calls` is 0.
+- Busy work is 71M to 122M instructions per emulated second (71M `dt2-sample-trig-noqa`, 82M idle/trig1-hold, 89M DN2
+  led sweep, 122M `exactness-100m`), which is **37 % to 48 % of the core at zero wait states** (66 % for `exactness-100m`).
+- Memory (bound only, no cache model): CACR 0xa50ce100 and ACR0 0x4007e020 (written by MAIN at 0x4000055a): instruction
+  cache and branch cache on, default instruction mode cacheable; data default cache-inhibited, DDR 0x40000000 to
+  0x47ffffff copyback through ACR0. RAMBAR is set by the bootstrap (0x80000235: valid, data bus), so the 64 KB SRAM is
+  single cycle for data. Per emulated second: 12M to 19M DDR operand references,
+  20M to 24M SRAM references, 0.1M peripheral, about 50M to 60M instruction longwords; 99 % of the executed instruction
+  bytes fit in 355 to 830 sixteen-byte lines (the I-cache has 512). The bootstrap writes MISCCR2 = 0xC000
+  (DDR2CLK = 1: the PLL VCO drives the DDR 2x clock), so the DDR clock is VCO/2 = fsys = 264 MHz, one core cycle per DDR
+  clock; CL 4, tRCD 4, tRP 4 clocks (bootstrap DDR_CR16/CR20/CR22/CR26), 8-bit datapath: a 16-byte line fill is 12
+  core cycles with the row open (6 to the critical word) and 20 with it closed (24 and 40 if the DDR clock were 132
+  MHz). The manual gives no crossbar or peripheral latency. With a miss rate per cacheable reference (instruction
+  longwords plus DDR operands, 1.07 per instruction) of 0 %, 2 % and 5 % the idle scenario runs at 189M, 160M and 129M
+  instr/s with a 12-cycle fill and 189M, 145M and 107M with a 20-cycle fill. The real core saturates at a miss rate of
+  14 % (12 cycles) or 8.5 % (20 cycles) for the idle scenario, 4.9 % or 2.9 % for `exactness-100m`.
+- Against the clock sweep (cliff at 80M to 99M, saturation median 72M, worst 87M): the zero-wait real rate (189M) is
+  1.9x to 2.4x above the cliff and stays above it up to a 5 % miss rate; the emulator's 132M corresponds to about 5 %
+  misses with the row open or 3 % with it closed. The earlier estimate of 90M to 175M assumed 1.5 to 3 cycles per
+  instruction.
+
+Open **[O]**: no cache simulation (real miss rates unknown); peripheral and crossbar latency; the bootstrap's DDR2CLK and
+PLL writes are read statically, not executed (core 264 MHz rests on the measured 132 MHz bus and the manual's fixed 2:1 ratio);
+stalls only between adjacent instructions; one dependent-register reading of the manual's stall text; no second-agent
+check of the table transcription against the manual pages.
