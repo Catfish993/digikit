@@ -1041,6 +1041,20 @@ def stock_busy(cell: Cell, cache_dir: Path = SHARED_CACHE) -> float:
     return mean
 
 
+def memory_readout(session: Session) -> dict[str, Any] | None:
+    """Static patch memory of the session's image (tools/patchkit/pk_mem.py) from the plan `patchkit patch` wrote next to
+    it; None for the stock image or an image without a plan."""
+    from tools.patchkit import pk_mem
+
+    plan = session.image.with_suffix(".plan.json") if session.image else None
+    if not session.cell.modules or plan is None or not plan.is_file():
+        return None
+    cell = session.cell
+    return pk_mem.usage(
+        pk_mem.port_regions(cell.device, cell.firmware), json.loads(plan.read_text())
+    )
+
+
 def dsp_budget_check(session: Session, budget_pct: float) -> dict[str, Any]:
     """Measure the cell, judge it against the stock baseline, record the check and OUT/dsp/CELL.json."""
     cell = session.cell
@@ -1054,6 +1068,7 @@ def dsp_budget_check(session: Session, budget_pct: float) -> dict[str, Any]:
         session.segment = ""
         return {}
     report["cell"] = cell.name
+    report["memory"] = memory_readout(session)
     session.check("projected high load", report["ok"], pk_dsp_budget.summary(report))
     session.segment = ""
     (OUT / "dsp").mkdir(parents=True, exist_ok=True)

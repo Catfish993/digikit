@@ -66,9 +66,15 @@ uv run python -m tools.patchkit.patchkit inspect out/patch/mg.syx               
 uv run python -m tools.patchkit.patchkit check --firmware Digitakt_II_OS1.17.syx           # which modules fit this firmware
 uv run python -m tools.patchkit.patchkit verify out/patch/mg.syx --base Digitakt_II_OS1.17.syx   # re-decode and check
 mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain
+mise run patch:mem -- fx/master-gain machines/pluck --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
 - `check` prints `ok` or `refused` plus the reason for every module (for example "built for dn2-1.11, dn2-1.12").
+- `patch:mem` (`tools/patchkit/pk_mem.py`, `--json` for scripts) applies the modules with the placement's own first-fit
+  allocator and prints, per region of the port (`cf.flash_cave`, `cf.expansion`, `dsp.l2`), the size, the bytes each
+  module uses (modules pulled in by `requires` included), the free bytes and the percent used. It exits 1 with the
+  placement's message when the set does not fit. Without modules it lists the port's free regions and needs no firmware.
+  `pk_harness run` writes the same readout as `memory` into `out/runs/patchkit/dsp/CELL.json`.
 - `verify` re-decodes the image and checks the container (packet checksums, content checksum, HMAC trailer), the size
   limits and the patch record. With `--base` it also checks that sections 2, 4 and 8 equal the stock image.
 - `explain` lists the allocation map (what went where, per region), each patched site with the bytes before and

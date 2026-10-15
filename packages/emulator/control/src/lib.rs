@@ -8,6 +8,7 @@
 //!   (the Unix socket here, a worker's `postMessage` later) feeds it.
 //! - [`server`] (feature `server`, unix): the socket listener and the
 //!   discovery file.
+//! - [`load`]: the live CPU meters behind `status.load`.
 //! - [`firmware`], [`events`], [`cli`]: section/DSP diffs, event fan-out and
 //!   the shared command line.
 
@@ -18,6 +19,7 @@ pub mod dispatch;
 pub mod events;
 pub mod firmware;
 pub mod health;
+pub mod load;
 pub mod proto;
 #[cfg(all(feature = "server", unix))]
 pub mod server;

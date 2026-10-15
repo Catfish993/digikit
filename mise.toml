@@ -255,6 +255,10 @@ description = "Create a module from a template: mise run patch:new -- category/n
 run = "uv run python -m tools.patchkit.pk_dev"
 description = "Developer loop: mise run patch:dev -- --modules a,b [--device dt2|dn2] [--once]; watches src/ and module.toml, rebuilds, patches, injects into a running emulator, runs the quick tests, one summary line per edit"
 
+[tasks."patch:mem"]
+run = "uv run python -m tools.patchkit.pk_mem"
+description = "Patch memory per region (size, used by each module, free), refused when the modules do not fit: mise run patch:mem -- fx/master-gain machines/pluck [--device dt2|dn2] [--firmware VER] [--json]"
+
 [tasks."patch:test"]
 run = "uv run python -m tools.patchkit.pk_harness run"
 description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:fx/master-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"

@@ -116,12 +116,24 @@ export interface Heartbeat {
   [key: string]: unknown;
 }
 
+/** `status.load`: CPU meters of the last closed window (docs/CONTROL.md). Percent of the chip; `real_*` are
+ * estimates from the manuals' cycle tables (devices/cycle-factors.json), `model_pct` is the emulator's own model. */
+export interface LoadStatus {
+  /** Emulated seconds the window covers (at least 1). */
+  window_s: number;
+  cf: { model_pct: number; real_pct: number; real_high_pct: number };
+  /** null when no DSP runs. */
+  dsp: { busy_per_block: number; model_pct: number; real_pct: number; real_high_pct: number } | null;
+}
+
 export interface StatusResult {
   cf: CfStatus;
   heartbeat: Heartbeat;
   /** "zero", "sharc" or "none". */
   dsp?: "zero" | "sharc" | "none" | (string & {});
   audio?: { halted?: unknown; [key: string]: unknown } | null;
+  /** null until the first window has closed (about a second of emulated time) or without a firmware. */
+  load?: LoadStatus | null;
   [key: string]: unknown;
 }
 

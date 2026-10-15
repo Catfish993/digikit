@@ -109,3 +109,18 @@ test("pending calls reject when the server closes", async () => {
   c.close();
   await assert.rejects(p);
 });
+
+test("status carries the typed CPU load", async () => {
+  const load = {
+    window_s: 1.2,
+    cf: { model_pct: 62.1, real_pct: 40.2, real_high_pct: 57.0 },
+    dsp: { busy_per_block: 334529, model_pct: 50.2, real_pct: 57.1, real_high_pct: 66.5 },
+  };
+  const srv = await fakeServer((_m, _p, reply) => reply({ result: { cf: {}, heartbeat: {}, load } }));
+  const c = await connect(srv.sock);
+  const status = await c.status();
+  assert.equal(status.load?.cf.real_pct, 40.2);
+  assert.equal(status.load?.dsp?.real_high_pct, 66.5);
+  c.close();
+  srv.close();
+});

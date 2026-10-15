@@ -12,6 +12,8 @@ the same factor (its code mix is assumed to cost like the stock mix).
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 BLOCK_RATE = 1500  # DSPI2 frames (blocks) per audio second
@@ -21,10 +23,12 @@ BLOCK_CYCLES = (
 BLOCK_CYCLES_EXACT = 1_000_000_000 / BLOCK_RATE
 DEFAULT_BUDGET_PCT = 85.0
 
-# real cycles per block / emulator busy instructions per block (stock, held note), from out/clock/sharc.json
+# real cycles per block / emulator busy instructions per block (stock, held note), from out/clock/sharc.json;
+# the one copy is devices/cycle-factors.json (the Rust meters read it too)
+CYCLE_FACTORS = Path(__file__).resolve().parents[2] / "devices" / "cycle-factors.json"
 FACTORS: dict[str, dict[str, float]] = {
-    "dn2": {"nominal": 1.138261, "high": 1.326075},
-    "dt2": {"nominal": 1.134327, "high": 1.406521},
+    device: spec["dsp"]
+    for device, spec in json.loads(CYCLE_FACTORS.read_text())["devices"].items()
 }
 
 

@@ -330,6 +330,11 @@ class Emu:
     def status(self) -> dict[str, Any]:
         return self.call("status")
 
+    def cpu_load(self) -> dict[str, Any] | None:
+        """`status.load`: ColdFire and DSP load, model and real-chip estimate (docs/CONTROL.md); None until the
+        first window (about 1 s of emulated time) has closed."""
+        return self.status().get("load")
+
     def load(
         self,
         syx: str | os.PathLike[str],

@@ -35,6 +35,7 @@ use crate::{
     events::Events,
     firmware::{self, Analysis},
     health::{self, Alert, Health},
+    load,
     proto::{Params, RpcError, RpcResult, base64, code},
 };
 
@@ -418,6 +419,8 @@ struct Actor {
     quit: bool,
     /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
     health: Health,
+    /// Live CPU meters (`status.load`).
+    load_meter: load::Meter,
     health_tick: u32,
 }
 
@@ -489,6 +492,7 @@ impl Actor {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(health::DEFAULT_STALL_MS),
             ),
+            load_meter: load::Meter::default(),
             health_tick: 0,
         }
     }
@@ -679,6 +683,7 @@ impl Actor {
         self.held_frame = None;
         self.held_leds = None;
         self.epoch += 1;
+        self.load_meter.reset();
     }
 
     // ----- webview commands (the pre-existing protocol) --------------------
@@ -707,9 +712,17 @@ impl Actor {
                 let result = if token != self.session {
                     Err("stale emulator session".into())
                 } else {
+                    let meter = &mut self.load_meter;
                     self.runtime
                         .as_mut()
-                        .map(|runtime| runtime.audio_status().unwrap_or(Value::Null))
+                        .map(|runtime| {
+                            let mut report = runtime.audio_status().unwrap_or(Value::Null);
+                            // The panel's one-second poll also carries the CPU meters.
+                            if report.is_object() {
+                                report["load"] = poll_load(meter, &runtime.status(), &report);
+                            }
+                            report
+                        })
                         .ok_or_else(|| "No firmware selected".into())
                 };
                 let _ = reply.send(result);
@@ -1331,8 +1344,10 @@ impl Actor {
         let Some(runtime) = self.runtime.as_mut() else {
             return Ok(json!({"firmware": null, "job": job}));
         };
-        let cf = serde_json::to_value(runtime.status()).unwrap_or(Value::Null);
+        let status = runtime.status();
+        let cf = serde_json::to_value(&status).unwrap_or(Value::Null);
         let audio = summarize_audio(runtime);
+        let load = poll_load(&mut self.load_meter, &status, &audio);
         let dsp = if runtime.has_audio() {
             "sharc"
         } else if runtime.is_zero() {
@@ -1350,6 +1365,7 @@ impl Actor {
                           "underrun_count": self.health.underrun_count,
                           "mainloop_pc": cf["mainloop_pc"]},
             "dsp_frames": frames(runtime),
+            "load": load,
         }))
     }
 
@@ -2753,6 +2769,32 @@ fn save_cache(runtime: &mut Runtime, path: &Path) -> Result<Option<String>, RpcE
     std::fs::write(&partial, data).map_err(|e| RpcError::io(format!("{partial:?}: {e}")))?;
     std::fs::rename(&partial, path).map_err(|e| RpcError::io(format!("{path:?}: {e}")))?;
     Ok(Some(path.display().to_string()))
+}
+
+/// One poll of the CPU meters (`status.load`): null until the first window has closed.
+fn poll_load(
+    meter: &mut load::Meter,
+    status: &elektron_native_boot::Status,
+    audio: &Value,
+) -> Value {
+    let Some(factors) = load::Factors::for_device(&status.device) else {
+        return Value::Null;
+    };
+    let tiers = &audio["dsp_tiers"];
+    let counters = load::Counters {
+        cf_busy: status.interpreted_instructions,
+        cf_total: status.interpreted_instructions
+            + status.idle_fast_forwarded_instructions
+            + status.ram_clear_fast_forwarded_instructions,
+        dsp: tiers["audio_s"].as_f64().map(|audio_s| load::DspCounters {
+            audio_s,
+            instructions: tiers["instructions"].as_u64().unwrap_or(0),
+            idle_skip: tiers["idle_skip"].as_u64().unwrap_or(0),
+        }),
+    };
+    meter
+        .poll(&factors, counters)
+        .map_or(Value::Null, |l| l.to_json())
 }
 
 /// The few audio fields a status poll wants (never syncs the DSP).

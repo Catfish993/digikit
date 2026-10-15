@@ -53,8 +53,8 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Test layout, commands and the current baseline: docs/TESTING.md.
 - `mise run verify` runs the gate steps that the changed files need (`tools/devtools/verify.py`; default: uncommitted
   changes; a lane passes `--base <its base branch>`; `--only STEPS` picks steps; `--explain` prints the routing and plan without running; `--rerun-failed` re-runs only the steps that failed in the last run). `mise run verify:full` runs every
-  step with the full 134-scenario tier sweep (about 7 minutes with a warm render cache, about 20 minutes when DSP/native code changed): before merging to `main` and after changes to the
-  generated core.
+  step with the full 134-scenario tier sweep (about 7 minutes with a warm render cache, about 20 minutes when DSP/native code changed): only after changes to the
+  generated core. Otherwise `mise run verify` (routed by the changed files) is the gate, also for a merge to `main`.
 - Steps: build, desktop (app crate check), web (node tests and astro check), pins (seven DN2 PCM pins), check (61
   DN2 scenario oracles), check-no-aot, tier-quick / tier-sweep (AOT = no-AOT PCM) (one shared queue of small chunks, DIGI_TIER_JOBS workers, default cpus-4), python-tests (the PY_GATE files, the PY_SUITES the change
   triggers and the changed test files; not all of tests/, which `mise run test` runs) — one process per file (DIGI_PY_JOBS, DIGI_PY_TIMEOUT), rust-tests (cargo test

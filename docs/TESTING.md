@@ -68,8 +68,8 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run lint` | `lint:py` (ruff check and format check on the `CLEAN` list), `lint:web` (oxlint), `lint:rust` (cargo fmt check) | Before a commit |
 | `mise run lint:py` | `tests/devtools/test_lint.py` only | Python files changed |
 | `mise run check` | `lint` and `test:quick` | Quick local check. Not the merge gate. |
-| `mise run verify` | The gate steps the changed files need (`tools/devtools/verify.py`). The `python-tests` step runs `PY_GATE`, the `PY_SUITES` whose trigger prefixes match, changed `tests/**/test_*.py` files, and users of a changed `tests/support` module. `--explain` shows the plan without running. `--rerun-failed` re-runs only the steps that failed last time (reads the run's result.json). | Before a commit; a lane passes `--base BRANCH` |
-| `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 7 min with a warm render cache, about 20 min when DSP/native code changed) | Before merging to `main` |
+| `mise run verify` | The gate steps the changed files need (`tools/devtools/verify.py`). The `python-tests` step runs `PY_GATE`, the `PY_SUITES` whose trigger prefixes match, changed `tests/**/test_*.py` files, and users of a changed `tests/support` module. `--explain` shows the plan without running. `--rerun-failed` re-runs only the steps that failed last time (reads the run's result.json). | Before a commit and before a merge to `main`; a lane passes `--base BRANCH` |
+| `mise run verify:full` | Every step, with the full 134-scenario tier sweep (about 7 min with a warm render cache, about 20 min when DSP/native code changed) | After changes to the generated core (`mise run verify` is the merge gate otherwise) |
 | `mise run scenarios` | Every DN2 scenario; fails when a pinned PCM hash differs | PCM pin check (renders are cached, see Render cache) |
 | `mise run scenarios:check` | `pytest tests/scenarios --slow`: DN2 FX oracles, fast subset (about 3 min) | After DSP or scenario changes |
 | `mise run scenarios:dt2` | DT2 FX oracles on the one-sample card (about 2 min) | After DT2 changes |
@@ -88,7 +88,7 @@ the same device and OS is measured by the same code (cached in `out/runs/patchki
 daemon binary). Added instructions per block = cell minus stock. Projected real load = busy x factor / 666,667 (1 GHz /
 1500 blocks per second). The factors are real cycles per block over busy instructions per block of the cycle model
 (`out/clock/sharc.json`, `tools/sharc_dev/sharc_cpi.py`, finding at the end of `docs/findings/06-sharc-engine-and-startup.md`):
-DN2 1.158 nominal / 1.365 high, DT2 1.155 / 1.448 (`tools/patchkit/pk_dsp_budget.py`). The cell fails when the projected
+DN2 1.138 nominal / 1.326 high, DT2 1.134 / 1.407, kept once in `devices/cycle-factors.json` (read by `tools/patchkit/pk_dsp_budget.py` and by the live CPU meters, `status.load` in `docs/CONTROL.md`; `uv run python -m tools.patchkit.pk_load dt2|dn2` prints the meters of a held note). The cell fails when the projected
 high load exceeds `--dsp-budget` (default 85 %); `--no-dsp-budget` skips the step. The table is printed at the end and
 written to `out/runs/patchkit/dsp-budget.json`. The default note exercises the always-on cost of a module; the cost of a
 module's own voice needs its own run (`tools/patchkit/pk_tiers.py`). Resolution is about 5 instructions per block.
