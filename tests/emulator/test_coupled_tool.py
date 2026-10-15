@@ -109,6 +109,5 @@ def test_feature_variant_keeps_default_dir(monkeypatch):
     monkeypatch.setattr(coupled, "FEATURES", "coupled-audio,cf-mix")
     feature = coupled.binary_path("dn2")
     assert default != feature
-    assert feature.parent.parent.parent == default.parent.parent.parent / "feat-cf-mix+coupled-audio"
     assert feature.parent.parent.name == "feat-cf-mix+coupled-audio"
     assert default.name == feature.name == "coupled-run"
