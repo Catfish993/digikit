@@ -101,6 +101,8 @@ struct Args {
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
     trace: bool,
+    /// `--guard FILE.json`: write-range guards (the `guard.set` shape), armed at scenario start.
+    guard: Option<Value>,
 }
 
 /// First 8 bytes of the SHA-256 of `bytes` as 16 hex digits.
@@ -262,6 +264,7 @@ fn parse_args() -> Result<Args, String> {
         dsp_peeks: Vec::new(),
         zero: false,
         trace: false,
+        guard: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -304,6 +307,14 @@ fn parse_args() -> Result<Args, String> {
                 }
             }
             "--trace" => a.trace = true,
+            "--guard" => {
+                let path = value("--guard")?;
+                let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+                let spec: Value =
+                    serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
+                elektron_native_boot::parse_guard_spec(&spec).map_err(|e| format!("{path}: {e}"))?;
+                a.guard = Some(spec);
+            }
             other => return Err(format!("unknown option {other}")),
         }
     }
@@ -707,6 +718,10 @@ fn run_scenario(
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
     let mut rt = CoupledRuntime::new(syx, card, Some(&options))?;
+    if let Some(spec) = &args.guard {
+        let (protect, allow_pc) = elektron_native_boot::parse_guard_spec(spec)?;
+        rt.set_write_guards(protect, allow_pc);
+    }
     if let Some(path) = wav {
         rt.capture_pcm(path)?;
     }
@@ -920,6 +935,8 @@ fn run_scenario(
     };
     #[cfg(not(feature = "region-profile"))]
     let region_profile = Value::Null;
+    let guard = rt.guard_report();
+    let guard_ok = guard.total == 0;
     let playback_ok = !args.playback
         || (health["sink_connected"].as_bool() == Some(true)
             && health["sink"]["stream_started"].as_bool() == Some(true)
@@ -931,8 +948,10 @@ fn run_scenario(
         "pcm_non_finite": tap.map_or(0, |t| t.non_finite),
         "pcm_hash_expected": sc.expect_sha256, "pcm_hash_match": hash_match,
         "ok": missing == 0 && halted.is_null() && step_error.is_none()
-            && tap.is_none_or(|t| t.non_finite == 0) && hash_match != Some(false) && playback_ok,
+            && tap.is_none_or(|t| t.non_finite == 0) && hash_match != Some(false) && playback_ok
+            && guard_ok,
         "playback_health_ok": playback_ok,
+        "guard_ok": guard_ok,
     });
     Ok(json!({
         "name": sc.name, "description": sc.description,
@@ -969,6 +988,7 @@ fn run_scenario(
         "dsp_peek": dsp_peek,
         "dsp_dump": dsp_dump,
         "gates": gates,
+        "guard": guard,
         "trace": if args.trace { Value::Array(trace) } else { Value::Null },
     }))
 }

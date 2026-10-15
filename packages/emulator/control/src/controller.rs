@@ -596,6 +596,20 @@ impl Actor {
                 }
             }
         }
+        if status.guard_hits > 0 {
+            let firsts = self
+                .runtime
+                .as_mut()
+                .map(|r| r.take_guard_first_hits())
+                .unwrap_or_default();
+            for hit in firsts {
+                self.emit(
+                    "guard",
+                    json!({"label": hit.label, "pc": hit.pc, "addr": hit.addr, "size": hit.size,
+                           "hit_icount": hit.icount, "total": status.guard_hits}),
+                );
+            }
+        }
     }
 
     fn emit(&self, kind: &str, data: Value) {
@@ -1196,6 +1210,16 @@ impl Actor {
             "leds.get" => self.rpc_leds().map(Some),
             "mem.cf.peek" => self.rpc_mem_peek(&p).map(Some),
             "mem.cf.poke" => self.rpc_mem_poke(&p).map(Some),
+            "guard.set" => self.rpc_guard_set(&p).map(Some),
+            "guard.report" => self
+                .with_runtime(|r| Ok(serde_json::to_value(r.guard_report()).unwrap_or(Value::Null)))
+                .map(Some),
+            "guard.clear" => self
+                .with_runtime(|r| {
+                    r.clear_guard_hits();
+                    Ok(json!({"cleared": true}))
+                })
+                .map(Some),
             "card.overlay" => self.rpc_card_overlay(&p).map(Some),
             "watchdog.config" => self.rpc_watchdog(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
@@ -1367,6 +1391,19 @@ impl Actor {
         }
         std::fs::write(&path, &out).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
         Ok(json!({"path": path, "sectors": sectors.len()}))
+    }
+
+    /// `guard.set {protect: [{lo, hi, label?}], allow_pc: [{lo, hi}]}`: arm write-range guards
+    /// (`hi` exclusive; addresses are integers or `"0x..."` strings). An empty `protect` disarms.
+    fn rpc_guard_set(&mut self, p: &Params) -> RpcResult {
+        let (protect, allow_pc) =
+            elektron_native_boot::parse_guard_spec(p.0).map_err(RpcError::bad_params)?;
+        let (ranges, allowed) = (protect.len(), allow_pc.len());
+        self.with_runtime(|r| {
+            r.set_write_guards(protect, allow_pc);
+            Ok(())
+        })?;
+        Ok(json!({"protect": ranges, "allow_pc": allowed}))
     }
 
     fn rpc_mem_poke(&mut self, p: &Params) -> RpcResult {

@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::capture::Dspi2Capture;
 use crate::common::*;
+use crate::guard::{GuardHit, GuardRange, GuardReport};
 use crate::ram_clear::RamClear;
 use crate::softfloat::{ExecutionPolicy, SoftfloatAbi, SoftfloatCounts};
 #[cfg(feature = "diagnostic-events")]
@@ -58,6 +59,8 @@ pub struct Status {
     pub interpreted_instructions: u64,
     pub idle_fast_forwarded_instructions: u64,
     pub ram_clear_fast_forwarded_instructions: u64,
+    /// Write-guard hits so far (`set_write_guards`); 0 when no guards are armed.
+    pub guard_hits: u64,
     pub flash_hle_calls: u64,
     pub softfloat_hle_calls: u64,
     pub softfloat: SoftfloatCounts,
@@ -695,6 +698,31 @@ impl Emulator {
         self.bus.board.read32(addr).ok()
     }
 
+    /// Arm write-range guards: a ColdFire store overlapping a `protect` range
+    /// while the PC is outside every `allow_pc` range `[lo, hi)` is recorded
+    /// (see `guard_report`). An empty `protect` disarms them. Armed guards
+    /// disable the fused-loop and reset-clear shortcuts so each store is
+    /// seen with its own PC. Only CPU stores are checked, not DMA or
+    /// host writes (`poke32`, `poke_bytes`).
+    pub fn set_write_guards(&mut self, protect: Vec<GuardRange>, allow_pc: Vec<(u32, u32)>) {
+        self.bus.guards.set(protect, allow_pc);
+    }
+
+    /// The first `GUARD_HIT_LIMIT` guard hits and the total count.
+    pub fn guard_report(&self) -> GuardReport {
+        self.bus.guards.report()
+    }
+
+    /// Forget recorded guard hits; the guards stay armed.
+    pub fn clear_guard_hits(&mut self) {
+        self.bus.guards.clear();
+    }
+
+    /// Hits that were the first for their protected range since the last call.
+    pub fn take_guard_first_hits(&mut self) -> Vec<GuardHit> {
+        self.bus.guards.take_first_hits()
+    }
+
     /// Write a guest longword without bus side effects (headless diagnosis:
     /// canary fills). Unmapped SDRAM pages are mapped zeroed first.
     pub fn poke32(&mut self, addr: u32, value: u32) -> Result<(), String> {
@@ -855,6 +883,7 @@ impl Emulator {
             interpreted_instructions: self.interpreted_instructions,
             idle_fast_forwarded_instructions: self.idle_fast_forwarded_instructions,
             ram_clear_fast_forwarded_instructions: self.ram_clear_fast_forwarded_instructions,
+            guard_hits: self.bus.guards.total(),
             flash_hle_calls: self.flash_hle_calls,
             softfloat_hle_calls: self.softfloat.counts.calls(),
             softfloat: self.softfloat.counts,
@@ -886,6 +915,7 @@ impl Emulator {
             return 0;
         };
         if !ACCELERATE_RAM_CLEAR
+            || !self.bus.guards.is_empty()
             || self.cpu.pc != clear.loop_pc
             || self.cpu.state != coldfire::RunState::Running
             || self.cpu.sr & 0xf700 != 0x2700

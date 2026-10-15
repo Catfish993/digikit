@@ -31,6 +31,9 @@ pub const METHODS: &[&str] = &[
     "cf.profile",
     "dsp.patch",
     "dsp.peek",
+    "guard.set",
+    "guard.report",
+    "guard.clear",
     "events.subscribe",
     "quit",
 ];
