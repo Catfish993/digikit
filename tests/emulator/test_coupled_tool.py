@@ -95,3 +95,20 @@ def test_default_jobs(monkeypatch):
     assert coupled.default_jobs() == 3
     monkeypatch.delenv("DIGI_JOBS")
     assert 1 <= coupled.default_jobs() <= 6
+
+
+def test_feature_variant_keeps_default_dir(monkeypatch):
+    assert coupled.feature_variant("coupled-audio") == ""
+    assert coupled.feature_variant("coupled-audio,cf-mix") == "feat-cf-mix+coupled-audio"
+    # order does not matter
+    assert coupled.feature_variant("cf-mix,coupled-audio") == coupled.feature_variant(
+        "coupled-audio,cf-mix"
+    )
+    monkeypatch.setattr(coupled, "FEATURES", "coupled-audio")
+    default = coupled.binary_path("dn2")
+    monkeypatch.setattr(coupled, "FEATURES", "coupled-audio,cf-mix")
+    feature = coupled.binary_path("dn2")
+    assert default != feature
+    assert feature.parent.parent.parent == default.parent.parent.parent / "feat-cf-mix+coupled-audio"
+    assert feature.parent.parent.name == "feat-cf-mix+coupled-audio"
+    assert default.name == feature.name == "coupled-run"

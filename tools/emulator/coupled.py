@@ -42,7 +42,8 @@ from tools.devtools import render_cache  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
 
 TOOLCHAIN = digi_env.TOOLCHAIN
-FEATURES = os.environ.get("DIGI_COUPLED_FEATURES", "coupled-audio")
+DEFAULT_FEATURES = "coupled-audio"
+FEATURES = os.environ.get("DIGI_COUPLED_FEATURES", DEFAULT_FEATURES)
 BINARY_NAME = "coupled-run"
 BISECT_DIR = ROOT / "out" / "native" / "bisect"
 RUNS_DIR = digi_env.RUNS_ROOT
@@ -186,8 +187,20 @@ def inputs(device: str = "dn2") -> dict[str, pathlib.Path]:
     return found
 
 
+def feature_variant(features: str | None = None) -> str:
+    """Target-dir variant for a feature list: empty for the default, else `feat-<sorted names>`.
+
+    A feature build gets its own dir, so it never replaces the default binary."""
+    raw = FEATURES if features is None else features
+    names = sorted({n.strip() for n in raw.split(",") if n.strip()})
+    if names == sorted(DEFAULT_FEATURES.split(",")):
+        return ""
+    return "feat-" + "+".join(names)
+
+
 def binary_path(device: str = "dn2", image=None) -> pathlib.Path:
-    return native_target.target_dir(generated(device, image)) / "release" / BINARY_NAME
+    target = native_target.target_dir(generated(device, image), feature_variant())
+    return target / "release" / BINARY_NAME
 
 
 def cargo(args: list[str]) -> list[str]:
@@ -197,7 +210,7 @@ def cargo(args: list[str]) -> list[str]:
 def build(device: str = "dn2", image=None) -> pathlib.Path:
     gen = generated(device, image)
     digi_env.check_generated(gen)
-    target = native_target.target_dir(gen)
+    target = native_target.target_dir(gen, feature_variant())
     env = {**digi_env.rust_env(), "SHARC_GEN_DIR": str(gen)}
     command = cargo(
         [
@@ -740,7 +753,7 @@ def cmd_test_quick(args) -> int:
     gen = generated()
     digi_env.check_generated(gen)
     nogen = native_target.target_dir("")
-    prod = native_target.target_dir(gen)
+    prod = native_target.target_dir(gen, feature_variant())
     base_env = digi_env.rust_env()
     base_env.pop("SHARC_GEN_DIR", None)
     steps = [
