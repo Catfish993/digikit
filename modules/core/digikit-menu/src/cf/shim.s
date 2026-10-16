@@ -23,3 +23,13 @@ dk_make_sp:
     jsr     _fw_sp
     addq.l  #8,%sp
     rts
+
+| dk_popup_make(out, textptr): the firmware's make_shared<PopupWindow>(const char *const &) takes `out` in a0 and the
+|   reference (a pointer to the message pointer) on the stack.
+    .globl dk_popup_make
+dk_popup_make:
+    move.l  4(%sp),%a0
+    move.l  8(%sp),-(%sp)
+    jsr     _fw_popup_make
+    addq.l  #4,%sp
+    rts

@@ -43,6 +43,10 @@ pub const H_SLOT_OFF: usize = 0x88;
 pub const H_SLOT_N: usize = 0x8c;
 pub const H_REG_OFF: usize = 0x90;
 pub const H_REG_SIZE: usize = 0x94;
+pub const H_DSP_OFF: usize = 0x98;
+pub const H_DSP_SIZE: usize = 0x9c;
+/// The runtime version that loads a DSP section (`dkrt_sdk::RUNTIME_VERSION` is at least this).
+pub const RUNTIME_DSP: u32 = 2;
 
 pub struct Options {
     pub name: String,
@@ -105,6 +109,12 @@ const STUB_IMAGE: [u8; 4] = [0x70, 0x00, 0x4e, 0x75];
 
 /// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
 pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> {
+    pack_full(obj, reg, &[], o)
+}
+
+/// Pack an object (or none), `register` records and a DSP section (see [`crate::dkmdsp`]; empty: none). A file with a DSP section
+/// needs a runtime of version [`RUNTIME_DSP`] or later.
+pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Result<Vec<u8>> {
     let stub = Dko {
         format: crate::dko::FORMAT,
         arch: "cf".into(),
@@ -239,7 +249,8 @@ pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> 
     let slot_off = reloc_off + relocs.len() * 8;
     let reg_off = slot_off + slots.len() * 8;
     let reg_size = reg.len();
-    let image_off = align_up(reg_off + reg_size, 16);
+    let dsp_off = align_up(reg_off + reg_size, 16);
+    let image_off = align_up(dsp_off + dsp.len(), 16);
     let total = image_off + image.len();
     if total > MAX_FILE {
         return Err(err!(
@@ -251,7 +262,15 @@ pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> 
     put(&mut f, 4, FORMAT);
     put(&mut f, H_SIZE, total as u32);
     put(&mut f, H_HDRSIZE, HEADER as u32);
-    put(&mut f, H_RUNTIME, o.runtime_min);
+    put(
+        &mut f,
+        H_RUNTIME,
+        if dsp.is_empty() {
+            o.runtime_min
+        } else {
+            o.runtime_min.max(RUNTIME_DSP)
+        },
+    );
     put(&mut f, H_VERSION, o.version);
     f[H_NAME..H_NAME + o.name.len()].copy_from_slice(o.name.as_bytes());
     put(&mut f, H_IMAGE_OFF, image_off as u32);
@@ -281,6 +300,11 @@ pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> 
         put(&mut f, slot_off + i * 8 + 4, *v);
     }
     f[reg_off..reg_off + reg_size].copy_from_slice(reg);
+    if !dsp.is_empty() {
+        put(&mut f, H_DSP_OFF, dsp_off as u32);
+        put(&mut f, H_DSP_SIZE, dsp.len() as u32);
+        f[dsp_off..dsp_off + dsp.len()].copy_from_slice(dsp);
+    }
     f[image_off..].copy_from_slice(&image);
     let sha = file_sha(&f);
     f[H_SHA..H_SHA + 32].copy_from_slice(&sha);
@@ -303,6 +327,8 @@ pub struct Dkm {
     pub fini: Option<u32>,
     pub slots: Vec<(u32, u32)>,
     pub register: Vec<u8>,
+    /// The DSP section, as bytes (empty: none); parse it with [`crate::dkmdsp::DspSection::parse`].
+    pub dsp: Vec<u8>,
 }
 
 impl Dkm {
@@ -382,6 +408,7 @@ impl Dkm {
             fini: opt(get(f, H_FINI)),
             slots,
             register: rng(get(f, H_REG_OFF) as usize, get(f, H_REG_SIZE) as usize)?.to_vec(),
+            dsp: rng(get(f, H_DSP_OFF) as usize, get(f, H_DSP_SIZE) as usize)?.to_vec(),
         })
     }
 

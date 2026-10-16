@@ -81,7 +81,7 @@ RECORD_SIZE = 0x80  # 128 bytes
 RECORDS_PER_PAGE = PAGE // RECORD_SIZE  # 256
 
 # Region 1 (MmcFs pools): left untouched (all zero), but the header and the
-# empty pool-occupancy table are written so first-boot format detection
+# all-zero pool write-protect table are written so first-boot format detection
 # passes and the pools read as validly-empty rather than corrupt. See
 # docs/findings/14-plus-drive-format.md.
 HEADER_SECTOR = 0

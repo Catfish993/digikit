@@ -160,7 +160,7 @@ layout = "single"
 # same project pool and records as the DT2 and smaller sound and kit slots, and no path filesystem (finding 23 S3).
 [card]
 header_sector = 0x0
-table_sector = 0x800
+table_sector = 0x800       # three WRITE-PROTECT bitmaps (bit set = padlock), 400 bytes (finding 35)
 
 # Projects: FUN_4012d7c2, block = ((slot + 0xb) & 0xff) << 15, as on the DT2.
 [card.pools.projects]

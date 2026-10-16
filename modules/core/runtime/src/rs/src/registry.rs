@@ -5,6 +5,9 @@
 //! addresses of the rows and tables and the row layouts; the link is optional, so an image with the runtime and without
 //! `core/dynreg` loads modules that carry no `register` records and refuses the ones that do (`E_NO_REGISTRY`).
 //!
+//! Digitone II keeps a machine's knobs in page rows (`pages`), not in the machine row: a PAGE record fills one reserved page
+//! row; the machine record's `own_dsp` is written to the row (the frame builder then tells the DSP the machine's own type).
+//!
 //! Rules: all checks run before the first write (`check`); rows are written in an order that a reader never sees a
 //! half-filled machine (the name pointer, which marks a row as used, is the last store, one aligned 32-bit word); the
 //! strings the rows point to live in this module's own state, never in the arena, so unload cannot leave a dangling pointer.
@@ -12,22 +15,20 @@ use crate::{cstr_len, rd32};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
-pub const E_NO_REGISTRY: i32 = -20; // the file has register records, the image has no core/dynreg
-pub const E_REG_DEVICE: i32 = -21; // the records are for another device
-pub const E_TYPE_RANGE: i32 = -22; // a machine type outside the reserved range, or a clone_of that is not built in
-pub const E_TYPE_USED: i32 = -23; // the type number is in use
-pub const E_PARAM_FULL: i32 = -24; // no free reserved parameter row
-
 const REG_MAGIC: u32 = 0x444b_5247; // "DKRG"
 const INFO_MAGIC: u32 = 0x4459_4e52; // "DYNR"
 const KIND_PARAM: u32 = 1;
 const KIND_MACHINE: u32 = 2;
+const KIND_PAGE: u32 = 3;
 const LEN_PARAM: u32 = 0x50;
 const LEN_MACHINE: u32 = 0x6c;
+const LEN_PAGE: u32 = 0x60;
 const KNOB_PARAM: u32 = 0x8000_0000;
-const MAX_RECORDS: u32 = 24;
+const MAX_RECORDS: u32 = 32;
 const MAX_MACH: usize = 8;
 const MAX_PARAM: usize = 16;
+const MAX_PAGE: usize = 8;
+const KNOBS: usize = 8;
 const MACH_TEXT: usize = 24;
 const REP_SIZE: usize = 48;
 
@@ -71,6 +72,21 @@ mod w {
     pub const RESERVE_TEMPLATE: usize = 47;
     pub const VIEW_VAR: usize = 48;
     pub const VIEW_BUILD: usize = 49;
+    pub const PG_ROWS: usize = 50; // 0: the device keeps its knobs in the machine row
+    pub const PG_ROW_SIZE: usize = 51;
+    pub const PG_FIRST: usize = 52;
+    pub const PG_DYN0: usize = 53;
+    pub const PG_DYN_N: usize = 54;
+    pub const PGO_NAME: usize = 55;
+    pub const PGO_TITLE: usize = 56;
+    pub const PGO_C: usize = 57;
+    pub const PGO_MACH: usize = 58;
+    pub const PGO_S: usize = 59;
+    pub const PG_FREE: usize = 60;
+    pub const F_PROJECT: usize = 61;
+    pub const F_KIT: usize = 62;
+    pub const F_TRACK: usize = 63;
+    pub const TRACKS: usize = 64;
 }
 
 #[repr(C, align(4))]
@@ -81,6 +97,10 @@ struct Strings {
     rep_short: [[u8; REP_SIZE]; MAX_MACH],
     param_name: [[u8; 32]; MAX_PARAM],
     param_short: [[u8; 16]; MAX_PARAM],
+    page_name: [[u8; MACH_TEXT]; MAX_PAGE],
+    page_title: [[u8; MACH_TEXT]; MAX_PAGE],
+    rep_pname: [[u8; REP_SIZE]; MAX_PAGE],
+    rep_ptitle: [[u8; REP_SIZE]; MAX_PAGE],
 }
 
 /// The registry's state: who owns each reserved row (module record index + 1, 0 = free) and the strings the rows use.
@@ -91,6 +111,7 @@ pub struct RegState {
     pub removes: u32,
     pub mach_owner: [u8; MAX_MACH],
     pub param_owner: [u8; MAX_PARAM],
+    pub page_owner: [u8; MAX_PAGE],
     /// An empty std::string representation (length 0, capacity 0, reference count -1, NUL) for a free machine row.
     empty_rep: [u32; 4],
     s: Strings,
@@ -156,8 +177,9 @@ unsafe fn copy_text(dst: *mut u8, src: *const u8, n: usize) {
     }
 }
 
-/// Build a std::string representation {len, cap, refcount -1, upper-cased chars, 0} at `rep`; returns the chars' address.
-unsafe fn make_rep(rep: *mut u8, src: *const u8) -> u32 {
+/// Build a std::string representation {len, cap, refcount -1, chars, 0} at `rep` (upper-cased when `upper`); returns the
+/// chars' address.
+unsafe fn make_rep(rep: *mut u8, src: *const u8, upper: bool) -> u32 {
     let n = cstr_len(src, MACH_TEXT) as u32;
     crate::wr32(rep, n);
     crate::wr32(rep.add(4), n);
@@ -165,7 +187,7 @@ unsafe fn make_rep(rep: *mut u8, src: *const u8) -> u32 {
     let mut i = 0;
     while i < n as usize {
         let c = *src.add(i);
-        *rep.add(12 + i) = if c.is_ascii_lowercase() { c - 32 } else { c };
+        *rep.add(12 + i) = if upper && c.is_ascii_lowercase() { c - 32 } else { c };
         i += 1;
     }
     *rep.add(12 + n as usize) = 0;
@@ -196,7 +218,10 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
         return E_NO_REGISTRY;
     }
     // the table must fit this registry's state (a table that says more rows than the state has would index past it)
-    if iw(inf, w::M_DYN_N) as usize > MAX_MACH || iw(inf, w::P_DYN_N) as usize > MAX_PARAM {
+    if iw(inf, w::M_DYN_N) as usize > MAX_MACH
+        || iw(inf, w::P_DYN_N) as usize > MAX_PARAM
+        || iw(inf, w::PG_DYN_N) as usize > MAX_PAGE
+    {
         return E_NO_REGISTRY;
     }
     if size < 16 || rd32(reg) != REG_MAGIC || rd32(reg.add(4)) != 1 {
@@ -211,7 +236,7 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
     }
     // pass 1: layout, counts
     let mut at: u32 = 16;
-    let (mut np, mut nm) = (0u32, 0u32);
+    let (mut np, mut nm, mut ng) = (0u32, 0u32, 0u32);
     let mut i = 0;
     while i < n {
         if at > size || size - at < 8 {
@@ -222,6 +247,7 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
         let want = match kind {
             KIND_PARAM => LEN_PARAM,
             KIND_MACHINE => LEN_MACHINE,
+            KIND_PAGE => LEN_PAGE,
             _ => return E_FORMAT,
         };
         if len != want || size - at < len {
@@ -229,13 +255,20 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
         }
         if kind == KIND_PARAM {
             np += 1;
-        } else {
+        } else if kind == KIND_MACHINE {
             nm += 1;
+        } else {
+            ng += 1;
         }
         at += len;
         i += 1;
     }
-    if at != size || np as usize > MAX_PARAM || nm as usize > MAX_MACH {
+    if at != size || np as usize > MAX_PARAM || nm as usize > MAX_MACH || ng as usize > MAX_PAGE {
+        return E_FORMAT;
+    }
+    // pages need a device that has page rows
+    let has_pages = iw(inf, w::PG_ROWS) != 0;
+    if ng != 0 && !has_pages {
         return E_FORMAT;
     }
     // pass 2: the records
@@ -265,10 +298,29 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
                 bad = E_FORMAT;
             }
             pi += 1;
+        } else if kind == KIND_PAGE {
+            // machine type (checked against the file's machines below), eight knobs, level, name, title
+            let mut j = 0;
+            while j < KNOBS {
+                let kn = rd32(b.add(4 + 4 * j));
+                if kn != 0 && (kn & KNOB_PARAM == 0 || (kn & !KNOB_PARAM) >= np) {
+                    bad = E_FORMAT;
+                    return;
+                }
+                j += 1;
+            }
+            if rd32(b.add(36)) > 0xffff
+                || !text_ok(b.add(40), MACH_TEXT)
+                || !text_ok(b.add(40 + MACH_TEXT), MACH_TEXT)
+                || knobs as usize != KNOBS
+            {
+                bad = E_FORMAT;
+            }
         } else {
             let t = rd32(b);
             let clone = rd32(b.add(4));
-            if rd32(b.add(8)) != 255 || rd32(b.add(12)) != 0 || rd32(b.add(16)) > 0xffff {
+            let own = rd32(b.add(12));
+            if rd32(b.add(8)) != 255 || own > 1 || (own == 1 && !has_pages) || rd32(b.add(16)) > 0xffff {
                 bad = E_FORMAT;
                 return;
             }
@@ -315,6 +367,37 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
     if bad != OK {
         return bad;
     }
+    // a page belongs to a machine of the same file
+    each(reg, |kind, b| {
+        if kind != KIND_PAGE || bad != OK {
+            return;
+        }
+        let t = rd32(b);
+        let mut j = 0;
+        let mut found = false;
+        while j < ns {
+            found |= seen_types[j] == t;
+            j += 1;
+        }
+        if !found {
+            bad = E_FORMAT;
+        }
+    });
+    if bad != OK {
+        return bad;
+    }
+    // free reserved page rows
+    let mut free_pg = 0u32;
+    let mut k = 0;
+    while k < iw(inf, w::PG_DYN_N) as usize && k < MAX_PAGE {
+        if s.page_owner[k] == 0 {
+            free_pg += 1;
+        }
+        k += 1;
+    }
+    if free_pg < ng {
+        return E_PAGE_FULL;
+    }
     // free reserved parameter rows
     let mut free = 0u32;
     let mut k = 0;
@@ -346,12 +429,12 @@ unsafe fn write_param_row(
     let size = iw(inf, w::PF_SIZE);
     let row = table + code * size;
     let tpl = table + template * size;
-    // values by spec code 0x100 ..: min, max, default, name, short, mirror index, kind word, 0x80 + slot (no `match`: a
-    // jump table would put data into the code section)
+    // values by spec code 0x100 ..: min, max, default, name, short, mirror index, kind word, 0x80 + slot, the slot itself
+    // (no `match`: a jump table would put data into the code section)
     let t = ((slot + 1) >> 2) & 1;
     let u = 1i32.wrapping_sub((slot >> 2) as i32);
     let kv = (0x10u32 + slot).wrapping_add((t as i32).wrapping_mul(u).wrapping_mul(0xffec) as u32);
-    let vals: [u32; 8] = [
+    let vals: [u32; 16] = [
         min,
         max,
         def,
@@ -360,6 +443,14 @@ unsafe fn write_param_row(
         25 + slot + (slot >> 2) * 2,
         (kv << 16) | (rd(tpl + 0x18) & 0xffff),
         0x80 + slot,
+        slot,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
     ];
     let mut i = 0;
     while i < 15 {
@@ -367,7 +458,7 @@ unsafe fn write_param_row(
         let v = if spec <= 0x3c {
             rd(tpl + spec)
         } else {
-            vals[(spec as usize - 0x100) & 7]
+            vals[(spec as usize - 0x100) & 15]
         };
         wr(row + 4 * i as u32, v);
         i += 1;
@@ -442,6 +533,40 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         );
     });
     let _ = n;
+    // pages (Digitone II): their machine is published below, so they sit unused until then
+    let slot_base = iw(inf, w::SLOT_BASE);
+    each(reg, |kind, b| {
+        if kind != KIND_PAGE {
+            return;
+        }
+        let mut k = 0;
+        while k < MAX_PAGE && s.page_owner[k] != 0 {
+            k += 1;
+        }
+        if k == MAX_PAGE {
+            return; // cannot happen after `check`
+        }
+        s.page_owner[k] = owner;
+        let row = iw(inf, w::PG_ROWS) + (iw(inf, w::PG_DYN0) + k as u32 - iw(inf, w::PG_FIRST)) * iw(inf, w::PG_ROW_SIZE);
+        copy_text(s.s.page_name[k].as_mut_ptr(), b.add(40), MACH_TEXT);
+        copy_text(s.s.page_title[k].as_mut_ptr(), b.add(40 + MACH_TEXT), MACH_TEXT);
+        let name = make_rep(s.s.rep_pname[k].as_mut_ptr(), s.s.page_name[k].as_ptr(), false);
+        let title = make_rep(s.s.rep_ptitle[k].as_mut_ptr(), s.s.page_title[k].as_ptr(), false);
+        let (c0, s0) = (row + iw(inf, w::PGO_C), row + iw(inf, w::PGO_S));
+        let mut j = 0;
+        while j < KNOBS {
+            let kn = rd32(b.add(4 + 4 * j));
+            let known = kn & KNOB_PARAM != 0;
+            wr(c0 + 4 * j as u32, if known { codes[(kn & !KNOB_PARAM) as usize] } else { 0 });
+            wr(s0 + 4 * j as u32, if known { slot_base + j as u32 } else { 0 });
+            j += 1;
+        }
+        wr(c0 + 4 * KNOBS as u32, rd32(b.add(36))); // the level code
+        wr(s0 + 4 * KNOBS as u32, 0);
+        wr(row + iw(inf, w::PGO_NAME), name);
+        wr(row + iw(inf, w::PGO_TITLE), title);
+        wr(row + iw(inf, w::PGO_MACH), rd32(b)); // the page belongs to its machine from this store on
+    });
     // machines
     let knobs = iw(inf, w::KNOBS) as usize;
     each(reg, |kind, b| {
@@ -462,12 +587,12 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         wr(f0 + 4 * knobs as u32, rd32(b.add(16))); // the level, the field after the knobs
         wr(row + iw(inf, w::O_CLONE), clone);
         wr(row + iw(inf, w::O_POS), rd32(b.add(8)));
-        wr(row + iw(inf, w::O_OWN), 0);
+        wr(row + iw(inf, w::O_OWN), rd32(b.add(12)));
         // strings
         copy_text(s.s.mach_name[k].as_mut_ptr(), b.add(52), MACH_TEXT);
         copy_text(s.s.mach_short[k].as_mut_ptr(), b.add(52 + MACH_TEXT), MACH_TEXT);
-        let long = make_rep(s.s.rep_long[k].as_mut_ptr(), s.s.mach_name[k].as_ptr());
-        let short = make_rep(s.s.rep_short[k].as_mut_ptr(), s.s.mach_short[k].as_ptr());
+        let long = make_rep(s.s.rep_long[k].as_mut_ptr(), s.s.mach_name[k].as_ptr(), true);
+        let short = make_rep(s.s.rep_short[k].as_mut_ptr(), s.s.mach_short[k].as_ptr(), true);
         wr(row + iw(inf, w::O_LONG), long);
         wr(row + iw(inf, w::O_SHORT), short);
         wr(row + iw(inf, w::O_SNAME), s.s.mach_short[k].as_ptr() as u32);
@@ -533,6 +658,30 @@ pub unsafe fn remove(owner: u8) {
         }
         k += 1;
     }
+    // pages: unbind from the machine first, then the rest of the row back to a free row
+    k = 0;
+    while k < MAX_PAGE {
+        if s.page_owner[k] == owner {
+            let row = iw(inf, w::PG_ROWS)
+                + (iw(inf, w::PG_DYN0) + k as u32 - iw(inf, w::PG_FIRST)) * iw(inf, w::PG_ROW_SIZE);
+            wr(row + iw(inf, w::PGO_MACH), iw(inf, w::PG_FREE));
+            s.empty_rep = [0, 0, 0xffff_ffff, 0];
+            let rep = addr_of!(DKRT_REG.empty_rep) as u32 + 12;
+            wr(row + iw(inf, w::PGO_NAME), rep);
+            wr(row + iw(inf, w::PGO_TITLE), rep);
+            let (c0, s0) = (row + iw(inf, w::PGO_C), row + iw(inf, w::PGO_S));
+            let mut j = 0;
+            while j < KNOBS {
+                wr(c0 + 4 * j as u32, 0);
+                wr(s0 + 4 * j as u32, 0);
+                j += 1;
+            }
+            wr(c0 + 4 * KNOBS as u32, 10); // the track level code, as in a free row
+            wr(s0 + 4 * KNOBS as u32, 0);
+            s.page_owner[k] = 0;
+        }
+        k += 1;
+    }
     k = 0;
     while k < MAX_PARAM {
         if s.param_owner[k] == owner {
@@ -553,4 +702,43 @@ pub unsafe fn remove(owner: u8) {
     }
     s.removes = s.removes.wrapping_add(1);
     refresh_view(inf);
+}
+
+/// Does a track of the active kit use a machine `owner` registered? (The unload is refused then: the track would be left on a
+/// type with no row.) The three firmware functions come from `dynreg_info`: the Project singleton, the active kit of a
+/// project, and the machine type of track `t` of a kit (-1 when there is none). Only the active kit is looked at: the
+/// other kits, the patterns' sound locks and the sound pool keep their type bytes and load as a free row.
+pub unsafe fn in_use(owner: u8) -> bool {
+    let inf = info();
+    if inf.is_null() {
+        return false;
+    }
+    let (f_project, f_kit, f_track) = (iw(inf, w::F_PROJECT), iw(inf, w::F_KIT), iw(inf, w::F_TRACK));
+    if f_project == 0 || f_kit == 0 || f_track == 0 {
+        return false;
+    }
+    let s = rs();
+    let mut any = false;
+    let mut k = 0;
+    while k < MAX_MACH {
+        any |= s.mach_owner[k] == owner;
+        k += 1;
+    }
+    if !any {
+        return false;
+    }
+    let project: unsafe extern "C" fn() -> u32 = core::mem::transmute(f_project as usize);
+    let kit_of: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(f_kit as usize);
+    let track_type: unsafe extern "C" fn(u32, i32) -> i32 = core::mem::transmute(f_track as usize);
+    let kit = kit_of(project());
+    let (dyn0, tracks) = (iw(inf, w::M_DYN0) as i32, iw(inf, w::TRACKS) as i32);
+    let mut t = 0;
+    while t < tracks {
+        let ty = track_type(kit, t) - dyn0;
+        if (0..MAX_MACH as i32).contains(&ty) && s.mach_owner[ty as usize] == owner {
+            return true;
+        }
+        t += 1;
+    }
+    false
 }

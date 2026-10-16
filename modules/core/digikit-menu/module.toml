@@ -34,6 +34,11 @@ fw_str_dtor = "cf.menu.fn.str_dtor"
 fw_blk_read = "cf.menu.fn.blk_read"
 fw_invalidate = "cf.menu.fn.invalidate"
 fw_icon_ref = "cf.menu.icon_ref"
+fw_sp_move = "cf.menu.fn.sp_move"
+fw_brain = "cf.menu.fn.brain"
+fw_mgr_of = "cf.menu.fn.mgr_of"
+fw_view_add = "cf.menu.fn.view_add"
+fw_sp_release = "cf.menu.fn.sp_release"
 
 [[object]]
 path = "build/digikit-menu-cf.dko.json"
@@ -42,6 +47,7 @@ place = "cf.expansion"
 
 [object.externs]
 _fw_sp = "cf.menu.fn.make_sp"
+_fw_popup_make = "cf.menu.fn.popup_make"
 _dk_tail = "hook.cf.menu.settings_tail.tail"
 
 # Hook before the last step of the rebuild (the selection restore); the displaced instructions run in the tail.
@@ -155,3 +161,56 @@ offset = 0x0
 len = 4
 mark = "D"
 
+[[anchor_rule]]
+name = "cf.menu.fn.popup_make"
+cpu = "cf"
+kind = "cf_ptr"
+hash = "ec84bde0abe50c47c39ea02790968411"
+offset = 0x32
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.menu.fn.sp_move"
+cpu = "cf"
+kind = "cf_ptr"
+hash = "ec84bde0abe50c47c39ea02790968411"
+offset = 0x40
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.menu.fn.brain"
+cpu = "cf"
+kind = "cf_ptr"
+hash = "ec84bde0abe50c47c39ea02790968411"
+offset = 0x46
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.menu.fn.mgr_of"
+cpu = "cf"
+kind = "cf_ptr"
+hash = "ec84bde0abe50c47c39ea02790968411"
+offset = 0x4e
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.menu.fn.view_add"
+cpu = "cf"
+kind = "cf_ptr"
+hash = "ec84bde0abe50c47c39ea02790968411"
+offset = 0x60
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.menu.fn.sp_release"
+cpu = "cf"
+kind = "cf_ptr"
+hash = "ec84bde0abe50c47c39ea02790968411"
+offset = 0x58
+len = 4
+mark = "D"

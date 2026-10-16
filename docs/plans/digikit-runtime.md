@@ -151,7 +151,7 @@ Gate: done (docs/findings/23-digikit-runtime-spikes.md).
 - [x] The desktop "Choose samples" path builds from a `plus_drive/` folder (nested folders, `.mmcfs/`, `digikit/`).
 - [x] The builder maps `plus_drive/<device>/digikit/` into the module store (docs/design/digikit-store.md); read back through the firmware's block read on DT2 and DN2 (`mise run plusdrive:check`).
 - [x] The export passes the running device; the card layout is device data (`[card]` in `devices/*.toml`).
-- [ ] MmcFs bitmaps: the firmware does not set them on save; find what it reads them for.
+- [x] MmcFs bitmaps: they are write-protect bits (set = padlock; the save path reads them and answers `N/A: Write-protected`), not occupancy. The builder set them for imported slots and so locked them; fixed, with a test (finding 35). Open: export protection a player sets in the emulator (sidecar file).
 
 Gate: a project saved and a sample recorded in the emulator are in `plus_drive/` after exit and are there again
 after the next boot.
@@ -181,7 +181,7 @@ before the arena is used: sample recording and delete (no audio input in the emu
 - [x] Toolchain: `pk_toolchains codegen-gcc` (pins, patches and the target JSON under tools/patchkit/toolchain/);
   Rust modules take ColdFire-safe helpers from `compiler_builtins` (docs/findings/26-rust-on-coldfire.md). Open:
   an install from scratch, timed.
-- [ ] C modules: a libgcc built for `-mcpu=54418` (the repo's libgcc helpers are 68020 code).
+- [x] C modules: a libgcc built for `-mcpu=54418` (`pk_toolchains libgcc-cf`, under a minute), linked into a C module as local symbols by `pk_build`; the ISA checker `tools/coldfire/isacheck.py` (no committed object has a 68020-only form); `test/c-demo` 64-bit divide, remainder, multiply and shifts correct through the runtime on dt2-1.17 and dn2-1.12 (finding 35).
 - [~] Module interface, schema and Rust SDK, designed together. Schema part done (finding 27): typed `[[machine]]`,
   `[[param]]`, `[[page]]`, `[[voice]]` sections with per-device knob models, generated Rust constants, SHARC include and
   gallery JSON; FX and MenuItem sections and the run-time registry interface are open. One schema (Machine, Param, Page, FX, MenuItem)
@@ -193,7 +193,7 @@ before the arena is used: sample recording and delete (no audio input in the emu
 - [x] A ColdFire-only test module: `test/dyn-demo`, a counter in slot 0.
 - [x] Loading triggered from the emulator by a mailbox poke (`mem.cf.poke`; `tools/patchkit/pk_dkrt.py proof`). No autoload folder.
 
-Gate: load, run and unload in the emulator on DT2 1.16 and DN2 1.11, write-watch clean, no flush warnings. Done on DT2 1.16/1.17 and DN2 1.11/1.12 (finding 29); open: the C-module libgcc and the interface/schema items above.
+Gate: load, run and unload in the emulator on DT2 1.16 and DN2 1.11, write-watch clean, no flush warnings. Done on DT2 1.16/1.17 and DN2 1.11/1.12 (finding 29); open: the interface/schema items above (the C-module libgcc is done, finding 35).
 
 ### Phase 4: DIGIKIT menu
 
@@ -207,7 +207,12 @@ Gate: load, run and unload in the emulator on DT2 1.16 and DN2 1.11, write-watch
   store reader are one definition in `dkrt-sdk`. Rows show `[X]` and a loaded marker; LOAD loads ticked and unloads unticked loaded
   rows; errors show the runtime's result text; ABOUT shows ABI, loaded count and free KB.
 - [x] Rust builds do not depend on the checkout path (`pk_rust.stage_crate`; finding 29 update).
-- [ ] A popup for errors (the answer row only now), an UNLOAD item separate from the ticks, a file name in the failure text.
+- [x] A popup for errors (the firmware's own PopupWindow, reached through six call-operand anchors), an UNLOAD item separate from the ticks,
+  the file name in the failure text, a text for each result code (unknown: `ERROR <n>`), a loading state for asynchronous loads (reads lane A's
+  `state` and `LOADING`; not yet run against an asynchronous runtime), greyed modules for another device or a newer runtime. Four images, 4 scripts
+  each, 0 stray writes, 0 flush hits (finding 34, `digikit_menu_proof run --quick`).
+- [x] UI-task stack: 160 KiB on all four images (task-create calls, `tools.coldfire.task_stacks`), 3256 bytes used in a load, popup and unload
+  (`DIGI_STACK_WATCH`, `docs/INSTRUMENTATION.md`; finding 34): a load may run on the UI task; no dedicated stack needed.
 
 Gate: done. The dyn-demo module loads from SETTINGS > DIGIKIT > LOAD MODULES on DT2 1.16, DT2 1.17, DN2 1.11 and DN2 1.12; its counter
 rises; ABOUT shows loaded 1; the row is marked; unticking and LOAD unloads it, the counter stops and `fini` ran; ABOUT shows loaded 0;
@@ -215,10 +220,16 @@ write-watch 0 events, flush check 0 hits (`tools/coldfire/digikit_menu_proof.py`
 
 ### Phase 5: machines
 
-- [~] ColdFire side, Digitakt II 1.16/1.17: fill reserved machine and param rows at run time (`core/dynreg`, `registry.rs`, `.dkm` `register`
+- [x] ColdFire side, Digitakt II 1.16/1.17: fill reserved machine and param rows at run time (`core/dynreg`, `registry.rs`, `.dkm` `register`
   records, `patchkit pack --device`; docs/design/digikit-registry.md, finding 30). A data-only clone of SLICE (`test/dyn-xslice`) is in the SRC
-  machine list after the load, is put on a track, and is gone after the unload; refusals write nothing; 0 stray writes, 0 flush hits. Open: page
-  rows and Digitone II, the DSP selector word of a run-time machine, a refusal to unload a machine a track uses.
+  machine list after the load, is put on a track, and is gone after the unload; refusals write nothing; 0 stray writes, 0 flush hits.
+- [x] ColdFire side, Digitone II 1.11/1.12 (finding 33): page rows (`pages`), `own_dsp`, the list getter filter (a hook at the `jsr (A3)` that ends the
+  getter) and the view hook, a DN2 parameter row spec; `.dkm` PAGE records. `test/dyn-dn2` (own_dsp machine, four parameters, a SYN page
+  with four knobs) is in the machine list after the load, goes on a track, its SYN page shows its knobs, it is gone after the unload; refusals write
+  nothing; 0 stray writes, 0 flush hits (`pk_registry proof` and `ui` on dn2-1.11 and dn2-1.12). No audio: the machine renders silence until a DSP routine is loaded.
+- [x] Unload refusal, both devices: `dkrt_unload` returns `E_TYPE_IN_USE` (-26) while a track of the active kit holds a machine of the module; accepted once the
+  track has another machine (DT2 1.17 and DN2 1.12, headless and on the panel). Registry codes -20 to -26 are in `dkrt-sdk`. Open: the DSP selector word of a
+  run-time machine on the Digitakt II; the other kits and the sound pool are not scanned.
 - [ ] SHARC side, both devices: the runtime sends the DSP code in the frame tail (S4b); a static L2 stub at the
   block handler copies it into free L2, checks it, invalidates the instruction cache range and fills the voices
   registry. Optional faster load: the full-frame borrow.
@@ -226,11 +237,20 @@ write-watch 0 events, flush check 0 hits (`tools/coldfire/digikit_menu_proof.py`
     handler, check, destination limits, cache invalidate (full, `FLUSH CACHE` and `ICAINV`; not modelled by the
     emulator), acknowledgement through the reply record. DT2 1.16/1.17 and DN2 1.11/1.12: 4 and 64 KiB byte exact,
     964 KB/s and 71.6 KB/s, PCM bit-identical to the idle image, +23/+26 DSP instructions per block.
-  - [ ] The runtime calls `dl_send` for a module's DSP object and fills the voices registry (needs the module format to
-    carry DSP code linked for the area, and the area's address from `_dl_area`).
+  - [x] The runtime calls `dl_send` for a module's DSP object and fills the voices registry (finding 32): the `.dkm` DSP section
+    (relocated on the ColdFire into a first-fit range of the 512 KiB / 320 KiB area), `core/dyndsp` (8 free voice rows, the table of
+    DSP addresses), window 1 of `core/dsp-link` for one-word row writes, the load as a state machine in the UI-loop hook
+    (`LOADING`, queue, unload order machine row, voice row, range). DT2: `test/dyn-pluck` loaded at run time gives PCM
+    bit-identical to the patched-in `machines/pluck` (`tools/patchkit/pk_dkrt_machine.py proof`).
   - [ ] Hardware: the cache sequence and the record offset `0x60` (finding 31, open points).
   - [ ] Optional: the full-frame borrow.
-- [ ] Port `machines/pluck` through the SDK as the proof (ColdFire and DSP sides).
+- [x] Port `machines/pluck` through the SDK as the proof (ColdFire and DSP sides): `test/dyn-pluck` (typed sections + the pluck DSP source),
+  Digitakt II 1.16 and 1.17. Digitone II: the DSP side only (`test/dyn-sine-dn2` against `test/dn2-sine`, type forced in the DSP's
+  frame copy).
+- [ ] Join the halves on the Digitone II: a `dyn-pluck` for DN2 (own_dsp machine and SYN page from finding 33, the DSP section from
+  finding 32) loaded from the menu plays like the patched-in `machines/pluck` on dn2-1.11/1.12; the Digitakt II proof through the menu as well
+  (the proofs load through the mailbox today). This is the Phase 5 gate.
+- [ ] The DSP selector word of a run-time machine (a clone of SLICE plays as SAMPLE; route and estimate in finding 32).
 - [x] Projects that name a machine that is not loaded fall back to the gap row (the type byte stays; the row is a clone of type 0 with no
   knobs; the SRC page frame equals that of a never-filled gap row; finding 30).
 

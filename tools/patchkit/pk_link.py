@@ -33,6 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
+from tools.coldfire import isacheck  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_elf,  # noqa: E402
     pk_toolchains,  # noqa: E402
@@ -57,9 +58,6 @@ CFLAGS = [
     "-Werror",
 ]
 ASFLAGS = [f"-mcpu={CPU}"]
-# Privileged forms a module may use: cache line push-and-invalidate (the digikit runtime flushes loaded code; modules run in
-# supervisor mode like the firmware).
-PRIVILEGED_OK = {"cpushl"}
 EM_68K = 4
 R_68K = {
     1: ("32", 4, False),
@@ -72,7 +70,6 @@ R_68K = {
     19: ("PLT16", 2, True),
     20: ("PLT8", 1, True),
 }
-ALLOWED_UNITS = {"isa_a", "isa_b", "isa_c", "emac"}
 KIND_ORDER = ["text", "rodata", "data", "bss"]
 
 
@@ -286,53 +283,63 @@ def link(obj: dict, base: int, symmap: dict[str, int] | None = None) -> Linked:
 
 def check_isa(linked: Linked) -> dict[str, int]:
     """Decode every instruction of the executable sections with our decoder; return the form histogram."""
-    if (
-        not linked.text_ranges
-    ):  # a data-only object (strings, tables): nothing to decode
-        return {}
-    cfdis = ROOT / "target" / "release" / "cfdis"
-    if not cfdis.exists():
-        r = subprocess.run(
-            ["cargo", "build", "--release", "-p", "coldfire", "--bin", "cfdis"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode:
-            raise PkLinkError(f"cannot build cfdis:\n{r.stderr[-2000:]}")
-    units = {}
-    for line in subprocess.run(
-        [str(cfdis), "--forms"], capture_output=True, text=True, check=True
-    ).stdout.splitlines():
-        form, unit, priv, _page = line.split("\t")
-        units[form] = (unit, priv == "true")
-    with tempfile.NamedTemporaryFile(suffix=".bin") as f:
-        f.write(linked.image)
-        f.flush()
-        ranges = "".join(f"{lo:x} {hi:x}\n" for lo, hi in linked.text_ranges)
-        out = subprocess.run(
-            [str(cfdis), f.name, f"{linked.base:x}", "--ranges"],
-            input=ranges,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-    hist: dict[str, int] = {}
-    bad = []
-    for line in out.splitlines():
-        if line.startswith("R "):
-            continue
-        addr, length, form, _text = line.split(" ", 3)
-        if length == "0":
-            bad.append(f"{addr}: illegal encoding")
-            continue
-        unit, priv = units[form]
-        hist[form] = hist.get(form, 0) + 1
-        if unit not in ALLOWED_UNITS or (priv and form not in PRIVILEGED_OK):
-            bad.append(f"{addr}: {form} ({unit}{', privileged' if priv else ''})")
+    hist, bad = isacheck.decode(linked.image, linked.base, linked.text_ranges)
     if bad:
         raise PkLinkError("instructions outside ISA_A/B/C+EMAC:\n  " + "\n  ".join(bad))
     return hist
+
+
+def _nm(obj: Path, *flags: str) -> list[str]:
+    r = subprocess.run(
+        [str(_tool("nm")), *flags, str(obj)], capture_output=True, text=True
+    )
+    if r.returncode:
+        raise PkLinkError(f"nm failed on {obj}:\n{r.stderr}")
+    return [ln.split()[-1] for ln in r.stdout.splitlines() if ln.split()]
+
+
+def resolve_helpers(obj: Path, out: Path) -> bool:
+    """Link the compiler helpers an object leaves undefined (`__udivdi3`, `__ashldi3`, ...) from the ColdFire libgcc.
+
+    C modules have no libc and no libgcc of their own, and the m68k-elf libgcc of the toolchain is 68000 code. The
+    archive built for -mcpu=54418 (pk_toolchains `build_libgcc_cf`, out/tools/m68k-elf/lib/libgcc-cf54418.a) is
+    searched by `ld -r` for the undefined symbols only; the members it pulls in (and what they pull in) are merged
+    into the object, and every symbol they define is made local, so two modules that both carry `__udivdi3`
+    do not collide. Returns False (and writes nothing) when the object has no helper to resolve. A name that is
+    undefined and not in the archive stays undefined (the module's externs)."""
+    undefined = _nm(obj, "-u")
+    if not undefined:
+        return False
+    lib = pk_toolchains.libgcc_cf()
+    helpers = (
+        {n for n in _nm(lib, "-g", "--defined-only") if n.startswith("__")}
+        if lib
+        else set()
+    )
+    want = [n for n in undefined if n in helpers]
+    if not want:
+        return False
+    if lib is None:
+        raise PkLinkError(
+            f"{', '.join(want)} needed: ColdFire libgcc not built (uv run python -m tools.patchkit.pk_toolchains libgcc-cf)"
+        )
+    before = set(_nm(obj, "-g", "--defined-only"))
+    r = subprocess.run(
+        [str(_tool("ld")), "-r", "-o", str(out), str(obj), str(lib)],
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode:
+        raise PkLinkError(f"ld -r with libgcc-cf54418 failed:\n{r.stderr}")
+    pulled = sorted(set(_nm(out, "-g", "--defined-only")) - before)
+    # the members carry unwind tables (.eh_frame): modules have no exception unwinder, so drop them with their relocations
+    args = ["--remove-section=.eh_frame", *(f"--localize-symbol={n}" for n in pulled)]
+    r = subprocess.run(
+        [str(_tool("objcopy")), *args, str(out)], capture_output=True, text=True
+    )
+    if r.returncode:
+        raise PkLinkError(f"objcopy failed:\n{r.stderr}")
+    return True
 
 
 def load_symmap(module: str | None, pairs: list[str]) -> dict[str, int]:
@@ -360,6 +367,9 @@ def build(
         else:
             merged = Path(d) / "all.o"
             merge_objects(objs, merged)
+        with_helpers = Path(d) / "helpers.o"
+        if resolve_helpers(merged, with_helpers):
+            merged = with_helpers
         obj = object_from_elf(merged.read_bytes(), sources)
     linked = link(obj, base, symmap)
     return obj, linked, check_isa(linked)

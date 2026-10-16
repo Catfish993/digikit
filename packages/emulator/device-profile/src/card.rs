@@ -32,7 +32,7 @@ impl Pool {
 }
 
 /// One slot pool. Slot `n` starts at sector `base_sector + n * stride_sectors` and holds up to `slot_bytes`.
-/// The pool's occupancy bits are `bitmap_bytes` bytes at `bitmap_offset` in the table sector.
+/// The pool's write-protect bits (a set bit is a padlock, not occupancy) are `bitmap_bytes` bytes at `bitmap_offset` in the table sector.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PoolLayout {
@@ -90,7 +90,7 @@ pub struct PoolSet {
 pub struct CardLayout {
     /// `MmcFs` header sector (magic 0xbeef_bace).
     pub header_sector: u64,
-    /// `MmcFs` table sector: the three occupancy bitmaps.
+    /// `MmcFs` table sector: the three write-protect bitmaps.
     pub table_sector: u64,
     pub pools: PoolSet,
     #[serde(default)]

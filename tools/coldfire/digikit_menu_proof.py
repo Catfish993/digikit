@@ -101,6 +101,16 @@ def make_card(image: str) -> pathlib.Path:
         pk_dkrt.broken_variants(
             pathlib.Path(work), tools, "test/dyn-demo", folder / "digikit"
         )
+    good = (folder / "digikit" / "modules" / "dyn-demo.dkm").read_bytes()
+    other = (
+        2 if dev == "dt2" else 1
+    )  # the other device's id (dkrt-sdk DEVICE_DT2 = 1, DEVICE_DN2 = 2)
+    (folder / "digikit" / "modules" / "foreign.dkm").write_bytes(
+        forge(good, device=other)
+    )
+    (folder / "digikit" / "modules" / "future.dkm").write_bytes(
+        forge(good, runtime_min=99)
+    )
     (folder / "digikit" / "readme.txt").write_bytes(b"readme")
     img = CARDS / f"{dev}.img"
     img.unlink(missing_ok=True)
@@ -109,6 +119,28 @@ def make_card(image: str) -> pathlib.Path:
          "plusdrive", "--", "build", str(folder), "-o", str(img), "--syx", f"firmware/{fw}", "--device", dev]
     )  # fmt: skip
     return img
+
+
+def forge(
+    good: bytes, device: int | None = None, runtime_min: int | None = None
+) -> bytes:
+    """A copy of a good `.dkm` with a header field changed and the file sha256 made right again: register records for another
+    device (an empty `DKRG` record, 16 bytes appended) or a higher `runtime_min`. The menu reads only these header fields."""
+    import hashlib
+    import struct
+
+    b = bytearray(good)
+    if device is not None:
+        b += b"\0" * (-len(b) % 16)
+        struct.pack_into(">I", b, 0x90, len(b))
+        struct.pack_into(">I", b, 0x94, 16)
+        b += struct.pack(">4sIII", b"DKRG", 1, device, 0)
+    if runtime_min is not None:
+        struct.pack_into(">I", b, 0x30, runtime_min)
+    struct.pack_into(">I", b, 0x08, len(b))
+    b[0x10:0x30] = bytes(32)
+    b[0x10:0x30] = hashlib.sha256(bytes(b)).digest()
+    return bytes(b)
 
 
 class Plan:
@@ -141,6 +173,11 @@ def peek_ats(facts_dir: pathlib.Path) -> list[int | None]:
         if m:
             out.append(None if m.group(1) is None else int(m.group(1)))
     return out
+
+
+def peek_ats_bytes(facts_dir: pathlib.Path) -> bytes:
+    """The longwords of the `--peek-at` reads of a text, in time order, as bytes (digikit_errors reads the first popup)."""
+    return b"".join((v or 0).to_bytes(4, "big") for v in peek_ats(facts_dir))
 
 
 def peek_bytes(d: pathlib.Path, addr: int, n: int) -> bytes:
@@ -186,7 +223,32 @@ def shots(image: str, script: str, d: pathlib.Path, frames: list[str]) -> None:
         sheet.save(SHOTS / f"{image}-{script}-sheet.png")
 
 
-def run_one(image, name, script, syx, plan, card, goldens, update, peeks, watch=None):
+def stack_env(image: str, plan: Plan) -> dict[str, str]:
+    """DIGI_STACK_WATCH on the UI task's stack, and epochs ended by the menu's MARK words (the start and the end of a LOAD or UNLOAD)."""
+    from tools.coldfire import task_stacks
+
+    _, ts, pop = task_stacks.tasks(image)
+    ui = task_stacks.ui_task(ts, pop)
+    mark = plan.addr("MARK")
+    return {
+        "DIGI_STACK_WATCH": "0x%x-0x%x" % (ui.base, ui.top),
+        "DIGI_STACK_WATCH_EPOCH": "0x%x+8" % mark,
+    }
+
+
+def run_one(
+    image,
+    name,
+    script,
+    syx,
+    plan,
+    card,
+    goldens,
+    update,
+    peeks,
+    watch=None,
+    env_extra=None,
+):
     out = OUT / image / name
     extra = []
     for a in peeks:
@@ -200,6 +262,7 @@ def run_one(image, name, script, syx, plan, card, goldens, update, peeks, watch=
         allow_pc=arena_safety.plan_allow_pc(plan),
         watch=watch,
         extra=extra,
+        env_extra=env_extra,
     )
     facts["name"] = name
     facts["bad"] = pin(image, name, facts, goldens, update)
@@ -209,6 +272,35 @@ def run_one(image, name, script, syx, plan, card, goldens, update, peeks, watch=
             % (facts["errors"], facts["write_events"], facts["flush_hits"])
         )
     return facts, out
+
+
+def stack_summary(facts: dict, mark: int) -> dict:
+    """The UI stack's high-water by phase: the whole run, the epochs ended by the end-of-request MARK word (a LOAD or UNLOAD
+    request: the menu action, dkrt_load or dkrt_unload and the popup), and every other epoch (idle, navigation, rebuilds)."""
+    st = facts["stacks"][0]
+    end = "%#010x" % (mark + 4)
+    req = [e for e in facts["stack_epochs"] if e["trigger"] == end]
+    rest = [e for e in facts["stack_epochs"] if e["trigger"] != end]
+    return {
+        "size": st["size"],
+        "total": st["depth"],
+        "total_pc": st["pc"],
+        "request": max((e["depth"] for e in req), default=None),
+        "request_pc": max(req, key=lambda e: e["depth"])["pc"] if req else None,
+        "other": max((e["depth"] for e in rest), default=None),
+        "other_pc": max(rest, key=lambda e: e["depth"])["pc"] if rest else None,
+        "requests": len(req),
+    }
+
+
+def report_stack(name: str, facts: dict, mark: int) -> None:
+    sm = stack_summary(facts, mark)
+    print(
+        f"  stack of {sm['size']} bytes: deepest {sm['total']} (pc {sm['total_pc']}); "
+        f"outside requests {sm['other']} (pc {sm['other_pc']}); "
+        f"in {sm['requests']} requests {sm['request']} (pc {sm['request_pc']}); "
+        f"margin {sm['size'] - sm['total']}"
+    )
 
 
 def main(argv=None) -> int:
@@ -222,6 +314,21 @@ def main(argv=None) -> int:
         action="store_true",
         help="also the stock menu scripts, stock against patched image",
     )
+    ap.add_argument(
+        "--stack",
+        action="store_true",
+        help="also measure the UI task's stack high-water (DIGI_STACK_WATCH)",
+    )
+    ap.add_argument(
+        "--quick",
+        action="store_true",
+        help="the quick tier: only digikit_errors and digikit_gate, no regression scripts",
+    )
+    ap.add_argument(
+        "--stack-stock",
+        action="store_true",
+        help="the UI stack high-water of the stock SETTINGS and project scripts (save, load, new, manage, format) on the patched image",
+    )
     ap.add_argument("--only", help="comma-separated script names to run (default: all)")
     ap.add_argument("--only-regress", action="store_true", help="skip the DIGIKIT runs")
     a = ap.parse_args(argv)
@@ -232,7 +339,20 @@ def main(argv=None) -> int:
     goldens = json.loads(GOLDEN.read_text()) if GOLDEN.exists() else {}
     if a.update and not a.only_regress:
         goldens = {k: v for k, v in goldens.items() if not k.startswith(image + "/")}
-    state = [plan.addr(n) for n in ("NENT", "STORE", "TICK", "RESULT", "LOADED")]
+    state = [
+        plan.addr(n)
+        for n in (
+            "NENT",
+            "STORE",
+            "TICK",
+            "RESULT",
+            "LOADED",
+            "RESULT2",
+            "POPUP",
+            "POPUPS",
+            "NOK",
+        )
+    ]
     st = plan.addr("DKRT_STATE")
     # the whole of cf.expansion except the runtime's staging buffer: the card read lands there by DMA, by design
     lo, hi = arena_safety.expansion(image)
@@ -242,9 +362,11 @@ def main(argv=None) -> int:
     jobs = [
         ("digikit_main", panel_script.SCRIPTS["digikit_main"]()),
         ("digikit_about", panel_script.digikit_about_script()),
-        ("digikit_errors", panel_script.digikit_errors_script()),
+        ("digikit_errors", panel_script.digikit_errors_script(plan.addr("POPUP"))),
         ("digikit_gate", panel_script.digikit_gate_script(st)),
     ]
+    if a.quick:
+        jobs = [j for j in jobs if j[0] in ("digikit_errors", "digikit_gate")]
     if a.only:
         jobs = [j for j in jobs if j[0] in a.only.split(",")]
     from concurrent.futures import ThreadPoolExecutor
@@ -268,6 +390,7 @@ def main(argv=None) -> int:
                 a.update,
                 peeks,
                 watch,
+                stack_env(image, plan) if a.stack else None,
             ),
         )
 
@@ -279,25 +402,43 @@ def main(argv=None) -> int:
         bad = list(facts["bad"])
         nent = peek(out, plan.addr("NENT"))
         store = peek(out, plan.addr("STORE"))
-        tick = list(peek_bytes(out, plan.addr("TICK"), 4)[:3])
-        loaded = list(peek_bytes(out, plan.addr("LOADED"), 4)[:3])
-        result = cstr(peek_bytes(out, plan.addr("RESULT"), 40))
+        tick = list(peek_bytes(out, plan.addr("TICK"), 8)[:5])
+        loaded = list(peek_bytes(out, plan.addr("LOADED"), 8)[:5])
+        result = cstr(peek_bytes(out, plan.addr("RESULT"), 48))
+        popup = cstr(peek_bytes(out, plan.addr("POPUP"), 48))
+        popups = peek(out, plan.addr("POPUPS"))
         info = {
             "entries": nent,
             "store": store,
             "ticks": tick,
             "loaded": loaded,
             "result": result,
+            "popup": popup,
+            "popups": popups,
         }
-        if name != "digikit_main" and "about" not in name and (nent != 3 or store != 1):
+        if name != "digikit_main" and "about" not in name and (nent != 5 or store != 1):
             bad.append(f"store read: entries {nent}, state {store}")
         want = {
             # (ticks, loaded, last answer) after the script
-            "digikit_errors": ([0, 1, 0], [0, 0, 0], "BAD SHA"),
-            "digikit_gate": ([0, 0, 0], [0, 0, 0], "UNLOADED 1"),
+            "digikit_errors": ([0, 1, 0, 0, 0], [0] * 5, "NOTHING TO DO"),
+            "digikit_gate": ([0] * 5, [0] * 5, "UNLOADED 1"),
         }.get(name)
         if want and (tick, loaded, result) != want:
             bad.append(f"final state {(tick, loaded, result)}, expected {want}")
+        if name == "digikit_errors":
+            # the firmware's message popup was given the file name and the reason, once per failed LOAD
+            first = cstr(peek_ats_bytes(out))
+            nok = list(peek_bytes(out, plan.addr("NOK"), 8)[:5])
+            info["not_ok"] = nok
+            if nok != [0, 0, 0, 1, 1]:
+                bad.append(f"greyed rows {nok}, expected foreign and future")
+            info["first_popup"] = first
+            if popups != 2 or popup != "BAD-SHA.DKM: BAD SHA":
+                bad.append(f"popup: {popups} shown, last {popup!r}")
+            if first != "BAD-IMPORT.DKM: NO IMPORT":
+                bad.append(f"first popup {first!r}")
+        if name == "digikit_gate" and popups != 0:
+            bad.append(f"popup shown by a good load: {popup!r}")
         if name == "digikit_gate":
             n = peek_ats(out)
             info["counter"] = n
@@ -320,6 +461,8 @@ def main(argv=None) -> int:
             info.update(loads=loads, slot0=slot0)
             if loads != 1 or slot0 != 0:
                 bad.append(f"runtime state: loads {loads}, slot 0 {slot0:#x}")
+        if a.stack:
+            report_stack(name, facts, plan.addr("MARK"))
         shots(image, name, out, [f for f, _ in script.frames])
         print(f"{name:18s} {'PASS' if not bad else 'FAIL'}  {info}")
         for b in bad:
@@ -328,6 +471,34 @@ def main(argv=None) -> int:
     if a.update:
         GOLDEN.parent.mkdir(parents=True, exist_ok=True)
         GOLDEN.write_text(json.dumps(dict(sorted(goldens.items())), indent=1) + "\n")
+    if a.stack_stock:
+        env = stack_env(image, plan)
+        env.pop("DIGI_STACK_WATCH_EPOCH")
+        names = [
+            n
+            for n in REGRESS_SCRIPTS
+            if n != "check_filesystem" or image.startswith("dt2")
+        ]
+        with ThreadPoolExecutor(max_workers=a.jobs) as pool:
+            runs = list(
+                pool.map(
+                    lambda n: arena_safety.run(
+                        image,
+                        n,
+                        OUT / image / ("stack-" + n),
+                        card=card,
+                        syx=syx,
+                        allow_pc=arena_safety.plan_allow_pc(plan_path),
+                        env_extra=env,
+                    ),  # fmt: skip
+                    names,
+                )
+            )
+        for n, f in zip(names, runs, strict=True):
+            m = f["stacks"][0]
+            print(
+                f"stack {n:16s} deepest {m['depth']} of {m['size']} bytes (pc {m['pc']})"
+            )
     if a.regress:
         # the stock SETTINGS scripts of finding 25 (project, system and format menus, saves): the same card, stock image
         # against patched image; every dumped frame and the card sectors the firmware wrote must be equal

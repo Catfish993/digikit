@@ -127,6 +127,33 @@ both on (about 1 billion instructions).
 
 `packages/emulator/boot/examples/cf_script.rs` runs a patched image with a card through a JSON script of runs, pokes, peeks, waits and direct calls with these variables set; `tools/patchkit/pk_dkrt.py proof` and `tools/patchkit/pk_registry.py proof` are its users (findings 29 and 30; the second calls the firmware's own list getter through a stub it pokes into free RAM).
 
+## Task stack high-water (ColdFire)
+
+`DIGI_STACK_WATCH=LO-HI[,..]` (hex, HI exclusive) names task stacks. Every CPU store into one is tracked after the write-watch
+start (`DIGI_WRITE_WATCH_AFTER`: the boot-time RAM clear writes the whole bss, stacks included, so set it to `cacr`). A stack grows
+down, so the lowest address a store reached is the high-water use; a frame that was reserved but never written is not seen (the
+reserve is small next to the stacks measured). Interrupt handlers push on the interrupted task's stack and are counted. The
+instrument needs `DIGI_WRITE_WATCH` or `DIGI_FLUSH_CHECK` only for the bus to take the single-step path; it works alone too.
+
+| variable | effect |
+|---|---|
+| `DIGI_STACK_WATCH=LO-HI[,..]` | the stacks to track |
+| `DIGI_STACK_WATCH_EPOCH=LO-HI[,..]` | a store into these ranges ends an epoch: the low-water mark is kept per epoch, so a phase of the run is measured by writing a marker word at its start and its end (the menu has `MARK`, written at the start and the end of a LOAD or UNLOAD) |
+
+Output: JSONL lines `{"t":"stack","ic","pc","addr","depth"}` for each new low that is 64 bytes deeper than the last one logged, and
+`{"t":"stack_epoch","row":{..}}` for each closed epoch; the summary (`PATH.summary.json`) has `stacks` (`lo`, `hi`, `size`, `low`, `depth`,
+`pc` and `ic` of the deepest store) and `stack_epochs` (`ic0`, `ic1`, `trigger` = the address that ended it, `low`, `depth`, `pc`,
+`low_ic`, `writes`; at most 512). `tools/coldfire/arena_safety.py run(..., env_extra=...)` passes the variables and returns `stacks`
+and `stack_epochs` in the facts.
+
+Where the stack of a task is: `uv run python -m tools.coldfire.task_stacks --image dt2-1.16` lists every RTOS task (entry, priority,
+stack base and size) from the calls of the firmware's one task-create function and marks the UI task (the one whose loop contains
+the queue pop that the runtime hooks); it reads the Ghidra dump of the image. `uv run python -m tools.coldfire.digikit_menu_proof run
+--image IMAGE --quick --stack` measures the UI stack during the DIGIKIT proof scripts and prints the high-water outside requests and
+inside LOAD/UNLOAD requests; `--stack-stock` does it for the stock SETTINGS and project scripts. `uv run python -m
+tools.coldfire.frame_depth modules/core/runtime/build/runtime.dko.json dkrt_load` adds the other side: the static worst-case depth of a
+module's functions from their frame sizes and calls (findings 34).
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one

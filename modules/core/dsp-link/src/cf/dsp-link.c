@@ -14,6 +14,8 @@
  *
  * Interface for the runtime (C ABI, no struct results):
  *   int dl_send(u32 dst_l2, const void *buf, u32 len);   0 started; -1 busy; -2 bad destination or size
+ *   int dl_send_win(u32 win, u32 dst_word, const void *buf, u32 len);   the same into window `win` (1: the voices registry),
+ *       the destination in words from the start of the window; the DSP checks it against the window's size (status 3)
  *   int dl_poll(DlStatus *st);                           the state (DL_IDLE, DL_BUSY, DL_DONE, DL_ERROR), and *st filled
  * dst_l2 is a byte address in the DSP's reserved area (_dl_area, DL_AREA_BYTES long), 4-aligned; len is a multiple of 4;
  * buf must stay valid until the state is DL_DONE or DL_ERROR. DL_DONE means the DSP has taken every chunk, has the bytes
@@ -26,7 +28,7 @@ typedef unsigned char u8;
 #define DL_MAGIC 0xD15Cu
 #define DL_ACK_MAGIC 0xA5D1u
 #define DL_ACK_OFF 0x60u
-#define DL_AREA_BYTES 0x20000u
+#define DL_AREA_BYTES 0x80000u /* the largest area the 17-bit offset reaches; the DSP knows the real size (status 3) */
 #define DL_WINDOW 12u
 #define DL_STALL_FRAMES 900u /* 0.6 s without progress */
 #define DL_END_FRAMES 6u
@@ -70,9 +72,11 @@ typedef struct DlLink {
     u32 nerr;
     u32 ending;
     u32 dirty;
+    u32 win; /* the window of the transfer (appended: the order of the fields above is read by tests) */
+    u32 pad[2]; /* 80 bytes: the state fills whole 16-byte cache lines, no code shares a line it writes to (flush check) */
 } DlLink;
 
-DlLink dl_link;
+DlLink dl_link __attribute__((aligned(16)));
 
 extern char _dl_area[]; /* the DSP object's reserved area (a DSP address) */
 extern volatile u32 dl_tx_lit; /* the literal of the driver's `lea tx_queue,a0`: the queue's address */
@@ -104,6 +108,7 @@ int dl_send(u32 dst_l2, const void *buf, u32 len)
     if ((dst_l2 & 3u) || (len & 3u) || len == 0u || dst_l2 < lo || dst_l2 - lo >= DL_AREA_BYTES ||
         len > DL_AREA_BYTES - (dst_l2 - lo) || buf == 0)
         return -2;
+    l->win = 0;
     l->buf = (u32)buf;
     l->dst_off = (dst_l2 - lo) >> 2;
     l->nwords = len >> 2;
@@ -111,6 +116,25 @@ int dl_send(u32 dst_l2, const void *buf, u32 len)
     l->acked = 0;
     l->nerr = 0;
     l->state = DL_START; /* last: the tick takes the request only now */
+    return 0;
+}
+
+int dl_send_win(u32 win, u32 dst_word, const void *buf, u32 len)
+{
+    DlLink *l = &dl_link;
+    u32 st = l->state;
+    if (st == DL_BUSY || st == DL_START || l->ending)
+        return -1;
+    if (win == 0u || win > 1u || (len & 3u) || len == 0u || dst_word >= 0x20000u || buf == 0)
+        return -2;
+    l->win = win;
+    l->buf = (u32)buf;
+    l->dst_off = dst_word;
+    l->nwords = len >> 2;
+    l->err = 0;
+    l->acked = 0;
+    l->nerr = 0;
+    l->state = DL_START;
     return 0;
 }
 
@@ -146,9 +170,9 @@ static void write_chunk(DlLink *l, u32 tx, u32 e0, u32 idx, int end)
     const u8 *p;
     if (n > cap)
         n = cap;
-    w0 = DL_MAGIC | (idx << 16);
-    w1 = end ? (1u << 24) : ((l->dst_off + first) | (n << 15) | ((idx + 1u == l->nchunks) ? (1u << 23) : 0u));
-    w1 |= l->xid << 25;
+    w0 = DL_MAGIC | (idx << 16) | (l->win << 30);
+    w1 = end ? (1u << 26) : ((l->dst_off + first) | (n << 17) | ((idx + 1u == l->nchunks) ? (1u << 25) : 0u));
+    w1 |= l->xid << 27;
     s1 = w0 + w1;
     s2 = w0 + s1;
     put_word(tx, e0, 0, w0);
@@ -185,8 +209,8 @@ void dl_tick(int len, const u16 *src, int reclen, const volatile u16 *rec)
         }
         l->cap = words - 3u;
         l->nchunks = (l->nwords + l->cap - 1u) / l->cap;
-        l->xid = (l->xid & 127u) + 1u;
-        if (l->xid > 127u)
+        l->xid = (l->xid & 31u) + 1u;
+        if (l->xid > 31u)
             l->xid = 1;
         l->next = 0;
         l->acked = 0;

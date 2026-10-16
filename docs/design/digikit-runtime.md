@@ -1,6 +1,6 @@
 # The digikit runtime, v0 (`core/runtime`)
 
-Status: built, 2026-10-16; emulator only (DT2 1.16, 1.17 and DN2 1.11, 1.12; nothing ran on a device). Plan:
+Status: built, 2026-10-16; DSP loader added 2026-10-17 (finding 32); emulator only (DT2 1.16, 1.17 and DN2 1.11, 1.12; nothing ran on a device). Plan:
 `docs/plans/digikit-runtime.md` (Phase 3). Results: `docs/findings/29-runtime-v0.md`. File format:
 `docs/design/digikit-dkm.md`. Store: `docs/design/digikit-store.md`.
 
@@ -59,7 +59,10 @@ results.
 
 On an error nothing is left behind. Codes: `E_NOT_FOUND` -1 (no store / no such file or module), `E_BAD_STORE` -2, `E_READ` -3,
 `E_SHA` -4, `E_FORMAT` -5, `E_RUNTIME` -6, `E_IMPORT` -7, `E_NOMEM` -8, `E_INIT` -9, `E_LOADED` -10, `E_SLOT` -11, `E_BUSY` -12,
-`E_TOO_BIG` -13, `E_TABLE_FULL` -14. The addresses of these functions are symbols of the patch plan (`plan.json`
+`E_TOO_BIG` -13, `E_TABLE_FULL` -14. The run-time registry's codes are in the same crate and the same table, -20 to -29 (`E_NO_REGISTRY` -20, `E_REG_DEVICE` -21,
+`E_TYPE_RANGE` -22, `E_TYPE_USED` -23, `E_PARAM_FULL` -24, `E_PAGE_FULL` -25, `E_TYPE_IN_USE` -26: `dkrt_unload` refuses a module whose machine a track
+of the active kit uses, docs/design/digikit-registry.md); -30 to -39 are the DSP side's. Codes are only added, never renumbered; `result_text` (menu text)
+covers -1 to -14 and shows `ERROR` for the others until a menu text is added. The addresses of these functions are symbols of the patch plan (`plan.json`
 `symbols`: `core/runtime@VERSION:dkrt_load`, ...). The DIGIKIT menu (`core/digikit-menu`, which `requires` this module) names
 the four as undefined symbols of its own object and patchkit links them: there is no table and no stand-in. `DkrtStatus`,
 `DkrtModule`, the result codes with `result_text` (menu text) and the store reader (`dkrt_sdk::store`: header, table CRC, path and
@@ -120,3 +123,38 @@ DN2: the flush check sees few CPUSHL on DN2 images (finding 25), so the 0-hit re
 A `.dkm` with `register` records fills machine and parameter rows that `core/dynreg` reserved at patch time. The runtime links to
 `core/dynreg`'s `dynreg_info` table optionally; `registry.rs` holds the code and its state (`DKRT_REG`). Design, record format, what is derived
 state and the write order: `docs/design/digikit-registry.md`.
+
+## DSP code of a module (state machine)
+
+A `.dkm` with a DSP section (`docs/design/digikit-dkm.md`) loads in two parts. `src/rs/src/dsp.rs` holds the DSP loader, `loader.rs` the
+shared tail of a load. Link: `dl_send`, `dl_send_win`, `dl_poll` of `core/dsp-link` and `dyndsp_info` of `core/dyndsp`, all optional
+(`[object] optional`): an image without them refuses a file that has a DSP section with `E_NO_DSP`.
+
+1. **Synchronous part** (inside `dkrt_load`, as before): the file's checks, now including the DSP section (`dsp::check`: device,
+   bounds, imports resolve in `dyndsp_info`, free voice rows, voice types in 16..23 and unused). Then `dsp::reserve` takes a range of the
+   DSP area (first fit over the per-module table `DKRT_DSP.mod_off/mod_len`, 64-byte granules, aligned for the object), copies the image
+   into an arena block and applies the relocations there (`abs24`/`abs32`, shifts for the placement, import values), and claims the
+   voice rows. The ColdFire image is copied, relocated and flushed as before, the `register` records are copied into the arena (the
+   staging buffer will be reused), the module record gets `used = 2` (loading) and `dkrt_load` returns `LOADING` (1).
+2. **Asynchronous part**, one step per UI-loop pass (`dsp::step`, called from `dkrt_tick`): `PH_SEND` starts `dl_send` of the image to the
+   reserved range and polls `dl_poll`; at DONE (the DSP has the bytes and has invalidated its instruction caches) `PH_ROWS` publishes each
+   voice row with two one-word `dl_send_win(1, ...)` transfers (pc, then type) and waits for each; then `loader::complete_pending` writes
+   the machine and parameter rows (`registry::apply`: the machine is listed from this point), runs `init`, binds the slots, sets
+   `used = 1`. Any failure (`dl` error, 6000 passes without progress) clears the rows it published, frees the range and the arena blocks
+   and leaves `last_result` at `E_DSP_XFER`; nothing of the module remains.
+3. **Requests that arrive meanwhile** are not lost: `dkrt_load` queues up to four paths and returns `LOADING`; the next one starts when the
+   machine is idle (`loader::start_queued`; a failure of a queued load shows in `last_result`). `dkrt_unload` of a module that is loading, or
+   while any load is in flight, answers `E_BUSY`.
+4. **Unload** of a module with DSP code: slots cleared, wait for tasks inside, `fini`, then the machine row (`registry::remove`), then the
+   DSP voice rows (blocking: the UI task writes the type word `0xffffffff`, about 10 audio blocks, bounded by a spin limit), then the
+   range is free and the arena block is returned. The rows are freed type first so the render scan skips them at once.
+
+Reporting: `DkrtStatus.state` (`STATE_IDLE` 0, `STATE_LOADING` 1), `queued`, `dsp_size`, `dsp_free`, `dsp_largest` (appended fields);
+`DkrtModule.state` (`MOD_LOADED`, `MOD_LOADING`) and `dsp_size`; `last_result` is `LOADING` (1) from the accept until the final result.
+`dkrt_module` lists a loading module, so the menu marks its row; the menu treats `LOADING` as accepted (`core/digikit-menu`, one line).
+The host mailbox answers `LOADING` in `result` and the final result is in `DKRT_STATE.last_result` once `DKRT_DSP.phase` is 0.
+`DKRT_DSP` (a symbol of the plan) is the loader's state for tools: phase, step, counters (`transfers`, `row_writes`, `failures`), per-module
+range, per-row type/owner.
+
+Cost: the loader is about 3 KB of code and 540 bytes of state; the DSP runs the same stub as before plus a window select (about 8
+instructions per chunk, none when idle).

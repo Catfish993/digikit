@@ -7,8 +7,9 @@
 
 /// Version of the `Api` table layout. A field is only ever appended; `Api::size` tells a module how much is there.
 pub const API_VERSION: u32 = 1;
-/// Version of the runtime a module was packed against (`runtime_min` in the `.dkm` header).
-pub const RUNTIME_VERSION: u32 = 1;
+/// Version of the runtime a module was packed against (`runtime_min` in the `.dkm` header). 2: DSP sections and asynchronous loads
+/// (finding 32), `register` PAGE records and `own_dsp` (finding 33), codes -25/-26 and -30 to -37.
+pub const RUNTIME_VERSION: u32 = 2;
 
 /// `Api::device`.
 pub const DEVICE_DT2: u32 = 1;
@@ -34,6 +35,32 @@ pub const E_SLOT: i32 = -11; // a slot it binds is taken
 pub const E_BUSY: i32 = -12; // a task is still inside the module
 pub const E_TOO_BIG: i32 = -13; // larger than the staging buffer
 pub const E_TABLE_FULL: i32 = -14; // no free module record
+
+/// Codes of the run-time registry (`register` records, docs/design/digikit-registry.md): -20 to -29. Lane ranges: -30 to
+/// -39 are the DSP side's. Additive: a code is never renumbered.
+pub const E_NO_REGISTRY: i32 = -20; // the file has register records, the image has no core/dynreg
+pub const E_REG_DEVICE: i32 = -21; // the records are for another device
+pub const E_TYPE_RANGE: i32 = -22; // a machine type outside the reserved range, or a clone_of that is not built in
+pub const E_TYPE_USED: i32 = -23; // the type number is in use
+pub const E_PARAM_FULL: i32 = -24; // no free reserved parameter row
+pub const E_PAGE_FULL: i32 = -25; // no free reserved page row (Digitone II)
+pub const E_TYPE_IN_USE: i32 = -26; // unload refused: a track of the active kit uses a machine of the module
+
+/// `dkrt_load` and `dkrt_unload` answer `LOADING` when they accepted the request and finish it over the next UI-loop passes (a
+/// module with DSP code: the transfer takes many audio blocks). The final result is `DkrtStatus::last_result` once
+/// `DkrtStatus::state` is back to `STATE_IDLE`. A module that is still loading is reported by `dkrt_module` with `state` `MOD_LOADING`
+/// and is not usable: its machine is not listed and its slots are not bound.
+pub const LOADING: i32 = 1;
+
+/// Codes of the DSP side of a module (docs/design/digikit-dkm.md, "DSP section"): -30 to -39 belong to the DSP loader.
+pub const E_NO_DSP: i32 = -30; // the file has DSP code, the image has no core/dsp-link and core/dyndsp
+pub const E_DSP_FORMAT: i32 = -31; // the DSP section is malformed
+pub const E_DSP_IMPORT: i32 = -32; // a DSP symbol the object imports is not exported by the image
+pub const E_DSP_NOSPACE: i32 = -33; // no free range in the DSP area
+pub const E_DSP_ROWS: i32 = -34; // no free voice row
+pub const E_DSP_XFER: i32 = -35; // the transfer to the DSP failed or timed out
+pub const E_DSP_DEVICE: i32 = -36; // the DSP code is for the other device
+pub const E_DSP_TYPE: i32 = -37; // a voice type outside the run-time range, or used by another module
 
 /// The table `init` receives (also reachable as `dkrt_api`). Appended-to only; check `size`.
 #[repr(C)]
@@ -75,7 +102,23 @@ pub struct DkrtStatus {
     pub last_result: i32,
     pub loads: u32,
     pub slot_calls: u32,
+    /// `STATE_IDLE`, `STATE_LOADING` (a module's DSP code is being sent) or `STATE_UNLOADING`.
+    pub state: u32,
+    /// Load requests waiting behind the one in progress.
+    pub queued: u32,
+    /// Bytes of the DSP area (0: the image has none) and of it free; the largest free range.
+    pub dsp_size: u32,
+    pub dsp_free: u32,
+    pub dsp_largest: u32,
 }
+
+pub const STATE_IDLE: u32 = 0;
+pub const STATE_LOADING: u32 = 1;
+pub const STATE_UNLOADING: u32 = 2;
+
+/// `DkrtModule::state`.
+pub const MOD_LOADED: u32 = 0;
+pub const MOD_LOADING: u32 = 1;
 
 /// `dkrt_module` result: one loaded module.
 #[repr(C)]
@@ -87,6 +130,10 @@ pub struct DkrtModule {
     pub slots: u32, // bit n = slot n bound
     /// Store path the module was loaded from (NUL-terminated, at most 63 bytes kept), for example `modules/dyn-demo.dkm`.
     pub path: [u8; 64],
+    /// `MOD_LOADED` or `MOD_LOADING`.
+    pub state: u32,
+    /// Bytes of the module's range in the DSP area (0: none).
+    pub dsp_size: u32,
 }
 
 /// Text for a result code, for a menu line (upper case, at most 14 characters). A table, not a `match`: the compiler turns a
@@ -109,7 +156,21 @@ pub fn result_text(code: i32) -> &'static str {
         "TOO BIG",
         "TABLE FULL",
     ];
-    if (E_TABLE_FULL..=OK).contains(&code) {
+    const DSP_TEXTS: [&str; 8] = [
+        "NO DSP LINK",
+        "BAD DSP CODE",
+        "DSP IMPORT",
+        "DSP FULL",
+        "NO VOICE ROW",
+        "DSP TRANSFER",
+        "WRONG DEVICE",
+        "BAD VOICE",
+    ];
+    if (E_DSP_TYPE..=E_NO_DSP).contains(&code) {
+        DSP_TEXTS[(-code - 30) as usize]
+    } else if code == LOADING {
+        "LOADING"
+    } else if (E_TABLE_FULL..=OK).contains(&code) {
         TEXTS[(-code) as usize]
     } else {
         "ERROR"

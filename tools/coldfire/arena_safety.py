@@ -125,12 +125,14 @@ def run(
     watch: str | None = None,
     syx: pathlib.Path | None = None,
     allow_pc: str | None = None,
+    env_extra: dict[str, str] | None = None,
 ) -> dict:
     """One bounded probe run; returns the facts. `out` is the run directory (created). `watch` replaces the write-watch
     ranges (a control: add a range the firmware does write, such as the display buffer 0x44e4a5b8+0x400, and the event
     count must be above zero). `syx` runs a patched image (built from the stock firmware of `image`; the probe gets the
     stock image's SHA-256 as its base). `allow_pc` (LO-HI[,..]) are PC ranges whose stores are not reported: the
-    module's own code, which writes its bss in the module RAM."""
+    module's own code, which writes its bss in the module RAM. `env_extra` is added to the probe's environment (for
+    example DIGI_STACK_WATCH, docs/INSTRUMENTATION.md)."""
     out = pathlib.Path(out)
     out.mkdir(parents=True, exist_ok=True)
     lo, hi = expansion(image)
@@ -186,6 +188,7 @@ def run(
     )
     if allow_pc:
         env["DIGI_WRITE_WATCH_ALLOW_PC"] = allow_pc
+    env.update(env_extra or {})
     if flush_check:
         env["DIGI_FLUSH_CHECK"] = "1"
     for f in ("writewatch.jsonl", "writewatch.summary.json", "overlay.bin"):
@@ -215,6 +218,15 @@ def run(
     ww = json.loads(summary.read_text()) if summary.exists() else None
     facts["write_events"] = None if ww is None else ww["events"]
     facts["flush_hits"] = None if ww is None else len(ww["flush_hits"])
+    facts["stacks"] = [] if ww is None else ww.get("stacks", [])
+    facts["stack_epochs"] = (
+        []
+        if ww is None
+        else [
+            json.loads(r) if isinstance(r, str) else r
+            for r in ww.get("stack_epochs", [])
+        ]
+    )
     facts["watch_stats"] = (
         None
         if ww is None

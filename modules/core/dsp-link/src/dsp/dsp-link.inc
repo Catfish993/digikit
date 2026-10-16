@@ -17,9 +17,12 @@
 // The displaced instruction runs in the patchkit tail after the final jump.
 //
 // Wire format of a chunk (little-endian words of the ring; the ColdFire writes the halves, low half first):
-//   w0  bits 0-15 DL_MAGIC, bits 16-31 idx (chunk number, 0 for the first of a transfer)
-//   w1  bits 0-14 off (destination, in words from the start of _dl_area), bits 15-22 n (payload words),
-//       bit 23 LAST, bit 24 END (stop acknowledging), bits 25-31 xid (transfer id, 1..127)
+//   w0  bits 0-15 DL_MAGIC, bits 16-29 idx (chunk number, 0 for the first of a transfer), bits 30-31 win (the window)
+//   w1  bits 0-16 off (destination, in words from the start of the window), bits 17-24 n (payload words),
+//       bit 25 LAST, bit 26 END (stop acknowledging), bits 27-31 xid (transfer id, 1..31)
+// Windows: 0 is _dl_area (DL_AREA_WORDS long); 1 is the voices registry (_dl_vrows, 2 * _dl_vcount words: one {type, pc} row is
+// two words), which the digikit runtime fills one word per transfer so that the render scan never sees a half-written row.
+// Both externs are 0 when core/dsp-voice is not in the image, which makes window 1 refuse every write.
 //   w2 ... w(n+1)  the payload
 //   w(n+2)  check = s1 XOR s2 over w0 ... w(n+1), where s1 += w and s2 += s1 for each word w (both start at 0)
 // A chunk is taken when xid and magic are right, idx equals the number of chunks taken so far (cum) and the check holds.
@@ -35,14 +38,14 @@
 #define DL_MAGIC 0xD15C
 #define DL_ACK_MAGIC 0xA5D1
 #define DL_ACK_OFF 0x60
-#define DL_AREA_BYTES 0x20000
-#define DL_AREA_WORDS 0x8000
 #define DL_SHL1C_CFG 0x3E000
 
 .SECTION/PM seg_pmco;
 .GLOBAL _dl_hook;
 .EXTERN _dl_back;
 .EXTERN _dl_area;
+.EXTERN _dl_vrows;
+.EXTERN _dl_vcount;
 
 _dl_hook:
     DM(_dl_sv0) = R0;
@@ -60,16 +63,16 @@ _dl_hook:
     R3 = DL_MAGIC;
     COMP(R4, R3);
     IF NE JUMP _dl_ack;
-    R13 = FEXT R10 BY 16:16;              // idx
+    R13 = FEXT R10 BY 16:14;              // idx
     R14 = DM(I3, M6);                     // w1
-    R4 = FEXT R14 BY 25:7;                // xid
+    R4 = FEXT R14 BY 27:5;                // xid
     R4 = PASS R4;
     IF EQ JUMP _dl_ack;
     R3 = DM(_dl_xid);
     COMP(R4, R3);
     IF EQ JUMP _dl_same;
     // another transfer: only its first chunk (idx 0) starts it
-    R5 = 0x1000000;
+    R5 = 0x4000000;
     R5 = R14 AND R5;                      // END of a transfer that is not the current one: nothing to do
     IF NE JUMP _dl_ack;
     R13 = PASS R13;
@@ -80,7 +83,7 @@ _dl_hook:
     DM(_dl_status) = R3;
     DM(_dl_nerr) = R3;
 _dl_same:
-    R5 = 0x1000000;
+    R5 = 0x4000000;
     R5 = R14 AND R5;
     IF EQ JUMP _dl_notend;
     R3 = 0;
@@ -95,14 +98,28 @@ _dl_notend:
     COMP(R13, R3);
     IF NE JUMP _dl_ack;                   // old (resent) or later (lost) chunk
     // n and off, and the limits
-    R5 = FEXT R14 BY 15:8;                // n (zero extended)
-    R6 = FEXT R14 BY 0:15;                // off
+    R5 = FEXT R14 BY 17:8;                // n (zero extended)
+    R6 = FEXT R14 BY 0:17;                // off
     R3 = DL_TAIL_WORDS - 3;
     COMP(R5, R3);
     IF GT JUMP _dl_range;
-    R3 = R5 + R6;
-    R4 = DL_AREA_WORDS;
-    COMP(R3, R4);
+    R0 = FEXT R10 BY 30:2;                // the window
+    R0 = PASS R0;
+    IF NE JUMP _dl_win1;
+    R3 = DL_AREA_WORDS;                   // window 0: the area
+    R4 = _dl_area;
+    JUMP _dl_wdone;
+_dl_win1:
+    R3 = 1;
+    COMP(R0, R3);
+    IF NE JUMP _dl_range;                 // windows 2 and 3 do not exist
+    R3 = _dl_vcount;                      // window 1: the voice rows (two words each, the terminator row excluded)
+    R3 = LSHIFT R3 BY 1;
+    R4 = _dl_vrows;
+_dl_wdone:
+    DM(_dl_wbase) = R4;
+    R4 = R5 + R6;
+    COMP(R4, R3);
     IF GT JUMP _dl_range;
     // the check over w0, w1 and the payload
     R3 = R10;                             // s1
@@ -131,9 +148,9 @@ _dl_sumdone:
     DM(_dl_nerr) = R3;
     JUMP _dl_ack;
 _dl_good:
-    // copy the payload to _dl_area + 4 off
+    // copy the payload to the window base + 4 off
     R0 = LSHIFT R6 BY 2;
-    R3 = _dl_area;
+    R3 = DM(_dl_wbase);
     R0 = R3 + R0;
     I2 = R0;
     R5 = PASS R5;
@@ -145,7 +162,7 @@ _dl_copied:
     R3 = DM(_dl_cum);
     R3 = R3 + 1;
     DM(_dl_cum) = R3;
-    R5 = 0x800000;
+    R5 = 0x2000000;
     R5 = R14 AND R5;                      // LAST
     IF EQ JUMP _dl_ack;
     // The code is in place: drop what the instruction caches may hold for it. FLUSH CACHE clears the instruction-conflict
@@ -202,9 +219,9 @@ _dl_out:
 .VAR _dl_cum = 0;
 .VAR _dl_status = 0;
 .VAR _dl_nerr = 0;
+.VAR _dl_wbase = 0;
 .VAR _dl_sv0 = 0;
 .VAR _dl_sv3 = 0;
 .VAR _dl_sv4 = 0;
 .VAR _dl_sv5 = 0;
 .VAR _dl_sv6 = 0;
-.PKBSS _dl_area, 131072;

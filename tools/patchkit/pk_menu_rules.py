@@ -36,6 +36,21 @@ SITES = [
     # View::invalidate(View*): sets the view's and the view manager's dirty flags (322 callers); the View sub-object
     # is at +0x38 of a VerticalMenuView
     ("cf.menu.fn.invalidate", 0x4011AE46, 4, "code"),
+    # The message popup, as `FUN_400a4832` (the "LOAD OK" / "LOAD ERROR" popup after a project load) builds it:
+    # make_shared<PopupWindow>(const char *const &) with the result shared_ptr in A0; move it into a shared_ptr<View>;
+    # add it to the view manager at Brain + 0x40 (exclusive flag 0); release both pointers. The helpers are templates shared
+    # by many callers (their code hashes repeat), so the anchors are the call operands in that one function.
+    ("cf.menu.fn.popup_make", 0x400A4862 + 2, 4, "ptr"),
+    ("cf.menu.fn.sp_move", 0x400A4870 + 2, 4, "ptr"),
+    ("cf.menu.fn.brain", 0x400A4876 + 2, 4, "ptr"),
+    (
+        "cf.menu.fn.mgr_of",
+        0x400A487E + 2,
+        4,
+        "ptr",
+    ),  # Brain* -> its view manager (Brain + 0x40)
+    ("cf.menu.fn.view_add", 0x400A4890 + 2, 4, "ptr"),
+    ("cf.menu.fn.sp_release", 0x400A4888 + 2, 4, "ptr"),
 ]
 
 

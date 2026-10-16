@@ -62,8 +62,9 @@ L_ACKED, L_NEXT, L_STALL, L_SINCE, L_SENT, L_RESENT, L_NERR, L_ENDING = (
     56,
     60,
 )
+L_WIN = 64
 DL_IDLE, DL_BUSY, DL_DONE, DL_ERROR, DL_START = 0, 1, 2, 3, 4
-AREA_BYTES = 0x20000
+AREA_WORDS = {"dt2": 131072, "dn2": 81920}  # DL_AREA_WORDS of src/dsp/<dev>.s
 FRAME = 88_000  # ColdFire instructions per DSP block (132 M / 1500)
 TRIG1 = 25
 DN2_NOTE = [
@@ -214,6 +215,7 @@ def peek_link(emu: Any, link: int) -> dict[str, int]:
         "nerr",
         "ending",
         "dirty",
+        "win",
     ]
     return {n: int(emu.peek32(link + 4 * i) or 0) for i, n in enumerate(names)}  # fmt: skip
 
@@ -221,6 +223,7 @@ def peek_link(emu: Any, link: int) -> dict[str, int]:
 def start_request(emu: Any, link: int, buf: int, dst_off: int, nwords: int) -> None:
     """What dl_send stores (modules/core/dsp-link/src/cf/dsp-link.c), written from the host; the state last."""
     emu.poke32(link + L_ERR, 0)
+    emu.poke32(link + L_WIN, 0)
     emu.poke32(link + L_BUF, buf)
     emu.poke32(link + L_DST, dst_off)
     emu.poke32(link + L_NWORDS, nwords)
@@ -358,8 +361,9 @@ def proof(a: argparse.Namespace) -> dict[str, Any]:
                 break
 
         # a forged destination: the DSP refuses it
+        aw = AREA_WORDS[device]
         before = dsp_bytes(
-            emu, area + 4 * 0x7FE0, 192
+            emu, area + 4 * (aw - 32), 192
         )  # the last 32 words of the area and 16 words beyond it
         holder = {}
 
@@ -367,8 +371,8 @@ def proof(a: argparse.Namespace) -> dict[str, Any]:
             if tick == "start":
                 poke_bytes(emu, buf, blob(256, 7))
                 start_request(
-                    emu, link, buf, 0x7FFC, 64
-                )  # the first chunk already ends past the area (0x8000 words)
+                    emu, link, buf, aw - 4, 64
+                )  # the first chunk already ends past the area
                 return
             if "state" not in holder and int(emu.peek32(link + L_STATE) or 0) in (
                 DL_DONE,
@@ -378,7 +382,7 @@ def proof(a: argparse.Namespace) -> dict[str, Any]:
                 holder["link"] = peek_link(emu, link)
 
         rig.note(work / "range.wav", hook_range, total_frames=1200)
-        after = dsp_bytes(emu, area + 4 * 0x7FE0, 192)
+        after = dsp_bytes(emu, area + 4 * (aw - 32), 192)
         check(
             "forged range: the DSP stops the transfer (error 3)",
             holder.get("state") == DL_ERROR and holder["link"]["err"] == 3,

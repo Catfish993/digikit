@@ -3,7 +3,7 @@
 Plan: `docs/plans/digikit-runtime.md` (Phase 5). Design: `docs/design/digikit-registry.md`. Code: `modules/core/dynreg`,
 `modules/core/runtime/src/rs/src/registry.rs`, `packages/patchkit/src/register.rs`, `modules/test/dyn-xslice`, `modules/test/dyn-params`. Lane r2b,
 2026-10-16, one agent, native emulator, Digitakt II 1.16 and 1.17 (stock images; nothing ran on a device). Everything is **[D]** (measured here once; no
-second agent has checked it against the image bytes). Digitone II is not done.
+second agent has checked it against the image bytes). Digitone II and the unload refusal: finding 33.
 
 ## Result
 
@@ -27,7 +27,7 @@ load the machine list shows XSLICE-D after MIDI (a separator between the stock a
 page shows the clone's knobs and the module's own parameter (label SPARE on knob 6); TRIG 1 plays without fault. After the unload (the track keeps type 16)
 the list is the stock list again (frame equal to the one before the load), and the SRC page shows eight empty boxes: **the same frame as a track on
 type 11, a gap row nobody ever filled**. After the reload the SRC page is the machine's again (frame equal to the first). Health (fault, DSP halt, stall) checked after
-every input.
+every input. **[C]** (finding 33) The unload with the track on the machine is now refused (-26), so in the proof the track is put on type 0 for the unload and the type byte is poked back to 16 afterwards (a project that names an unloaded machine); the frames above are unchanged, the reload is followed by a selection through the list, and a refused unload with the track on the machine leaves the same frame.
 
 ## What was found
 
@@ -54,16 +54,14 @@ every input.
 
 ## Open **[O]**
 
-- **Digitone II.** Needs the DN2 machine and page rows (`pages` registry), the DN2 list getter filter and view hook, and a DN2 parameter row spec (the
-  data is in `dynreg_info`; the code names no device). The packer already refuses a DN2 machine that has knobs. Estimated 4 to 8 agent hours; not started.
+- **Digitone II.** Done, see finding 33 (page rows, the list getter hook at `jsr (A3)`, the view hook, a DN2 parameter spec).
 - **Audio of a run-time machine.** The DSP's type -> selector table is part of the DSP image; the selector word of every reserved type is type 0's, so a run-time
   clone of SLICE plays as SAMPLE (the audition ran without fault; PCM not compared). Options in the design note (a reserved row with a fixed selector, or the SHARC
   side of Phase 5 loading selector words).
 - **The view pointer** is kept for as long as the firmware keeps the view (it builds it once, at boot); if a firmware path destroyed the view without building a
   new one, the registry would call the builder on a stale pointer. Not seen; not excluded.
-- **Unloading a machine a track uses** is allowed (the track keeps its type and behaves as on a gap row). Refusing needs a scan of the 16 tracks' type
-  bytes, which is firmware layout and not an anchor yet.
-- Pages, `own_dsp` and `[[voice]]` records; more than 8 machines or 16 parameters; a machine with `position` (list order is fixed at patch time).
+- **Unloading a machine a track uses** is refused since finding 33 (`E_TYPE_IN_USE`, -26; the active kit's 16 tracks, read through three firmware function anchors). A track that holds an unloaded type (a project load, another kit) behaves as on a gap row, as described above.
+- `[[voice]]` records; more than 8 machines or 16 parameters; a machine with `position` (list order is fixed at patch time). Pages and `own_dsp`: finding 33.
 - Hardware: nothing flashed. The registry only writes data (no code, no cache maintenance needed), but the real D-cache and the UI task's use of the
   tables were not exercised outside the emulator.
-- The refusal codes -20 to -24 live in `registry.rs`; they belong in `dkrt-sdk` with the next ABI revision (lane r1 owns that file).
+- The refusal codes are in `dkrt-sdk` since finding 33 (-20 to -26).

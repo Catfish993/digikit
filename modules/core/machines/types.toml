@@ -37,9 +37,11 @@ dynamic_first = 16
 [dt2.dynamic]
 "test/dyn-xslice:xslice_d" = 16
 "test/dyn-params:dynp" = 17
+"test/dyn-pluck:pluck" = 18
 
 [dn2]
 last = 23
+dynamic_first = 16
 
 [dn2.alloc]
 "test/dn2-clone:fmclone" = 5
@@ -47,3 +49,14 @@ last = 23
 "test/dn2-sine:dn2sine" = 7
 "test/dn2-edge:dn2edge" = 8
 "machines/pluck:pluck" = 9
+"core/dynreg:dyn16" = 16
+"core/dynreg:dyn17" = 17
+"core/dynreg:dyn18" = 18
+"core/dynreg:dyn19" = 19
+"core/dynreg:dyn20" = 20
+"core/dynreg:dyn21" = 21
+"core/dynreg:dyn22" = 22
+"core/dynreg:dyn23" = 23
+
+[dn2.dynamic]
+"test/dyn-dn2:dyn_pluck" = 16

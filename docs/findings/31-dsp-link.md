@@ -48,6 +48,8 @@ no struct results. `buf` is read in place until DONE or ERROR. 18 tests in `test
 check the arguments, the chunk format against a Python model, the acknowledgement handling, the 900-block timeout and the
 geometry error on the ColdFire core.
 
+**[C]** The chunk header described next was widened in finding 32 (2026-10-17): `idx` 14 bits, a 2-bit window, `off` 17 bits, `xid` 5 bits, LAST bit 25, END bit 26, so that the area can be 512 KiB and the voices registry is a second window. The numbers of this file were measured with the 15-bit offset and 128 KiB area; the 4 KiB DT2 run was repeated with the new format (11 blocks, byte exact, PCM identical).
+
 **Chunk format** (little-endian DSP words; the ColdFire writes the low halfword first): `w0` = magic `0xD15C` | idx << 16;
 `w1` = off (words from the start of the area, 15 bits) | n (payload words, 8 bits) << 15 | LAST << 23 | END << 24 |
 xid << 25; payload; `check` = s1 xor s2 over all words before it (s1 += w, s2 += s1). A chunk is taken when the magic,

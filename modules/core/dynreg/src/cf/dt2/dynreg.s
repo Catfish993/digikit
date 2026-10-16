@@ -69,7 +69,7 @@ dynreg_empty:
     .globl dynreg_info
 dynreg_info:
     .long   0x44594e52                  |  0 'DYNR'
-    .long   1                           |  4 version
+    .long   2                           |  4 version (2: page, unload words from 200)
     .long   1                           |  8 device (1 = dt2)
     .long   _dr_rows                    | 12 machines.rows
     .long   _dr_row_size                | 16 row size
@@ -108,3 +108,18 @@ dynreg_info:
     .long   0xd1                        | 188 the template of a free reserved parameter row
     .long   dynreg_view                 | 192 address of the variable that holds the machine selection view (0 until it exists)
     .long   _dr_f_build                 | 196 the function that builds that view's items: build(view)
+    .long   0                           | 200 page rows (pages.rows; 0: the device keeps its knobs in the machine row)
+    .long   0                           | 204 page row size
+    .long   0                           | 208 pages.first
+    .long   0                           | 212 index of the first reserved page row
+    .long   0                           | 216 reserved page rows
+    .long   0                           | 220 offset of the page name (std::string chars pointer) in a page row
+    .long   0                           | 224 title
+    .long   0                           | 228 c0 .. c8 (nine parameter codes)
+    .long   0                           | 232 machine (the type the page belongs to)
+    .long   0                           | 236 s0 .. s8 (nine sound-array slots)
+    .long   0                           | 240 the `machine` value of a free page row (no type has it)
+    .long   _dr_f_project               | 244 function: the Project singleton, project() -> d0
+    .long   _dr_f_kit                   | 248 function: kit_of(project) -> the active kit
+    .long   _dr_f_track                 | 252 function: track_type(kit, track) -> the track's machine type (-1: no track)
+    .long   16                          | 256 tracks

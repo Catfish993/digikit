@@ -26,7 +26,8 @@ binary, device, every file's relative path and bytes).
 - **`.mmcfs/projects/NNNN.bin`, `.mmcfs/sounds/NNNN.bin`, `.mmcfs/kits/NNNN.bin`**: raw
   slot contents of the three MmcFs pools, NNNN = the slot index (4 decimal digits; projects
   0 to 127, sounds 0 to 2047, kits 0 to 1023). The builder writes each into its fixed
-  slot and sets its bit in the pool occupancy bitmaps (sector 0x800). A file larger than
+  slot and leaves its write-protect bit clear (the bitmaps at sector 0x800 are padlocks, not occupancy:
+  finding 35). A file larger than
   its slot (DT2: project 16 MiB, sound 4 KiB, kit 64 KiB; DN2: 16 MiB, 1 KiB, 32 KiB) is an
   error. Anything else under `.mmcfs/` is reported and skipped.
 - **`.mmcfs/boot/SSSSSS.bin`**: a raw 16 MiB region outside the pools; SSSSSS is its first sector in hex (the exporter

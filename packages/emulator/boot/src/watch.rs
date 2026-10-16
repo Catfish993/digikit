@@ -77,6 +77,10 @@ pub struct WatchConfig {
     pub out: Option<PathBuf>,
     /// Events written to the log; counting continues past it.
     pub limit: u64,
+    /// Task stacks `[lo, hi)` (high-water mark instrument, `DIGI_STACK_WATCH`): the lowest address a store reached.
+    pub stacks: Vec<(u32, u32)>,
+    /// A store into one of these ranges ends a stack epoch (`DIGI_STACK_WATCH_EPOCH`): the low-water mark is kept per epoch.
+    pub epochs: Vec<(u32, u32)>,
 }
 
 impl Default for WatchConfig {
@@ -88,6 +92,8 @@ impl Default for WatchConfig {
             flush_check: false,
             out: None,
             limit: 100_000,
+            stacks: Vec::new(),
+            epochs: Vec::new(),
         }
     }
 }
@@ -128,7 +134,9 @@ impl WatchConfig {
     /// `DIGI_WRITE_WATCH=LO-HI[,..]` (or `LO+LEN`), `DIGI_WRITE_WATCH_ALLOW_PC=LO-HI[,..]`,
     /// `DIGI_WRITE_WATCH_AFTER=cacr|ICOUNT`, `DIGI_FLUSH_CHECK=1`,
     /// `DIGI_WRITE_WATCH_OUT=PATH` (default `$DIGI_DIAG_DIR/writewatch.jsonl`, else stderr),
-    /// `DIGI_WRITE_WATCH_LIMIT=N`. `Ok(None)` when neither instrument is switched on.
+    /// `DIGI_WRITE_WATCH_LIMIT=N`, `DIGI_STACK_WATCH=LO-HI[,..]` (task stack ranges: lowest store, new lows and per-epoch
+    /// lows in the log and summary), `DIGI_STACK_WATCH_EPOCH=LO-HI[,..]` (a store there ends an epoch).
+    /// `Ok(None)` when no instrument is switched on.
     pub fn from_env() -> Result<Option<Self>, String> {
         fn non_empty(v: Result<String, std::env::VarError>) -> Option<String> {
             v.ok().filter(|v| !v.is_empty())
@@ -138,7 +146,13 @@ impl WatchConfig {
             cfg.ranges = parse_ranges(&v).map_err(|e| format!("DIGI_WRITE_WATCH: {e}"))?;
         }
         cfg.flush_check = non_empty(std::env::var("DIGI_FLUSH_CHECK")).is_some_and(|v| v != "0");
-        if cfg.ranges.is_empty() && !cfg.flush_check {
+        if let Some(v) = non_empty(std::env::var("DIGI_STACK_WATCH")) {
+            cfg.stacks = parse_ranges(&v).map_err(|e| format!("DIGI_STACK_WATCH: {e}"))?;
+        }
+        if let Some(v) = non_empty(std::env::var("DIGI_STACK_WATCH_EPOCH")) {
+            cfg.epochs = parse_ranges(&v).map_err(|e| format!("DIGI_STACK_WATCH_EPOCH: {e}"))?;
+        }
+        if cfg.ranges.is_empty() && !cfg.flush_check && cfg.stacks.is_empty() {
             return Ok(None);
         }
         if let Some(v) = non_empty(std::env::var("DIGI_WRITE_WATCH_ALLOW_PC")) {
@@ -313,7 +327,48 @@ impl std::fmt::Debug for Watch {
     }
 }
 
+/// Low-water mark of one task stack. A stack grows down, so the lowest address any store reached is its high-water use
+/// (a frame reserved but never written is not seen; the reserve is small next to the stack).
+#[derive(Clone, Copy, Debug)]
+struct StackMark {
+    lo: u32,
+    hi: u32,
+    /// Lowest store address, the PC that made it and its instruction count.
+    low: u32,
+    pc: u32,
+    ic: u64,
+    /// Last low written to the log (a new line is written when the low is 64 bytes deeper).
+    logged: u32,
+    /// The same for the current epoch.
+    e_low: u32,
+    e_pc: u32,
+    e_ic: u64,
+    e_start: u64,
+    e_writes: u64,
+}
+
+impl StackMark {
+    fn new(lo: u32, hi: u32) -> Self {
+        Self {
+            lo,
+            hi,
+            low: hi,
+            pc: 0,
+            ic: 0,
+            logged: hi,
+            e_low: hi,
+            e_pc: 0,
+            e_ic: 0,
+            e_start: 0,
+            e_writes: 0,
+        }
+    }
+}
+
 pub(crate) struct Watch {
+    stacks: Vec<StackMark>,
+    /// Closed epochs, as JSON objects, for the summary (at most 512).
+    epoch_rows: Vec<String>,
     cfg: WatchConfig,
     started: bool,
     cacr: u32,
@@ -338,6 +393,7 @@ impl Watch {
                 None
             }
         });
+        let cfg_stacks = cfg.stacks.iter().map(|&(lo, hi)| StackMark::new(lo, hi)).collect();
         Self {
             started: cfg.after == After::Start,
             flush: cfg.flush_check.then(Flush::new),
@@ -348,6 +404,8 @@ impl Watch {
             logged: 0,
             per_pc: BTreeMap::new(),
             per_dma: BTreeMap::new(),
+            stacks: cfg_stacks,
+            epoch_rows: Vec::new(),
             summary_done: false,
             seen: [0; 5],
         }
@@ -379,8 +437,66 @@ impl Watch {
         }
     }
 
+    /// End the stack epoch: write one row per stack that saw a store in it, and start the next.
+    fn close_epoch(&mut self, trigger: u32, icount: u64) {
+        for i in 0..self.stacks.len() {
+            let m = self.stacks[i];
+            if m.e_writes > 0 {
+                let row = format!(
+                    "{{\"stack\":\"{:#010x}\",\"ic0\":{},\"ic1\":{icount},\"trigger\":\"{trigger:#010x}\",\"low\":\"{:#010x}\",\"depth\":{},\"pc\":\"{:#010x}\",\"low_ic\":{},\"writes\":{}}}",
+                    m.lo,
+                    m.e_start,
+                    m.e_low,
+                    m.hi - m.e_low,
+                    m.e_pc,
+                    m.e_ic,
+                    m.e_writes
+                );
+                self.line_out(&format!("{{\"t\":\"stack_epoch\",\"row\":{row}}}"));
+                if self.epoch_rows.len() < 512 {
+                    self.epoch_rows.push(row);
+                }
+            }
+            let m = &mut self.stacks[i];
+            m.e_low = m.hi;
+            m.e_writes = 0;
+            m.e_start = icount;
+        }
+    }
+
+    fn stack_store(&mut self, pc: u32, addr: u32, size: u8, icount: u64) {
+        if self.cfg.epochs.iter().any(|&(lo, hi)| addr < hi && addr.saturating_add(u32::from(size)) > lo) {
+            self.close_epoch(addr, icount);
+        }
+        let n = normalise(addr);
+        for i in 0..self.stacks.len() {
+            let m = &mut self.stacks[i];
+            if n < m.lo || n >= m.hi {
+                continue;
+            }
+            m.e_writes += 1;
+            if n < m.e_low {
+                (m.e_low, m.e_pc, m.e_ic) = (n, pc, icount);
+            }
+            if n < m.low {
+                (m.low, m.pc, m.ic) = (n, pc, icount);
+                if n + 64 <= m.logged {
+                    m.logged = n;
+                    let line = format!(
+                        "{{\"t\":\"stack\",\"ic\":{icount},\"pc\":\"{pc:#010x}\",\"addr\":\"{n:#010x}\",\"depth\":{}}}",
+                        m.hi - n
+                    );
+                    self.line_out(&line);
+                }
+            }
+        }
+    }
+
     pub(crate) fn store(&mut self, pc: u32, addr: u32, size: u8, value: u32, icount: u64) {
         self.tick(icount);
+        if self.started && !self.stacks.is_empty() {
+            self.stack_store(pc, addr, size, icount);
+        }
         if self.started
             && !self.cfg.ranges.is_empty()
             && self.overlaps(addr, u32::from(size))
@@ -554,8 +670,26 @@ impl Watch {
                 )
             })
             .collect();
+        let stacks: Vec<String> = self
+            .stacks
+            .iter()
+            .map(|m| {
+                format!(
+                    "{{\"lo\":\"{:#010x}\",\"hi\":\"{:#010x}\",\"size\":{},\"low\":\"{:#010x}\",\"depth\":{},\"pc\":\"{:#010x}\",\"ic\":{}}}",
+                    m.lo,
+                    m.hi,
+                    m.hi - m.lo,
+                    m.low,
+                    m.hi - m.low,
+                    m.pc,
+                    m.ic
+                )
+            })
+            .collect();
         let text = format!(
-            "{{\"events\":{},\"logged\":{},\"cacr_writes\":{},\"flush_stores_tracked\":{},\"flush_fetches_checked\":{},\"cpushl\":{},\"per_pc\":[{}],\"per_dma\":[{}],\"flush_hits\":[{}]}}",
+            "{{\"stacks\":[{}],\"stack_epochs\":[{}],\"events\":{},\"logged\":{},\"cacr_writes\":{},\"flush_stores_tracked\":{},\"flush_fetches_checked\":{},\"cpushl\":{},\"per_pc\":[{}],\"per_dma\":[{}],\"flush_hits\":[{}]}}",
+            stacks.join(","),
+            self.epoch_rows.join(","),
             self.events,
             self.logged,
             self.seen[0],
@@ -605,6 +739,24 @@ mod tests {
             flush_check: flush,
             ..WatchConfig::default()
         })
+    }
+
+    #[test]
+    fn stack_low_water_is_tracked_per_epoch() {
+        let mut w = Watch::new(WatchConfig {
+            stacks: vec![(0x4096_0000, 0x4098_0000)],
+            epochs: vec![(0x4700_0000, 0x4700_0004)],
+            ..WatchConfig::default()
+        });
+        w.store(0x4000_1000, 0x4097_fff0, 4, 0, 1);
+        w.store(0x4000_1004, 0x4097_ff00, 4, 0, 2);
+        w.store(0x4000_1008, 0x4700_0000, 4, 0, 3); // epoch ends: low 0x100 deep
+        w.store(0x4000_100c, 0x4097_ffc0, 4, 0, 4);
+        w.store(0x4000_1010, 0x4000_0000, 4, 0, 5); // outside the stack
+        assert_eq!((w.stacks[0].low, w.stacks[0].pc), (0x4097_ff00, 0x4000_1004));
+        assert_eq!(w.stacks[0].e_low, 0x4097_ffc0);
+        assert_eq!(w.epoch_rows.len(), 1);
+        assert!(w.epoch_rows[0].contains("\"depth\":256"), "{}", w.epoch_rows[0]);
     }
 
     #[test]

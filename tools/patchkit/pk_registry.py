@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Run-time machines and parameters (core/dynreg + core/runtime registry) in the emulator, DT2.
+"""Run-time machines, parameters and pages (core/dynreg + core/runtime registry) in the emulator, DT2 and DN2.
 
-    uv run python -m tools.patchkit.pk_registry proof [--image dt2-1.16] [--keep DIR] [--control]
+    uv run python -m tools.patchkit.pk_registry proof [--image dt2-1.16|dt2-1.17|dn2-1.11|dn2-1.12] [--keep DIR] [--control] [--quick]
+    uv run python -m tools.patchkit.pk_registry ui [--image ...] [--keep DIR] [--update]
 
 Patches `core/runtime` and `core/dynreg` (so `core/machines`, `core/params`), packs `test/dyn-xslice` (a data-only machine and
 one parameter) and variants that must be refused, builds a card with them in the module store, boots the patched firmware with
@@ -12,6 +13,13 @@ tables are byte for byte unchanged); a good file fills exactly its rows and the 
 same type is refused; unload gives back the rows (list and tables equal the start, but for the pointers of the string
 representations); load and unload again. The write watch covers the rows and tables with the runtime as the only allowed
 writer, and the machines framework's own lazy table builder is listed apart. Prints one JSON report; exit 0 when every check holds.
+
+Digitone II (`test/dyn-dn2`: a machine with `own_dsp`, four parameters and one SYN page): the same list and row checks, plus the
+reserved page row (name, title, nine codes, nine slots, the machine it belongs to) and the parameter rows with the sound-array slot as
+mirror index. Unload refusal (both devices): a stub in free RAM calls the firmware's own functions (the Project singleton, the active
+kit, the sound of track 5) and writes the machine type of that track; the unload is refused (-26) while it holds the module's
+type, nothing changes, and it is accepted once the type is changed. `--quick` runs the shorter script (a subset of the refused
+files, no second reload).
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from tools.patchkit.pk_dkrt import (  # noqa: E402
     be32,
     build_card,
     cmd_ops,
+    cstr,
     patch,
     run_script,
     runtime_ranges,
@@ -49,12 +58,18 @@ E_NO_REGISTRY, E_REG_DEVICE, E_TYPE_RANGE, E_TYPE_USED, E_PARAM_FULL = (
     -23,
     -24,
 )
+E_PAGE_FULL, E_TYPE_IN_USE = -25, -26
 H_SHA, H_REG_OFF = 0x10, 0x90
 FIRST_DYN, N_DYN = 16, 8
-ROW, PF, PREG = 64, 60, 0x1C
+ROW, PF, PREG, PG = 64, 60, 0x1C, 84
 STUB = 0x47FD0000  # six-byte stub that loads a0 and calls the list getter (free RAM below the harness stack)
 SRET = 0x47FD1000
-IMAGES = ("dt2-1.16", "dt2-1.17")
+STUB_TRACK = 0x47FD2000  # stub that reads (and optionally writes) the machine type of a track of the active kit
+# firmware layout (findings 02 and 33): the sound of track t is at kit + 0x6c + t * 0x3c0, an object whose virtual function at
+# vtable + 0x28 returns the record that holds the type byte, at +0xa2 (Digitakt II) or +0xde (Digitone II)
+SOUND_BASE, SOUND_STRIDE, TYPE_OFF = 0x6C, 0x3C0, {"dt2": 0xA2, "dn2": 0xDE}
+BUSY_TRACK = 5
+IMAGES = ("dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12")
 
 
 def anchor(image: str, name: str) -> int:
@@ -103,11 +118,67 @@ def variants(good: bytes) -> dict[str, bytes]:
     return out
 
 
+def track_stub(image: str, track: int, value: int | None) -> bytes:
+    """ColdFire code (free RAM, called by the harness) that returns the machine type of `track` of the active kit in d0, after
+    writing `value` to it when it is not None. It calls the firmware's Project singleton and kit accessor (the anchors the
+    runtime's unload refusal uses) and the sound's own virtual getter, so no heap address is assumed."""
+    dev = image[:3]
+    off = TYPE_OFF[dev]
+    code = bytes.fromhex("4eb9") + struct.pack(
+        ">I", anchor(image, "cf.dynreg.project")
+    )  # jsr project
+    code += bytes.fromhex("2f00")  # move.l d0,-(sp)
+    code += bytes.fromhex("4eb9") + struct.pack(
+        ">I", anchor(image, "cf.dynreg.kit_of")
+    )  # jsr kit_of
+    code += bytes.fromhex("588f")  # addq.l #4,sp
+    code += bytes.fromhex("0680") + struct.pack(
+        ">I", SOUND_BASE + track * SOUND_STRIDE
+    )  # addi.l #sound,d0
+    code += bytes.fromhex(
+        "2f00 2040 2050 2068 0028 4e90 588f 2040".replace(" ", "")
+    )  # push S; a0 = S->vfunc[0x28](S)
+    if value is not None:
+        code += bytes.fromhex("117c") + struct.pack(
+            ">HH", value & 0xFF, off
+        )  # move.b #value,(off,a0)
+    code += bytes.fromhex("7128") + struct.pack(">H", off)  # mvs.b (off,a0),d0
+    code += bytes.fromhex("4e75")
+    return code
+
+
+def track_ops(
+    image: str, tag: str, value: int | None, track: int = BUSY_TRACK
+) -> list[dict]:
+    """Script ops: put the stub in RAM and call it; `<tag>:call` carries the type read back in d0."""
+    code = track_stub(image, track, value)
+    return [
+        {
+            "op": "poke",
+            "addr": hex(STUB_TRACK),
+            "hex": code.hex(),
+            "tag": f"{tag}:stub",
+        },
+        {"op": "call", "pc": hex(STUB_TRACK), "args": [], "tag": f"{tag}:call"},
+    ]
+
+
+def track_type_read(by: dict, tag: str) -> int:
+    """The signed machine type a `track_ops` call returned."""
+    d0 = by[f"{tag}:call"]["d0"] & 0xFF
+    return d0 - 256 if d0 >= 128 else d0
+
+
 def proof(
-    image: str = "dt2-1.16", keep: Path | None = None, control: bool = False
+    image: str = "dt2-1.16",
+    keep: Path | None = None,
+    control: bool = False,
+    quick: bool = False,
 ) -> dict:
     if image not in IMAGES:
         raise ProofError(f"no registry proof for {image}")
+    if image.startswith("dn2"):
+        return proof_dn2(image, keep, control, quick)
     getter_fn, dispatch_fn = (
         anchor(image, "cf.machines.list_entry"),
         anchor(image, "cf.machines.dispatch"),
@@ -230,6 +301,8 @@ def proof(
     script += snapshot("s0") + getter("g0") + dispatch("d0", FIRST_DYN)
     refused = ["wrong-device", "bad-version", "type-low", "type-high", "clone-dyn", "knob-missing-param",
                "knob-not-stock", "position"]  # fmt: skip
+    if quick:
+        refused = ["wrong-device", "type-low", "knob-missing-param", "position"]
     for n in refused:
         script += cmd_ops(rt, 1, f"modules/{n}.dkm", n)
     script += snapshot("s1")
@@ -237,6 +310,14 @@ def proof(
     script += snapshot("s2") + getter("g2") + dispatch("d2", FIRST_DYN)
     script += cmd_ops(rt, 1, "modules/dup.dkm", "dup")
     script += snapshot("s3")
+    # a track of the active kit is on the machine: the unload is refused and changes nothing; with the track on type 0 it works
+    script += track_ops(image, "tk-set", FIRST_DYN)
+    script += (
+        cmd_ops(rt, 2, "test/dyn-xslice", "unload-busy")
+        + snapshot("s3b")
+        + getter("g3b")
+    )
+    script += track_ops(image, "tk-clear", 0)
     script += cmd_ops(rt, 2, "test/dyn-xslice", "unload")
     script += snapshot("s4") + getter("g4") + dispatch("d4", FIRST_DYN)
     script += (
@@ -405,6 +486,19 @@ def proof(
         f"{result('dup')}",
     )
     check("the refused duplicate wrote nothing", same(s2, snap("s3")))
+    check("a track of the active kit holds type 16 (read by the firmware's own accessors)", track_type_read(by, "tk-set") == FIRST_DYN,
+          f"{track_type_read(by, 'tk-set')}")  # fmt: skip
+    check("unload is refused while a track uses the machine (E_TYPE_IN_USE)", result("unload-busy") == E_TYPE_IN_USE,
+          f"{result('unload-busy')}")  # fmt: skip
+    check(
+        "the refused unload changed nothing (rows, tables, list)",
+        same(s2, snap("s3b")) and listing("g3b") == listing("g2"),
+    )
+    check(
+        "the track is back on type 0",
+        track_type_read(by, "tk-clear") == 0,
+        f"{track_type_read(by, 'tk-clear')}",
+    )
     check("unload ok", result("unload") == OK, f"{result('unload')}")
     check(
         "unload gives the rows back (tables equal the start, but for pointers)",
@@ -528,6 +622,427 @@ def proof(
     }  # fmt: skip
 
 
+def variants_dn2(good: bytes) -> dict[str, bytes]:
+    """Edited copies of the DN2 file. Records in order: four PARAMs (0x50), the MACHINE (0x6c), the PAGE (0x60)."""
+    reg = struct.unpack_from(">I", good, H_REG_OFF)[0]
+    mach = 16 + 4 * 0x50 + 8  # body of the machine record
+    page = mach - 8 + 0x6C + 8  # body of the page record
+    out = {}
+
+    def edit(name: str, off: int, val: int) -> None:
+        b = bytearray(good)
+        struct.pack_into(">I", b, reg + off, val)
+        out[name] = resha(bytes(b))
+
+    edit("wrong-device", 8, 1)
+    edit("bad-version", 4, 9)
+    edit("type-low", mach, 9)
+    edit("type-high", mach, 24)
+    edit("clone-dyn", mach + 4, 16)
+    edit("own-dsp-2", mach + 12, 2)
+    edit("position", mach + 8, 3)
+    edit("page-type", page, 17)  # a page for a machine that is not in the file
+    edit(
+        "page-knob-stock", page + 4, 0x200
+    )  # a page knob is a param of the file or empty
+    edit("page-knob-missing", page + 4, 0x8000_0009)
+    edit("page-kind", page - 8, 4)  # a record kind the runtime does not know
+    return out
+
+
+def proof_dn2(
+    image: str, keep: Path | None = None, control: bool = False, quick: bool = False
+) -> dict:
+    """The Digitone II proof: `test/dyn-dn2` (machine with own_dsp, four parameters, one SYN page) through the mailbox."""
+    getter_fn, dispatch_fn = (
+        anchor(image, "cf.machines.list_entry"),
+        anchor(image, "cf.machines.dispatch"),
+    )
+    device = image[:3]
+    syx_stock = config.stock(DEVICE_SYX[image])
+    tools = Tools()
+    work = keep or Path(tempfile.mkdtemp(prefix="pk-registry-dn2-"))
+    work.mkdir(parents=True, exist_ok=True)
+    folder = work / "plus_drive"
+    mods = folder / "digikit" / "modules"
+    mods.mkdir(parents=True, exist_ok=True)
+    patched = work / f"{image}-registry.syx"
+    plan = patch(tools, syx_stock, patched, "core/runtime,core/dynreg")
+    rt = runtime_ranges(plan)
+    good = mods / "dyn-dn2.dkm"
+    tools.patchkit_run("pack", "test/dyn-dn2", "--device", device, "-o", good)
+    tools.patchkit_run(
+        "pack",
+        "test/dyn-dn2",
+        "--device",
+        device,
+        "--name",
+        "test/dyn-dn2-2",
+        "-o",
+        mods / "dup.dkm",
+    )
+    for name, data in variants_dn2(good.read_bytes()).items():
+        (mods / f"{name}.dkm").write_bytes(data)
+    card = work / f"{device}.img"
+    build_card(tools, folder, card, syx_stock, device)
+
+    st = rt["state"]
+    o = "core/machines"
+    rows, rows_n = sym(plan, o, "machines.rows"), sym(plan, o, "machines.count")
+    names, permit = sym(plan, o, "mf_names"), sym(plan, o, "mf_permit")
+    first = sym(plan, o, "machines.first")
+    pgrows, pgn = sym(plan, o, "pages.rows"), sym(plan, o, "pages.count")
+    pg0 = sym(plan, "core/dynreg", "pages.dpg0.index") - sym(plan, o, "pages.first")
+    pf = sym(plan, "core/params", "pf_table")
+    pfirst = sym(plan, "core/params", "params.first")
+    preg = sym(plan, "core/params", "params.rows")
+    reg_state = sym(plan, "core/runtime", "DKRT_REG")
+    info = sym(plan, "core/dynreg", "dynreg_info")
+    row16 = rows + (FIRST_DYN - first) * ROW
+    dp0 = sym(plan, "core/dynreg", "params.dp0.index")
+    assert dp0 == pfirst
+    ntypes = first + rows_n
+    code_ranges = {
+        owner: [tuple(r) for w in plan["writes"] if w["kind"] == "place" and w["owner"].startswith(owner + "@")
+                for r in w.get("code", [])]
+        for owner in ("core/runtime", "core/machines", "core/params", "core/dynreg")
+    }  # fmt: skip
+    watch = [(rows, rows + rows_n * ROW), (names, names + 12 * ntypes), (permit, permit + 4 * ntypes),
+             (pf + PF * pfirst, pf + PF * (pfirst + 16)), (preg, preg + PREG * 16),
+             (pgrows, pgrows + pgn * PG)]  # fmt: skip
+    allow = list(code_ranges["core/runtime"])
+    env = {
+        "DIGI_FLUSH_CHECK": "1",
+        "DIGI_WRITE_WATCH": ",".join(f"{a:x}-{b:x}" for a, b in watch),
+        "DIGI_WRITE_WATCH_ALLOW_PC": "40000000-40000001" if control else ",".join(f"{a:x}-{b:x}" for a, b in allow),
+        "DIGI_WRITE_WATCH_AFTER": "cacr",
+        "DIGI_WRITE_WATCH_OUT": str(work / "ww.jsonl"),
+    }  # fmt: skip
+
+    def peek(tag: str, addr: int, n: int) -> dict:
+        return {"op": "peek", "addr": hex(addr), "len": n, "tag": tag}
+
+    def snapshot(tag: str) -> list[dict]:
+        return [
+            peek(f"{tag}:rows", rows, rows_n * ROW),
+            peek(f"{tag}:names", names, 12 * ntypes),
+            peek(f"{tag}:permit", permit, 4 * ntypes),
+            peek(f"{tag}:pf", pf + PF * pfirst, PF * 16),
+            peek(f"{tag}:preg", preg, PREG * 16),
+            peek(f"{tag}:pages", pgrows, pgn * PG),
+            peek(f"{tag}:reg", reg_state, 16),
+        ]
+
+    def getter(tag: str) -> list[dict]:
+        code = (
+            bytes.fromhex("41f9") + struct.pack(">I", SRET) + bytes.fromhex("4eb9")
+            + struct.pack(">I", getter_fn) + bytes.fromhex("4e75")
+        )  # fmt: skip
+        return [
+            {"op": "poke", "addr": hex(STUB), "hex": code.hex(), "tag": f"{tag}:stub"},
+            {"op": "call", "pc": hex(STUB), "args": [], "tag": f"{tag}:call"},
+            peek(f"{tag}:vec", SRET, 12),
+            {
+                "op": "peek",
+                "addr": hex(SRET),
+                "len": 60,
+                "ptr": True,
+                "tag": f"{tag}:elems",
+            },
+        ]
+
+    def dispatch(tag: str, t: int) -> list[dict]:
+        return [
+            {"op": "call", "pc": hex(dispatch_fn), "args": [t], "tag": f"{tag}:call"}
+        ]
+
+    def strings(tag: str) -> list[dict]:
+        """Follow the page's name and title pointers and the first parameter's name pointer."""
+        prow = pgrows + (pg0) * PG
+        return [
+            {"op": "peek", "addr": hex(prow), "len": 16, "ptr": True, "tag": f"{tag}:pname"},
+            {"op": "peek", "addr": hex(prow + 4), "len": 16, "ptr": True, "tag": f"{tag}:ptitle"},
+            {"op": "peek", "addr": hex(pf + PF * pfirst + 40), "len": 16, "ptr": True, "tag": f"{tag}:p0name"},
+        ]  # fmt: skip
+
+    view_var = sym(plan, "core/dynreg", "dynreg_view")
+    script: list[dict] = [{"op": "run", "insns": 30_000_000, "tag": "settle"},
+                          peek("info", info, 264), peek("state0", st, 16), peek("view0", view_var, 4)]  # fmt: skip
+    script += snapshot("s0") + getter("g0") + dispatch("d0", FIRST_DYN)
+    refused = ["wrong-device", "bad-version", "type-low", "type-high", "clone-dyn", "own-dsp-2", "position",
+               "page-type", "page-knob-stock", "page-knob-missing", "page-kind"]  # fmt: skip
+    if quick:
+        refused = [
+            "wrong-device",
+            "type-low",
+            "own-dsp-2",
+            "page-type",
+            "page-knob-missing",
+        ]
+    for n in refused:
+        script += cmd_ops(rt, 1, f"modules/{n}.dkm", n)
+    script += snapshot("s1")
+    script += cmd_ops(rt, 1, "modules/dyn-dn2.dkm", "load")
+    script += snapshot("s2") + getter("g2") + dispatch("d2", FIRST_DYN) + strings("s2")
+    script += cmd_ops(rt, 1, "modules/dup.dkm", "dup")
+    script += snapshot("s3")
+    script += track_ops(image, "tk-set", FIRST_DYN)
+    script += (
+        cmd_ops(rt, 2, "test/dyn-dn2", "unload-busy") + snapshot("s3b") + getter("g3b")
+    )
+    script += track_ops(image, "tk-clear", 0)
+    script += cmd_ops(rt, 2, "test/dyn-dn2", "unload")
+    script += snapshot("s4") + getter("g4") + dispatch("d4", FIRST_DYN)
+    if not quick:
+        script += (
+            cmd_ops(rt, 1, "modules/dyn-dn2.dkm", "load2")
+            + snapshot("s5")
+            + getter("g5")
+        )
+        script += (
+            cmd_ops(rt, 2, "test/dyn-dn2", "unload2") + snapshot("s6") + getter("g6")
+        )
+    script += [
+        {"op": "run", "insns": 5_000_000, "tag": "end"},
+        peek("stateE", st, 1256),
+    ]
+    out = run_script(
+        tools, patched, plan["base"]["syx_sha256"], card, script, env, work
+    )
+    by = {r["tag"]: r for r in out if r.get("tag")}
+    raw = lambda tag: bytes.fromhex(by[tag]["hex"])  # noqa: E731
+    checks: list[tuple[str, bool, str]] = []
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks.append((name, bool(ok), detail))
+
+    def snap(tag: str) -> dict[str, bytes]:
+        return {
+            k: raw(f"{tag}:{k}")
+            for k in ("rows", "names", "permit", "pf", "preg", "pages")
+        }
+
+    def same(a: dict[str, bytes], b: dict[str, bytes], mask: bool = False) -> bool:
+        """Equal tables; `mask` ignores the pointers that differ after a give-back (representations, name pointers)."""
+        if not mask:
+            return a == b
+        ra, rb = bytearray(a["rows"]), bytearray(b["rows"])
+        pa, pb = bytearray(a["pf"]), bytearray(b["pf"])
+        ga, gb = bytearray(a["preg"]), bytearray(b["preg"])
+        qa, qb = bytearray(a["pages"]), bytearray(b["pages"])
+        r0 = (FIRST_DYN - first) * ROW
+        for buf in (ra, rb):
+            for off in (0, 4, 56, 60):
+                for k in range(N_DYN):
+                    buf[r0 + k * ROW + off : r0 + k * ROW + off + 4] = bytes(4)
+        for buf in (pa, pb):
+            for k in range(16):
+                for off in (40, 48):
+                    buf[k * PF + off : k * PF + off + 4] = bytes(4)
+        for buf in (ga, gb):
+            for k in range(16):
+                buf[k * PREG : k * PREG + 8] = bytes(8)
+        for buf in (qa, qb):
+            for k in range(N_DYN):
+                buf[(pg0 + k) * PG : (pg0 + k) * PG + 8] = bytes(8)
+        nm_a, nm_b = bytearray(a["names"]), bytearray(b["names"])
+        for buf in (nm_a, nm_b):
+            for t in range(FIRST_DYN, ntypes):
+                buf[12 * t : 12 * t + 8] = bytes(8)
+        return (ra, pa, ga, qa, nm_a, a["permit"]) == (
+            rb,
+            pb,
+            gb,
+            qb,
+            nm_b,
+            b["permit"],
+        )
+
+    def result(tag: str) -> int:
+        return sbe32(raw(f"{tag}:result"), 0)
+
+    def listing(tag: str) -> list[int]:
+        v = raw(f"{tag}:vec")
+        n = (be32(v, 4) - be32(v, 0)) // 4
+        e = raw(f"{tag}:elems")
+        return [be32(e, 4 * i) for i in range(n)]
+
+    def text(tag: str) -> str:
+        return cstr(raw(tag))
+
+    inf = raw("info")
+    check("dynreg_info present (version 2, Digitone II)", be32(inf, 0) == 0x44594E52 and be32(inf, 4) == 2 and be32(inf, 8) == 2
+          and be32(inf, 12) == rows and be32(inf, 200) == pgrows and be32(inf, 80) == pf,
+          f"magic {be32(inf, 0):#x} version {be32(inf, 4)} rows {be32(inf, 12):#x}")  # fmt: skip
+    check("runtime started", be32(raw("state0"), 0) == 0x444B5254)
+    check("the machine selection view exists after boot, before any panel input (the view hook saw it)", be32(raw("view0"), 0) != 0,
+          f"{be32(raw('view0'), 0):#x}")  # fmt: skip
+    want = {"wrong-device": E_REG_DEVICE, "bad-version": E_FORMAT, "type-low": E_TYPE_RANGE, "type-high": E_TYPE_RANGE,
+            "clone-dyn": E_TYPE_RANGE, "own-dsp-2": E_FORMAT, "position": E_FORMAT, "page-type": E_FORMAT,
+            "page-knob-stock": E_FORMAT, "page-knob-missing": E_FORMAT, "page-kind": E_FORMAT}  # fmt: skip
+    for n in refused:
+        check(
+            f"refused: {n}", result(n) == want[n], f"result {result(n)}, want {want[n]}"
+        )
+    check(
+        "refused files wrote nothing to the rows and tables",
+        same(snap("s0"), snap("s1")),
+    )
+    g = {
+        t: listing(t)
+        for t in (
+            ("g0", "g2", "g3b", "g4")
+            if quick
+            else ("g0", "g2", "g3b", "g4", "g5", "g6")
+        )
+    }
+    check(
+        "list getter ran",
+        all(by[f"{t}:call"]["ok"] for t in g),
+        str({t: by[f"{t}:call"]["ok"] for t in g}),
+    )
+    check(
+        "before: the list is the built-in machines only (no reserved type)",
+        sorted(g["g0"]) == list(range(first)),
+        f"{g['g0']}",
+    )
+    check(
+        "after load: the list gains type 16, last",
+        g["g2"] == g["g0"] + [FIRST_DYN],
+        f"{g['g2']}",
+    )
+    check(
+        "after unload: the list is the start again",
+        g["g4"] == g["g0"] and (quick or (g["g6"] == g["g0"] and g["g5"] == g["g2"])),
+        f"{g['g4']}",
+    )
+    check("load ok", result("load") == OK, f"result {result('load')}")
+    s0, s2 = snap("s0"), snap("s2")
+    r0 = (FIRST_DYN - first) * ROW
+    row = s2["rows"][r0 : r0 + ROW]
+    check("row 16: clone_of 0, own_dsp 1, listed at the end", be32(row, 44) == 0 and be32(row, 52) == 1 and be32(row, 48) == 255,
+          f"clone {be32(row, 44)} own {be32(row, 52)} pos {be32(row, 48)}")  # fmt: skip
+    check("only row 16 of the machine rows changed",
+          all(s0["rows"][i * ROW : (i + 1) * ROW] == s2["rows"][i * ROW : (i + 1) * ROW] for i in range(rows_n) if i != FIRST_DYN - first), "")  # fmt: skip
+    check("names and permission tables: only entry 16 changed",
+          all(s0["names"][12 * t : 12 * t + 12] == s2["names"][12 * t : 12 * t + 12] for t in range(ntypes) if t != FIRST_DYN)
+          and s0["permit"][:4 * FIRST_DYN] == s2["permit"][:4 * FIRST_DYN] and s2["permit"][4 * FIRST_DYN : 4 * FIRST_DYN + 4] == s2["permit"][:4], "")  # fmt: skip
+    check(
+        "the dispatch descriptor of type 16 is its row",
+        by["d2:call"]["d0"] == row16,
+        f"{by['d2:call']['d0']:#x} vs {row16:#x}",
+    )
+    # the page row
+    pgr = s2["pages"][pg0 * PG : (pg0 + 1) * PG]
+    codes = [be32(pgr, 8 + 4 * i) for i in range(9)]
+    slots = [be32(pgr, 48 + 4 * i) for i in range(9)]
+    check("page row 0: machine 16, knobs A..D are the module's parameters, level 10", be32(pgr, 44) == FIRST_DYN
+          and codes == [dp0, dp0 + 1, dp0 + 2, dp0 + 3, 0, 0, 0, 0, 10], f"machine {be32(pgr, 44)} codes {[hex(c) for c in codes]}")  # fmt: skip
+    check(
+        "page row 0: slots 25 .. 28, then none",
+        slots == [25, 26, 27, 28, 0, 0, 0, 0, 0],
+        f"{slots}",
+    )
+    check("page row 0: name DYN, title Dyn Synth", text("s2:pname") == "DYN" and text("s2:ptitle") == "Dyn Synth",
+          f"{text('s2:pname')!r} {text('s2:ptitle')!r}")  # fmt: skip
+    check("only page row 0 of the reserved page rows changed",
+          all(s0["pages"][i * PG : (i + 1) * PG] == s2["pages"][i * PG : (i + 1) * PG] for i in range(pgn) if i != pg0)
+          and all(be32(s0["pages"], i * PG + 44) == 0x7FFFFFFF for i in range(pg0, pg0 + N_DYN)), "")  # fmt: skip
+    pfr = [s2["pf"][i * PF : (i + 1) * PF] for i in range(4)]
+    check("parameter rows 0 .. 3: the sound-array slot as mirror index, ranges", all(be32(pfr[i], 4) == 25 + i for i in range(4))
+          and [(be32(r, 8), be32(r, 12), be32(r, 16)) for r in pfr] == [(0, 0x7F00, 0x2000), (0, 0x3F00, 0x1000), (0x100, 0x7F00, 0x7000), (0, 0x7F00, 0x4000)],
+          f"{[[hex(be32(r, 4 * i)) for i in range(5)] for r in pfr][:2]}")  # fmt: skip
+    check(
+        "parameter row 0 name is the module's text",
+        text("s2:p0name") == "Dyn Alpha",
+        f"{text('s2:p0name')!r}",
+    )
+    check(
+        "parameter registry rows: template 0xd5, slots",
+        all(
+            be32(s2["preg"], PREG * i + 8) == 0xD5
+            and be32(s2["preg"], PREG * i + 12) == 25 + i
+            for i in range(4)
+        ),
+    )
+    check(
+        "a second file with the same type is refused (E_TYPE_USED)",
+        result("dup") == E_TYPE_USED,
+        f"{result('dup')}",
+    )
+    check("the refused duplicate wrote nothing", same(s2, snap("s3")))
+    check("a track of the active kit holds type 16 (read by the firmware's own accessors)", track_type_read(by, "tk-set") == FIRST_DYN,
+          f"{track_type_read(by, 'tk-set')}")  # fmt: skip
+    check(
+        "unload is refused while a track uses the machine (E_TYPE_IN_USE)",
+        result("unload-busy") == E_TYPE_IN_USE,
+        f"{result('unload-busy')}",
+    )
+    check(
+        "the refused unload changed nothing (rows, tables, pages, list)",
+        same(s2, snap("s3b")) and listing("g3b") == listing("g2"),
+    )
+    check(
+        "the track is back on type 0",
+        track_type_read(by, "tk-clear") == 0,
+        f"{track_type_read(by, 'tk-clear')}",
+    )
+    check("unload ok", result("unload") == OK, f"{result('unload')}")
+    check(
+        "unload gives the rows back (tables equal the start, but for pointers)",
+        same(s0, snap("s4"), mask=True),
+    )
+    if not quick:
+        check(
+            "reload works, second unload works",
+            result("load2") == OK and result("unload2") == OK,
+            f"{result('load2')} {result('unload2')}",
+        )
+        check(
+            "after the second unload the tables equal the start again",
+            same(s0, snap("s6"), mask=True),
+        )
+        check("the same rows after reload as after the first load", snap("s5")["rows"] == s2["rows"] and snap("s5")["pf"] == s2["pf"]
+              and snap("s5")["pages"][pg0 * PG + 8 : (pg0 + 1) * PG] == s2["pages"][pg0 * PG + 8 : (pg0 + 1) * PG])  # fmt: skip
+    summary = json.loads((work / "ww.summary.json").read_text())
+    per_pc = summary.get("per_pc", [])
+
+    def owner_of(pc: int) -> str:
+        for name, rs in code_ranges.items():
+            if any(a <= pc < b for a, b in rs):
+                return name
+        return "other"
+
+    by_owner: dict[str, int] = {}
+    for p in per_pc:
+        ow = owner_of(int(p["pc"], 16))
+        by_owner[ow] = by_owner.get(ow, 0) + p["count"]
+    foreign = {k: v for k, v in by_owner.items() if k != "core/machines"}
+    if control:
+        check(
+            "control: with the runtime not allowed, the watch sees its writes",
+            by_owner.get("core/runtime", 0) > 0,
+            f"{by_owner}",
+        )
+    else:
+        check(
+            "write-watch: no write into the rows by anything but the runtime and the machines table builder",
+            not foreign,
+            f"{foreign}",
+        )
+    check(
+        "flush check: 0 hits",
+        summary["flush_hits"] == [],
+        f"{summary['flush_hits'][:2]}",
+    )
+    return {
+        "image": image, "work": str(work), "ok": all(c[1] for c in checks), "quick": quick,
+        "checks": [{"name": a, "ok": b, "detail": c} for a, b, c in checks],
+        "write_watch": {"events": summary["events"], "by_owner": by_owner, "flush_hits": summary["flush_hits"], "cpushl": summary["cpushl"]},
+        "lists": g,
+    }  # fmt: skip
+
+
 # ---- the panel: the machine list as the firmware draws it, a track, unload -------------------------------------------------------
 
 TRACK_OBJ_WORD = 0x4265338C  # the type byte is the third byte of this word (finding 02)
@@ -565,9 +1080,14 @@ def ui_proof(
     rows = sym(plan, "core/machines", "machines.rows")
     first = sym(plan, "core/machines", "machines.first")
     row16 = rows + (FIRST_DYN - first) * ROW
-    tools.patchkit_run(
-        "pack", "test/dyn-xslice", "--device", device, "-o", mods / "xslice-d.dkm"
+    dn2 = device == "dn2"
+    module, dkm = (
+        ("test/dyn-dn2", "dyn-dn2.dkm") if dn2 else ("test/dyn-xslice", "xslice-d.dkm")
     )
+    tools.patchkit_run("pack", module, "--device", device, "-o", mods / dkm)
+    dn2_card = work / f"{device}.img"
+    if dn2:
+        build_card(tools, folder, dn2_card, syx_stock, device)
 
     class UiSession(H.Session):
         def open(
@@ -585,7 +1105,10 @@ def ui_proof(
                 env=self.env,
             )
             self.emu.subscribe()
-            self.card = self.emu.call("card.load", dir=str(folder))["card"]
+            if dn2:  # `card.load` seeds a project, which only the Digitakt II 1.16 image supports: use a built card image
+                self.card = str(dn2_card)
+            else:
+                self.card = self.emu.call("card.load", dir=str(folder))["card"]
             self.load(image)
 
     goldens = H.Goldens(FRAMES)
@@ -636,6 +1159,142 @@ def ui_proof(
         s.reset()
         s.run_ms(1500)
 
+    if dn2:
+        # Digitone II: the list gains DYNSYN after MIDI; YES puts it on track 1; the SYN page is the machine's own page; the unload
+        # is refused while the track uses it; with another machine on the track the unload works and the list is the stock list.
+        pgrows = sym(plan, "core/machines", "pages.rows")
+        pg0 = sym(plan, "core/dynreg", "pages.dpg0.index") - sym(
+            plan, "core/machines", "pages.first"
+        )
+        stock_n = first  # built-in machines
+
+        def page_machine() -> int:
+            return tword(pgrows + pg0 * PG + 44)
+
+        def syn_page(name: str) -> None:
+            s.do_tap("SYN")
+            s.run_ms(400)
+            s.expect_frame(name)
+
+        def choose(downs: int, ups: int = 0) -> None:
+            s.do_tap(["FUNC", "SRC"])
+            s.run_ms(250)
+            for _ in range(ups):
+                s.do_tap("UP")
+                s.run_ms(80)
+            for _ in range(downs):
+                s.do_tap("DOWN")
+                s.run_ms(80)
+
+        try:
+            s.open(patched)
+            s.segment = "ui"
+            fresh()
+            view_var = sym(plan, "core/dynreg", "dynreg_view")
+            view0 = tword(view_var)
+            syn_page("syn-page-stock")
+            choose(stock_n - 1)
+            s.expect_frame("list-before-load")
+            close_list(False)
+            # control: without the view the registry cannot rebuild the list the view caches, so the loaded machine is not in it
+            s.emu.poke32(view_var, 0)
+            r = mailbox(1, f"modules/{dkm}")
+            check("control: load with the view unknown to the registry", r == 0, f"{r}")
+            s.run_ms(200)
+            choose(stock_n)
+            s.expect_frame("list-control-no-rebuild")
+            close_list(False)
+            check(
+                "control: the list (cached by the view) does not show the loaded machine",
+                s.frames.get("ui/list-control-no-rebuild")
+                == s.frames.get("ui/list-before-load"),
+            )
+            s.emu.poke32(view_var, view0)
+            r = mailbox(2, "test/dyn-dn2")
+            check("control: unload", r == 0, f"{r}")
+            r = mailbox(1, f"modules/{dkm}")
+            check("load through the mailbox", r == 0, f"{r}")
+            check(
+                "page row 0 belongs to type 16",
+                page_machine() == FIRST_DYN,
+                f"{page_machine():#x}",
+            )
+            s.run_ms(200)
+            choose(stock_n)
+            check("the machine selection view is the one built at boot (opening the list does not build another)", view0 != 0 and tword(view_var) == view0,
+                  f"{view0:#x} {tword(view_var):#x}")  # fmt: skip
+            s.expect_frame("list-with-dyn")
+            check(
+                "the list shows the new machine",
+                s.frames.get("ui/list-with-dyn") != s.frames.get("ui/list-before-load"),
+            )
+            close_list(True)
+            s.run_ms(300)
+            syn_page("syn-page-dyn")
+            check(
+                "the SYN page is the machine's own page",
+                s.frames.get("ui/syn-page-dyn") != s.frames.get("ui/syn-page-stock"),
+            )
+            s.do_hold("TRIG 1", 300)
+            s.run_ms(500)
+            s.health("trig on the run-time machine")
+            r = mailbox(2, "test/dyn-dn2")
+            check(
+                "unload with a track on the machine is refused (E_TYPE_IN_USE)",
+                r == E_TYPE_IN_USE,
+                f"{r}",
+            )
+            check("the page is still bound to its machine", page_machine() == FIRST_DYN)
+            s.run_ms(200)
+            syn_page("syn-page-after-refused-unload")
+            check(
+                "the SYN page is unchanged after the refused unload",
+                s.frames.get("ui/syn-page-after-refused-unload")
+                == s.frames.get("ui/syn-page-dyn"),
+            )
+            # change the track's machine through the list (the first entry), then the unload works
+            choose(0, ups=stock_n + 1)
+            close_list(True)
+            s.run_ms(300)
+            syn_page("syn-page-first-machine")
+            r = mailbox(2, "test/dyn-dn2")
+            check("unload works once the track uses another machine", r == 0, f"{r}")
+            check(
+                "page row 0 is free again",
+                page_machine() == 0x7FFFFFFF,
+                f"{page_machine():#x}",
+            )
+            s.run_ms(300)
+            s.health("after unload")
+            choose(stock_n - 1)
+            s.expect_frame("list-after-unload")
+            check(
+                "after the unload the list is the stock list",
+                s.frames.get("ui/list-after-unload")
+                == s.frames.get("ui/list-before-load"),
+            )
+            close_list(False)
+            # load again: the machine is back
+            r = mailbox(1, f"modules/{dkm}")
+            check("reload", r == 0, f"{r}")
+            s.run_ms(200)
+            choose(stock_n)
+            close_list(True)
+            s.run_ms(300)
+            syn_page("syn-page-reloaded")
+            check("after the reload the SYN page is the machine's again", s.frames.get("ui/syn-page-reloaded") == s.frames.get("ui/syn-page-dyn"),
+                  f"{s.frames.get('ui/syn-page-reloaded', '')[:12]} {s.frames.get('ui/syn-page-dyn', '')[:12]}")  # fmt: skip
+            s.health("end")
+            for c in s.checks:
+                checks.append((f"harness/{c.name}", c.ok, c.detail))
+        finally:
+            s.close()
+            if update:
+                goldens.save()
+        return {"image": image, "work": str(work), "ok": all(c[1] for c in checks),
+                "checks": [{"name": a, "ok": b, "detail": c} for a, b, c in checks],
+                "frames": s.frames, "frame_dir": str(H.OUT / "frames" / cell.slug)}  # fmt: skip
+
     try:
         s.open(patched)
         s.segment = "ui"
@@ -666,9 +1325,13 @@ def ui_proof(
         s.do_hold("TRIG 1", 300)
         s.run_ms(500)
         s.health("audition of the run-time machine")
-        # unload while a track has the machine
+        # unload (the track is on type 0 for it: the runtime refuses to give back a machine a track uses, see the end)
+        word = tword(TRACK_OBJ_WORD)
+        s.emu.poke32(TRACK_OBJ_WORD, word & ~0xFF00)
+        s.run_ms(200)
         r = mailbox(2, "test/dyn-xslice")
         check("unload through the mailbox", r == 0, f"{r}")
+        s.emu.poke32(TRACK_OBJ_WORD, word)  # a project that names the unloaded machine
         check(
             "row 16 free again (empty name), clone of type 0",
             tword(tword(row16 + 56)) >> 24 == 0 and tword(row16 + 44) == 0,
@@ -685,21 +1348,61 @@ def ui_proof(
         s.expect_frame("list-after-unload")
         close_list(False)
         # a gap row for comparison: type 11 was never filled
-        word = tword(TRACK_OBJ_WORD)
         s.emu.poke32(TRACK_OBJ_WORD, (word & ~0xFF00) | (11 << 8))
         s.run_ms(300)
         s.health("track on a gap row")
         s.expect_frame("src-page-gap-row")
         check("the unloaded machine looks like a gap row on the SRC page", s.frames.get("ui/src-page-after-unload") == s.frames.get("ui/src-page-gap-row"),
               f"{s.frames.get('ui/src-page-after-unload', '')[:12]} {s.frames.get('ui/src-page-gap-row', '')[:12]}")  # fmt: skip
-        # load again: the machine is back, the track with type 16 uses it
-        s.emu.poke32(TRACK_OBJ_WORD, (word & ~0xFF00) | (FIRST_DYN << 8))
+        # load again and put the machine on the track through the list: the SRC page is the machine's again
+        s.emu.poke32(TRACK_OBJ_WORD, word & ~0xFF00)
+        s.run_ms(200)
         r = mailbox(1, "modules/xslice-d.dkm")
         check("reload", r == 0, f"{r}")
+        s.run_ms(200)
+        open_list(7)
+        close_list(True)
+        check(
+            "YES selects it again: track 1 has type 16",
+            type_now() == FIRST_DYN,
+            f"{type_now()}",
+        )
         s.run_ms(300)
         s.expect_frame("src-page-reloaded")
         check("after the reload the SRC page is the machine's again", s.frames.get("ui/src-page-reloaded") == s.frames.get("ui/src-page-xslice-d"),
               f"{s.frames.get('ui/src-page-reloaded', '')[:12]} {s.frames.get('ui/src-page-xslice-d', '')[:12]}")  # fmt: skip
+        # the track is on the machine: the unload is refused and nothing changes
+        r = mailbox(2, "test/dyn-xslice")
+        check(
+            "unload with a track on the machine is refused (E_TYPE_IN_USE)",
+            r == E_TYPE_IN_USE,
+            f"{r}",
+        )
+        check(
+            "the machine is still listed and the track still plays it",
+            tword(tword(row16 + 56)) >> 24 == ord("X") and type_now() == FIRST_DYN,
+        )
+        s.run_ms(200)
+        s.expect_frame("src-page-after-refused-unload")
+        check(
+            "the SRC page is unchanged after the refused unload",
+            s.frames.get("ui/src-page-after-refused-unload")
+            == s.frames.get("ui/src-page-xslice-d"),
+        )
+        # change the track's machine through the list (the first entry), then the unload works
+        s.do_tap(["FUNC", "SRC"])
+        s.run_ms(250)
+        for _ in range(8):
+            s.do_tap("UP")
+            s.run_ms(80)
+        close_list(True)
+        check(
+            "the track is on a built-in machine",
+            type_now() != FIRST_DYN,
+            f"{type_now()}",
+        )
+        r = mailbox(2, "test/dyn-xslice")
+        check("unload works once the track uses another machine", r == 0, f"{r}")
         s.health("end")
         for c in s.checks:
             checks.append((f"harness/{c.name}", c.ok, c.detail))
@@ -719,6 +1422,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--image", default="dt2-1.16")
     p.add_argument("--keep", type=Path)
     p.add_argument("--control", action="store_true")
+    p.add_argument(
+        "--quick",
+        action="store_true",
+        help="the shorter script: a subset of the refused files, no second reload",
+    )
     u = sub.add_parser("ui", help="the panel: list, select, unload (coupled daemon)")
     u.add_argument("--image", default="dt2-1.16")
     u.add_argument("--keep", type=Path)
@@ -728,7 +1436,7 @@ def main(argv: list[str] | None = None) -> int:
         rep = ui_proof(a.image, a.keep, a.update)
         print(json.dumps(rep, indent=1))
         return 0 if rep["ok"] else 1
-    rep = proof(a.image, a.keep, a.control)
+    rep = proof(a.image, a.keep, a.control, a.quick)
     print(json.dumps(rep, indent=1))
     return 0 if rep["ok"] else 1
 

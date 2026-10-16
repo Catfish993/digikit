@@ -21,7 +21,7 @@ YES, 3 s).
 - **The MmcFs occupancy bitmaps (sector `0x800`) are not updated by a panel save** (no write to that sector in 20 s of
   emulated time). The callers of the bit setters are the factory format and slot erase (`FUN_40131282`, `FUN_401302ee`), not
   the save. The exporter therefore decides occupancy from the slot content (first sector neither all zero nor all `0xFF`) and
-  reports a set bit on an empty slot. **[O]** What the bit polarity means (`FUN_40130484` toggles, `FUN_401303a8` sets where
+  reports a set bit on an empty slot. **[C]** Finding 35: the bits are write-protect flags (set = padlock) and the save path only reads them. Earlier open text: What the bit polarity means (`FUN_40130484` toggles, `FUN_401303a8` sets where
   a callback returns 0) and whether the firmware reads the bitmap on load (a project saved this way was not loaded again in
   the emulator here).
 

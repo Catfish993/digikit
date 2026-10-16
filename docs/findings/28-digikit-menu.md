@@ -2,6 +2,11 @@
 
 **Update 2026-10-16 (lane r1, second pass): the menu now calls the real runtime and loads and unloads from the list; see "Joined to the runtime" at the end. The sections below describe the first pass, where a stand-in runtime and the table `DKRT_API` were used; that table and `test/digikit-rt-stub` no longer exist [C].**
 
+**Update 2026-10-17 (lane r1, third pass; finding 34): the list now has a separate UNLOAD row, an error popup made with the firmware's own
+PopupWindow, the file name in the failure text, a text for every result code (unknown ones as `ERROR <n>`), a loading state for
+asynchronous loads, and greyed `[-]` rows for modules built for the other device or a newer runtime. Ticks only select: LOAD loads, UNLOAD unloads,
+a loaded module no longer starts ticked [C]. The stack question of "Still open" is answered: the UI task has 160 KiB and a load used 3.3 KiB (finding 34).**
+
 Plan: `docs/plans/digikit-runtime.md` Phase 4. Lane r1, 2026-10-16, native emulator (`regions_probe`), module
 `modules/core/digikit-menu` (Rust through rustc_codegen_gcc, finding 26). Everything here is **[D]**: measured or read once; no
 second agent has checked the addresses against the image bytes. Nothing ran on a device. Addresses are DT2 1.16 unless stated;
@@ -129,7 +134,7 @@ Lane r1, 2026-10-16, native emulator, all four images. Everything below is **[D]
   firmware's block read and a 16-byte aligned buffer). The runtime reads into its staging buffer, the menu into a 16 KiB heap block.
   Changes in behaviour: the menu now checks the table CRC too (it did not), and it shows `BAD STORE` for a store that fails a check
   or has a table over 16 KiB (more than 128 entries).
-- **Rows and actions.** `[X]` ticked, `[ ]` not, and `*` (the OLED draws it as a cross) in the fourth character when the runtime
+- **Rows and actions** (first version of this pass; replaced [C]: see finding 34, ticks no longer unload). `[X]` ticked, `[ ]` not, and `*` (the OLED draws it as a cross) in the fourth character when the runtime
   has that file loaded; a loaded module starts ticked, so unticking it and pressing LOAD unloads it. LOAD loads each ticked row that
   is not loaded and unloads each unticked row that is; the answer row reads `LOADED n`, `UNLOADED n`, `LOADED n UNLOAD m`,
   `NOTHING TO DO`, or the runtime's result text for the first failure plus `+n` (`BAD SHA`, `NO IMPORT`, ...; table in `dkrt-sdk`
@@ -156,7 +161,7 @@ Lane r1, 2026-10-16, native emulator, all four images. Everything below is **[D]
 - **[O]** Not on hardware. The staging buffer, the arena and the menu's heap block are the only memory the load touches; the flush
   check is strong on DT2, weak on DN2 (finding 25).
 - **[O]** `dkrt_load` runs inside a menu action on the UI task, so the display freezes for the load (about 4 ms of guest time for
-  dyn-demo, more with a real card); the stack use of the nested calls (menu, runtime about 1 KiB) is not measured.
+  dyn-demo, more with a real card); the stack use of the nested calls (menu, runtime about 1 KiB) is not measured [C]: measured in finding 34, 3256 bytes of the UI task's 160 KiB inside a request.
 - **[O]** More than 32 `.dkm` entries, names longer than 17 characters (their last 17 are shown), and a store with more than 128
   entries are not handled (`BAD STORE`).
 - **[O]** A file renamed in the store but loaded earlier: the match is by store path, so the row of the new name is unmarked.

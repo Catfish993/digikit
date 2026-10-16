@@ -15,6 +15,7 @@ use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
 mod arena;
+mod dsp;
 mod loader;
 pub mod registry;
 mod sha256;
@@ -367,6 +368,12 @@ pub unsafe extern "C" fn dkrt_status(out: *mut DkrtStatus) {
     o.last_result = s.last_result;
     o.loads = s.loads;
     o.slot_calls = s.slot_calls;
+    o.state = dsp::state();
+    o.queued = dsp::ds().queued;
+    o.dsp_size = dsp::area_bytes();
+    let (dfree, dlargest) = dsp::area_stats();
+    o.dsp_free = dfree;
+    o.dsp_largest = dlargest;
 }
 
 /// The `index`th loaded module (in load-slot order) into `out`; returns 0, or `E_NOT_FOUND` past the end.
@@ -387,6 +394,8 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
                 o.size = m.size;
                 o.slots = m.slot_mask;
                 o.path = (*addr_of!(DKRT_PATHS))[i];
+                o.state = if m.used == 2 { MOD_LOADING } else { MOD_LOADED };
+                o.dsp_size = dsp::ds().mod_len[i];
                 return OK;
             }
             seen += 1;
@@ -403,6 +412,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     init_once();
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
+    dsp::step();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));
     if cmd != 0 {

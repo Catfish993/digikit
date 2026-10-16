@@ -1,5 +1,6 @@
 //! The `.dkm` loader (docs/design/digikit-dkm.md). Every check runs before anything is written to the arena.
 
+use crate::dsp;
 use crate::sha256::Sha;
 use crate::{
     arena, cstr_eq, cstr_len, dkrt_api, flush, import_addr, init_once, rd32, st, store, wr32,
@@ -34,6 +35,8 @@ const H_SLOT_OFF: usize = 0x88;
 const H_SLOT_N: usize = 0x8c;
 const H_REG_OFF: usize = 0x90;
 const H_REG_SIZE: usize = 0x94;
+const H_DSP_OFF: usize = 0x98;
+const H_DSP_SIZE: usize = 0x9c;
 
 unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
@@ -41,6 +44,11 @@ unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
 
 /// Validate and load the `.dkm` at `path`. See `dkrt_load`.
 pub unsafe fn load(path: *const u8) -> i32 {
+    dsp::init_once();
+    // a module's DSP code is being sent: the staging buffer and the link are in use, so this request waits its turn
+    if dsp::busy() {
+        return if dsp::enqueue(path) { LOADING } else { E_BUSY };
+    }
     let found = match store::find(path) {
         Ok(f) => f,
         Err(e) => return e,
@@ -174,6 +182,15 @@ pub unsafe fn load(path: *const u8) -> i32 {
     if r != OK {
         return r;
     }
+    // the DSP section, if any
+    let (dsp_off, dsp_size) = (rd32(f.add(H_DSP_OFF)), rd32(f.add(H_DSP_SIZE)));
+    let mut job = dsp::Job::empty();
+    if dsp_size != 0 {
+        let r = dsp::check(f, dsp_off, dsp_size, size, &mut job);
+        if r != OK {
+            return r;
+        }
+    }
     // already loaded; a free record
     let mut rec: usize = MAX_MODULES;
     i = 0;
@@ -192,8 +209,18 @@ pub unsafe fn load(path: *const u8) -> i32 {
     }
 
     // ---- allocate, copy, relocate, zero bss ----
+    // The DSP range, the relocated DSP image and the voice rows come first: nothing else is allocated yet if they fail.
+    if dsp_size != 0 {
+        let r = dsp::reserve(rec, &job);
+        if r != OK {
+            return r;
+        }
+    }
     let mem = arena::alloc(total);
     if mem.is_null() {
+        if dsp_size != 0 {
+            dsp::cancel(rec);
+        }
         return E_NOMEM;
     }
     let base = mem as u32;
@@ -254,23 +281,77 @@ pub unsafe fn load(path: *const u8) -> i32 {
         fns[idx] = fnaddr;
         i += 1;
     }
-    // registry rows before `init` (which may reuse the staging buffer through `store_read`)
+    let mut idx = 0;
+    while idx < SLOTS {
+        if mask & (1 << idx) != 0 {
+            m.slot_fn[idx] = fns[idx];
+        }
+        idx += 1;
+    }
+    m.slot_mask = 0;
+    let initaddr = if init == NONE { 0 } else { base + init };
+    if dsp_size != 0 {
+        // The register records and the slot table must outlive this call (the staging buffer will be reused): keep copies.
+        let mut regcopy = 0u32;
+        if reg_size != 0 {
+            let p = arena::alloc(reg_size);
+            if p.is_null() {
+                dsp::cancel(rec);
+                arena::free(mem);
+                m.used = 0;
+                return E_NOMEM;
+            }
+            i = 0;
+            while i < reg_size as usize {
+                *p.add(i) = *reg.add(i);
+                i += 1;
+            }
+            regcopy = p as u32;
+        }
+        m.used = 2; // loading: not listed, slots not bound, unload refused
+        dsp::launch(dsp::Pending {
+            rec: rec as u32,
+            reg: regcopy,
+            reg_size,
+            init: initaddr,
+            mask,
+            fns,
+        });
+        return LOADING;
+    }
+    let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
+    if r != OK {
+        arena::free(mem);
+        m.used = 0;
+    }
+    r
+}
+
+/// The end of a load, shared by the immediate and the DSP path: the registry rows (the machine is listed from here), `init`, the
+/// slots. On an error everything it did is undone (the DSP part too) and the caller frees the module's memory.
+unsafe fn complete(
+    rec: usize,
+    reg: *const u8,
+    reg_size: u32,
+    init: u32,
+    mask: u32,
+    fns: &[u32; SLOTS],
+) -> i32 {
+    let s = st();
     let owner = rec as u8 + 1;
+    // registry rows before `init` (which may reuse the staging buffer through `store_read`)
     let r = crate::registry::apply(owner, reg, reg_size);
     if r != OK {
         crate::registry::remove(owner);
-        m.used = 0;
-        arena::free(mem);
+        dsp::release(rec);
         return r;
     }
-    if init != NONE {
-        let call: unsafe extern "C" fn(*const Api) -> i32 =
-            core::mem::transmute((base + init) as usize);
+    if init != 0 {
+        let call: unsafe extern "C" fn(*const Api) -> i32 = core::mem::transmute(init as usize);
         let r = call(addr_of!(dkrt_api));
         if r != 0 {
             crate::registry::remove(owner);
-            m.used = 0;
-            arena::free(mem);
+            dsp::release(rec);
             return E_INIT;
         }
     }
@@ -281,9 +362,46 @@ pub unsafe fn load(path: *const u8) -> i32 {
         }
         idx += 1;
     }
+    let m: &mut Module = &mut s.modules[rec];
     m.slot_mask = mask;
+    m.used = 1;
     s.loads = s.loads.wrapping_add(1);
     OK
+}
+
+/// The DSP code of a pending load is in place and its voice rows are published: finish the load (called by `dsp::step`).
+pub unsafe fn complete_pending(p: &dsp::Pending) -> i32 {
+    let rec = p.rec as usize;
+    let m = &mut st().modules[rec];
+    let r = complete(rec, p.reg as *const u8, p.reg_size, p.init, p.mask, &p.fns);
+    if p.reg != 0 {
+        arena::free(p.reg as *mut u8);
+    }
+    if r != OK {
+        arena::free(m.base as *mut u8);
+        m.used = 0;
+    }
+    r
+}
+
+/// A pending load failed in the DSP part: free what the CF part allocated (the DSP part is undone by the caller).
+pub unsafe fn abort_pending(p: &dsp::Pending) {
+    let m = &mut st().modules[p.rec as usize];
+    if p.reg != 0 {
+        arena::free(p.reg as *mut u8);
+    }
+    arena::free(m.base as *mut u8);
+    m.used = 0;
+    m.slot_mask = 0;
+}
+
+/// The state machine is free: start the oldest queued load. A failure shows in `last_result`.
+pub unsafe fn start_queued() {
+    let mut path = [0u8; 64];
+    if dsp::dequeue(path.as_mut_ptr()) {
+        let r = load(path.as_ptr());
+        st().last_result = r;
+    }
 }
 
 /// See `dkrt_unload`.
@@ -301,7 +419,15 @@ pub unsafe fn unload(name: *const u8) -> i32 {
     if rec == MAX_MODULES {
         return E_NOT_FOUND;
     }
+    // a module whose DSP code is being sent, or a load in progress, is not unloaded (it would race the transfer)
+    if s.modules[rec].used != 1 || dsp::busy() {
+        return E_BUSY;
+    }
     let m: &mut Module = &mut s.modules[rec];
+    // a track of the active kit that uses one of its machines: refuse (nothing is touched)
+    if crate::registry::in_use(rec as u8 + 1) {
+        return E_TYPE_IN_USE;
+    }
     // 1. clear the slots (one aligned store each) so no new call starts
     let mut idx = 0;
     while idx < SLOTS {
@@ -342,7 +468,9 @@ pub unsafe fn unload(name: *const u8) -> i32 {
         let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(m.fini as usize);
         call(addr_of!(dkrt_api));
     }
+    // the machine row first, then the DSP voice rows, then the range in the DSP area
     crate::registry::remove(rec as u8 + 1);
+    dsp::release(rec);
     arena::free(m.base as *mut u8);
     m.used = 0;
     m.slot_mask = 0;

@@ -22,8 +22,9 @@ RUNTIME = ROOT / "modules/core/runtime"
 
 
 def test_committed_objects_are_current_and_plain_coldfire():
-    obj = json.loads((DYNREG / "build/dynreg-dt2.dko.json").read_text())
-    assert {r["type"] for r in obj["relocs"]} <= {"cf.32", "cf.pc32", "cf.pc16"}
+    for dev in ("dt2", "dn2"):
+        obj = json.loads((DYNREG / f"build/dynreg-{dev}.dko.json").read_text())
+        assert {r["type"] for r in obj["relocs"]} <= {"cf.32", "cf.pc32", "cf.pc16"}
     pk_build.build_module(DYNREG, check=True)
     if pk_toolchains.codegen_gcc_ready():
         pk_build.build_module(RUNTIME, check=True)
@@ -36,7 +37,7 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
         tools.patchkit_run("pack", "test/dyn-xslice", "--device", "dt2", "-o", out)
     assert a.read_bytes() == b.read_bytes()
     info = tools.patchkit_run("dkm-info", a)
-    assert "device 1 (1 params, 1 machines)" in info
+    assert "device 1 (1 params, 1 machines, 0 pages)" in info
     assert 'machine type 16 "XSlice-D" "XSD" clone_of 6' in info
     # a run-time module needs its device, and a machine module that is not dynamic cannot be packed without code
     r = tools.run(
@@ -49,6 +50,28 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
         tmp_path / "x.dkm",
     )
     assert r.returncode != 0 and "--device" in r.stderr
+    # the Digitone II module: machine (own_dsp), four parameters and one page, packed deterministically
+    c, d = tmp_path / "c.dkm", tmp_path / "d.dkm"
+    for out in (c, d):
+        tools.patchkit_run("pack", "test/dyn-dn2", "--device", "dn2", "-o", out)
+    assert c.read_bytes() == d.read_bytes()
+    info = tools.patchkit_run("dkm-info", c)
+    assert "device 2 (4 params, 1 machines, 1 pages)" in info
+    assert 'machine type 16 "DynSyn" "DSY" clone_of 0 level 10 own_dsp 1' in info
+    assert 'page of type 16 "DYN" "Dyn Synth"' in info
+    # a Digitakt II module has no page, and a Digitone II one is refused on the Digitakt
+    r = tools.run(
+        tools.patchkit,
+        "--root",
+        ROOT,
+        "pack",
+        "test/dyn-dn2",
+        "--device",
+        "dt2",
+        "-o",
+        tmp_path / "z.dkm",
+    )
+    assert r.returncode != 0
     r = tools.run(
         tools.patchkit,
         "--root",
@@ -72,6 +95,15 @@ def test_runtime_registers_machines_and_parameters(image, tmp_path):
     assert not failed, failed
     assert report["write_watch"]["flush_hits"] == []
     assert set(report["write_watch"]["by_owner"]) <= {"core/machines"}
+
+
+@pytest.mark.parametrize("image", ["dn2-1.11", "dn2-1.12", "dt2-1.17"])
+def test_the_quick_proof_holds(image, tmp_path):
+    if not config.stock(pk_dkrt.DEVICE_SYX[image]).exists():
+        pytest.skip(f"{pk_dkrt.DEVICE_SYX[image]} missing")
+    report = pk_registry.proof(image, tmp_path, quick=True)
+    failed = [c for c in report["checks"] if not c["ok"]]
+    assert not failed, failed
 
 
 def test_the_write_watch_sees_the_runtime_when_its_code_is_not_allowed(tmp_path):

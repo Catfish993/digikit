@@ -22,22 +22,35 @@
    "section": ".text",
    "symbol": "_fw_sp",
    "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 48,
+   "section": ".text",
+   "symbol": "_fw_popup_make",
+   "type": "cf.32"
   }
  ],
  "sections": [
   {
    "align": 4,
-   "hex": "2f0a4eb900000000588f4ef900000000206f00042f2f000c2f2f000c4eb900000000508f4e75",
+   "hex": "2f0a4eb900000000588f4ef900000000206f00042f2f000c2f2f000c4eb900000000508f4e75206f00042f2f00084eb900000000588f4e75",
    "kind": "text",
    "name": ".text",
-   "size": 38
+   "size": 56
   }
  ],
- "source_sha256": "4eaaece6ddefba2879e1a4079b39364a01cb64f1d0321f6c505c1784133c0e06",
+ "source_sha256": "b560ef60172a42c1f9c82878e8ac3828716a6a87489a32d73620d75cba45d2b3",
  "symbols": [
   {
    "global": true,
    "name": "_dk_tail",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_fw_popup_make",
    "section": null,
    "value": 0
   },
@@ -64,13 +77,19 @@
    "name": "dk_make_sp",
    "section": ".text",
    "value": 16
+  },
+  {
+   "global": true,
+   "name": "dk_popup_make",
+   "section": ".text",
+   "value": 38
   }
  ],
  "toolchain": {
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "10",
+  "instructions_redecoded": "15",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

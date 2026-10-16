@@ -158,6 +158,9 @@ def cf_object(sources: list[Path]) -> dict:
             if len(objs) > 1:
                 merged = Path(d) / "all.o"
                 pk_link.merge_objects(objs, merged)
+            with_helpers = Path(d) / "helpers.o"
+            if pk_link.resolve_helpers(merged, with_helpers):
+                merged = with_helpers  # __udivdi3 and friends, from the ColdFire libgcc
             proto = pk_link.object_from_elf(merged.read_bytes(), sources)
     undefined = [s["name"] for s in proto["symbols"] if s["section"] is None]
     symmap = {n: base + 0x100 + 8 * i for i, n in enumerate(undefined)}

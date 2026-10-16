@@ -20,6 +20,7 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device dt2|dn2]   the module's ColdFire object as a run-time .dkm
                                          (a `dynamic = true` module: its machine and param records for --device)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
+  dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
   list                                   modules under modules/ and ports under devices/ports/
   gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
@@ -337,11 +338,14 @@ plan.json {}",
                 name: flag(rest, "--name").unwrap_or_else(|| id.clone()),
                 version: patchkit::dkm::parse_version(&m.manifest.module.version)?,
                 runtime_min: match flag(rest, "--runtime-min") {
-                    Some(v) => v.parse().map_err(|_| Error("--runtime-min: a number".into()))?,
+                    Some(v) => v
+                        .parse()
+                        .map_err(|_| Error("--runtime-min: a number".into()))?,
                     None => patchkit::dkm::RUNTIME_VERSION,
                 },
             };
             // a run-time module: its typed sections, lowered for one device, are the `register` records
+            let mut dsp: Vec<u8> = vec![];
             let reg = if dynamic {
                 let dev = flag(rest, "--device")
                     .ok_or_else(|| Error("a run-time module needs --device dt2|dn2".into()))?;
@@ -355,19 +359,67 @@ plan.json {}",
                         d.dynamic
                             .iter()
                             .filter_map(|(k, v)| {
-                                k.strip_prefix(&format!("{id}:")).map(|n| (n.to_string(), *v))
+                                k.strip_prefix(&format!("{id}:"))
+                                    .map(|n| (n.to_string(), *v))
                             })
                             .collect()
                     })
                     .unwrap_or_default();
-                match res.iter().find(|r| r.dev == dev) {
+                // the DSP object of the device, if any: its voices are the `[[voice]]` entries (type from the machine) and the
+                // `[[dsp_voice]]` entries (explicit type)
+                let sharc: Vec<_> = m
+                    .objects
+                    .iter()
+                    .zip(&m.manifest.object)
+                    .filter(|(o, r)| {
+                        o.arch == "sharc"
+                            && (r.devices.is_empty() || r.devices.iter().any(|d| *d == dev))
+                    })
+                    .collect();
+                if sharc.len() > 1 {
+                    return Err(Error(format!(
+                        "{id} has {} DSP objects for {dev}; a .dkm packs one",
+                        sharc.len()
+                    )));
+                }
+                let resolved = res.iter().find(|r| r.dev == dev);
+                let mut voices = vec![];
+                for v in resolved.map(|r| r.voices.as_slice()).unwrap_or_default() {
+                    let t = types.get(&v.machine).ok_or_else(|| {
+                        Error(format!("voice {}: no run-time type number", v.machine))
+                    })?;
+                    voices.push((*t as u32, v.entry.clone()));
+                }
+                for v in m
+                    .manifest
+                    .dsp_voice
+                    .iter()
+                    .filter(|v| v.devices.is_empty() || v.devices.iter().any(|d| *d == dev))
+                {
+                    voices.push((v.type_no as u32, v.entry.clone()));
+                }
+                match sharc.first() {
+                    Some((o, _)) => {
+                        dsp = patchkit::dkmdsp::pack(
+                            o,
+                            patchkit::register::device_id(&dev)?,
+                            &voices,
+                        )?
+                    }
+                    None if !voices.is_empty() => {
+                        return Err(Error(format!("{id}: a voice needs a DSP object for {dev}")));
+                    }
+                    None => {}
+                }
+                match resolved {
                     Some(r) => patchkit::register::Register::lower(r, &types)?.encode(),
+                    None if !dsp.is_empty() => vec![],
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
                 }
             } else {
                 vec![]
             };
-            let file = patchkit::dkm::pack_with(cf.first().map(|c| c.0), &reg, &opts)?;
+            let file = patchkit::dkm::pack_full(cf.first().map(|c| c.0), &reg, &dsp, &opts)?;
             write(&out, &file)?;
             let d = patchkit::dkm::Dkm::parse(&file)?;
             println!(
@@ -381,26 +433,79 @@ plan.json {}",
                 d.sha256
             );
         }
+        "dkm-dsp-image" => {
+            // the DSP image of a .dkm placed at the L2 byte address BASE, imports as NAME=VALUE: the reference loader
+            let d = patchkit::dkm::Dkm::parse(&read(need(rest)?)?)?;
+            let base = rest
+                .get(1)
+                .and_then(|b| u32::from_str_radix(b.trim_start_matches("0x"), 16).ok())
+                .ok_or_else(|| Error("dkm-dsp-image FILE BASE(hex) [NAME=VALUE(hex)..]".into()))?;
+            let imports: std::collections::BTreeMap<String, u32> = rest[2..]
+                .iter()
+                .filter_map(|a| a.split_once('='))
+                .filter_map(|(k, v)| {
+                    Some((
+                        k.to_string(),
+                        u32::from_str_radix(v.trim_start_matches("0x"), 16).ok()?,
+                    ))
+                })
+                .collect();
+            let x = patchkit::dkmdsp::DspSection::parse(&d.dsp)?;
+            let img = x.relocated(base, &|n| imports.get(n).copied())?;
+            println!("{}", patchkit::error::hex(&img));
+        }
         "dkm-info" => {
             let d = patchkit::dkm::Dkm::parse(&read(need(rest)?)?)?;
             println!("name      {}", d.name);
-            println!("version   {}.{}.{}", d.version >> 16, d.version >> 8 & 255, d.version & 255);
+            println!(
+                "version   {}.{}.{}",
+                d.version >> 16,
+                d.version >> 8 & 255,
+                d.version & 255
+            );
             println!("runtime   >= {}", d.runtime_min);
             println!("sha256    {}", d.sha256);
-            println!("image     {} bytes, bss {}, align {}", d.image.len(), d.bss, d.align);
+            println!(
+                "image     {} bytes, bss {}, align {}",
+                d.image.len(),
+                d.bss,
+                d.align
+            );
             println!("relocs    {}", d.relocs.len());
             println!("imports   {}", d.imports.join(", "));
             println!("init      {:?}  fini {:?}", d.init, d.fini);
             println!("slots     {:?}", d.slots);
             println!("register  {} bytes", d.register.len());
+            println!("dsp       {} bytes", d.dsp.len());
+            if !d.dsp.is_empty() {
+                let x = patchkit::dkmdsp::DspSection::parse(&d.dsp)?;
+                println!(
+                    "  device {} image {} bytes, bss {}, align {}, {} relocations, imports {}",
+                    x.device,
+                    x.image.len(),
+                    x.bss,
+                    x.align,
+                    x.relocs.len(),
+                    x.imports.join(", ")
+                );
+                for v in &x.voices {
+                    println!("  voice type {} entry +{:#x}", v.type_no, v.entry);
+                }
+            }
             if !d.register.is_empty() {
                 let r = patchkit::register::Register::parse(&d.register)?;
-                println!("  device {} ({} params, {} machines)", r.device, r.params.len(), r.machines.len());
+                println!("  device {} ({} params, {} machines, {} pages)", r.device, r.params.len(), r.machines.len(), r.pages.len());
                 for p in &r.params {
-                    println!("  param {} {:?} {:?} template {:#x} slot {} range {}..{} default {}", p.index, p.name, p.short, p.template, p.slot, p.min, p.max, p.default);
+                    println!(
+                        "  param {} {:?} {:?} template {:#x} slot {} range {}..{} default {}",
+                        p.index, p.name, p.short, p.template, p.slot, p.min, p.max, p.default
+                    );
                 }
                 for m in &r.machines {
-                    println!("  machine type {} {:?} {:?} clone_of {} level {} knobs {:x?}", m.type_no, m.name, m.short, m.clone_of, m.level, m.knobs);
+                    println!("  machine type {} {:?} {:?} clone_of {} level {} own_dsp {} knobs {:x?}", m.type_no, m.name, m.short, m.clone_of, m.level, m.own_dsp, m.knobs);
+                }
+                for g in &r.pages {
+                    println!("  page of type {} {:?} {:?} level {} knobs {:x?}", g.type_no, g.name, g.title, g.level, g.knobs);
                 }
             }
         }

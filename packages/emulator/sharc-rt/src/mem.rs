@@ -186,6 +186,11 @@ impl Mem {
             let b = 0x2000_0000 + (pc - 0xb80000) * 2;
             self.watch_page((b >> PAGE_BITS) as usize, WATCH_DECODE);
             self.watch_page(((b + 1) >> PAGE_BITS) as usize, WATCH_DECODE);
+            // code the DSP wrote at run time into L2 that no boot block loaded (the digikit runtime's DSP area) lives on the
+            // alias page of that byte address (`canonical_of`: the address plus the short-word alias base)
+            let c = 0x4800_0000 + (pc - 0xb80000) * 2;
+            self.watch_page((c >> PAGE_BITS) as usize, WATCH_DECODE);
+            self.watch_page(((c + 1) >> PAGE_BITS) as usize, WATCH_DECODE);
         }
     }
 
@@ -616,7 +621,11 @@ impl Mem {
             return Some(v);
         }
         if (0xb80000..0xc00000).contains(&pc) {
-            return word(0x2000_0000 + (pc - 0xb80000) * 2);
+            if let Some(v) = word(0x2000_0000 + (pc - 0xb80000) * 2) {
+                return Some(v);
+            }
+            // bytes a DM store wrote where the loader put none sit on the alias page of the L2 byte address
+            return word(0x4800_0000 + (pc - 0xb80000) * 2);
         }
         None
     }

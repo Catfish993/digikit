@@ -13,7 +13,7 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
-use dkrt_sdk::{result_text, store, DkrtModule, DkrtStatus, E_NOT_FOUND, E_READ, OK};
+use dkrt_sdk::{store, DkrtModule, DkrtStatus, E_NOT_FOUND, E_READ, OK};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -43,6 +43,16 @@ extern "C" {
     static fw_icon_ref: [u16; 3];
     /// Assembly shim (shim.s): `shared_ptr<View>` from a raw `View*` with the opener as parent (A0 = out).
     fn dk_make_sp(out: *mut SharedPtr, parent: *mut u8, view: *mut u8);
+    /// Assembly shim (shim.s): `make_shared<PopupWindow>(const char *const &)` into `out` (A0 = out); `text` points at the
+    /// pointer to the NUL-terminated message.
+    fn dk_popup_make(out: *mut SharedPtr, text: *const *const u8);
+    /// The popup's pointer plumbing as `FUN_400a4832` ("LOAD ERROR") does it: move `src` into a `shared_ptr<View>` `dst`,
+    /// the Brain singleton, its view manager (Brain + 0x40), add the view (exclusive flag 0), release a count holder.
+    fn fw_sp_move(dst: *mut SharedPtr, src: *mut SharedPtr);
+    fn fw_brain() -> *mut u8;
+    fn fw_mgr_of(brain: *mut u8) -> *mut u8;
+    fn fw_view_add(mgr: *mut u8, sp: *const SharedPtr, exclusive: u32) -> u32;
+    fn fw_sp_release(ctl: *mut *mut u8);
 }
 
 // ---- the runtime (core/runtime) --------------------------------------------------------------------------------
@@ -195,16 +205,21 @@ unsafe fn push(from: *mut u8, v: *mut View) {
 
 #[repr(C)]
 struct Text {
-    b: [u8; 40],
+    b: [u8; TEXT],
     n: usize,
 }
+const TEXT: usize = 48;
 impl Text {
-    fn new() -> Text {
-        Text { b: [0; 40], n: 0 }
+    const fn new() -> Text {
+        Text { b: [0; TEXT], n: 0 }
+    }
+    fn clear(&mut self) {
+        self.b = [0; TEXT];
+        self.n = 0;
     }
     fn s(&mut self, t: &[u8]) -> &mut Text {
         for &c in t {
-            if self.n < 39 && c != 0 {
+            if self.n < TEXT - 1 && c != 0 {
                 self.b[self.n] = c;
                 self.n += 1;
             }
@@ -228,6 +243,12 @@ impl Text {
         }
         self
     }
+    fn int(&mut self, v: i32) -> &mut Text {
+        if v < 0 {
+            self.s(b"-");
+        }
+        self.num(v.unsigned_abs())
+    }
     fn ptr(&self) -> *const u8 {
         self.b.as_ptr() // zero filled: always terminated
     }
@@ -246,12 +267,55 @@ static mut STORE: u32 = 0;
 /// Table indices of the `.dkm` entries, and their ticks.
 static mut ENT: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut TICK: [u8; MAX_ENT] = [0; MAX_ENT];
-/// 1 when the runtime has the entry's file loaded, and the module's name for `dkrt_unload`.
+/// 1 when the runtime has the entry's file loaded (2: the runtime is still loading it), and the module's name for `dkrt_unload`.
 static mut LOADED: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut MODNAME: [[u8; 32]; MAX_ENT] = [[0; 32]; MAX_ENT];
 static mut NENT: usize = 0;
-/// The result row of the last LOAD (empty: shows "LOAD").
-static mut RESULT: Text = Text { b: [0; 40], n: 0 };
+/// 1 when the file's header says this runtime or device cannot load it (shown greyed out, `[-]`, and cannot be ticked).
+static mut NOK: [u8; MAX_ENT] = [0; MAX_ENT];
+/// One 512-byte, 16-byte aligned firmware heap block the card DMA fills with a file's header sector.
+static mut HDR: *mut u8 = null_mut();
+/// The answer rows of the last LOAD or UNLOAD: what happened, and for a failure the file it was about (empty: no rows).
+static mut RESULT: Text = Text::new();
+static mut RESULT2: Text = Text::new();
+/// The text of the last popup (the message the firmware's popup window was given) and how many were shown. Read by the proof.
+static mut POPUP: Text = Text::new();
+static mut POPUPS: u32 = 0;
+/// Counters of the start and the end of a LOAD or UNLOAD request (words 0 and 1). Nothing reads them but the proof: a store to
+/// either ends a stack epoch of `DIGI_STACK_WATCH_EPOCH`, so the deepest stack use of a request is measured between the two.
+static mut MARK: [u32; 2] = [0; 2];
+/// A request the runtime accepted and is finishing over later UI-loop passes: 0 none, 1 load, 2 unload; the row it is about.
+static mut PEND: u32 = 0;
+static mut PEND_ROW: usize = 0;
+
+// What the runtime reports while a request is in flight (the asynchronous loader, `dkrt-sdk` `LOADING`, `DkrtStatus::state`,
+// `DkrtModule::state`). An older runtime never answers `LOADING` and its `state` word stays zero, so this works with both: the
+// buffers below are larger than the layout this crate was built with, and the words are read by position.
+const LOADING: i32 = 1;
+const STATE_WORD: usize = 12;
+const MOD_STATE_OFF: usize = 112;
+const MOD_LOADING: u32 = 1;
+
+#[repr(C)]
+struct StatusBuf {
+    s: DkrtStatus,
+    ext: [u32; 12],
+}
+#[repr(C)]
+struct ModBuf {
+    m: DkrtModule,
+    ext: [u32; 8],
+}
+
+unsafe fn status() -> StatusBuf {
+    let mut b: StatusBuf = core::mem::zeroed();
+    dkrt_status(&mut b.s);
+    b
+}
+/// `DkrtStatus::state` (0 idle, 1 loading, 2 unloading).
+unsafe fn busy(b: &StatusBuf) -> u32 {
+    *(b as *const StatusBuf as *const u32).add(STATE_WORD)
+}
 
 unsafe fn entry_path(e: usize) -> &'static [u8] {
     store::path(TAB, e)
@@ -262,29 +326,69 @@ unsafe fn refresh_loaded() {
     LOADED = [0; MAX_ENT];
     let mut index = 0;
     loop {
-        let mut m: DkrtModule = core::mem::zeroed();
-        if dkrt_module(index, &mut m) != OK {
+        let mut m: ModBuf = core::mem::zeroed();
+        if dkrt_module(index, &mut m.m) != OK {
             break;
         }
         index += 1;
+        let mstate = *(&m as *const ModBuf as *const u8).add(MOD_STATE_OFF).cast::<u32>();
         let mut n = 0;
-        while n < 63 && m.path[n] != 0 {
+        while n < 63 && m.m.path[n] != 0 {
             n += 1;
         }
         for i in 0..NENT {
-            if entry_path(ENT[i] as usize) == &m.path[..n] {
-                LOADED[i] = 1;
-                MODNAME[i] = m.name;
+            if entry_path(ENT[i] as usize) == &m.m.path[..n] {
+                LOADED[i] = if mstate == MOD_LOADING { 2 } else { 1 };
+                MODNAME[i] = m.m.name;
             }
         }
     }
 }
 
+const DKM_MAGIC: u32 = 0x444b_4d46; // "DKMF"
+const REG_MAGIC: u32 = 0x444b_5247; // "DKRG"
+/// A header word at byte `off` of the file starting at store sector `first`, read through the block reader; None on an error.
+unsafe fn file_word(first: u32, off: u32) -> Option<u32> {
+    if store::read_sectors(fw_blk_read, first + off / 512, 1, HDR, 512) != OK {
+        return None;
+    }
+    Some(store::be32(HDR.add((off % 512) as usize)))
+}
+
+/// Whether the file at store sector `first` can be loaded by this runtime on this device, judged from its header: the `.dkm`
+/// format's `runtime_min`, and the device of its register records (docs/design/digikit-dkm.md; a module without records runs on
+/// either device). A file that is not a `.dkm` or cannot be read passes: the runtime then names the real reason when it is ticked.
+unsafe fn compatible(first: u32, runtime: u32, device: u32) -> bool {
+    match file_word(first, 0) {
+        Some(DKM_MAGIC) => {}
+        _ => return true,
+    }
+    if let Some(min) = file_word(first, 0x30) {
+        if min > runtime {
+            return false;
+        }
+    }
+    let (Some(off), Some(size)) = (file_word(first, 0x90), file_word(first, 0x94)) else {
+        return true;
+    };
+    if size == 0 || off % 16 != 0 {
+        return true;
+    }
+    if file_word(first, off) != Some(REG_MAGIC) {
+        return true;
+    }
+    match file_word(first, off + 8) {
+        Some(d) => d == device || device == 0,
+        None => true,
+    }
+}
+
 unsafe fn scan_store() {
     NENT = 0;
+    NOK = [0; MAX_ENT];
     TICK = [0; MAX_ENT];
-    RESULT.n = 0;
-    RESULT.b = [0; 40];
+    RESULT.clear();
+    RESULT2.clear();
     if TAB.is_null() {
         TAB = fw_new(TAB_BYTES as u32);
     }
@@ -310,8 +414,19 @@ unsafe fn scan_store() {
         }
     }
     STORE = 1;
+    if HDR.is_null() {
+        HDR = fw_new(512);
+    }
+    let st = status();
+    for i in 0..NENT {
+        let f = store::file(TAB, ENT[i] as usize);
+        if !compatible(f.first, st.s.runtime, st.s.device) {
+            NOK[i] = 1;
+        }
+    }
     refresh_loaded();
-    TICK = LOADED; // a loaded module starts ticked: unticking it and pressing LOAD unloads it
+    // a request from before the view was left may have finished
+    poll();
 }
 
 fn lower(c: u8) -> u8 {
@@ -329,6 +444,111 @@ fn upper(c: u8) -> u8 {
     }
 }
 
+// ---- result texts ---------------------------------------------------------------------------------------------------
+
+// A short text (upper case, at most 14 characters) for each runtime result code. One table per owner so that the lanes that
+// add codes add lines in their own table: the loader's -1..-19, the registry's -20..-29, the DSP loader's -30..-39. A code
+// that has no text, or lies outside, shows as "ERROR <n>". Plain tables: a dense `match` becomes a PC-relative jump table,
+// which is not ColdFire code.
+const TEXT_RUNTIME: [&str; 20] = [
+    "OK", "NOT FOUND", "BAD STORE", "READ ERROR", "BAD SHA", "BAD FORMAT", "RUNTIME OLD", "NO IMPORT", "NO MEMORY",
+    "INIT FAILED", "ALREADY LOADED", "SLOT TAKEN", "BUSY", "TOO BIG", "TABLE FULL", "", "", "", "", "",
+];
+const TEXT_REGISTRY: [&str; 10] = [
+    "NO REGISTRY", "WRONG DEVICE", "BAD TYPE", "TYPE USED", "PARAMS FULL", "PAGES FULL", "IN USE", "", "", "",
+];
+const TEXT_DSP: [&str; 10] = [
+    "NO DSP LINK", "BAD DSP CODE", "DSP IMPORT", "DSP FULL", "NO VOICE ROW", "DSP TRANSFER", "WRONG DEVICE", "BAD VOICE", "", "",
+];
+
+fn status_text(t: &mut Text, code: i32) {
+    let k = code.unsigned_abs() as usize;
+    let known = if code >= 0 {
+        ""
+    } else if k < 20 {
+        TEXT_RUNTIME[k]
+    } else if k < 30 {
+        TEXT_REGISTRY[k - 20]
+    } else if k < 40 {
+        TEXT_DSP[k - 30]
+    } else {
+        ""
+    };
+    if known.is_empty() {
+        t.s(b"ERROR ").int(code);
+    } else {
+        t.s(known.as_bytes());
+    }
+}
+
+/// The file name of a row, upper case, at most `max` characters from the end.
+unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
+    let p = entry_path(ENT[i] as usize);
+    let mut start = 0;
+    for (k, &c) in p.iter().enumerate() {
+        if c == b'/' {
+            start = k + 1;
+        }
+    }
+    let name = &p[start..];
+    let name = if name.len() > max { &name[name.len() - max..] } else { name };
+    for &c in name {
+        t.s(&[upper(c)]);
+    }
+}
+
+/// Show `POPUP` in the firmware's message popup window (the one "LOAD ERROR" uses after a project load): it takes the key focus
+/// until it is dismissed.
+unsafe fn popup(t: &Text) {
+    POPUP.b = t.b;
+    POPUP.n = t.n;
+    POPUPS += 1;
+    let text: *const u8 = POPUP.b.as_ptr();
+    let mut a = SharedPtr { ptr: null_mut(), ctl: null_mut() };
+    dk_popup_make(&mut a, &text);
+    let mut b = SharedPtr { ptr: null_mut(), ctl: null_mut() };
+    fw_sp_move(&mut b, &mut a);
+    let mgr = fw_mgr_of(fw_brain());
+    fw_view_add(mgr, &b, 0);
+    fw_sp_release(&mut b.ctl);
+    fw_sp_release(&mut a.ctl);
+}
+
+/// A request for row `i` failed with `code`: the answer rows name the reason and the file, and a popup says both.
+unsafe fn fail(i: usize, code: i32) {
+    RESULT.clear();
+    RESULT2.clear();
+    status_text(&mut RESULT, code);
+    upper_name(i, 17, &mut RESULT2);
+    let mut t = Text::new();
+    upper_name(i, 24, &mut t);
+    t.s(b": ");
+    status_text(&mut t, code);
+    popup(&t);
+}
+
+/// Collect the end of a request the runtime was finishing: once its state is idle again, `last_result` is the answer.
+unsafe fn poll() {
+    if PEND == 0 {
+        return;
+    }
+    let st = status();
+    if busy(&st) != 0 {
+        return;
+    }
+    let (row, kind) = (PEND_ROW, PEND);
+    PEND = 0;
+    refresh_loaded();
+    RESULT.clear();
+    RESULT2.clear();
+    if st.s.last_result == OK {
+        TICK[row] = 0;
+        RESULT.s(if kind == 1 { b"LOADED 1" } else { b"UNLOADED 1" });
+    } else {
+        fail(row, st.s.last_result);
+    }
+}
+
 // ---- the three views ---------------------------------------------------------------------------------------------
 
 const A_NOP: u32 = 0;
@@ -336,6 +556,8 @@ const A_OPEN_MAIN: u32 = 1;
 const A_OPEN_LOAD: u32 = 2;
 const A_OPEN_ABOUT: u32 = 3;
 const A_LOAD: u32 = 4;
+const A_UNLOAD: u32 = 5;
+const A_REFRESH: u32 = 6;
 const A_TOGGLE: u32 = 0x100;
 
 unsafe fn fill_main() {
@@ -361,16 +583,30 @@ unsafe fn fill_load() {
     } else {
         for i in 0..NENT {
             let mut t = Text::new();
-            // `[X]` ticked, `[ ]` not; the fourth character is `*` when the runtime has the module loaded
-            t.s(if TICK[i] != 0 { b"[X]" } else { b"[ ]" });
-            t.s(if LOADED[i] != 0 { b"*" } else { b" " });
+            // `[-]` a file this runtime or device cannot load (it cannot be ticked); otherwise `[X]` ticked, `[ ]` not; the fourth character is `*` when the runtime has the module loaded, `L` while it loads it
+            t.s(if NOK[i] != 0 {
+                b"[-]"
+            } else if TICK[i] != 0 {
+                b"[X]"
+            } else {
+                b"[ ]"
+            });
+            t.s(match LOADED[i] {
+                0 => b" ",
+                1 => b"*",
+                _ => b"L",
+            });
             upper_name(i, 17, &mut t);
-            row(m, &t.b, A_TOGGLE + i as u32, 0);
+            row(m, &t.b, if NOK[i] != 0 { A_NOP } else { A_TOGGLE + i as u32 }, 0);
         }
+        row(m, b"LOAD\0", A_LOAD, 0);
+        row(m, b"UNLOAD\0", A_UNLOAD, 0);
+        // the answer rows; pressing YES on the first asks the runtime again (a request may still be in flight)
         if RESULT.n > 0 {
-            row(m, &RESULT.b, A_LOAD, 0);
-        } else {
-            row(m, b"LOAD\0", A_LOAD, 0);
+            row(m, &RESULT.b, A_REFRESH, 0);
+        }
+        if RESULT2.n > 0 {
+            row(m, &RESULT2.b, A_REFRESH, 0);
         }
     }
     end_rebuild(m, sel);
@@ -380,62 +616,74 @@ unsafe fn fill_about() {
     let m = ABOUTV.obj;
     let sel = begin_rebuild(m);
     row(m, b"DIGIKIT 0.1.0\0", A_NOP, 0);
-    let mut st: DkrtStatus = core::mem::zeroed();
-    dkrt_status(&mut st);
+    let st = status();
     let mut t = Text::new();
-    t.s(b"RUNTIME ABI ").num(st.runtime);
+    t.s(b"RUNTIME ABI ").num(st.s.runtime);
     row(m, &t.b, A_NOP, 0);
     let mut t = Text::new();
-    t.s(b"LOADED ").num(st.modules);
+    t.s(b"LOADED ").num(st.s.modules);
     row(m, &t.b, A_NOP, 0);
     let mut t = Text::new();
-    t.s(b"FREE ").num(st.arena_free / 1024).s(b" KB");
+    t.s(b"FREE ").num(st.s.arena_free / 1024).s(b" KB");
     row(m, &t.b, A_NOP, 0);
     end_rebuild(m, sel);
 }
 
-/// The file name of a row, upper case, at most `max` characters from the end.
-unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
-    let p = entry_path(ENT[i] as usize);
-    let mut start = 0;
-    for (k, &c) in p.iter().enumerate() {
-        if c == b'/' {
-            start = k + 1;
+/// The summary of a batch of requests that all finished at once.
+unsafe fn summarise(done: u32, failed: u32, first_fail: Option<(usize, i32)>, past: &[u8]) {
+    RESULT.clear();
+    RESULT2.clear();
+    if let Some((i, code)) = first_fail {
+        fail(i, code);
+        if failed > 1 {
+            RESULT.s(b" +").num(failed - 1);
         }
-    }
-    let name = &p[start..];
-    let name = if name.len() > max { &name[name.len() - max..] } else { name };
-    for &c in name {
-        t.s(&[upper(c)]);
+    } else if done == 0 {
+        RESULT.s(b"NOTHING TO DO");
+    } else {
+        RESULT.s(past).s(b" ").num(done);
     }
 }
 
-/// LOAD: bring the runtime in line with the ticks. A ticked row that is not loaded is loaded, an unticked row that is loaded
-/// is unloaded. The answer row shows the counts, or the first failure with the runtime's result text ("BAD SHA", "NO IMPORT").
+/// LOAD: load every ticked row the runtime does not have. A request that the runtime accepts and finishes later (`LOADING`)
+/// ends the batch; the answer rows show `LOADING...` until `poll` sees the runtime idle again. While the runtime is busy, a
+/// second request is refused.
 unsafe fn do_load() {
-    RESULT.b = [0; 40];
-    RESULT.n = 0;
-    let (mut loaded, mut unloaded, mut failed) = (0u32, 0u32, 0u32);
+    mark(0);
+    do_load_inner();
+    mark(1);
+}
+
+unsafe fn mark(k: usize) {
+    let p = addr_of_mut!(MARK) as *mut u32;
+    p.add(k).write_volatile(p.add(k).read_volatile().wrapping_add(1));
+}
+
+unsafe fn do_load_inner() {
+    poll();
+    if busy(&status()) != 0 || PEND != 0 {
+        RESULT.clear();
+        RESULT2.clear();
+        RESULT.s(b"LOADING...");
+        return;
+    }
+    let (mut done, mut failed) = (0u32, 0u32);
     let mut first_fail: Option<(usize, i32)> = None;
     for i in 0..NENT {
-        let want = TICK[i] != 0;
-        if want == (LOADED[i] != 0) {
+        if TICK[i] == 0 || LOADED[i] != 0 {
             continue;
         }
-        let r = if want {
-            let p = entry_path(ENT[i] as usize);
-            let mut path = [0u8; 88];
-            path[..p.len()].copy_from_slice(p);
-            dkrt_load(path.as_ptr())
-        } else {
-            dkrt_unload(MODNAME[i].as_ptr())
-        };
-        if r == OK {
-            if want {
-                loaded += 1;
-            } else {
-                unloaded += 1;
-            }
+        let p = entry_path(ENT[i] as usize);
+        let mut path = [0u8; 88];
+        path[..p.len()].copy_from_slice(p);
+        let r = dkrt_load(path.as_ptr());
+        if r == LOADING {
+            PEND = 1;
+            PEND_ROW = i;
+            break;
+        } else if r == OK {
+            done += 1;
+            TICK[i] = 0;
         } else {
             failed += 1;
             if first_fail.is_none() {
@@ -444,56 +692,98 @@ unsafe fn do_load() {
         }
     }
     refresh_loaded();
-    if let Some((_i, r)) = first_fail {
-        // the row is about 17 characters wide; the failed rows stay ticked and unmarked, so they show which one it was
-        RESULT.s(result_text(r).as_bytes());
-        if failed > 1 {
-            RESULT.s(b" +").num(failed - 1);
-        }
-    } else if loaded + unloaded == 0 {
-        RESULT.s(b"NOTHING TO DO");
-    } else if unloaded == 0 {
-        RESULT.s(b"LOADED ").num(loaded);
-    } else if loaded == 0 {
-        RESULT.s(b"UNLOADED ").num(unloaded);
+    if PEND != 0 {
+        RESULT.clear();
+        RESULT2.clear();
+        RESULT.s(b"LOADING...");
     } else {
-        RESULT.s(b"LOADED ").num(loaded).s(b" UNLOAD ").num(unloaded);
+        summarise(done, failed, first_fail, b"LOADED");
     }
 }
 
-unsafe fn dispatch(act: u32, ctx: u32) {
-    match act {
-        A_OPEN_MAIN => {
-            let settings = ctx as *mut u8;
-            ensure_view(addr_of_mut!(MAIN), NAME_MAIN, b"DIGIKIT\0", settings);
-            fill_main();
-            push(settings, addr_of_mut!(MAIN));
+/// UNLOAD: unload every ticked row the runtime has loaded (ticks alone never unload anything).
+unsafe fn do_unload() {
+    mark(0);
+    do_unload_inner();
+    mark(1);
+}
+
+unsafe fn do_unload_inner() {
+    poll();
+    if busy(&status()) != 0 || PEND != 0 {
+        RESULT.clear();
+        RESULT2.clear();
+        RESULT.s(b"LOADING...");
+        return;
+    }
+    let (mut done, mut failed) = (0u32, 0u32);
+    let mut first_fail: Option<(usize, i32)> = None;
+    for i in 0..NENT {
+        if TICK[i] == 0 || LOADED[i] != 1 {
+            continue;
         }
-        A_OPEN_LOAD => {
-            scan_store();
-            ensure_view(addr_of_mut!(LOADV), NAME_LOAD, b"MODULES\0", MAIN.obj);
-            fill_load();
-            push(MAIN.obj, addr_of_mut!(LOADV));
-        }
-        A_OPEN_ABOUT => {
-            ensure_view(addr_of_mut!(ABOUTV), NAME_ABOUT, b"ABOUT\0", MAIN.obj);
-            fill_about();
-            push(MAIN.obj, addr_of_mut!(ABOUTV));
-        }
-        A_LOAD => {
-            do_load();
-            fill_load();
-        }
-        a if a >= A_TOGGLE => {
-            let i = (a - A_TOGGLE) as usize;
-            if i < NENT {
-                TICK[i] ^= 1;
-                RESULT.n = 0;
-                RESULT.b = [0; 40];
+        let r = dkrt_unload(MODNAME[i].as_ptr());
+        if r == LOADING {
+            PEND = 2;
+            PEND_ROW = i;
+            break;
+        } else if r == OK {
+            done += 1;
+            TICK[i] = 0;
+        } else {
+            failed += 1;
+            if first_fail.is_none() {
+                first_fail = Some((i, r));
             }
-            fill_load();
         }
-        _ => {}
+    }
+    refresh_loaded();
+    if PEND != 0 {
+        RESULT.clear();
+        RESULT2.clear();
+        RESULT.s(b"LOADING...");
+    } else {
+        summarise(done, failed, first_fail, b"UNLOADED");
+    }
+}
+
+// An `if` chain, not a `match`: six dense arms become a PC-relative jump table, which is not ColdFire code.
+unsafe fn dispatch(act: u32, ctx: u32) {
+    if act == A_OPEN_MAIN {
+        let settings = ctx as *mut u8;
+        ensure_view(addr_of_mut!(MAIN), NAME_MAIN, b"DIGIKIT\0", settings);
+        fill_main();
+        push(settings, addr_of_mut!(MAIN));
+    } else if act == A_OPEN_LOAD {
+        scan_store();
+        ensure_view(addr_of_mut!(LOADV), NAME_LOAD, b"MODULES\0", MAIN.obj);
+        fill_load();
+        push(MAIN.obj, addr_of_mut!(LOADV));
+    } else if act == A_OPEN_ABOUT {
+        ensure_view(addr_of_mut!(ABOUTV), NAME_ABOUT, b"ABOUT\0", MAIN.obj);
+        fill_about();
+        push(MAIN.obj, addr_of_mut!(ABOUTV));
+    } else if act == A_LOAD {
+        do_load();
+        fill_load();
+    } else if act == A_UNLOAD {
+        do_unload();
+        fill_load();
+    } else if act == A_REFRESH {
+        poll();
+        refresh_loaded();
+        fill_load();
+    } else if act >= A_TOGGLE {
+        let i = (act - A_TOGGLE) as usize;
+        poll();
+        if i < NENT {
+            TICK[i] ^= 1;
+            if PEND == 0 {
+                RESULT.clear();
+                RESULT2.clear();
+            }
+        }
+        fill_load();
     }
 }
 

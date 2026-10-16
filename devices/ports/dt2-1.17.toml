@@ -39,6 +39,16 @@ excludes = [[0x200fa000, 0x200fe000]]
 mark = "D"
 
 [[anchor]]
+name = "cf.dynreg.kit_of"
+cpu = "cf"
+kind = "code"
+addr = 0x40041d24
+len = 6
+sha256 = "242f254f8637ee0a61c6f4eee76e02de6a54fc404235145f33f8de8142b994d5"
+mark = "D"
+rule = "core/dynreg:cf_func"
+
+[[anchor]]
 name = "cf.dynreg.list_copy"
 cpu = "cf"
 kind = "code"
@@ -55,6 +65,26 @@ kind = "code"
 addr = 0x40060f50
 len = 8
 sha256 = "d38e64037d171546ea46d9f5ff950af69f4742dd92f87e4f56faf9fe101bb64e"
+mark = "D"
+rule = "core/dynreg:cf_func"
+
+[[anchor]]
+name = "cf.dynreg.project"
+cpu = "cf"
+kind = "code"
+addr = 0x40198b7e
+len = 4
+sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
+mark = "D"
+rule = "core/dynreg:cf_func"
+
+[[anchor]]
+name = "cf.dynreg.track_type"
+cpu = "cf"
+kind = "code"
+addr = 0x40036266
+len = 4
+sha256 = "1752574de8d0026d70bf9141496056979060c689d8d347371a73b627becc2134"
 mark = "D"
 rule = "core/dynreg:cf_func"
 
@@ -443,6 +473,17 @@ mark = "D"
 rule = "core/digikit-menu:cf_func"
 
 [[anchor]]
+name = "cf.menu.fn.brain"
+cpu = "cf"
+kind = "data"
+addr = 0x40198c24
+src = 0x400a49dc
+len = 4
+sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
 name = "cf.menu.fn.invalidate"
 cpu = "cf"
 kind = "code"
@@ -473,6 +514,17 @@ mark = "D"
 rule = "core/digikit-menu:cf_func"
 
 [[anchor]]
+name = "cf.menu.fn.mgr_of"
+cpu = "cf"
+kind = "data"
+addr = 0x40030a42
+src = 0x400a49e4
+len = 4
+sha256 = "7f284fb65360c6f575800b1a7f6020278ea44dcfb08684ee639a5b361437086c"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
 name = "cf.menu.fn.new"
 cpu = "cf"
 kind = "code"
@@ -483,6 +535,17 @@ mark = "D"
 rule = "core/digikit-menu:cf_func"
 
 [[anchor]]
+name = "cf.menu.fn.popup_make"
+cpu = "cf"
+kind = "data"
+addr = 0x401b87bc
+src = 0x400a49c8
+len = 4
+sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
 name = "cf.menu.fn.push"
 cpu = "cf"
 kind = "code"
@@ -491,6 +554,28 @@ len = 4
 sha256 = "78f42f83e9b362432042b115bfc0318067ac16a8703b3f21db6e85abcc090477"
 mark = "D"
 rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.sp_move"
+cpu = "cf"
+kind = "data"
+addr = 0x4019cc04
+src = 0x400a49d6
+len = 4
+sha256 = "6bc847565586fd279c9429243adc9c910e24d03f5da732a58d9765e263d6931a"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
+
+[[anchor]]
+name = "cf.menu.fn.sp_release"
+cpu = "cf"
+kind = "data"
+addr = 0x40197d26
+src = 0x400a49ee
+len = 4
+sha256 = "854132dec93aeb507c7a450696fa544cb2c2ac3ef072e88c0d5fa6334b9cc790"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
 
 [[anchor]]
 name = "cf.menu.fn.str_ctor"
@@ -511,6 +596,17 @@ len = 4
 sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
 mark = "D"
 rule = "core/digikit-menu:cf_func"
+
+[[anchor]]
+name = "cf.menu.fn.view_add"
+cpu = "cf"
+kind = "data"
+addr = 0x4011c08a
+src = 0x400a49f6
+len = 4
+sha256 = "f467eea18c7c737d4ccb9cf58c66adb26f524f460267d95fe322a0cf1b687ccc"
+mark = "D"
+rule = "core/digikit-menu:cf_ptr"
 
 [[anchor]]
 name = "cf.menu.fn.view_ctor"

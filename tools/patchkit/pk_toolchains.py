@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -58,11 +59,18 @@ GCC_JIT_URL = "https://github.com/rust-lang/gcc"
 GCC_JIT_REV = (
     "37ea7cd851f04ee6a313c5067c9fde9328f876aa"  # = libgccjit.version at CG_REV
 )
+LIBGCC_CF_NAME = "libgcc-cf54418.a"
 RUST_TARGET = CG_PATCHES / "m68k-cf-none-elf-a2.json"
 
 
 def m68k_bin(name: str = "gcc") -> pathlib.Path | None:
     p = M68K_PREFIX / "bin" / f"m68k-elf-{name}"
+    return p if p.exists() else None
+
+
+def libgcc_cf() -> pathlib.Path | None:
+    """The integer/float helper archive built for -mcpu=54418 (build_libgcc_cf), or None."""
+    p = M68K_PREFIX / "lib" / LIBGCC_CF_NAME
     return p if p.exists() else None
 
 
@@ -200,6 +208,64 @@ def build_m68k() -> None:
         )
         run(["make", "-j", jobs, "all-gcc", "all-target-libgcc"], cwd=g_obj, env=env)
         run(["make", "install-gcc", "install-target-libgcc"], cwd=g_obj, env=env)
+    if not (M68K_PREFIX / "lib" / LIBGCC_CF_NAME).exists():
+        build_libgcc_cf()
+
+
+def build_libgcc_cf() -> None:
+    """libgcc rebuilt for -mcpu=54418 (ColdFire V4e, ISA_C + EMAC) from the same GCC sources and build tree as build_m68k.
+
+    The m68k-elf gcc is configured without multilib, so its libgcc.a is 68000 code (`mulsi3`, `divsi3` and the soft-float
+    helpers use forms a ColdFire traps on: tools/coldfire/isacheck.py refuses it). The libgcc Makefile of the existing
+    build tree is copied next to the original and `make` runs it with `-mcpu=54418` (the object files are not shared; the
+    copy builds in under a minute). The unwind members are dropped (modules use no exceptions; they hold float-register
+    forms). The result is out/tools/m68k-elf/lib/libgcc-cf54418.a; `isacheck` must pass over it."""
+    gobj = TOOLS / "build" / "gcc" / "m68k-elf"
+    src = gobj / "libgcc"
+    if not (src / "Makefile").exists():
+        sys.exit("build the m68k toolchain first: pk_toolchains m68k")
+    dst = gobj / "libgcc-cf"  # a sibling: the Makefile finds ../.././gcc relative to it
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.mkdir()
+    keep = subprocess.run(
+        ["tar", "cf", "-", "--exclude=*.o", "--exclude=*.a", "--exclude=*.dep", "."],
+        cwd=src,
+        capture_output=True,
+        check=True,
+    ).stdout
+    subprocess.run(["tar", "xf", "-"], cwd=dst, input=keep, check=True)
+    cc = next(
+        ln.split("=", 1)[1].strip()
+        for ln in (dst / "Makefile").read_text().splitlines()
+        if ln.startswith("CC =")
+    )
+    env = dict(os.environ)
+    env["PATH"] = f"{M68K_PREFIX / 'bin'}:{env['PATH']}"
+    run(
+        ["make", "-j", str(os.cpu_count() or 4), f"CC={cc} -mcpu=54418", "libgcc.a"],
+        cwd=dst,
+        env=env,
+    )
+    out = M68K_PREFIX / "lib" / LIBGCC_CF_NAME
+    shutil.copy(dst / "libgcc.a", out)
+    members = subprocess.run(
+        [str(M68K_PREFIX / "bin" / "m68k-elf-ar"), "t", str(out)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    drop = [m for m in members if m.startswith("unwind")]
+    if drop:
+        run([str(M68K_PREFIX / "bin" / "m68k-elf-ar"), "d", str(out), *drop])
+    run([str(M68K_PREFIX / "bin" / "m68k-elf-ranlib"), str(out)])
+    from tools.coldfire import isacheck
+
+    try:
+        isacheck.check_file(out)
+    except isacheck.IsaError as e:
+        out.unlink()
+        sys.exit(f"{out}: {e}")
 
 
 def _git_checkout(path: pathlib.Path, url: str, rev: str) -> None:
@@ -329,6 +395,7 @@ def build_selache() -> None:
 def status() -> dict[str, object]:
     out: dict[str, object] = {
         "m68k_elf_gcc": None,
+        "libgcc_cf54418": str(libgcc_cf()) if libgcc_cf() else None,
         "selache": None,
         "codegen_gcc": (
             {
@@ -361,10 +428,14 @@ def status() -> dict[str, object]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    ap.add_argument("what", choices=["m68k", "selache", "codegen-gcc", "status"])
+    ap.add_argument(
+        "what", choices=["m68k", "libgcc-cf", "selache", "codegen-gcc", "status"]
+    )
     args = ap.parse_args()
     if args.what == "m68k":
         build_m68k()
+    elif args.what == "libgcc-cf":
+        build_libgcc_cf()
     elif args.what == "selache":
         build_selache()
     elif args.what == "codegen-gcc":

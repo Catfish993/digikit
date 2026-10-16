@@ -5,7 +5,7 @@
 //! - region 2, the path filesystem: superblock at sector 0x5D8000 (magic, version 3 or 4, lookup3 checksum), the id
 //!   and page bitmaps, 128-byte records (inline extents, or indirect extent pages above 8 extents), directory
 //!   content pages;
-//! - region 1, MmcFs: the header at sector 0, three occupancy bitmaps at sector 0x800 and the project, sound and
+//! - region 1, MmcFs: the header at sector 0, three write-protect bitmaps at sector 0x800 and the project, sound and
 //!   kit slots at fixed sector addresses.
 //!
 //! Nothing here panics on a damaged card: inconsistencies become `issues` and the walk goes on where it can.
@@ -578,9 +578,9 @@ fn read_trimmed(img: &dyn RandomAccessRead, first: u64, sectors: u64) -> Vec<u8>
 /// Read the occupied MmcFs slots.
 ///
 /// A slot is occupied when its first sector holds data: not all zero (never written) and not all 0xFF (erased).
-/// The occupancy bitmaps at sector 0x800 are not used for that: a project saved from the panel (FUNC+SETTINGS,
-/// YES) writes the slot and leaves the bitmap untouched (measured, DT2 1.16), so the bitmap would miss it. A bit
-/// that is set for an empty slot is reported. `overlay` (when known) selects the boot regions the guest wrote.
+/// The bitmaps at sector 0x800 are not used for that: they are the slots' write-protect bits (a padlock; finding 35), and
+/// a project saved from the panel (FUNC+SETTINGS, YES) writes the slot and leaves them untouched (measured, DT2 1.16).
+/// A write-protect bit that is set for an empty slot is reported (the firmware only sets it for a slot that holds data). `overlay` (when known) selects the boot regions the guest wrote.
 /// The project regions outside the pools are the layout's `boot-project` and `working-project` regions (the two boot
 /// copies are COKi containers the builder seeds and the firmware reads at start; the working project is rewritten
 /// from the boot copy at every start, FUN_4012eef2); they are exported only when the guest wrote them.
@@ -615,7 +615,7 @@ pub fn read_mmcfs(
             if !used {
                 if bit {
                     out.issues.push(format!(
-                        "{} slot {slot}: set in the occupancy bitmap but empty",
+                        "{} slot {slot}: write-protect bit set but the slot is empty",
                         pool.dir_name()
                     ));
                 }

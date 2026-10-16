@@ -642,8 +642,10 @@ pub fn build_tree_image(
         }
     }
 
-    // Raw MmcFs slots and their occupancy bitmaps (the table sector, 400 bytes).
-    let mut pool_table = [0u8; SECTOR];
+    // Raw MmcFs slots. The table sector (400 bytes) holds the pools' WRITE-PROTECT bits (a set bit is a padlock: the
+    // firmware refuses to save over, rename or delete the slot; finding 35), not occupancy, so an imported slot leaves
+    // its bit clear. The table is written all zero: no slot protected, and the firmware reads it as valid.
+    let pool_table = [0u8; SECTOR];
     for ((pool, slot), data) in &tree.slots.slots {
         if *slot >= layout.slot_count(*pool) {
             return Err(ImageError::SlotOutOfRange {
@@ -661,7 +663,6 @@ pub fn build_tree_image(
             });
         }
         image.write_at(bytes_at_sector(layout.slot_sector(*pool, *slot))?, data)?;
-        pool_table[layout.pool(*pool).bitmap_offset + (*slot >> 3) as usize] |= 1 << (slot & 7);
     }
     image.write_at(bytes_at_sector(layout.table_sector)?, &pool_table)?;
 
@@ -1126,7 +1127,7 @@ mod tests {
     }
 
     #[test]
-    fn mmcfs_slots_land_in_their_sectors_and_set_bitmaps() {
+    fn mmcfs_slots_land_in_their_sectors_and_leave_the_write_protect_bits_clear() {
         for (device, sound_sector, kit_sector) in [
             ("dt2", (7 + 0x2400) * 8, 0x16000 + 3 * 0x80),
             ("dn2", (7 + 0x800) * 2, 0x2000 + 3 * 0x40),
@@ -1154,13 +1155,10 @@ mod tests {
             assert_eq!(v.read((0x8a << 15) << 9, 512), vec![9; 512]);
             assert_eq!(v.read(sound_sector * 512, 0x400), pattern(0x400));
             assert_eq!(v.read(kit_sector * 512, 3000), pattern(3000));
+            // The table holds write-protect bits (finding 35): an imported slot must not be a padlocked one, because the
+            // firmware's project save refuses a protected slot ("N/A: Write-protected").
             let t = v.read(0x800 * 512, 512);
-            assert_eq!(t[0], 1 << 5);
-            assert_eq!(t[15], 1 << 7);
-            assert_eq!(t[16 + (7 >> 3)], 1 << 7);
-            assert_eq!(t[16 + 256], 1 << 3);
-            assert_eq!(t[..16].iter().map(|b| b.count_ones()).sum::<u32>(), 2);
-            assert!(t[400..].iter().all(|&b| b == 0));
+            assert!(t.iter().all(|&b| b == 0), "no slot is write-protected");
         }
     }
 

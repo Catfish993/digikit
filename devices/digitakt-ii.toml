@@ -162,7 +162,7 @@ layout = "single"
 # linear: slot n is at base_sector + n * stride_sectors, so the firmware's clamped formulas are base + stride * n.
 [card]
 header_sector = 0x0        # MmcFs header, magic 0xbeef_bace
-table_sector = 0x800       # three occupancy bitmaps, 400 bytes (FUN_40130f9a clears them; setters FUN_40130234, FUN_40132b8a)
+table_sector = 0x800       # three WRITE-PROTECT bitmaps (bit set = padlock), 400 bytes (FUN_40130f9a clears them; setters FUN_40130234, FUN_4013011e, FUN_40132c6c; finding 35)
 
 # Projects, 16 MiB, 128 slots: FUN_4012eef2, block = ((slot + 0xb) & 0xff) << 15 (a slot > 0x7f is clamped to 0x7f).
 [card.pools.projects]

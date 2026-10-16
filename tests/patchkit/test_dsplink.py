@@ -63,13 +63,14 @@ def test_constants_agree_between_the_two_sides():
         ("DL_MAGIC", MAGIC),
         ("DL_ACK_MAGIC", ACK_MAGIC),
         ("DL_ACK_OFF", ACK_OFF),
-        ("DL_AREA_BYTES", 0x20000),
     ):
         assert define(c, name) == want == define(s, name)
-    assert define(s, "DL_AREA_WORDS") * 4 == define(s, "DL_AREA_BYTES")
-    assert re.search(
-        r"\.PKBSS _dl_area, 131072;", s
-    )  # the reserved area is DL_AREA_BYTES long
+    # the area of each device: the DL_AREA_BYTES define, the .PKBSS literal and the word count agree, and the 17-bit offset reaches it
+    for dev in ("dt2", "dn2"):
+        d = (MOD / "src" / "dsp" / f"{dev}.s").read_text()
+        assert define(d, "DL_AREA_WORDS") * 4 == define(d, "DL_AREA_BYTES")
+        assert re.search(rf"\.PKBSS _dl_area, {define(d, 'DL_AREA_BYTES')};", d)
+        assert define(d, "DL_AREA_BYTES") <= define(c, "DL_AREA_BYTES") <= 4 << 17
 
 
 @pytest.mark.parametrize("image", sorted(IMAGES))
@@ -175,12 +176,12 @@ def call(linked, fn, args, reads=()):
     return {"pc": linked.symbols[fn], "args": list(args), "reads": list(reads)}
 
 
-LINK_FIELDS = ["state", "err", "buf", "dst", "nwords", "xid", "cap", "nchunks", "acked", "next", "stall", "since", "sent", "resent", "nerr", "ending", "dirty"]  # fmt: skip
+LINK_FIELDS = ["state", "err", "buf", "dst", "nwords", "xid", "cap", "nchunks", "acked", "next", "stall", "since", "sent", "resent", "nerr", "ending", "dirty", "win"]  # fmt: skip
 
 
 def link_of(linked, r):
     b = r.reads[0]
-    return dict(zip(LINK_FIELDS, struct.unpack(">17I", b), strict=True))
+    return dict(zip(LINK_FIELDS, struct.unpack(">18I", b), strict=True))
 
 
 def tail_words(blob: bytes, e0: int, n: int) -> list[int]:
@@ -207,7 +208,7 @@ def check_word(words: list[int]) -> int:
 def test_dl_send_checks_its_arguments(machine, built):
     ln = built.symbols["dl_link"]
     src = DATA + 0x4000
-    ok = call(built, "dl_send", [AREA + 0x40, src, 64], [(ln, 68)])
+    ok = call(built, "dl_send", [AREA + 0x40, src, 64], [(ln, 72)])
     cases = [
         ok,
         call(
@@ -228,8 +229,8 @@ def test_dl_send_checks_its_arguments(machine, built):
         [AREA, src, 63],  # length not a multiple of 4
         [AREA, src, 0],
         [AREA - 4, src, 64],  # before the area
-        [AREA + 0x20000, src, 4],  # after it
-        [AREA + 0x1FFFC, src, 8],  # runs over its end
+        [AREA + 0x80000, src, 4],  # after it
+        [AREA + 0x7FFFC, src, 8],  # runs over its end
         [AREA, 0, 64],
     ]
     res = run(machine, built, {}, [call(built, "dl_send", a) for a in bad])
@@ -238,7 +239,7 @@ def test_dl_send_checks_its_arguments(machine, built):
         machine,
         built,
         {src: bytes(4)},
-        [call(built, "dl_send", [AREA + 0x1FFFC, src, 4])],
+        [call(built, "dl_send", [AREA + 0x7FFFC, src, 4])],
     )
     assert last[0].d0 == 0
 
@@ -251,7 +252,7 @@ def test_first_tick_writes_a_chunk_the_dsp_can_check(machine, built):
     nwords = len(data) // 4
     words = [int.from_bytes(data[i : i + 4], "little") for i in range(0, len(data), 4)]
     # DT2 geometry: 0x802 data bytes, a 0xabc-byte frame: tail from entry 0x402, 174 words, 171 for the payload
-    tick = call(built, "dl_tick", [0x802, 0, 0xABC, 0], [(ln, 68), (TXQ, 0x55E * 4)])
+    tick = call(built, "dl_tick", [0x802, 0, 0xABC, 0], [(ln, 72), (TXQ, 0x55E * 4)])
     r = run(
         machine,
         built,
@@ -270,19 +271,20 @@ def test_first_tick_writes_a_chunk_the_dsp_can_check(machine, built):
     w = tail_words(first.reads[1], 0x402, 174)
     assert w[0] == MAGIC | (0 << 16)
     off, n, last, end, xid = (
-        w[1] & 0x7FFF,
-        (w[1] >> 15) & 0xFF,
-        (w[1] >> 23) & 1,
-        (w[1] >> 24) & 1,
-        w[1] >> 25,
+        w[1] & 0x1FFFF,
+        (w[1] >> 17) & 0xFF,
+        (w[1] >> 25) & 1,
+        (w[1] >> 26) & 1,
+        w[1] >> 27,
     )
     assert (off, n, last, end, xid) == (8, 171, 0, 0, 1)
+    assert w[0] >> 30 == 0  # window 0
     assert w[2 : 2 + n] == words[:171]
     assert w[2 + n] == check_word(w[: 2 + n])
     # no acknowledgement came, so the second tick sends chunk 1
     w1 = tail_words(r[2].reads[1], 0x402, 174)
     assert w1[0] == MAGIC | (1 << 16)
-    off1, n1, last1 = w1[1] & 0x7FFF, (w1[1] >> 15) & 0xFF, (w1[1] >> 23) & 1
+    off1, n1, last1 = w1[1] & 0x1FFFF, (w1[1] >> 17) & 0xFF, (w1[1] >> 25) & 1
     assert (off1, n1, last1) == (8 + 171, nwords - 171, 1)
     assert w1[2 : 2 + n1] == words[171:]
     assert w1[2 + n1] == check_word(w1[: 2 + n1])
@@ -308,7 +310,7 @@ def test_acknowledgements_drive_the_state(machine, built):
         return bytes(rec)
 
     def tick(rec_addr):
-        return call(built, "dl_tick", [0xA80, 0, 0xABC, rec_addr], [(ln, 68)])
+        return call(built, "dl_tick", [0xA80, 0, 0xABC, rec_addr], [(ln, 72)])
 
     recs = {
         REC + 0x1000 * i: ack(*a)
@@ -356,7 +358,7 @@ def test_dsp_error_status_and_timeout_stop_the_transfer(machine, built):
     struct.pack_into(
         ">HHHH", rec, ACK_OFF, ACK_MAGIC, 0, 1 | (3 << 8), 0
     )  # status 3: destination refused
-    tick = call(built, "dl_tick", [0xA80, 0, 0xABC, REC], [(ln, 68)])
+    tick = call(built, "dl_tick", [0xA80, 0, 0xABC, REC], [(ln, 72)])
     r = run(
         machine,
         built,
@@ -367,7 +369,7 @@ def test_dsp_error_status_and_timeout_stop_the_transfer(machine, built):
     assert lk["state"] == 3 and lk["err"] == 3 and lk["ending"] == 5
     # no acknowledgement at all: the timeout is 900 ticks
     ticks = [
-        call(built, "dl_tick", [0xA80, 0, 0xABC, 0], [(ln, 68)]) for _ in range(902)
+        call(built, "dl_tick", [0xA80, 0, 0xABC, 0], [(ln, 72)]) for _ in range(902)
     ]
     r = run(
         machine,
@@ -383,7 +385,37 @@ def test_dsp_error_status_and_timeout_stop_the_transfer(machine, built):
         {src: bytes(64)},
         [
             call(built, "dl_send", [AREA, src, 64]),
-            call(built, "dl_tick", [0xAB0, 0, 0xABC, 0], [(ln, 68), (TXQ, 64)]),
+            call(built, "dl_tick", [0xAB0, 0, 0xABC, 0], [(ln, 72), (TXQ, 64)]),
         ],
     )
     assert link_of(built, r[1])["err"] == 101 and r[1].reads[1] == bytes(64)
+
+
+@needs_gcc
+def test_window_transfers_carry_the_window_and_refuse_bad_arguments(machine, built):
+    ln = built.symbols["dl_link"]
+    src = DATA + 0x4000
+    tick = call(built, "dl_tick", [0x802, 0, 0xABC, 0], [(ln, 72), (TXQ, 0x55E * 4)])
+    data = struct.pack("<2I", 0x11223344, 0x55667788)
+    r = run(
+        machine,
+        built,
+        {src: data},
+        [call(built, "dl_send_win", [1, 3, src, 8]), tick],
+    )
+    assert r[0].d0 == 0
+    w = tail_words(r[1].reads[1], 0x402, 174)
+    assert w[0] == MAGIC | (0 << 16) | (1 << 30)
+    assert (w[1] & 0x1FFFF, (w[1] >> 17) & 0xFF, (w[1] >> 25) & 1) == (3, 2, 1)
+    assert w[2:4] == [0x11223344, 0x55667788]
+    assert w[4] == check_word(w[:4])
+    bad = [
+        [0, 0, src, 8],  # window 0 is dl_send's
+        [2, 0, src, 8],  # no window 2
+        [1, 0, src, 0],
+        [1, 0, src, 6],
+        [1, 0x20000, src, 4],
+        [1, 0, 0, 4],
+    ]
+    res = run(machine, built, {}, [call(built, "dl_send_win", a) for a in bad])
+    assert [x.d0 & 0xFFFFFFFF for x in res] == [0xFFFFFFFE] * len(bad)
