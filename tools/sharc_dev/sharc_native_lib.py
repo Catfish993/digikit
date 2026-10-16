@@ -24,6 +24,8 @@ SHARED = ROOT / "out/native/shared-core"
 
 
 def library_path() -> pathlib.Path:
+    if sys.platform == "win32":  # cargo names a Windows cdylib without the lib prefix
+        return SHARED / "target/release/sharc_native.dll"
     suffix = "dylib" if sys.platform == "darwin" else "so"
     return SHARED / "target/release" / f"libsharc_native.{suffix}"
 

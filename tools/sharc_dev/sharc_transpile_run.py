@@ -52,7 +52,11 @@ from tools.sharc_dev.sharcldr import LoadedMemory  # noqa: E402
 # build (kept for perf/AOT work; it may be stale, and an old one that lacks
 # symbols makes the tests skip). With neither, the shared-core path, so the
 # skip message points at what `mise run sharc:native-lib` builds.
-_LIB_NAME = "libsharc_native." + ("dylib" if sys.platform == "darwin" else "so")
+_LIB_NAME = (
+    "sharc_native.dll"  # cargo names a Windows cdylib without the lib prefix
+    if sys.platform == "win32"
+    else "libsharc_native." + ("dylib" if sys.platform == "darwin" else "so")
+)
 _IMAGE_LIB = os.path.join(
     ROOT, "out", "native", "opt", "target-final", "release", _LIB_NAME
 )
