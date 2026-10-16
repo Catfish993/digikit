@@ -3,12 +3,23 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "packageManager": "pnpm@12.8.2",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "pnpm --filter @digi/web dev",
     "build": "pnpm --filter @digi/web build",
     "check": "pnpm --filter @digi/web check",
-    "lint": "pnpm --filter @digi/web lint",
+    "lint": "oxlint",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
     "test": "pnpm --filter @digi/web test:audio",
     "test:regression": "pnpm --filter @digi/regression test"
+  },
+  "devDependencies": {
+    "eslint-plugin-solid": "0.18.1",
+    "oxlint": "1.87.0",
+    "prettier": "3.9.9",
+    "prettier-plugin-astro": "1.1.1"
   }
 }

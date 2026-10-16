@@ -4,7 +4,7 @@ version = "0.1.0"
 name = "XSLICE"
 category = "machines"
 status = "experimental"
-summary = "A MANUAL SLICE clone with its own name and a SRC page that also shows the orphaned CFADE row (an XSLICE machine, built on core/machines)"
+summary = "A slice machine like MANUAL SLICE, with its own SRC page."
 requires = ["core/machines"]
 conflicts = []
 

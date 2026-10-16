@@ -62,7 +62,12 @@ export interface CardBridge {
 }
 
 /** Send `files` to the controller and start the card job; returns when the job has started. */
-export async function startCard(bridge: CardBridge, files: File[], onStaged?: (done: number, total: number) => void, name = folderName(files)): Promise<void> {
+export async function startCard(
+  bridge: CardBridge,
+  files: File[],
+  onStaged?: (done: number, total: number) => void,
+  name = folderName(files),
+): Promise<void> {
   await bridge.reset();
   let done = 0;
   for (const file of files) {

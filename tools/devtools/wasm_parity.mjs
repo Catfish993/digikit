@@ -42,9 +42,16 @@ for (let i = 2; i < process.argv.length; i++) {
   args[a.slice(2)] = process.argv[++i];
 }
 const here = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(args.repo ?? (fs.existsSync(path.join(here, '..', '..', 'packages', 'emulator')) ? path.join(here, '..', '..') : process.cwd()));
+const root = path.resolve(
+  args.repo ??
+    (fs.existsSync(path.join(here, '..', '..', 'packages', 'emulator')) ? path.join(here, '..', '..') : process.cwd()),
+);
 const env = process.env;
-const ready = path.resolve(root, env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
+const ready = path.resolve(
+  root,
+  env.DIGI_EMU_READY_DIR ??
+    JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir,
+);
 const paths = {
   core: args.core ?? path.join(root, 'apps/web/.local/emulator-core-sharc.wasm'),
   syx: args.syx ?? env.DIGI_EMU_SYX ?? env.DIGI_COUPLED_SYX ?? path.join(root, 'firmware', 'Digitone_II_OS1.11.syx'),
@@ -67,8 +74,16 @@ const fastConfig = (() => {
   const table = JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/fast_regions.json'), 'utf8'));
   const entry = table[crypto.createHash('sha256').update(fs.readFileSync(paths.syx)).digest('hex')];
   if (!entry) throw new Error('no entry in tools/emulator/fast_regions.json for this firmware');
-  const pcs = (t) => (t ?? '').split(',').filter((x) => x.trim()).map((x) => parseInt(x, 16));
-  return { regions: pcs(entry.fast_regions), roots: pcs(entry.blocktrans), ...(args.fast.startsWith('desktop+auto') ? { auto: [256, 64] } : {}) };
+  const pcs = (t) =>
+    (t ?? '')
+      .split(',')
+      .filter((x) => x.trim())
+      .map((x) => parseInt(x, 16));
+  return {
+    regions: pcs(entry.fast_regions),
+    roots: pcs(entry.blocktrans),
+    ...(args.fast.startsWith('desktop+auto') ? { auto: [256, 64] } : {}),
+  };
 })();
 const kernels = [];
 const hostStats = { compileMs: 0, compiled: 0, runs: 0, bytes: 0 };
@@ -77,21 +92,40 @@ const hostEnv = {
     const bytes = new Uint8Array(mem(), ptr, len).slice();
     const t = performance.now();
     try {
-      const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { memory: e.memory, helper: e.digi_helper_exec } });
+      const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes), {
+        env: { memory: e.memory, helper: e.digi_helper_exec },
+      });
       kernels.push(inst.exports.k0);
-    } catch (err) { console.error(`kernel module refused: ${err}`); return -1; }
-    hostStats.compileMs += performance.now() - t; hostStats.compiled++; hostStats.bytes += len;
+    } catch (err) {
+      console.error(`kernel module refused: ${err}`);
+      return -1;
+    }
+    hostStats.compileMs += performance.now() - t;
+    hostStats.compiled++;
+    hostStats.bytes += len;
     return kernels.length - 1;
   },
-  host_wasm_run(id, ctx, st) { hostStats.runs++; return kernels[id](ctx, st); },
-  host_wasm_free(id) { kernels[id] = null; },
+  host_wasm_run(id, ctx, st) {
+    hostStats.runs++;
+    return kernels[id](ctx, st);
+  },
+  host_wasm_free(id) {
+    kernels[id] = null;
+  },
 };
 // --split 1: the two-worker session of the browser (apps/web/src/split-session.ts):
 // the ColdFire instance runs in this thread, the DSP instance in a worker_threads
 // worker (tools/devtools/wasm_split.mjs), DSPI2 frames cross a SharedArrayBuffer. Same
 // scenario loop and events, so the PCM must be the single-instance PCM.
 let e, mem, call, first, loadS, cfSide, dspDone, linkBuffer;
-const dspiStub = { host_dspi_exchange() { throw new Error('no remote DSP'); }, host_dspi_link() { throw new Error('no remote DSP'); } };
+const dspiStub = {
+  host_dspi_exchange() {
+    throw new Error('no remote DSP');
+  },
+  host_dspi_link() {
+    throw new Error('no remote DSP');
+  },
+};
 if (args.split === '1') {
   const web = path.join(root, 'apps/web/src');
   const { createCfSide } = await import(path.join(web, 'split-session.ts'));
@@ -100,19 +134,40 @@ if (args.split === '1') {
   const read = (p) => new Uint8Array(fs.readFileSync(p));
   const wasm = read(paths.core);
   linkBuffer = createLinkBuffer();
-  const dspWorker = new Worker(path.join(here, 'wasm_split.mjs'), { workerData: { wasm, image: read(paths.image), state: read(paths.dsp), link: linkBuffer, keepPcm: true, fast: fastConfig }, execArgv: process.execArgv });
-  dspDone = new Promise((resolve, reject) => { dspWorker.on('message', (m) => { if (m.type === 'done') resolve(m); }); dspWorker.on('error', reject); });
-  await new Promise((resolve, reject) => { dspWorker.once('message', (m) => m.type === 'ready' && resolve()); dspWorker.once('error', reject); });
+  const dspWorker = new Worker(path.join(here, 'wasm_split.mjs'), {
+    workerData: {
+      wasm,
+      image: read(paths.image),
+      state: read(paths.dsp),
+      link: linkBuffer,
+      keepPcm: true,
+      fast: fastConfig,
+    },
+    execArgv: process.execArgv,
+  });
+  dspDone = new Promise((resolve, reject) => {
+    dspWorker.on('message', (m) => {
+      if (m.type === 'done') resolve(m);
+    });
+    dspWorker.on('error', reject);
+  });
+  await new Promise((resolve, reject) => {
+    dspWorker.once('message', (m) => m.type === 'ready' && resolve());
+    dspWorker.once('error', reject);
+  });
   const t0 = performance.now();
   cfSide = await createCfSide({ wasm, syx: read(paths.syx), snapshot: read(paths.snap), link: linkBuffer });
   loadS = (performance.now() - t0) / 1000;
-  e = cfSide.core.exports; mem = cfSide.core.memory; call = cfSide.core.call;
+  e = cfSide.core.exports;
+  mem = cfSide.core.memory;
+  call = cfSide.core.call;
   first = cfSide.loaded;
 } else {
   const { instance } = await WebAssembly.instantiate(fs.readFileSync(paths.core), { env: { ...dspiStub, ...hostEnv } });
   e = instance.exports;
   mem = () => e.memory.buffer;
-  const json = () => JSON.parse(new TextDecoder().decode(new Uint8Array(mem(), e.digi_result_ptr(), e.digi_result_len())));
+  const json = () =>
+    JSON.parse(new TextDecoder().decode(new Uint8Array(mem(), e.digi_result_ptr(), e.digi_result_len())));
   call = (name, ...a) => {
     const c = e[name](...a);
     const v = json();
@@ -129,7 +184,17 @@ if (args.split === '1') {
   const bufs = Object.fromEntries(['syx', 'image', 'dsp', 'snap'].map((k) => [k, fs.readFileSync(paths[k])]));
   const ptrs = Object.fromEntries(Object.entries(bufs).map(([k, b]) => [k, put(b)]));
   const t0 = performance.now();
-  first = call('digi_load_coupled', ptrs.syx, bufs.syx.length, ptrs.image, bufs.image.length, ptrs.dsp, bufs.dsp.length, ptrs.snap, bufs.snap.length);
+  first = call(
+    'digi_load_coupled',
+    ptrs.syx,
+    bufs.syx.length,
+    ptrs.image,
+    bufs.image.length,
+    ptrs.dsp,
+    bufs.dsp.length,
+    ptrs.snap,
+    bufs.snap.length,
+  );
   loadS = (performance.now() - t0) / 1000;
   for (const k of Object.keys(ptrs)) e.digi_dealloc(ptrs[k], bufs[k].length);
 }
@@ -137,10 +202,22 @@ if (!first.status.ready) throw new Error('the restored snapshot is not at ready'
 if (args.split !== '1' && fastConfig) {
   if (Array.isArray(fastConfig)) call('digi_sharc_fast', ...fastConfig);
   else {
-    const putU32 = (list) => { const p = e.digi_alloc(list.length * 4); new Uint32Array(mem(), p, list.length).set(list); return p; };
+    const putU32 = (list) => {
+      const p = e.digi_alloc(list.length * 4);
+      new Uint32Array(mem(), p, list.length).set(list);
+      return p;
+    };
     const reg = putU32(fastConfig.regions);
     const roots = putU32(fastConfig.roots);
-    call('digi_sharc_fast_regions', reg, fastConfig.regions.length, roots, fastConfig.roots.length, ...(fastConfig.auto ?? [0xffffffff, 0]), 0);
+    call(
+      'digi_sharc_fast_regions',
+      reg,
+      fastConfig.regions.length,
+      roots,
+      fastConfig.roots.length,
+      ...(fastConfig.auto ?? [0xffffffff, 0]),
+      0,
+    );
   }
 }
 const readyAt = first.status.icount;
@@ -154,7 +231,12 @@ if (qa) call('digi_button', 12, 1);
 const qaPoll = (icount) => {
   if (!qa) return;
   const elapsed = icount - readyAt;
-  for (const [stage, when, act] of [[1, 1e6, 0], [2, 20e6, 1], [3, 21e6, 0], [4, 40e6, null]]) {
+  for (const [stage, when, act] of [
+    [1, 1e6, 0],
+    [2, 20e6, 1],
+    [3, 21e6, 0],
+    [4, 40e6, null],
+  ]) {
     if (qa.stage === stage && elapsed >= when) {
       if (act === null) call('digi_turn', 1, 1);
       else call('digi_button', 12, act);
@@ -167,23 +249,28 @@ qaPoll(readyAt);
 // at_s events count audio seconds as DSPI2 frames sent / 1500.
 const sortKey = (ev) => (ev.at_instr !== undefined ? [0, ev.at_instr] : [1, Math.round(ev.at_s * FRAMES_PER_SECOND)]);
 const events = [...(scenario.events ?? [])].sort((a, b) => {
-  const [ka, na] = sortKey(a), [kb, nb] = sortKey(b);
+  const [ka, na] = sortKey(a),
+    [kb, nb] = sortKey(b);
   return ka - kb || na - nb;
 });
 const seconds = args.seconds !== undefined ? Number(args.seconds) : scenario.seconds;
 const targetFrames = seconds === undefined ? null : Math.ceil(seconds * FRAMES_PER_SECOND);
-const untilInstr = args.seconds !== undefined ? null : scenario.instructions ?? null;
+const untilInstr = args.seconds !== undefined ? null : (scenario.instructions ?? null);
 
 const chunks = [];
 let ledState;
-let values = 0, icount = readyAt, next = 0, nChunks = 0;
+let values = 0,
+  icount = readyAt,
+  next = 0,
+  nChunks = 0;
 const frames = () => (cfSide ? cfSide.stats().frames : Math.floor(values / VALUES_PER_FRAME));
 const wallStart = performance.now();
 let lastLog = wallStart;
 for (;;) {
   while (next < events.length) {
     const ev = events[next];
-    const due = ev.at_instr !== undefined ? icount - readyAt >= ev.at_instr : frames() >= Math.round(ev.at_s * FRAMES_PER_SECOND);
+    const due =
+      ev.at_instr !== undefined ? icount - readyAt >= ev.at_instr : frames() >= Math.round(ev.at_s * FRAMES_PER_SECOND);
     if (!due) break;
     if (args.leds) console.log(`+${((icount - readyAt) / 1e6).toFixed(1)}M event ${JSON.stringify(ev)}`);
     if (ev.button !== undefined) call('digi_button', ev.button, (ev.down ?? true) ? 1 : 0);
@@ -195,14 +282,22 @@ for (;;) {
   let budget = STEP_CHUNK;
   if (untilInstr !== null && scenario.clip_last_chunk) budget = Math.min(untilInstr - elapsed, STEP_CHUNK);
   const ev = events[next];
-  if (scenario.exact_events && ev && ev.at_instr !== undefined && ev.at_instr > elapsed) budget = Math.min(budget, ev.at_instr - elapsed);
+  if (scenario.exact_events && ev && ev.at_instr !== undefined && ev.at_instr > elapsed)
+    budget = Math.min(budget, ev.at_instr - elapsed);
   const snap = call('digi_step', budget);
   const status = snap.status;
   if (args.leds && snap.leds !== undefined) {
-    const prev = ledState ?? '0'.repeat(128), changes = [];
-    for (let i = 0; i < 64; i++) if (snap.leds.slice(i * 2, i * 2 + 2) !== prev.slice(i * 2, i * 2 + 2)) changes.push(`${i.toString(16).padStart(2, '0')}:${prev.slice(i * 2, i * 2 + 2)}->${snap.leds.slice(i * 2, i * 2 + 2)}`);
+    const prev = ledState ?? '0'.repeat(128),
+      changes = [];
+    for (let i = 0; i < 64; i++)
+      if (snap.leds.slice(i * 2, i * 2 + 2) !== prev.slice(i * 2, i * 2 + 2))
+        changes.push(
+          `${i.toString(16).padStart(2, '0')}:${prev.slice(i * 2, i * 2 + 2)}->${snap.leds.slice(i * 2, i * 2 + 2)}`,
+        );
     ledState = snap.leds;
-    console.log(`+${((status.icount - readyAt) / 1e6).toFixed(1)}M leds rev=${status.led_revision} ${changes.join(' ')}`);
+    console.log(
+      `+${((status.icount - readyAt) / 1e6).toFixed(1)}M leds rev=${status.led_revision} ${changes.join(' ')}`,
+    );
   }
   nChunks++;
   icount = status.icount;
@@ -215,7 +310,9 @@ for (;;) {
   qaPoll(icount);
   if (performance.now() - lastLog > 30000) {
     lastLog = performance.now();
-    console.error(`  +${((icount - readyAt) / 1e6).toFixed(0)}M cf, ${(values / 2 / 48000).toFixed(2)} s audio, wall ${((lastLog - wallStart) / 1000).toFixed(0)} s`);
+    console.error(
+      `  +${((icount - readyAt) / 1e6).toFixed(0)}M cf, ${(values / 2 / 48000).toFixed(2)} s audio, wall ${((lastLog - wallStart) / 1000).toFixed(0)} s`,
+    );
   }
 }
 const wallS = (performance.now() - wallStart) / 1000;
@@ -229,17 +326,32 @@ if (cfSide) {
   values = pcm.length / 4;
   stats = done.stats.engine;
   const s = cfSide.stats();
-  console.log(`split: ColdFire thread blocked on the DSP ${(s.waitedMs / 1000).toFixed(2)} s of ${wallS.toFixed(2)} s, DSP worker busy ${(done.stats.busyMs / 1000).toFixed(2)} s, ${s.requests} link requests`);
+  console.log(
+    `split: ColdFire thread blocked on the DSP ${(s.waitedMs / 1000).toFixed(2)} s of ${wallS.toFixed(2)} s, DSP worker busy ${(done.stats.busyMs / 1000).toFixed(2)} s, ${s.requests} link requests`,
+  );
 } else stats = call('digi_sharc_stats');
 const audioS = values / 2 / 48000;
 const sha = crypto.createHash('sha256').update(pcm).digest('hex');
-console.log(`scenario=${scenario.name} cf_instr=${icount - readyAt} chunks=${nChunks} frames=${stats.frames} dsp_instr=${stats.dsp_instructions} halted=${stats.halted} missing_blocks=${stats.missing_blocks}`);
+console.log(
+  `scenario=${scenario.name} cf_instr=${icount - readyAt} chunks=${nChunks} frames=${stats.frames} dsp_instr=${stats.dsp_instructions} halted=${stats.halted} missing_blocks=${stats.missing_blocks}`,
+);
 console.log(`pcm values=${values} audio=${audioS.toFixed(3)}s sha256=${sha}`);
-console.log(`wall=${wallS.toFixed(1)}s load=${loadS.toFixed(2)}s real_time_factor=${(wallS / audioS).toFixed(1)}x slower than real time`);
+console.log(
+  `wall=${wallS.toFixed(1)}s load=${loadS.toFixed(2)}s real_time_factor=${(wallS / audioS).toFixed(1)}x slower than real time`,
+);
 if (args.fast) {
-  const k = cfSide ? (await dspDone).stats.kernels : { compiled: hostStats.compiled, compileMs: hostStats.compileMs, wasmBytes: hostStats.bytes, runs: hostStats.runs };
+  const k = cfSide
+    ? (await dspDone).stats.kernels
+    : {
+        compiled: hostStats.compiled,
+        compileMs: hostStats.compileMs,
+        wasmBytes: hostStats.bytes,
+        runs: hostStats.runs,
+      };
   console.log('fast report', JSON.stringify(cfSide ? (await dspDone).stats.fast : call('digi_sharc_fast_report')));
-  console.log(`fast tier: ${k.compiled} kernels compiled in ${k.compileMs.toFixed(0)} ms (${(k.wasmBytes / 1e6).toFixed(2)} MB wasm), ${k.runs} kernel runs`);
+  console.log(
+    `fast tier: ${k.compiled} kernels compiled in ${k.compileMs.toFixed(0)} ms (${(k.wasmBytes / 1e6).toFixed(2)} MB wasm), ${k.runs} kernel runs`,
+  );
 }
 if (args.out) fs.writeFileSync(args.out, pcm);
 let rc = 0;

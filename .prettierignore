@@ -1,0 +1,29 @@
+# Prettier formats the JS/TS workspaces only. Everything else at the root is
+# Rust, Python, firmware data or docs with their own conventions.
+/*
+!/apps/
+!/packages/
+!/tests/
+!/tools/
+!/package.json
+!/pnpm-workspace.yaml
+!/.prettierrc.json
+!/.oxlintrc.json
+
+# Non-JS parts of the JS roots
+/tests/*
+!/tests/regression/
+/tools/**/*.json
+/packages/emulator/**/*.json
+**/*.md
+
+# Generated or local
+node_modules/
+dist/
+.astro/
+target/
+gen/
+apps/web/.local/
+apps/web/public/modules/
+apps/web/public/*.wasm
+pnpm-lock.yaml

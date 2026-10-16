@@ -20,6 +20,9 @@ struct Host {
     handle: Handle,
     /// Where the webview's chosen sample files are staged before the card is built.
     staging: PathBuf,
+    /// The .syx the app was started with (`mise run emu -- FILE`); the console shows it and reloads it
+    /// when it changes. The page can read only this file.
+    source: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<StartupArgs, String> {
@@ -91,6 +94,42 @@ fn emu_save_diagnostics(name: String, json: String) -> Result<String, String> {
     let path = dir.join(format!("{stamp}-{safe}"));
     std::fs::write(&path, json).map_err(|e| e.to_string())?;
     Ok(path.display().to_string())
+}
+
+/// The startup .syx: its path, size and modification time (milliseconds since the epoch), or null
+/// when the app was started without one.
+#[tauri::command]
+fn emu_source_info(host: State<'_, Host>) -> Result<Option<Value>, String> {
+    let Some(path) = &host.source else {
+        return Ok(None);
+    };
+    let fail = |error: &dyn std::fmt::Display| format!("{}: {error}", path.display());
+    let metadata = std::fs::metadata(path).map_err(|e| fail(&e))?;
+    let modified = metadata.modified().map_err(|e| fail(&e))?;
+    let modified_ms = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| fail(&e))?
+        .as_millis() as u64;
+    Ok(Some(serde_json::json!({
+        "path": path.display().to_string(),
+        "name": path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        "bytes": metadata.len(),
+        "modified_ms": modified_ms,
+    })))
+}
+
+/// The startup .syx's current bytes, for the console's Reload and its reload on change.
+#[tauri::command]
+fn emu_source_read(host: State<'_, Host>) -> Result<tauri::ipc::Response, String> {
+    let path = host
+        .source
+        .as_ref()
+        .ok_or("the app was started without a firmware file")?;
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]
@@ -443,12 +482,18 @@ fn main() {
     let host = Host {
         handle,
         staging: run_dir_for_staging.join("cards").join("staging"),
+        source: startup
+            .syx
+            .clone()
+            .map(|path| std::fs::canonicalize(&path).unwrap_or(path)),
     };
     tauri::Builder::default()
         .manage(host)
         .invoke_handler(tauri::generate_handler![
             emu_diagnostics,
             emu_save_diagnostics,
+            emu_source_info,
+            emu_source_read,
             emu_audio_status,
             emu_startup,
             emu_load,

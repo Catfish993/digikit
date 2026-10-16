@@ -4,7 +4,7 @@ version = "0.1.0"
 name = "Master gain"
 category = "fx"
 status = "experimental"
-summary = "Scales the final stereo block before the Q31 conversion by a gain word (1.0 = bit-identical)"
+summary = "Scales the master output by a set gain."
 requires = []
 conflicts = []
 

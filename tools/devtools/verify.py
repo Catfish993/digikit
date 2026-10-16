@@ -160,6 +160,18 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("dt2-check", "dt2-tier-quick", "python-tests"),
     ),
+    (
+        (
+            ".oxlintrc.json",
+            ".prettierrc.json",
+            ".prettierignore",
+            ".editorconfig",
+            "packages/control-client/",
+            "packages/test-support/",
+            "tests/regression/",
+        ),
+        ("web",),
+    ),
     (("apps/web/",), ("web",)),
     (("apps/desktop/",), ("desktop", "web")),
     (
@@ -625,7 +637,11 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
 
 
 def desktop_check(gate: Gate) -> None:
-    """The desktop app crate must compile with its own features."""
+    """The desktop console builds and type-checks, and the app crate compiles with it."""
+    gate.run("desktop-ui", ["pnpm", "--filter", "@digi/desktop", "run", "build:ui"])
+    gate.run(
+        "desktop-ui-types", ["pnpm", "--filter", "@digi/desktop", "run", "check:ui"]
+    )
     env = digi_env.rust_env()
     env["SHARC_GEN_DIR"] = str(digi_env.generated_dir())
     cmd = ["cargo", "check", "--manifest-path", "apps/desktop/src-tauri/Cargo.toml"]
@@ -638,6 +654,8 @@ def web_check(gate: Gate) -> None:
     gate.run(
         "patchkit-wasm", [*PY, "-m", "tools.emulator.native_wasm", "--patchkit-only"]
     )
+    gate.run("web-lint", ["pnpm", "exec", "oxlint"])
+    gate.run("web-format", ["pnpm", "exec", "prettier", "--check", "."])
     gate.run("web-tests", ["node", "--test", "tests/*.test.mjs"], cwd=web)
     gate.run("web-types", ["npx", "astro", "check"], cwd=web)
 
@@ -691,7 +709,7 @@ def plan(steps: tuple[str, ...]) -> tuple[list[str], dict[str, tuple[str, ...]]]
 
 def rust_tests_command() -> list[str]:
     # cargo test --workspace --release (rust_ws.py); digiemu-desktop is excluded when
-    # apps/web/dist is absent
+    # apps/desktop/ui/dist is absent
     return [*PY, "-m", "tools.devtools.rust_ws", "test"]
 
 

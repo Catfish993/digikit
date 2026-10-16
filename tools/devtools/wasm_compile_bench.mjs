@@ -12,7 +12,7 @@
 // shared memory and serialises a module through structured clone to test
 // that a Module can be handed to another thread.
 import fs from 'node:fs';
-import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 
 if (!isMainThread) {
   const scratch = new WebAssembly.Memory({ initial: 64 });
@@ -23,18 +23,27 @@ if (!isMainThread) {
     if (m.warm) {
       // Run the function once on scratch memory so V8 compiles it here.
       const inst = new WebAssembly.Instance(mod, { env: { memory: scratch } });
-      try { inst.exports.k0(0x10000, 0x40000); } catch (e) { /* trap ignored */ }
+      try {
+        inst.exports.k0(0x10000, 0x40000);
+      } catch {
+        /* trap ignored */
+      }
     }
     parentPort.postMessage({ id: m.id, mod, ms: performance.now() - t0 });
   });
 } else {
   const [dir, limitArg] = process.argv.slice(2);
-  const names = fs.readdirSync(dir).filter((n) => n.startsWith('kernel-') && n.endsWith('.wasm')).sort();
+  const names = fs
+    .readdirSync(dir)
+    .filter((n) => n.startsWith('kernel-') && n.endsWith('.wasm'))
+    .sort();
   const limit = Number(limitArg ?? names.length);
   const files = names.slice(0, limit).map((n) => fs.readFileSync(`${dir}/${n}`));
   const q = (xs, p) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(xs.length * p))];
   const bytes = files.reduce((a, f) => a + f.length, 0);
-  console.log(`${files.length} modules, ${(bytes / 1e6).toFixed(1)} MB, mean ${(bytes / files.length / 1024).toFixed(1)} KB`);
+  console.log(
+    `${files.length} modules, ${(bytes / 1e6).toFixed(1)} MB, mean ${(bytes / files.length / 1024).toFixed(1)} KB`,
+  );
 
   // V8 caches compiled modules by their bytes, so each measurement needs its
   // own process: ONLY=sync | async | worker.
@@ -42,8 +51,11 @@ if (!isMainThread) {
   if (only === 'async') {
     setInterval(() => {}, 50); // keep the loop alive while V8 compiles in the background
     const t1 = performance.now();
-    for (let i = 0; i < files.length; i += 64) await Promise.all(files.slice(i, i + 64).map((f) => WebAssembly.compile(f)));
-    console.log(`async WebAssembly.compile of all, 64 in flight (V8 background threads): wall ${((performance.now() - t1) / 1e3).toFixed(2)} s`);
+    for (let i = 0; i < files.length; i += 64)
+      await Promise.all(files.slice(i, i + 64).map((f) => WebAssembly.compile(f)));
+    console.log(
+      `async WebAssembly.compile of all, 64 in flight (V8 background threads): wall ${((performance.now() - t1) / 1e3).toFixed(2)} s`,
+    );
     process.exit(0);
   }
   if (only === 'worker') {
@@ -58,7 +70,9 @@ if (!isMainThread) {
     });
     files.forEach((f, id) => w.postMessage({ id, bytes: f }));
     await done;
-    console.log(`compile worker + postMessage(Module) of ${files.length}: wall ${((performance.now() - t2) / 1e3).toFixed(2)} s`);
+    console.log(
+      `compile worker + postMessage(Module) of ${files.length}: wall ${((performance.now() - t2) / 1e3).toFixed(2)} s`,
+    );
     process.exit(0);
   }
 
@@ -66,11 +80,14 @@ if (!isMainThread) {
     // Compile (and for 'warm', call once) in a worker, hand the Module over,
     // and time the first call here: is the lazily compiled code shared?
     const w = new Worker(new URL(import.meta.url));
-    const mods = new Array(files.length);
+    const mods = Array.from({ length: files.length });
     const t0 = performance.now();
     const done = new Promise((resolve) => {
       let n = 0;
-      w.on('message', (m) => { mods[m.id] = m.mod; if (++n === files.length) resolve(); });
+      w.on('message', (m) => {
+        mods[m.id] = m.mod;
+        if (++n === files.length) resolve();
+      });
     });
     files.forEach((f, id) => w.postMessage({ id, bytes: f, warm: only === 'warm' }));
     await done;
@@ -80,11 +97,17 @@ if (!isMainThread) {
     for (const m of mods) {
       const inst = new WebAssembly.Instance(m, { env: { memory: mem } });
       const t = performance.now();
-      try { inst.exports.k0(0x10000, 0x40000); } catch (e) { /* trap ignored */ }
+      try {
+        inst.exports.k0(0x10000, 0x40000);
+      } catch {
+        /* trap ignored */
+      }
       call.push(performance.now() - t);
     }
     const sum = (xs) => xs.reduce((a, b) => a + b, 0);
-    console.log(`${only}: worker wall ${(wall / 1e3).toFixed(2)} s; first call here mean ${(sum(call) / call.length).toFixed(3)} ms p99 ${q(call, 0.99).toFixed(3)} max ${Math.max(...call).toFixed(2)} ms`);
+    console.log(
+      `${only}: worker wall ${(wall / 1e3).toFixed(2)} s; first call here mean ${(sum(call) / call.length).toFixed(3)} ms p99 ${q(call, 0.99).toFixed(3)} max ${Math.max(...call).toFixed(2)} ms`,
+    );
     process.exit(0);
   }
 
@@ -94,11 +117,14 @@ if (!isMainThread) {
     const w = new Worker(new URL(import.meta.url));
     const done = new Promise((resolve) => {
       let n = 0;
-      w.on('message', () => { if (++n === files.length) resolve(); });
+      w.on('message', () => {
+        if (++n === files.length) resolve();
+      });
     });
     files.forEach((f, id) => w.postMessage({ id, bytes: f }));
     await done;
-    const ctor = [], call = [];
+    const ctor = [],
+      call = [];
     const mem = new WebAssembly.Memory({ initial: 64 });
     for (const f of files) {
       let t = performance.now();
@@ -106,11 +132,17 @@ if (!isMainThread) {
       ctor.push(performance.now() - t);
       const inst = new WebAssembly.Instance(m, { env: { memory: mem } });
       t = performance.now();
-      try { inst.exports.k0(0x10000, 0x40000); } catch (e) { /* trap ignored */ }
+      try {
+        inst.exports.k0(0x10000, 0x40000);
+      } catch {
+        /* trap ignored */
+      }
       call.push(performance.now() - t);
     }
     const sum = (xs) => xs.reduce((a, b) => a + b, 0);
-    console.log(`after worker compile: constructor mean ${(sum(ctor) / ctor.length).toFixed(3)} ms max ${Math.max(...ctor).toFixed(2)}; first call mean ${(sum(call) / call.length).toFixed(3)} ms p99 ${q(call, 0.99).toFixed(3)} max ${Math.max(...call).toFixed(2)} ms`);
+    console.log(
+      `after worker compile: constructor mean ${(sum(ctor) / ctor.length).toFixed(3)} ms max ${Math.max(...ctor).toFixed(2)}; first call mean ${(sum(call) / call.length).toFixed(3)} ms p99 ${q(call, 0.99).toFixed(3)} max ${Math.max(...call).toFixed(2)} ms`,
+    );
     process.exit(0);
   }
 
@@ -134,13 +166,22 @@ if (!isMainThread) {
   //    function lazily on its first call unless --no-wasm-lazy-compilation).
   const mem = new WebAssembly.Memory({ initial: 64 });
   const first = [];
-  let ok = 0, trapped = 0;
+  let ok = 0,
+    trapped = 0;
   for (const m of mods) {
     let inst;
-    try { inst = new WebAssembly.Instance(m, { env: { memory: mem } }); } catch (e) { continue; }
+    try {
+      inst = new WebAssembly.Instance(m, { env: { memory: mem } });
+    } catch {
+      continue;
+    }
     ok++;
     const t = performance.now();
-    try { inst.exports.k0(0x10000, 0x40000); } catch (e) { trapped++; }
+    try {
+      inst.exports.k0(0x10000, 0x40000);
+    } catch {
+      trapped++;
+    }
     first.push(performance.now() - t);
   }
   const ft = first.reduce((a, b) => a + b, 0);

@@ -11,15 +11,33 @@ const module = new WebAssembly.Module(bytes);
 const memory = new WebAssembly.Memory({ initial: 2 });
 const calls = [];
 let status = 1;
-const instance = new WebAssembly.Instance(module, { env: { memory, helper: (st, rec) => { calls.push([st, rec]); return status; } } });
+const instance = new WebAssembly.Instance(module, {
+  env: {
+    memory,
+    helper: (st, rec) => {
+      calls.push([st, rec]);
+      return status;
+    },
+  },
+});
 const view = new DataView(memory.buffer);
-const ctx = 0x1000, st = 0x2000;
-const CTX_ITERS = 0, CTX_DONE = 4, CTX_EXIT_K = 8;
-assert.deepEqual(WebAssembly.Module.imports(module).map((i) => `${i.module}.${i.name}:${i.kind}`), ['env.memory:memory', 'env.helper:function']);
+const ctx = 0x1000,
+  st = 0x2000;
+const CTX_ITERS = 0,
+  CTX_DONE = 4,
+  CTX_EXIT_K = 8;
+assert.deepEqual(
+  WebAssembly.Module.imports(module).map((i) => `${i.module}.${i.name}:${i.kind}`),
+  ['env.memory:memory', 'env.helper:function'],
+);
 
 view.setUint32(ctx + CTX_ITERS, 3, true);
 assert.equal(instance.exports.k0(ctx, st), 0);
-assert.deepEqual(calls, [[st, 0x1234], [st, 0x1234], [st, 0x1234]]);
+assert.deepEqual(calls, [
+  [st, 0x1234],
+  [st, 0x1234],
+  [st, 0x1234],
+]);
 assert.equal(view.getUint32(ctx + CTX_DONE, true), 3);
 
 calls.length = 0;

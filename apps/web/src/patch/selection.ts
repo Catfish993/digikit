@@ -1,7 +1,13 @@
 // Dependency and conflict reasoning for the gallery's selection, from the manifests alone (patchkit
 // checks everything again when it applies). Pure functions, no DOM: node tests import this file.
 
-export interface CardInfo { id: string; name: string; requires: string[]; conflicts: string[]; claims: string[] }
+export interface CardInfo {
+  id: string;
+  name: string;
+  requires: string[];
+  conflicts: string[];
+  claims: string[];
+}
 
 const byId = (cards: CardInfo[]) => new Map(cards.map((c) => [c.id, c]));
 
@@ -25,16 +31,22 @@ export function withoutDependents(cards: CardInfo[], selected: string[], id: str
   let grew = true;
   while (grew) {
     grew = false;
-    for (const s of selected) if (!gone.has(s) && (map.get(s)?.requires ?? []).some((r) => gone.has(r))) { gone.add(s); grew = true; }
+    for (const s of selected)
+      if (!gone.has(s) && (map.get(s)?.requires ?? []).some((r) => gone.has(r))) {
+        gone.add(s);
+        grew = true;
+      }
   }
   return selected.filter((s) => !gone.has(s));
 }
 
 /** Why `a` and `b` cannot be applied together, or undefined. */
 export function clash(a: CardInfo, b: CardInfo): string | undefined {
-  if (a.conflicts.includes(b.id) || b.conflicts.includes(a.id)) return `${a.name} conflicts with ${b.name}: one of them lists the other as a conflict.`;
+  if (a.conflicts.includes(b.id) || b.conflicts.includes(a.id))
+    return `${a.name} conflicts with ${b.name}: one of them lists the other as a conflict.`;
   const shared = a.claims.filter((c) => b.claims.includes(c));
-  if (shared.length) return `${a.name} and ${b.name} both use ${shared.map((s) => `"${s}"`).join(', ')}, which only one module can have.`;
+  if (shared.length)
+    return `${a.name} and ${b.name} both use ${shared.map((s) => `"${s}"`).join(', ')}, which only one module can have.`;
   return undefined;
 }
 
@@ -49,18 +61,25 @@ export function selectionProblems(cards: CardInfo[], selected: string[]): Proble
   const map = byId(cards);
   const chosen = selected.map((id) => map.get(id)).filter((c): c is CardInfo => Boolean(c));
   const conflicts: string[] = [];
-  for (let i = 0; i < chosen.length; i++) for (let j = i + 1; j < chosen.length; j++) {
-    const why = clash(chosen[i], chosen[j]);
-    if (why) conflicts.push(why);
-  }
+  for (let i = 0; i < chosen.length; i++)
+    for (let j = i + 1; j < chosen.length; j++) {
+      const why = clash(chosen[i], chosen[j]);
+      if (why) conflicts.push(why);
+    }
   const blockers = new Map<string, string>();
   for (const card of cards) {
     if (selected.includes(card.id)) continue;
-    const incoming = withRequired(cards, [], card.id).map((id) => map.get(id)).filter((c): c is CardInfo => Boolean(c));
-    outer: for (const add of incoming) for (const have of chosen) {
-      const why = clash(add, have);
-      if (why) { blockers.set(card.id, add.id === card.id ? why : `Needs ${add.name}. ${why}`); break outer; }
-    }
+    const incoming = withRequired(cards, [], card.id)
+      .map((id) => map.get(id))
+      .filter((c): c is CardInfo => Boolean(c));
+    outer: for (const add of incoming)
+      for (const have of chosen) {
+        const why = clash(add, have);
+        if (why) {
+          blockers.set(card.id, add.id === card.id ? why : `Needs ${add.name}. ${why}`);
+          break outer;
+        }
+      }
   }
   return { conflicts, blockers };
 }

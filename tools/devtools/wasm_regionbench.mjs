@@ -17,6 +17,8 @@ const wasi = new WASI({
   preopens: { '/': '/' },
 });
 const module = await WebAssembly.compile(await readFile(path));
-const instance = await WebAssembly.instantiate(module,
-  wasi.getImportObject ? wasi.getImportObject() : { wasi_snapshot_preview1: wasi.wasiImport });
+const instance = await WebAssembly.instantiate(
+  module,
+  wasi.getImportObject ? wasi.getImportObject() : { wasi_snapshot_preview1: wasi.wasiImport },
+);
 process.exit(wasi.start(instance));

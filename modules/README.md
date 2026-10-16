@@ -22,7 +22,8 @@ modules/<category>/<name>/
   src/dsp/*.s          SHARC+ sources (algebraic syntax; every assembled word is re-decoded by our decoder)
   build/*.dko.json     built objects; committed
   tests/*.toml         harness tests
-  gallery/README.md    the card text of the web gallery
+  README.md            notes: what it does, devices, limits
+  gallery/icon.svg     the gallery card's icon
 ```
 
 Sources may sit in subfolders (`src/cf/dt2/`, `src/cf/dn2/`) when one module serves both devices. The directory path
@@ -47,10 +48,11 @@ must equal the module id.
   explains it. Registry entries claim themselves.
 - **Dependencies**: `requires` lists framework modules. The command line and the gallery add them for you (the
   command line prints `added by requires: ...`); a missing module or a `requires` cycle is refused.
-- **`gallery/README.md`**: text for the gallery card. Write for a player: what it adds, which firmware, how to hear
-  it, limits, "emulator only". The gallery renders a small Markdown subset: headings, paragraphs, `-` lists, fenced
-  code blocks, `` `code` `` and `**bold**`. It has no tables, no links and no HTML. No firmware bytes, no vendor
-  tool names.
+- **`summary` and `gallery/icon.svg`**: what the gallery card shows. `summary` is one short sentence for players (at
+  most 120 characters, ending with a full stop). The icon is line art on a 48 grid: `currentColor` lines and one
+  highlight in `style="stroke: var(--icon-accent)"`. `apps/web/tests/icons.test.mjs` checks it.
+- **`README.md`**: the module's notes. Write for a player: what it adds, which firmware, how to hear it, limits,
+  "emulator only". No firmware bytes, no vendor tool names.
 - **Comments in sources** say what the code does at each firmware site and which registers are free there, and cite
   the finding that shows it (`docs/findings/NN-...`).
 - **Findings**: write results into `docs/findings/` with the marks of AGENTS.md, one file per topic.
@@ -437,7 +439,7 @@ of its own: three frameworks do the firmware work, and the module only declares 
 - **Tests.** `tests/select.toml` opens the machine list, selects PLUCK, checks the committed type, the SRC page frame,
   that a trig sounds, that the DSP knows the type and that turning a knob changes the page. `tests/smoke.toml` checks
   that the module leaves the stock voice alone.
-- **Gallery.** `gallery/README.md` lists the knobs and what projects saved with PLUCK do on stock firmware.
+- **Gallery.** `README.md` lists the knobs and what projects saved with PLUCK do on stock firmware.
 
 The frameworks themselves are ordinary modules: `modules/core/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/params/` and

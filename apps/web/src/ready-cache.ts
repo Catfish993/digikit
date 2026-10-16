@@ -43,8 +43,14 @@ function pack(state: ReadyState): Uint8Array {
   dv.setUint32(0, MAGIC, true);
   dv.setUint32(4, CORE_VERSION, true);
   let at = 8;
-  parts.forEach((p) => { dv.setUint32(at, p.length, true); at += 4; });
-  parts.forEach((p) => { out.set(p, at); at += p.length; });
+  parts.forEach((p) => {
+    dv.setUint32(at, p.length, true);
+    at += 4;
+  });
+  parts.forEach((p) => {
+    out.set(p, at);
+    at += p.length;
+  });
   return out;
 }
 
@@ -55,7 +61,11 @@ function unpack(bytes: Uint8Array): ReadyState | undefined {
   const lens = [dv.getUint32(8, true), dv.getUint32(12, true), dv.getUint32(16, true)];
   let at = 20;
   if (at + lens[0] + lens[1] + lens[2] !== bytes.length) return undefined;
-  const [image, dsp, snapshot] = lens.map((n) => { const v = bytes.slice(at, at + n); at += n; return v; });
+  const [image, dsp, snapshot] = lens.map((n) => {
+    const v = bytes.slice(at, at + n);
+    at += n;
+    return v;
+  });
   return { image, dsp, snapshot };
 }
 
@@ -100,14 +110,24 @@ export function idbStore(name = 'digi-ready-state'): Store {
     const db = await open();
     return new Promise<T>((resolve, reject) => {
       const req = f(db.transaction('states', mode).objectStore('states'));
-      req.onsuccess = () => { db.close(); resolve(req.result); };
-      req.onerror = () => { db.close(); reject(req.error); };
+      req.onsuccess = () => {
+        db.close();
+        resolve(req.result);
+      };
+      req.onerror = () => {
+        db.close();
+        reject(req.error);
+      };
     });
   };
   return {
     get: async (key) => (await run<Uint8Array | undefined>('readonly', (s) => s.get(key))) ?? undefined,
-    put: async (key, value) => { await run('readwrite', (s) => s.put(value, key)); },
-    delete: async (key) => { await run('readwrite', (s) => s.delete(key)); },
+    put: async (key, value) => {
+      await run('readwrite', (s) => s.put(value, key));
+    },
+    delete: async (key) => {
+      await run('readwrite', (s) => s.delete(key));
+    },
   };
 }
 
@@ -116,7 +136,11 @@ export function memoryStore(): Store {
   const m = new Map<string, Uint8Array>();
   return {
     get: async (k) => m.get(k),
-    put: async (k, v) => { m.set(k, v); },
-    delete: async (k) => { m.delete(k); },
+    put: async (k, v) => {
+      m.set(k, v);
+    },
+    delete: async (k) => {
+      m.delete(k);
+    },
   };
 }

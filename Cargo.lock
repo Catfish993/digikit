@@ -1027,6 +1027,7 @@ dependencies = [
  "emmc-card",
  "live-audio",
  "machine",
+ "patchkit",
  "periph",
  "plusdrive-format",
  "serde",

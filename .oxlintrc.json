@@ -1,7 +1,9 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "jsPlugins": ["eslint-plugin-solid"],
-  "categories": { "correctness": "error" },
+  "categories": {
+    "correctness": "error"
+  },
   "rules": {
     "solid/jsx-no-duplicate-props": "error",
     "solid/jsx-no-undef": "error",
@@ -22,7 +24,22 @@
     "solid/imports": "error"
   },
   "overrides": [
-    { "files": ["**/*.tsx"], "rules": { "eslint/no-unassigned-vars": "off" } }
+    {
+      "files": ["**/*.tsx"],
+      "rules": {
+        "eslint/no-unassigned-vars": "off"
+      }
+    }
   ],
-  "ignorePatterns": ["dist", ".astro", ".local", "public"]
+  "ignorePatterns": [
+    "**/node_modules",
+    "**/dist",
+    "**/.astro",
+    "**/target",
+    "out",
+    ".claude",
+    "apps/web/.local",
+    "apps/web/public",
+    "apps/desktop/src-tauri/gen"
+  ]
 }

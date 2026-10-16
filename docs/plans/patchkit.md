@@ -840,7 +840,7 @@ browser DSP audio (separate sharc-jit plan) when chosen.
 - `/patch` (`src/components/PatchGallery.tsx`): drop zone, identification against the device profiles and ports,
   category filter, status and per-firmware badges, automatic `requires`, conflicts and shared claims explained,
   patchkit's own error text for incompatibility, result panel, download (`Digitakt_II_OS1.17+fx-master-gain.syx`),
-  "Boot in emulator" through IndexedDB (`src/patch/handoff.ts`, `/?handoff=1`), safety notes.
+  "Boot in emulator" through IndexedDB (`src/patch/handoff.ts`, `/emulator/?handoff=1`), safety notes.
 - Emulator page: shared layout with a top nav and theme tokens (`styles/site.css`, light and dark); dev-only
   controls (device select, export diagnostics, DSP image/state/snapshot pickers, bench, `?leds=`) show on the dev
   server or with `?dev=1` (`src/dev.ts`); the device follows the firmware's hash. The one pre-existing oxlint

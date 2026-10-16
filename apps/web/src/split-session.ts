@@ -72,16 +72,29 @@ export async function createDspSide(o: DspSideOptions): Promise<DspSide> {
     const regions = core.put(new Uint8Array(new Uint32Array(f.regions).buffer));
     const roots = core.put(new Uint8Array(new Uint32Array(f.roots).buffer));
     const [threshold, minInsns] = f.auto ?? [0xffffffff, 0];
-    core.call('digi_sharc_fast_regions', regions, f.regions.length, roots, f.roots.length, threshold, minInsns, f.follow ? 1 : 0);
+    core.call(
+      'digi_sharc_fast_regions',
+      regions,
+      f.regions.length,
+      roots,
+      f.roots.length,
+      threshold,
+      minInsns,
+      f.follow ? 1 : 0,
+    );
     core.free(regions, f.regions.length * 4);
     core.free(roots, f.roots.length * 4);
     fastArmed = true;
   };
-  if (Array.isArray(o.fast)) { core.call('digi_sharc_fast', ...o.fast); fastArmed = true; }
-  else if (o.fast && 'kind' in o.fast) {
+  if (Array.isArray(o.fast)) {
+    core.call('digi_sharc_fast', ...o.fast);
+    fastArmed = true;
+  } else if (o.fast && 'kind' in o.fast) {
     const aot = core.exports.digi_sharc_aot_blocks?.();
-    if (aot === 0) { core.call('digi_sharc_fast', 4, 2, 1); fastArmed = true; }
-    else if (o.fast.desktop) armRegions(o.fast.desktop);
+    if (aot === 0) {
+      core.call('digi_sharc_fast', 4, 2, 1);
+      fastArmed = true;
+    } else if (o.fast.desktop) armRegions(o.fast.desktop);
   } else if (o.fast) armRegions(o.fast);
   const txp = core.put(new Uint8Array(MAX_PAYLOAD));
   const rxp = core.put(new Uint8Array(MAX_PAYLOAD));
@@ -100,7 +113,14 @@ export async function createDspSide(o: DspSideOptions): Promise<DspSide> {
   let statsCalls = 0;
   const stats = (): DspStats => {
     if (fastArmed && statsCalls++ % 20 === 0) lastFast = core.call('digi_sharc_fast_report');
-    return { frames, busyMs: server.busyMs, engine: core.call('digi_sharc_stats'), pcmValues, kernels: { ...core.kernels }, fast: lastFast };
+    return {
+      frames,
+      busyMs: server.busyMs,
+      engine: core.call('digi_sharc_stats'),
+      pcmValues,
+      kernels: { ...core.kernels },
+      fast: lastFast,
+    };
   };
   return {
     core,

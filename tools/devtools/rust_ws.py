@@ -8,8 +8,8 @@
 
 ``test`` and ``check`` use the generated core of ``tools/emulator/digi_env.py`` and its
 target dir (``tools/emulator/native_target.py``), so they reuse the compiled
-``sharc-gen``. The desktop crate embeds ``apps/web/dist``; it is left out
-when the web package has not been built. ``fmt`` covers only ``CLEAN_CRATES``:
+``sharc-gen``. The desktop crate embeds ``apps/desktop/ui/dist``; it is left out
+when the desktop console has not been built. ``fmt`` covers only ``CLEAN_CRATES``:
 add a crate once ``cargo fmt -p CRATE --check`` passes; the list should only
 grow.
 """
@@ -40,7 +40,7 @@ CLEAN_CRATES = [
 
 def workspace_args() -> list[str]:
     args = ["--workspace"]
-    if not (ROOT / "apps/web/dist").is_dir():
+    if not (ROOT / "apps/desktop/ui/dist").is_dir():
         args += ["--exclude", "digiemu-desktop"]
     return args
 

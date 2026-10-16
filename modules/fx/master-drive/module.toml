@@ -4,7 +4,7 @@ version = "0.1.0"
 name = "Master drive"
 category = "fx"
 status = "experimental"
-summary = "A soft-clip saturator on the master bus with one knob (the master page's encoder 8, formerly the compressor's Sidechain Filter); UI 80 and below is bit-identical to stock"
+summary = "Soft-clip saturation on the master output, on one knob."
 requires = []
 conflicts = ["fx/master-gain"]
 

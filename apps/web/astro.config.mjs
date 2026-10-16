@@ -6,8 +6,9 @@ import solid from '@astrojs/solid-js';
 
 // Dev-only (`apply: 'serve'`): these files are firmware-derived and are never part of a build.
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-const readyDir = process.env.DIGI_EMU_READY_DIR
-  || JSON.parse(fs.readFileSync(path.join(repoRoot, 'tools', 'emulator', 'ready_inputs.json'), 'utf8')).ready_dir;
+const readyDir =
+  process.env.DIGI_EMU_READY_DIR ||
+  JSON.parse(fs.readFileSync(path.join(repoRoot, 'tools', 'emulator', 'ready_inputs.json'), 'utf8')).ready_dir;
 const localDir = path.resolve(repoRoot, readyDir);
 const localFiles = {
   'dsp-image': process.env.DIGI_EMU_DSP_IMAGE || path.join(localDir, 'digi-audio-dn2-image.bin'),
@@ -16,19 +17,29 @@ const localFiles = {
   // Used only by the headless bench (`?bench=1`, tools/devtools/browser_bench.mjs): the page cannot pick a file there.
   firmware: process.env.DIGI_EMU_SYX || path.join(repoRoot, 'firmware', 'Digitone_II_OS1.11.syx'),
 };
-const coupledCore = process.env.DIGI_EMU_SHARC_CORE || fileURLToPath(new URL('./.local/emulator-core-sharc.wasm', import.meta.url));
+const coupledCore =
+  process.env.DIGI_EMU_SHARC_CORE || fileURLToPath(new URL('./.local/emulator-core-sharc.wasm', import.meta.url));
 const loopback = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 // Answers GET (body) and HEAD (headers only) for one file; false when the file is missing.
 function sendFile(req, res, file, contentType) {
   let stat;
-  try { stat = fs.statSync(file); } catch { return false; }
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return false;
+  }
   if (!stat.isFile()) return false;
   res.setHeader('Content-Type', contentType);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Length', String(stat.size));
-  if (req.method === 'HEAD') { res.end(); return true; }
-  fs.createReadStream(file).on('error', () => res.destroy()).pipe(res);
+  if (req.method === 'HEAD') {
+    res.end();
+    return true;
+  }
+  fs.createReadStream(file)
+    .on('error', () => res.destroy())
+    .pipe(res);
   return true;
 }
 
@@ -44,8 +55,16 @@ const localInputs = {
       next();
     });
     server.middlewares.use('/__digi-local', (req, res) => {
-      if (!loopback.has(req.socket.remoteAddress ?? '')) { res.statusCode = 403; res.end(); return; }
-      if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; res.end(); return; }
+      if (!loopback.has(req.socket.remoteAddress ?? '')) {
+        res.statusCode = 403;
+        res.end();
+        return;
+      }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.statusCode = 405;
+        res.end();
+        return;
+      }
       const key = (req.url ?? '').split('?')[0].replace(/^\/+/, '');
       res.setHeader('Cache-Control', 'no-store');
       if (key === 'manifest') {
@@ -61,14 +80,31 @@ const localInputs = {
         return;
       }
       const file = Object.hasOwn(localFiles, key) ? localFiles[key] : undefined;
-      if (!file || !sendFile(req, res, file, 'application/octet-stream')) { res.statusCode = 404; res.end(); }
+      if (!file || !sendFile(req, res, file, 'application/octet-stream')) {
+        res.statusCode = 404;
+        res.end();
+      }
     });
     // The coupled core is firmware-derived: served from apps/web/.local, never from public/.
     server.middlewares.use((req, res, next) => {
-      if ((req.url ?? '').split('?')[0] !== '/emulator-core-sharc.wasm') { next(); return; }
-      if (!loopback.has(req.socket.remoteAddress ?? '')) { res.statusCode = 403; res.end(); return; }
-      if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; res.end(); return; }
-      if (!sendFile(req, res, coupledCore, 'application/wasm')) { res.statusCode = 404; res.end(); }
+      if (!(req.url ?? '').split('?')[0].endsWith('/emulator-core-sharc.wasm')) {
+        next();
+        return;
+      }
+      if (!loopback.has(req.socket.remoteAddress ?? '')) {
+        res.statusCode = 403;
+        res.end();
+        return;
+      }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.statusCode = 405;
+        res.end();
+        return;
+      }
+      if (!sendFile(req, res, coupledCore, 'application/wasm')) {
+        res.statusCode = 404;
+        res.end();
+      }
     });
   },
 };
@@ -81,11 +117,16 @@ const buildGuard = {
       const walk = (current) => {
         for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
           const full = path.join(current, entry.name);
-          if (entry.isDirectory()) { walk(full); continue; }
+          if (entry.isDirectory()) {
+            walk(full);
+            continue;
+          }
           if (!entry.isFile()) continue;
           // Ports and modules (hashes and our own code) are allowed; a firmware image or snapshot never is.
-          const bad = /^emulator-core-sharc.*\.wasm$/.test(entry.name) || /\.(syx|snap|mstate)$/i.test(entry.name)
-            || (entry.name !== 'emulator-core.wasm' && fs.statSync(full).size > 5 * 1024 * 1024);
+          const bad =
+            /^emulator-core-sharc.*\.wasm$/.test(entry.name) ||
+            /\.(syx|snap|mstate)$/i.test(entry.name) ||
+            (entry.name !== 'emulator-core.wasm' && fs.statSync(full).size > 5 * 1024 * 1024);
           if (bad) throw new Error(`firmware-derived file in build output: ${full}`);
         }
       };
@@ -98,4 +139,8 @@ const buildGuard = {
 const extraFsAllow = (process.env.DIGI_VITE_FS_ALLOW || '').split(path.delimiter).filter(Boolean);
 const server = extraFsAllow.length ? { fs: { allow: [repoRoot, ...extraFsAllow] } } : undefined;
 
-export default defineConfig({ devToolbar: { enabled: false }, integrations: [solid(), buildGuard], vite: { plugins: [localInputs], ...(server ? { server } : {}) } });
+export default defineConfig({
+  devToolbar: { enabled: false },
+  integrations: [solid(), buildGuard],
+  vite: { plugins: [localInputs], ...(server ? { server } : {}) },
+});

@@ -35,10 +35,9 @@ BLOCKTRANS_ROOTS = {
 }
 PANEL_STAMP = ROOT / "out" / "native" / "panel-stamp.json"
 PANEL_INPUTS = (
+    "apps/desktop/ui",
+    "apps/desktop/package.json",
     "apps/web/src",
-    "apps/web/public",
-    "apps/web/package.json",
-    "apps/web/astro.config.mjs",
     "pnpm-lock.yaml",
 )
 
@@ -473,12 +472,12 @@ def panel_digest() -> str:
 
 
 def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
-    """`astro build` the shared panel unless its sources match the last build.
+    """Build the desktop console (apps/desktop/ui) unless its sources match the last build.
 
     DIGI_EMU_PANEL=1 forces the build.
     """
     digest = panel_digest()
-    dist = ROOT / "apps" / "web" / "dist"
+    dist = ROOT / "apps" / "desktop" / "ui" / "dist"
     try:
         same = json.loads(PANEL_STAMP.read_text()).get("digest") == digest
     except (OSError, ValueError):
@@ -486,7 +485,7 @@ def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
     if same and dist.is_dir() and environ.get("DIGI_EMU_PANEL") != "1":
         return
     subprocess.run(
-        ["pnpm", "--filter", "@digi/web", "exec", "astro", "build"],
+        ["pnpm", "--filter", "@digi/desktop", "run", "build:ui"],
         cwd=ROOT,
         check=True,
     )

@@ -31,7 +31,8 @@ self.onmessage = async ({ data }: MessageEvent<DspStart>) => {
       fast: data.fast,
       statsEvery: 50,
       onPcm: (pcm) => data.pcmPort.postMessage(pcm, [pcm.buffer]),
-      onStats: (stats) => postMessage({ type: 'stats', ...stats, ...pcmMetrics(stats.pcmValues, performance.now() - startedAt) }),
+      onStats: (stats) =>
+        postMessage({ type: 'stats', ...stats, ...pcmMetrics(stats.pcmValues, performance.now() - startedAt) }),
     });
     postMessage({ type: 'ready' });
     startedAt = performance.now();

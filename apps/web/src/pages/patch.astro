@@ -1,8 +1,13 @@
 ---
 import Base from '../layouts/Base.astro';
 import PatchGallery from '../components/PatchGallery';
+import { modules } from '../data/modules';
 ---
 
-<Base title="digikit patch" active="patch">
-  <PatchGallery client:only="solid-js" />
+<Base
+  title="Patch your firmware · digikit"
+  description="Add machines and effects to your own Digitakt II or Digitone II firmware, in your browser."
+  active="patch"
+>
+  <PatchGallery client:only="solid-js" modules={modules} />
 </Base>

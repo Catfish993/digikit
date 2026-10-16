@@ -29,7 +29,10 @@ export interface Session {
 }
 
 export function canSplit(): boolean {
-  return typeof SharedArrayBuffer !== 'undefined' && (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true;
+  return (
+    typeof SharedArrayBuffer !== 'undefined' &&
+    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
+  );
 }
 
 /**
@@ -58,11 +61,20 @@ export async function startSession(syx: Uint8Array, o: SessionOptions): Promise<
   const cf = new Worker(new URL('./cf-worker.ts', import.meta.url), { type: 'module' });
   const ready = (w: Worker) =>
     new Promise<void>((resolve, reject) => {
-      w.onmessage = ({ data }) => (data.type === 'ready' ? resolve() : data.type === 'error' ? reject(new Error(data.error)) : o.onStatus?.(data));
+      w.onmessage = ({ data }) =>
+        data.type === 'ready' ? resolve() : data.type === 'error' ? reject(new Error(data.error)) : o.onStatus?.(data);
       w.onerror = (e) => reject(new Error(e.message));
     });
   const dspReady = ready(dsp);
-  const start: DspStart = { type: 'start', coreUrl: o.coreUrl, image: state.image, state: state.dsp, link, fast: o.fast ?? [256, 64, 0], pcmPort: o.pcmPort };
+  const start: DspStart = {
+    type: 'start',
+    coreUrl: o.coreUrl,
+    image: state.image,
+    state: state.dsp,
+    link,
+    fast: o.fast ?? [256, 64, 0],
+    pcmPort: o.pcmPort,
+  };
   dsp.postMessage(start, [o.pcmPort]);
   await dspReady; // the DSP must answer before the ColdFire sends its first frame
   const cfReady = ready(cf);

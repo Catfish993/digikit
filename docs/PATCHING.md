@@ -164,7 +164,7 @@ mise run patch:new -- test/my-demo --cf       # ColdFire only: code, data and bs
 mise run patch:build                          # rebuild all objects (`-- modules/fx/my-effect` for one, `-- --check` only checks)
 ```
 
-The command writes `modules/<category>/<name>/` (manifest, source stubs, `tests/smoke.toml`, `gallery/README.md`) and
+The command writes `modules/<category>/<name>/` (manifest, source stubs, `tests/smoke.toml`, `README.md`, `gallery/icon.svg`) and
 builds it, so the template is known to compile. [modules/README.md](../modules/README.md) is the authoring guide and
 the manifest reference.
 
@@ -183,15 +183,15 @@ that is how a new firmware shows which rules need work. A firmware without a por
 ### Web gallery
 
 ```sh
-mise run web          # builds the browser core and patchkit.wasm, generates the module index, serves http://localhost:4321
+mise run web          # builds the browser core and patchkit.wasm, generates the module bundle, serves http://localhost:4321 (home; the emulator is /emulator/, patching /patch/)
 ```
 
 Open `/patch`. Drop your own `.syx` on the page (it is read in the browser and never uploaded), pick modules, patch,
 check the result and download it. Required modules are added automatically; conflicts and incompatible firmware are
 explained with patchkit's own error text. "Boot in emulator" starts the patched image in the browser core (screen and
-controls, no DSP audio yet). The page reads `public/modules/index.json` and `bundle.json`, which
-`apps/web/scripts/gen-modules.mjs` generates from the committed `modules/` and `devices/ports/` (never from
-`out/`). `patchkit.wasm` produces the same bytes as the command line (`apps/web/tests/patchkit.test.mjs`). The
+controls, no DSP audio yet). The page reads module.toml and `gallery/icon.svg` at build time. `patchkit.wasm` reads
+`public/modules/bundle.json`, which `apps/web/scripts/gen-modules.mjs` generates from the committed `modules/` and
+`devices/ports/` (never from `out/`). `patchkit.wasm` produces the same bytes as the command line (`apps/web/tests/patchkit.test.mjs`). The
 first `mise run web` in a fresh tree compiles the browser cores and takes several minutes.
 
 ## How it works
@@ -233,7 +233,8 @@ modules/<category>/<name>/
   src/dsp/*.s          SHARC+ sources (algebraic syntax)
   build/*.dko.json     built objects, committed; `patch:build --check` keeps them current
   tests/*.toml         harness tests
-  gallery/README.md    text of the gallery card
+  README.md            notes: what it does, devices, limits
+  gallery/icon.svg     the gallery card's icon
 ```
 
 The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `[[anchor_rule]]`, `[[section]]`,

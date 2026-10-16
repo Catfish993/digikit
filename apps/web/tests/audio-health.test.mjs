@@ -8,15 +8,24 @@ import ts from 'typescript';
 function processor() {
   let Processor;
   const reports = [];
-  const context = { sampleRate: 48000, Float32Array,
-    AudioWorkletProcessor: class { constructor() { this.port = { postMessage: (value) => reports.push(value) }; } },
-    registerProcessor: (_name, ctor) => { Processor = ctor; },
+  const context = {
+    sampleRate: 48000,
+    Float32Array,
+    AudioWorkletProcessor: class {
+      constructor() {
+        this.port = { postMessage: (value) => reports.push(value) };
+      }
+    },
+    registerProcessor: (_name, ctor) => {
+      Processor = ctor;
+    },
   };
   vm.runInNewContext(fs.readFileSync(new URL('../public/pcm-worklet.js', import.meta.url), 'utf8'), context);
   const p = new Processor();
   const send = (data) => p.port.onmessage({ data });
   const render = (n) => {
-    const left = new Float32Array(n), right = new Float32Array(n);
+    const left = new Float32Array(n),
+      right = new Float32Array(n);
     assert.equal(p.process([], [[left, right]]), true);
     return [Array.from(left), Array.from(right)];
   };
@@ -44,64 +53,123 @@ function workerHarness({ ordinaryHasCoupling = false } = {}) {
     digi_alloc: () => 8,
     digi_dealloc: () => {},
     digi_load: () => writeResult({ snapshot: { status: { icount } } }),
-    digi_step: () => { icount += 100; return writeResult({ snapshot: { status: { icount } } }); },
-    digi_button: (code, down) => { buttons.push([code, down]); return writeResult({}); },
+    digi_step: () => {
+      icount += 100;
+      return writeResult({ snapshot: { status: { icount } } });
+    },
+    digi_button: (code, down) => {
+      buttons.push([code, down]);
+      return writeResult({});
+    },
   };
   if (ordinaryHasCoupling) abi.digi_load_coupled = () => writeResult({ snapshot: { status: { icount } } });
-  const source = fs.readFileSync(new URL('../src/runtime/runtime-worker.ts', import.meta.url), 'utf8')
+  const source = fs
+    .readFileSync(new URL('../src/runtime/runtime-worker.ts', import.meta.url), 'utf8')
     .replace("import { LinkClient } from '../sab-link.ts';", 'class LinkClient {}')
-    .replace("import { hostMetrics, pcmMetrics } from './runtime-metrics';", 'const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, report() { return {}; } }); const pcmMetrics = () => ({});');
+    .replace("import.meta.env.BASE_URL.replace(/\\/?$/, '/')", "'/'")
+    .replace(
+      "import { hostMetrics, pcmMetrics } from './runtime-metrics';",
+      'const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, report() { return {}; } }); const pcmMetrics = () => ({});',
+    );
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const context = {
-    WebAssembly: { Memory: WebAssembly.Memory, instantiateStreaming: async (response) => {
-      await response;
-      return { instance: { exports: abi } };
-    } },
+    WebAssembly: {
+      Memory: WebAssembly.Memory,
+      instantiateStreaming: async (response) => {
+        await response;
+        return { instance: { exports: abi } };
+      },
+    },
     fetch: async (url) => {
       if (String(url).includes('sharc')) throw new Error('missing sharc core');
       return {};
     },
-    TextDecoder, TextEncoder, Uint8Array, Float32Array, performance: { now: () => 0 },
-    setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    TextDecoder,
+    TextEncoder,
+    Uint8Array,
+    Float32Array,
+    performance: { now: () => 0 },
+    setTimeout: (fn) => {
+      timers.push(fn);
+      return timers.length;
+    },
     // The pump yields through a MessageChannel: each port2 post queues one port1 task, like a timer.
-    MessageChannel: class { constructor() { const port1 = {}; this.port1 = port1; this.port2 = { postMessage: () => { timers.push(() => port1.onmessage?.({})); } }; } },
-    postMessage: (message) => { if (message.reply) replies.get(message.reply)?.(message); },
-    self: {}, console,
+    MessageChannel: class {
+      constructor() {
+        const port1 = {};
+        this.port1 = port1;
+        this.port2 = {
+          postMessage: () => {
+            timers.push(() => port1.onmessage?.({}));
+          },
+        };
+      }
+    },
+    postMessage: (message) => {
+      if (message.reply) replies.get(message.reply)?.(message);
+    },
+    self: {},
+    console,
   };
   vm.runInNewContext(js, context);
-  const send = (data) => new Promise((resolve, reject) => {
-    replies.set(data.id, (message) => {
-      replies.delete(data.id);
-      if (message.error) reject(new Error(message.error)); else resolve(message.value);
+  const send = (data) =>
+    new Promise((resolve, reject) => {
+      replies.set(data.id, (message) => {
+        replies.delete(data.id);
+        if (message.error) reject(new Error(message.error));
+        else resolve(message.value);
+      });
+      context.self.onmessage({ data });
     });
-    context.self.onmessage({ data });
-  });
-  return { send, buttons, runTimer: async () => { const timer = timers.shift(); if (timer) await timer(); } };
+  return {
+    send,
+    buttons,
+    runTimer: async () => {
+      const timer = timers.shift();
+      if (timer) await timer();
+    },
+  };
 }
 
 function nativeRuntimeHarness(invoke) {
   const original = fs.readFileSync(new URL('../src/runtime/runtime.ts', import.meta.url), 'utf8');
-  const source = ("const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, invalidatePumpGap() {}, report() { return {}; } });\n" + original.slice(original.indexOf('export async function nativeRuntime')))
+  const source = (
+    'const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, invalidatePumpGap() {}, report() { return {}; } });\n' +
+    original.slice(original.indexOf('export async function nativeRuntime'))
+  )
     .replace("await import('@tauri-apps/api/core')", 'await fakeTauri()')
     .replaceAll('export ', '')
     .concat('\nglobalThis.nativeRuntime = nativeRuntime;');
   const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const timers = [];
   const context = {
-    fakeTauri: async () => ({ isTauri: () => true, invoke }), performance: { now: () => 0 },
-    window: { setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout() {} }, console,
+    fakeTauri: async () => ({ isTauri: () => true, invoke }),
+    performance: { now: () => 0 },
+    window: {
+      setTimeout: (fn) => {
+        timers.push(fn);
+        return timers.length;
+      },
+      clearTimeout() {},
+    },
+    console,
   };
   vm.runInNewContext(js, context);
   return { runtime: (update = () => {}) => context.nativeRuntime(update), timers };
 }
 
 test('PCM rate is emitted stereo duration over this session wall time', () => {
-  assert.deepEqual(pcmMetrics(96000, 2000), { pcm_produced_seconds: 1, production_elapsed_wall_seconds: 2, pcm_seconds_per_wall_second: 0.5 });
+  assert.deepEqual(pcmMetrics(96000, 2000), {
+    pcm_produced_seconds: 1,
+    production_elapsed_wall_seconds: 2,
+    pcm_seconds_per_wall_second: 0.5,
+  });
   assert.equal(pcmMetrics(0, 0).pcm_seconds_per_wall_second, 0);
 });
 
 test('host response histogram is bounded, resettable and exported by value', () => {
-  const m = hostMetrics('wasm_abi'); m.reset();
+  const m = hostMetrics('wasm_abi');
+  m.reset();
   const snapshot = { status: { ready: false } };
   for (const n of [0, 1, 2, 5, 10, 20, 50, 100, 101]) m.step(0, n, snapshot);
   const report = m.report();
@@ -114,13 +182,15 @@ test('host response histogram is bounded, resettable and exported by value', () 
 });
 
 test('desktop pump gaps exclude input queued while a step response is in flight', () => {
-  const m = hostMetrics('native_ipc'); m.reset();
+  const m = hostMetrics('native_ipc');
+  m.reset();
   const snapshot = { status: { ready: false } };
   m.step(10, 14, snapshot);
   m.invalidatePumpGap(); // input queues while the preceding emu_step is in flight
   m.step(17, 22, snapshot); // that response must not bridge to post-input work
   m.invalidatePumpGap(); // input completes before the following pump iteration
-  m.step(100, 110, snapshot); m.step(115, 120, snapshot);
+  m.step(100, 110, snapshot);
+  m.step(115, 120, snapshot);
   const scheduling = m.report().measured_pump_scheduling;
   assert.equal(scheduling.gaps, 1);
   assert.equal(scheduling.gap_wall_ms, 5);
@@ -137,8 +207,13 @@ test('native audio health uses its lightweight endpoint and preserves CF setup f
   });
   const runtime = await native.runtime();
   assert.deepEqual(JSON.parse(JSON.stringify(await runtime.nativeAudio())), {
-    sink_connected: false, playback_requested: false, flow_started: false,
-    source_audio_seconds: 0, session_wall_seconds: 0, device_error: null, setup_needed: true,
+    sink_connected: false,
+    playback_requested: false,
+    flow_started: false,
+    source_audio_seconds: 0,
+    session_wall_seconds: 0,
+    device_error: null,
+    setup_needed: true,
   });
   assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
     ['emu_startup', null],
@@ -159,35 +234,53 @@ test('buffer threshold has a 0.25 s minimum; stereo output is faded in; initial 
   const { p, send, render } = processor();
   send({ type: 'config', startSeconds: 4 / 48000 });
   send(new Float32Array([1, 2, 3, 4]));
-  assert.deepEqual(render(2), [[0, 0], [0, 0]]);
-  assert.equal(p.silence, 2); assert.equal(p.underrunFrames, 0);
+  assert.deepEqual(render(2), [
+    [0, 0],
+    [0, 0],
+  ]);
+  assert.equal(p.silence, 2);
+  assert.equal(p.underrunFrames, 0);
   send(new Float32Array([5, 6, 7, 8]));
-  assert.deepEqual(render(4), [[0, 0, 0, 0], [0, 0, 0, 0]]);
+  assert.deepEqual(render(4), [
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ]);
   send(new Float32Array(2 * 12000));
   const [l, r] = render(4);
-  const want = [[1, 3, 5, 7], [2, 4, 6, 8]];
-  [l, r].forEach((ch, c) => ch.forEach((v, k) => assert.ok(Math.abs(v - want[c][k] * k / 128) < 1e-5)));
-  assert.equal(p.highWater, 12004); assert.equal(p.played, 4);
+  const want = [
+    [1, 3, 5, 7],
+    [2, 4, 6, 8],
+  ];
+  [l, r].forEach((ch, c) => ch.forEach((v, k) => assert.ok(Math.abs(v - (want[c][k] * k) / 128) < 1e-5)));
+  assert.equal(p.highWater, 12004);
+  assert.equal(p.played, 4);
 });
 
 test('underrun duration includes the partial quantum and subsequent rebuffering', () => {
   const { p, send, render, reports } = processor();
   send({ type: 'config', startSeconds: 0 });
-  const port = {}; send({ port });
+  const port = {};
+  send({ port });
   port.onmessage({ data: new Float32Array(2 * 12000).fill(1) });
   for (let q = 0; q < 93; q += 1) render(128);
   render(128);
-  assert.equal(p.underruns, 1); assert.equal(p.fades, 1); assert.equal(p.underrunFrames, 32);
+  assert.equal(p.underruns, 1);
+  assert.equal(p.fades, 1);
+  assert.equal(p.underrunFrames, 32);
   render(128);
   assert.equal(p.underrunFrames, 160);
-  p.sinceReport = 12000; render(4);
+  p.sinceReport = 12000;
+  render(4);
   const report = reports.at(-1);
   assert.equal(report.underrunSeconds, 164 / 48000);
   assert.equal(report.fades, 1);
   assert.equal(report.highWaterSeconds, 12000 / 48000);
   assert.equal(report.portAttached, true);
-  assert.equal(report.receivedPcm, true); assert.equal(report.renderedPcm, true);
-  send({ type: 'flush' }); assert.equal(p.queued, 0); assert.equal(p.playing, false);
+  assert.equal(report.receivedPcm, true);
+  assert.equal(report.renderedPcm, true);
+  send({ type: 'flush' });
+  assert.equal(p.queued, 0);
+  assert.equal(p.playing, false);
 });
 
 test('a burst fades in from zero and fades out before the silence', () => {
@@ -216,5 +309,8 @@ test('a deferred tap releases after an ordinary CF step', async () => {
   await worker.send({ type: 'load', id: 'load', generation: 1, bytes: new Uint8Array([1]).buffer });
   await worker.send({ type: 'tap', id: 'tap', generation: 1, code: 25, hold: 100 });
   await worker.runTimer();
-  assert.deepEqual(worker.buttons, [[25, 1], [25, 0]]);
+  assert.deepEqual(worker.buttons, [
+    [25, 1],
+    [25, 0],
+  ]);
 });
