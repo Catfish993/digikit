@@ -141,6 +141,29 @@ both on (about 1 billion instructions).
   `Bus::cacr_written` are called from CPUSHL and MOVEC-to-CACR only; their default is empty. The environment
   is read once, when an `Emulator` is built.
 
+## MIDI input and output, panel scripts, safety runs (ColdFire, native)
+
+Finding 25. `regions_probe` (`packages/emulator/boot/examples/regions_probe.rs`, built by
+`tools/coldfire/regions.py probe_binary`) takes, besides the options of `regions.py confirm`:
+
+| option | effect |
+|---|---|
+| `--midi T:HEX`, `--midi-file T:PATH` | queue bytes on MIDI DIN T instructions after ready, at `--midi-period N` instructions per byte (default 42240, the wire rate) |
+| `--usb T:HEX`, `--usb-file T:PATH` | hand bytes to the firmware's USB MIDI receive callback (MidiRpc requests) |
+| `--midi-out PATH`, `--usb-out PATH` | write the bytes the firmware sent on DIN / to the USB transmit function (also in the `midi` and `usb` JSON lines) |
+| `--frame T:PATH` | write the raw 1024-byte OLED frame at T |
+| `--overlay-out PATH` | write the card writes (`card.overlay` format) |
+| `--pc ADDR`, `--peek ADDR` | count executions of a PC; print a longword at the end |
+
+`uv run python -m tools.coldfire.arena_safety run IMAGE SCRIPT` runs one panel script (`tools/coldfire/panel_script.py`;
+also `boot`, `nav`, `play`) with `DIGI_WRITE_WATCH` on `cf.expansion` from the first CACR write, the flush check, a canary
+pattern in the region and the card overlay check, and judges it; `suite IMAGE` runs them all (a few minutes with
+`--jobs 6`); `card-check OVERLAY.bin` tests a saved overlay for sectors in the module store 0x38000-0x3E000;
+`list` names the scripts. Each run leaves `facts.json`, the frames (PNG) and `overlay.bin` in its directory
+(default `out/runs/arena/IMAGE-SCRIPT`). `contact_sheet()` joins frames into one picture for reading a script's path.
+Frame SHA-256 goldens: `tests/golden/arena_safety_frames.json` (`suite --update-goldens` rewrites them after a firmware or
+script change; check the frames by eye first).
+
 ## Cargo features
 
 | crate | feature | effect |

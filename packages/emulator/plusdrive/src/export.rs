@@ -20,7 +20,7 @@ use std::{
 
 use emmc_card::{CardOverlaySector, RandomAccessRead};
 
-use crate::{Fs, Geometry, OverlayImage, WavLimits, parse_overlay, read_mmcfs, wav_to_native};
+use crate::{CardLayout, Fs, OverlayImage, WavLimits, parse_overlay, read_mmcfs, wav_to_native};
 
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -216,7 +216,7 @@ fn stage_file(dir: &Path, rel: &str, bytes: &[u8]) -> Result<(), String> {
 /// Write the card's tree and slots to `export_dir`.
 fn stage(
     view: &OverlayImage<'_>,
-    geometry: Geometry,
+    layout: &CardLayout,
     export_dir: &Path,
     report: &mut Report,
 ) -> Result<Staged, String> {
@@ -226,9 +226,12 @@ fn stage(
         mmcfs: false,
     };
     fs::create_dir_all(export_dir).map_err(|e| format!("{}: {e}", export_dir.display()))?;
-    match Fs::open(view) {
-        Err(e) => report.issues.push(e.to_string()),
-        Ok(fs_view) => {
+    // A device without a path filesystem (DN2) has no tree to export.
+    let path_fs = layout.path_fs.as_ref().map(|_| Fs::open(view));
+    match path_fs {
+        None => {}
+        Some(Err(e)) => report.issues.push(e.to_string()),
+        Some(Ok(fs_view)) => {
             let walk = fs_view.walk();
             report.issues.extend(walk.issues.iter().cloned());
             // The firmware links its RAM-resident "factory" tree into the root at every mount: expected, not on the card.
@@ -278,7 +281,10 @@ fn stage(
                         p.push(n.to_vec());
                         rel_string(&p).to_lowercase()
                     };
-                    let reserved = i == 0 && (name.starts_with(b".mmcfs") || name == b".preview");
+                    let reserved = i == 0
+                        && (name.starts_with(b".mmcfs")
+                            || name == b".preview"
+                            || name == b"digikit");
                     if (reserved || taken.contains(&full(&name))) && last {
                         let id = node.record.id;
                         name.extend_from_slice(format!("~{id}").as_bytes());
@@ -312,7 +318,7 @@ fn stage(
             }
         }
     }
-    let mmc = read_mmcfs(view, geometry, Some(view));
+    let mmc = read_mmcfs(view, layout, Some(view));
     report.issues.extend(mmc.issues.iter().cloned());
     staged.mmcfs = mmc.present;
     for slot in &mmc.slots {
@@ -339,6 +345,10 @@ fn list_files(folder: &Path, rel: &str, out: &mut Vec<String>) {
         if name.starts_with('.') && name != ".mmcfs" {
             continue;
         }
+        // `digikit/` goes to the module store; the firmware never writes it and the export never touches it.
+        if rel.is_empty() && name == "digikit" {
+            continue;
+        }
         let child = if rel.is_empty() {
             name
         } else {
@@ -357,7 +367,7 @@ pub fn export(
     base: &dyn RandomAccessRead,
     overlay: &[CardOverlaySector],
     folder: &Path,
-    geometry: Geometry,
+    layout: &CardLayout,
     options: &Options,
 ) -> Result<Report, String> {
     let stamp = options.stamp.clone().unwrap_or_else(utc_stamp);
@@ -369,7 +379,7 @@ pub fn export(
         backup_dir: backup_dir.clone(),
         ..Report::default()
     };
-    let staged = stage(&view, geometry, &export_dir, &mut report)?;
+    let staged = stage(&view, layout, &export_dir, &mut report)?;
     fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
 
     // Sample sources in the folder: `x.wav` stands for the native file `x` when it converts to the same bytes.
@@ -520,7 +530,7 @@ pub const EXPORT_USAGE: &str = "usage: plusdrive export IMAGE [--overlay FILE] -
 pub fn cli(args: Vec<String>) -> Result<(), String> {
     let (mut image, mut overlay, mut folder, mut out, mut prune) =
         (None, None, None, PathBuf::from("out/plusdrive"), false);
-    let mut geometry = Geometry::Dt2;
+    let mut device = String::from("dt2");
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -530,13 +540,7 @@ pub fn cli(args: Vec<String>) -> Result<(), String> {
             "-o" => folder = Some(PathBuf::from(it.next().ok_or("missing -o value")?)),
             "--out" => out = PathBuf::from(it.next().ok_or("missing --out value")?),
             "--prune" => prune = true,
-            "--device" => {
-                geometry = match it.next().ok_or("missing --device value")?.as_str() {
-                    "dt2" => Geometry::Dt2,
-                    "dn2" => Geometry::Dn2,
-                    other => return Err(format!("unknown device {other}")),
-                }
-            }
+            "--device" => device = it.next().ok_or("missing --device value")?,
             _ if image.is_none() && !arg.starts_with('-') => image = Some(PathBuf::from(arg)),
             _ => return Err(EXPORT_USAGE.into()),
         }
@@ -552,7 +556,8 @@ pub fn cli(args: Vec<String>) -> Result<(), String> {
     };
     let mut options = Options::new(out);
     options.prune = prune;
-    let report = export(&base, &sectors, &folder, geometry, &options)?;
+    let layout = crate::card_layout(&device)?;
+    let report = export(&base, &sectors, &folder, &layout, &options)?;
     println!("{}", report.text());
     Ok(())
 }
@@ -560,7 +565,7 @@ pub fn cli(args: Vec<String>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Geometry, NamedSample, Pool, SparseImage, build_sample_image};
+    use crate::{NamedSample, Pool, SparseImage, build_sample_image, card_layout, dt2_layout};
 
     fn wav(frames: usize, seed: u8) -> Vec<u8> {
         let data: Vec<u8> = (0..frames)
@@ -609,7 +614,7 @@ mod tests {
         let image = card_of(&wavs);
         let mut options = Options::new(root.join("out"));
         options.stamp = Some("t1".into());
-        let report = export(&image, &[], &folder, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &[], &folder, &dt2_layout(), &options).unwrap();
         assert!(report.issues.is_empty(), "{:?}", report.issues);
         assert_eq!(report.unchanged.len(), 2, "{report:?}");
         assert!(
@@ -630,7 +635,7 @@ mod tests {
         let empty = root.join("empty");
         let mut options = Options::new(root.join("out"));
         options.stamp = Some("t2".into());
-        let report = export(&image, &[], &empty, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &[], &empty, &dt2_layout(), &options).unwrap();
         assert_eq!(report.added, ["kick", "snare"]);
         assert_eq!(
             fs::read(empty.join("kick")).unwrap(),
@@ -638,10 +643,53 @@ mod tests {
         );
         // and a second export changes nothing
         options.stamp = Some("t3".into());
-        let again = export(&image, &[], &empty, Geometry::Dt2, &options).unwrap();
+        let again = export(&image, &[], &empty, &dt2_layout(), &options).unwrap();
         assert!(again.added.is_empty() && again.replaced.is_empty());
         assert_eq!(again.unchanged.len(), 2);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn digikit_is_neither_exported_nor_reported_and_dn2_has_no_tree() {
+        let root = temp("digikit");
+        let folder = root.join("plus_drive/dt2");
+        fs::create_dir_all(folder.join("digikit/sub")).unwrap();
+        fs::write(folder.join("digikit/sub/m.dkm"), b"module").unwrap();
+        let mut image = card_of(&[("kick.wav", wav(3000, 1))]);
+        let store = crate::encode_store(
+            vec![crate::StoreFile {
+                path: "sub/m.dkm".into(),
+                bytes: b"module".to_vec(),
+            }],
+            0x6000,
+        )
+        .unwrap();
+        image.write_at(0x38000 * 512, &store).unwrap();
+        let mut options = Options::new(root.join("out"));
+        options.stamp = Some("t1".into());
+        let report = export(&image, &[], &folder, &dt2_layout(), &options).unwrap();
+        let all = [
+            &report.added,
+            &report.replaced,
+            &report.unchanged,
+            &report.deleted_by_firmware,
+            &report.pruned,
+        ];
+        assert!(
+            all.iter()
+                .all(|list| list.iter().all(|f| !f.contains("digikit"))),
+            "{report:?}"
+        );
+        assert!(folder.join("digikit/sub/m.dkm").is_file());
+        assert!(!report.export_dir.join("digikit").exists());
+        // DN2: no path filesystem, so no tree and no issue about one.
+        options.stamp = Some("t2".into());
+        let dn2 = card_layout("dn2").unwrap();
+        let report = export(&image, &[], &root.join("dn2"), &dn2, &options).unwrap();
+        assert!(
+            report.added.is_empty() && report.issues.is_empty(),
+            "{report:?}"
+        );
     }
 
     #[test]
@@ -654,7 +702,7 @@ mod tests {
         // first export into the folder: native file `a`
         let mut options = Options::new(root.join("out"));
         options.stamp = Some("s1".into());
-        export(&image, &[], &folder, Geometry::Dt2, &options).unwrap();
+        export(&image, &[], &folder, &dt2_layout(), &options).unwrap();
         let before = fs::read(folder.join("a")).unwrap();
         // the overlay rewrites the first PCM bytes of that file's page
         let fs_view = Fs::open(&image).unwrap();
@@ -672,7 +720,7 @@ mod tests {
             data,
         }];
         options.stamp = Some("s2".into());
-        let report = export(&image, &overlay, &folder, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
         assert_eq!(report.replaced, ["a"], "{report:?}");
         let after = fs::read(folder.join("a")).unwrap();
         assert_eq!(after.len(), before.len());
@@ -681,12 +729,12 @@ mod tests {
         // a file the folder has and the card lacks is listed and kept, then pruned on request
         fs::write(folder.join("gone"), b"x").unwrap();
         options.stamp = Some("s3".into());
-        let report = export(&image, &overlay, &folder, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
         assert_eq!(report.deleted_by_firmware, ["gone"]);
         assert!(folder.join("gone").exists());
         options.stamp = Some("s4".into());
         options.prune = true;
-        let report = export(&image, &overlay, &folder, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
         assert_eq!(report.pruned, ["gone"]);
         assert!(!folder.join("gone").exists());
         assert_eq!(fs::read(report.backup_dir.join("gone")).unwrap(), b"x");
@@ -708,20 +756,20 @@ mod tests {
         slot_bytes[1024] = 0xcd; // last non-zero sector is the third
         image
             .write_at(
-                Geometry::Dt2.slot_sector(Pool::Projects, 3) * 512,
+                dt2_layout().slot_sector(Pool::Projects, 3) * 512,
                 &slot_bytes,
             )
             .unwrap();
         image
-            .write_at(Geometry::Dt2.slot_sector(Pool::Sounds, 5) * 512, &[7; 512])
+            .write_at(dt2_layout().slot_sector(Pool::Sounds, 5) * 512, &[7; 512])
             .unwrap();
         image
-            .write_at(Geometry::Dt2.slot_sector(Pool::Kits, 9) * 512, &[8; 512])
+            .write_at(dt2_layout().slot_sector(Pool::Kits, 9) * 512, &[8; 512])
             .unwrap();
         let folder = root.join("f");
         let mut options = Options::new(root.join("out"));
         options.stamp = Some("m".into());
-        let report = export(&image, &[], &folder, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &[], &folder, &dt2_layout(), &options).unwrap();
         assert_eq!(
             report.added,
             [
@@ -736,7 +784,7 @@ mod tests {
         );
         // A boot project copy (COKi) is exported only when the guest wrote it.
         options.stamp = Some("m2".into());
-        let report = export(&image, &[], &folder, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &[], &folder, &dt2_layout(), &options).unwrap();
         assert!(!folder.join(".mmcfs/boot").exists(), "{report:?}");
         let mut written = [0u8; 64];
         written[0] = 0xff;
@@ -748,7 +796,7 @@ mod tests {
             data,
         }];
         options.stamp = Some("m3".into());
-        let report = export(&image, &overlay, &folder, Geometry::Dt2, &options).unwrap();
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
         assert_eq!(report.added, [".mmcfs/boot/040000.bin"]);
         assert_eq!(
             &fs::read(folder.join(".mmcfs/boot/040000.bin")).unwrap()[..4],

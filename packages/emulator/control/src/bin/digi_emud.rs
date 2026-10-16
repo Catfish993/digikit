@@ -40,6 +40,11 @@ fn main() {
     let mut config = Config::new(startup.audio.clone());
     config.mode = if free { Mode::Free } else { Mode::Paused };
     config.run_dir = run_dir.clone();
+    config.card_folder = startup.card_folder.clone().map(|dir| digi_control::CardSource {
+        dir,
+        sync: startup.card_sync,
+        out: None,
+    });
     if startup.scenario.is_some() {
         eprintln!(
             "digi-emud: --scenario is a desktop option (scenario.run over the socket is not built yet)"

@@ -52,6 +52,12 @@ device = "dt2"
 firmware = "1.16"
 modules = ["fx/master-drive"]
 
+# Rust on the ColdFire (finding 26)
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["test/rust-demo"]
+
 [[cell]]
 device = "dt2"
 firmware = "1.16"

@@ -11,6 +11,7 @@ pub mod cfmix;
 mod common;
 mod cputime;
 mod guard;
+pub mod midi;
 pub mod dsp_patch;
 pub mod dsp_stream;
 pub mod panel_leds;

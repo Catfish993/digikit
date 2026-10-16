@@ -280,7 +280,18 @@ async fn emu_card_reset(host: State<'_, Host>) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Stage one chosen `.wav` file: the raw body, its name in `x-name`.
+/// A staged file's relative path (`/`-separated) is safe to join to the staging directory: no empty, `.` or `..`
+/// part, no backslash or NUL, so nothing escapes it.
+fn staged_path_ok(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains(['\\', '\0'])
+        && name
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+/// Stage one file of the chosen +Drive-style folder: the raw body, its path relative to the folder in `x-name`
+/// (nested folders and `.mmcfs/` are kept; the controller builds the card with the +Drive builder).
 #[tauri::command]
 async fn emu_card_stage(
     host: State<'_, Host>,
@@ -292,22 +303,20 @@ async fn emu_card_stage(
         .and_then(|value| value.to_str().ok())
         .and_then(percent_decode)
         .ok_or("missing x-name")?;
-    // A bare file name: the folder choice is flat, and nothing may escape the staging directory.
-    if name.is_empty()
-        || name.starts_with('.')
-        || name.contains(['/', '\\', '\0'])
-        || !name.to_ascii_lowercase().ends_with(".wav")
-    {
-        return Err(format!("not a sample file name: {name}"));
+    if !staged_path_ok(&name) {
+        return Err(format!("not a file path inside the folder: {name}"));
     }
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
-        _ => return Err("sample files must use a raw byte body".into()),
+        _ => return Err("staged files must use a raw byte body".into()),
     };
     let dir = host.staging.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        std::fs::write(dir.join(name), bytes).map_err(|e| e.to_string())
+        let target = dir.join(&name);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(target, bytes).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -411,6 +420,14 @@ fn main() {
         Mode::Free
     };
     config.run_dir = run_dir.clone();
+    config.card_folder = startup
+        .card_folder
+        .clone()
+        .map(|dir| digi_control::CardSource {
+            dir,
+            sync: startup.card_sync,
+            out: None,
+        });
     // Mount the last card again at start (not for scenarios, which must not depend on earlier runs).
     config.remember_card = startup.scenario.is_none();
     let run_dir_for_staging = run_dir.clone();

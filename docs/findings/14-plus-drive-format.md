@@ -1319,6 +1319,8 @@ with a folder-built image and calls `FUN_40156fc4` / `FUN_40157072` / `FUN_40157
   slots) and `0x2000 + n * 0x40` on DN2 1.11 (`FUN_401308ac`, 32 KiB). The boot project at sectors 0x40000
   and 0x48000 is not a pool slot (it would be project slot 0xfd / 0xfe), so imported project slots cannot
   collide with it.
+- The per-device numbers above (and the project regions at 0x40000, 0x48000, 0x50000, the path-filesystem superblock and the
+  module store range) are data now: `[card]` in `devices/<device>.toml`, with the firmware functions cited there.
 - **[O]** The bitmaps at sector 0x800 are written as occupancy (bit `n & 7` of byte `n >> 3` of each pool's
   range: 16, 256, 128 bytes). `FUN_40130234`, `FUN_4013011e`, `FUN_40132c6c` set the bit from a flag argument
   and a per-pool slot test, and the kit and sound setters set it when their test returns 0, so the polarity

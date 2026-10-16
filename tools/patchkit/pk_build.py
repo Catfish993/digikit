@@ -5,7 +5,8 @@
     uv run python -m tools.patchkit.pk_build build-all [--check]
 
 For every `[[object]]` of a module's `module.toml` that lists `sources`, the sources are compiled by the
-pinned toolchain (SHARC+: Selache `selas`; ColdFire: m68k-elf gcc/as, tools/patchkit/pk_link.py), turned into the
+pinned toolchain (SHARC+: Selache `selas`; ColdFire: m68k-elf gcc/as, tools/patchkit/pk_link.py; ColdFire Rust: a `Cargo.toml` as the only source,
+tools/patchkit/pk_rust.py), turned into the
 canonical object JSON (sorted keys, integers only; format in packages/patchkit/src/dko.rs) and written to the
 object's `path`. Every instruction is re-decoded by our own decoders (SHARC: tools/patchkit/pk_sharc.py `verify`;
 ColdFire: tools/patchkit/pk_link.py `check_isa`), so a toolchain encoding bug cannot reach an image.
@@ -28,6 +29,7 @@ ROOT = HERE.parent.parent
 
 from tools.patchkit import (  # noqa: E402
     pk_link,  # noqa: E402
+    pk_rust,  # noqa: E402
     pk_sharc,  # noqa: E402
 )
 
@@ -110,18 +112,27 @@ def sharc_object(sources: list[Path]) -> dict:
 
 def cf_object(sources: list[Path]) -> dict:
     base = 0x47E8B000
-    # Compile once to learn the undefined symbols, then place them near the base so PC16/PC8 reach.
-    with tempfile.TemporaryDirectory(prefix="pk-build-") as d:
-        objs = []
-        for i, src in enumerate(sources):
-            o = Path(d) / f"{i}_{src.stem}.o"
-            pk_link.compile_source(src, o)
-            objs.append(o)
-        merged = objs[0]
-        if len(objs) > 1:
-            merged = Path(d) / "all.o"
-            pk_link.merge_objects(objs, merged)
-        proto = pk_link.object_from_elf(merged.read_bytes(), sources)
+    if any(p.name == "Cargo.toml" for p in sources):
+        # A Rust crate (tools/patchkit/pk_rust.py): the manifest is the only source entry
+        if len(sources) != 1:
+            raise BuildError("a Rust object lists its Cargo.toml as the only source")
+        try:
+            proto = pk_rust.object_proto(sources[0])
+        except pk_rust.RustBuildError as e:
+            raise BuildError(str(e)) from e
+    else:
+        # Compile once to learn the undefined symbols, then place them near the base so PC16/PC8 reach.
+        with tempfile.TemporaryDirectory(prefix="pk-build-") as d:
+            objs = []
+            for i, src in enumerate(sources):
+                o = Path(d) / f"{i}_{src.stem}.o"
+                pk_link.compile_source(src, o)
+                objs.append(o)
+            merged = objs[0]
+            if len(objs) > 1:
+                merged = Path(d) / "all.o"
+                pk_link.merge_objects(objs, merged)
+            proto = pk_link.object_from_elf(merged.read_bytes(), sources)
     undefined = [s["name"] for s in proto["symbols"] if s["section"] is None]
     symmap = {n: base + 0x100 + 8 * i for i, n in enumerate(undefined)}
     linked = pk_link.link(proto, base, symmap)

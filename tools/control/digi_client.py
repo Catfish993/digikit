@@ -430,6 +430,22 @@ class Emu:
     def frame_png(self) -> bytes:
         return oled_png(self.frame()[1])
 
+    def midi_in(self, data: bytes, period: int | None = None) -> dict[str, Any]:
+        """Queue bytes on the MIDI DIN input; PERIOD = instructions between bytes (default: the 31250 baud wire rate)."""
+        return self.call("midi.in", bytes=data.hex(), **_opt(period=period))
+
+    def midi_out(self) -> bytes:
+        """The bytes the firmware sent on MIDI DIN since the last call."""
+        return bytes.fromhex(self.call("midi.out")["hex"])
+
+    def usb_in(self, data: bytes) -> dict[str, Any]:
+        """Hand bytes to the firmware's USB MIDI receive callback (MidiRpc requests arrive only this way)."""
+        return self.call("midi.usb.in", bytes=data.hex())
+
+    def usb_out(self) -> bytes:
+        """The bytes the firmware handed to its USB MIDI transmit function since the last call."""
+        return bytes.fromhex(self.call("midi.usb.out")["hex"])
+
     def peek32(self, addr: int) -> int | None:
         """One guest longword (None when unmapped), read without side effects."""
         value = self.call("mem.cf.peek", addr=addr)["value"]

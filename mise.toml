@@ -27,7 +27,7 @@ description = "Install the Python and web dependencies"
 
 [tasks.emu]
 run = "uv run python -m tools.emulator.native_emu"
-description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready); `-- --build-only` builds without launching. The +Drive is plus_drive/<device>/ when it exists (`-- --plus-drive DIR` picks another folder, `--samples DIR` is the same option)"
+description = "Build once and run the desktop emulator (DN2 audio when local inputs are ready); `-- --build-only` builds without launching. The +Drive is plus_drive/<device>/ when it exists (`-- --plus-drive DIR` picks another folder, `--samples DIR` is the same option; the firmware's changes are exported back to the folder on exit, `-- --no-sync` turns that off)"
 
 [tasks."emu:serve"]
 run = "uv run python -m tools.emulator.native_emu --daemon"
@@ -229,8 +229,8 @@ run = "python3 -m tools.emulator.native_boot"
 description = "Run the bounded native Oracle boot diagnostic"
 
 [tasks."plusdrive:check"]
-run = "uv run python -m tools.firmware.plusdrive_check"
-description = "The firmware's own view (mount, readdir, lookup, read) of an image built from a plus_drive-style fixture: nested folders, plain files, a multi-page directory, multi-extent files (about 1 min)"
+run = ["uv run python -m tools.firmware.plusdrive_check", "uv run python -m tools.firmware.plusdrive_check --dn2"]
+description = "The firmware's own view (mount, readdir, lookup, read) of an image built from a plus_drive-style fixture: nested folders, plain files, a multi-page directory, multi-extent files; and the digikit/ module store through the firmware's block read on DT2 and DN2 (about 1 min)"
 
 [tasks."dev:plusdrive"]
 alias = "plusdrive"

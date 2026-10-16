@@ -45,3 +45,18 @@ still converts to the native bytes counts as unchanged, and if the firmware chan
 native file takes its place). `.mmcfs/{projects,sounds,kits}/NNNN.bin` (slot content up to the last non-zero sector; the
 image reads the rest as zero). `.mmcfs/boot/SSSSSS.bin`: the 16 MiB regions at sectors `0x40000`, `0x48000`, `0x50000`, only
 when the overlay touched them. These are not pool slots: the builder should write the file at that sector.
+
+## Update 2026-10-16: layout as data, boot regions, store, exit export
+
+- The card layout (pool formulas, project regions, path-filesystem superblock, store range) moved from the `Geometry`
+  enum into `[card]` of `devices/*.toml` (`device-profile::CardLayout`); every formula the enum had is reproduced by a test.
+  The console export passes the running device's layout (the DN2 `TODO` is gone). A device without `[card.path_fs]`
+  (DN2) is exported without a path-filesystem walk.
+- The builder takes `.mmcfs/boot/SSSSSS.bin` and writes it at that sector; a boot copy replaces the generated boot project
+  (docs/SAMPLES.md). **[V]** `packages/emulator/control/tests/card_roundtrip.rs`: save a project from the panel, quit (the
+  synced folder is exported on exit: 2 added, `.mmcfs/projects/0000.bin` and `.mmcfs/boot/050000.bin`), build a new card
+  from the folder, and slot 0 (14,522,368 bytes) and the working project are on it byte for byte; the DT2 boots to the main
+  screen on it. A second export adds nothing; the one file it replaces is the working project, which the firmware rewrites
+  from the boot copy at every start (**[D]**: so `050000.bin` in the folder is a copy that the next boot overwrites on the
+  card; only slot files carry a saved project).
+- `digikit/` is ignored by the exporter (docs/design/digikit-store.md).

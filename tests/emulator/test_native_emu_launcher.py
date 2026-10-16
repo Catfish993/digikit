@@ -731,7 +731,30 @@ def test_plus_drive_folder_is_the_default_card(monkeypatch, tmp_path):
     folder = _folder(root, "dt2", {"digikit/modules/test.dkm": b"x"})
     scope["main"]([str(syx), "--cf-only"])
     assert built == [(folder, syx, "dt2")]
-    assert calls[-1][1:] == [str(syx), "--card-image", str(tmp_path / "card.img")]
+    # The app is told the folder the card came from: it exports the firmware's changes there on exit.
+    assert calls[-1][1:] == [
+        str(syx),
+        "--card-image",
+        str(tmp_path / "card.img"),
+        "--card-folder",
+        str(folder.resolve()),
+    ]
+
+
+def test_no_sync_keeps_the_folder_but_turns_the_exit_export_off(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    folder = _folder(root, "dt2", {"a.wav": b"x"})
+    scope["main"]([str(syx), "--cf-only", "--no-sync"])
+    assert calls[-1][1:] == [
+        str(syx),
+        "--card-image",
+        str(tmp_path / "card.img"),
+        "--card-folder",
+        str(folder.resolve()),
+        "--no-card-sync",
+    ]
 
 
 def test_launcher_without_syx_argument_gets_the_firmware_and_card(
@@ -741,9 +764,15 @@ def test_launcher_without_syx_argument_gets_the_firmware_and_card(
     root = tmp_path / "pd"
     monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
     monkeypatch.setenv("DIGI_EMU_SYX", str(syx))
-    _folder(root, "dt2", {"a.wav": b"x"})
+    folder = _folder(root, "dt2", {"a.wav": b"x"})
     scope["main"](["--cf-only"])
-    assert calls[-1][1:] == [str(syx), "--card-image", str(tmp_path / "card.img")]
+    assert calls[-1][1:] == [
+        str(syx),
+        "--card-image",
+        str(tmp_path / "card.img"),
+        "--card-folder",
+        str(folder.resolve()),
+    ]
 
 
 def test_other_devices_folder_and_empty_folders_are_ignored(monkeypatch, tmp_path):
@@ -757,7 +786,7 @@ def test_other_devices_folder_and_empty_folders_are_ignored(monkeypatch, tmp_pat
     assert calls[-1][1:] == [str(syx)]
 
 
-def test_dn2_takes_only_mmcfs(monkeypatch, tmp_path):
+def test_dn2_takes_only_mmcfs_and_digikit(monkeypatch, tmp_path):
     scope = launcher()
     has = scope["plus_drive_has_content"]
     folder = _folder(tmp_path, "dn2", {"samples/a.wav": b"x", ".DS_Store": b""})
@@ -765,6 +794,8 @@ def test_dn2_takes_only_mmcfs(monkeypatch, tmp_path):
     assert has(folder, "dn2") is False
     _folder(tmp_path, "dn2", {".mmcfs/kits/0001.bin": b"x"})
     assert has(folder, "dn2") is True
+    only_store = _folder(tmp_path / "s", "dn2", {"digikit/m.dkm": b"x"})
+    assert has(only_store, "dn2") is True
 
 
 def test_explicit_card_image_or_unknown_firmware_skips_the_folder(

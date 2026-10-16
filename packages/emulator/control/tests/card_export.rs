@@ -209,7 +209,7 @@ fn a_project_saved_by_the_firmware_is_exported_to_the_folder() {
         &base,
         &sectors,
         &offline,
-        plusdrive_format::Geometry::Dt2,
+        &plusdrive_format::dt2_layout(),
         &options,
     )
     .unwrap();

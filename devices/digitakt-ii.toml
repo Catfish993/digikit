@@ -156,3 +156,65 @@ name = "level"
 kind = "encoder"
 codes = [9]
 layout = "single"
+
+# Where the card keeps things (finding 14 "MmcFs slots", finding 23 S6). Read by packages/emulator/device-profile and
+# used by the +Drive builder, reader and exporter (packages/emulator/plusdrive); sectors are 512 bytes. Every pool is
+# linear: slot n is at base_sector + n * stride_sectors, so the firmware's clamped formulas are base + stride * n.
+[card]
+header_sector = 0x0        # MmcFs header, magic 0xbeef_bace
+table_sector = 0x800       # three occupancy bitmaps, 400 bytes (FUN_40130f9a clears them; setters FUN_40130234, FUN_40132b8a)
+
+# Projects, 16 MiB, 128 slots: FUN_4012eef2, block = ((slot + 0xb) & 0xff) << 15 (a slot > 0x7f is clamped to 0x7f).
+[card.pools.projects]
+base_sector = 0x58000
+stride_sectors = 0x8000
+slots = 128
+slot_bytes = 0x1000000
+bitmap_offset = 0
+bitmap_bytes = 16
+
+# Sound presets, 4 KiB, 2048 slots: FUN_4012f596, block = (slot + 0x2400) * 8.
+[card.pools.sounds]
+base_sector = 0x12000
+stride_sectors = 8
+slots = 2048
+slot_bytes = 0x1000
+bitmap_offset = 16
+bitmap_bytes = 256
+
+# Kits, 64 KiB, 1024 slots: FUN_401324cc, block = (slot * 0x10000 + 0x2c00000) >> 9.
+[card.pools.kits]
+base_sector = 0x16000
+stride_sectors = 0x80
+slots = 1024
+slot_bytes = 0x10000
+bitmap_offset = 272
+bitmap_bytes = 128
+
+# Project records outside the pools (16 MiB each): two boot copies, a COKi container the builder seeds and the firmware
+# reads at start, and the working project, rewritten from the boot copy at every start (FUN_4012eef2 special case; finding 24). They would be
+# project slots 0xfd, 0xfe and 0xff of the unclamped formula; no pool slot (at most 0x7f) reaches them.
+[[card.regions]]
+role = "boot-project"
+sector = 0x40000
+sectors = 0x8000
+
+[[card.regions]]
+role = "boot-project"
+sector = 0x48000
+sectors = 0x8000
+
+[[card.regions]]
+role = "working-project"
+sector = 0x50000
+sectors = 0x8000
+
+# The folder (path) filesystem: superblock magic 0x656b4653 (finding 14); it runs to the end of the card.
+[card.path_fs]
+superblock_sector = 0x5d8000
+
+# Module store (docs/design/digikit-store.md): above every kit pool, below the project records, outside every erase
+# range; the firmware never writes it (finding 23 S6: a choice with 0x2000 sectors of margin, not a measurement).
+[card.store]
+first_sector = 0x38000
+end_sector = 0x3e000

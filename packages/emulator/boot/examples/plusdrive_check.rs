@@ -1,7 +1,7 @@
 //! The firmware's own view of a +Drive image (DT2 1.16): mount flag, directory
 //! listing, name lookup, file open/size/read, called on a booted machine.
 //!
-//! usage: plusdrive_check SYX CARD.img OP...
+//! usage: plusdrive_check [--block-read ADDR] SYX CARD.img OP...
 //!
 //! Boots SYX with CARD.img to ready (at most 1.5e9 instructions), then runs the
 //! ops in order; one JSON line each:
@@ -10,6 +10,9 @@
 //!   read:/PATH         open `FUN_40158626`, size `FUN_4015ba22`, read `FUN_4015832e`
 //!                      in 32 KiB chunks, close `FUN_401585e4`; length and SHA-256
 //!   lookup:ID:NAME     name lookup `FUN_401572e0` (the 0x10000 hash index)
+//!   block:SECTOR:BYTES the firmware's block read (DT2 1.16 `FUN_4012deda`, DN2 1.11 `FUN_4012c59a`, selected
+//!                      with --block-read; arguments sector, bytes, buffer; 16-byte aligned buffer, 512 multiples):
+//!                      reads BYTES rounded up to 512 and reports the first 32 bytes and the SHA-256 of BYTES
 //! The addresses are DT2 1.16 (docs/findings/14-plus-drive-format.md,
 //! docs/findings/23-digikit-runtime-spikes.md S3). Scratch memory is the free
 //! RAM at 0x47f00000 (cf.expansion), the stack the one cf_call uses.
@@ -32,6 +35,7 @@ const READ: u32 = 0x4015_832e;
 const CLOSE: u32 = 0x4015_85e4;
 const SIZE: u32 = 0x4015_ba22;
 const LOOKUP: u32 = 0x4015_72e0;
+const DT2_BLOCK_READ: u32 = 0x4012_deda;
 const PATH: u32 = 0x47f0_0000;
 const MODE: u32 = 0x47f0_0200;
 const ITER: u32 = 0x47f0_1000;
@@ -87,9 +91,14 @@ fn cstr(bytes: &[u8]) -> String {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let mut args: Vec<String> = env::args().collect();
+    let mut block_read = DT2_BLOCK_READ;
+    if args.get(1).map(String::as_str) == Some("--block-read") && args.len() > 2 {
+        block_read = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("hex address");
+        args.drain(1..3);
+    }
     if args.len() < 4 {
-        eprintln!("usage: plusdrive_check SYX CARD.img OP...");
+        eprintln!("usage: plusdrive_check [--block-read ADDR] SYX CARD.img OP...");
         std::process::exit(2);
     }
     let syx = fs::read(&args[1]).unwrap();
@@ -205,6 +214,31 @@ fn main() {
                                "name": cstr(&e[0x14..])})
                     }
                 }
+            }
+            "block" => {
+                let (sector, bytes) = rest.split_once(':').unwrap_or((rest, "512"));
+                let sector = u32::from_str_radix(sector.trim_start_matches("0x"), 16).unwrap();
+                let bytes: usize = bytes.parse().unwrap();
+                let (mut data, mut at, mut rc_all) = (Vec::new(), 0usize, 0u32);
+                let mut error = None;
+                while at < bytes {
+                    let n = (bytes - at).div_ceil(512).min((CHUNK / 512) as usize) * 512;
+                    match call(&mut emu, block_read, &[sector + (at / 512) as u32, n as u32, BUF]) {
+                        Ok(rc) => {
+                            rc_all |= rc;
+                            data.extend_from_slice(&emu.peek_bytes(BUF, n).unwrap());
+                        }
+                        Err(e) => {
+                            error = Some(e);
+                            break;
+                        }
+                    }
+                    at += n;
+                }
+                data.truncate(bytes);
+                let digest: String = Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect();
+                let head: String = data.iter().take(32).map(|b| format!("{b:02x}")).collect();
+                json!({"op": op, "rc": rc_all, "read": data.len(), "sha256": digest, "head": head, "error": error})
             }
             other => json!({"op": op, "error": format!("unknown op {other}")}),
         };

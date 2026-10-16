@@ -12,7 +12,7 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
-import { cardLine, startCard, topLevelWavs, type CardStatus } from '@web/runtime/cards';
+import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 
 type Source = { path: string; name: string; bytes: number; modified_ms: number };
 type Status = RuntimeSnapshot['status'];
@@ -207,10 +207,10 @@ export default function Console() {
   const chooseSamples = async (list: FileList | null) => {
     const cards = runtime()?.cards;
     if (!cards || !list) return;
-    const files = topLevelWavs(Array.from(list));
+    const files = folderFiles(Array.from(list));
     if (folderInput) folderInput.value = '';
     if (files.length === 0) {
-      setCard({ state: 'error', message: 'No .wav files directly in that folder.' });
+      setCard({ state: 'error', message: 'No files in that folder.' });
       return;
     }
     setCardBusy(true);
@@ -404,7 +404,7 @@ export default function Console() {
                 type="button"
                 class="tb"
                 disabled={!status() || cardBusy()}
-                title="Pick a folder of .wav files: track N plays file N (sorted by name)"
+                title="Pick a plus_drive-style folder: WAVs become samples (track N plays file N, sorted by name), .mmcfs/ and digikit/ are used as they are"
                 onClick={() => folderInput?.click()}
               >
                 Sample folder…

@@ -795,6 +795,8 @@ def run_step(gate: Gate, step: str) -> None:
         gate.run("card", [*PY, "-m", "tools.emulator.card_check"])
         # The firmware's own view of a folder-built image (nested folders, plain files).
         gate.run("card-fs", [*PY, "-m", "tools.firmware.plusdrive_check"])
+        # The module store through the firmware's block read, on the DN2 too.
+        gate.run("card-fs-dn2", [*PY, "-m", "tools.firmware.plusdrive_check", "--dn2"])
     elif step == "dt2-tone":
         gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":

@@ -154,3 +154,59 @@ name = "level"
 kind = "encoder"
 codes = [9]
 layout = "single"
+
+# Where the card keeps things (finding 14 "MmcFs slots", finding 23 S6). Read by packages/emulator/device-profile and
+# used by the +Drive builder, reader and exporter (packages/emulator/plusdrive); sectors are 512 bytes. DN2 1.11 has the
+# same project pool and records as the DT2 and smaller sound and kit slots, and no path filesystem (finding 23 S3).
+[card]
+header_sector = 0x0
+table_sector = 0x800
+
+# Projects: FUN_4012d7c2, block = ((slot + 0xb) & 0xff) << 15, as on the DT2.
+[card.pools.projects]
+base_sector = 0x58000
+stride_sectors = 0x8000
+slots = 128
+slot_bytes = 0x1000000
+bitmap_offset = 0
+bitmap_bytes = 16
+
+# Sound presets, 1 KiB, 2048 slots: FUN_4012de66, block = (slot + 0x800) * 2.
+[card.pools.sounds]
+base_sector = 0x1000
+stride_sectors = 2
+slots = 2048
+slot_bytes = 0x400
+bitmap_offset = 16
+bitmap_bytes = 256
+
+# Kits, 32 KiB, 1024 slots: FUN_401308ac, block = 0x2000 + slot * 0x40.
+[card.pools.kits]
+base_sector = 0x2000
+stride_sectors = 0x40
+slots = 1024
+slot_bytes = 0x8000
+bitmap_offset = 272
+bitmap_bytes = 128
+
+[[card.regions]]
+role = "boot-project"
+sector = 0x40000
+sectors = 0x8000
+
+[[card.regions]]
+role = "boot-project"
+sector = 0x48000
+sectors = 0x8000
+
+[[card.regions]]
+role = "working-project"
+sector = 0x50000
+sectors = 0x8000
+
+# No [card.path_fs]: no folder filesystem was found in the DN2 1.11 MAIN OS.
+
+# Module store: same range as the DT2 (finding 23 S6).
+[card.store]
+first_sector = 0x38000
+end_sector = 0x3e000

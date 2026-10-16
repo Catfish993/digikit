@@ -1,0 +1,13 @@
+# test/rust-demo: Rust code, data and bss in the expansion region that nothing calls: the firmware must boot and
+# run as stock (the smoke tour's goldens carry the module set, so equal frames are asserted there).
+[test]
+name = "boots"
+devices = ["dt2", "dn2"]
+quick = true
+
+[[step]]
+wait_ms = 1000
+[[step]]
+expect_frame = "main"
+[[step]]
+expect_no_fault = true

@@ -121,7 +121,7 @@ def pgo_trained_core(device: str) -> pathlib.Path | None:
 def default_audio_args(args: list[str] | None = None) -> list[str]:
     """Add local ready audio inputs to a normal launcher command line."""
     args = [] if args is None else list(args)
-    value_options = {"--card-image", "--audio-buffer"}
+    value_options = {"--card-image", "--card-folder", "--audio-buffer"}
     positional = next(
         (
             value
@@ -514,10 +514,10 @@ def plus_drive_files(root: pathlib.Path) -> list[pathlib.Path]:
 
 def plus_drive_has_content(root: pathlib.Path, device: str) -> bool:
     """Whether `root` holds anything the device's card can take: DN2 has no path
-    filesystem, only `.mmcfs/` applies."""
+    filesystem, only `.mmcfs/` and `digikit/` (the module store) apply."""
     files = plus_drive_files(root)
     if device == "dn2":
-        files = [f for f in files if f.parts[0] == ".mmcfs"]
+        files = [f for f in files if f.parts[0] in (".mmcfs", "digikit")]
     return bool(files)
 
 
@@ -530,8 +530,12 @@ def plusdrive_card(
     folders map to the path filesystem as they are; a `.wav` becomes a native
     sample named without the extension (24 -> 16 bit, 48 kHz); any other file is
     copied byte for byte (a file that is a native sample stays one);
-    `.mmcfs/{projects,sounds,kits}/NNNN.bin` are raw MmcFs slots. DN2 has no
-    path filesystem: only `.mmcfs/` applies.
+    `.mmcfs/{projects,sounds,kits}/NNNN.bin` are raw MmcFs slots;
+    `.mmcfs/boot/SSSSSS.bin` are the project regions outside the pools (a boot
+    copy replaces the generated boot project); `digikit/` goes to the module
+    store (docs/design/digikit-store.md). DN2 has no path filesystem: only
+    `.mmcfs/` and `digikit/` apply. The card layout of the device comes from
+    devices/<device>.toml `[card]`.
 
     Uses the native `plusdrive build` (packages/emulator/plusdrive). The image lives in
     out/plusdrive/native/<key12>/<device>.img, keyed by the SHA-256 of the firmware,
@@ -617,7 +621,7 @@ def take_option(args: list[str], name: str) -> tuple[str | None, list[str]]:
 def syx_from_args(args: list[str]) -> pathlib.Path:
     """The firmware file the launcher will run: the first positional argument,
     else the default."""
-    value_options = {"--card-image", "--audio-buffer"}
+    value_options = {"--card-image", "--card-folder", "--audio-buffer"}
     syx_arg = next(
         (
             v
@@ -634,7 +638,12 @@ def main(args: list[str] | None = None) -> None:
     force_cf = "--cf-only" in args
     build_only = "--build-only" in args
     daemon = "--daemon" in args
-    args = [arg for arg in args if arg not in ("--cf-only", "--build-only", "--daemon")]
+    no_sync = "--no-sync" in args
+    args = [
+        arg
+        for arg in args
+        if arg not in ("--cf-only", "--build-only", "--daemon", "--no-sync")
+    ]
     plus_drive, args = take_option(args, "--plus-drive")
     samples, args = take_option(args, "--samples")
     if plus_drive is not None and samples is not None:
@@ -657,7 +666,11 @@ def main(args: list[str] | None = None) -> None:
         card = plusdrive_card(folder, syx, env, device)
         first_positional = any(
             not v.startswith("--")
-            and (j == 0 or args[j - 1] not in ("--card-image", "--audio-buffer"))
+            and (
+                j == 0
+                or args[j - 1]
+                not in ("--card-image", "--card-folder", "--audio-buffer")
+            )
             for j, v in enumerate(args)
         )
         args = [
@@ -665,7 +678,17 @@ def main(args: list[str] | None = None) -> None:
             *args,
             "--card-image",
             str(card),
+            # The app exports what the firmware wrote to the card back into the folder on exit
+            # (a log line says how many files); --no-sync leaves the folder alone.
+            "--card-folder",
+            str(folder.resolve()),
+            *(["--no-card-sync"] if no_sync else []),
         ]
+        if not no_sync:
+            print(
+                f"+Drive: changes on the card are exported to {folder} on exit (--no-sync turns it off)",
+                file=sys.stderr,
+            )
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:

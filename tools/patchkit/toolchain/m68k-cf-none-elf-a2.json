@@ -1,0 +1,19 @@
+{
+  "arch": "m68k",
+  "cpu": "generic",
+  "data-layout": "E-m:e-p:32:16:32-i8:8:8-i16:16:16-i32:16:32-i64:16:64-n8:16:32-a:0:16-S16",
+  "llvm-target": "m68k-unknown-none-elf",
+  "os": "none",
+  "executables": true,
+  "linker-flavor": "gcc",
+  "linker": "m68k-elf-gcc",
+  "panic-strategy": "abort",
+  "max-atomic-width": 32,
+  "target-endian": "big",
+  "target-pointer-width": 32,
+  "dynamic-linking": false,
+  "disable-redzone": true,
+  "relocation-model": "static",
+  "has-thread-local": false,
+  "features": ""
+}

@@ -195,6 +195,22 @@ pub enum ImageError {
         bytes: usize,
         limit: usize,
     },
+    /// A layout the builder cannot write (its path filesystem constants are fixed to one superblock sector).
+    UnsupportedLayout(&'static str),
+    /// Files were given for a device without a path filesystem.
+    NoPathFilesystem,
+    /// A region sector that is not a boot or working project region of the layout.
+    UnknownRegion {
+        sector: u64,
+    },
+    RegionSize {
+        sector: u64,
+        bytes: usize,
+        limit: usize,
+    },
+    /// `digikit/` files for a device with no module store range.
+    NoStore,
+    Store(crate::StoreError),
     Sparse(SparseImageError),
     Format(crate::FormatError),
     Project(crate::ProjectError),

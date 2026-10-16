@@ -33,6 +33,10 @@ from the menu. No hardware flashing until everything works in the emulator.
    `out/plusdrive/backup/`.
 7. Module store: card sectors 0x38000-0x3E000 on both devices (S6), read with the firmware's own block read
    function. `plus_drive/<device>/digikit/` maps into it. The DT2 path filesystem stays for samples.
+8. Device facts are data: what differs between devices (card layout, store range, panel, DSP link, frame
+   channel sizes) lives in `devices/<device>.toml`, and firmware-version addresses in `devices/ports/*.toml`.
+   Code takes a profile, never a device enum, so another device on the same platform (for example Syntakt) is a
+   new TOML file. The card layout moved there first (`[card]`, packages/emulator/device-profile).
 
 ## What is known (sources)
 
@@ -141,12 +145,12 @@ Gate: done (docs/findings/23-digikit-runtime-spikes.md).
 - [x] 1b: image reader (path filesystem and MmcFs slots) and exporter (`plusdrive export`, console `card.export`),
   with backups (docs/findings/24-plusdrive-export.md). A panel project save arrives as
   `.mmcfs/projects/0000.bin`.
-- [ ] The builder takes the exporter's `.mmcfs/boot/SSSSSS.bin` (the copies at 0x40000 and 0x48000 and the
-  working project at 0x50000).
-- [ ] `mise run emu` exports on exit (the desktop app is told the folder and turns on `sync`).
-- [ ] The desktop "Choose samples" path builds from a `plus_drive/` folder.
-- [ ] The builder maps `plus_drive/<device>/digikit/` into the module store.
-- [ ] The export passes the running device (the console uses DT2 for now).
+- [x] The builder takes the exporter's `.mmcfs/boot/SSSSSS.bin` (the copies at 0x40000 and 0x48000 and the
+  working project at 0x50000); a boot copy in the folder replaces the generated boot project (docs/SAMPLES.md).
+- [x] `mise run emu` exports on exit (`--card-folder`, log line `card: exported N changed files to ...`; `-- --no-sync` turns it off).
+- [x] The desktop "Choose samples" path builds from a `plus_drive/` folder (nested folders, `.mmcfs/`, `digikit/`).
+- [x] The builder maps `plus_drive/<device>/digikit/` into the module store (docs/design/digikit-store.md); read back through the firmware's block read on DT2 and DN2 (`mise run plusdrive:check`).
+- [x] The export passes the running device; the card layout is device data (`[card]` in `devices/*.toml`).
 - [ ] MmcFs bitmaps: the firmware does not set them on save; find what it reads them for.
 
 Gate: a project saved and a sample recorded in the emulator are in `plus_drive/` after exit and are there again
@@ -154,22 +158,27 @@ after the next boot.
 
 ### Phase 2: arena safety
 
-- [ ] Scenarios for the paths not yet covered: project save and load, sample record and delete, Transfer over
-  SysEx, OS update screens.
-- [ ] Run them with the S5 write-watch on `cf.expansion`, and with the canary from tools/coldfire/regions.py.
+- [x] Scenarios for the paths not yet covered: project save, load, new, delete, rename, format, OS update (enter and
+  cancel), the filesystem check, MIDI DIN input, MidiRpc over the USB callback (docs/findings/25-digikit-safety.md).
+  Not covered: sample record and delete (no audio input in the emulator), the startup menu (FUNC held at power-up), real USB.
+- [x] Run them with the S5 write-watch on `cf.expansion` and with the canary (tools/coldfire/arena_safety.py): 0 write
+  events, 0 flush hits, canary intact, on DT2 1.16 (16 runs) and DN2 1.11 (15 runs).
 - [ ] Static check of the arena with tools/coldfire/refscan.py and tools/coldfire/cf.py (no absolute references).
-- [ ] The card overlay after each scenario has no sector in the module store (0x38000-0x3E000).
+- [x] The card overlay after each scenario has no sector in the module store (0x38000-0x3E000).
 
-Gate: no write into the arena by firmware on any scenario; result recorded in docs/findings/.
+Gate: no write into the arena by firmware on any scenario; result recorded in docs/findings/25-digikit-safety.md. Open
+before the arena is used: the static check, DT2 1.17 and DN2 1.12 runs (`arena_safety suite IMAGE`), sample recording.
 
 ### Phase 3: runtime v0 (no UI)
 
-- [ ] Toolchain: `rustc_codegen_gcc` and the patched libgccjit in tools/patchkit/pk_toolchains.py; ColdFire-safe
-  helpers (`__muldi3`, the 64-bit division helpers) instead of the 68020 libgcc; a target JSON with `i64:16:64`.
+- [x] Toolchain: `pk_toolchains codegen-gcc` (pins, patches and the target JSON under tools/patchkit/toolchain/);
+  Rust modules take ColdFire-safe helpers from `compiler_builtins` (docs/findings/26-rust-on-coldfire.md). Open:
+  an install from scratch, timed.
+- [ ] C modules: a libgcc built for `-mcpu=54418` (the repo's libgcc helpers are 68020 code).
 - [ ] Module interface, schema and Rust SDK, designed together. One schema (Machine, Param, Page, FX, MenuItem)
   generates the runtime's registry rows, the SDK types, the constants that SHARC assembly includes and the
   gallery metadata. A versioned runtime interface through which a loaded module registers what it adds.
-- [ ] One Rust module linked by patchkit and run in the emulator.
+- [x] One Rust module linked by patchkit and run in the emulator (`test/rust-demo`, all four ports).
 - [ ] `core/runtime` module: trampolines, import table, arena allocator, loader.
 - [ ] `.dkm` packer in Rust.
 - [ ] A ColdFire-only test module (for example a counter in a hook slot).

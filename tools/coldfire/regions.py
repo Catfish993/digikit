@@ -511,6 +511,10 @@ def scenario_args(name: str) -> list[str]:
         _tap(ev, t, 21)
         t += 20_000_000
     else:
+        from tools.coldfire import panel_script
+
+        if name in panel_script.SCRIPTS:
+            return panel_script.SCRIPTS[name]().args()
         raise ValueError("unknown scenario %r" % name)
     args = ["--extra", str(t + 50_000_000)]
     for _, kind, spec in ev:

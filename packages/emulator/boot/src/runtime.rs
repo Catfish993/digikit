@@ -165,6 +165,7 @@ pub struct Emulator {
     uart_rx_isr: u32,
     input_ready: bool,
     input_attempted_in_chunk: bool,
+    midi: crate::midi::MidiPort,
     policy: ExecutionPolicy,
     softfloat: SoftfloatAbi,
     ram_clear: Option<RamClear>,
@@ -505,6 +506,7 @@ impl Emulator {
             uart_rx_isr,
             input_ready: false,
             input_attempted_in_chunk: false,
+            midi: Default::default(),
             policy,
             softfloat,
             ram_clear,
@@ -979,6 +981,7 @@ impl Emulator {
             || self.bus.board.dspi1_irq()
             || self.irq1_pending
             || self.input_attempted_in_chunk
+            || self.midi.busy()
             || !self.bus.board.ram_matches(clear.entry, &clear.code)
         {
             return 0;
@@ -1070,6 +1073,7 @@ impl Emulator {
             || self.bus.board.dspi1_irq()
             || self.irq1_pending
             || self.input_attempted_in_chunk
+            || self.midi.busy()
             || !self.bus.board.ram_matches(previous_pc, &[0x60, 0xfe])
         {
             return 0;
@@ -1147,6 +1151,9 @@ impl Emulator {
         ]);
         pcs.extend(self.softfloat.entries());
         pcs.extend(self.probe_hits.keys().copied());
+        if self.midi.usb.enabled {
+            pcs.extend([self.midi.usb.tx_fn, self.midi.usb.ret_pc].into_iter().filter(|&pc| pc != 0));
+        }
         if let Some(clear) = &self.ram_clear {
             pcs.push(clear.loop_pc);
         }
@@ -1217,6 +1224,7 @@ impl Emulator {
             || self.rx_pending
             || self.irq1_pending
             || !self.input_packets.is_empty()
+            || self.midi.busy()
             || self.fs_clear_pending.is_some()
             || self.cpu.state != coldfire::RunState::Running
             || self.bus.board.has_host_events()
@@ -1540,6 +1548,21 @@ impl Emulator {
                 }
             }
         }
+        if self.midi.busy() {
+            let delivered = match self.service_midi() {
+                Ok(true) => Ok(true),
+                Ok(false) => self.service_usb(),
+                Err(error) => Err(error),
+            };
+            match delivered {
+                Ok(true) => return,
+                Ok(false) => {}
+                Err(error) => {
+                    self.set_error(error);
+                    return;
+                }
+            }
+        }
         if watched && self.idle_spins.contains(&pc) {
             self.idle_passes += 1;
             if self.idle_passes.is_multiple_of(20_000)
@@ -1650,6 +1673,9 @@ impl Emulator {
     }
 
     fn observe_marks(&mut self, pc: u32) {
+        if self.midi.usb.enabled {
+            self.observe_usb(pc);
+        }
         if let Some(hits) = self.probe_hits.get_mut(&pc) {
             *hits += 1;
             let ret = self.bus.board.read32(self.cpu.a[7]).unwrap_or(0);
@@ -1909,6 +1935,253 @@ impl Emulator {
             }
             Ok(false) => Err("DSPI1 handler rejected".into()),
             Err(error) => Err(format!("DSPI1 delivery poisoned({error:?})")),
+        }
+    }
+
+    /// Queue MIDI DIN bytes for the guest. `period` is the instruction count between two bytes
+    /// (`midi::WIRE_PERIOD` is the real wire rate; 0 delivers as fast as the guest takes its interrupt).
+    pub fn midi_in(&mut self, bytes: &[u8], period: u64) -> Result<usize, String> {
+        if self.midi.queue.len() + bytes.len() > crate::midi::QUEUE_MAX {
+            return Err("midi input queue full".into());
+        }
+        if !self.midi.busy() {
+            self.midi.next_ic = self.cpu.icount;
+        }
+        self.midi.period = period;
+        self.midi.queue.extend(bytes.iter().copied());
+        Ok(self.midi.queue.len())
+    }
+
+    /// Queue bytes for the firmware's USB MIDI receive callback (cable 0). USB itself is not modelled: the bytes are
+    /// handed to the callback in an interrupt taken at the next instruction boundary the guest allows, in chunks
+    /// of at most 64 bytes one USB frame apart. Errors when this image has no resolvable USB MIDI callback.
+    pub fn usb_midi_in(&mut self, bytes: &[u8]) -> Result<usize, String> {
+        use crate::midi::{resolve_usb, USB_CHUNK, USB_PERIOD};
+        if !self.midi.usb.enabled {
+            let (rx, tx) = resolve_usb(&self.main, MAIN_LOAD)
+                .ok_or("this image has no USB MIDI callback this emulator knows")?;
+            self.midi.usb.rx_cb = rx;
+            self.midi.usb.tx_fn = tx;
+            self.midi.usb.period = USB_PERIOD;
+            self.midi.usb.enabled = true;
+            self.rebuild_watch();
+        }
+        if !self.midi.busy() {
+            self.midi.usb.next_ic = self.cpu.icount;
+        }
+        for chunk in bytes.chunks(USB_CHUNK) {
+            self.midi.usb.queue.push_back(chunk.to_vec());
+        }
+        Ok(self.midi.usb.queue.len())
+    }
+
+    /// Start recording what the firmware sends to the USB MIDI transmit function without queueing input.
+    pub fn usb_midi_watch(&mut self) -> Result<(), String> {
+        self.usb_midi_in(&[]).map(|_| ())
+    }
+
+    /// The MIDI bytes the firmware handed to the USB transmit function since the last call.
+    pub fn take_usb_out(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.midi.usb.out)
+    }
+
+    /// Hand the next chunk to the USB receive callback: an interrupt frame is pushed as for a hardware interrupt,
+    /// the chunk and the callback's arguments are built below it, and the PC goes to the callback. The callback returns
+    /// to an `rte` of the firmware; `observe_usb` sees it, pops the arguments and restores d0, d1, a0, a1.
+    fn service_usb(&mut self) -> Result<bool, String> {
+        const LEVEL: u8 = 5;
+        if !self.midi.usb.enabled
+            || self.midi.usb.active.is_some()
+            || self.midi.usb.queue.is_empty()
+            || self.cpu.icount < self.midi.usb.next_ic
+            || ((self.cpu.sr >> 8) & 7) >= u16::from(LEVEL)
+            || self.cpu.state != coldfire::RunState::Running
+        {
+            return Ok(false);
+        }
+        if self.midi.usb.ret_pc == 0 {
+            // An `rte` at the end of the MIDI receive ISR: only this ISR returns here with these arguments.
+            let handler = self
+                .bus
+                .board
+                .read32(self.cpu.ctrl.vbr.wrapping_add(4 * u32::from(crate::midi::RX_VECTOR)))
+                .map_err(|_| "usb: vector")?;
+            let at = handler.checked_sub(MAIN_LOAD).ok_or("usb: handler")? as usize;
+            let scan = self.main.get(at..at + 0x100).ok_or("usb: handler range")?;
+            let rte = (0..scan.len() - 1)
+                .step_by(2)
+                .find(|&k| scan[k..k + 2] == [0x4e, 0x73])
+                .ok_or("usb: no rte after the MIDI receive ISR")?;
+            self.midi.usb.ret_pc = handler + rte as u32;
+            self.rebuild_watch();
+        }
+        let chunk = self.midi.usb.queue.front().cloned().expect("queue checked");
+        let stack = if self.cpu.sr & 0x2000 == 0 && self.cpu.ctrl.cacr & 0x20 != 0 {
+            self.cpu.other_a7
+        } else {
+            self.cpu.a[7]
+        };
+        if !self.bus.board.can_write_ram_range((stack & !3).wrapping_sub(512 + chunk.len() as u32), 512 + chunk.len()) {
+            return Ok(false);
+        }
+        let saved = [self.cpu.d[0], self.cpu.d[1], self.cpu.a[0], self.cpu.a[1]];
+        match self.cpu.take_interrupt(
+            &mut self.bus.board,
+            crate::midi::RX_VECTOR,
+            Some(LEVEL),
+            InterruptPolicy::Oracle,
+        ) {
+            Ok(true) => {}
+            Ok(false) => return Ok(false),
+            Err(error) => return Err(format!("USB MIDI delivery poisoned({error:?})")),
+        }
+        let frame_sp = self.cpu.a[7];
+        let data = frame_sp.wrapping_sub(chunk.len() as u32) & !3;
+        self.poke_bytes(data, &chunk)?;
+        let mut sp = data;
+        for word in [chunk.len() as u32, data, self.midi.usb.ret_pc] {
+            sp -= 4;
+            self.bus.board.write32(sp, word).map_err(|_| "usb: stack write")?;
+        }
+        self.cpu.a[7] = sp;
+        self.cpu.pc = self.midi.usb.rx_cb;
+        self.midi.usb.queue.pop_front();
+        self.midi.usb.in_bytes += chunk.len() as u64;
+        self.midi.usb.calls += 1;
+        self.midi.usb.next_ic = self.cpu.icount + self.midi.usb.period;
+        self.midi.usb.active = Some(crate::midi::UsbCall {
+            sp_after_rts: sp + 4,
+            frame_sp,
+            saved,
+        });
+        Ok(true)
+    }
+
+    /// At the transmit function: record its (length, buffer) arguments. At the callback's return: unwind.
+    fn observe_usb(&mut self, pc: u32) {
+        if pc == self.midi.usb.tx_fn {
+            let sp = self.cpu.a[7];
+            let len = self.bus.board.read32(sp.wrapping_add(4)).unwrap_or(0);
+            let buf = self.bus.board.read32(sp.wrapping_add(8)).unwrap_or(0);
+            if (1..=0x10000).contains(&len)
+                && let Ok(bytes) = self.peek_bytes(buf, len as usize)
+            {
+                self.midi.usb.out.extend_from_slice(&bytes);
+            }
+        }
+        if pc == self.midi.usb.ret_pc
+            && let Some(call) = &self.midi.usb.active
+            && self.cpu.a[7] == call.sp_after_rts
+        {
+            self.cpu.a[7] = call.frame_sp;
+            [self.cpu.d[0], self.cpu.d[1], self.cpu.a[0], self.cpu.a[1]] = call.saved;
+            self.midi.usb.active = None;
+        }
+    }
+
+    /// The bytes the guest sent on the MIDI DIN output since the last call.
+    pub fn take_midi_out(&mut self) -> Vec<u8> {
+        let bytes = self.bus.board.take_midi_tx();
+        self.midi.tx_bytes += bytes.len() as u64;
+        bytes
+    }
+
+    pub fn midi_status(&self) -> crate::midi::MidiStatus {
+        crate::midi::MidiStatus {
+            queued: self.midi.queue.len(),
+            rx_bytes: self.midi.rx_bytes,
+            rx_irqs: self.midi.rx_irqs,
+            tx_bytes: self.midi.tx_bytes,
+            usb_queued: self.midi.usb.queue.iter().map(Vec::len).sum(),
+            usb_in_bytes: self.midi.usb.in_bytes,
+            usb_calls: self.midi.usb.calls,
+            usb_out_bytes: self.midi.usb.out.len(),
+        }
+    }
+
+    /// One MIDI byte at a time: store it where the receive DMA channel would (ring, DADDR), then offer the
+    /// channel's interrupt when the guest's mask, priority level and stack allow it.
+    fn service_midi(&mut self) -> Result<bool, String> {
+        use crate::midi::{RX_SOURCE, RX_VECTOR as MIDI_VECTOR, TCD36_BASE, TCD36_DADDR};
+        if !self.midi.pending {
+            if self.cpu.icount < self.midi.next_ic || self.midi.queue.is_empty() {
+                return Ok(false);
+            }
+            let board = &mut self.bus.board;
+            let (Ok(saddr), Ok(attr), Ok(nbytes), Ok(daddr)) = (
+                board.read32(TCD36_BASE),
+                board.read16(TCD36_BASE + 4),
+                board.read32(TCD36_BASE + 8),
+                board.read32(TCD36_DADDR),
+            ) else {
+                return Ok(false);
+            };
+            // Set up by the driver: UART9 data register, one byte per minor loop, 8-bit, destination modulo 2^15.
+            if saddr != machine::MIDI_UDR || attr != 0x0078 || nbytes != 1 {
+                return Ok(false);
+            }
+            let base = daddr & !0x7fff;
+            if !board.can_write_ram_range(base, 0x8000) {
+                return Ok(false);
+            }
+            let byte = self.midi.queue.pop_front().expect("queue checked");
+            board
+                .write_guest(daddr, 1, u32::from(byte))
+                .map_err(|_| "midi ring write")?;
+            board
+                .write32(TCD36_DADDR, base + ((daddr - base + 1) & 0x7fff))
+                .map_err(|_| "midi DADDR write")?;
+            self.midi.pending = true;
+            self.midi.rx_bytes += 1;
+            self.midi.next_ic = self.cpu.icount + self.midi.period;
+        }
+        let level = self
+            .bus
+            .board
+            .read8(INTC1_BASE + 0x40 + RX_SOURCE)
+            .map_err(|_| "midi ICR")?
+            & 7;
+        let imrl = self
+            .bus
+            .board
+            .read32(INTC1_BASE + 0x0c)
+            .map_err(|_| "midi IMRL")?;
+        if level == 0
+            || (imrl >> RX_SOURCE) & 1 != 0
+            || ((self.cpu.sr >> 8) & 7) >= u16::from(level)
+        {
+            return Ok(false);
+        }
+        let handler = self
+            .bus
+            .board
+            .read32(self.cpu.ctrl.vbr.wrapping_add(4 * u32::from(MIDI_VECTOR)))
+            .map_err(|_| "midi vector")?;
+        if !(MAIN_LOAD..MAIN_LOAD + self.main.len() as u32).contains(&handler) {
+            return Ok(false);
+        }
+        let stack = if self.cpu.sr & 0x2000 == 0 && self.cpu.ctrl.cacr & 0x20 != 0 {
+            self.cpu.other_a7
+        } else {
+            self.cpu.a[7]
+        };
+        let frame = (stack & !3).wrapping_sub(8);
+        if !self.bus.board.can_write_ram_range(frame, 8) {
+            return Ok(false);
+        }
+        match self.cpu.take_interrupt(
+            &mut self.bus.board,
+            MIDI_VECTOR,
+            Some(level),
+            InterruptPolicy::Oracle,
+        ) {
+            Ok(true) => {
+                self.midi.rx_irqs += 1;
+                self.midi.pending = false;
+                Ok(true)
+            }
+            Ok(false) => Err("MIDI RX handler rejected".into()),
+            Err(error) => Err(format!("MIDI RX delivery poisoned({error:?})")),
         }
     }
 

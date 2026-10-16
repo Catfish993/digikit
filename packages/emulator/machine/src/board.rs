@@ -35,6 +35,8 @@ const TX35_MAX_BYTES: usize = 4096;
 /// eDMA channel the DT2 firmware uses for DSPI1 RX (finding 04, transfer inventory).
 const DSPI1_RX_CHAN: usize = 14;
 type RamPage = Box<[u8]>;
+/// UART9 (MIDI DIN) data register: the firmware sends MIDI by byte stores here (finding 25).
+pub const MIDI_UDR: u32 = 0xec07_400c;
 
 // `owned_mmio`'s fast reject: no owned device slot starts below the end of
 // SDRAM.
@@ -162,6 +164,9 @@ pub struct Board {
     /// Bytes drained by the eDMA35 UART8-TX model. This is host observation
     /// only; UART RX and peripheral responses remain outside this Board seam.
     uart_tx: Vec<u8>,
+    /// Bytes the guest stored to the MIDI DIN UART (UART9) data register. Host observation
+    /// only: not part of a checkpoint.
+    midi_tx: Vec<u8>,
     /// DSPI1 RX completion (eDMA channel 14) waiting for the host to raise
     /// its interrupt. Not part of the snapshot: `snap_save` refuses while set.
     dspi1_irq: bool,
@@ -382,6 +387,7 @@ impl Board {
             oracle_fault_pages: 0,
             sd_gate: None,
             uart_tx: vec![],
+            midi_tx: vec![],
             dspi1_irq: false,
         }
     }
@@ -829,6 +835,10 @@ impl Board {
     /// in order (take it second; for the write-watch).
     pub fn take_dma_sources(&mut self) -> Vec<&'static str> {
         std::mem::take(&mut self.dma_sources)
+    }
+    /// Return the bytes the guest wrote to the MIDI DIN UART9 data register since the prior call.
+    pub fn take_midi_tx(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.midi_tx)
     }
     /// Return UART8 TX bytes drained by eDMA channel 35 since the prior call.
     pub fn take_uart_tx(&mut self) -> Vec<u8> {
@@ -1464,6 +1474,9 @@ impl Board {
 
     #[inline(never)]
     fn write_inner_slow(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
+        if addr == MIDI_UDR && size == 1 {
+            self.midi_tx.push(value as u8);
+        }
         if Time::owns(addr) {
             self.bump_epoch(addr);
             if let Some(time) = self.time.as_mut()

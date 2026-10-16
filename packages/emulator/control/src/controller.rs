@@ -268,6 +268,19 @@ pub struct Config {
     /// again when a DT2 firmware is loaded without a card (the desktop app;
     /// off for scenarios and tests, which must not depend on earlier runs).
     pub remember_card: bool,
+    /// The +Drive folder the startup card (`firmware.load`'s `card`) was built from: `card.export` writes
+    /// there, and with `sync` a quit does so too.
+    pub card_folder: Option<CardSource>,
+}
+
+/// A +Drive folder and what to do with the firmware's changes to its card.
+#[derive(Clone, Debug)]
+pub struct CardSource {
+    pub dir: PathBuf,
+    /// Export the changes to `dir` when the session ends.
+    pub sync: bool,
+    /// Where exports and backups go (default `$DIGI_PLUSDRIVE_OUT` or `out/plusdrive`).
+    pub out: Option<PathBuf>,
 }
 
 impl Config {
@@ -280,6 +293,7 @@ impl Config {
             events: Events::default(),
             on_quit: None,
             remember_card: false,
+            card_folder: None,
         }
     }
 }
@@ -444,6 +458,8 @@ struct Actor {
     /// `firmware.load {auto_no}`: press NO once the runtime it installs is ready.
     want_auto_no: bool,
     remember_card: bool,
+    /// Taken by the first load that mounts a card image.
+    startup_card_folder: Option<CardSource>,
     quit: bool,
     /// Fault, DSP halt and main-loop stall detection (events `fault`, `halt`, `stall`).
     health: Health,
@@ -514,6 +530,7 @@ impl Actor {
             auto_no: false,
             want_auto_no: false,
             remember_card: config.remember_card,
+            startup_card_folder: config.card_folder,
             quit: false,
             health: Health::new(
                 std::env::var("DIGI_STALL_MS")
@@ -899,12 +916,33 @@ impl Actor {
                 (runtime, error, image)
             }
         };
+        self.adopt_card_folder(image.as_ref());
         self.loaded = Some(Loaded::stock(bytes, image));
         self.install(runtime, error);
         let snapshot = self.runtime.as_mut().expect("new runtime").snapshot();
         self.startup_snapshot = Some(snapshot.clone());
         self.emit("session.changed", json!({"reason": "load"}));
         Ok(snapshot)
+    }
+
+    /// The first load that mounts a card image takes the startup `--card-folder`: that card's +Drive folder.
+    fn adopt_card_folder(&mut self, card: Option<&PathBuf>) {
+        let (Some(card), Some(source)) = (card, self.startup_card_folder.take()) else { return };
+        eprintln!(
+            "card: {} is the +Drive folder of this card; {}",
+            display_path(&source.dir),
+            if source.sync {
+                "the firmware's changes are exported to it on exit"
+            } else {
+                "exit does not export (card.export does)"
+            }
+        );
+        self.card_folder = Some(CardFolder {
+            image: card.clone(),
+            dir: source.dir,
+            sync: source.sync,
+            out: source.out,
+        });
     }
 
     /// The card `last.json` names, when it is this DT2 firmware's and its
@@ -1265,6 +1303,8 @@ impl Actor {
                 })
                 .map(Some),
             "card.overlay" => self.rpc_card_overlay(&p).map(Some),
+            "midi.in" | "midi.usb.in" => self.rpc_midi_in(method, &p).map(Some),
+            "midi.out" | "midi.usb.out" => self.rpc_midi_out(method, &p).map(Some),
             "card.export" => self.rpc_card_export(&p).map(Some),
             "watchdog.config" => self.rpc_watchdog(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
@@ -1471,14 +1511,19 @@ impl Actor {
             std::env::var_os("DIGI_PLUSDRIVE_OUT").map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from)
         }));
         options.prune = prune;
-        // TODO(dn2): pass the device
-        plusdrive_format::export::export(
-            &base,
-            &overlay,
-            &folder,
-            plusdrive_format::Geometry::Dt2,
-            &options,
-        )
+        let layout = self.card_layout()?;
+        plusdrive_format::export::export(&base, &overlay, &folder, &layout, &options)
+    }
+
+    /// The card layout of the running device (its profile's `[card]` section), found by the base firmware's hash.
+    fn card_layout(&self) -> Result<plusdrive_format::CardLayout, String> {
+        let loaded = self.loaded.as_ref().ok_or("no firmware is loaded")?;
+        let registry = plusdrive_format::device_profile::Registry::load().map_err(|e| e.to_string())?;
+        let (device, _) = registry.identify(&loaded.base_sha).map_err(|e| e.to_string())?;
+        device
+            .card
+            .clone()
+            .ok_or_else(|| format!("device {} has no [card] layout", device.short))
     }
 
     /// At quit: save the firmware's card writes next to the image (`overlay.bin`, merged over an older one, so a
@@ -1501,13 +1546,17 @@ impl Actor {
                 eprintln!("card: could not save {}: {error}", path.display());
             }
         }
+        let dir_shown = dir.clone();
         match self.export_card(Some(dir), out, false) {
             Ok(report) => eprintln!(
-                "card: exported to the folder: {} added, {} replaced, {} deleted by the firmware (kept); {}",
+                "card: exported {} changed files to {} ({} added, {} replaced; {} deleted by the firmware, kept; {} issues); backup {}",
+                report.added.len() + report.replaced.len(),
+                display_path(&dir_shown),
                 report.added.len(),
                 report.replaced.len(),
                 report.deleted_by_firmware.len(),
-                report.export_dir.display()
+                report.issues.len(),
+                report.backup_dir.display()
             ),
             Err(error) => eprintln!("card: export failed: {error}"),
         }
@@ -1527,6 +1576,66 @@ impl Actor {
         }
         std::fs::write(&path, &out).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
         Ok(json!({"path": path, "sectors": sectors.len()}))
+    }
+
+    /// `midi.in {bytes | file, period?}` queues bytes on the MIDI DIN input (UART9), one per `period` instructions
+    /// (default 42,240: the 31250 baud wire rate; 0 = as fast as the firmware takes its interrupts).
+    /// `midi.usb.in {bytes | file}` hands the bytes to the firmware's USB MIDI receive callback (USB itself is not
+    /// modelled; docs/CONTROL.md). `bytes` is a hex string (spaces allowed) or an array of numbers.
+    fn rpc_midi_in(&mut self, method: &str, p: &Params) -> RpcResult {
+        let data = match (p.get("bytes"), p.opt_str("file")?) {
+            (Some(Value::String(hex)), None) => {
+                let digits: Vec<u8> = hex.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+                if digits.len() % 2 != 0 || !digits.iter().all(u8::is_ascii_hexdigit) {
+                    return Err(RpcError::bad_params("bytes is an even number of hex digits"));
+                }
+                digits
+                    .chunks(2)
+                    .map(|c| u8::from_str_radix(std::str::from_utf8(c).unwrap_or("0"), 16).unwrap_or(0))
+                    .collect::<Vec<u8>>()
+            }
+            (Some(Value::Array(items)), None) => items
+                .iter()
+                .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
+                .collect::<Option<Vec<u8>>>()
+                .ok_or_else(|| RpcError::bad_params("bytes holds numbers 0..255"))?,
+            (None, Some(path)) => {
+                std::fs::read(path).map_err(|e| RpcError::io(format!("{path}: {e}")))?
+            }
+            _ => return Err(RpcError::bad_params("give bytes (hex string or array) or file")),
+        };
+        let period = p
+            .opt_u64("period")?
+            .unwrap_or(elektron_native_boot::midi::WIRE_PERIOD);
+        let usb = method == "midi.usb.in";
+        let queued = self.with_runtime(|r| {
+            if usb {
+                r.usb_midi_in(&data)
+            } else {
+                r.midi_in(&data, period)
+            }
+            .map_err(RpcError::bad_params)
+        })?;
+        Ok(json!({"bytes": data.len(), "queued": queued}))
+    }
+
+    /// `midi.out {file?}` returns (and clears) the bytes the firmware sent on MIDI DIN since the last call as a
+    /// hex string; `midi.usb.out` the bytes it handed to the USB MIDI transmit function. The first
+    /// `midi.usb.out` or `midi.usb.in` starts the USB capture. `file` also writes them raw.
+    fn rpc_midi_out(&mut self, method: &str, p: &Params) -> RpcResult {
+        let usb = method == "midi.usb.out";
+        let (bytes, status) = self.with_runtime(|r| {
+            if usb {
+                r.usb_midi_watch().map_err(RpcError::bad_params)?;
+            }
+            let bytes = if usb { r.take_usb_out() } else { r.take_midi_out() };
+            Ok((bytes, r.midi_status()))
+        })?;
+        if let Some(path) = p.opt_str("file")? {
+            std::fs::write(path, &bytes).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
+        }
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        Ok(json!({"bytes": bytes.len(), "hex": hex, "status": status}))
     }
 
     /// `guard.set {protect: [{lo, hi, label?}], allow_pc: [{lo, hi}]}`: arm write-range guards
@@ -2021,6 +2130,7 @@ impl Actor {
             "cold"
         }
         .into();
+        self.adopt_card_folder(card.as_ref());
         let mut loaded = Loaded::stock(bytes, card);
         loaded.base_analysis = Some(new.clone());
         loaded.current_analysis = Some(new);
@@ -2060,6 +2170,7 @@ impl Actor {
         }
         .into();
         let base_sha = firmware::sha256_hex(&base_bytes);
+        self.adopt_card_folder(card.as_ref());
         self.loaded = Some(Loaded {
             base: Some(base_bytes),
             base_sha,
@@ -2615,6 +2726,14 @@ struct CardJob {
     export_out: Option<PathBuf>,
 }
 
+/// A path as shown in a log line: relative to the working directory when it is below it.
+fn display_path(path: &Path) -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| path.strip_prefix(cwd).ok().map(|p| p.display().to_string()))
+        .unwrap_or_else(|| path.display().to_string())
+}
+
 fn set_status(status: &Mutex<Value>, value: Value) {
     if let Ok(mut slot) = status.lock() {
         *slot = value;
@@ -2633,16 +2752,15 @@ fn run_card_job(
     let started = Instant::now();
     set_status(
         status,
-        json!({"state": "working", "phase": "scanning", "message": "Reading the sample folder", "fraction": 0.0}),
+        json!({"state": "working", "phase": "scanning", "message": "Reading the +Drive folder", "fraction": 0.0}),
     );
-    let files = cards::list_wavs(&dir)?;
-    let total = files.len();
-    let (paths, card_cached) = cards::ensure_card(&run_dir, &syx, &files, |done, total| {
+    let files = cards::list_files(&dir)?;
+    let (paths, card_cached, total) = cards::ensure_card(&run_dir, &syx, &dir, &files, |done, total| {
         set_status(
             status,
             json!({
                 "state": "working", "phase": "building",
-                "message": format!("Building the card ({done}/{total} samples)"),
+                "message": format!("Building the card ({done}/{total} files)"),
                 "fraction": 0.1 * done as f64 / total.max(1) as f64,
                 "done": done, "total": total,
             }),

@@ -1,0 +1,21 @@
+[module]
+id = "test/rust-demo"
+version = "0.1.0"
+name = "Rust on the ColdFire demo"
+category = "test"
+status = "experimental"
+summary = "Test fixture: a Rust crate in cf.expansion; nothing calls it"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Built with rustc_codegen_gcc for -mcpu=54418 (tools/patchkit/pk_rust.py; finding 26). The object is committed.
+[[object]]
+path = "build/rust-demo.dko.json"
+sources = ["src/rs/Cargo.toml"]
+place = "cf.expansion"

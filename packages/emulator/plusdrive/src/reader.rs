@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use emmc_card::{CardOverlaySector, RandomAccessRead};
 
-use crate::tree::{Geometry, Pool};
+use crate::tree::{CardLayout, Pool, RegionRole};
 use crate::{
     CONTENT_AREA_SECTOR, ID_BITMAP_SECTOR, PAGE, PAGE_BITMAP_SECTOR, RECORD_AREA_SECTOR,
     RECORD_SIZE, ROOT_ID, SECTOR, SUPERBLOCK_SECTOR, hashlittle,
@@ -528,22 +528,7 @@ impl<'a> Fs<'a> {
 
 // ----- region 1: MmcFs slots ---------------------------------------------------------------------------------------
 
-/// Offset and byte length of the pool's occupancy bitmap in the table sector (sector 0x800); the same on both devices.
-fn pool_bitmap(pool: Pool) -> (usize, usize) {
-    match pool {
-        Pool::Projects => (0, 16),
-        Pool::Sounds => (16, 256),
-        Pool::Kits => (272, 128),
-    }
-}
-
 pub const MMCFS_HEADER_MAGIC: u32 = 0xbeef_bace;
-pub const MMCFS_TABLE_SECTOR: u64 = 0x800;
-/// Raw 16 MiB regions outside the slot pools that the guest uses for projects: the two boot copies (a COKi
-/// container the builder seeds, read at start) and the working project (project "slot 0x80", rewritten from the
-/// boot copy at every start; FUN_4012eef2). Exported only when the guest wrote them.
-pub const BOOT_SLOT_SECTORS: [u64; 3] = [0x40000, 0x48000, 0x50000];
-const BOOT_SLOT_SECTOR_COUNT: u64 = 0x8000;
 const SOUND_MAGICS: [u32; 2] = [0x4454_3153, 0x444e_3153]; // "DT1S", "DN1S"
 
 #[derive(Clone, Debug)]
@@ -596,13 +581,16 @@ fn read_trimmed(img: &dyn RandomAccessRead, first: u64, sectors: u64) -> Vec<u8>
 /// The occupancy bitmaps at sector 0x800 are not used for that: a project saved from the panel (FUNC+SETTINGS,
 /// YES) writes the slot and leaves the bitmap untouched (measured, DT2 1.16), so the bitmap would miss it. A bit
 /// that is set for an empty slot is reported. `overlay` (when known) selects the boot regions the guest wrote.
+/// The project regions outside the pools are the layout's `boot-project` and `working-project` regions (the two boot
+/// copies are COKi containers the builder seeds and the firmware reads at start; the working project is rewritten
+/// from the boot copy at every start, FUN_4012eef2); they are exported only when the guest wrote them.
 pub fn read_mmcfs(
     img: &dyn RandomAccessRead,
-    geometry: Geometry,
+    layout: &CardLayout,
     overlay: Option<&OverlayImage<'_>>,
 ) -> MmcFsRead {
     let mut out = MmcFsRead::default();
-    let header = read_vec(img, 0, SECTOR);
+    let header = read_vec(img, layout.header_sector * SECTOR as u64, SECTOR);
     if be32(&header, 0) != MMCFS_HEADER_MAGIC {
         out.issues.push(format!(
             "MmcFs header magic {:#010x}: no slot pools on this card",
@@ -611,13 +599,16 @@ pub fn read_mmcfs(
         return out;
     }
     out.present = true;
-    let table = read_vec(img, MMCFS_TABLE_SECTOR * SECTOR as u64, SECTOR);
+    let table = read_vec(img, layout.table_sector * SECTOR as u64, SECTOR);
     for pool in Pool::ALL {
-        let (offset, length) = pool_bitmap(pool);
+        let (offset, length) = (
+            layout.pool(pool).bitmap_offset,
+            layout.pool(pool).bitmap_bytes,
+        );
         let bits = &table[offset..offset + length];
-        for slot in 0..geometry.slot_count(pool) {
+        for slot in 0..layout.slot_count(pool) {
             // First sector of a slot (FUN_4012eef2, FUN_4012f596, FUN_401324cc).
-            let sector = geometry.slot_sector(pool, slot);
+            let sector = layout.slot_sector(pool, slot);
             let first = read_vec(img, sector * SECTOR as u64, SECTOR);
             let used = first.iter().any(|&b| b != 0) && first.iter().any(|&b| b != 0xff);
             let bit = bits[slot as usize >> 3] & (1 << (slot & 7)) != 0;
@@ -642,7 +633,7 @@ pub fn read_mmcfs(
                     pool.dir_name()
                 ));
             }
-            let bytes = read_trimmed(img, sector, (geometry.slot_bytes(pool) / 512) as u64);
+            let bytes = read_trimmed(img, sector, (layout.slot_bytes(pool) / 512) as u64);
             out.slots.push(Slot {
                 pool,
                 index: slot,
@@ -652,10 +643,15 @@ pub fn read_mmcfs(
         }
     }
     if let Some(overlay) = overlay {
-        for sector in BOOT_SLOT_SECTORS {
-            if overlay.touched_in(sector, BOOT_SLOT_SECTOR_COUNT) {
-                out.boot
-                    .push((sector, read_trimmed(img, sector, BOOT_SLOT_SECTOR_COUNT)));
+        for region in layout
+            .regions_of(RegionRole::BootProject)
+            .chain(layout.regions_of(RegionRole::WorkingProject))
+        {
+            if overlay.touched_in(region.sector, region.sectors) {
+                out.boot.push((
+                    region.sector,
+                    read_trimmed(img, region.sector, region.sectors),
+                ));
             }
         }
     }
@@ -752,13 +748,11 @@ mod tests {
 
     #[test]
     fn slot_addresses_match_the_firmware_formulas() {
-        assert_eq!(Geometry::Dt2.slot_sector(Pool::Projects, 0), 0x58000);
-        assert_eq!(Geometry::Dt2.slot_sector(Pool::Projects, 127), 0x8a << 15);
-        assert_eq!(Geometry::Dt2.slot_sector(Pool::Sounds, 0), 0x12000);
-        assert_eq!(
-            Geometry::Dt2.slot_sector(Pool::Kits, 1),
-            (0x2c0_0000 + 0x10000) >> 9
-        );
+        let dt2 = crate::dt2_layout();
+        assert_eq!(dt2.slot_sector(Pool::Projects, 0), 0x58000);
+        assert_eq!(dt2.slot_sector(Pool::Projects, 127), 0x8a << 15);
+        assert_eq!(dt2.slot_sector(Pool::Sounds, 0), 0x12000);
+        assert_eq!(dt2.slot_sector(Pool::Kits, 1), (0x2c0_0000 + 0x10000) >> 9);
         assert_eq!(page_sector(0x100_0800), Some(0x458000));
         assert_eq!(page_sector(0x100_0000), None);
     }

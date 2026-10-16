@@ -11,13 +11,13 @@ use crate::image::{
     put16, put32, record_offset, validate_native,
 };
 use crate::{
-    ATTR_DIR, ATTR_FILE, BOOT_CONFIG_SECTOR, BOOT_CONFIG_SECTOR_2, DEFAULT_CAPACITY_BLOCKS,
-    DEFAULT_OFFSET01, DirEntry, FACTORY_TABLE_SECTOR, HASH_TABLE_SECTOR, HEADER_SECTOR,
-    ID_BITMAP_SECTOR, NativeInfo, NativeSample, PAGE, PAGE_BITMAP_SECTOR, POOL_TABLE_SECTOR,
+    ATTR_DIR, ATTR_FILE, DEFAULT_CAPACITY_BLOCKS, DEFAULT_OFFSET01, DirEntry, FACTORY_TABLE_SECTOR,
+    HASH_TABLE_SECTOR, ID_BITMAP_SECTOR, NativeInfo, NativeSample, PAGE, PAGE_BITMAP_SECTOR,
     RECORD_SIZE, RESERVED_PAGES, ROOT_ID, ROOT_PARENT, SECTOR, SUPERBLOCK_SECTOR,
     build_boot_config_record, build_directory, build_factory_table_record, build_superblock,
     content_hash,
 };
+pub use device_profile::{CardLayout, Pool, RegionRole};
 
 pub(crate) const HEADER_MAGIC: u32 = 0xbeef_bace;
 /// Logical page of the name-hash index (0x10001: order, 0x10002: id).
@@ -33,73 +33,20 @@ pub const MAX_TREE_BYTES: usize = 1 << 30;
 /// Highest record id the firmware accepts (`FUN_4015b64e`).
 const MAX_ID: u32 = 0x57fff;
 pub const POOL_TABLE_BYTES: usize = 400;
-const POOL_OFFSETS: [usize; 3] = [0, 16, 16 + 256];
 
-/// The three `MmcFs` slot pools.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Pool {
-    Projects,
-    Sounds,
-    Kits,
-}
-impl Pool {
-    pub const ALL: [Pool; 3] = [Pool::Projects, Pool::Sounds, Pool::Kits];
-    /// The folder name under `.mmcfs/`.
-    pub fn dir_name(self) -> &'static str {
-        match self {
-            Pool::Projects => "projects",
-            Pool::Sounds => "sounds",
-            Pool::Kits => "kits",
-        }
-    }
-    pub fn from_dir_name(name: &str) -> Option<Pool> {
-        Pool::ALL.into_iter().find(|p| p.dir_name() == name)
-    }
-    fn index(self) -> usize {
-        self as usize
-    }
+/// The card layout of a device by its short name (`dt2`, `dn2`), from the device profiles (`devices/*.toml`,
+/// `[card]`; `$DIGI_DEVICES_DIR` and the embedded copy as for the other profile lookups).
+pub fn card_layout(device: &str) -> Result<CardLayout, String> {
+    let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
+    registry
+        .card_layout(device)
+        .cloned()
+        .ok_or_else(|| format!("no card layout for device {device}"))
 }
 
-/// Where a device keeps its `MmcFs` slots. The path filesystem is written for
-/// both: DN2 boots from the same empty one today and ignores it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Geometry {
-    /// DT2 1.16: projects `(slot + 0xb) & 0xff` << 15 sectors (16 MiB), sounds
-    /// `(slot + 0x2400) * 8` (4 KiB), kits `0x16000 + slot * 0x80` (64 KiB).
-    Dt2,
-    /// DN2 1.11: projects as DT2, sounds `(slot + 0x800) * 2` (1 KiB), kits
-    /// `0x2000 + slot * 0x40` (32 KiB).
-    Dn2,
-}
-impl Geometry {
-    pub fn slot_count(self, pool: Pool) -> u32 {
-        match pool {
-            Pool::Projects => 128,
-            Pool::Sounds => 2048,
-            Pool::Kits => 1024,
-        }
-    }
-    /// Bytes between the start of a slot and the next region.
-    pub fn slot_bytes(self, pool: Pool) -> usize {
-        let sectors = match (self, pool) {
-            (_, Pool::Projects) => 0x8000,
-            (Geometry::Dt2, Pool::Sounds) => 8,
-            (Geometry::Dn2, Pool::Sounds) => 2,
-            (Geometry::Dt2, Pool::Kits) => 0x80,
-            (Geometry::Dn2, Pool::Kits) => 0x40,
-        };
-        sectors * SECTOR
-    }
-    pub fn slot_sector(self, pool: Pool, slot: u32) -> u64 {
-        let slot = u64::from(slot);
-        match (self, pool) {
-            (_, Pool::Projects) => ((slot + 0xb) & 0xff) << 15,
-            (Geometry::Dt2, Pool::Sounds) => (slot + 0x2400) * 8,
-            (Geometry::Dn2, Pool::Sounds) => (slot + 0x800) * 2,
-            (Geometry::Dt2, Pool::Kits) => 0x16000 + slot * 0x80,
-            (Geometry::Dn2, Pool::Kits) => 0x2000 + slot * 0x40,
-        }
-    }
+/// Same, for the DT2 (the default of the builder and of the tests).
+pub fn dt2_layout() -> CardLayout {
+    card_layout("dt2").expect("the DT2 profile has a [card] section")
 }
 
 /// Raw slot contents by pool and slot index.
@@ -130,12 +77,17 @@ pub struct Tree {
     /// Directories to create even when empty (relative paths).
     pub dirs: Vec<String>,
     pub slots: MmcSlots,
+    /// Raw 16 MiB regions outside the pools by first sector (the boot and working projects of the layout). A
+    /// region given here replaces the generated boot project at that sector.
+    pub regions: BTreeMap<u64, Vec<u8>>,
+    /// Files of `digikit/` for the module store.
+    pub store: Vec<crate::StoreFile>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct TreeOptions {
     pub capacity_blocks: u32,
-    pub geometry: Geometry,
+    pub layout: CardLayout,
     /// Longest extent in pages. Files and directories longer than this get
     /// several (adjacent) extents. Nothing in the layout needs it; it
     /// exercises multi-extent and indirect-extent records.
@@ -145,7 +97,7 @@ impl Default for TreeOptions {
     fn default() -> Self {
         Self {
             capacity_blocks: DEFAULT_CAPACITY_BLOCKS,
-            geometry: Geometry::Dt2,
+            layout: dt2_layout(),
             max_extent_pages: u32::MAX,
         }
     }
@@ -571,23 +523,38 @@ impl Writer<'_> {
     }
 }
 
-/// Build the image of a [`Tree`]. A boot project (`project_seed`) is written
+/// Build the image of a [`Tree`] for the card layout of `options`. A boot project (`project_seed`) is written
 /// only when the tree holds a native sample for its references.
+///
+/// Boot regions: the generated boot record (and, with a seed and a native sample, the boot project) goes to every
+/// `boot-project` region of the layout; a region in `tree.regions` replaces the generated bytes at its sector
+/// (the generated project is then not written there). Working-project regions are written only from `tree.regions`.
 pub fn build_tree_image(
     tree: Tree,
     options: TreeOptions,
     project_seed: Option<crate::ProjectSeed<'_>>,
 ) -> Result<crate::BuiltImage, ImageError> {
+    let layout = &options.layout;
     let capacity = u64::from(options.capacity_blocks)
         .checked_mul(SECTOR as u64)
         .ok_or(ImageError::CapacityOverflow)?;
-    let factory_end = bytes_at_sector(FACTORY_TABLE_SECTOR)?
-        .checked_add(PAGE as u64)
-        .ok_or(ImageError::CapacityOverflow)?;
-    if capacity < factory_end {
-        return Err(ImageError::FixedRegionsDoNotFit {
-            capacity_blocks: options.capacity_blocks,
-        });
+    let path_fs = match &layout.path_fs {
+        Some(fs) if fs.superblock_sector == u64::from(SUPERBLOCK_SECTOR) => true,
+        Some(_) => return Err(ImageError::UnsupportedLayout("path_fs.superblock_sector")),
+        None => false,
+    };
+    if !path_fs && !(tree.files.is_empty() && tree.dirs.is_empty()) {
+        return Err(ImageError::NoPathFilesystem);
+    }
+    if path_fs {
+        let factory_end = bytes_at_sector(FACTORY_TABLE_SECTOR)?
+            .checked_add(PAGE as u64)
+            .ok_or(ImageError::CapacityOverflow)?;
+        if capacity < factory_end {
+            return Err(ImageError::FixedRegionsDoNotFit {
+                capacity_blocks: options.capacity_blocks,
+            });
+        }
     }
 
     // The tree of nodes, with the size limits.
@@ -631,29 +598,60 @@ pub fn build_tree_image(
     put32(&mut header, 4, 1);
     header[8] = 1;
     header[9] = 1;
-    image.write_at(bytes_at_sector(HEADER_SECTOR)?, &header)?;
-    image.write_at(
-        bytes_at_sector(u64::from(SUPERBLOCK_SECTOR))?,
-        &build_superblock(),
-    )?;
-    image.write_at(
-        bytes_at_sector(FACTORY_TABLE_SECTOR)?,
-        &build_factory_table_record(),
-    )?;
-    let boot = build_boot_config_record();
-    image.write_at(bytes_at_sector(BOOT_CONFIG_SECTOR)?, &boot)?;
-    image.write_at(bytes_at_sector(BOOT_CONFIG_SECTOR_2)?, &boot)?;
+    image.write_at(bytes_at_sector(layout.header_sector)?, &header)?;
+    if path_fs {
+        image.write_at(
+            bytes_at_sector(u64::from(SUPERBLOCK_SECTOR))?,
+            &build_superblock(),
+        )?;
+        image.write_at(
+            bytes_at_sector(FACTORY_TABLE_SECTOR)?,
+            &build_factory_table_record(),
+        )?;
+    }
 
-    // Raw MmcFs slots and their occupancy bitmaps (sector 0x800, 400 bytes).
+    // Boot and working project regions.
+    for sector in tree.regions.keys() {
+        let region = layout
+            .region_at(*sector)
+            .ok_or(ImageError::UnknownRegion { sector: *sector })?;
+        let data = &tree.regions[sector];
+        let limit = (region.sectors as usize) * SECTOR;
+        if data.is_empty() || data.len() > limit {
+            return Err(ImageError::RegionSize {
+                sector: *sector,
+                bytes: data.len(),
+                limit,
+            });
+        }
+    }
+    let boot = build_boot_config_record();
+    let mut generated: Vec<u64> = Vec::new();
+    for region in layout.regions_of(RegionRole::BootProject) {
+        match tree.regions.get(&region.sector) {
+            Some(given) => image.write_at(bytes_at_sector(region.sector)?, given)?,
+            None => {
+                image.write_at(bytes_at_sector(region.sector)?, &boot)?;
+                generated.push(region.sector);
+            }
+        }
+    }
+    for region in layout.regions_of(RegionRole::WorkingProject) {
+        if let Some(given) = tree.regions.get(&region.sector) {
+            image.write_at(bytes_at_sector(region.sector)?, given)?;
+        }
+    }
+
+    // Raw MmcFs slots and their occupancy bitmaps (the table sector, 400 bytes).
     let mut pool_table = [0u8; SECTOR];
     for ((pool, slot), data) in &tree.slots.slots {
-        if *slot >= options.geometry.slot_count(*pool) {
+        if *slot >= layout.slot_count(*pool) {
             return Err(ImageError::SlotOutOfRange {
                 pool: pool.dir_name(),
                 slot: *slot,
             });
         }
-        let limit = options.geometry.slot_bytes(*pool);
+        let limit = layout.slot_bytes(*pool);
         if data.is_empty() || data.len() > limit {
             return Err(ImageError::SlotSize {
                 pool: pool.dir_name(),
@@ -662,13 +660,27 @@ pub fn build_tree_image(
                 limit,
             });
         }
-        image.write_at(
-            bytes_at_sector(options.geometry.slot_sector(*pool, *slot))?,
-            data,
-        )?;
-        pool_table[POOL_OFFSETS[pool.index()] + (*slot >> 3) as usize] |= 1 << (slot & 7);
+        image.write_at(bytes_at_sector(layout.slot_sector(*pool, *slot))?, data)?;
+        pool_table[layout.pool(*pool).bitmap_offset + (*slot >> 3) as usize] |= 1 << (slot & 7);
     }
-    image.write_at(bytes_at_sector(POOL_TABLE_SECTOR)?, &pool_table)?;
+    image.write_at(bytes_at_sector(layout.table_sector)?, &pool_table)?;
+
+    // The module store.
+    if !tree.store.is_empty() {
+        let range = layout.store.as_ref().ok_or(ImageError::NoStore)?;
+        let bytes = crate::encode_store(tree.store, range.end_sector - range.first_sector)
+            .map_err(ImageError::Store)?;
+        image.write_at(bytes_at_sector(range.first_sector)?, &bytes)?;
+    }
+
+    if !path_fs {
+        return Ok(crate::BuiltImage {
+            image,
+            files: Vec::new(),
+            entries: Vec::new(),
+            project: None,
+        });
+    }
 
     let mut writer = Writer {
         image: &mut image,
@@ -723,8 +735,9 @@ pub fn build_tree_image(
                 &natives.iter().map(|f| f.reference).collect::<Vec<_>>(),
                 alloc.next_id,
             )?;
-            image.replace_at(bytes_at_sector(BOOT_CONFIG_SECTOR)?, &record)?;
-            image.replace_at(bytes_at_sector(BOOT_CONFIG_SECTOR_2)?, &record)?;
+            for sector in &generated {
+                image.replace_at(bytes_at_sector(*sector)?, &record)?;
+            }
             Some(report)
         }
         _ => None,
@@ -1114,10 +1127,11 @@ mod tests {
 
     #[test]
     fn mmcfs_slots_land_in_their_sectors_and_set_bitmaps() {
-        for (geometry, sound_sector, kit_sector) in [
-            (Geometry::Dt2, (7 + 0x2400) * 8, 0x16000 + 3 * 0x80),
-            (Geometry::Dn2, (7 + 0x800) * 2, 0x2000 + 3 * 0x40),
+        for (device, sound_sector, kit_sector) in [
+            ("dt2", (7 + 0x2400) * 8, 0x16000 + 3 * 0x80),
+            ("dn2", (7 + 0x800) * 2, 0x2000 + 3 * 0x40),
         ] {
+            let layout = card_layout(device).unwrap();
             let mut slots = MmcSlots::default();
             slots.slots.insert((Pool::Projects, 5), pattern(100_000));
             slots.slots.insert((Pool::Projects, 127), vec![9; 512]);
@@ -1129,7 +1143,7 @@ mod tests {
                     ..Default::default()
                 },
                 TreeOptions {
-                    geometry,
+                    layout,
                     ..Default::default()
                 },
                 None,
@@ -1140,7 +1154,7 @@ mod tests {
             assert_eq!(v.read((0x8a << 15) << 9, 512), vec![9; 512]);
             assert_eq!(v.read(sound_sector * 512, 0x400), pattern(0x400));
             assert_eq!(v.read(kit_sector * 512, 3000), pattern(3000));
-            let t = v.read(POOL_TABLE_SECTOR * 512, 512);
+            let t = v.read(0x800 * 512, 512);
             assert_eq!(t[0], 1 << 5);
             assert_eq!(t[15], 1 << 7);
             assert_eq!(t[16 + (7 >> 3)], 1 << 7);
@@ -1148,6 +1162,126 @@ mod tests {
             assert_eq!(t[..16].iter().map(|b| b.count_ones()).sum::<u32>(), 2);
             assert!(t[400..].iter().all(|&b| b == 0));
         }
+    }
+
+    fn tree_with(regions: Vec<(u64, Vec<u8>)>, store: Vec<crate::StoreFile>) -> Tree {
+        Tree {
+            regions: regions.into_iter().collect(),
+            store,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_folder_region_replaces_the_generated_boot_project() {
+        let seed_free = |tree: Tree, device: &str| {
+            build_tree_image(
+                tree,
+                TreeOptions {
+                    layout: card_layout(device).unwrap(),
+                    ..Default::default()
+                },
+                None,
+            )
+        };
+        for device in ["dt2", "dn2"] {
+            let built = seed_free(
+                tree_with(
+                    vec![(0x40000, pattern(3000)), (0x50000, vec![7; 600])],
+                    Vec::new(),
+                ),
+                device,
+            )
+            .unwrap();
+            let v = View(&built.image);
+            assert_eq!(v.read(0x40000 * 512, 3000), pattern(3000));
+            // the other boot copy keeps the generated record; the working project is only what the folder gave
+            assert_eq!(
+                v.read(0x48000 * 512, 256),
+                build_boot_config_record().to_vec()
+            );
+            assert_eq!(v.read(0x50000 * 512, 600), vec![7; 600]);
+        }
+        let err = |sector, len| {
+            seed_free(tree_with(vec![(sector, vec![1; len])], Vec::new()), "dt2").err()
+        };
+        assert!(matches!(
+            err(0x41000, 10),
+            Some(ImageError::UnknownRegion { .. })
+        ));
+        assert!(matches!(
+            err(0x40000, 0x8000 * 512 + 1),
+            Some(ImageError::RegionSize { .. })
+        ));
+        assert!(matches!(
+            err(0x40000, 0),
+            Some(ImageError::RegionSize { .. })
+        ));
+    }
+
+    #[test]
+    fn digikit_files_land_in_the_module_store_and_must_fit() {
+        for device in ["dt2", "dn2"] {
+            let files = vec![
+                crate::StoreFile {
+                    path: "b.dkm".into(),
+                    bytes: pattern(1500),
+                },
+                crate::StoreFile {
+                    path: "a/x.bin".into(),
+                    bytes: vec![1],
+                },
+            ];
+            let built = build_tree_image(
+                tree_with(Vec::new(), files),
+                TreeOptions {
+                    layout: card_layout(device).unwrap(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+            let store = crate::read_store(&built.image, 0x38000, 0x6000)
+                .unwrap()
+                .unwrap();
+            let names: Vec<_> = store.entries.iter().map(|e| e.path.as_str()).collect();
+            assert_eq!(names, ["a/x.bin", "b.dkm"]);
+            let bytes = crate::read_store_file(&built.image, 0x38000, &store.entries[1]).unwrap();
+            assert_eq!(bytes, pattern(1500));
+        }
+        let too_big = crate::StoreFile {
+            path: "big".into(),
+            bytes: vec![0; 12 * 1024 * 1024],
+        };
+        assert!(matches!(
+            build_tree_image(
+                tree_with(Vec::new(), vec![too_big]),
+                TreeOptions::default(),
+                None
+            ),
+            Err(ImageError::Store(crate::StoreError::DoesNotFit { .. }))
+        ));
+    }
+
+    #[test]
+    fn dn2_takes_no_path_filesystem_files() {
+        let dn2 = TreeOptions {
+            layout: card_layout("dn2").unwrap(),
+            ..Default::default()
+        };
+        let tree = Tree {
+            files: vec![plain("a", vec![1])],
+            ..Default::default()
+        };
+        assert!(matches!(
+            build_tree_image(tree, dn2.clone(), None),
+            Err(ImageError::NoPathFilesystem)
+        ));
+        let built = build_tree_image(Tree::default(), dn2, None).unwrap();
+        // header and table only: no superblock where the DT2 keeps it
+        let v = View(&built.image);
+        assert_eq!(v.read(0, 4), HEADER_MAGIC.to_be_bytes());
+        assert!(v.read(0x5d8000 * 512, 512).iter().all(|&b| b == 0));
     }
 
     #[test]
@@ -1187,7 +1321,7 @@ mod tests {
         ));
         assert!(one(Pool::Projects, 0, 16 * 1024 * 1024).is_none());
         // A project slot never reaches the boot project at 0x40000/0x48000.
-        let top = Geometry::Dt2.slot_sector(Pool::Projects, 0);
+        let top = dt2_layout().slot_sector(Pool::Projects, 0);
         assert!(top > 0x48000 + 0x6ecb);
     }
 
