@@ -272,8 +272,8 @@ def test_acm_runs_a_chain_to_its_null_pointer_and_honours_the_interrupt_mask():
 
 def _acm_blocks(sgctl: int, blocks: int = 3, window: int = 8):
     """Two ACM channels run once a block; between runs the core re-arms each TCB's
-    INIDX and OUTIDX to the next block's buffers, which the accelerator set to 0 and
-    0xFFFFFFFF after the last window (HWR chapter 39, ACM)."""
+    INIDX and OUTIDX to the next block's buffers, which the accelerator set to
+    0xFFFFFFFF and 0 after the last window (ACM, as on silicon)."""
     state = _state()
     xs0 = [float(k % 7) - 3.0 for k in range(window * blocks)]
     xs1 = [0.05 * k for k in range(window * blocks)]
@@ -288,8 +288,8 @@ def _acm_blocks(sgctl: int, blocks: int = 3, window: int = 8):
     for b in range(blocks):
         if b:
             for tcb, inp, out in ((TCB0, IN0, OUT0), (TCB1, IN1, OUT1)):
-                assert _peek(state, tcb + 4 * 14, 1, "I") == [0]
-                assert _peek(state, tcb + 4 * 10, 1, "I") == [0xFFFFFFFF]
+                assert _peek(state, tcb + 4 * 14, 1, "I") == [0xFFFFFFFF]
+                assert _peek(state, tcb + 4 * 10, 1, "I") == [0]
                 _poke(state, tcb + 4 * 14, [_w(inp + 4 * window * b)])
                 _poke(state, tcb + 4 * 10, [_w(out + 4 * window * b)])
             _dm_write(state, iir.IIR_CTL1, 4, Const(0))
