@@ -1,0 +1,16 @@
+name: Module idea
+description: A machine, effect or change you would like as a firmware module.
+labels: [module idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What it should do
+      description: What a player hears or sees, and on which device.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Related stock features, references to public manuals, sketches.

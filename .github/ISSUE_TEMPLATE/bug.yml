@@ -1,0 +1,27 @@
+name: Bug
+description: Something in the site, the patcher, the emulator or a module does not work.
+labels: [bug]
+body:
+  - type: dropdown
+    id: part
+    attributes:
+      label: Where
+      options: [Web site, Patcher, Browser emulator, Desktop app, A module, Something else]
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Device and OS version
+      description: For example Digitakt II 1.17. Name it; never attach the firmware file.
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did, what you expected, what happened
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Modules, browser or OS, logs
+      description: Diagnostics exported from the emulator are fine; firmware, snapshots and card images are not.

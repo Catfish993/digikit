@@ -27,7 +27,8 @@ state and next steps, not results.
 
 ## Branches and pull requests
 
-- Work on a branch. `main` takes changes through a pull request.
+- Work on a branch. `main` takes changes through a pull request; you merge your own PR once its review
+  threads are resolved (squash or merge commit). `main` cannot be force-pushed or deleted.
 - Keep moves and renames, helper extraction and behaviour changes in separate commits.
 - Keep the PR description short, in plain technical English. Say what was verified.
 
@@ -37,7 +38,8 @@ state and next steps, not results.
   [docs/TESTING.md](docs/TESTING.md)).
 - Before a PR, run `mise run verify`. It selects the steps your changes need;
   `mise run verify -- --explain` shows the plan.
-- Before merging to `main`, run `mise run verify:full`.
+- `mise run verify` is also the gate for merging to `main`. Run `mise run verify:full` only after changes to the
+  generated SHARC core.
 - New Python files join the ruff `CLEAN` list in `tests/devtools/test_lint.py`, and the mypy
   `TYPED` list in `tests/devtools/test_types.py` where practical.
 - Python tools go in the owner's package under `tools/` (docs/LAYOUT.md); run them with `uv run python -m tools.<owner>.<module>` and never change `sys.path`.

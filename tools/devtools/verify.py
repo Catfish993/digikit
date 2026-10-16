@@ -151,6 +151,8 @@ FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
+    # GitHub settings files (templates, CODEOWNERS): only the path check reads them.
+    ((".github/",), ("python-tests",)),
     (
         (
             "tests/scenarios/dt2-",
