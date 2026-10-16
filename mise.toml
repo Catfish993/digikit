@@ -276,6 +276,10 @@ description = "Patch memory per region (size, used by each module, free), refuse
 run = "uv run python -m tools.patchkit.pk_harness run"
 description = "Smoke tour and module tests over the matrix (tests/patchkit/smoke/matrix.toml): mise run patch:test [-- --matrix FILE | --cell dt2-1.17:fx/master-gain | --update]; one PASS/FAIL line per cell, logs in out/runs/patchkit/"
 
+[tasks."dkrt:proof"]
+run = "uv run python -m tools.patchkit.pk_dkrt proof"
+description = "digikit runtime in the emulator: patch core/runtime, load/run/unload test/dyn-demo from the card store, refusal cases, write-watch and flush check: mise run dkrt:proof [-- --image dn2-1.11 --keep DIR]"
+
 [tasks."patch:proofs"]
 run = "uv run python -m tools.patchkit.pk_proofs"
 description = "Every emulator proof on its quick tier, in sequence (DT2: gain, drive, voice, machines, pluck; DN2: gain, voice, machines, pages, pluck; drive runs on DT2 only): mise run patch:proofs [-- --only pluck,machines --jobs N]; one PASS/FAIL line per tool and a total, logs in out/runs/proofs"

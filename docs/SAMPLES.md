@@ -38,7 +38,8 @@ binary, device, every file's relative path and bytes).
   file replaces the generated project at its sector**: if `.mmcfs/boot/040000.bin` exists, 0x40000 is that file and the
   generated project is not written there (the same for `048000`; each copy on its own). The project of an earlier session
   refers to sample ids, so it matches only the same sample set: delete the boot file to have the project generated again.
-  The working project (`050000`) is written only from a file. `.mmcfs/projects/` cannot collide with these regions: slots
+  The working project (`050000`) is written only from a file; the exporter does not write it by default (the firmware
+  rewrites it from the boot copy at every start; `--with-working-project` adds it). `.mmcfs/projects/` cannot collide with these regions: slots
   end before them.
 - **`digikit/`** (top level only) is not copied to the path filesystem: every file under it, recursively, goes to the
   module store (`docs/design/digikit-store.md`), on DT2 and DN2. More than the store holds (12 MiB) is an error.

@@ -1466,16 +1466,20 @@ impl Actor {
 
     /// `mem.cf.poke {addr, value}`: write one longword of SDRAM (a test aid: break the guest on
     /// purpose to exercise `fault`/`stall`). Not part of the replay record.
-    /// `card.export {dir?, out?, prune?}`: bring a +Drive folder up to date with what the firmware wrote to the
+    /// `card.export {dir?, out?, prune?, working_project?}`: bring a +Drive folder up to date with what the firmware wrote to the
     /// card (finding 24). `dir` defaults to the folder the card was loaded from.
     /// The whole tree goes to `<out>/export/<stamp>/` first (`out` defaults to `$DIGI_PLUSDRIVE_OUT` or
     /// `out/plusdrive`), then only new or changed files are copied, each replaced file moved to
-    /// `<out>/backup/<stamp>/`. Files the firmware deleted are listed; `prune` moves them to the backup.
+    /// `<out>/backup/<stamp>/`. Files the firmware deleted are listed; `prune` moves them to the backup. The working
+    /// project (`.mmcfs/boot/050000.bin`, rewritten by the firmware at every start) is left out unless `working_project`.
     fn rpc_card_export(&mut self, p: &Params) -> RpcResult {
         let explicit = p.opt_str("dir")?.map(PathBuf::from);
         let out = p.opt_str("out")?.map(PathBuf::from);
         let prune = p.opt_bool("prune")?.unwrap_or(false);
-        let report = self.export_card(explicit, out, prune).map_err(RpcError::io)?;
+        let working = p.opt_bool("working_project")?.unwrap_or(false);
+        let report = self
+            .export_card(explicit, out, prune, working)
+            .map_err(RpcError::io)?;
         Ok(json!({
             "added": report.added, "replaced": report.replaced, "unchanged": report.unchanged.len(),
             "deleted_by_firmware": report.deleted_by_firmware, "pruned": report.pruned,
@@ -1490,6 +1494,7 @@ impl Actor {
         explicit: Option<PathBuf>,
         out: Option<PathBuf>,
         prune: bool,
+        working_project: bool,
     ) -> Result<plusdrive_format::export::Report, String> {
         let image = self
             .loaded
@@ -1511,6 +1516,7 @@ impl Actor {
             std::env::var_os("DIGI_PLUSDRIVE_OUT").map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from)
         }));
         options.prune = prune;
+        options.include_working_project = working_project;
         let layout = self.card_layout()?;
         plusdrive_format::export::export(&base, &overlay, &folder, &layout, &options)
     }
@@ -1547,7 +1553,7 @@ impl Actor {
             }
         }
         let dir_shown = dir.clone();
-        match self.export_card(Some(dir), out, false) {
+        match self.export_card(Some(dir), out, false, false) {
             Ok(report) => eprintln!(
                 "card: exported {} changed files to {} ({} added, {} replaced; {} deleted by the firmware, kept; {} issues); backup {}",
                 report.added.len() + report.replaced.len(),

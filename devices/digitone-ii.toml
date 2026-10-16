@@ -210,3 +210,23 @@ sectors = 0x8000
 [card.store]
 first_sector = 0x38000
 end_sector = 0x3e000
+
+# How a module's machines map onto this device (packages/patchkit/src/typed.rs lowers the typed sections of a
+# module.toml with it; `patchkit gen` writes the constants a DSP routine needs). Finding 02 (own pages) and 06.
+# The knobs of a machine are the page columns c0..c7 of a `[[page]]` and sound-array slots 25..32; the level is c8.
+# A machine with a page of its own sets `own_dsp`: the FM engine then renders nothing for it.
+[modules.knobs]
+count = 8
+slot_base = 25
+to = "page"
+knob_field = "c"
+slot_field = "s"
+level_field = "c8"
+level_default = 10          # the track level code
+own_dsp = true
+
+# The DSP's copy of the frame holds the word of sound-array slot s of voice v at halfword 0x6d + 0x49 v + (s - 25).
+[modules.frame]
+base = 0x6d
+stride = 0x49
+mirror_base = 25

@@ -4,7 +4,7 @@
     uv run python -m tools.patchkit.patchkit bin                       print the path of the built binary
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/
     uv run python -m tools.patchkit.patchkit explain --firmware X.syx --modules a,b              site-by-site account
-    uv run python -m tools.patchkit.patchkit list|inspect|check|verify ...                       passed through
+    uv run python -m tools.patchkit.patchkit list|inspect|check|verify|gen ...                     passed through
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
     uv run python -m tools.patchkit.patchkit inject [OUT.syx] [--hot]  load a patched image into the running emulator
 
@@ -74,6 +74,9 @@ def flag(args: list[str], name: str) -> str | None:
     )
 
 
+GALLERY = "build/gen/gallery.json"
+
+
 def bundle(extra: list[Path] | None = None) -> dict:
     """Ports and modules as texts: the input of `pk_apply` in patchkit.wasm.
 
@@ -91,8 +94,19 @@ def bundle(extra: list[Path] | None = None) -> dict:
         for r in d.get("registry", []):  # the permanent-number tables of frameworks
             if r.get("index_table"):
                 files[r["index_table"]] = (m.parent / r["index_table"]).read_text()
+        gallery = (
+            m.parent / GALLERY
+        )  # `patchkit gen`: machines and parameters, for the page
+        if gallery.is_file():
+            files[GALLERY] = gallery.read_text()
         modules.append({"manifest": m.read_text(), "files": files})
-    return {"ports": ports, "modules": modules}
+    # the device files with a [modules] section: the knob models the typed module sections are lowered with
+    devices = []
+    for f in sorted((ROOT / "devices").glob("*.toml")):
+        text = f.read_text()
+        if "modules" in tomllib.loads(text):
+            devices.append(text)
+    return {"ports": ports, "modules": modules, "devices": devices}
 
 
 def sharc_listing(syx: Path, plan: dict) -> list[str]:
@@ -234,7 +248,7 @@ def main(argv: list[str]) -> int:
         return cmd_explain(args)
     if cmd == "inject":
         return cmd_inject(args)
-    if cmd in ("list", "inspect", "check", "verify", "apply", "rebuild"):
+    if cmd in ("list", "inspect", "check", "verify", "apply", "rebuild", "gen"):
         return run([cmd, *args]).returncode
     print(__doc__)
     return 2

@@ -25,7 +25,7 @@ sector 0, the header
   8   4   u32 entry_count
   12  4   u32 table_sectors      = ceil(entry_count * 128 / 512)
   16  4   u32 used_sectors       header + table + data
-  20  4   u32 crc32 of the table (IEEE 802.3, as zlib: check value of "123456789" is 0xcbf43926)
+  20  4   u32 crc32 of the table sectors, zero padding included (IEEE 802.3, as zlib: check value of "123456789" is 0xcbf43926)
   24  ..  zero to 512 bytes
 
 sectors 1 .. table_sectors, the table: entry_count entries of 128 bytes, sorted by path (byte order)

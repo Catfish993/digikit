@@ -3,7 +3,8 @@
 //! Folder layout (plan decision 6, docs/findings/24-plusdrive-export.md): path-filesystem files and folders by their names in
 //! the firmware's native format; `.mmcfs/{projects,sounds,kits}/NNNN.bin` for the occupied MmcFs slots;
 //! `.mmcfs/boot/SSSSSS.bin` for a 16 MiB region outside the pools (sector in hex: the two boot copies 040000 and
-//! 048000, the working project 050000) that the guest wrote.
+//! 048000) that the guest wrote. The working project (050000) is left out unless `include_working_project` is set:
+//! the firmware rewrites it from the boot copy at every start.
 //!
 //! Nothing is lost: the whole tree is first written to `<out>/export/<stamp>/`; then only files that are new or
 //! differ are copied into the folder, and each replaced file is moved to `<out>/backup/<stamp>/` first. Files the
@@ -20,7 +21,9 @@ use std::{
 
 use emmc_card::{CardOverlaySector, RandomAccessRead};
 
-use crate::{CardLayout, Fs, OverlayImage, WavLimits, parse_overlay, read_mmcfs, wav_to_native};
+use crate::{
+    CardLayout, Fs, OverlayImage, RegionRole, WavLimits, parse_overlay, read_mmcfs, wav_to_native,
+};
 
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -30,6 +33,10 @@ pub struct Options {
     pub prune: bool,
     /// Fixed stamp (tests); default: the UTC time now.
     pub stamp: Option<String>,
+    /// Also export the working project (`.mmcfs/boot/050000.bin`). Default: no. The firmware rewrites it from the
+    /// boot copy at every start (finding 24), so a copy in the folder is replaced on the card at the next boot
+    /// and only makes every later export differ.
+    pub include_working_project: bool,
 }
 
 impl Options {
@@ -38,6 +45,7 @@ impl Options {
             out_root: out_root.into(),
             prune: false,
             stamp: None,
+            include_working_project: false,
         }
     }
 }
@@ -218,6 +226,7 @@ fn stage(
     view: &OverlayImage<'_>,
     layout: &CardLayout,
     export_dir: &Path,
+    include_working_project: bool,
     report: &mut Report,
 ) -> Result<Staged, String> {
     let mut staged = Staged {
@@ -327,6 +336,11 @@ fn stage(
         staged.files.insert(rel);
     }
     for (sector, bytes) in &mmc.boot {
+        if !include_working_project
+            && layout.region_at(*sector).is_some_and(|r| r.role == RegionRole::WorkingProject)
+        {
+            continue;
+        }
         let rel = format!(".mmcfs/boot/{sector:06x}.bin");
         stage_file(export_dir, &rel, bytes)?;
         staged.files.insert(rel);
@@ -379,7 +393,13 @@ pub fn export(
         backup_dir: backup_dir.clone(),
         ..Report::default()
     };
-    let staged = stage(&view, layout, &export_dir, &mut report)?;
+    let staged = stage(
+        &view,
+        layout,
+        &export_dir,
+        options.include_working_project,
+        &mut report,
+    )?;
     fs::create_dir_all(folder).map_err(|e| format!("{}: {e}", folder.display()))?;
 
     // Sample sources in the folder: `x.wav` stands for the native file `x` when it converts to the same bytes.
@@ -520,17 +540,19 @@ impl RandomAccessRead for FileImage {
     }
 }
 
-pub const EXPORT_USAGE: &str = "usage: plusdrive export IMAGE [--overlay FILE] -o FOLDER [--out DIR] [--prune] [--device dt2|dn2]\n  \
+pub const EXPORT_USAGE: &str = "usage: plusdrive export IMAGE [--overlay FILE] -o FOLDER [--out DIR] [--prune] [--with-working-project] [--device dt2|dn2]\n  \
      IMAGE   card image (sparse file); --overlay: a `card.overlay` file of the guest's writes\n  \
      -o      the plus_drive/<device> folder to bring up to date\n  \
      --out   holds export/<stamp>/ and backup/<stamp>/ (default out/plusdrive)\n  \
      --prune move files the firmware deleted to the backup (default: list and keep)\n  \
+     --with-working-project  also export .mmcfs/boot/050000.bin (default: no; the firmware rewrites it at every start)\n  \
      --device the card's device (default dt2)";
 
 pub fn cli(args: Vec<String>) -> Result<(), String> {
     let (mut image, mut overlay, mut folder, mut out, mut prune) =
         (None, None, None, PathBuf::from("out/plusdrive"), false);
     let mut device = String::from("dt2");
+    let mut working = false;
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -540,6 +562,7 @@ pub fn cli(args: Vec<String>) -> Result<(), String> {
             "-o" => folder = Some(PathBuf::from(it.next().ok_or("missing -o value")?)),
             "--out" => out = PathBuf::from(it.next().ok_or("missing --out value")?),
             "--prune" => prune = true,
+            "--with-working-project" => working = true,
             "--device" => device = it.next().ok_or("missing --device value")?,
             _ if image.is_none() && !arg.starts_with('-') => image = Some(PathBuf::from(arg)),
             _ => return Err(EXPORT_USAGE.into()),
@@ -556,6 +579,7 @@ pub fn cli(args: Vec<String>) -> Result<(), String> {
     };
     let mut options = Options::new(out);
     options.prune = prune;
+    options.include_working_project = working;
     let layout = crate::card_layout(&device)?;
     let report = export(&base, &sectors, &folder, &layout, &options)?;
     println!("{}", report.text());
@@ -802,6 +826,23 @@ mod tests {
             &fs::read(folder.join(".mmcfs/boot/040000.bin")).unwrap()[..4],
             b"COKj"
         );
+        // The working project (0x50000) is rewritten by the firmware at every start: left out unless asked for.
+        let working = [
+            overlay[0].clone(),
+            CardOverlaySector {
+                sector: 0x50000,
+                written,
+                data,
+            },
+        ];
+        options.stamp = Some("m4".into());
+        let report = export(&image, &working, &folder, &dt2_layout(), &options).unwrap();
+        assert!(report.added.is_empty(), "{report:?}");
+        assert!(!folder.join(".mmcfs/boot/050000.bin").exists());
+        options.include_working_project = true;
+        options.stamp = Some("m5".into());
+        let report = export(&image, &working, &folder, &dt2_layout(), &options).unwrap();
+        assert_eq!(report.added, [".mmcfs/boot/050000.bin"]);
         let _ = fs::remove_dir_all(&root);
     }
 }

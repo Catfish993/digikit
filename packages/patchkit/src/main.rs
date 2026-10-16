@@ -17,8 +17,12 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   explain --firmware X.syx (--modules a,b | --plan plan.json)   what a patch does, site by site
   verify  OUT.syx [--base X.syx]         re-decode and check an image
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V]   the module's ColdFire object as a run-time .dkm
+  dkm-info FILE.dkm                      check a .dkm and list what it holds
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
   list                                   modules under modules/ and ports under devices/ports/
+  gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
+                                         a SHARC include per device, gallery JSON
 ";
 
 struct Args {
@@ -67,6 +71,7 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
             lib.modules.extend(Library::scan(&d)?.modules);
         }
     }
+    lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
     Ok(lib)
 }
 
@@ -192,6 +197,46 @@ fn run(a: Args) -> Result<()> {
                 );
             }
         }
+        "gen" => {
+            let lib = library(&a.root, rest)?;
+            let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+            let only: Vec<String> = flag(rest, "--modules")
+                .unwrap_or_default()
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+            let check = rest.iter().any(|a| a == "--check");
+            let mut stale = 0;
+            for m in &lib.modules {
+                if !only.is_empty() && !only.iter().any(|o| o == m.id()) {
+                    continue;
+                }
+                for (rel, text) in patchkit::modgen::generate(&lib, &models, m.id())? {
+                    let path = a.root.join("modules").join(m.id()).join(&rel);
+                    let have = std::fs::read_to_string(&path).ok();
+                    if have.as_deref() == Some(text.as_str()) {
+                        continue;
+                    }
+                    if check {
+                        println!("stale    {}", path.display());
+                        stale += 1;
+                    } else {
+                        if let Some(d) = path.parent() {
+                            std::fs::create_dir_all(d)
+                                .map_err(|e| Error(format!("{}: {e}", d.display())))?;
+                        }
+                        write(&path.to_string_lossy(), text.as_bytes())?;
+                        println!("wrote    {}", path.display());
+                    }
+                }
+            }
+            if stale > 0 {
+                return Err(Error(format!(
+                    "{stale} generated file(s) are stale: run `patchkit gen`"
+                )));
+            }
+        }
         "explain" => {
             let fwp = flag(rest, "--firmware").ok_or_else(|| Error(USAGE.into()))?;
             let raw = read(&fwp)?;
@@ -266,6 +311,60 @@ plan.json {}",
             let fw = Firmware::parse(&read(need(rest)?)?)?;
             let o = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
             write(&o, &fw.build(None)?)?;
+        }
+        "pack" => {
+            let id = need(rest)?;
+            let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
+            let lib = library(&a.root, rest)?;
+            let m = lib
+                .get(id)
+                .ok_or_else(|| Error(format!("no module {id}")))?;
+            let cf: Vec<_> = m
+                .objects
+                .iter()
+                .zip(&m.manifest.object)
+                .filter(|(o, _)| o.arch == "cf")
+                .collect();
+            if cf.len() != 1 {
+                return Err(Error(format!(
+                    "{id} has {} ColdFire objects; a .dkm packs exactly one",
+                    cf.len()
+                )));
+            }
+            let opts = patchkit::dkm::Options {
+                name: flag(rest, "--name").unwrap_or_else(|| id.clone()),
+                version: patchkit::dkm::parse_version(&m.manifest.module.version)?,
+                runtime_min: match flag(rest, "--runtime-min") {
+                    Some(v) => v.parse().map_err(|_| Error("--runtime-min: a number".into()))?,
+                    None => patchkit::dkm::RUNTIME_VERSION,
+                },
+            };
+            let file = patchkit::dkm::pack(cf[0].0, &opts)?;
+            write(&out, &file)?;
+            let d = patchkit::dkm::Dkm::parse(&file)?;
+            println!(
+                "{out}: {} bytes, {} (image {} + bss {}, {} relocations, {} imports), sha256 {}",
+                file.len(),
+                d.name,
+                d.image.len(),
+                d.bss,
+                d.relocs.len(),
+                d.imports.len(),
+                d.sha256
+            );
+        }
+        "dkm-info" => {
+            let d = patchkit::dkm::Dkm::parse(&read(need(rest)?)?)?;
+            println!("name      {}", d.name);
+            println!("version   {}.{}.{}", d.version >> 16, d.version >> 8 & 255, d.version & 255);
+            println!("runtime   >= {}", d.runtime_min);
+            println!("sha256    {}", d.sha256);
+            println!("image     {} bytes, bss {}, align {}", d.image.len(), d.bss, d.align);
+            println!("relocs    {}", d.relocs.len());
+            println!("imports   {}", d.imports.join(", "));
+            println!("init      {:?}  fini {:?}", d.init, d.fini);
+            println!("slots     {:?}", d.slots);
+            println!("register  {} bytes", d.register.len());
         }
         "pack-section" => {
             let data = read(need(rest)?)?;

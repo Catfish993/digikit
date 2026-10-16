@@ -299,7 +299,8 @@ fn a_digitakt_machine_is_refused_on_the_digitone() {
     assert!(
         e.contains("outside the anchor")
             || e.contains("anchor")
-            || e.contains("no number in the allocation table"),
+            || e.contains("no number in the allocation table")
+            || e.contains("not compatible"), // machines/xslice lists its ports
         "{e}"
     );
 }

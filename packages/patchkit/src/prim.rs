@@ -335,6 +335,12 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
     let mut act = Active::default();
     for id in order {
         let m = lib.get(id).unwrap();
+        if crate::typed::has_typed(&m.manifest) && !m.manifest.lowered {
+            return Err(err!(
+                "{}: typed sections were not lowered (load the library with the device models)",
+                m.id()
+            ));
+        }
         for d in m.manifest.registry.iter().filter(|r| on(&r.devices, dev)) {
             if act.regs.iter().any(|r| r.def.name == d.name) {
                 return Err(err!("registry {} is declared twice", d.name));

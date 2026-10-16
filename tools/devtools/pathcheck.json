@@ -211,6 +211,10 @@
       "file": "tools/sharc_dev/sharc_transpile/driver.py",
       "token": "tools/sharc_transpile_run.check_build_info",
       "reason": "CORE_FINGERPRINT input: editing it forces a core regeneration; fix at the next one"
+    },
+    {
+      "pattern": "^modules/[A-Za-z0-9_.-]+\\.dkm$",
+      "reason": "a digikit card-store path, relative to plus_drive/<device>/digikit/ (docs/design/digikit-store.md), not the repository's modules/"
     }
   ],
   "moved_local": {

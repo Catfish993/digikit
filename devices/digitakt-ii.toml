@@ -218,3 +218,23 @@ superblock_sector = 0x5d8000
 [card.store]
 first_sector = 0x38000
 end_sector = 0x3e000
+
+# How a module's machines map onto this device (packages/patchkit/src/typed.rs lowers the typed sections of a
+# module.toml with it; `patchkit gen` writes the constants a DSP routine needs). Finding 02; modules/machines/pluck/src/dsp.
+# The knobs of a machine are descriptor fields f0..f7 of its machine row (engine slots 0..7) and the level is f8.
+[modules.knobs]
+count = 8
+slot_base = 0
+to = "machine"
+knob_field = "f"
+level_field = "f8"
+level_default = 10          # 0x0a: the track level code
+
+# The DSP's copy of the frame holds knob j of track t at halfword 0x6d + 48 t + j + (j / 4) * 2 (byte 0xda + 0x60 t);
+# the parameter table gives knob j the mirror index 25 + j + (j / 4) * 2 (core/params builds the same index).
+[modules.frame]
+base = 0x6d
+stride = 48
+group = 4
+gap = 2
+mirror_base = 25

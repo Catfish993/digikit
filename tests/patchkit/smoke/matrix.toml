@@ -83,3 +83,19 @@ modules = ["core/machines", "core/params", "core/dsp-voice", "machines/pluck"]
 device = "dn2"
 firmware = "1.12"
 modules = ["core/machines", "core/params", "test/dn2-pages"]
+
+# SETTINGS > DIGIKIT (finding 28)
+[[cell]]
+device = "dt2"
+firmware = "1.16"
+modules = ["core/digikit-menu"]
+
+[[cell]]
+device = "dt2"
+firmware = "1.17"
+modules = ["core/digikit-menu"]
+
+[[cell]]
+device = "dn2"
+firmware = "1.12"
+modules = ["core/digikit-menu"]

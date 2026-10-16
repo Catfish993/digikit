@@ -48,6 +48,15 @@ def expansion(image: str) -> tuple[int, int]:
     raise KeyError("no cf.expansion region in %s" % image)
 
 
+def plan_allow_pc(plan: pathlib.Path | str) -> str:
+    """`allow_pc` for a patched image: the range the patch placed in cf.expansion (its used size from the patch plan: the
+    modules' code, data and bss). Only the modules run from there, so their own stores are not reported and nothing
+    else is (the PC range is a filter on who stores, not on where)."""
+    d = json.loads(pathlib.Path(plan).read_text())
+    first, _ = expansion(d["base"]["device"] + "-" + d["base"]["version"])
+    return "0x%x-0x%x" % (first, first + d["regions"]["cf.expansion"][0])
+
+
 def parse_overlay(data: bytes) -> list[int]:
     """The sector numbers in a `card.overlay` file, in file order."""
     if len(data) % SECTOR_RECORD:
@@ -114,20 +123,33 @@ def run(
     timeout_s: float = 900.0,
     binary: pathlib.Path | None = None,
     watch: str | None = None,
+    syx: pathlib.Path | None = None,
+    allow_pc: str | None = None,
 ) -> dict:
     """One bounded probe run; returns the facts. `out` is the run directory (created). `watch` replaces the write-watch
     ranges (a control: add a range the firmware does write, such as the display buffer 0x44e4a5b8+0x400, and the event
-    count must be above zero)."""
+    count must be above zero). `syx` runs a patched image (built from the stock firmware of `image`; the probe gets the
+    stock image's SHA-256 as its base). `allow_pc` (LO-HI[,..]) are PC ranges whose stores are not reported: the
+    module's own code, which writes its bss in the module RAM."""
     out = pathlib.Path(out)
     out.mkdir(parents=True, exist_ok=True)
     lo, hi = expansion(image)
     binary = binary or regions.probe_binary()
     _, syx_name, base = regions.IMAGES[image]
-    syx = config.stock(syx_name)
-    cmd = [str(binary), str(syx)]
-    if base:
-        import hashlib
+    import hashlib
 
+    stock = config.stock(syx_name)
+    cmd = [str(binary), str(syx or stock)]
+    if syx is not None:
+        canary = False  # the fill would overwrite the module's code and data, which sit in the region
+        # a patched image: the probe boots it from the stock image's profile (and the stock image of its base, if any)
+        cmd += [
+            "--base-sha",
+            hashlib.sha256(
+                config.stock(regions.IMAGES[base or image][1]).read_bytes()
+            ).hexdigest(),
+        ]
+    elif base:
         cmd += [
             "--base-sha",
             hashlib.sha256(
@@ -162,6 +184,8 @@ def run(
         DIGI_WRITE_WATCH_OUT=str(out / "writewatch.jsonl"),
         DIGI_WRITE_WATCH_LIMIT=str(watch_limit),
     )
+    if allow_pc:
+        env["DIGI_WRITE_WATCH_ALLOW_PC"] = allow_pc
     if flush_check:
         env["DIGI_FLUSH_CHECK"] = "1"
     for f in ("writewatch.jsonl", "writewatch.summary.json", "overlay.bin"):
@@ -359,6 +383,7 @@ def suite(
     card: pathlib.Path | None,
     jobs: int = 4,
     update_goldens: bool = False,
+    run_kw: dict | None = None,
 ) -> list[dict]:
     """Run scripts (concurrently, `jobs` at a time) and judge each: no write into cf.expansion, no flush hit, canary intact,
     no module-store sector written, and what `check_reached` demands."""
@@ -370,7 +395,7 @@ def suite(
 
     def one(name: str) -> dict:
         out = out_root / name
-        facts = run(image, name, out, card=card, binary=binary)
+        facts = run(image, name, out, card=card, binary=binary, **(run_kw or {}))
         facts["script"] = name
         if update_goldens:
             for fname, sha in facts["frame_sha256"].items():
@@ -411,6 +436,15 @@ def table(results: list[dict]) -> str:
     return "\n".join(rows)
 
 
+def _patched_kw(a) -> dict:
+    if not a.syx:
+        return {}
+    kw: dict = {"syx": pathlib.Path(a.syx)}
+    if a.plan:
+        kw["allow_pc"] = plan_allow_pc(a.plan)
+    return kw
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -420,6 +454,13 @@ def main(argv=None) -> int:
     r.add_argument("--card")
     r.add_argument("--out", default=None)
     r.add_argument("--watch-limit", type=int, default=100000)
+    r.add_argument(
+        "--syx", help="a patched image built from the stock firmware of IMAGE"
+    )
+    r.add_argument(
+        "--plan",
+        help="its patch plan (gives the module's own PC range, whose stores are not reported)",
+    )
     sub.add_parser("list")
     su = sub.add_parser("suite")
     su.add_argument("image")
@@ -428,6 +469,10 @@ def main(argv=None) -> int:
     su.add_argument("--out", default=None)
     su.add_argument("--jobs", type=int, default=4)
     su.add_argument("--update-goldens", action="store_true")
+    su.add_argument(
+        "--syx", help="a patched image built from the stock firmware of IMAGE"
+    )
+    su.add_argument("--plan", help="its patch plan")
     c = sub.add_parser("card-check")
     c.add_argument("overlay")
     c.add_argument("--lo", type=lambda s: int(s, 0), default=CARD_STORE[0])
@@ -453,6 +498,7 @@ def main(argv=None) -> int:
             pathlib.Path(a.card) if a.card else None,
             a.jobs,
             a.update_goldens,
+            run_kw=_patched_kw(a),
         )
         text = table(results)
         (out / "summary.md").write_text(text + "\n")
@@ -467,6 +513,7 @@ def main(argv=None) -> int:
         out,
         card=pathlib.Path(a.card) if a.card else None,
         watch_limit=a.watch_limit,
+        **_patched_kw(a),
     )
     print(
         json.dumps(

@@ -172,14 +172,16 @@ resource = "dsp.master.hook"
     return "".join(parts)
 
 
-MACHINE_ENTRY = """
-[[entry]]
-registry = "machines"
+MACHINE_SECTION = """
+# Typed section (modules/README.md, "Typed sections"): lowered per device into the machine, param and page rows.
+# Give it knobs = [...] (stock codes and the ids of [[param]] sections), then [[param]], [[voice]] and, on a Digitone II,
+# a [[page]]; `patchkit gen` writes the constants a DSP routine includes.
+[[machine]]
 id = "{eid}"
 name = "{title}"
 short = "{short}"
-clone_of = 0            # the stock type this machine copies; give it parameters and a DSP routine from here
-devices = ["{dev}"]
+clone_of = 0            # the stock type this machine copies
+devices = [{devices}]
 """
 
 
@@ -240,9 +242,11 @@ conflicts = []
 # The machine's type number is permanent: modules/core/machines/types.toml, key "{id_}:{eid}".
 """
     short = re.sub(r"[^A-Z0-9]", "", name.upper())[:4] or "NEW"
-    return head + "".join(
-        MACHINE_ENTRY.format(eid=eid, title=title[:23], short=short, dev=d)
-        for d in devices
+    return head + MACHINE_SECTION.format(
+        eid=eid,
+        title=title[:23],
+        short=short,
+        devices=", ".join(f'"{d}"' for d in devices),
     )
 
 

@@ -305,7 +305,7 @@ kind = "u32"
 
 ### `[[entry]]`
 
-A content module adds a row to a framework's registry. Keys: `registry`, `id`, `devices`, and one key per registry
+(Machine modules use the typed sections below instead.) A content module adds a row to a framework's registry. Keys: `registry`, `id`, `devices`, and one key per registry
 field. Numbers, strings for `cstr` fields and expressions or symbols for `sym` and numeric fields.
 
 ```toml
@@ -319,6 +319,92 @@ devices = ["dt2"]
 
 patchkit refuses an entry for an unknown registry, an unknown or missing field, a value that does not fit, a
 `cstr` that is too long and an id used twice.
+
+### Typed sections: `[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`
+
+A machine module is written in four small typed sections instead of `[[entry]]` rows. patchkit lowers them per
+device into the rows of `core/machines`, `core/params` and `core/dsp-voice` (`packages/patchkit/src/typed.rs`;
+the lowering also runs in the browser). What a knob means on a device is device data: `[modules.knobs]` and
+`[modules.frame]` in `devices/<device>.toml`. A device file that has no `[modules]` section takes no typed
+sections, and a new device is a new TOML file. `machines/pluck` and `machines/xslice` are the examples.
+
+```toml
+[[voice]]                     # machine id -> the DSP routine's symbol (core/dsp-voice)
+machine = "pluck"
+entry = "_pk_render"
+
+[[machine]]
+id = "pluck"
+name = "Pluck"                # at most 23 characters
+short = "PLK"
+clone_of = 0                  # the stock type it copies
+knobs = [0xca, "pluck_decay", "pluck_pick", 0, "pluck_bright", "pluck_color", 0, 0xd1]
+#        ^ knob 0 .. 7: a stock parameter code, the id of a [[param]] of this module, or 0 for none
+level = 10                    # optional; default: the device model's level_default
+devices = ["dt2"]             # optional; default: every device with a model
+[machine.dn2]                 # per-device override of any key above, plus position and own_dsp
+position = 4                  # place in the machine list (default: last)
+own_dsp = true                # the engine renders nothing for it; only where the model allows it
+knobs = ["pluck_decay", "pluck_pick", "pluck_bright", "pluck_color"]
+
+[[param]]
+id = "pluck_decay"
+name = "Decay"                # at most 31 characters (the page header)
+short = "DECAY"               # at most 15 characters (the label under the knob)
+template = 0xd1               # stock code whose row is copied
+min = 0
+max = 0x7f00
+default = 0x4000
+[param.dn2]                   # per-device override of name, short, template, min, max, default
+template = 0xd5
+
+[[page]]                      # only where the device keeps knobs in a page (Digitone II)
+id = "pluck_syn"
+machine = "pluck"
+name = "PLUCK"
+title = "Pluck"
+devices = ["dn2"]             # knobs default to the machine's knobs on that device
+```
+
+Rules:
+
+- A parameter's slot is its knob position: `slot_base + position` (Digitakt II engine slots 0 to 7, Digitone II
+  sound-array slots 25 to 32). A param used at two positions (two machines, or a machine and its page) is refused.
+  A param that no machine of a device uses is left out there; with an explicit `devices` it is an error.
+- Parameter codes follow the order of the `[[param]]` sections (`params.<id>.index`, as before). Type numbers stay
+  permanent (`core/machines/types.toml`); the lowering needs none.
+- Lowered rows, per device: `voices` (`type = machines.<id>.index`, `pc = entry`), `machines`, `params`, `pages`.
+  On a device whose knobs go to the machine row (`to = "machine"`: Digitakt II) the machine row gets `f0..f7` and the
+  level `f8`. On a device whose knobs go to a page (`to = "page"`: Digitone II) the `[[page]]` gets `c0..c7`, the slots
+  `s0..` and the level `c8`; a stock code on a page is refused (the slot-to-code mapping is not understood yet).
+- A typo is an error: unknown keys of a device table, a device table for a device without a model, more knobs than
+  the device has, a page on a device that keeps knobs in the machine row.
+- Hand-written `[[entry]]` rows still work, also next to typed sections (for example for a registry the typed form does not cover).
+
+The device model, from `devices/digitakt-ii.toml` (comments in the files):
+
+```toml
+[modules.knobs]   # count, slot_base, to = "machine" | "page", knob_field, slot_field, level_field, level_default, own_dsp
+[modules.frame]   # base, stride, group, gap, mirror_base: where the DSP finds knob j of track t
+```
+
+The frame word of knob `j` of track (voice) `t` is halfword `base + stride * t + j + (j / group) * gap`; the parameter
+table gives it the mirror index `mirror_base + j + (j / group) * gap`.
+
+#### Generated files (`patchkit gen`)
+
+`patchkit gen` (`uv run python -m tools.patchkit.patchkit gen`, or the binary) writes
+`modules/<id>/build/gen/` for every module with typed sections; `gen --check` fails when a committed file is
+stale (`packages/patchkit/tests/typed.rs` runs it). The files hold no firmware bytes.
+
+| File | For |
+|---|---|
+| `consts.rs` | Rust SDK users: `include!("consts.rs");` gives `pub mod dt2 { ... }` and `pub mod dn2 { ... }` with `FRAME_BASE`, `FRAME_STRIDE`, `<MACHINE>_TYPE`, per parameter `<PARAM>_KNOB`, `_SLOT`, `_FRAME_OFF`, `_MIRROR`, `_MIN`, `_MAX`, `_DEFAULT`, and `frame_halfword(track, offset)` |
+| `<device>.inc` | SHARC assembly: `#include "dt2.inc"` (pk_build expands it from `build/gen/`); the same names as `#define`s, in decimal (the assembler upper-cases macro text, so `0x` literals break after `+`) |
+| `gallery.json` | the gallery: machines with their knobs, per device (type, position, page), and the parameters with ranges; it is part of the web bundle (`files["build/gen/gallery.json"]`) and shown on the module card |
+
+Example (pluck, Digitakt II): `R1 = FRAME_BASE;` and `R0 = R13 + PLUCK_DECAY_FRAME_OFF;` instead of `0x6d` and `1`.
+`tests/patchkit/test_pk_gen_include.py` shows that this assembles to the committed object, byte for byte.
 
 ### `[[section]]`
 

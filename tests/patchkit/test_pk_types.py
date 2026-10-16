@@ -18,11 +18,12 @@ def machine_entries() -> list[tuple[str, str, list[str]]]:
     out = []
     for m in sorted((ROOT / "modules").rglob("module.toml")):
         d = tomllib.loads(m.read_text())
-        for e in d.get("entry", []):
-            if e["registry"] == "machines":
-                # a module without a device filter is meant for the devices its [targets] name
-                on = {k.split("-")[0] for k in d.get("targets", {})}
-                out.append((d["module"]["id"], e["id"], e.get("devices") or sorted(on)))
+        # hand-written rows and the typed [[machine]] sections
+        rows = [e for e in d.get("entry", []) if e["registry"] == "machines"]
+        for e in [*rows, *d.get("machine", [])]:
+            # a module without a device filter is meant for the devices its [targets] name
+            on = {k.split("-")[0] for k in d.get("targets", {})}
+            out.append((d["module"]["id"], e["id"], e.get("devices") or sorted(on)))
     return out
 
 

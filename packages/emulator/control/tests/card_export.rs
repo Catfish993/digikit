@@ -151,7 +151,8 @@ fn a_project_saved_by_the_firmware_is_exported_to_the_folder() {
         .map(|v| v.as_str().unwrap())
         .collect();
     assert!(added.contains(&".mmcfs/projects/0000.bin"), "{added:?}");
-    assert!(added.contains(&".mmcfs/boot/050000.bin"), "{added:?}");
+    // The working project is rewritten by the firmware at every start: not exported unless asked for.
+    assert!(!added.contains(&".mmcfs/boot/050000.bin"), "{added:?}");
     assert_eq!(report["replaced"].as_array().unwrap().len(), 0);
     assert_eq!(
         report["unchanged"], 3,
@@ -191,6 +192,20 @@ fn a_project_saved_by_the_firmware_is_exported_to_the_folder() {
         .unwrap();
     assert_eq!(again["added"].as_array().unwrap().len(), 0, "{again:#}");
     assert_eq!(again["replaced"].as_array().unwrap().len(), 0, "{again:#}");
+    assert!(!folder.join(".mmcfs/boot/050000.bin").exists());
+
+    // `working_project` brings the working project along.
+    let with = handle
+        .call(
+            "card.export",
+            json!({"out": out.display().to_string(), "working_project": true}),
+        )
+        .unwrap();
+    assert_eq!(
+        with["added"],
+        json!([".mmcfs/boot/050000.bin"]),
+        "{with:#}"
+    );
 
     // Quit: overlay.bin is saved next to the image and the synced folder is exported once more.
     handle.call("quit", json!({})).unwrap();

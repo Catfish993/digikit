@@ -1,0 +1,181 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 8,
+   "offset": 8,
+   "section": ".text.dkm_fini",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 4,
+   "offset": 14,
+   "section": ".text.dkm_fini",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.dkm_fini",
+   "symbol": ".sec..rodata.global.15",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 6,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 4,
+   "offset": 12,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 8,
+   "offset": 18,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 12,
+   "offset": 24,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 30,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 36,
+   "section": ".text.dkm_init",
+   "symbol": ".sec..rodata.global.16",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 8,
+   "section": ".text.dkm_slot_0",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  },
+  {
+   "addend": 4,
+   "offset": 14,
+   "section": ".text.dkm_slot_0",
+   "symbol": ".sec..bss.DYN_COUNTER",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 2,
+   "hex": "203cf1f1000123c0000000002f3900000000487900000000206f000c206800204e90508f4e75",
+   "kind": "text",
+   "name": ".text.dkm_fini",
+   "size": 38
+  },
+  {
+   "align": 2,
+   "hex": "4feffff042b90000000042b90000000042b90000000042b900000000487900000000487900000000206f001c206800204e9042804fef00184e75",
+   "kind": "text",
+   "name": ".text.dkm_init",
+   "size": 58
+  },
+  {
+   "align": 2,
+   "hex": "203c44594e4d23c00000000052b9000000004e75",
+   "kind": "text",
+   "name": ".text.dkm_slot_0",
+   "size": 20
+  },
+  {
+   "align": 1,
+   "hex": "64796e2d64656d6f20636f756e74657200",
+   "kind": "data",
+   "name": ".rodata.global.16",
+   "size": 17
+  },
+  {
+   "align": 1,
+   "hex": "64796e2d64656d6f2066696e6900",
+   "kind": "data",
+   "name": ".rodata.global.15",
+   "size": 14
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.DYN_COUNTER",
+   "size": 16
+  }
+ ],
+ "source_sha256": "9d2ab110248ab0c59edf9fa4b870d27ed4f6ad1f64c58ebc903fe9ca766c50a1",
+ "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss.DYN_COUNTER",
+   "section": ".bss.DYN_COUNTER",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..rodata.global.15",
+   "section": ".rodata.global.15",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..rodata.global.16",
+   "section": ".rodata.global.16",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "DYN_COUNTER",
+   "section": ".bss.DYN_COUNTER",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkm_fini",
+   "section": ".text.dkm_fini",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkm_init",
+   "section": ".text.dkm_init",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkm_slot_0",
+   "section": ".text.dkm_slot_0",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "exports": "DYN_COUNTER dkm_fini dkm_init dkm_slot_0",
+  "instructions_redecoded": "26",
+  "libgccjit_gcc": "37ea7cd851f04ee6a313c5067c9fde9328f876aa",
+  "rustc": "rustc 1.101.0-nightly (6f5da406b 2026-10-10)",
+  "rustc_codegen_gcc": "a7d8a5227b520187e3d93c1f7fc01dd1ba8659cf",
+  "rustflags": "-Cllvm-args=-mcpu=54418 -Cpanic=abort -Zlocation-detail=none -Zfmt-debug=none",
+  "target": "m68k-cf-none-elf-a2.json"
+ }
+}

@@ -43,6 +43,25 @@ test('bundle lists the committed modules and ports', () => {
   assert.ok(json.length < 2 * 1024 * 1024);
 });
 
+test('bundle carries the device knob models and the gallery JSON of typed modules', () => {
+  const { bundle } = buildModuleData(root);
+  assert.equal(bundle.devices.length, 2);
+  assert.ok(bundle.devices.every((t) => 'modules' in parse(t)));
+  const pluck = bundle.modules.find((m) => m.manifest.includes('id = "machines/pluck"'));
+  assert.ok(pluck.manifest.includes('[[machine]]') && !pluck.manifest.includes('[[entry]]'));
+  const g = JSON.parse(pluck.files['build/gen/gallery.json']);
+  assert.equal(g.module, 'machines/pluck');
+  const m = g.machines[0];
+  assert.deepEqual(Object.keys(m.devices).sort(), ['dn2', 'dt2']);
+  assert.equal(m.devices.dt2.knobs[1].param, 'pluck_decay');
+  assert.equal(m.devices.dn2.knobs[0].slot, 25);
+  assert.deepEqual(
+    g.params.dt2.map((p) => p.short),
+    ['DECAY', 'PICK', 'BRIGHT', 'COLOR'],
+  );
+  for (const p of g.params.dt2) assert.ok(p.min <= p.default && p.default <= p.max, p.id);
+});
+
 test('public module summaries are one short sentence', () => {
   for (const file of manifestFiles()) {
     const { module: m } = parse(readFileSync(file, 'utf8'));

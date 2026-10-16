@@ -28,6 +28,18 @@ pub struct Manifest {
     /// ... and entries it adds to registries (a content module).
     #[serde(default)]
     pub entry: Vec<EntryDef>,
+    /// Typed sections (`crate::typed`); `typed::lower` turns them into `entry` rows per device.
+    #[serde(default)]
+    pub machine: Vec<crate::typed::MachineDef>,
+    #[serde(default)]
+    pub param: Vec<crate::typed::ParamDef>,
+    #[serde(default)]
+    pub page: Vec<crate::typed::PageDef>,
+    #[serde(default)]
+    pub voice: Vec<crate::typed::VoiceDef>,
+    /// Set by `typed::lower`.
+    #[serde(skip)]
+    pub lowered: bool,
 }
 
 /// A number or an expression (`crate::expr`) written either as a TOML integer or as a string.
@@ -331,6 +343,15 @@ impl Library {
         self.modules.iter().find(|m| m.id() == id)
     }
 
+    /// Lower the typed sections of every module with the device models (`crate::typed`).
+    pub fn lower(&mut self, models: &crate::typed::Models) -> Result<()> {
+        for m in &mut self.modules {
+            crate::typed::lower(&mut m.manifest, models)
+                .map_err(|e| err!("{}: {e}", m.manifest.module.id))?;
+        }
+        Ok(())
+    }
+
     /// The selection plus everything it requires, transitively. Returns the full list (the selection first, in the
     /// order given, then the added modules in the order found) and the added ones. Refuses a module that is not in
     /// the library, a requirement that is missing, and a `requires` cycle.
@@ -418,6 +439,13 @@ impl Library {
             }
             modules.push(m);
         }
-        Ok(Library { modules })
+        let mut lib = Library { modules };
+        // the device models sit next to `modules/` (`devices/*.toml`); an extra module root without them
+        // is lowered by the caller
+        let devices = root.parent().map(|p| p.join("devices"));
+        if let Some(d) = devices.filter(|d| d.is_dir()) {
+            lib.lower(&crate::typed::Models::from_dir(&d)?)?;
+        }
+        Ok(lib)
     }
 }

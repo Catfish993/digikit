@@ -19,7 +19,6 @@ const SETTINGS: u64 = 8;
 const YES: u64 = 10;
 const NO: u64 = 12;
 const PROJECT_SLOT_0: u64 = 0x58000;
-const WORKING_PROJECT: u64 = 0x50000;
 const STORE: u64 = 0x38000;
 
 fn wav(frequency: f64) -> Vec<u8> {
@@ -147,13 +146,16 @@ fn a_saved_project_survives_quit_export_rebuild_and_boot() {
     // The quit exported the changes to the folder; digikit/ is untouched.
     let project = fs::read(folder.join(".mmcfs/projects/0000.bin")).unwrap();
     assert_eq!(&project[..4], &[0xbe, 0xef, 0xba, 0xce]);
-    let working = fs::read(folder.join(".mmcfs/boot/050000.bin")).unwrap();
+    // The working project is not exported: the firmware rewrites it from the boot copy at every start.
+    assert!(
+        !folder.join(".mmcfs/boot/050000.bin").exists(),
+        "the working project is not exported by default"
+    );
     assert_eq!(fs::read(folder.join("digikit/modules/m.dkm")).unwrap(), module);
     eprintln!(
         "session 1: card built in {build1:.1} s, boot {boot1:.1} s, quit+export {quit1:.1} s; \
-         project slot 0 {} bytes, working project {} bytes",
-        project.len(),
-        working.len()
+         project slot 0 {} bytes",
+        project.len()
     );
 
     // Session 2: the folder now holds the project, so the card is a new one.
@@ -178,11 +180,6 @@ fn a_saved_project_survives_quit_export_rebuild_and_boot() {
     // The saved project is on the new card, sector for sector (trailing zeros are not stored).
     let on_card = read_image(&image2, PROJECT_SLOT_0, project.len());
     assert_eq!(on_card, project, "project slot 0 on the new card");
-    assert_eq!(
-        read_image(&image2, WORKING_PROJECT, working.len()),
-        working,
-        "working project on the new card"
-    );
     // The module store is on it too.
     let store = plusdrive_format::read_store(
         &plusdrive_format::export::FileImage::open(&image2).unwrap(),
@@ -195,25 +192,17 @@ fn a_saved_project_survives_quit_export_rebuild_and_boot() {
     assert!(store.entries[0].path.ends_with("m.dkm"), "{:?}", store.entries[0]);
     let boot2 = boot_to_main(&handle);
 
-    // The firmware boots on it. A second export adds nothing; the only file it may replace is the working project
-    // (the firmware rewrites it from the boot copy at every start).
+    // The firmware boots on it. A second export adds and replaces nothing (the working project, which the firmware
+    // rewrites at every start, is not exported).
     let report = handle
         .call("card.export", json!({"out": out.display().to_string()}))
         .unwrap();
     assert_eq!(report["added"].as_array().unwrap().len(), 0, "{report:#}");
-    let replaced: Vec<&str> = report["replaced"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert!(
-        replaced.iter().all(|f| *f == ".mmcfs/boot/050000.bin"),
-        "{report:#}"
-    );
+    let replaced = report["replaced"].as_array().unwrap();
+    assert!(replaced.is_empty(), "{report:#}");
     eprintln!(
         "session 2: card rebuilt in {build2:.1} s, booted to the main screen in {boot2:.1} s; \
-         slot 0 on the card = the exported {} bytes; second export: added 0, replaced {replaced:?}, unchanged {}",
+         slot 0 on the card = the exported {} bytes; second export: added 0, replaced 0, unchanged {}",
         project.len(),
         report["unchanged"]
     );

@@ -28,6 +28,8 @@ const byParts = (a, b) => {
   return x.length - y.length;
 };
 
+const GALLERY = 'build/gen/gallery.json';
+
 /** `{bundle}` from the committed tree under `root`. */
 export function buildModuleData(root = repoRoot) {
   const ports = readdirSync(join(root, 'devices', 'ports'))
@@ -44,9 +46,17 @@ export function buildModuleData(root = repoRoot) {
     for (const o of d.object ?? []) files[o.path] = readFileSync(join(dir, o.path), 'utf8');
     for (const r of d.registry ?? [])
       if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
+    // `patchkit gen`: machines and parameters, for the page
+    if (existsSync(join(dir, GALLERY))) files[GALLERY] = readFileSync(join(dir, GALLERY), 'utf8');
     modules.push({ manifest: text, files });
   }
-  return { bundle: { ports, modules } };
+  // the device files with a [modules] section: the knob models the typed module sections are lowered with
+  const devices = readdirSync(join(root, 'devices'))
+    .filter((f) => f.endsWith('.toml'))
+    .sort()
+    .map((f) => readFileSync(join(root, 'devices', f), 'utf8'))
+    .filter((t) => 'modules' in parse(t));
+  return { bundle: { ports, modules, devices } };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

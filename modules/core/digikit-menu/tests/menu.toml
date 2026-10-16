@@ -1,0 +1,85 @@
+# SETTINGS > DIGIKIT: the entry is the ninth row of SETTINGS, opens; MODULES lists the store (the harness card has none:
+# NO STORE); ABOUT shows no runtime; NO leaves. Frames are pinned by hash (tests/patchkit/smoke/goldens.json).
+[test]
+name = "menu"
+devices = ["dt2", "dn2"]
+quick = true
+
+[[step]]
+tap = "NO"
+[[step]]
+wait_ms = 300
+[[step]]
+tap = "SETTINGS"
+[[step]]
+wait_ms = 400
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 150
+[[step]]
+expect_frame = "settings_digikit"
+[[step]]
+tap = "YES"
+[[step]]
+wait_ms = 500
+[[step]]
+expect_frame = "digikit"
+[[step]]
+tap = "YES"
+[[step]]
+wait_ms = 800
+[[step]]
+expect_frame = "modules"
+[[step]]
+tap = "NO"
+[[step]]
+wait_ms = 400
+[[step]]
+tap = "DOWN"
+[[step]]
+wait_ms = 300
+[[step]]
+tap = "YES"
+[[step]]
+wait_ms = 600
+[[step]]
+expect_frame = "about"
+[[step]]
+tap = "NO"
+[[step]]
+wait_ms = 400
+[[step]]
+tap = "NO"
+[[step]]
+wait_ms = 400
+[[step]]
+expect_no_fault = true

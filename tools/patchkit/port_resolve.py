@@ -32,7 +32,9 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py
                  anchor's value is its absolute address (a frame word or other fixed data), `src` the instruction.
 
   cf_words       words = [u32 or "*", ...]: a table row found by a masked signature (big-endian u32 words at 4-byte
-                 alignment, exactly one match in the MAIN OS image); a data anchor over the row.
+                 alignment, exactly one match in the MAIN OS image); a data anchor over the row. With `as = "code"`, `offset` and
+                 `len`: a code anchor of `len` bytes at row + offset (a call site found by the words around it, for images
+                 where the cfdb has no function there).
 
   cf_func        hash = <cfdb h_strict of the containing function>, ordinal = <index among the functions with that
                  hash, in address order; default 0>, offset = <bytes from its entry>, len = <bytes>: a code
@@ -228,6 +230,16 @@ def resolve_cf_words(cf: CfFacts, rule: dict) -> dict:
     if len(hits) != 1:
         raise ResolveError(f"{rule['name']}: {len(hits)} rows match the signature")
     row = hits[0]
+    if rule.get("as") == "code":
+        # a code anchor inside the matched words (for example the `jsr` of a call site): `offset` bytes from the row, `len` bytes
+        addr = cf.base + row + int(rule.get("offset", 0))
+        n = int(rule["len"])
+        return {
+            "kind": "code",
+            "addr": addr,
+            "len": n,
+            "sha256": sha(cf.bytes_at(addr, n)),
+        }
     return {
         "kind": "data",
         "addr": cf.base + row,

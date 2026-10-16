@@ -180,6 +180,7 @@ Run output goes to `out/runs/<scenario-or-kind>/<stamp>/` ([INSTRUMENTATION.md](
 | --- | --- |
 | `tools/patchkit/machineprofile.py` | Identify a known MAIN OS by hash and report its machine-related anchors and preconditions. |
 | `tools/patchkit/machinepatch.py` / `tools/patchkit/machinebuild.py` | Plan and build the static MAIN OS patches for an eighth machine. |
+| `tools/patchkit/pk_dkrt.py` | The digikit runtime in the emulator (`proof`): patch `core/runtime`, pack `test/dyn-demo` and two broken variants into a card store, boot, load/run/unload through the mailbox, refusal cases, write-watch and flush check (finding 29). Runs `packages/emulator/boot/examples/cf_script.rs`. |
 | `tools/sharc_dev/framelink.py` | Describe the ColdFire-to-SHARC frame layout for known images. |
 | `tools/sharc_dev/dspmap.py` | Find ColdFire instructions that reference frame-link tables. |
 

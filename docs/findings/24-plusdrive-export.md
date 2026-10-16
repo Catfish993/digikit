@@ -60,3 +60,15 @@ when the overlay touched them. These are not pool slots: the builder should writ
   from the boot copy at every start (**[D]**: so `050000.bin` in the folder is a copy that the next boot overwrites on the
   card; only slot files carry a saved project).
 - `digikit/` is ignored by the exporter (docs/design/digikit-store.md).
+
+## Update 2026-10-16 (r2b): the working project is not exported
+
+- `.mmcfs/boot/050000.bin` (the working project) is left out of the export by default. The firmware rewrites it from the
+  boot copy at every start (**[D]**, see above), so a copy in the folder is replaced on the card at the next boot and made
+  every later export differ. The two boot copies (`040000`, `048000`) and the pool slots are exported as before.
+- Options: `export::Options::include_working_project`, `plusdrive export --with-working-project`, `card.export
+  {working_project: true}`. The builder still takes `050000.bin` from a folder (docs/SAMPLES.md), so an old folder works.
+- Tests: `export::tests::mmcfs_slots_are_exported_by_their_content` (default leaves it out, the option adds it);
+  `control/tests/card_export.rs` and `card_roundtrip.rs` (a saved project: `.mmcfs/projects/0000.bin` only; the second
+  export adds and replaces nothing). **[O]** the two control tests were compile-checked in this lane (`cargo check
+  --tests`), not run; `mise run verify` runs them in the `card` step.

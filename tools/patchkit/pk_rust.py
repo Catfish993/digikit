@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import struct
 import subprocess
@@ -72,11 +73,17 @@ def require_toolchain() -> None:
 
 
 def crate_files(manifest: Path) -> list[Path]:
+    """The crate's manifest and sources, and those of its path dependencies (for example `dkrt-sdk`)."""
     d = manifest.parent
     out = [manifest, *sorted((d / "src").rglob("*.rs"))]
     for extra in ("build.rs", "rust-toolchain.toml"):
         if (d / extra).exists():
             out.append(d / extra)
+    deps = tomllib.loads(manifest.read_text()).get("dependencies", {})
+    for dep in deps.values():
+        if isinstance(dep, dict) and "path" in dep:
+            sub = (d / dep["path"] / "Cargo.toml").resolve()
+            out += [p for p in crate_files(sub) if p not in out]
     return out
 
 
@@ -84,7 +91,7 @@ def source_sha256(manifest: Path) -> str:
     """The crate's sources (relative names + bytes) and the toolchain pins: what a build depends on."""
     h = hashlib.sha256()
     for p in crate_files(manifest):
-        h.update(str(p.relative_to(manifest.parent)).encode() + b"\0" + p.read_bytes())
+        h.update(os.path.relpath(p, manifest.parent).encode() + b"\0" + p.read_bytes())
     h.update(
         "\0".join(
             [
@@ -154,6 +161,12 @@ def _members(lib: Path, workdir: Path) -> list[Path]:
     return sorted(workdir.glob("*.o"))
 
 
+def _is_empty(obj: Path) -> bool:
+    """True when the object has no code, data or bss (`size` prints 0 0 0)."""
+    out = _run([_tool("size"), str(obj)]).stdout.split("\n")[1].split()
+    return out[:3] == ["0", "0", "0"]
+
+
 def _globals(obj: Path) -> tuple[list[str], list[str]]:
     """(defined global symbols, undefined symbols) of an object, by `nm`."""
     out = _run([_tool("nm"), "--no-demangle", str(obj)]).stdout.splitlines()
@@ -190,6 +203,8 @@ def build_object(manifest: Path, out: Path) -> list[str]:
         members = _members(lib, work)
         exports: list[str] = []
         for m in members:
+            if _is_empty(m):
+                continue  # a crate with only types (dkrt-sdk) compiles to an object with no sections; its flags are 0
             check_flags(m.read_bytes(), f"archive member {m.name}")
             if m.name.startswith((crate + "-", crate + ".")):
                 exports += _globals(m)[0]
@@ -238,7 +253,7 @@ def object_proto(manifest: Path) -> dict:
         proto = pk_link.object_from_elf(o.read_bytes(), [manifest])
     proto["source_sha256"] = source_sha256(manifest)
     proto["sources"] = [
-        str(p.relative_to(manifest.parent)) for p in crate_files(manifest)
+        os.path.relpath(p, manifest.parent) for p in crate_files(manifest)
     ]
     proto["toolchain"] = {**toolchain_info(), "exports": " ".join(exports)}
     check_relocs(proto)

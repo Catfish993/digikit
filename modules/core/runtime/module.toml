@@ -1,0 +1,109 @@
+[module]
+id = "core/runtime"
+version = "0.1.0"
+name = "digikit runtime"
+category = "core"
+status = "experimental"
+summary = "Loads modules from the card module store into a private arena at run time (emulator only, no menu yet)"
+requires = ["core/expansion"]
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The runtime: Rust, built with rustc_codegen_gcc for -mcpu=54418 (finding 26). Its bss holds the module arena
+# (DKRT_ARENA, 512 KiB) and the staging buffer (64 KiB), so patchkit reserves both together with the code and no other
+# static object can overlap them. The firmware's functions it calls are anchors resolved at patch time.
+[[object]]
+path = "build/runtime.dko.json"
+sources = ["src/rs/Cargo.toml"]
+place = "cf.expansion"
+
+[object.externs]
+fw_block_read = "dkrt.fw.block_read"
+fw_alloc = "dkrt.fw.alloc"
+fw_free = "dkrt.fw.free"
+
+# The UI-loop hook trampoline and the cache flush (assembly).
+[[object]]
+path = "build/tramp.dko.json"
+sources = ["src/cf/tramp.s"]
+place = "cf.expansion"
+
+[object.externs]
+fw_queue_pop = "dkrt.fw.queue_pop"
+
+[[object]]
+path = "build/device-dt2.dko.json"
+sources = ["src/cf/dt2/device.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[[object]]
+path = "build/device-dn2.dko.json"
+sources = ["src/cf/dn2/device.s"]
+place = "cf.expansion"
+devices = ["dn2"]
+
+# The call at the top of the UI task's event loop that pops the next event from the UI queue
+# (`pea queue; jsr pop; addq.l #4,sp; moveq #0x29,d1; ...`) goes to the trampoline, which runs the runtime's tick and
+# continues in the stock pop.
+[[op]]
+op = "retarget"
+anchor = "dkrt.hook.ui_loop"
+to = "dkrt_loop_hook"
+
+[[claim]]
+resource = "dkrt.hook.ui_loop"
+
+[[anchor_rule]]
+name = "dkrt.hook.ui_loop"
+cpu = "cf"
+kind = "cf_words"
+as = "code"
+words = ["*", "*", 0x40001928, 0x588f7229, 0x24407192, 0xb28065e8]
+offset = 6
+len = 6
+mark = "D"
+
+# The stock queue pop (blocking pend on the queue, returns the next item), the function the hook call goes to.
+[[anchor_rule]]
+name = "dkrt.fw.queue_pop"
+cpu = "cf"
+kind = "cf_func"
+hash = "5545f84fcc633b347034f629aa4858b9"
+offset = 0
+len = 2
+mark = "D"
+
+# The firmware's eMMC block read: int f(u32 sector, u32 bytes, void *buf), 0 = ok (finding 23 S6).
+[[anchor_rule]]
+name = "dkrt.fw.block_read"
+cpu = "cf"
+kind = "cf_func"
+hash = "dcf1d4873d4a4fb5ac903e8ada9c1a12"
+offset = 0
+len = 2
+mark = "D"
+
+# operator new and its free (the 32 MiB buddy allocator, finding 01): void *f(u32), void f(void *)
+[[anchor_rule]]
+name = "dkrt.fw.alloc"
+cpu = "cf"
+kind = "cf_func"
+hash = "0dcb1d56c454607ae1698e4eeff299e7"
+offset = 0
+len = 2
+mark = "D"
+
+[[anchor_rule]]
+name = "dkrt.fw.free"
+cpu = "cf"
+kind = "cf_func"
+hash = "b591a5e50d0db4780b36812232691efa"
+offset = 0
+len = 2
+mark = "D"

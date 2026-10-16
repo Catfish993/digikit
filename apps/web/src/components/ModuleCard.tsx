@@ -54,6 +54,9 @@ export default function ModuleCard(props: ModuleCardProps) {
       <div class="card-text">
         <h3>{props.module.name}</h3>
         <p class="sum">{props.module.summary}</p>
+        <Show when={props.module.machines.some((m) => m.params.length > 0)}>
+          <p class="knobs">Knobs: {props.module.machines.flatMap((m) => m.params.map((p) => p.short)).join(', ')}</p>
+        </Show>
       </div>
       <div class="grow" />
       <div class="facts-row">

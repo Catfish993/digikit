@@ -4,7 +4,7 @@
 //!        [--extra N] [--report-every N] [--event T:CODE:down|up]... [--turn T:ENC:DETENTS]...
 //!        [--zero-digest] [--pattern canary|zero] [--expect ADDR:FILE]...
 //!        [--midi T:HEX]... [--midi-file T:PATH]... [--midi-period N] [--midi-out PATH]
-//!        [--frame T:PATH]... [--overlay-out PATH]
+//!        [--frame T:PATH]... [--overlay-out PATH] [--poke T:ADDR:VALUE]...
 //!
 //! --midi / --midi-file queue bytes on the MIDI DIN input T instructions past ready, one byte per
 //! --midi-period instructions (default 42240 = 320 us, the wire rate). --midi-out writes every byte the
@@ -162,6 +162,7 @@ enum Input {
     Midi(Vec<u8>),
     Usb(Vec<u8>),
     Frame(String),
+    Poke(u32, u32),
 }
 
 fn unhex(s: &str) -> Vec<u8> {
@@ -297,6 +298,12 @@ fn main() {
                     Input::Button(num(p[1]) as u8, p[2] == "down"),
                 ));
             }
+            "--poke" => {
+                // T:ADDR:VALUE: a host write of one longword T instructions past ready (test scaffolding, not seen by the watch)
+                let v = value();
+                let p: Vec<&str> = v.split(':').collect();
+                inputs.push((u64::from(num(p[0])), Input::Poke(num(p[1]), num(p[2]))));
+            }
             "--turn" => {
                 let v = value();
                 let p: Vec<&str> = v.split(':').collect();
@@ -381,6 +388,7 @@ fn main() {
                     Input::Turn(enc, d) => emu.turn(*enc, *d),
                     Input::Midi(bytes) => emu.midi_in(bytes, midi_period).map(|_| ()),
                     Input::Usb(bytes) => emu.usb_midi_in(bytes).map(|_| ()),
+                    Input::Poke(addr, value) => emu.poke32(*addr, *value),
                     Input::Frame(path) => emu
                         .current_frame()
                         .map(|(_, f)| fs::write(path, f).map_err(|e| e.to_string()))
@@ -398,7 +406,21 @@ fn main() {
             }
         }
         if s.error.is_some() || s.icount >= 6_000_000_000 {
-            println!("{{\"error\":{:?},\"icount\":{}}}", s.error, s.icount);
+            println!(
+                "{{\"error\":{},\"icount\":{},\"pc\":\"{:#x}\"}}",
+                s.error.as_ref().map_or("null".to_string(), |e| format!("{e:?}")),
+                s.icount,
+                s.pc
+            );
+            if s.error.is_some() {
+                let (d, a, pc, sr) = emu.cpu_regs();
+                let stack: Vec<String> = (0..12u32)
+                    .map(|k| format!("{:#x}", emu.peek32(a[7].wrapping_add(4 * k)).unwrap_or(0)))
+                    .collect();
+                println!(
+                    "{{\"fault_regs\":{{\"pc\":\"{pc:#x}\",\"sr\":\"{sr:#x}\",\"d\":{d:x?},\"a\":{a:x?},\"stack\":{stack:?}}}}}"
+                );
+            }
             break;
         }
         if ready_at.is_some_and(|r| s.icount - r >= extra) {
@@ -418,6 +440,9 @@ fn main() {
     }
     for (pc, hits) in emu.probe_hits() {
         println!("{{\"pc\":\"{pc:#x}\",\"hits\":{hits}}}");
+    }
+    for ((pc, ret, arg), (hits, last)) in emu.probe_rets() {
+        println!("{{\"pc_ret\":\"{pc:#x}\",\"ret\":\"{ret:#x}\",\"arg\":\"{arg:#x}\",\"hits\":{hits},\"last\":{last}}}");
     }
     for &a in &peeks {
         println!("{{\"peek\":\"{a:#x}\",\"value\":{:?}}}", emu.peek32(a));

@@ -14,7 +14,7 @@ Pipeline (the same one patchkit's module build and patch-time linker follow):
      symbols from a symbol map (for example tools/coldfire/cf_names_dt2_1_17.py ADDRS), apply the relocations.
   4. ``check_isa``: decode every instruction of the executable sections with our own decoder (packages/emulator/coldfire
      ``cfdis``, generated from tools/coldfire/cfisa/coldfire.json); anything that is not ISA_A/B/C or EMAC (a 68020+
-     form, an FPU form, a privileged form, an illegal word) fails.
+     form, an FPU form, a privileged form other than `cpushl`, an illegal word) fails.
 
 Relocation types handled: R_68K_32/16/8 (absolute), R_68K_PC32/16/8 and R_68K_PLT32/16/8 (S + A - P).
 """
@@ -57,6 +57,9 @@ CFLAGS = [
     "-Werror",
 ]
 ASFLAGS = [f"-mcpu={CPU}"]
+# Privileged forms a module may use: cache line push-and-invalidate (the digikit runtime flushes loaded code; modules run in
+# supervisor mode like the firmware).
+PRIVILEGED_OK = {"cpushl"}
 EM_68K = 4
 R_68K = {
     1: ("32", 4, False),
@@ -325,7 +328,7 @@ def check_isa(linked: Linked) -> dict[str, int]:
             continue
         unit, priv = units[form]
         hist[form] = hist.get(form, 0) + 1
-        if unit not in ALLOWED_UNITS or priv:
+        if unit not in ALLOWED_UNITS or (priv and form not in PRIVILEGED_OK):
             bad.append(f"{addr}: {form} ({unit}{', privileged' if priv else ''})")
     if bad:
         raise PkLinkError("instructions outside ISA_A/B/C+EMAC:\n  " + "\n  ".join(bad))

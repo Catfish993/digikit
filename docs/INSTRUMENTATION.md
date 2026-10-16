@@ -125,6 +125,8 @@ With either instrument armed the bus takes the single-step path: fused loops and
 are off (as with `--guard`), so a run is slower: DT2 1.16 boots to ready in about 15 s of wall time with
 both on (about 1 billion instructions).
 
+`packages/emulator/boot/examples/cf_script.rs` runs a patched image with a card through a JSON script of runs, pokes, peeks, waits and direct calls with these variables set; `tools/patchkit/pk_dkrt.py proof` is its user (finding 29).
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one

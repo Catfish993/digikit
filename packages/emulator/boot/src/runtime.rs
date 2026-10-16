@@ -714,6 +714,11 @@ impl Emulator {
         self.bus.board.card_overlay_sectors()
     }
 
+    /// (d0-d7, a0-a7, pc, sr): for headless diagnosis (a fault report).
+    pub fn cpu_regs(&self) -> ([u32; 8], [u32; 8], u32, u16) {
+        (self.cpu.d, self.cpu.a, self.cpu.pc, self.cpu.sr)
+    }
+
     /// Read a guest longword without side effects (None when unmapped or
     /// device-owned). For headless diagnosis only.
     pub fn peek32(&mut self, addr: u32) -> Option<u32> {

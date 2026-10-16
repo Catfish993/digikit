@@ -53,6 +53,11 @@ class Script:
         self.t += gap
         return self
 
+    # host write (test scaffolding: the runtime stand-in's pointers into the menu module's table)
+    def poke(self, addr: int, value: int) -> Script:
+        self.events.append((self.t, "--poke %d:%#x:%#x" % (self.t, addr, value)))
+        return self
+
     # MIDI
     def midi(self, data: bytes) -> Script:
         """MIDI DIN bytes at wire rate."""
@@ -232,6 +237,82 @@ def pattern_temp() -> Script:
     """FUNC+YES: pattern saved to the temp area."""
     s = boot().tap(NO, gap=G)
     return s.chord(FUNC, YES, gap=20_000_000).frame("pattern_saved")
+
+
+# --- SETTINGS > DIGIKIT (modules/core/digikit-menu, finding 28) ---------------------------------------------------
+# Only meaningful on an image patched with core/digikit-menu: DIGIKIT is the 9th SETTINGS entry (8 DOWN from PROJECT;
+# DN2 and DT2 alike while OUTBOX 8 is hidden).
+
+
+def _to_digikit(s: Script) -> Script:
+    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (LOAD MODULES, ABOUT)."""
+    _settings(s)
+    for _ in range(8):
+        s.tap(DOWN, gap=15_000_000)
+    s.frame("settings_digikit")
+    return s.tap(YES, gap=40_000_000).frame("digikit_main")
+
+
+@script({"frames": ["settings_digikit", "digikit_main"]})
+def digikit_main() -> Script:
+    """SETTINGS list scrolled to DIGIKIT, then DIGIKIT opened."""
+    return _to_digikit(boot())
+
+
+DG = 60_000_000  # a DIGIKIT row action rebuilds the list; the OLED shows it after about this many instructions
+
+
+def digikit_load_script(pokes: list[tuple[int, int]] | None = None) -> Script:
+    """DIGIKIT > MODULES (a.dkm, b.dkm, LOAD): tick a, tick b, LOAD, untick a, LOAD again.
+    `pokes` (address, value) are host writes at the start: the runtime stand-in's pointers in DKRT_API, magic last."""
+    s = boot()
+    for addr, value in pokes or []:
+        s.poke(addr, value).wait(1_000_000)
+    _to_digikit(s)
+    s.tap(YES, gap=DG).frame("load_list")
+    s.tap(YES, gap=DG).frame("tick_a")
+    s.tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame("tick_ab")
+    s.tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame("load_result")
+    s.tap(UP, gap=15_000_000).tap(UP, gap=15_000_000).tap(YES, gap=DG).frame("untick_a")
+    s.tap(DOWN, gap=15_000_000).tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame(
+        "load_result2"
+    )
+    return s.wait(20_000_000)
+
+
+@script(
+    {
+        "frames": [
+            "settings_digikit",
+            "digikit_main",
+            "load_list",
+            "tick_a",
+            "tick_ab",
+            "load_result",
+            "untick_a",
+            "load_result2",
+        ]
+    }
+)
+def digikit_load() -> Script:
+    """DIGIKIT > MODULES with no runtime: LOAD answers NO RUNTIME."""
+    return digikit_load_script()
+
+
+def digikit_about_script(pokes: list[tuple[int, int]] | None = None) -> Script:
+    """DIGIKIT > ABOUT, then NO back to the DIGIKIT view."""
+    s = boot()
+    for addr, value in pokes or []:
+        s.poke(addr, value).wait(1_000_000)
+    _to_digikit(s)
+    s.tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame("about")
+    return s.tap(NO, gap=G).frame("back_main")
+
+
+@script({"frames": ["settings_digikit", "digikit_main", "about", "back_main"]})
+def digikit_about() -> Script:
+    """DIGIKIT > ABOUT (no runtime), then NO back to the DIGIKIT view."""
+    return digikit_about_script()
 
 
 # --- MIDI -------------------------------------------------------------------

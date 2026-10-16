@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tempfile
 import tomllib
@@ -47,9 +48,32 @@ def canonical(obj: dict) -> str:
     return json.dumps(obj, sort_keys=True, indent=1, ensure_ascii=True) + "\n"
 
 
-def sharc_object(sources: list[Path]) -> dict:
+INCLUDE = re.compile(r'^#include\s+"([^"]+)"[ \t]*$', re.M)
+
+
+def expand_includes(text: str, dirs: list[Path], depth: int = 0) -> str:
+    """Replace `#include "name"` lines by the file's text (searched in `dirs`; the generated includes of
+    `patchkit gen` are in the module's `build/gen/`). The assembler is run on a temporary copy, so it cannot
+    find includes itself."""
+    if depth > 4:
+        raise BuildError("#include nests deeper than 4 levels")
+
+    def one(m: re.Match) -> str:
+        for d in dirs:
+            f = d / m.group(1)
+            if f.is_file():
+                return expand_includes(f.read_text(), dirs, depth + 1)
+        raise BuildError(
+            f'#include "{m.group(1)}" not found in {[str(d) for d in dirs]}'
+        )
+
+    return INCLUDE.sub(one, text)
+
+
+def sharc_object(sources: list[Path], include_dirs: list[Path] | None = None) -> dict:
     """One or more `.s` files, concatenated into one translation unit, to an object."""
-    text = "\n".join(p.read_text() for p in sources)
+    dirs = [*(include_dirs or []), *{p.parent for p in sources}]
+    text = expand_includes("\n".join(p.read_text() for p in sources), dirs)
     obj = pk_sharc.assemble(text)
     # ISA check: link at a placeholder base with placeholder externs; verify() re-decodes every instruction
     # and reads every relocated field back.
@@ -214,7 +238,7 @@ def build_module(moddir: Path, check: bool) -> list[str]:
         paths = [moddir / s for s in srcs]
         kinds = {p.suffix for p in paths}
         if kinds <= {".s"} and any("dsp" in Path(s).parts for s in srcs):
-            obj = sharc_object(paths)
+            obj = sharc_object(paths, [moddir / "build" / "gen"])
         else:
             obj = cf_object(paths)
         text = canonical(obj)

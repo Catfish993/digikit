@@ -1,0 +1,63 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": ".text",
+   "symbol": "dkrt_tick",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 24,
+   "section": ".text",
+   "symbol": "fw_queue_pop",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 4,
+   "hex": "4feffff048d703034eb9000000004cd703034fef00104ef900000000206f0004222f0008200802800000000fd28020080280fffffff0204006810000000fe889670af4e841e80010538166f64e75",
+   "kind": "text",
+   "name": ".text",
+   "size": 78
+  }
+ ],
+ "source_sha256": "9238fa876ce318a957a3c625de583171ef36122ecc1f9ec36b75253d3fa3059f",
+ "symbols": [
+  {
+   "global": true,
+   "name": "dkrt_flush",
+   "section": ".text",
+   "value": 28
+  },
+  {
+   "global": true,
+   "name": "dkrt_loop_hook",
+   "section": ".text",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_tick",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "fw_queue_pop",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "22",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

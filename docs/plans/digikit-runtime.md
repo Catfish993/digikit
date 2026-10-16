@@ -175,24 +175,30 @@ before the arena is used: the static check, DT2 1.17 and DN2 1.12 runs (`arena_s
   Rust modules take ColdFire-safe helpers from `compiler_builtins` (docs/findings/26-rust-on-coldfire.md). Open:
   an install from scratch, timed.
 - [ ] C modules: a libgcc built for `-mcpu=54418` (the repo's libgcc helpers are 68020 code).
-- [ ] Module interface, schema and Rust SDK, designed together. One schema (Machine, Param, Page, FX, MenuItem)
+- [~] Module interface, schema and Rust SDK, designed together. Schema part done (finding 27): typed `[[machine]]`,
+  `[[param]]`, `[[page]]`, `[[voice]]` sections with per-device knob models, generated Rust constants, SHARC include and
+  gallery JSON; FX and MenuItem sections and the run-time registry interface are open. One schema (Machine, Param, Page, FX, MenuItem)
   generates the runtime's registry rows, the SDK types, the constants that SHARC assembly includes and the
   gallery metadata. A versioned runtime interface through which a loaded module registers what it adds.
 - [x] One Rust module linked by patchkit and run in the emulator (`test/rust-demo`, all four ports).
-- [ ] `core/runtime` module: trampolines, import table, arena allocator, loader.
-- [ ] `.dkm` packer in Rust.
-- [ ] A ColdFire-only test module (for example a counter in a hook slot).
-- [ ] Loading triggered from the emulator console or an autoload folder (emulator only).
+- [x] `core/runtime` module: UI-loop hook trampoline, import table, arena allocator, store reader, loader (docs/design/digikit-runtime.md, finding 29). Slot 0 only; no registry yet.
+- [x] `.dkm` packer in Rust (`patchkit pack`, docs/design/digikit-dkm.md).
+- [x] A ColdFire-only test module: `test/dyn-demo`, a counter in slot 0.
+- [x] Loading triggered from the emulator by a mailbox poke (`mem.cf.poke`; `tools/patchkit/pk_dkrt.py proof`). No autoload folder.
 
-Gate: load, run and unload in the emulator on DT2 1.16 and DN2 1.11, write-watch clean, no flush warnings.
+Gate: load, run and unload in the emulator on DT2 1.16 and DN2 1.11, write-watch clean, no flush warnings. Done on DT2 1.16/1.17 and DN2 1.11/1.12 (finding 29); open: the C-module libgcc and the interface/schema items above.
 
 ### Phase 4: DIGIKIT menu
 
-- [ ] SETTINGS > DIGIKIT entry: hook the tail of the SETTINGS rebuild (DT2 `0x400a5d58`, DN2 `0x4009fe34`), add
-  a `MenuItem`, push a stock `VerticalMenuView`. LOAD MODULES list with toggle rows drawn by our callback, LOAD
-  item, error messages.
+- [x] SETTINGS > DIGIKIT entry (`modules/core/digikit-menu`, Rust): a hook before the selection restore at the end of the SETTINGS
+  rebuild (DT2 `0x400a5d48`, DN2 `0x4009fe24`) adds a `MenuItem`; its action pushes a stock `VerticalMenuView` (LOAD MODULES, ABOUT).
+  LOAD MODULES lists the `.dkm` files of the card store as `[ ]`/`[X]` rows (a label rebuild, not a draw callback), YES ticks, the
+  last row LOAD calls `dkrt_load` through the table `DKRT_API` that the runtime fills (no runtime: NO RUNTIME). Proof in the emulator on
+  all four images (docs/findings/28-digikit-menu.md, `tools/coldfire/digikit_menu_proof.py`).
+- [ ] Error messages beyond the answer row (a popup), unload from the menu, the `DkrtStatus` layout agreed with `core/runtime`.
 
-Gate: the test module loads and unloads from the menu in the emulator.
+Gate: the test module loads and unloads from the menu in the emulator (the stand-in runtime is loaded from the menu; the real
+runtime is Phase 3).
 
 ### Phase 5: machines
 
