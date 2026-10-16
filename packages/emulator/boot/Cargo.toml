@@ -35,6 +35,7 @@ device-profile = { path = "../device-profile" }
 dt2-firmware-loader = { path = "../loader" }
 emmc-card = { path = "../card" }
 machine = { path = "../machine" }
+patchkit = { path = "../../patchkit" }
 periph = { path = "../periph", default-features = false }
 plusdrive-format = { path = "../plusdrive" }
 serde = { version = "1", features = ["derive"] }

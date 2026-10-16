@@ -397,7 +397,7 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
       if (firmwareFile === file) {
         setPaused(true);
         setLoaded(false);
-        setStatus(String(error));
+        setStatus(error instanceof Error ? error.message : String(error));
       }
     } finally {
       if (!kept) coupledSink?.close();
@@ -415,7 +415,9 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
         if (item.device === 'dt2' || item.device === 'dn2') setDevice(item.device);
         void choose(new File([item.bytes], item.name));
       })
-      .catch((error) => setStatus(`Could not read the patched firmware: ${String(error)}`));
+      .catch((error) =>
+        setStatus(`Could not read the patched firmware: ${error instanceof Error ? error.message : String(error)}`),
+      );
   });
   const pollCard = () => {
     const cards = runtime()?.cards;

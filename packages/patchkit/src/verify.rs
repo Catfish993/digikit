@@ -68,6 +68,40 @@ pub fn read_segments(main: &[u8], base: u64) -> Result<Vec<(u64, Vec<u8>, u64)>>
     Ok(out)
 }
 
+/// The `DKPR` record of an image: the first expansion segment of MAIN, or a non-fill block of the DSP
+/// stream (which wins when both exist).
+fn find_record(fw: &Firmware) -> Result<Option<Record>> {
+    let mut record = None;
+    if let Some(main) = fw.section(3) {
+        let segs = read_segments(&main.data, main.dest as u64)?;
+        if let Some((_, payload, _)) = segs.first()
+            && payload.starts_with(record::MAGIC)
+        {
+            record = Some(Record::decode(payload)?);
+        }
+    }
+    if let Some(dsp) = fw.section(7) {
+        let stream = Stream::parse(dsp.data.clone())?;
+        for b in &stream.blocks {
+            if !b.fill()
+                && b.count >= 4
+                && &stream.blob[b.payload_offset..b.payload_offset + 4] == record::MAGIC
+            {
+                record = Some(Record::decode(
+                    &stream.blob[b.payload_offset..b.payload_offset + b.count as usize],
+                )?);
+            }
+        }
+    }
+    Ok(record)
+}
+
+/// The `DKPR` patch record of a patched image (its stock base and modules), or `None` for an image
+/// patchkit did not make. Reads the record only; it does not verify the image.
+pub fn patch_record(syx_bytes: &[u8]) -> Result<Option<Record>> {
+    find_record(&Firmware::parse(syx_bytes)?)
+}
+
 pub fn verify(syx_bytes: &[u8], reg: Option<&Registry>, base: Option<&[u8]>) -> Result<Report> {
     let mut checks = vec![];
     let msgs = syx::messages(syx_bytes)?;
@@ -131,33 +165,18 @@ pub fn verify(syx_bytes: &[u8], reg: Option<&Registry>, base: Option<&[u8]>) -> 
     let dsp = fw.section(7).ok_or_else(|| err!("no DSP section"))?;
     let stream = Stream::parse(dsp.data.clone())?;
     crate::bootrom::require(&stream.blob)?;
-    let mut record = None;
+    let record = find_record(&fw)?;
     let mut segments: Vec<(u64, u64, u64)> = vec![];
     if let Some(main) = fw.section(3) {
         let segs = read_segments(&main.data, main.dest as u64)?;
         for (dest, payload, bss) in &segs {
             segments.push((*dest, payload.len() as u64, *bss));
         }
-        if let Some((_, payload, _)) = segs.first()
-            && payload.starts_with(record::MAGIC)
-        {
-            record = Some(Record::decode(payload)?);
-        }
         if !segs.is_empty() {
             checks.push(format!(
                 "{} expansion segments, chain ends at the image end",
                 segs.len()
             ));
-        }
-    }
-    for b in &stream.blocks {
-        if !b.fill()
-            && b.count >= 4
-            && &stream.blob[b.payload_offset..b.payload_offset + 4] == record::MAGIC
-        {
-            record = Some(Record::decode(
-                &stream.blob[b.payload_offset..b.payload_offset + b.count as usize],
-            )?);
         }
     }
     let mut port_id = None;

@@ -317,9 +317,24 @@ impl Emulator {
             None => registry
                 .boot_for_main(&digest(syx), &main)
                 // A .syx of a known MAIN with another DSP stream has no known file digest.
-                .or_else(|e| registry.boot_by_main(&main).ok_or(e)),
+                .or_else(|e| registry.boot_by_main(&main).ok_or(e))
+                // A digikit-patched image names its stock base in its patch record.
+                .or_else(|e| match patchkit::verify::patch_record(syx) {
+                    Ok(Some(record)) => registry.boot_for_base(&record.base_sha256),
+                    _ => Err(e),
+                }),
         }
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| match e {
+            device_profile::RegistryError::UnknownFirmware { sha256 } => format!(
+                "this file is not a supported firmware: use a stock {}, or a digikit patch of one (SHA-256 {sha256})",
+                supported_firmware(&registry)
+            ),
+            device_profile::RegistryError::UnsupportedBoot { version, .. } => format!(
+                "OS {version} does not run in the emulator: use {}",
+                supported_firmware(&registry)
+            ),
+            e => e.to_string(),
+        })?;
         let contract = profile
             .readiness_contract
             .ok_or("firmware has no readiness contract")?;
@@ -2005,6 +2020,24 @@ fn service_ssi<const TRACE: bool>(
         }
     }
     Ok(None)
+}
+
+/// The firmware releases the emulator boots, for messages: "Digitakt II 1.16 or 1.17, Digitone II 1.11 or 1.12".
+fn supported_firmware(registry: &device_profile::Registry) -> String {
+    registry
+        .devices()
+        .iter()
+        .filter_map(|device| {
+            let versions: Vec<&str> = device
+                .firmwares
+                .iter()
+                .filter(|firmware| firmware.boot.is_some())
+                .map(|firmware| firmware.version.as_str())
+                .collect();
+            (!versions.is_empty()).then(|| format!("{} {}", device.name, versions.join(" or ")))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn verified_task_create(main: &[u8]) -> Result<u32, String> {

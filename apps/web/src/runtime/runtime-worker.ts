@@ -368,5 +368,7 @@ async function handle(data: Message) {
   }
 }
 self.onmessage = ({ data }) => {
-  serial = serial.then(() => handle(data)).catch((error) => reject(data, String(error)));
+  serial = serial
+    .then(() => handle(data))
+    .catch((error) => reject(data, error instanceof Error ? error.message : String(error)));
 };
