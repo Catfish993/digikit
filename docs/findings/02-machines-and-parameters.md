@@ -1579,13 +1579,15 @@ the module's parameter codes, row 7 is a clone of type 0 and hidden); `tests/pat
 on each device it targets, numbers unique and in range, `pk_new.allocate`); the ColdFire call harness tests of the list
 builder (`tests/patchkit/test_pk_machines_fw.py`, `_dn2_fw.py`) pass unchanged. Emulator: see the results note in
 docs/plans/patchkit.md (quick-tier proofs and the smoke matrix on the permanent numbers).
-## Digitone II 1.11: machine selection in the emulator, and where a track becomes MIDI **[V]**
+## Digitone II 1.11: machine selection in the emulator, and where a track becomes MIDI **[D]**
 
-Measured 2026-09-18 on Digitone II OS 1.11, MAIN OS loaded at `0x40000400`, with
-this branch's code plus #19 (DN2 boot fixes), #24 (resume weakptr snapshots) and
-#28 (`--patch-ranges`, `--poke-at`, `--stack-when`).
+Measured 2026-09-18 on Digitone II OS 1.11, MAIN OS loaded at `0x40000400`, in the
+Python reference emulator of that time, which is removed since. That run also had three
+changes that were never merged: #19 (DN2 boot fixes), #24 (resume weakptr snapshots)
+and #28 (`--patch-ranges`, `--poke-at`, `--stack-when`). The addresses are the
+firmware's and do not depend on the emulator.
 
-### Getting there **[V]**
+### Getting there **[D]**
 
 - `boot400M` is still booting: FUNC+SYN opens the selector at ~70M, and the
   +Drive loading screens then take the panel over. A run from `boot400M` to
@@ -1598,7 +1600,7 @@ this branch's code plus #19 (DN2 boot fixes), #24 (resume weakptr snapshots) and
   platform names: **FUNC 17 + SRC 2** is the DN2's FUNC+SYN, then UP 11,
   DOWN 14, LEFT 13, RIGHT 15, YES 10, NO 12.
 
-### The selector **[V]**
+### The selector **[D]**
 
 MACHINE SEL has two pages; LEFT/RIGHT switch them (the owner's tip, confirmed).
 The menu's own lists (`view+388` SYN, `view+400` FLTR, 8-byte entries; cursor
@@ -1615,7 +1617,7 @@ The menu's own lists (`view+388` SYN, `view+400` FLTR, 8-byte entries; cursor
 
 Type 4 = MIDI agrees with DNX's reading of saved kits.
 
-### The commit **[V]**
+### The commit **[D]**
 
 YES calls `0x40031880(model, track, type)` from `0x4005bba0`; the type comes
 from `0x4005b162(view)` (row -> list entry -> `0x40116e54`). `0x40031880`:
@@ -1629,7 +1631,7 @@ from `0x4005b162(view)` (row -> list entry -> `0x40116e54`). `0x40031880`:
 
 All three writes were caught with `--watch` at one instruction count.
 
-### An input artefact worth knowing **[V]**
+### An input artefact worth knowing **[D]**
 
 A `--input` press is held for ~9M instructions before its release is serviced,
 which is long enough for the firmware's key repeat: one DOWN from WAVETONE left
