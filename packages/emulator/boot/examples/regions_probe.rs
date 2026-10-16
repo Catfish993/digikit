@@ -4,7 +4,7 @@
 //!        [--extra N] [--report-every N] [--event T:CODE:down|up]... [--turn T:ENC:DETENTS]...
 //!        [--zero-digest] [--pattern canary|zero] [--expect ADDR:FILE]...
 //!        [--midi T:HEX]... [--midi-file T:PATH]... [--midi-period N] [--midi-out PATH]
-//!        [--frame T:PATH]... [--overlay-out PATH] [--poke T:ADDR:VALUE]...
+//!        [--frame T:PATH]... [--overlay-out PATH] [--poke T:ADDR:VALUE]... [--peek-at T:ADDR[:OFF]]...
 //!
 //! --midi / --midi-file queue bytes on the MIDI DIN input T instructions past ready, one byte per
 //! --midi-period instructions (default 42240 = 320 us, the wire rate). --midi-out writes every byte the
@@ -163,6 +163,8 @@ enum Input {
     Usb(Vec<u8>),
     Frame(String),
     Poke(u32, u32),
+    /// address, and an optional offset: the longword at (the longword at address) + offset
+    PeekAt(u32, Option<u32>),
 }
 
 fn unhex(s: &str) -> Vec<u8> {
@@ -304,6 +306,15 @@ fn main() {
                 let p: Vec<&str> = v.split(':').collect();
                 inputs.push((u64::from(num(p[0])), Input::Poke(num(p[1]), num(p[2]))));
             }
+            "--peek-at" => {
+                // T:ADDR: read one longword T instructions past ready and print it ({"peek_at":..}); a value that moves
+                let v = value();
+                let p: Vec<&str> = v.split(':').collect();
+                inputs.push((
+                    u64::from(num(p[0])),
+                    Input::PeekAt(num(p[1]), p.get(2).map(|o| num(o))),
+                ));
+            }
             "--turn" => {
                 let v = value();
                 let p: Vec<&str> = v.split(':').collect();
@@ -389,6 +400,14 @@ fn main() {
                     Input::Midi(bytes) => emu.midi_in(bytes, midi_period).map(|_| ()),
                     Input::Usb(bytes) => emu.usb_midi_in(bytes).map(|_| ()),
                     Input::Poke(addr, value) => emu.poke32(*addr, *value),
+                    Input::PeekAt(addr, via) => {
+                        let value = match via {
+                            None => emu.peek32(*addr),
+                            Some(off) => emu.peek32(*addr).and_then(|p| emu.peek32(p.wrapping_add(*off))),
+                        };
+                        println!("{{\"peek_at\":\"{addr:#x}\",\"t\":{elapsed},\"value\":{value:?}}}");
+                        Ok(())
+                    }
                     Input::Frame(path) => emu
                         .current_frame()
                         .map(|(_, f)| fs::write(path, f).map_err(|e| e.to_string()))

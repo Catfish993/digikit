@@ -138,6 +138,12 @@ pub struct DevAlloc {
     pub last: i64,
     #[serde(default)]
     pub alloc: BTreeMap<String, i64>,
+    /// First number of the range reserved for run-time modules (`core/dynreg` reserves `dynamic_first ..= last`).
+    #[serde(default)]
+    pub dynamic_first: Option<i64>,
+    /// Permanent numbers of run-time (`dynamic = true`) modules, keyed like `alloc`; each lies in `dynamic_first ..= last`.
+    #[serde(default)]
+    pub dynamic: BTreeMap<String, i64>,
 }
 
 impl AllocTable {
@@ -161,8 +167,48 @@ impl AllocTable {
                     ));
                 }
             }
+            d.check_dynamic(dev)?;
         }
         Ok(t)
+    }
+}
+
+impl DevAlloc {
+    /// Check the run-time range: numbers inside `dynamic_first ..= last`, unique, none of the static `alloc` numbers.
+    fn check_dynamic(&self, dev: &str) -> Result<()> {
+        if self.dynamic.is_empty() && self.dynamic_first.is_none() {
+            return Ok(());
+        }
+        let Some(first) = self.dynamic_first else {
+            return Err(err!(
+                "allocation table [{dev}]: [{dev}.dynamic] needs dynamic_first"
+            ));
+        };
+        let mut seen: BTreeMap<i64, &str> = BTreeMap::new();
+        for (k, v) in &self.dynamic {
+            if *v < first || *v > self.last {
+                return Err(err!(
+                    "allocation table [{dev}.dynamic]: {k} = {v} is outside {first}..={}",
+                    self.last
+                ));
+            }
+            if let Some(prev) = seen.insert(*v, k) {
+                return Err(err!(
+                    "allocation table [{dev}.dynamic]: {prev} and {k} both have number {v}"
+                ));
+            }
+        }
+        // the range belongs to the run-time modules; `core/dynreg` reserves its rows there
+        if let Some((k, v)) = self
+            .alloc
+            .iter()
+            .find(|(k, v)| **v >= first && !k.starts_with("core/dynreg:"))
+        {
+            return Err(err!(
+                "allocation table [{dev}]: {k} = {v} lies in the run-time range {first}.."
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -205,6 +251,10 @@ pub struct ModuleInfo {
     /// Restrict to these ports (`dt2-1.16`); empty = any firmware whose anchors resolve.
     #[serde(default)]
     pub ports: Vec<String>,
+    /// A module that is loaded at run time (`patchkit pack`, a `.dkm`), never patched into an image. Its typed sections
+    /// are not lowered into registry rows; the packer lowers them into the `.dkm` `register` records.
+    #[serde(default)]
+    pub dynamic: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -218,6 +268,9 @@ pub struct ObjectRef {
     /// Undefined symbol -> anchor name (an undefined symbol named like an anchor needs no entry).
     #[serde(default)]
     pub externs: BTreeMap<String, String>,
+    /// Undefined symbols that resolve to 0 when no selected module provides them (an optional link to another module).
+    #[serde(default)]
+    pub optional: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

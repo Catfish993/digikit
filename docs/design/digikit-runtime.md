@@ -55,13 +55,16 @@ results.
     int32_t dkrt_unload(const char *name);          // the module's name ("test/dyn-demo")
     void    dkrt_status(DkrtStatus *out);           // magic 'DKRT', runtime version, device, arena base/size/free/largest,
                                                     //   module count, ticks, last result, loads, slot calls
-    int32_t dkrt_module(uint32_t index, DkrtModule *out);   // name, version, base, size, slot mask; E_NOT_FOUND past the end
+    int32_t dkrt_module(uint32_t index, DkrtModule *out);   // name, version, base, size, slot mask, store path; E_NOT_FOUND past the end
 
 On an error nothing is left behind. Codes: `E_NOT_FOUND` -1 (no store / no such file or module), `E_BAD_STORE` -2, `E_READ` -3,
 `E_SHA` -4, `E_FORMAT` -5, `E_RUNTIME` -6, `E_IMPORT` -7, `E_NOMEM` -8, `E_INIT` -9, `E_LOADED` -10, `E_SLOT` -11, `E_BUSY` -12,
 `E_TOO_BIG` -13, `E_TABLE_FULL` -14. The addresses of these functions are symbols of the patch plan (`plan.json`
-`symbols`: `core/runtime@VERSION:dkrt_load`, ...); a module that wants to call them (the DIGIKIT menu) names them as
-`[object.externs]`/module symbols like any cross-module symbol.
+`symbols`: `core/runtime@VERSION:dkrt_load`, ...). The DIGIKIT menu (`core/digikit-menu`, which `requires` this module) names
+the four as undefined symbols of its own object and patchkit links them: there is no table and no stand-in. `DkrtStatus`,
+`DkrtModule`, the result codes with `result_text` (menu text) and the store reader (`dkrt_sdk::store`: header, table CRC, path and
+file entries over a caller's block read and buffer) are in `dkrt-sdk`, used by both crates. The runtime keeps the store path of each
+module in `DKRT_PATHS` (apart from `State`) and returns it in `DkrtModule.path`, so a menu can mark the rows that are loaded.
 
 `dkrt_tick` is also exported, for the hook only.
 
@@ -111,3 +114,9 @@ block is merged with its neighbours. 524 288 bytes minus 16 at start. `free` ign
 
 Module file at most 64 KiB; 8 modules; 8 slots; imports at most 64; no streaming; one task context; no autoload; no safe-mode key.
 DN2: the flush check sees few CPUSHL on DN2 images (finding 25), so the 0-hit result there is weaker evidence.
+
+## Registry (machines and parameters)
+
+A `.dkm` with `register` records fills machine and parameter rows that `core/dynreg` reserved at patch time. The runtime links to
+`core/dynreg`'s `dynreg_info` table optionally; `registry.rs` holds the code and its state (`DKRT_REG`). Design, record format, what is derived
+state and the write order: `docs/design/digikit-registry.md`.

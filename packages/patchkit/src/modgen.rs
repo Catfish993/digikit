@@ -22,14 +22,14 @@ fn upper(id: &str) -> String {
 
 /// The permanent type number of a machine (`core/machines` types.toml), if the framework is in the library.
 fn type_number(lib: &Library, dev: &str, module: &str, machine: &str) -> Option<i64> {
-    lib.get("core/machines")?
+    let d = lib
+        .get("core/machines")?
         .alloc
         .get("machines")?
         .devices
-        .get(dev)?
-        .alloc
-        .get(&format!("{module}:{machine}"))
-        .copied()
+        .get(dev)?;
+    let key = format!("{module}:{machine}");
+    d.alloc.get(&key).or_else(|| d.dynamic.get(&key)).copied()
 }
 
 fn hex(v: i64) -> String {

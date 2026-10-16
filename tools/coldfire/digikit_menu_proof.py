@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 """Emulator proof of SETTINGS > DIGIKIT (modules/core/digikit-menu, docs/findings/28-digikit-menu.md).
 
-    uv run python -m tools.coldfire.digikit_menu_proof run [--image dt2-1.16] [--update] [--jobs N] [--regress]
+    uv run python -m tools.coldfire.digikit_menu_proof run [--image dt2-1.16] [--update] [--jobs N] [--regress] [--only NAMES]
 
-Patches the stock firmware with core/digikit-menu (and test/digikit-rt-stub for the runtime-present runs), builds a card
-from a `plus_drive`-style folder with `digikit/modules/a.dkm` and `b.dkm`, boots in the native emulator (regions_probe)
-and presses the panel keys of tools/coldfire/panel_script.py. Judged per run:
+Patches the stock firmware with core/digikit-menu (which requires core/runtime), builds a card from a `plus_drive`-style
+folder with `digikit/modules/dyn-demo.dkm` (packed by `patchkit pack`), `bad-sha.dkm` and `bad-import.dkm`, boots in the
+native emulator (regions_probe) and presses the panel keys of tools/coldfire/panel_script.py. The gate script ticks dyn-demo,
+LOADs it, reads its counter rising (`--peek-at`), shows ABOUT with one module loaded, comes back to the list (the row is marked
+loaded), unticks and LOADs again (unload), reads the counter stopped and the marker `fini` left, shows ABOUT with none. Judged
+per run:
 
   * the firmware's stores and DMA never touch the module RAM `cf.expansion`, except the module's own code (the
     write-watch with ALLOW_PC = the module; the module's read buffers come from the firmware heap), and no flush hit
     (DIGI_FLUSH_CHECK=1);
   * the OLED frames named by the script have the SHA-256 pinned in tests/golden/digikit_menu_frames.json
     (`--update` writes them after a look at the PNGs);
-  * the module's state after the run, read back with `--peek`: the store was read (STORE=1, two entries), the ticks
-    the keys made, the text of the last LOAD answer, and with the stand-in runtime the paths it was given;
+  * the menu's state after the run, read back with `--peek`: the store was read (STORE=1, three entries), the ticks and the
+    loaded flags, the text of the last LOAD answer; the gate's counter samples;
   * `--regress` also runs the stock menu scripts of finding 25 on the patched image against their pinned frames.
 
 PNGs of the DIGIKIT screens go to out/runs/lanes/r1-shots/ (a contact sheet per script).
@@ -45,8 +48,9 @@ DEVICE = {
     "dn2-1.12": ("dn2", "Digitone_II_OS1.12.syx"),
 }
 MENU = "core/digikit-menu"
-STUB = "test/digikit-rt-stub"
-DKRT_MAGIC = 0x444B5254
+RUNTIME = "core/runtime"
+DYN_MAGIC = 0x44594E4D  # "DYNM"
+FINI_MARK = 0xF1F10001
 
 
 REGRESS_SCRIPTS = [
@@ -80,13 +84,23 @@ def patch(
 
 
 def make_card(image: str) -> pathlib.Path:
-    """A card with digikit/modules/a.dkm and b.dkm (any bytes) and digikit/readme.txt (not a module)."""
+    """A card with digikit/modules/{bad-import,bad-sha,dyn-demo}.dkm and digikit/readme.txt (not a module)."""
+    import tempfile
+
+    from tools.patchkit import pk_dkrt
+
     dev, fw = DEVICE[image]
     folder = CARDS / dev
     shutil.rmtree(folder, ignore_errors=True)
     (folder / "digikit" / "modules").mkdir(parents=True)
-    (folder / "digikit" / "modules" / "a.dkm").write_bytes(b"dummy module a\n")
-    (folder / "digikit" / "modules" / "b.dkm").write_bytes(b"dummy module b, longer\n")
+    tools = pk_dkrt.Tools()
+    pk_dkrt.pack(
+        tools, "test/dyn-demo", folder / "digikit" / "modules" / "dyn-demo.dkm"
+    )
+    with tempfile.TemporaryDirectory(prefix="dkmenu-") as work:
+        pk_dkrt.broken_variants(
+            pathlib.Path(work), tools, "test/dyn-demo", folder / "digikit"
+        )
     (folder / "digikit" / "readme.txt").write_bytes(b"readme")
     img = CARDS / f"{dev}.img"
     img.unlink(missing_ok=True)
@@ -115,6 +129,18 @@ def peek(facts_dir: pathlib.Path, addr: int) -> int | None:
         if m and int(m.group(1), 16) == addr:
             return None if m.group(2) is None else int(m.group(2))
     return None
+
+
+def peek_ats(facts_dir: pathlib.Path) -> list[int | None]:
+    """The values of the `--peek-at` reads, in time order."""
+    out = []
+    for line in (facts_dir / "probe.stdout").read_text().splitlines():
+        m = re.match(
+            r'\{"peek_at":"0x[0-9a-f]+","t":\d+,"value":(?:Some\((\d+)\)|None)\}', line
+        )
+        if m:
+            out.append(None if m.group(1) is None else int(m.group(1)))
+    return out
 
 
 def peek_bytes(d: pathlib.Path, addr: int, n: int) -> bytes:
@@ -160,7 +186,7 @@ def shots(image: str, script: str, d: pathlib.Path, frames: list[str]) -> None:
         sheet.save(SHOTS / f"{image}-{script}-sheet.png")
 
 
-def run_one(image, name, script, syx, plan, card, goldens, update, peeks):
+def run_one(image, name, script, syx, plan, card, goldens, update, peeks, watch=None):
     out = OUT / image / name
     extra = []
     for a in peeks:
@@ -172,6 +198,7 @@ def run_one(image, name, script, syx, plan, card, goldens, update, peeks):
         card=card,
         syx=syx,
         allow_pc=arena_safety.plan_allow_pc(plan),
+        watch=watch,
         extra=extra,
     )
     facts["name"] = name
@@ -195,76 +222,104 @@ def main(argv=None) -> int:
         action="store_true",
         help="also the stock menu scripts, stock against patched image",
     )
+    ap.add_argument("--only", help="comma-separated script names to run (default: all)")
     ap.add_argument("--only-regress", action="store_true", help="skip the DIGIKIT runs")
     a = ap.parse_args(argv)
     image = a.image
     syx, plan_path = patch(image, [MENU], f"dkmenu-{image}")
-    syx_rt, plan_rt_path = patch(image, [MENU, STUB], f"dkmenu-rt-{image}")
-    plan, plan_rt = Plan(plan_path), Plan(plan_rt_path)
+    plan = Plan(plan_path)
     card = make_card(image)
     goldens = json.loads(GOLDEN.read_text()) if GOLDEN.exists() else {}
-    api = plan_rt.addr("DKRT_API")
-    pokes = [
-        (api + 4, 1), (api + 8, plan_rt.addr("stub_load")), (api + 16, plan_rt.addr("stub_status")),
-        (api, DKRT_MAGIC),
-    ]  # fmt: skip
-    state = [plan.addr(n) for n in ("NENT", "STORE", "TICK", "RESULT")]
-    state_rt = [
-        plan_rt.addr(n)
-        for n in ("NENT", "STORE", "TICK", "RESULT", "stub_count", "stub_log")
-    ]
+    if a.update and not a.only_regress:
+        goldens = {k: v for k, v in goldens.items() if not k.startswith(image + "/")}
+    state = [plan.addr(n) for n in ("NENT", "STORE", "TICK", "RESULT", "LOADED")]
+    st = plan.addr("DKRT_STATE")
+    # the whole of cf.expansion except the runtime's staging buffer: the card read lands there by DMA, by design
+    lo, hi = arena_safety.expansion(image)
+    stage = plan.addr("DKRT_STAGE")
+    watch = "0x%x-0x%x,0x%x-0x%x" % (lo, stage, stage + 64 * 1024, hi)
+    runtime_state = [st + 4 * k for k in range(0, 12)]
     jobs = [
-        ("digikit_main", panel_script.SCRIPTS["digikit_main"](), syx, plan_path, plan, state),
-        ("digikit_load", panel_script.digikit_load_script(), syx, plan_path, plan, state),
-        ("digikit_about", panel_script.digikit_about_script(), syx, plan_path, plan, state),
-        ("digikit_load_rt", panel_script.digikit_load_script(pokes), syx_rt, plan_rt_path, plan_rt, state_rt),
-        ("digikit_about_rt", panel_script.digikit_about_script(pokes), syx_rt, plan_rt_path, plan_rt, state_rt),
-    ]  # fmt: skip
+        ("digikit_main", panel_script.SCRIPTS["digikit_main"]()),
+        ("digikit_about", panel_script.digikit_about_script()),
+        ("digikit_errors", panel_script.digikit_errors_script()),
+        ("digikit_gate", panel_script.digikit_gate_script(st)),
+    ]
+    if a.only:
+        jobs = [j for j in jobs if j[0] in a.only.split(",")]
     from concurrent.futures import ThreadPoolExecutor
 
     def go(j):
-        name, script, s, pp, pl, st = j
+        name, script = j
         peeks = []
-        for sym_addr in st:
+        for sym_addr in state:
             peeks += [sym_addr + 4 * k for k in range(0, 12)]
-        return (j, *run_one(image, name, script, s, pp, card, goldens, a.update, peeks))
+        peeks += runtime_state
+        return (
+            j,
+            *run_one(
+                image,
+                name,
+                script,
+                syx,
+                plan_path,
+                card,
+                goldens,
+                a.update,
+                peeks,
+                watch,
+            ),
+        )
 
     with ThreadPoolExecutor(max_workers=a.jobs) as pool:
         results = [] if a.only_regress else list(pool.map(go, jobs))
     ok = True
     for j, facts, out in results:
-        name, script, _s, _pp, pl, st = j
+        name, script = j
         bad = list(facts["bad"])
-        nent = peek(out, pl.addr("NENT"))
-        store = peek(out, pl.addr("STORE"))
-        tick = peek_bytes(out, pl.addr("TICK"), 8)
-        result = cstr(peek_bytes(out, pl.addr("RESULT"), 40))
+        nent = peek(out, plan.addr("NENT"))
+        store = peek(out, plan.addr("STORE"))
+        tick = list(peek_bytes(out, plan.addr("TICK"), 4)[:3])
+        loaded = list(peek_bytes(out, plan.addr("LOADED"), 4)[:3])
+        result = cstr(peek_bytes(out, plan.addr("RESULT"), 40))
         info = {
             "entries": nent,
             "store": store,
-            "ticks": list(tick[:2]),
+            "ticks": tick,
+            "loaded": loaded,
             "result": result,
         }
-        if name != "digikit_main" and "about" not in name:
-            if nent != 2 or store != 1:
-                bad.append(f"store read: entries {nent}, state {store}")
-            want_ticks = [0, 1]  # a ticked, b ticked, a unticked
-            if list(tick[:2]) != want_ticks:
-                bad.append(f"ticks {list(tick[:2])}, expected {want_ticks}")
-            want_result = "LOADED 1 FAILED 0" if name.endswith("_rt") else "NO RUNTIME"
-            if result != want_result:
-                bad.append(f"last LOAD answer {result!r}, expected {want_result!r}")
-        if name.endswith("_rt") and "load" in name:
-            count = peek(out, pl.addr("stub_count"))
-            log = peek_bytes(out, pl.addr("stub_log"), 48)
-            paths = [cstr(log[16 * k : 16 * k + 16]) for k in range(3)]
-            info.update(stub_calls=count, stub_paths=paths)
-            if count != 3 or paths != [
-                "modules/a.dkm",
-                "modules/b.dkm",
-                "modules/b.dkm",
-            ]:
-                bad.append(f"runtime stand-in saw {count} calls {paths}")
+        if name != "digikit_main" and "about" not in name and (nent != 3 or store != 1):
+            bad.append(f"store read: entries {nent}, state {store}")
+        want = {
+            # (ticks, loaded, last answer) after the script
+            "digikit_errors": ([0, 1, 0], [0, 0, 0], "BAD SHA"),
+            "digikit_gate": ([0, 0, 0], [0, 0, 0], "UNLOADED 1"),
+        }.get(name)
+        if want and (tick, loaded, result) != want:
+            bad.append(f"final state {(tick, loaded, result)}, expected {want}")
+        if name == "digikit_gate":
+            n = peek_ats(out)
+            info["counter"] = n
+            if len(n) != 8 or None in n:
+                bad.append(f"counter samples {n}")
+            else:
+                if n[0] != DYN_MAGIC:
+                    bad.append(f"counter magic {n[0]:#x}")
+                if not n[1] < n[2] < n[3]:
+                    bad.append(f"counter does not rise while loaded: {n[1:4]}")
+                if (
+                    n[4] != n[6]
+                    or n[4] < n[3]
+                    or n[5] != FINI_MARK
+                    or n[7] != FINI_MARK
+                ):
+                    bad.append(f"counter after unload {n[4:8]}")
+            loads = peek(out, st + 16)
+            slot0 = peek(out, st + 40)
+            info.update(loads=loads, slot0=slot0)
+            if loads != 1 or slot0 != 0:
+                bad.append(f"runtime state: loads {loads}, slot 0 {slot0:#x}")
         shots(image, name, out, [f for f, _ in script.frames])
         print(f"{name:18s} {'PASS' if not bad else 'FAIL'}  {info}")
         for b in bad:

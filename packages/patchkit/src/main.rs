@@ -17,7 +17,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   explain --firmware X.syx (--modules a,b | --plan plan.json)   what a patch does, site by site
   verify  OUT.syx [--base X.syx]         re-decode and check an image
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
-  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V]   the module's ColdFire object as a run-time .dkm
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device dt2|dn2]   the module's ColdFire object as a run-time .dkm
+                                         (a `dynamic = true` module: its machine and param records for --device)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
   list                                   modules under modules/ and ports under devices/ports/
@@ -325,7 +326,8 @@ plan.json {}",
                 .zip(&m.manifest.object)
                 .filter(|(o, _)| o.arch == "cf")
                 .collect();
-            if cf.len() != 1 {
+            let dynamic = m.manifest.module.dynamic;
+            if cf.len() > 1 || (cf.is_empty() && !dynamic) {
                 return Err(Error(format!(
                     "{id} has {} ColdFire objects; a .dkm packs exactly one",
                     cf.len()
@@ -339,7 +341,33 @@ plan.json {}",
                     None => patchkit::dkm::RUNTIME_VERSION,
                 },
             };
-            let file = patchkit::dkm::pack(cf[0].0, &opts)?;
+            // a run-time module: its typed sections, lowered for one device, are the `register` records
+            let reg = if dynamic {
+                let dev = flag(rest, "--device")
+                    .ok_or_else(|| Error("a run-time module needs --device dt2|dn2".into()))?;
+                let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+                let res = patchkit::typed::resolve(&m.manifest, &models)?;
+                let types: std::collections::BTreeMap<String, i64> = lib
+                    .get("core/machines")
+                    .and_then(|f| f.alloc.get("machines"))
+                    .and_then(|t| t.devices.get(&dev))
+                    .map(|d| {
+                        d.dynamic
+                            .iter()
+                            .filter_map(|(k, v)| {
+                                k.strip_prefix(&format!("{id}:")).map(|n| (n.to_string(), *v))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                match res.iter().find(|r| r.dev == dev) {
+                    Some(r) => patchkit::register::Register::lower(r, &types)?.encode(),
+                    None => return Err(Error(format!("{id}: nothing for device {dev}"))),
+                }
+            } else {
+                vec![]
+            };
+            let file = patchkit::dkm::pack_with(cf.first().map(|c| c.0), &reg, &opts)?;
             write(&out, &file)?;
             let d = patchkit::dkm::Dkm::parse(&file)?;
             println!(
@@ -365,6 +393,16 @@ plan.json {}",
             println!("init      {:?}  fini {:?}", d.init, d.fini);
             println!("slots     {:?}", d.slots);
             println!("register  {} bytes", d.register.len());
+            if !d.register.is_empty() {
+                let r = patchkit::register::Register::parse(&d.register)?;
+                println!("  device {} ({} params, {} machines)", r.device, r.params.len(), r.machines.len());
+                for p in &r.params {
+                    println!("  param {} {:?} {:?} template {:#x} slot {} range {}..{} default {}", p.index, p.name, p.short, p.template, p.slot, p.min, p.max, p.default);
+                }
+                for m in &r.machines {
+                    println!("  machine type {} {:?} {:?} clone_of {} level {} knobs {:x?}", m.type_no, m.name, m.short, m.clone_of, m.level, m.knobs);
+                }
+            }
         }
         "pack-section" => {
             let data = read(need(rest)?)?;

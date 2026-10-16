@@ -371,6 +371,7 @@ SUITE = [
     "din_midi",
     "midirpc_info",
     "midirpc_files",
+    "midirpc_write",
 ]
 # Scripts that only make sense on one device (the menu has no such entry on the other).
 ONLY = {"check_filesystem": "dt2"}
@@ -436,6 +437,121 @@ def table(results: list[dict]) -> str:
     return "\n".join(rows)
 
 
+def static_check(image: str, with_cf: bool = True) -> dict:
+    """The static arena check of one image: every absolute reference the MAIN OS code makes into `cf.expansion` (cached
+    view and the +0x08000000 uncached alias), and every immediate that looks like a sector or byte address of the module
+    store (CARD_STORE, as a sector number and as a byte offset), by a linear sweep (tools/coldfire/refscan.py), plus
+    the call and data references into the range that the Ghidra-derived database knows (cf.py refs_to; skipped when the
+    database is absent). A sweep cannot see computed addresses: `hits` empty is a lower bound, not a proof."""
+    from tools.coldfire import refscan
+
+    lo, hi = expansion(image)
+    main = regions.load_main(image)
+    base = regions.MAIN_BASE
+    out: dict = {"image": image, "range": [lo, hi], "views": {}, "store": {}}
+    for name, a, b, minv in (
+        ("cached", lo, hi, 0x10000),
+        ("uncached", lo + regions.ALIAS, hi + regions.ALIAS, 0x10000),
+        ("store_sector", CARD_STORE[0], CARD_STORE[1], 0x10000),
+    ):
+        hits, n, covered, swept = refscan.scan(
+            main, base, base, base + len(main), a, b, minv
+        )
+        d = {
+            "range": [a, b],
+            "instructions": n,
+            "coverage_pct": round(100.0 * covered / swept, 2),
+            "hits": [
+                {"pc": pc, "ops": "%s %s" % (mn, ops), "target": t}
+                for pc, _, mn, ops, t in hits
+            ],
+        }
+        (out["store"] if name.startswith("store") else out["views"])[name] = d
+    if with_cf:
+        out["cf"] = _cf_refs(image, lo, hi)
+        _tag_functions(image, out)
+    return out
+
+
+def _tag_functions(image: str, res: dict) -> None:
+    """Add `func` (entry, name) to each hit whose pc lies in a function that the Ghidra dump found, else None: a hit
+    outside every function is data (strings, tables) that the linear sweep decoded as code."""
+    from tools.coldfire import cf
+
+    try:
+        img = cf.load(image + "-emac")
+    except FileNotFoundError:
+        return
+    for grp in ("views", "store"):
+        for d in res[grp].values():
+            for h in d["hits"]:
+                row = img.sql(
+                    'SELECT entry, name FROM functions WHERE image=? AND entry<=? AND "end">=? ORDER BY entry DESC LIMIT 1',
+                    img.name,
+                    h["pc"],
+                    h["pc"],
+                )
+                h["func"] = [row[0][0], row[0][1]] if row else None
+
+
+def _cf_refs(image: str, lo: int, hi: int) -> dict:
+    """Rows of the call/data reference tables whose target lies in the range (either view)."""
+    from tools.coldfire import cf
+
+    try:
+        img = cf.load(image + "-emac")
+    except FileNotFoundError:
+        return {"available": False}
+    rows: list = []
+    for a, b in ((lo, hi), (lo + regions.ALIAS, hi + regions.ALIAS)):
+        rows += img.sql(
+            "SELECT 'data', site, to_addr FROM datarefs WHERE image=? AND to_addr>=? AND to_addr<? "
+            "UNION ALL SELECT 'edge', site, to_addr FROM edges WHERE image=? AND to_addr>=? AND to_addr<?",
+            img.name,
+            a,
+            b,
+            img.name,
+            a,
+            b,
+        )
+    return {"available": True, "rows": [list(r) for r in rows]}
+
+
+def _static_report(r: dict) -> str:
+    lines = ["%s cf.expansion %#x-%#x" % (r["image"], *r["range"])]
+    for grp in ("views", "store"):
+        for name, d in r[grp].items():
+            lines.append(
+                "  %-13s %#x-%#x  %.2f%% coverage (%d instructions)  %d hits"
+                % (
+                    name,
+                    *d["range"],
+                    d["coverage_pct"],
+                    d["instructions"],
+                    len(d["hits"]),
+                )
+            )
+            for h in d["hits"]:
+                f = h.get("func")
+                lines.append(
+                    "    %#x  %s -> %#x  %s"
+                    % (
+                        h["pc"],
+                        h["ops"],
+                        h["target"],
+                        "in %s %#x" % (f[1], f[0]) if f else "outside every function",
+                    )
+                )
+    cfr = r.get("cf", {})
+    lines.append(
+        "  cf tables      %s"
+        % ("%d rows" % len(cfr["rows"]) if cfr.get("available") else "no database")
+    )
+    for kind, site, to in cfr.get("rows", []):
+        lines.append("    %s %#x -> %#x" % (kind, site, to))
+    return "\n".join(lines)
+
+
 def _patched_kw(a) -> dict:
     if not a.syx:
         return {}
@@ -473,6 +589,10 @@ def main(argv=None) -> int:
         "--syx", help="a patched image built from the stock firmware of IMAGE"
     )
     su.add_argument("--plan", help="its patch plan")
+    st = sub.add_parser("static")
+    st.add_argument("images", nargs="+")
+    st.add_argument("--json")
+    st.add_argument("--no-cf", action="store_true")
     c = sub.add_parser("card-check")
     c.add_argument("overlay")
     c.add_argument("--lo", type=lambda s: int(s, 0), default=CARD_STORE[0])
@@ -481,6 +601,13 @@ def main(argv=None) -> int:
     if a.cmd == "list":
         for n in sorted(SCRIPTS_BY_NAME):
             print(n)
+        return 0
+    if a.cmd == "static":
+        res = [static_check(i, not a.no_cf) for i in a.images]
+        for r in res:
+            print(_static_report(r))
+        if a.json:
+            pathlib.Path(a.json).write_text(json.dumps(res, indent=1))
         return 0
     if a.cmd == "card-check":
         hits = card_store_hits(a.overlay, a.lo, a.hi)

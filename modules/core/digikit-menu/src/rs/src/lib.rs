@@ -13,6 +13,7 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
+use dkrt_sdk::{result_text, store, DkrtModule, DkrtStatus, E_NOT_FOUND, E_READ, OK};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -44,38 +45,18 @@ extern "C" {
     fn dk_make_sp(out: *mut SharedPtr, parent: *mut u8, view: *mut u8);
 }
 
-// ---- the runtime's table -------------------------------------------------------------------------------------
+// ---- the runtime (core/runtime) --------------------------------------------------------------------------------
 
-/// What the runtime (core/runtime) fills in at its init. `magic` is written last. Until then every field is zero
-/// (bss), the menu shows NO RUNTIME and LOAD does nothing. Function pointers use the C ABI.
-///   load(path cstr) -> i32          0 = loaded
-///   unload(path cstr) -> i32        0 = unloaded
-///   status(*mut DkrtStatus)
-#[repr(C)]
-pub struct DkrtApi {
-    pub magic: u32,
-    pub abi: u32,
-    pub load: usize,
-    pub unload: usize,
-    pub status: usize,
-}
-pub const DKRT_MAGIC: u32 = 0x444b_5254; // "DKRT"
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct DkrtStatus {
-    pub abi: u32,
-    pub state: u32,
-    pub loaded: u32,
-    pub free_bytes: u32,
-}
-
-#[no_mangle]
-pub static mut DKRT_API: DkrtApi = DkrtApi { magic: 0, abi: 0, load: 0, unload: 0, status: 0 };
-
-unsafe fn rt_present() -> bool {
-    let a = &*addr_of!(DKRT_API);
-    a.magic == DKRT_MAGIC && a.load != 0
+// The menu `requires` core/runtime, so these are plain symbols the linker resolves to the runtime's exports. The layouts
+// (`DkrtStatus`, `DkrtModule`) and the result codes are the runtime's own, from the shared crate `dkrt-sdk`.
+extern "C" {
+    /// Load the `.dkm` at the store path (relative to `digikit/`, for example `modules/a.dkm`); 0 = loaded, else an `E_*` code.
+    fn dkrt_load(path: *const u8) -> i32;
+    /// Unload the module called `name` (the name in the `.dkm` header, from `DkrtModule`).
+    fn dkrt_unload(name: *const u8) -> i32;
+    fn dkrt_status(out: *mut DkrtStatus);
+    /// The `index`th loaded module; 0, or `E_NOT_FOUND` past the end.
+    fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32;
 }
 
 // ---- std::function and shared_ptr as the firmware lays them out -----------------------------------------------
@@ -252,75 +233,85 @@ impl Text {
     }
 }
 
-// ---- the module store (docs/design/digikit-store.md) -------------------------------------------------------------
+// ---- the module store (docs/design/digikit-store.md; the reader is `dkrt_sdk::store`, shared with the runtime) ----------
 
-/// First sector of the store: `[card.store] first_sector` of devices/*.toml, the same on both devices.
-const STORE_FIRST: u32 = 0x38000;
 const MAX_ENT: usize = 32;
-
-/// The two read buffers come from the firmware heap on first use (the card DMA writes them, and module RAM stays free
-/// of writes by anything but this code); the buddy allocator hands out blocks aligned to their size.
-static mut HDR: *mut u8 = null_mut();
+/// Table buffer: 128 entries. The card DMA writes it, so it comes from the firmware heap (module RAM stays free of writes by
+/// anything but this code); the buddy allocator hands out blocks aligned to their size.
+const TAB_BYTES: usize = 16 * 1024;
 static mut TAB: *mut u8 = null_mut();
 
-/// 0 = not read, 1 = ok, 2 = no store, 3 = read error
+/// 0 = not read, 1 = ok, 2 = no store, 3 = read error, 4 = bad or too big
 static mut STORE: u32 = 0;
 /// Table indices of the `.dkm` entries, and their ticks.
 static mut ENT: [u8; MAX_ENT] = [0; MAX_ENT];
 static mut TICK: [u8; MAX_ENT] = [0; MAX_ENT];
+/// 1 when the runtime has the entry's file loaded, and the module's name for `dkrt_unload`.
+static mut LOADED: [u8; MAX_ENT] = [0; MAX_ENT];
+static mut MODNAME: [[u8; 32]; MAX_ENT] = [[0; 32]; MAX_ENT];
 static mut NENT: usize = 0;
 /// The result row of the last LOAD (empty: shows "LOAD").
 static mut RESULT: Text = Text { b: [0; 40], n: 0 };
 
-fn be32(b: &[u8], at: usize) -> u32 {
-    ((b[at] as u32) << 24) | ((b[at + 1] as u32) << 16) | ((b[at + 2] as u32) << 8) | b[at + 3] as u32
+unsafe fn entry_path(e: usize) -> &'static [u8] {
+    store::path(TAB, e)
 }
 
-unsafe fn entry_path(e: usize) -> &'static [u8] {
-    let t = core::slice::from_raw_parts(TAB.add(e * 128), 88);
-    let mut n = 0;
-    while n < 87 && t[n] != 0 {
-        n += 1;
+/// Ask the runtime which modules it holds and match their store paths against the rows.
+unsafe fn refresh_loaded() {
+    LOADED = [0; MAX_ENT];
+    let mut index = 0;
+    loop {
+        let mut m: DkrtModule = core::mem::zeroed();
+        if dkrt_module(index, &mut m) != OK {
+            break;
+        }
+        index += 1;
+        let mut n = 0;
+        while n < 63 && m.path[n] != 0 {
+            n += 1;
+        }
+        for i in 0..NENT {
+            if entry_path(ENT[i] as usize) == &m.path[..n] {
+                LOADED[i] = 1;
+                MODNAME[i] = m.name;
+            }
+        }
     }
-    &t[..n]
 }
 
 unsafe fn scan_store() {
     NENT = 0;
-    for k in 0..MAX_ENT {
-        TICK[k] = 0;
-    }
+    TICK = [0; MAX_ENT];
     RESULT.n = 0;
     RESULT.b = [0; 40];
-    if HDR.is_null() {
-        HDR = fw_new(512);
-        TAB = fw_new((MAX_ENT * 128) as u32);
+    if TAB.is_null() {
+        TAB = fw_new(TAB_BYTES as u32);
     }
-    let h = core::slice::from_raw_parts_mut(HDR, 512);
-    if fw_blk_read(STORE_FIRST, 512, HDR) != 0 {
-        STORE = 3;
-        return;
-    }
-    if &h[0..4] != b"DKST" || be32(h, 4) != 1 {
-        STORE = 2;
-        return;
-    }
-    let count = be32(h, 8) as usize;
-    let n = if count > MAX_ENT { MAX_ENT } else { count };
-    let sectors = (n * 128 + 511) / 512;
-    if sectors > 0 && fw_blk_read(STORE_FIRST + 1, (sectors * 512) as u32, TAB) != 0 {
-        STORE = 3;
-        return;
-    }
-    for e in 0..n {
+    let t = match store::open(fw_blk_read, TAB, TAB_BYTES) {
+        Ok(t) => t,
+        Err(e) => {
+            STORE = if e == E_NOT_FOUND { 2 } else if e == E_READ { 3 } else { 4 };
+            return;
+        }
+    };
+    for e in 0..t.count as usize {
         let p = entry_path(e);
         let l = p.len();
-        if l > 4 && p[l - 4] == b'.' && lower(p[l - 3]) == b'd' && lower(p[l - 2]) == b'k' && lower(p[l - 1]) == b'm' {
+        if l > 4
+            && p[l - 4] == b'.'
+            && lower(p[l - 3]) == b'd'
+            && lower(p[l - 2]) == b'k'
+            && lower(p[l - 1]) == b'm'
+            && NENT < MAX_ENT
+        {
             ENT[NENT] = e as u8;
             NENT += 1;
         }
     }
     STORE = 1;
+    refresh_loaded();
+    TICK = LOADED; // a loaded module starts ticked: unticking it and pressing LOAD unloads it
 }
 
 fn lower(c: u8) -> u8 {
@@ -359,27 +350,21 @@ unsafe fn fill_load() {
     let m = LOADV.obj;
     let sel = begin_rebuild(m);
     if STORE != 1 {
-        let t: &[u8] = if STORE == 2 { b"NO STORE\0" } else { b"STORE READ ERROR\0" };
+        let t: &[u8] = match STORE {
+            2 => b"NO STORE\0",
+            3 => b"STORE READ ERROR\0",
+            _ => b"BAD STORE\0",
+        };
         row(m, t, A_NOP, 0);
     } else if NENT == 0 {
         row(m, b"NO MODULES\0", A_NOP, 0);
     } else {
         for i in 0..NENT {
-            let p = entry_path(ENT[i] as usize);
-            // the file name, at most 17 characters from the end
-            let mut start = 0;
-            for (k, &c) in p.iter().enumerate() {
-                if c == b'/' {
-                    start = k + 1;
-                }
-            }
             let mut t = Text::new();
-            t.s(if TICK[i] != 0 { b"[X] " } else { b"[ ] " });
-            let name = &p[start..];
-            let name = if name.len() > 17 { &name[name.len() - 17..] } else { name };
-            for &c in name {
-                t.s(&[upper(c)]);
-            }
+            // `[X]` ticked, `[ ]` not; the fourth character is `*` when the runtime has the module loaded
+            t.s(if TICK[i] != 0 { b"[X]" } else { b"[ ]" });
+            t.s(if LOADED[i] != 0 { b"*" } else { b" " });
+            upper_name(i, 17, &mut t);
             row(m, &t.b, A_TOGGLE + i as u32, 0);
         }
         if RESULT.n > 0 {
@@ -395,55 +380,84 @@ unsafe fn fill_about() {
     let m = ABOUTV.obj;
     let sel = begin_rebuild(m);
     row(m, b"DIGIKIT 0.1.0\0", A_NOP, 0);
-    if rt_present() {
-        let a = &*addr_of!(DKRT_API);
-        let mut t = Text::new();
-        t.s(b"RUNTIME ABI ").num(a.abi);
-        row(m, &t.b, A_NOP, 0);
-        if a.status != 0 {
-            let f: unsafe extern "C" fn(*mut DkrtStatus) = transmute(a.status);
-            let mut st = DkrtStatus { abi: 0, state: 0, loaded: 0, free_bytes: 0 };
-            f(&mut st);
-            let mut t = Text::new();
-            t.s(b"LOADED ").num(st.loaded);
-            row(m, &t.b, A_NOP, 0);
-            let mut t = Text::new();
-            t.s(b"FREE ").num(st.free_bytes / 1024).s(b" KB");
-            row(m, &t.b, A_NOP, 0);
-        }
-    } else {
-        row(m, b"RUNTIME: NONE\0", A_NOP, 0);
-    }
+    let mut st: DkrtStatus = core::mem::zeroed();
+    dkrt_status(&mut st);
+    let mut t = Text::new();
+    t.s(b"RUNTIME ABI ").num(st.runtime);
+    row(m, &t.b, A_NOP, 0);
+    let mut t = Text::new();
+    t.s(b"LOADED ").num(st.modules);
+    row(m, &t.b, A_NOP, 0);
+    let mut t = Text::new();
+    t.s(b"FREE ").num(st.arena_free / 1024).s(b" KB");
+    row(m, &t.b, A_NOP, 0);
     end_rebuild(m, sel);
 }
 
+/// The file name of a row, upper case, at most `max` characters from the end.
+unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
+    let p = entry_path(ENT[i] as usize);
+    let mut start = 0;
+    for (k, &c) in p.iter().enumerate() {
+        if c == b'/' {
+            start = k + 1;
+        }
+    }
+    let name = &p[start..];
+    let name = if name.len() > max { &name[name.len() - max..] } else { name };
+    for &c in name {
+        t.s(&[upper(c)]);
+    }
+}
+
+/// LOAD: bring the runtime in line with the ticks. A ticked row that is not loaded is loaded, an unticked row that is loaded
+/// is unloaded. The answer row shows the counts, or the first failure with the runtime's result text ("BAD SHA", "NO IMPORT").
 unsafe fn do_load() {
     RESULT.b = [0; 40];
     RESULT.n = 0;
-    if !rt_present() {
-        RESULT.s(b"NO RUNTIME");
-        return;
-    }
-    let load: unsafe extern "C" fn(*const u8) -> i32 = transmute((*addr_of!(DKRT_API)).load);
-    let (mut ok, mut bad, mut any) = (0u32, 0u32, false);
+    let (mut loaded, mut unloaded, mut failed) = (0u32, 0u32, 0u32);
+    let mut first_fail: Option<(usize, i32)> = None;
     for i in 0..NENT {
-        if TICK[i] == 0 {
+        let want = TICK[i] != 0;
+        if want == (LOADED[i] != 0) {
             continue;
         }
-        any = true;
-        let p = entry_path(ENT[i] as usize);
-        let mut path = [0u8; 88];
-        path[..p.len()].copy_from_slice(p);
-        if load(path.as_ptr()) == 0 {
-            ok += 1;
+        let r = if want {
+            let p = entry_path(ENT[i] as usize);
+            let mut path = [0u8; 88];
+            path[..p.len()].copy_from_slice(p);
+            dkrt_load(path.as_ptr())
         } else {
-            bad += 1;
+            dkrt_unload(MODNAME[i].as_ptr())
+        };
+        if r == OK {
+            if want {
+                loaded += 1;
+            } else {
+                unloaded += 1;
+            }
+        } else {
+            failed += 1;
+            if first_fail.is_none() {
+                first_fail = Some((i, r));
+            }
         }
     }
-    if !any {
-        RESULT.s(b"NOTHING TICKED");
+    refresh_loaded();
+    if let Some((_i, r)) = first_fail {
+        // the row is about 17 characters wide; the failed rows stay ticked and unmarked, so they show which one it was
+        RESULT.s(result_text(r).as_bytes());
+        if failed > 1 {
+            RESULT.s(b" +").num(failed - 1);
+        }
+    } else if loaded + unloaded == 0 {
+        RESULT.s(b"NOTHING TO DO");
+    } else if unloaded == 0 {
+        RESULT.s(b"LOADED ").num(loaded);
+    } else if loaded == 0 {
+        RESULT.s(b"UNLOADED ").num(unloaded);
     } else {
-        RESULT.s(b"LOADED ").num(ok).s(b" FAILED ").num(bad);
+        RESULT.s(b"LOADED ").num(loaded).s(b" UNLOAD ").num(unloaded);
     }
 }
 

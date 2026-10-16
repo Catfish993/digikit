@@ -21,6 +21,7 @@ import argparse
 import hashlib
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -132,6 +133,44 @@ def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return r
 
 
+def _stage(manifest: Path, dest: Path, deps_dir: Path, seen: dict[Path, Path]) -> Path:
+    """Copy a crate to `dest` and its path dependencies to `deps_dir/<n>-<name>`, rewriting the `path = ".."` of the
+    copies. Returns the staged manifest."""
+    shutil.copytree(
+        manifest.parent, dest, ignore=shutil.ignore_patterns("target", ".git")
+    )
+    text = (dest / "Cargo.toml").read_text()
+    deps = tomllib.loads(text).get("dependencies", {})
+    for dep in deps.values():
+        if isinstance(dep, dict) and "path" in dep:
+            sub = (manifest.parent / dep["path"] / "Cargo.toml").resolve()
+            if sub not in seen:
+                sd = deps_dir / f"{len(seen)}-{sub.parent.name}"
+                seen[sub] = sd
+                _stage(sub, sd, deps_dir, seen)
+            rel = os.path.relpath(seen[sub], dest)
+            text = re.sub(
+                r'(path\s*=\s*)"' + re.escape(dep["path"]) + '"',
+                lambda m, rel=rel: f'{m.group(1)}"{rel}"',
+                text,
+            )
+    (dest / "Cargo.toml").write_text(text)
+    return dest / "Cargo.toml"
+
+
+def stage_crate(manifest: Path, root: Path) -> Path:
+    """Stage the crate under `root` so that the build does not depend on where the checkout is.
+
+    cargo's `-C metadata` (the crate disambiguator in every `_R...` symbol, and the StableCrateId) hashes a path
+    dependency's absolute path unless it lies inside the workspace root, and `dkrt-sdk` lies outside the crate. The
+    crate is its own workspace, so its path dependencies are copied inside it (`.deps/`) and every path in the copy is
+    relative to the crate: the same hash in any worktree, temp copy or clone. A build of the copy costs one rebuild of
+    the crate; `core` and `compiler_builtins` in the target directory are reused.
+    """
+    seen: dict[Path, Path] = {}
+    return _stage(manifest, root / "crate", root / "crate" / ".deps", seen)
+
+
 def build_staticlib(manifest: Path) -> Path:
     require_toolchain()
     manifest = manifest.resolve()
@@ -144,12 +183,14 @@ def build_staticlib(manifest: Path) -> Path:
     target_dir = CACHE / f"{ROOT.name}-{manifest.parent.parent.parent.name}"
     env = pk_toolchains.codegen_gcc_env(RUSTFLAGS_EXTRA)
     target = pk_toolchains.rust_target_json()
-    cmd = [
-        "cargo", f"+{pk_toolchains.RUST_NIGHTLY}", "rustc", "--release", *CARGO_ARGS,
-        "--target", str(target), "--target-dir", str(target_dir),
-        "--manifest-path", str(manifest),
-    ]  # fmt: skip
-    _run(cmd, env=env, cwd=manifest.parent)
+    with tempfile.TemporaryDirectory(prefix="pk-rust-src-") as stage:
+        staged = stage_crate(manifest, Path(stage))
+        cmd = [
+            "cargo", f"+{pk_toolchains.RUST_NIGHTLY}", "rustc", "--release", *CARGO_ARGS,
+            "--target", str(target), "--target-dir", str(target_dir),
+            "--manifest-path", str(staged),
+        ]  # fmt: skip
+        _run(cmd, env=env, cwd=staged.parent)
     lib = target_dir / target.stem / "release" / f"lib{name}.a"
     if not lib.exists():
         raise RustBuildError(f"{lib} was not produced")
@@ -221,6 +262,14 @@ def build_object(manifest: Path, out: Path) -> list[str]:
         # Internal names carry crate hashes: make them local, then drop the locals nothing relocates against, so
         # the object does not depend on where the crate was built.
         _run([_tool("objcopy"), "-w", "-L", "_R*", str(out)])
+        # The compiler's own helpers (memcpy, __muldi3, ...) are private copies: two Rust objects in one image would
+        # export the same name. The runtime hands its copies to run-time modules through its import table.
+        helpers = sorted(g for g in _globals(out)[0] if HELPER.match(g))
+        if helpers:
+            cmd = [_tool("objcopy")]
+            for h in helpers:
+                cmd += ["-L", h]
+            _run([*cmd, str(out)])
         _run([_tool("strip"), "--strip-unneeded", str(out)])
     check_flags(out.read_bytes(), str(out))
     undefined = _globals(out)[1]

@@ -44,7 +44,7 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x88 | 4 | `slot_off` |
 | 0x8c | 4 | `slot_count` (at most 8) |
 | 0x90 | 4 | `register_off` |
-| 0x94 | 4 | `register_size` (0 in v0) |
+| 0x94 | 4 | `register_size` (0: none) |
 | 0x98 | 8 | reserved (0) |
 
 After the header, in this order, each table where its offset says: imports, relocations, slot bindings, the `register` records,
@@ -61,9 +61,11 @@ padding to 16, then the image.
   import is refused by the packer (the distance to the firmware would depend on where the module is loaded).
 - **Slot bindings**: entries of 8 bytes: `u32 slot`, `u32 function offset`. They come from exported symbols
   `dkm_slot_<n>`, n = 0 to 7. The loader publishes each with one aligned 32-bit store after `init` returned 0.
-- **`register` records**: opaque to this version (`register_size = 0`). The schema work puts the registry rows a module adds
-  (machines, parameters, pages) here; the loader will hand them to the registry owner. A runtime of this version ignores the
-  bytes but checks that they lie inside the file.
+- **`register` records**: typed machine and parameter records (`docs/design/digikit-registry.md`; layout in
+  `packages/patchkit/src/register.rs`). `patchkit pack MODULE --device dt2` lowers a `dynamic = true` module's `[[machine]]` and `[[param]]`
+  sections into them; the loader checks them with the rest of the file (before anything is written) and hands them to the registry
+  (`registry.rs`), which fills the rows `core/dynreg` reserved. A module with no code at all packs with a four-byte image (`dkm_init` is
+  `moveq #0,d0; rts`).
 - **Image**: the linked bytes at base 0; every word named by a relocation holds `S + A` (symbol offset plus addend) for kind 0 and
   `A` for kind 1.
 
@@ -79,8 +81,11 @@ non-zero the load is undone (`E_INIT`).
 4. Name, alignment, table bounds, reloc kinds and offsets, slot numbers and function offsets (`E_FORMAT`).
 5. Every import resolves (`E_IMPORT`); every slot it binds is free (`E_SLOT`); no module of that name is loaded (`E_LOADED`); a
    free module record (`E_TABLE_FULL`).
-6. Then: allocate `image_size + bss_size` (`E_NOMEM`), copy, zero bss, relocate, flush both caches over the range, record, `init`
-   (`E_INIT`: the block is freed again), publish the slots.
+6. The `register` records, if any: `E_NO_REGISTRY` (the image has no `core/dynreg`), `E_REG_DEVICE`, `E_FORMAT`, `E_TYPE_RANGE`, `E_TYPE_USED`,
+   `E_PARAM_FULL` (-20 to -24; docs/design/digikit-registry.md).
+7. Then: allocate `image_size + bss_size` (`E_NOMEM`), copy, zero bss, relocate, flush both caches over the range, record, `init`
+   (`E_INIT`: the block is freed again), publish the slots. The registry rows are written after the copy and before `init` (`init` may reuse the
+   staging buffer, which holds the records); a failed `init` removes them again.
 
 ## Check
 
@@ -92,4 +97,4 @@ patch-time linker's output at that base. The runtime's loader is checked in the 
 
 - Streaming load for files over 64 KiB; compression.
 - Signing: the sha256 is an integrity check, not authentication (the store is on the user's own card).
-- The `register` section's content (schema lane).
+- Pages, `own_dsp` and DSP code in the `register` section (Digitone II, Phase 5 SHARC side).

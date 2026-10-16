@@ -1,0 +1,356 @@
+[module]
+id = "core/dynreg"
+version = "0.1.0"
+name = "Run-time registry"
+category = "core"
+status = "experimental"
+summary = "Reserves machine and parameter rows that modules loaded at run time by the digikit runtime fill (emulator only)"
+requires = ["core/runtime", "core/machines", "core/params"]
+conflicts = []
+ports = ["dt2-1.16", "dt2-1.17"]
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "experimental"
+
+# Patch-time half of the run-time registry (docs/design/digikit-registry.md). It adds no behaviour by itself:
+#
+# - 8 machine rows (the type numbers dynamic_first ..= last of core/machines types.toml, 16 to 23) and 16 parameter rows
+#   that look like the rows of a built-in machine with no name. The machine rows are listed (position = the end), so the
+#   firmware's list, rank and name tables span them; a row whose name is empty is skipped when the list is returned.
+# - `dynreg_view_hook` remembers the machine selection view (the firmware builds its item list once, at boot, from the getter):
+#   the registry calls the view's build function again after it changed the rows.
+# - `dynreg_copy` retargets the copy at the end of the machine list getter (`std::copy` of the sorted static list into the
+#   returned vector) and leaves out the types whose row is still empty.
+# - `dynreg_info` is the table of addresses and row layout that the runtime's registry reads (core/runtime, optional link).
+#
+# The runtime fills and clears the rows. With this module the rows read as gap rows (clone of type 0, no name), which is
+# also what a project that names an unloaded run-time machine gets.
+
+[[object]]
+path = "build/dynreg-dt2.dko.json"
+sources = ["src/cf/dt2/dynreg.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[object.externs]
+_dr_rows = "machines.rows"
+_dr_row_size = "machines.row_size"
+_dr_first = "machines.first"
+_dr_count = "machines.count"
+_dr_dyn0 = "machines.dyn16.index"
+_dr_names = "mf_names"
+_dr_permit = "mf_permit"
+_dr_pertype = "mf_pertype"
+_dr_p_table = "pf_table"
+_dr_p_rows = "params.rows"
+_dr_p_row_size = "params.row_size"
+_dr_p_first = "params.first"
+_dr_p_count = "params.count"
+_dr_p_dyn0 = "params.dp0.index"
+_dr_t_view = "hook.cf.dynreg.msv_build.tail"
+_dr_f_build = "cf.dynreg.msv_build"
+
+# the copy at the end of the machine list getter: `jsr copy(begin, end, dest)`, result in d0 = the end of the copy
+[[op]]
+op = "retarget"
+anchor = "cf.dynreg.list_copy"
+to = "dynreg_copy"
+devices = ["dt2"]
+
+[[claim]]
+resource = "cf.dynreg.list_copy"
+
+# the entry of the function that fills the machine selection view's items from the getter (the view caches the list)
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "cf.dynreg.msv_build"
+offset = 0
+to = "dynreg_view_hook"
+displaced = "run"
+devices = ["dt2"]
+
+[[claim]]
+resource = "cf.dynreg.msv_build"
+
+[[anchor_rule]]
+name = "cf.dynreg.msv_build"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "aba88709b609b69b6441121c296634f8"
+offset = 0x0
+len = 8
+mark = "D"
+
+[[anchor_rule]]
+name = "cf.dynreg.list_copy"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "7c680e4200eed1964a22109ee2d43932"
+offset = 0x13e
+len = 6
+mark = "D"
+
+# ---- reserved rows -------------------------------------------------------------------------------------------------------
+
+# Machines: the permanent numbers are the run-time range of types.toml (key "core/dynreg:dyn<N>").
+[[entry]]
+registry = "machines"
+id = "dyn16"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "machines"
+id = "dyn17"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "machines"
+id = "dyn18"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "machines"
+id = "dyn19"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "machines"
+id = "dyn20"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "machines"
+id = "dyn21"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "machines"
+id = "dyn22"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "machines"
+id = "dyn23"
+name = ""
+short = ""
+clone_of = 0
+devices = ["dt2"]
+
+# Parameters: codes follow the order of the entries (params.dp0.index ...), so the run-time module's records are given the
+# next free one. The template only has to be a valid stock code (the value-class object lookup uses it).
+[[entry]]
+registry = "params"
+id = "dp0"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp1"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp2"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp3"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp4"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp5"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp6"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp7"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp8"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp9"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp10"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp11"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp12"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp13"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp14"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]
+
+[[entry]]
+registry = "params"
+id = "dp15"
+name = ""
+short = ""
+template = 0xd1
+slot = 0
+min = 0
+max = 0
+default = 0
+devices = ["dt2"]

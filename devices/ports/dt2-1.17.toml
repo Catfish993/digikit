@@ -39,6 +39,26 @@ excludes = [[0x200fa000, 0x200fe000]]
 mark = "D"
 
 [[anchor]]
+name = "cf.dynreg.list_copy"
+cpu = "cf"
+kind = "code"
+addr = 0x40052b46
+len = 6
+sha256 = "741e91882439151e861c78696c9375fdf01c91419f03d386ca3d19a4586b8fab"
+mark = "D"
+rule = "core/dynreg:cf_func"
+
+[[anchor]]
+name = "cf.dynreg.msv_build"
+cpu = "cf"
+kind = "code"
+addr = 0x40060f50
+len = 8
+sha256 = "d38e64037d171546ea46d9f5ff950af69f4742dd92f87e4f56faf9fe101bb64e"
+mark = "D"
+rule = "core/dynreg:cf_func"
+
+[[anchor]]
 name = "cf.machines.clone.0"
 cpu = "cf"
 kind = "code"
@@ -1733,6 +1753,47 @@ len = 6
 sha256 = "1940b0a63c6ecde995281cba985d224c36ffbda5cb4d818577538dd180809638"
 mark = "D"
 rule = "core/runtime:cf_words"
+
+[[anchor]]
+name = "dl.cf.frame_call"
+cpu = "cf"
+kind = "code"
+addr = 0x4002dd74
+len = 6
+sha256 = "3b5bfef87fffe24f50bcde099ab9d3bc80df33b6497b71debb052fa2595c9ef1"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.frame_fn"
+cpu = "cf"
+kind = "code"
+addr = 0x400cd420
+len = 2
+sha256 = "f465c3739385890c221dff1a05e578c6cae0d0430e46996d319db7439f884336"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.tx_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x400cd48c
+len = 4
+sha256 = "30e34b9529825f8c32836cb08a2256b7dacd9f76c6dbedc3c8c3aab9ad8734cb"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.dsp.block_tail"
+cpu = "sharc"
+kind = "code"
+addr = 0x2838eb82
+pm = 0x1c75c1
+len = 6
+sha256 = "418515de8832faaa693bd7424adcd86687fea642b49c15f3490d48a0a2481f56"
+mark = "D"
+rule = "core/dsp-link:sharc_func"
 
 [[anchor]]
 name = "dsp.fx.sidechain_filter_word"

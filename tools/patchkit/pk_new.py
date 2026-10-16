@@ -198,10 +198,13 @@ def allocate(key: str, devices: list[str], path: Path = TYPES) -> dict[str, int]
         if key in alloc:
             out[dev] = alloc[key]
             continue
-        n = max([STOCK_TYPES[dev] - 1, *alloc.values()]) + 1
-        if n > d["last"]:
+        # numbers from `dynamic_first` up belong to run-time modules (core/dynreg reserves them)
+        top = d.get("dynamic_first", d["last"] + 1) - 1
+        n = max([STOCK_TYPES[dev] - 1, *(v for v in alloc.values() if v <= top)]) + 1
+        if n > top:
             raise SystemExit(
-                f"{path}: [{dev}] is full: the next number {n} is above last = {d['last']}"
+                f"{path}: [{dev}] is full: the next number {n} is above {top} "
+                f"(last = {d['last']}, run-time range from {d.get('dynamic_first', 'none')})"
             )
         lines = text.split("\n")
         start = lines.index(f"[{dev}.alloc]")

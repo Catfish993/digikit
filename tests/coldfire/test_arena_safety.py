@@ -84,7 +84,7 @@ def test_every_script_builds_and_its_expectations_name_known_keys():
         script = fn()
         assert script.args(frame_dir="x")[0] == "--extra", name
         assert set(ps.EXPECT[name]) <= keys, name
-        for frame in ps.EXPECT[name].get("frames", []):
+        for frame in ps.EXPECT.get(name, {}).get("frames", []):
             assert frame in [n for n, _ in script.frames], (name, frame)
 
 
@@ -126,6 +126,8 @@ def test_golden_file_covers_every_expected_frame_of_the_checked_images():
     golden = json.loads(a.GOLDEN.read_text()) if a.GOLDEN.exists() else {}
     for image in ("dt2-1.16",):
         for name, expect in ps.EXPECT.items():
+            if name.startswith("digikit_"):
+                continue  # scripts for a patched image: pinned in tests/golden/digikit_menu_frames.json
             for frame in expect.get("frames", []):
                 key = "%s/%s/%s" % (image, name, frame)
                 assert key in golden, key
@@ -194,3 +196,23 @@ def test_project_save_writes_slot_0_and_nothing_in_the_arena_or_module_store(
         and facts["flush_hits"] == 0
     )
     assert a.check_reached("save_project", "dt2-1.16", facts) == []
+
+
+def test_static_check_finds_absolute_references_in_both_views(monkeypatch):
+    from tools.coldfire import regions
+
+    # move.l #$47e8b000,d0 (cached view) and move.l #$4fe8b010,d1 (uncached alias), then a sector immediate and an unrelated one
+    code = bytes.fromhex("203c47e8b000223c4fe8b010243c00038001263c00001234") + bytes(8)
+    monkeypatch.setattr(regions, "load_main", lambda image: code)
+    r = a.static_check("dt2-1.16", with_cf=False)
+    assert [h["target"] for h in r["views"]["cached"]["hits"]] == [0x47E8B000]
+    assert [h["target"] for h in r["views"]["uncached"]["hits"]] == [0x4FE8B010]
+    assert [h["target"] for h in r["store"]["store_sector"]["hits"]] == [0x38001]
+    assert "0x47e8b000" in a._static_report(r)
+
+
+def test_midirpc_write_script_expects_replies_per_device():
+    s = ps.SCRIPTS["midirpc_write"]()
+    assert s.args(frame_dir="x")[0] == "--extra"
+    assert ps.EXPECT["midirpc_write"]["usb_replies"]["dt2"][0] == 0x40
+    assert "midirpc_write" in a.SUITE

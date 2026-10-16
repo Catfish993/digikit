@@ -78,3 +78,25 @@ the flush it reports none. This is the first run of our own cache maintenance un
 - The module store was only read through the emulator's eMMC model; the real card's read latency and the block read's mutex under
   load are untested. No hardware.
 - Files over 64 KiB, more than 8 modules, more than 8 slots: refused.
+
+## Update (lane r1, 2026-10-16): menu join, shared reader, location-independent Rust builds
+
+- **[D]** The DIGIKIT menu calls `dkrt_load`, `dkrt_unload`, `dkrt_status` and `dkrt_module` directly (finding 28, "Joined to the
+  runtime"); `DkrtModule` gained `path`. `store.rs` is now a thin layer over `dkrt_sdk::store` (the reader shared with the menu); the
+  runtime's table check, errors and the 64 KiB staging buffer are unchanged (`pk_dkrt proof` passes on DT2 1.16 and DN2 1.11 with the
+  same numbers). `E_TOO_BIG` is now returned for a table that does not fit the buffer (was `E_BAD_STORE`).
+- **[D]** **Rust object names no longer depend on the checkout path.** Cause: cargo's `-C metadata` (the crate disambiguator in
+  every `_R...` symbol, the StableCrateId) hashes the absolute path of a path dependency that lies outside the crate's own
+  workspace root; `dkrt-sdk` is outside `modules/core/runtime/src/rs`. Built in `lanes/r1`, `lanes/r4`, the main tree and a temp copy,
+  `runtime.dko.json` had three different disambiguators (`Csjc...`, `Cse20...`, `Csb...`), so `pk_build build-all --check` called
+  committed objects stale in any other worktree. Fix in `tools/patchkit/pk_rust.py`: `stage_crate` copies the crate to a temporary
+  directory and its path dependencies into `.deps/` inside it, with relative paths, and cargo builds that copy (the target directory
+  and the build of `core` and `compiler_builtins` stay shared; the crate itself is rebuilt each time, a few seconds). Chosen over a
+  fixed staging path (two lanes would share it) and over symbol rewriting (the hash also reaches the StableCrateId). Check: the same
+  crate built in the lane, in the main-tree path and in a temp copy gives the same object (test `test_object_does_not_depend_on_the_
+  checkout_location`); the patched DT2 1.16 images of `core/runtime`, `core/digikit-menu` and `test/rust-demo` are byte-identical
+  before and after (symbol names do not reach the image).
+- **[D]** Compiler helpers (`memcpy`, `memset`, `memcmp`, `__muldi3`, ...) are made local in every Rust object (`pk_rust`): two Rust
+  objects in one image (runtime and menu) both exported `memcpy` ("symbol memcpy is exported twice"). The runtime still hands its
+  copies to run-time modules through its import table. `rust-demo.dko.json` and `runtime.dko.json` changed (symbol binding only);
+  images unchanged.

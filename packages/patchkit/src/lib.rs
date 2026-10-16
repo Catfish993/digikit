@@ -24,6 +24,7 @@ pub mod module;
 pub mod port;
 pub mod prim;
 pub mod record;
+pub mod register;
 pub mod typed;
 pub mod verify;
 pub mod wasm;

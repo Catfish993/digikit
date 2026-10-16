@@ -644,6 +644,11 @@ pub fn lower(m: &mut Manifest, models: &Models) -> Result<()> {
     if m.lowered || !has_typed(m) {
         return Ok(());
     }
+    if m.module.dynamic {
+        // loaded at run time: the packer lowers it into `.dkm` records, nothing is patched
+        m.lowered = true;
+        return Ok(());
+    }
     if models.by_device.is_empty() {
         return Err(err!(
             "{}: has [[machine]]/[[param]] sections, but no device file with [modules] is available",

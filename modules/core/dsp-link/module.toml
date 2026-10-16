@@ -1,0 +1,138 @@
+[module]
+id = "core/dsp-link"
+version = "0.1.0"
+name = "DSP link"
+category = "core"
+status = "experimental"
+summary = "Sends code and data to the DSP while it runs, through the unused end of the ColdFire's block frame."
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.16" = "experimental"
+"dt2-1.17" = "untested"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "untested"
+
+# ColdFire: the hook on the frame sender and the sender's state (both devices; the anchors differ per device).
+[[object]]
+path = "build/dsp-link-cf.dko.json"
+sources = ["src/cf/dsp-link.c", "src/cf/tramp.s"]
+place = "cf.expansion"
+
+[object.externs]
+dl_stock_send = "dl.cf.frame_fn"
+dl_tx_lit = "dl.cf.tx_lit"
+
+[[object]]
+path = "build/dsp-link-dt2.dko.json"
+sources = ["src/dsp/dt2.s"]
+place = "dsp.l2"
+devices = ["dt2"]
+
+[object.externs]
+_dl_back = "hook.dl.dsp.block_tail.tail"
+
+[[object]]
+path = "build/dsp-link-dn2.dko.json"
+sources = ["src/dsp/dn2.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[object.externs]
+_dl_back = "hook.dl.dsp.block_tail.tail"
+
+[[op]]
+op = "retarget"
+anchor = "dl.cf.frame_call"
+to = "dl_frame_hook"
+
+[[op]]
+op = "hook"
+cpu = "sharc"
+anchor = "dl.dsp.block_tail"
+to = "_dl_hook"
+displaced = "run"
+
+[[claim]]
+resource = "dl.dsp.block_tail"
+
+[[claim]]
+resource = "dl.cf.frame_call"
+
+# The second last instruction of the block handler's common tail, `DM(<ring toggle>) = R1`: every command path of the
+# handler ends there, after the handler has built the record. The same relocation-insensitive hash on both devices.
+[[anchor_rule]]
+name = "dl.dsp.block_tail"
+cpu = "sharc"
+kind = "sharc_func"
+reloc_hash = "64b66b0db31c9fe533e67c75374b1041e22aae334bc3cd8743a491ab2448ecde"
+offset = 0xf4
+len = 6
+mark = "D"
+
+# ColdFire anchors. The block-frame sender is an interrupt handler (finding 04: vector 191; DT2 vector_191_handler, DN2 the
+# handler at 0x40025e36 in 1.11 and 1.12). It calls the stock driver with `jsr abs.l` at 104 bytes into the handler, in all
+# four images; the driver is found by its masked hash, and the literal `lea <tx queue>,a0` inside it gives the queue's address.
+# Digitakt II:
+[[anchor_rule]]
+name = "dl.cf.frame_call"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "e17112316e2cef97a3ebdd4ec57cc849"
+offset = 104
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "dl.cf.frame_fn"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "c7fa95828acc6073c8bac3dcd78b465f"
+offset = 0
+len = 2
+mark = "D"
+
+[[anchor_rule]]
+name = "dl.cf.tx_lit"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "c7fa95828acc6073c8bac3dcd78b465f"
+offset = 0x6c
+len = 4
+mark = "D"
+
+# Digitone II:
+[[anchor_rule]]
+name = "dl.cf.frame_call"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f44b8037b4b199d47efc3899eb659b74"
+offset = 104
+len = 6
+mark = "D"
+
+[[anchor_rule]]
+name = "dl.cf.frame_fn"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "321c6b90f1d02ec2acbb38e45d7f6940"
+offset = 0
+len = 2
+mark = "D"
+
+[[anchor_rule]]
+name = "dl.cf.tx_lit"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "321c6b90f1d02ec2acbb38e45d7f6940"
+offset = 0x92
+len = 4
+mark = "D"

@@ -1,5 +1,7 @@
 # 28. digikit runtime: the SETTINGS > DIGIKIT menu (Phase 4)
 
+**Update 2026-10-16 (lane r1, second pass): the menu now calls the real runtime and loads and unloads from the list; see "Joined to the runtime" at the end. The sections below describe the first pass, where a stand-in runtime and the table `DKRT_API` were used; that table and `test/digikit-rt-stub` no longer exist [C].**
+
 Plan: `docs/plans/digikit-runtime.md` Phase 4. Lane r1, 2026-10-16, native emulator (`regions_probe`), module
 `modules/core/digikit-menu` (Rust through rustc_codegen_gcc, finding 26). Everything here is **[D]**: measured or read once; no
 second agent has checked the addresses against the image bytes. Nothing ran on a device. Addresses are DT2 1.16 unless stated;
@@ -69,7 +71,7 @@ same card writes on the patched and the stock image (`--regress`; not run on 1.1
   pointers stored in `std::function` objects and through a `jmp` shim. The only assembly is the hook shim and the a0 adapter for
   `FUN_40119dda`.
 
-## The runtime table (the "weak" mechanism) **[D]**
+## The runtime table (the "weak" mechanism), first pass, replaced **[C]**
 
 `DKRT_API` in the module's bss: `magic, abi, load, unload, status` (5 words, README of the module). The runtime fills it, `magic`
 last. patchkit has no optional symbol, so the menu cannot name `dkrt_load` and still patch without the runtime; a slot the menu owns
@@ -113,3 +115,48 @@ or the menu changes.
   The icon of every row and title is the SYSTEM one.
 - **[O]** After LOAD the last row shows the answer text and still loads when pressed again.
 - **[O]** `dkrt_load` runs on the UI task and blocks it for the duration of the load.
+
+## Joined to the runtime (Phase 4 gate) **[D]**
+
+Lane r1, 2026-10-16, native emulator, all four images. Everything below is **[D]**: measured here once.
+
+- **The menu calls the runtime by symbol.** `core/digikit-menu` has `requires = ["core/runtime"]` and its crate declares
+  `dkrt_load`, `dkrt_unload`, `dkrt_status` and `dkrt_module` as `extern "C"`; patchkit links them to the runtime's exports. The table
+  `DKRT_API` and `modules/test/digikit-rt-stub` are gone. The layouts `DkrtStatus` and `DkrtModule` are the runtime's, from the
+  shared crate `dkrt-sdk` (the first pass's four-word `DkrtStatus` was a guess and is dropped). `DkrtModule` gained `path` (64
+  bytes, the store path the module was loaded from; the runtime keeps it in `DKRT_PATHS`, not in `State`).
+- **One store reader.** The header, table CRC, bounds and entry parsing are `dkrt_sdk::store` (no_std; the caller passes the
+  firmware's block read and a 16-byte aligned buffer). The runtime reads into its staging buffer, the menu into a 16 KiB heap block.
+  Changes in behaviour: the menu now checks the table CRC too (it did not), and it shows `BAD STORE` for a store that fails a check
+  or has a table over 16 KiB (more than 128 entries).
+- **Rows and actions.** `[X]` ticked, `[ ]` not, and `*` (the OLED draws it as a cross) in the fourth character when the runtime
+  has that file loaded; a loaded module starts ticked, so unticking it and pressing LOAD unloads it. LOAD loads each ticked row that
+  is not loaded and unloads each unticked row that is; the answer row reads `LOADED n`, `UNLOADED n`, `LOADED n UNLOAD m`,
+  `NOTHING TO DO`, or the runtime's result text for the first failure plus `+n` (`BAD SHA`, `NO IMPORT`, ...; table in `dkrt-sdk`
+  `result_text`). Failed rows stay ticked and unmarked. The row is about 17 characters wide, so the text carries no file name.
+  There is no separate UNLOAD item. ABOUT: `RUNTIME ABI 1`, `LOADED n`, `FREE 511 KB`.
+- **Cursor** of a reused view stays where it was on re-entry (the second visit to MODULES opens with the cursor on LOAD).
+- **Compiler trap.** A dense `match` (here `result_text`) compiled to a PC-relative jump table inline in `.text` (`movew
+  pc@(..,d1:l:2)`, `jmp pc@(..)`), which is 68020 code, not ColdFire; `pk_build` refused the object. The function is now a table lookup.
+- **Gate** (`uv run python -m tools.coldfire.digikit_menu_proof run --image IMAGE`): a card from a `plus_drive`-style folder with
+  `digikit/modules/dyn-demo.dkm` (packed by `patchkit pack`), `bad-sha.dkm`, `bad-import.dkm`. `digikit_gate`: SETTINGS > DIGIKIT >
+  LOAD MODULES, tick dyn-demo, LOAD (answer `LOADED 1`, the row `[X]*`), the demo's counter read by the host at three times
+  (`regions_probe --peek-at T:ADDR:OFF`, new): magic `DYNM`, then 14, 37, 60 on DT2 1.16 and rising on every image; ABOUT `LOADED 1`;
+  back to the list: the row is marked loaded; untick, LOAD (`UNLOADED 1`), the counter 152 at two later times and the marker `fini`
+  leaves (0xF1F10001) in the freed memory; ABOUT `LOADED 0`. `digikit_errors`: two broken modules ticked, LOAD answers `NO IMPORT +1`,
+  then one unticked: `BAD SHA`. All four images, 4 scripts each: pass, frames pinned in `tests/golden/digikit_menu_frames.json`,
+  `DKRT_STATE` `loads` = 1 and slot 0 empty at the end. The write-watch covers all of `cf.expansion` except the runtime's staging
+  buffer (the card read lands there by DMA, by design: 3 events per list read before it was excluded) with `ALLOW_PC` = the patch's
+  code range (menu, runtime, arena): 0 events; the flush check: 0 hits. The stock SETTINGS scripts of finding 25 on DT2 1.16 (10) and
+  DN2 1.11 (9) give the same frames and card writes stock and patched, writes 0, flush 0. PNGs: `out/runs/lanes/r1-shots/`.
+- **Smoke harness.** The cells `dt2-1.16`, `dt2-1.17`, `dn2-1.12` with `[core/digikit-menu]` now install the runtime too (requires);
+  the harness card has no store, so MODULES still shows NO STORE; only the ABOUT frame of the `menu` test changed.
+
+### Still open
+- **[O]** Not on hardware. The staging buffer, the arena and the menu's heap block are the only memory the load touches; the flush
+  check is strong on DT2, weak on DN2 (finding 25).
+- **[O]** `dkrt_load` runs inside a menu action on the UI task, so the display freezes for the load (about 4 ms of guest time for
+  dyn-demo, more with a real card); the stack use of the nested calls (menu, runtime about 1 KiB) is not measured.
+- **[O]** More than 32 `.dkm` entries, names longer than 17 characters (their last 17 are shown), and a store with more than 128
+  entries are not handled (`BAD STORE`).
+- **[O]** A file renamed in the store but loaded earlier: the match is by store path, so the row of the new name is unmarked.

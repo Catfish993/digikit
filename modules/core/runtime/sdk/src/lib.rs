@@ -85,6 +85,35 @@ pub struct DkrtModule {
     pub base: u32,
     pub size: u32,
     pub slots: u32, // bit n = slot n bound
+    /// Store path the module was loaded from (NUL-terminated, at most 63 bytes kept), for example `modules/dyn-demo.dkm`.
+    pub path: [u8; 64],
+}
+
+/// Text for a result code, for a menu line (upper case, at most 14 characters). A table, not a `match`: the compiler turns a
+/// dense `match` into a PC-relative jump table that is not ColdFire code.
+pub fn result_text(code: i32) -> &'static str {
+    const TEXTS: [&str; 15] = [
+        "OK",
+        "NOT FOUND",
+        "BAD STORE",
+        "READ ERROR",
+        "BAD SHA",
+        "BAD FORMAT",
+        "RUNTIME OLD",
+        "NO IMPORT",
+        "NO MEMORY",
+        "INIT FAILED",
+        "ALREADY LOADED",
+        "SLOT TAKEN",
+        "BUSY",
+        "TOO BIG",
+        "TABLE FULL",
+    ];
+    if (E_TABLE_FULL..=OK).contains(&code) {
+        TEXTS[(-code) as usize]
+    } else {
+        "ERROR"
+    }
 }
 
 /// Mailbox commands (emulator and test use; a menu calls `dkrt_load` directly).
@@ -99,4 +128,144 @@ pub struct Mailbox {
     pub seq: u32,
     pub result: i32,
     pub arg: [u8; 96],
+}
+
+/// The card module store reader (docs/design/digikit-store.md): sector 0 header "DKST", a table of 128-byte entries sorted
+/// by path, then the files. Shared by the runtime (loads) and the DIGIKIT menu (lists). The caller gives the firmware's block
+/// read and a 16-byte aligned buffer; nothing here allocates.
+pub mod store {
+    use super::*;
+
+    /// First card sector of the store and its length (devices/*.toml `[card.store]`, both devices).
+    pub const FIRST: u32 = 0x38000;
+    pub const SECTORS: u32 = 0x6000;
+    pub const MAGIC: u32 = 0x444b_5354; // "DKST"
+    pub const ENTRY: usize = 128;
+    /// Bytes of a path in an entry (NUL-terminated inside).
+    pub const PATH_BYTES: usize = 88;
+
+    /// The firmware's eMMC block read: `(sector, byte count, buffer)`; 0 = ok. Buffer 16-byte aligned, count a multiple of 512,
+    /// at most 0x10000 per call.
+    pub type BlockRead = unsafe extern "C" fn(sector: u32, bytes: u32, buf: *mut u8) -> i32;
+
+    pub struct Table {
+        pub count: u32,
+        pub sectors: u32,
+    }
+
+    /// Where a file is and what its table entry says its sha256 is.
+    pub struct File {
+        pub first: u32,
+        pub size: u32,
+        pub sha: [u8; 32],
+    }
+
+    pub unsafe fn be32(p: *const u8) -> u32 {
+        ((*p as u32) << 24) | ((*p.add(1) as u32) << 16) | ((*p.add(2) as u32) << 8) | (*p.add(3) as u32)
+    }
+
+    pub unsafe fn cstr_eq(a: *const u8, b: *const u8) -> bool {
+        let mut i = 0;
+        loop {
+            let x = *a.add(i);
+            if x != *b.add(i) {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            i += 1;
+        }
+    }
+
+    /// Read `count` sectors starting `rel` sectors into the store; `cap` is the size of `buf` in bytes.
+    pub unsafe fn read_sectors(rd: BlockRead, rel: u32, count: u32, buf: *mut u8, cap: usize) -> i32 {
+        if rel >= SECTORS || count > SECTORS - rel || count as usize * 512 > cap || count * 512 > 0x10000 {
+            return E_BAD_STORE;
+        }
+        if rd(FIRST + rel, count * 512, buf) != 0 {
+            return E_READ;
+        }
+        OK
+    }
+
+    fn crc32(mut crc: u32, p: *const u8, n: usize) -> u32 {
+        let mut i = 0;
+        while i < n {
+            crc ^= unsafe { *p.add(i) } as u32;
+            let mut k = 0;
+            while k < 8 {
+                crc = (crc >> 1) ^ (0xedb8_8320 & 0u32.wrapping_sub(crc & 1));
+                k += 1;
+            }
+            i += 1;
+        }
+        crc
+    }
+
+    /// Read the header and the table into `buf` (`cap` bytes, at least 512). The table then starts at `buf`; entry `i` is at
+    /// `buf + i * ENTRY`. Errors: `E_NOT_FOUND` (no store on the card), `E_READ`, `E_BAD_STORE` (version, counts, table CRC-32,
+    /// which covers the zero-padded table sectors), `E_TOO_BIG` (the table does not fit in `cap`).
+    pub unsafe fn open(rd: BlockRead, buf: *mut u8, cap: usize) -> Result<Table, i32> {
+        let r = read_sectors(rd, 0, 1, buf, cap);
+        if r != OK {
+            return Err(if r == E_READ { E_READ } else { E_NOT_FOUND });
+        }
+        if be32(buf) != MAGIC {
+            return Err(E_NOT_FOUND);
+        }
+        if be32(buf.add(4)) != 1 {
+            return Err(E_BAD_STORE);
+        }
+        let count = be32(buf.add(8));
+        let sectors = be32(buf.add(12));
+        let want_crc = be32(buf.add(20));
+        if count == 0 || count > 4096 || sectors != (count * ENTRY as u32 + 511) / 512 {
+            return Err(E_BAD_STORE);
+        }
+        if sectors as usize * 512 > cap {
+            return Err(E_TOO_BIG);
+        }
+        let r = read_sectors(rd, 1, sectors, buf, cap);
+        if r != OK {
+            return Err(r);
+        }
+        if !crc32(0xffff_ffff, buf, sectors as usize * 512) != want_crc {
+            return Err(E_BAD_STORE);
+        }
+        Ok(Table { count, sectors })
+    }
+
+    /// The NUL-terminated path of entry `i` of the table at `tab`.
+    pub unsafe fn path(tab: *const u8, i: usize) -> &'static [u8] {
+        let p = tab.add(i * ENTRY);
+        let mut n = 0;
+        while n < PATH_BYTES - 1 && *p.add(n) != 0 {
+            n += 1;
+        }
+        core::slice::from_raw_parts(p, n)
+    }
+
+    pub unsafe fn file(tab: *const u8, i: usize) -> File {
+        let e = tab.add(i * ENTRY);
+        let mut f = File { first: be32(e.add(88)), size: be32(e.add(92)), sha: [0; 32] };
+        let mut k = 0;
+        while k < 32 {
+            f.sha[k] = *e.add(96 + k);
+            k += 1;
+        }
+        f
+    }
+
+    /// Entry of `path` (NUL-terminated) in the table `t` at `tab`.
+    pub unsafe fn find(tab: *const u8, t: &Table, path: *const u8) -> Result<File, i32> {
+        let mut i = 0;
+        while i < t.count as usize {
+            if cstr_eq(tab.add(i * ENTRY), path) {
+                return Ok(file(tab, i));
+            }
+            i += 1;
+        }
+        Err(E_NOT_FOUND)
+    }
 }

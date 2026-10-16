@@ -19,10 +19,33 @@ store. The scripts reach the screens and replies named in the last column (frame
 
 What this does not show **[O]**: sample recording and delete (no audio input), Transfer over real USB (the USB hardware is
 not modelled; MidiRpc enters at the firmware's USB receive callback), the startup menu (EMPTY RESET and FACTORY RESET need
-FUNC held at power-up; a probe input is timed from ready), writing RPCs (Data write, file write, OS upgrade were not sent),
-the Data object RPC payloads (below), DN2 1.12 and DT2 1.17 (the same tools run them: `arena_safety suite IMAGE`). A pass is
-evidence for the paths run, not a proof; the static check of the arena (refscan, no absolute references) is still open in the
-plan.
+FUNC held at power-up; a probe input is timed from ready), the Data object write RPCs (refused without an active transfer,
+below) and the payload of a Data read. A pass is evidence for the paths run, not a proof.
+
+**Second pass, 2026-10-16 [D]** (lane b, branch `runtime/digikit-runtime` at 9319a02): the same suite on the other two images
+and again on the first two, a patched run per image, one new script and the static check (sections below). Results:
+
+| image | stock suite (card) | with `core/runtime` patched in | static check |
+|---|---|---|---|
+| dt2-1.16 | 16/16 PASS (samples card) | 16/16 PASS | no reference |
+| dt2-1.17 | 16/16 PASS | 17/17 PASS | no reference |
+| dn2-1.11 | 15/15 PASS | 15/15 PASS | no reference |
+| dn2-1.12 | 15/15 PASS | 16/16 PASS | no reference |
+
+0 write events into `cf.expansion`, 0 flush hits and 0 card sectors in the module store in every run; `midirpc_write` adds
+one run per image (17 and 16 scripts). The frames of the 1.17 and 1.12 runs (38 and 36 frames) have the same SHA-256 as the
+1.16 and 1.11 goldens, so the same screens were reached (the golden file holds 1.16 and 1.11 only). The 1.16 re-run needs the
+card built from `samples/` as above (`plusdrive build samples/ -o ...`): the shared `out/plusdrive/dt2.img` of Em's tree lists
+other files and fails the file-list frames, not the safety checks. Instruction counts moved by under 0.1 % against the
+first pass (1,312,595,928 against 1,313,345,912 for `boot`): the card and the build changed. The counts of a pair (1.16 and
+1.17, 1.11 and 1.12) are equal because the scripts are timed from the base image's ready state.
+
+Patched runs: `arena_safety suite IMAGE --syx OUT.syx --plan OUT.plan.json`, the image from `pk_dkrt.patch` (module
+`core/runtime`), `DIGI_WRITE_WATCH_ALLOW_PC` = the placed range (`cf.expansion` offset 0 for 602,324 bytes: the runtime's
+code, data and its 512 KiB static arena). The canary is off (the fill would overwrite the module); the watch still covers the
+whole region, so the arena static is watched against firmware stores. `per_pc` and `per_dma` are empty in all 64 patched runs: the runtime did
+not store into its own range either (it only hooks the UI loop; loading a module is the `pk_dkrt proof`, finding 29). The
+suite does not load a module: write-watch with a loaded module is the Phase 3 gate.
 
 ## Runs
 
@@ -51,6 +74,7 @@ sectors): the firmware writes the working project region at every boot (DT2: 0x5
 | din_midi | 1201345735 | 1035728787 | 0 | 28685 / 25177 | 0 | 28 MIDI DIN bytes at wire rate: note on/off, CC, Sample Dump inquiry, a MidiRpc Ping (28 interrupts, parser hit 28 times on DT2) |
 | midirpc_info | 1376345755 | 1210728810 | 0 | 28685 / 25177 | 0 | MidiRpc over the USB callback: Ping, SoftwareVersion, DeviceUID, StorageSpace, TempoRead, Query, Screenshot |
 | midirpc_files | 1296345759 | 1130728812 | 0 | 28685 / 25177 | 0 | MidiRpc ReadDir /, ReadDir /factory, DataList x2, DataReadOpen |
+| midirpc_write | 1376047546 (1.17, patched) | 1210728794 (1.11) | 0 | 29069 / 25177 | 0 | MidiRpc FsSample open for write, write, close, DataWriteOpen, DataWritePartial, ReadDir (see "Write RPCs") |
 
 Write events and flush hits were 0 in every run and the canary never changed. No run wrote a sector in 0x38000-0x3E000.
 
@@ -138,3 +162,54 @@ DT2 and DN2 except where noted. Read from the OLED frames of the runs (the frame
   on DN2; why is **[O]**. The write-watch itself is not affected.
 - The boot writes about 14 MiB of the working project at every start (DT2 28,685 sectors, DN2 25,177): a host that keeps the
   card overlay must expect it.
+
+## Static check of the arena **[D]**
+
+`uv run python -m tools.coldfire.arena_safety static IMAGE...` (`static_check`): a linear sweep of the MAIN OS image with
+`tools/coldfire/refscan.py` for every absolute operand inside `cf.expansion` (the cached view and the +0x08000000 uncached
+view), for immediates inside the module store as sector numbers (0x38000-0x3E000), and `cf.py` for call and data references
+into the range from the Ghidra-derived database (`datarefs`, `edges`; both views). Coverage is the share of swept bytes that
+decoded as instructions; the rest is data and the sweep reads data as code, so most hits are noise and each is classified by
+its context.
+
+| image | coverage | cached view | uncached view | sector immediates | cf datarefs / edges |
+|---|---|---|---|---|---|
+| dt2-1.16 | 96.78 % | 2 hits, both constants | 2 hits, no code | 3, no card use | 0 rows |
+| dt2-1.17 | 96.81 % | 2 hits, both constants | 1 hit, no code | 3, no card use | 0 rows |
+| dn2-1.11 | 96.59 % | 38 hits, constants and data | 34 hits, constants and data | 2, no card use | 0 rows |
+| dn2-1.12 | 96.61 % | 37 hits, constants and data | 34 hits, constants and data | 2, no card use | 0 rows |
+
+Every hit is not an address (read in the disassembly around it on dt2-1.16 and dn2-1.11; the others are the same code at a
+different address):
+
+- `move.l #$47efffff,d0` / `movea.l #$47efffff,a0` (DT2 0x4017cef2, 0x4017d48c; DN2 0x4017279a, 0x40172d34), each followed by
+  `#$e0000000`: the double 0x47efffffe0000000 (the largest float as a double), in the float conversion code.
+- `#$474e5543` (DN2 0x401cf974): the ASCII "GNUC" of the C++ exception class tag, followed by `#$432b2b00` ("C++").
+- DT2 0x40115944 (`addi.l #$4fefffe4`): a desynchronised decode; the bytes `4fef ffe4` are `lea -28(a7),a7`, a function
+  prologue. DN2 0x4001d96c (`ori.l #$47f94003`): the table of offsets after `jmp (pc,d0.l)`, read as code.
+- DN2 `#$4f000000` (0x40178ebe, 0x40178ee4): the float 2^31. DT2 0x40298fbe and the other DN2 hits (0x4023xxxx-0x4028xxxx,
+  outside every function of the dump, with operands such as `([$4f352c8e,a1],d2.l,$b2e4379)` that no compiler emits):
+  tables after the code, read as instructions. The DN2 hits come in two copies of the same bytes. I did not read each of
+  the roughly 70 of them one by one; the function test (inside a dumped function or not) and the operand shapes sort them.
+- Sector immediates: `cmpi.l #$3988e,d2` (DT2 0x4017da7e) is a mantissa compare in the same math code; the rest are data.
+  The other sector hits (DT2 0x4026df9a, 0x4028865e, DN2 0x40284842) are invalid operand shapes in the data area. No
+  immediate in 0x38000-0x3E000 is used as a card sector. (The neighbours 0x50000 and 0x58000 are used; I did not map them.)
+
+The Ghidra database has no data or call reference into either view, on all four images. **Limits [O]:** the sweep and the
+database see absolute addresses only. An address that is computed (a base plus an index, or a pointer read from memory) is
+invisible to both; so the dynamic runs are the evidence for those, and they found no store. The sweep also covers the MAIN OS section only
+(not the updater section, which does not run in these paths), and 3 % of the bytes did not decode.
+
+## Write RPCs (item 3) **[D]**
+
+`midirpc_write` (`panel_script.RPC_WRITE`, in the suite) sends writing requests through the USB callback. The FsSample file
+write works on DT2: `FsSampleOpenFileForWrite 0x40` with the path `/arenaprobe.wav` creates the file (the later `ReadDir /`
+lists it; the overlay grows by 384 sectors, none in the module store), `FsSampleWriteFileV1 0x42` with `{handle 0, offset 0,
+length 1024, data}` and `Close 0x41` answer with zero status, and `FsSampleWriteFileV2 0x46` answers "File is not open". The
+request layout is the guess of docs/MIDI-SYSEX-RPC.md section 6; the replies fit it, but I did not find the 1024 data bytes in
+the overlay afterwards (the data may be packed 7-bit, or flushed later), so that the data is stored is **[O]**. DN2 has no
+FsSample handler (no reply, like ReadDir). The Data object writes are refused on both devices: `DataWriteOpen 0x57` with a
+path gets "Unable to handle path", `DataWritePartial 0x58` gets "File transfer is inactive". So a Data write needs an
+active transfer, which the USB Transfer mode of the real device starts and the emulator does not; sending one needs that state
+and the undocumented object payload. Missing for the Data writes **[O]**: the transfer-start request, the payload layout
+of 0x57, and USB itself. Their handlers run behind the same two refusals in every run.

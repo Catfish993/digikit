@@ -16,6 +16,7 @@ use dkrt_sdk::*;
 
 mod arena;
 mod loader;
+pub mod registry;
 mod sha256;
 mod store;
 
@@ -87,6 +88,9 @@ pub struct State {
 
 #[no_mangle]
 pub static mut DKRT_STATE: State = unsafe { core::mem::zeroed() };
+/// The store path each module record was loaded from (kept apart from `State`, whose layout the proof tools peek).
+#[no_mangle]
+pub static mut DKRT_PATHS: [[u8; 64]; MAX_MODULES] = [[0; 64]; MAX_MODULES];
 #[no_mangle]
 pub static mut DKRT_MAILBOX: Mailbox = Mailbox {
     cmd: 0,
@@ -382,6 +386,7 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
                 o.base = m.base;
                 o.size = m.size;
                 o.slots = m.slot_mask;
+                o.path = (*addr_of!(DKRT_PATHS))[i];
                 return OK;
             }
             seen += 1;

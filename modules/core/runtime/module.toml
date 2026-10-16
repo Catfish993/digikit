@@ -21,6 +21,8 @@ conflicts = []
 path = "build/runtime.dko.json"
 sources = ["src/rs/Cargo.toml"]
 place = "cf.expansion"
+# The run-time registry's table of addresses (core/dynreg); 0 when core/dynreg is not in the image.
+optional = ["dynreg_info"]
 
 [object.externs]
 fw_block_read = "dkrt.fw.block_read"

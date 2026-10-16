@@ -100,7 +100,9 @@ def sharc_object(sources: list[Path], include_dirs: list[Path] | None = None) ->
                 "kind": "bss" if bss else "data",
                 "align": align,
                 "size": len(blob),
-                "hex": blob.hex(),
+                "hex": ""
+                if bss
+                else blob.hex(),  # bss is reserved by size (dko.rs does not read its hex)
             }
         )
     symbols = []

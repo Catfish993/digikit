@@ -1674,6 +1674,47 @@ mark = "D"
 rule = "core/runtime:cf_words"
 
 [[anchor]]
+name = "dl.cf.frame_call"
+cpu = "cf"
+kind = "code"
+addr = 0x40025e9e
+len = 6
+sha256 = "75c101f1855de1d64834d65762783556855c2cb36693a73d474ba1765e44d883"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.frame_fn"
+cpu = "cf"
+kind = "code"
+addr = 0x400cf7be
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.cf.tx_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x400cf850
+len = 4
+sha256 = "26046ae785e42fcb7c48f3b1700906e89bd2fcdd4c10eb93de1e11a634b5ed19"
+mark = "D"
+rule = "core/dsp-link:cf_func"
+
+[[anchor]]
+name = "dl.dsp.block_tail"
+cpu = "sharc"
+kind = "code"
+addr = 0x28393cbe
+pm = 0x1c9e5f
+len = 6
+sha256 = "9489f54d1cb1ed596c0cee43d27a53ed20b01e92623d4147dec3e3c12f31c24b"
+mark = "D"
+rule = "core/dsp-link:sharc_func"
+
+[[anchor]]
 name = "dsp.fx.sidechain_filter_word"
 cpu = "sharc"
 kind = "value"

@@ -32,6 +32,8 @@ const H_INIT: usize = 0x80;
 const H_FINI: usize = 0x84;
 const H_SLOT_OFF: usize = 0x88;
 const H_SLOT_N: usize = 0x8c;
+const H_REG_OFF: usize = 0x90;
+const H_REG_SIZE: usize = 0x94;
 
 unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
@@ -162,6 +164,16 @@ pub unsafe fn load(path: *const u8) -> i32 {
         mask |= 1 << idx;
         i += 1;
     }
+    // `register` records (machines, parameters): validated now, written after the copy
+    let (reg_off, reg_size) = (rd32(f.add(H_REG_OFF)), rd32(f.add(H_REG_SIZE)));
+    if !in_file(reg_off, reg_size, size) {
+        return E_FORMAT;
+    }
+    let reg = f.add(reg_off as usize);
+    let r = crate::registry::check(reg, reg_size);
+    if r != OK {
+        return r;
+    }
     // already loaded; a free record
     let mut rec: usize = MAX_MODULES;
     i = 0;
@@ -220,6 +232,13 @@ pub unsafe fn load(path: *const u8) -> i32 {
         m.name[i] = *name.add(i);
         i += 1;
     }
+    let dst = &mut (*addr_of_mut!(crate::DKRT_PATHS))[rec];
+    let plen = cstr_len(path, 63);
+    i = 0;
+    while i < 64 {
+        dst[i] = if i < plen { *path.add(i) } else { 0 };
+        i += 1;
+    }
     m.version = rd32(f.add(H_VERSION));
     m.base = base;
     m.size = total;
@@ -235,11 +254,21 @@ pub unsafe fn load(path: *const u8) -> i32 {
         fns[idx] = fnaddr;
         i += 1;
     }
+    // registry rows before `init` (which may reuse the staging buffer through `store_read`)
+    let owner = rec as u8 + 1;
+    let r = crate::registry::apply(owner, reg, reg_size);
+    if r != OK {
+        crate::registry::remove(owner);
+        m.used = 0;
+        arena::free(mem);
+        return r;
+    }
     if init != NONE {
         let call: unsafe extern "C" fn(*const Api) -> i32 =
             core::mem::transmute((base + init) as usize);
         let r = call(addr_of!(dkrt_api));
         if r != 0 {
+            crate::registry::remove(owner);
             m.used = 0;
             arena::free(mem);
             return E_INIT;
@@ -313,6 +342,7 @@ pub unsafe fn unload(name: *const u8) -> i32 {
         let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(m.fini as usize);
         call(addr_of!(dkrt_api));
     }
+    crate::registry::remove(rec as u8 + 1);
     arena::free(m.base as *mut u8);
     m.used = 0;
     m.slot_mask = 0;

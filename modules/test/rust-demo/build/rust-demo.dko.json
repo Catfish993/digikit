@@ -351,13 +351,13 @@
    "value": 0
   },
   {
-   "global": true,
+   "global": false,
    "name": "__muldi3",
    "section": ".text.__muldi3",
    "value": 0
   },
   {
-   "global": true,
+   "global": false,
    "name": "__udivdi3",
    "section": ".text.__udivdi3",
    "value": 0

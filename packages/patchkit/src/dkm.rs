@@ -97,6 +97,35 @@ fn valid_name(n: &str) -> bool {
 /// Pack a ColdFire object. Exports by name: `dkm_init`, `dkm_fini`, `dkm_slot_<n>` (n < 8). Every other undefined symbol is
 /// an import resolved by the runtime's table at load time; only 32-bit absolute relocations may name one.
 pub fn pack(obj: &Dko, o: &Options) -> Result<Vec<u8>> {
+    pack_with(Some(obj), &[], o)
+}
+
+/// The image of a data-only module: `dkm_init` is `moveq #0,d0; rts`. The `register` records do the work.
+const STUB_IMAGE: [u8; 4] = [0x70, 0x00, 0x4e, 0x75];
+
+/// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
+pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> {
+    let stub = Dko {
+        format: crate::dko::FORMAT,
+        arch: "cf".into(),
+        source_sha256: "0".repeat(64),
+        toolchain: Default::default(),
+        sections: vec![crate::dko::DkoSection {
+            name: ".text".into(),
+            kind: "text".into(),
+            align: 4,
+            size: STUB_IMAGE.len() as u32,
+            hex: hex(&STUB_IMAGE),
+        }],
+        symbols: vec![crate::dko::DkoSymbol {
+            name: "dkm_init".into(),
+            section: Some(".text".into()),
+            value: 0,
+            global: true,
+        }],
+        relocs: vec![],
+    };
+    let obj = obj.unwrap_or(&stub);
     if obj.arch != "cf" {
         return Err(err!(
             "a .dkm holds ColdFire code; the object is {}",
@@ -209,7 +238,7 @@ pub fn pack(obj: &Dko, o: &Options) -> Result<Vec<u8>> {
     let reloc_off = import_off + imports.len() * IMPORT_LEN;
     let slot_off = reloc_off + relocs.len() * 8;
     let reg_off = slot_off + slots.len() * 8;
-    let reg_size = 0usize; // `register` records: the schema lane fills this; empty in v0
+    let reg_size = reg.len();
     let image_off = align_up(reg_off + reg_size, 16);
     let total = image_off + image.len();
     if total > MAX_FILE {
@@ -251,6 +280,7 @@ pub fn pack(obj: &Dko, o: &Options) -> Result<Vec<u8>> {
         put(&mut f, slot_off + i * 8, *n);
         put(&mut f, slot_off + i * 8 + 4, *v);
     }
+    f[reg_off..reg_off + reg_size].copy_from_slice(reg);
     f[image_off..].copy_from_slice(&image);
     let sha = file_sha(&f);
     f[H_SHA..H_SHA + 32].copy_from_slice(&sha);

@@ -1,6 +1,6 @@
 # digikit runtime: load modules from the +Drive at run time
 
-Status: design agreed 2026-10-16; Phase 0 done (docs/findings/23-digikit-runtime-spikes.md); Phase 1 built, with the gaps listed under Phase 1. Branch `runtime/digikit-runtime`; commits after a green verify (Em, 2026-10-16).
+Status: design agreed 2026-10-16; Phase 0 done (docs/findings/23-digikit-runtime-spikes.md); Phase 1 built, with the gaps listed under Phase 1; Phases 3 and 4 gates done in the emulator (menu joined to the runtime). Branch `runtime/digikit-runtime`; commits after a green verify (Em, 2026-10-16).
 
 ## Goal
 
@@ -163,11 +163,18 @@ after the next boot.
   Not covered: sample record and delete (no audio input in the emulator), the startup menu (FUNC held at power-up), real USB.
 - [x] Run them with the S5 write-watch on `cf.expansion` and with the canary (tools/coldfire/arena_safety.py): 0 write
   events, 0 flush hits, canary intact, on DT2 1.16 (16 runs) and DN2 1.11 (15 runs).
-- [ ] Static check of the arena with tools/coldfire/refscan.py and tools/coldfire/cf.py (no absolute references).
+- [x] Static check of the arena with tools/coldfire/refscan.py and tools/coldfire/cf.py (`arena_safety static IMAGE`): no absolute
+  reference into `cf.expansion` (either view) or to the module store sectors on dt2-1.16/1.17 and dn2-1.11/1.12; coverage
+  96.6 to 96.8 %; every hit read as a constant or data (finding 25). Computed addresses are covered by the dynamic runs only.
 - [x] The card overlay after each scenario has no sector in the module store (0x38000-0x3E000).
 
+- [x] DT2 1.17 and DN2 1.12 suites, the 1.16/1.11 re-run, and one suite per image with `core/runtime` patched in (ALLOW_PC = its
+  range): all PASS, 0 write events (finding 25, second pass).
+- [x] MidiRpc write calls: the FsSample file write runs and writes nothing in the store; the Data writes are refused without an
+  active transfer (open: that transfer state).
+
 Gate: no write into the arena by firmware on any scenario; result recorded in docs/findings/25-digikit-safety.md. Open
-before the arena is used: the static check, DT2 1.17 and DN2 1.12 runs (`arena_safety suite IMAGE`), sample recording.
+before the arena is used: sample recording and delete (no audio input in the emulator), the Data write RPCs.
 
 ### Phase 3: runtime v0 (no UI)
 
@@ -195,19 +202,37 @@ Gate: load, run and unload in the emulator on DT2 1.16 and DN2 1.11, write-watch
   LOAD MODULES lists the `.dkm` files of the card store as `[ ]`/`[X]` rows (a label rebuild, not a draw callback), YES ticks, the
   last row LOAD calls `dkrt_load` through the table `DKRT_API` that the runtime fills (no runtime: NO RUNTIME). Proof in the emulator on
   all four images (docs/findings/28-digikit-menu.md, `tools/coldfire/digikit_menu_proof.py`).
-- [ ] Error messages beyond the answer row (a popup), unload from the menu, the `DkrtStatus` layout agreed with `core/runtime`.
+- [x] Joined to the runtime (finding 28, "Joined to the runtime"): the menu `requires` `core/runtime` and calls `dkrt_load`, `dkrt_unload`,
+  `dkrt_status` and `dkrt_module` by symbol (no `DKRT_API`, no stand-in module); `DkrtStatus`, `DkrtModule`, result codes and the card
+  store reader are one definition in `dkrt-sdk`. Rows show `[X]` and a loaded marker; LOAD loads ticked and unloads unticked loaded
+  rows; errors show the runtime's result text; ABOUT shows ABI, loaded count and free KB.
+- [x] Rust builds do not depend on the checkout path (`pk_rust.stage_crate`; finding 29 update).
+- [ ] A popup for errors (the answer row only now), an UNLOAD item separate from the ticks, a file name in the failure text.
 
-Gate: the test module loads and unloads from the menu in the emulator (the stand-in runtime is loaded from the menu; the real
-runtime is Phase 3).
+Gate: done. The dyn-demo module loads from SETTINGS > DIGIKIT > LOAD MODULES on DT2 1.16, DT2 1.17, DN2 1.11 and DN2 1.12; its counter
+rises; ABOUT shows loaded 1; the row is marked; unticking and LOAD unloads it, the counter stops and `fini` ran; ABOUT shows loaded 0;
+write-watch 0 events, flush check 0 hits (`tools/coldfire/digikit_menu_proof.py`).
 
 ### Phase 5: machines
 
-- [ ] ColdFire side: fill reserved machine, param and page rows at run time.
+- [~] ColdFire side, Digitakt II 1.16/1.17: fill reserved machine and param rows at run time (`core/dynreg`, `registry.rs`, `.dkm` `register`
+  records, `patchkit pack --device`; docs/design/digikit-registry.md, finding 30). A data-only clone of SLICE (`test/dyn-xslice`) is in the SRC
+  machine list after the load, is put on a track, and is gone after the unload; refusals write nothing; 0 stray writes, 0 flush hits. Open: page
+  rows and Digitone II, the DSP selector word of a run-time machine, a refusal to unload a machine a track uses.
 - [ ] SHARC side, both devices: the runtime sends the DSP code in the frame tail (S4b); a static L2 stub at the
   block handler copies it into free L2, checks it, invalidates the instruction cache range and fills the voices
   registry. Optional faster load: the full-frame borrow.
+  - [x] The channel: `core/dsp-link` (finding 31). ColdFire `dl_send`/`dl_poll`, a DSP stub at the end of the block
+    handler, check, destination limits, cache invalidate (full, `FLUSH CACHE` and `ICAINV`; not modelled by the
+    emulator), acknowledgement through the reply record. DT2 1.16/1.17 and DN2 1.11/1.12: 4 and 64 KiB byte exact,
+    964 KB/s and 71.6 KB/s, PCM bit-identical to the idle image, +23/+26 DSP instructions per block.
+  - [ ] The runtime calls `dl_send` for a module's DSP object and fills the voices registry (needs the module format to
+    carry DSP code linked for the area, and the area's address from `_dl_area`).
+  - [ ] Hardware: the cache sequence and the record offset `0x60` (finding 31, open points).
+  - [ ] Optional: the full-frame borrow.
 - [ ] Port `machines/pluck` through the SDK as the proof (ColdFire and DSP sides).
-- [ ] Projects that name a machine that is not loaded fall back to the gap row.
+- [x] Projects that name a machine that is not loaded fall back to the gap row (the type byte stays; the row is a clone of type 0 with no
+  knobs; the SRC page frame equals that of a never-filled gap row; finding 30).
 
 Gate: a machine module selected in the menu plays in the emulator on both devices.
 

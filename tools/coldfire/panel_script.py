@@ -53,9 +53,15 @@ class Script:
         self.t += gap
         return self
 
-    # host write (test scaffolding: the runtime stand-in's pointers into the menu module's table)
+    # host write (test scaffolding)
     def poke(self, addr: int, value: int) -> Script:
         self.events.append((self.t, "--poke %d:%#x:%#x" % (self.t, addr, value)))
+        return self
+
+    # host read at a time (`regions_probe --peek-at`): the longword at `addr`, or with `via` at (longword at `addr`) + via
+    def peek_at(self, addr: int, via: int | None = None) -> Script:
+        spec = "%d:%#x" % (self.t, addr) + ("" if via is None else ":%d" % via)
+        self.events.append((self.t, "--peek-at " + spec))
         return self
 
     # MIDI
@@ -253,29 +259,37 @@ def _to_digikit(s: Script) -> Script:
     return s.tap(YES, gap=40_000_000).frame("digikit_main")
 
 
+DG = 60_000_000  # a DIGIKIT row action rebuilds the list; the OLED shows it after about this many instructions
+KEY = 15_000_000  # a cursor move
+RUNTIME_LOG_VALUE = (
+    808 + 24
+)  # DKRT_STATE + this: the value of log entry 0 = the address of test/dyn-demo's DYN_COUNTER
+
+
+def _to_modules(s: Script) -> Script:
+    """From the DIGIKIT view with the cursor on LOAD MODULES: open the list (rescans the store)."""
+    return s.tap(YES, gap=DG)
+
+
 @script({"frames": ["settings_digikit", "digikit_main"]})
 def digikit_main() -> Script:
     """SETTINGS list scrolled to DIGIKIT, then DIGIKIT opened."""
     return _to_digikit(boot())
 
 
-DG = 60_000_000  # a DIGIKIT row action rebuilds the list; the OLED shows it after about this many instructions
-
-
-def digikit_load_script(pokes: list[tuple[int, int]] | None = None) -> Script:
-    """DIGIKIT > MODULES (a.dkm, b.dkm, LOAD): tick a, tick b, LOAD, untick a, LOAD again.
-    `pokes` (address, value) are host writes at the start: the runtime stand-in's pointers in DKRT_API, magic last."""
+def digikit_errors_script() -> Script:
+    """DIGIKIT > MODULES on a card with bad-import.dkm, bad-sha.dkm and dyn-demo.dkm: tick the two broken ones, LOAD (the answer
+    names the first failure with the runtime's result text); untick one, LOAD again (a different failure)."""
     s = boot()
-    for addr, value in pokes or []:
-        s.poke(addr, value).wait(1_000_000)
     _to_digikit(s)
-    s.tap(YES, gap=DG).frame("load_list")
-    s.tap(YES, gap=DG).frame("tick_a")
-    s.tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame("tick_ab")
-    s.tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame("load_result")
-    s.tap(UP, gap=15_000_000).tap(UP, gap=15_000_000).tap(YES, gap=DG).frame("untick_a")
-    s.tap(DOWN, gap=15_000_000).tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame(
-        "load_result2"
+    _to_modules(s).frame("load_list")
+    s.tap(YES, gap=DG).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("ticked_two")
+    s.tap(DOWN, gap=KEY).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("answer_two")
+    s.tap(UP, gap=KEY).tap(UP, gap=KEY).tap(UP, gap=KEY).tap(YES, gap=DG).frame(
+        "unticked_first"
+    )
+    s.tap(DOWN, gap=KEY).tap(DOWN, gap=KEY).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame(
+        "answer_one"
     )
     return s.wait(20_000_000)
 
@@ -286,32 +300,83 @@ def digikit_load_script(pokes: list[tuple[int, int]] | None = None) -> Script:
             "settings_digikit",
             "digikit_main",
             "load_list",
-            "tick_a",
-            "tick_ab",
-            "load_result",
-            "untick_a",
-            "load_result2",
+            "ticked_two",
+            "answer_two",
+            "unticked_first",
+            "answer_one",
         ]
     }
 )
-def digikit_load() -> Script:
-    """DIGIKIT > MODULES with no runtime: LOAD answers NO RUNTIME."""
-    return digikit_load_script()
+def digikit_errors() -> Script:
+    return digikit_errors_script()
 
 
-def digikit_about_script(pokes: list[tuple[int, int]] | None = None) -> Script:
+def digikit_gate_script(state: int | None = None) -> Script:
+    """The Phase 4 gate: DIGIKIT > MODULES > tick dyn-demo > LOAD, ABOUT (loaded 1), back to MODULES (the row is marked
+    loaded), untick, LOAD (unloads), ABOUT (loaded 0). `state` is the address of DKRT_STATE: the host reads the module's counter
+    (a longword in the arena that the runtime logged) at five times, and its magic and the marker `fini` leaves."""
+
+    def counter(s: Script, off: int) -> None:
+        if state is not None:
+            s.peek_at(state + RUNTIME_LOG_VALUE, off)
+
+    s = boot()
+    _to_digikit(s)
+    _to_modules(s).frame("load_list")
+    s.tap(DOWN, gap=KEY).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("ticked")
+    s.tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("loaded")
+    counter(s, 0)
+    counter(s, 4)
+    s.wait(100_000_000)
+    counter(s, 4)
+    s.wait(100_000_000)
+    counter(s, 4)
+    s.tap(NO, gap=G).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("about_loaded")
+    s.tap(NO, gap=G).tap(UP, gap=KEY)
+    _to_modules(s).frame("marked_loaded")
+    # the view keeps its cursor: it is on LOAD
+    s.tap(UP, gap=KEY).tap(YES, gap=DG).frame("unticked")
+    s.tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("unloaded")
+    counter(s, 4)
+    counter(s, 8)
+    s.wait(100_000_000)
+    counter(s, 4)
+    counter(s, 8)
+    s.tap(NO, gap=G).tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("about_unloaded")
+    return s.tap(NO, gap=G)
+
+
+@script(
+    {
+        "frames": [
+            "settings_digikit",
+            "digikit_main",
+            "load_list",
+            "ticked",
+            "loaded",
+            "about_loaded",
+            "marked_loaded",
+            "unticked",
+            "unloaded",
+            "about_unloaded",
+        ]
+    }
+)
+def digikit_gate() -> Script:
+    return digikit_gate_script()
+
+
+def digikit_about_script() -> Script:
     """DIGIKIT > ABOUT, then NO back to the DIGIKIT view."""
     s = boot()
-    for addr, value in pokes or []:
-        s.poke(addr, value).wait(1_000_000)
     _to_digikit(s)
-    s.tap(DOWN, gap=15_000_000).tap(YES, gap=DG).frame("about")
+    s.tap(DOWN, gap=KEY).tap(YES, gap=DG).frame("about")
     return s.tap(NO, gap=G).frame("back_main")
 
 
 @script({"frames": ["settings_digikit", "digikit_main", "about", "back_main"]})
 def digikit_about() -> Script:
-    """DIGIKIT > ABOUT (no runtime), then NO back to the DIGIKIT view."""
+    """DIGIKIT > ABOUT (runtime ABI, loaded count, free KB), then NO back to the DIGIKIT view."""
     return digikit_about_script()
 
 
@@ -341,6 +406,30 @@ RPC_FILES = [
         0x54,
         b"/projects/001\x00",
     ),  # DataReadOpen (payload layout not documented: a path)
+]
+
+
+def _u32s(*v: int) -> bytes:
+    return b"".join(x.to_bytes(4, "big") for x in v)
+
+
+# Writing RPC (shape from docs/MIDI-SYSEX-RPC.md section 6: open by path, then {handle, offset, length, data}; the handle
+# layout is a guess that the replies confirm: open, write and close answer with status zero, a second write answers
+# "File is not open"). The Data object writes (0x57, 0x58) are refused: "Unable to handle path", "File transfer is inactive".
+RPC_WRITE = [
+    (0x40, b"/arenaprobe.wav\x00"),  # FsSampleOpenFileForWrite
+    (
+        0x42,
+        _u32s(0, 0, 1024) + b"\x55" * 1024,
+    ),  # FsSampleWriteFileV1: handle 0, offset 0, 1024 bytes
+    (
+        0x46,
+        _u32s(0, 1024, 8) + b"RIFFWAVE",
+    ),  # FsSampleWriteFileV2: answers "File is not open"
+    (0x41, _u32s(0)),  # close
+    (0x57, b"/projects/002\x00"),  # DataWriteOpen
+    (0x58, b"\x00" * 8),  # DataWritePartial
+    (0x10, b"/\x00"),  # ReadDir: the new file is listed
 ]
 
 
@@ -378,6 +467,13 @@ def midirpc_info() -> Script:
 def midirpc_files() -> Script:
     """MidiRpc ReadDir (and the undocumented Data calls as path guesses) over the USB callback."""
     return _rpc(RPC_FILES)
+
+
+@script({"usb_replies": {"dt2": [64, 66, 70, 65, 87, 88, 16], "dn2": [87, 88]}})
+def midirpc_write() -> Script:
+    """MidiRpc writes over the USB callback: a sample file is created and written by path (FsSample), the Data
+    object writes are refused."""
+    return _rpc(RPC_WRITE)
 
 
 @script({"din_bytes": 28, "pcs": {"0x4011d1f6": 28}})

@@ -115,16 +115,50 @@ def test_plan_helpers(tmp_path):
                 "regions": {"cf.expansion": [0x1000, 0x100000]},
                 "symbols": {
                     "core/digikit-menu@0.1.0:.sec..bss._RNvCsAbC_15pk_digikit_menu4TICK": 0x47E8C100,
-                    "core/digikit-menu@0.1.0:DKRT_API": 0x47E8C200,
-                    "core/digikit-menu@0.1.0:.sec..bss.DKRT_API": 0x47E8C200,
+                    "core/runtime@0.1.0:DKRT_STATE": 0x47E8C200,
                 },
             }
         )
     )
     p = digikit_menu_proof.Plan(plan)
-    assert p.addr("TICK") == 0x47E8C100 and p.addr("DKRT_API") == 0x47E8C200
+    assert p.addr("TICK") == 0x47E8C100 and p.addr("DKRT_STATE") == 0x47E8C200
     lo, hi = arena_safety.expansion("dt2-1.16")
     assert arena_safety.plan_allow_pc(plan) == "0x%x-0x%x" % (lo, lo + 0x1000)
+
+
+def test_peek_at_parser(tmp_path):
+    (tmp_path / "probe.stdout").write_text(
+        '{"peek_at":"0x47e8c100","t":5,"value":Some(7)}\n{"peek_at":"0x47e8c100","t":9,"value":None}\n'
+        '{"peek":"0x47e8c104","value":Some(1)}\n'
+    )
+    assert digikit_menu_proof.peek_ats(tmp_path) == [7, None]
+
+
+def test_menu_calls_the_runtime_by_symbol():
+    """The menu `requires` core/runtime and names its four ABI functions as undefined symbols; the runtime exports them. No
+    table, no stand-in module (finding 28)."""
+    menu = json.loads((MODULE / "build/digikit-menu-rs.dko.json").read_text())
+    rt = json.loads((ROOT / "modules/core/runtime/build/runtime.dko.json").read_text())
+    names = {s["name"] for s in menu["symbols"]}
+    wanted = {"dkrt_load", "dkrt_unload", "dkrt_status", "dkrt_module"}
+    assert wanted <= {r["symbol"] for r in menu["relocs"]}
+    assert wanted.isdisjoint(
+        {s["name"] for s in menu["symbols"] if s["global"] and s.get("section")}
+    )
+    assert wanted <= {s["name"] for s in rt["symbols"] if s["global"]}
+    assert "DKRT_API" not in names
+    assert tomllib.loads((MODULE / "module.toml").read_text())["module"][
+        "requires"
+    ] == ["core/runtime"]
+    assert not (ROOT / "modules" / "test" / "digikit-rt-stub").exists()
+
+
+def test_the_menu_and_the_runtime_share_the_store_reader():
+    """One reader (`dkrt_sdk::store`): neither crate has its own table or header parser."""
+    menu = (MODULE / "src/rs/src/lib.rs").read_text()
+    rt = (ROOT / "modules/core/runtime/src/rs/src").glob("*.rs")
+    assert "store::open" in menu and 'b"DKST"' not in menu and "0x444b_5354" not in menu
+    assert not any("0x444b_5354" in f.read_text() for f in rt)
 
 
 def test_peek_parser(tmp_path):
@@ -137,8 +171,29 @@ def test_peek_parser(tmp_path):
 
 
 def test_digikit_scripts_are_registered():
-    for name in ("digikit_main", "digikit_load", "digikit_about"):
+    for name in ("digikit_main", "digikit_about"):
         s = panel_script.SCRIPTS[name]()
         assert [n for n, _ in s.frames][0] == "settings_digikit"
-    s = panel_script.digikit_load_script([(0x47E8C000, 1)])
-    assert any(spec.startswith("--poke") for _t, spec in s.events)
+    for name in ("digikit_errors", "digikit_gate"):
+        s = panel_script.SCRIPTS[name]()
+        assert [n for n, _ in s.frames][:2] == ["settings_digikit", "digikit_main"]
+    # the gate reads the module's counter through the runtime's log entry 0 (magic, three samples, then the marker `fini` left), twice more after unload
+    s = panel_script.digikit_gate_script(0x47E8C200)
+    peeks = [spec for _t, spec in s.events if spec.startswith("--peek-at")]
+    assert len(peeks) == 8 and all(":" in p.split()[1] for p in peeks)
+
+
+@pytest.mark.slow
+def test_gate_loads_and_unloads_from_the_menu(tmp_path):
+    """The Phase 4 gate on DT2 1.16 (about 30 s): tick dyn-demo, LOAD, its counter rises, ABOUT, the row is marked loaded,
+    untick, LOAD unloads, its counter stops; write-watch and flush check clean."""
+    if not config.stock("Digitakt_II_OS1.16.syx").exists():
+        pytest.skip("Digitakt_II_OS1.16.syx missing")
+    if not pk_toolchains.codegen_gcc_ready():
+        pytest.skip("Rust-for-ColdFire toolchain not installed")
+    r = subprocess.run(
+        ["uv", "run", "python", "-m", "tools.coldfire.digikit_menu_proof", "run", "--image", "dt2-1.16",
+         "--only", "digikit_gate,digikit_errors"],
+        cwd=ROOT, capture_output=True, text=True, timeout=900,
+    )  # fmt: skip
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]

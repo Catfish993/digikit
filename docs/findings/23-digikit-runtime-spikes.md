@@ -169,6 +169,9 @@ while the card is read (time per 32 KiB page **[O]**).
 - Open **[O]**: how the DSP's 32-bit read combines the first two wire units (choose a magic that cannot occur in
   a stock frame and confirm with a captured frame); that no engine write lands in the record bytes used for the
   acknowledgement; the instruction cache invalidate after the copy.
+  Built and settled in finding 31 (`core/dsp-link`): the byte order is confirmed on captured frames, the
+  acknowledgement cannot go where this section proposed (the DSP rewrites the whole record every block, so the stub
+  runs at the end of the handler instead) **[C]**, and the cache sequence is written down but not exercised by the emulator.
 
 ## S5: emulator write-watch and flush check **[D]**
 

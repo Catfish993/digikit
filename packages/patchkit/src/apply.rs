@@ -861,11 +861,13 @@ pub fn apply_with(
         owner: String,
         dko: &'a Dko,
         externs: &'a BTreeMap<String, String>,
+        optional: &'a [String],
         place: String,
         base: u64,
         cpu: &'static str,
     }
     let no_externs: BTreeMap<String, String> = BTreeMap::new();
+    let no_optional: Vec<String> = vec![];
     let mut placed: Vec<Placed> = vec![];
     for id in &order {
         let m = lib.get(id).unwrap();
@@ -887,6 +889,7 @@ pub fn apply_with(
                     owner: m.tag(),
                     dko,
                     externs: &no_externs,
+                    optional: &no_optional,
                     place: (*region).into(),
                     base,
                     cpu: if dko.arch == "sharc" { SHARC } else { CF },
@@ -921,6 +924,7 @@ pub fn apply_with(
                 owner: m.tag(),
                 dko,
                 externs: &o.externs,
+                optional: &o.optional,
                 place: o.place.clone(),
                 base,
                 cpu,
@@ -1048,6 +1052,9 @@ pub fn apply_with(
                 ext.insert(sy.name.clone(), *v);
             } else if let Some(a) = port.anchor(&aname) {
                 ext.insert(sy.name.clone(), anchor_value(a));
+            } else if !ext.contains_key(&sy.name) && p.optional.contains(&sy.name) {
+                // an optional link to a module that is not selected
+                ext.insert(sy.name.clone(), 0);
             }
         }
         let l = link::link(p.dko, p.base, &ext)?;

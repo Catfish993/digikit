@@ -75,6 +75,7 @@ Numbers can be written as TOML integers or as strings holding an *expression* (s
 | `requires` | module ids that must be selected too (frameworks) |
 | `conflicts` | module ids that must not be selected |
 | `ports` | optional: only these ports, for example `["dt2-1.16", "dt2-1.17"]` (empty: any firmware whose anchors resolve) |
+| `dynamic` | optional, default false: a run-time module. It is never patched into an image (patchkit refuses it); its typed sections are not lowered into rows; `patchkit pack MODULE --device dt2 -o X.dkm` lowers them into the `.dkm` `register` records that the digikit runtime writes into the rows `core/dynreg` reserved (docs/design/digikit-registry.md). Its machine numbers are in `core/machines/types.toml` `[<dev>.dynamic]` |
 
 ```toml
 [module]
@@ -109,6 +110,7 @@ A built object that patchkit places in a region. One module may have several (fo
 | `place` | region: `dsp.l2` (SHARC+ code and data), `cf.expansion` (ColdFire code, data, bss) or `cf.flash_cave` (only the built-in loader) |
 | `devices` | optional: `["dt2"]`, `["dn2"]` or both (default: both) |
 | `[object.externs]` | undefined symbol of the object = anchor name (a symbol named exactly like an anchor needs no entry) |
+| `optional` (key of `[[object]]`) | undefined symbols that resolve to 0 when no selected module defines them (an optional link to another module; the runtime uses it for `core/dynreg`) |
 
 ```toml
 [[object]]
