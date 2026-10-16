@@ -3,6 +3,7 @@
 import { hostMetrics, pcmMetrics } from './runtime-metrics';
 import { LinkClient } from '../sab-link.ts';
 const metrics = hostMetrics('wasm_abi');
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 
 type Abi = Record<string, CallableFunction>;
 let wasm: Abi | undefined;
@@ -101,7 +102,7 @@ function put(bytes: Uint8Array) {
   return pointer;
 }
 function core() {
-  corePromise ??= WebAssembly.instantiateStreaming(fetch('/emulator-core.wasm'), {}).then(({ instance }) => {
+  corePromise ??= WebAssembly.instantiateStreaming(fetch(`${base}emulator-core.wasm`), {}).then(({ instance }) => {
     plain = instance.exports as unknown as Abi;
     wasm ??= plain;
     return plain;
@@ -111,7 +112,7 @@ function core() {
 /** The coupled core is a separate, large file, fetched only when the audio
  * panel loads a coupled session. */
 function sharcCore() {
-  sharcPromise ??= WebAssembly.instantiateStreaming(fetch('/emulator-core-sharc.wasm'), coreImports).then(
+  sharcPromise ??= WebAssembly.instantiateStreaming(fetch(`${base}emulator-core-sharc.wasm`), coreImports).then(
     ({ instance }) => instance.exports as unknown as Abi,
   );
   return sharcPromise;
@@ -135,7 +136,7 @@ const coreImports = {
 };
 /** Cheap availability probe: does not download the large file. */
 function coupledCapable() {
-  capablePromise ??= fetch('/emulator-core-sharc.wasm', { method: 'HEAD' }).then(
+  capablePromise ??= fetch(`${base}emulator-core-sharc.wasm`, { method: 'HEAD' }).then(
     (response) => response.ok,
     () => false,
   );

@@ -1,5 +1,5 @@
 /**
- * Headless throughput bench (dev server only): `/?bench=1&seconds=N[&warmup=S]`.
+ * Headless throughput bench (dev server only): `/emulator/?bench=1&seconds=N[&warmup=S]`.
  * Loads the local coupled inputs, presses Trig 1 as the panel's Trig 1 button
  * does (`tap(25)`), runs the worker flat out until N audio seconds exist and
  * publishes the result on `window.__bench` and as a `BENCH_JSON` console line.

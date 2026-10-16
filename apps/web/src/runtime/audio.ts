@@ -1,4 +1,6 @@
 /** Browser PCM sink for the coupled core: AudioContext + AudioWorklet. */
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+
 export interface AudioStats {
   queuedSeconds: number;
   playing: boolean;
@@ -57,7 +59,7 @@ export class PcmSink {
 
   /** Loads the worklet and returns the port the emulator worker posts PCM to. */
   async open(startSeconds: number): Promise<MessagePort> {
-    await this.context.audioWorklet.addModule('/pcm-worklet.js');
+    await this.context.audioWorklet.addModule(`${base}pcm-worklet.js`);
     this.node = new AudioWorkletNode(this.context, 'pcm-player', { numberOfInputs: 0, outputChannelCount: [2] });
     this.node.connect(this.context.destination);
     this.node.port.onmessage = ({ data }: MessageEvent<AudioStats>) => {

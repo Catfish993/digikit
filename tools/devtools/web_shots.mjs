@@ -112,7 +112,7 @@ const expect = (ok, what) => {
 };
 
 try {
-  await go(`${url}/patch`);
+  await go(`${url}/patch/`);
   await until(`document.querySelectorAll('.card').length > 0`, 'module cards');
   await shot('patch-empty');
   // choose the firmware

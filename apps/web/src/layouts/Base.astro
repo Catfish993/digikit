@@ -1,37 +1,69 @@
 ---
-// Shared page shell: top navigation between the emulator and the patch gallery, theme tokens,
-// and the COI service worker (GitHub Pages cannot send COOP/COEP headers; the worker adds them so
-// SharedArrayBuffer works after the first reload).
+// Shared page shell: fonts, tokens, the site navigation, and the COI service worker (GitHub Pages cannot
+// send COOP/COEP headers; the worker adds them so SharedArrayBuffer works after the first reload).
+import '@fontsource-variable/archivo/wdth.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
+import '@fontsource/silkscreen/400.css';
 import '../styles/site.css';
 interface Props {
   title: string;
-  active: 'emulator' | 'patch';
+  description?: string;
+  active?: 'home' | 'patch' | 'emulator';
+  /** The page fills the window instead of scrolling (the emulator). */
+  fill?: boolean;
 }
-const { title, active } = Astro.props;
+const { title, description, active, fill = false } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const current = (page: Props['active']) => (active === page ? 'page' : undefined);
 ---
 
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0c0e" />
+    {description && <meta name="description" content={description} />}
     <title>{title}</title>
     <script is:inline src={`${base}coi-serviceworker.js`}></script>
   </head>
-  <body>
-    <nav class="topnav" aria-label="Main">
-      <a class="brand" href={base}>
-        digikit
-      </a>
-      <a href={base} aria-current={active === 'emulator' ? 'page' : undefined}>
-        Emulator
-      </a>
-      <a href={`${base}patch`} aria-current={active === 'patch' ? 'page' : undefined}>
-        Patch
-      </a>
-    </nav>
+  <body class:list={{ fill }}>
+    <header class="sitenav">
+      <div class="wrap">
+        <a class="brand" href={base}>
+          <span class="brand-mark" aria-hidden="true">
+            <i></i>
+            <i></i>
+            <i></i>
+            <i></i>
+          </span>
+          digikit
+        </a>
+        <nav class="nav-links" aria-label="Main">
+          <a href={`${base}patch/`} aria-current={current('patch')}>
+            Patch
+          </a>
+          <a href={`${base}emulator/`} aria-current={current('emulator')}>
+            Emulator
+          </a>
+        </nav>
+        <a class="nav-source" href="https://github.com/ElekLabs/digikit">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M5.5 4.5L2 8L5.5 11.5M10.5 4.5L14 8L10.5 11.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            ></path>
+          </svg>
+          <span>Source</span>
+        </a>
+      </div>
+    </header>
     <slot />
   </body>
 </html>

@@ -6,6 +6,8 @@ import fastRegionTable from '../../../../tools/emulator/fast_regions.json';
 import { sha256Hex } from './local-inputs';
 import type { CardBridge, CardStatus } from './cards';
 
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+
 const pcs = (list: string | undefined) =>
   (list ?? '')
     .split(',')
@@ -214,7 +216,7 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
     link = undefined;
     dspStats = undefined;
   };
-  const coreModule = () => (modulePromise ??= WebAssembly.compileStreaming(fetch('/emulator-core-sharc.wasm')));
+  const coreModule = () => (modulePromise ??= WebAssembly.compileStreaming(fetch(`${base}emulator-core-sharc.wasm`)));
   /** Starts the DSP worker; resolves with its link and the compiled core, or undefined when the core cannot be split. */
   const startDsp = async (files: CoupledFiles, audioPort: MessagePort) => {
     const module = await coreModule();

@@ -66,6 +66,7 @@ function workerHarness({ ordinaryHasCoupling = false } = {}) {
   const source = fs
     .readFileSync(new URL('../src/runtime/runtime-worker.ts', import.meta.url), 'utf8')
     .replace("import { LinkClient } from '../sab-link.ts';", 'class LinkClient {}')
+    .replace("import.meta.env.BASE_URL.replace(/\\/?$/, '/')", "'/'")
     .replace(
       "import { hostMetrics, pcmMetrics } from './runtime-metrics';",
       'const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, report() { return {}; } }); const pcmMetrics = () => ({});',

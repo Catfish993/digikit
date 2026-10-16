@@ -87,7 +87,7 @@ const localInputs = {
     });
     // The coupled core is firmware-derived: served from apps/web/.local, never from public/.
     server.middlewares.use((req, res, next) => {
-      if ((req.url ?? '').split('?')[0] !== '/emulator-core-sharc.wasm') {
+      if (!(req.url ?? '').split('?')[0].endsWith('/emulator-core-sharc.wasm')) {
         next();
         return;
       }

@@ -13,6 +13,7 @@ export interface LocalManifest {
 
 export async function localManifest(): Promise<LocalManifest | undefined> {
   try {
+    // A dev-server route at the server root, not under BASE_URL.
     const response = await fetch('/__digi-local/manifest', { cache: 'no-store' });
     if (!response.ok) return undefined;
     const value = await response.json();

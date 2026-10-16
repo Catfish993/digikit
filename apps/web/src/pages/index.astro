@@ -1,8 +1,465 @@
 ---
 import Base from '../layouts/Base.astro';
-import Faceplate from '../components/Faceplate';
+import DeviceArt from '../components/DeviceArt.astro';
+import ModuleCard from '../components/ModuleCard';
+import { publicModules } from '../data/modules';
+import { deviceProfiles } from '../data/device-profiles';
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+// Releases the emulator boots and patchkit has ports for: the ones with a boot profile.
+const supported = (['dt2', 'dn2'] as const).map((id) => ({
+  id,
+  name: deviceProfiles[id].name,
+  versions: deviceProfiles[id].firmware.filter((f) => f.main_sha256).map((f) => f.version),
+}));
+const needs = (requires: string[]) => requires.length;
 ---
 
-<Base title="digikit emulator" active="emulator">
-  <Faceplate client:only="solid-js" />
+<Base
+  title="digikit · new machines and effects for Digitakt II and Digitone II"
+  description="Add community machines and effects to your own Digitakt II or Digitone II firmware, then try it in the emulator before you flash. Everything runs in your browser."
+  active="home"
+>
+  <main>
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow accent">Digitakt II · Digitone II</span>
+          <h1>New machines and effects for your Elektron&nbsp;box.</h1>
+          <p class="lede">
+            Add community modules to your own firmware, then play it in the emulator before you flash. It all runs in
+            this browser tab.
+          </p>
+          <div class="hero-cta">
+            <a class="btn primary" href={`${base}patch/`}>
+              Patch your firmware
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M3 8H13M9 4L13 8L9 12"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                ></path>
+              </svg>
+            </a>
+            <a class="btn quiet" href={`${base}emulator/`}>
+              Try the emulator
+            </a>
+          </div>
+          <ul class="facts">
+            <li>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="7" width="10" height="7" rx="1.5"></rect>
+                  <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0V7"></path>
+                </g>
+              </svg>
+              Firmware never leaves your device
+            </li>
+            <li>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M3 8.5L6.5 12L13 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                ></path>
+              </svg>
+              Every patch verified before download
+            </li>
+            <li>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M5.5 4.5L2 8L5.5 11.5M10.5 4.5L14 8L10.5 11.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                ></path>
+              </svg>
+              Open source, AGPL-3.0
+            </li>
+          </ul>
+        </div>
+        <div class="hero-device">
+          <DeviceArt device="dt2" playing label="Digitakt II front panel running the Pluck machine" />
+        </div>
+      </div>
+    </section>
+
+    <hr class="rule" />
+    <section class="section" aria-labelledby="how">
+      <div class="wrap">
+        <h2 id="how" class="section-title">
+          Three steps, no installs
+        </h2>
+        <ol class="steps">
+          <li class="step">
+            <span class="trigkey" aria-hidden="true">
+              1<i></i>
+            </span>
+            <div>
+              <h3>Drop in your firmware</h3>
+              <p>Use the stock .syx from Elektron. digikit names the device and OS version.</p>
+            </div>
+          </li>
+          <li class="step">
+            <span class="trigkey" aria-hidden="true">
+              2<i></i>
+            </span>
+            <div>
+              <h3>Pick your modules</h3>
+              <p>New machines and effects. Only modules that fit your firmware can be added.</p>
+            </div>
+          </li>
+          <li class="step">
+            <span class="trigkey lit" aria-hidden="true">
+              3<i></i>
+            </span>
+            <div>
+              <h3>Patch, play, then flash</h3>
+              <p>Download the patched .syx, or run it in the emulator first and play it from the panel.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section tight" aria-labelledby="mods">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <h2 id="mods" class="section-title">
+              Modules
+            </h2>
+            <p>Machines and effects written for the hardware's own DSP.</p>
+          </div>
+          <a href={`${base}patch/`}>Browse all modules →</a>
+        </div>
+        <ul class="cards">
+          {publicModules.map((m) => (
+            <li>
+              <ModuleCard module={m} needs={needs(m.requires)} href={`${base}patch/?add=${encodeURIComponent(m.id)}`} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+
+    <section class="section tight" aria-labelledby="fw">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <h2 id="fw" class="section-title">
+              Supported firmware
+            </h2>
+            <p>digikit patches and runs these stock releases. Any other file is refused before anything changes.</p>
+          </div>
+        </div>
+        <div class="table-box">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Device</th>
+                <th scope="col">OS versions</th>
+                <th scope="col">Patch</th>
+                <th scope="col">Emulator</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supported.map((d) => (
+                <tr>
+                  <th scope="row">
+                    <span class="devcell">
+                      <DeviceArt device={d.id} class="thumb" label="" />
+                      {d.name}
+                    </span>
+                  </th>
+                  <td>
+                    <span class="vers">
+                      {d.versions.map((v) => (
+                        <span class="ver">{v}</span>
+                      ))}
+                    </span>
+                  </td>
+                  <td class="yes">Yes</td>
+                  <td class="yes">Yes</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section tight last">
+      <div class="wrap notes">
+        <div class="note">
+          <h3>Before you flash</h3>
+          <p>
+            Every module is experimental. Back up your projects, try the patched firmware in the emulator, and keep the
+            stock .syx so you can flash back.
+          </p>
+        </div>
+        <div class="note">
+          <h3>Independent project</h3>
+          <p>
+            digikit is not affiliated with or endorsed by Elektron. This site hosts no firmware: you bring your own.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
 </Base>
+
+<style>
+  .hero {
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    right: -10%;
+    top: -20%;
+    width: 70%;
+    height: 120%;
+    background: radial-gradient(closest-side, rgba(243, 181, 44, 0.16), rgba(243, 181, 44, 0));
+    pointer-events: none;
+  }
+  .hero-grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 11fr) minmax(0, 13fr);
+    gap: 56px;
+    align-items: center;
+    padding-block: 72px 80px;
+  }
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .hero-copy h1 {
+    font-size: var(--t-3xl);
+    font-weight: 660;
+  }
+  .eyebrow.accent {
+    color: var(--amber);
+  }
+  .lede {
+    font-size: var(--t-md);
+    color: var(--ink-2);
+    max-width: 30em;
+  }
+  .hero-cta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-top: 6px;
+  }
+  .hero-cta .btn {
+    height: 50px;
+    padding-inline: 22px;
+    font-size: 15.5px;
+  }
+  .facts {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 0;
+    margin: 6px 0 0;
+    list-style: none;
+    font-size: var(--t-sm);
+    color: var(--ink-2);
+  }
+  .facts li {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .facts svg {
+    width: 15px;
+    height: 15px;
+    color: var(--amber);
+  }
+  .hero-device {
+    margin-right: calc(var(--gutter) * -1.2);
+    animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0.001;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @media (max-width: 900px) {
+    .hero-grid {
+      grid-template-columns: minmax(0, 1fr);
+      padding-block: 48px 56px;
+    }
+    .hero-device {
+      margin-right: 0;
+    }
+  }
+
+  .rule {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 0;
+  }
+  .section {
+    padding-block: 64px;
+  }
+  .section.tight {
+    padding-top: 8px;
+  }
+  .section.last {
+    padding-bottom: 96px;
+  }
+  .section-title {
+    font-size: var(--t-xl);
+  }
+  #how {
+    margin-bottom: 28px;
+  }
+  .section-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+  }
+  .section-head p {
+    color: var(--ink-2);
+    max-width: 34em;
+    margin-top: 8px;
+  }
+  .section-head a {
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+    padding: 22px;
+    border-radius: var(--r-m);
+    background: var(--panel);
+    border: 1px solid var(--line);
+  }
+  .step h3 {
+    font-size: var(--t-md);
+    font-stretch: 112%;
+    margin-bottom: 6px;
+  }
+  .step p {
+    color: var(--ink-2);
+    font-size: 14.5px;
+  }
+  @media (max-width: 860px) {
+    .steps {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .table-box {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-m);
+    background: var(--panel);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 560px;
+    font-variant-numeric: tabular-nums;
+  }
+  th,
+  td {
+    padding: 16px 20px;
+    text-align: left;
+  }
+  thead th {
+    font-family: var(--font-display);
+    font-stretch: 125%;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody tr + tr > * {
+    border-top: 1px solid var(--line);
+  }
+  tbody th {
+    font-weight: 600;
+  }
+  .devcell {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .devcell :global(.thumb) {
+    width: 72px;
+    flex-shrink: 0;
+  }
+  .devcell :global(.thumb .panel-surface) {
+    filter: none;
+  }
+  .vers {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .yes {
+    color: var(--ok);
+  }
+
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .note {
+    padding: 26px;
+    border-radius: var(--r-m);
+    border: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .note h3 {
+    font-size: var(--t-md);
+    font-stretch: 112%;
+  }
+  .note p {
+    color: var(--ink-2);
+  }
+  @media (max-width: 760px) {
+    .notes {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

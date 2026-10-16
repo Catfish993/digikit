@@ -1,0 +1,7 @@
+<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="6" cy="30" r="2.5"/>
+  <circle cx="42" cy="30" r="2.5"/>
+  <path d="M8.5 30Q24 40 39.5 30" stroke-width="1.5" opacity=".4"/>
+  <path d="M8.5 30L17 19L39.5 30"/>
+  <path d="M13 7L22 9.5L15.5 15.5Z" style="stroke: var(--icon-accent); fill: var(--icon-accent)"/>
+</svg>

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Headless-browser throughput bench of the coupled browser core (page mode
-// `/?bench=1&seconds=N`, apps/web/src/runtime/bench.ts). Drives Chrome or
+// `/emulator/?bench=1&seconds=N`, apps/web/src/runtime/bench.ts). Drives Chrome or
 // Chromium over CDP with Node's built-in fetch/WebSocket (no dependencies),
 // starts the astro dev server itself unless --url is given, and prints one
 // JSON document.
@@ -518,10 +518,10 @@ async function oneRun(url, driver, port) {
     await driver.start();
     const { cdp, workerSessions, profiles } = driver.ctx ?? {};
     // Warm the dev server (Vite may optimise dependencies and reload on the first visit).
-    await driver.navigate(`${url}/`);
+    await driver.navigate(`${url}/emulator/`);
     await sleep(4000);
     await driver.navigate(
-      `${url}/?bench=1&seconds=${seconds}${profile ? '&hold=1' : ''}${splitOpt === undefined ? '' : `&split=${splitOpt}`}${fastOpt === undefined ? '' : `&fast=${encodeURIComponent(fastOpt)}`}`,
+      `${url}/emulator/?bench=1&seconds=${seconds}${profile ? '&hold=1' : ''}${splitOpt === undefined ? '' : `&split=${splitOpt}`}${fastOpt === undefined ? '' : `&fast=${encodeURIComponent(fastOpt)}`}`,
     );
     const end = Date.now() + timeoutS * 1000;
     let result;

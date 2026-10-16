@@ -227,7 +227,7 @@ export default function PatchGallery() {
     if (!r) return;
     try {
       await putHandoff({ name: r.file, device: r.device, bytes: r.bytes.slice(0) });
-      location.assign(`${base}?handoff=1`);
+      location.assign(`${base}emulator/?handoff=1`);
     } catch (error) {
       setPatchError(`Could not pass the file to the emulator: ${String(error)}`);
     }

@@ -183,7 +183,7 @@ that is how a new firmware shows which rules need work. A firmware without a por
 ### Web gallery
 
 ```sh
-mise run web          # builds the browser core and patchkit.wasm, generates the module index, serves http://localhost:4321
+mise run web          # builds the browser core and patchkit.wasm, generates the module index, serves http://localhost:4321 (home; the emulator is /emulator/, patching /patch/)
 ```
 
 Open `/patch`. Drop your own `.syx` on the page (it is read in the browser and never uploaded), pick modules, patch,
