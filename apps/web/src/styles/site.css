@@ -362,3 +362,15 @@ button {
 body.fill {
   height: 100dvh;
 }
+
+/* The .syx file drawing in the drop zones (SyxFile.tsx). */
+.syx-file {
+  width: 56px;
+  height: 66px;
+}
+.syx-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  fill: var(--amber-ink);
+}

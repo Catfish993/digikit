@@ -68,16 +68,6 @@
 .drop.dragging {
   background: var(--amber-soft);
 }
-.syx {
-  width: 56px;
-  height: 66px;
-}
-.syx-label {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  fill: var(--amber-ink);
-}
 .drop-text strong {
   display: block;
   font-family: var(--font-display);

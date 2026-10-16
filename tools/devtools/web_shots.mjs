@@ -148,11 +148,11 @@ try {
     );
     await until(`location.search.includes('handoff=1')`, 'navigation to the emulator', 20000);
     await until(
-      `document.querySelector('.toolbar .status')?.textContent.match(/(dt2|dn2) [\\d.]+/)`,
+      `document.querySelector('main.emulator')?.dataset.loaded === 'true' && document.querySelector('.runbar strong')?.textContent.includes('OS')`,
       'emulator running the patched firmware',
       180000,
     );
-    expect(true, `emulator: ${await ev(`document.querySelector('.toolbar .status').textContent`)}`);
+    expect(true, `emulator: ${await ev(`document.querySelector('.runbar').textContent`)}`);
     await sleep(3000);
     await shot('emulator-patched', 1280, 900, 'light');
     await shot('emulator-phone', 390, 844, 'dark');

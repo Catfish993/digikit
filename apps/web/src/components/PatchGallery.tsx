@@ -11,6 +11,7 @@ import { panels } from '../data/faceplates';
 import type { DeviceId } from '../data/device-profiles';
 import ModuleCard, { type CardState } from './ModuleCard';
 import PanelArt from './PanelArt';
+import SyxFile from './SyxFile';
 import './patch.css';
 
 type PatchRun = {
@@ -69,25 +70,6 @@ const INFO = 'M8 1.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 8 1.8ZM8 7.5V11M8 5V5.1'
 const DOWNLOAD = 'M8 2.5V10.5M4.5 7L8 10.5L11.5 7M3 13.5H13';
 const PLAY = 'M4.5 2.5L12.5 8L4.5 13.5Z';
 const CLOSE = 'M4 4L12 12M12 4L4 12';
-
-function SyxFile() {
-  return (
-    <svg class="syx" viewBox="0 0 56 66" aria-hidden="true">
-      <path
-        d="M6 3H36L52 19V61a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
-        fill="#1f2226"
-        stroke="#3a3d44"
-        stroke-width="1.5"
-      />
-      <path d="M36 3V17a2 2 0 0 0 2 2H52" fill="none" stroke="#3a3d44" stroke-width="1.5" />
-      <rect x="10" y="40" width="34" height="14" rx="3" fill="var(--amber)" />
-      <text x="27" y="50.5" text-anchor="middle" class="syx-label">
-        .syx
-      </text>
-      <path d="M12 27h8M23 27h14M12 33h18" stroke="#4a4e56" stroke-width="2" stroke-linecap="round" />
-    </svg>
-  );
-}
 
 export default function PatchGallery(props: { modules: ModuleInfo[] }) {
   const cards = () => props.modules;
