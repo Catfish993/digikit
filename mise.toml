@@ -8,6 +8,7 @@ activate_aggressive = true
 
 [tools]
 rust = "1.98.1"
+node = "24.15.0"
 pnpm = "12.8.2"
 "aqua:WebAssembly/binaryen" = "version_133"
 wasm-tools = "1.261.0"
@@ -148,14 +149,22 @@ description = "ruff check and ruff format --check on the CLEAN list of tests/dev
 
 [tasks."lint:web"]
 run = "pnpm lint"
-description = "Lint the web panel (oxlint with eslint-plugin-solid)"
+description = "Lint the JS/TS workspaces (oxlint with eslint-plugin-solid)"
+
+[tasks."fmt:web"]
+run = "pnpm fmt:check"
+description = "Check JS/TS/Astro/CSS formatting (Prettier)"
+
+[tasks.fmt]
+run = "pnpm fmt"
+description = "Format JS/TS/Astro/CSS in place (Prettier)"
 
 [tasks."lint:rust"]
 run = "uv run python -m tools.devtools.rust_ws fmt"
 description = "cargo fmt --check on the crates that are already clean (CLEAN_CRATES in tools/devtools/rust_ws.py)"
 
 [tasks.lint]
-depends = ["lint:py", "lint:web", "lint:rust"]
+depends = ["lint:py", "lint:web", "fmt:web", "lint:rust"]
 description = "All linters"
 
 [tasks.check]

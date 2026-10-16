@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+# Firmware, emulator state and build outputs are bytes, never text.
+*.syx binary
+*.bin binary
+*.snap binary
+*.wasm binary
+*.wav binary
+*.png binary
+*.jpg binary
+*.woff2 binary
+
+pnpm-lock.yaml linguist-generated
+Cargo.lock linguist-generated
+uv.lock linguist-generated

@@ -160,6 +160,18 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("dt2-check", "dt2-tier-quick", "python-tests"),
     ),
+    (
+        (
+            ".oxlintrc.json",
+            ".prettierrc.json",
+            ".prettierignore",
+            ".editorconfig",
+            "packages/control-client/",
+            "packages/test-support/",
+            "tests/regression/",
+        ),
+        ("web",),
+    ),
     (("apps/web/",), ("web",)),
     (("apps/desktop/",), ("desktop", "web")),
     (
@@ -638,6 +650,8 @@ def web_check(gate: Gate) -> None:
     gate.run(
         "patchkit-wasm", [*PY, "-m", "tools.emulator.native_wasm", "--patchkit-only"]
     )
+    gate.run("web-lint", ["pnpm", "exec", "oxlint"])
+    gate.run("web-format", ["pnpm", "exec", "prettier", "--check", "."])
     gate.run("web-tests", ["node", "--test", "tests/*.test.mjs"], cwd=web)
     gate.run("web-types", ["npx", "astro", "check"], cwd=web)
 
