@@ -1,13 +1,7 @@
-import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js';
+import { For, Show, createSignal, onCleanup, onMount } from 'solid-js';
 import { panels } from '../data/faceplates';
 import { deviceProfiles, localReadyFirmwareSha256, type DeviceId } from '../data/device-profiles';
-import {
-  browserRuntime,
-  nativeRuntime,
-  type EmulatorRuntime,
-  type NativeAudioStatus,
-  type RuntimeUpdate,
-} from '../runtime/runtime';
+import { browserRuntime, type EmulatorRuntime, type RuntimeUpdate } from '../runtime/runtime';
 import { parseLeds } from '../runtime/leds';
 import { PcmSink, resumeOnNextGesture } from '../runtime/audio';
 import { fetchLocalInputs, localManifest, sha256Hex } from '../runtime/local-inputs';
@@ -16,7 +10,6 @@ import LivePanel, { type LivePanelApi } from './LivePanel';
 import PanelArt from './PanelArt';
 import SyxFile from './SyxFile';
 import { benchRequested, runBench } from '../runtime/bench';
-import { cardLine, startCard, topLevelWavs, type CardStatus } from '../runtime/cards';
 import { devEnabled } from '../dev';
 import { identify } from '../patch/identify';
 import { takeHandoff } from '../patch/handoff';
@@ -55,7 +48,6 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
   const [running, setRunning] = createSignal<{ device: string; version: string }>();
   const [phase, setPhase] = createSignal('');
   const [fileName, setFileName] = createSignal('');
-  const [native, setNative] = createSignal(false);
   const [dragging, setDragging] = createSignal(false);
   const [reportAvailable, setReportAvailable] = createSignal(false);
   const [paused, setPaused] = createSignal(true);
@@ -64,21 +56,11 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
   const [browserAudioReset, setBrowserAudioReset] = createSignal(0);
   const [chosenFirmware, setChosenFirmware] = createSignal<{ name: string; bytes: Uint8Array }>();
   const [adopted, setAdopted] = createSignal<{ sink: PcmSink; note: string }>();
-  const [nativeAudio, setNativeAudio] = createSignal<NativeAudioStatus>();
-  const [recentRate, setRecentRate] = createSignal<number>();
-  // Samples for the Digitakt II: desktop only, where the controller builds the card (runtime/cards.ts).
-  const [cardStatus, setCardStatus] = createSignal<CardStatus>();
-  const [cardBusy, setCardBusy] = createSignal(false);
-  const [cardNote, setCardNote] = createSignal('');
   const [runtimeSignal, setRuntimeSignal] = createSignal<EmulatorRuntime | undefined>(undefined);
-  let cardTimer: number | undefined;
-  let cardInput: HTMLInputElement | undefined;
-  let lastAudio: { produced: number; wall: number } | undefined;
   const runtime = () => runtimeSignal() ?? activeRuntime ?? props.runtime;
   let activeRuntime: EmulatorRuntime | undefined;
   let runtimeReady: Promise<EmulatorRuntime | undefined> | undefined;
   let live: LivePanelApi | undefined;
-  let audioTimer: number | undefined;
   let firmwareFile: File | undefined;
   const panel = () => panels[device()];
   const clearCanvas = () => live?.clear();
@@ -114,65 +96,20 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
     );
   };
   let disposed = false;
-  const refreshNativeAudio = async () => {
-    try {
-      const status = await activeRuntime?.nativeAudio?.();
-      setNativeAudio(status);
-      const produced = status?.source_audio_seconds,
-        wall = status?.session_wall_seconds;
-      if (produced === undefined || wall === undefined) {
-        lastAudio = undefined;
-        return;
-      }
-      if (lastAudio && produced < lastAudio.produced) lastAudio = undefined;
-      if (lastAudio && wall > lastAudio.wall) setRecentRate((produced - lastAudio.produced) / (wall - lastAudio.wall));
-      lastAudio = { produced, wall };
-    } catch {
-      /* a replaced session has no status to show */
-    }
-  };
-  const loadLine = (load: NonNullable<NativeAudioStatus['load']>) => {
-    const parts = [`CF ${Math.round(load.cf.real_pct)} %`];
-    if (load.dsp) parts.push(`DSP ${Math.round(load.dsp.real_pct)} % (worst ${Math.round(load.dsp.real_high_pct)} %)`);
-    return parts.join(' · ');
-  };
-  const loadTitle = (load: NonNullable<NativeAudioStatus['load']>) =>
-    `Estimated load of the real chips, from the manuals' cycle tables (not measured). In the emulator's own model: ColdFire ${load.cf.model_pct.toFixed(0)} %${load.dsp ? `, DSP ${load.dsp.model_pct.toFixed(0)} %` : ''}. "Worst" assumes the high bound of the assumed latencies. Window ${load.window_s.toFixed(1)} s of emulated time.`;
-  const audioLine = (audio: NativeAudioStatus) => {
-    const sink = audio.sink;
-    const parts = [`Audio output active${audio.output_device ? ` on ${audio.output_device}` : ''}`];
-    const rate = recentRate();
-    if (rate !== undefined) parts.push(`${rate.toFixed(2)}× real time`);
-    parts.push(`underruns ${sink?.underrun_events ?? 0}`);
-    if (sink?.rebuffering) parts.push('refilling');
-    if (audio.audio_mode === 'stretch' && sink?.stretch_rate !== undefined)
-      parts.push(`speed ${sink.stretch_rate.toFixed(3)}`);
-    const cost = audio.dsp_tiers?.dsp_cpu_per_audio_s;
-    if (typeof cost === 'number') parts.push(`DSP ${cost.toFixed(2)} CPU s per audio s`);
-    parts.push(`produced ${audio.source_audio_seconds.toFixed(2)} s`);
-    return parts.join(' · ');
-  };
   onMount(() => {
-    runtimeReady = Promise.resolve(props.runtime ?? nativeRuntime(update)).then((runtime) => {
-      const selected = runtime ?? browserRuntime(update);
+    runtimeReady = Promise.resolve(props.runtime ?? browserRuntime(update)).then((selected) => {
       if (disposed) {
         selected.dispose();
         return undefined;
       }
       activeRuntime = selected;
       setRuntimeSignal(selected);
-      setBrowserAudioSetup(!runtime);
-      setNative(Boolean(runtime));
-      void refreshNativeAudio();
-      audioTimer = window.setInterval(() => {
-        void refreshNativeAudio();
-      }, 1000);
+      setBrowserAudioSetup(!props.runtime);
       return selected;
     });
   });
   onCleanup(() => {
     disposed = true;
-    if (audioTimer) window.clearInterval(audioTimer);
     live?.releaseAll();
     void activeRuntime?.stop().catch((error) => update({ type: 'error', error: String(error) }));
     activeRuntime?.dispose();
@@ -267,79 +204,12 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
         setStatus(`Could not read the patched firmware: ${error instanceof Error ? error.message : String(error)}`),
       );
   });
-  const pollCard = () => {
-    const cards = runtime()?.cards;
-    if (!cards) return;
-    cardTimer = window.setTimeout(async () => {
-      try {
-        const status = await cards.status();
-        setCardStatus(status);
-        if (status.state === 'working') {
-          pollCard();
-          return;
-        }
-        setCardBusy(false);
-        if (status.state === 'ready') {
-          setPaused(false);
-          setLoaded(true);
-        }
-      } catch (error) {
-        setCardBusy(false);
-        setCardNote(`Card status failed: ${String(error)}`);
-      }
-    }, 400);
-  };
-  const chooseSamples = async (list?: FileList | null) => {
-    const cards = runtime()?.cards;
-    if (!cards || !list) return;
-    const files = topLevelWavs(Array.from(list));
-    if (cardInput) cardInput.value = '';
-    if (files.length === 0) {
-      setCardNote('No .wav files directly in that folder.');
-      return;
-    }
-    setCardBusy(true);
-    setCardNote('');
-    setCardStatus({
-      state: 'working',
-      message: `Sending ${files.length} sample${files.length === 1 ? '' : 's'} to the emulator`,
-      fraction: 0,
-    });
-    try {
-      await startCard(cards, files, (done, total) =>
-        setCardStatus({ state: 'working', message: `Sending samples (${done}/${total})`, fraction: 0 }),
-      );
-      pollCard();
-    } catch (error) {
-      setCardBusy(false);
-      setCardStatus({ state: 'error', message: String(error) });
-    }
-  };
-  // A DT2 that has just started may have mounted the last card on its own: show it, or the hint.
-  createEffect(() => {
-    const cards = runtime()?.cards;
-    if (!cards || !loaded() || device() !== 'dt2' || cardBusy()) return;
-    cards.status().then(
-      (status) => {
-        if (!cardBusy()) setCardStatus(status);
-      },
-      () => undefined,
-    );
-  });
-  onCleanup(() => {
-    if (cardTimer) window.clearTimeout(cardTimer);
-  });
   const exportDiagnostics = async () => {
     try {
       const report = await runtime()?.diagnostics();
       if (!report) return;
       const name = `digiemu-${report.device}-diagnostics.json`,
         json = JSON.stringify(report, null, 2);
-      const save = runtime()?.saveDiagnostics;
-      if (save) {
-        setStatus(`Diagnostics saved to ${await save(name, json)}`);
-        return;
-      }
       const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
       const link = document.createElement('a');
       link.href = url;
@@ -504,11 +374,9 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
                 {phase() ? ` · ${phase()}` : ''}
               </small>
             </div>
-            <Show when={!native()}>
-              <span class="sound-note" title="The browser emulator has no audio yet. The desktop app plays it.">
-                No sound yet
-              </span>
-            </Show>
+            <span class="sound-note" title="The browser emulator has no audio yet. The desktop app plays it.">
+              No sound yet
+            </span>
             <button
               type="button"
               class="btn sm quiet"
@@ -552,51 +420,19 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
           <p class="hint">
             Click keys to press them. Drag or scroll knobs to turn them. Click FUNC, then a key, for a FUNC combination.
           </p>
-          <Show when={dev || native()}>
-            <details class="devtools" open={native()}>
+          <Show when={dev}>
+            <details class="devtools">
               <summary>Developer tools</summary>
               <div class="devtools-row">
                 <output class="status" aria-live="polite">
                   {status()}
                 </output>
-                <Show when={device() === 'dt2'}>
-                  <button
-                    class="samples"
-                    disabled={!runtime()?.cards || !loaded() || cardBusy()}
-                    title={
-                      runtime()?.cards
-                        ? 'Pick a folder of .wav files: track N plays file N (sorted by name)'
-                        : 'Sample cards need the desktop app for now'
-                    }
-                    onClick={() => cardInput?.click()}
-                  >
-                    Choose samples
-                  </button>
-                  <input
-                    ref={(el) => {
-                      cardInput = el;
-                      el.setAttribute('webkitdirectory', '');
-                    }}
-                    type="file"
-                    multiple
-                    hidden
-                    onChange={(e) => void chooseSamples(e.currentTarget.files)}
-                  />
-                  <Show when={!runtime()?.cards}>
-                    <small class="samples-note">desktop only for now</small>
-                  </Show>
-                </Show>
                 <Show when={dev}>
                   <button disabled={!reportAvailable()} onClick={() => void exportDiagnostics()}>
                     Export diagnostics
                   </button>
                 </Show>
               </div>
-              <Show when={cardNote() || cardLine(cardStatus())}>
-                <output class="card-status" aria-live="polite">
-                  {cardNote() || cardLine(cardStatus())}
-                </output>
-              </Show>
               <Show when={dev && browserAudioSetup()}>
                 <CoupledAudio
                   reset={browserAudioReset()}
@@ -612,51 +448,6 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
                   }}
                   onError={(error) => setStatus(error)}
                 />
-              </Show>
-              <Show when={nativeAudio()}>
-                {(audio) => (
-                  <div
-                    class="coupled"
-                    style={{
-                      display: 'flex',
-                      'flex-wrap': 'wrap',
-                      gap: '0.5rem',
-                      'align-items': 'center',
-                      padding: '0.4rem 0',
-                    }}
-                  >
-                    <output>
-                      {audio().setup_needed
-                        ? 'Audio setup is unavailable for this firmware.'
-                        : !audio().playback_requested
-                          ? 'Audio output muted.'
-                          : (audio().device_error ??
-                            audio().sink?.error ??
-                            (audio().sink_connected
-                              ? audio().sink?.stream_started
-                                ? audioLine(audio())
-                                : 'Audio output ready; buffering.'
-                              : 'Audio output is unavailable.'))}
-                    </output>
-                    <Show when={audio().load}>
-                      {(load) => (
-                        <output class="cpu-load" title={loadTitle(load())}>
-                          {loadLine(load())}
-                        </output>
-                      )}
-                    </Show>
-                    <button
-                      disabled={!loaded() || audio().setup_needed || !audio().flow_started}
-                      onClick={() =>
-                        void runtime()
-                          ?.tap?.(25)
-                          .catch((error) => update({ type: 'error', error: String(error) }))
-                      }
-                    >
-                      Audition Trig 1
-                    </button>
-                  </div>
-                )}
               </Show>
             </details>
           </Show>

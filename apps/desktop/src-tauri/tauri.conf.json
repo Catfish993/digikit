@@ -3,12 +3,14 @@
   "productName": "digikit",
   "version": "0.1.0",
   "identifier": "dev.digiemu.panel",
-  "build": { "beforeBuildCommand": "pnpm --filter @digi/web exec astro build", "frontendDist": "../../web/dist" },
+  "build": {
+    "beforeBuildCommand": "pnpm --filter @digi/desktop run build:ui",
+    "frontendDist": "../ui/dist"
+  },
   "app": {
     "windows": [
       {
         "title": "digikit",
-        "url": "emulator/index.html",
         "width": 1120,
         "height": 1000,
         "minWidth": 700,
@@ -19,5 +21,8 @@
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
-  "bundle": { "active": true, "targets": ["app"] }
+  "bundle": {
+    "active": true,
+    "targets": ["app"]
+  }
 }
