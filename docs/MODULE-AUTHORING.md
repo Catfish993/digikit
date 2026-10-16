@@ -100,7 +100,7 @@ mise run patch:new -- ui/my-tweak --cf                                 # ColdFir
 ```
 
 This writes `modules/<category>/<name>/` with `module.toml`, source stubs (`src/cf/*.c`, `src/dsp/*.s`),
-`tests/smoke.toml` and `gallery/README.md`, and builds it so you start from code that compiles. A machine also gets a
+`tests/smoke.toml`, `README.md` and `gallery/icon.svg`, and builds it so you start from code that compiles. A machine also gets a
 permanent type number per device in `modules/core/machines/types.toml` (printed by the command; commit it with the
 module: projects store this number).
 

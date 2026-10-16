@@ -117,18 +117,18 @@ try {
   await shot('patch-empty');
   // choose the firmware
   const { root } = await cdp('DOM.getDocument');
-  const { nodeId } = await cdp('DOM.querySelector', { nodeId: root.nodeId, selector: '.dropzone input[type=file]' });
+  const { nodeId } = await cdp('DOM.querySelector', { nodeId: root.nodeId, selector: '#firmware-file' });
   await cdp('DOM.setFileInputFiles', { nodeId, files: [fw] });
-  await until(`document.querySelector('.file-line .pill')?.textContent.includes('OS')`, 'firmware identified');
-  expect(true, `identified: ${await ev(`document.querySelector('.file-line').textContent`)}`);
+  await until(`document.querySelector('.loaded-name .badge.ok')`, 'firmware identified');
+  expect(true, `identified: ${await ev(`document.querySelector('.loaded-name').textContent`)}`);
   const card = `[...document.querySelectorAll('.card')].find((c) => c.textContent.includes('${moduleId}'))`;
-  expect(await ev(`${card}?.textContent.includes('Works with your firmware')`), 'compatibility badge');
-  await ev(`${card}.querySelector('button').click()`);
+  expect(await ev(`${card}?.textContent.includes('Works with')`), 'compatibility note');
+  await ev(`${card}.querySelector('button.add').click()`);
   await shot('patch-selected');
-  await ev(`[...document.querySelectorAll('.actions button')].find((b) => b.textContent.includes('Patch')).click()`);
-  await until(`document.querySelector('.result a[download]')`, 'result panel', 120000);
+  await ev(`document.querySelector('.patchbar .btn.primary').click()`);
+  await until(`document.querySelector('.dialog a[download]')`, 'result dialog', 120000);
   const dl = await ev(
-    `(async () => { const a = document.querySelector('.result a[download]'); const b = new Uint8Array(await (await fetch(a.href)).arrayBuffer()); const h = await crypto.subtle.digest('SHA-256', b); return { name: a.download, len: b.length, sha: [...new Uint8Array(h)].map((x) => x.toString(16).padStart(2, '0')).join('') }; })()`,
+    `(async () => { const a = document.querySelector('.dialog a[download]'); const b = new Uint8Array(await (await fetch(a.href)).arrayBuffer()); const h = await crypto.subtle.digest('SHA-256', b); return { name: a.download, len: b.length, sha: [...new Uint8Array(h)].map((x) => x.toString(16).padStart(2, '0')).join('') }; })()`,
   );
   console.log('download', JSON.stringify(dl));
   expect(/^(Digitakt_II|Digitone_II)_OS[\d.]+\+.+\.syx$/.test(dl.name), `file name ${dl.name}`);
@@ -138,12 +138,14 @@ try {
       createHash('sha256').update(readFileSync(want)).digest('hex') === dl.sha,
       'download equals the command-line output',
     );
-  await ev(`document.querySelector('.result').scrollIntoView()`);
+  await ev(`document.querySelector('.dialog').scrollIntoView()`);
   await shot('patch-result');
   await shot('patch-result-dark', 1280, 900, 'dark');
   await shot('patch-phone', 390, 844, 'light');
   if (!args.includes('--no-boot')) {
-    await ev(`[...document.querySelectorAll('.result button')].find((b) => b.textContent.includes('Boot')).click()`);
+    await ev(
+      `[...document.querySelectorAll('.dialog button')].find((b) => b.textContent.includes('Run in emulator')).click()`,
+    );
     await until(`location.search.includes('handoff=1')`, 'navigation to the emulator', 20000);
     await until(
       `document.querySelector('.toolbar .status')?.textContent.match(/(dt2|dn2) [\\d.]+/)`,

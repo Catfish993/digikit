@@ -8,7 +8,7 @@
                                                            # a machine type: a clone of type 0 with a permanent number
 
 Writes `modules/<category>/<name>/`: `module.toml`, `src/cf/<name>.c` and/or `src/dsp/<name>.s`, `tests/smoke.toml`
-(the quick tests `patch:dev` and `patch:test` run), `gallery/README.md`; then builds the objects with
+(the quick tests `patch:dev` and `patch:test` run), `README.md`, `gallery/icon.svg`; then builds the objects with
 tools/patchkit/pk_build.py, so the template is known to compile. The DSP stub reuses the anchor rules of fx/master-gain (rules
 only: masked signatures and hashes, never firmware bytes). A new module claims `dsp.master.hook` when it has a DSP
 part, so it conflicts with fx/master-gain: pick one at a time until the master-fx framework (Phase 3) exists.
@@ -92,13 +92,20 @@ expect_no_fault = true
 
 README = """# {title}
 
-{id}: describe what the module does for a player in one or two sentences.
+{id}: what the module does, for a player, in one or two sentences.
 
 - Devices and firmware: Digitakt II 1.17, Digitone II 1.12 (status in `module.toml` `[targets]`).
 - What changes on the device, and how to hear or see it.
 - Known limits.
 
-The gallery shows this text. Keep it free of firmware bytes and vendor tool names.
+The web gallery shows `summary` from module.toml (one short sentence) and `gallery/icon.svg`. Keep this file free
+of firmware bytes and vendor tool names.
+"""
+
+ICON = """<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="8" y="8" width="32" height="32" rx="6"/>
+  <circle cx="24" cy="24" r="4" style="stroke: var(--icon-accent); fill: var(--icon-accent)"/>
+</svg>
 """
 
 
@@ -110,7 +117,7 @@ version = "0.1.0"
 name = "{name.replace("-", " ").capitalize()}"
 category = "{id_.split("/")[0]}"
 status = "experimental"
-summary = "Describe the module in one line"
+summary = "One short sentence for players, 120 characters at most, ending with a full stop."
 requires = []
 conflicts = []
 
@@ -220,7 +227,7 @@ version = "0.1.0"
 name = "{title}"
 category = "{id_.split("/")[0]}"
 status = "experimental"
-summary = "Describe the machine in one line"
+summary = "One short sentence for players, 120 characters at most, ending with a full stop."
 requires = ["core/machines"]
 conflicts = []
 
@@ -266,9 +273,8 @@ def create(
         if machine
         else manifest(id_, sym, name, cf, dsp),
         "tests/smoke.toml": SMOKE.format(id=id_),
-        "gallery/README.md": README.format(
-            id=id_, title=name.replace("-", " ").capitalize()
-        ),
+        "README.md": README.format(id=id_, title=name.replace("-", " ").capitalize()),
+        "gallery/icon.svg": ICON,
     }
     if cf and not machine:
         files[f"src/cf/{name}.c"] = CF_C.format(id=id_, sym="pk" + sym)

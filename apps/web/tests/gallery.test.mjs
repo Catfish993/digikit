@@ -7,7 +7,8 @@ import { existsSync, readFileSync, mkdtempSync, readdirSync, statSync } from 'no
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildModuleData, markdownBlocks } from '../scripts/gen-modules.mjs';
+import { parse } from 'smol-toml';
+import { buildModuleData } from '../scripts/gen-modules.mjs';
 import { PatchKit, patchedFileName } from '../src/patch/patchkit-core.ts';
 import { clash, selectionProblems, withRequired, withoutDependents } from '../src/patch/selection.ts';
 
@@ -26,44 +27,35 @@ const py = (module, ...args) =>
     maxBuffer: 1 << 28,
   });
 
-test('index lists the committed modules with gallery metadata', () => {
-  const { index, bundle } = buildModuleData(root);
-  const ids = index.modules.map((m) => m.id);
-  assert.ok(ids.includes('fx/master-gain') && ids.includes('core/expansion'));
-  const gain = index.modules.find((m) => m.id === 'fx/master-gain');
-  assert.equal(gain.category, 'fx');
-  assert.equal(gain.status, 'experimental');
-  assert.deepEqual(gain.devices, ['dn2', 'dt2']);
-  assert.ok(gain.targets.some((t) => t.port === 'dt2-1.17' && t.status === 'experimental'));
-  assert.deepEqual(gain.claims, ['dsp.master.hook']);
-  assert.ok(gain.gallery.length > 0 && gain.gallery.some((b) => b.t === 'ul'));
-  assert.equal(bundle.modules.length, index.modules.length);
+const manifestFiles = (dir = join(root, 'modules')) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? manifestFiles(join(dir, e.name)) : e.name === 'module.toml' ? [join(dir, e.name)] : [],
+  );
+
+test('bundle lists the committed modules and ports', () => {
+  const { bundle } = buildModuleData(root);
+  assert.equal(bundle.modules.length, manifestFiles().length);
+  assert.ok(bundle.modules.some((m) => m.manifest.includes('id = "fx/master-gain"')));
   assert.equal(bundle.ports.length, readdirSync(join(root, 'devices/ports')).length);
   // committed content only: nothing generated under out/ and no firmware-sized blobs
-  assert.ok(!JSON.stringify(index).includes('out/modules'));
-  assert.ok(JSON.stringify(bundle).length < 2 * 1024 * 1024);
+  const json = JSON.stringify(bundle);
+  assert.ok(!json.includes('out/modules'));
+  assert.ok(json.length < 2 * 1024 * 1024);
+});
+
+test('public module summaries are one short sentence', () => {
+  for (const file of manifestFiles()) {
+    const { module: m } = parse(readFileSync(file, 'utf8'));
+    if (m.category === 'core' || m.category === 'test') continue;
+    assert.ok(m.summary.length <= 120, `${m.id}: summary is longer than 120 characters`);
+    assert.ok(m.summary.endsWith('.'), `${m.id}: summary does not end with a full stop`);
+  }
 });
 
 test('bundle equals tools/patchkit/patchkit.py bundle', { skip: !existsSync(join(root, '.venv')) }, () => {
   const out = join(mkdtempSync(join(tmpdir(), 'gal-')), 'bundle.json');
   py('tools.patchkit.patchkit', 'bundle', '-o', out);
   assert.deepEqual(buildModuleData(root).bundle, JSON.parse(readFileSync(out, 'utf8')));
-});
-
-test('markdown blocks are data, never HTML', () => {
-  const blocks = markdownBlocks(
-    '# Title\n\nA `code` and **bold** <script>x</script>.\n\n- one\n- two\n\n```\nraw\n```\n',
-  );
-  assert.deepEqual(
-    blocks.map((b) => b.t),
-    ['h', 'p', 'ul', 'code'],
-  );
-  assert.deepEqual(blocks[1].runs.map((r) => [r.text, !!r.code, !!r.bold]).slice(1, 4), [
-    ['code', true, false],
-    [' and ', false, false],
-    ['bold', false, true],
-  ]);
-  assert.ok(blocks[1].runs.at(-1).text.includes('<script>'));
 });
 
 test('selection: requires are added, dependents removed, clashes explained', () => {

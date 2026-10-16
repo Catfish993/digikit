@@ -55,7 +55,8 @@ modules/<category>/<name>/
   src/dsp/*.s          SHARC+ (algebraic syntax; every assembled word is re-decoded by our decoder)
   build/*.dko.json     committed objects (patch:build; patch:build --check keeps them current)
   tests/*.toml         harness tests: [test] name, devices, quick; [[step]] ...
-  gallery/README.md    text for the web gallery
+  README.md            notes: what it does, devices, limits
+  gallery/icon.svg     the gallery card's icon
 ```
 
 - `[[object]]`: `path`, `sources`, `place = "dsp.l2" | "cf.expansion"`, optional `devices`, `[object.externs]` (undefined
@@ -119,5 +120,5 @@ use is justified in the file header (docs/findings/06). Gain 1.0 is bit-identica
 To change the gain in a running emulator without rebuilding: `dsp.patch` (`DM <gain addr> 3f000000`), see finding 17.
 A new module starts from `mise run patch:new -- fx/name --dsp`, which copies these anchor rules and a pass-through hook
 (it claims `dsp.master.hook`, so it cannot be combined with `fx/master-gain` or `fx/master-drive`).
-The gallery card text is `gallery/README.md` (headings, paragraphs, lists, code; no tables or links).
+The gallery card shows `summary` (one short sentence) and `gallery/icon.svg` (48 grid, `currentColor` lines, one `var(--icon-accent)` highlight); the module notes are `README.md`.
 Document the result in `docs/findings/` (one file per topic) with marks, not in a handover.

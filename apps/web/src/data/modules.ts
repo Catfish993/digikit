@@ -1,5 +1,5 @@
 // The module gallery, read at build time from the committed modules/**/module.toml and each module's
-// gallery/icon.svg (line art on a 48 grid; tests/icons.test.mjs checks what an icon may contain).
+// gallery/icon.svg (line art on a 48 grid; apps/web/tests/icons.test.mjs checks what an icon may contain).
 import { parse } from 'smol-toml';
 import type { DeviceId } from './device-profiles';
 
@@ -25,6 +25,8 @@ export interface ModuleInfo {
   summary: string;
   requires: string[];
   conflicts: string[];
+  /** Resources the module takes (only one module may hold each). */
+  claims: string[];
   /** The devices any target names, in a fixed order. */
   devices: DeviceId[];
   /** Inline SVG markup, from the repository. */
@@ -59,13 +61,14 @@ type Manifest = {
     conflicts?: string[];
   };
   targets?: Record<string, string>;
+  claim?: { resource: string }[];
 };
 
 const order: DeviceId[] = ['dt2', 'dn2'];
 
 export const modules: ModuleInfo[] = Object.entries(manifests)
   .map(([path, text]) => {
-    const { module: m, targets = {} } = parse(text) as unknown as Manifest;
+    const { module: m, targets = {}, claim = [] } = parse(text) as unknown as Manifest;
     const named = new Set(Object.keys(targets).map((port) => port.split('-')[0]));
     return {
       id: m.id,
@@ -76,6 +79,7 @@ export const modules: ModuleInfo[] = Object.entries(manifests)
       summary: m.summary,
       requires: m.requires ?? [],
       conflicts: m.conflicts ?? [],
+      claims: claim.map((c) => c.resource),
       devices: order.filter((d) => named.has(d)),
       icon: icons[path.replace(/module\.toml$/, 'gallery/icon.svg')] ?? FRAMEWORK_ICON,
     };

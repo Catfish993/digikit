@@ -258,7 +258,7 @@ description = "Site-by-site account of a patch (disassembly before and after, al
 
 [tasks."patch:new"]
 run = "uv run python -m tools.patchkit.pk_new"
-description = "Create a module from a template: mise run patch:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, gallery/README.md; builds it)"
+description = "Create a module from a template: mise run patch:new -- category/name [--cf] [--dsp] (stubs, tests/smoke.toml, README.md, gallery/icon.svg; builds it)"
 
 [tasks."patch:dev"]
 run = "uv run python -m tools.patchkit.pk_dev"
