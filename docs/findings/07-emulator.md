@@ -4704,6 +4704,33 @@ Not modeled:
 
 Unsupported cases raise or trap.
 
+**[D]** The same option also models the two filter accelerators, IIR0 (HWR
+chapter 39) and FIR0 (HWR chapter 38). The sources are
+tools/sharc_dev/sharc_core/iir.py and tools/sharc_dev/sharc_core/fir.py. Their
+twins are packages/emulator/sharc-rt/src/rt/iir.rs and
+packages/emulator/sharc-rt/src/rt/fir.rs. Neither DN2 1.11 nor DT2 1.16 starts
+them. A mod that moves filter work off the core can use them.
+- Both run legacy and Auto Configuration Mode TCB chains, 32-bit floats, and
+  circular buffers with the index write-back. WDONE, ACDONE and the DMA source
+  go through the SEC (SID 120 for IIR0, SID 118 for FIR0).
+- IIR0: transposed direct form II biquads, up to 64 a channel, windows of 1 to
+  1024 samples, and Save State.
+- FIR0: single-rate filters of 1 to 1024 taps, coefficients stored C[N-1]
+  first, and FIR_COEFCNT counting down by the tap count.
+- A run starts when CTL1 goes to EN | DMAEN, and it completes at once.
+- The models refuse 40-bit or fixed-point data, truncation rounding, sample
+  rate conversion, more than 1024 FIR taps, Channel Auto Iterate, HALT and
+  trigger waits. Timing, MACSTAT and the debug registers are not modeled.
+
+**[O]** The HWR does not give the order of the float operations. IIR0 follows
+Figure 39-2 term by term. FIR0 gives MAC k the taps k, k + 4, k + 8 and so on,
+oldest sample first, and adds the four sums in order. Each product and each sum
+rounds to float32. Only the silicon can confirm these orders.
+
+A probe build
+runs both accelerators on a Digitone II and reads the results back over USB.
+It is ready, but nobody has run it yet.
+
 **[C]** PM-bus scalar and long-word data loads and stores now use the unified
 memory, as normal-word UREG loads already did ("single, unified address
 space"). Previously PM loads were Unknown and PM stores wrote nothing. The DN2

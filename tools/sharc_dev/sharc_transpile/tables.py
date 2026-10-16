@@ -190,6 +190,38 @@ for _n in [
     "_periph_write",
 ]:
     BOUNDARY["sharc_core.periph." + _n] = Bnd()
+# Hand-written twins in packages/emulator/sharc-rt/src/rt/iir.rs, reached only from periph.
+for _n in [
+    "_f32",
+    "_bits",
+    "_r",
+    "_mmr",
+    "_set",
+    "_word_read",
+    "_word_write",
+    "_step",
+    "_load_tcb",
+    "_coefficients",
+    "_save_state",
+    "_window",
+    "_channel_done",
+    "_run",
+    "_iir_read",
+    "_iir_write",
+]:
+    BOUNDARY["sharc_core.iir." + _n] = Bnd()
+# Hand-written twins in packages/emulator/sharc-rt/src/rt/fir.rs, reached only from periph.
+for _n in [
+    "_mmr",
+    "_coefficients",
+    "_window",
+    "_channel",
+    "_channel_done",
+    "_run",
+    "_fir_read",
+    "_fir_write",
+]:
+    BOUNDARY["sharc_core.fir." + _n] = Bnd()
 for _n in ["_concrete_address", "_byte_present"]:
     BOUNDARY["sharc_core.memory." + _n] = Bnd()
 # The address table: one out-of-line range walk in the runtime instead of a
