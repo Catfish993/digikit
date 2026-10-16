@@ -33,7 +33,7 @@ fn sysctl_resets_self_clear() {
 
 #[test]
 fn oracle_irqstat_guest_write_round_trips() {
-    // `emu.esdhc.Esdhc` installs no IRQSTAT write hook, so its guest store
+    // `unicorn-reference-final:emu/esdhc.py`'s `Esdhc` installs no IRQSTAT write hook, so its guest store
     // remains plain register-file data despite the device's W1C behavior.
     let mut h = Esdhc::new(Card::default());
     h.write(esdhc::BASE + esdhc::IRQSTAT, 4, 0xA5A5_0003);

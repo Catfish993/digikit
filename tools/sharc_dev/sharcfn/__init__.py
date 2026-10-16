@@ -56,7 +56,7 @@ entry for them (ALU 0xe0/0xd9/0xda, shifter 0xb0, multifunction 0x1a/0x1e/
 on file, never silently. Type10a_rel (and, as measured here, Type10a_abs
 too) is absent from tools/sharc_dev/sharc_visa_tables.py's VISA form set entirely, so
 any real occurrence surfaces as a disassembler desync -- resynced and
-reported like tools/fullscan.py does, not silently skipped. Forms with no
+reported like a full-image scan does, not silently skipped. Forms with no
 dedicated renderer here fall back to a field dump (name=value, one line)
 plus named-region annotation on any address-shaped field -- never skipped,
 per the same "loud gap beats silent gap" rule.

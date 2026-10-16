@@ -27,7 +27,7 @@ Public software used as an independent decoder/corpus cross-check:
 | [`js216/selache`](https://github.com/js216/selache) | `2b26d3b75c53063575bc5c820fa0d38879335187` | SHARC+ VISA width and `0x02`-prefixed immediate-shift decode; the decoded ShiftImm field and operation semantics were checked independently against the public programming reference |
 | [`analogdevicesinc/runtime-sharc-loader`](https://github.com/analogdevicesinc/runtime-sharc-loader) | `bbb85bb59b203f4219a831814a721f7646f27498` | Public SHARC+ source/loader corpus containing aligned matching byte sequences; executable placement and source-line association are not established |
 
-`dt2/elz.py`, the section decompressor, follows the format of `aplib.c` in
+`tools/firmware/elz.py`, the section decompressor, follows the format of `aplib.c` in
 [mischa85/elektron-firmware-tool](https://github.com/mischa85/elektron-firmware-tool)
 (MIT). It is a separate implementation; no code was copied.
 

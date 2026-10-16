@@ -1,5 +1,5 @@
 """Differential test harness for the SHARC+ core: Python (tools/sharc_dev/sharc_core,
-driven concretely through tools/sharc_run.Runner) against a future native
+driven concretely through tools/sharc_dev/sharc_run.Runner) against a future native
 implementation (a Rust crate, ``packages/emulator/sharc/``, built as a C-ABI cdylib and
 loaded with ctypes -- see scratchpad/rt-native-core-design.md section 4).
 
@@ -1201,7 +1201,7 @@ def run_frame_lockstep(
     img=None,
 ) -> LockstepResult:
     """Per-frame lockstep: deliver each of FRAMES (``.tx`` DSPI2 bytes, as
-    ``emu.sharc_capture``'s frame records have) to both runners with
+    ``tools.sharc_dev.sharc_capture``'s frame records have) to both runners with
     exactly the primitives ``sharc_replay.replay()``'s own frame loop uses
     (``sharc_harness.write_dma_transfer``/``drive_dma_completion``/
     ``call_frame_collect_all``), then compares full exported state.  Stops

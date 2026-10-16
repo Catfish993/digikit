@@ -3,7 +3,7 @@
 The runtime SysEx command surface of **MAIN OS 1.16**: how the device is spoken
 to over its USB (or DIN) MIDI port while it is running normally, as opposed to
 the OS-upgrade *container* format (that is `docs/FINDINGS.md` "Container", and
-`dt2/container.py`). Discovered 2026-09-20.
+`tools/firmware/container.py`). Discovered 2026-09-20.
 
 Scope note: `docs/FINDINGS.md` is 1.15C-scoped. **Everything here is
 Digitakt II 1.16**, MAIN OS `out/sections/dt2-1.16/section_3_MAIN_OS.bin`,
@@ -217,7 +217,7 @@ load; the FsSample dispatch call site itself was not located, so whether
 `OsUpgradeStart (0x50)` / `OsUpgradeWrite (0x51)` / `OsUpgradeEnd (0x52)` are
 MidiRpc commands. `MidiRpcOsUpgradeWriteRequest` (`0x401e0e22`) has the same
 `{slot, offset, length, data}` shape as the file-write primitives. This is the
-same content the offline `.syx` container carries (`dt2/build.py`,
+same content the offline `.syx` container carries (`tools/firmware/build.py`,
 `tools/firmware/roundtrip.py`), delivered over MIDI instead of as a file. It is the
 natural target for pushing a rebuilt image to hardware.
 

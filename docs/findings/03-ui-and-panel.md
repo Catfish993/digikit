@@ -215,7 +215,7 @@ five machine patches; instruction counts start at 0 there.
 
 ## A1 FUNC+SRC A/B is repeatable across state and profile lanes **[V]**
 
-`experiments/a1-func-src.json` was run from `snapshots/postintro.snap` against
+The experiment descriptor `experiments/a1-func-src.json` (removed; last present at tag `unicorn-reference-final`'s era, see git history) was run from `snapshots/postintro.snap` against
 1.15C (`62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c`)
 as `out/experiments/a1-func-src/a1-real-002/`.  It delivered the raw FUNC/SRC
 sequence `2201`, `2002`, `2000`, `2200`, requested an observation while the

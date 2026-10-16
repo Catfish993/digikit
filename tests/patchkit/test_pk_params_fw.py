@@ -1,5 +1,5 @@
 """core/params as a module: the hook routine on the native core, and the table-row expressions of module.toml against
-the Rust generator's row builder (packages/emulator/patchkit/src/params.rs).
+the Rust generator's row builder (a1cf1df^:native/patchkit/src/params.rs, removed in a1cf1df).
 
 The expressions are evaluated by a small stand-in for patchkit's expression language (integers, symbols, `$field`,
 `image.u8|u16|u32(...)`, + - * / & | << >> and parentheses): lane a's evaluator is the real one, this keeps the
@@ -12,13 +12,14 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_cfunit,  # noqa: E402
     pk_toolchains,  # noqa: E402
 )
 from tools.patchkit.pk_expr import evaluate as eval_expr  # noqa: E402
 
-SYX = ROOT / "Digitakt_II_OS1.17.syx"
+SYX = config.stock("Digitakt_II_OS1.17.syx")
 SRC = ROOT / "modules" / "core" / "params" / "src" / "cf" / "dt2" / "params.s"
 MANIFEST = ROOT / "modules" / "core" / "params" / "module.toml"
 FIRST = 0x113
@@ -140,7 +141,9 @@ def unit():
     )
 
 
-@pytest.mark.skipif(not SYX.exists(), reason="Digitakt_II_OS1.17.syx not present")
+@pytest.mark.skipif(
+    not SYX.exists(), reason="firmware/Digitakt_II_OS1.17.syx not present"
+)
 def test_added_codes_become_their_template(unit):
     templates = [0xD1, 0x20, 0x112]
     rows = b"".join(

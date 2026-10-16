@@ -136,7 +136,7 @@ def _cffacts():
 
 def _find_image(manifest, sha):
     """The MAIN OS file whose SHA-256 is the dump's (the manifest's recorded
-    path can name a later image: sections/ is overwritten by each extract)."""
+    path can name a later image: each image has its own out/sections/<image>/)."""
     import glob
     import hashlib
 

@@ -112,7 +112,7 @@ impl DmaBuffers<'_> {
 }
 
 /// Execute the data movement and TCD writeback performed by
-/// `emu.esdhc.Esdhc._dma_out`/`_dma_in` for eDMA channel 59.
+/// `unicorn-reference-final:emu/esdhc.py`'s `Esdhc._dma_out`/`_dma_in` for eDMA channel 59.
 ///
 /// CMD8 and CMD18 copy the supplied card window to `DADDR`, then advance
 /// `DADDR` by the major-loop byte count. CMD25 copies each guest minor loop
@@ -221,7 +221,7 @@ pub trait CardPort {
 /// differs from device hardware.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum RegisterPolicy {
-    /// Match `emu.esdhc.Esdhc`: guest writes store directly in IRQSTAT.
+    /// Match `unicorn-reference-final:emu/esdhc.py`'s `Esdhc`: guest writes store directly in IRQSTAT.
     #[default]
     Oracle,
     /// Apply the RM's device behavior: IRQSTAT guest writes are W1C.

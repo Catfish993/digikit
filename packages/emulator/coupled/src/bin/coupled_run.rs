@@ -10,10 +10,10 @@
 //! timer reads per 0.667 ms period and one hash/sum pass over the PCM.
 //!
 //! ```text
-//! coupled-run --syx Digitone_II_OS1.11.syx \
-//!   --dsp-image snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
-//!   --dsp-state snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
-//!   --cf-snapshot snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
+//! coupled-run --syx firmware/Digitone_II_OS1.11.syx \
+//!   --dsp-image out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
+//!   --dsp-state out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
+//!   --cf-snapshot out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
 //!   [--dsp-patch FILE] [--card-image FILE] [--scenarios FILE.json] [--scenario NAME]... [--seconds S] [--playback] [--audio-buffer S] [--no-pcm-tap] [--no-link-timing] [--profile-regions] [--profile-execution] \
 //!   [--out report.json] [--list] \
 //!   [--replay FILE.json] [--wav PATH] [--dump-dsp PATH] [--audio-mode rebuffer|stretch|gap]
@@ -46,7 +46,7 @@
 //! chunk that follows, so a run is a function of its inputs; with `exact_events` the
 //! chunk is shortened so an `at_instr` event fires at exactly that count. `qa_script` also plays
 //! the shared QA sequence of `packages/emulator/boot/examples/common` (NO, NO, encoder A).
-//! The default scenarios are `scenarios/dn2.json`.
+//! The default scenarios are `tests/scenarios/dn2.json`.
 
 use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,
@@ -239,7 +239,7 @@ fn do_peeks(rt: &mut CoupledRuntime, peeks: &[(String, Peek)]) -> Value {
 
 fn parse_args() -> Result<Args, String> {
     let mut a = Args {
-        syx: "Digitone_II_OS1.11.syx".into(),
+        syx: "firmware/Digitone_II_OS1.11.syx".into(),
         image: PathBuf::new(),
         state: PathBuf::new(),
         snapshot: PathBuf::new(),

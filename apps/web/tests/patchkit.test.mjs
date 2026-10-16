@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const wasmPath = join(root, 'apps/web/public/patchkit.wasm');
 const images = {
-  dt2: join(root, 'Digitakt_II_OS1.17.syx'),
-  dn2: join(root, 'Digitone_II_OS1.12.syx'),
+  dt2: join(root, 'firmware', 'Digitakt_II_OS1.17.syx'),
+  dn2: join(root, 'firmware', 'Digitone_II_OS1.12.syx'),
 };
 const need = [wasmPath, ...Object.values(images)].every(existsSync);
 const py = (module, ...args) => execFileSync('uv', ['run', 'python', '-m', module, ...args], { cwd: root, env: { ...process.env, PYTHONPATH: root }, encoding: 'utf8', maxBuffer: 1 << 28 });

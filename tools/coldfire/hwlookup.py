@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from emu.hwref import (  # noqa: E402
+from tools.coldfire.hwref import (  # noqa: E402
     decode_register_value,
     resolve_address,
     resolve_dma_channel,

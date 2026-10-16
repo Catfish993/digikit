@@ -489,7 +489,7 @@ random content. Every result matched. Two firmware quirks this uncovered,
 both reproduced in the Python: (1) the seed is `initval + 0xDEADBEEF` with
 **no length folded in**, unlike lookup3.c's one-shot `hashlittle`; (2) a
 zero-length input's tail `switch` jumps straight past `final()`, returning
-the raw seed unfinalized -- `tests/test_plusdrive.py` has the golden
+the raw seed unfinalized -- `tests/firmware/test_plusdrive.py` has the golden
 vectors and the finalize-skip test. **[V]**.
 
 Fields at superblock offsets `0x2c`/`0x30` (table above) are now also

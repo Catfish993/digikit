@@ -303,7 +303,7 @@ DN2_111 = {
     # and unreferenced, and leave 0x80 bytes of margin before 0x402fc000.
     "cave_a": 0x402FB7A8,
     "cave_b": 0x402FBB80,
-    # From tools/cavefind.py: below the reset clear loop's start (0x402fc000).
+    # From unicorn-reference-final:tools/cavefind.py: below the reset clear loop's start (0x402fc000).
     "flash_cave": (0x402FB7A8, 2136),
     "missing": (
         "field_accessor: too many generic matches to isolate",

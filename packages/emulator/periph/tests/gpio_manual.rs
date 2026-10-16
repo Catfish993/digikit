@@ -1,4 +1,4 @@
-//! SD continuity-gate tests, ported from `emu/gpio.py` and RM chapter 15.
+//! SD continuity-gate tests, ported from `unicorn-reference-final:emu/gpio.py` and RM chapter 15.
 
 use periph::gpio::{GPIO_BASE, PCLRR_D, PPDSDR_C, PPDSDR_D, SdGate};
 use periph::regfile::SLOT_SIZE;

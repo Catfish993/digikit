@@ -218,7 +218,7 @@ packages/emulator/
                 eSDHC + card, GPIO, UART, FlexBus/DSP FIFO, panel, display
   machine/      board wiring + per-product profile (DT2, DN2): memory map,
                 which peripherals, symbols; snapshot import from emu/*.snap
-  loader/       .syx extraction (port of dt2/elz.py), +Drive builder (port
+  loader/       .syx extraction (port of tools/firmware/elz.py), +Drive builder (port
                 of tools/firmware/plusdrive.py)
   live/         desktop audio (cpal), threads, frame queue
   web/          wasm32 bindings: Web Worker, AudioWorklet, file picker

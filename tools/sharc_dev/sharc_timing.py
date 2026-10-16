@@ -9,7 +9,7 @@ whether a "move" counts as a "load", the L2 and DDR latencies); the choice of ea
 Stalls are counted on adjacent executed instruction pairs (N-1 -> N). The manual's tables list the adjacent case;
 stalls for a longer distance are smaller and are not counted (a lower bound on stalls).
 
-Unit tests: tests/sharc/test_sharc_timing.py.
+Unit tests: tests/sharc/analysis/test_sharc_timing.py.
 """
 
 from __future__ import annotations

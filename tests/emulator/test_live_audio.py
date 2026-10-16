@@ -1,4 +1,4 @@
-"""Tests for tools/emulator/live_audio.py, the ctypes wrapper around native/live.
+"""Tests for tools/emulator/live_audio.py, the ctypes wrapper around packages/emulator/live.
 
 Skipped entirely if packages/emulator/live hasn't been built (`cd packages/emulator/live && cargo
 build --release`) -- these tests never build the crate themselves, matching

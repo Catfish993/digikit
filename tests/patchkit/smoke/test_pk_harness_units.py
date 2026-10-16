@@ -10,6 +10,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_harness as h  # noqa: E402
 
 
@@ -83,7 +84,7 @@ def test_goldens_round_trip_and_only_hashes_are_committed(tmp_path):
 
 def test_stale_or_foreign_ready_inputs_are_refused(tmp_path, monkeypatch):
     cell = h.Cell("dn2", "1.12")
-    syx = h.ROOT / h.FIRMWARE[("dn2", "1.12")]["syx"]
+    syx = config.stock(h.FIRMWARE[("dn2", "1.12")]["syx"])
     if not syx.is_file():
         pytest.skip("no firmware")
     digest = hashlib.sha256(syx.read_bytes()).hexdigest()

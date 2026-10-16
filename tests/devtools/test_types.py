@@ -38,7 +38,7 @@ TYPED = [
     "tools/sharc_dev/aot_fxprof.py",
     "tools/devtools/benchlock.py",
     "tools/control/digi_client.py",
-    "emu/sharc_peer.py",
+    "tools/sharc_dev/sharc_peer.py",
     "tools/coldfire/cf.py",
     "tools/coldfire/cf_names.py",
     "tools/coldfire/cfdb.py",
@@ -67,6 +67,9 @@ TYPED = [
     "tools/sharc_dev/sharc_widthaudit.py",
     "tools/sharc_dev/sharcldr.py",
     "tools/emulator/snapread.py",
+    "tools/devtools/pathcheck.py",
+    "tests/devtools/test_pathcheck.py",
+    "tests/devtools/test_pathcheck_repo.py",
 ]
 
 

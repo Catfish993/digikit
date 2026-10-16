@@ -22,7 +22,7 @@ fn vector_numbering_section_17_3_1_3() {
 #[test]
 fn oracle_registers_round_trip_as_plain_ram() {
     // The Python emulator (removed; see tag unicorn-reference-final) never intercepts a guest access here (see
-    // `emu.pit.interrupt_level`, which only *reads* IMR/ICR); IPR, INTFRC,
+    // `unicorn-reference-final:emu/pit.py`'s `interrupt_level`, which only *reads* IMR/ICR); IPR, INTFRC,
     // SIMR and CIMR all round-trip exactly like any other unmodelled
     // register.
     let mut intc = IntcBank::new();
@@ -84,7 +84,7 @@ fn icr_level_zero_disables_regardless_of_mask() {
 
 #[test]
 fn level_for_vector_matches_emu_pit_interrupt_level() {
-    // `emu.pit.interrupt_level`: `icr = ... & 0x07`; masked = IMR bit; ->
+    // `unicorn-reference-final:emu/pit.py`'s `interrupt_level`: `icr = ... & 0x07`; masked = IMR bit; ->
     // None if level 0 or masked, else the level.
     let mut intc = IntcBank::new();
     intc.write(BASES[2] + 0x40 + 13, 1, 5); // PIT0 (INTC2 src 13), level 5

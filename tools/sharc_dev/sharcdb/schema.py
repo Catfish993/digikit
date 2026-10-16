@@ -37,7 +37,7 @@ DB_VERSION = 16
 # stream bytes (data[payload_offset:payload_offset+payload_len]). Both now
 # instead read the block's declared [target_address, target_address+
 # byte_count) range through a tools/sharc_dev/sharcldr.py LoadedMemory built over the
-# whole stream, matching tools/sharc_core.sequencer.decode_at()'s own input
+# whole stream, matching tools/sharc_dev/sharc_core/sequencer.decode_at()'s own input
 # (no database access, LoadedMemory only) -- one decode INPUT as well as one
 # decode function, for the same reason the "One decode path" section unified
 # the decode FUNCTION.

@@ -4,7 +4,7 @@ Two groups, the same convention tests/sharc/integration/test_sharc_harness_*.py 
 helpers (describe_frame/_mono/parse_args) need no firmware and always run;
 replay() itself needs the real DT2 1.16 SHARC+ image bytes (Elektron's
 copyright, never committed here) and a real capture file (out/captures/,
-also never committed -- tools/sharc_capture_run.py's own output), and is
+also never committed -- unicorn-reference-final:tools/sharc_capture_run.py's own output), and is
 skipped without either.
 """
 
@@ -394,7 +394,7 @@ class ReplayIdleCaptureTest(unittest.TestCase):
 @pytest.mark.slow
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class CallFrameCollectAllWithHitsTest(unittest.TestCase):
-    """tools/sharc_replay.call_frame_collect_all_with_hits(): a real pc-hit
+    """tools/sharc_dev/sharc_replay.call_frame_collect_all_with_hits(): a real pc-hit
     breakpoint (Runner.breakpoints, checked natively inside
     sharc_survey.run_collect_all()'s own loop), not a memory watch on a
     write target a function is only believed to touch -- lane E2's own task

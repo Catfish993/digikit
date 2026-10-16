@@ -55,6 +55,8 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from tools.firmware import config
+
 _here = os.path.dirname(os.path.abspath(__file__))
 
 REPO = os.path.dirname(os.path.dirname(_here))
@@ -302,10 +304,10 @@ def describe(program, args, program_path, rtti):
     """-> the manifest fields known before the dump starts."""
     image_sha = program.getExecutableSHA256()
     image_sha = str(image_sha) if image_sha is not None else None
-    # The image on disk, by default sections/<program path>; --image names
+    # The image on disk, by default <sections dir>/<program path>; --image names
     # another, such as out/sections/dt2-1.16/section_3_MAIN_OS.bin.
     sections_image = (os.path.abspath(args.image) if args.image
-                      else os.path.join(REPO, 'sections', program_path.lstrip('/')))
+                      else os.path.join(str(config.sections_dir()), program_path.lstrip('/')))
     sections_sha = sha256_file(sections_image) if os.path.exists(sections_image) else None
     source_marker = os.path.join(os.path.dirname(sections_image), '.source-sha256')
     source_sha = None
@@ -507,7 +509,7 @@ def parse_args(argv=None):
     p.add_argument('--timeout', type=int, default=DEFAULT_TIMEOUT, help='seconds per function')
     p.add_argument('--rtti', help='tools/coldfire/rttiscan.py JSON for the typeinfos and vtables tables')
     p.add_argument('--image', help='the image file imported into Ghidra, to check its SHA-256 '
-                   '(default: sections/ plus the program path)')
+                   '(default: config.sections_dir() plus the program path)')
     g = p.add_mutually_exclusive_group()
     g.add_argument('--only-functions', nargs='+', metavar='ADDR',
                    help='decompile only the functions containing these addresses')

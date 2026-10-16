@@ -42,7 +42,7 @@ controller (`pcm.tap`). Patch: `tools/patchkit/dsp_patches/dn2-1.11-master-half.
   patched MAIN" below: with the launch's DSP inputs the patched MAIN now comes up with audio; the
   ColdFire-only boot above remains the fallback when there are none.
 
-## Protocol checks (CF-only DN2 1.11, `tests/test_digi_client.py`)
+## Protocol checks (CF-only DN2 1.11, `tests/control/test_digi_client.py`)
 
 - `step(N)` advances the ColdFire count by exactly N for N = 1, 7, 250000,
   250001 and 600000. An input with `at_instr` is recorded at exactly that
@@ -116,9 +116,9 @@ of the power, rms 0.0255, the same analysis as the stock firmware, after a cold 
 `restart`. 1.17 behaves like 1.16. Without `auto_no` the DT2 note is silent after the load (the modal is still up),
 which is why the option exists. **[D]**
 
-Tests: `tests/test_coupled_patched.py` (slow; DN2 1.12 and DT2 1.17 cold/cached/restart/audible, `start snapshot`
+Tests: `tests/emulator/test_coupled_patched.py` (slow; DN2 1.12 and DT2 1.17 cold/cached/restart/audible, `start snapshot`
 without a pair, `start cold` rebuild, hot inject of an appended block), the Rust unit test `patched_pair_key`, and
-`tests/test_digi_client.py` (the ColdFire-only fallback and its note).
+`tests/control/test_digi_client.py` (the ColdFire-only fallback and its note).
 
 **ColdFire canary with the DSP running.** `tools/coldfire/regions.py confirm IMAGE --dsp READY_DIR` runs the spike 0.3 canary
 probe with the ready directory's DSP on the DSPI2 link from reset (the expansion region filled with an

@@ -154,7 +154,7 @@ pub unsafe extern "C" fn live_play_wav(
 
 /// Queues one SPI2 TX frame (wire order) for the frame source: the
 /// emulator's DSPI2 peer calls this for every frame the ColdFire sends
-/// (`emu/livesharc.py`). Each queued frame is rendered once, in order; when
+/// (`unicorn-reference-final:emu/livesharc.py`). Each queued frame is rendered once, in order; when
 /// none is queued the last one repeats with its one-shot words cleared
 /// (`src/repeater.rs`). Returns `0`, or a negative code on a bad handle.
 ///

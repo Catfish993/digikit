@@ -2,7 +2,7 @@
 
 Follows the tests/sharc/trace/ convention: build tiny synthetic loader
 streams and Instruction records by hand rather than reading real firmware
-bytes (sections/, out/ and anything derived from them are Elektron's
+bytes (out/, firmware/ and anything derived from them are Elektron's
 copyright and must never end up here).
 """
 

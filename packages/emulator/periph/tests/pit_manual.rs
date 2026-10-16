@@ -63,7 +63,7 @@ fn disabled_channel_has_no_period() {
 
 #[test]
 fn one_microsecond_calibration() {
-    // emu/pit.py's module docstring: the firmware's own delay routine
+    // unicorn-reference-final:emu/pit.py's module docstring: the firmware's own delay routine
     // programs PRE=0, PMR=131 at the 132 MHz bus clock and gets exactly
     // 1 us per tick under `prescale*(pmr+1)/F_BUS`. ips=F_BUS here so the
     // result is directly in seconds.
@@ -123,7 +123,7 @@ fn missed_tick_does_not_chase_the_backlog() {
 fn priority_within_a_level_is_highest_source_first() {
     // RM SS17.3.1/Table 17-19: within one level, the higher source number
     // is serviced first. PIT0/2/3 are INTC2 sources 13/15/16, so `(3, 2, 0)`
-    // (emu.pit.Pits' own default order) offers PIT3 before PIT0 when both
+    // (`unicorn-reference-final:emu/pit.py`'s `Pits` own default order) offers PIT3 before PIT0 when both
     // are pending at the same level. Taking PIT3's interrupt raises IPL to
     // that level, which then refuses PIT0's same-level request until PIT3's
     // handler returns (the class docs' "the first one taken raises IPL to

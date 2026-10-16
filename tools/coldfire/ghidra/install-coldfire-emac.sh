@@ -16,7 +16,7 @@ REL=$(sed -n 's/^application.release.name=//p' "$PROPS")
 cat > "$MOD/extension.properties" <<EOF
 name=ColdfireEMAC
 description=ColdFire language with MOVCLR and corrected EMAC instructions
-author=digitakt2
+author=digikit
 createdOn=
 version=$VER
 EOF

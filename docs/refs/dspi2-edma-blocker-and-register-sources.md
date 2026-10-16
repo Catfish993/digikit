@@ -246,7 +246,7 @@ against our own image, not settled fact.**
   images can be re-signed. Byte-exact on 22/23 images.
 - **[bryantysinger/elektron-models-teardown](https://github.com/bryantysinger/elektron-models-teardown)**
   — Model:Samples/Cycles. MAIN OS at `0x40000400`, stack `0x48000000`, bootstrap at
-  `0x80000400`. Notes **RTTI left in: ~407 class names recoverable** (cf. `emu/symbols.py`).
+  `0x80000400`. Notes **RTTI left in: ~407 class names recoverable** (cf. `tools/coldfire/symbols.py`).
 - **[angellinares/dn2_firmware_explore](https://github.com/angellinares/dn2_firmware_explore)**
   — Digitone II. Reports Ghidra's stock ColdFire disassembly validates against
   `objdump` while **Capstone fails**.

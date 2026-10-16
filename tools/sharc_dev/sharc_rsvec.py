@@ -1,7 +1,7 @@
 """Capture block test vectors for the native SHARC+ core from a replay.
 
 Replays a DSPI2 capture through the Python reference (tools/sharc_dev/sharc_core,
-driven the way tools/sharc_replay.replay() drives it) and, for each
+driven the way tools/sharc_dev/sharc_replay.replay() drives it) and, for each
 listed block, records up to N entries: the machine state at the block
 entry, every memory byte the block reads before writing it, and the state,
 written bytes, exit PC and instruction count when control leaves the block
@@ -251,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="out/native/vectors.txt")
     args = p.parse_args(argv)
 
-    from emu import sharc_capture
+    from tools.sharc_dev import sharc_capture
     from tools.sharc_dev import sharc_harness as h
     from tools.sharc_dev import sharc_lp0 as lp0
     from tools.sharc_dev import sharc_survey as sv

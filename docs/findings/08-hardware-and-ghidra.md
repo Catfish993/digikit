@@ -85,7 +85,7 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
 
 ## Digitakt II 1.16 in Ghidra: the same layout, 14743 functions **[V]**
 
-- `uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16`
+- `uv run python -m tools.firmware.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16`
   writes a MAIN OS of 3,275,616 bytes for `0x40000400`, sha-256 `57bb4dfa…`
   (1.15C: 3,177,312 bytes). Digitone II 1.11 and 1.10E are extracted to
   `out/sections/dn2-1.11/` and `out/sections/dn2-1.10E/`. **[V]**
@@ -231,8 +231,8 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   `main-os-oracle-v1`, `elektron-rtos-v1`, readiness contract, DSP block copied from 1.16 / 1.11;
   `plusdrive_project_contract` for DT2). All signature-resolved anchors of the boot path resolve
   on both with no code change (`boot_anchors_resolve_on_every_supported_firmware`: softfloat ABI,
-  RAM clear, fused loops, idle spins); `emu/symbols.py` leaves the same nine (DT2) / eleven (DN2)
-  symbols unresolved as on 1.16 / 1.11, all on `tests/test_symbol_audit.py`'s allow-list. Both boot
+  RAM clear, fused loops, idle spins); `tools/coldfire/symbols.py` leaves the same nine (DT2) / eleven (DN2)
+  symbols unresolved as on 1.16 / 1.11, all on `tests/coldfire/test_symbol_audit.py`'s allow-list. Both boot
   to ready natively: DT2 1.17 ready at 1,114,985,926 ColdFire instructions, DN2 1.12 at
   851,236,338. **[D]**
 - **Two things were version-keyed and are not any more.** `supported_softfloat` was a
@@ -273,11 +273,11 @@ Facts measured 2026-10-13 (lane `b`, patchkit spike 0.1). Marks below.
   Tracking did not make. Version Tracking is not ground truth, so three independent checks: (a) for
   the pairs where both images have an RTTI-derived name, the class agrees in 6735 of 6747 (99.8%; the
   `_vN_t` storage-version rename counts as the same class; the rest are byte-identical sibling
-  getters); per stage the weakest is `gap` (1455 of 1461). (b) The 68 symbols that `emu/symbols.py`
+  getters); per stage the weakest is `gap` (1455 of 1461). (b) The 68 symbols that `tools/coldfire/symbols.py`
   resolves by its own signatures in both images: 62 map to the right address on 1.16 -> 1.17 and 61
   of 67 on 1.11 -> 1.12, none wrong, the rest unmapped (fixed RTOS addresses outside any function,
   two char* tables, one address inside a rewritten function); on 1.15C -> 1.16 one is wrong
-  (`transport`, which `emu/symbols.py` itself says is unverified). (c) the 86 addresses of
+  (`transport`, which `tools/coldfire/symbols.py` itself says is unverified). (c) the 86 addresses of
   `tools/coldfire/cf_names.py`: 85 carry to 1.17 (`tools/coldfire/cf_names_dt2_1_17.py`, generated, all [D]); 45 moved,
   40 did not. SRAM (`0x8000xxxx`) and the heap-side globals (`0x43...`, `0x44...`, `0x47...`,
   `0x405b...`) are at the same address in 1.17; only data inside the image moved.

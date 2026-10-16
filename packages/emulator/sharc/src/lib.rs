@@ -888,7 +888,7 @@ impl Engine {
         }
     }
 
-    /// tools/sharc_periph_host.spi2_exchange: FRAME (wire order) lands in
+    /// tools/sharc_dev/sharc_periph_host.spi2_exchange: FRAME (wire order) lands in
     /// the SPI2 RX DMA work unit; the TX work unit comes back in wire order;
     /// both channels then complete (SEC sources 69 and 70).
     pub fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, Trap> {
@@ -950,7 +950,7 @@ impl Engine {
         self.host_event(|s| dma_done(s, LP0_DMA, SID_LP0_DMA))
     }
 
-    /// tools/sharc_periph_host.sport_block: one audio block through SPORT4A
+    /// tools/sharc_dev/sharc_periph_host.sport_block: one audio block through SPORT4A
     /// (output, DMA10) and SPORT4B (input, DMA11). Ok(None) while the SPORTs
     /// are not running (nothing changes). BLOCK None means zeros. All or
     /// nothing: a rejected block leaves the state untouched.
@@ -2735,7 +2735,7 @@ pub unsafe extern "C" fn sharc_native_info(out: *mut u8, out_cap: usize) -> i32 
 /// came from (0: generated before the version existed), the image's
 /// SHA-256 and the block count. Loaders compare the first two with the
 /// current sources and refuse a stale library
-/// (tools/sharc_transpile_run.check_build_info, packages/emulator/live).
+/// (tools/sharc_dev/sharc_transpile_run.check_build_info, packages/emulator/live).
 #[allow(unused_assignments)]
 pub fn build_info() -> String {
     #[allow(unused_mut)]

@@ -1,6 +1,6 @@
 //! The timers+INTC lane as one unit: routes guest reads/writes to whichever
 //! bank owns the address, and drives `service()` at a guest-clock boundary
-//! in the order `emu.longrun.Timers` does (PIT sources before DMA-timer
+//! in the order `unicorn-reference-final:emu/longrun.py`'s `Timers` does (PIT sources before DMA-timer
 //! sources -- `build_timers` constructs `Pits` first).
 //!
 //! This is the interface the plan's P4 stage 2b (DMA/SSI/DSPI) is meant to
@@ -84,7 +84,7 @@ impl Timers {
         self.dtim.rescale(now, new_ips);
     }
 
-    /// `tools/mmio_record.py`'s `release_intro_timers`: at the intro's exit
+    /// `unicorn-reference-final:tools/mmio_record.py`'s `release_intro_timers`: at the intro's exit
     /// hook, the PIT bank's intro-only `(3,)` channel set expands to the
     /// full `(3, 2, 0)` (DTIM's stays `(3,)`), and both banks release their
     /// `held` flag. A trace's `MARK {"event": "intro handover"}` record is
@@ -100,11 +100,11 @@ impl Timers {
     }
 
     /// Advance to guest instruction count `done`. PIT sources first, then
-    /// DTIM (construction order in `emu.longrun.build_timers`). -> raised
+    /// DTIM (construction order in `unicorn-reference-final:emu/longrun.py`'s `build_timers`). -> raised
     /// vectors in delivery order, and any host writes performed.
     ///
     /// Also arms any channel that is enabled but not yet scheduled, at this
-    /// same `done` -- in `emu.longrun.spin`, `Pits.step`/`Dtims.step` (via
+    /// same `done` -- in `unicorn-reference-final:emu/longrun.py`'s `spin`, `Pits.step`/`Dtims.step` (via
     /// `deadline`) run immediately after `service` at the identical clock,
     /// to size the *next* chunk, and `deadline`'s arming
     /// (`if next[ch] is None: next[ch] = done + period`) is a side effect of

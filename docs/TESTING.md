@@ -11,7 +11,7 @@ tests live with their code.
 | `tests/sharc/trace` | The symbolic tracer | `tools/sharc_dev/sharc_trace.py` |
 | `tests/sharc/generation` | Assembler, transpiler, Rust generator, lowering, generated p-code language | `tools/sharc_dev/sharc_transpile*.py`, `tools/sharc_dev/sharc_rsgen.py`, `tools/sharc_dev/sharc_lowergen*.py`, `tools/sharc_dev/sharcpcode.py`, `tools/sharc_dev/sharcspec` |
 | `tests/sharc/analysis` | Loader, disassembler, sharcdb and the other analysis tools | `tools/sharc_dev/sharcldr.py`, `tools/sharc_dev/sharc_disasm.py`, `tools/sharc_dev/sharcdb/`, `tools/sharc_dev/sharc*.py` |
-| `tests/sharc/integration` | Firmware-backed harness, replay, golden hashes, capture and peer | `tools/sharc_dev/sharc_harness/`, `tools/sharc_dev/sharc_replay.py`, `emu/sharc_capture.py`, `emu/sharc_peer.py` |
+| `tests/sharc/integration` | Firmware-backed harness, replay, golden hashes, capture and peer | `tools/sharc_dev/sharc_harness/`, `tools/sharc_dev/sharc_replay.py`, `tools/sharc_dev/sharc_capture.py`, `tools/sharc_dev/sharc_peer.py` |
 | `tests/patchkit` | Patchkit, module primitives, DSP voice rig, PLUCK, master drive, proofs runner. `smoke/` is the emulator smoke tour (`matrix.toml`, `tours/`, `goldens.json`). `pk_src/` holds small patch sources. | `tools/patchkit/patchkit.py`, `tools/patchkit/pk_*.py`, `tools/patchkit/pk_harness.py` |
 | `tests/coldfire` | ColdFire analysis: cf/cfdb, Ghidra tools, symbols, RTTI, vtables, the ISA oracle | `tools/coldfire/cf.py`, `tools/coldfire/cfdb.py`, Ghidra tools |
 | `tests/emulator` | Launcher, PGO, target directories, coupled runner helpers, live audio, wire traces, bootstrap | `tools/emulator/native_emu.py`, `tools/emulator/native_pgo.py`, `tools/emulator/coupled.py` |
@@ -19,7 +19,7 @@ tests live with their code.
 | `tests/firmware` | `.syx` container, aPLib/ELZ, device profiles, firmware atlas, snapshots, machine patch planning, +Drive format | `dt2/`, `emu/` |
 | `tests/dsp` | DSP maps and diffs, FX scenario generators, audio checks | DSP tools |
 | `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/devtools/verify.py`, `tools/devtools/benchlock.py`, `tools/devtools/test_outcomes.py` |
-| `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenarios:*`. | `scenarios/`, `tools/emulator/coupled.py` |
+| `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenarios:*`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
 | `tests/support` | Helpers shared by tests. No `test_` prefix, not collected. `tests/support/paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS`. | |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures | |
 
@@ -38,6 +38,7 @@ Other tests:
 - Mark long firmware runs `@pytest.mark.slow`. They are skipped unless `--slow` is given.
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - A new Python file joins the `CLEAN` list in `tests/devtools/test_lint.py`.
+- `tests/devtools/test_pathcheck_repo.py` (in the verify gate) runs `uv run python -m tools.devtools.pathcheck`: every path-like token in tracked text files must name a tracked file or directory, a generated or git-ignored path, or an allowed token. A deleted file is cited as `REF:path`, checked with `git cat-file` (`unicorn-reference-final:emu/edma.py`, `<commit>^:path`). Files under `history_docs` (findings, plans, design, archive, refs, contracts) may name paths that were once tracked. Add an exception to `allow` in `tools/devtools/pathcheck.json` with a required reason; an allow that matches nothing fails the run. `--fix` and `--fix-deleted REF` rewrite stale tokens (dry run unless `--apply`).
 
 ## Inputs tests need
 
@@ -46,15 +47,15 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 
 | Input | Skip message looks like | How to provide | Tests |
 | --- | --- | --- | --- |
-| Stock firmware `.syx` in the repo root (DT2 1.16/1.17, DN2 1.11/1.12; 1.15C/1.10E for old analysis) | "needs Digitakt_II_OS1.16.syx in the repo root", "stock firmware images not present" | README "Firmware" (files come from Elektron's support site; `DIGI_EMU_SYX` and `DIGI_EMU_SYX_DT2` override paths) | `tests/firmware`, `tests/patchkit`, `tests/emulator/test_bootstrap.py` |
-| Extracted sections `out/sections/<image>/` | "out/sections/dt2-1.16/section_7_BLOB.bin is not available", "no extracted sections", "DT2 1.16 image absent" | `uv run python -m emu.extract Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16` (likewise `dn2-1.11`; README "Extract the firmware") | `tests/sharc/*`, `tests/coldfire`, `tests/dsp` |
+| Stock firmware images in `firmware/` (DT2 1.16/1.17, DN2 1.11/1.12; 1.15C/1.10E for old analysis) | "needs Digitakt_II_OS1.16.syx in firmware/", "stock firmware images not present" | README "Firmware" (files come from Elektron's support site; `DIGI_EMU_SYX` and `DIGI_EMU_SYX_DT2` override paths) | `tests/firmware`, `tests/patchkit`, `tests/emulator/test_bootstrap.py` |
+| Extracted sections `out/sections/<image>/` | "out/sections/dt2-1.16/section_7_BLOB.bin is not available", "no extracted sections", "DT2 1.16 image absent" | `uv run python -m tools.firmware.extract firmware/Digitakt_II_OS1.16.syx -o out/sections/dt2-1.16` (likewise `dn2-1.11`; README "Extract the firmware") | `tests/sharc/*`, `tests/coldfire`, `tests/dsp` |
 | SHARC program database `out/sharcdb/<image>.sqlite` | "out/sharcdb/dt2-1.16.sqlite is not available", "no program database" | `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin` (needs the sections) | `tests/sharc/analysis` |
 | ColdFire Ghidra dump `out/ghidra/<image>-emac` and its cfdb | "out/ghidra/dt2-1.16-emac missing", "no cfdb for dt2-1.17" | Needs Ghidra: a `tools/coldfire/ghidradump.py` dump, then `uv run python -m tools.coldfire.cfdb build out/ghidra/<image>-emac` (AGENTS.md "Static analysis") | `tests/coldfire`, `tests/firmware/test_fw.py` |
 | Native SHARC library (`DEFAULT_LIB` in `tools/sharc_dev/sharc_transpile_run.py`; `SHARC_NATIVE_LIB` overrides) | "no native library built", "native core not built (packages/emulator/sharc)" | `mise run sharc:native-lib` (firmware-free; builds the shared core first; output in `out/native/shared-core/target`). The shared-core library is preferred when present; else the image-specific library at `out/native/opt/target-final` (perf/AOT work; may be stale, and an old one that lacks symbols makes the tests skip); `SHARC_NATIVE_LIB` overrides. | `tests/sharc/semantics`, `tests/sharc/generation` |
 | Generated shared core `out/native/shared-core/gen` | "no shared core generated here" | `mise run gen:core` | `tests/sharc/generation/test_sharc_lowergen.py` |
 | Module toolchains in `out/tools` (m68k gcc/binutils, Selache) | "selache not built (tools/patchkit/pk_toolchains.py selache)", "m68k toolchain not installed" | `mise run toolchains` (about 15 min; `uv run python -m tools.patchkit.pk_toolchains status` shows what is present; docs/PATCHING.md) | `tests/patchkit` |
 | `digi-emud` daemon | "needs DIGI_EMUD (a built digi-emud) and the DN2 .syx" | Build it with `mise run emu:serve -- --build-only` (per `tools/control/digi_client.py`), set `DIGI_EMUD` to the binary (`DIGI_EMUD_DN2` / `DIGI_EMUD_DT2` for coupled runs; `tools/emulator/native_emu.py --daemon --build-only <syx>` prints the path), and have the `.syx` (`DIGI_EMU_SYX`) | `tests/control`, `tests/patchkit/test_master_drive_emu.py`, `tests/emulator/test_coupled_patched.py` |
-| Ready inputs, `snapshots/*.snap` | "no snapshots/*.snap present", patched ready inputs missing | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min; needs the `.syx`; README) | `tests/firmware/test_snapread.py`, `tests/emulator/test_coupled_patched.py` |
+| Ready inputs, `out/snapshots/*.snap` | "no out/snapshots/*.snap present", patched ready inputs missing | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min; needs the `.syx`; README) | `tests/firmware/test_snapread.py`, `tests/emulator/test_coupled_patched.py` |
 | Captures `out/captures/*.dt2cap` | "the fulltx play capture is not available", "no drive3 capture" | Not reproducible from the repository alone; these tests stay skipped for most contributors. | `tests/sharc/integration`, `tests/sharc/generation` |
 | Opt-in switches | "set LIVE_AUDIO_DEVICE_TESTS=1 to open a real output device", "packages/emulator/live not built: cd packages/emulator/live && cargo build --release" | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `cd packages/emulator/live && cargo build --release` builds the live library; `--slow` runs the long firmware runs. A `SELACHE_DIR` oracle switch is not confirmed (see `tools/patchkit/pk_toolchains.py`, which defines `SELACHE_DIR` as a path, not an environment variable). | `tests/emulator/test_live_audio.py`, tests marked `slow` |
 
@@ -124,7 +125,7 @@ Per-file run (`test_outcomes.py run --jobs 6`) of the non-slow suite at
 | --- | --- | --- | --- | --- | --- |
 | 157 | 2289 | 5 | 237 | 0 | about 8 min |
 
-- The 5 failures were in `tests/firmware/test_device.py`: `devices/*-leds.toml` has no `[device]` table. Fixed by `emu/device.py` skipping sidecar files.
+- The 5 failures were in `tests/firmware/test_device.py`: `devices/*-leds.toml` has no `[device]` table. Fixed by `tools/firmware/device.py` skipping sidecar files.
 - After the fixes on this branch (bb912e1), one pytest process over all of `tests/` passes: 2322 passed, 237 skipped, 0 failed, in 18 minutes. The per-file runner takes about 8 minutes with 6 jobs.
 - Clean checkout (no firmware, no out/): 2005 passed, 554 skipped, 0 failed after the fixes in this branch; every skip names its missing input. With `mise run sharc:native-lib` (22 s from cold), the 46 native-library skips run: 644 passed and one failure (the shift 0x50 corpus case, since fixed).
 - The same run after the test moves gave the same outcome and skip reason for every test.
@@ -133,7 +134,7 @@ Per-file run (`test_outcomes.py run --jobs 6`) of the non-slow suite at
 | File | Time |
 | --- | --- |
 | `tests/patchkit/test_pluck.py` | 453 s |
-| `tests/sharc/integration/test_sharc_harness.py` (before the split into test_sharc_harness_{audio,voice,frame,cli}.py) | 210 s |
+| `tests/sharc/integration/test_sharc_harness_*.py` (before the split into test_sharc_harness_{audio,voice,frame,cli}.py) | 210 s |
 | `tests/patchkit/test_patchkit.py` | 111 s |
 | `tests/coldfire/test_regions.py` | 86 s |
 | `tests/patchkit/test_dsp_voice.py` | 73 s |

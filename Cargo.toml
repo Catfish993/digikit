@@ -12,10 +12,8 @@ members = [
     "packages/emulator/control",
     "packages/emulator/coupled",
     "packages/emulator/device-profile",
-    "packages/emulator/host",
     "packages/emulator/live",
     "packages/emulator/loader",
-    "packages/emulator/patchkit",
     "packages/emulator/machine",
     "packages/emulator/periph",
     "packages/emulator/plusdrive",
@@ -24,6 +22,7 @@ members = [
     "packages/emulator/sharc-fast-wasm",
     "packages/emulator/sharc-gen",
     "packages/emulator/sharc-rt",
+    "packages/patchkit",
     "apps/desktop/src-tauri",
 ]
 exclude = [
@@ -34,7 +33,7 @@ exclude = [
 
 [workspace.package]
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/m-dwyer/digikit"
+repository = "https://github.com/ElekLabs/digikit"
 
 # Timing and shipping profile. Matches what the desktop app has always been
 # built with (default codegen units, unwinding panics): changing it moves the

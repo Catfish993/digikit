@@ -8,8 +8,8 @@ Read [README.md](README.md) (setup), [docs/LAYOUT.md](docs/LAYOUT.md) (who owns 
 
 ## Never commit
 
-- Firmware (`*.syx`) or anything derived from it: `sections/`, `out/`, `snapshots/`,
-  `apps/web/.local`, card images.
+- Firmware (`*.syx`) or anything derived from it: `firmware/` holds the images and
+  is ignored; `out/` (sections, snapshots), `apps/web/.local`, card images.
 - Users' sample audio.
 - Secrets.
 
@@ -41,7 +41,7 @@ state and next steps, not results.
 - New Python files join the ruff `CLEAN` list in `tests/devtools/test_lint.py`, and the mypy
   `TYPED` list in `tests/devtools/test_types.py` where practical.
 - Python tools go in the owner's package under `tools/` (docs/LAYOUT.md); run them with `uv run python -m tools.<owner>.<module>` and never change `sys.path`.
-- PCM pins in `scenarios/*.json` and the SHARC golden hashes change only with the
+- PCM pins in `tests/scenarios/*.json` and the SHARC golden hashes change only with the
   maintainer's approval and a stated reason.
 
 ## Hardware

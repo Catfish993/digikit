@@ -78,7 +78,7 @@ all, without claiming they arm a *voice*.
 
 This module never edits `sharc_core`, `emu/`, or
 `sharc_harness.FRAME_PATCH_TABLE` (other lanes' files): it only drives the
-existing replay path (`tools/sharc_replay.write_dma_transfer`/
+existing replay path (`tools/sharc_dev/sharc_replay.write_dma_transfer`/
 `drive_dma_completion`/`call_frame_collect_all_with_hits`, the last with
 this lane's own opt-in `sample_fn` hook) with a wider breakpoint/sample set.
 """
@@ -92,7 +92,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from emu import sharc_capture  # noqa: E402
+from tools.sharc_dev import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_replay as replay  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
@@ -303,7 +303,7 @@ def trace_arm_path(
 ) -> dict:
     """Replay CAPTURE_PATH's real DSPI2 frames through the real hardware
     landing zone (`sharc_harness.write_dma_transfer`/`drive_dma_completion`,
-    the same delivery `tools/sharc_replay.replay()` uses -- lane G1,
+    the same delivery `tools/sharc_dev/sharc_replay.replay()` uses -- lane G1,
     2026-09-26) with one hand-set-up voice (voice 0, `sharc_harness.
     setup_voice`, the same convention every other replay in this project
     uses so results are directly comparable), and record, per frame, every
@@ -316,7 +316,7 @@ def trace_arm_path(
     just `write_dma_transfer`/`drive_dma_completion` are not even called
     for them. This only saves time when the frames being skipped are known
     not to matter for the question at hand (e.g. bracketing a panel event
-    deep into a long idle capture, as `tools/sharc_capture_run.py --kind
+    deep into a long idle capture, as `unicorn-reference-final:tools/sharc_capture_run.py --kind
     note`'s default `trig_at` does): every companding-record/arm-guard
     finding this project has made (docs/findings/06, Lane E2/H1-H3) shows
     those cells depend only on `command_word_shift_src` (toggled by a

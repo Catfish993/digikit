@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate scenarios/dt2-trackfx.json and scenarios/dt2-sendfx.json: DT2 1.16 FX sweeps.
+"""Generate tests/scenarios/dt2-trackfx.json and tests/scenarios/dt2-sendfx.json: DT2 1.16 FX sweeps.
 
     uv run python -m tools.emulator.gen_dt2fx [OUT_DIR]
 
@@ -364,7 +364,9 @@ def main(argv: list[str]) -> int:
     root = (
         pathlib.Path(argv[1])
         if len(argv) > 1
-        else pathlib.Path(__file__).resolve().parent.parent.parent / "scenarios"
+        else pathlib.Path(__file__).resolve().parent.parent.parent
+        / "tests"
+        / "scenarios"
     )
     if len(argv) > 2 and argv[2] == "--ladder":
         d.write(root / "dt2-ladder.json", ladder())

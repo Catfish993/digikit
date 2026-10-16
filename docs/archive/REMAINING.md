@@ -20,8 +20,8 @@ inherited from earlier docs. Claims inherited from earlier docs are marked.
 
 | Step | Tool | State |
 |---|---|---|
-| `.syx` → 8-in-7 decode → ELE3 → section table | `dt2/container.py` | works |
-| sections → decompressed blobs | `emu/extract.py` (`dt2/elz.py` by default, all four firmwares; `--oracle` runs the device's own depacker under Unicorn, 1.15C and 1.10E only) | works |
+| `.syx` → 8-in-7 decode → ELE3 → section table | `tools/firmware/container.py` | works |
+| sections → decompressed blobs | `tools/firmware/extract.py` (`tools/firmware/elz.py` by default, all four firmwares; `--oracle` runs the device's own depacker under Unicorn, 1.15C and 1.10E only) | works |
 | byte-exact, length-preserving edit of a decompressed section | `tools/patchkit/patchimg.py` | works; validates old bytes, refuses overlaps, enforces `len(old)==len(new)` |
 | CRC-32 oracle (`0x80001bd0`) | `emu/oracle.py` | works, byte-exact vs zlib |
 | depack oracle (`0x80000432`) | `emu/oracle.py` | works |
@@ -51,11 +51,11 @@ reverse engineering first.
    dozen lines and needs no LZ77 matching at all. Sections grow; nothing checks
    that. Do this first and defer a real packer indefinitely.
 2. `[W]` **Per-section 8-byte header**: big-endian `[u32 compressed_len][u32 byte_sum]`.
-   The reader is `dt2/container.py:70` / `emu/extract.py:59`; only the writer is
+   The reader is `tools/firmware/container.py:70` / `tools/firmware/extract.py:59`; only the writer is
    missing. Note §4 (updater) is stored raw with sum 0 and §5 (meta) has no
    header — preserve both quirks.
 3. `[W]` **ELE3 section-table writer**: magic, count at `0x1C`, 16-byte entries
-   `(id, offset, comp_len, dest)` from `0x20`. Reader at `dt2/container.py:16,57`;
+   `(id, offset, comp_len, dest)` from `0x20`. Reader at `tools/firmware/container.py:16,57`;
    the writer is a direct inverse.
 4. **32-bit content checksum.** Done — traced at `0x80003ca6` (not
    `0x40003ca6`, a transcription slip in earlier notes; that address is the
@@ -65,7 +65,7 @@ reverse engineering first.
    `sum(i ^ word_i)` over 1-based big-endian u32 words of the whole container
    including the 32-byte trailer, compared against preamble bytes 4-7.
    Confirmed byte-exact on all four firmwares. Implemented as
-   `dt2.build.content_checksum`.
+   `tools.firmware.build.content_checksum`.
 5. **HMAC-SHA256 trailer.** Done — trailer computed at `0x80005e2a`; the key
    is derived at `0x80005d90`, same code in both devices:
    `key[i] = CONST[i] ^ sha256(STRING)[i] ^ sha256(STRING[::-1])[i]`, with
@@ -74,8 +74,8 @@ reverse engineering first.
    @`0x80007077`. It is textbook HMAC-SHA256 over `container[:total_len-32]`.
    The "32-byte constant beginning `69 5d 82 bc`" noted above is only one of
    the three XOR operands, not the key itself. Implemented as
-   `dt2/authcode.py`.
-6. `[W]` **8-in-7 re-encoding.** Direct inverse of `dt2/container.py:38-44`.
+   `tools/firmware/authcode.py`.
+6. `[W]` **8-in-7 re-encoding.** Direct inverse of `tools/firmware/container.py:38-44`.
    No ambiguity.
 7. **Per-packet SysEx checksum.** Done — `decode_syx()` had sliced
    `body[9:125]` and discarded byte 125 without ever computing or checking
@@ -83,7 +83,7 @@ reverse engineering first.
    where `body` is the bytes between F0 and F7 and `K` is byte 7 of the
    16-byte framing message (`0x0F` Digitakt II, `0x10` Digitone II).
    Verified on 64,053 messages across four firmwares. Implemented as
-   `dt2.build.packet_checksum`. Worth recording: an earlier exhaustive
+   `tools.firmware.build.packet_checksum`. Worth recording: an earlier exhaustive
    black-box search over 30,603 pairs failed because the construction folds
    each byte's own index in, a family the search never tried.
 8. `[W]` **Round-trip gate.** Repack → re-extract with `emu/oracle.py` → assert
@@ -108,7 +108,7 @@ For the stated goal, what is needed on top of the repack chain:
   firmware's SHA-256, and refuses to apply two patches that overlap;
 - `apply` as the inverse of the manifest `patchimg.py` already writes — this is
   a small refactor of existing, working code, not new logic;
-- device parameterisation. `emu/device.py` + `devices/*.toml` already do this
+- device parameterisation. `tools/firmware/device.py` + `devices/*.toml` already do this
   properly for the **panel**, but every container/address constant is hardcoded
   DT2-1.15C (`emu/oracle.py` says so in its own header). Addresses must move
   into the device TOMLs before DN2 can be patched at all.
@@ -439,7 +439,7 @@ Start there.
    about forty lines — tag bit `0`, literal byte, repeat, end code, no LZ77
    matching. Byte-exact packing was already established as unnecessary.
 2. The three mechanical writers: per-section header, ELE3 table, 8-in-7
-   encode. Each is the direct inverse of a reader in `dt2/container.py`.
+   encode. Each is the direct inverse of a reader in `tools/firmware/container.py`.
 3. **Build the round-trip gate early**: repack → re-extract with the device's
    own depacker → assert all five sections byte-identical. This is what makes
    flashing defensible, and it exists as a test before anything else needs to.

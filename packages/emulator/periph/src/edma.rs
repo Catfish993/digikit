@@ -1,7 +1,7 @@
 //! The eDMA controller (MCF5441XRM chapter 19): shared register layout used
 //! by every channel model in this crate (this file's own [`TxChannel`],
 //! `dspi::Dspi2Link`, `ssi::Ssi0Dma`), plus the console-UART8-TX channel
-//! (35) itself -- a direct port of `emu/edma.py`'s `TxChannel`.
+//! (35) itself -- a direct port of `unicorn-reference-final:emu/edma.py`'s `TxChannel`.
 //!
 //! ## Register layout
 //!
@@ -19,7 +19,7 @@
 //! eDMA control registers any model in this codebase reacts to (a write
 //! arms/disarms a channel's request); every other TCD field is read
 //! generically by field name (`SADDR`, `ATTR`, ... `CSR`), not hardcoded per
-//! channel, matching the discipline `emu/edma.py`/`emu/dspi2.py`/`emu/ssi.py`
+//! channel, matching the discipline `unicorn-reference-final:emu/edma.py`/`unicorn-reference-final:emu/dspi2.py`/`unicorn-reference-final:emu/ssi.py`
 //! already follow (see their module docstrings: "duplicating firmware
 //! struct layout is the mistake to avoid").
 //!
@@ -108,7 +108,7 @@ pub const fn tcd_offset(chan: usize) -> usize {
     TCD_SLOT_OFFSET + chan * 0x20
 }
 
-/// Sign-extend the low `bits` bits of `value` (`emu.edma`/`emu.dspi2`'s
+/// Sign-extend the low `bits` bits of `value` (`unicorn-reference-final:emu/edma.py`/`unicorn-reference-final:emu/dspi2.py`'s
 /// `_signed`; `edma.py`'s `TxChannel.run` inlines the 16-bit case).
 pub fn signed(value: u32, bits: u32) -> i64 {
     let sign = 1i64 << (bits - 1);
@@ -236,7 +236,7 @@ impl<'a> TcdView<'a> {
 /// One eDMA channel whose destination is a fixed peripheral register and
 /// whose major loop runs eagerly on `EDMA_SERQ`, run entirely inside a
 /// register write with the CPU's own instruction stream paused -- a direct
-/// port of `emu/edma.py`'s `TxChannel` (see that module's docstring for the
+/// port of `unicorn-reference-final:emu/edma.py`'s `TxChannel` (see that module's docstring for the
 /// hardware reasoning: eDMA channel 35, the UART8 console TX ring).
 ///
 /// The major loop's *source* bytes (`0x4FE1B000`'s ring, outside this
@@ -246,7 +246,7 @@ impl<'a> TcdView<'a> {
 /// `packages/emulator/machine`, with a real memory bus) calls [`TxChannel::run`]
 /// directly with the source bytes it read itself; a trace replay instead
 /// takes them from the trace's own merged `HRD` record for this exact call
-/// (`emu.edma.TxChannel.run read` -- `docs/plans/native-emulator.md` P4,
+/// (`unicorn-reference-final:emu/edma.py`'s `TxChannel.run read` -- `docs/plans/native-emulator.md` P4,
 /// "host memory-write records HWR" mentions this class of record; the read
 /// counterpart is `HRD`, recorded "only for peripheral modules... the DMA
 /// source data a model replayed in isolation needs as input",
@@ -279,7 +279,7 @@ impl TxChannel {
     }
 
     /// Run the whole major loop now, given the source bytes it moved
-    /// (`citer * 1` bytes, one byte per minor loop -- `emu.edma.TxChannel`
+    /// (`citer * 1` bytes, one byte per minor loop -- `unicorn-reference-final:emu/edma.py`'s `TxChannel`
     /// always uses `NBYTES` bytes per minor loop, but the console driver's
     /// own TCD always programs `NBYTES=1`; `source` may be longer, only the
     /// first `citer * nbytes` bytes are used). -> `false` (no-op) if CITER

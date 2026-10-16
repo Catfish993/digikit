@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate scenarios/dn2-sendfx.json: one sweep per control of the DN2 send FX pages.
+"""Generate tests/scenarios/dn2-sendfx.json: one sweep per control of the DN2 send FX pages.
 
     uv run python -m tools.emulator.gen_sendfx [OUT]
 
@@ -193,6 +193,7 @@ def scenarios() -> list[dict]:
 def main(argv: list[str]) -> int:
     default = (
         pathlib.Path(__file__).resolve().parent.parent.parent
+        / "tests"
         / "scenarios"
         / "dn2-sendfx.json"
     )

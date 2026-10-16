@@ -10,14 +10,14 @@ given run directories. Parameter values come from the report's ``peek``
 (s16 big-endian, UI value = high byte). Writes fxcheck.json and, unless
 --no-plots, plots-<scenario>/ (audiocheck plots) into each run directory.
 
-Track FX sweeps (scenarios/dn2-trackfx.json, ``tf-*``): the reference is
+Track FX sweeps (tests/scenarios/dn2-trackfx.json, ``tf-*``): the reference is
 tf-dry-hold or tf-dry-tap by hold time, every run decodes the whole peeked
 Sound and Fx arrays by parameter name (descriptor table of --image, default the
 DN2 1.11 MAIN OS) and lists the ones that differ from the reference, and the
 per-control measures are printed in a second table. ``--ref`` overrides the
 reference.
 
-Send FX sweeps (scenarios/dn2-sendfx.json, ``sf-*``): the dry reference is
+Send FX sweeps (tests/scenarios/dn2-sendfx.json, ``sf-*``): the dry reference is
 sf-dry-tap or sf-dry-hold, the read-back diff is against sf-<fx>-ref (send up,
 page at defaults), the wet signal is the scenario minus the dry reference, and
 the per-effect measures (delay echoes, reverb decay and onset, chorus
@@ -197,7 +197,7 @@ def scenario_events() -> dict[str, list[dict]]:
     """Events of every scenario in the DN2 FX scenario files, by name."""
     out: dict[str, list[dict]] = {}
     for fn in SCENARIO_FILES:
-        f = ROOT / "scenarios" / fn
+        f = ROOT / "tests" / "scenarios" / fn
         if f.exists():
             for s in json.loads(f.read_text())["scenarios"]:
                 out[s["name"]] = s["events"]
@@ -332,7 +332,7 @@ def snd_ui(vals: dict[str, int], idx: int) -> int | None:
     return None
 
 
-# --- per-control measures (scenarios/dn2-trackfx.json) ------------------------
+# --- per-control measures (tests/scenarios/dn2-trackfx.json) ------------------------
 
 HOLD_FAMILIES = ("br", "over", "srr")
 SEND_FAMILIES = ("del", "rev", "chr")
@@ -531,7 +531,7 @@ def plot_tf(x: ac.F, rate: int, t0: float, d: pathlib.Path, m: dict[str, Any]) -
         plt.close(fig)
 
 
-# --- send FX pages (scenarios/dn2-sendfx.json) --------------------------------
+# --- send FX pages (tests/scenarios/dn2-sendfx.json) --------------------------------
 
 PRE = 0.02  # alignment pre-roll before the note onset, s
 

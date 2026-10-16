@@ -2,7 +2,7 @@
 # fmt: off
 """Resolve SHARC+ program addresses from tools/sharc_dev/sharcdb/'s database, instead
 of hardcoding them per firmware build -- the SHARC-side counterpart to
-emu/symbols.py, which does this for the ColdFire main OS. Read that module's
+tools/coldfire/symbols.py, which does this for the ColdFire main OS. Read that module's
 docstring first: the same idea (fixed anchors verified by content, everything
 else found by what it looks like or how it is reached from something already
 resolved, REQUIRED fails loudly at resolve() time, OPTIONAL degrades to None)
@@ -17,7 +17,7 @@ applies here with three SHARC-specific primitives instead of ColdFire's:
     * LiteralAt: a literal value decoded by tools/sharc_dev/sharcdb/'s own typed
       instruction reader, at a fixed word (`sw`) offset from an
       already-resolved function's entry -- the SHARC analogue of
-      emu.symbols.Operand, except the literal is read from the `literals`
+      tools.coldfire.symbols.Operand, except the literal is read from the `literals`
       table (already sign-extended and int-valued by the decoder) rather
       than re-parsed from raw bytes.
     * IVTSlot: a populated slot of the L1 hardware interrupt vector table,
@@ -165,7 +165,7 @@ class LiteralAt:
 
 class Offset:
     """A fixed word distance from an already-resolved symbol -- the SHARC
-    analogue of emu.symbols.Offset, for a code address (a command-table
+    analogue of tools.coldfire.symbols.Offset, for a code address (a command-table
     jump target, say) that has no literal or signature of its own, only a
     known position relative to something that does. Verified against
     `insn` so a delta that no longer lands on an aligned instruction start

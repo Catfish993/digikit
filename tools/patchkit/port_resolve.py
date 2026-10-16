@@ -72,6 +72,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+from tools.firmware import config
+
 ROOT = Path(__file__).resolve().parents[2]
 
 RESOLVED_BY = "tools/patchkit/port_resolve.py 1"
@@ -127,9 +129,9 @@ def module_rules(root: Path) -> list[dict]:
 
 
 def sections_of(syx: Path) -> dict[int, bytes]:
-    from dt2.container import sections
-    from dt2.elz import depack_section
-    from emu.extract import classify
+    from tools.firmware.container import sections
+    from tools.firmware.elz import depack_section
+    from tools.firmware.extract import classify
 
     c, table = sections(str(syx))
     out = {}
@@ -256,7 +258,7 @@ def param_table(cf: CfFacts, rule: dict) -> tuple[int, int]:
 def scan_param_sites(
     main: bytes, main_base: int, t1: int, count: int
 ) -> tuple[list[int], list[tuple[int, int]]]:
-    """The same scan as `params::scan` in packages/emulator/patchkit: references into the table and clamp bounds."""
+    """The same scan as `params::scan` in packages/patchkit: references into the table and clamp bounds."""
     import numpy as np
 
     end = min(t1 - main_base, len(main))
@@ -703,7 +705,10 @@ def main() -> int:
         if a.cmd == "rule-sharc":
             return cmd_rule_sharc(a)
         files = (
-            [Path(f) if Path(f).exists() else ROOT / f for f in FIRMWARE.values()]
+            [
+                Path(f) if Path(f).exists() else config.stock(f)
+                for f in FIRMWARE.values()
+            ]
             if a.cmd == "resolve-all"
             else [a.syx]
         )

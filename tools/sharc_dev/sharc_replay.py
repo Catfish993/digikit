@@ -1,4 +1,4 @@
-"""Replay a tools/sharc_capture_run.py capture into the real SHARC audio
+"""Replay a unicorn-reference-final:tools/sharc_capture_run.py capture into the real SHARC audio
 task, from a post-init state.
 
     uv run python -m tools.sharc_dev.sharc_replay dt2-1.16 CAPTURE.dt2cap \
@@ -14,7 +14,7 @@ For each captured DSPI2 frame, in capture order:
    flags at `0x73c + 2i` / `0x75c + 2i`, for tracks 0-15. This does not
    depend on where -- or whether -- the payload lands on the SHARC side
    (see point 2): it is read straight from the captured bytes, the same way
-   `docs/findings/04`'s own `tools/sharcframe.py` experiment read them.
+   `docs/findings/04`'s own `unicorn-reference-final:tools/sharcframe.py` experiment read them.
 
 2. **Delivers the transfer at its real hardware address and lets the
    firmware do the rest (lane G1, 2026-09-26)**, instead of poking a
@@ -116,7 +116,7 @@ from collections.abc import Callable
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-from emu import sharc_capture  # noqa: E402
+from tools.sharc_dev import sharc_capture  # noqa: E402
 from tools.sharc_dev import sharc_harness as h  # noqa: E402
 from tools.sharc_dev import sharc_lp0 as lp0  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
@@ -135,7 +135,7 @@ from tools.sharc_dev import sharc_trace as st  # noqa: E402
 # which are relative to this same base either way.
 RX_BASE = 0x2558DC
 
-# emu/dspiframe.py's TX_PAYLOAD_BYTES["dt2"]: the real-payload length the
+# tools/sharc_dev/dspiframe.py's TX_PAYLOAD_BYTES["dt2"]: the real-payload length the
 # ColdFire driver copies out of its own TX source buffer before padding the
 # rest of the FRAME_BYTES=0xabc (2,748) byte wire frame with tag-only PUSHR
 # entries (docs/findings/04-coldfire-dsp-link.md, "TX length ... are not two
@@ -147,9 +147,9 @@ TX_PAYLOAD_BYTES = 0x802
 
 # docs/findings/04's per-track TX frame map: offsets into the ColdFire's own
 # 0x802-byte payload, which is also this tool's captured `tx` bytes (see
-# tools/sharc_capture_run.py: the driver-call hook captures the argument
+# unicorn-reference-final:tools/sharc_capture_run.py: the driver-call hook captures the argument
 # length the firmware itself passes, 0x802, not the padded 2748-byte wire
-# frame emu/dspi2.py's eDMA model would see).
+# frame unicorn-reference-final:emu/dspi2.py's eDMA model would see).
 MACHINE_TYPE_OFFSET = 0x94
 FLAG_A_OFFSET = 0x73C
 FLAG_B_OFFSET = 0x75C
@@ -182,7 +182,7 @@ VOICE_ACTIVATED_REASON = (
     "receive buffers are not aliased to the frame reader's runtime I5: "
     "'No static path establishes either frame value'). This replay drives "
     "the render path with a hand-set-up voice "
-    "(tools/sharc_harness.setup_voice), not one the firmware itself "
+    "(tools/sharc_dev/sharc_harness.setup_voice), not one the firmware itself "
     "activated from the captured frame."
 )
 
@@ -220,7 +220,7 @@ def describe_frame(tx: bytes) -> dict:
     carries, from the ColdFire's own documented TX layout -- independent of
     where, or whether, it lands on the SHARC side. Also reports the
     transfer's tail (past `TX_PAYLOAD_BYTES`, see that constant's own
-    docstring): a capture made before this lane's `tools/sharc_capture_run.py`
+    docstring): a capture made before this lane's `unicorn-reference-final:tools/sharc_capture_run.py`
     fix only ever has `tx_len == TX_PAYLOAD_BYTES` (an empty tail, `None`
     fields below), not a claim the tail is absent on real hardware."""
     tracks = [

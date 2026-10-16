@@ -1,5 +1,5 @@
 # fmt: off
-"""Audit every symbol emu/symbols.py resolves, on both current firmwares --
+"""Audit every symbol tools/coldfire/symbols.py resolves, on both current firmwares --
 Digitakt II 1.16 and Digitone II 1.11 -- instead of discovering a gap one
 hang at a time (as display_sem and worker_done_sem were). Skips outright if
 an image has not been extracted; a real environment (Em's) has both.
@@ -7,14 +7,14 @@ an image has not been extracted; a real environment (Em's) has both.
 import unittest
 from pathlib import Path
 
-from emu import symbols
+from tools.coldfire import symbols
 
 DT16 = Path("out/sections/dt2-1.16/section_3_MAIN_OS.bin")
 DN11 = Path("out/sections/dn2-1.11/section_3_MAIN_OS.bin")
 
-# Read only from emu/uitrace.py's UiTrace, which tools/guirun.py constructs
+# Read only from unicorn-reference-final:emu/uitrace.py's UiTrace, which unicorn-reference-final:tools/guirun.py constructs
 # only under --trace-ui / --trace-ui-verbose / --trace-ui-json (see
-# tools/guirun.py around `trace = uitrace.UiTrace(...)`). Unresolved here
+# unicorn-reference-final:tools/guirun.py around `trace = uitrace.UiTrace(...)`). Unresolved here
 # degrades trace output, never boot, so the audit does not fail on it. Also
 # covers queue_send/ui_queue, which UiTrace is the only outside reader of.
 TRACE_UI_ONLY = frozenset({
@@ -25,9 +25,9 @@ TRACE_UI_ONLY = frozenset({
 
 # transport/call_sites: diagnostic-only (dspboot's do_transport_call logs
 # which timeout argument a call site pushed; changes no register or memory
-# state). emu/symbols.py's own comment on `transport` documents it as
+# state). tools/coldfire/symbols.py's own comment on `transport` documents it as
 # "NOT verified to resolve on Digitone" and every caller degrades with
-# `profile.call_sites or ()` (see emu/dspboot.py) rather than requiring it.
+# `profile.call_sites or ()` (see unicorn-reference-final:emu/dspboot.py) rather than requiring it.
 DIAGNOSTIC_ONLY = frozenset({'transport', 'call_sites'})
 
 ALLOWED_NONE = TRACE_UI_ONLY | DIAGNOSTIC_ONLY
@@ -75,7 +75,7 @@ class SymbolAuditTest(unittest.TestCase):
         """Every Fixed(...) rule (a literal address, optionally with a
         verify-bytes check) should resolve on BOTH current images. A Fixed
         rule that only verifies on one build is exactly the display_sem bug
-        (emu/symbols.py's own SigAt docstring): a hardcoded 1.15C-only
+        (tools/coldfire/symbols.py's own SigAt docstring): a hardcoded 1.15C-only
         address that silently stops matching on a later build."""
         present = {label: path for label, path in IMAGES.items() if path.exists()}
         if len(present) < 2:

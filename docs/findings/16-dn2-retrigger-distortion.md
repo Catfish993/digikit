@@ -154,7 +154,7 @@ regions entered with MODE1 bits 21-23, so it never ran 17a/b under PEYEN.
 
 Fix: `tools/sharc_dev/sharc_core/forms_move.py::_type_17a` also writes the Cureg under
 `_simd_active`; test `test_type17_immediate_load_writes_cureg_only_under_peyen`
-in tests/test_sharc_stack_registers.py. **[V]** A static scan found 57 Type 17
+in tests/sharc/semantics/test_sharc_stack_registers.py. **[V]** A static scan found 57 Type 17
 R/S loads inside PEYEN spans in DN2 1.11 and 19 in DT2 1.16 (e.g. DN2
 0x1c1b5d, 0x1c209a, 0x1c248c, 0x1c2593, 0x1c4693): all were wrong before.
 
@@ -175,11 +175,11 @@ Results after the fix **[V]**:
 - Fine scan f00..f24 at six DSP periods (150 runs, an22): 0 bad; tone 94.3-95.2%.
 - Wide scan P=1202..~1342 (140 runs, an24): no 'B'.
 - Scenario hashes: trig1-taps, trig1-tap-release and exactness-100m changed
-  (expect_sha256 updated in scenarios/dn2.json, because the DSP
+  (expect_sha256 updated in tests/scenarios/dn2.json, because the DSP
   output changed on purpose); trig1-noqa-40m unchanged (a50586e8..). New:
   trig1-taps 1ca0ae84.., tap-release aa1dbd9e.., exactness-100m 3b600f6d... All
   taps in the three changed scenarios are clean (tone 94.7-95.1%).
-- tests/test_sharc_golden.py: all six hashes unchanged (they use DT2 1.16 and
+- tests/sharc/integration/test_sharc_golden.py: all six hashes unchanged (they use DT2 1.16 and
   coverage/run paths that do not hit this case): no `--update`.
 - `pytest -k "sharc and not slow"`: 45 failed (all the stale native dylib
   tests, same count as before), 1703 passed: no new failures.
@@ -230,7 +230,7 @@ samples unchanged.
 
 ## Reproduce
 
-- Scenarios in `scenarios/dn2.json`: `trig1-taps`,
+- Scenarios in `tests/scenarios/dn2.json`: `trig1-taps`,
   `trig1-tap-release`. With the 2026-10-06 snapshot (the default) no NO press
   is needed before Trig 1; the NO prelude in older scenarios is harmless on the
   main screen. The 2026-10-03 snapshot has the SLC dialog open, so it needs the
@@ -259,7 +259,7 @@ The reference is now `mise run emu:ready -- dn2` (tools/emulator/ready.py: CF co
 plus a DSP cold-start state from the .syx alone). New pins: exactness-100m
 `b3f5230f..`, trig1-taps `d60ad339..`, trig1-tap-release `88347621..`,
 trig1-noqa-40m `2861ce03..`, CF digest `55dc699e..`, DSP export `4dc48019..`
-(`scenarios/dn2.json`, `coupled_ready_exactness`). The retrigger
+(`tests/scenarios/dn2.json`, `coupled_ready_exactness`). The retrigger
 scans of this finding were made on the old state and are not repeated **[O]**.
 
 ### Why the old and the cold start state differ **[D]**

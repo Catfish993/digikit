@@ -6,7 +6,7 @@ RAM, then runs functions with the gcc m68k ABI (arguments on the stack, result i
 and returns the registers and requested memory. Backed by packages/emulator/boot/examples/cf_call.rs.
 
     from pk_cfcall import CfMachine
-    m = CfMachine("Digitakt_II_OS1.17.syx")
+    m = CfMachine("Digitakt_II_OS1.17.syx")  # a bare name is looked up in firmware/
     r = m.call(0x47e8b000, [ptr, n], pokes={0x47e8b000: code, ptr: data}, reads=[(ptr, 16)])
     r.d0, r.reads[0]
 
@@ -21,6 +21,8 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from tools.firmware import config
 
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = ROOT / "target" / "release" / "examples" / "cf_call"
@@ -91,7 +93,11 @@ class CfMachine:
         self.base_sha256 = base_sha256
         self.syx = Path(syx)
         if not self.syx.is_absolute():
-            self.syx = ROOT / self.syx
+            self.syx = (
+                config.stock(self.syx.name)
+                if len(self.syx.parts) == 1
+                else ROOT / self.syx
+            )
         CACHE.mkdir(parents=True, exist_ok=True)
         self.state = Path(state) if state else CACHE / (self.syx.stem + ".state")
         self.timeout = timeout

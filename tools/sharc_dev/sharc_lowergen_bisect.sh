@@ -3,7 +3,7 @@
 # usage: tools/sharc_dev/sharc_lowergen_bisect.sh SECONDS CONFIG FORMS...
 #   CONFIG a fastcov --config (static-insns+follow, default, fast-auto, ...)
 #   FORMS  none, all, or a comma list of forms
-export DIGI_EMU_SYX=${DIGI_EMU_SYX:-$PWD/../../../Digitone_II_OS1.11.syx}
+export DIGI_EMU_SYX=${DIGI_EMU_SYX:-$PWD/../../../firmware/Digitone_II_OS1.11.syx}
 secs=$1
 config=$2
 shift 2

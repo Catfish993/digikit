@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the panel LED sweep scenarios to scenarios/dt2.json and scenarios/dn2.json.
+"""Add the panel LED sweep scenarios to tests/scenarios/dt2.json and tests/scenarios/dn2.json.
 
     uv run python -m tools.emulator.gen_led_sweep
 
@@ -38,7 +38,7 @@ def scenario(dev: str, codes: int) -> dict:
 
 def main() -> None:
     for dev, codes in DEVICES.items():
-        path = ROOT / "scenarios" / f"{dev}.json"
+        path = ROOT / "tests" / "scenarios" / f"{dev}.json"
         doc = json.loads(path.read_text())
         name = f"{dev}-led-sweep"
         doc["scenarios"] = [s for s in doc["scenarios"] if s["name"] != name]

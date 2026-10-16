@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate scenarios/dn2-trackfx.json: one sweep per control of the DN2 track FX page.
+"""Generate tests/scenarios/dn2-trackfx.json: one sweep per control of the DN2 track FX page.
 
     uv run python -m tools.emulator.gen_trackfx [OUT]
 
@@ -188,6 +188,7 @@ def scenarios() -> list[dict]:
 def main(argv: list[str]) -> int:
     default = (
         pathlib.Path(__file__).resolve().parent.parent.parent
+        / "tests"
         / "scenarios"
         / "dn2-trackfx.json"
     )

@@ -1,5 +1,5 @@
 """SHARC coprocessor server: the process peer at the far end of
-``emu/sharc_peer.py``.
+``tools/sharc_dev/sharc_peer.py``.
 
 Runs the SHARC core as its own OS process so it can be stepped in lockstep
 with the ColdFire emulator (CPython + patched Unicorn) across a process
@@ -16,10 +16,10 @@ CPython for Unicorn:
     uv run --no-project --python pypy3.11 python -m tools.sharc_dev.sharc_proc
 
 This module is pure standard library (plus, for a future runner backend,
-`tools/sharc_dev/sharc_core`/`tools/sharc_dev/sharc_run` -- see ``RunnerBackend``): no `unicorn`,
+`tools/sharc_dev/sharc_core`/`tools/sharc_dev/sharc_run.py` -- see ``RunnerBackend``): no `unicorn`,
 `capstone` or `pypcode`, so it starts under PyPy. Everything CPython-only
 (Unicorn, the DSPI2/SSI0 models themselves) stays on the client side, in
-``emu/sharc_peer.py``.
+``tools/sharc_dev/sharc_peer.py``.
 
 ## Protocol (version 1)
 
@@ -30,7 +30,7 @@ byte payload (``EXCHANGE``/``EXCHANGE_OK``, ``AUDIO_RX_OK``, ``AUDIO_TX``) or
 a UTF-8 JSON object (everything else, including ``ERROR``). No pickle, so a
 message is safe to log or replay without executing anything. stdout carries
 *only* this framing; all diagnostics go to stderr (see
-``emu.sharc_peer.SharcServerDied``, which reads stderr's tail on a crash).
+``tools.sharc_dev.sharc_peer.SharcServerDied``, which reads stderr's tail on a crash).
 
 | type | name         | direction | body | meaning                                |
 |-----:|--------------|-----------|------|-----------------------------------------|
@@ -38,11 +38,11 @@ message is safe to log or replay without executing anything. stdout carries
 |    2 | HELLO_OK     | s -> c    | json | ``{version, backend, device, pid}``     |
 |    3 | RESET        | c -> s    | json | ``{}``                                  |
 |    4 | RESET_OK     | s -> c    | json | ``{}``                                  |
-|    5 | EXCHANGE     | c -> s    | raw  | DSPI2 frame TX bytes (`emu.dspi2` peer) |
+|    5 | EXCHANGE     | c -> s    | raw  | DSPI2 frame TX bytes (`unicorn-reference-final:emu/dspi2.py` peer) |
 |    6 | EXCHANGE_OK  | s -> c    | raw  | DSPI2 frame RX bytes, same length       |
-|    7 | AUDIO_RX     | c -> s    | json | ``{nbytes}`` -- this period's `emu.ssi` `peer.rx` request |
+|    7 | AUDIO_RX     | c -> s    | json | ``{nbytes}`` -- this period's `unicorn-reference-final:emu/ssi.py` `peer.rx` request |
 |    8 | AUDIO_RX_OK  | s -> c    | raw  | `nbytes` of RX/DAC sample bytes         |
-|    9 | AUDIO_TX     | c -> s    | raw  | this period's captured TX/codec sample bytes (`emu.ssi` `peer.tx`) |
+|    9 | AUDIO_TX     | c -> s    | raw  | this period's captured TX/codec sample bytes (`unicorn-reference-final:emu/ssi.py` `peer.tx`) |
 |   10 | AUDIO_TX_OK  | s -> c    | json | ``{}``                                  |
 |   11 | ADVANCE      | c -> s    | json | ``{unit: "instructions" or "samples", count}`` |
 |   12 | ADVANCE_OK   | s -> c    | json | ``{executed}``                          |
@@ -52,7 +52,7 @@ message is safe to log or replay without executing anything. stdout carries
 |   16 | SHUTDOWN_OK  | s -> c    | json | ``{}`` (server exits after replying)    |
 |  255 | ERROR        | s -> c    | json | ``{message}`` -- sent instead of the OK reply for whatever request failed; the server keeps serving afterwards |
 
-``AUDIO`` is two message types, not one, because ``emu/ssi.py``'s peer hook
+``AUDIO`` is two message types, not one, because ``unicorn-reference-final:emu/ssi.py``'s peer hook
 already is two independent calls per DMA period -- ``peer.rx(nbytes)`` before
 the RX channel's destination is written, ``peer.tx(data)`` after the TX
 channel's source is captured (see that module's "SSI0 peer hook") -- and RX
@@ -60,8 +60,8 @@ for period N does not causally depend on TX for period N, so there is
 nothing to gain by forcing them into one round trip.
 
 ``ADVANCE`` lets a caller step the SHARC side's own clock independently of
-frame/audio traffic (`emu.longrun.spin`'s `async_events` calls `service()` at
-every chunk boundary; see `emu.sharc_peer.SharcServerPeer.step`/`service`).
+frame/audio traffic (`unicorn-reference-final:emu/longrun.py`'s `spin` `async_events` calls `service()` at
+every chunk boundary; see `tools.sharc_dev.sharc_peer.SharcServerPeer.step`/`service`).
 **Open question, not settled by this module**: what ColdFire-instruction- or
 DSPI2-frame-cadence should map to how many `ADVANCE` samples/instructions.
 `StubBackend` does not need an answer (nothing here depends on wall time
@@ -143,7 +143,7 @@ _LEN = struct.Struct(">I")  # 4-byte big-endian body length
 
 
 # ---------------------------------------------------------------------------
-# Framing. Deliberately duplicated (not imported) in emu/sharc_peer.py: this
+# Framing. Deliberately duplicated (not imported) in tools/sharc_dev/sharc_peer.py: this
 # module has to stay stdlib-only to start under PyPy, and the client lives in
 # the emu/ package that many other CPython-only (Unicorn) modules import at
 # package scope -- importing across that boundary would tie two things that
@@ -198,7 +198,7 @@ class Backend(ABC):
 
     A backend answers in guest instruction/byte terms only; it knows nothing
     about the wire protocol above, or about the DSPI2/SSI0 peer contracts on
-    the ColdFire side -- see ``emu/dspi2.py`` and ``emu/ssi.py`` for those.
+    the ColdFire side -- see ``unicorn-reference-final:emu/dspi2.py`` and ``unicorn-reference-final:emu/ssi.py`` for those.
     """
 
     @abstractmethod
@@ -302,7 +302,7 @@ class RunnerBackend(Backend):
     getting one voice to render correctly (`tools/sharc_dev/sharc_run.py`'s
     ``sharc_run`` harness / `tools/sharc_dev/sharc_harness/`), and the server-process
     split is orthogonal to that work -- this class exists so the protocol
-    and the client (`emu/sharc_peer.py`) are already exercised against the
+    and the client (`tools/sharc_dev/sharc_peer.py`) are already exercised against the
     exact shape a finished runner will need, not so the runner is ready now.
     Every method raises the same ``NotImplementedError``; the server turns
     that into an ``ERROR`` reply (see ``Server.handle_one``) rather than

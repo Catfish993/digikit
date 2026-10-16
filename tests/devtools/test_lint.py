@@ -14,8 +14,6 @@ ROOT = str(REPO_ROOT)
 
 # Every tracked Python file (ruff skips git-ignored files).
 CLEAN = [
-    "dt2",
-    "emu",
     "tests",
     "tools",
 ]

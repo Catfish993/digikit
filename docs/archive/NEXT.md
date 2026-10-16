@@ -16,9 +16,9 @@ You supply your own `Digitakt_II_OS1.15C.syx`
 uv sync                     # creates .venv on CPython 3.12 from uv.lock
 
 # decompress the sections out of the .syx (about a second)
-uv run python -m emu.extract Digitakt_II_OS1.15C.syx -o sections/
+uv run python -m tools.firmware.extract Digitakt_II_OS1.15C.syx -o sections/
 
-uv run python -m dt2.container Digitakt_II_OS1.15C.syx   # section table
+uv run python -m tools.firmware.container Digitakt_II_OS1.15C.syx   # section table
 uv run python emu/oracle.py                              # CRC oracle, seconds
 uv run python emu/screen.py selftest                     # graphics, seconds
 uv run python -m emu.softfloat                           # float HLE vs firmware
@@ -47,8 +47,8 @@ window. uv's managed CPython bundles tkinter, so `uv sync` is the whole setup
 
 | Capability | Where | Status |
 |---|---|---|
-| `.syx` -> ELE3 container + section table | `dt2/container.py` | works |
-| ColdFire-aware disassembly | `dt2/coldfire.py` | works (handles MVS/MVZ, FF1) |
+| `.syx` -> ELE3 container + section table | `tools/firmware/container.py` | works |
+| ColdFire-aware disassembly | `tools/coldfire/disasm.py` | works (handles MVS/MVZ, FF1) |
 | Unicorn machine + ISA workarounds | `emu/harness.py` | works |
 | CRC-32 oracle (`0x80001bd0`) | `emu/oracle.py` | byte-exact vs zlib |
 | aPLib depacker (`0x80000432`) | `emu/oracle.py` | validates a full 3.1 MB repack |
@@ -290,7 +290,7 @@ Established statically, not by flashing anything:
 1. **Capstone 5 silently mis-decodes ColdFire opcodes** — `MVS`/`MVZ` (including
    indexed mode) and `FF1`. A linear sweep loses sync *on the instruction that
    matters* — it sits directly on the bootstrap version gate, and misreading it
-   inverts the safety answer. Use `dt2/coldfire.py` or Ghidra's
+   inverts the safety answer. Use `tools/coldfire/disasm.py` or Ghidra's
    `68000:BE:32:Coldfire`.
 2. **Unicorn hard-aborts (SIGABRT) on `movec` with Rc=0x009** — not a catchable
    fault. Must be intercepted before Unicorn's decoder sees it. Handled in

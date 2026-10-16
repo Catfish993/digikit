@@ -1,5 +1,5 @@
 //! DSPI2 (`0xEC03_8000`) + eDMA channels 28/29: the periodic ColdFire<->SHARC
-//! frame link -- a direct port of `emu/dspi2.py`'s `Dspi2Link`. See that
+//! frame link -- a direct port of `unicorn-reference-final:emu/dspi2.py`'s `Dspi2Link`. See that
 //! module's docstring for the hardware reasoning (channel roles, the polled
 //! `SR_LINK_IDLE` status bit instead of an interrupt, the defensive
 //! `INT_MAJOR` completion vector).
@@ -13,11 +13,11 @@
 //!
 //! ## The peer, and where its bytes come from in a replay
 //!
-//! [`Peer::exchange`] is exactly `emu.dspi2`'s `peer.exchange(tx) -> rx`
-//! contract: the SHARC side is outside this machine (`docs/plan-native-
-//! emulator.md`'s P4 task), and every trace this crate replays against was
-//! itself recorded with `ZeroPeer` (`tools/mmio_record.py` always passes
-//! `emu.dspi2.ZeroPeer()` as `dspi2_peer` -- see its own source and
+//! [`Peer::exchange`] is exactly `unicorn-reference-final:emu/dspi2.py`'s `peer.exchange(tx) -> rx`
+//! contract: the SHARC side is outside this machine
+//! (`docs/plans/native-emulator.md`'s P4 task), and every trace this crate replays against was
+//! itself recorded with `ZeroPeer` (`unicorn-reference-final:tools/mmio_record.py` always passes
+//! `unicorn-reference-final:emu/dspi2.py`'s `ZeroPeer()` as `dspi2_peer` -- see its own source and
 //! `scratchpad/p4-mmio-recorder.md`'s window table), so [`ZeroPeer`] here
 //! reproduces the same silence; a replay checks its RX output against the
 //! trace's own `HWR` for `_deliver`, which doubles as independent
@@ -68,11 +68,11 @@ pub const RX_VECTOR: u16 = (RX_CHAN + 120) as u16; // 148
 /// DSPIx_SR bit 28 (`EOQF`, RM Table 40-7 p.1189: "End of queue flag...
 /// set when the TX FIFO entry has the EOQ bit set... and after the last
 /// incoming databit is sampled"). `FUN_400cd2bc` polls this bit
-/// (`emu/dspiframe.py`'s naming, `SR_LINK_IDLE`) to see whether the
+/// (`tools/sharc_dev/dspiframe.py`'s naming, `SR_LINK_IDLE`) to see whether the
 /// previous transfer finished before arming a new one.
 pub const SR_LINK_IDLE: u32 = 1 << 28;
 
-pub const FRAME_BYTES: usize = 0xABC; // 2,748 bytes, emu/dspiframe.py
+pub const FRAME_BYTES: usize = 0xABC; // 2,748 bytes, tools/sharc_dev/dspiframe.py
 pub const PUSHR_TAG: u16 = 0x8001;
 
 /// The SHARC side of the link: outside this machine (see the module docs).
@@ -86,7 +86,7 @@ pub trait Peer {
 }
 
 /// What the unmodeled hardware already implies: an untouched, zero-
-/// initialized SRAM RX buffer (`emu.dspi2.ZeroPeer`; every trace this crate
+/// initialized SRAM RX buffer (`unicorn-reference-final:emu/dspi2.py`'s `ZeroPeer`; every trace this crate
 /// replays against was recorded with exactly this peer -- see the module
 /// docs).
 #[derive(Default)]
@@ -99,7 +99,7 @@ impl Peer for ZeroPeer {
 }
 
 /// One channel's captured-TX-waiting-for-RX-arm state, and the reverse
-/// (`Dspi2Link`'s `_tx_ready`/`_rx_armed`, `emu/dspi2.py`).
+/// (`Dspi2Link`'s `_tx_ready`/`_rx_armed`, `unicorn-reference-final:emu/dspi2.py`).
 #[derive(Default)]
 pub struct Dspi2Link {
     pub tx_chan: usize,
@@ -223,7 +223,7 @@ impl Dspi2Link {
                 // The upper 16 bits are the driver's own PUSHR CONT/PCS/EOQ
                 // tag, consumed by the (unmodelled) DSPI2 shift register and
                 // never shifted onto the wire; only TXDATA (the low 16
-                // bits) reaches the SHARC (`emu/dspi2.py`'s `_capture`).
+                // bits) reaches the SHARC (`unicorn-reference-final:emu/dspi2.py`'s `_capture`).
                 out.extend_from_slice(&group[2..4]);
             } else {
                 out.extend_from_slice(group);

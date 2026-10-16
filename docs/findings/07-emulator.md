@@ -4,7 +4,7 @@
 
 `packages/emulator/loader` decodes the SysEx 8-in-7 transport, ELE3 entries and ELZ
 sections without filesystem APIs. Its decoded DT2 1.16 and DN2 1.11 sections
-byte-match `dt2/elz.py`; its library also compiles for `wasm32-unknown-unknown`.
+byte-match `tools/firmware/elz.py`; its library also compiles for `wasm32-unknown-unknown`.
 The native host's `--syx` input selects section 3, the MAIN_OS at
 `0x40000400`, rather than section 2, which is the bootstrap/version record.
 
@@ -19,7 +19,7 @@ Bringing the ColdFire emulation up: display, DSP bring-up, making it run, the pe
 
 ## The emulator boots Digitakt II 1.16 **[V][D][O]**
 
-- `emu/symbols.py` resolves all seven required symbols on 1.16, and 57 of
+- `tools/coldfire/symbols.py` resolves all seven required symbols on 1.16, and 57 of
   72 in all. Its `transport` signature matches the wrong function there,
   `0x40134200`; Version Tracking maps 1.15C's `0x40128c7c` to `0x40136268`.
   `call_sites` therefore lists 25 sites instead of 4; the cold boot only
@@ -98,7 +98,7 @@ was wrong.**
 confirmed by `0x84020003 -> DSPI0_PUSHR`, whose low byte `0x03` is the NOR READ
 command. Its callers scan the ELE3 section table at flash offset `0x80020`. The
 flash content it wants at boot **is the staged OS container**, which is exactly
-what `dt2.container` decodes out of the `.syx` we already have.
+what `tools.firmware.container` decodes out of the `.syx` we already have.
 
 High-level-emulating that one function and backing it with the container (see
 `emu/flashboot.py`) makes boot progress immediately, and the reads it issues
@@ -1375,7 +1375,7 @@ From `snapshots/dt2-1.16/boot400M.snap` the main screen is up by about 300M
 instructions, and from `snapshots/dn2-1.11/boot400M.snap` (a new ladder)
 likewise. `tools/emucheck.py` passes both at 700M. The only pends still faked
 are 175 in the intro's exit park (`0x400d1930` on 1.16, `0x400d4038` on
-1.15C). `tests/test_symbol_audit.py` fails if any symbol the harness uses is
+1.15C). `tests/coldfire/test_symbol_audit.py` fails if any symbol the harness uses is
 `None` on DT2 1.16 or DN2 1.11; eight trace-only symbols are still fixed 1.15C
 addresses. **[D][O]**
 
@@ -1791,7 +1791,7 @@ LED/knob-grid clearing. **None of them writes vector 208, `PIT3_PMR` or
 The "Update MMC Caches" job body itself (`LAB_400333e6`, a small trampoline
 at `0x400333e6`-`0x400333fa` between two registered functions -- Ghidra
 does not give it its own symbol; read directly from
-`sections/section_3_MAIN_OS.bin` via `dt2.coldfire.disasm`, per CLAUDE.md's
+`sections/section_3_MAIN_OS.bin` via `tools.coldfire.disasm.disasm`, per CLAUDE.md's
 warning that Ghidra misses small trampolines) is just:
 
 ```
@@ -2186,7 +2186,7 @@ gives `0x44e460d8`) and arms PIT3 with PMR `0x4323`. The task draws a
 spinner and a bar from the bitmaps at `0x402b4b80`/`0x402b4cf8` and flushes
 with `FUN_4013390e`. `FUN_40133626` (PIT3 off, `INTC2_SIMR = 0x10`, post
 `0x44e460e0`) ends it, called at `0x400335b6`, `0x40033618` (factory reset
-job) and `0x400334a0` (migrate job). `emu/symbols.py` already names it the
+job) and `0x400334a0` (migrate job). `tools/coldfire/symbols.py` already names it the
 progress screen.
 
 **The intro is the same pattern [V].** `FUN_400d12e4` (called at
@@ -3146,7 +3146,7 @@ remain **[O]**.
 The first stop is reproducible without GUI timing: re-import the same
 locally checked state pack (`state-82cf380735390258438540a4.pack`,
 SHA-256 `cbb6de7e9e732edf085dc3ba47b7760fc2db52c7595827027266d71f8e6f9bfc`)
-through offline `tools/live_audio.LiveAudio`, verify each recorded
+through offline `tools/emulator/live_audio.LiveAudio`, verify each recorded
 `bytes_hex` hash, swap each adjacent byte pair *back* to queue wire order,
 then `push_frame`/`render(1)` once for each of ordinals 0..198. These
 199 **actual native SHARC** renders take **41,661,645 instructions**, with
@@ -3288,7 +3288,7 @@ change was added.
 **[D]** `packages/emulator/sharc` now exports the read-only
 `sharc_native_get_pc(handle) -> i64` diagnostic accessor. It returns the
 architectural next `pc_sw`, rather than the separately modelled UREG `PC`;
-null returns `-1`. `tools/sharc_transpile_run.NativeCore.pc()` binds it only
+null returns `-1`. `tools/sharc_dev/sharc_transpile_run.NativeCore.pc()` binds it only
 when present, so the accepted original library remains loadable and a request
 against that legacy library fails explicitly without a full-state-export
 fallback. A scratch diagnostic rebuild used the accepted generated directory
@@ -4684,7 +4684,7 @@ it touches no MMR. Only an interrupt that readies a task can move it on.
   the indirect jump at `0x1c9dbf` through `0x268a68`.
 
 **[D]** `State.peripheral_model`, native option 22, models two blocks (sources
-in tools/sharc_dev/sharc_core/periph.py, twin packages/emulator/sharc/src/rt/periph.rs):
+in tools/sharc_dev/sharc_core/periph.py, twin packages/emulator/sharc-rt/src/rt/periph.rs):
 - The SEC core interface: SCTL.SEN/IEN, SSTAT PND/ACT, CSID/CSTAT.SIDV,
   acknowledge by a SHDBG_SECI_ID or CSID write, END and RAISE.
 - Descriptor-list DMA for DMA26/27/10/11: the fetch order is NXT, ADDRSTART,
@@ -4861,7 +4861,7 @@ one word the odd lane kept its old value, the voice mix fed it back (gain about
 all loads keep one word. **[D]** The PRM text does not say this; the evidence is
 the compiler-shaped clear loop. After the fix the same run gives no NaN
 (blocks 4896-4899 are a short finite transient, then 0). Test:
-`tests/test_sharc_trace_simd.py::test_type15_dag_register_store_writes_both_words_in_simd`.
+`tests/sharc/trace/test_sharc_trace_simd.py::test_type15_dag_register_store_writes_both_words_in_simd`.
 The earlier "real cmd3 output from frame 4896" in that run was this blow-up.
 
 ## DN2 command-3 synthesis path (2026-10-02)
@@ -6757,7 +6757,7 @@ regeneration and PGO retrain.
 - Process note: rebuilding into `out/native/target/prod/pgo-use` with a
   different PGO profile forced a 7 min rebuild of the generated core at the
   next launch. Experiments must use their own target dirs.
-- **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and scenarios/dn2.json.
+- **[C]** The PCM hashes in this section (`77cbc376…`, `e50f2908…`, and exactness `38d2a322…`) predate the Type 17 SIMD Cureg fix; current values are in docs/findings/16-dn2-retrigger-distortion.md and tests/scenarios/dn2.json.
 
 ## Folded from the lane notebooks and early handovers (2026-10-08)
 

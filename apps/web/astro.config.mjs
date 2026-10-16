@@ -14,7 +14,7 @@ const localFiles = {
   'dsp-state': process.env.DIGI_EMU_DSP_STATE || path.join(localDir, 'digi-audio-m5.snap.dsp'),
   'cf-snapshot': process.env.DIGI_EMU_CF_SNAPSHOT || path.join(localDir, 'digi-audio-m5.snap'),
   // Used only by the headless bench (`?bench=1`, tools/devtools/browser_bench.mjs): the page cannot pick a file there.
-  firmware: process.env.DIGI_EMU_SYX || path.join(repoRoot, 'Digitone_II_OS1.11.syx'),
+  firmware: process.env.DIGI_EMU_SYX || path.join(repoRoot, 'firmware', 'Digitone_II_OS1.11.syx'),
 };
 const coupledCore = process.env.DIGI_EMU_SHARC_CORE || fileURLToPath(new URL('./.local/emulator-core-sharc.wasm', import.meta.url));
 const loopback = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);

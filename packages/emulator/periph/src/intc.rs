@@ -25,13 +25,13 @@
 //!
 //! **Oracle-compatible mode** (used by the replay harness, [`IntcBank::read`]
 //! / [`IntcBank::write`]): the Python emulator (removed; see tag unicorn-reference-final) never intercepts a guest
-//! access to any of these registers -- `emu.pit.interrupt_level` only reads
+//! access to any of these registers -- `unicorn-reference-final:emu/pit.py`'s `interrupt_level` only reads
 //! IMR/ICR bytes it did not write, so from the guest's side every register
 //! here, including IPR, INTFRC, SIMR and CIMR, is plain RAM (last write
 //! wins). That is what `read`/`write` implement, so the replay's RD checks
 //! match the trace by construction; [`IntcBank::level_for_vector`] is the
 //! one piece of interpretation the oracle model needs, mirroring
-//! `emu.pit.interrupt_level` exactly.
+//! `unicorn-reference-final:emu/pit.py`'s `interrupt_level` exactly.
 //!
 //! **Hardware-accurate mode** (manual-only; NOT used against these traces,
 //! since the frozen oracle does not implement it -- see finding "the INTC
@@ -143,7 +143,7 @@ impl IntcBank {
     }
 
     /// -> the source's ICR level (1-7), or None if level 0 (disabled) or
-    /// masked in IMR. Same computation as `emu.pit.interrupt_level` /
+    /// masked in IMR. Same computation as `unicorn-reference-final:emu/pit.py`'s `interrupt_level` /
     /// `Pits.level` / `Dtims.level`: read-only, no side effect.
     pub fn level_for_vector(&self, vector: u16) -> Option<u8> {
         let (ctrl_idx, first) = VECTOR_BASE

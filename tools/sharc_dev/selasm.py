@@ -18,7 +18,7 @@ by-hand, per-snippet step, not something this script attempts.
 
 Usage:
     uv run python selasm.py snippet.s
-    uv run python selasm.py snippet.s --selache-dir /private/tmp/selache-public \
+    uv run python selasm.py snippet.s --selache-dir out/selache-public \
         --section seg_pmco
 """
 
@@ -36,7 +36,7 @@ from tools.sharc_dev.sharc_selache import (  # noqa: E402
     SelacheOracle,
 )
 
-DEFAULT_SELACHE_DIR = "/private/tmp/selache-public"
+DEFAULT_SELACHE_DIR = str(HERE.parents[1] / "out" / "selache-public")
 
 
 def main() -> None:

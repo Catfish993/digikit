@@ -5,7 +5,7 @@ vectors -- this firmware's variant seeds differently (no length folded into
 the seed) and has a zero-length quirk (see the function's docstring) -- so
 they were captured by *executing* the firmware's own checksum routine
 (``FUN_4015abb2``) in the emulator, via a bounded fresh call
-(``emu.harness.call``) on a restored ``snapshots/dt2-1.16/running.snap``,
+(``unicorn-reference-final:emu/harness.py``'s ``call``) on a restored ``out/snapshots/dt2-1.16/running.snap``,
 against random buffers of each length. That covers every tail case of
 ``FUN_4015a6dc``'s switch (0-12) and both the single-block and streaming
 (>1200-byte) paths. The capture script is not checked in (a throwaway
@@ -458,7 +458,7 @@ class BuildLayoutTest(unittest.TestCase):
 
 class NameHashTest(unittest.TestCase):
     # Values returned by the firmware's own FUN_40155f96 for these names
-    # (tools/plusdrive_check.py, check_directory, on DT2 1.16).
+    # (unicorn-reference-final:tools/plusdrive_check.py, check_directory, on DT2 1.16).
     FIRMWARE = {b".": 1909931592, b"..": 2084022942, b"hat": 1964773430}
 
     def test_matches_firmware(self):

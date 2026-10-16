@@ -327,20 +327,20 @@ def values_of(fields: dict) -> list[tuple[str, int, int]]:
 # since tests and comments here already refer to it that way.
 _NEVER_ALIGNED_FORMS = sharc_disasm.NEVER_ALIGNED_FORMS
 
-# The width/form choice below -- and tools/sharc_core.sequencer.decode_at()'s
+# The width/form choice below -- and tools/sharc_dev/sharc_core/sequencer.decode_at()'s
 # single-PC decode -- both live in one place now:
-# tools/sharc_disasm.resolve_confident_width() (see its docstring and
+# tools/sharc_dev/sharc_disasm.resolve_confident_width() (see its docstring and
 # WIDTH_LOOKAHEAD comment for the DT2 1.16 sw 0x1c4b99/sw 0x1c4e10 cases this
 # catches). decode_all() below calls it directly with this module's own
 # memoized `table` as raw_at, so a whole-image walk stays O(n) instead of
-# re-decoding each lookahead step; tools/sharc_disasm.decode_confident()/
+# re-decoding each lookahead step; tools/sharc_dev/sharc_disasm.decode_confident()/
 # decode_confident_loaded() call the same function per-PC for decode_at().
 
 
 def decode_all(data: bytes) -> dict:
     """offset -> Instruction for every even offset that decodes, excluding
     the decode-trap forms in _NEVER_ALIGNED_FORMS (see the comment above),
-    then re-resolved by tools/sharc_disasm.resolve_confident_width() wherever
+    then re-resolved by tools/sharc_dev/sharc_disasm.resolve_confident_width() wherever
     a narrower VISA form also matches and is the better-supported reading."""
     table = {}
     for offset in range(0, len(data) - 1, 2):

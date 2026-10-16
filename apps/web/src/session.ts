@@ -13,7 +13,7 @@ import type { DspStart } from './dsp-worker.ts';
 export interface SessionOptions {
   /** URL of the generic core (`emulator-core-generic.wasm`: no firmware in it). */
   coreUrl: string;
-  /** DSP fast tier: threshold, min insns, follow; default 256,64,0 (see docs/notes/laneB.md). */
+  /** DSP fast tier: threshold, min insns, follow; default 256,64,0 (see 6f819d9^:docs/notes/laneB.md). */
   fast?: [number, number, number];
   /** The audio worklet's port: interleaved L/R f32 blocks arrive here. */
   pcmPort: MessagePort;
@@ -37,10 +37,10 @@ export function canSplit(): boolean {
  * ready with the DSP attached, and take the three products (packed DSP image
  * from the .syx's SHARC section, DSP state, ColdFire snapshot). NOT BUILT YET:
  * the pieces exist natively (packages/emulator/loader decodes the .syx and is wasm32
- * clean; packages/emulator/host's `--syx` mode boots to ready), not in the browser core.
+ * clean; the removed dt2-native-host crate booted a .syx to ready natively), not in the browser core.
  */
 export async function coldBoot(_syx: Uint8Array, _progress?: (fraction: number) => void): Promise<ReadyState> {
-  throw new Error('cold boot from a .syx is not built in the browser core yet (see docs/notes/laneB.md)');
+  throw new Error('cold boot from a .syx is not built in the browser core yet (see 6f819d9^:docs/notes/laneB.md)');
 }
 
 export async function startSession(syx: Uint8Array, o: SessionOptions): Promise<Session> {

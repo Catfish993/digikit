@@ -90,7 +90,7 @@ public class McfLabels extends GhidraScript {
             l.add(new Object[]{name + "_DAT", base + 0x0CL, 1L});
         }
 
-        // eSDHC base (m5441xsim.h:299-303); other offsets from emu/esdhc.py
+        // eSDHC base (m5441xsim.h:299-303); other offsets from unicorn-reference-final:emu/esdhc.py
         // (DSADDR..HOSTVER, RM ch.25), which this script does not otherwise modify.
         l.add(new Object[]{"ESDHC_BASE", 0xFC0CC000L, 0x100L});
         l.add(new Object[]{"ESDHC_XFERTYP", 0xFC0CC00CL, 4L});
@@ -98,9 +98,9 @@ public class McfLabels extends GhidraScript {
         l.add(new Object[]{"ESDHC_SYSCTL", 0xFC0CC02CL, 4L});
         l.add(new Object[]{"ESDHC_IRQSTAT", 0xFC0CC030L, 4L});
 
-        // eDMA base/SERQ/TCD_BASE from emu/edma.py, cross-checked against netburner
+        // eDMA base/SERQ/TCD_BASE from unicorn-reference-final:emu/edma.py, cross-checked against netburner
         // sim5441x.h:483-497,527,1404; ERQL/CINT from the same sim5441x.h edmastruct.
-        // TCD35 (UART8 TX, emu/edma.py TX_CHAN/TX_VECTOR) fields use emu/edma.py's
+        // TCD35 (UART8 TX, unicorn-reference-final:emu/edma.py TX_CHAN/TX_VECTOR) fields use unicorn-reference-final:emu/edma.py's
         // TCD offsets, non-Kinetis order (CITER at +0x14, BITER at +0x1C).
         l.add(new Object[]{"EDMA_BASE", 0xFC044000L, 0x4000L});
         l.add(new Object[]{"EDMA_ERQL", 0xFC04400CL, 4L});

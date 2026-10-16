@@ -44,7 +44,7 @@ Backlog for patchkit itself (the rest lives in the plans named above):
 
 ## Facts this design rests on
 
-- Container: checksum, HMAC trailer and per-packet checksums are reproduced; `dt2.build.rebuild` repacks and
+- Container: checksum, HMAC trailer and per-packet checksums are reproduced; `tools.firmware.build.rebuild` repacks and
   `roundtrip.check_authenticity` verifies (finding 01). No patched image has been flashed to a device.
 - 1.17 (DT2) and 1.12 (DN2) change only MAIN OS (section 3) and META (section 5). Sections 2 (bootstrap), 4
   (updater), 7 (SHARC blob) and 8 are byte-identical to 1.16 / 1.11. DT2 1.17 MAIN is the same size as 1.16 but
@@ -87,7 +87,7 @@ resources fit. `targets` in the manifest records only test status (`stable`, `ex
 
 - Live in `devices/ports/<short>-<version>.toml`, next to the device files, referenced by firmware sha256.
 - Built by `mise run port:resolve -- FILE.syx` from resolution rules (masked signatures, xref shapes, SHARC
-  `reloc_hash`), the same approach as `emu/symbols.py` and `tools/sharc_dev/sharc_symbols.py`. Never hand-typed.
+  `reloc_hash`), the same approach as `tools/coldfire/symbols.py` and `tools/sharc_dev/sharc_symbols.py`. Never hand-typed.
 - Each anchor stores address, length and the **sha256 of the expected bytes**, not the bytes, so no firmware bytes
   are committed.
 - Regions: `flash_cave` (loader only), the ColdFire expansion region, free SHARC L2, each with capacity and
@@ -114,7 +114,7 @@ little code is shared between the two CPUs. The readable layer is the manifest p
 `.dko`: JSON with sections as hex, symbols, relocations, source hash, toolchain version. Builds are pinned and
 reproducible.
 
-### patchkit (Rust, `packages/emulator/patchkit`)
+### patchkit (Rust, `packages/patchkit`)
 
 One implementation, built as a CLI binary and as `patchkit.wasm` for the gallery. A test asserts the CLI and wasm
 produce byte-identical output. It does not depend on the generated SHARC core, so it builds in seconds, and
@@ -190,7 +190,7 @@ enough, audio is an offline render.
   touched, the STARTUP menu comes up over a faulting MAIN OS, the bootstrap's checksum/HMAC accepts rebuilt images
   and rejects corrupt ones, recovery to stock works, and a 1.16/1.17 image does not rewrite the bootstrap [V].
   `tools/patchkit/patched_image.py` builds the harmless stock-size test image. Open: MAIN OS validator (0x400d9e4c) not run.
-- 0.3: RAM map, expansion region and loader hook as above; `tools/coldfire/regions.py` replaces cavefind; `dt2/aplibpack.py`
+- 0.3: RAM map, expansion region and loader hook as above; `tools/coldfire/regions.py` replaces cavefind; `tools/firmware/aplibpack.py`
   passes the bootstrap's own depacker on all 16 sections; `rebuild` keeps untouched sections verbatim and has a
   `max_container` guard.
 
@@ -253,14 +253,14 @@ Estimates are agent time. Phase 0 spikes run in parallel lanes (`tools/devtools/
 
 Spec (decided 2026-10-13):
 
-- **Split.** Rust `packages/emulator/patchkit` (lib + `patchkit` binary + wasm32 cdylib, the packages/emulator/boot pattern; deps:
+- **Split.** Rust `packages/patchkit` (lib + `patchkit` binary + wasm32 cdylib, the packages/emulator/boot pattern; deps:
   `loader`, `coldfire` (std-only), sha2, hmac, serde, serde_json, toml) does everything at patch time: `.syx`
   decode (via `loader`) and encode, aPLib pack, HMAC seal, checksums, 8-in-7 framing with the per-device packet
   constant, port load and verify, link, apply, conflicts, record, plan, explain. Python does everything at
   module-build and port-resolve time (toolchains, cfdb/sharcdb queries): `tools/patchkit/pk_build.py` (src -> `.dko`),
   `tools/patchkit/port_resolve.py` (rules -> port lockfile). `tools/patchkit/patchkit.py` wraps the Rust CLI for mise.
 - **Codec.** Untouched sections keep their stored bytes verbatim; changed sections are packed with an aPLib packer
-  ported from `dt2/aplibpack.py` that produces the **same bytes** as the Python packer (test on all 16 stock
+  ported from `tools/firmware/aplibpack.py` that produces the **same bytes** as the Python packer (test on all 16 stock
   sections). Hard limits from the port (`container_max` 0x300000, section 7 stored <= 0x100000 and depacked <=
   0xfffff, MAIN staged image <= 0x3ffc00); sections 2, 4, 8 can never change. Every output is re-decoded and
   checked (checksum, HMAC, packet checksums, limits, record).
@@ -312,7 +312,7 @@ Slice first (one agent), then coverage:
 
 ### Phase 1 results (2026-10-13, lane `a`)
 
-Details and numbers: `docs/findings/21-patchkit-core.md`. Built: `packages/emulator/patchkit` (lib, `patchkit` binary, wasm
+Details and numbers: `docs/findings/21-patchkit-core.md`. Built: `packages/patchkit` (lib, `patchkit` binary, wasm
 C ABI), `tools/patchkit/pk_build.py`, `tools/patchkit/port_resolve.py`, `tools/patchkit/patchkit.py`, ports for dt2-1.16, dt2-1.17,
 dn2-1.11 and dn2-1.12, modules `core/expansion`, `fx/master-gain`, `test/cf-demo`; the generated (uncommitted, `out/modules/`) oracle modules
 `oracle/dn2-master-half` and `oracle/xslice-dt2-1-16`; mise tasks `patch`, `patch:build`, `patch:explain`, `port:resolve`,
@@ -320,7 +320,7 @@ dn2-1.11 and dn2-1.12, modules `core/expansion`, `fx/master-gain`, `test/cf-demo
 
 - The codec rebuilds all four stock images byte for byte; the Rust aPLib packer equals the Python one on all 16
   packed sections (and is 25 times faster). Stock payloads start at container offset 0x90, not 0x80 as
-  `dt2/build.py` writes [C].
+  `tools/firmware/build.py` writes [C].
 - `fx/master-gain` on DT2 1.17 and DN2 1.12, injected through `firmware.load`: bit-identical at gain 1.0,
   -6.0206 dB at 0.5, from the same ready state.
 - Oracles: DN2 master half (all decoded sections equal `dsp_patch.py syx`), XSLICE (section 3 sha256
@@ -398,7 +398,7 @@ Details: finding 17 ("Health events, heartbeat and the watchdog") and `tools/pat
 ### Phase 3 results (2026-10-13, lane `b`)
 
 Details, evidence and the DSP binding contract: `docs/findings/02-machines-and-parameters.md` ("core.machines").
-Built: `packages/emulator/patchkit/src/machines.rs` (the generator, 4 unit tests, `tests/machines.rs` with 6 integration tests on the
+Built: `a1cf1df^:native/patchkit/src/machines.rs` (the generator, removed in a1cf1df; 4 unit tests, `a1cf1df^:native/patchkit/tests/machines.rs` with 6 integration tests on the
 real ports and images), `[[machine]]` in the manifest, `modules/core/machines` (24 ColdFire anchor rules of the new kind
 `cf_func`, one DSP rule), `modules/machines/xslice`, `modules/test/machine-clone`, `tools/patchkit/pk_machine_rules.py`,
 `tools/patchkit/pk_proof_machines.py`, `tools/emulator/card_overlay.py` and the daemon method `card.overlay`; harness steps `expect_mem`
@@ -453,7 +453,7 @@ the same, but DN2's machines are FM engines, so new DN2 machines need the DSP vo
 
 ### Phase 3 results (wave 6, 2026-10-14, lane `b`): core.params and PLUCK end to end
 
-Built: `packages/emulator/patchkit/src/params.rs` (3 unit tests, `tests/params.rs` 5 integration tests), `[[param]]` and `fields` that
+Built: `a1cf1df^:native/patchkit/src/params.rs` (3 unit tests, `a1cf1df^:native/patchkit/tests/params.rs` 5 integration tests), `[[param]]` and `fields` that
 name parameters in the manifest, `modules/core/params`, three port rule kinds in `tools/patchkit/port_resolve.py` (`cf_params_t1`,
 `cf_params_sites`: count and hash of 111 sites, plus a `cf_func` for the second table), `modules/machines/pluck` (machine,
 four parameters, the DSP row now registers `machines.pluck.type`), `tools/patchkit/pk_proof_pluck.py`, harness helpers
@@ -477,7 +477,7 @@ four parameters, the DSP row now registers `machines.pluck.type`), `tools/patchk
 Details and evidence: findings 02 ("core.machines on Digitone II 1.12") and 06 ("Per-voice hook on DN2 1.11/1.12: built").
 Emulator only; nothing flashed; one agent.
 
-- **core.machines on DN2 1.12** (took about a day, not the assessed 3 to 4): `packages/emulator/patchkit/src/machines/dn2.rs` is the
+- **core.machines on DN2 1.12** (took about a day, not the assessed 3 to 4): `a1cf1df^:native/patchkit/src/machines/dn2.rs` is the
   Digitone part of the generator (the Digitakt-only parts are skipped on `dn2`; the Digitakt output is byte-identical to
   before for `core/machines` + `machines/xslice` + `test/machine-clone` on 1.16 and 1.17); 31 DN2 anchors by function hash
   (`tools/patchkit/pk_machine_rules_dn2.py`, 1.11 and 1.12 resolve). The parameter-page layer needs no table growth for a clone: three
@@ -526,7 +526,7 @@ was touched; new: `tools/coldfire/dn2_probe.py`, `tools/coldfire/dn2_pages.py`, 
 ### DN2 pages and PLUCK (2026-10-14, lane `b`)
 
 Details and evidence: findings 02 ("DN2 own parameter pages: built", "PLUCK on Digitone II") and 06 ("DN2 voice routine: PLUCK").
-Emulator only; nothing flashed; one agent; no change in `packages/emulator/patchkit` (no primitive was missing).
+Emulator only; nothing flashed; one agent; no change in `packages/patchkit` (no primitive was missing).
 
 - **Own pages**: `core/machines` gets a registry `pages` (a row is a page descriptor plus its machine and the sound slots of
   its knobs) and the DN2 hooks `typemap.0/1/2` answer page count, descriptor and slot to code from it; `core/params` now has
@@ -633,8 +633,8 @@ Problem: `core/machines` numbered machines `first + k` in module order, and a pr
   devices); an unknown module, a missing requirement and a `requires` cycle are refused with the module names. `Library::with_requires`.
 - Small: the PLUCK gallery README uses lists (the gallery renders no tables); `fw:onboard` is marked not built (backlog).
 
-Verified (quick proof tier, no full tiers): `cargo test -p patchkit` (all; new: allocation and gap tests in `tests/prims.rs`,
-requires/cycle test, PLUCK-is-9 in `tests/frameworks.rs`), 82 Python tests of the patchkit files (new `tests/patchkit/test_pk_types.py`,
+Verified (quick proof tier, no full tiers): `cargo test -p patchkit` (all; new: allocation and gap tests in `packages/patchkit/tests/prims.rs`,
+requires/cycle test, PLUCK-is-9 in `packages/patchkit/tests/frameworks.rs`), 82 Python tests of the patchkit files (new `tests/patchkit/test_pk_types.py`,
 a gap-row case in `tests/patchkit/test_pk_machines_fw.py`), `pnpm --dir apps/web test` 29 of 29, `mise run patch:proofs` 10 of 10
 (gain dt2/dn2, drive, voice dt2/dn2, machines dt2/dn2, pages dn2, pluck dt2/dn2; the PLUCK and PAGES proofs now expect types 9 and 6,
 the others did not change), smoke matrix 15 of 15 cells (DT2 1.17 and 1.16, DN2 1.12; 11 on the first run, the other 4 after the `expect_mem` / `expect_dsp` type
@@ -643,10 +643,10 @@ changed and none was re-recorded: the machine list shows the same entries in the
 
 ### Phase 3b.1 results (2026-10-14, lane `a`)
 
-Built: `packages/emulator/patchkit/src/expr.rs` (P3), `prim.rs` (manifest checks, registry and section builders, ColdFire site
+Built: `packages/patchkit/src/expr.rs` (P3), `prim.rs` (manifest checks, registry and section builders, ColdFire site
 decoding and tail re-encoding, plan records), wiring in `apply.rs` and `module.rs`, `explain` sections for registries,
 copied sections and hooks, `cf_params_refs` / `cf_params_bounds` in `tools/patchkit/port_resolve.py`. Tests: 7 unit tests
-(`expr`, `prim`), `tests/prims.rs` (18 integration tests over the real ports and stock images: typed writes and their
+(`expr`, `prim`), `packages/patchkit/tests/prims.rs` (18 integration tests over the real ports and stock images: typed writes and their
 errors, multi-site writes, registry rows/symbols/strings, canonical order, entry errors, sections on ColdFire and SHARC,
 hook on ColdFire and SHARC, non-boundary, re-encoded PC-relative instructions, device filters, explain, plan.json),
 `tests/patchkit/test_pk_prims.py` and `modules/test/registry-demo` (DT2 1.17, 1.16 anchor resolves too): boots to ready on the
@@ -890,7 +890,7 @@ browser DSP audio (separate sharc-jit plan) when chosen.
 - Conditional Type 7a is modelled (finding 05): DT2 1.17 and 1.16 PLAY in patterns 3 and 4 runs clean; DN2 pins and the
   61 oracles, DT2 tone, oracles and tier-quick pass against regenerated cores (`gen-next` dirs, coordinator swaps them
   in at merge).
-- Boot ROM rules (finding 06, "Boot ROM conformance"): `tools/sharc_dev/sharc_bootcheck.py`, `packages/emulator/patchkit/src/bootrom.rs`;
+- Boot ROM rules (finding 06, "Boot ROM conformance"): `tools/sharc_dev/sharc_bootcheck.py`, `packages/patchkit/src/bootrom.rs`;
   stock streams, `fx/master-gain`, `fx/master-drive` and the L2 canary pass. Two defects fixed: the FIRST block's
   next-application pointer was not grown by `append_block`, and the append window included the ROM's 8 KB workspace.
   The emulator now refuses such streams (`tools/emulator/ready.py`, `firmware.load`, `patchkit verify`).

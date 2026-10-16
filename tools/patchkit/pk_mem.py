@@ -22,6 +22,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from tools.firmware import config
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
@@ -103,7 +105,7 @@ def apply_plan(device: str, firmware: str, modules: list[str]) -> dict[str, Any]
     from tools.patchkit import patchkit
     from tools.patchkit import pk_harness as h
 
-    syx = ROOT / h.FIRMWARE[(device, firmware)]["syx"]
+    syx = config.stock(h.FIRMWARE[(device, firmware)]["syx"])
     if not syx.is_file():
         raise SystemExit(f"{syx} is missing")
     with tempfile.TemporaryDirectory(prefix="pk-mem-") as tmp:

@@ -1007,10 +1007,10 @@ def cmd_plan(args: argparse.Namespace) -> int:
 COUPLED_MANIFEST = "packages/emulator/coupled/Cargo.toml"
 # (scenario file, scenario names): 3 s trig of the card's sample, then FX.
 DT2_WORKLOAD: list[tuple[str, list[str]]] = [
-    ("scenarios/dt2.json", ["dt2-sample-trig"]),
-    ("scenarios/dt2-trackfx.json", ["tf-br-127"]),
+    ("tests/scenarios/dt2.json", ["dt2-sample-trig"]),
+    ("tests/scenarios/dt2-trackfx.json", ["tf-br-127"]),
     (
-        "scenarios/dt2-sendfx.json",
+        "tests/scenarios/dt2-sendfx.json",
         ["sf-del-ppwidth-u50", "sf-rev-decay-u50", "sf-mst-thr0"],
     ),
 ]

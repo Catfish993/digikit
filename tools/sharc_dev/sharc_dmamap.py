@@ -27,7 +27,7 @@ resolve to is the only way to find which physical DMA channel each ring's
 DSCPTR_NXT actually lands on, short of hand-tracing every driver-service
 callee.
 
-Runs from ``tools/sharc_harness.run_init()``'s post-init state via
+Runs from ``tools/sharc_dev/sharc_harness.run_init()``'s post-init state via
 ``Runner.fresh_call()`` -- the same convention every other tool built on
 this harness uses (``tools/sharc_dev/sharc_replay.py``, ``tools/sharc_dev/sharc_survey.py``) --
 with the harness's usual ``explicit_memory_model`` already on

@@ -9,7 +9,7 @@
 //!
 //! The `trace` feature (default; excluded from a wasm32 build with
 //! `--no-default-features`) adds [`trace::Reader`], a parser for the
-//! `DT2MMIO` v1 format `emu/mmiotrace.py` writes, and the `mmio-replay`
+//! `DT2MMIO` v1 format `unicorn-reference-final:emu/mmiotrace.py` writes, and the `mmio-replay`
 //! binary that checks this crate's models against a recorded trace -- see
 //! `trace`'s module docs for the format and `bin/replay.rs` for the
 //! comparison method.

@@ -1,5 +1,5 @@
 //! Opt-in recording of ColdFire->DSP DSPI2 frames as a `.dt2cap` file
-//! (format: emu/sharc_capture.py). Replies stay zeros, like `ZeroPeer`, so
+//! (format: tools/sharc_dev/sharc_capture.py). Replies stay zeros, like `ZeroPeer`, so
 //! recording does not change guest behaviour.
 
 use std::{cell::RefCell, rc::Rc};

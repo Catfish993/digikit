@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from emu import sharc_capture
+from tools.sharc_dev import sharc_capture
 
 from .runner import _poke
 
@@ -21,7 +21,7 @@ from .runner import _poke
 # (offsets 0x6da-0x7f4 and 0x2c-0x72e respectively) -- so every prior
 # "reads all zero" finding about those tables was reading an RX frame this
 # project never populated, not a property of the firmware. The functions
-# below load real RX frame bytes from a tools/sharc_capture_run.py capture
+# below load real RX frame bytes from a unicorn-reference-final:tools/sharc_capture_run.py capture
 # (a real device's own DSPI2 traffic) and write them at the same address a
 # real transfer would, so a frame render sees whatever a real device
 # actually put in its own mixer/gate tables.
@@ -129,9 +129,9 @@ DEFAULT_CAPTURE_TRACK = 2
 
 
 def load_capture(path: str = DEFAULT_CAPTURE_PATH) -> sharc_capture.Capture:
-    """``emu.sharc_capture.load(path)`` -- re-exported so a caller (this
+    """``tools.sharc_dev.sharc_capture.load(path)`` -- re-exported so a caller (this
     module's own CLI, a test, a caller script) does not need its own
-    ``sys.path``/import dance for ``emu.sharc_capture`` just to load one
+    ``sys.path``/import dance for ``tools.sharc_dev.sharc_capture`` just to load one
     capture file."""
     return sharc_capture.load(path)
 

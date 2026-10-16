@@ -1,11 +1,11 @@
 """Find GCC C++ RTTI, vtables and Class::method strings in a ColdFire image.
 
-    uv run python -m tools.coldfire.rttiscan sections/section_3_MAIN_OS.bin
+    uv run python -m tools.coldfire.rttiscan out/sections/section_3_MAIN_OS.bin
         [--base 0x40000400] [--code LO HI]...
         --json out/symbols/dt2-1.15C-rtti.json
 
 Raw and deterministic: it reads the image and uses the repo disassembler
-(dt2.coldfire), not Ghidra. Ghidra's RecoverClassesFromRTTIScript recovers
+(tools.coldfire.disasm), not Ghidra. Ghidra's RecoverClassesFromRTTIScript recovers
 no classes from this image, even with the program's compiler set to gcc.
 
 Itanium C++ ABI, 32-bit big-endian; the objects are 4-byte aligned:
@@ -38,8 +38,8 @@ import struct
 import subprocess
 import sys
 
-from dt2.coldfire import disasm  # noqa: E402
 from tools.coldfire.codeseeds import BASE, CODE, in_code  # noqa: E402
+from tools.coldfire.disasm import disasm  # noqa: E402
 
 KINDS = {
     "class": "N10__cxxabiv117__class_type_infoE",

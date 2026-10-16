@@ -548,8 +548,7 @@ class FirmwareBackedTest(unittest.TestCase):
 
 @unittest.skipUnless(DT2_116_BLOB.exists(), "DT2 1.16 firmware bytes are not available")
 class InitStateRenderTest(unittest.TestCase):
-    """--run-init actually feeding the render (HANDOVER-2026-09-25's "Next
-    steps 1"): run_init() once here (it is ~1.24M instructions, several
+    """--run-init actually feeding the render : run_init() once here (it is ~1.24M instructions, several
     seconds) and share the resulting InitResult across every test method,
     the same way check_correctness()'s own cases now share one init run."""
 

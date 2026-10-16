@@ -4,7 +4,7 @@ of a ColdFire firmware image.
 
 Answers one general question: "what, if anything, in this image's code
 statically references address range [LO, HI)?" -- by linearly disassembling
-a span of the image with `dt2.coldfire.disasm` (Capstone m68k + this repo's
+a span of the image with `tools.coldfire.disasm.disasm` (Capstone m68k + this repo's
 own ColdFire MVS/MVZ and FF1.L patches, so a scripted sweep does not
 silently desync on those two opcodes -- see that module's docstring) and
 regex-extracting every operand that looks like a 32-bit absolute address:
@@ -29,7 +29,7 @@ run into data/a jump table/a desync, and its hits should be treated with
 more suspicion than a byte range with none.
 
 Usage:
-    uv run python -m tools.coldfire.refscan sections/section_3_MAIN_OS.bin \\
+    uv run python -m tools.coldfire.refscan out/sections/section_3_MAIN_OS.bin \\
         --base 0x40000400 --range 0x402f9c14 0x40307f60
 
     # Restrict the sweep itself (default: the whole image):
@@ -54,7 +54,7 @@ import json
 import re
 import sys
 
-from dt2.coldfire import disasm  # noqa: E402
+from tools.coldfire.disasm import disasm  # noqa: E402
 
 # A bare "$hex" token not immediately followed by "(" -- that "(" case is a
 # displacement operand like "$14(a7)" or "-$14(a7)", not an absolute address.
@@ -100,7 +100,7 @@ def build_map(hits, lo, hi):
 
     Treats each distinct referenced target address as a single occupied
     point (this is a static scan; real object sizes are not known without
-    a runtime dump or Ghidra data-type info -- see tools/memdump.py and
+    a runtime dump or Ghidra data-type info -- see unicorn-reference-final:tools/memdump.py and
     tools/coldfire/ghidraq.py for that). Gaps are computed between consecutive
     distinct target addresses, and from lo to the first / last to hi.
     """
@@ -123,7 +123,7 @@ def main(argv=None):
     )
     ap.add_argument(
         "image",
-        help="path to a raw firmware section, e.g. sections/section_3_MAIN_OS.bin",
+        help="path to a raw firmware section, e.g. out/sections/section_3_MAIN_OS.bin",
     )
     ap.add_argument(
         "--base",

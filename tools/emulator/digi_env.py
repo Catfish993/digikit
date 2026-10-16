@@ -21,6 +21,8 @@ import sys
 import tomllib
 from collections.abc import Callable
 
+from tools.firmware import config
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 # The DN2 ready-inputs directory: ready_dir in tools/emulator/ready_inputs.json (shared
 # with the JS tools), overridden by DIGI_EMU_READY_DIR.
@@ -38,7 +40,7 @@ READY_DIRS = {
     },
 }
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
-DEFAULT_SYX = ROOT / "Digitone_II_OS1.11.syx"
+DEFAULT_SYX = config.stock("Digitone_II_OS1.11.syx")
 FAST_TABLE = ROOT / "tools" / "emulator" / "fast_regions.json"
 TOOLCHAIN: str = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]["rust"]
 TRIPLE = "aarch64-apple-darwin"
@@ -150,7 +152,7 @@ def check_generated(gen: pathlib.Path, environ: Environ | None = None) -> None:
 
 
 def firmware(environ: Environ | None = None) -> pathlib.Path:
-    """The DN2 .syx: DIGI_EMU_SYX, then DIGI_COUPLED_SYX, then the repo-root default."""
+    """The DN2 .syx: DIGI_EMU_SYX, then DIGI_COUPLED_SYX, then the firmware/ default."""
     environ = os.environ if environ is None else environ
     return pathlib.Path(
         environ.get("DIGI_EMU_SYX") or environ.get("DIGI_COUPLED_SYX") or DEFAULT_SYX
@@ -172,13 +174,15 @@ def device_for_syx(path: pathlib.Path) -> str | None:
 
 
 def firmware_for(device: str, environ: Environ | None = None) -> pathlib.Path:
-    """The .syx of a device: DIGI_EMU_SYX_<DEVICE>, else the repo-root default
+    """The .syx of a device: DIGI_EMU_SYX_<DEVICE>, else the firmware/ default
     (DN2 also honours DIGI_EMU_SYX and DIGI_COUPLED_SYX, see `firmware`)."""
     environ = os.environ if environ is None else environ
     if device == "dn2":
         return firmware(environ)
     default = {"dt2": "Digitakt_II_OS1.16.syx"}[device]
-    return pathlib.Path(environ.get(f"DIGI_EMU_SYX_{device.upper()}") or ROOT / default)
+    return pathlib.Path(
+        environ.get(f"DIGI_EMU_SYX_{device.upper()}") or config.stock(default)
+    )
 
 
 def ready_inputs(

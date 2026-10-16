@@ -1,10 +1,10 @@
-"""emu/sharc_capture.py: capture file format round-trip and CapturingPeer.
+"""tools/sharc_dev/sharc_capture.py: capture file format round-trip and CapturingPeer.
 
 No firmware image or Unicorn required -- this only exercises the file
-format and the peer contract (emu.dspi2's `.exchange`, emu.ssi's
-`.rx`/`.tx`). tools/sharc_capture_run.py, which drives a real Machine, is
+format and the peer contract (unicorn-reference-final:emu/dspi2.py's
+`.exchange`, unicorn-reference-final:emu/ssi.py's `.rx`/`.tx`). unicorn-reference-final:tools/sharc_capture_run.py, which drives a real Machine, is
 exercised by hand against a real snapshot instead (see its own docstring
-and tests/test_sharcframe.py's precedent: "capture needs a snapshot").
+and unicorn-reference-final:tests/test_sharcframe.py's precedent: "capture needs a snapshot").
 
 Run with: uv run python -m pytest tests/sharc/integration/test_sharc_capture.py -q
 """
@@ -13,7 +13,7 @@ import os
 import tempfile
 import unittest
 
-from emu.sharc_capture import (  # noqa: E402
+from tools.sharc_dev.sharc_capture import (  # noqa: E402
     MAGIC,
     CaptureWriter,
     CapturingPeer,
@@ -86,7 +86,7 @@ class CaptureRoundTripTest(unittest.TestCase):
             )
 
     def test_kind_play_round_trips(self):
-        # tools/sharc_capture_run.py's `--kind play` (presses the panel PLAY
+        # unicorn-reference-final:tools/sharc_capture_run.py's `--kind play` (presses the panel PLAY
         # button instead of a single TRIG, to start the loaded pattern's own
         # sequencer -- see that module's docstring): CaptureWriter/load must
         # accept and preserve "play" the same way as "idle"/"note".
@@ -130,7 +130,7 @@ class CaptureRoundTripTest(unittest.TestCase):
         self.assertEqual(MAGIC, b"DT2CAP1\n")
 
     def test_dspi1_call_round_trips(self):
-        # tools/sharc_capture_run.py's observational hook on FUN_400cd48a
+        # unicorn-reference-final:tools/sharc_capture_run.py's observational hook on FUN_400cd48a
         # (docs/findings/04-coldfire-dsp-link.md, "eDMA and DSPI transfer
         # inventory"): records the call's own arguments only.
         path = os.path.join(TMP, "dspi1.dt2cap")
@@ -154,7 +154,7 @@ class CaptureRoundTripTest(unittest.TestCase):
                 os.remove(path)
 
     def test_mem_write_round_trips(self):
-        # tools/sharc_capture_run.py's --watch-mem hook (e.g. the FlexBus
+        # unicorn-reference-final:tools/sharc_capture_run.py's --watch-mem hook (e.g. the FlexBus
         # 0x8c000000 window): address plus the bytes actually written.
         path = os.path.join(TMP, "memwrite.dt2cap")
         try:
@@ -211,8 +211,8 @@ class CaptureRoundTripTest(unittest.TestCase):
 
 
 class CapturingPeerContractTest(unittest.TestCase):
-    """CapturingPeer must satisfy the same shapes emu.dspi2/emu.ssi expect
-    of any peer: exchange() returns exactly len(tx) bytes, rx() returns
+    """CapturingPeer must satisfy the same shapes unicorn-reference-final:emu/dspi2.py
+    and unicorn-reference-final:emu/ssi.py expect of any peer: exchange() returns exactly len(tx) bytes, rx() returns
     exactly nbytes, both never invent nonzero data."""
 
     def test_exchange_never_invents_data(self):

@@ -1,4 +1,4 @@
-"""Fixtures for the scenario oracle tests (scenarios/README.md, "Oracle tests").
+"""Fixtures for the scenario oracle tests (tests/scenarios/README.md, "Oracle tests").
 
 A test asks ``render`` for scenarios by name. Every scenario a selected test
 declares (``@pytest.mark.scn(name, ...)``) is rendered over parallel ``coupled-run``
@@ -177,7 +177,7 @@ class Renderer:
         run = self.base / f"{pathlib.Path(fname).stem}-{self.batches}"
         coupled.run_batch(
             self.device,
-            ROOT / "scenarios" / fname,
+            ROOT / "tests" / "scenarios" / fname,
             names,
             run,
             peeks=self.peeks,

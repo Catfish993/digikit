@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 from tools.coldfire import cf  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import machinepatch as mp  # noqa: E402
 from tools.patchkit import machineprofile as mprof  # noqa: E402
 from tools.patchkit import port_resolve as pr  # noqa: E402
@@ -94,7 +95,7 @@ class Img:
 
 
 def build_rules(ref: str) -> list[dict]:
-    main = pr.sections_of(ROOT / SYX[ref])[3]
+    main = pr.sections_of(config.stock(SYX[ref]))[3]
     base = mprof.LOAD_ADDR
 
     def read(a: int, n: int) -> bytes:

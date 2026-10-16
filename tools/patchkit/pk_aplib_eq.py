@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""patchkit's aPLib packer must emit the same bytes as dt2/aplibpack.py on every packed section.
+"""patchkit's aPLib packer must emit the same bytes as tools/firmware/aplibpack.py on every packed section.
 
     uv run python -m tools.patchkit.pk_aplib_eq [FIRMWARE.syx ...] [--only 2,3,7,8] [--rust BIN]
 
@@ -20,10 +20,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from dt2 import aplibpack  # noqa: E402
-from dt2.container import sections  # noqa: E402
-from dt2.elz import depack_section  # noqa: E402
-from emu.extract import classify  # noqa: E402
+from tools.firmware import aplibpack, config  # noqa: E402
+from tools.firmware.container import sections  # noqa: E402
+from tools.firmware.elz import depack_section  # noqa: E402
+from tools.firmware.extract import classify  # noqa: E402
 
 FIRMWARE = [
     "Digitakt_II_OS1.16.syx",
@@ -66,7 +66,7 @@ def main() -> int:
     bad = 0
     total = 0
     for name in a.syx or FIRMWARE:
-        path = ROOT / name if not Path(name).exists() else Path(name)
+        path = Path(name) if Path(name).exists() else config.stock(name)
         if not path.exists():
             print(f"skip {name} (not present)")
             continue

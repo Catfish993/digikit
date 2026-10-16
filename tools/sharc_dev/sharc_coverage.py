@@ -19,7 +19,7 @@ modify, long-word access, unresolved predicates): they depend on state.
 Also compares the two decode paths this project keeps in sync (see
 docs/findings/05-sharc-isa-and-decoding.md, "One decode path"):
 tools/sharc_dev/sharcdb/'s whole-image successor-confidence walk (the `insn` table)
-against tools/sharc_core.sequencer.decode_at()'s single-PC decode, for every
+against tools/sharc_dev/sharc_core/sequencer.decode_at()'s single-PC decode, for every
 aligned instruction:
 
     uv run python -m tools.sharc_dev.sharc_coverage dt2-1.16 --compare-decode-at
@@ -163,7 +163,7 @@ def compare_decode_at(img, example_cap=25):
     decode (the `insn` table row: width, form, fields -- built by
     tools/sharc_dev/sharcimm.py's successor-confidence walk over one code block's
     range, read through LoadedMemory since DB_VERSION v13) against
-    tools/sharc_core.sequencer.decode_at() at the same short-word PC, run
+    tools/sharc_dev/sharc_core/sequencer.decode_at() at the same short-word PC, run
     against this image's own LoadedMemory (the merged, last-write-wins
     final boot image; no database access at decode time).
     -> {image, total, stale_bytes, mismatches, by_kind, by_key, examples}:

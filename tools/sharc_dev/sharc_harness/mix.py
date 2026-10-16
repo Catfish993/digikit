@@ -7,8 +7,7 @@ import struct
 import time
 from collections.abc import Callable, Mapping, Sequence
 
-from emu import sharc_capture
-from tools.sharc_dev import sharc_dac
+from tools.sharc_dev import sharc_capture, sharc_dac
 from tools.sharc_dev import sharc_run as sr
 from tools.sharc_dev import sharc_survey as sv
 from tools.sharc_dev import sharc_trace as st
@@ -754,7 +753,7 @@ def render_frames_to_ring_a(
     itself to carry phase since every frame's record restarted at
     `start=0`).
 
-    **CAPTURE (lane E1, 2026-09-25).** If given (an `emu.sharc_capture.load()`
+    **CAPTURE (lane E1, 2026-09-25).** If given (an `tools.sharc_dev.sharc_capture.load()`
     result), frame `i`'s own real RX bytes -- `capture_frame_bytes(capture,
     (capture_frame_start or find_settled_capture_frame(capture,
     min_frame=DEFAULT_CAPTURE_FRAME_INDEX)) + i)`, wrapping modulo

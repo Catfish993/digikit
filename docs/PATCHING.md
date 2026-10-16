@@ -32,14 +32,14 @@ mise run toolchains   # pinned m68k-elf gcc/binutils and the public SHARC+ assem
 ```
 
 `mise run toolchains` is needed only to build module sources (`patch:build`, `patch:new`, `patch:dev`). Applying
-modules that are already built needs no toolchain. Put your firmware files in the repository root
+modules that are already built needs no toolchain. Put your firmware files in `firmware/`
 (`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`, ...). `uv run python -m tools.patchkit.pk_toolchains status` prints the
 installed versions.
 
 ### Patch a firmware
 
 ```sh
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
 ```
 
 This writes `out/patch/mg.syx` and `out/patch/mg.plan.json` (every write with its owner, diffable). Without `-o` the
@@ -55,7 +55,7 @@ name is `out/patch/<firmware>+<modules>.syx`. The command verifies the result be
 A machine needs its framework modules, which are added for you:
 
 ```sh
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
 ```
 
 ### Inspect, check, explain, verify
@@ -63,9 +63,9 @@ mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck -o 
 ```sh
 uv run python -m tools.patchkit.patchkit list                                   # modules and ports
 uv run python -m tools.patchkit.patchkit inspect out/patch/mg.syx               # device, sha256, port, patch record, sections
-uv run python -m tools.patchkit.patchkit check --firmware Digitakt_II_OS1.17.syx           # which modules fit this firmware
-uv run python -m tools.patchkit.patchkit verify out/patch/mg.syx --base Digitakt_II_OS1.17.syx   # re-decode and check
-mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain
+uv run python -m tools.patchkit.patchkit check --firmware firmware/Digitakt_II_OS1.17.syx           # which modules fit this firmware
+uv run python -m tools.patchkit.patchkit verify out/patch/mg.syx --base firmware/Digitakt_II_OS1.17.syx   # re-decode and check
+mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain
 mise run patch:mem -- fx/master-gain machines/pluck --device dt2 --firmware 1.17    # bytes used and free per region
 ```
 
@@ -105,13 +105,13 @@ Headless daemon with DSP audio (the flags `tools/control/digi_client.py` uses fo
 
 ```sh
 R=out/ready-pk-dt2-117
-mise run emu:serve -- --auto-coupled --audio-profile-syx Digitakt_II_OS1.17.syx \
+mise run emu:serve -- --auto-coupled --audio-profile-syx firmware/Digitakt_II_OS1.17.syx \
   --dsp-image $R/digi-audio-dn2-image.bin --dsp-state $R/digi-audio-m5.snap.dsp \
-  --cf-snapshot $R/digi-audio-m5.snap --no-audio Digitakt_II_OS1.17.syx
+  --cf-snapshot $R/digi-audio-m5.snap --no-audio firmware/Digitakt_II_OS1.17.syx
 mise run emu:ctl status       # from another shell; `mise run emu:ctl quit` stops the daemon
 ```
 
-The ready inputs come from `uv run python -m tools.emulator.ready dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117
+The ready inputs come from `uv run python -m tools.emulator.ready dt2 --syx firmware/Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117
 --force` (about 2 minutes). The test harness looks for them in the table at the top of `tools/patchkit/pk_harness.py`;
 `DIGI_PK_READY_<DEV>_<VER>` (for example `DIGI_PK_READY_DT2_117`) overrides the directory. The harness refuses ready
 inputs that are stale or belong to another `.syx`.
@@ -171,7 +171,7 @@ the manifest reference.
 ### Resolve a port for a firmware
 
 ```sh
-mise run port:resolve -- Digitakt_II_OS1.17.syx   # one firmware -> devices/ports/dt2-1.17.toml
+mise run port:resolve -- firmware/Digitakt_II_OS1.17.syx   # one firmware -> devices/ports/dt2-1.17.toml
 mise run port:resolve                             # the four supported firmwares
 ```
 
@@ -204,7 +204,7 @@ first `mise run web` in a fresh tree compiles the browser cores and takes severa
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
 | Content module | Own code and declarative registry entries. No addresses. | `fx/master-gain`, `machines/pluck` |
 
-patchkit itself (`packages/emulator/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
+patchkit itself (`packages/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
 frameworks are modules built on them. One implementation serves the command line and `patchkit.wasm`.
 
 ### Ports and anchors
@@ -283,7 +283,7 @@ The region is above the bss end, so the reset clear does not touch it, and a can
 free L2. The ColdFire boot routine sends the whole decompressed section, so no ColdFire change is needed. Limits:
 stored size at most `0x100000`, decompressed size at most `0xfffff`; usable appended payload 727,540 B (DT2) and
 211,600 B (DN2). patchkit checks every output stream against the boot-ROM rules that the public manual states
-(`packages/emulator/patchkit/src/bootrom.rs`, [finding 06](findings/06-sharc-engine-and-startup.md), "Boot ROM conformance").
+(`packages/patchkit/src/bootrom.rs`, [finding 06](findings/06-sharc-engine-and-startup.md), "Boot ROM conformance").
 
 ### Linking and `.dko` objects
 
@@ -314,7 +314,7 @@ patchkit stores a `DKPR` record in the image: format version, the SHA-256 of the
 
 - The codec reproduces all four stock images byte for byte (framing, 8-in-7 coding, packet checksums, content
   checksum, HMAC trailer). Sections that a patch does not change keep their stored bytes. Changed sections are packed
-  with an aPLib packer that produces the same bytes as `dt2/aplibpack.py` and runs about 25 times faster.
+  with an aPLib packer that produces the same bytes as `tools/firmware/aplibpack.py` and runs about 25 times faster.
 - **Sections 2 (bootstrap), 4 (updater) and 8 never change.** patchkit has no override. The bootstrap is what lets you
   recover from a bad MAIN OS.
 - The container is at most `0x300000` (3 MiB). The OS container is written to flash at `0x80000`; the record sectors
@@ -322,7 +322,7 @@ patchkit stores a `DKPR` record in the image: format version, the SHA-256 of the
   Stock images are about 1.5 MB.
 - patchkit re-decodes and verifies every output before it reports success: checksums, HMAC, size limits, the patch
   record, and (with a base) that sections 2, 4 and 8 equal the stock image.
-- Never flash the output of `dt2.build.rebuild`: it stores sections without compression and exceeds the cap
+- Never flash the output of `tools.firmware.build.rebuild`: it stores sections without compression and exceeds the cap
   ([finding 01](findings/01-container-and-patching.md)).
 
 ### What is never stored in the repository

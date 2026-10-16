@@ -119,8 +119,7 @@ def reference_render(
     ``coeff_table[0][K - base]`` (times the sample's own Q15 value) to
     within fixed-point rounding, for every one of the 6 tap positions --
     see ``read_coeff_table()``'s own docstring for the same trace this
-    reused to fix the coefficient byte offset. See
-    ``/private/tmp/claude-501/-Users-em-src-digi-digitakt2/89c5e6c8-2a58-496e-84a0-527f96e6f55a/scratchpad/trace_impulse2.py``.
+    reused to fix the coefficient byte offset.
     """
     phases = len(coeff_table)
     taps = len(coeff_table[0]) if coeff_table else 6

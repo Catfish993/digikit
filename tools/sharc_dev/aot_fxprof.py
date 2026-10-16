@@ -2,7 +2,7 @@
 """DSP profiles from coupled scenario runs, merged into an existing AOT profile.
 
     uv run python -m tools.sharc_dev.aot_fxprof --out DIR \
-        scenarios/dn2-trackfx.json:tf-br-127 scenarios/dn2-sendfx.json:sf-mst-thr0 \
+        tests/scenarios/dn2-trackfx.json:tf-br-127 tests/scenarios/dn2-sendfx.json:sf-mst-thr0 \
         [--base-cov F --base-entries F --base-trans F]
 
 The AOT cores are generated from interpreter profiles (coverage, entries,

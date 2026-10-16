@@ -12,7 +12,7 @@
 // Options: --seconds N (10) --runs N (1) --js-flags "..." --profile --split 0|1
 //   --url http://host:port (use a running dev server) --port N (4399)
 //   --chrome PATH (else $CHROME, Google Chrome, Chromium, Edge)
-//   --syx PATH (else $DIGI_EMU_SYX, repo-root Digitone_II_OS1.11.syx, main tree)
+//   --syx PATH (else $DIGI_EMU_SYX, repo-root firmware/Digitone_II_OS1.11.syx, main tree)
 //   --timeout S (900) --headed
 //   --browser chrome|firefox|safari (chrome). Firefox is driven over WebDriver BiDi (no geckodriver): --firefox PATH
 //   (/Applications/Firefox.app/Contents/MacOS/firefox). Safari uses /usr/bin/safaridriver and has no headless mode;
@@ -62,7 +62,7 @@ function findChrome() {
 function findSyx() {
   const name = 'Digitone_II_OS1.11.syx';
   const main = root.includes(`${path.sep}.claude${path.sep}worktrees${path.sep}`) ? root.split(`${path.sep}.claude${path.sep}`)[0] : root;
-  const found = [opt('syx'), process.env.DIGI_EMU_SYX, path.join(root, name), path.join(main, name)].find((c) => c && fs.existsSync(c));
+  const found = [opt('syx'), process.env.DIGI_EMU_SYX, path.join(root, 'firmware', name), path.join(main, 'firmware', name)].find((c) => c && fs.existsSync(c));
   if (!found) throw new Error(`firmware ${name} not found; pass --syx PATH`);
   return found;
 }

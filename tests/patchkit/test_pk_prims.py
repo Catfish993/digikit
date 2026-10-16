@@ -13,12 +13,13 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.emulator import native_target  # noqa: E402
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_cfcall,  # noqa: E402
     pk_toolchains,  # noqa: E402
 )
 
-DT2_117 = ROOT / "Digitakt_II_OS1.17.syx"
+DT2_117 = config.stock("Digitakt_II_OS1.17.syx")
 SETTER = 0x40035260  # Kit::vfunc_12(obj, v): if (v) obj->field20 = v
 
 pytestmark = pytest.mark.skipif(

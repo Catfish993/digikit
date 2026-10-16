@@ -11,24 +11,24 @@ PATCHING.md).
 ## Try it: the PLUCK machine in the emulator
 
 The fastest way to see a module work: patch the existing PLUCK machine (a plucked string) into Digitakt II 1.17 and
-inject it into the running desktop emulator. Firmware files go in the repository root; the ready state is built once
+inject it into the running desktop emulator. Firmware files go in `firmware/`; the ready state is built once
 (about 2 minutes) and stays under `out/`.
 
 ```sh
-uv run python -m tools.emulator.ready dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # once
+uv run python -m tools.emulator.ready dt2 --syx firmware/Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # once
 ```
 
 Shell 1, the emulator on Digitakt II 1.17 (`DIGI_EMU_READY_DIR_DT2` points the app at that ready state; the default
 one is for 1.16). The first launch builds the app, which takes several minutes:
 
 ```sh
-DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- Digitakt_II_OS1.17.syx
+DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- firmware/Digitakt_II_OS1.17.syx
 ```
 
 Shell 2, patch and inject:
 
 ```sh
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck -o out/patch/pluck.syx
 mise run inject -- out/patch/pluck.syx
 ```
 
@@ -50,25 +50,25 @@ without PGO), so in the desktop app the screens and knobs behave normally but PL
 clean, record the app's output, which is generated in emulated time:
 
 ```sh
-DIGI_EMU_SINK_WAV=out/pluck.wav DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- Digitakt_II_OS1.17.syx
+DIGI_EMU_SINK_WAV=out/pluck.wav DIGI_EMU_READY_DIR_DT2=out/ready-pk-dt2-117 mise run emu -- firmware/Digitakt_II_OS1.17.syx
 ```
 
 Other modules to try the same way:
 
 ```sh
 # a clone machine (XSLICE, a MANUAL SLICE clone with its own name; no DSP code of its own)
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/xslice -o out/patch/xslice.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/xslice -o out/patch/xslice.syx
 # a master-bus drive: the DRV knob on the FUNC + MOD master page (encoder 7; above 80 adds drive)
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-drive -o out/patch/drive.syx
-# Digitone II 1.12 (start the emulator with Digitone_II_OS1.12.syx and a 1.12 ready state)
-mise run patch -- --firmware Digitone_II_OS1.12.syx --modules machines/pluck -o out/patch/pluck-dn2.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-drive -o out/patch/drive.syx
+# Digitone II 1.12 (start the emulator with firmware/Digitone_II_OS1.12.syx and a 1.12 ready state)
+mise run patch -- --firmware firmware/Digitone_II_OS1.12.syx --modules machines/pluck -o out/patch/pluck-dn2.syx
 ```
 
 Inject each with `mise run inject -- <file>`. To see what a patch changed, and to go back to stock:
 
 ```sh
-mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules machines/pluck
-mise run inject -- Digitakt_II_OS1.17.syx
+mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/pluck
+mise run inject -- firmware/Digitakt_II_OS1.17.syx
 ```
 
 If the app starts without audio it prints which ready inputs are missing; rebuild them with the `tools/emulator/ready.py` line
@@ -76,7 +76,7 @@ above.
 
 ## Quick usage
 
-Run every command from the repository root. Put your own stock firmware files in the root
+Run every command from the repository root. Put your own stock firmware files in `firmware/`
 (`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`).
 
 ### 1. Set up once
@@ -85,7 +85,7 @@ Run every command from the repository root. Put your own stock firmware files in
 mise install
 mise run setup         # Python and web dependencies
 mise run toolchains    # pinned ColdFire gcc/binutils and the SHARC+ assembler, into out/tools (about 15 min)
-uv run python -m tools.emulator.ready dt2 --syx Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # about 2 min
+uv run python -m tools.emulator.ready dt2 --syx firmware/Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117 --force   # about 2 min
 ```
 
 The last line builds the emulator's ready state for that firmware (it is derived from the firmware, so it stays under
@@ -113,7 +113,7 @@ mise run patch:build -- modules/machines/my-synth
 ### 3. Patch a firmware
 
 ```sh
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules machines/my-synth -o out/patch/my-synth.syx
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/my-synth -o out/patch/my-synth.syx
 ```
 
 The frameworks the module `requires` are added for you. The command refuses anything that does not fit (wrong
@@ -121,7 +121,7 @@ firmware, a conflict with another module, no room) and verifies the image before
 where:
 
 ```sh
-mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules machines/my-synth
+mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules machines/my-synth
 ```
 
 ### 4. Run the emulator and inject the patched image

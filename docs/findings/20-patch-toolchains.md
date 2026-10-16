@@ -3,7 +3,7 @@
 Goal: compile patchkit modules ahead of time into relocatable objects, link them into the firmware at patch
 time with our own code, and unit-test them on the emulated cores. Plan: `docs/plans/patchkit.md`, item 0.5.
 Tools: `tools/patchkit/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.py`, `pk_sharc.py`; tests
-`tests/test_pk_cf.py`, `tests/test_pk_sharc.py` (sources in `tests/pk_src/`). Both tool chains install under
+`tests/patchkit/test_pk_cf.py`, `tests/patchkit/test_pk_sharc.py` (sources in `tests/pk_src/`). Both tool chains install under
 `out/tools/` (gitignored; `mise run toolchains`); the tests skip when a toolchain or the 1.17 image is absent.
 
 ## ColdFire (MCF5441x, ISA_C + EMAC, no FPU)
@@ -70,7 +70,7 @@ Tools: `tools/patchkit/pk_toolchains.py`, `pk_elf.py`, `pk_link.py`, `pk_cfcall.
 
 ## selcc (Selache C compiler) [D]
 
-Usable for small code, with caveats. Six test functions (`tests/pk_src/scale_c.c`) compile, every instruction (49 and 123 in two
+Usable for small code, with caveats. Six test functions (`tests/patchkit/pk_src/scale_c.c`) compile, every instruction (49 and 123 in two
 sample files) decodes with the extent Selache chose, and they run correctly on the core: `add3`, `sum` over an `int` array, a struct
 float field, a `switch`, a bit-count loop, a float scale loop. Calling convention: ADI-style frames
 (`cjump`/`rframe`; frame pointer I6, return address at `[I6-1]`), arguments R4/R8/R12, result R0, symbols get a

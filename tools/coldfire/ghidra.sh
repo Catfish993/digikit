@@ -1,7 +1,7 @@
 #!/bin/sh
-# Ghidra headless over the MAIN OS image, for the things dt2/coldfire.py cannot do.
+# Ghidra headless over the MAIN OS image, for the things tools/coldfire/disasm.py cannot do.
 #
-# dt2/coldfire.py is a linear sweep. It has no cross-references, no function
+# tools/coldfire/disasm.py is a linear sweep. It has no cross-references, no function
 # boundaries and no decompiler, and its "xref" substitute -- searching the image
 # for the big-endian address constant -- silently misses PC-relative calls. That
 # is not a corner case: `jsr $401772cc(pc)` at 0x4017845e encodes as 4eba ee6c
@@ -28,7 +28,7 @@ GHIDRA=${GHIDRA:-/opt/homebrew/Cellar/ghidra/12.1.3/libexec/support/analyzeHeadl
 # were returning no results.
 PROJ=${GHIDRA_PROJ:-$HOME/ghidra-projects/dt2}
 NAME=${GHIDRA_NAME:-dt2}
-IMG=${GHIDRA_IMG:-sections/section_3_MAIN_OS.bin}
+IMG=${GHIDRA_IMG:-out/sections/dt2-1.16/section_3_MAIN_OS.bin}
 BASE=0x40000400            # dspboot.MAIN_LOAD
 # NOT plain 68000: MVS/MVZ and FF1 decode wrong. GHIDRA_LANG=68000:BE:32:ColdfireEMAC
 # (tools/coldfire/ghidra/install-coldfire-emac.sh) also decodes the EMAC instructions.

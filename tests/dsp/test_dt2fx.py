@@ -19,7 +19,7 @@ FILES = {
 
 @pytest.mark.parametrize("fn", FILES)
 def test_files_match_the_generator(fn: str) -> None:
-    got = json.loads((ROOT / "scenarios" / fn).read_text())["scenarios"]
+    got = json.loads((ROOT / "tests" / "scenarios" / fn).read_text())["scenarios"]
     assert got == json.loads(json.dumps(FILES[fn]()))
 
 

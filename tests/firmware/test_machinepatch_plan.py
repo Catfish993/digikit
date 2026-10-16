@@ -5,7 +5,7 @@ import os
 import struct
 import unittest
 
-from emu import config
+from tools.firmware import config
 
 # tools/patchkit/machinepatch.py inserts these same two paths itself, but they need
 # to be present before the import statement below runs.
@@ -39,8 +39,11 @@ GOLDEN_ALL5 = (
 
 
 # These plans pin 1.15C bytes, so prefer the pinned 1.15C extract over
-# config.main_image(), which follows whichever firmware sections/ holds.
-PINNED_1_15C = os.path.join("out", "sections", "dt2-1.15C", "section_3_MAIN_OS.bin")
+# config.main_image(), which follows whichever firmware config.firmware() picks.
+PINNED_1_15C = os.path.join(
+    config.sections_for(config.stock("Digitakt_II_OS1.15C.syx")),
+    "section_3_MAIN_OS.bin",
+)
 
 
 def _try_main_image():
@@ -77,7 +80,8 @@ class StaticImage:
 
 
 @unittest.skipUnless(
-    _MAIN_IMAGE is not None, "no MAIN OS image available (see emu.config.main_image)"
+    _MAIN_IMAGE is not None,
+    "no MAIN OS image available (see tools.firmware.config.main_image)",
 )
 class PlanBTest(unittest.TestCase):
     def setUp(self):

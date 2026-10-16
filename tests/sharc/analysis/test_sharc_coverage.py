@@ -1,5 +1,5 @@
 """tools/sharc_dev/sharc_coverage.py's compare_decode_at(): tools/sharc_dev/sharcdb/'s own
-decode (the `insn` table) against tools/sharc_core.sequencer.decode_at() at
+decode (the `insn` table) against tools/sharc_dev/sharc_core/sequencer.decode_at() at
 the same PC. See docs/findings/05-sharc-isa-and-decoding.md, "One decode
 path"."""
 
@@ -78,7 +78,7 @@ class CompareDecodeAtTest(unittest.TestCase):
         # The database's raw bytes were never written to this image's
         # memory at all: decode_at can't agree or disagree with bytes it
         # cannot read, so this is not a decode mismatch (see
-        # tools/sharc_coverage.compare_decode_at's docstring -- this is the
+        # tools/sharc_dev/sharc_coverage.compare_decode_at's docstring -- this is the
         # dt2-1.16 block-1 case, reproduced minimally).
         mem = sharcldr.LoadedMemory.from_stream(b"")
         rows = [(0x2000, 2, "c000", "2c", "{}")]

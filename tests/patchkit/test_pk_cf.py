@@ -11,12 +11,13 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
+from tools.firmware import config  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_link,  # noqa: E402
     pk_toolchains,  # noqa: E402
 )
 
-SYX = ROOT / "Digitakt_II_OS1.17.syx"
+SYX = config.stock("Digitakt_II_OS1.17.syx")
 SRC = ROOT / "tests" / "patchkit" / "pk_src"
 BASE = 0x47E8B000  # spike 0.3 expansion region (DT2)
 DATA = 0x47EC0000  # scratch data inside the region
@@ -108,7 +109,9 @@ def test_pc_relative_relocations():
         pk_link.link(obj, BASE, {**SYMS, "near_ext": SYMS["fw_field_0c"]})
 
 
-@pytest.mark.skipif(not SYX.exists(), reason="Digitakt_II_OS1.17.syx not present")
+@pytest.mark.skipif(
+    not SYX.exists(), reason="firmware/Digitakt_II_OS1.17.syx not present"
+)
 @needs_gcc
 class TestOnTheCore:
     @pytest.fixture(scope="class")

@@ -18,7 +18,7 @@ meant. `listing()` prints the re-decoded mnemonics.
 Only the forms the hook routines need exist; add a form together with a test
 in tests/sharc/generation/test_sharc_asm.py. Encodings come from the public manuals via
 tools/sharc_dev/sharcspec/; no vendor toolchain is used. Register codes are the
-universal-register codes of tools/sharc_trace.UREG_CODES.
+universal-register codes of tools/sharc_dev/sharc_trace.UREG_CODES.
 """
 
 from __future__ import annotations

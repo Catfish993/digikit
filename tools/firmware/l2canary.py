@@ -71,7 +71,7 @@ def largest_free(stream: dsp_patch.Stream) -> tuple[int, int]:
 def build(
     syx: Path, out: Path, rng: tuple[int, int] | None, seed: int
 ) -> dict[str, object]:
-    from dt2.build import FLASH_CONTAINER_MAX, rebuild
+    from tools.firmware.build import FLASH_CONTAINER_MAX, rebuild
 
     stream = dsp_patch.Stream(dsp_patch.section_blob(syx, 7))
     stock_len = len(stream.blob)

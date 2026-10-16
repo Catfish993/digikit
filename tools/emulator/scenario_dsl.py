@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builders for scenario event lists (scenarios/README.md), DN2/DT2 panel codes.
+"""Builders for scenario event lists (tests/scenarios/README.md), DN2/DT2 panel codes.
 
     tl = Timeline()
     open_page(tl, FX_PAGE)                      # button down at 1M, up at 3M
@@ -110,5 +110,5 @@ def scenario(
 
 
 def write(path: str | pathlib.Path, scenarios: list[dict[str, Any]]) -> None:
-    """Write a scenario file in the layout of scenarios/dn2-fx.json."""
+    """Write a scenario file in the layout of tests/scenarios/dn2-fx.json."""
     pathlib.Path(path).write_text(json.dumps({"scenarios": scenarios}, indent=2) + "\n")

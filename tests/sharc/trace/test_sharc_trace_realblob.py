@@ -160,7 +160,7 @@ class TypeCacheCompareRealBlobTest(unittest.TestCase):
     final DM(I5+0xc4) value is whichever register the SECOND store uses
     (M14), not the freshly-read per-track field the first store wrote.
 
-    Moved out of the now-removed tools/sharcemu.py's test suite (this test
+    Moved out of the now-removed 87df16d^:tools/sharcemu.py's test suite (this test
     never exercised sharcemu itself, only tools/sharc_dev/sharc_trace.py).
     """
 

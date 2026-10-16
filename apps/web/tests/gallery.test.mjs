@@ -13,7 +13,7 @@ import { clash, selectionProblems, withRequired, withoutDependents } from '../sr
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const wasmPath = join(root, 'apps/web/public/patchkit.wasm');
-const images = { dt2: join(root, 'Digitakt_II_OS1.17.syx'), dn2: join(root, 'Digitone_II_OS1.12.syx') };
+const images = { dt2: join(root, 'firmware', 'Digitakt_II_OS1.17.syx'), dn2: join(root, 'firmware', 'Digitone_II_OS1.12.syx') };
 const have = [wasmPath, ...Object.values(images)].every(existsSync);
 const py = (module, ...args) => execFileSync('uv', ['run', 'python', '-m', module, ...args], { cwd: root, env: { ...process.env, PYTHONPATH: root }, encoding: 'utf8', maxBuffer: 1 << 28 });
 
@@ -94,7 +94,7 @@ test('worker core: a firmware of the other device, and garbage, are refused', { 
   const { bundle } = buildModuleData(root);
   const kit = await PatchKit.create(readFileSync(wasmPath), JSON.stringify(bundle));
   assert.throws(() => kit.check(new Uint8Array(1000)), /./);
-  const old = join(root, 'Digitakt_II_OS1.15C.syx');
+  const old = join(root, 'firmware', 'Digitakt_II_OS1.15C.syx');
   if (existsSync(old)) {
     const c = kit.check(new Uint8Array(readFileSync(old)));
     assert.equal(c.port, null);

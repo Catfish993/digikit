@@ -15,7 +15,7 @@ time. It reuses every decoder already in this repo -- tools/sharc_dev/sharcldr.p
 block classification, function boundaries, the merged-field helper),
 tools/sharc_dev/sharcflow.py (call/return site finding, pcrel_target), tools/sharc_dev/sharcfn/
 (render_instruction for the mnemonic text, register/condition naming) and
-tools/sharc_dev/sharc_disasm.py/sharcimm.py (the linear disassembler and its sweep) --
+tools/sharc_dev/{sharc_disasm,sharcimm}.py (the linear disassembler and its sweep) --
 and adds no new instruction decoding of its own.
 
 A CALL-only caller graph misses JUMP edges: a `JUMP IF SV` at sw 0x1c7053

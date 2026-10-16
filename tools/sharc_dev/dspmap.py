@@ -23,7 +23,7 @@ import json
 import os
 import sqlite3
 
-from dt2.coldfire import disasm  # noqa: E402
+from tools.coldfire.disasm import disasm  # noqa: E402
 from tools.coldfire.refscan import scan  # noqa: E402
 from tools.coldfire.vtcheck import containing  # noqa: E402
 from tools.sharc_dev import framelink  # noqa: E402

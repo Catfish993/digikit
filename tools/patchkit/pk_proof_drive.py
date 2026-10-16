@@ -46,7 +46,7 @@ from tools.patchkit import pk_proofkit as K  # noqa: E402
 
 FW = {"dt2": "1.17", "dn2": "1.12"}
 TRIG1, FUNC = 25, 17
-# The master page: FUNC + button 6 (scenarios/*-sendfx.json "sf-mst-mix"); DT2 first leaves the FILE SYSTEM modal.
+# The master page: FUNC + button 6 (tests/scenarios/*-sendfx.json "sf-mst-mix"); DT2 first leaves the FILE SYSTEM modal.
 PRELUDE = {
     "dt2": [
         {"at_instr": 0, "button": 12, "down": True},
@@ -77,7 +77,7 @@ TURN_AT = {
 TRIG_DOWN = {"dt2": 150_000_000, "dn2": 150_000_000}
 TRIG_UP = {"dt2": 300_000_000, "dn2": 330_000_000}
 END = {"dt2": 340_000_000, "dn2": 370_000_000}
-DETENT = 4  # detents per knob event (scenarios/*-sendfx.json)
+DETENT = 4  # detents per knob event (tests/scenarios/*-sendfx.json)
 
 
 def turns(

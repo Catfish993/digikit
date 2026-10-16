@@ -1,4 +1,4 @@
-//! Unit tests against MCF5441XRM chapter 40 (DSPI) and `emu/dspi2.py`'s
+//! Unit tests against MCF5441XRM chapter 40 (DSPI) and `unicorn-reference-final:emu/dspi2.py`'s
 //! `Dspi2Link`, independent of any trace.
 
 use periph::dspi::{self, Dspi2Link, Peer, RX_CHAN, TX_CHAN, ZeroPeer};
@@ -21,13 +21,13 @@ fn register_map_table_40_3() {
 fn sr_eoqf_bit_28_table_40_7() {
     // RM Table 40-7 p.1189: EOQF (bit 28) "set when the TX FIFO entry has
     // the EOQ bit set... and after the last incoming databit is sampled" --
-    // `FUN_400cd2bc`'s own "link idle" poll (`emu/dspiframe.py`'s naming).
+    // `FUN_400cd2bc`'s own "link idle" poll (`tools/sharc_dev/dspiframe.py`'s naming).
     assert_eq!(dspi::SR_LINK_IDLE, 1 << 28);
 }
 
 #[test]
 fn channel_roles_and_vectors() {
-    // emu/dspiframe.py: TX_CHAN, RX_CHAN = 29, 28; vector = channel + 120.
+    // tools/sharc_dev/dspiframe.py: TX_CHAN, RX_CHAN = 29, 28; vector = channel + 120.
     assert_eq!(dspi::TX_CHAN, 29);
     assert_eq!(dspi::RX_CHAN, 28);
     assert_eq!(dspi::TX_VECTOR, 149);
@@ -36,7 +36,7 @@ fn channel_roles_and_vectors() {
 
 /// `elem_bits`: the field `Dspi2Link::capture`/`run_deliver` actually reads
 /// for this channel's element size -- `attr & 0x7` for a TX-side capture,
-/// `(attr >> 8) & 0x7` for an RX-side deliver (`emu/dspi2.py`'s own
+/// `(attr >> 8) & 0x7` for an RX-side deliver (`unicorn-reference-final:emu/dspi2.py`'s own
 /// `_capture`/`_deliver`; ported verbatim in `dspi.rs`, even though RM Table
 /// 19-21 p.385 names bits 2-0 `DSIZE` and 10-8 `SSIZE` -- the oracle's field
 /// selection is what a replay must match, not the manual's naming for it).
@@ -54,7 +54,7 @@ fn program(regs: &mut RegFile, chan: usize, attr: u16, nbytes: u32, citer: u16) 
 
 #[test]
 fn capture_strips_pushr_tag_keeping_low_16_bits() {
-    // `emu/dspi2.py::_capture`: a 4-byte source element is
+    // `unicorn-reference-final:emu/dspi2.py::_capture`: a 4-byte source element is
     // `0x8001xxxx` (CONT|PCS0 tag, TXDATA) -- only the low 16 bits reach
     // the SHARC. `_capture` reads `attr & 0x7`; 0b010 (32-bit) -> ATTR=0x02.
     let mut regs = RegFile::new();
@@ -89,7 +89,7 @@ fn zero_peer_returns_silence_of_the_right_length() {
 
 #[test]
 fn full_frame_round_trip_arms_tx_then_rx_and_delivers_zeros() {
-    // The documented order (`emu/dspi2.py`'s module docstring): TX (29)
+    // The documented order (`unicorn-reference-final:emu/dspi2.py`'s module docstring): TX (29)
     // captured first, RX (28) armed second, which is what triggers the
     // exchange and the RX destination write.
     let mut regs = RegFile::new();

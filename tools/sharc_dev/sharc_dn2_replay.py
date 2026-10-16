@@ -22,7 +22,7 @@ import json
 import time
 from pathlib import Path
 
-from emu import sharc_capture as cap  # noqa: E402
+from tools.sharc_dev import sharc_capture as cap  # noqa: E402
 from tools.sharc_dev import sharc_diff as sd  # noqa: E402
 from tools.sharc_dev import sharc_run as sr  # noqa: E402
 from tools.sharc_dev import sharc_transpile_run as nr  # noqa: E402

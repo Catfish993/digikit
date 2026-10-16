@@ -250,7 +250,7 @@ and stop on `PcmPlayer` **[O]**; `dspi_log` and `dsp_watch` via a new worker
 
 A patched .syx comes from `tools/patchkit/dsp_patch.py syx BASE.syx PATCH OUT.syx`
 (applies a patch file to the DSP stream and rebuilds the container with
-`dt2/build.py`, store-only packing so the file is about 3x larger), or the
+`tools/firmware/build.py`, store-only packing so the file is about 3x larger), or the
 patch file goes straight in with `firmware.load {syx: BASE, dsp_patch: FILE}`.
 
 Not built: a hot ColdFire code overlay. It is only safe when the changed MAIN

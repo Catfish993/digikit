@@ -20,13 +20,13 @@
 //!
 //! Delivery order within a level is highest-source-first (RM SS17.3.1,
 //! Table 17-19), which for PIT0/2/3 (sources 13/15/16) is `(3, 2, 0)` --
-//! `emu.pit.Pits`' own `channels` default and the order this bank's
+//! `unicorn-reference-final:emu/pit.py`'s `Pits` own `channels` default and the order this bank's
 //! `service` walks when given that order.
 //!
-//! This is a direct, field-for-field port of `emu.pit.Pits`: same float
+//! This is a direct, field-for-field port of `unicorn-reference-final:emu/pit.py`'s `Pits`: same float
 //! arithmetic (`next[]` are instruction-count floats, exactly as Python's
 //! `done + p` produces), same "one tick per `service` call, never more"
-//! rule, same pending/missed/cleared bookkeeping. See `emu/pit.py`'s module
+//! rule, same pending/missed/cleared bookkeeping. See `unicorn-reference-final:emu/pit.py`'s module
 //! docstring for the hardware reasoning; this file does not repeat it.
 
 use crate::intc::IntcBank;
@@ -44,8 +44,8 @@ const RLD: u16 = 0x02;
 const PIF: u16 = 0x04;
 const PIE: u16 = 0x08;
 
-/// MCF5441XRM Eqn. 38-1: the internal bus clock, fixed by `emu.pit`'s own
-/// derivation from the reset PLL configuration (see `emu/pit.py::F_BUS`).
+/// MCF5441XRM Eqn. 38-1: the internal bus clock, fixed by `unicorn-reference-final:emu/pit.py`'s own
+/// derivation from the reset PLL configuration (see `unicorn-reference-final:emu/pit.py::F_BUS`).
 pub const F_BUS: f64 = 132_000_000.0;
 
 /// A step with no armed channel at all: only matters for `step()`'s
@@ -142,7 +142,7 @@ impl PitBank {
     /// exactly: if the write touches PCSR's PIF byte with bit 2 set, on a
     /// channel this bank is actively scheduling, a pending tick is
     /// discarded before the CPU ever sees it (`Pits._on_pcsr`; see the
-    /// class docs in `emu/pit.py`, "A refused tick is held, not dropped" --
+    /// class docs in `unicorn-reference-final:emu/pit.py`, "A refused tick is held, not dropped" --
     /// the RTOS's own context-switch handler does this on every switch).
     pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
         let Some(ch) = Self::slot(addr) else {
@@ -340,7 +340,7 @@ impl PitBank {
     /// PCSR's address, with the byte(s) actually written and their offset
     /// within the 16-bit register, so the replay's `cleared` bookkeeping
     /// matches (informational; does not gate delivery -- see the class docs
-    /// in `emu/pit.py`, "A refused tick is held, not dropped").
+    /// in `unicorn-reference-final:emu/pit.py`, "A refused tick is held, not dropped").
     pub fn note_pcsr_write(&mut self, ch: usize, byte_touches_pif: bool, pif_bit_set: bool) {
         if byte_touches_pif && pif_bit_set && self.ch[ch].pending {
             self.ch[ch].pending = false;

@@ -471,7 +471,7 @@ def cmd_census(args) -> int:
         details[name] = dc
     lines = ["# ColdFire instruction census", ""]
     lines.append(
-        "Source: Ghidra function listings (out/ghidra/<image>-emac/disasm), decoded by native/coldfire."
+        "Source: Ghidra function listings (out/ghidra/<image>-emac/disasm), decoded by packages/emulator/coldfire."
     )
     lines.append("")
     names = args.images

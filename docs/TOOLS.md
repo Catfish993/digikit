@@ -9,11 +9,11 @@ full command line. Run output and diagnostics (`out/runs/`, `--diag`) are in
 ## Generated-file rule
 
 Firmware and anything derived from it must stay out of git. This includes
-`.syx` files, extracted `sections/`, snapshots, Ghidra dumps, measurement
+`.syx` files (`firmware/`), extracted sections (`out/sections/`), snapshots, Ghidra dumps, measurement
 databases, disassembly reports, and mapped string output. Put repeatable
 results under `out/`; commit the tool and synthetic tests, not its output.
 
-Before trusting an emulator run, confirm that `sections/.source-sha256`
+Before trusting an emulator run, confirm that `out/sections/<image>/.source-sha256`
 matches the source `.syx`. Bound emulator runs with an instruction limit.
 
 The full test suite is:
@@ -26,13 +26,13 @@ uv run --with pytest python -m pytest tests -q
 
 | Tool | Purpose |
 | --- | --- |
-| `python -m emu.extract` | Extract all sections from a supplied `.syx`. This is the normal entry point. |
+| `python -m tools.firmware.extract` | Extract all sections from a supplied `.syx`. This is the normal entry point. |
 | `tools/firmware/roundtrip.py` | Rebuild and re-extract a container as an acceptance gate for the repack chain. |
 | `tools/firmware/content_hmac.py` | Inspect or calculate the container's content-authentication trailer. |
 | `tools/patchkit/patchimg.py` | Apply byte-exact, preconditioned patches to an extracted section image. |
 | `tools/coldfire/ddr_geometry.py` | Derive DDR geometry from the bootstrap's initialization sequence. |
 | `tools/coldfire/regions.py` | RAM map of a MAIN OS image, flash caves and the expansion region per image; `confirm` canary-fills a region and runs the emulator; `loader-test` boots a patched image with a reset-path loader. |
-| `tools/firmware/aplib_check.py` | Pack every section of the four firmwares with `dt2/aplibpack.py` and check it with `dt2/elz.py` and the bootstrap's own depacker on the native core. |
+| `tools/firmware/aplib_check.py` | Pack every section of the four firmwares with `tools/firmware/aplibpack.py` and check it with `tools/firmware/elz.py` and the bootstrap's own depacker on the native core. |
 
 Never patch the bootstrap or updater sections. See
 [`PATCHING.md`](PATCHING.md) before producing an image intended for hardware.
@@ -158,7 +158,7 @@ each has a module docstring with its full command line.
 | `tools/devtools/rust_ws.py` | `mise run test` / `test:slow` / `lint:rust` helper: cargo over the whole workspace with the pinned toolchain. |
 | `tools/emulator/digi_env.py` | Paths, firmware lookup, ready-input lookup, the generated-core registry and fast-region tables (`tools/emulator/fast_regions.json`). |
 | `tools/devtools/wasm_parity.mjs` | `mise run web:parity NAME`: check the browser core renders a scenario's PCM byte-identical to native. |
-| `tools/devtools/worktree-setup.sh` | Link `out/`, `sections/`, `snapshots/`, `.venv` and generated language files into an agent worktree. |
+| `tools/devtools/worktree-setup.sh` | Link `out/`, `.venv`, each `firmware/*.syx` and generated language files into an agent worktree. |
 
 Generated fast-tier lowering (see finding 18 for the design):
 
@@ -299,7 +299,7 @@ unsupported `9b_abs` form; it is not a general SHARC emulator.
 ### `tools/sharc_dev/sharc_run.py`
 
 A concrete, single-path SHARC+ runner built on `sharc_trace.py`, replacing
-the removed `tools/sharcemu.py` (a Ghidra `EmulatorHelper` p-code harness;
+the removed `87df16d^:tools/sharcemu.py` (a Ghidra `EmulatorHelper` p-code harness;
 its arithmetic already came from `sharc_trace.py`, and this runner covers
 the same "run this one routine forward with real inputs" need without a
 Ghidra JVM). `sharc_trace.py` is symbolic and forks on an unresolved

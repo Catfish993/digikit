@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Prepare a git worktree for an agent: fast-forward it to BASE (default: the
 # main tree's current branch), link the main tree's untracked inputs into it --
-# firmware and firmware-derived data, generated Ghidra/SLEIGH language files,
+# the firmware images (firmware/*.syx) and out/ (sections, snapshots, builds),
+# generated Ghidra/SLEIGH language files,
 # the web page's local DSP inputs and the virtualenv
 # and the dev tools -- and install node_modules from the pnpm store.
 # Persistent lanes: tools/devtools/lane.sh.
@@ -26,8 +27,6 @@ git -C "$here" merge --ff-only --quiet "$base"
 
 links=(
   out
-  sections
-  snapshots
   .venv
   apps/web/.local
   apps/web/dist
@@ -46,9 +45,11 @@ for path in "${links[@]}"; do
     ln -s "$main/$path" "$here/$path"
   fi
 done
-# The firmware images at the repository root (ignored by *.syx).
-for syx in "$main"/*.syx; do
-  [[ -e $syx && ! -e $here/$(basename "$syx") ]] && ln -s "$syx" "$here/$(basename "$syx")"
+# The firmware images. firmware/ is a tracked directory (it holds a README), so
+# link the images into it; /firmware/* is ignored by .gitignore.
+mkdir -p "$here/firmware"
+for syx in "$main"/firmware/*.syx; do
+  [[ -e $syx && ! -e $here/firmware/$(basename "$syx") ]] && ln -s "$syx" "$here/firmware/$(basename "$syx")"
 done
 # node_modules from the shared pnpm store (hard links, no network).
 if [[ ! -d $here/node_modules ]]; then
@@ -61,6 +62,8 @@ echo "base:     $(git -C "$here" log --oneline -1)"
 for path in "${links[@]}"; do
   [[ -L $here/$path ]] && echo "linked:   $path"
 done
-if [[ -f $here/sections/.source-sha256 ]]; then
-  echo "sections: $(cat "$here/sections/.source-sha256")"
-fi
+for marker in "$here"/out/sections/*/.source-sha256; do
+  if [[ -f $marker ]]; then
+    echo "sections: $(basename "$(dirname "$marker")") $(cat "$marker")"
+  fi
+done

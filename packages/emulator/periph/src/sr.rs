@@ -3,9 +3,9 @@
 //!
 //! `PitBank`/`DtimBank::service` need the CPU's current IPL to decide
 //! whether a pending, unmasked source may actually be delivered right now
-//! (`emu.pit.deliver_pending`: `if ((sr >> 8) & 7) >= level: continue`). A
+//! (`unicorn-reference-final:emu/pit.py`'s `deliver_pending`: `if ((sr >> 8) & 7) >= level: continue`). A
 //! peripheral-only crate has no CPU of its own to ask, so this tracks SR the
-//! way `emu.harness.Machine.raise_vector` changes it:
+//! way `unicorn-reference-final:emu/harness.py`'s `Machine.raise_vector` changes it:
 //!
 //! * on a taken interrupt with a level, SR gets the supervisor bit set and
 //!   its IPL field replaced by that level;
@@ -14,7 +14,7 @@
 //! * `rte` restores the exact SR that was pushed to the exception frame.
 //!
 //! Both formulas are exact copies of `raise_vector`'s two paths
-//! (`emu/harness.py`, the non-srtrap branch and the srtrap trampoline's
+//! (`unicorn-reference-final:emu/harness.py`, the non-srtrap branch and the srtrap trampoline's
 //! `andi.l`/`ori.l` pair produce the same live SR either way).
 //!
 //! The one gap: a guest `move.w #x,sr` is not a memory access, so it is

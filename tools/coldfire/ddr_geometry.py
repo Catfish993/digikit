@@ -32,8 +32,9 @@ so the physical size is
 Reproduce the disassembly by hand:
 
     uv run python -c "
-    from dt2.coldfire import disasm
-    data = open('sections/section_2_DSP.bin','rb').read()
+    from tools.coldfire.disasm import disasm
+from tools.firmware import config
+    data = open('out/sections/dt2-1.16/section_2_DSP.bin','rb').read()
     for pc, raw, mn, ops in disasm(data, 0x80000400, 0x800006c0, 0x800008a0):
         print(hex(pc), raw, mn, ops)"
 
@@ -45,7 +46,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from dt2.coldfire import disasm
+from tools.coldfire.disasm import disasm
+from tools.firmware import config
 
 LOAD_ADDRESS = 0x80000400
 START, END = 0x800006C0, 0x800008A0
@@ -144,7 +146,10 @@ def main(argv=None):
     p.add_argument(
         "bootstrap",
         nargs="?",
-        default="sections/section_2_DSP.bin",
+        default=str(
+            config.sections_for(config.stock("Digitakt_II_OS1.16.syx"))
+            / "section_2_DSP.bin"
+        ),
         help="decompressed bootstrap image (section 2 body)",
     )
     p.add_argument(

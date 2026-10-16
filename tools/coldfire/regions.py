@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """RAM and flash-cave regions of a MAIN OS image: the facts, the candidates, the canary.
 
-Replaces the lost tools/cavefind.py. Per image (out/sections/IMAGE/section_3_MAIN_OS.bin):
+Replaces the lost unicorn-reference-final:tools/cavefind.py. Per image (out/sections/IMAGE/section_3_MAIN_OS.bin):
 
     uv run python -m tools.coldfire.regions report [IMAGE ...] [--json]
     uv run python -m tools.coldfire.regions confirm IMAGE [--region flash_cave|expansion|START:LEN]
@@ -66,6 +66,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
+from tools.firmware import config  # noqa: E402
 
 MAIN_BASE = 0x40000400
 RESET_ENTRY = 0x400004E8
@@ -83,8 +84,8 @@ IMAGES = {
     "dn2-1.12": ("dn2-1.12", "Digitone_II_OS1.12.syx", "dn2-1.11"),
 }
 SNAPSHOTS = {
-    "dt2-1.16": "snapshots/dt2-audio-ready-cold-2026-10-07/digi-audio-m5.snap",
-    "dn2-1.11": "snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap",
+    "dt2-1.16": "out/snapshots/dt2-audio-ready-cold-2026-10-07/digi-audio-m5.snap",
+    "dn2-1.11": "out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap",
 }
 
 # The reset helpers, with their address operands masked ("." = any byte).
@@ -569,12 +570,12 @@ def run_probe(
     dsp_dir: pathlib.Path | None = None,
 ):
     _, syx_name, base = IMAGES[image]
-    syx = ROOT / syx_name
+    syx = config.stock(syx_name)
     cmd = [str(binary), str(syx)]
     if base:
         cmd += [
             "--base-sha",
-            hashlib.sha256((ROOT / IMAGES[base][1]).read_bytes()).hexdigest(),
+            hashlib.sha256((config.stock(IMAGES[base][1])).read_bytes()).hexdigest(),
         ]
     for start, length in fills:
         cmd += ["--fill", "0x%x:0x%x" % (start, length)]
@@ -687,7 +688,7 @@ def loader_code(cave: int, seg: int, copy_helper: int, clear_helper: int) -> byt
 def loader_test(image: str, kib: int, pack: str) -> int:
     import random
 
-    from dt2 import build as dbuild
+    from tools.firmware import build as dbuild
 
     a = analyse(image)
     f = a["reset"]
@@ -715,12 +716,12 @@ def loader_test(image: str, kib: int, pack: str) -> int:
     work.mkdir(parents=True, exist_ok=True)
     syx = work / (image + ".syx")
     syx.write_bytes(
-        dbuild.rebuild(str(ROOT / IMAGES[image][1]), {3: bytes(main)}, pack=pack)
+        dbuild.rebuild(str(config.stock(IMAGES[image][1])), {3: bytes(main)}, pack=pack)
     )
     expect = work / (image + ".segment")
     expect.write_bytes(payload)
     base = IMAGES[image][2] or image
-    base_sha = hashlib.sha256((ROOT / IMAGES[base][1]).read_bytes()).hexdigest()
+    base_sha = hashlib.sha256((config.stock(IMAGES[base][1])).read_bytes()).hexdigest()
     cmd = [str(probe_binary()), str(syx), "--base-sha", base_sha, "--extra", "20000000"]
     cmd += ["--expect", "0x%x:%s" % (dest, expect)]
     out = subprocess.run(

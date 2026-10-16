@@ -407,8 +407,8 @@ them to the 24-bit output.
 
 ```sh
 mise run patch:build -- modules/fx/master-gain --check
-mise run patch -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
-mise run patch:explain -- --firmware Digitakt_II_OS1.17.syx --modules fx/master-gain
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain -o out/patch/mg.syx
+mise run patch:explain -- --firmware firmware/Digitakt_II_OS1.17.syx --modules fx/master-gain
 mise run patch:dev -- --modules fx/master-gain
 mise run patch:test -- --cell "dt2-1.17:fx/master-gain,test/cf-demo"
 ```

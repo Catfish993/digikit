@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """Acceptance gate for the repack chain: rebuild a firmware .syx from
-extracted sections, then re-extract the rebuilt container with dt2/elz.py
+extracted sections, then re-extract the rebuilt container with tools/firmware/elz.py
 and prove every section comes back byte-identical.
 
-What this proves: the container write path -- dt2/build.py's packing,
+What this proves: the container write path -- tools/firmware/build.py's packing,
 its ELE3 table, the per-section storage rules, 8-in-7 encoding, SysEx
-framing -- reproduces content that dt2/elz.py, the decoder verified against the
+framing -- reproduces content that tools/firmware/elz.py, the decoder verified against the
 device's own depacker, decodes to exactly the bytes it started from.
 
 The preamble's 32-bit content checksum, the container's 32-byte
 HMAC-SHA256 trailer, and each SysEx message's byte-125 checksum are all
-now recovered and computed by the write path (dt2/build.py, dt2/authcode.py);
+now recovered and computed by the write path (tools/firmware/build.py, tools/firmware/authcode.py);
 this gate verifies all three against the rebuilt image.
 
 What this does NOT prove: that the rebuilt .syx is acceptable to a real
 device. No rebuilt image has ever been flashed to hardware. The final
 chunk's zero padding remains an inference, since no sample firmware has a
 partial final chunk to confirm it against. And the store-only packer in
-dt2/aplib.py makes the image roughly three times its original size; the
+tools/firmware/aplib.py makes the image roughly three times its original size; the
 receive code imposes no size limit, but the physical DDR and flash
 capacities on the device are not established. Flashing the output of this
 tool is untested -- proceed at your own risk.
@@ -26,7 +26,7 @@ tool is untested -- proceed at your own risk.
 not a pass on the real thing.
 
     uv run python -m tools.firmware.roundtrip FIRMWARE.syx
-        [--sections DIR]      default: sections/
+        [--sections DIR]      default: out/sections/<image key>/ of FIRMWARE.syx
         [--out FILE]          also write the rebuilt .syx here
         [--accept-sections]   skip the provenance check against FIRMWARE.syx
         [--quick]             skip section 3 (MAIN OS); partial gate only
@@ -39,12 +39,12 @@ import struct
 import sys
 import tempfile
 
-from dt2 import build
-from dt2.authcode import DEVICE_BY_ID, DEVICES, compute_trailer, derive_key
-from dt2.container import container as C
-from dt2.container import decode_syx
-from dt2.elz import depack_section
-from emu.extract import NAMES, SOURCE_MARKER, classify
+from tools.firmware import build, config
+from tools.firmware.authcode import DEVICE_BY_ID, DEVICES, compute_trailer, derive_key
+from tools.firmware.container import container as C
+from tools.firmware.container import decode_syx
+from tools.firmware.elz import depack_section
+from tools.firmware.extract import NAMES, SOURCE_MARKER, classify
 
 TABLE_OFF = 0x20
 
@@ -59,7 +59,7 @@ def sha256(path):
 
 def check_provenance(syx, sections_dir, accept):
     """Refuse to run against sections that were extracted from a different
-    .syx -- see emu/run.py's need_matching_sections, which this follows."""
+    .syx -- see unicorn-reference-final:emu/run.py's need_matching_sections, which this follows."""
     if accept:
         return
     marker_path = os.path.join(sections_dir, SOURCE_MARKER)
@@ -84,7 +84,7 @@ def check_provenance(syx, sections_dir, accept):
 
 
 def load_sections(sections_dir):
-    """-> {section_id: decompressed bytes}, one per id in emu/extract.py's
+    """-> {section_id: decompressed bytes}, one per id in tools/firmware/extract.py's
     NAMES, read from the fixed section_<id>_<name>.bin filenames."""
     orig = {}
     for sid, name in NAMES.items():
@@ -163,8 +163,7 @@ def main(argv=None):
     ap.add_argument("syx", help="the firmware .syx to round-trip")
     ap.add_argument(
         "--sections",
-        default="sections",
-        help="directory of extracted sections (default: sections/)",
+        help="directory of extracted sections (default: out/sections/<image key>/)",
     )
     ap.add_argument("--out", help="also write the rebuilt .syx here")
     ap.add_argument(
@@ -179,6 +178,7 @@ def main(argv=None):
     )
     args = ap.parse_args(argv)
 
+    args.sections = args.sections or str(config.sections_for(args.syx))
     check_provenance(args.syx, args.sections, args.accept_sections)
     orig = load_sections(args.sections)
 

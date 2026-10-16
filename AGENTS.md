@@ -1,4 +1,4 @@
-# digitakt2: agent instructions
+# digikit: agent instructions
 
 Reverse engineering and emulation of the Elektron Digitakt II (OS 1.16) and Digitone II (OS 1.11): a ColdFire
 MCF5441x main CPU and a SHARC+ DSP, run natively (desktop app) and in the browser (wasm). The device on the desk is
@@ -10,7 +10,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Results go in docs/findings/, not in handovers. Marks: **[V]** verified here, **[D]** measured or read once,
   **[O]** open, **[C]** corrects an earlier claim. A second agent checks a finding against the image bytes before
   it is marked [V]. An empty Ghidra caller list is not evidence of dead code.
-- Firmware and anything derived from it (`*.syx`, `sections/`, `out/`, `snapshots/`, `apps/web/.local`, card
+- Firmware and anything derived from it (`firmware/*.syx`, `out/` with its sections and snapshots, `apps/web/.local`, card
   images) and users' sample audio: never commit it.
 - Never name, copy or quote the vendor DSP toolchain or its files. Cite only public manuals
   (docs/sharc/SOURCES.md).
@@ -19,16 +19,16 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Before work estimated at more than about a day, state its payoff and confidence; recommend stopping when they
   are weak.
 - Run the emulator only when a static answer is not enough, and bound runs (`--limit`, `--seconds`). Em runs the
-  emulator in the same tree: `sections/.source-sha256` is the SHA-256 of the .syx the sections came from (coupled
-  DN2/DT2 runs use per-device ready inputs, not `sections/`).
+  emulator in the same tree: `out/sections/<image>/.source-sha256` is the SHA-256 of the .syx those sections came from (coupled
+  DN2/DT2 runs use per-device ready inputs, not `out/sections/`).
 
 ## Working with agents
 
 - Roles: a reader explores code and returns quotes; an editor applies fully specified edits (then check
   `git diff`); a runner builds, tests and measures. The coordinating agent keeps decisions and orchestration.
 - Parallel work runs in persistent lane worktrees: `tools/devtools/lane.sh NAME [BASE]` creates or resets
-  `../lanes/NAME` on branch `lane/NAME` and runs `tools/devtools/worktree-setup.sh`, which links `out/`, `sections/`,
-  `snapshots/`, `.venv`, the firmware `*.syx` and `apps/web/.local` from the main tree and installs
+  `../lanes/NAME` on branch `lane/NAME` and runs `tools/devtools/worktree-setup.sh`, which links `out/`,
+  `.venv`, each `firmware/*.syx` and `apps/web/.local` from the main tree and installs
   `node_modules` with `pnpm install --offline`. Lanes are reused so their Rust build directories stay warm (a
   fresh worktree costs about 25 minutes of cold builds). Use a lane only for parallel native edits or long
   measurements; reading and small edits happen in the main tree.
@@ -65,13 +65,14 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 - Lint: `tests/devtools/test_lint.py` runs ruff on its `CLEAN` list (new files start clean and join it). Types:
   `tests/devtools/test_types.py` (mypy, Python 3.11) on its `TYPED` list. The SHARC core must also run under PyPy 3.11
   (`tests/devtools/test_pypy.py`, slow).
+- Paths: tools/devtools/pathcheck.py fails on references to missing paths; cite a deleted file as `REF:path` (e.g. `unicorn-reference-final:emu/edma.py`).
 - `tests/sharc/integration/test_sharc_golden.py` hashes six SHARC core outputs: a refactor keeps them; an intended change updates
-  them with `--update` and says why. PCM pins in `scenarios/*.json` change only with Em's approval.
+  them with `--update` and says why. PCM pins in `tests/scenarios/*.json` change only with Em's approval.
 
 ## Build and run
 
 - Python tools: `tools/` is a package with one subpackage per owner (docs/LAYOUT.md); the repository root is the only import root. Run a tool as `uv run python -m tools.<owner>.<module>` from the repository root and import it as `from tools.<owner> import <module>`. Never change `sys.path`. A tool that starts another tool runs `[sys.executable, "-m", "tools.<owner>.<module>", ...]` with `env=tools.python_env()`.
-- mise tasks: `mise run emu [-- FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
+- mise tasks: `mise run emu [-- firmware/FIRMWARE.syx]` (desktop app; `-- --build-only` builds without launching), `emu:ctl`, `web` (browser dev page),
   `web:bench`, `scenario NAME`, `scenarios`, `scenarios:check`, `scenarios:dt2`, `perf`, `pgo` (both devices, then rebuilds the launcher), `pgo:dn2`, `pgo:dt2`, `gen:core`.
 - Paths, toolchain and fast-region tables: tools/emulator/digi_env.py, tools/emulator/fast_regions.json.
 - SHARC crates: packages/emulator/sharc-rt (runtime), packages/emulator/sharc-gen (the generated core from `SHARC_GEN_DIR`; relative
@@ -88,7 +89,7 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
   benchmarks). tools/devtools/coupled_ab.py, native_pgo.py and sharc_regionbench.py take the lock themselves (wrapping them
   deadlocks).
 - The shell is zsh: an unquoted `$VAR` is one word. There is no `timeout` binary.
-- Extract firmware: `uv run python -m emu.extract SYX -o DIR`.
+- Extract firmware: `uv run python -m tools.firmware.extract firmware/SYX -o DIR` (the default DIR is `out/sections/<image>`).
 - The Python Unicorn reference emulator was removed; the last commit with it is tagged `unicorn-reference-final`.
 - Manuals: read `out/refs/<pdf stem>/` (`toc.md`, `pages/pNNNN.txt`, `all.txt`), built with
   `uv run --with pymupdf python -m tools.devtools.refstext`.

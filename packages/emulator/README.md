@@ -44,7 +44,6 @@ root). The directory name is not always the package name; use the package name w
 | `packages/emulator/live` | `live-audio` | Live audio output: SPSC ring, frame repeater, cpal callback. |
 | `packages/emulator/coupled` | `digi-coupled` | The coupled ColdFire + SHARC+ run loop shared by the app and `coupled-run`; the fixture gates. |
 | `packages/emulator/control` | `digi-control` | Controller and control protocol (JSON-RPC over NDJSON); the `digi-emud` daemon. Design: `docs/design/emulator-control.md`. |
-| `packages/emulator/host` | `dt2-native-host` | Offline ColdFire to DSPI2 to SHARC host from the first native lane. Unused: nothing depends on it. |
 | `apps/desktop/src-tauri` | `digiemu-desktop` | The desktop app (Tauri), a thin shell over `digi-control` and `digi-coupled`. |
 
 Left out of the workspace: `.claude/` (agent worktrees live inside the tree and must
@@ -115,10 +114,10 @@ export SHARC_GEN_DIR=$PWD/out/native/dn2-audio/gen
 T=$(uv run python -m tools.emulator.native_target dir)
 cargo build --release --locked --target-dir "$T" -p digi-coupled --features coupled-audio --bin coupled-run
 SHARC_FAST_REGIONS=0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509 "$T"/release/coupled-run \
-  --syx Digitone_II_OS1.11.syx \
-  --dsp-image snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
-  --dsp-state snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
-  --cf-snapshot snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
+  --syx firmware/Digitone_II_OS1.11.syx \
+  --dsp-image out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-dn2-image.bin \
+  --dsp-state out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap.dsp \
+  --cf-snapshot out/snapshots/dn2-audio-ready-cold-2026-10-07/digi-audio-m5.snap \
   --scenario idle --scenario trig1-hold --out out/runs/x/report.json
 ```
 
@@ -136,7 +135,7 @@ skips the PCM hash and statistics and `--no-link-timing` the per-period and link
 timers (to A/B their cost). Exit code 2 means a gate
 failed (missing blocks, halt, step error, non-finite PCM, wrong expected hash).
 
-### Scenarios (`scenarios/dn2.json`)
+### Scenarios (`tests/scenarios/dn2.json`)
 
 A scenario is a length (`seconds` of audio, or `instructions` of ColdFire) and a
 list of panel events. Times count from the restored ready point: `at_instr` in

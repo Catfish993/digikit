@@ -191,9 +191,9 @@ def put(name, **values):
 
 
 class ConfidentDecodeTest(unittest.TestCase):
-    """tools/sharc_disasm.resolve_confident_width()'s two entry points --
+    """tools/sharc_dev/sharc_disasm.resolve_confident_width()'s two entry points --
     decode_confident() (flat buffer) and decode_confident_loaded() (loader-
-    backed memory) -- both used by tools/sharc_core.sequencer.decode_at(), so
+    backed memory) -- both used by tools/sharc_dev/sharc_core/sequencer.decode_at(), so
     a single-PC decode makes the identical width/form choice a whole-image
     walk (tools/sharc_dev/sharcimm.py's decode_all(), tests/sharc/analysis/test_sharcimm.py's
     WidthPreferenceTest) makes. See docs/findings/05-sharc-isa-and-decoding.md,

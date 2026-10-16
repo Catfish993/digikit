@@ -19,10 +19,10 @@ Commands (the image is the packed loader image, `tools/sharc_dev/sharc_pack_imag
 state (a snapshot holds its own copy of code and data, so patching the image
 alone does not change a snapshot run). Output is firmware-derived: keep it
 outside the repository. Writing a patched .syx would need a packer for the
-ELZ stream (dt2/elz.py only depacks), so the patch file plus the base .syx is
+ELZ stream (tools/firmware/elz.py only depacks), so the patch file plus the base .syx is
 the input.
 
-`syx` is that writer, built on dt2/build.py (store-only aPLib packing, so the
+`syx` is that writer, built on tools/firmware/build.py (store-only aPLib packing, so the
 file is about 3x larger than the original): it applies the patch to the DSP boot
 stream (section 7) of BASE.syx and rebuilds the container with correct
 checksums and HMAC trailer. Every other section keeps its decoded bytes, so the
@@ -338,9 +338,9 @@ class Stream:
 
 def section_blob(syx: Path, section: int) -> bytes:
     """The decoded bytes of one section of a .syx."""
-    from dt2.container import sections
-    from dt2.elz import depack_section
-    from emu.extract import classify
+    from tools.firmware.container import sections
+    from tools.firmware.elz import depack_section
+    from tools.firmware.extract import classify
 
     container, table = sections(str(syx))
     for sid, off, clen, _dest in table:
@@ -376,7 +376,7 @@ def write_syx(base: Path, patch: Patch, out: Path) -> tuple[int, int]:
         before = stream.read(op.addr, len(op.new))
         changed += sum(a != b for a, b in zip(before, op.new, strict=True))
         stream.write(op.addr, op.new)
-    from dt2.build import FLASH_CONTAINER_MAX, rebuild
+    from tools.firmware.build import FLASH_CONTAINER_MAX, rebuild
 
     out.write_bytes(
         rebuild(

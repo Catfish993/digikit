@@ -7,7 +7,7 @@ board: NOR flash (SPI transport replaced), panel UART (keys, display records), M
 packages/emulator/bootstrap/src/lib.rs for what is modelled and docs/findings/01-container-and-patching.md ("Recovery").
 
     uv run python -m tools.emulator.bootstrap_run verify IMAGE.syx [--base STOCK.syx] [--png OUT.png]
-        Flash holds BASE (default Digitakt_II_OS1.16.syx). Boot with [FUNC] held, press [TRIG 4], send IMAGE over
+        Flash holds BASE (default firmware/Digitakt_II_OS1.16.syx). Boot with [FUNC] held, press [TRIG 4], send IMAGE over
         MIDI, let the bootstrap verify (content checksum, HMAC) and write it, reboot, and check that MAIN OS comes
         up from the flash with IMAGE's own section 3. Exit 0 only when IMAGE is accepted end to end.
     uv run python -m tools.emulator.bootstrap_run menu [--syx STOCK.syx] [--png OUT.png]
@@ -29,13 +29,13 @@ import tempfile
 from dataclasses import dataclass, field
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-from dt2 import build, container  # noqa: E402
-from dt2.elz import depack_section  # noqa: E402
-from emu.extract import classify  # noqa: E402
 from tools.devtools import benchlock  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
+from tools.firmware import build, config, container  # noqa: E402
+from tools.firmware.elz import depack_section  # noqa: E402
+from tools.firmware.extract import classify  # noqa: E402
 
-DEFAULT_SYX = ROOT / "Digitakt_II_OS1.16.syx"
+DEFAULT_SYX = config.stock("Digitakt_II_OS1.16.syx")
 FLASH_SIZE = 0x100_0000
 CONTAINER_AT = 0x8_0000
 SECTOR = 0x4_0000
@@ -112,7 +112,7 @@ def ensure_binary() -> pathlib.Path:
 
 
 def extract_boot(syx: pathlib.Path | str) -> bytes:
-    """The depacked bootstrap (section 2) of a .syx, as emu.extract writes it."""
+    """The depacked bootstrap (section 2) of a .syx, as tools.firmware.extract writes it."""
     c, secs = container.sections(syx)
     for sid, off, clen, _dest in secs:
         if sid == 2:

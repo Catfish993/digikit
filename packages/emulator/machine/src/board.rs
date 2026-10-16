@@ -1129,7 +1129,7 @@ impl Board {
         }
         let byte = value as u8;
         match self.policy {
-            // `emu.edma` only recognizes the channel form of SERQ. Its CERQ
+            // `unicorn-reference-final:emu/edma.py` only recognizes the channel form of SERQ. Its CERQ
             // writes and SERQ all-channel form are inert for this seam.
             CompletionPolicy::Oracle => {
                 if addr == edma::SERQ
@@ -1212,7 +1212,7 @@ impl Board {
         Ok(source)
     }
 
-    /// Read eDMA35's UART8 source exactly as `emu.edma.TxChannel.run` does:
+    /// Read eDMA35's UART8 source exactly as `unicorn-reference-final:emu/edma.py`'s `TxChannel.run` does:
     /// every byte advances by SOFF and source modulo is applied per byte.
     /// This preflights all guest reads before the SERQ write mutates the TCD.
     fn tx35_source(&mut self) -> Result<Vec<u8>, BoardWriteError> {

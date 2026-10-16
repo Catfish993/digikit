@@ -1,5 +1,5 @@
 //! A peripheral's raw register bytes: one 16 KiB slot, big-endian, exactly
-//! as `emu/mmiotrace.py`'s `PAGE` records capture it and as the MCF5441x
+//! as `unicorn-reference-final:emu/mmiotrace.py`'s `PAGE` records capture it and as the MCF5441x
 //! bus presents it.
 //!
 //! For every register this crate's models do not specifically interpret,
@@ -10,7 +10,7 @@
 //! prescaler math, write-1-to-clear) on top of one of these per instance.
 
 /// MCF5441x peripherals are mapped in 16 KiB (0x4000-byte) slots (RM Tables
-/// 1-3/1-4), and `emu/mmiotrace.py`'s `PAGE` records dump exactly one slot.
+/// 1-3/1-4), and `unicorn-reference-final:emu/mmiotrace.py`'s `PAGE` records dump exactly one slot.
 pub const SLOT_SIZE: usize = 0x4000;
 
 #[derive(Clone)]
