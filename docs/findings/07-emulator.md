@@ -4722,14 +4722,39 @@ them. A mod that moves filter work off the core can use them.
   rate conversion, more than 1024 FIR taps, Channel Auto Iterate, HALT and
   trigger waits. Timing, MACSTAT and the debug registers are not modeled.
 
-**[O]** The HWR does not give the order of the float operations. IIR0 follows
-Figure 39-2 term by term. FIR0 gives MAC k the taps k, k + 4, k + 8 and so on,
-oldest sample first, and adds the four sums in order. Each product and each sum
-rounds to float32. Only the silicon can confirm these orders.
+**[C]** The HWR does not give the order of the float operations. The first
+models guessed it, and the silicon showed three of the guesses wrong. A probe
+build ran five jobs on the ADSP-21569 of a Digitone II on 2026-10-17 and read
+the results back over USB (dn2_firmware's `accelprobe1`). The jobs were IIR0
+with 2 biquads and Save State, run twice, IIR0 in ACM, FIR0 with 11 taps, and
+FIR0 in ACM with 37 taps. The inputs are full-mantissa floats, so a different
+rounding order shows in the last bits. The models now match every word the chip
+wrote: 40 IIR0 outputs, 4 saved states, 24 FIR0 outputs and the write-backs.
+- IIR0 adds stored word 5 of a biquad to the output. The HWR lists the stored
+  states as Dk2, Dk1. The first model read Figure 39-2 as Dk1 feeding the
+  output, so it used word 6. Each product and each sum rounds to float32. With
+  s1 = word 5 and s2 = word 6, the chip computes these terms:
 
-A probe build
-runs both accelerators on a Digitone II and reads the results back over USB.
-It is ready, but nobody has run it yet.
+      y  = A0 x + s1
+      s1 = (A1 x + s2) + B1 y
+      s2 = A2 x + B2 y
+- FIR0's four MACs take the taps k, k + 4, k + 8 and so on, oldest sample
+  first, as modelled. The four sums add in pairs: (acc0 + acc1) + (acc2 +
+  acc3). Fewer than four taps is not measured.
+- In ACM, the chip writes 0xFFFFFFFF to the TCB's INIDX and 0 to its OUTIDX.
+  The HWR says 0 and 0xFFFFFFFF in that order, for both accelerators.
+- The tests `test_silicon_*` hold the five jobs and the chip's words, for both
+  twins. They are in tests/sharc/semantics/test_sharc_iir.py and test_sharc_fir.py.
+
+**[V]** The same run kept each job's time in core cycles, from the start to
+ACDONE. The core polled about every 30 cycles. The models do not model timing.
+
+| Job | Cycles |
+|---|---|
+| IIR0, 2 biquads, 16 samples (two runs) | 706 and 731 |
+| IIR0 in ACM, 1 biquad, 8 samples | 493 |
+| FIR0, 11 taps, 16 samples | 791 |
+| FIR0 in ACM, 37 taps, 8 samples | 1,344 |
 
 **[C]** PM-bus scalar and long-word data loads and stores now use the unified
 memory, as normal-word UREG loads already did ("single, unified address

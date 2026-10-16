@@ -2,7 +2,7 @@
 
 Each case lays out TCBs, coefficients and data in a RAM window, starts IIR0 by a guest
 write of IIR_CTL1 (as code on the DSP would), and checks the output against a plain
-float32 biquad in the model's documented order, plus the write-back, the status and
+float32 biquad in the order measured on silicon, plus the write-back, the status and
 the SEC source.
 """
 
@@ -133,30 +133,31 @@ def _acm_tcb(state, tcb, nxt, ctl2, coef, inp, out, sgctl=0):
 
 def _biquads(state, at, sections):
     words = []
-    for a0, a1, b1, a2, b2, d2, d1 in sections:
+    for a0, a1, b1, a2, b2, s1, s2 in sections:
         words += [
             float(a0),
             float(a1),
             float(b1),
             float(a2),
             float(b2),
-            float(d2),
-            float(d1),
+            float(s1),
+            float(s2),
         ]
     _poke(state, at, words)
 
 
 def _reference(xs, sections):
-    """The model's documented order, each product and sum rounded to float32."""
+    """The silicon's order (iir.py), each product and sum rounded to float32; the
+    states as stored (s1, s2)."""
     st = [[_f32(s[5]), _f32(s[6])] for s in sections]
     co = [[_f32(c) for c in s[:5]] for s in sections]
     out = []
     for x in xs:
         x = _f32(x)
         for (a0, a1, b1, a2, b2), d in zip(co, st, strict=True):
-            y = _f32(_f32(a0 * x) + d[1])
-            d[1] = _f32(_f32(_f32(a1 * x) + _f32(b1 * y)) + d[0])
-            d[0] = _f32(_f32(a2 * x) + _f32(b2 * y))
+            y = _f32(_f32(a0 * x) + d[0])
+            d[0] = _f32(_f32(_f32(a1 * x) + d[1]) + _f32(b1 * y))
+            d[1] = _f32(_f32(a2 * x) + _f32(b2 * y))
             x = y
         out.append(x)
     return out, st
@@ -211,7 +212,7 @@ def test_two_cascaded_biquads_and_two_channels_with_save_state_continue_across_r
     want1, st1 = _reference(xs1 + xs1, sec1)
     assert _peek(state, OUT0, 32) == want0  # one 32-sample run's worth
     assert _peek(state, OUT1, 32) == want1
-    assert _peek(state, COEF0 + 4 * 5, 2) == st0[0]  # Dk2, Dk1 saved after A0..B2
+    assert _peek(state, COEF0 + 4 * 5, 2) == st0[0]  # s1, s2 saved after A0..B2
     assert _peek(state, COEF0 + 4 * 12, 2) == st0[1]
 
 
@@ -259,14 +260,60 @@ def test_acm_runs_a_chain_to_its_null_pointer_and_honours_the_interrupt_mask():
     _start(state, iir.CTL1_EN | iir.CTL1_DMAEN | iir.CTL1_ACM, _w(TCB0) + 15)
     assert _peek(state, OUT0, 8) == _reference(xs, [LOWPASS])[0]
     assert _peek(state, OUT1, 8) == _reference(xs, [PEAK])[0]
-    assert _peek(state, TCB0 + 4 * 14, 1, "I") == [0]  # ACM: INIDX 0, OUTIDX all ones
-    assert _peek(state, TCB0 + 4 * 10, 1, "I") == [0xFFFFFFFF]
+    assert _peek(state, TCB0 + 4 * 14, 1, "I") == [0xFFFFFFFF]  # ACM: INIDX all ones
+    assert _peek(state, TCB0 + 4 * 10, 1, "I") == [0]  # OUTIDX 0 (silicon)
     assert (
         _peek(state, COEF1 + 4 * 5, 2) == _reference(xs, [PEAK])[1][0]
     )  # SGCTL.SS: channel 2 only
     assert _peek(state, COEF0 + 4 * 5, 2) == [0.0, 0.0]
     assert not _pending(state)  # IMASK on both
     assert _dm_read(state, iir.IIR_DMASTAT, 4).value & iir.DMASTAT_ACDONE
+
+
+def _acm_blocks(sgctl: int, blocks: int = 3, window: int = 8):
+    """Two ACM channels run once a block; between runs the core re-arms each TCB's
+    INIDX and OUTIDX to the next block's buffers, which the accelerator set to
+    0xFFFFFFFF and 0 after the last window (ACM, as on silicon)."""
+    state = _state()
+    xs0 = [float(k % 7) - 3.0 for k in range(window * blocks)]
+    xs1 = [0.05 * k for k in range(window * blocks)]
+    _poke(state, IN0, xs0)
+    _poke(state, IN1, xs1)
+    _biquads(state, COEF0, [LOWPASS, PEAK])
+    _biquads(state, COEF1, [PEAK])
+    ctl2 = (_ctl2(2, window, imask=True), _ctl2(1, window, imask=True))
+    _acm_tcb(state, TCB0, TCB1, ctl2[0], COEF0, IN0, OUT0, sgctl=sgctl)
+    _acm_tcb(state, TCB1, 0, ctl2[1], COEF1, IN1, OUT1, sgctl=sgctl)
+    ctl1 = iir.CTL1_EN | iir.CTL1_DMAEN | iir.CTL1_ACM
+    for b in range(blocks):
+        if b:
+            for tcb, inp, out in ((TCB0, IN0, OUT0), (TCB1, IN1, OUT1)):
+                assert _peek(state, tcb + 4 * 14, 1, "I") == [0xFFFFFFFF]
+                assert _peek(state, tcb + 4 * 10, 1, "I") == [0]
+                _poke(state, tcb + 4 * 14, [_w(inp + 4 * window * b)])
+                _poke(state, tcb + 4 * 10, [_w(out + 4 * window * b)])
+            _dm_write(state, iir.IIR_CTL1, 4, Const(0))
+        _start(state, ctl1, _w(TCB0) + 15)
+    return state, xs0, xs1
+
+
+def test_acm_channels_with_save_state_continue_block_after_block_once_re_armed():
+    blocks, window = 3, 8
+    state, xs0, xs1 = _acm_blocks(iir.SGCTL_SS, blocks, window)
+    assert _peek(state, OUT0, blocks * window) == _reference(xs0, [LOWPASS, PEAK])[0]
+    assert _peek(state, OUT1, blocks * window) == _reference(xs1, [PEAK])[0]
+
+
+def test_acm_channels_without_save_state_restart_every_block():
+    blocks, window = 3, 8
+    state, xs0, _ = _acm_blocks(0, blocks, window)
+    for b in range(blocks):  # each block from the stored (zero) states again
+        part = xs0[b * window : (b + 1) * window]
+        assert (
+            _peek(state, OUT0 + 4 * window * b, window)
+            == _reference(part, [LOWPASS, PEAK])[0]
+        )
+    assert _peek(state, OUT0, blocks * window) != _reference(xs0, [LOWPASS, PEAK])[0]
 
 
 def test_reads_leave_the_done_bits_set():
@@ -364,3 +411,138 @@ def test_native_twin_matches_the_reference(mode) -> None:
     )
     assert core.peek(iir.IIR_DMASTAT, 4) == _dm_read(state, iir.IIR_DMASTAT, 4).value
     assert sd.compare_states(sd.export_state(state), core.export_state()) == []
+
+
+# --- Silicon -----------------------------------------------------------------
+# The jobs of dn2_firmware's accelprobe1 build (src/dnfw/waverider/accelprobe.py), run once
+# on an ADSP-21569 in a Digitone II on 2026-10-17, and the words it read back over USB.
+# The inputs are full-mantissa floats from a fixed generator, so a different rounding
+# order shows in the last bits. Only the RAM addresses differ from the probe's.
+
+
+def _lcg_floats(n: int, seed: int, scale: float = 1.0) -> list[float]:
+    """The probe's inputs: N float32 values in -scale..scale (accelprobe._floats)."""
+    out, s = [], seed
+    for _ in range(n):
+        s = (s * 1103515245 + 12345) & 0x7FFFFFFF
+        out.append(_f32(scale * (2.0 * s / 0x7FFFFFFF - 1.0)))
+    return out
+
+
+def _engine(engine: str, state: State):
+    """(write, peek) for the Python model or its native twin, on the same state."""
+    if engine == "native":
+        core = _native(state)
+        return (
+            lambda a, v: _both(state, core, a, v),
+            lambda byte, n: [core.peek(byte + 4 * k, 4) for k in range(n)],
+        )
+    return (
+        lambda a, v: _dm_write(state, a, 4, Const(v)),
+        lambda byte, n: _peek(state, byte, n, "I"),
+    )
+
+
+SILICON_IIR_A_COEFS = (
+    0.0675,
+    0.135,
+    1.1429,
+    0.0675,
+    -0.4128,
+    0.01,
+    -0.02,
+    1.0213,
+    -1.7311,
+    1.6992,
+    0.7417,
+    -0.7862,
+    0.0,
+    0.0,
+)
+SILICON_IIR_A = [
+    0x3CFFECD3,
+    0x3D288641,
+    0xB95C5740,
+    0xBE052752,
+    0xBE96AA18,
+    0xBEAD7284,
+    0xBE25BEE7,
+    0x3DCEFFA8,
+    0x3E917BB8,
+    0x3ED33C6C,
+    0x3EE1FF16,
+    0x3E620200,
+    0xBE17CEBB,
+    0xBEEB7E9A,
+    0xBF243341,
+    0xBF111041,
+    0xBE6EDA72,
+    0x3D10BB3F,
+    0x3DF69511,
+    0x3E19F041,
+    0x3E22F88C,
+    0x3E1934B4,
+    0x3E06D6F1,
+    0x3E069278,
+    0x3D11A5A5,
+    0xBE01B5DC,
+    0xBE319C7F,
+    0xBE3FA82C,
+    0xBE78ECDC,
+    0xBE5C143F,
+    0xBDC5065C,
+    0xBC6A99B0,
+]
+SILICON_IIR_A_STATES = [
+    0xBCE8F090,
+    0x3D8AD43F,
+    0x3DBFC970,
+    0xBD52FCE4,
+]  # words 5, 6, 12, 13
+SILICON_IIR_B_COEFS = (0.3333, -0.2, 0.5129, 0.1171, -0.2771, 0.03, 0.07)
+SILICON_IIR_B = [
+    0x3E7863FF,
+    0x3E1C49B0,
+    0xBD1788CB,
+    0xBCCC37E6,
+    0xBD291025,
+    0x3D51739D,
+    0xBDB809C2,
+    0x3E9F02CA,
+]
+
+
+@pytest.mark.parametrize("engine", ["python", "native"])
+def test_silicon_two_biquads_two_runs_with_save_state(engine) -> None:
+    """Probe runs 1 and 2: legacy, 2 biquads, 16 samples, IIR_CTL1.SS, the same TCB
+    twice. All 32 outputs, the 4 saved states and the index write-back."""
+    state = _state()
+    _poke(state, COEF0, [_f32(c) for c in SILICON_IIR_A_COEFS])
+    _poke(state, IN0, _lcg_floats(32, 11))
+    _legacy_tcb(state, TCB0, TCB0, _ctl2(2, 16), COEF0, IN0, OUT0)
+    write, peek = _engine(engine, state)
+    ctl1 = iir.CTL1_EN | iir.CTL1_DMAEN | iir.CTL1_SS
+    for _ in range(2):
+        write(iir.IIR_CTL1, 0)
+        write(iir.IIR_CHNPTR, _w(TCB0) + 12)
+        write(iir.IIR_CTL1, ctl1)
+    assert peek(OUT0, 32) == SILICON_IIR_A
+    assert peek(COEF0 + 4 * 5, 2) + peek(COEF0 + 4 * 12, 2) == SILICON_IIR_A_STATES
+    assert peek(TCB0 + 4 * 11, 1) == [_w(IN0) + 32]  # INIDX + 2 W
+    assert peek(TCB0 + 4 * 7, 1) == [_w(OUT0) + 32]  # OUTIDX + 2 W
+
+
+@pytest.mark.parametrize("engine", ["python", "native"])
+def test_silicon_acm_one_biquad(engine) -> None:
+    """Probe run 3: ACM, 1 biquad, 8 samples, IMASK. All 8 outputs, and the write-back
+    the chip leaves in the TCB: INIDX all ones, OUTIDX 0."""
+    state = _state()
+    _poke(state, COEF0, [_f32(c) for c in SILICON_IIR_B_COEFS])
+    _poke(state, IN0, _lcg_floats(8, 23))
+    _acm_tcb(state, TCB0, 0, _ctl2(1, 8, imask=True), COEF0, IN0, OUT0)
+    write, peek = _engine(engine, state)
+    write(iir.IIR_CHNPTR, _w(TCB0) + 15)
+    write(iir.IIR_CTL1, iir.CTL1_EN | iir.CTL1_DMAEN | iir.CTL1_ACM)
+    assert peek(OUT0, 8) == SILICON_IIR_B
+    assert peek(TCB0 + 4 * 14, 1) == [0xFFFFFFFF]
+    assert peek(TCB0 + 4 * 10, 1) == [0]
