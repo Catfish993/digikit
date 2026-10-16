@@ -44,6 +44,26 @@ current step, 0x71 on programmed trigs, 16.5M instructions per step on average, 
 `dn2-rec-play` plays a hit every 0.5 s (window RMS period of 5 windows of 100 ms); `dt2-rec-play --dt2-card` plays
 from 0.6 s on; PLAY alone steps too.
 
+### The same chain on DN2 1.11, and a unit **[D]**
+
+Found apart from the above (dn2_firmware, 2026-10-11). On DN2 1.11 the stages are at these addresses:
+
+| Stage | Where | What it does |
+| ----- | ----- | ------------ |
+| Audio ISR | `0x40025e36`, internal-clock path `0x40027aba` | Adds `2 * [0x402a0dec]` to `0x80005398` and subtracts it from the countdown `0x800053a0`. At or below zero it stores `0x7fffffff` there and sets INTFRCH bit 12 (`0x40027afc`). |
+| Source 44 | vector 108, ICR level 5, handler `0x400d7864` | Clears bit 12, re-arms, and forces source 57 (`orl #1<<25, 0xFC048010` at `0x400d7c02`). |
+| Source 57 | vector 121, ICR level 2, handler `0x400d987a` | Clears bit 25, adds 900000 to `0x42c4e900` and runs the per-step work. The step count `0x4463ed14` goes up at `0x400da54c`. |
+
+The routine that ends at `0x400d95d0` installs both handlers: `0x400d987a` at `0x400001e4` with level 2 at
+`0xFC048079`, and `0x400d7864` at `0x400001b0` with level 5 at `0xFC04806C`. The handler at `0x400d987a` has no
+direct caller, so a call-graph search for it finds nothing. The clock-mode word is `0x402a0df0`: `0x4013706c`
+returns the index of its highest set bit, and `0x4013707c` sets the mode and the period. Mode 1 and the external
+clock (`0x40138034` returns 3) branch away at `0x40027b04` and `0x40027a80`.
+
+With forced delivery on, DN2 1.11 from reset with PLAY steps `0x446483d0` from 0 to 15, and `0x4463ed14` rises 18
+per 300 M instructions: 7.9 steps a second at 132 MHz. A Digitone II on 1.11, on PLAY with its internal clock, read
+about 8 steps a second on the same two words through a USB memory probe.
+
 ## The LED stream **[D]**
 
 `FUN_40133d64(logical, value)` builds the record `b9 idx val` (3 bytes through `FUN_4000220c`, one UART8 queue):
