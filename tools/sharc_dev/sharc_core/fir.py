@@ -13,7 +13,7 @@ single-rate filters of 1 to 1024 taps (one iteration) and windows of 1 to
 1024 samples; coefficients stored C[N-1] first, read with FIR_COEFMOD and never
 circular; a circular input buffer (FIR_INIDX, FIR_INMOD, FIR_INCNT as the
 length, FIR_INBASE, in words) and output buffer, the same; the index
-write-back to the TCB (legacy: + W, ACM: 0 and 0xffffffff); FIR_COEFCNT down
+write-back to the TCB (legacy: + W, ACM: INIDX 0xffffffff and OUTIDX 0); FIR_COEFCNT down
 by the tap count; FIR_DMASTAT's WDONE and ACDONE and the FIR0_DMA source
 (SID 118) through the SEC: per channel with FIR_CTL1.CCINTR (legacy) or per
 channel unless FIR_CTL2.IMASK (ACM), else once when all channels are done
@@ -27,15 +27,17 @@ priority are not modeled. Unsupported settings (fixed point, truncation
 rounding, sample rate conversion, more than 1024 taps, Channel Auto Iterate,
 HALT, a trigger wait) raise ValueError instead of guessing.
 
-Unverified against silicon: the order of the float operations. The HWR says
-four MACs take the taps four at a time and their sums are added at the end;
-this model gives MAC k the taps k, k + 4, k + 8, ... in memory order (the
-oldest sample first), rounds each product and each sum to float32 (round to
-nearest even, denormals kept), starts each sum with its first product, and
-adds the sums in order:
+Measured on silicon (an ADSP-21569 in a Digitone II, 2026-10-17; 24 outputs of
+11 and 37 taps, bit for bit): the order of the float operations. The HWR says
+only that four MACs take the taps four at a time and that their sums add at
+the end. MAC k takes the taps k, k + 4, k + 8, ... in memory order (the oldest
+sample first); each product and each sum rounds to float32 (round to nearest
+even, denormals kept), each sum starts with its first product, and the four
+sums add in pairs:
     acc[k] = sum over i = k mod 4 of C[N-1-i] x[n-(N-1)+i]
-    y      = ((acc[0] + acc[1]) + acc[2]) + acc[3]
-(fewer than four taps: only the sums that exist).
+    y      = (acc[0] + acc[1]) + (acc[2] + acc[3])
+(fewer than four taps: the sums that exist, in order; not measured). The ACM
+write-back is the other way round from the HWR's text, as in iir.py.
 """
 
 from __future__ import annotations
@@ -156,9 +158,12 @@ def _window(state: State, coefs: list[float], layout, pointer: int, acm: bool) -
                 acc.append(p)
             else:
                 acc[i % MACS] = _r(acc[i % MACS] + p)
-        y = acc[0]
-        for k in range(1, len(acc)):
-            y = _r(y + acc[k])
+        if len(acc) == MACS:
+            y = _r(_r(acc[0] + acc[1]) + _r(acc[2] + acc[3]))
+        else:
+            y = acc[0]
+            for k in range(1, len(acc)):
+                y = _r(y + acc[k])
         _word_write(state, outidx, _bits(y))
         outidx = _step(
             outidx,
@@ -166,8 +171,8 @@ def _window(state: State, coefs: list[float], layout, pointer: int, acm: bool) -
             _mmr(state, FIR_OUTCNT) & 0xFFFF,
             _mmr(state, FIR_OUTBASE) & 0x3FFFFFFF,
         )
-    if acm:
-        back, outidx = 0x00000000, 0xFFFFFFFF
+    if acm:  # silicon: the HWR's text has the two values the other way round
+        back, outidx = 0xFFFFFFFF, 0x00000000
     _word_write(state, pointer - layout.index(FIR_INIDX), back)
     _word_write(state, pointer - layout.index(FIR_OUTIDX), outidx)
     _set(state, FIR_INIDX, back)

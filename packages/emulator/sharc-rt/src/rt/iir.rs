@@ -76,13 +76,14 @@ const ACM_TCB: [u32; 16] = [
     IIR_SCTL1, IIR_CHNPTR,
 ];
 
-/// One biquad: A0, A1, B1, A2, B2, Dk2, Dk1, and the word addresses of Dk2, Dk1.
+/// One biquad: A0, A1, B1, A2, B2, s1, s2 (s1 is added to the output), and the
+/// word addresses of s1, s2.
 struct Biquad {
     c: [f32; 5],
-    d2: f32,
-    d1: f32,
-    at2: u32,
+    s1: f32,
+    s2: f32,
     at1: u32,
+    at2: u32,
 }
 
 /// iir._mmr
@@ -157,10 +158,10 @@ fn coefficients(s: &St) -> R<Vec<Biquad>> {
         }
         out.push(Biquad {
             c: [w[0], w[1], w[2], w[3], w[4]],
-            d2: w[5],
-            d1: w[6],
-            at2: places[5],
-            at1: places[6],
+            s1: w[5],
+            s2: w[6],
+            at1: places[5],
+            at2: places[6],
         });
     }
     Ok(out)
@@ -169,8 +170,8 @@ fn coefficients(s: &St) -> R<Vec<Biquad>> {
 /// iir._save_state
 fn save_state(s: &mut St, biquads: &[Biquad]) -> R<()> {
     for bq in biquads {
-        word_write(s, bq.at2, bq.d2.to_bits())?;
-        word_write(s, bq.at1, bq.d1.to_bits())?;
+        word_write(s, bq.at1, bq.s1.to_bits())?;
+        word_write(s, bq.at2, bq.s2.to_bits())?;
     }
     Ok(())
 }
@@ -191,9 +192,9 @@ fn window(s: &mut St, biquads: &mut [Biquad], layout: &[u32], pointer: u32, acm:
         let mut x = f32::from_bits(word_read(s, inidx)?);
         for bq in biquads.iter_mut() {
             let [a0, a1, b1, a2, b2] = bq.c;
-            let y = a0 * x + bq.d1;
-            bq.d1 = (a1 * x + b1 * y) + bq.d2;
-            bq.d2 = a2 * x + b2 * y;
+            let y = a0 * x + bq.s1;
+            bq.s1 = (a1 * x + bq.s2) + b1 * y;
+            bq.s2 = a2 * x + b2 * y;
             x = y;
         }
         word_write(s, outidx, x.to_bits())?;
@@ -201,8 +202,8 @@ fn window(s: &mut St, biquads: &mut [Biquad], layout: &[u32], pointer: u32, acm:
         outidx = step(outidx, outmod, outlen, outbase);
     }
     if acm {
-        inidx = 0x0000_0000;
-        outidx = 0xFFFF_FFFF;
+        inidx = 0xFFFF_FFFF;
+        outidx = 0x0000_0000;
     }
     word_write(s, pointer.wrapping_sub(position(layout, IIR_INIDX)), inidx)?;
     word_write(s, pointer.wrapping_sub(position(layout, IIR_OUTIDX)), outidx)?;

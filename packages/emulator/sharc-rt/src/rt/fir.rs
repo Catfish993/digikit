@@ -117,16 +117,21 @@ fn window(s: &mut St, coefs: &[f32], layout: &[u32], pointer: u32, acm: bool) ->
             let p = c * xs[j + i];
             acc[i % MACS] = if i < MACS { p } else { acc[i % MACS] + p };
         }
-        let mut y = acc[0];
-        for &a in acc.iter().take(coefs.len().min(MACS)).skip(1) {
-            y += a;
-        }
+        let y = if coefs.len() >= MACS {
+            (acc[0] + acc[1]) + (acc[2] + acc[3])
+        } else {
+            let mut y = acc[0];
+            for &a in acc.iter().take(coefs.len()).skip(1) {
+                y += a;
+            }
+            y
+        };
         word_write(s, outidx, y.to_bits())?;
         outidx = step(outidx, outmod, outlen, outbase);
     }
     if acm {
-        back = 0x0000_0000;
-        outidx = 0xFFFF_FFFF;
+        back = 0xFFFF_FFFF;
+        outidx = 0x0000_0000;
     }
     word_write(s, pointer.wrapping_sub(position(layout, FIR_INIDX)), back)?;
     word_write(s, pointer.wrapping_sub(position(layout, FIR_OUTIDX)), outidx)?;

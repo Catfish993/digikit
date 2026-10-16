@@ -3,7 +3,7 @@
 Each case lays out TCBs, coefficients and data in a RAM window, starts FIR0 by a guest
 write of FIR_CTL1 (as code on the DSP would), and checks the output: against an exact
 convolution where the values make every sum exact (the buffer layout of HWR "System
-Memory Storage"), else against a float32 FIR in the model's documented order; plus the
+Memory Storage"), else against a float32 FIR in the order measured on silicon; plus the
 write-back, the status and the SEC source.
 """
 
@@ -138,8 +138,8 @@ def _coefs(state, at, c):
 
 
 def _reference(c, history, xs):
-    """The model's documented order: four sums over the taps k, k + 4, ... in memory
-    order (oldest sample first), each product and sum rounded to float32."""
+    """The silicon's order (fir.py): four sums over the taps k, k + 4, ... in memory
+    order (oldest sample first), added in pairs, each product and sum rounded to float32."""
     mem = [_f32(v) for v in reversed(c)]
     data = [_f32(v) for v in list(history) + list(xs)]
     out = []
@@ -151,9 +151,12 @@ def _reference(c, history, xs):
                 acc.append(p)
             else:
                 acc[i % 4] = _f32(acc[i % 4] + p)
-        y = acc[0]
-        for a in acc[1:]:
-            y = _f32(y + a)
+        if len(acc) == 4:
+            y = _f32(_f32(acc[0] + acc[1]) + _f32(acc[2] + acc[3]))
+        else:
+            y = acc[0]
+            for a in acc[1:]:
+                y = _f32(y + a)
         out.append(y)
     return out
 
@@ -251,8 +254,8 @@ def test_acm_runs_a_chain_to_its_null_pointer_and_honours_the_interrupt_mask():
     _start(state, GO | fir.CTL1_ACM, _w(TCB0) + 15)
     assert _peek(state, OUT0, 8) == [0.5 + k for k in range(8)]
     assert _peek(state, OUT1, 8) == [2.0] * 8
-    assert _peek(state, TCB0 + 4 * 14, 1, "I") == [0]  # ACM: INIDX 0, OUTIDX all ones
-    assert _peek(state, TCB0 + 4 * 10, 1, "I") == [0xFFFFFFFF]
+    assert _peek(state, TCB0 + 4 * 14, 1, "I") == [0xFFFFFFFF]  # ACM: INIDX all ones
+    assert _peek(state, TCB0 + 4 * 10, 1, "I") == [0]  # OUTIDX 0 (silicon)
     assert not _pending(state)  # IMASK on both
     assert _dm_read(state, fir.FIR_DMASTAT, 4).value & fir.DMASTAT_ACDONE
 
@@ -339,3 +342,94 @@ def test_native_twin_matches_the_reference(mode) -> None:
     )
     assert core.peek(fir.FIR_DMASTAT, 4) == _dm_read(state, fir.FIR_DMASTAT, 4).value
     assert sd.compare_states(sd.export_state(state), core.export_state()) == []
+
+
+# --- Silicon -----------------------------------------------------------------
+# The jobs of dn2_firmware's accelprobe1 build (src/dnfw/waverider/accelprobe.py), run once
+# on an ADSP-21569 in a Digitone II on 2026-10-17, and the words it read back over USB.
+# The inputs are full-mantissa floats from a fixed generator, so a different rounding
+# order shows in the last bits. Only the RAM addresses differ from the probe's.
+
+
+def _lcg_floats(n: int, seed: int, scale: float = 1.0) -> list[float]:
+    """The probe's inputs: N float32 values in -scale..scale (accelprobe._floats)."""
+    out, s = [], seed
+    for _ in range(n):
+        s = (s * 1103515245 + 12345) & 0x7FFFFFFF
+        out.append(_f32(scale * (2.0 * s / 0x7FFFFFFF - 1.0)))
+    return out
+
+
+def _engine(engine: str, state: State):
+    """(write, peek) for the Python model or its native twin, on the same state."""
+    if engine == "native":
+        core = _native(state)
+        return (
+            lambda a, v: _both(state, core, a, v),
+            lambda byte, n: [core.peek(byte + 4 * k, 4) for k in range(n)],
+        )
+    return (
+        lambda a, v: _dm_write(state, a, 4, Const(v)),
+        lambda byte, n: _peek(state, byte, n, "I"),
+    )
+
+
+SILICON_FIR_C = [
+    0x3E6DAF6C,
+    0x3DE9E907,
+    0x3E523D76,
+    0xBC739548,
+    0xBED3D843,
+    0xBEA69E78,
+    0xBD9A951A,
+    0x3EFDF556,
+    0xBEE7F1A0,
+    0x3F6315D2,
+    0xBF3945EA,
+    0x3ED9FC91,
+    0xBEC23D9B,
+    0x3EA4355A,
+    0x3EA34574,
+    0xBC6BAA40,
+]
+SILICON_FIR_D = [
+    0x3DFF2D04,
+    0xBE560312,
+    0x3E5F1D88,
+    0x3D0C2288,
+    0xBE61DF5F,
+    0xBE230ADE,
+    0xBD96D257,
+    0x3DE69944,
+]
+
+
+@pytest.mark.parametrize("engine", ["python", "native"])
+def test_silicon_eleven_taps(engine) -> None:
+    """Probe run 4: legacy, 11 taps, 16 samples. All 16 outputs and the write-back."""
+    state = _state()
+    _coefs(state, COEF0, _lcg_floats(11, 37, 0.4))
+    _poke(state, IN0, _lcg_floats(11 - 1 + 16, 41))
+    _legacy_tcb(state, TCB0, TCB0, _ctl2(11, 16), COEF0, IN0, OUT0)
+    write, peek = _engine(engine, state)
+    write(fir.FIR_CHNPTR, _w(TCB0) + 12)
+    write(fir.FIR_CTL1, GO)
+    assert peek(OUT0, 16) == SILICON_FIR_C
+    assert peek(TCB0 + 4 * 11, 1) == [_w(IN0) + 16]  # INIDX + W
+    assert peek(TCB0 + 4 * 7, 1) == [_w(OUT0) + 16]  # OUTIDX + W
+
+
+@pytest.mark.parametrize("engine", ["python", "native"])
+def test_silicon_acm_thirty_seven_taps(engine) -> None:
+    """Probe run 5: ACM, 37 taps, 8 samples, IMASK. All 8 outputs, and the write-back
+    the chip leaves in the TCB: INIDX all ones, OUTIDX 0."""
+    state = _state()
+    _coefs(state, COEF0, _lcg_floats(37, 53, 0.1))
+    _poke(state, IN0, _lcg_floats(37 - 1 + 8, 59))
+    _acm_tcb(state, TCB0, 0, _ctl2(37, 8, imask=True), COEF0, IN0, OUT0)
+    write, peek = _engine(engine, state)
+    write(fir.FIR_CHNPTR, _w(TCB0) + 15)
+    write(fir.FIR_CTL1, GO | fir.CTL1_ACM)
+    assert peek(OUT0, 8) == SILICON_FIR_D
+    assert peek(TCB0 + 4 * 14, 1) == [0xFFFFFFFF]
+    assert peek(TCB0 + 4 * 10, 1) == [0]

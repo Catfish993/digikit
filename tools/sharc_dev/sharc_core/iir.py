@@ -12,8 +12,8 @@ IIR_CHNPTR at TCB + 15, until a null chain pointer); 32-bit IEEE floats; the
 transposed direct form II biquad of HWR Figure 39-2, up to 64 a channel, a
 window of 1 to 1024 samples; circular input, output and coefficient buffers
 (index, modifier, length, base, in words); the index write-back to the TCB
-(legacy: + W, ACM: 0 and 0xffffffff); Save State (IIR_CTL1.SS, IIR_SGCTL.SS)
-writing each biquad's Dk2, Dk1 back after its coefficients; IIR_DMASTAT's
+(legacy: + W, ACM: INIDX 0xffffffff and OUTIDX 0); Save State (IIR_CTL1.SS,
+IIR_SGCTL.SS) writing each biquad's two states back after its coefficients; IIR_DMASTAT's
 WDONE and ACDONE and the IIR0_DMA source (SID 120)
 through the SEC: per channel with IIR_CTL1.CCINTR (legacy) or per channel
 unless IIR_CTL2.IMASK (ACM), else once when all channels are done (legacy).
@@ -27,14 +27,18 @@ burst reads, the debug registers, IIR_MACSTAT, triggers and priority are not
 modeled. Unsupported settings (40-bit mode, truncation rounding, Channel Auto
 Iterate, HALT, a trigger wait) raise ValueError instead of guessing.
 
-Unverified against silicon: the order of the float operations inside a biquad.
-The HWR gives the signal flow, not the order; this model follows the figure
-term by term, each product and each sum rounded to float32 (round to nearest
+Measured on silicon (an ADSP-21569 in a Digitone II, 2026-10-17; 40 outputs and
+4 saved states of three runs, bit for bit): the order of the float operations
+inside a biquad and the roles of the two stored states. The HWR gives only the
+signal flow. Each product and each sum rounds to float32 (round to nearest
 even), denormals kept:
-    y   = A0 x + Dk1
-    Dk1 = (A1 x + B1 y) + Dk2
-    Dk2 = A2 x + B2 y
-with the HWR's names (Ak = b, Bk = -a, stored A0, A1, B1, A2, B2, Dk2, Dk1).
+    y  = A0 x + s1
+    s1 = (A1 x + s2) + B1 y
+    s2 = A2 x + B2 y
+with Ak = b and Bk = -a, stored A0, A1, B1, A2, B2, s1, s2. The HWR names the
+two stored states Dk2, Dk1 in that order, but the chip adds the first of them
+(word 5) to the output. The ACM write-back is also the other way round from
+the HWR's text (INIDX 0, OUTIDX all ones) on the chip.
 """
 
 from __future__ import annotations
@@ -184,8 +188,8 @@ def _load_tcb(state: State, pointer: int, layout) -> None:
 
 
 def _coefficients(state: State) -> list[list[float]]:
-    """The channel's biquads (A0, A1, B1, A2, B2, Dk2, Dk1) from its buffer, with
-    the word address each Dk2 came from (index 7) for Save State."""
+    """The channel's biquads (A0, A1, B1, A2, B2, s1, s2) from its buffer, with
+    the word addresses s1 and s2 came from (indices 7, 8) for Save State."""
     count = (_mmr(state, IIR_CTL2) & CTL2_BIQUADS_MASK) + 1
     index = _mmr(state, IIR_COEFIDX) & 0x3FFFFFFF
     modifier, length = _mmr(state, IIR_COEFMOD), _mmr(state, IIR_COEFLEN) & 0xFFFF
@@ -220,10 +224,10 @@ def _window(
     for _ in range(window):
         x = _f32(_word_read(state, inidx))
         for bq in biquads:
-            a0, a1, b1, a2, b2, d2, d1 = bq[:7]
-            y = _r(_r(a0 * x) + d1)
-            bq[6] = _r(_r(_r(a1 * x) + _r(b1 * y)) + d2)
-            bq[5] = _r(_r(a2 * x) + _r(b2 * y))
+            a0, a1, b1, a2, b2, s1, s2 = bq[:7]
+            y = _r(_r(a0 * x) + s1)
+            bq[5] = _r(_r(_r(a1 * x) + s2) + _r(b1 * y))
+            bq[6] = _r(_r(a2 * x) + _r(b2 * y))
             x = y
         _word_write(state, outidx, _bits(x))
         inidx = _step(
@@ -238,8 +242,8 @@ def _window(
             _mmr(state, IIR_OUTLEN) & 0xFFFF,
             _mmr(state, IIR_OUTBASE) & 0x3FFFFFFF,
         )
-    if acm:
-        inidx, outidx = 0x00000000, 0xFFFFFFFF
+    if acm:  # silicon: the HWR's text has the two values the other way round
+        inidx, outidx = 0xFFFFFFFF, 0x00000000
     _word_write(state, pointer - layout.index(IIR_INIDX), inidx)
     _word_write(state, pointer - layout.index(IIR_OUTIDX), outidx)
     _set(state, IIR_INIDX, inidx)
