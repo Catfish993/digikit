@@ -9,10 +9,18 @@ import { fileURLToPath } from 'node:url';
 import { ReadyCache, memoryStore, sha256Hex, CORE_VERSION } from '../src/ready-cache.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const ready = path.resolve(root, process.env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
+const ready = path.resolve(
+  root,
+  process.env.DIGI_EMU_READY_DIR ??
+    JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir,
+);
 const read = (n) => new Uint8Array(fs.readFileSync(path.join(ready, n)));
 const state = fs.existsSync(path.join(ready, 'digi-audio-m5.snap'))
-  ? { image: read('digi-audio-dn2-image.bin'), dsp: read('digi-audio-m5.snap.dsp'), snapshot: read('digi-audio-m5.snap') }
+  ? {
+      image: read('digi-audio-dn2-image.bin'),
+      dsp: read('digi-audio-m5.snap.dsp'),
+      snapshot: read('digi-audio-m5.snap'),
+    }
   : { image: new Uint8Array([1, 2, 3]), dsp: new Uint8Array(1000).fill(7), snapshot: new Uint8Array(5000) };
 const syx = new Uint8Array([9, 9, 9]);
 
@@ -34,4 +42,6 @@ await store.put(ReadyCache.key(key), new Uint8Array([1, 2, 3, 4]));
 assert.equal(await cache.load(key), undefined);
 assert.equal(await store.get(ReadyCache.key(key)), undefined);
 const raw = state.image.length + state.dsp.length + state.snapshot.length;
-console.log(`ok (core version ${CORE_VERSION}): ${(raw / 1e6).toFixed(1)} MB state -> ${(stored / 1e6).toFixed(1)} MB stored, save ${saveMs.toFixed(0)} ms, restore ${loadMs.toFixed(0)} ms`);
+console.log(
+  `ok (core version ${CORE_VERSION}): ${(raw / 1e6).toFixed(1)} MB state -> ${(stored / 1e6).toFixed(1)} MB stored, save ${saveMs.toFixed(0)} ms, restore ${loadMs.toFixed(0)} ms`,
+);

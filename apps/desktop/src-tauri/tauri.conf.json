@@ -6,7 +6,9 @@
   "build": { "beforeBuildCommand": "pnpm --filter @digi/web exec astro build", "frontendDist": "../../web/dist" },
   "app": {
     "windows": [{ "title": "digikit", "width": 1120, "height": 1000, "minWidth": 700, "minHeight": 600 }],
-    "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost" }
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost"
+    }
   },
   "bundle": { "active": true, "targets": ["app"] }
 }

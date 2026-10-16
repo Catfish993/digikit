@@ -36,13 +36,18 @@ class PcmProcessor extends AudioWorkletProcessor {
       } else if (data && data.type === 'config') {
         this.start = Math.max(this.minStart, data.startSeconds * sampleRate);
       } else if (data && data.type === 'flush') {
-        this.queue = []; this.head = 0; this.queued = 0; this.playing = false;
+        this.queue = [];
+        this.head = 0;
+        this.queued = 0;
+        this.playing = false;
       }
     };
     this.port.onmessage = ({ data }) => {
       // The emulator worker's PCM port arrives here.
-      if (data && data.port) { this.portAttached = true; data.port.onmessage = onData; }
-      else onData({ data });
+      if (data && data.port) {
+        this.portAttached = true;
+        data.port.onmessage = onData;
+      } else onData({ data });
     };
   }
   process(_inputs, outputs) {
@@ -50,7 +55,10 @@ class PcmProcessor extends AudioWorkletProcessor {
     const left = out[0];
     const right = out[1] ?? out[0];
     const n = left.length;
-    if (!this.playing && this.queued > 0 && this.queued >= this.start) { this.playing = true; this.fadeIn = FADE; }
+    if (!this.playing && this.queued > 0 && this.queued >= this.start) {
+      this.playing = true;
+      this.fadeIn = FADE;
+    }
     let i = 0;
     if (this.playing) {
       while (i < n && this.queue.length) {
@@ -59,22 +67,29 @@ class PcmProcessor extends AudioWorkletProcessor {
         let r = block[this.head + 1];
         if (this.fadeIn > 0) {
           const g = (FADE - this.fadeIn) / FADE;
-          l *= g; r *= g; this.fadeIn -= 1;
+          l *= g;
+          r *= g;
+          this.fadeIn -= 1;
         }
         left[i] = l;
         right[i] = r;
         i += 1;
         this.head += 2;
-        if (this.head >= block.length) { this.queue.shift(); this.head = 0; }
+        if (this.head >= block.length) {
+          this.queue.shift();
+          this.head = 0;
+        }
       }
       this.queued -= i;
       this.played += i;
       if (i < n) {
-        this.playing = false; this.underruns += 1;
+        this.playing = false;
+        this.underruns += 1;
         const k = Math.min(i, FADE);
         for (let j = 0; j < k; j += 1) {
           const g = (k - j) / (k + 1);
-          left[i - k + j] *= g; right[i - k + j] *= g;
+          left[i - k + j] *= g;
+          right[i - k + j] *= g;
         }
         if (k > 0) this.fades += 1;
       }
@@ -83,19 +98,26 @@ class PcmProcessor extends AudioWorkletProcessor {
     // Initial buffering is silence, not an underrun. Include all rebuffering
     // silence after the first consumed PCM frame, not just the event quantum.
     if (this.played > 0) this.underrunFrames += n - i;
-    for (; i < n; i += 1) { left[i] = 0; right[i] = 0; }
+    for (; i < n; i += 1) {
+      left[i] = 0;
+      right[i] = 0;
+    }
     this.sinceReport += n;
     if (this.sinceReport >= sampleRate / 4) {
       this.sinceReport = 0;
       this.port.postMessage({
-        queuedSeconds: this.queued / sampleRate, playing: this.playing,
-        underruns: this.underruns, fades: this.fades, playedSeconds: this.played / sampleRate,
+        queuedSeconds: this.queued / sampleRate,
+        playing: this.playing,
+        underruns: this.underruns,
+        fades: this.fades,
+        playedSeconds: this.played / sampleRate,
         receivedSeconds: this.received / sampleRate,
         highWaterSeconds: this.highWater / sampleRate,
         silenceSeconds: this.silence / sampleRate,
         underrunSeconds: this.underrunFrames / sampleRate,
         portAttached: this.portAttached,
-        receivedPcm: this.received > 0, renderedPcm: this.played > 0,
+        receivedPcm: this.received > 0,
+        renderedPcm: this.played > 0,
       });
     }
     return true;

@@ -13,9 +13,18 @@ import { clash, selectionProblems, withRequired, withoutDependents } from '../sr
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const wasmPath = join(root, 'apps/web/public/patchkit.wasm');
-const images = { dt2: join(root, 'firmware', 'Digitakt_II_OS1.17.syx'), dn2: join(root, 'firmware', 'Digitone_II_OS1.12.syx') };
+const images = {
+  dt2: join(root, 'firmware', 'Digitakt_II_OS1.17.syx'),
+  dn2: join(root, 'firmware', 'Digitone_II_OS1.12.syx'),
+};
 const have = [wasmPath, ...Object.values(images)].every(existsSync);
-const py = (module, ...args) => execFileSync('uv', ['run', 'python', '-m', module, ...args], { cwd: root, env: { ...process.env, PYTHONPATH: root }, encoding: 'utf8', maxBuffer: 1 << 28 });
+const py = (module, ...args) =>
+  execFileSync('uv', ['run', 'python', '-m', module, ...args], {
+    cwd: root,
+    env: { ...process.env, PYTHONPATH: root },
+    encoding: 'utf8',
+    maxBuffer: 1 << 28,
+  });
 
 test('index lists the committed modules with gallery metadata', () => {
   const { index, bundle } = buildModuleData(root);
@@ -37,20 +46,36 @@ test('index lists the committed modules with gallery metadata', () => {
 
 test('bundle equals tools/patchkit/patchkit.py bundle', { skip: !existsSync(join(root, '.venv')) }, () => {
   const out = join(mkdtempSync(join(tmpdir(), 'gal-')), 'bundle.json');
-  py('tools.patchkit.patchkit','bundle', '-o', out);
+  py('tools.patchkit.patchkit', 'bundle', '-o', out);
   assert.deepEqual(buildModuleData(root).bundle, JSON.parse(readFileSync(out, 'utf8')));
 });
 
 test('markdown blocks are data, never HTML', () => {
-  const blocks = markdownBlocks('# Title\n\nA `code` and **bold** <script>x</script>.\n\n- one\n- two\n\n```\nraw\n```\n');
-  assert.deepEqual(blocks.map((b) => b.t), ['h', 'p', 'ul', 'code']);
-  assert.deepEqual(blocks[1].runs.map((r) => [r.text, !!r.code, !!r.bold]).slice(1, 4), [['code', true, false], [' and ', false, false], ['bold', false, true]]);
+  const blocks = markdownBlocks(
+    '# Title\n\nA `code` and **bold** <script>x</script>.\n\n- one\n- two\n\n```\nraw\n```\n',
+  );
+  assert.deepEqual(
+    blocks.map((b) => b.t),
+    ['h', 'p', 'ul', 'code'],
+  );
+  assert.deepEqual(blocks[1].runs.map((r) => [r.text, !!r.code, !!r.bold]).slice(1, 4), [
+    ['code', true, false],
+    [' and ', false, false],
+    ['bold', false, true],
+  ]);
   assert.ok(blocks[1].runs.at(-1).text.includes('<script>'));
 });
 
 test('selection: requires are added, dependents removed, clashes explained', () => {
   const c = (id, extra = {}) => ({ id, name: id, requires: [], conflicts: [], claims: [], ...extra });
-  const cards = [c('a', { requires: ['b'] }), c('b', { requires: ['d'] }), c('d'), c('x', { claims: ['hook'] }), c('y', { claims: ['hook'] }), c('z', { conflicts: ['d'] })];
+  const cards = [
+    c('a', { requires: ['b'] }),
+    c('b', { requires: ['d'] }),
+    c('d'),
+    c('x', { claims: ['hook'] }),
+    c('y', { claims: ['hook'] }),
+    c('z', { conflicts: ['d'] }),
+  ];
   assert.deepEqual(withRequired(cards, [], 'a'), ['a', 'b', 'd']);
   assert.deepEqual(withoutDependents(cards, ['a', 'b', 'd'], 'd'), []);
   assert.deepEqual(withoutDependents(cards, ['a', 'b', 'd', 'x'], 'b'), ['d', 'x']);
@@ -79,7 +104,7 @@ test('worker core: check and apply equal the command line (fx/master-gain)', { s
     assert.ok(checked.port?.startsWith(name));
     assert.equal(checked.modules.find((m) => m.id === 'fx/master-gain').ok, true);
     const out = join(work, `${name}.syx`);
-    py('tools.patchkit.patchkit','patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out);
+    py('tools.patchkit.patchkit', 'patch', '--firmware', path, '--modules', 'fx/master-gain', '-o', out);
     const r = kit.apply(fw, ['fx/master-gain']);
     assert.ok(Buffer.from(r.syx).equals(readFileSync(out)), `${name}: output differs from the CLI`);
     assert.equal(r.plan.record.modules[0].split('@')[0], 'fx/master-gain');
@@ -103,7 +128,10 @@ test('worker core: a firmware of the other device, and garbage, are refused', { 
 });
 
 test('built site (when present) carries no firmware', { skip: !existsSync(join(root, 'apps/web/dist')) }, () => {
-  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]);
+  const walk = (d) =>
+    readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)],
+    );
   for (const f of walk(join(root, 'apps/web/dist'))) {
     assert.ok(!/\.(syx|snap|mstate)$/i.test(f), f);
     assert.ok(statSync(f).size < 5 * 1024 * 1024 || f.endsWith('emulator-core.wasm'), f);

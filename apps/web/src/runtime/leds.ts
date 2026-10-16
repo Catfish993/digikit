@@ -9,7 +9,11 @@ export function parseLeds(hex: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-export interface Light { on: boolean; intensity: number; /** CSS colour from the value's colour mask; undefined when the mask is empty (use a fallback). */ color?: string }
+export interface Light {
+  on: boolean;
+  intensity: number;
+  /** CSS colour from the value's colour mask; undefined when the mask is empty (use a fallback). */ color?: string;
+}
 
 /**
  * One panel LED value (docs/findings/19-sequencer-and-leds.md, [value] in devices/*-leds.toml): 0x01 is off; bits 4-7
@@ -19,13 +23,19 @@ export interface Light { on: boolean; intensity: number; /** CSS colour from the
  */
 export function ledLight(value: number): Light {
   if (value <= 1) return { on: false, intensity: 0 };
-  const mask = value >> 4, intensity = (value & 15) === 1 ? 1 : 0.35;
+  const mask = value >> 4,
+    intensity = (value & 15) === 1 ? 1 : 0.35;
   if (mask === 0) return { on: true, intensity };
   const rgb = [mask & 1 ? 255 : 0, mask & 2 ? 255 : 0, mask & 4 ? 255 : 0];
-  if (mask & 8) { rgb[0] = 255; rgb[1] = Math.max(rgb[1], 227); rgb[2] = Math.max(rgb[2], 166); }
+  if (mask & 8) {
+    rgb[0] = 255;
+    rgb[1] = Math.max(rgb[1], 227);
+    rgb[2] = Math.max(rgb[2], 166);
+  }
   return { on: true, intensity, color: `rgb(${rgb.join(',')})` };
 }
 
 export const WARM_WHITE = '#ffe3a6';
 /** Default colour for a key's lit legend: PLAY green, RECORD red, the rest warm white. */
-export const defaultLedColor = (icon?: string) => icon === 'play' ? '#46d160' : icon === 'record' ? '#ff5a4f' : WARM_WHITE;
+export const defaultLedColor = (icon?: string) =>
+  icon === 'play' ? '#46d160' : icon === 'record' ? '#ff5a4f' : WARM_WHITE;

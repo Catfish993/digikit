@@ -1,15 +1,15 @@
-import path from "node:path";
-import { describe, expect, test } from "vitest";
-import { golden } from "@digi/test-support";
-import { armFreeRegionGuard, expectNoGuardHits, withSession } from "../support.ts";
+import path from 'node:path';
+import { describe, expect, test } from 'vitest';
+import { golden } from '@digi/test-support';
+import { armFreeRegionGuard, expectNoGuardHits, withSession } from '../support.ts';
 
-const GOLDENS = path.join(import.meta.dirname, "..", "goldens", "dt2-1.16.json");
-const PAGES = ["SRC", "FLTR", "AMP", "FX", "MOD"];
+const GOLDENS = path.join(import.meta.dirname, '..', 'goldens', 'dt2-1.16.json');
+const PAGES = ['SRC', 'FLTR', 'AMP', 'FX', 'MOD'];
 
-const h = withSession({ device: "dt2", firmware: "1.16", dsp: "zero" });
+const h = withSession({ device: 'dt2', firmware: '1.16', dsp: 'zero' });
 
-describe("dt2 parameter pages", () => {
-  test.each(PAGES)("page %s", async (page) => {
+describe('dt2 parameter pages', () => {
+  test.each(PAGES)('page %s', async (page) => {
     const { session } = h;
     await armFreeRegionGuard(session);
     const main = await session.frameHash();

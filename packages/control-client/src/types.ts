@@ -16,18 +16,18 @@ export const ERR = {
 } as const;
 
 export type EventKind =
-  | "halt"
-  | "stall.end"
-  | "underrun"
-  | "session.changed"
-  | "scenario.done"
-  | "firmware.loaded"
-  | "mode"
-  | "card.started"
-  | "card.ready"
-  | "card.error"
-  | "lagged"
-  | "frame"
+  | 'halt'
+  | 'stall.end'
+  | 'underrun'
+  | 'session.changed'
+  | 'scenario.done'
+  | 'firmware.loaded'
+  | 'mode'
+  | 'card.started'
+  | 'card.ready'
+  | 'card.error'
+  | 'lagged'
+  | 'frame'
   | (string & {});
 
 /** A pushed event; `kind` plus kind-specific fields. */
@@ -36,7 +36,7 @@ export interface EmuEvent {
   [key: string]: unknown;
 }
 
-export type StartMode = "auto" | "snapshot" | "cold";
+export type StartMode = 'auto' | 'snapshot' | 'cold';
 
 export interface FirmwareLoadParams {
   syx: string;
@@ -130,7 +130,7 @@ export interface StatusResult {
   cf: CfStatus;
   heartbeat: Heartbeat;
   /** "zero", "sharc" or "none". */
-  dsp?: "zero" | "sharc" | "none" | (string & {});
+  dsp?: 'zero' | 'sharc' | 'none' | (string & {});
   audio?: { halted?: unknown; [key: string]: unknown } | null;
   /** null until the first window has closed (about a second of emulated time) or without a firmware. */
   load?: LoadStatus | null;

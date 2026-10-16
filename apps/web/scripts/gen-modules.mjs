@@ -23,7 +23,8 @@ const walk = (dir, name, out = []) => {
 };
 // Python's sorted(Path) compares path parts, not the joined string.
 const byParts = (a, b) => {
-  const x = a.split(sep), y = b.split(sep);
+  const x = a.split(sep),
+    y = b.split(sep);
   for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
   return x.length - y.length;
 };
@@ -33,7 +34,8 @@ export function markdownBlocks(source) {
   const runs = (text) => {
     const out = [];
     const re = /`([^`]+)`|\*\*([^*]+)\*\*/g;
-    let last = 0, m;
+    let last = 0,
+      m;
     while ((m = re.exec(text))) {
       if (m.index > last) out.push({ text: text.slice(last, m.index) });
       out.push(m[1] !== undefined ? { text: m[1], code: true } : { text: m[2], bold: true });
@@ -43,23 +45,50 @@ export function markdownBlocks(source) {
     return out;
   };
   const blocks = [];
-  let para = [], list = null, code = null;
+  let para = [],
+    list = null,
+    code = null;
   const flush = () => {
     if (para.length) blocks.push({ t: 'p', runs: runs(para.join(' ')) });
     if (list) blocks.push({ t: 'ul', items: list.map(runs) });
-    para = []; list = null;
+    para = [];
+    list = null;
   };
   for (const line of source.split('\n')) {
     if (code) {
-      if (line.startsWith('```')) { blocks.push({ t: 'code', text: code.join('\n') }); code = null; } else code.push(line);
+      if (line.startsWith('```')) {
+        blocks.push({ t: 'code', text: code.join('\n') });
+        code = null;
+      } else code.push(line);
       continue;
     }
-    if (line.startsWith('```')) { flush(); code = []; continue; }
+    if (line.startsWith('```')) {
+      flush();
+      code = [];
+      continue;
+    }
     const h = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (h) { flush(); blocks.push({ t: 'h', level: Math.min(h[1].length + 1, 5), runs: runs(h[2]) }); continue; }
+    if (h) {
+      flush();
+      blocks.push({ t: 'h', level: Math.min(h[1].length + 1, 5), runs: runs(h[2]) });
+      continue;
+    }
     const li = /^\s*[-*]\s+(.*)$/.exec(line);
-    if (li) { if (!list) { if (para.length) { blocks.push({ t: 'p', runs: runs(para.join(' ')) }); para = []; } list = []; } list.push(li[1]); continue; }
-    if (line.trim() === '') { flush(); continue; }
+    if (li) {
+      if (!list) {
+        if (para.length) {
+          blocks.push({ t: 'p', runs: runs(para.join(' ')) });
+          para = [];
+        }
+        list = [];
+      }
+      list.push(li[1]);
+      continue;
+    }
+    if (line.trim() === '') {
+      flush();
+      continue;
+    }
     if (list) flush();
     para.push(line.trim());
   }
@@ -69,17 +98,21 @@ export function markdownBlocks(source) {
 
 /** `{bundle, index}` from the committed tree under `root`. */
 export function buildModuleData(root = repoRoot) {
-  const ports = readdirSync(join(root, 'devices', 'ports')).filter((f) => f.endsWith('.toml')).sort()
+  const ports = readdirSync(join(root, 'devices', 'ports'))
+    .filter((f) => f.endsWith('.toml'))
+    .sort()
     .map((f) => readFileSync(join(root, 'devices', 'ports', f), 'utf8'));
   const manifests = walk(join(root, 'modules'), 'module.toml').sort(byParts);
-  const modules = [], cards = [];
+  const modules = [],
+    cards = [];
   for (const file of manifests) {
     const dir = dirname(file);
     const text = readFileSync(file, 'utf8');
     const d = parse(text);
     const files = {};
     for (const o of d.object ?? []) files[o.path] = readFileSync(join(dir, o.path), 'utf8');
-    for (const r of d.registry ?? []) if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
+    for (const r of d.registry ?? [])
+      if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
     modules.push({ manifest: text, files });
     const m = d.module;
     const readme = join(dir, 'gallery', 'README.md');
@@ -87,8 +120,18 @@ export function buildModuleData(root = repoRoot) {
     const claims = (d.claim ?? []).map((c) => c.resource);
     const devices = [...new Set(targets.map((t) => t.port.split('-')[0]))].sort();
     cards.push({
-      id: m.id, version: m.version, name: m.name, category: m.category, status: m.status, summary: m.summary,
-      requires: m.requires ?? [], conflicts: m.conflicts ?? [], ports: m.ports ?? [], targets, claims, devices,
+      id: m.id,
+      version: m.version,
+      name: m.name,
+      category: m.category,
+      status: m.status,
+      summary: m.summary,
+      requires: m.requires ?? [],
+      conflicts: m.conflicts ?? [],
+      ports: m.ports ?? [],
+      targets,
+      claims,
+      devices,
       gallery: existsSync(readme) ? markdownBlocks(readFileSync(readme, 'utf8')) : [],
       path: relative(root, dir).split(sep).join('/'),
     });
@@ -103,5 +146,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'index.json'), JSON.stringify(index));
   writeFileSync(join(out, 'bundle.json'), JSON.stringify(bundle));
-  console.log(`modules: ${index.modules.length} modules, ${bundle.ports.length} ports, bundle ${statSync(join(out, 'bundle.json')).size} bytes`);
+  console.log(
+    `modules: ${index.modules.length} modules, ${bundle.ports.length} ports, bundle ${statSync(join(out, 'bundle.json')).size} bytes`,
+  );
 }

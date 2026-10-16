@@ -1,28 +1,28 @@
-import path from "node:path";
-import { describe, expect, test } from "vitest";
-import { golden } from "@digi/test-support";
-import { armFreeRegionGuard, expectNoGuardHits, withSession } from "../support.ts";
+import path from 'node:path';
+import { describe, expect, test } from 'vitest';
+import { golden } from '@digi/test-support';
+import { armFreeRegionGuard, expectNoGuardHits, withSession } from '../support.ts';
 
 // Replays tests/scenarios/dt2.json "dt2-rec-play" (exact_events: events land at their at_instr). The reference is
 // `coupled-run --dsp zero --trace` on the same scenario (out/c4/proof-B.json trace).
-const GOLDENS = path.join(import.meta.dirname, "..", "goldens", "dt2-1.16.json");
+const GOLDENS = path.join(import.meta.dirname, '..', 'goldens', 'dt2-1.16.json');
 const TOTAL = 792_000_000; // 6 s
 const MAX_STEP = 200_000_000;
 
-const h = withSession({ device: "dt2", firmware: "1.16", dsp: "zero", restart: false });
+const h = withSession({ device: 'dt2', firmware: '1.16', dsp: 'zero', restart: false });
 
-describe("dt2 rec-play", () => {
-  test("replay to 6 s", async () => {
+describe('dt2 rec-play', () => {
+  test('replay to 6 s', async () => {
     const { session } = h;
     const c = session.client;
     // Restart without the 300 ms settle: at_instr counts from the restored ready point, as in coupled-run.
     await c.restart(true);
     await armFreeRegionGuard(session);
 
-    const scenario = (await import("../../scenarios/dt2.json", { with: { type: "json" } })).default as {
+    const scenario = (await import('../../scenarios/dt2.json', { with: { type: 'json' } })).default as {
       scenarios: { name: string; events: { at_instr: number }[] }[];
     };
-    const events = scenario.scenarios.find((s) => s.name === "dt2-rec-play")!.events;
+    const events = scenario.scenarios.find((s) => s.name === 'dt2-rec-play')!.events;
     await c.inputSchedule(events);
 
     const points = [...new Set(events.map((e) => e.at_instr))].sort((a, b) => a - b);
@@ -43,10 +43,10 @@ describe("dt2 rec-play", () => {
     await advance(TOTAL);
     const final = await session.frameHash();
 
-    await session.expectNoFault("rec-play");
+    await session.expectNoFault('rec-play');
     await expectNoGuardHits(session);
-    golden(GOLDENS, "rec-play.final", final);
-    golden(GOLDENS, "rec-play.event_frames", seen);
+    golden(GOLDENS, 'rec-play.final', final);
+    golden(GOLDENS, 'rec-play.event_frames', seen);
     expect(seen.length).toBeGreaterThan(0);
   });
 });

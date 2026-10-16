@@ -29,7 +29,11 @@ if (!isMainThread) {
   const d = workerData;
   const chunks = [];
   const side = await createDspSide({
-    wasm: d.wasm, image: d.image, state: d.state, link: d.link, fast: d.fast,
+    wasm: d.wasm,
+    image: d.image,
+    state: d.state,
+    link: d.link,
+    fast: d.fast,
     onPcm: (pcm) => chunks.push(Buffer.from(pcm.buffer)),
   });
   parentPort.postMessage({ type: 'ready' });
@@ -38,7 +42,10 @@ if (!isMainThread) {
   const wallMs = performance.now() - t0;
   const pcm = Buffer.concat(chunks);
   parentPort.postMessage({
-    type: 'done', stats: side.stats(), wallMs, pcmValues: pcm.length / 4,
+    type: 'done',
+    stats: side.stats(),
+    wallMs,
+    pcmValues: pcm.length / 4,
     sha256: crypto.createHash('sha256').update(pcm).digest('hex'),
     ...(d.keepPcm ? { pcm: new Uint8Array(pcm) } : {}),
   });
@@ -48,7 +55,11 @@ if (!isMainThread) {
 const args = {};
 for (let i = 2; i < process.argv.length; i += 2) args[process.argv[i].slice(2)] = process.argv[i + 1];
 const env = process.env;
-const ready = path.resolve(root, env.DIGI_EMU_READY_DIR ?? JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir);
+const ready = path.resolve(
+  root,
+  env.DIGI_EMU_READY_DIR ??
+    JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/ready_inputs.json'), 'utf8')).ready_dir,
+);
 const read = (p) => new Uint8Array(fs.readFileSync(p));
 const wasm = read(args.core);
 const syx = read(args.syx ?? env.DIGI_EMU_SYX ?? path.join(root, 'firmware', 'Digitone_II_OS1.11.syx'));
@@ -65,10 +76,15 @@ const worker = new Worker(fileURLToPath(import.meta.url), {
   execArgv: process.execArgv,
 });
 const done = new Promise((resolve, reject) => {
-  worker.on('message', (m) => { if (m.type === 'done') resolve(m); });
+  worker.on('message', (m) => {
+    if (m.type === 'done') resolve(m);
+  });
   worker.on('error', reject);
 });
-await new Promise((resolve, reject) => { worker.once('message', (m) => m.type === 'ready' && resolve()); worker.once('error', reject); });
+await new Promise((resolve, reject) => {
+  worker.once('message', (m) => m.type === 'ready' && resolve());
+  worker.once('error', reject);
+});
 
 const t0 = performance.now();
 const cf = await createCfSide({ wasm, syx, snapshot, link });
@@ -82,8 +98,17 @@ const dsp = await done;
 const s = cf.stats();
 const audio = target / FRAMES_PER_SECOND;
 const cfBusy = s.stepMs - s.waitedMs;
-console.log(`two instances, ${audio.toFixed(2)} audio s, load ${loadS.toFixed(2)} s, wall ${(wallMs / 1000).toFixed(2)} s (${(wallMs / 1000 / audio).toFixed(2)} s per audio s)`);
-console.log(`ColdFire worker: ${(cfBusy / 1000 / audio).toFixed(3)} CPU s per audio s (step ${(s.stepMs / 1000).toFixed(2)} s, blocked on the DSP ${(s.waitedMs / 1000).toFixed(2)} s, ${s.requests} link requests)`);
-console.log(`DSP worker:      ${(dsp.stats.busyMs / 1000 / audio).toFixed(3)} CPU s per audio s (${dsp.stats.frames} frames)`);
-if (dsp.stats.fast) console.log(`fast tier: ${dsp.stats.kernels.compiled} kernels, ${dsp.stats.kernels.compileMs.toFixed(0)} ms compile, ${(dsp.stats.kernels.wasmBytes / 1e6).toFixed(2)} MB wasm, ${dsp.stats.kernels.runs} runs`);
+console.log(
+  `two instances, ${audio.toFixed(2)} audio s, load ${loadS.toFixed(2)} s, wall ${(wallMs / 1000).toFixed(2)} s (${(wallMs / 1000 / audio).toFixed(2)} s per audio s)`,
+);
+console.log(
+  `ColdFire worker: ${(cfBusy / 1000 / audio).toFixed(3)} CPU s per audio s (step ${(s.stepMs / 1000).toFixed(2)} s, blocked on the DSP ${(s.waitedMs / 1000).toFixed(2)} s, ${s.requests} link requests)`,
+);
+console.log(
+  `DSP worker:      ${(dsp.stats.busyMs / 1000 / audio).toFixed(3)} CPU s per audio s (${dsp.stats.frames} frames)`,
+);
+if (dsp.stats.fast)
+  console.log(
+    `fast tier: ${dsp.stats.kernels.compiled} kernels, ${dsp.stats.kernels.compileMs.toFixed(0)} ms compile, ${(dsp.stats.kernels.wasmBytes / 1e6).toFixed(2)} MB wasm, ${dsp.stats.kernels.runs} runs`,
+  );
 console.log(`pcm values=${dsp.pcmValues} sha256=${dsp.sha256}`);

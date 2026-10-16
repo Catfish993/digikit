@@ -1,4 +1,4 @@
-import net from "node:net";
+import net from 'node:net';
 import type {
   EmuEvent,
   FirmwareLoadParams,
@@ -12,7 +12,7 @@ import type {
   RunUntilParams,
   StatusResult,
   WatchdogResult,
-} from "./types.ts";
+} from './types.ts';
 
 export const SCHEMA_VERSION = 1;
 
@@ -22,7 +22,7 @@ export class RpcError extends Error {
   data: unknown;
   constructor(code: number, message: string, data?: unknown) {
     super(`${message} (code ${code})`);
-    this.name = "RpcError";
+    this.name = 'RpcError';
     this.code = code;
     this.data = data;
   }
@@ -43,7 +43,7 @@ export class Client {
   #socket: net.Socket;
   #nextId = 1;
   #pending = new Map<number, Pending>();
-  #text = "";
+  #text = '';
   #queue: EmuEvent[] = [];
   #waiter: (() => void) | null = null;
   #closed: Error | null = null;
@@ -54,20 +54,20 @@ export class Client {
   constructor(socket: net.Socket, options: ConnectOptions = {}) {
     this.#socket = socket;
     this.#max = options.maxBufferedEvents ?? 10000;
-    socket.setEncoding("utf8");
-    socket.on("data", (chunk: string) => this.#onData(chunk));
-    socket.on("close", () => this.#onClose(new Error("emulator closed the connection")));
-    socket.on("error", (err) => this.#onClose(err));
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk: string) => this.#onData(chunk));
+    socket.on('close', () => this.#onClose(new Error('emulator closed the connection')));
+    socket.on('error', (err) => this.#onClose(err));
   }
 
   #onData(chunk: string): void {
     this.#text += chunk;
     for (;;) {
-      const nl = this.#text.indexOf("\n");
+      const nl = this.#text.indexOf('\n');
       if (nl < 0) return;
       const line = this.#text.slice(0, nl);
       this.#text = this.#text.slice(nl + 1);
-      if (line.trim() !== "") this.#onMessage(JSON.parse(line));
+      if (line.trim() !== '') this.#onMessage(JSON.parse(line));
     }
   }
 
@@ -78,7 +78,7 @@ export class Client {
     result?: unknown;
     error?: { code: number; message: string; data?: unknown };
   }): void {
-    if (msg.method === "event" && msg.params) {
+    if (msg.method === 'event' && msg.params) {
       if (this.#queue.length >= this.#max) {
         this.#queue.shift();
         this.dropped++;
@@ -113,7 +113,7 @@ export class Client {
     const id = this.#nextId++;
     return new Promise<T>((resolve, reject) => {
       this.#pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
-      this.#socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+      this.#socket.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
     });
   }
 
@@ -136,7 +136,7 @@ export class Client {
       if (this.#closed || signal?.aborted) return;
       await new Promise<void>((resolve) => {
         this.#waiter = resolve;
-        signal?.addEventListener("abort", () => resolve(), { once: true });
+        signal?.addEventListener('abort', () => resolve(), { once: true });
       });
     }
   }
@@ -144,77 +144,77 @@ export class Client {
   // ----- typed wrappers ------------------------------------------------------
 
   async hello(): Promise<{ schema_version: number; [key: string]: unknown }> {
-    const r = await this.call<{ schema_version: number }>("hello", { min_schema: SCHEMA_VERSION });
+    const r = await this.call<{ schema_version: number }>('hello', { min_schema: SCHEMA_VERSION });
     if (r.schema_version < SCHEMA_VERSION) {
       throw new RpcError(-32602, `host schema ${r.schema_version} is too old`);
     }
     return r;
   }
   status(): Promise<StatusResult> {
-    return this.call("status");
+    return this.call('status');
   }
   firmwareLoad(params: FirmwareLoadParams): Promise<FirmwareLoadResult> {
-    return this.call("firmware.load", params);
+    return this.call('firmware.load', params);
   }
   restart(autoNo = false): Promise<Record<string, unknown>> {
-    return this.call("restart", autoNo ? { auto_no: true } : {});
+    return this.call('restart', autoNo ? { auto_no: true } : {});
   }
   step(instructions: number, extra: { timeout_wall_s?: number } = {}): Promise<Record<string, unknown>> {
-    return this.call("step", { instructions, ...extra });
+    return this.call('step', { instructions, ...extra });
   }
   runUntil(params: RunUntilParams): Promise<Record<string, unknown>> {
-    return this.call("run_until", params);
+    return this.call('run_until', params);
   }
   inputButton(code: number, down = true, atInstr?: number): Promise<unknown> {
-    return this.call("input.button", opt({ code, down, at_instr: atInstr }));
+    return this.call('input.button', opt({ code, down, at_instr: atInstr }));
   }
   inputTurn(encoder: number, detents = 1, atInstr?: number): Promise<unknown> {
-    return this.call("input.turn", opt({ encoder, detents, at_instr: atInstr }));
+    return this.call('input.turn', opt({ encoder, detents, at_instr: atInstr }));
   }
   inputTap(code: number, hold = 40_000_000, atInstr?: number): Promise<unknown> {
-    return this.call("input.tap", opt({ code, hold, at_instr: atInstr }));
+    return this.call('input.tap', opt({ code, hold, at_instr: atInstr }));
   }
   inputSchedule(events: InputScheduleEvent[]): Promise<unknown> {
-    return this.call("input.schedule", { events });
+    return this.call('input.schedule', { events });
   }
   framebufferGet(params: FramebufferParams = {}): Promise<FramebufferResult> {
-    return this.call("framebuffer.get", params);
+    return this.call('framebuffer.get', params);
   }
   /** Hex SHA-256 of the 1024 decoded OLED bytes, without transferring them. */
   async frameHash(): Promise<string> {
     const r = await this.framebufferGet({ hash: true, data: false });
-    if (!r.sha256) throw new Error("framebuffer.get returned no sha256");
+    if (!r.sha256) throw new Error('framebuffer.get returned no sha256');
     return r.sha256;
   }
   ledsGet(): Promise<LedsResult> {
-    return this.call("leds.get");
+    return this.call('leds.get');
   }
   eventsSubscribe(kinds: string[] = []): Promise<unknown> {
-    return this.call("events.subscribe", kinds.length ? { kinds } : {});
+    return this.call('events.subscribe', kinds.length ? { kinds } : {});
   }
   cardLoad(dir: string): Promise<{ card: string; [key: string]: unknown }> {
-    return this.call("card.load", { dir });
+    return this.call('card.load', { dir });
   }
   /** `stallMs` sets the stall threshold in emulated ms (0 disables); omit to read. */
   watchdogConfig(stallMs?: number): Promise<WatchdogResult> {
-    return this.call("watchdog.config", opt({ stall_ms: stallMs }));
+    return this.call('watchdog.config', opt({ stall_ms: stallMs }));
   }
   /** One guest longword, null when unmapped. */
   async memPeek(addr: number): Promise<number | null> {
-    const r = await this.call<{ value: number | null }>("mem.cf.peek", { addr });
+    const r = await this.call<{ value: number | null }>('mem.cf.peek', { addr });
     return r.value === null ? null : Number(r.value);
   }
   guardSet(params: GuardSetParams): Promise<unknown> {
-    return this.call("guard.set", params);
+    return this.call('guard.set', params);
   }
   guardReport(): Promise<GuardReport> {
-    return this.call("guard.report");
+    return this.call('guard.report');
   }
   guardClear(): Promise<unknown> {
-    return this.call("guard.clear");
+    return this.call('guard.clear');
   }
   quit(): Promise<unknown> {
-    return this.call("quit");
+    return this.call('quit');
   }
 
   /** Close the socket (does not stop the daemon). */
@@ -231,14 +231,17 @@ function opt(params: Record<string, unknown>): Record<string, unknown> {
 export function connect(socketPath: string, options: ConnectOptions = {}): Promise<Client> {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(socketPath);
-    socket.once("error", reject);
-    socket.once("connect", () => {
-      socket.off("error", reject);
+    socket.once('error', reject);
+    socket.once('connect', () => {
+      socket.off('error', reject);
       const client = new Client(socket, options);
-      client.hello().then(() => resolve(client), (err) => {
-        client.close();
-        reject(err);
-      });
+      client.hello().then(
+        () => resolve(client),
+        (err) => {
+          client.close();
+          reject(err);
+        },
+      );
     });
   });
 }

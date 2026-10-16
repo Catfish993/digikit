@@ -1,7 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
-import { afterAll, beforeAll, beforeEach } from "vitest";
-import { repoRoot, Session, type Device, type SessionOptions } from "@digi/test-support";
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterAll, beforeAll, beforeEach } from 'vitest';
+import { repoRoot, Session, type Device, type SessionOptions } from '@digi/test-support';
 
 export interface SessionHandle {
   /** The session of this test file; valid inside tests and hooks. */
@@ -23,7 +23,7 @@ export function withSession(opts: SessionOptions & { restart?: boolean }): Sessi
   });
   return {
     get session() {
-      if (!session) throw new Error("session not started");
+      if (!session) throw new Error('session not started');
       return session;
     },
   };
@@ -40,25 +40,25 @@ export interface FreeRegion {
  * and `excludes` (a list of `[lo, hi]` pairs, cut out of the region) are read, by regex on the block
  * text; everything else in the file is ignored. `hi` is the file's `end`. */
 export function freeRegions(device: Device, firmware: string): FreeRegion[] {
-  const file = path.join(repoRoot(), "devices", "ports", `${device}-${firmware}.toml`);
-  const text = fs.readFileSync(file, "utf8");
+  const file = path.join(repoRoot(), 'devices', 'ports', `${device}-${firmware}.toml`);
+  const text = fs.readFileSync(file, 'utf8');
   const out: FreeRegion[] = [];
   for (const block of text.split(/^\[\[/m).slice(1)) {
-    if (!block.startsWith("region]]")) continue;
-    const str = (key: string) => new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, "m").exec(block)?.[1];
+    if (!block.startsWith('region]]')) continue;
+    const str = (key: string) => new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, 'm').exec(block)?.[1];
     const num = (key: string) => {
-      const m = new RegExp(`^${key}\\s*=\\s*(0x[0-9a-fA-F]+|\\d+)`, "m").exec(block);
+      const m = new RegExp(`^${key}\\s*=\\s*(0x[0-9a-fA-F]+|\\d+)`, 'm').exec(block);
       return m ? Number(m[1]) : undefined;
     };
-    const name = str("name");
-    const start = num("start");
-    const end = num("end");
-    if (str("cpu") !== "cf") continue;
+    const name = str('name');
+    const start = num('start');
+    const end = num('end');
+    if (str('cpu') !== 'cf') continue;
     if (name === undefined || start === undefined || end === undefined) {
       throw new Error(`${file}: malformed region block`);
     }
     const excludes: [number, number][] = [];
-    const exc = /^excludes\s*=\s*(\[.*\])\s*$/m.exec(block)?.[1] ?? "[]";
+    const exc = /^excludes\s*=\s*(\[.*\])\s*$/m.exec(block)?.[1] ?? '[]';
     for (const m of exc.matchAll(/\[\s*(0x[0-9a-fA-F]+|\d+)\s*,\s*(0x[0-9a-fA-F]+|\d+)\s*\]/g)) {
       excludes.push([Number(m[1]), Number(m[2])]);
     }
@@ -89,5 +89,5 @@ export async function expectNoGuardHits(session: Session): Promise<void> {
   const lines = report.hits
     .slice(0, 8)
     .map((h) => `${h.label} pc=${hex(h.pc)} addr=${hex(h.addr)} size=${h.size} icount=${h.icount}`);
-  throw new Error(`guard: ${report.total} write(s) into free regions:\n${lines.join("\n")}`);
+  throw new Error(`guard: ${report.total} write(s) into free regions:\n${lines.join('\n')}`);
 }

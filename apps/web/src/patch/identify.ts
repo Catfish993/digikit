@@ -1,6 +1,10 @@
 import { deviceProfiles, type DeviceId } from '../data/device-profiles';
 
-export interface Identity { device: DeviceId; deviceName: string; version: string }
+export interface Identity {
+  device: DeviceId;
+  deviceName: string;
+  version: string;
+}
 
 /** Which stock firmware a SHA-256 is, from the device profiles (undefined for anything else, including patched images). */
 export function identify(sha256: string): Identity | undefined {

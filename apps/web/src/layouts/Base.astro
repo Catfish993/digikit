@@ -3,7 +3,10 @@
 // and the COI service worker (GitHub Pages cannot send COOP/COEP headers; the worker adds them so
 // SharedArrayBuffer works after the first reload).
 import '../styles/site.css';
-interface Props { title: string; active: 'emulator' | 'patch' }
+interface Props {
+  title: string;
+  active: 'emulator' | 'patch';
+}
 const { title, active } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 ---
@@ -19,9 +22,15 @@ const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
   </head>
   <body>
     <nav class="topnav" aria-label="Main">
-      <a class="brand" href={base}>digikit</a>
-      <a href={base} aria-current={active === 'emulator' ? 'page' : undefined}>Emulator</a>
-      <a href={`${base}patch`} aria-current={active === 'patch' ? 'page' : undefined}>Patch</a>
+      <a class="brand" href={base}>
+        digikit
+      </a>
+      <a href={base} aria-current={active === 'emulator' ? 'page' : undefined}>
+        Emulator
+      </a>
+      <a href={`${base}patch`} aria-current={active === 'patch' ? 'page' : undefined}>
+        Patch
+      </a>
     </nav>
     <slot />
   </body>

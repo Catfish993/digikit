@@ -1,1 +1,6 @@
-{ "identifier": "main", "description": "The main panel window has no plugin permissions.", "windows": ["main"], "permissions": [] }
+{
+  "identifier": "main",
+  "description": "The main panel window has no plugin permissions.",
+  "windows": ["main"],
+  "permissions": []
+}

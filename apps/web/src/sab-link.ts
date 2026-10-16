@@ -84,7 +84,12 @@ export class LinkServer extends Ends {
    * while this side does the rest of the frame (the DSP's render). Returns
    * after `stopWhenIdle` ms without a request when it is set (tests).
    */
-  serve(frame: (tx: Uint8Array) => Uint8Array, link: (data: Uint8Array) => void, after?: () => void, stopWhenIdle = 0): void {
+  serve(
+    frame: (tx: Uint8Array) => Uint8Array,
+    link: (data: Uint8Array) => void,
+    after?: () => void,
+    stopWhenIdle = 0,
+  ): void {
     for (;;) {
       while (Atomics.load(this.ctl, REQ) === this.seen) {
         if (Atomics.load(this.ctl, CLOSED)) return;

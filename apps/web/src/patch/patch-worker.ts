@@ -9,7 +9,8 @@ export type PatchRequest =
   | { type: 'apply'; id: number; firmware: ArrayBuffer; modules: string[] };
 
 let kit: Promise<PatchKit> | undefined;
-const post = (message: unknown, transfer: Transferable[] = []) => (self as unknown as Worker).postMessage(message, transfer);
+const post = (message: unknown, transfer: Transferable[] = []) =>
+  (self as unknown as Worker).postMessage(message, transfer);
 
 self.onmessage = async ({ data }: MessageEvent<PatchRequest>) => {
   try {
@@ -30,9 +31,15 @@ self.onmessage = async ({ data }: MessageEvent<PatchRequest>) => {
       post({ type: 'checked', id: data.id, result: k.check(firmware) });
     } else {
       const r = k.apply(firmware, data.modules);
-      post({ type: 'patched', id: data.id, plan: r.plan, verify: r.verify, sha256: r.sha256, syx: r.syx.buffer }, [r.syx.buffer]);
+      post({ type: 'patched', id: data.id, plan: r.plan, verify: r.verify, sha256: r.sha256, syx: r.syx.buffer }, [
+        r.syx.buffer,
+      ]);
     }
   } catch (error) {
-    post({ type: 'error', id: (data as { id?: number }).id, error: error instanceof Error ? error.message : String(error) });
+    post({
+      type: 'error',
+      id: (data as { id?: number }).id,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 };
