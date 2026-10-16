@@ -12,7 +12,7 @@
 // shared memory and serialises a module through structured clone to test
 // that a Module can be handed to another thread.
 import fs from 'node:fs';
-import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 
 if (!isMainThread) {
   const scratch = new WebAssembly.Memory({ initial: 64 });
@@ -25,7 +25,7 @@ if (!isMainThread) {
       const inst = new WebAssembly.Instance(mod, { env: { memory: scratch } });
       try {
         inst.exports.k0(0x10000, 0x40000);
-      } catch (e) {
+      } catch {
         /* trap ignored */
       }
     }
@@ -80,7 +80,7 @@ if (!isMainThread) {
     // Compile (and for 'warm', call once) in a worker, hand the Module over,
     // and time the first call here: is the lazily compiled code shared?
     const w = new Worker(new URL(import.meta.url));
-    const mods = new Array(files.length);
+    const mods = Array.from({ length: files.length });
     const t0 = performance.now();
     const done = new Promise((resolve) => {
       let n = 0;
@@ -99,7 +99,7 @@ if (!isMainThread) {
       const t = performance.now();
       try {
         inst.exports.k0(0x10000, 0x40000);
-      } catch (e) {
+      } catch {
         /* trap ignored */
       }
       call.push(performance.now() - t);
@@ -134,7 +134,7 @@ if (!isMainThread) {
       t = performance.now();
       try {
         inst.exports.k0(0x10000, 0x40000);
-      } catch (e) {
+      } catch {
         /* trap ignored */
       }
       call.push(performance.now() - t);
@@ -172,14 +172,14 @@ if (!isMainThread) {
     let inst;
     try {
       inst = new WebAssembly.Instance(m, { env: { memory: mem } });
-    } catch (e) {
+    } catch {
       continue;
     }
     ok++;
     const t = performance.now();
     try {
       inst.exports.k0(0x10000, 0x40000);
-    } catch (e) {
+    } catch {
       trapped++;
     }
     first.push(performance.now() - t);

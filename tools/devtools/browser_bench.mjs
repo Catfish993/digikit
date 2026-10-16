@@ -263,7 +263,7 @@ function selfTimes(profileData) {
   // DSP: generated SHARC+ kernels and the engine around them. ColdFire: interpreter, bus and board. Idle is the worker waiting.
   const categories = { dsp: 0, coldfire: 0, idle: 0, other: 0 };
   for (const [name, us] of self) {
-    const kind = /^\(idle\)/.test(name)
+    const kind = name.startsWith('(idle)')
       ? 'idle'
       : /sharc_gen|sharc_native|sharc_rt|sharc_fast/.test(name)
         ? 'dsp'
@@ -516,7 +516,7 @@ function safariDriver(port) {
 async function oneRun(url, driver, port) {
   try {
     await driver.start();
-    const { cdp, sessionId, workerSessions, profiles } = driver.ctx ?? {};
+    const { cdp, workerSessions, profiles } = driver.ctx ?? {};
     // Warm the dev server (Vite may optimise dependencies and reload on the first visit).
     await driver.navigate(`${url}/`);
     await sleep(4000);
