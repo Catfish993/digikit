@@ -1289,3 +1289,41 @@ then reports `state ready, auto true, name, samples`, and the toolbar shows "Sam
 files)"; with nothing cached it shows "Choose samples to load a folder of WAVs". DN2 is
 unchanged. Test: `packages/emulator/control/tests/card_load.rs`
 (`the_last_card_is_mounted_again_when_the_dt2_starts`).
+
+## `plus_drive/` folders: nested directories, plain files, extents, MmcFs slots (2026-10-16) **[D]**
+
+`packages/emulator/plusdrive` (`tree.rs`) builds an image from a folder; the contract is in
+`docs/SAMPLES.md`. What the builder relies on, read from the 1.16 decompile and confirmed by the
+firmware's own calls (`tools/firmware/plusdrive_check.py`, `mise run plusdrive:check`, which boots the DT2
+with a folder-built image and calls `FUN_40156fc4` / `FUN_40157072` / `FUN_401572e0` / `FUN_40158626` /
+`FUN_4015832e`):
+
+- **Directories of more than one page.** Entries never cross a 32 KiB content page and the last entry of each
+  page has a slot that runs to the page end. The three index pages keep `page * 0x8000 + offset` with the
+  directory's logical page. `FUN_401572e0` binary-searches `0x10000` by the unsigned name hash, then compares
+  the names of equal keys; at 0xfff entries and more it falls back to a linear scan, and `FUN_40157072` only
+  uses `0x10001` below 0xfff. The builder stops at 4,092 children (4,094 entries with "." and ".."). A
+  702-entry directory (two content pages) lists and resolves correctly **[D]**.
+- **Extents.** A record holds up to 8 inline 12-byte extents `{logical start, pages, physical page}`; with 9 or
+  more it holds up to 24 page ids of extent-index pages, 0xaaa (2730) extents each
+  (`FUN_40157d28`: `index = n / 0xaaa`, extent `n % 0xaaa`). The builder allocates files in one run, so a
+  single extent is the normal case (a 64 MiB file is one extent); `--max-extent-pages N` splits runs into
+  several extents to exercise the other forms. Files of 2 and 10 extents (indirect) read back equal through
+  the firmware **[D]**.
+- **Plain files** use the same record, content hash (`hash | 1` in record word +0x0c and the hash table) and
+  directory entry as samples; the firmware does not look at the payload. A file named `factory` in the root
+  is refused (the mount links the firmware's own `/factory`).
+- **MmcFs slots.** Sector of slot `n`: projects `((n + 0xb) & 0xff) << 15` (16 MiB each, 128 slots; DT2
+  `FUN_4012eef2`, DN2 1.11 `FUN_4012d7c2`), sounds `(n + 0x2400) * 8` on DT2 (4 KiB, 2048 slots) and
+  `(n + 0x800) * 2` on DN2 1.11 (`FUN_4012de66`, 1 KiB), kits `0x16000 + n * 0x80` on DT2 (64 KiB, 1024
+  slots) and `0x2000 + n * 0x40` on DN2 1.11 (`FUN_401308ac`, 32 KiB). The boot project at sectors 0x40000
+  and 0x48000 is not a pool slot (it would be project slot 0xfd / 0xfe), so imported project slots cannot
+  collide with it.
+- **[O]** The bitmaps at sector 0x800 are written as occupancy (bit `n & 7` of byte `n >> 3` of each pool's
+  range: 16, 256, 128 bytes). `FUN_40130234`, `FUN_4013011e`, `FUN_40132c6c` set the bit from a flag argument
+  and a per-pool slot test, and the kit and sound setters set it when their test returns 0, so the polarity
+  of the sound and kit bits is not proven. No firmware call reads a folder-imported slot yet; the first slot
+  files from a real exporter should be checked with `FUN_4012ecd8` (project) and the slot headers
+  (`FUN_4012f6d8`). The DN2 addresses come from the 1.11 decompile only; 1.12 was not compared.
+- **[O]** A directory's link count (record +2) is written as 2 plus the number of subdirectories; real cards
+  were not compared.

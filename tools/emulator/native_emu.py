@@ -493,23 +493,56 @@ def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
     PANEL_STAMP.write_text(json.dumps({"digest": digest}) + "\n")
 
 
+def plus_drive_root() -> pathlib.Path:
+    """The folder that holds plus_drive/<device>/ (DIGI_PLUS_DRIVE, else the repository's)."""
+    return pathlib.Path(os.environ.get("DIGI_PLUS_DRIVE") or ROOT / "plus_drive")
+
+
+def plus_drive_files(root: pathlib.Path) -> list[pathlib.Path]:
+    """Every regular file under `root` (relative paths, sorted); symbolic links and
+    .DS_Store are left out, as the builder leaves them out."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        here = pathlib.Path(dirpath)
+        for name in sorted(filenames):
+            path = here / name
+            if name != ".DS_Store" and not path.is_symlink():
+                found.append(path.relative_to(root))
+    return found
+
+
+def plus_drive_has_content(root: pathlib.Path, device: str) -> bool:
+    """Whether `root` holds anything the device's card can take: DN2 has no path
+    filesystem, only `.mmcfs/` applies."""
+    files = plus_drive_files(root)
+    if device == "dn2":
+        files = [f for f in files if f.parts[0] == ".mmcfs"]
+    return bool(files)
+
+
 def plusdrive_card(
-    samples: pathlib.Path, syx: pathlib.Path, env: dict[str, str]
+    folder: pathlib.Path, syx: pathlib.Path, env: dict[str, str], device: str = "dt2"
 ) -> pathlib.Path:
-    """Build (or reuse) a +Drive card image from a folder of WAV files.
+    """Build (or reuse) a +Drive card image from a `plus_drive/<device>/` folder.
+
+    The folder contract (docs/findings/14-plus-drive-format.md, "plus_drive/"): files and
+    folders map to the path filesystem as they are; a `.wav` becomes a native
+    sample named without the extension (24 -> 16 bit, 48 kHz); any other file is
+    copied byte for byte (a file that is a native sample stays one);
+    `.mmcfs/{projects,sounds,kits}/NNNN.bin` are raw MmcFs slots. DN2 has no
+    path filesystem: only `.mmcfs/` applies.
 
     Uses the native `plusdrive build` (packages/emulator/plusdrive). The image lives in
-    out/plusdrive/native/<key12>/dt2.img, keyed by the SHA-256 of the firmware,
-    the plusdrive binary and every sample's name and bytes, so unchanged
+    out/plusdrive/native/<key12>/<device>.img, keyed by the SHA-256 of the firmware,
+    the plusdrive binary and every file's relative path and bytes, so unchanged
     inputs reuse the image.
     """
-    if not samples.is_dir():
-        raise SystemExit(f"--samples: {samples} is not a directory")
-    names = sorted(
-        p.name for p in samples.iterdir() if p.suffix.lower() == ".wav" and p.is_file()
-    )
-    if not names:
-        raise SystemExit(f"--samples: no .wav files directly in {samples}")
+    if not folder.is_dir():
+        raise SystemExit(f"{folder} is not a directory")
+    files = plus_drive_files(folder)
+    if not files:
+        raise SystemExit(f"{folder} holds no files")
     manifest = ROOT / "packages" / "emulator" / "plusdrive" / "Cargo.toml"
     # Share the CF-only target dir with the desktop app: one dependency build.
     target = target_dir_for(None)
@@ -535,20 +568,31 @@ def plusdrive_card(
     h = hashlib.sha256()
     h.update(b"firmware\0" + hashlib.sha256(syx.read_bytes()).digest())
     h.update(b"plusdrive\0" + hashlib.sha256(binary.read_bytes()).digest())
-    for name in names:
-        h.update(b"sample\0" + name.encode() + b"\0")
-        h.update(hashlib.sha256((samples / name).read_bytes()).digest())
+    h.update(b"device\0" + device.encode() + b"\0")
+    for rel in files:
+        h.update(b"file\0" + rel.as_posix().encode() + b"\0")
+        h.update(hashlib.sha256((folder / rel).read_bytes()).digest())
     key = h.hexdigest()[:12]
-    image = ROOT / "out" / "plusdrive" / "native" / key / "dt2.img"
+    image = ROOT / "out" / "plusdrive" / "native" / key / f"{device}.img"
     if image.is_file():
-        print(f"+Drive card: reusing {image} ({len(names)} sample(s))", file=sys.stderr)
+        print(f"+Drive card: reusing {image} ({len(files)} file(s))", file=sys.stderr)
         return image
     image.parent.mkdir(parents=True, exist_ok=True)
     # One partial file per process: parallel verify steps can build the same
     # key at once, and os.replace lets the last one win atomically.
-    partial = image.with_name(f"dt2.{os.getpid()}.part")
+    partial = image.with_name(f"{device}.{os.getpid()}.part")
     done = subprocess.run(
-        [str(binary), "build", str(samples), "-o", str(partial), "--syx", str(syx)],
+        [
+            str(binary),
+            "build",
+            str(folder),
+            "-o",
+            str(partial),
+            "--device",
+            device,
+            "--syx",
+            str(syx),
+        ],
         cwd=ROOT,
         env=env,
     )
@@ -556,8 +600,33 @@ def plusdrive_card(
         partial.unlink(missing_ok=True)
         raise SystemExit(done.returncode)
     os.replace(partial, image)
-    print(f"+Drive card: built {image} ({len(names)} sample(s))", file=sys.stderr)
+    print(f"+Drive card: built {image} ({len(files)} file(s))", file=sys.stderr)
     return image
+
+
+def take_option(args: list[str], name: str) -> tuple[str | None, list[str]]:
+    """The value of `--name VALUE` and `args` without it."""
+    if name not in args:
+        return None, args
+    i = args.index(name)
+    if i + 1 >= len(args):
+        raise SystemExit(f"{name} needs a directory")
+    return args[i + 1], args[:i] + args[i + 2 :]
+
+
+def syx_from_args(args: list[str]) -> pathlib.Path:
+    """The firmware file the launcher will run: the first positional argument,
+    else the default."""
+    value_options = {"--card-image", "--audio-buffer"}
+    syx_arg = next(
+        (
+            v
+            for j, v in enumerate(args)
+            if not v.startswith("--") and (j == 0 or args[j - 1] not in value_options)
+        ),
+        None,
+    )
+    return pathlib.Path(syx_arg) if syx_arg else digi_env.firmware(os.environ)
 
 
 def main(args: list[str] | None = None) -> None:
@@ -566,28 +635,37 @@ def main(args: list[str] | None = None) -> None:
     build_only = "--build-only" in args
     daemon = "--daemon" in args
     args = [arg for arg in args if arg not in ("--cf-only", "--build-only", "--daemon")]
-    if "--samples" in args:
-        i = args.index("--samples")
-        if i + 1 >= len(args):
-            raise SystemExit("--samples needs a directory of .wav files")
-        samples = pathlib.Path(args[i + 1])
-        del args[i : i + 2]
-        if "--card-image" in args:
-            raise SystemExit("--samples and --card-image cannot be combined")
-        value_options = {"--card-image", "--audio-buffer"}
-        syx_arg = next(
-            (
-                v
-                for j, v in enumerate(args)
-                if not v.startswith("--")
-                and (j == 0 or args[j - 1] not in value_options)
-            ),
-            None,
-        )
-        syx = pathlib.Path(syx_arg) if syx_arg else digi_env.firmware(os.environ)
+    plus_drive, args = take_option(args, "--plus-drive")
+    samples, args = take_option(args, "--samples")
+    if plus_drive is not None and samples is not None:
+        raise SystemExit("--plus-drive and --samples cannot be combined")
+    folder = pathlib.Path(plus_drive or samples) if (plus_drive or samples) else None
+    if folder is not None and "--card-image" in args:
+        raise SystemExit("--plus-drive/--samples and --card-image cannot be combined")
+    syx = syx_from_args(args)
+    known = digi_env.device_for_syx(syx)
+    device = known or "dn2"
+    if known and folder is None and "--card-image" not in args:
+        default = plus_drive_root() / device
+        # plus_drive/<device>/ is the +Drive when it holds something this device can use.
+        if default.is_dir() and plus_drive_has_content(default, device):
+            folder = default
+    if folder is not None:
+        if plus_drive is None and samples is None:
+            print(f"+Drive: {folder}", file=sys.stderr)
         env = digi_env.rust_env(dict(os.environ))
-        card = plusdrive_card(samples, syx, env)
-        args = [*([] if syx_arg else [str(syx)]), *args, "--card-image", str(card)]
+        card = plusdrive_card(folder, syx, env, device)
+        first_positional = any(
+            not v.startswith("--")
+            and (j == 0 or args[j - 1] not in ("--card-image", "--audio-buffer"))
+            for j, v in enumerate(args)
+        )
+        args = [
+            *([] if first_positional else [str(syx)]),
+            *args,
+            "--card-image",
+            str(card),
+        ]
     if force_cf and ("--coupled" in args or "--auto-coupled" in args):
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:

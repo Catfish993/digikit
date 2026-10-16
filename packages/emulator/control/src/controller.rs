@@ -87,15 +87,40 @@ fn card(path: PathBuf) -> Result<(Card, ReadError), String> {
     }
     let error = Arc::new(Mutex::new(None));
     let backing = FileBacking {
-        file: Mutex::new(File::open(path).map_err(|e| format!("card image: {e}"))?),
+        file: Mutex::new(File::open(&path).map_err(|e| format!("card image: {e}"))?),
         len: metadata.len(),
         error: error.clone(),
     };
-    Ok((
-        Card::with_backing(identity, Some(Box::new(backing)))
-            .map_err(|e| format!("card: {e:?}"))?,
-        error,
-    ))
+    let mut card = Card::with_backing(identity, Some(Box::new(backing)))
+        .map_err(|e| format!("card: {e:?}"))?;
+    apply_saved_overlay(&mut card, &path);
+    Ok((card, error))
+}
+
+/// Where a card image keeps the firmware's writes between sessions.
+pub fn overlay_path(image: &Path) -> PathBuf {
+    image.with_file_name("overlay.bin")
+}
+
+/// Put the writes a synced session saved next to `image` (`overlay.bin`) back on a fresh card. A damaged or
+/// foreign file is ignored with a message. A ready snapshot restored afterwards brings its own overlay.
+fn apply_saved_overlay(card: &mut Card, image: &Path) {
+    let path = overlay_path(image);
+    let Ok(bytes) = std::fs::read(&path) else { return };
+    let result = plusdrive_format::parse_overlay(&bytes)
+        .map_err(|e| e.to_string())
+        .and_then(|sectors| {
+            let state = emmc_card::CardCheckpoint {
+                blocks: card.blocks(),
+                rca: card.rca(),
+                selected: card.selected(),
+                overlay: Default::default(),
+            };
+            card.restore_checkpoint_sectors(&state, &sectors).map_err(|e| format!("{e:?}"))
+        });
+    if let Err(error) = result {
+        eprintln!("card: ignoring {}: {error}", path.display());
+    }
 }
 
 fn card_for(image: Option<PathBuf>) -> Result<(Option<Card>, Option<ReadError>), String> {
@@ -411,6 +436,9 @@ struct Actor {
     patch_job: Option<PatchJob>,
     /// The last card job's outcome, for `card.status`.
     card_last: Value,
+    /// The +Drive folder the loaded card was built from, with the card image it belongs to:
+    /// `card.export` without a `dir` writes there, and a quit does so when `sync` was set.
+    card_folder: Option<CardFolder>,
     /// Press NO once the runtime is ready (closes DT2's FILE SYSTEM OK modal).
     auto_no: bool,
     /// `firmware.load {auto_no}`: press NO once the runtime it installs is ready.
@@ -482,6 +510,7 @@ impl Actor {
             card_job: None,
             patch_job: None,
             card_last: json!({"state": "idle"}),
+            card_folder: None,
             auto_no: false,
             want_auto_no: false,
             remember_card: config.remember_card,
@@ -539,6 +568,8 @@ impl Actor {
                 None => self.advance(),
             }
         }
+        // The handle went away without a `quit` (the desktop window closed): the card is still live.
+        self.finish_card();
         if let Some(job) = self.job.take() {
             let _ = job
                 .reply
@@ -1234,6 +1265,7 @@ impl Actor {
                 })
                 .map(Some),
             "card.overlay" => self.rpc_card_overlay(&p).map(Some),
+            "card.export" => self.rpc_card_export(&p).map(Some),
             "watchdog.config" => self.rpc_watchdog(&p).map(Some),
             "diagnostics" => self.with_runtime(|r| Ok(r.diagnostics())).map(Some),
             "audio.report" => self
@@ -1272,6 +1304,7 @@ impl Actor {
             "card.cancel" => Ok(Some(json!({"cancelled": self.cancel_card()}))),
             "quit" => {
                 self.quit = true;
+                self.finish_card();
                 self.runtime = None;
                 Ok(Some(json!({"quitting": true})))
             }
@@ -1393,6 +1426,93 @@ impl Actor {
 
     /// `mem.cf.poke {addr, value}`: write one longword of SDRAM (a test aid: break the guest on
     /// purpose to exercise `fault`/`stall`). Not part of the replay record.
+    /// `card.export {dir?, out?, prune?}`: bring a +Drive folder up to date with what the firmware wrote to the
+    /// card (finding 24). `dir` defaults to the folder the card was loaded from.
+    /// The whole tree goes to `<out>/export/<stamp>/` first (`out` defaults to `$DIGI_PLUSDRIVE_OUT` or
+    /// `out/plusdrive`), then only new or changed files are copied, each replaced file moved to
+    /// `<out>/backup/<stamp>/`. Files the firmware deleted are listed; `prune` moves them to the backup.
+    fn rpc_card_export(&mut self, p: &Params) -> RpcResult {
+        let explicit = p.opt_str("dir")?.map(PathBuf::from);
+        let out = p.opt_str("out")?.map(PathBuf::from);
+        let prune = p.opt_bool("prune")?.unwrap_or(false);
+        let report = self.export_card(explicit, out, prune).map_err(RpcError::io)?;
+        Ok(json!({
+            "added": report.added, "replaced": report.replaced, "unchanged": report.unchanged.len(),
+            "deleted_by_firmware": report.deleted_by_firmware, "pruned": report.pruned,
+            "issues": report.issues,
+            "export_dir": report.export_dir.display().to_string(),
+            "backup_dir": report.backup_dir.display().to_string(),
+        }))
+    }
+
+    fn export_card(
+        &mut self,
+        explicit: Option<PathBuf>,
+        out: Option<PathBuf>,
+        prune: bool,
+    ) -> Result<plusdrive_format::export::Report, String> {
+        let image = self
+            .loaded
+            .as_ref()
+            .and_then(|l| l.card.clone())
+            .ok_or("no card is loaded")?;
+        let folder = match (&explicit, &self.card_folder) {
+            (Some(dir), _) => dir.clone(),
+            (None, Some(f)) if f.image == image => f.dir.clone(),
+            _ => return Err("no +Drive folder is known for this card; pass dir".into()),
+        };
+        let overlay = self
+            .runtime
+            .as_ref()
+            .map(|r| r.card_overlay())
+            .ok_or("no runtime")?;
+        let base = plusdrive_format::export::FileImage::open(&image)?;
+        let mut options = plusdrive_format::export::Options::new(out.unwrap_or_else(|| {
+            std::env::var_os("DIGI_PLUSDRIVE_OUT").map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from)
+        }));
+        options.prune = prune;
+        // TODO(dn2): pass the device
+        plusdrive_format::export::export(
+            &base,
+            &overlay,
+            &folder,
+            plusdrive_format::Geometry::Dt2,
+            &options,
+        )
+    }
+
+    /// At quit: save the firmware's card writes next to the image (`overlay.bin`, merged over an older one, so a
+    /// session that did not start from it loses nothing), then, for a synced card, export them to its folder.
+    /// Failures are printed: the quit goes on.
+    fn finish_card(&mut self) {
+        let Some(folder) = self.card_folder.as_ref().filter(|f| f.sync) else { return };
+        let (image, dir, out) = (folder.image.clone(), folder.dir.clone(), folder.out.clone());
+        if self.loaded.as_ref().and_then(|l| l.card.as_ref()) != Some(&image) {
+            return;
+        }
+        let Some(overlay) = self.runtime.as_ref().map(|r| r.card_overlay()) else { return };
+        let path = overlay_path(&image);
+        if !overlay.is_empty() {
+            let merged = merge_overlay(std::fs::read(&path).ok(), overlay);
+            let partial = path.with_extension("bin.part");
+            let saved = std::fs::write(&partial, plusdrive_format::encode_overlay(&merged))
+                .and_then(|()| std::fs::rename(&partial, &path));
+            if let Err(error) = saved {
+                eprintln!("card: could not save {}: {error}", path.display());
+            }
+        }
+        match self.export_card(Some(dir), out, false) {
+            Ok(report) => eprintln!(
+                "card: exported to the folder: {} added, {} replaced, {} deleted by the firmware (kept); {}",
+                report.added.len(),
+                report.replaced.len(),
+                report.deleted_by_firmware.len(),
+                report.export_dir.display()
+            ),
+            Err(error) => eprintln!("card: export failed: {error}"),
+        }
+    }
+
     /// `card.overlay {path}`: write the guest's writes to the card as a sparse file: per touched sector
     /// `u64 le sector, [u8; 64] mask (bit i of byte i/8 names data byte i), [u8; 512] data`. Applied over the card's
     /// base image it gives the card the guest sees (`tools/emulator/card_overlay.py`).
@@ -2471,6 +2591,15 @@ struct CardReady {
     boot_seconds: f64,
 }
 
+/// Where the loaded card came from and whether a quit writes the firmware's changes back to it.
+struct CardFolder {
+    image: PathBuf,
+    dir: PathBuf,
+    sync: bool,
+    /// Where exports and backups go (`card.load {export_out}`); default `$DIGI_PLUSDRIVE_OUT` or `out/plusdrive`.
+    out: Option<PathBuf>,
+}
+
 struct CardJob {
     status: Arc<Mutex<Value>>,
     done: mpsc::Receiver<Result<CardReady, String>>,
@@ -2480,6 +2609,10 @@ struct CardJob {
     syx: Vec<u8>,
     /// What the UI calls the card (the chosen folder's name).
     name: String,
+    /// The folder the card is built from, and `sync`: write the firmware's changes back to it on quit.
+    dir: PathBuf,
+    sync: bool,
+    export_out: Option<PathBuf>,
 }
 
 fn set_status(status: &Mutex<Value>, value: Value) {
@@ -2622,6 +2755,8 @@ impl Actor {
             });
         let wait = p.opt_bool("wait")?.unwrap_or(true);
         let auto_no = p.opt_bool("auto_no")?.unwrap_or(true);
+        let sync = p.opt_bool("sync")?.unwrap_or(false);
+        let export_out = p.opt_str("export_out")?.map(PathBuf::from);
         if self.job.is_some() || self.card_job.is_some() || self.patch_job.is_some() {
             return Err(RpcError::new(code::BUSY, "another job is running"));
         }
@@ -2643,6 +2778,7 @@ impl Actor {
         let (done_tx, done) = mpsc::channel();
         let (worker_status, worker_cancel) = (status.clone(), cancel.clone());
         let (worker_syx, run_dir, audio) = (syx.clone(), self.run_dir.clone(), self.audio.clone());
+        let source_dir = dir.clone();
         thread::Builder::new()
             .name("digi-card".into())
             .spawn(move || {
@@ -2666,6 +2802,9 @@ impl Actor {
             started: Instant::now(),
             syx,
             name,
+            dir: source_dir,
+            sync,
+            export_out,
         });
         self.emit("card.started", json!({}));
         if wait {
@@ -2691,6 +2830,12 @@ impl Actor {
             outcome.and_then(|ready| self.install_card(&job.syx, &job.name, ready, seconds));
         match &result {
             Ok(report) => {
+                self.card_folder = report["card"].as_str().map(|image| CardFolder {
+                    image: PathBuf::from(image),
+                    dir: job.dir.clone(),
+                    sync: job.sync,
+                    out: job.export_out.clone(),
+                });
                 self.card_last = report.clone();
                 self.emit("card.ready", report.clone());
             }
@@ -2755,6 +2900,35 @@ impl Actor {
             "seconds": seconds,
         }))
     }
+}
+
+/// `newer` laid over the writes of an older `overlay.bin` (byte by byte, by mask).
+fn merge_overlay(
+    older: Option<Vec<u8>>,
+    newer: Vec<emmc_card::CardOverlaySector>,
+) -> Vec<emmc_card::CardOverlaySector> {
+    let mut sectors: std::collections::BTreeMap<u64, emmc_card::CardOverlaySector> = older
+        .and_then(|bytes| plusdrive_format::parse_overlay(&bytes).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| (s.sector, s))
+        .collect();
+    for new in newer {
+        match sectors.get_mut(&new.sector) {
+            Some(old) => {
+                for i in 0..512 {
+                    if new.written[i / 8] & (1 << (i % 8)) != 0 {
+                        old.written[i / 8] |= 1 << (i % 8);
+                        old.data[i] = new.data[i];
+                    }
+                }
+            }
+            None => {
+                sectors.insert(new.sector, new);
+            }
+        }
+    }
+    sectors.into_values().collect()
 }
 
 /// Save a ready runtime's ColdFire snapshot; the path on success.

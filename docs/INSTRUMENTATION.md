@@ -71,6 +71,60 @@ captures), `DIGI_COUPLED_PCM_F32LE`, `DIGI_COUPLED_DSP_EXPORT` (the pinned test)
 `DIGI_PANEL_TX_LOG=PATH` (front-panel LED bytes from UART8: one line `icount hex` per drain), `DIGI_INTC_FORCE=0` (turn off delivery of guest-forced INTC sources, INTFRCH/INTFRCL: the
 sequencer step ISRs; on by default since 2026-10-13, always on in wasm; for A/B only; finding 19).
 
+## Write-watch and flush check (ColdFire)
+
+Two instruments for the native ColdFire core, off by default. They extend the write-range guards
+(`--guard`, `packages/emulator/boot/src/guard.rs`) and share their state; the code is
+`packages/emulator/boot/src/watch.rs`. They are read from the environment when an `Emulator` is built (desktop,
+`coupled-run`, `regions_probe`, wasm builds read nothing).
+
+| variable | effect |
+|---|---|
+| `DIGI_WRITE_WATCH=LO-HI[,..]` | report every write into these guest ranges (hex; `LO+LEN` also works; HI exclusive). Alias addresses `0x48000000..0x4fffffff` fold onto DDR, so a range is given once, in the cached view. |
+| `DIGI_WRITE_WATCH_ALLOW_PC=LO-HI[,..]` | stores from these PCs are not reported (the runtime's own code). DMA has no PC and is always reported. |
+| `DIGI_WRITE_WATCH_AFTER=cacr\|ICOUNT` | start reporting at the first CACR write that enables a cache, or at an instruction count. Without it the reset-path RAM clear is reported too. |
+| `DIGI_FLUSH_CHECK=1` | the flush check (below). Independent of `DIGI_WRITE_WATCH`. |
+| `DIGI_WRITE_WATCH_OUT=PATH` | JSONL log; default `$DIGI_DIAG_DIR/writewatch.jsonl`, else stderr. The summary goes to `PATH` with the extension `summary.json`. |
+| `DIGI_WRITE_WATCH_LIMIT=N` | log at most N events (default 100000); the counts go on. |
+
+Events (JSONL), `ic` = guest instruction count:
+
+```
+{"t":"w","ic":19811920,"pc":"0x400004d2","addr":"0x44e4a5b8","size":4,"value":"0x0"}   CPU store
+{"t":"dma","ic":..,"src":"esdhc-dma59","addr":"0x..","size":512}                       DMA into RAM
+{"t":"flush","ic":..,"fetch_pc":"0x..","line":"0x..","writer":{"pc":"0x.."},"write_ic":..,"dcache_pending":true}
+```
+
+DMA sources are the paths that report to `Board::take_dma_written_ranges`: `esdhc-dma59`, `dspi1-rx`, `dspi2`.
+A DMA event is reported when the runtime drains the board (after the instruction), so its `ic` can be a
+few instructions late, and it has no value. The summary has the events, a count per PC (most frequent
+first), a count per DMA source, the flush hits and work counters (`cacr_writes`, `flush_stores_tracked`,
+`flush_fetches_checked`, `cpushl`) that show the check saw traffic. `Emulator::finish_write_watch()` writes
+the summary at once; it is also written when the emulator is dropped.
+
+Flush check. V4 caches are not coherent on hardware (copyback data cache, separate instruction cache); the
+emulator is, so code that runs after being written without a flush works in the emulator and fails on the
+device. Each 16-byte DDR line stored to (or written by DMA) while CACR[IEC] is set is dirty until it is
+cleaned; a fetch from a dirty line is reported once per line, with the fetch PC and the last writer. A line
+is cleaned by both of:
+
+- data side: a CPUSHL with dc or bc (push) after a cached store; not needed after an uncached-alias store
+  or DMA; CACR[DCINVA] counts;
+- instruction side: a CPUSHL with ic or bc that invalidates (CACR[IDPI] = 0 or IVO = 1), or CACR[ICINVA].
+
+CPUSHL is modelled as the hardware does: with CACR[SPA] set (the stock firmware's `0xa50ce100`) the address
+register is a physical address and cleans that line; with SPA clear it names a set (bits 10:4) and a way (bits
+1:0), and a line is cleaned when all four ways of its set were done since the last store to the set. Stores
+while the instruction cache is off do not count (the reset-path loader runs before CACR is written).
+Limits: only the first word of an instruction is checked (an instruction that crosses into a dirty line is
+missed); only the DDR window `0x40000000..0x47ffffff` is tracked; stores made by host code (`poke32`, HLE) are
+not seen; the emulator itself does not alias the uncached view (a store through `0x48...` lands in separate
+memory, as `tools/coldfire/regions.py` already notes).
+
+With either instrument armed the bus takes the single-step path: fused loops and the reset RAM-clear batch
+are off (as with `--guard`), so a run is slower: DT2 1.16 boots to ready in about 15 s of wall time with
+both on (about 1 billion instructions).
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one
@@ -81,6 +135,11 @@ sequencer step ISRs; on by default since 2026-10-13, always on in wasm; for A/B 
   lookups on that path are read once (`OnceLock`). The other env lookups in `fast/` run at build or
   decline-reporting time only.
 - Boot: `sharc_peer` reads its diagnostics once at start.
+- Write-watch and flush check: the store path of `LoggingBus` tests one `bool` (`WriteGuards::armed`), the
+  same single predictable branch the write guards already had (they tested `protect.is_empty()`); the work is
+  in a cold out-of-line function. The decode-cache-miss fetch path tests the same flag. `Bus::cpushl` and
+  `Bus::cacr_written` are called from CPUSHL and MOVEC-to-CACR only; their default is empty. The environment
+  is read once, when an `Emulator` is built.
 
 ## Cargo features
 

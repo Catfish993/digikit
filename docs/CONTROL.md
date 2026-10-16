@@ -67,7 +67,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `framebuffer.get` | `frame`, `frame_png`, `frame_hash` | `frame` |
 | `leds.get` | `leds` | `call` |
 | `mem.cf.peek`, `mem.cf.poke` | `peek32`, `poke32` | `call` |
-| `card.overlay`, `card.load`, `card.status`, `card.cancel` | | `call` |
+| `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel` | | `call` |
 | `watchdog.config` | `watchdog` | `call` |
 | `diagnostics` | | `call` |
 | `audio.report` | `audio` | `call` |
@@ -138,6 +138,14 @@ same numbers). Each closed window is blended 50/50 into the shown value; a resto
 | 1 | no firmware | 8 | I/O |
 | 2 | stale session | 9 | timeout |
 | 3 | busy | | |
+
+`card.load {dir, sync?, export_out?}` also records `dir` as the card's +Drive folder. `card.export {dir?, out?, prune?}` brings
+that folder (or `dir`) up to date with what the firmware wrote to the card: files of the path filesystem by name in the
+native format, `.mmcfs/{projects,sounds,kits}/NNNN.bin` slots and `.mmcfs/boot/SSSSSS.bin` regions (finding 24). The tree goes
+to `<out>/export/<stamp>/` first, each replaced file to `<out>/backup/<stamp>/` (`out` default `$DIGI_PLUSDRIVE_OUT` or
+`out/plusdrive`); files the firmware deleted are listed and kept unless `prune`. With `sync: true` a `quit` (or the controller
+stopping) saves `overlay.bin` next to the card image and runs the same export. From the shell:
+`plusdrive export IMAGE [--overlay overlay.bin] -o FOLDER [--out DIR] [--prune]`.
 
 ## Examples
 

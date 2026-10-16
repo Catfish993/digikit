@@ -524,6 +524,11 @@ impl Emulator {
             prof: Default::default(),
         };
         emulator.rebuild_watch();
+        // DIGI_WRITE_WATCH / DIGI_FLUSH_CHECK: off unless set (see watch.rs).
+        match crate::watch::WatchConfig::from_env() {
+            Ok(cfg) => emulator.bus.guards.set_watch(cfg),
+            Err(e) => eprintln!("write-watch: {e}; not armed"),
+        }
         emulator.mark(Mark::Entry, "before_instruction");
         Ok(emulator)
     }
@@ -721,6 +726,38 @@ impl Emulator {
     /// host writes (`poke32`, `poke_bytes`).
     pub fn set_write_guards(&mut self, protect: Vec<GuardRange>, allow_pc: Vec<(u32, u32)>) {
         self.bus.guards.set(protect, allow_pc);
+    }
+
+    /// Arm (or, with `None`, disarm) the write-watch and flush check; the same
+    /// as the `DIGI_WRITE_WATCH*` and `DIGI_FLUSH_CHECK` variables read at
+    /// construction. The CACR the instruments assume is the CPU's current one.
+    pub fn set_write_watch(&mut self, cfg: Option<crate::watch::WatchConfig>) {
+        self.bus.guards.set_watch(cfg);
+        let cacr = self.cpu.ctrl.cacr;
+        if let Some(w) = self.bus.guards.watch_mut() {
+            w.set_cacr(cacr);
+        }
+    }
+
+    /// Lines fetched while their last write was unflushed (flush check).
+    pub fn flush_hits(&self) -> Vec<crate::watch::FlushHit> {
+        self.bus.guards.flush_hits()
+    }
+
+    /// Reported write-watch events so far and, most frequent first, the PCs that made them.
+    pub fn write_watch_totals(&mut self) -> (u64, Vec<(u32, u64)>) {
+        self.bus
+            .guards
+            .watch_mut()
+            .map_or((0, Vec::new()), |w| (w.totals().0, w.per_pc()))
+    }
+
+    /// Flush the write-watch log and write its summary (also done when the
+    /// emulator is dropped).
+    pub fn finish_write_watch(&mut self) {
+        if let Some(w) = self.bus.guards.watch_mut() {
+            w.finish();
+        }
     }
 
     /// The first `GUARD_HIT_LIMIT` guard hits and the total count.
@@ -1701,6 +1738,14 @@ impl Emulator {
             }
         }
         let ranges = self.bus.board.take_dma_written_ranges();
+        let sources = self.bus.board.take_dma_sources();
+        if !self.bus.guards.is_empty() {
+            for (&(address, bytes), src) in ranges.iter().zip(sources) {
+                self.bus
+                    .guards
+                    .note_dma(src, address, bytes, self.bus.current_icount);
+            }
+        }
         // DMA into a page with decoded instructions (code run from RAM).
         for &(address, bytes) in &ranges {
             self.cpu.invalidate_external_write(address, bytes);
@@ -2563,6 +2608,10 @@ impl Emulator {
         self.bus.current_pc = r.u32()?;
         self.bus.current_icount = r.u64()?;
         self.bus.access_dropped = r.u64()?;
+        let cacr = self.cpu.ctrl.cacr;
+        if let Some(w) = self.bus.guards.watch_mut() {
+            w.set_cacr(cacr);
+        }
         self.bus.cmdarg_writes = r.u64()?;
         self.bus.xfertyp_writes = r.u64()?;
         self.bus.gpio_reads = r.u64()?;

@@ -80,7 +80,7 @@ The files go to `out/snapshots/<device>-audio-ready-cold-*`. Git ignores them.
 
 ```sh
 mise run emu                      # build once and run (`mise run emu -- --build-only` builds only)
-mise run emu -- --cf-only --samples DIR firmware/Digitakt_II_OS1.16.syx   # your .wav files on the DT2 +Drive
+mise run emu -- --cf-only --plus-drive DIR firmware/Digitakt_II_OS1.16.syx   # a +Drive folder (default: plus_drive/<device>/; --samples is the same option)
 mise run emu -- --dsp-patch FILE  # overlay a DSP patch (DN2 audio)
 mise run emu -- --cf-only         # ColdFire only: no DSP, no audio
 ```
@@ -88,7 +88,7 @@ mise run emu -- --cf-only         # ColdFire only: no DSP, no audio
 With the DN2 ready inputs present, `mise run emu` plays DN2 audio. Without them it
 starts the ColdFire-only emulator. The DSP needs about 1.6 CPU seconds per audio second
 ([finding 18](docs/findings/18-dsp-performance.md)), so real time is not reached yet.
-`--samples` builds a +Drive image from a folder of `.wav` files and caches it by content.
+The +Drive comes from `plus_drive/dt2/` or `plus_drive/dn2/` (git ignores both) when it exists, or from `--plus-drive DIR` (`--samples DIR` is the same option): the launcher builds a card image from the folder and caches it by content ([docs/SAMPLES.md](docs/SAMPLES.md)).
 Track N of the DT2 plays file N (sorted by name; more than 16 files wrap around).
 
 **Choose samples (desktop app, Digitakt II).** With the DT2 running, the toolbar's "Choose

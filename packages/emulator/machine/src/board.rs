@@ -130,6 +130,8 @@ pub struct Board {
     scratch_card: RamPage,
     events: Vec<CompletionEvent>,
     dma_written: Vec<(u32, usize)>,
+    /// The engine of each `dma_written` entry (instruments only; drained with it).
+    dma_sources: Vec<&'static str>,
     last_error: Option<BoardWriteError>,
     /// Optional PIT/INTC facade in a stable allocation; ownership transfers by pointer.
     /// Its owned MMIO is never backed by sparse RAM.
@@ -365,6 +367,7 @@ impl Board {
             scratch_card: vec![0; PAGE_SIZE].into_boxed_slice(),
             events: vec![],
             dma_written: vec![],
+            dma_sources: vec![],
             last_error: None,
             time: None,
             forced_mmio: BTreeMap::new(),
@@ -453,6 +456,7 @@ impl Board {
         }
         self.events.clear();
         self.dma_written.clear();
+        self.dma_sources.clear();
         self.dma.snap_load(r)?;
         r.tag("ESDH")?;
         self.esdhc.snap_load(r)?;
@@ -799,6 +803,7 @@ impl Board {
             assert!(self.ram_write(dest.wrapping_add(offset), 1, 0));
         }
         self.dma_written.push((dest, total as usize));
+        self.dma_sources.push("dspi1-rx");
         self.dspi1_irq = true;
         Ok(())
     }
@@ -819,6 +824,11 @@ impl Board {
     /// instruction fetch; only successful card-to-guest transfers appear.
     pub fn take_dma_written_ranges(&mut self) -> Vec<(u32, usize)> {
         std::mem::take(&mut self.dma_written)
+    }
+    /// The engine of each range the last `take_dma_written_ranges` returned,
+    /// in order (take it second; for the write-watch).
+    pub fn take_dma_sources(&mut self) -> Vec<&'static str> {
+        std::mem::take(&mut self.dma_sources)
     }
     /// Return UART8 TX bytes drained by eDMA channel 35 since the prior call.
     pub fn take_uart_tx(&mut self) -> Vec<u8> {
@@ -1120,6 +1130,7 @@ impl Board {
                 self.page_mut(address).unwrap()[Self::page_offset(address)] = value;
             }
             self.dma_written.push((base, effect.bytes));
+            self.dma_sources.push("esdhc-dma59");
         }
         Ok(effect.completion)
     }
@@ -1335,6 +1346,7 @@ impl Board {
         }
         if !data.is_empty() {
             self.dma_written.push((addr, data.len()));
+            self.dma_sources.push("dspi2");
         }
         Ok(())
     }

@@ -228,7 +228,9 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         (
             "packages/emulator/plusdrive/",
             "packages/emulator/card/",
+            "packages/emulator/boot/examples/plusdrive_check.rs",
             "tools/emulator/card_check.py",
+            "tools/firmware/plusdrive_check.py",
         ),
         ("desktop", "rust-tests", "card"),
     ),
@@ -791,6 +793,8 @@ def run_step(gate: Gate, step: str) -> None:
         gate.run("rust-tests", rust_tests_command())
     elif step == "card":
         gate.run("card", [*PY, "-m", "tools.emulator.card_check"])
+        # The firmware's own view of a folder-built image (nested folders, plain files).
+        gate.run("card-fs", [*PY, "-m", "tools.firmware.plusdrive_check"])
     elif step == "dt2-tone":
         gate.run("dt2-tone", [*PY, "-m", "tools.emulator.dt2_sample_check"])
     elif step == "dt2-check":

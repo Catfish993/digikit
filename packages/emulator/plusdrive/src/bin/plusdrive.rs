@@ -1,14 +1,15 @@
 use device_profile::Registry;
 use emmc_card::RandomAccessRead;
 use plusdrive_format::{
-    NamedSample, ProjectSeed, WavLimits, build_sample_image_with_options, list_image, wav_to_native,
+    Content, EntryKind, Geometry, MmcSlots, Pool, ProjectSeed, Tree, TreeFile, TreeOptions,
+    WavLimits, build_tree_image, list_image, parse_native, wav_to_native,
 };
 use sha2::{Digest, Sha256};
 use std::{
     env, fs,
     fs::OpenOptions,
     io::{Read, Seek, SeekFrom, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
 };
 
@@ -37,14 +38,133 @@ impl RandomAccessRead for FileImage {
     }
 }
 fn usage() -> &'static str {
-    "usage: plusdrive build SAMPLES -o NEW_IMAGE [--syx FILE] [--no-project] [--capacity-blocks N]\n       plusdrive ls IMAGE\n\nProject seeding requires a verified DT2 1.16 SysEx; without --syx the image is sample-only."
+    "usage: plusdrive build DIR -o NEW_IMAGE [--device dt2|dn2] [--syx FILE] [--no-project] [--capacity-blocks N] [--max-extent-pages N]\n       plusdrive ls IMAGE\n       plusdrive export IMAGE [--overlay FILE] -o FOLDER [--out DIR] [--prune] [--device dt2|dn2]\n\nDIR is a plus_drive/<device> folder: files and folders map to the path filesystem (a .wav becomes a native\nsample named without the extension; any other file is copied byte for byte), and .mmcfs/{projects,sounds,kits}/NNNN.bin\nare raw MmcFs slots. DN2 has no path filesystem: only .mmcfs applies.\nA boot project is seeded from a verified DT2 1.16 SysEx (--syx) when the folder holds a native sample."
 }
+
+const WAV_SOURCE_LIMIT: u64 = 64 * 1024 * 1024;
+
+#[derive(Default)]
+struct Scan {
+    files: Vec<TreeFile>,
+    dirs: Vec<String>,
+    slots: MmcSlots,
+    skipped: Vec<String>,
+}
+
+fn slot_number(name: &str) -> Option<u32> {
+    let digits = name.strip_suffix(".bin")?;
+    (digits.len() == 4 && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| digits.parse().ok())
+        .flatten()
+}
+
+/// Walk `root`. `path_fs` false (DN2) skips everything outside `.mmcfs`.
+fn scan(root: &Path, path_fs: bool) -> Result<Scan, String> {
+    let mut out = Scan::default();
+    let mut stack = vec![(root.to_path_buf(), String::new())];
+    while let Some((dir, prefix)) = stack.pop() {
+        let mut entries = fs::read_dir(&dir)
+            .map_err(|e| format!("{}: {e}", dir.display()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        entries.sort_by_key(|entry| entry.file_name());
+        if !prefix.is_empty() && entries.is_empty() && path_fs {
+            out.dirs.push(prefix.clone());
+        }
+        for entry in entries {
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| format!("{}: name is not UTF-8", entry.path().display()))?;
+            let rel = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let kind = entry.file_type().map_err(|e| e.to_string())?;
+            if kind.is_symlink() {
+                out.skipped.push(format!("{rel} (symbolic link)"));
+                continue;
+            }
+            if prefix.is_empty() && name == ".mmcfs" && kind.is_dir() {
+                scan_mmcfs(&entry.path(), &mut out)?;
+                continue;
+            }
+            if name == ".DS_Store" {
+                continue;
+            }
+            if !path_fs {
+                out.skipped
+                    .push(format!("{rel} (DN2 has no path filesystem)"));
+                continue;
+            }
+            if kind.is_dir() {
+                stack.push((entry.path(), rel));
+            } else if kind.is_file() {
+                let path = entry.path();
+                let len = entry.metadata().map_err(|e| e.to_string())?.len();
+                let is_wav = Path::new(&name)
+                    .extension()
+                    .is_some_and(|x| x.eq_ignore_ascii_case("wav"));
+                let content = if is_wav {
+                    if len > WAV_SOURCE_LIMIT {
+                        return Err(format!("{} exceeds WAV source limit", path.display()));
+                    }
+                    let wav = fs::read(&path).map_err(|e| e.to_string())?;
+                    Content::Native(
+                        wav_to_native(&wav, WavLimits::default())
+                            .map_err(|e| format!("{}: {e:?}", path.display()))?,
+                    )
+                } else {
+                    let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                    match parse_native(bytes.clone()) {
+                        Some(sample) => Content::Native(sample),
+                        None => Content::Plain(bytes),
+                    }
+                };
+                out.files.push(TreeFile { path: rel, content });
+            } else {
+                out.skipped.push(format!("{rel} (not a regular file)"));
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn scan_mmcfs(dir: &Path, out: &mut Scan) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let pool = Pool::from_dir_name(&name).filter(|_| entry.path().is_dir());
+        let Some(pool) = pool else {
+            out.skipped
+                .push(format!(".mmcfs/{name} (not projects, sounds or kits)"));
+            continue;
+        };
+        for slot_file in fs::read_dir(entry.path()).map_err(|e| e.to_string())? {
+            let slot_file = slot_file.map_err(|e| e.to_string())?;
+            let file_name = slot_file.file_name().to_string_lossy().into_owned();
+            let rel = format!(".mmcfs/{name}/{file_name}");
+            match (slot_number(&file_name), slot_file.file_type()) {
+                (Some(slot), Ok(kind)) if kind.is_file() => {
+                    let bytes = fs::read(slot_file.path()).map_err(|e| format!("{rel}: {e}"))?;
+                    out.slots.slots.insert((pool, slot), bytes);
+                }
+                _ => out.skipped.push(format!("{rel} (not NNNN.bin)")),
+            }
+        }
+    }
+    Ok(())
+}
+
 fn build(args: Vec<String>) -> Result<(), String> {
     let mut source = None;
     let mut output = None;
     let mut capacity = 0x760000u32;
     let mut syx = None;
     let mut no_project = false;
+    let mut device = None;
+    let mut max_extent_pages = u32::MAX;
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -56,6 +176,14 @@ fn build(args: Vec<String>) -> Result<(), String> {
                     .parse()
                     .map_err(|_| "invalid --capacity-blocks")?
             }
+            "--max-extent-pages" => {
+                max_extent_pages = it
+                    .next()
+                    .ok_or("missing --max-extent-pages value")?
+                    .parse()
+                    .map_err(|_| "invalid --max-extent-pages")?
+            }
+            "--device" => device = Some(it.next().ok_or("missing --device value")?),
             "--syx" => syx = Some(PathBuf::from(it.next().ok_or("missing --syx value")?)),
             "--no-project" => no_project = true,
             _ if source.is_none() => source = Some(PathBuf::from(arg)),
@@ -70,51 +198,11 @@ fn build(args: Vec<String>) -> Result<(), String> {
     if output.exists() {
         return Err("output already exists".into());
     }
-    let mut paths = Vec::new();
-    for entry in fs::read_dir(&source).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if entry.file_type().map_err(|e| e.to_string())?.is_file()
-            && path
-                .extension()
-                .is_some_and(|x| x.eq_ignore_ascii_case("wav"))
-        {
-            paths.push((entry.file_name(), path));
-        }
-    }
-    paths.sort_by(|a, b| a.0.cmp(&b.0));
-    if paths.is_empty() {
-        return Err("no direct .wav files".into());
-    }
-    if paths.len() > 2048 {
-        return Err("too many samples".into());
-    }
-    let mut samples = Vec::with_capacity(paths.len());
-    let mut total = 0usize;
-    for (name, path) in paths {
-        let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
-        if meta.len() > 64 * 1024 * 1024 {
-            return Err(format!("{} exceeds WAV source limit", path.display()));
-        };
-        let wav = fs::read(&path).map_err(|e| e.to_string())?;
-        let sample = wav_to_native(&wav, WavLimits::default())
-            .map_err(|e| format!("{}: {e:?}", path.display()))?;
-        total = total
-            .checked_add(sample.bytes.len())
-            .ok_or("native sample size overflow")?;
-        if total > 256 * 1024 * 1024 {
-            return Err("native sample aggregate exceeds limit".into());
-        };
-        samples.push(NamedSample {
-            file_name: name
-                .into_string()
-                .map_err(|_| "sample file name is not UTF-8")?,
-            sample,
-        });
-    }
     let main;
-    let seed = if let Some(syx) = syx {
-        let bytes = fs::read(&syx).map_err(|e| format!("{}: {e}", syx.display()))?;
+    let mut seed = None;
+    let mut device_short = device;
+    if let Some(syx) = &syx {
+        let bytes = fs::read(syx).map_err(|e| format!("{}: {e}", syx.display()))?;
         let digest = Sha256::digest(&bytes)
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -128,23 +216,55 @@ fn build(args: Vec<String>) -> Result<(), String> {
             .ok_or("firmware has no MAIN section")?
             .bytes;
         let registry = Registry::load().map_err(|e| e.to_string())?;
-        let (device, profile, _) = registry
+        let (found, profile, _) = registry
             .boot_for_main(&digest, &main)
             .map_err(|e| e.to_string())?;
-        if device.short != "dt2" {
-            return Err("project seeding is DT2-only".into());
+        if device_short.as_deref().is_some_and(|d| d != found.short) {
+            return Err(format!("--device does not match {}", syx.display()));
         }
-        Some(ProjectSeed {
-            main: &main,
-            contract: profile
-                .plusdrive_project_contract
-                .ok_or("firmware has no +Drive project contract")?,
-        })
-    } else {
-        None
+        device_short = Some(found.short.to_string());
+        if found.short == "dt2" {
+            seed = Some(ProjectSeed {
+                main: &main,
+                contract: profile
+                    .plusdrive_project_contract
+                    .ok_or("firmware has no +Drive project contract")?,
+            });
+        }
+    }
+    let geometry = match device_short.as_deref().unwrap_or("dt2") {
+        "dt2" => Geometry::Dt2,
+        "dn2" => Geometry::Dn2,
+        other => return Err(format!("unknown device {other}")),
     };
-    let built = build_sample_image_with_options(samples, capacity, seed)
-        .map_err(|e| format!("build: {e:?}"))?;
+    let scanned = scan(&source, geometry == Geometry::Dt2)?;
+    for line in &scanned.skipped {
+        eprintln!("plusdrive: skipped {line}");
+    }
+    let slot_count = scanned.slots.slots.len();
+    let tree = Tree {
+        files: scanned.files,
+        dirs: scanned.dirs,
+        slots: scanned.slots,
+    };
+    let built = build_tree_image(
+        tree,
+        TreeOptions {
+            capacity_blocks: capacity,
+            geometry,
+            max_extent_pages,
+        },
+        if no_project { None } else { seed },
+    )
+    .map_err(|e| format!("build: {e:?}"))?;
+    let (mut dirs, mut plain) = (0, 0);
+    for entry in &built.entries {
+        match entry.kind {
+            EntryKind::Dir => dirs += 1,
+            EntryKind::Plain => plain += 1,
+            EntryKind::Native => {}
+        }
+    }
     let result = (|| -> Result<(), String> {
         let mut file = OpenOptions::new()
             .write(true)
@@ -162,10 +282,13 @@ fn build(args: Vec<String>) -> Result<(), String> {
         }
         file.flush().map_err(|e| e.to_string())?;
         println!(
-            "logical_bytes={} written_bytes={} sample_entries={} project={:?}",
+            "logical_bytes={} written_bytes={} sample_entries={} plain_files={} directories={} mmcfs_slots={} project={:?}",
             built.image.logical_len(),
             bytes,
             built.files.len(),
+            plain,
+            dirs - 1,
+            slot_count,
             built.project
         );
         Ok(())
@@ -201,6 +324,7 @@ fn main() {
     let rest = args.collect();
     let result = match command.as_deref() {
         Some("build") => build(rest),
+        Some("export") => plusdrive_format::export::cli(rest),
         Some("ls") => {
             if rest.len() == 1 {
                 ls(PathBuf::from(&rest[0]))

@@ -23,6 +23,7 @@ pub mod sharc_peer;
 mod softfloat;
 pub mod spikelog;
 mod telemetry;
+mod watch;
 pub mod wav;
 
 pub use capture::Dspi2Capture;
@@ -30,6 +31,7 @@ pub use periph::clock;
 pub use cputime::thread_cpu_ns;
 pub use guard::{GUARD_HIT_LIMIT, GuardHit, GuardRange, GuardReport, parse_guard_spec};
 pub use telemetry::DiagnosticReport;
+pub use watch::{After, FlushHit, WatchConfig, Writer, parse_ranges};
 
 pub use runtime::{CallResult, CallSpec, Emulator, Snapshot, Status};
 pub use softfloat::ExecutionPolicy;

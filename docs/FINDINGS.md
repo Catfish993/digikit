@@ -42,6 +42,8 @@ earlier claim.
 | [`20-patch-toolchains.md`](findings/20-patch-toolchains.md) | patchkit toolchains: pinned m68k-elf gcc/binutils (`-mcpu=54418`) and Selache, the prototype linkers, ISA checks, running linked functions on both emulated cores, selcc verdict, `.dko` recommendation |
 | [`21-patchkit-core.md`](findings/21-patchkit-core.md) | patchkit core: the stock container layout (payloads from 0x90) and the byte-exact codec, the Rust aPLib packer equal to Python on 16 sections, port lockfiles, the Selache listing quirk, fx/master-gain through patchkit (-6.0206 dB, bit-identical at unity, DT2 and DN2), the DN2 master-half and XSLICE oracles, the core/expansion loader and its coupled boots, patchkit.wasm equal to the CLI |
 | [`22-patchkit-master-drive.md`](findings/22-patchkit-master-drive.md) | fx/master-drive on DT2 1.17 and DN2 1.12: the Sidechain Filter word as the knob, neutral 0x5000 (kits do not start from the descriptor default), the relabelled master-page knob, bit-identical bypass, harmonics and level with drive, no clicks, 20 to 968 DSP instructions per block, Selache's ignored (SW) suffix |
+| [`23-digikit-runtime-spikes.md`](findings/23-digikit-runtime-spikes.md) | digikit runtime Phase 0: Rust through GCC's back end produces ColdFire code (LLVM does not), the SETTINGS menu rebuild and a one-hook DIGIKIT item, the locked C-level file API on DT2, the unused frame tail as a DSP code channel on both devices, a card module store at sectors 0x38000-0x3E000, the emulator write-watch and flush check |
+| [`24-plusdrive-export.md`](findings/24-plusdrive-export.md) | +Drive export: the image and overlay reader, `plusdrive export` and `card.export`, a panel save landing in project slot 0, the MmcFs bitmaps not updated by a save |
 | [`functions/README.md`](findings/functions/README.md) | Per-function SHARC notes, including Phase B wrapper and conditional-resampling-path entries |
 
 ## Other documents that hold results
@@ -56,6 +58,7 @@ earlier claim.
 | [`sharc/`](sharc/) | `SOURCES.md` (public SHARC+ sources), `SPEC-FINDINGS.md` (instruction set), `structure-1.16.md` (DT2 1.16 DSP structure) |
 | [`design/`](design/) | Design notes: `emulator-control.md` (control protocol), `p5-machine.md` |
 | [`plans/native-emulator.md`](plans/native-emulator.md) | The native emulator plan (design history) |
+| [`plans/digikit-runtime.md`](plans/digikit-runtime.md) | The digikit runtime plan: modules loaded from the +Drive at run time |
 | [`refs/`](refs/) | Notes on public references (MCF5441x, Linux and QEMU sources, DSPI2/eDMA) |
 | [`INSTRUMENTATION.md`](INSTRUMENTATION.md) | Where run output goes and the diagnostic and tuning switches |
 | [`TOOLS.md`](TOOLS.md) | Index of the tools |

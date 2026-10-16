@@ -1,0 +1,47 @@
+# 24. +Drive export: reading the card back (Phase 1b)
+
+Plan: `docs/plans/digikit-runtime.md`. Code: `packages/emulator/plusdrive/src/{reader,export}.rs`, the `plusdrive export`
+command, `card.export` in `packages/emulator/control`. Run on DT2 1.16 (`out/sections/dt2-1.16`, source SHA-256
+`278541e4...`, checked against `firmware/Digitakt_II_OS1.16.syx`), ColdFire only, 2026-10-16. One agent, not checked by a
+second one: marks are **[D]** unless stated.
+
+## What the firmware wrote **[D]**
+
+Test: `packages/emulator/control/tests/card_export.rs` (card of three WAV files, boot to the main screen, NO, FUNC+SETTINGS,
+YES, 3 s).
+
+- Boot alone writes 28,685 overlay sectors: the working project at sector `0x50000` (project "slot 0x80", `FUN_4012eef2`
+  special case) 28,364 sectors, the superblock sector `0x5D8000`, the first record page (64 sectors at `0x5D8180`, the
+  factory link in the root) and 256 sectors at `0x5EFF80` (content pages `0x78`..`0x7F`: the root directory and index pages).
+  The three samples read back byte for byte as the builder wrote them.
+- The panel save writes project slot 0 (`0x58000`, 28,364 sectors = 14,522,368 bytes with the trailing zero sectors cut) and
+  nothing else. The slot starts `BEEFBACE 00000005 "PRESETS 1643"` (v5 container); the stock boot project at `0x40000` is a
+  `COKi` container the builder seeds. Slot 0 and the working project differ only from byte 14,521,861 on. The boot copies
+  `0x40000` and `0x48000` are not rewritten.
+- **The MmcFs occupancy bitmaps (sector `0x800`) are not updated by a panel save** (no write to that sector in 20 s of
+  emulated time). The callers of the bit setters are the factory format and slot erase (`FUN_40131282`, `FUN_401302ee`), not
+  the save. The exporter therefore decides occupancy from the slot content (first sector neither all zero nor all `0xFF`) and
+  reports a set bit on an empty slot. **[O]** What the bit polarity means (`FUN_40130484` toggles, `FUN_401303a8` sets where
+  a callback returns 0) and whether the firmware reads the bitmap on load (a project saved this way was not loaded again in
+  the emulator here).
+
+## Reader **[D]**
+
+- Region 2 as in finding 14: superblock (magic, version 3 or 4, lookup3 over `[0, 0x1FC)`, page size), records at
+  `0x5D8180 + (id>>8)*0x40` sectors, up to 8 inline extents or up to 24 indirect extent pages of 2,730 extents (`FUN_40157d28`),
+  content page to sector `0x5EE180 + page*0x40` (pages `>= 0x1000800`: `page*0x40 - 0x3FBC8000`, the factory table at
+  `0x458000`; ids `0x1000000..0x10007FF` are RAM-resident and skipped). Directory pages are walked as variable entries (id 0 =
+  free slot). Checks reported, never fatal: kind byte vs record attribute, record parent, id and page bitmaps, ids set in the
+  bitmap but not reachable, unmapped pages. The indirect extent path is read from the decompile, not from a card the firmware
+  wrote (**[O]**: no such card yet).
+- Region 1: pool slot sectors as in finding 14 (`FUN_4012eef2`, `FUN_4012f596`, `FUN_401324cc`). Slot sizes: project 0x8000
+  sectors, sound 8, kit 128 (the next slot's address).
+- The firmware links "factory" into the root directory at every mount; the exporter skips it.
+
+## Folder written
+
+Path-filesystem files by name, native bytes (no `.wav` extension: the firmware stores names without it; a folder `x.wav` that
+still converts to the native bytes counts as unchanged, and if the firmware changed the sample the WAV is backed up and the
+native file takes its place). `.mmcfs/{projects,sounds,kits}/NNNN.bin` (slot content up to the last non-zero sector; the
+image reads the rest as zero). `.mmcfs/boot/SSSSSS.bin`: the 16 MiB regions at sectors `0x40000`, `0x48000`, `0x50000`, only
+when the overlay touched them. These are not pool slots: the builder should write the file at that sector.

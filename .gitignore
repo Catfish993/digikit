@@ -38,6 +38,7 @@ tools/sharc_dev/sharcspec/ghidra/SHARC_VISA/
 
 # Local +Drive sample input (see docs/SAMPLES.md); never committed
 samples/
+plus_drive/
 
 # Rust build output for packages/
 packages/**/target/

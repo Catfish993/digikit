@@ -36,6 +36,17 @@ pub trait Bus {
         let _ = (addr, len);
         false
     }
+    /// MOVEC to CACR completed with `cacr` (the written value). A hook for
+    /// instruments; the default does nothing and costs nothing.
+    fn cacr_written(&mut self, cacr: u32) {
+        let _ = cacr;
+    }
+    /// CPUSHL executed: `cache` is the instruction's field (1 data, 2
+    /// instruction, 3 both), `ax` the address register's value, `cacr` the
+    /// current CACR. A hook for instruments; the default does nothing.
+    fn cpushl(&mut self, cache: u8, ax: u32, cacr: u32) {
+        let _ = (cache, ax, cacr);
+    }
 }
 
 /// Status register bits (CFPRM p.25 Table 1-7).
@@ -2494,13 +2505,20 @@ impl Cpu {
                 self.write(bus, &ea!(i, 0), Size::B, v).map_err(Ok)?;
             }
             Form::Tpf => {}
-            Form::Cpushl => {}
+            Form::Cpushl => {
+                if let (Operand::Cache(cache), Operand::Ea(Ea::Ind(r))) = (ops[0], ops[1]) {
+                    bus.cpushl(cache, self.a[r as usize], self.ctrl.cacr);
+                }
+            }
             Form::Movec => {
                 let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 let Operand::Ctrl(rc) = ops[1] else {
                     unreachable!()
                 };
                 self.write_ctrl(rc, v);
+                if rc == 0x002 {
+                    bus.cacr_written(v);
+                }
             }
             Form::Rte => {
                 let fv = self.pop32(bus).map_err(Ok)?;
