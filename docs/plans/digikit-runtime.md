@@ -1,6 +1,6 @@
 # digikit runtime: load modules from the +Drive at run time
 
-Status: design agreed 2026-10-16; Phase 0 done (docs/findings/23-digikit-runtime-spikes.md); Phase 1 built, with the gaps listed under Phase 1; Phases 3 and 4 gates done in the emulator (menu joined to the runtime). Branch `runtime/digikit-runtime`; commits after a green verify (Em, 2026-10-16).
+Status: design agreed 2026-10-16; **changed 2026-10-17 to boot-time loading** (decision 9). Phases 0 to 5 built for hot loading (tag `digikit-hot-reload-v1`, archived in docs/plans/digikit-hot-reload.md); Phase 6 is the current work. Branch `runtime/digikit-runtime`; commits after a green verify (Em, 2026-10-16).
 
 ## Goal
 
@@ -37,6 +37,21 @@ from the menu. No hardware flashing until everything works in the emulator.
    channel sizes) lives in `devices/<device>.toml`, and firmware-version addresses in `devices/ports/*.toml`.
    Code takes a profile, never a device enum, so another device on the same platform (for example Syntakt) is a
    new TOML file. The card layout moved there first (`[card]`, packages/emulator/device-profile).
+
+9. **(2026-10-17, replaces the run-time load/unload of decision 3.)** The module set is fixed for a session. The user
+   ticks modules in DIGIKIT > MODULES and chooses APPLY & RESTART; the runtime saves the selection and restarts, and
+   at boot it loads the selected modules before the firmware builds its machine tables (finding 36). No unload, no
+   load while a project is open or playing. Reason: a load/unload under an open, playing project needs a transport
+   guard, an in-use scan of the whole project, ordering under concurrent readers and a soak to be trusted (the risk
+   review of 2026-10-17); a restart removes that class. Hot loading is archived (tag `digikit-hot-reload-v1`,
+   docs/plans/digikit-hot-reload.md) and may return later, first for code-only modules.
+10. The permanent identity of a run-time machine is its type number (16 to 23, `modules/core/machines/types.toml`):
+    kit tracks and pool sounds store it. Parameter codes may be allocated first-free each boot: sounds and p-locks
+    are keyed by sound-array slot (finding 36, question 4).
+11. Getting it onto a device, in order: flash the patched OS once through Elektron's own OS update (SysEx; patchkit
+    writes only sections 3 and 7, so the stock OS can always be re-flashed: finding 36); upload modules over USB
+    SysEx into the store (the runtime's only card write besides the selection record); USB mass storage ("disk
+    mode") is assessed later.
 
 ## What is known (sources)
 
@@ -256,8 +271,51 @@ write-watch 0 events, flush check 0 hits (`tools/coldfire/digikit_menu_proof.py`
 
 Gate: a machine module selected in the menu plays in the emulator on both devices.
 
+### Phase 6: boot-time loading (decision 9; current)
+
+Hook (finding 36): one `jsr` in the main-OS task just before the MainScreenView constructor (DT2 1.16/1.17 0x40033cf2,
+DN2 1.11/1.12 0x4002f16a). There the block read, the DSP and the frame work, and the machine view is not built yet, so
+the rows are in place before the stock builder runs (no view hook, no rebuild at boot). DN2 DSP upload (about 1 s for
+64 KiB) may move to the first pass of the UI-loop hook if the boot delay matters (measure).
+
+C ABI for the menu (names fixed here so the menu and the runtime can be built in parallel; layouts in `dkrt-sdk`):
+- `dkrt_selection_get(out *mut DkrtSelection) -> i32`: the saved selection, which the next boot loads (store paths, at most 8).
+- `dkrt_selection_set(sel *const DkrtSelection) -> i32`: write it (two copies with a sequence number and a CRC, in
+  sectors of the store range that the +Drive builder keeps); no effect until the restart.
+- `dkrt_restart() -> i32`: save the working state the way the firmware does (item below), then soft reset; returns
+  only when it refuses (for example a card transfer in flight).
+- `dkrt_boot_info(out *mut DkrtBootInfo)`: safe mode and why, the boot counter, each selected module's load result.
+- `dkrt_status` and `dkrt_module` stay (what this session loaded).
+
+Items:
+- [ ] Boot load: the hook, the selection record, loads in selection order through the existing checks (a module that
+  fails is skipped and reported; the others load), DSP code through `core/dsp-link`.
+- [ ] Safe mode: a boot counter in the selection record, raised before the loads and cleared once the UI loop runs;
+  after two boots that did not reach it, or with a key held at power-on, boot with no modules and say so.
+- [ ] Restart: the soft reset (0x80 to 0xEC090000, the firmware's unused helper at 0x40005608; finding 36) after the
+  working state is saved. Open (finding 36, question 2): whether unsaved edits survive a restart, and which firmware
+  call saves them; measured in the emulator first.
+- [ ] Menu: DIGIKIT > MODULES ticks the selection (greyed: other device or newer runtime), APPLY & RESTART, a line for
+  safe mode, ABOUT with this session's modules and their results.
+- [ ] +Drive: the selection record round-trips with `plus_drive/<device>/digikit/` (a file the exporter writes back).
+- [ ] Tests kept in the suite (routed by verify), one scenario format, from a booted snapshot where possible:
+  - equivalence, any module type: booting with set S gives the same rows and tables at the main screen and the same PCM
+    for a scripted project as the image patchkit builds with S patched in;
+  - project round trip across sets: save under set A, boot with B, boot with A again: sounds, values, p-locks and
+    sound locks byte-identical; a track whose machine is not loaded keeps its type;
+  - safe mode: a module that faults in `init` twice leads to a boot with no modules;
+  - power cut while the selection is written (reset between the two copies): the next boot uses a valid copy;
+  - write-watch, flush check and card-store check on every scenario.
+- [ ] Archive commit: remove the hot-only parts (unload, in-use scan, load queue, live LOAD/UNLOAD in the menu, the
+  boot-unneeded view and rebuild hooks if the boot path proves them unneeded) in one commit, so `git revert` restores them.
+
+Gate: on both devices, a set of modules chosen in the menu (a machine with DSP code, a code-only module) is loaded after
+APPLY & RESTART, plays like the patched-in set, and the round-trip and safe-mode tests pass.
+
 ### Later
 
+- Hot loading and unloading: docs/plans/digikit-hot-reload.md (archived state and what is left).
+- USB upload of modules over SysEx (decision 11), then USB mass storage assessed.
 - Health and diagnostics module: CPU load (idle-task counter), RAM (buddy allocator bitmap), DSP load.
 - Faster transfer: assess separately. USB mass storage would show Elektron's filesystem, which no host can mount,
   so it would need a FAT view on the device or a host tool.
