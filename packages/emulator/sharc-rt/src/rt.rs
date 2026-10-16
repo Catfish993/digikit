@@ -2067,6 +2067,7 @@ pub fn scalbn(x: f64, n: Int) -> f64 {
 }
 
 pub mod bnd;
+pub mod iir;
 pub mod periph;
 
 stack_ops!(
