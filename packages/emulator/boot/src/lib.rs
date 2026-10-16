@@ -31,5 +31,8 @@ pub use cputime::thread_cpu_ns;
 pub use guard::{GUARD_HIT_LIMIT, GuardHit, GuardRange, GuardReport, parse_guard_spec};
 pub use telemetry::DiagnosticReport;
 
-pub use runtime::{CallResult, CallSpec, Emulator, Snapshot, Status};
+pub use runtime::{
+    CAPTURE_MAX, CallResult, CallSpec, Capture, Emulator, GuestCall, REG_LOG_MAX, RegHit, Snapshot,
+    Status,
+};
 pub use softfloat::ExecutionPolicy;
