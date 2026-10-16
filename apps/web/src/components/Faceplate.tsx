@@ -3,16 +3,16 @@ import { panels } from '../data/faceplates';
 import { deviceProfiles, localReadyFirmwareSha256, type DeviceId } from '../data/device-profiles';
 import {
   browserRuntime,
-  drawFrame,
   nativeRuntime,
   type EmulatorRuntime,
   type NativeAudioStatus,
   type RuntimeUpdate,
 } from '../runtime/runtime';
-import { LED_COUNT, defaultLedColor, ledLight, parseLeds, WARM_WHITE } from '../runtime/leds';
+import { parseLeds } from '../runtime/leds';
 import { PcmSink, resumeOnNextGesture } from '../runtime/audio';
 import { fetchLocalInputs, localManifest, sha256Hex } from '../runtime/local-inputs';
 import CoupledAudio, { startCoupled } from './CoupledAudio';
+import LivePanel, { type LivePanelApi } from './LivePanel';
 import PanelArt from './PanelArt';
 import SyxFile from './SyxFile';
 import { benchRequested, runBench } from '../runtime/bench';
@@ -41,13 +41,11 @@ export default function Faceplate(props: { runtime?: EmulatorRuntime } = {}) {
 function Panel(props: { runtime?: EmulatorRuntime }) {
   const dev = devEnabled();
   const [device, setDevice] = createSignal<'dt2' | 'dn2'>('dt2');
-  const [pressed, setPressed] = createSignal(new Set<number>());
-  const [leds, setLeds] = createSignal(new Uint8Array(LED_COUNT));
   // `?leds=<128 hex digits>` shows a fixed LED state without a running emulator (a styling aid; a loaded firmware replaces it).
   onMount(() => {
     const preview = dev ? new URLSearchParams(location.search).get('leds') : null;
     if (preview) {
-      setLeds(parseLeds(preview));
+      live?.previewLeds(parseLeds(preview));
       setStage('run');
     }
   });
@@ -79,48 +77,11 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
   const runtime = () => runtimeSignal() ?? activeRuntime ?? props.runtime;
   let activeRuntime: EmulatorRuntime | undefined;
   let runtimeReady: Promise<EmulatorRuntime | undefined> | undefined;
-  let canvas: HTMLCanvasElement | undefined;
-  const pointers = new Map<
-    number,
-    { code?: number; encoder?: number; y: number; pushed?: number; moved: boolean; target?: SVGGElement }
-  >();
-  const owners = new Map<number, number>();
-  // Encoders are endless and the firmware reports no angle: the notch angle is UI-only (24 detents per turn).
-  const [angles, setAngles] = createSignal<Record<number, number>>({});
-  const angle = (encoder: number | undefined) => (encoder ? (angles()[encoder] ?? 0) : 0);
-  const spin = (encoder: number, detents: number) =>
-    setAngles((old) => ({ ...old, [encoder]: ((((old[encoder] ?? 0) + detents * 15) % 360) + 360) % 360 }));
-  // A mouse cannot hold FUNC while clicking another key, and the firmware only sees a chord when FUNC
-  // stays down across the other key's press and release (docs/findings/03-ui-and-panel.md). A click
-  // on FUNC latches it; the next key's release (or a second click on FUNC) releases it.
-  const FUNC = 17;
-  let funcLatched = false;
-  let suppressedKnob: SVGGElement | undefined;
-  let clearSuppression: number | undefined;
+  let live: LivePanelApi | undefined;
   let audioTimer: number | undefined;
   let firmwareFile: File | undefined;
   const panel = () => panels[device()];
-  const clearCanvas = () => {
-    if (canvas) canvas.getContext('2d')?.clearRect(0, 0, 128, 64);
-    setLeds(new Uint8Array(LED_COUNT));
-  };
-  // A key's lit state: the legend glows (the real keys are backlit through the print). Trig keys default to idx = code.
-  const keyLight = (key: { code: number; style?: string; icon?: string; led?: number; led_color?: string }) => {
-    const idx = key.led;
-    if (idx === undefined) return undefined;
-    const light = ledLight(leds()[idx] ?? 0);
-    return light.on
-      ? { '--lit': String(light.intensity), '--lit-color': light.color ?? key.led_color ?? defaultLedColor(key.icon) }
-      : undefined;
-  };
-  const indicatorLight = (i: number) => {
-    const idx = panel().leds.idx?.[i];
-    if (idx === undefined) return undefined;
-    const light = ledLight(leds()[idx] ?? 0);
-    return light.on
-      ? { '--lit': String(light.intensity), '--lit-color': light.color ?? panel().leds.color ?? WARM_WHITE }
-      : undefined;
-  };
+  const clearCanvas = () => live?.clear();
   const update = (event: RuntimeUpdate) => {
     if (event.type === 'error') {
       setPaused(true);
@@ -130,8 +91,7 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
     }
     const snapshot = event.snapshot;
     setReportAvailable(true);
-    if (snapshot.frame && canvas) drawFrame(canvas, snapshot.frame);
-    if (snapshot.leds !== undefined) setLeds(parseLeds(snapshot.leds));
+    live?.show(snapshot);
     const s = snapshot.status;
     if (s.error) {
       setPaused(true);
@@ -153,75 +113,6 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
       `${s.device} ${s.version} — ${display}, ${s.icount.toLocaleString()} instructions${s.error ? `: ${s.error}` : ''}`,
     );
   };
-  const emit = (code: number, down: boolean) => {
-    const count = owners.get(code) ?? 0;
-    const nextCount = down ? count + 1 : Math.max(0, count - 1);
-    if (nextCount) owners.set(code, nextCount);
-    else owners.delete(code);
-    if ((down && count === 0) || (!down && count === 1)) {
-      setPressed((old) => {
-        const next = new Set(old);
-        if (down) next.add(code);
-        else next.delete(code);
-        return next;
-      });
-      const result = down ? runtime()?.press(code) : runtime()?.release(code);
-      void result?.catch((error) => update({ type: 'error', error: String(error) }));
-    }
-  };
-  // Knob drags listen on window, not on the SVG with pointer capture: WebKit (the Tauri webview, Safari)
-  // can retarget or drop captured pointer events and fire lostpointercapture early, which ended the drag
-  // before the first detent. Deltas come from clientY differences (movementY is not reliable in WebKit).
-  const dragMove = (e: PointerEvent) => {
-    const drag = pointers.get(e.pointerId);
-    if (!drag?.encoder) return;
-    const detents = Math.trunc((drag.y - e.clientY) / 8);
-    if (Math.abs(e.clientY - drag.y) > 3) drag.moved = true;
-    if (detents) {
-      spin(drag.encoder, detents);
-      void runtime()
-        ?.turn(drag.encoder, detents)
-        ?.catch((error) => update({ type: 'error', error: String(error) }));
-      drag.y -= detents * 8;
-    }
-  };
-  const dragEnd = (e: PointerEvent) => {
-    releasePointer(e.pointerId);
-  };
-  const detachDrag = () => {
-    window.removeEventListener('pointermove', dragMove);
-    window.removeEventListener('pointerup', dragEnd);
-    window.removeEventListener('pointercancel', dragEnd);
-  };
-  const releasePointer = (id: number) => {
-    const state = pointers.get(id);
-    if (!state) return;
-    if (state.target && (state.moved || state.pushed)) {
-      suppressedKnob = state.target;
-      if (clearSuppression) window.clearTimeout(clearSuppression);
-      clearSuppression = window.setTimeout(() => {
-        suppressedKnob = undefined;
-      }, 0);
-    }
-    if (state.code) emit(state.code, false);
-    if (state.pushed) emit(state.pushed, false);
-    if (funcLatched && (state.code || state.pushed)) {
-      funcLatched = false;
-      emit(FUNC, false);
-    }
-    pointers.delete(id);
-    if (![...pointers.values()].some((p) => p.encoder)) detachDrag();
-  };
-  const releaseAll = () => {
-    funcLatched = false;
-    for (const code of pressed()) runtime()?.release(code);
-    owners.clear();
-    setPressed(new Set<number>());
-    pointers.clear();
-    detachDrag();
-    suppressedKnob = undefined;
-  };
-  onMount(() => window.addEventListener('blur', releaseAll));
   let disposed = false;
   const refreshNativeAudio = async () => {
     try {
@@ -281,10 +172,8 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
   });
   onCleanup(() => {
     disposed = true;
-    window.removeEventListener('blur', releaseAll);
-    if (clearSuppression) window.clearTimeout(clearSuppression);
     if (audioTimer) window.clearInterval(audioTimer);
-    releaseAll();
+    live?.releaseAll();
     void activeRuntime?.stop().catch((error) => update({ type: 'error', error: String(error) }));
     activeRuntime?.dispose();
   });
@@ -299,7 +188,7 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
     void coupledSink?.resume().catch(() => {});
     if (coupledSink) resumeOnNextGesture(coupledSink);
     let kept = false;
-    releaseAll();
+    live?.releaseAll();
     setBrowserAudioReset((value) => value + 1);
     void runtime()?.stop();
     clearCanvas();
@@ -462,7 +351,7 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
     }
   };
   const changeFirmware = () => {
-    releaseAll();
+    live?.releaseAll();
     setBrowserAudioReset((value) => value + 1);
     void runtime()?.stop();
     clearCanvas();
@@ -651,77 +540,12 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
         </div>
       </Show>
       <section class="panel-wrap" hidden={stage() !== 'run'} aria-label={`${panel().name} front panel`}>
-        <PanelArt
+        <LivePanel
           panel={panel()}
-          ledStyle={indicatorLight}
-          keyLight={keyLight}
-          isPressed={(code) => pressed().has(code)}
-          angle={angle}
-          onSvgPointerUp={(e) => releasePointer(e.pointerId)}
-          onSvgPointerCancel={(e) => releasePointer(e.pointerId)}
-          onSvgLostPointerCapture={(e) => {
-            if (pointers.get(e.pointerId)?.code) releasePointer(e.pointerId);
-          }}
-          onKnobPointerDown={(knob, e) => {
-            if (!knob.encoder) return;
-            e.preventDefault();
-            const pushed = e.shiftKey ? knob.push : undefined;
-            if (pushed) emit(pushed, true);
-            pointers.set(e.pointerId, {
-              encoder: knob.encoder,
-              y: e.clientY,
-              pushed,
-              moved: false,
-              target: e.currentTarget,
-            });
-            detachDrag();
-            window.addEventListener('pointermove', dragMove);
-            window.addEventListener('pointerup', dragEnd);
-            window.addEventListener('pointercancel', dragEnd);
-          }}
-          onKnobClick={(knob, e) => {
-            if (suppressedKnob === e.currentTarget) {
-              suppressedKnob = undefined;
-              return;
-            }
-            if (knob.push) {
-              emit(knob.push, true);
-              // oxlint-disable-next-line solid/reactivity -- runs inside the knob's click handler (a PanelArt prop)
-              queueMicrotask(() => emit(knob.push!, false));
-            }
-          }}
-          onKnobWheel={(knob, e) => {
-            if (!knob.encoder) return;
-            e.preventDefault();
-            const detents = e.shiftKey ? Math.sign(-e.deltaY) * 10 : Math.sign(-e.deltaY);
-            if (detents) spin(knob.encoder, detents);
-            runtime()?.turn(knob.encoder, detents);
-          }}
-          onKeyPointerDown={(key, e) => {
-            if (key.code === FUNC) {
-              funcLatched = !funcLatched;
-              emit(FUNC, funcLatched);
-              return;
-            }
-            e.currentTarget.setPointerCapture(e.pointerId);
-            pointers.set(e.pointerId, { code: key.code, y: e.clientY, moved: false });
-            emit(key.code, true);
-          }}
-        >
-          <canvas
-            ref={canvas}
-            class="oled"
-            width="128"
-            height="64"
-            aria-label="128 by 64 OLED display"
-            style={{
-              left: `${(panel().glass[0] / 215) * 100}%`,
-              top: `${(panel().glass[1] / 176) * 100}%`,
-              width: `${((panel().glass[2] - panel().glass[0]) / 215) * 100}%`,
-              height: `${((panel().glass[3] - panel().glass[1]) / 176) * 100}%`,
-            }}
-          />
-        </PanelArt>
+          runtime={runtime}
+          onError={(error) => update({ type: 'error', error })}
+          ref={(api) => (live = api)}
+        />
       </section>
       <Show when={stage() === 'run'}>
         <div class="wrap emu-foot">
@@ -780,7 +604,7 @@ function Panel(props: { runtime?: EmulatorRuntime }) {
                   adopted={adopted}
                   runtime={() => runtimeReady ?? Promise.resolve(undefined)}
                   onStarted={(snapshot) => {
-                    releaseAll();
+                    live?.releaseAll();
                     clearCanvas();
                     update({ type: 'snapshot', snapshot });
                     setPaused(false);

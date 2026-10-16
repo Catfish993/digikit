@@ -154,6 +154,20 @@ try {
     );
     expect(true, `emulator: ${await ev(`document.querySelector('.runbar').textContent`)}`);
     await sleep(3000);
+    // Real mouse input on the NO key: it goes down while held and comes back up on release.
+    const box = await ev(
+      `(() => { const k = [...document.querySelectorAll('.panel .key')].find((g) => g.textContent.trim().startsWith('NO')); k.id = 'probe-key'; const r = k.querySelector('.key-face').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    );
+    const mouse = (type) =>
+      cdp('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 });
+    await mouse('mouseMoved');
+    await mouse('mousePressed');
+    await sleep(150);
+    const held = await ev(`document.getElementById('probe-key').classList.contains('down')`);
+    await mouse('mouseReleased');
+    await sleep(150);
+    const released = !(await ev(`document.getElementById('probe-key').classList.contains('down')`));
+    expect(held && released, 'panel key goes down on press and up on release');
     await shot('emulator-patched', 1280, 900, 'light');
     await shot('emulator-phone', 390, 844, 'dark');
   }
