@@ -1,14 +1,14 @@
 # The run-time registry: machines and parameters added by a loaded module
 
 Status: built for Digitakt II 1.16 and 1.17 (2026-10-16) and Digitone II 1.11 and 1.12 (2026-10-17; pages, `own_dsp`, finding 33), ColdFire side only, emulator only. Plan: `docs/plans/digikit-runtime.md`
-(Phase 5, ColdFire side). Results and evidence: `docs/findings/30-runtime-machines.md` (Digitakt II) and `docs/findings/33-runtime-machines-dn2.md` (Digitone II, unload refusal). File: `docs/design/digikit-dkm.md`. Runtime:
+(Phase 5, ColdFire side). **Since the Phase 6 archive commit the rows are filled by the boot-time load only**: the unload, the in-use refusal and the machine-view hook and rebuild described for hot reload below are archived (docs/plans/digikit-hot-reload.md, tag `digikit-hot-reload-v1`); the paragraphs that describe them are marked. Results and evidence: `docs/findings/30-runtime-machines.md` (Digitakt II) and `docs/findings/33-runtime-machines-dn2.md` (Digitone II, unload refusal). File: `docs/design/digikit-dkm.md`. Runtime:
 `docs/design/digikit-runtime.md`. Code: `modules/core/dynreg` (patch time), `modules/core/runtime/src/rs/src/registry.rs` (run time),
 `packages/patchkit/src/register.rs` (records, packer).
 
 ## What it does
 
-A `.dkm` carries typed machine and parameter records in its `register` section. `dkrt_load` checks them and writes them into rows that
-`core/dynreg` reserved at patch time; the machine is then in the SRC machine list and can be put on a track. `dkrt_unload` gives the rows back.
+A `.dkm` carries typed machine and parameter records in its `register` section. The boot-time load checks them and writes them into rows that
+`core/dynreg` reserved at patch time, before the firmware builds its machine view; the machine is then in the SRC machine list and can be put on a track. (`registry::remove` still gives the rows back when the DSP part of a boot-time load fails.)
 Nothing is patched at run time: no firmware code is written, only rows, tables and one pointer.
 
 ## Records (the `register` section)
@@ -57,8 +57,7 @@ dyn23` hold the reservation); a patched machine never takes one. Numbers 10 to 1
 `core/dynreg` exports `dynreg_info`, a table of the addresses and layouts the registry needs (`dynreg.s`, 264 bytes since version 2): the machine rows and their
 field offsets, the name, permission and per-type tables, the parameter table and registry rows, the first reserved type and parameter code, how to
 build a parameter row (a spec of 15 words: copy template word n, or min, max, default, name, short, mirror index, kind word, 0x80 + slot), the knob
-count, two firmware-side addresses (below), and from byte 200 the page rows and their layout, the value of a free page row and the three firmware functions
-of the unload refusal (below). The runtime links to it with `[object] optional = ["dynreg_info"]` (patchkit resolves an optional
+count, and from byte 200 the page rows and their layout and the value of a free page row. Words 192, 196 and 244 to 256 (the view variable and builder, the three firmware functions of the unload refusal and the track count) are 0 since the archive commit; the offsets stay. The runtime links to it with `[object] optional = ["dynreg_info"]` (patchkit resolves an optional
 undefined symbol to 0 when no selected module defines it); without `core/dynreg` a file with `register` records is refused (`E_NO_REGISTRY`) and a
 file without records loads as before. The runtime's code names no device: the layouts are data.
 
@@ -73,7 +72,7 @@ builds more from them. What was found, and what the registry does (evidence in f
 | `mf_names[t]` {long, short, hint}, `mf_permit[t]`, `mf_pertype[t]` | name accessors, permission gate, per-type lookups | long and short point to strings in the registry's state; permission and per-type byte copied from the clone's entry, the hint likewise |
 | `mf_list_buf`, rank pairs, rank map, static sorted list | the list getter `FUN_40052a08` (static vector sorted once at first use) | nothing: the reserved types are in all of them from patch time, in type order, at the end |
 | the list the getter returns | the machine selection view | `dynreg_copy` (retargets the `std::copy` at the end of the getter) leaves out the types whose row has an empty name |
-| the machine selection view's item list | the SRC machine list | **the firmware builds it once at boot and keeps it.** `dynreg_view_hook` (a hook at the entry of the function that fills it, `FUN_40060f50`) remembers the view; after a change the registry calls that function again (it clears the items first) |
+| the machine selection view's item list | the SRC machine list | **the firmware builds it once at boot and keeps it.** The boot hook runs before the view exists, so the stock builder (`FUN_40060f50`) reads the rows. (Hot reload had `dynreg_view_hook` remember the view and the registry call the builder again after a change: archived.) |
 | parameter row (60 bytes) in `pf_table`, `params.rows` row | the parameter accessors, `pf_t2` (value-class object by template) | written from the spec: template words, min, max, default, name and short pointers, mirror index, kind word, 0x80 + slot |
 | page row (84 bytes) in `pages.rows` (Digitone II) | `mf_typemap0/1/2` (page count, descriptor, slot -> code), `mf_reader` (a machine with pages is its own type for every caller) | written from the PAGE record: name and title as std::string representations (not upper-cased, in the registry's state), nine codes, nine slots, `machine` last (the page belongs to the type from that store on) |
 | the DSP's type -> selector table (Digitakt II) | the DSP | not touched: it is part of the DSP image (reserved types select as type 0). Open |
@@ -83,7 +82,7 @@ a patched machine.
 
 ## Writing, publishing, and what must hold
 
-All of it runs in the UI task: `dkrt_load` and `dkrt_unload` are called from the UI-loop hook (`dkrt_tick`, mailbox) or from the menu, and the
+All of it runs in the main-OS task at boot (`dkrt_boot_hook`) or, for the DSP part's failure path, in the UI task, and the
 machine list, the descriptor dispatch and the parameter accessors are the UI task's. There is no second reader.
 
 1. **Check before any write** (`registry::check`, from the loader's check phase): header, device, record kinds and lengths, text fields, parameter
@@ -91,15 +90,12 @@ machine list, the descriptor dispatch and the parameter accessors are the UI tas
    built-in type, enough free reserved parameter rows (`E_PARAM_FULL`). A refused file changes no byte of any row or table (checked).
 2. **Order** (`registry::apply`, before `init`): parameter rows (they carry no visibility), then the page rows (their machine is not listed yet), then per machine: the row fields, the string representations,
    `mf_names`, permission, per-type byte, owner, and last the **name pointer, one aligned 32-bit store**: the row counts as used from that store
-   on (the list filter and the `E_TYPE_USED` test read it). Then the list the view keeps is rebuilt.
-3. **Unload** (`registry::remove`, after `fini`): the name pointer first (the row is hidden), then the row and tables, then the page rows (`machine` first),
-   then the parameter rows are reset to the reserved values, then the view list is rebuilt. Strings and representations live in the registry's state (about 2 KB of the runtime's bss), never in
+   on (the list filter and the `E_TYPE_USED` test read it). (Hot reload then rebuilt the list the view keeps: archived.)
+3. **Take-down** (`registry::remove`, after `fini`; at boot only for a failed DSP part): the name pointer first (the row is hidden), then the row and tables, then the page rows (`machine` first),
+   then the parameter rows are reset to the reserved values. Strings and representations live in the registry's state (about 2 KB of the runtime's bss), never in
    the arena, so no pointer in a row can dangle.
-4. **Refusal** (`registry::in_use`, called by `dkrt_unload` before anything is touched): the three firmware functions in `dynreg_info` (anchors
-   `cf.dynreg.project`, `cf.dynreg.kit_of`, `cf.dynreg.track_type`, the same code on both devices: `project()` is the lazily built Project singleton,
-   `kit_of(project)` the active kit, `track_type(kit, t)` the machine type of track `t`, -1 for track 16, 4 or 5 for a MIDI track) give the machine type of
-   each of the 16 tracks of the **active kit**; a track on a type this module registered makes `dkrt_unload` return `E_TYPE_IN_USE` (-26) with no change.
-   The other kits of the project, the 128 pattern kits' stored types and the sound pool are not looked at: a stored type that names a free row loads as below.
+4. **Refusal of an unload** (`registry::in_use`, the three firmware functions `cf.dynreg.project`, `kit_of`, `track_type`): archived with hot reload. There is no unload, so no
+   track can be left on a type with no row. The anchors and their port entries are removed; docs/plans/digikit-hot-reload.md lists them.
 5. A project (or a track) that names a type whose row is free behaves as on a gap row: the type byte stays; the row is a clone of type 0 with no knobs
    (the SRC page shows empty boxes); the permission, per-type byte and the DSP selector are type 0's.
 
@@ -114,14 +110,13 @@ Same rows and order, with differences that are data in `dynreg_info` or code in 
   the six bytes `jsr (A3); move.l D0,(4,A2)` at +0xde are replaced by a hook (`dynreg_list_hook`: `jsr dynreg_copy; move.l d0,4(a2)`; the displaced bytes are dropped).
   `dynreg_copy` is the same filter as on the Digitakt II.
 - The machine selection view's item builder is `FUN_4005b2c0(view)`, the same function (same `h_strict` hash) as the Digitakt II's `FUN_40060f50`; the view is built once at
-  boot and keeps its list, so the same view hook and rebuild are needed.
+  boot and keeps its list; the boot hook runs before it exists, so nothing rebuilds it.
 - The list order is that of `mf_list_buf` (stock order, then the machines at their positions; the reserved rows at the end, after MIDI); the group separator shows between
   MIDI and the first run-time machine.
 
 ## Limits and open items
 
 - 8 machines, 16 parameters and (Digitone II) 8 pages at a time (numbers are in `dynreg.s` and `module.toml`; more costs 64 + about 90 bytes per type, 60 + 28 per parameter, 84 per page).
-- The unload refusal looks at the active kit only (above).
 - The machine plays through the DSP as type 0 (SAMPLE) on the Digitakt II: the selector word of a reserved type is in the DSP image. Options: reserved rows with a fixed
   selector (a slice clone gets 5) refused for a clone of another type; or the Phase 5 SHARC side loads the selector words. A machine that is a
   data-only clone of SLICE is therefore not audio-complete yet. On the Digitone II an `own_dsp` machine renders silence until a DSP routine for its type is loaded (lane A).

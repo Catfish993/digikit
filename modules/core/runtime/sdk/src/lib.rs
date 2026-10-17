@@ -19,7 +19,7 @@ pub const DEVICE_DN2: u32 = 2;
 /// Slot 0 runs once per pass of the UI task's event loop (about 120 Hz), as `extern "C" fn(*const Api)`.
 pub const SLOTS: usize = 8;
 
-/// Result codes of `dkrt_load`, `dkrt_unload` and `Api::store_read` (negative = error).
+/// Result codes of `dkrt_load` and `Api::store_read` (negative = error).
 pub const OK: i32 = 0;
 pub const E_NOT_FOUND: i32 = -1; // no store, or no such file / module
 pub const E_BAD_STORE: i32 = -2; // store header or table check failed
@@ -32,7 +32,7 @@ pub const E_NOMEM: i32 = -8; // arena full
 pub const E_INIT: i32 = -9; // init returned non-zero
 pub const E_LOADED: i32 = -10; // a module of that name is loaded
 pub const E_SLOT: i32 = -11; // a slot it binds is taken
-pub const E_BUSY: i32 = -12; // a task is still inside the module
+pub const E_BUSY: i32 = -12; // a task is still inside the module (a boot-time DSP failure that takes the module down again)
 pub const E_TOO_BIG: i32 = -13; // larger than the staging buffer
 pub const E_TABLE_FULL: i32 = -14; // no free module record
 
@@ -44,12 +44,11 @@ pub const E_TYPE_RANGE: i32 = -22; // a machine type outside the reserved range,
 pub const E_TYPE_USED: i32 = -23; // the type number is in use
 pub const E_PARAM_FULL: i32 = -24; // no free reserved parameter row
 pub const E_PAGE_FULL: i32 = -25; // no free reserved page row (Digitone II)
-pub const E_TYPE_IN_USE: i32 = -26; // unload refused: a track of the active kit uses a machine of the module
+pub const E_TYPE_IN_USE: i32 = -26; // archived with hot reload (docs/plans/digikit-hot-reload.md): no code returns it now; the number stays reserved
 
-/// `dkrt_load` and `dkrt_unload` answer `LOADING` when they accepted the request and finish it over the next UI-loop passes (a
-/// module with DSP code: the transfer takes many audio blocks). The final result is `DkrtStatus::last_result` once
-/// `DkrtStatus::state` is back to `STATE_IDLE`. A module that is still loading is reported by `dkrt_module` with `state` `MOD_LOADING`
-/// and is not usable: its machine is not listed and its slots are not bound.
+/// The boot-time load of a module with DSP code answers `LOADING`: its ColdFire part is live, the DSP part follows over the first
+/// UI-loop passes (the transfer takes many audio blocks). The final result is in `DkrtBootInfo::results`. A module whose DSP part is
+/// still going is reported by `dkrt_module` with `state` `MOD_LOADING`.
 pub const LOADING: i32 = 1;
 
 /// Codes of the DSP side of a module (docs/design/digikit-dkm.md, "DSP section"): -30 to -39 belong to the DSP loader.
@@ -102,10 +101,8 @@ pub struct DkrtStatus {
     pub last_result: i32,
     pub loads: u32,
     pub slot_calls: u32,
-    /// `STATE_IDLE`, `STATE_LOADING` (a module's DSP code is being sent) or `STATE_UNLOADING`.
+    /// `STATE_IDLE` or `STATE_LOADING` (a module's DSP code is being sent).
     pub state: u32,
-    /// Load requests waiting behind the one in progress.
-    pub queued: u32,
     /// Bytes of the DSP area (0: the image has none) and of it free; the largest free range.
     pub dsp_size: u32,
     pub dsp_free: u32,
@@ -114,7 +111,7 @@ pub struct DkrtStatus {
 
 pub const STATE_IDLE: u32 = 0;
 pub const STATE_LOADING: u32 = 1;
-pub const STATE_UNLOADING: u32 = 2;
+pub const STATE_UNLOADING: u32 = 2; // archived with hot reload; never reported now
 
 /// `DkrtModule::state`.
 pub const MOD_LOADED: u32 = 0;
@@ -177,9 +174,9 @@ pub fn result_text(code: i32) -> &'static str {
     }
 }
 
-/// Mailbox commands (emulator and test use; a menu calls `dkrt_load` directly).
+/// Mailbox commands (emulator and test use). `CMD_LOAD` calls `dkrt_load`, which answers `E_BOOT_ONLY` once the boot is over; command
+/// 2 was `CMD_UNLOAD` (archived with hot reload, tag `digikit-hot-reload-v1`) and is answered `E_FORMAT`.
 pub const CMD_LOAD: u32 = 1;
-pub const CMD_UNLOAD: u32 = 2;
 /// `arg`: store paths, each NUL terminated, the list ended by an empty path (an empty list clears the selection):
 /// `dkrt_selection_set`. The answer is its result.
 pub const CMD_SELECT: u32 = 3;
@@ -195,6 +192,7 @@ pub const E_SEL_COUNT: i32 = -41; // more than `SEL_MAX` paths
 pub const E_SEL_WRITE: i32 = -42; // the firmware's block write failed
 pub const E_CARD_BUSY: i32 = -43; // `dkrt_restart`: a card transfer is in flight
 pub const E_SAFE_MODE: i32 = -44; // this boot is in safe mode: no module was loaded
+pub const E_BOOT_ONLY: i32 = -45; // `dkrt_load` after the boot hook: the module set is fixed per session (hot reload is archived)
 
 /// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
 /// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
@@ -242,11 +240,6 @@ pub struct DkrtBootInfo {
     /// Reserved (0). The boot does not wait for DSP code: the frames that carry it start later, so a module with DSP code is
     /// reported `LOADING` until its DSP part is in, over the first UI-loop passes.
     pub dsp_wait: u32,
-    /// Times the registry called the firmware's machine-list builder again (the view hook of `core/dynreg`): 0 for the loads of a
-    /// boot, because the view does not exist yet and the stock builder reads the rows when it is made.
-    pub view_rebuilds: u32,
-    /// The machine selection view's address as `core/dynreg` had recorded it when the boot hook began (0: not built yet).
-    pub view_at_boot: u32,
 }
 
 /// The selection record (docs/design/digikit-store.md): one sector, big endian, in two copies at the end of the store range.

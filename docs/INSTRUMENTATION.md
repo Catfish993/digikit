@@ -125,7 +125,7 @@ With either instrument armed the bus takes the single-step path: fused loops and
 are off (as with `--guard`), so a run is slower: DT2 1.16 boots to ready in about 15 s of wall time with
 both on (about 1 billion instructions).
 
-`packages/emulator/boot/examples/cf_script.rs` runs a patched image with a card through a JSON script of runs, pokes, peeks, waits and direct calls with these variables set; `tools/patchkit/pk_dkrt.py proof` and `tools/patchkit/pk_registry.py proof` are its users (findings 29 and 30; the second calls the firmware's own list getter through a stub it pokes into free RAM).
+`packages/emulator/boot/examples/cf_script.rs` runs a patched image with a card through a JSON script of runs, pokes, peeks, waits and direct calls with these variables set; `tools/patchkit/pk_dkrt.py proof` and `tools/patchkit/pk_cdemo.py proof` are its users (findings 29 and 35; the hot-load `pk_registry.py proof`, which called the firmware's own list getter through a stub it poked into free RAM, is archived with hot reload).
 
 ## Task stack high-water (ColdFire)
 

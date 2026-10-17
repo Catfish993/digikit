@@ -4,8 +4,7 @@
     uv run python -m tools.patchkit.pk_cdemo proof [--image dt2-1.17] [--keep DIR]
 
 Patches `core/runtime` into the stock image, packs `test/c-demo` (64-bit divide, remainder, multiply and shifts: libgcc helpers
-that pk_build links in from the -mcpu=54418 libgcc), puts it in a +Drive card's module store, boots, loads it through the
-mailbox, reads the module's result block through the address its `dkm_init` logged, and compares every word with Python's
+that pk_build links in from the -mcpu=54418 libgcc), puts it in a +Drive card's module store with a selection record, boots (the boot hook loads it), reads the module's result block through the address its `dkm_init` logged, and compares every word with Python's
 integer arithmetic. A V4e that met a 68020-only form in a helper would take an illegal-instruction exception instead, so a
 correct result is also the run-time proof that the helpers are ColdFire code. The write-watch (only the runtime and the arena
 write into `cf.expansion`) and the flush check run as in tools/patchkit/pk_dkrt.py.
@@ -29,7 +28,6 @@ from tools.patchkit.pk_dkrt import (
     ST_MODULES,
     ProofError,
     be32,
-    cmd_ops,
     sbe32,
 )
 
@@ -82,6 +80,7 @@ def proof(image: str, keep: Path | None = None) -> dict:
     pk_dkrt.pack(tools, "test/c-demo", store / "modules" / "c-demo.dkm")
     card = work / f"{device}.img"
     pk_dkrt.build_card(tools, folder, card, syx, device)
+    pk_dkrt.write_selection(card, ["modules/c-demo.dkm"])  # loaded by the boot hook
     st, arena = rt["state"], rt["arena"]
     region_lo = min(
         w["addr"]
@@ -100,7 +99,12 @@ def proof(image: str, keep: Path | None = None) -> dict:
     out_ptr = st + ST_LOG + 24  # value of log entry 0: the address of c_demo_out
     script = [
         {"op": "run", "insns": 30_000_000, "tag": "settle"},
-        *cmd_ops(rt, 1, "modules/c-demo.dkm", "load"),
+        {
+            "op": "peek",
+            "addr": hex(rt["sym"]["DKRT_BOOT"] + 4 * pk_dkrt.BOOT_FIELDS),
+            "len": 4,
+            "tag": "load:result",
+        },
         {"op": "peek", "addr": hex(st), "len": pk_dkrt.STATE_BYTES, "tag": "state"},
         {"op": "peek", "addr": hex(out_ptr), "len": 80, "tag": "out", "ptr": True},
     ]

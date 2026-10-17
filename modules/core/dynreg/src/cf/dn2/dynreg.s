@@ -52,22 +52,6 @@ dynreg_list_hook:
     move.l  %d0,4(%a2)
     jmp     _dr_t_copy + 6
 
-| dynreg_view_hook: the entry of the function that builds the machine selection view's item list from the list getter
-| (`FUN_4005b2c0(view)`, called once by the view's constructor at boot). The list is cached in the view, so the registry
-| rebuilds it after it changed the rows: the hook only remembers the view. Every register is preserved.
-    .globl dynreg_view_hook
-dynreg_view_hook:
-    move.l  %d0,-(%sp)
-    move.l  8(%sp),%d0
-    move.l  %d0,dynreg_view
-    move.l  (%sp)+,%d0
-    jmp     _dr_t_view
-
-    .bss
-    .balign 16                          | a cache line of its own: no code shares the line of a variable the CPU writes
-    .globl dynreg_view
-dynreg_view: .space 16
-
     .section .rodata
     .balign 4
     .globl dynreg_empty
@@ -114,8 +98,8 @@ dynreg_info:
     .long   8                           | 180 knobs per page
     .long   25                          | 184 sound-array slot of knob 0
     .long   0xd5                        | 188 the template of a free reserved parameter row (A Env Decay)
-    .long   dynreg_view                 | 192 address of the variable that holds the machine selection view (0 until it exists)
-    .long   _dr_f_build                 | 196 the function that builds that view's items: build(view)
+    .long   0                           | 192 (was the machine-view variable: archived with hot reload, docs/plans/digikit-hot-reload.md)
+    .long   0                           | 196 (was the view builder)
     .long   _dr_pg_rows                 | 200 page rows (pages.rows)
     .long   _dr_pg_row_size             | 204 page row size
     .long   _dr_pg_first                | 208 pages.first
@@ -127,7 +111,7 @@ dynreg_info:
     .long   44                          | 232 machine (the type the page belongs to)
     .long   48                          | 236 s0 .. s8 (nine sound-array slots)
     .long   0x7fffffff                  | 240 the `machine` value of a free page row (no type has it; not -1, which a track without a sound reads)
-    .long   _dr_f_project               | 244 function: the Project singleton, project() -> d0
-    .long   _dr_f_kit                   | 248 function: kit_of(project) -> the active kit
-    .long   _dr_f_track                 | 252 function: track_type(kit, track) -> the track's machine type (-1: no track)
-    .long   16                          | 256 tracks
+    .long   0                           | 244 (was project(); the in-use scan is archived)
+    .long   0                           | 248 (was kit_of)
+    .long   0                           | 252 (was track_type)
+    .long   0                           | 256 (was the track count)

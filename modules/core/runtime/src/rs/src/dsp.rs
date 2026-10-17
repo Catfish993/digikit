@@ -1,7 +1,7 @@
 //! The DSP side of run-time modules (docs/design/digikit-dkm.md "DSP section", docs/findings/32-runtime-dsp-machines.md).
 //!
 //! A `.dkm` may carry SHARC+ code and data for the DSP. The runtime places it in a range of the DSP area (the `_dl_area` of
-//! `core/dsp-link`, first fit, freed on unload), applies the relocations on the ColdFire, sends the bytes with `dl_send` and
+//! `core/dsp-link`, first fit, freed when the DSP part of a boot-time load fails), applies the relocations on the ColdFire, sends the bytes with `dl_send` and
 //! publishes the module's voice rows. The transfer takes many audio blocks, so a load is a state machine that the UI-loop hook
 //! advances (`step`); `dkrt_load` returns `LOADING` and the machine is listed only when the DSP code is acknowledged
 //! and the voice rows are in.
@@ -22,7 +22,6 @@ pub const MAX_ROWS: usize = 8;
 const MAX_VOICES: usize = 8;
 const MAX_RELOCS: u32 = 4096;
 const MAX_IMPORTS: u32 = 32;
-pub const QUEUE: usize = 4;
 const GRANULE: u32 = 64;
 const L2_BYTE_BASE: u32 = 0x2000_0000;
 const L2_SW_BASE: u32 = 0x00B8_0000;
@@ -128,8 +127,6 @@ pub struct DspState {
     pub pending: Pending,
     pub waiting: [Pending; crate::MAX_MODULES],
     pub nwait: u32,
-    pub queued: u32,
-    pub queue: [[u8; 64]; QUEUE],
 }
 
 #[no_mangle]
@@ -191,10 +188,6 @@ pub unsafe fn init_once() {
         i += 1;
     }
     d.magic = STATE_MAGIC;
-}
-
-pub fn busy() -> bool {
-    ds().phase != PH_IDLE
 }
 
 // ---- the area ----------------------------------------------------------------------------------------------------------
@@ -585,7 +578,7 @@ unsafe fn poll_done() -> Option<bool> {
     }
 }
 
-/// Write one word and wait for it (the UI task spins; a few audio blocks). Used on the unload and error paths.
+/// Write one word and wait for it (the UI task spins; a few audio blocks). Used on the error paths.
 unsafe fn write_word_blocking(word: u32, value: u32) -> bool {
     let mut n = 0;
     while !start_word(word, value) {
@@ -625,7 +618,7 @@ unsafe fn clear_rows(rec: usize) {
     }
 }
 
-/// Unload the DSP part of module record `rec`: its voice rows, then its range. (The machine row is already gone.)
+/// Take the DSP part of module record `rec` down (a failed boot-time load): its voice rows, then its range. (The machine row is already gone.)
 pub unsafe fn release(rec: usize) {
     let d = ds();
     if d.mod_len[rec] == 0 {
@@ -687,29 +680,21 @@ unsafe fn fail(code: i32) {
         arena::free(d.pending.send_buf as *mut u8);
         d.pending.send_buf = 0;
     }
-    if d.pending.early != 0 {
-        // the machine was published at boot: take it down again (rows, `fini`, memory)
-        crate::loader::undo_early(rec);
-    } else {
-        unreserve(rec);
-        crate::loader::abort_pending(&d.pending);
-    }
+    // the machine was published at boot: take it down again (rows, `fini`, memory)
+    crate::loader::undo_early(rec);
     crate::boot::note_result(d.pending.boot_idx, code);
     d.failures += 1;
     crate::st().last_result = code;
     next_job();
 }
 
-/// Advance the load in progress by what is ready now; start the next queued load when idle. Called once per UI-loop pass.
+/// Advance the load in progress by what is ready now. Called once per UI-loop pass.
 pub unsafe fn step() {
     let d = ds();
     if d.magic != STATE_MAGIC {
         return;
     }
     if d.phase == PH_IDLE {
-        if d.queued > 0 {
-            crate::loader::start_queued();
-        }
         return;
     }
     d.ticks += 1;
@@ -766,16 +751,8 @@ pub unsafe fn step() {
                 }
                 if row == MAX_ROWS {
                     // every row is in: list the machine, run init, publish the slots
-                    let r = if d.pending.early != 0 {
-                        OK
-                    } else {
-                        crate::loader::complete_pending(&d.pending)
-                    };
-                    crate::boot::note_result(d.pending.boot_idx, r);
-                    crate::st().last_result = r;
-                    if r != OK {
-                        d.failures += 1;
-                    }
+                    crate::boot::note_result(d.pending.boot_idx, OK);
+                    crate::st().last_result = OK;
                     next_job();
                     return;
                 }
@@ -810,45 +787,6 @@ pub unsafe fn step() {
             _ => return,
         }
     }
-}
-
-// ---- the queue of load requests behind the one in progress ---------------------------------------------------------------------
-
-/// Remember a path to load when the state machine is free; false when the queue is full.
-pub unsafe fn enqueue(path: *const u8) -> bool {
-    let d = ds();
-    if d.queued as usize >= QUEUE {
-        return false;
-    }
-    let slot = &mut d.queue[d.queued as usize];
-    let n = cstr_len(path, 63);
-    let mut i = 0;
-    while i < 64 {
-        slot[i] = if i < n { *path.add(i) } else { 0 };
-        i += 1;
-    }
-    d.queued += 1;
-    true
-}
-
-/// Take the oldest queued path into `out` (64 bytes); false when empty.
-pub unsafe fn dequeue(out: *mut u8) -> bool {
-    let d = ds();
-    if d.queued == 0 {
-        return false;
-    }
-    let mut i = 0;
-    while i < 64 {
-        *out.add(i) = d.queue[0][i];
-        i += 1;
-    }
-    let mut k = 1;
-    while k < d.queued as usize {
-        d.queue[k - 1] = d.queue[k];
-        k += 1;
-    }
-    d.queued -= 1;
-    true
 }
 
 pub unsafe fn state() -> u32 {

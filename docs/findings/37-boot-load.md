@@ -69,4 +69,4 @@ cases and one restart):
 - **Saving the working state before the reset** (finding 36, question 2): done in finding 40 (serialize + boot-record write, anchored on all four ports); the panel edits tried do not survive.
 - **The module store must keep clear of the record sectors** (`selection_sectors`): `plusdrive` still lets a store fill the whole range.
 - **A track that names a machine whose DSP part is not in yet** plays as type 0 for the first moments of a boot; saved projects keep the type byte.
-- **Hot-only code remains** (unload, queue, in-use scan, the view hook): the coordinator's archive commit removes it; `view_rebuilds` stays 0 at boot.
+- **Hot-only code removed** (lane r4, the Phase 6 archive commit; list in docs/plans/digikit-hot-reload.md): run-time unload, in-use scan, request queue, view hook and rebuild. `DkrtBootInfo::view_rebuilds` and `view_at_boot` went with them; the rows above that mention them are the measurement before the removal. **[D]** The equivalence scenarios (stock list takes the module, track type 18, PCM equal) pass without the view hook.

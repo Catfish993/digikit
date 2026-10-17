@@ -185,26 +185,3 @@ def test_digikit_scripts_are_registered():
     for name in ("digikit_main", "digikit_about"):
         s = panel_script.SCRIPTS[name]()
         assert [n for n, _ in s.frames][0] == "settings_digikit"
-    for name in ("digikit_errors", "digikit_gate"):
-        s = panel_script.SCRIPTS[name]()
-        assert [n for n, _ in s.frames][:2] == ["settings_digikit", "digikit_main"]
-    # the gate reads the module's counter through the runtime's log entry 0 (magic, three samples, then the marker `fini` left), twice more after unload
-    s = panel_script.digikit_gate_script(0x47E8C200)
-    peeks = [spec for _t, spec in s.events if spec.startswith("--peek-at")]
-    assert len(peeks) == 8 and all(":" in p.split()[1] for p in peeks)
-
-
-@pytest.mark.slow
-def test_gate_loads_and_unloads_from_the_menu(tmp_path):
-    """The Phase 4 gate on DT2 1.16 (about 30 s): tick dyn-demo, LOAD, its counter rises, ABOUT, the row is marked loaded,
-    untick, LOAD unloads, its counter stops; write-watch and flush check clean."""
-    if not config.stock("Digitakt_II_OS1.16.syx").exists():
-        pytest.skip("Digitakt_II_OS1.16.syx missing")
-    if not pk_toolchains.codegen_gcc_ready():
-        pytest.skip("Rust-for-ColdFire toolchain not installed")
-    r = subprocess.run(
-        ["uv", "run", "python", "-m", "tools.coldfire.digikit_menu_proof", "run", "--image", "dt2-1.16",
-         "--only", "digikit_gate,digikit_errors"],
-        cwd=ROOT, capture_output=True, text=True, timeout=900,
-    )  # fmt: skip
-    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]

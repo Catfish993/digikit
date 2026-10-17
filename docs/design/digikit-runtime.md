@@ -43,7 +43,7 @@ task, which also calls the card filesystem and block read, finding 23 S3), once 
 per million instructions in an idle emulator, **[D]** finding 29), before the task blocks, and nothing live is in d0/d1/a0/a1 there.
 It is not an interrupt, so the loader may block in the card read.
 
-`dkrt_tick` (a) polls the host mailbox for a load or unload command and (b) calls slot 0 when a module bound one, counting
+`dkrt_tick` (a) polls the host mailbox for a command (selection, restart) and (b) calls slot 0 when a module bound one, counting
 the call in `entered[0]`.
 
 ## C ABI (stable names; declared in `modules/core/runtime/sdk/src/lib.rs`, crate `dkrt-sdk`)
@@ -51,8 +51,8 @@ the call in `entered[0]`.
 All three are for the UI task (or another task context); not from an interrupt; not reentrant. Results are `i32`; no small-struct
 results.
 
-    int32_t dkrt_load(const char *path);            // "modules/dyn-demo.dkm": store-relative; 0 or a negative E_* code
-    int32_t dkrt_unload(const char *name);          // the module's name ("test/dyn-demo")
+    int32_t dkrt_load(const char *path);            // "modules/dyn-demo.dkm": store-relative; 0 or a negative E_* code. Only the
+                                                    //   boot hook loads: any other caller gets E_BOOT_ONLY (-45)
     void    dkrt_status(DkrtStatus *out);           // magic 'DKRT', runtime version, device, arena base/size/free/largest,
                                                     //   module count, ticks, last result, loads, slot calls
     int32_t dkrt_module(uint32_t index, DkrtModule *out);   // name, version, base, size, slot mask, store path; E_NOT_FOUND past the end
@@ -60,8 +60,8 @@ results.
 On an error nothing is left behind. Codes: `E_NOT_FOUND` -1 (no store / no such file or module), `E_BAD_STORE` -2, `E_READ` -3,
 `E_SHA` -4, `E_FORMAT` -5, `E_RUNTIME` -6, `E_IMPORT` -7, `E_NOMEM` -8, `E_INIT` -9, `E_LOADED` -10, `E_SLOT` -11, `E_BUSY` -12,
 `E_TOO_BIG` -13, `E_TABLE_FULL` -14. The run-time registry's codes are in the same crate and the same table, -20 to -29 (`E_NO_REGISTRY` -20, `E_REG_DEVICE` -21,
-`E_TYPE_RANGE` -22, `E_TYPE_USED` -23, `E_PARAM_FULL` -24, `E_PAGE_FULL` -25, `E_TYPE_IN_USE` -26: `dkrt_unload` refuses a module whose machine a track
-of the active kit uses, docs/design/digikit-registry.md); -30 to -39 are the DSP side's. Codes are only added, never renumbered; `result_text` (menu text)
+`E_TYPE_RANGE` -22, `E_TYPE_USED` -23, `E_PARAM_FULL` -24, `E_PAGE_FULL` -25, `E_TYPE_IN_USE` -26: reserved; it was the unload refusal of hot reload, which is archived,
+docs/design/digikit-registry.md); -30 to -39 are the DSP side's. Codes are only added, never renumbered; `result_text` (menu text)
 covers -1 to -14 and shows `ERROR` for the others until a menu text is added. The addresses of these functions are symbols of the patch plan (`plan.json`
 `symbols`: `core/runtime@VERSION:dkrt_load`, ...). The DIGIKIT menu (`core/digikit-menu`, which `requires` this module) names
 the four as undefined symbols of its own object and patchkit links them: there is no table and no stand-in. `DkrtStatus`,
@@ -84,18 +84,18 @@ leave them undefined, which is not done in v0 **[O]**.
 ### Slots
 
 `SLOTS = 8` function pointers in `DKRT_STATE`. A module binds slot n by exporting `dkm_slot_<n>`; the loader publishes it after
-`init` with one aligned 32-bit store and unload clears it first. Slot 0 is called once per UI-loop pass as
+`init` with one aligned 32-bit store; the take-down of a boot-time DSP failure clears it first. Slot 0 is called once per UI-loop pass as
 `void (*)(const Api *)`. Slots 1 to 7 are bound but nothing calls them yet (later hooks: the sequencer, key handlers, ...).
-`entered[n]` counts tasks inside slot n's function (maintained by the caller of the slot); unload spins on it (2 000 000
-iterations) after clearing the slot and, if it never drops, restores the slot and returns `E_BUSY`. Only slot 0, from the UI
-task, exists today, so the count is 0 whenever unload runs from the same task.
+`entered[n]` counts tasks inside slot n's function (maintained by the caller of the slot); the take-down (`loader::unload_rec`, used only
+when the DSP part of a boot-time load fails) spins on it (2 000 000 iterations) after clearing the slot and, if it never drops, restores the
+slot and returns `E_BUSY`. Only slot 0, from the UI task, exists today, so the count is 0 when it runs from the same task.
 
 ### Mailbox (emulator, tests)
 
-`DKRT_MAILBOX {cmd, seq, result, arg[96]}`: write the NUL-terminated path or name into `arg`, then `cmd` (1 load, 2 unload); the
+`DKRT_MAILBOX {cmd, seq, result, arg[96]}`: write the NUL-terminated path or name into `arg`, then `cmd` (1 load, which now answers `E_BOOT_ONLY`; 3 to 5 selection and
+restart; 2 was unload and is answered `E_FORMAT`); the
 next `dkrt_tick` runs it, stores `result`, adds one to `seq` and zeroes `cmd`. The emulator control socket does this with
-`mem.cf.poke` (`tools/patchkit/pk_dkrt.py` uses the `cf_script` example for the same pokes). A hardware menu calls `dkrt_load`
-directly instead.
+`mem.cf.poke` (`tools/patchkit/pk_dkrt.py` uses the `cf_script` example for the same pokes). The menu calls `dkrt_selection_get`/`set`, `dkrt_restart`, `dkrt_boot_info`, `dkrt_status` and `dkrt_module` directly (finding 38).
 
 ## Arena allocator
 
@@ -105,13 +105,13 @@ block is merged with its neighbours. 524 288 bytes minus 16 at start. `free` ign
 ## Safety rules kept
 
 - The loader reads and checks everything before the first write to the arena (`E_SHA`, `E_IMPORT`, `E_FORMAT`, ... leave the
-  arena byte for byte unchanged; checked by comparing the whole arena before and after).
+  arena untouched; checked in `pk_dkrt proof` by the first module landing at the arena's first block after three refused files).
 - Code written through the data cache is pushed (`cpushl bc`, every 16-byte line of the block) before it can be fetched; the
   emulator's flush check reports 0 hits, and reports hits when the flush is disabled (finding 29).
 - Writers into `cf.expansion` are the runtime's code and code running from the arena; the write watch sees nothing else.
 - Slots are published after `init` and cleared before `fini`; the runtime never runs a partly loaded module.
-- v0 does not unload a module that something else still points into (a registry row, a machine in a project); that comes with
-  the registry (Phase 5).
+- There is no run-time unload: the module set is fixed per session (hot reload is archived, docs/plans/digikit-hot-reload.md, tag
+  `digikit-hot-reload-v1`; `git revert` of the Phase 6 archive commit restores it).
 
 ## Limits (v0)
 
@@ -130,29 +130,25 @@ A `.dkm` with a DSP section (`docs/design/digikit-dkm.md`) loads in two parts. `
 shared tail of a load. Link: `dl_send`, `dl_send_win`, `dl_poll` of `core/dsp-link` and `dyndsp_info` of `core/dyndsp`, all optional
 (`[object] optional`): an image without them refuses a file that has a DSP section with `E_NO_DSP`.
 
-1. **Synchronous part** (inside `dkrt_load`, as before): the file's checks, now including the DSP section (`dsp::check`: device,
+1. **Synchronous part** (inside the load, in the boot hook): the file's checks, now including the DSP section (`dsp::check`: device,
    bounds, imports resolve in `dyndsp_info`, free voice rows, voice types in 16..23 and unused). Then `dsp::reserve` takes a range of the
    DSP area (first fit over the per-module table `DKRT_DSP.mod_off/mod_len`, 64-byte granules, aligned for the object), copies the image
    into an arena block and applies the relocations there (`abs24`/`abs32`, shifts for the placement, import values), and claims the
-   voice rows. The ColdFire image is copied, relocated and flushed as before, the `register` records are copied into the arena (the
-   staging buffer will be reused), the module record gets `used = 2` (loading) and `dkrt_load` returns `LOADING` (1).
+   voice rows. The ColdFire image is copied, relocated and flushed, the machine and parameter rows, `init` and the slots go live at once
+   (the DSP frames do not flow yet at the task entry; see "Boot-time loading"), and the load returns `LOADING` (1).
 2. **Asynchronous part**, one step per UI-loop pass (`dsp::step`, called from `dkrt_tick`): `PH_SEND` starts `dl_send` of the image to the
    reserved range and polls `dl_poll`; at DONE (the DSP has the bytes and has invalidated its instruction caches) `PH_ROWS` publishes each
-   voice row with two one-word `dl_send_win(1, ...)` transfers (pc, then type) and waits for each; then `loader::complete_pending` writes
-   the machine and parameter rows (`registry::apply`: the machine is listed from this point), runs `init`, binds the slots, sets
-   `used = 1`. Any failure (`dl` error, 6000 passes without progress) clears the rows it published, frees the range and the arena blocks
-   and leaves `last_result` at `E_DSP_XFER`; nothing of the module remains.
-3. **Requests that arrive meanwhile** are not lost: `dkrt_load` queues up to four paths and returns `LOADING`; the next one starts when the
-   machine is idle (`loader::start_queued`; a failure of a queued load shows in `last_result`). `dkrt_unload` of a module that is loading, or
-   while any load is in flight, answers `E_BUSY`.
-4. **Unload** of a module with DSP code: slots cleared, wait for tasks inside, `fini`, then the machine row (`registry::remove`), then the
-   DSP voice rows (blocking: the UI task writes the type word `0xffffffff`, about 10 audio blocks, bounded by a spin limit), then the
-   range is free and the arena block is returned. The rows are freed type first so the render scan skips them at once.
+   voice row with two one-word `dl_send_win(1, ...)` transfers (pc, then type) and waits for each; then the boot report gets the result.
+   Any failure (`dl` error, 6000 passes without progress) clears the rows it published, takes the module down again
+   (`loader::undo_early`: slots, `fini`, machine rows, range, arena block) and leaves `last_result` at `E_DSP_XFER`.
+   Several modules queue behind each other in `DspState.waiting`, one transfer at a time.
 
-Reporting: `DkrtStatus.state` (`STATE_IDLE` 0, `STATE_LOADING` 1), `queued`, `dsp_size`, `dsp_free`, `dsp_largest` (appended fields);
+(Hot reload archived: a load while the firmware ran used `used = 2`, a request queue of four paths, `loader::start_queued`,
+`loader::complete_pending` and an unload that freed the voice rows and the range in reverse order. Those are described in
+docs/plans/digikit-hot-reload.md and restored by reverting the archive commit.)
+
+Reporting: `DkrtStatus.state` (`STATE_IDLE` 0, `STATE_LOADING` 1), `dsp_size`, `dsp_free`, `dsp_largest`;
 `DkrtModule.state` (`MOD_LOADED`, `MOD_LOADING`) and `dsp_size`; `last_result` is `LOADING` (1) from the accept until the final result.
-`dkrt_module` lists a loading module, so the menu marks its row; the menu treats `LOADING` as accepted (`core/digikit-menu`, one line).
-The host mailbox answers `LOADING` in `result` and the final result is in `DKRT_STATE.last_result` once `DKRT_DSP.phase` is 0.
 `DKRT_DSP` (a symbol of the plan) is the loader's state for tools: phase, step, counters (`transfers`, `row_writes`, `failures`), per-module
 range, per-row type/owner.
 
@@ -167,8 +163,10 @@ The module set is fixed for a session. The selection is a record in two sectors 
 **Hook.** `dkrt_boot_hook` (`src/cf/tramp.s`) is a `hook` op at the entry of the main-OS task (anchor `dkrt.hook.boot`, found by the words
 of the prologue; the displaced `link`/`movem` run in the tail). Why there: the block read exists and nothing of the UI does. The MainScreenView, and with it the machine selection view that reads the machine list **once**, is made by one of
 the singletons the task builds first: the first design hooked the call that uses the MainScreenView (finding 36) and measured the view
-already built there (`DkrtBootInfo::view_at_boot`), so the registry had to rebuild its list. At the task entry `view_at_boot` is 0 and
-`view_rebuilds` stays 0: the stock builder reads the rows, no view hook runs at boot.
+already built there, so the registry had to rebuild its list. At the task entry the view does not exist yet: the stock builder reads the
+rows, and the view hook and the rebuild (`dynreg_view_hook`, `registry::refresh_view`) are gone with the archive commit. (Proof that the boot
+path does not need them: the equivalence scenarios of tests/digikit, where the stock list takes the run-time machine and the track gets its
+type, pass without them; before the removal `view_rebuilds` was 0 at every boot, finding 37.)
 
 **Sequence** (`boot.rs`, `dkrt_boot`): read both copies (`sel`), pick the valid one with the higher sequence number; decide safe mode (flag
 bit 0, the key, or a boot counter of 2 or more); raise the boot counter (one copy, the one that is not current, `seq + 1`) before
@@ -179,7 +177,7 @@ reported in `DkrtBootInfo::results`, the others load). The first pass of the UI 
 therefore published in two steps: the CF part at once (machine and parameter rows, `init`, slots; `used = 1`), the DSP part queued in the
 state machine of finding 32 (`Pending.early`), which sends the image and publishes the voice rows over the first UI-loop passes. Jobs
 queue (`DspState.waiting`), one transfer at a time. The result of a module shows `LOADING` until then; a failure of the DSP part takes the
-module down again (`loader::undo_early` = the unload path). Until the voice row is in, a saved track on the machine plays as type 0.
+module down again (`loader::undo_early`, the only user of the take-down). Until the voice row is in, a saved track on the machine plays as type 0.
 
 **API** (C ABI, `dkrt-sdk`): `dkrt_selection_get(out *mut DkrtSelection) -> i32`, `dkrt_selection_set(sel *const DkrtSelection) -> i32`
 (0, `E_SEL_PATH`, `E_SEL_COUNT`, `E_SEL_WRITE`), `dkrt_restart() -> i32` (returns only when it refuses: `E_CARD_BUSY` when the eSDHC

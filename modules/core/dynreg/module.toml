@@ -20,8 +20,6 @@ ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
 # - 8 machine rows (the type numbers dynamic_first ..= last of core/machines types.toml, 16 to 23) and 16 parameter rows
 #   that look like the rows of a built-in machine with no name. The machine rows are listed (position = the end), so the
 #   firmware's list, rank and name tables span them; a row whose name is empty is skipped when the list is returned.
-# - `dynreg_view_hook` remembers the machine selection view (the firmware builds its item list once, at boot, from the getter):
-#   the registry calls the view's build function again after it changed the rows.
 # - `dynreg_copy` retargets the copy at the end of the machine list getter (`std::copy` of the sorted static list into the
 #   returned vector) and leaves out the types whose row is still empty.
 # - `dynreg_info` is the table of addresses and row layout that the runtime's registry reads (core/runtime, optional link).
@@ -29,8 +27,9 @@ ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
 # Digitone II: the same, and a page row per machine: a machine with a page row is its own type for the page and draw code
 # (core/machines), the knobs are the page's columns. Eight page rows are reserved (their `machine` is a value no type has).
 #
-# `cf.dynreg.project`, `cf.dynreg.kit_of` and `cf.dynreg.track_type` are three firmware functions (on both devices) with which
-# the runtime reads the machine type of each of the 16 tracks of the active kit before it gives a machine back.
+# Archived with hot reload (docs/plans/digikit-hot-reload.md, tag digikit-hot-reload-v1): the view hook (`dynreg_view_hook`, the
+# `cf.dynreg.msv_build` anchor) and the in-use anchors (`cf.dynreg.project`, `kit_of`, `track_type`). At boot the rows are in place
+# before the stock builder reads the list, so nothing rebuilds the view.
 #
 # The runtime fills and clears the rows. With this module the rows read as gap rows (clone of type 0, no name), which is
 # also what a project that names an unloaded run-time machine gets.
@@ -56,11 +55,6 @@ _dr_p_row_size = "params.row_size"
 _dr_p_first = "params.first"
 _dr_p_count = "params.count"
 _dr_p_dyn0 = "params.dp0.index"
-_dr_t_view = "hook.cf.dynreg.msv_build.tail"
-_dr_f_build = "cf.dynreg.msv_build"
-_dr_f_project = "cf.dynreg.project"
-_dr_f_kit = "cf.dynreg.kit_of"
-_dr_f_track = "cf.dynreg.track_type"
 
 
 [[object]]
@@ -87,12 +81,7 @@ _dr_pg_rows = "pages.rows"
 _dr_pg_row_size = "pages.row_size"
 _dr_pg_first = "pages.first"
 _dr_pg_dyn0 = "pages.dpg0.index"
-_dr_t_view = "hook.cf.dynreg.msv_build.tail"
 _dr_t_copy = "cf.dynreg.list_copy"
-_dr_f_build = "cf.dynreg.msv_build"
-_dr_f_project = "cf.dynreg.project"
-_dr_f_kit = "cf.dynreg.kit_of"
-_dr_f_track = "cf.dynreg.track_type"
 
 # the copy at the end of the machine list getter: `jsr copy(begin, end, dest)`, result in d0 = the end of the copy
 [[op]]
@@ -115,29 +104,6 @@ devices = ["dn2"]
 [[claim]]
 resource = "cf.dynreg.list_copy"
 
-# the entry of the function that fills the machine selection view's items from the getter (the view caches the list)
-[[op]]
-op = "hook"
-cpu = "cf"
-anchor = "cf.dynreg.msv_build"
-offset = 0
-to = "dynreg_view_hook"
-displaced = "run"
-devices = ["dt2", "dn2"]
-
-[[claim]]
-resource = "cf.dynreg.msv_build"
-
-[[anchor_rule]]
-name = "cf.dynreg.msv_build"
-devices = ["dt2", "dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "aba88709b609b69b6441121c296634f8"
-offset = 0x0
-len = 8
-mark = "D"
-
 [[anchor_rule]]
 name = "cf.dynreg.list_copy"
 devices = ["dt2"]
@@ -149,36 +115,6 @@ len = 6
 mark = "D"
 
 [[anchor_rule]]
-name = "cf.dynreg.project"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "ec70a039cd46fc8071a7e84112decfb1"
-offset = 0x0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.dynreg.kit_of"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "f29fb6421b637b6883ebb6d384a09179"
-offset = 0x0
-len = 6
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.dynreg.track_type"
-devices = ["dt2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "9a76292be32cf9c7a8fd2e7c031c41d9"
-offset = 0x0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
 name = "cf.dynreg.list_copy"
 devices = ["dn2"]
 cpu = "cf"
@@ -186,36 +122,6 @@ kind = "cf_func"
 hash = "69828342bcd67f7587f7d51d4c4a6575"
 offset = 0xde
 len = 6
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.dynreg.project"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "e722721313b9899418dac1e1d039205c"
-offset = 0x0
-len = 4
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.dynreg.kit_of"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "f29fb6421b637b6883ebb6d384a09179"
-offset = 0x0
-len = 6
-mark = "D"
-
-[[anchor_rule]]
-name = "cf.dynreg.track_type"
-devices = ["dn2"]
-cpu = "cf"
-kind = "cf_func"
-hash = "7f68bc71629aaed41f2ffa075e03c222"
-offset = 0x0
-len = 4
 mark = "D"
 
 # ---- reserved rows -------------------------------------------------------------------------------------------------------

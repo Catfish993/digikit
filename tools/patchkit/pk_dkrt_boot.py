@@ -68,7 +68,12 @@ SEL_MAX, SEL_PATH = 8, 56
 STORE_FIRST, STORE_SECTORS = 0x38000, 0x6000
 SECTOR_A = STORE_FIRST + STORE_SECTORS - 2
 SECTOR_B = STORE_FIRST + STORE_SECTORS - 1
-CMD_LOAD, CMD_UNLOAD, CMD_SELECT, CMD_RESTART, CMD_SELECT_ONE = 1, 2, 3, 4, 5
+CMD_LOAD, CMD_SELECT, CMD_RESTART, CMD_SELECT_ONE = (
+    1,
+    3,
+    4,
+    5,
+)  # command 2 was CMD_UNLOAD (archived)
 SAFE_NAMES = {0: "none", 1: "counter", 2: "key", 3: "flag"}
 BI_FIELDS = [
     "magic",
@@ -295,8 +300,6 @@ class BootRig(M.Rig):
         d["results"] = res[: d["count"]] if d["count"] else res[:0]
         d["all_results"] = res
         d["dsp_wait"] = self.w(self.boot_sym + 4 * (len(BI_FIELDS) + SEL_MAX))
-        d["view_rebuilds"] = self.w(self.boot_sym + 4 * (len(BI_FIELDS) + SEL_MAX + 1))
-        d["view_at_boot"] = self.w(self.boot_sym + 4 * (len(BI_FIELDS) + SEL_MAX + 2))
         d["reason_name"] = SAFE_NAMES.get(d["reason"], "?")
         return d
 
@@ -453,11 +456,6 @@ class Proof:
                 and info["loaded"] == n
                 and info["safe"] == 0,
                 f"{info['results']} dsp_wait {info['dsp_wait']}",
-            )
-            self.check(
-                "no view hook and no second list build: the stock builder read the rows",
-                info["view_rebuilds"] == 0,
-                f"{info['view_rebuilds']} rebuilds by the registry, view at boot {info['view_at_boot']:#x}",
             )
             rec = current(run.sel_records())
             self.check(

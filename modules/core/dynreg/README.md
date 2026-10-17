@@ -5,8 +5,7 @@ Reserves machine, parameter and (Digitone II) page rows that modules loaded at r
 leaves them out until a module has filled them. Needs `core/runtime`, `core/machines` and `core/params` (added automatically). Digitakt II OS 1.16
 and 1.17, Digitone II OS 1.11 and 1.12, emulator only.
 
-It also anchors three firmware functions (`cf.dynreg.project`, `kit_of`, `track_type`) with which the runtime refuses to unload a machine a track of
-the active kit uses.
+The machine-view hook and the three in-use anchors of hot reload are archived (`docs/plans/digikit-hot-reload.md`).
 
 How it works and its limits: `docs/design/digikit-registry.md`. Test modules: `test/dyn-xslice`, `test/dyn-params` (Digitakt II), `test/dyn-dn2`
-(Digitone II). Anchor rules: `uv run python -m tools.patchkit.pk_dynreg_rules --device dt2|dn2`.
+(Digitone II). Anchor rules: `uv run python -m tools.patchkit.pk_dynreg_rules --device dn2`.

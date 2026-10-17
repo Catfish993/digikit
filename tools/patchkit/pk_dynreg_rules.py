@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Print the `[[anchor_rule]]` blocks of modules/core/dynreg (the run-time registry's ColdFire sites).
 
-    uv run python -m tools.patchkit.pk_dynreg_rules [--device dt2|dn2] [--check IMAGE ...]
+    uv run python -m tools.patchkit.pk_dynreg_rules [--device dn2] [--check IMAGE ...]
 
-The sites are the machine selection view's item builder (the view caches the machine list: `cf.dynreg.msv_build`), the
-copy that ends the machine list getter (`cf.dynreg.list_copy`) and the three functions the unload refusal calls to read the
-machine type of each track of the active kit (`cf.dynreg.project`, `cf.dynreg.kit_of`, `cf.dynreg.track_type`). Each rule
+The only site (Digitone II; the Digitakt II rule is written by hand) is the copy that ends the machine list getter (`cf.dynreg.list_copy`). (The machine selection view's item builder,
+`cf.dynreg.msv_build`, and the three functions of the unload refusal, `cf.dynreg.project`, `kit_of` and `track_type`, were archived
+with hot reload: docs/plans/digikit-hot-reload.md.) Each rule
 names its function by the cfdb `h_strict` hash (address operands masked; no firmware bytes), the ordinal among functions
 that share the hash, and the offset and length of the site (same scheme as tools/patchkit/pk_machine_rules.py).
 Reference addresses: Digitakt II 1.17 and Digitone II 1.12 (findings 30 and 33). `--check` resolves every rule on other
@@ -21,24 +21,11 @@ from tools.patchkit import pk_machine_rules as base
 
 # (anchor name, byte address, length) per device, on the reference image
 SITES: dict[str, tuple[str, tuple[tuple[str, int, int], ...]]] = {
-    "dt2": (
-        "dt2-1.17",
-        (
-            ("cf.dynreg.msv_build", 0x40060F50, 8),
-            ("cf.dynreg.project", 0x40198B7E, 4),
-            ("cf.dynreg.kit_of", 0x40041D24, 6),
-            ("cf.dynreg.track_type", 0x40036266, 4),
-        ),
-    ),
     "dn2": (
         "dn2-1.12",
         (
-            ("cf.dynreg.msv_build", 0x4005B2C0, 8),
             # the final `jsr (A3); move.l D0,(4,A2)` of the list getter: copy(static list) -> the returned vector
             ("cf.dynreg.list_copy", 0x4004D994, 6),
-            ("cf.dynreg.project", 0x4018AC5A, 4),
-            ("cf.dynreg.kit_of", 0x4003E41A, 6),
-            ("cf.dynreg.track_type", 0x4003134E, 4),
         ),
     ),
 }

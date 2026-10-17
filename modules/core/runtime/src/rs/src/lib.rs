@@ -3,7 +3,7 @@
 //! What it does (docs/plans/digikit-runtime.md, docs/design/digikit-runtime.md): reads `.dkm` module files from the card
 //! module store with the firmware's own block read, checks them, copies and relocates them into a private arena, flushes
 //! the caches, calls `init`, binds the module's slots. A hook in the UI task's event loop (`dkrt_tick`) polls a mailbox
-//! for host-requested loads and calls slot 0.
+//! for host commands (the selection, the restart) and calls slot 0.
 //!
 //! Rules: task context only (never from an interrupt); no `core::fmt`; every `extern "C"` function takes and returns
 //! integers or pointers. Built with rustc_codegen_gcc for -mcpu=54418 (finding 26).
@@ -342,20 +342,13 @@ pub unsafe fn init_once() {
 // ---- the public C ABI ----------------------------------------------------------------------------------------------------
 
 /// Load the module file `path` (NUL-terminated, relative to the store root, for example "modules/dyn-demo.dkm").
-/// Returns 0 or a negative `E_*` code; on an error nothing was left behind. Task context only; not reentrant.
+/// Returns 0 or a negative `E_*` code; on an error nothing was left behind. Task context only; not reentrant. Only the boot hook
+/// loads: the module set is fixed per session, so every other caller gets `E_BOOT_ONLY` (hot reload and `dkrt_unload` are archived,
+/// tag `digikit-hot-reload-v1`, docs/plans/digikit-hot-reload.md).
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_load(path: *const u8) -> i32 {
     init_once();
     let r = loader::load(path);
-    st().last_result = r;
-    r
-}
-
-/// Unload the module called `name` (NUL-terminated): clear its slots, wait for tasks inside it, `fini`, free.
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_unload(name: *const u8) -> i32 {
-    init_once();
-    let r = loader::unload(name);
     st().last_result = r;
     r
 }
@@ -388,7 +381,6 @@ pub unsafe extern "C" fn dkrt_status(out: *mut DkrtStatus) {
     o.loads = s.loads;
     o.slot_calls = s.slot_calls;
     o.state = dsp::state();
-    o.queued = dsp::ds().queued;
     o.dsp_size = dsp::area_bytes();
     let (dfree, dlargest) = dsp::area_stats();
     o.dsp_free = dfree;
@@ -514,8 +506,6 @@ pub unsafe extern "C" fn dkrt_tick() {
         // an if chain, not a `match`: a dense match becomes a PC-relative jump table, which is not ColdFire code
         let r = if cmd == CMD_LOAD {
             dkrt_load(mb.arg.as_ptr())
-        } else if cmd == CMD_UNLOAD {
-            dkrt_unload(mb.arg.as_ptr())
         } else if cmd == CMD_SELECT {
             mailbox_select(mb.arg.as_ptr(), 2)
         } else if cmd == CMD_SELECT_ONE {

@@ -39,20 +39,6 @@
   },
   {
    "addend": 0,
-   "offset": 104,
-   "section": ".text",
-   "symbol": ".sec..bss",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 112,
-   "section": ".text",
-   "symbol": "_dr_t_view",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
    "offset": 16,
    "section": ".rodata",
    "symbol": "_dr_rows",
@@ -155,74 +141,26 @@
    "section": ".rodata",
    "symbol": ".sec..rodata",
    "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 196,
-   "section": ".rodata",
-   "symbol": ".sec..bss",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 200,
-   "section": ".rodata",
-   "symbol": "_dr_f_build",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 248,
-   "section": ".rodata",
-   "symbol": "_dr_f_project",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 252,
-   "section": ".rodata",
-   "symbol": "_dr_f_kit",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 256,
-   "section": ".rodata",
-   "symbol": "_dr_f_track",
-   "type": "cf.32"
   }
  ],
  "sections": [
   {
    "align": 4,
-   "hex": "4feffff448d7040c206f0010222f0014226f0018b1c1643c201824000482000000000c82000000086426068200000000048200000000263c000000004c0238000683000000002443246a00384a1267c422c060c020094cd7040c4fef000c4e752f00202f000823c000000000201f4ef900000000",
+   "hex": "4feffff448d7040c206f0010222f0014226f0018b1c1643c201824000482000000000c82000000086426068200000000048200000000263c000000004c0238000683000000002443246a00384a1267c422c060c020094cd7040c4fef000c4e75",
    "kind": "text",
    "name": ".text",
-   "size": 116
-  },
-  {
-   "align": 16,
-   "hex": "",
-   "kind": "bss",
-   "name": ".bss",
-   "size": 16
+   "size": 96
   },
   {
    "align": 4,
-   "hex": "0000000044594e5200000002000000010000000000000000000000000000000000000000000000080000000000000000000000000000000000000004000000080000002c0000003000000034000000380000003c000000000000000000000000000000000000000000000000000000100000003c000000080000000000000000000001050000010000000101000001020000001400000106000001070000002000000024000001030000002c0000010400000034000000380000000800000000000000d10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010",
+   "hex": "0000000044594e5200000002000000010000000000000000000000000000000000000000000000080000000000000000000000000000000000000004000000080000002c0000003000000034000000380000003c000000000000000000000000000000000000000000000000000000100000003c000000080000000000000000000001050000010000000101000001020000001400000106000001070000002000000024000001030000002c0000010400000034000000380000000800000000000000d10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
    "kind": "data",
    "name": ".rodata",
    "size": 264
   }
  ],
- "source_sha256": "70e87bd11d32b4c62caab958df3bd6a91affc2ed414c63302cc8fc91b3c1a02b",
+ "source_sha256": "c32ea12c92d73c20ae04e28bf31a9673e3308f558c63507357fa51f555b37127",
  "symbols": [
-  {
-   "global": false,
-   "name": ".sec..bss",
-   "section": ".bss",
-   "value": 0
-  },
   {
    "global": false,
    "name": ".sec..rodata",
@@ -238,30 +176,6 @@
   {
    "global": true,
    "name": "_dr_dyn0",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "_dr_f_build",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "_dr_f_kit",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "_dr_f_project",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "_dr_f_track",
    "section": null,
    "value": 0
   },
@@ -339,12 +253,6 @@
   },
   {
    "global": true,
-   "name": "_dr_t_view",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
    "name": "dynreg_copy",
    "section": ".text",
    "value": 0
@@ -360,25 +268,13 @@
    "name": "dynreg_info",
    "section": ".rodata",
    "value": 4
-  },
-  {
-   "global": true,
-   "name": "dynreg_view",
-   "section": ".bss",
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "dynreg_view_hook",
-   "section": ".text",
-   "value": 96
   }
  ],
  "toolchain": {
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "32",
+  "instructions_redecoded": "27",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

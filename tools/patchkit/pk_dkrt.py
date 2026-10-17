@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Run the digikit runtime (core/runtime) in the emulator: patch, pack modules, build a card, boot, load, observe.
+"""Run the digikit runtime (core/runtime) in the emulator: patch, pack modules, build a card, boot, observe.
 
     uv run python -m tools.patchkit.pk_dkrt proof [--image dt2-1.16] [--keep DIR] [--control]
 
-`proof` is the Phase 3 gate on one image (docs/findings/29-runtime-v0.md): it patches core/runtime into the stock firmware,
-packs test/dyn-demo (and two broken variants) into `.dkm` files, builds a +Drive card with them in the module store, boots
-the patched firmware with that card through packages/emulator/boot/examples/cf_script.rs, then drives the runtime through its
-mailbox (a host poke, the same path a menu would call directly): a load that must be refused (bad sha256), one that must be
-refused (an import the runtime does not have), a load that works, the module's counter rising while the UI task runs,
-an unload, the counter stopping, a second load and unload. The write-watch on `cf.expansion` (the runtime's code and the
-arena allowed as writers) and the flush check run through all of it. Prints one JSON report; exit status 0 when every check
-holds.
+`proof` is the loader gate on one image (docs/findings/29-runtime-v0.md, converted to boot-time loading in finding 37 when hot reload
+was archived): it patches core/runtime into the stock firmware, packs test/dyn-demo (and two broken variants) into `.dkm` files,
+builds a +Drive card with them in the module store and a selection record that names, in order, a file with a bad sha256, a file
+with an import the runtime does not have, a file that is not there, the good module, and the good module again. The boot hook loads
+the selection (through packages/emulator/boot/examples/cf_script.rs); the proof reads the boot report (the three refusals, the load,
+the duplicate refused), the module's counter rising while the UI task runs, and checks that the refused files left nothing behind
+(arena, slots, module records). After the boot a `dkrt_load` (mailbox and direct call) answers `E_BOOT_ONLY` and a command 2 (the
+old unload) is refused as unknown. The write-watch on `cf.expansion` (the runtime's code and the arena allowed as writers) and
+the flush check run through all of it. Prints one JSON report; exit status 0 when every check holds.
 
 The state layout peeked here is `State` and `Mailbox` in modules/core/runtime/src/rs/src/lib.rs and sdk/src/lib.rs.
 """
@@ -24,6 +25,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +46,10 @@ OK, E_NOT_FOUND, E_BAD_STORE, E_READ, E_SHA, E_FORMAT, E_RUNTIME, E_IMPORT = (
     -7,
 )
 E_NOMEM, E_INIT, E_LOADED, E_SLOT = -8, -9, -10, -11
+E_FORMAT_CMD, E_BOOT_ONLY = -5, -45
+SEL_MAGIC, SEL_VERSION, SEL_PATH, SEL_MAX = 0x444B534C, 1, 56, 8
+SECTOR_A, SECTOR_B = 0x38000 + 0x6000 - 2, 0x38000 + 0x6000 - 1
+BOOT_FIELDS = 10  # DkrtBootInfo words before `results`
 ARENA_BYTES = 512 * 1024
 SLOTS, MAX_MODULES, LOG_ENTRIES = 8, 8, 16
 # offsets in State (repr(C); sizes in the comments of lib.rs)
@@ -58,13 +64,6 @@ DEVICE_SYX = {
     "dt2-1.17": "Digitakt_II_OS1.17.syx",
     "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
-}
-# the firmware's block read (anchor dkrt.fw.block_read) per image, for the direct cost measurement
-BLOCK_READ = {
-    "dt2-1.16": 0x4012DEDA,
-    "dt2-1.17": 0x4012E1B6,
-    "dn2-1.11": 0x4012C59A,
-    "dn2-1.12": 0x4012C87A,
 }
 RUN = 25_000_000  # instructions between samples: the UI task's event loop passes about every 4 million
 
@@ -188,6 +187,31 @@ def build_card(tools: Tools, folder: Path, image: Path, syx: Path, device: str) 
         raise ProofError(f"plusdrive build: {r.stderr}{r.stdout}")
 
 
+def make_record(
+    paths: list[str], seq: int = 1, counter: int = 0, flags: int = 0
+) -> bytes:
+    """One copy of the selection record (docs/design/digikit-store.md)."""
+    if len(paths) > SEL_MAX or any(len(p) >= SEL_PATH or not p for p in paths):
+        raise ProofError("selection: at most 8 paths of 1 to 55 characters")
+    b = bytearray(512)
+    struct.pack_into(
+        ">IIIIII", b, 0, SEL_MAGIC, SEL_VERSION, seq, counter, flags, len(paths)
+    )
+    for i, p in enumerate(paths):
+        b[32 + i * SEL_PATH : 32 + i * SEL_PATH + len(p)] = p.encode()
+    struct.pack_into(">I", b, 508, zlib.crc32(bytes(b[:508])))
+    return bytes(b)
+
+
+def write_selection(card: Path, paths: list[str]) -> None:
+    """Both copies of a selection record over the two record sectors of a card image file."""
+    rec = make_record(paths)
+    with open(card, "r+b") as f:
+        for sector in (SECTOR_A, SECTOR_B):
+            f.seek(sector * 512)
+            f.write(rec)
+
+
 def watch_ranges(rt: dict, lo: int, hi: int) -> list[tuple[int, int]]:
     """[lo, hi) minus the buffers the card reads fill by DMA (the staging buffer, the 512-byte record buffer)."""
     holes = [(rt["stage"], 64 * 1024)]
@@ -287,8 +311,16 @@ def proof(
     broken_variants(work, tools, "test/dyn-demo", store)
     card = work / f"{device}.img"
     build_card(tools, folder, card, syx_stock, device)
+    selection = [
+        "modules/bad-sha.dkm",
+        "modules/bad-import.dkm",
+        "modules/nope.dkm",
+        "modules/dyn-demo.dkm",
+        "modules/dyn-demo.dkm",
+    ]
+    write_selection(card, selection)
 
-    st, mb, arena, stage = rt["state"], rt["mailbox"], rt["arena"], rt["stage"]
+    st, mb, arena = rt["state"], rt["mailbox"], rt["arena"]
     sym = rt["sym"]
     region_lo = min(
         w["addr"]
@@ -319,37 +351,21 @@ def proof(
             **({"ptr": True} if ptr else {}),
         }
 
+    boot = sym["DKRT_BOOT"]
     counter_ptr = st + ST_LOG + 24  # value of log entry 0 = the demo's counter address
     run = lambda n, tag: {"op": "run", "insns": n, "tag": tag}  # noqa: E731
     script: list[dict] = [
         run(30_000_000, "settle"),
+        peek("boot", boot, 4 * (BOOT_FIELDS + SEL_MAX)),
         peek("state0", st, STATE_BYTES),
-        peek("arena0", arena, ARENA_BYTES),
-        *cmd_ops(rt, 1, "modules/bad-sha.dkm", "badsha"),
-        *cmd_ops(rt, 1, "modules/bad-import.dkm", "badimp"),
-        *cmd_ops(rt, 1, "modules/nope.dkm", "nofile"),
-        peek("arena1", arena, ARENA_BYTES),
-        peek("state1", st, STATE_BYTES),
-        *cmd_ops(rt, 1, "modules/dyn-demo.dkm", "load"),
-        peek("state2", st, STATE_BYTES),
         peek("c1", counter_ptr, 16, ptr=True),
         run(RUN, "r1"),
         peek("c2", counter_ptr, 16, ptr=True),
         run(RUN, "r2"),
         peek("c3", counter_ptr, 16, ptr=True),
+        # after the boot: the module set is fixed (mailbox load, the old unload command, a direct call)
+        *cmd_ops(rt, 1, "modules/dyn-demo.dkm", "late"),
         *cmd_ops(rt, 2, "test/dyn-demo", "unload"),
-        peek("state3", st, STATE_BYTES),
-        peek("c4", counter_ptr, 16, ptr=True),
-        run(RUN, "r3"),
-        peek("c5", counter_ptr, 16, ptr=True),
-        peek("blk", arena, 32),
-        *cmd_ops(rt, 1, "modules/dyn-demo.dkm", "load2"),
-        run(RUN, "r4"),
-        peek("c6", counter_ptr, 16, ptr=True),
-        *cmd_ops(rt, 2, "test/dyn-demo", "unload2"),
-        *cmd_ops(rt, 2, "test/dyn-demo", "unload3"),  # not loaded any more: refused
-        peek("state4", st, STATE_BYTES),
-        # exact costs: the loader called directly (interrupts masked), path and name in the mailbox argument area
         {
             "op": "poke",
             "addr": hex(mb + MB_ARG),
@@ -360,38 +376,11 @@ def proof(
             "op": "call",
             "pc": hex(sym["dkrt_load"]),
             "args": [mb + MB_ARG],
-            "tag": "cost_load",
+            "tag": "late_direct",
         },
-        {
-            "op": "poke",
-            "addr": hex(mb + MB_ARG),
-            "hex": b"test/dyn-demo\0".hex(),
-            "tag": "p2",
-        },
-        {
-            "op": "call",
-            "pc": hex(sym["dkrt_unload"]),
-            "args": [mb + MB_ARG],
-            "tag": "cost_unload",
-        },
-        {
-            "op": "call",
-            "pc": hex(BLOCK_READ[image]),
-            "args": [0x38000, 512, stage],
-            "tag": "cost_block_read",
-        },
-        {
-            "op": "poke",
-            "addr": hex(mb + MB_ARG),
-            "hex": b"modules/bad-sha.dkm\0".hex(),
-            "tag": "p3",
-        },
-        {
-            "op": "call",
-            "pc": hex(sym["dkrt_load"]),
-            "args": [mb + MB_ARG],
-            "tag": "cost_refused",
-        },
+        peek("state1", st, STATE_BYTES),
+        run(RUN, "r3"),
+        peek("c4", counter_ptr, 16, ptr=True),
     ]
     out = run_script(
         tools, patched, plan["base"]["syx_sha256"], card, script, env, work
@@ -403,56 +392,54 @@ def proof(
     def check(name: str, ok: bool, detail: str = "") -> None:
         checks.append((name, bool(ok), detail))
 
-    s0, s1, s2, s3, s4 = (raw(f"state{i}") for i in range(5))
+    s0, s1, bi = raw("state0"), raw("state1"), raw("boot")
     arena_lo, arena_hi = be32(s0, ST_ARENA_LO), be32(s0, ST_ARENA_HI)
     check("runtime started by the UI-loop hook", be32(s0, 0) == 0x444B5254 and be32(s0, ST_TICKS) > 0,
           f"magic {be32(s0, 0):#x}, ticks {be32(s0, ST_TICKS)}")  # fmt: skip
     check("arena set up", arena_lo == (arena + 15) & ~15 and arena_hi - arena_lo >= ARENA_BYTES - 32,
           f"{arena_lo:#x}..{arena_hi:#x}")  # fmt: skip
+    results = [sbe32(bi, 4 * (BOOT_FIELDS + k)) for k in range(len(selection))]
+    want = [
+        E_SHA,
+        E_IMPORT,
+        E_NOT_FOUND,
+        OK,
+        E_SLOT,
+    ]  # the duplicate meets the taken slot before the name check
+    check(
+        "boot report: three refusals, the load, the duplicate refused (slot taken)",
+        results == want,
+        f"{results}, want {want}",
+    )
+    check("boot report: count 5, loaded 1", be32(bi, 4 * 7) == len(selection) and be32(bi, 4 * 8) == 1,
+          f"count {be32(bi, 4 * 7)}, loaded {be32(bi, 4 * 8)}")  # fmt: skip
+    m0 = ST_MODULES
+    base = be32(s0, m0 + 40)
+    check("module record", be32(s0, m0) == 1 and cstr(s0[m0 + 4 : m0 + 36]) == "test/dyn-demo"
+          and be32(s0, ST_SLOTS) != 0 and be32(s0, ST_SLOTS) > base,
+          f"base {base:#x} slot0 {be32(s0, ST_SLOTS):#x}")  # fmt: skip
+    check("refused files left nothing behind: the first arena block is the module's, one module, one slot, one load",
+          base == arena_lo + 16
+          and all(be32(s0, ST_MODULES + i * MODULE_SIZE) == 0 for i in range(1, MAX_MODULES))
+          and all(be32(s0, ST_SLOTS + 4 * i) == 0 for i in range(1, SLOTS)) and be32(s0, ST_LOADS) == 1,
+          f"base {base:#x} (arena {arena_lo:#x}), loads {be32(s0, ST_LOADS)}")  # fmt: skip
+    cs = [raw(f"c{i}") for i in range(1, 5)]
+    n = [be32(c, 4) for c in cs]
+    check("counter magic", be32(cs[1], 0) == 0x44594E4D)
+    check("counter rises while loaded", n[0] < n[1] < n[2] < n[3], f"{n}")
 
     def result(tag: str) -> tuple[int, int]:
         r = raw(f"{tag}:result")
         return sbe32(r, 0), be32(raw(f"{tag}:seq0"), 0)
 
-    for tag, want in (("badsha", E_SHA), ("badimp", E_IMPORT), ("nofile", E_NOT_FOUND)):
-        got, _ = result(tag)
-        check(f"refused: {tag}", got == want, f"result {got}, want {want}")
-    check("refused loads wrote nothing to the arena", raw("arena0") == raw("arena1"))
-    check("refused loads left no module or slot",
-          all(be32(s1, ST_MODULES + i * MODULE_SIZE) == 0 for i in range(MAX_MODULES))
-          and all(be32(s1, ST_SLOTS + 4 * i) == 0 for i in range(SLOTS)) and be32(s1, ST_LOADS) == 0)  # fmt: skip
-    got, _ = result("load")
-    m0 = ST_MODULES
-    base = be32(s2, m0 + 40)
-    check("load ok", got == OK, f"result {got}")
-    check("module record", be32(s2, m0) == 1 and cstr(s2[m0 + 4 : m0 + 36]) == "test/dyn-demo"
-          and base == arena_lo + 16 and be32(s2, ST_SLOTS) != 0 and be32(s2, ST_SLOTS) > base,
-          f"base {base:#x} slot0 {be32(s2, ST_SLOTS):#x}")  # fmt: skip
-    cs = [raw(f"c{i}") for i in range(1, 7)]
-    n = [be32(c, 4) for c in cs]
-    check("counter magic", be32(cs[1], 0) == 0x44594E4D)
-    check("counter rises while loaded", n[0] < n[1] < n[2], f"{n[:3]}")
-    got, _ = result("unload")
-    check("unload ok", got == OK, f"result {got}")
-    check("slot cleared, module gone", be32(s3, ST_SLOTS) == 0 and be32(s3, m0) == 0)
-    check("counter stops after unload", n[3] == n[4] and be32(cs[3], 8) == 0xF1F10001 and be32(cs[4], 8) == 0xF1F10001,
-          f"{n[3]} {n[4]}")  # fmt: skip
-    blk = raw("blk")
-    check("arena whole again (blocks merged)", be32(blk, 0) == arena_hi - arena_lo and be32(blk, 4) == 0,
-          f"free block {be32(blk, 0):#x}")  # fmt: skip
-    check("reload works and counts", result("load2")[0] == OK and n[5] > 0, f"{n[5]}")
-    check("second unload ok, third refused", result("unload2")[0] == OK and result("unload3")[0] == E_NOT_FOUND,
-          f"{result('unload2')[0]} {result('unload3')[0]}")  # fmt: skip
-    check("all unloaded at the end", all(be32(s4, ST_MODULES + i * MODULE_SIZE) == 0 for i in range(MAX_MODULES))
-          and be32(s4, ST_LOADS) == 2, f"loads {be32(s4, ST_LOADS)}")  # fmt: skip
-    for tag in ("cost_load", "cost_unload"):
-        check(
-            f"direct call {tag} returns 0",
-            by[tag]["ok"] and by[tag]["d0"] == 0,
-            str(by[tag]),
-        )
-    check("direct call of a refused load returns -4", by["cost_refused"]["ok"]
-          and by["cost_refused"]["d0"] == 0xFFFFFFFC, str(by["cost_refused"]))  # fmt: skip
+    check("a mailbox load after the boot is refused (E_BOOT_ONLY)", result("late")[0] == E_BOOT_ONLY,
+          f"{result('late')[0]}")  # fmt: skip
+    check("the old unload command (2) is refused as unknown", result("unload")[0] == E_FORMAT_CMD,
+          f"{result('unload')[0]}")  # fmt: skip
+    check("a direct dkrt_load after the boot answers E_BOOT_ONLY", by["late_direct"]["ok"]
+          and by["late_direct"]["d0"] == (E_BOOT_ONLY & 0xFFFFFFFF), str(by["late_direct"]))  # fmt: skip
+    check("the late requests changed nothing (one module, one load)",
+          be32(s1, ST_LOADS) == 1 and be32(s1, m0) == 1, f"loads {be32(s1, ST_LOADS)}")  # fmt: skip
     summary = json.loads((work / "ww.summary.json").read_text())
     if control:
         check(
@@ -476,12 +463,8 @@ def proof(
         "ok": all(c[1] for c in checks),
         "checks": [{"name": a, "ok": b, "detail": c} for a, b, c in checks],
         "numbers": {
-            "ticks_before_load": be32(s0, ST_TICKS),
+            "boot_results": results,
             "counter": n,
-            "load_insns": by["cost_load"]["insns"],
-            "unload_insns": by["cost_unload"]["insns"],
-            "block_read_512_insns": by["cost_block_read"]["insns"],
-            "refused_load_insns": by["cost_refused"]["insns"],
             "write_watch": {
                 k: summary[k]
                 for k in (

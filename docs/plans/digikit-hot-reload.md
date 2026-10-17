@@ -17,6 +17,36 @@ decision 9). Everything below is at tag `digikit-hot-reload-v1` (commit 928dc1d)
 Shared with the boot design, so not archived: the store and its reader, `.dkm`, the loader's checks, the registry writes,
 DSP relocation, `core/dsp-link`, `core/dyndsp`, `core/dynreg` rows.
 
+## What the archive commit removed (Phase 6, lane r4; `git revert` of the commit "digikit runtime: archive hot reload" restores all of it)
+
+Runtime (`modules/core/runtime`):
+- `dkrt_unload` (C ABI), `loader::unload` and `CMD_UNLOAD` (mailbox command 2, now answered `E_FORMAT`); `loader::unload_rec` stays (same name) as the take-down of a failed boot-time DSP part (`undo_early`).
+- The in-use scan `registry::in_use` and its `dynreg_info` words `F_PROJECT`, `F_KIT`, `F_TRACK`, `TRACKS` (words 61 to 64; the table keeps
+  zeros there).
+- The machine-view rebuild: `registry::view_now`, `registry::refresh_view` (and its calls at the end of `apply` and `remove`), the words
+  `VIEW_VAR` and `VIEW_BUILD` (48, 49), `DkrtBootInfo::view_rebuilds` and `view_at_boot`.
+- The load queue: `dsp::QUEUE`, `dsp::enqueue`, `dsp::dequeue`, `DspState::queued` and `queue`, `loader::start_queued`, `dsp::busy` and its
+  queue branch in `loader::load`, `DkrtStatus::queued`.
+- The run-time DSP load path: the `used = 2` branch of `loader::load`, `loader::complete_pending`, `loader::abort_pending`, the non-early
+  branch of `dsp::fail` and of the `PH_ROWS` end. `dkrt_load` outside the boot hook now returns the new `E_BOOT_ONLY` (-45).
+- Kept on purpose (the boot path needs them): `dsp::release`, `clear_rows`, `unreserve` (a boot-time DSP failure frees rows and range),
+  `registry::remove`, `E_BUSY`, `E_TYPE_IN_USE` and `STATE_UNLOADING` as reserved numbers, the `Pending` struct (its `reg`, `init`, `mask`,
+  `fns` fields are always 0 now; kept so the `DKRT_DSP` layout the proof tools read does not move).
+
+`core/dynreg`: the `dynreg_view_hook` hook op, claim and anchor `cf.dynreg.msv_build`; the anchors `cf.dynreg.project`, `cf.dynreg.kit_of`,
+`cf.dynreg.track_type`; the `dynreg_view` variable; the externs `_dr_t_view`, `_dr_f_build`, `_dr_f_project`, `_dr_f_kit`, `_dr_f_track`
+(both devices); the four anchors per port in `devices/ports/*.toml` (regenerate with `port_resolve resolve-all`).
+
+Tools and tests: `digikit-hot-reload-v1:tools/patchkit/pk_registry.py` (all of it: `proof`, `proof_dn2`, `ui_proof`) and `digikit-hot-reload-v1:tests/patchkit/registry_frames.json`; in
+`pk_dkrt_machine.py` the `proof` functions, `build_folder`, `Rig.load_and_wait`, `watch_checks`, `main`; `pk_dkrt.py` `proof` was rewritten for
+boot-time loading (selection with bad files, `E_BOOT_ONLY` after the boot), as was `pk_cdemo.py`; `panel_script.py` `digikit_errors`,
+`digikit_gate` and their constants; the hot tests in `tests/patchkit/test_patchkit_registry.py`, `test_patchkit_dkrt_machine.py`
+and `test_digikit_menu.py` (`test_gate_loads_and_unloads_from_the_menu`); the mise task `dkrt:machine`.
+The menu (`core/digikit-menu`) needed no change: finding 38 had already moved it to the selection calls.
+
+Coverage that replaces them: `tests/digikit` (equivalence of the rows, tables and PCM for a selected module, round trips, safe mode, power
+cuts), `pk_dkrt_boot`, `pk_dkrt proof` (refusals of bad files at boot), `digikit_menu_proof`.
+
 ## What hot reload still needs before it can be trusted (the risk review of 2026-10-17)
 
 1. Transport guard: refuse a load or unload while the sequencer plays or records, a sample is recorded, or a card operation runs.

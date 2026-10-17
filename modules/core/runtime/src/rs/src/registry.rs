@@ -1,5 +1,5 @@
 //! The run-time registry: machines and parameters that a loaded `.dkm` adds to the rows `core/dynreg` reserved at patch
-//! time (docs/design/digikit-registry.md). Everything here runs in the UI task, from `dkrt_load` and `dkrt_unload`.
+//! time (docs/design/digikit-registry.md). Everything here runs in the UI task, from the boot-time load (`loader::complete`) and its undo (`remove`).
 //!
 //! The runtime does not link to `core/machines` or `core/params`. `core/dynreg` exports one table, `dynreg_info`, with the
 //! addresses of the rows and tables and the row layouts; the link is optional, so an image with the runtime and without
@@ -37,7 +37,8 @@ extern "C" {
     fn dynreg_info();
 }
 
-/// Words of `dynreg_info` (byte offsets / 4).
+/// Words of `dynreg_info` (byte offsets / 4). Words 48, 49 and 61 to 64 were the machine-view hook and the in-use functions of hot
+/// reload (archived, docs/plans/digikit-hot-reload.md); the table keeps them as zeros so the other offsets stay.
 mod w {
     pub const MAGIC: usize = 0;
     pub const DEVICE: usize = 2;
@@ -70,8 +71,6 @@ mod w {
     pub const KNOBS: usize = 45;
     pub const SLOT_BASE: usize = 46;
     pub const RESERVE_TEMPLATE: usize = 47;
-    pub const VIEW_VAR: usize = 48;
-    pub const VIEW_BUILD: usize = 49;
     pub const PG_ROWS: usize = 50; // 0: the device keeps its knobs in the machine row
     pub const PG_ROW_SIZE: usize = 51;
     pub const PG_FIRST: usize = 52;
@@ -83,10 +82,6 @@ mod w {
     pub const PGO_MACH: usize = 58;
     pub const PGO_S: usize = 59;
     pub const PG_FREE: usize = 60;
-    pub const F_PROJECT: usize = 61;
-    pub const F_KIT: usize = 62;
-    pub const F_TRACK: usize = 63;
-    pub const TRACKS: usize = 64;
 }
 
 #[repr(C, align(4))]
@@ -474,36 +469,6 @@ unsafe fn write_param_row(
     wr(reg_row + iw(inf, w::P_TEMPLATE_OFF) + 16, def);
 }
 
-/// The machine selection view as `core/dynreg` recorded it (0: none yet, or the image has no `core/dynreg`).
-pub unsafe fn view_now() -> u32 {
-    let inf = info();
-    if inf.is_null() {
-        return 0;
-    }
-    let var = iw(inf, w::VIEW_VAR);
-    if var == 0 {
-        0
-    } else {
-        rd(var)
-    }
-}
-
-/// The firmware builds the machine selection view's item list once, from the list getter. After the rows changed, build it
-/// again (it clears its items first); nothing to do while the view does not exist yet.
-unsafe fn refresh_view(inf: *const u32) {
-    let var = iw(inf, w::VIEW_VAR);
-    let build = iw(inf, w::VIEW_BUILD);
-    if var == 0 || build == 0 {
-        return;
-    }
-    let view = rd(var);
-    if view != 0 {
-        let f: unsafe extern "C" fn(u32) = core::mem::transmute(build as usize);
-        crate::boot::info().view_rebuilds += 1;
-        f(view);
-    }
-}
-
 /// Fill the reserved rows from the (checked) records. `owner` = module record index + 1.
 pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
     if size == 0 {
@@ -626,7 +591,6 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         wr(row + iw(inf, w::O_NAME), s.s.mach_name[k].as_ptr() as u32);
     });
     s.registers = s.registers.wrapping_add(1);
-    refresh_view(inf);
     OK
 }
 
@@ -716,44 +680,4 @@ pub unsafe fn remove(owner: u8) {
         k += 1;
     }
     s.removes = s.removes.wrapping_add(1);
-    refresh_view(inf);
-}
-
-/// Does a track of the active kit use a machine `owner` registered? (The unload is refused then: the track would be left on a
-/// type with no row.) The three firmware functions come from `dynreg_info`: the Project singleton, the active kit of a
-/// project, and the machine type of track `t` of a kit (-1 when there is none). Only the active kit is looked at: the
-/// other kits, the patterns' sound locks and the sound pool keep their type bytes and load as a free row.
-pub unsafe fn in_use(owner: u8) -> bool {
-    let inf = info();
-    if inf.is_null() {
-        return false;
-    }
-    let (f_project, f_kit, f_track) = (iw(inf, w::F_PROJECT), iw(inf, w::F_KIT), iw(inf, w::F_TRACK));
-    if f_project == 0 || f_kit == 0 || f_track == 0 {
-        return false;
-    }
-    let s = rs();
-    let mut any = false;
-    let mut k = 0;
-    while k < MAX_MACH {
-        any |= s.mach_owner[k] == owner;
-        k += 1;
-    }
-    if !any {
-        return false;
-    }
-    let project: unsafe extern "C" fn() -> u32 = core::mem::transmute(f_project as usize);
-    let kit_of: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(f_kit as usize);
-    let track_type: unsafe extern "C" fn(u32, i32) -> i32 = core::mem::transmute(f_track as usize);
-    let kit = kit_of(project());
-    let (dyn0, tracks) = (iw(inf, w::M_DYN0) as i32, iw(inf, w::TRACKS) as i32);
-    let mut t = 0;
-    while t < tracks {
-        let ty = track_type(kit, t) - dyn0;
-        if (0..MAX_MACH as i32).contains(&ty) && s.mach_owner[ty as usize] == owner {
-            return true;
-        }
-        t += 1;
-    }
-    false
 }

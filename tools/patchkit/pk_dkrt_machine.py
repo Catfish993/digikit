@@ -1,37 +1,18 @@
 #!/usr/bin/env python3
-"""A machine with its own DSP code, loaded at run time: PCM equal to the patched-in machine (docs/findings/32-runtime-dsp-machines.md).
+"""Helpers for the run-time-machine proofs: the panel rig, the PCM comparison and the second implementation of the DSP relocation.
 
-    uv run python -m tools.patchkit.pk_dkrt_machine proof [--image dt2-1.17] [--quick] [--keep DIR]
-
-`proof` builds two images of the same firmware with the same ColdFire-side modules (`core/runtime`, `core/dynreg`, `core/dyndsp`
-and what they require), so both run the same hooks at every block interrupt: the REFERENCE has `machines/pluck` patched in; the
-RUN-TIME image does not, and loads `test/dyn-pluck` (the same DSP source, packed with `patchkit pack --device dt2`) from the card
-store through the runtime's mailbox while the firmware runs. Both are driven through the panel the same way (FUNC+SRC, pick
-PLUCK, YES), the same note is played from the same DSP block (`run_until frames`), and the PCM is compared sample by sample.
-
-Checks, in order: the load answers `LOADING` and finishes with 0; the machine is not in the type table before the DSP code is
-acknowledged (sampled while the load runs); the DSP area holds the relocated image byte for byte (a second implementation of the
-relocation, here, against the runtime's); the voice row holds the machine's type and the routine's pc; the track takes the machine
-(type byte 18 against 9); the PCM equals the reference's; an unload frees the row (type back to 0xffffffff) and the range; a reload
-reuses them; write-watch on `cf.expansion` (the patched range is the only writer; the staging buffer is excluded: the card read
-lands there by DMA) and the flush check report nothing; no card store sector is written. Prints one JSON report; exit 0 when every
-check holds.
-
-`--quick` skips the reload after the unload.
-
-On the Digitone II (`--image dn2-1.12`) the ColdFire registry for run-time machines is lane B's, so the proof covers the DSP half
-only: the reference is `test/dn2-sine` patched in, the run-time image loads `test/dyn-sine-dn2` (the same DSP source, no machine
-record), and the DSP's frame copy is forced to the machine type (`DSP_FRAME_POKE`) in both, 7 and 18. Same checks from the load to the PCM.
+The proof that used to live here (a machine loaded through the mailbox while the firmware ran, against the patched-in one) was
+hot-reload only and is archived (tag `digikit-hot-reload-v1`, docs/plans/digikit-hot-reload.md). Its boot-time successor is
+tools/patchkit/pk_digikit_scen.py (equivalence scenarios: the same PCM, sample for sample, from a module selected at boot; finding 37),
+which uses `Rig`, `pcm_check`, `parse_dsp_section` and `relocate` from here.
 """
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import json
 import struct
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -42,16 +23,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 from tools.coldfire import arena_safety  # noqa: E402
 from tools.control.digi_client import Emu  # noqa: E402
-from tools.emulator import card_check  # noqa: E402
-from tools.firmware import config  # noqa: E402
 from tools.patchkit import hook_ab  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit.pk_dkrt import (  # noqa: E402
-    DEVICE_SYX,
     ProofError,
-    Tools,
-    build_card,
-    patch,
 )
 
 LOADING = 1
@@ -289,32 +264,6 @@ class Rig:
             "<II", raw
         )  # dsp_peek returns memory bytes: DSP words are little endian
 
-    def load_and_wait(
-        self, path: str, sample_type: int | None = None
-    ) -> dict[str, Any]:
-        """Post the load; sample the machine table while the DSP code is on its way; wait for the end."""
-        f0 = self.frames()
-        r0 = self.post(1, path)
-        listed_early: bool | None = None
-        waited = 0
-        while self.dsp_phase() != 0 and waited < 400:
-            if sample_type is not None:
-                listed_early = bool(listed_early) or self.machine_listed(sample_type)
-            self.s.run_ms(2)
-            waited += 1
-        # the queue may hold a start; wait for idle and a final result
-        for _ in range(100):
-            if self.dsp_phase() == 0 and self.last_result() != LOADING:
-                break
-            self.s.run_ms(10)
-        return {
-            "answer": r0,
-            "result": self.last_result(),
-            "frames": self.frames() - f0,
-            "listed_while_loading": listed_early,
-            "ticks_waited": waited,
-        }
-
     # -- the firmware's machine rows (core/machines): the name pointer marks a row as used
     def machine_listed(self, typ: int) -> bool:
         rows = sym(self.plan, "core/machines", "machines.rows")
@@ -395,289 +344,6 @@ class Rig:
         return out
 
 
-def build_folder(work: Path, tools: Tools, device: str) -> Path:
-    folder = work / "plus_drive"
-    mods = folder / "digikit" / "modules"
-    mods.mkdir(parents=True, exist_ok=True)
-    if device == "dt2":
-        samples = work / "samples"
-        card_check.make_samples(samples)
-        for f in samples.iterdir():
-            (folder / f.name).write_bytes(f.read_bytes())
-        tools.patchkit_run(
-            "pack", MODULE, "--device", device, "-o", mods / "pluck-d.dkm"
-        )
-    else:
-        tools.patchkit_run(
-            "pack", MODULE_DN2, "--device", device, "-o", mods / "sine-d.dkm"
-        )
-    return folder
-
-
-def proof(
-    image: str, quick: bool, keep: Path | None, watch: bool = True
-) -> dict[str, Any]:
-    device = image[:3]
-    work = keep or Path(tempfile.mkdtemp(prefix="pk-dkrt-machine-"))
-    work.mkdir(parents=True, exist_ok=True)
-    tools = Tools()
-    syx_stock = config.stock(DEVICE_SYX[image])
-    folder = build_folder(work, tools, device)
-    dkm = next((folder / "digikit" / "modules").glob("*.dkm")).read_bytes()
-    sec = parse_dsp_section(dkm)
-    report: dict[str, Any] = {"image": image, "work": str(work), "dkm_bytes": len(dkm)}
-    rigs: list[Rig] = []
-    try:
-        fn = _proof if device == "dt2" else _proof_dn2
-        return fn(
-            image, quick, work, tools, syx_stock, folder, dkm, sec, report, watch, rigs
-        )
-    finally:
-        for r in rigs:
-            r.s.close()  # a daemon of ours is never left running after a failed check
-
-
-def _proof(
-    image, quick, work, tools, syx_stock, folder, dkm, sec, report, watch, rigs
-) -> dict[str, Any]:  # noqa: ANN001
-    checks: list[tuple[str, bool, str]] = []
-    t0 = time.monotonic()
-
-    # ---- the reference: pluck patched in
-    ref_img = work / f"{image}-ref.syx"
-    ref_plan = patch(tools, syx_stock, ref_img, MODULES_STATIC + ",machines/pluck")
-    ref = Rig(
-        "ref",
-        image,
-        MODULES_STATIC + ",machines/pluck",
-        ref_plan,
-        ref_img,
-        folder,
-        work,
-        watch,
-    )
-    rigs.append(ref)
-    ref.start()
-    hint = 7
-    hint = ref.select_type(PLUCK_STATIC_TYPE, hint)
-    ref.check(
-        "the track takes the patched-in PLUCK (type 9)",
-        ref.type_now() == PLUCK_STATIC_TYPE,
-        f"downs {hint}",
-    )
-    ref_pcm = ref.note(work / "ref.wav", TRIG_FRAME)
-    ref.check(
-        "the reference note is audible",
-        float(abs(ref_pcm).max()) > 0.01,
-        f"{len(ref_pcm)} samples, peak {float(abs(ref_pcm).max()):.3f}",
-    )
-    report["ref"] = ref.finish()
-    checks += ref.checks
-
-    # ---- the run-time image
-    run_img = work / f"{image}-run.syx"
-    run_plan = patch(tools, syx_stock, run_img, MODULES_STATIC)
-    run = Rig("run", image, MODULES_STATIC, run_plan, run_img, folder, work, watch)
-    rigs.append(run)
-    run.start()
-    area = run.info_word(3)
-    run.check(
-        "the DSP area is where dsp-link put it",
-        area == sym(run_plan, "core/dsp-link", "_dl_area"),
-        f"{area:#x}",
-    )
-    run.check(
-        "no voice row is claimed before the load",
-        all(run.voice_row(k)[0] == FREE_TYPE for k in range(8)),
-    )
-    load = run.load_and_wait("modules/pluck-d.dkm", PLUCK_DYN_TYPE)
-    report["load"] = load
-    run.check(
-        "dkrt_load answers LOADING", load["answer"] == LOADING, f"{load['answer']}"
-    )
-    run.check("the load finishes with 0", load["result"] == 0, f"{load['result']}")
-    run.check(
-        "the machine was not listed while the DSP code was on its way",
-        load["listed_while_loading"] is False,
-        f"{load['listed_while_loading']}",
-    )
-    run.check(
-        "the machine is listed after the load", run.machine_listed(PLUCK_DYN_TYPE)
-    )
-    run.check(
-        "the DSP loader state is idle and clean",
-        run.dsp_phase() == 0 and run.w(run.dsp + D_FAILURES) == 0,
-    )
-    off = run.w(run.dsp + D_MOD_OFF)
-    base = area + off
-    imports = {}
-    nimp = run.info_word(9)
-    info = sym(run_plan, "core/dyndsp", "dyndsp_info")
-    for i in range(nimp):
-        raw = b"".join(
-            run.w(info + 40 + 32 * i + 4 * k).to_bytes(4, "big") for k in range(8)
-        )
-        imports[raw[:28].split(b"\0")[0].decode()] = int.from_bytes(raw[28:32], "big")
-    want = relocate(sec, base, imports)
-    got = run.dsp_bytes(base, len(want))
-    run.check(
-        "the DSP area holds the relocated image byte for byte",
-        got == want,
-        f"{len(want)} bytes at {base:#x}, {sum(a != b for a, b in zip(got, want, strict=True))} differ",
-    )
-    pc = L2_SW_BASE + (base + sec["voices"][0][1] - L2_BYTE_BASE) // 2
-    rows = [run.voice_row(k) for k in range(8)]
-    claimed = [k for k, r in enumerate(rows) if r[0] != FREE_TYPE]
-    run.check(
-        "one voice row holds type 18 and the routine's pc",
-        len(claimed) == 1 and rows[claimed[0]] == (PLUCK_DYN_TYPE, pc),
-        f"{[(hex(a), hex(b)) for a, b in rows if a != FREE_TYPE]} want {pc:#x}",
-    )
-    hint = run.select_type(PLUCK_DYN_TYPE, 7)
-    run.check(
-        "the track takes the run-time PLUCK (type 18)",
-        run.type_now() == PLUCK_DYN_TYPE,
-        f"downs {hint}",
-    )
-    run_pcm = run.note(work / "run.wav", TRIG_FRAME)
-    pcm_check(run, ref_pcm, run_pcm, report, "machine")
-    # ---- unload (refused while a track holds the machine: E_TYPE_IN_USE -26), a control note, reload
-    r = run.post(2, "test/dyn-pluck")
-    run.check(
-        "unload is refused while the track holds the machine (-26)", r == -26, f"{r}"
-    )
-    word = run.w(TRACK_OBJ_WORD)
-    run.emu.poke32(TRACK_OBJ_WORD, word & ~0xFF00)  # the track moves to type 0 (SAMPLE)
-    run.s.run_ms(100)
-    r = run.post(2, "test/dyn-pluck")
-    run.check("unload answers 0 once the track is elsewhere", r == 0, f"{r}")
-    run.s.run_ms(300)
-    rows = [run.voice_row(k) for k in range(8)]
-    run.check("the voice row is free again", all(t == FREE_TYPE for t, _ in rows))
-    run.check(
-        "the machine is gone from the table", not run.machine_listed(PLUCK_DYN_TYPE)
-    )
-    run.check("the range is free again", run.w(run.dsp + D_MOD_LEN) == 0)
-    if not quick:
-        # control: the track is put back on type 18, the voice row is free, so the DSP renders the note as stock SAMPLE: not the pluck
-        run.emu.poke32(TRACK_OBJ_WORD, word)  # back on type 18, which has no row now
-        run.s.run_ms(100)
-        ctl = run.note(work / "after-unload.wav", TRIG_FRAME + 2500)
-        diff = int((ctl != ref_pcm).sum()) if len(ctl) == len(ref_pcm) else -1
-        run.check(
-            "after the unload the same note is not the pluck (the comparison has teeth)",
-            diff != 0 and float(abs(ctl).max()) < 0.8 * float(abs(ref_pcm).max()),
-            f"{diff} samples differ, peak {float(abs(ctl).max()):.3f} against {float(abs(ref_pcm).max()):.3f}",
-        )
-        load2 = run.load_and_wait("modules/pluck-d.dkm")
-        run.check(
-            "the reload finishes with 0 and reuses the range",
-            load2["result"] == 0 and run.w(run.dsp + D_MOD_OFF) == off,
-            f"{load2}",
-        )
-    run.s.health("end")
-    report["run"] = run.finish()
-    checks += run.checks
-    checks += watch_checks(report, watch)
-    report["checks"] = [{"name": a, "ok": b, "detail": c} for a, b, c in checks]
-    report["pass"] = all(c[1] for c in checks)
-    report["seconds"] = round(time.monotonic() - t0, 1)
-    (work / "report.json").write_text(json.dumps(report, indent=1))
-    return report
-
-
-def _proof_dn2(
-    image, quick, work, tools, syx_stock, folder, dkm, sec, report, watch, rigs
-) -> dict[str, Any]:  # noqa: ANN001
-    checks: list[tuple[str, bool, str]] = []
-    t0 = time.monotonic()
-    card = work / "card-dn2.img"
-    build_card(tools, folder, card, syx_stock, "dn2")
-    ref_img = work / f"{image}-ref.syx"
-    ref_plan = patch(tools, syx_stock, ref_img, MODULES_STATIC_DN2 + ",test/dn2-sine")
-    ref = Rig("ref", image, MODULES_STATIC_DN2 + ",test/dn2-sine", ref_plan, ref_img, folder, work, watch, card,
-              {"DSP_FRAME_POKE": DN2_TYPE_POKE.format(SINE_STATIC_TYPE)})  # fmt: skip
-    rigs.append(ref)
-    ref.start()
-    ref_pcm = ref.note(work / "ref.wav", TRIG_FRAME_DN2)
-    ref.check(
-        "the reference note is audible",
-        float(abs(ref_pcm).max()) > 0.01,
-        f"{len(ref_pcm)} samples, peak {float(abs(ref_pcm).max()):.3f}",
-    )
-    report["ref"] = ref.finish()
-    checks += ref.checks
-
-    run_img = work / f"{image}-run.syx"
-    run_plan = patch(tools, syx_stock, run_img, MODULES_STATIC_DN2)
-    run = Rig("run", image, MODULES_STATIC_DN2, run_plan, run_img, folder, work, watch, card,
-              {"DSP_FRAME_POKE": DN2_TYPE_POKE.format(SINE_DYN_TYPE)})  # fmt: skip
-    rigs.append(run)
-    run.start()
-    area = run.info_word(3)
-    run.check(
-        "the DSP area is where dsp-link put it",
-        area == sym(run_plan, "core/dsp-link", "_dl_area"),
-        f"{area:#x}",
-    )
-    run.check(
-        "no voice row is claimed before the load",
-        all(run.voice_row(k)[0] == FREE_TYPE for k in range(8)),
-    )
-    load = run.load_and_wait("modules/sine-d.dkm")
-    report["load"] = load
-    run.check(
-        "dkrt_load answers LOADING", load["answer"] == LOADING, f"{load['answer']}"
-    )
-    run.check("the load finishes with 0", load["result"] == 0, f"{load['result']}")
-    run.check(
-        "the DSP loader state is idle and clean",
-        run.dsp_phase() == 0 and run.w(run.dsp + D_FAILURES) == 0,
-    )
-    base = area + run.w(run.dsp + D_MOD_OFF)
-    want = relocate(sec, base, run_imports(run, run_plan))
-    got = run.dsp_bytes(base, len(want))
-    run.check(
-        "the DSP area holds the relocated image byte for byte",
-        got == want,
-        f"{len(want)} bytes at {base:#x}, {sum(a != b for a, b in zip(got, want, strict=True))} differ",
-    )
-    pc = L2_SW_BASE + (base + sec["voices"][0][1] - L2_BYTE_BASE) // 2
-    rows = [run.voice_row(k) for k in range(8)]
-    claimed = [k for k, r in enumerate(rows) if r[0] != FREE_TYPE]
-    run.check(
-        "one voice row holds type 18 and the routine's pc",
-        len(claimed) == 1 and rows[claimed[0]] == (SINE_DYN_TYPE, pc),
-        f"{[(hex(a), hex(b)) for a, b in rows if a != FREE_TYPE]} want {pc:#x}",
-    )
-    run_pcm = run.note(work / "run.wav", TRIG_FRAME_DN2)
-    pcm_check(run, ref_pcm, run_pcm, report, "voice")
-    r = run.post(2, "test/dyn-sine-dn2")
-    run.check("unload answers 0", r == 0, f"{r}")
-    run.s.run_ms(300)
-    run.check(
-        "the voice row is free again",
-        all(run.voice_row(k)[0] == FREE_TYPE for k in range(8)),
-    )
-    run.check("the range is free again", run.w(run.dsp + D_MOD_LEN) == 0)
-    if not quick:
-        load2 = run.load_and_wait("modules/sine-d.dkm")
-        run.check(
-            "the reload finishes with 0 and reuses the range",
-            load2["result"] == 0,
-            f"{load2}",
-        )
-    run.s.health("end")
-    report["run"] = run.finish()
-    checks += run.checks
-    checks += watch_checks(report, watch)
-    report["checks"] = [{"name": a, "ok": b, "detail": c} for a, b, c in checks]
-    report["pass"] = all(c[1] for c in checks)
-    report["seconds"] = round(time.monotonic() - t0, 1)
-    (work / "report.json").write_text(json.dumps(report, indent=1))
-    return report
-
-
 def pcm_check(
     run: Rig,
     ref_pcm: np.ndarray,
@@ -742,56 +408,3 @@ def run_imports(run: Rig, plan: dict) -> dict[str, int]:
         )
         out[raw[:28].split(b"\0")[0].decode()] = int.from_bytes(raw[28:32], "big")
     return out
-
-
-def watch_checks(report: dict[str, Any], watch: bool) -> list[tuple[str, bool, str]]:
-    checks = []
-    for tag in ("ref", "run"):
-        rep = report[tag]
-        if watch:
-            checks.append(
-                (
-                    f"{tag}: write-watch: no stray write into cf.expansion",
-                    rep.get("write_events") == 0,
-                    f"{rep.get('write_events')} {rep.get('per_pc')}",
-                )
-            )
-            checks.append(
-                (
-                    f"{tag}: flush check: no hit",
-                    rep.get("flush_hits") == 0,
-                    f"{rep.get('flush_hits')} hits, {rep.get('cpushl')} cpushl",
-                )
-            )
-        checks.append(
-            (
-                f"{tag}: no card store sector written",
-                rep.get("store_sector_writes") == 0,
-                f"{rep.get('store_sector_writes')}",
-            )
-        )
-    for n, ok, d in checks:
-        print(f"{'ok  ' if ok else 'FAIL'} {n} {d}", flush=True)
-    return checks
-
-
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("proof")
-    p.add_argument("--image", default="dt2-1.17")
-    p.add_argument("--quick", action="store_true")
-    p.add_argument("--keep", type=Path)
-    p.add_argument("--no-watch", action="store_true")
-    a = ap.parse_args(argv)
-    try:
-        rep = proof(a.image, a.quick, a.keep, not a.no_watch)
-    except (Fail, ProofError, H.Failure) as e:
-        print(f"FAIL {e}", file=sys.stderr)
-        return 1
-    print(json.dumps({k: v for k, v in rep.items() if k != "checks"}, indent=1))
-    return 0 if rep["pass"] else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

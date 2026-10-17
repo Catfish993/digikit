@@ -2,7 +2,7 @@
 
 Static: every committed ColdFire object decodes as ISA_A/B/C + EMAC; the toolchain's stock libgcc (68000 code) is refused;
 the -mcpu=54418 libgcc archive passes; test/c-demo links its helpers locally (no undefined symbol, no exported helper).
-Emulator: the packed c-demo is loaded by the runtime and its 64-bit results equal Python's (dt2-1.17 and dn2-1.12)."""
+Emulator: the packed c-demo is loaded by the boot hook and its 64-bit results equal Python's (dt2-1.17 and dn2-1.12)."""
 
 import json
 import subprocess
@@ -69,7 +69,7 @@ def test_c_demo_object_is_current_and_self_contained():
 
 
 @pytest.mark.parametrize("image", ["dt2-1.17", "dn2-1.12"])
-def test_runtime_loads_c_demo_and_its_64_bit_results_are_right(image, tmp_path):
+def test_boot_loads_c_demo_and_its_64_bit_results_are_right(image, tmp_path):
     if not config.stock(pk_dkrt.DEVICE_SYX[image]).exists():
         pytest.skip(f"{pk_dkrt.DEVICE_SYX[image]} missing")
     report = pk_cdemo.proof(image, tmp_path)

@@ -12,7 +12,7 @@ same file serves every image whose runtime has the imports it names. It is made 
     patchkit dkm-info FILE.dkm          # checks the sha256 and lists the contents
 
 `pack` takes exactly one ColdFire object of the module (the module id names it; `--modules-dir DIR` adds module roots). The name
-defaults to the module id (`test/dyn-demo`), at most 31 characters of `A-Z a-z 0-9 - _ . /`; `unload` takes this name. The file is
+defaults to the module id (`test/dyn-demo`), at most 31 characters of `A-Z a-z 0-9 - _ . /`; `dkrt_module` reports this name (the run-time `unload` that took it is archived). The file is
 deterministic: the same object gives the same bytes.
 
 ## Format
@@ -81,7 +81,7 @@ A run-time machine can bring its own SHARC+ code (finding 32). `patchkit pack MO
 global symbol) or the explicit `[[dsp_voice]] type = N, entry = "_sym"` give the voice rows. The code holds no address of the image it
 runs in: it is linked at the nominal base `0x20000000` (L2 byte base) and **relocated by the runtime on the ColdFire** before it sends
 the bytes, so several DSP modules coexist in the DSP area (`_dl_area` of `core/dsp-link`, 512 KiB on the Digitakt II, 320 KiB on the
-Digitone II; first fit, freed on unload). Relocation is cheap here: the repository's DSP objects use only two kinds, `sharc.abs24`
+Digitone II; first fit, freed when a boot-time DSP part fails). Relocation is cheap here: the repository's DSP objects use only two kinds, `sharc.abs24`
 (a call or jump target, a pc) and `sharc.abs32` (a 32-bit immediate: a data address, or a pc), both of which the linker already
 patches into a 48-bit instruction, and 24 relocations per 3.5 KB for `pluck`.
 
@@ -119,8 +119,8 @@ The runtime reserves `image_size + bss_size` rounded up to 64 bytes (`E_DSP_NOSP
 the image in an arena block, sends it with `dl_send` (window 0 of the link) and, when the DSP acknowledges (the DSP has the bytes in L2
 and has invalidated its instruction caches), publishes the voice rows (window 1: **one word per transfer**, the pc first and the type
 last; a free row has type `0xffffffff`, which no machine equals, so the DSP's render scan never sees a half-written row). Only then
-it writes the machine and parameter rows, runs `init` and binds the slots. An unload runs the other way: machine row, voice row (type
-to `0xffffffff` first), then the range. Refusal codes -30 to -39 (`dkrt-sdk`): `E_NO_DSP` -30 (no `core/dsp-link` and `core/dyndsp` in
+it writes the machine and parameter rows, runs `init` and binds the slots. When the DSP part fails at boot the module is taken down the other way: machine row, voice row (type
+to `0xffffffff` first), then the range (the run-time unload that did this is archived). Refusal codes -30 to -39 (`dkrt-sdk`): `E_NO_DSP` -30 (no `core/dsp-link` and `core/dyndsp` in
 the image), `E_DSP_FORMAT` -31, `E_DSP_IMPORT` -32, `E_DSP_NOSPACE` -33, `E_DSP_ROWS` -34 (no free voice row), `E_DSP_XFER` -35 (transfer
 failed or timed out), `E_DSP_DEVICE` -36, `E_DSP_TYPE` -37 (a voice type outside 16..23 or in use).
 
@@ -137,7 +137,7 @@ type 0's (finding 30). A machine that clones SAMPLE, like `pluck`, is right alre
    free module record (`E_TABLE_FULL`).
 6. The DSP section, if any (`E_NO_DSP`, `E_DSP_DEVICE`, `E_DSP_FORMAT`, `E_DSP_IMPORT`, `E_DSP_NOSPACE`, `E_DSP_ROWS`, `E_DSP_TYPE`; nothing is
    reserved yet), then the `register` records, if any: `E_NO_REGISTRY` (the image has no `core/dynreg`), `E_REG_DEVICE`, `E_FORMAT`, `E_TYPE_RANGE`,
-   `E_TYPE_USED`, `E_PARAM_FULL`, `E_PAGE_FULL` (-20 to -25; docs/design/digikit-registry.md); `dkrt_unload` adds `E_TYPE_IN_USE` (-26).
+   `E_TYPE_USED`, `E_PARAM_FULL`, `E_PAGE_FULL` (-20 to -25; docs/design/digikit-registry.md); -26 (`E_TYPE_IN_USE`, the unload refusal) is reserved: hot reload is archived.
 7. Then: allocate `image_size + bss_size` (`E_NOMEM`), copy, zero bss, relocate, flush both caches over the range, record, `init`
    (`E_INIT`: the block is freed again), publish the slots. The registry rows are written after the copy and before `init` (`init` may reuse the
    staging buffer, which holds the records); a failed `init` removes them again.

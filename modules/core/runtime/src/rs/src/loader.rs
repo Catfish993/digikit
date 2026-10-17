@@ -45,9 +45,9 @@ unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
 /// Validate and load the `.dkm` at `path`. See `dkrt_load`.
 pub unsafe fn load(path: *const u8) -> i32 {
     dsp::init_once();
-    // a module's DSP code is being sent: the staging buffer and the link are in use, so this request waits its turn
-    if dsp::busy() && !EARLY {
-        return if dsp::enqueue(path) { LOADING } else { E_BUSY };
+    // the module set is fixed per session: only the boot hook loads (hot reload is archived, docs/plans/digikit-hot-reload.md)
+    if !EARLY {
+        return E_BOOT_ONLY;
     }
     let found = match store::find(path) {
         Ok(f) => f,
@@ -291,62 +291,25 @@ pub unsafe fn load(path: *const u8) -> i32 {
     m.slot_mask = 0;
     let initaddr = if init == NONE { 0 } else { base + init };
     if dsp_size != 0 {
-        // The register records and the slot table must outlive this call (the staging buffer will be reused): keep copies.
-        let mut regcopy = 0u32;
-        if reg_size != 0 {
-            let p = arena::alloc(reg_size);
-            if p.is_null() {
-                dsp::cancel(rec);
-                arena::free(mem);
-                m.used = 0;
-                return E_NOMEM;
-            }
-            i = 0;
-            while i < reg_size as usize {
-                *p.add(i) = *reg.add(i);
-                i += 1;
-            }
-            regcopy = p as u32;
+        // the CF part goes live now (rows in place before the machine view is built); the DSP code and the voice rows follow
+        // when the frames flow
+        m.used = 1;
+        let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
+        if r != OK {
+            dsp::cancel(rec);
+            arena::free(mem);
+            m.used = 0;
+            return r;
         }
-        if EARLY {
-            // boot: the CF part goes live now (rows in place before the machine view is built); the DSP code and the voice
-            // rows follow when the frames flow
-            m.used = 1;
-            if regcopy != 0 {
-                arena::free(regcopy as *mut u8);
-            }
-            let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
-            if r != OK {
-                dsp::cancel(rec);
-                arena::free(mem);
-                m.used = 0;
-                return r;
-            }
-            dsp::launch(dsp::Pending {
-                rec: rec as u32,
-                reg: 0,
-                reg_size: 0,
-                init: 0,
-                mask: 0,
-                fns,
-                early: 1,
-                boot_idx: BOOT_IDX,
-                send_base: 0,
-                send_len: 0,
-                send_buf: 0,
-            });
-            return LOADING;
-        }
-        m.used = 2; // loading: not listed, slots not bound, unload refused
         dsp::launch(dsp::Pending {
             rec: rec as u32,
-            reg: regcopy,
-            reg_size,
-            init: initaddr,
-            mask,
+            reg: 0,
+            reg_size: 0,
+            init: 0,
+            mask: 0,
             fns,
-            early: 0,
-            boot_idx: u32::MAX,
+            early: 1,
+            boot_idx: BOOT_IDX,
             send_base: 0,
             send_len: 0,
             send_buf: 0,
@@ -361,7 +324,7 @@ pub unsafe fn load(path: *const u8) -> i32 {
     r
 }
 
-/// The end of a load, shared by the immediate and the DSP path: the registry rows (the machine is listed from here), `init`, the
+/// The end of a load, shared by the immediate and the DSP path (both run in the boot hook): the registry rows (the machine is listed from here), `init`, the
 /// slots. On an error everything it did is undone (the DSP part too) and the caller frees the module's memory.
 unsafe fn complete(
     rec: usize,
@@ -403,21 +366,6 @@ unsafe fn complete(
     OK
 }
 
-/// The DSP code of a pending load is in place and its voice rows are published: finish the load (called by `dsp::step`).
-pub unsafe fn complete_pending(p: &dsp::Pending) -> i32 {
-    let rec = p.rec as usize;
-    let m = &mut st().modules[rec];
-    let r = complete(rec, p.reg as *const u8, p.reg_size, p.init, p.mask, &p.fns);
-    if p.reg != 0 {
-        arena::free(p.reg as *mut u8);
-    }
-    if r != OK {
-        arena::free(m.base as *mut u8);
-        m.used = 0;
-    }
-    r
-}
-
 /// The DSP part of a module published at boot failed (the machine rows, `init` and the slots are in already): take it down again.
 pub unsafe fn undo_early(rec: usize) {
     unload_rec(rec);
@@ -429,54 +377,9 @@ pub static mut EARLY: bool = false;
 /// The selection index of the module being loaded by the boot hook (`u32::MAX`: none).
 pub static mut BOOT_IDX: u32 = u32::MAX;
 
-/// A pending load failed in the DSP part: free what the CF part allocated (the DSP part is undone by the caller).
-pub unsafe fn abort_pending(p: &dsp::Pending) {
-    let m = &mut st().modules[p.rec as usize];
-    if p.reg != 0 {
-        arena::free(p.reg as *mut u8);
-    }
-    arena::free(m.base as *mut u8);
-    m.used = 0;
-    m.slot_mask = 0;
-}
-
-/// The state machine is free: start the oldest queued load. A failure shows in `last_result`.
-pub unsafe fn start_queued() {
-    let mut path = [0u8; 64];
-    if dsp::dequeue(path.as_mut_ptr()) {
-        let r = load(path.as_ptr());
-        st().last_result = r;
-    }
-}
-
-/// See `dkrt_unload`.
-pub unsafe fn unload(name: *const u8) -> i32 {
-    init_once();
-    let s = st();
-    let mut rec = MAX_MODULES;
-    let mut i = 0;
-    while i < MAX_MODULES {
-        if s.modules[i].used != 0 && cstr_eq(s.modules[i].name.as_ptr(), name) {
-            rec = i;
-        }
-        i += 1;
-    }
-    if rec == MAX_MODULES {
-        return E_NOT_FOUND;
-    }
-    // a module whose DSP code is being sent, or a load in progress, is not unloaded (it would race the transfer)
-    if s.modules[rec].used != 1 || dsp::busy() {
-        return E_BUSY;
-    }
-    // a track of the active kit that uses one of its machines: refuse (nothing is touched)
-    if crate::registry::in_use(rec as u8 + 1) {
-        return E_TYPE_IN_USE;
-    }
-    unload_rec(rec)
-}
-
-/// Take module record `rec` down: slots, wait for tasks inside, `fini`, machine rows, DSP voice rows and range, memory. Used by
-/// `unload` after its checks and by the DSP loader when the DSP part of a module published at boot fails (`undo_early`).
+/// Take module record `rec` down: slots, wait for tasks inside, `fini`, machine rows, DSP voice rows and range, memory. Used only
+/// by the DSP loader when the DSP part of a module published at boot fails (`undo_early`). The run-time `unload` that also called
+/// it (with the in-use scan) is archived with hot reload.
 pub unsafe fn unload_rec(rec: usize) -> i32 {
     let s = st();
     let m: &mut Module = &mut s.modules[rec];

@@ -309,7 +309,7 @@ Items:
   - safe mode: a module that faults in `init` twice leads to a boot with no modules;
   - power cut while the selection is written (reset between the two copies): the next boot uses a valid copy;
   - write-watch, flush check and card-store check on every scenario.
-- [ ] Archive commit: remove the hot-only parts (unload, in-use scan, load queue, live LOAD/UNLOAD in the menu, the
+- [x] Archive commit (lane r4, 2026-10-17; list in docs/plans/digikit-hot-reload.md): remove the hot-only parts (unload, in-use scan, load queue, live LOAD/UNLOAD in the menu, the
   boot-unneeded view and rebuild hooks if the boot path proves them unneeded) in one commit, so `git revert` restores them.
 
 Gate: on both devices, a set of modules chosen in the menu (a machine with DSP code, a code-only module) is loaded after

@@ -1,3 +1,3 @@
 # DYN-PARAMS (test)
 
-A run-time machine whose eight knobs are eight parameters; a fixture for tools/patchkit/pk_registry.py. Emulator only.
+A run-time machine whose eight knobs are eight parameters; a fixture of the boot-time scenarios (tests/digikit); the hot `pk_registry.py` proof it served is archived. Emulator only.

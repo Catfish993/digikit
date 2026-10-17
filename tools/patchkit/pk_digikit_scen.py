@@ -428,11 +428,6 @@ def run_equiv(c: Ctx) -> None:
             and info["safe"] == 0,
             f"{info['results']}",
         )
-        c.check(
-            "no view rebuild: the stock builder read the rows",
-            info["view_rebuilds"] == 0,
-            str(info["view_rebuilds"]),
-        )
         got = decode_tables(rig)
         used = [r for r in rig.voice_rows() if r[0] != B.FREE_TYPE]
         want_voices = t.get("voices", 0)

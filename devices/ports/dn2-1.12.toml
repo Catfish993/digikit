@@ -39,52 +39,12 @@ excludes = []
 mark = "D"
 
 [[anchor]]
-name = "cf.dynreg.kit_of"
-cpu = "cf"
-kind = "code"
-addr = 0x4003e41a
-len = 6
-sha256 = "242f254f8637ee0a61c6f4eee76e02de6a54fc404235145f33f8de8142b994d5"
-mark = "D"
-rule = "core/dynreg:cf_func"
-
-[[anchor]]
 name = "cf.dynreg.list_copy"
 cpu = "cf"
 kind = "code"
 addr = 0x4004d994
 len = 6
 sha256 = "90c7fbe9c6489da25d7eb42917fc5c310af223606804215065065c066f090184"
-mark = "D"
-rule = "core/dynreg:cf_func"
-
-[[anchor]]
-name = "cf.dynreg.msv_build"
-cpu = "cf"
-kind = "code"
-addr = 0x4005b2c0
-len = 8
-sha256 = "d38e64037d171546ea46d9f5ff950af69f4742dd92f87e4f56faf9fe101bb64e"
-mark = "D"
-rule = "core/dynreg:cf_func"
-
-[[anchor]]
-name = "cf.dynreg.project"
-cpu = "cf"
-kind = "code"
-addr = 0x4018ac5a
-len = 4
-sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
-mark = "D"
-rule = "core/dynreg:cf_func"
-
-[[anchor]]
-name = "cf.dynreg.track_type"
-cpu = "cf"
-kind = "code"
-addr = 0x4003134e
-len = 4
-sha256 = "1752574de8d0026d70bf9141496056979060c689d8d347371a73b627becc2134"
 mark = "D"
 rule = "core/dynreg:cf_func"
 

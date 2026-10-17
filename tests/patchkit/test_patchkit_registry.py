@@ -2,20 +2,17 @@
 parameters that a `.dkm` adds at run time (docs/design/digikit-registry.md, finding 30).
 
 The committed objects are current; the packer lowers a dynamic module's typed sections into `register` records
-deterministically; the emulator proofs (tools/patchkit/pk_registry.py) patch the runtime and core/dynreg, load, refuse and
-unload modules through the mailbox, and check the firmware's own list getter and the rows (about 12 s per image), and, on
-a coupled daemon, the machine list on the panel, a track on the machine, the unload and the reload (frames pinned in
-tests/patchkit/registry_frames.json)."""
+deterministically; the emulator proofs are the boot-time scenarios of tests/digikit (the firmware's own list getter and rows with the module
+selected at boot, the PCM of the machine). The hot-load proofs that were here (digikit-hot-reload-v1:tools/patchkit/pk_registry.py: mailbox load,
+refuse, unload, the panel frames) are archived with hot reload (tag digikit-hot-reload-v1)."""
 
 import json
 
-import pytest
 from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.firmware import config  # noqa: E402
-from tools.patchkit import pk_build, pk_dkrt, pk_registry, pk_toolchains  # noqa: E402
+from tools.patchkit import pk_build, pk_dkrt, pk_toolchains  # noqa: E402
 
 DYNREG = ROOT / "modules/core/dynreg"
 RUNTIME = ROOT / "modules/core/runtime"
@@ -84,46 +81,3 @@ def test_pack_lowers_the_typed_sections_deterministically(tmp_path):
         tmp_path / "y.dkm",
     )
     assert r.returncode != 0
-
-
-@pytest.mark.parametrize("image", pk_registry.IMAGES)
-def test_runtime_registers_machines_and_parameters(image, tmp_path):
-    if not config.stock(pk_dkrt.DEVICE_SYX[image]).exists():
-        pytest.skip(f"{pk_dkrt.DEVICE_SYX[image]} missing")
-    report = pk_registry.proof(image, tmp_path)
-    failed = [c for c in report["checks"] if not c["ok"]]
-    assert not failed, failed
-    assert report["write_watch"]["flush_hits"] == []
-    assert set(report["write_watch"]["by_owner"]) <= {"core/machines"}
-
-
-@pytest.mark.parametrize("image", ["dn2-1.11", "dn2-1.12", "dt2-1.17"])
-def test_the_quick_proof_holds(image, tmp_path):
-    if not config.stock(pk_dkrt.DEVICE_SYX[image]).exists():
-        pytest.skip(f"{pk_dkrt.DEVICE_SYX[image]} missing")
-    report = pk_registry.proof(image, tmp_path, quick=True)
-    failed = [c for c in report["checks"] if not c["ok"]]
-    assert not failed, failed
-
-
-def test_the_write_watch_sees_the_runtime_when_its_code_is_not_allowed(tmp_path):
-    """Control: with the allowed PC range moved elsewhere the same run reports the runtime's own writes."""
-    if not config.stock("Digitakt_II_OS1.16.syx").exists():
-        pytest.skip("Digitakt_II_OS1.16.syx missing")
-    report = pk_registry.proof("dt2-1.16", tmp_path, control=True)
-    watch = next(c for c in report["checks"] if c["name"].startswith("control"))
-    assert watch["ok"], watch
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("image", pk_registry.IMAGES)
-def test_the_machine_appears_on_the_panel_and_goes_away(image, tmp_path):
-    from tools.patchkit import pk_harness as H
-
-    try:
-        H.firmware_inputs(H.Cell(image[:3], image[4:]))
-    except H.HarnessError as e:
-        pytest.skip(str(e))
-    report = pk_registry.ui_proof(image, tmp_path)
-    failed = [c for c in report["checks"] if not c["ok"]]
-    assert not failed, failed

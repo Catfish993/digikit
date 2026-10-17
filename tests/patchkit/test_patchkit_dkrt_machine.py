@@ -2,8 +2,8 @@
 
 Static checks: the committed objects are current, the DSP section is deterministic, its relocation agrees in three places
 (the Rust reference loader behind `patchkit dkm-dsp-image`, this file's own, and the loader's checks), and the two sides of the
-DSP area's size agree. The emulator proofs (tools/patchkit/pk_dkrt_machine.py) are slow: a run-time `pluck` against the patched-in
-one, PCM bit for bit, on the Digitakt II; the DSP half on the Digitone II."""
+DSP area's size agree. The emulator proofs are the boot-time equivalence scenarios (tests/digikit, equiv-dyn-pluck and equiv-dn2-set: a selected
+module against the patched-in one, PCM sample for sample); the hot-load proof that was here is archived."""
 
 import re
 
@@ -12,7 +12,6 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.firmware import config  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_build,
     pk_dkrt,
@@ -94,16 +93,3 @@ def test_a_dsp_only_module_packs_for_the_digitone_ii(tmp_path):
         tmp_path / "x",
     )
     assert r.returncode != 0
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize("image", ["dt2-1.17", "dn2-1.12"])
-def test_run_time_voice_equals_the_patched_in_one(image, tmp_path):
-    from tools.patchkit.pk_dkrt import DEVICE_SYX
-
-    if not config.stock(DEVICE_SYX[image]).exists():
-        pytest.skip(f"{DEVICE_SYX[image]} missing")
-    report = pk_dkrt_machine.proof(image, True, tmp_path)
-    failed = [c for c in report["checks"] if not c["ok"]]
-    assert not failed, failed
-    assert report["pcm"]["exact"] or report["pcm"]["differ_after_alignment"] == 0

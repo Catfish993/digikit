@@ -34,8 +34,6 @@ pub static mut DKRT_BOOT: DkrtBootInfo = DkrtBootInfo {
     ui_reached: 0,
     results: [0; SEL_MAX],
     dsp_wait: 0,
-    view_rebuilds: 0,
-    view_at_boot: 0,
 };
 /// The record this boot started from (or an empty one) and the bookkeeping the writes need.
 static mut REC: Record = Record::empty();
@@ -228,7 +226,6 @@ pub unsafe extern "C" fn dkrt_boot() {
     }
     b.magic = INFO_MAGIC;
     b.version = 1;
-    b.view_at_boot = crate::registry::view_now();
     let (rec, copy) = current();
     let valid = rec.is_some();
     let mut r = rec.unwrap_or(Record::empty());
@@ -332,7 +329,5 @@ pub unsafe fn boot_info(out: *mut DkrtBootInfo) {
         ui_reached: b.ui_reached,
         results: b.results,
         dsp_wait: b.dsp_wait,
-        view_rebuilds: b.view_rebuilds,
-        view_at_boot: b.view_at_boot,
     };
 }
