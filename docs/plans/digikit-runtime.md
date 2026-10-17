@@ -271,7 +271,7 @@ write-watch 0 events, flush check 0 hits (`tools/coldfire/digikit_menu_proof.py`
 
 Gate: a machine module selected in the menu plays in the emulator on both devices.
 
-### Phase 6: boot-time loading (decision 9; current)
+### Phase 6: boot-time loading (decision 9)
 
 Hook (finding 36 proposed a `jsr` just before the MainScreenView constructor; finding 37 measured that the machine view already
 exists there and moved it): a `hook` op at the **entry of the main-OS task** (DT2 0x400337ba, DN2 0x4002ed34). There the block read
@@ -316,11 +316,27 @@ Gate: on both devices, a set of modules chosen in the menu (a machine with DSP c
 APPLY & RESTART, plays like the patched-in set, and the round-trip and safe-mode tests pass.
 - [x] Menu gate (lane r4, finding 39): `uv run python -m tools.patchkit.pk_digikit_scen run menu-pluck-demo --tier full` (dt2-1.16/1.17, dn2-1.11/1.12: pass; ticks `test/dyn-demo` and `test/dyn-pluck`, APPLY & RESTART, PCM equal to the patched-in `machines/pluck`, watch 0, flush 0, card writes only in the selection sectors). The Digitone II pluck is `test/dyn-pluck` (equiv: `run equiv-dyn-pluck --tier full`). Round trip and safe mode: `roundtrip-*`, `safe-fault` (finding 39).
 
+### Phase 7: module upload and tools (2026-10-18; current)
+
+Spec: docs/design/digikit-upload.md (framing, commands, store format version 2 with two header copies).
+
+- [ ] Device side in `core/runtime`: the SysEx hook in the MIDI task on all four ports, INFO/LIST/BEGIN/DATA/END/DELETE/CLEAR/ABORT,
+  staging and the two-copy header commit; plusdrive builder, reader and exporter take store version 2 (lane r4).
+- [ ] A Python host tool, `dkupload` in tools/device (emulator and device), and the kept upload scenarios (lane r4).
+- [ ] Static check: can the runtime take its own SysEx before the firmware's per-event chain (finding 42 section 2, stages 2-3) to pass
+  1.4 MB/s (lane r4, report only).
+- [ ] Emulator: the idle fast-forward recognises the core/health counting loop and credits the skipped iterations (lane b).
+- [ ] `devrpc` 8-in-7 framing fixed; finding 25's FsSample write check re-run with valid writes (lane b).
+- [ ] Desktop and web app: a Modules panel (list, upload, delete, repack) over this protocol, to the running emulator; the device
+  MIDI path built but not sent to hardware (lane r1).
+
+Gate: on both devices in the emulator, a module uploaded from the desktop app and from the web app appears in DIGIKIT > MODULES,
+loads after APPLY & RESTART and plays like the card-built module; the cut and playback scenarios pass.
+
 ### Later
 
 - Hot loading and unloading: docs/plans/digikit-hot-reload.md (archived state and what is left).
-- USB upload of modules over SysEx (decision 11), then USB mass storage assessed.
-- Health and diagnostics module: CPU load (idle-task counter), RAM (buddy allocator bitmap), DSP load.
+- Samples over a vendor bulk interface (finding 42 route B), after a device measurement of the card write rate; mass storage only if that fails.
 - Faster transfer: assess separately. USB mass storage would show Elektron's filesystem, which no host can mount,
   so it would need a FAT view on the device or a host tool.
 - Browser: the web emulator has no card today; the dev loop is desktop only.
