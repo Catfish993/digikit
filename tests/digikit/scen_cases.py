@@ -24,9 +24,29 @@ def cases(kinds: tuple[str, ...], device: str | None = None):
     return out
 
 
-def run(scen, image, tmp_path):
+JOBS = int(os.environ.get("DIGIKIT_JOBS", "3"))
+_REPORTS: dict[tuple[str, str], dict] = {}
+
+
+def run(scen, image, tmp_path_factory, request):
+    """Run the case; the first case of a file runs every selected case of the file at once (JOBS processes), the others read their report."""
     if not config.stock(DEVICE_SYX[image]).exists():
         pytest.skip(f"{DEVICE_SYX[image]} missing")
-    report = S.run_scenario(scen, image, tmp_path)
+    key = (scen.name, image)
+    if key not in _REPORTS:
+        mine = [
+            (it.callspec.params["scen"], it.callspec.params["image"])
+            for it in request.session.items
+            if it.module is request.module and hasattr(it, "callspec")
+        ]
+        mine = [(s, i) for s, i in mine if config.stock(DEVICE_SYX[i]).exists()]
+        keep = tmp_path_factory.mktemp("digikit")
+        if len(mine) == 1:
+            _REPORTS[key] = S.run_scenario(
+                scen, image, keep / f"{scen.name}-{image}", TIER
+            )
+        else:
+            _REPORTS.update(S.run_pairs(mine, TIER, JOBS, keep, quiet=True))
+    report = _REPORTS[key]
     failed = [c for c in report["checks"] if not c["ok"]]
     assert report["pass"], failed

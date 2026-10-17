@@ -70,3 +70,18 @@ cases and one restart):
 - **The module store must keep clear of the record sectors** (`selection_sectors`): `plusdrive` still lets a store fill the whole range.
 - **A track that names a machine whose DSP part is not in yet** plays as type 0 for the first moments of a boot; saved projects keep the type byte.
 - **Hot-only code removed** (lane r4, the Phase 6 archive commit; list in docs/plans/digikit-hot-reload.md): run-time unload, in-use scan, request queue, view hook and rebuild. `DkrtBootInfo::view_rebuilds` and `view_at_boot` went with them; the rows above that mention them are the measurement before the removal. **[D]** The equivalence scenarios (stock list takes the module, track type 18, PCM equal) pass without the view hook.
+
+## The DSP part of a boot-loaded module: when the voice row is in, both devices (lane r4, 2026-10-17)
+
+**[D]** Measured with `equiv-dyn-pluck` (the runner records it in the report as `boot_ready`; `BootRig.start` steps one DSP block at a time from the ready point of the cold boot
+until the module's result is no longer `LOADING`). DSP blocks are 64 samples at 48 kHz, 1.33 ms; a block is 88 000 ColdFire instructions.
+
+| Image (module `test/dyn-pluck`) | At the ready point | Voice row in |
+| --- | --- | --- |
+| dt2-1.17 | result 0, voice row in | **0 blocks after the ready point**: the DSP part (3.5 KB image) is done before the cold boot is ready |
+| dn2-1.11 and dn2-1.12 | result `LOADING` (1), no voice row | **154 blocks, 205 ms after the ready point** (the 3.5 KB image is about 76 chunks of 48 bytes, two blocks each; finding 32 measured 153) |
+
+- **[C]** Above, "by the ready point of the cold boot the DSP part is done" holds on the Digitakt II only. On the Digitone II the DSP part finishes about 0.2 s into the
+  UI loop, so a saved track on a run-time DSP machine plays as type 0 for that long after the main screen appears (the machine row, the parameters and the page are in from the
+  hook on). The time from the task entry to the ready point is not stepped: the cold boot runs on the controller's worker; its length is the ColdFire boot (1.11e9 instructions on DT2 1.17), not the load.
+- **[O]** On a device the eMMC reads take real time and the chunk rate of the DN2 frame tail is the same, so the DN2 figure should hold; the DT2 one depends on how far the cold boot runs past the time the frames carry code.

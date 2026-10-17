@@ -5,7 +5,7 @@ name = "Pluck"
 category = "machines"
 status = "experimental"
 summary = "A plucked-string synth machine with decay, pick position, brightness and colour."
-ports = ["dt2-1.16", "dt2-1.17", "dn2-1.12"]
+ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
 requires = ["core/dsp-voice", "core/machines", "core/params"]
 conflicts = []
 

@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -54,8 +55,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 
 from tools.coldfire import arena_safety  # noqa: E402
+from tools.control.digi_client import Emu, EmuError  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_dkrt_machine as M  # noqa: E402
+from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit.pk_dkrt import (  # noqa: E402
     DEVICE_SYX,
     Tools,
@@ -87,6 +90,9 @@ BI_FIELDS = [
     "loaded",
     "ui_reached",
 ]
+SETTLE_MS = int(
+    os.environ.get("DIGIKIT_SETTLE_MS", "1500")
+)  # emulated ms the first UI-loop passes run before a scenario looks (wait_dsp then waits for a module's DSP part)
 E_SAFE_MODE = -44
 E_LOADING = 1
 RT = "core/runtime,core/dynreg,core/dyndsp"
@@ -225,10 +231,14 @@ class Env:
         tag: str = "boot",
         watch: bool = False,
         extra_env: dict[str, str] | None = None,
+        cf_only: bool = False,
+        settle_ms: int | None = None,
     ) -> BootRig:
+        # SETTLE_MS: emulated ms to run after the boot before the rig is handed out (default SETTLE_MS)
+        # CF_ONLY: a daemon without DSP and audio (`CfBootRig`)
         # (the cold boot runs the image's own DSP code from the start, as a device does: a boot-time DSP load needs it)
         # DIGI_WRITE_WATCH_SEQ: one watch summary per emulator (the cold boot, each reset boot, the installed runtime)
-        return BootRig(
+        rig = (CfBootRig if cf_only else BootRig)(
             self,
             img,
             tag,
@@ -239,6 +249,9 @@ class Env:
                 **(extra_env or {}),
             },
         )
+        if settle_ms is not None:
+            rig.settle_ms = settle_ms
+        return rig
 
 
 class BootRig(M.Rig):
@@ -266,22 +279,57 @@ class BootRig(M.Rig):
             extra_env,
         )
         self.env, self.card_path = env, card
-        self.boot_sym = M.sym(img.plan, "core/runtime", "DKRT_BOOT")
+        self._lock: Any = None
+        self.settle_ms = SETTLE_MS
+        self.boot_sym = (
+            M.sym(img.plan, "core/runtime", "DKRT_BOOT") if M.has_rt(img.plan) else 0
+        )
 
     def __enter__(self) -> BootRig:
-        self.start()
+        # two rigs on one run directory (one firmware on one card) would share a socket and a boot cache: the second waits
+        # (scenarios run side by side in threads and in processes)
+        import fcntl
+
+        H.OUT.mkdir(parents=True, exist_ok=True)
+        self._lock = (H.OUT / f"run-{self.s.run_name}.lock").open("w")
+        fcntl.flock(self._lock, fcntl.LOCK_EX)
+        try:
+            self.start()
+        except BaseException:
+            self._release()
+            raise
         return self
 
-    def __exit__(self, *exc: object) -> None:
+    def _release(self) -> None:
         self.s.close()
+        lock, self._lock = self._lock, None
+        if lock is not None:
+            lock.close()  # closing the file drops the flock
+
+    def __exit__(self, *exc: object) -> None:
+        self._release()
 
     def start(self) -> None:  # the cold boot has run the hook; no mailbox traffic yet
         self.s.open(self.syx)
         self.s.segment = "boot"
         # the state at the ready point of the cold boot, before anything else runs: is the DSP part of the selection done?
         self.at_ready = self.boot_info()
+        # when the cold boot is ready: DSP blocks since the boot (a block is 64 samples at 48 kHz) and whether the voice row is in
+        self.frames_at_ready = self.frames()
+        self.voice_at_ready = [r for r in self.voice_rows() if r[0] != FREE_TYPE]
+        # DSP blocks from the ready point (the cold boot is ready, the UI loop runs) to the DSP part being done: a saved track plays as
+        # type 0 until then. None: no DSP part (or already done at the ready point: 0).
+        self.blocks_to_dsp: int | None = (
+            0 if E_LOADING not in self.at_ready["results"] else None
+        )
+        n = 0
+        while self.blocks_to_dsp is None and n < 3000:
+            self.emu.step(88_000)
+            n += 1
+            if E_LOADING not in self.boot_info()["results"]:
+                self.blocks_to_dsp = self.frames() - self.frames_at_ready
         self.s.reset()
-        self.s.run_ms(1500)
+        self.s.run_ms(self.settle_ms)
         self.wait_dsp()
 
     def wait_dsp(self, ms: int = 5000) -> None:
@@ -360,6 +408,87 @@ class BootRig(M.Rig):
             "flush_hits": flush,
             "cpushl": cpushl,
         }
+
+
+class CfFolderSession(M.FolderSession):
+    """A daemon without DSP and audio: the ColdFire alone. Its cold boot to the main panel takes about 6 s (the coupled one 10 to 20 s)
+    and a second of emulated idle time costs almost nothing (the coupled daemon runs at about a quarter of real time). What the
+    firmware does on the ColdFire is the same; what needs the DSP (a module's DSP part, voice rows, PCM) is not there."""
+
+    def open(self, image: Path | None = None) -> None:
+        exe = H.daemon_binary(self.cell.device, self.syx)
+        self.emu = Emu.spawn(
+            binary=exe,
+            timeout=300,
+            run_dir=H.OUT / f"run-{self.run_name}",
+            env=self.env,
+        )
+        self.emu.subscribe()
+        self.card = str(self.card_img)
+        assert image is not None
+        self.load(image)
+
+    def load(self, image: Path, settle: bool = False) -> dict[str, Any]:
+        emu = self.emu
+        assert emu is not None and self.card is not None
+        started = time.monotonic()
+        try:
+            report = emu.call(
+                "firmware.load",
+                syx=str(image),
+                force=True,
+                auto_no=True,
+                start="auto",
+                card=self.card,
+            )
+        except EmuError as e:
+            raise H.LoadFailure(f"firmware.load {image.name}: {e}") from e
+        self.image, self.load_report = image, report
+        emu.watchdog(self.cell.stall_ms)
+        # the boot job runs when the daemon is stepped; the panel is up when the main UI has been reached (a used card never runs
+        # the DT2 filesystem check the coupled readiness contract waits for)
+        for _ in range(400):
+            emu.step(20_000_000)
+            cf = emu.status()["cf"]
+            if cf.get("error") or cf["phase"] == "fault":
+                raise H.LoadFailure(f"cold boot: {cf.get('error')} pc={cf['pc']:#x}")
+            if cf["main_ui_reached"]:
+                break
+        else:
+            raise H.LoadFailure("cold boot: the main panel was not reached")
+        emu.drain_events()
+        self.timings["load_s"] = time.monotonic() - started
+        return report
+
+    def reset(self) -> None:
+        raise Fail("a ColdFire-only daemon has no reset to the ready state")
+
+    def mark_pcm(self) -> None:  # no PCM tap
+        pass
+
+
+class CfBootRig(BootRig):
+    """`BootRig` on a ColdFire-only daemon (`CfFolderSession`): panel scripts, RAM views and the card; no DSP, no PCM, no restart.
+    `boot_info()['results']` of a module with a DSP part still reads `LOADING`."""
+
+    session_cls = CfFolderSession
+
+    def start(self) -> None:
+        self.s.open(self.syx)
+        self.s.segment = "boot"
+        self.at_ready = self.boot_info()
+        self.s.run_ms(
+            self.settle_ms
+        )  # the first UI-loop passes, as the coupled rig settles
+
+    def wait_dsp(self, ms: int = 5000) -> None:
+        pass
+
+    def voice_rows(self) -> list[tuple[int, int]]:
+        raise Fail("no DSP in a ColdFire-only rig")
+
+    def restart(self, timeout_s: float = 900.0) -> None:
+        raise Fail("the soft-reset model is coupled only")
 
 
 # ---- the proof ----------------------------------------------------------------------------------------------------------------

@@ -262,7 +262,7 @@ write-watch 0 events, flush check 0 hits (`tools/coldfire/digikit_menu_proof.py`
 - [x] Port `machines/pluck` through the SDK as the proof (ColdFire and DSP sides): `test/dyn-pluck` (typed sections + the pluck DSP source),
   Digitakt II 1.16 and 1.17. Digitone II: the DSP side only (`test/dyn-sine-dn2` against `test/dn2-sine`, type forced in the DSP's
   frame copy).
-- [ ] Join the halves on the Digitone II: a `dyn-pluck` for DN2 (own_dsp machine and SYN page from finding 33, the DSP section from
+- [x] (done, lane r4, finding 39) Join the halves on the Digitone II: a `dyn-pluck` for DN2 (own_dsp machine and SYN page from finding 33, the DSP section from
   finding 32) loaded from the menu plays like the patched-in `machines/pluck` on dn2-1.11/1.12; the Digitakt II proof through the menu as well
   (the proofs load through the mailbox today). This is the Phase 5 gate.
 - [ ] The DSP selector word of a run-time machine (a clone of SLICE plays as SAMPLE; route and estimate in finding 32).
@@ -314,6 +314,7 @@ Items:
 
 Gate: on both devices, a set of modules chosen in the menu (a machine with DSP code, a code-only module) is loaded after
 APPLY & RESTART, plays like the patched-in set, and the round-trip and safe-mode tests pass.
+- [x] Menu gate (lane r4, finding 39): `uv run python -m tools.patchkit.pk_digikit_scen run menu-pluck-demo --tier full` (dt2-1.16/1.17, dn2-1.11/1.12: pass; ticks `test/dyn-demo` and `test/dyn-pluck`, APPLY & RESTART, PCM equal to the patched-in `machines/pluck`, watch 0, flush 0, card writes only in the selection sectors). The Digitone II pluck is `test/dyn-pluck` (equiv: `run equiv-dyn-pluck --tier full`). Round trip and safe mode: `roundtrip-*`, `safe-fault` (finding 39).
 
 ### Later
 

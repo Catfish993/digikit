@@ -47,11 +47,80 @@ preset lock (LEVEL) is saved through the panel (FUNC+SETTINGS). Under set A the 
   run on a used card (as after a soft reset, finding 37). `DIGI_COLD_RELAX_FS=1` (`packages/emulator/control/src/controller.rs`, also in the boot-cache key) makes the cold boot
   ready at the main panel; the runner sets it for cards made by `card_after` only.
 - **[D]** The machine selection on DT2 puts a track's type byte at `0x4265338e + 0x450 * (track - 1)` (the kit's track stride, finding 02); `TRK` + `TRIG n` selects track n.
-- **[D]** Most of a scenario's time is emulated panel time (a save and a load take about 10 s each, a restart about the same), not the boots: restoring the cold boots from the
+- **[D]** (Superseded by the section "Time: where it went" below: the cause is the coupled emulator's speed, 0.24x, and the fix is not to run the SHARC+ where nothing needs it.) Most of a scenario's time is emulated panel time (a save and a load take about 10 s each, a restart about the same), not the boots: restoring the cold boots from the
   cache saves 10 to 40 s per boot only. Measured standalone, the quick tier is 97 s (equiv DT2), about 60 s (equiv DN2), 187 s (round trip DT2), 239 s (safe and cut DT2) and about 130 s (safe and cut DN2); inside `mise run verify`, with the cargo tests and the other python tests running, the same files took 97 to 620 s (five files in parallel, `DIGI_PY_JOBS`), so the budget of about 3 minutes holds only for an idle machine.
 - **[D]** `verify` builds in the target directory the scenarios use while the python tests run, so a tool binary can be missing for a moment: the runner retries a missing tool for up to 3 minutes.
 - **[C]** `pk_dkrt_boot.py`'s own proof (`proof --quick`) covers equiv for one device image, restart, cut and safe; the scenario suite replaces its equiv, cut and safe parts
   with data files and adds the sets, the round trip and the DN2 variants. The proof tool stays as it is (restart, the watch totals).
+
+## Time: where it went and what changed (lane b, 2026-10-17)
+
+Tool: `DIGIKIT_PROFILE=1 uv run python -m tools.patchkit.pk_digikit_scen run NAME` (or `uv run python -m tools.patchkit.pk_digikit_prof NAME`) prints wall time per phase (exclusive),
+per named step and the emulator's speed. All **[D]**, one run each, DT2 1.17 / DN2 1.12, warm boot caches, the machine shared with other lanes.
+
+**The speed of the emulator is the cost.** The coupled daemon (ColdFire + SHARC+ in step) runs the panel at **0.21 to 0.24 emulated seconds per wall second**
+(8.7 emulated s in 38.7 s on the pluck scenario, 35.3 s in 147 s on the round trip); a coupled cold boot to ready takes 16 to 20 s (DT2) and 9 s (DN2),
+restoring it from the boot cache 1 s. The ColdFire alone (`cf_script`, or a `digi-emud` started without `--auto-coupled`) boots the same patched
+firmware to the main panel in **5.7 s**, runs the panel at **1.1 emulated seconds per wall second** and skips idle time (3 emulated idle seconds: 0.13 s).
+The SHARC+ is what costs; what the firmware saves to the card does not depend on it.
+
+Before (wall seconds; the phases are exclusive):
+
+| Phase | equiv-dyn-pluck (DT2) | equiv-dn2-set (DN2, cold boots) | roundtrip-dt2 |
+| --- | --- | --- | --- |
+| image build and patch, pack | 2.9 | 2.8 | 1.5 |
+| daemon spawn | 2.0 | 14.2 (DN2 spawn 4.7 each) | 1.6 |
+| boot: cache restore (DT2) / cold boot (DN2, first run of a card) | 3.1 (3 x 1.0) | 28.2 (3 x 9.4) | 16.9 (1 x 1.0, 1 x 15.9 cold) |
+| reset after the boot | 3.2 | 1.1 | 2.0 |
+| emulated panel and settle (coupled `step`) | 38.7 (8.7 emulated s) | 26.3 (5.5 emulated s) | 147.1 (35.3 emulated s) |
+| note: run to the trig frame, capture (PCM) | 22.6 (13.5 + 9.1) | 30.5 (21.4 + 9.1) | - |
+| oracles (decode, compare, slot diff), close, writes | 1.0 | 1.0 | 4.0 |
+| **total** | **73** | **104** | **174** |
+
+In the round trip a save is 18 s, building the project 45 s, a load 33 s. In the note scenarios the frame at which the note starts (`TRIG_FRAME`) was a
+constant chosen for the slowest setup: the rigs were at frame 5130 (DT2) and 2700 (DN2) and idled to 7500 and 6000 (6.8 s and 10.8 s per rig).
+
+Ceiling (best case per phase, same oracles): spawn and cache restore 1 + 1 s; image build 1.2 s (patchkit); the panel script in emulated time on the
+ColdFire alone (the project round trip: about 14 s for the first boot, 14 s for the second); where the DSP is needed (selection of a machine, the note, the
+DSP part of a module), coupled seconds at 4.4 s wall each: the capture of 1500 frames is 2 emulated s = 4.5 s and cannot be shortened without
+shortening what the PCM oracle compares; the machine list on the panel about 1.5 emulated s = 6 s; boot settle 0.3 emulated s. The pluck scenario's
+floor is about 17 s, the DN2 set's about 12 s, the round trip's about 30 s (two ColdFire boots in a chain, each save needs the card of the one before).
+
+Built (every oracle unchanged; results identical, see below):
+
+- **ColdFire-only rig for the panel script of the round trip** (`pk_dkrt_boot.CfBootRig`, `Ctx.rig(..., cf_only=True)`; scenario key `engine = "cf"`, the default of
+  `roundtrip`). The boot check "every module loaded, DSP part included" runs on a coupled boot of the same card in a thread beside it (the ColdFire part is
+  checked on the ColdFire rig: `count`, no safe mode, every result 0 or `LOADING`). A realistic coupled run of the same panel script stays as
+  `roundtrip-dt2-coupled` (`engine = "coupled"`, full tier, DT2 1.17). The DT2 round trip: 174 s to **38 s**; `roundtrip-dn2` (4 boots) 164 to 276 s to 128 s inside a full-tier run with six jobs at load 18 (not measured alone).
+- **Independent boots run side by side** (`Ctx.parallel`): the reference boot and the run-time boot of an equivalence scenario; the cases of a power-cut scenario; the
+  two boots of the safe scenario. A boot of "no module" is made only when it is the reference (a set without a twin); with a twin the old run made it only to
+  report it. A rig holds an exclusive lock on its run directory (one firmware on one card), so two scenarios in parallel never share a daemon socket.
+- **Shorter setup**: the rig runs 300 emulated ms after the boot instead of 1500 (`wait_dsp` still waits for a module's DSP part; the panel scripts that save
+  a project keep 1500: with 300 the save wrote nothing, the oracle failed as it should); `trig_frame` of the two note scenarios set to the setup's end
+  plus 170 frames (3500 for the pluck, 1050 for the DN2 set; a rig that is already past it fails with "raise TRIG_FRAME", as before).
+- **Parallel cases** in the pytest files (`DIGIKIT_JOBS`, default 3) and `pk_digikit_scen run --jobs N`; `DIGIKIT_RUN_SALT=x` forces cold boots (timing of a first run).
+- The boot cache already is the "booted-state snapshot": the daemon saves the ready pair (ColdFire snapshot and DSP state, taken after the boot hook has run) per
+  firmware and card path; restoring it costs 1 s. A snapshot before the hook would restore faster than a cold boot only on a first run (the pair is cached per card anyway) and would
+  have to be keyed by the sections and the card bytes outside the store; with 1 s restores it buys nothing, so it was not built. The boot of the DN2 daemon was cold in every run of my first profile only because that run was the first of those cards.
+
+Not built: calling the firmware's save and load functions from a script (the ColdFire-only rig makes the panel route cheap enough and keeps it the real route);
+running the patched-in twin and the boot-loaded image in one daemon (they are different firmwares); a no-DSP rig for the equivalence scenarios (the DSP
+part, the voice rows and the PCM are what they check).
+
+After (wall seconds, DT2 1.17 / DN2 1.12, scenario alone, warm caches, then cold boots):
+
+| Scenario | before | after (warm) | after (cold boots) |
+| --- | --- | --- | --- |
+| equiv-dyn-pluck | 73 (cold first run 131) | 20.7 | 40 (in the quick tier run) |
+| equiv-dn2-set | 104 (first run) | 14.2 | 22 |
+| roundtrip-dt2 | 174 | 37.7 | 44 |
+| the three at once (the quick tier) | 174 (the longest) | 38 | 44 |
+| full tier, five pytest files at once (as `verify --full`) | about 50 min serial | 250 s | - |
+
+A/B (same scenario, before and after, same oracle): the project of the round trip is bit-for-bit the same. The report of the old coupled run and of the ColdFire-only run
+agree in `edit_vs_baseline`, `pattern0_changes` (the changed bytes of pattern 1), `pattern0_changed_bytes`, `save2_vs_save1`, `header_stamps`, and every check but the
+selection hint of the panel list (`9 downs` against `11 downs`: the list path differs, the machine reached is the same type 18); `roundtrip-dt2-coupled` passes with
+the old route. Equivalence: all checks pass as before, the PCM of the note exact (`exact True`, 0 samples differ) with the shorter setup. The full tier (31 pairs, all four images) passes.
 
 ## Open **[O]**
 
@@ -59,3 +128,18 @@ preset lock (LEVEL) is saved through the panel (FUNC+SETTINGS). Under set A the 
 - The preset lock is not decoded; the p-lock only by changed bytes.
 - Only the newest image of each device is in the quick tier; the full tier (`verify --full`, `DIGIKIT_TIER=full`) runs every scenario on all four images (about 50 minutes serial).
 - Equivalence compares decoded rows, not the raw bytes of the tables (the type numbers, parameter codes and string pointers differ between a run-time and a patched-in set by construction).
+
+## Phase 6 gate: dyn-pluck on both devices, and through the menu (lane r4, 2026-10-17)
+
+**[D]** Native emulator, stock images, nothing ran on a device.
+
+| Scenario (kind) | What it proves | Result, wall clock of one image |
+| --- | --- | --- |
+| `equiv-dyn-pluck` (equiv, now both devices; quick tier) | `test/dyn-pluck` now builds for the Digitone II: the `own_dsp` machine (permanent type 17, `types.toml` `[dn2.dynamic]`), its SYN page with four knobs and `pluck_dn2.s` as the DSP section. Selected at boot it gives rows equal to the patched-in `machines/pluck` and a PCM equal from the onset (96 000 samples, 0 differ after alignment, onset shift 64 as in finding 37), key held through the capture | pass dn2-1.12 67 to 83 s, dn2-1.11 32 to 48 s; dt2-1.16 131 s, dt2-1.17 70 s (unchanged result) |
+| `menu-pluck-demo` (menu, new kind; full tier) | boot with an empty selection; SETTINGS > DIGIKIT > MODULES; tick `test/dyn-demo` (code only) and `test/dyn-pluck`; APPLY & RESTART (first press: one popup, nothing saved; second: `dkrt_selection_set` 0, soft reset); the next boot: both results 0, the record in use holds the two paths, the machine is in the list with the patched-in `machines/pluck` rows, one voice row, a note on it equal to the patched-in set (DN2: exact; DT2: 0 differ from the onset), write-watch 0, flush hits 0, card writes in the store range only `0x3dffe` and `0x3dfff` | pass dt2-1.17 153 s, dt2-1.16 187 s, dn2-1.12 146 s, dn2-1.11 81 s |
+
+- **[D]** On the Digitone II the patched-in `machines/pluck` cannot share an image with the runtime: `pluck_dn2` reserves 256 KiB of delay lines and the runtime's DSP area is 320 KiB
+  (`dsp.l2` has 490 948 bytes; 329 364 used by the runtime, 265 668 asked by the module). The reference image of a DN2 pluck scenario is therefore built **without the runtime**
+  (`ref_plain = true`; `PlainRig`, the same panel and capture) and compared by rows and PCM only. The run-time module needs no second copy: its delay lines live in the area.
+- `machines/pluck` lists `dn2-1.11` in `ports` now (its target was `untested`); the equivalence passes on it.
+- **[D]** The menu scenario needs more than the 120 s that fit the quick tier (the panel script and the restart are emulated time), so it runs in the full tier; the DN2 `equiv-dyn-pluck` joins the quick tier.

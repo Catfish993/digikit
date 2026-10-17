@@ -153,8 +153,16 @@ class FolderSession(H.Session):
         self.load(image)
 
 
+def has_rt(plan: dict) -> bool:
+    return any(k.startswith("core/runtime@") for k in plan["symbols"])
+
+
 class Rig:
     """One image, one daemon: the helpers both kinds of run share."""
+
+    session_cls: type[FolderSession] = (
+        FolderSession  # a subclass picks another kind of daemon (pk_dkrt_boot.CfBootRig)
+    )
 
     def __init__(self, tag: str, image: str, modules: str, plan: dict, syx: Path, folder: Path, work: Path, watch: bool,
                  card_img: Path | None = None, extra_env: dict[str, str] | None = None):  # fmt: skip
@@ -189,7 +197,7 @@ class Rig:
                 "DIGI_FLUSH_CHECK": "1",
                 "DIGI_WRITE_WATCH_OUT": str(out),
             }
-        self.s = FolderSession(
+        self.s = self.session_cls(
             cell,
             H.Goldens(work / f"{tag}.goldens.json"),
             run_name=f"dkm-{tag}-{image}",
@@ -199,9 +207,10 @@ class Rig:
         self.s.card_img = card_img
         self.syx = syx
         self.checks: list[tuple[str, bool, str]] = []
-        self.mb = sym(plan, "core/runtime", "DKRT_MAILBOX")
-        self.state = sym(plan, "core/runtime", "DKRT_STATE")
-        self.dsp = sym(plan, "core/runtime", "DKRT_DSP")
+        # (a reference image without the runtime, `ref_plain` scenarios, has none of these)
+        self.mb = sym(plan, "core/runtime", "DKRT_MAILBOX") if has_rt(plan) else 0
+        self.state = sym(plan, "core/runtime", "DKRT_STATE") if has_rt(plan) else 0
+        self.dsp = sym(plan, "core/runtime", "DKRT_DSP") if has_rt(plan) else 0
 
     def check(self, name: str, ok: bool, detail: str = "") -> None:
         self.checks.append((f"{self.tag}: {name}", bool(ok), detail))

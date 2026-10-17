@@ -93,6 +93,7 @@ boots the patched firmware in the coupled emulator through `pk_dkrt_boot` (`Env`
 | --- | --- |
 | `equiv` | the machine, parameter and page rows (decoded: names, ranges, defaults, slots, knobs) and the voice rows of a boot with set S equal those of the image patchkit builds with S's static twin (`modules/test/twin-*`, `machines/pluck`, `test/dn2-sine`); the PCM of a note equal where the set has a sound. A set with no twin leaves every table as a boot with no module. |
 | `roundtrip` | a project with run-time machines on tracks, parameter values, a p-lock and a preset lock is saved under set A, loaded and saved under set B (a machine absent) and under A again: the MmcFs slot is byte-identical to the first save but for one header stamp word; the sound records keep the machine types. Controls: the panel script changed the project; the stamp changes once. |
+| `menu` | a set ticked in SETTINGS > DIGIKIT > MODULES on a boot with no selection, APPLY & RESTART (two presses): the next boot loaded the whole set (the record, the results), the machine is in the list with the patched-in set's rows, a note plays PCM equal to the patched-in set. Full tier (about 2.5 minutes per image). |
 | `safe` | a module whose `init` resets the machine: the third boot is safe mode (reason counter), nothing loaded, selection kept; the safe-once flag. |
 | `cut` | the card states a power cut leaves between the two copies of the selection record, and one copy written by the runtime itself. |
 
@@ -102,10 +103,16 @@ sectors the guest wrote (in the store range only the two selection sectors).
 Tiers: `DIGIKIT_TIER=quick` (default; the scenarios marked `tier = "quick"`, the newest image of each device) is what `mise run verify` runs when
 a file of the runtime, `core/dynreg`, `core/dsp-link`, `core/dyndsp`, `core/digikit-menu`, the `.dkm` packer, `plusdrive`, the boot tools or `tests/digikit` changed (the
 suite `digikit-boot` in `tools/devtools/verify.py`; one pytest file per group, so they run in parallel); `verify --full` sets `DIGIKIT_TIER=full`: every
-scenario on all four images. The quick tier is the pluck equivalence (DT2), the DN2 set and the DT2 round trip (about 3 minutes in parallel);
+scenario on all four images. The quick tier is the pluck equivalence (both devices), the DN2 set and the DT2 round trip (under a minute in parallel);
 safe mode and the power cut run in the full tier. Cards are cached by content in `out/cache/digikit/cards/` (read-only for the guest; its writes live in an overlay),
 so a repeated scenario reuses the daemon's boot cache; most of the time of a scenario is emulated panel time (a project save and load take about 10 s each), not the boots.
 A scenario file is `tests/digikit/scenarios/NAME.toml`: `[scenario] name, kind, devices, tier`, and a table named like the kind (the runner's docstring lists the keys).
+Speed (finding 39, "Time: where it went"): the coupled daemon runs the panel at about a quarter of real time, the ColdFire alone at real time and faster, so the panel script of
+the `roundtrip` kind runs on ColdFire-only daemons (`engine = "cf"`, the default; `engine = "coupled"` is `roundtrip-dt2-coupled`, full tier) while a coupled boot of the same card checks the
+DSP part of the modules. Independent boots of a scenario run in threads; the cases of a test file run side by side (`DIGIKIT_JOBS`, default 3; `pk_digikit_scen run --jobs N`).
+The `equiv` keys `trig_frame` (the frame the note starts at; the rigs must be before it) set it close to the end of the setup. Timing: `DIGIKIT_PROFILE=1` prints the phase table of a run,
+`DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` changes the 300 ms the rigs run after their boot. Measured on a quiet machine: the quick tier (three scenarios at once) 38 s with warm boot caches and 44 s cold;
+the full tier (five test files at once) 250 s.
 
 ## DSP budget gate (patchkit smoke)
 

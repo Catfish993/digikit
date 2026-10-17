@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -249,6 +250,31 @@ def export(rig: B.BootRig, name: str) -> Path:
     return out
 
 
+def boot_check(
+    c: Any, img: Any, card: Path, tag: str, label: str, sel: list[str]
+) -> threading.Thread:
+    """The coupled boot of CARD in a thread: every module loaded, its DSP part included (the panel script runs elsewhere meanwhile)."""
+
+    def run() -> None:
+        try:
+            with c.rig(img, card, tag, settle_ms=B.SETTLE_MS) as rig:
+                info = rig.boot_info()
+                c.check(
+                    f"{label}: every module loaded",
+                    info["loaded"] == len(sel)
+                    and info["safe"] == 0
+                    and all(r == 0 for r in info["results"]),
+                    str(info["results"]),
+                )
+                c.done(rig)
+        except Exception as e:  # noqa: BLE001  a failed boot check fails the scenario with its reason
+            c.check(f"{label}: coupled boot check: {type(e).__name__}: {e}", False)
+
+    th = threading.Thread(target=run, name=tag)
+    th.start()
+    return th
+
+
 def run_roundtrip(c: Any) -> None:
     t = c.table()
     sets: dict[str, list[str]] = t["sets"]
@@ -266,20 +292,43 @@ def run_roundtrip(c: Any) -> None:
     ] = []  # (set name, card after, slot sectors)
     touched: set[int] = set()
     edited = False
+    engine = t.get(
+        "engine", "cf"
+    )  # cf: the panel script runs on ColdFire-only daemons, the boot check on coupled ones, in parallel
+    checks: list[threading.Thread] = []
     for step, name in enumerate(order):
         sel = [files[m] for m in sets[name]]
         card = c.card(sel, base=base_card) if base_card else c.card(sel)
         if base_card:
             c.used_cards.add(card.name)
-        with c.rig(img, card, f"rt{step}") as rig:
-            info = rig.boot_info()
-            c.check(
-                f"boot {step + 1} (set {name}): every module loaded",
-                info["loaded"] == len(sel)
-                and info["safe"] == 0
-                and all(r == 0 for r in info["results"]),
-                str(info["results"]),
+        if engine == "cf":
+            checks.append(
+                boot_check(
+                    c, img, card, f"rtb{step}", f"boot {step + 1} (set {name})", sel
+                )
             )
+        with c.rig(
+            img, card, f"rt{step}", cf_only=engine == "cf", settle_ms=B.SETTLE_MS
+        ) as rig:
+            info = rig.boot_info()
+            if (
+                engine == "cf"
+            ):  # the ColdFire half of the boot check; a module's DSP part is still pending here
+                c.check(
+                    f"boot {step + 1} (set {name}): every module loaded (ColdFire part)",
+                    info["count"] == len(sel)
+                    and info["safe"] == 0
+                    and all(r in (0, B.E_LOADING) for r in info["results"]),
+                    str(info["results"]),
+                )
+            else:
+                c.check(
+                    f"boot {step + 1} (set {name}): every module loaded",
+                    info["loaded"] == len(sel)
+                    and info["safe"] == 0
+                    and all(r == 0 for r in info["results"]),
+                    str(info["results"]),
+                )
             if step == 0:
                 save_project(rig)
                 base_ov = export(rig, "base")
@@ -299,6 +348,8 @@ def run_roundtrip(c: Any) -> None:
             base_card_after = card_after(c, card, base_ov)
         saves.append((name, after, slot_sectors(ov)))
         base_card = after
+    for th in checks:
+        th.join()
     assert edited
     # compare: the slot of every save against the first
     imgs = [slot_image(card, touched) for _, card, _ in saves]
