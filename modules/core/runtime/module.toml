@@ -23,7 +23,7 @@ sources = ["src/rs/Cargo.toml"]
 place = "cf.expansion"
 # The run-time registry's table of addresses (core/dynreg), the DSP code channel (core/dsp-link: dl_send, dl_send_win, dl_poll) and
 # the table of DSP addresses (core/dyndsp); each is 0 when its module is not in the image.
-optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dyndsp_info"]
+optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dyndsp_info", "health_read", "health_heap"]
 
 [object.externs]
 fw_block_read = "dkrt.fw.block_read"

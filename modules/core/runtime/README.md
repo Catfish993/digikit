@@ -13,3 +13,5 @@ hot reload is archived, `docs/plans/digikit-hot-reload.md`). The DIGIKIT menu ch
   boot with that `plus_drive/`; put `modules/dyn-demo.dkm` in `plus_drive/dt2/digikit/selection.txt` (or use DIGIKIT > MODULES), and the boot loads it.
 - Layout: `sdk/` is the crate both the runtime and modules use (`Api`, result codes); `src/rs/` the runtime; `src/cf/tramp.s` the
   hook trampoline and `dkrt_flush`; `src/cf/<dev>/device.s` the device id.
+- Health (finding 41): `dkrt_health(DkrtHealth *)` (CPU load, the DSP's block time, heap, arena, DSP area; the first three need `core/health`), `dkrt_blocks()` (a 1500 Hz
+  clock), `dkrt_poll_set(fn)` (a function the UI-loop tick calls once per pass; the DIGIKIT HEALTH page refreshes itself with it), mailbox command `CMD_HEALTH`.

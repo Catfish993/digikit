@@ -10,6 +10,9 @@ Adds **SETTINGS > DIGIKIT** (the ninth row, after SYSTEM). Emulator only: nothin
   boot is in safe mode): the first press shows a popup that the device restarts, the second saves the selection (`dkrt_selection_set`) and
   restarts (`dkrt_restart`); a refusal is shown. **CLEAR SELECTION** unticks all. In safe mode the DIGIKIT view and the list show `SAFE: <reason>`
   and a popup says why. Modules are loaded by the runtime at boot, not by the menu.
+- **HEALTH** shows CPU load, the DSP's block time (average and maximum of the last second), the free firmware heap and its largest block, the free runtime arena and
+  the free DSP area, and refreshes itself about twice a second without a key press (the page registers a function with `dkrt_poll_set`, which the UI loop calls
+  once per pass; it stops when the page is closed). The figures need `core/health`; without it the page says so. Finding 41.
 - **ABOUT** shows the version, the runtime's ABI, safe mode and why, this boot's modules with each result text, and the free arena in KB.
 
 Firmware: DT2 1.16 and 1.17, DN2 1.11 and 1.12 (the same sites and helpers, found by function hash).

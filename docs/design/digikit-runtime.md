@@ -56,6 +56,9 @@ results.
     void    dkrt_status(DkrtStatus *out);           // magic 'DKRT', runtime version, device, arena base/size/free/largest,
                                                     //   module count, ticks, last result, loads, slot calls
     int32_t dkrt_module(uint32_t index, DkrtModule *out);   // name, version, base, size, slot mask, store path; E_NOT_FOUND past the end
+    void    dkrt_health(DkrtHealth *out);   // CPU load, DSP block time, heap, arena, DSP area (finding 41; needs core/health for the first three)
+    uint32_t dkrt_blocks(void);             // DSP blocks since boot (1500 per second), 0 without core/health: a clock for a UI
+    void    dkrt_poll_set(uintptr_t fn);    // fn() is called at the end of every UI-loop pass in the UI task (0 removes it); one caller
 
 On an error nothing is left behind. Codes: `E_NOT_FOUND` -1 (no store / no such file or module), `E_BAD_STORE` -2, `E_READ` -3,
 `E_SHA` -4, `E_FORMAT` -5, `E_RUNTIME` -6, `E_IMPORT` -7, `E_NOMEM` -8, `E_INIT` -9, `E_LOADED` -10, `E_SLOT` -11, `E_BUSY` -12,
@@ -182,7 +185,7 @@ module down again (`loader::undo_early`, the only user of the take-down). Until 
 **API** (C ABI, `dkrt-sdk`): `dkrt_selection_get(out *mut DkrtSelection) -> i32`, `dkrt_selection_set(sel *const DkrtSelection) -> i32`
 (0, `E_SEL_PATH`, `E_SEL_COUNT`, `E_SEL_WRITE`), `dkrt_restart() -> i32` (returns only when it refuses: `E_CARD_BUSY` when the eSDHC
 present-state register shows a transfer, checked again with interrupts masked), `dkrt_boot_info(out *mut DkrtBootInfo)`. Mailbox: `CMD_SELECT`,
-`CMD_SELECT_ONE` (one copy, for the power-cut test), `CMD_RESTART`. `dkrt_status` and `dkrt_module` keep their meaning for this session.
+`CMD_SELECT_ONE` (one copy, for the power-cut test), `CMD_RESTART`, `CMD_HEALTH` (6: `dkrt_health` into the exported `DKRT_HEALTH`). `dkrt_status` and `dkrt_module` keep their meaning for this session.
 
 **Restart.** `dkrt_restart`: refuse during a card transfer; save the working state the way the firmware does before an OS update
 (`save_working_state`, `DKRT_SAVE_MODE`: the project into the arena, then the arena into the boot record; finding 40); mask interrupts; the firmware's own

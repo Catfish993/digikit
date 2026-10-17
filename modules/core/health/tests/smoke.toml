@@ -1,0 +1,15 @@
+# core/health: the hooks change nothing the player can see or hear (the measurements are proven by
+# `uv run python -m tools.coldfire.digikit_health_proof run`).
+[test]
+name = "audible"
+devices = ["dt2", "dn2"]
+quick = true
+
+[[step]]
+tap = "TRIG 1"
+[[step]]
+wait_ms = 400
+[[step]]
+expect_pcm_db = { min = -60, max = -3 }
+[[step]]
+expect_no_fault = true

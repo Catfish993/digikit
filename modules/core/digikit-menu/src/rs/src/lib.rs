@@ -13,7 +13,7 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
-use dkrt_sdk::{store, DkrtBootInfo, DkrtModule, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
+use dkrt_sdk::{store, DkrtBootInfo, DkrtHealth, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -71,6 +71,12 @@ extern "C" {
     fn dkrt_status(out: *mut DkrtStatus);
     /// The `index`th loaded module; 0, or `E_NOT_FOUND` past the end.
     fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32;
+    /// CPU load, the DSP's block time, the heap, the arena and the DSP area (finding 41).
+    fn dkrt_health(out: *mut DkrtHealth);
+    /// DSP blocks since boot (a 1500 Hz clock), 0 without core/health.
+    fn dkrt_blocks() -> u32;
+    /// A function the UI loop calls once per pass (0 removes it).
+    fn dkrt_poll_set(f: usize);
 }
 
 // ---- std::function and shared_ptr as the firmware lays them out -----------------------------------------------
@@ -131,10 +137,12 @@ const NO_VIEW: View = View { obj: null_mut(), sp: null_mut() };
 static mut MAIN: View = NO_VIEW;
 static mut LOADV: View = NO_VIEW;
 static mut ABOUTV: View = NO_VIEW;
+static mut HEALTHV: View = NO_VIEW;
 
 static NAME_MAIN: &[u8] = b"DigikitMenu\0";
 static NAME_LOAD: &[u8] = b"DigikitLoadMenu\0";
 static NAME_ABOUT: &[u8] = b"DigikitAboutMenu\0";
+static NAME_HEALTH: &[u8] = b"DigikitHealthMenu\0";
 
 /// The address of the stock icon the SYSTEM item uses, read from the operand of the instruction that pushes it.
 unsafe fn icon() -> *const u8 {
@@ -602,6 +610,7 @@ const A_OPEN_ABOUT: u32 = 3;
 const A_APPLY: u32 = 4;
 const A_CLEAR: u32 = 5;
 const A_SAFE: u32 = 6;
+const A_OPEN_HEALTH: u32 = 7;
 const A_TOGGLE: u32 = 0x100;
 
 unsafe fn fill_main() {
@@ -615,6 +624,7 @@ unsafe fn fill_main() {
     }
     row(m, b"MODULES\0", A_OPEN_LOAD, 0);
     row(m, b"ABOUT\0", A_OPEN_ABOUT, 0);
+    row(m, b"HEALTH\0", A_OPEN_HEALTH, 0);
     end_rebuild(m, sel);
 }
 
@@ -718,6 +728,159 @@ unsafe fn fill_about() {
     end_rebuild(m, sel);
 }
 
+// ---- HEALTH (finding 41) --------------------------------------------------------------------------------------------------
+
+/// The figures the page shows (the last `dkrt_health`) and how many times the page was refreshed. Read by the proof.
+#[no_mangle]
+pub static mut DK_HEALTH: DkrtHealth = unsafe { core::mem::zeroed() };
+#[no_mangle]
+pub static mut DK_REDRAWS: u32 = 0;
+/// Calls of `dk_poll` (UI-loop passes while the page is registered). Read by the proof.
+#[no_mangle]
+pub static mut DK_POLLS: u32 = 0;
+/// 1 once the page was seen open (the polling then stops when it is not), the block count of the last refresh, calls without a clock.
+static mut H_SEEN: u32 = 0;
+static mut H_LAST: u32 = 0;
+static mut H_CALLS: u32 = 0;
+/// The page refreshes when this many DSP blocks passed (half a second), or every 60 UI passes without the block clock.
+const H_BLOCKS: u32 = 750;
+
+/// `n` bytes as `12.3 MB` (tenths) or, below a megabyte, `511 KB`.
+fn size_text(t: &mut Text, n: u32) {
+    if n >= 1024 * 1024 {
+        let tenth = (n / 1024 * 10) / 1024;
+        t.num(tenth / 10).s(b".").num(tenth % 10).s(b" MB");
+    } else {
+        t.num(n / 1024).s(b" KB");
+    }
+}
+
+/// A load in tenths of a percent as `37%`.
+fn pct_text(t: &mut Text, x10: u32) {
+    t.num((x10 + 5) / 10).s(b"%");
+}
+
+/// The page's lines as text, as the last `fill_health` made them (24 bytes each, NUL-terminated). Read by the proof.
+#[no_mangle]
+pub static mut DK_LINES: [[u8; 24]; 8] = [[0; 24]; 8];
+
+/// One row of the page; its text is also kept in `DK_LINES[k]`.
+unsafe fn hrow(m: *mut u8, t: &Text, k: usize) {
+    let mut n = 0;
+    while n < 23 && t.b[n] != 0 {
+        DK_LINES[k][n] = t.b[n];
+        n += 1;
+    }
+    while n < 24 {
+        DK_LINES[k][n] = 0;
+        n += 1;
+    }
+    row(m, &t.b, A_NOP, 0);
+}
+
+unsafe fn fill_health() {
+    let m = HEALTHV.obj;
+    let sel = begin_rebuild(m);
+    let h = &DK_HEALTH;
+    let mut t = Text::new();
+    t.s(b"CPU ");
+    if h.flags & HEALTH_CPU != 0 {
+        pct_text(&mut t, h.cpu_x10);
+    } else {
+        t.s(b"--");
+    }
+    hrow(m, &t, 0);
+    let mut t = Text::new();
+    t.s(b"DSP ");
+    if h.flags & HEALTH_DSP != 0 {
+        pct_text(&mut t, h.dsp_avg_x10);
+        t.s(b" MAX ");
+        pct_text(&mut t, h.dsp_max_x10);
+    } else {
+        t.s(b"--");
+    }
+    hrow(m, &t, 1);
+    let mut t = Text::new();
+    t.s(b"RAM FREE ");
+    if h.flags & HEALTH_HEAP != 0 {
+        if h.flags & HEALTH_HEAP_CUT != 0 {
+            t.s(b">");
+        }
+        size_text(&mut t, h.heap_free);
+    } else {
+        t.s(b"--");
+    }
+    hrow(m, &t, 2);
+    let mut t = Text::new();
+    t.s(b"LARGEST ");
+    if h.flags & HEALTH_HEAP != 0 {
+        size_text(&mut t, h.heap_largest);
+    } else {
+        t.s(b"--");
+    }
+    hrow(m, &t, 3);
+    let mut t = Text::new();
+    t.s(b"ARENA FREE ");
+    size_text(&mut t, h.arena_free);
+    hrow(m, &t, 4);
+    let mut t = Text::new();
+    t.s(b"DSP FREE ");
+    if h.dsp_area_total != 0 {
+        size_text(&mut t, h.dsp_area_free);
+    } else {
+        t.s(b"--");
+    }
+    hrow(m, &t, 5);
+    if h.flags & HEALTH_MODULE == 0 {
+        let mut t = Text::new();
+        t.s(b"NO HEALTH MODULE");
+        hrow(m, &t, 6);
+    }
+    end_rebuild(m, sel);
+}
+
+unsafe fn refresh_health() {
+    dkrt_health(addr_of_mut!(DK_HEALTH));
+    fill_health();
+    DK_REDRAWS += 1;
+}
+
+/// The UI loop's per-pass call while the HEALTH page is registered: refresh about twice a second without a key press, and stop
+/// when the page was closed (the View's parent pointer at +0x2c, which `View::invalidate` tests, is 0 then).
+#[no_mangle]
+pub unsafe extern "C" fn dk_poll() {
+    DK_POLLS = DK_POLLS.wrapping_add(1);
+    let v = HEALTHV.obj;
+    if v.is_null() {
+        dkrt_poll_set(0);
+        return;
+    }
+    let open = *(v.add(0x38 + 0x2c) as *const u32) != 0;
+    if open {
+        H_SEEN = 1;
+    } else if H_SEEN != 0 {
+        dkrt_poll_set(0);
+        H_SEEN = 0;
+        return;
+    } else {
+        return;
+    }
+    let b = dkrt_blocks();
+    if b != 0 {
+        if H_LAST != 0 && b.wrapping_sub(H_LAST) < H_BLOCKS {
+            return;
+        }
+        H_LAST = b;
+    } else {
+        H_CALLS += 1;
+        if H_CALLS < 60 {
+            return;
+        }
+        H_CALLS = 0;
+    }
+    refresh_health();
+}
+
 /// APPLY & RESTART: the first press says what will happen (a popup) and arms the row; the second saves the pending selection
 /// and soft-resets. `dkrt_restart` only returns when it refuses; the refusal is shown.
 unsafe fn do_apply() {
@@ -793,6 +956,14 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         ensure_view(addr_of_mut!(ABOUTV), NAME_ABOUT, b"ABOUT\0", MAIN.obj);
         fill_about();
         push(MAIN.obj, addr_of_mut!(ABOUTV));
+    } else if act == A_OPEN_HEALTH {
+        ensure_view(addr_of_mut!(HEALTHV), NAME_HEALTH, b"HEALTH\0", MAIN.obj);
+        refresh_health();
+        push(MAIN.obj, addr_of_mut!(HEALTHV));
+        H_SEEN = 0;
+        H_LAST = 0;
+        H_CALLS = 0;
+        dkrt_poll_set(dk_poll as usize);
     } else if act == A_APPLY {
         do_apply();
         fill_load();

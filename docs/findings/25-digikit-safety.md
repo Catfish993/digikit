@@ -213,3 +213,8 @@ path gets "Unable to handle path", `DataWritePartial 0x58` gets "File transfer i
 active transfer, which the USB Transfer mode of the real device starts and the emulator does not; sending one needs that state
 and the undocumented object payload. Missing for the Data writes **[O]**: the transfer-start request, the payload layout
 of 0x57, and USB itself. Their handlers run behind the same two refusals in every run.
+
+**[C]** (2026-10-17, finding 42): the device-0x10 SysEx body is 8-in-7 packed, and `devrpc.build_request` / `RPC_WRITE` send raw
+bytes, so the request was malformed for every payload byte at or above 0x80 and past the first seven bytes. The 1024 data bytes were
+therefore never a valid write: this run proves the file creation and the replies, not where written data lands. The "no write
+into the module store" result holds for what ran; a write with correct framing is still to be run.

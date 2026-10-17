@@ -1916,3 +1916,84 @@ len = 6
 sha256 = "a235dd3cac08067a7da384b9ef7fe0e1962e04aa94852054af6ca2e940401d4c"
 mark = "D"
 rule = "core/dsp-voice:sharc_func"
+
+[[anchor]]
+name = "health.fw.create_main"
+cpu = "cf"
+kind = "data"
+addr = 0x4002e8d0
+src = 0x400cf250
+len = 4
+sha256 = "d08b2e7dd81775a91efdb6dc8c02e9f20b180574dcbc2a91c3ae79fa058f81ed"
+mark = "D"
+rule = "core/health:cf_ptr"
+
+[[anchor]]
+name = "health.heap.desc_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x401202e6
+len = 4
+sha256 = "1934415adc4b6ce57c973b1a8ca0dfddb3fba015f3b7d1d66f7ff8e6d585cf1e"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.lock_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x401202dc
+len = 4
+sha256 = "e3937162b612371f3190cba14677855845819e40672445fcdbe09bbfcd8cbef5"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.mutex_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x401202d6
+len = 4
+sha256 = "112c4c71266f899f43b22d6a369b7e3d0d1d49d08ce113a3ccb20cefad481955"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.unlock_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4012035a
+len = 4
+sha256 = "6d5958effffe50c2bdc4e3be904523603e6792b900aac4bd51064bb03e0a4d23"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.hook.block"
+cpu = "cf"
+kind = "code"
+addr = 0x40025e36
+len = 8
+sha256 = "f25eae2dbba66d66151f131dda109005c52a8a235510eb550512dedd8243c249"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.hook.idle"
+cpu = "cf"
+kind = "code"
+addr = 0x400cf24e
+len = 6
+sha256 = "611a4975c7d24f2e327d7f5a31b6c66a002a125db5f5fe162569226ab5e7b998"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.rec_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40025e8c
+len = 4
+sha256 = "1887f40ff8ebb1f347d0a7be65f35254be630fa046c08055b30acced870d97a4"
+mark = "D"
+rule = "core/health:cf_func"

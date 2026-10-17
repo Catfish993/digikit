@@ -117,6 +117,56 @@ pub const STATE_UNLOADING: u32 = 2; // archived with hot reload; never reported 
 pub const MOD_LOADED: u32 = 0;
 pub const MOD_LOADING: u32 = 1;
 
+/// `dkrt_health` result (finding 41). The caller owns the memory; the layout only grows at the end. A figure is valid when its flag is
+/// set; the others are 0. Loads are in tenths of a percent (0 to 1000).
+#[repr(C)]
+pub struct DkrtHealth {
+    pub magic: u32,   // 'HLTH'
+    pub version: u32, // 1
+    pub flags: u32,   // `HEALTH_*`
+    /// DSP blocks seen since boot (1500 per second) and windows (one second each) closed.
+    pub blocks: u32,
+    pub windows: u32,
+    /// CPU: load of the last window (`HEALTH_CPU`), the idle-loop iterations in it and the best window so far (100 % idle).
+    pub cpu_x10: u32,
+    pub idle_win: u32,
+    pub idle_ref: u32,
+    /// DSP block handler, cycles per block (the DSP's own EMUCLK difference): average and maximum of the last window, the cycles a
+    /// block has (`DSP_BLOCK_CYCLES`), and both as tenths of a percent of it (`HEALTH_DSP`).
+    pub dsp_avg: u32,
+    pub dsp_max: u32,
+    pub dsp_period: u32,
+    pub dsp_avg_x10: u32,
+    pub dsp_max_x10: u32,
+    /// The firmware heap (`HEALTH_HEAP`): bytes in all, free, the largest free block, live allocations, free blocks walked.
+    pub heap_total: u32,
+    pub heap_free: u32,
+    pub heap_largest: u32,
+    pub heap_allocs: u32,
+    pub heap_free_blocks: u32,
+    /// The runtime's module arena and the DSP area (0: the image has none): bytes in all, free, the largest free range.
+    pub arena_total: u32,
+    pub arena_free: u32,
+    pub arena_largest: u32,
+    pub dsp_area_total: u32,
+    pub dsp_area_free: u32,
+    pub dsp_area_largest: u32,
+}
+
+pub const HEALTH_MAGIC: u32 = 0x484c_5448; // "HLTH"
+/// `DkrtHealth::flags`: the image has `core/health`; the CPU load is valid (a second window closed); the DSP figures are valid
+/// (a window with counts); the heap figures are valid; the heap walk stopped at its bound (the free figure is a lower bound);
+/// the free lists looked corrupt (the walk stopped).
+pub const HEALTH_MODULE: u32 = 1;
+pub const HEALTH_CPU: u32 = 2;
+pub const HEALTH_DSP: u32 = 4;
+pub const HEALTH_HEAP: u32 = 8;
+pub const HEALTH_HEAP_CUT: u32 = 16;
+pub const HEALTH_HEAP_BAD: u32 = 32;
+/// Cycles in one DSP block (64 samples at 48 kHz) at the 1 GHz core clock of the emulator's model. The real clock of the device is
+/// not known here (finding 41, open): the DSP percentages scale with it.
+pub const DSP_BLOCK_CYCLES: u32 = 666_667;
+
 /// `dkrt_module` result: one loaded module.
 #[repr(C)]
 pub struct DkrtModule {
@@ -185,6 +235,8 @@ pub const CMD_RESTART: u32 = 4;
 /// Write ONE copy of the selection record from `arg` (`arg[0]` = copy 0 or 1, then the paths as for `CMD_SELECT`) with sequence
 /// number `seq + 1`: lets a test make the state between the two writes of `dkrt_selection_set` (a power cut).
 pub const CMD_SELECT_ONE: u32 = 5;
+/// Run `dkrt_health` into the exported `DKRT_HEALTH` (the proof reads it; `result` is 0).
+pub const CMD_HEALTH: u32 = 6;
 
 /// Codes of boot-time loading (-40 to -49, finding 37).
 pub const E_SEL_PATH: i32 = -40; // a path of the selection is empty, too long or has a bad character

@@ -342,7 +342,9 @@ class BootProof:
         (e.folder / "digikit" / "modules" / "foreign.dkm").write_bytes(
             forge(good, device=other)
         )
-        self.img = e.build_image(f"{RUNTIME},{MENU}", "menu")
+        self.img = e.build_image(
+            f"{self.B.RT},{MENU}", "menu"
+        )  # the boot rig reads the voice rows: dynreg and dyndsp too
         self.plan = Plan(self.img.plan)
 
     # -- reads

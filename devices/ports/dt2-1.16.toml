@@ -2012,6 +2012,87 @@ mark = "D"
 rule = "core/dsp-voice:sharc_literal"
 
 [[anchor]]
+name = "health.fw.create_main"
+cpu = "cf"
+kind = "data"
+addr = 0x4003324e
+src = 0x400ccce8
+len = 4
+sha256 = "d08b2e7dd81775a91efdb6dc8c02e9f20b180574dcbc2a91c3ae79fa058f81ed"
+mark = "D"
+rule = "core/health:cf_ptr"
+
+[[anchor]]
+name = "health.heap.desc_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e692
+len = 4
+sha256 = "2f4ce0459b3b219d36f52bb75c975324c39ed270acd50ba38e83416c3969bdd7"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.lock_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e688
+len = 4
+sha256 = "e3937162b612371f3190cba14677855845819e40672445fcdbe09bbfcd8cbef5"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.mutex_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e682
+len = 4
+sha256 = "1ca6332d8670041f777b04c0f9df89ab58fd3cbc99961aacf5b214f1943cc0a6"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.heap.unlock_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e706
+len = 4
+sha256 = "6d5958effffe50c2bdc4e3be904523603e6792b900aac4bd51064bb03e0a4d23"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.hook.block"
+cpu = "cf"
+kind = "code"
+addr = 0x4002dd0c
+len = 8
+sha256 = "f49caf854513020ac192c7049da7f4bdb8d3335bc777ad0847cd11969c90d658"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.hook.idle"
+cpu = "cf"
+kind = "code"
+addr = 0x400ccce6
+len = 6
+sha256 = "a892255fd8ca9d706c919fa9a76f456785cbe830c4dbdea127d502a1f5e089bb"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
+name = "health.rec_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x4002dd62
+len = 4
+sha256 = "34210e1412e209d95d960c803098c94b6ae935878b7b9bf87621af6827c98d03"
+mark = "D"
+rule = "core/health:cf_func"
+
+[[anchor]]
 name = "test.demo.kit_setter"
 cpu = "cf"
 kind = "code"
