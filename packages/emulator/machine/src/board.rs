@@ -117,6 +117,16 @@ pub struct GuestBusAccess {
     pub access: GuestAccess,
 }
 
+/// RCM.RCR, the reset control register: bit 7 is SOFTRST (docs/findings/36-boot-load-spike.md section 3).
+pub const RCM_RCR: u32 = 0xEC09_0000;
+
+impl Board {
+    /// Has the guest written SOFTRST to RCM.RCR? (The machine does not reset itself: the host that owns it restarts the boot.)
+    pub fn soft_reset_requested(&self) -> bool {
+        self.soft_reset
+    }
+}
+
 /// Caller-mapped 1 MiB RAM pages.  The tagged 4096-entry table is indexed by
 /// address bits 31:20, so ordinary 1/2/4-byte RAM accesses take one table
 /// lookup.  MMIO is always dispatched before this table.
@@ -128,6 +138,8 @@ pub struct Board {
     policy: CompletionPolicy,
     armed_dma59: bool,
     esdhc_dma_bytes: u64,
+    /// A store of 0x80 into RCM.RCR (0xEC090000) was seen: the firmware asked for a soft reset (see `soft_reset_requested`).
+    soft_reset: bool,
     scratch_guest: RamPage,
     scratch_card: RamPage,
     events: Vec<CompletionEvent>,
@@ -368,6 +380,7 @@ impl Board {
             policy,
             armed_dma59: false,
             esdhc_dma_bytes: 0,
+            soft_reset: false,
             scratch_guest: vec![0; PAGE_SIZE].into_boxed_slice(),
             scratch_card: vec![0; PAGE_SIZE].into_boxed_slice(),
             events: vec![],
@@ -1575,6 +1588,9 @@ impl Board {
                 .ram_write(addr, size, value)
                 .then_some(())
                 .ok_or(BoardWriteError::Bus(Self::bus_error(addr, true)));
+            if wrote.is_ok() && addr == RCM_RCR && size == 1 && value & 0x80 != 0 {
+                self.soft_reset = true;
+            }
             if wrote.is_ok()
                 && addr >= GPIO_BASE
                 && addr

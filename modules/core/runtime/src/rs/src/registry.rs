@@ -474,6 +474,20 @@ unsafe fn write_param_row(
     wr(reg_row + iw(inf, w::P_TEMPLATE_OFF) + 16, def);
 }
 
+/// The machine selection view as `core/dynreg` recorded it (0: none yet, or the image has no `core/dynreg`).
+pub unsafe fn view_now() -> u32 {
+    let inf = info();
+    if inf.is_null() {
+        return 0;
+    }
+    let var = iw(inf, w::VIEW_VAR);
+    if var == 0 {
+        0
+    } else {
+        rd(var)
+    }
+}
+
 /// The firmware builds the machine selection view's item list once, from the list getter. After the rows changed, build it
 /// again (it clears its items first); nothing to do while the view does not exist yet.
 unsafe fn refresh_view(inf: *const u32) {
@@ -485,6 +499,7 @@ unsafe fn refresh_view(inf: *const u32) {
     let view = rd(var);
     if view != 0 {
         let f: unsafe extern "C" fn(u32) = core::mem::transmute(build as usize);
+        crate::boot::info().view_rebuilds += 1;
         f(view);
     }
 }

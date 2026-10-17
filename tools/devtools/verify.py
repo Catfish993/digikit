@@ -89,6 +89,26 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ("tests/patchkit",),
     ),
     (
+        "digikit-boot",
+        (
+            "modules/core/runtime/",
+            "modules/core/dynreg/",
+            "modules/core/dsp-link/",
+            "modules/core/dyndsp/",
+            "modules/core/digikit-menu/",
+            "modules/test/dyn-",
+            "modules/test/c-demo/",
+            "modules/test/twin-",
+            "packages/patchkit/src/dkm.rs",
+            "packages/patchkit/src/register.rs",
+            "packages/emulator/plusdrive/",
+            "tools/patchkit/pk_dkrt",
+            "tools/patchkit/pk_digikit_",
+            "tests/digikit/",
+        ),
+        ("tests/digikit",),
+    ),
+    (
         "control-client",
         ("tools/control/digi_client.py", "packages/emulator/control/"),
         ("tests/control",),
@@ -921,6 +941,8 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--rerun-failed cannot be combined with --only or --full")
     files: list[str] = []
     full, dt2 = args.full, args.dt2
+    if full:  # tests/digikit: every scenario on all four images (the gate runs the quick tier)
+        os.environ["DIGIKIT_TIER"] = "full"
     rerun_tests: list[str] | None = None
     if args.rerun_failed:
         last = load_last_result(Path(digi_env.RUNS_ROOT) / "verify", None)

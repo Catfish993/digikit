@@ -98,7 +98,11 @@ def test_hook_displaces_the_selection_restore(image, tmp_path):
         "--plan",
         plan_path,
     )
-    hooks = json.loads(plan_path.read_text())["hooks"]
+    hooks = [
+        h
+        for h in json.loads(plan_path.read_text())["hooks"]
+        if h["anchor"] != "dkrt.hook.boot"  # the runtime's own boot hook
+    ]
     assert len(hooks) == 1 and hooks[0]["anchor"] == "cf.menu.settings_tail"
     assert [i.split(None, 2)[2] for i in hooks[0]["displaced_insns"]] == [
         "movea.l (a2),a0",
@@ -135,12 +139,19 @@ def test_peek_at_parser(tmp_path):
 
 
 def test_menu_calls_the_runtime_by_symbol():
-    """The menu `requires` core/runtime and names its four ABI functions as undefined symbols; the runtime exports them. No
+    """The menu `requires` core/runtime and names its ABI functions as undefined symbols; the runtime exports them. No
     table, no stand-in module (finding 28)."""
     menu = json.loads((MODULE / "build/digikit-menu-rs.dko.json").read_text())
     rt = json.loads((ROOT / "modules/core/runtime/build/runtime.dko.json").read_text())
     names = {s["name"] for s in menu["symbols"]}
-    wanted = {"dkrt_load", "dkrt_unload", "dkrt_status", "dkrt_module"}
+    wanted = {
+        "dkrt_selection_get",
+        "dkrt_selection_set",
+        "dkrt_restart",
+        "dkrt_boot_info",
+        "dkrt_status",
+        "dkrt_module",
+    }
     assert wanted <= {r["symbol"] for r in menu["relocs"]}
     assert wanted.isdisjoint(
         {s["name"] for s in menu["symbols"] if s["global"] and s.get("section")}

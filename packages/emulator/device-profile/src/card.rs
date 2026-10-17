@@ -75,6 +75,15 @@ pub struct PathFsLayout {
 pub struct StoreLayout {
     pub first_sector: u64,
     pub end_sector: u64,
+    /// The last `selection_sectors` sectors of the range hold the runtime's selection record (two copies of one sector, the
+    /// runtime writes them with the firmware's block write; docs/design/digikit-store.md). The store builder keeps its files out
+    /// of them: its limit is `end_sector - first_sector - selection_sectors`.
+    #[serde(default = "default_selection_sectors")]
+    pub selection_sectors: u64,
+}
+
+fn default_selection_sectors() -> u64 {
+    2
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]

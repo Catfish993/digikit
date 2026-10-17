@@ -4,7 +4,7 @@ version = "0.1.0"
 name = "DIGIKIT menu"
 category = "core"
 status = "experimental"
-summary = "Adds SETTINGS > DIGIKIT with LOAD MODULES (the .dkm files of the +Drive module store) and ABOUT"
+summary = "Adds SETTINGS > DIGIKIT with MODULES (the .dkm files of the +Drive module store) and ABOUT"
 requires = ["core/runtime"]
 conflicts = []
 
@@ -17,7 +17,7 @@ conflicts = []
 # The menu is built from the firmware's own menu classes (finding 28): a hook at the end of the SETTINGS item list
 # rebuild calls dk_add_item, which adds a DIGIKIT item after SYSTEM. The views, the item builder, the view stack push,
 # the string constructor and the block read are anchors; the Rust crate (src/rs) holds the logic and calls the runtime's
-# exported functions (dkrt_load, dkrt_unload, dkrt_status, dkrt_module) by symbol: the module requires core/runtime.
+# exported functions (dkrt_selection_get, dkrt_selection_set, dkrt_restart, dkrt_boot_info, dkrt_status, dkrt_module) by symbol: the module requires core/runtime.
 
 [[object]]
 path = "build/digikit-menu-rs.dko.json"

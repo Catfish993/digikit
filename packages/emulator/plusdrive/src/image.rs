@@ -211,6 +211,8 @@ pub enum ImageError {
     /// `digikit/` files for a device with no module store range.
     NoStore,
     Store(crate::StoreError),
+    /// `digikit/selection.txt` cannot be turned into a record.
+    Selection(String),
     Sparse(SparseImageError),
     Format(crate::FormatError),
     Project(crate::ProjectError),

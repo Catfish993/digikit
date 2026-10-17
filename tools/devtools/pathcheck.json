@@ -21,6 +21,26 @@
   ],
   "allow": [
     {
+      "token": "modules/test/dyn-",
+      "file": "tools/devtools/verify.py",
+      "reason": "verify trigger prefix, not a path"
+    },
+    {
+      "token": "modules/test/twin-",
+      "file": "tools/devtools/verify.py",
+      "reason": "verify trigger prefix, not a path"
+    },
+    {
+      "token": "tools/patchkit/pk_digikit_",
+      "file": "tools/devtools/verify.py",
+      "reason": "verify trigger prefix, not a path"
+    },
+    {
+      "token": "modules/dir/b.dkm",
+      "file": "packages/emulator/plusdrive/src/selection.rs",
+      "reason": "a card-store path in a unit test"
+    },
+    {
       "pattern": "docs/findings/\\d\\d",
       "reason": "NN shorthand for the findings files numbered NN-*"
     },

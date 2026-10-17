@@ -1,0 +1,29 @@
+# A project with run-time machines on tracks 1 and 2 (parameter values, a p-lock and a preset lock on step 1) is saved under set A, then
+# loaded and saved under set B (the track-1 machine is absent): the project slot equals the first save but for the header stamp, and
+# the sounds keep their types. The full tier (roundtrip-dt2-orders) adds a same-set reload and the other load order.
+[scenario]
+name = "roundtrip-dt2"
+kind = "roundtrip"
+devices = ["dt2"]
+tier = "quick"
+
+[roundtrip]
+order = ["A", "B"]
+types = [18, 16]
+lock_turn = 11
+sound_lock_turn = 2
+
+[roundtrip.sets]
+A = ["test/dyn-pluck", "test/dyn-xslice"]
+B = ["test/dyn-xslice"]
+A2 = ["test/dyn-xslice", "test/dyn-pluck"]
+
+[[roundtrip.machines]]
+track = 1
+type = 18
+hint = 10
+
+[[roundtrip.machines]]
+track = 2
+type = 16
+hint = 7

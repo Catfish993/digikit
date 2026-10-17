@@ -30,9 +30,11 @@ import json
 import pathlib
 import random
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
@@ -45,7 +47,6 @@ BLOCK_READ = {"dt2": 0x4012DEDA, "dn2": 0x4012C59A}
 
 
 def write_wav(path: pathlib.Path) -> None:
-    import struct
     import wave
 
     with wave.open(str(path), "wb") as w:
@@ -55,6 +56,26 @@ def write_wav(path: pathlib.Path) -> None:
         w.writeframes(
             struct.pack("<2400h", *[(i * 37) % 6000 - 3000 for i in range(2400)])
         )
+
+
+SELECTION = [
+    "modules/test.dkm",
+    "big.bin",
+]  # digikit/selection.txt of the fixture: the runtime's selection record
+SELECTION_SECTORS = (
+    0x3DFFE,
+    0x3DFFF,
+)  # copy A and B, the last two sectors of the store range
+
+
+def expected_selection(paths: list[str]) -> bytes:
+    """The record the builder writes for `paths` (docs/design/digikit-store.md; seq 1, counter 0, no flags)."""
+    rec = bytearray(512)
+    rec[0:24] = struct.pack(">6I", 0x444B534C, 1, 1, 0, 0, len(paths))
+    for i, p in enumerate(paths):
+        rec[32 + 56 * i : 32 + 56 * i + len(p)] = p.encode()
+    rec[508:512] = struct.pack(">I", zlib.crc32(bytes(rec[:508])))
+    return bytes(rec)
 
 
 def make_store_fixture(folder: pathlib.Path) -> dict[str, bytes]:
@@ -68,6 +89,9 @@ def make_store_fixture(folder: pathlib.Path) -> dict[str, bytes]:
         target = folder / "digikit" / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+    (folder / "digikit" / "selection.txt").write_text(
+        "# fixture\n" + "\n".join(SELECTION) + "\n"
+    )
     return store
 
 
@@ -174,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         ]  # fmt: skip
         # The module store through the firmware's block read: the header sector, the table, each file.
         ops += [f"block:{STORE_FIRST:x}:512", f"block:{STORE_FIRST + 1:x}:512"]
+        ops += [f"block:{sector:x}:512" for sector in SELECTION_SECTORS]
         ops += [
             f"block:{STORE_FIRST + first:x}:{size}"
             for first, size, _ in listing.values()
@@ -237,6 +262,17 @@ def judge_store(results, image, listing, store, listing_ok) -> list[str]:
             want = hashlib.sha256(region(int(sector, 16), int(size))).hexdigest()
             if row.get("sha256") != want or row.get("read") != int(size):
                 bad.append(f"{op}: firmware bytes differ from the image file")
+    want_rec = hashlib.sha256(expected_selection(SELECTION)).hexdigest()
+    for sector in SELECTION_SECTORS:
+        row = results.get(f"block:{sector:x}:512", {})
+        if row.get("sha256") != want_rec:
+            bad.append(
+                f"selection record at sector {sector:#x}: firmware read {row.get('sha256')}, want {want_rec}"
+            )
+    if "selection.txt" in listing:
+        bad.append(
+            "selection.txt went into the module store; it is the selection record"
+        )
     for path, (first, size, _) in listing.items():
         row = results.get(f"block:{STORE_FIRST + first:x}:{size}", {})
         if row.get("sha256") != hashlib.sha256(store[path]).hexdigest():

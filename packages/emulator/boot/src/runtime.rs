@@ -69,6 +69,8 @@ pub struct Status {
     pub oracle_ticks: u64,
     pub execution_policy: ExecutionPolicy,
     pub clock_description: String,
+    /// The guest wrote SOFTRST to RCM.RCR: a restart of the boot is due (the controller does it for a patched build).
+    pub soft_reset: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -275,6 +277,12 @@ impl Emulator {
     /// panel) applies; neither the whole-file digest nor the MAIN digest is
     /// checked, so any MAIN bytes boot if every signature lookup still
     /// resolves (each one fails loudly otherwise).
+    /// Ready when the main panel is up, without the filesystem check the firmware runs on a fresh card (a card that an earlier
+    /// boot already used can skip it, as after a soft reset).
+    pub fn relax_fs_check(&mut self) {
+        self.contract = device_profile::ReadinessContract::MainPanelV1;
+    }
+
     pub fn new_patched(
         syx: &[u8],
         card: Option<Card>,
@@ -951,6 +959,7 @@ impl Emulator {
             oracle_ticks: self.oracle_ticks().unwrap_or(u64::MAX),
             execution_policy: self.policy,
             clock_description: "oracle_ticks = legacy cpu.icount + accepted softfloat ABI calls; atomic calls consume one scheduling tick, not a CPU instruction".into(),
+            soft_reset: self.bus.board.soft_reset_requested(),
         }
     }
 

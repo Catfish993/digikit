@@ -251,7 +251,7 @@ def pattern_temp() -> Script:
 
 
 def _to_digikit(s: Script) -> Script:
-    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (LOAD MODULES, ABOUT)."""
+    """SETTINGS, 8 x DOWN to DIGIKIT, YES: the DIGIKIT view (MODULES, ABOUT)."""
     _settings(s)
     for _ in range(8):
         s.tap(DOWN, gap=15_000_000)
@@ -267,7 +267,7 @@ RUNTIME_LOG_VALUE = (
 
 
 def _to_modules(s: Script) -> Script:
-    """From the DIGIKIT view with the cursor on LOAD MODULES: open the list (rescans the store)."""
+    """From the DIGIKIT view with the cursor on MODULES: open the list (rescans the store)."""
     return s.tap(YES, gap=DG)
 
 

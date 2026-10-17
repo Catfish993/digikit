@@ -13,7 +13,7 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
-use dkrt_sdk::{store, DkrtModule, DkrtStatus, E_NOT_FOUND, E_READ, OK};
+use dkrt_sdk::{store, DkrtBootInfo, DkrtModule, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -60,10 +60,14 @@ extern "C" {
 // The menu `requires` core/runtime, so these are plain symbols the linker resolves to the runtime's exports. The layouts
 // (`DkrtStatus`, `DkrtModule`) and the result codes are the runtime's own, from the shared crate `dkrt-sdk`.
 extern "C" {
-    /// Load the `.dkm` at the store path (relative to `digikit/`, for example `modules/a.dkm`); 0 = loaded, else an `E_*` code.
-    fn dkrt_load(path: *const u8) -> i32;
-    /// Unload the module called `name` (the name in the `.dkm` header, from `DkrtModule`).
-    fn dkrt_unload(name: *const u8) -> i32;
+    /// The saved selection (what the next boot loads): `count` store paths. Always 0.
+    fn dkrt_selection_get(out: *mut DkrtSelection) -> i32;
+    /// Save a selection (two copies in the card's store range); 0 or an `E_SEL_*` code. No effect until the next boot.
+    fn dkrt_selection_set(sel: *const DkrtSelection) -> i32;
+    /// Soft reset. Returns only when it refuses (`E_CARD_BUSY`, ...).
+    fn dkrt_restart() -> i32;
+    /// This boot: safe mode and why, the modules selected and each one's result.
+    fn dkrt_boot_info(out: *mut DkrtBootInfo);
     fn dkrt_status(out: *mut DkrtStatus);
     /// The `index`th loaded module; 0, or `E_NOT_FOUND` past the end.
     fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32;
@@ -204,7 +208,7 @@ unsafe fn push(from: *mut u8, v: *mut View) {
 // ---- small text helpers ------------------------------------------------------------------------------------------
 
 #[repr(C)]
-struct Text {
+pub struct Text {
     b: [u8; TEXT],
     n: usize,
 }
@@ -264,58 +268,54 @@ static mut TAB: *mut u8 = null_mut();
 
 /// 0 = not read, 1 = ok, 2 = no store, 3 = read error, 4 = bad or too big
 static mut STORE: u32 = 0;
-/// Table indices of the `.dkm` entries, and their ticks.
+/// Table indices of the `.dkm` entries.
 static mut ENT: [u8; MAX_ENT] = [0; MAX_ENT];
+/// The pending selection: 1 when the row is ticked. It starts as the saved selection and is only saved by APPLY & RESTART.
 static mut TICK: [u8; MAX_ENT] = [0; MAX_ENT];
-/// 1 when the runtime has the entry's file loaded (2: the runtime is still loading it), and the module's name for `dkrt_unload`.
+/// 1 when the saved selection (`dkrt_selection_get`) holds the row's file.
+static mut SAVED: [u8; MAX_ENT] = [0; MAX_ENT];
+/// Paths of the saved selection that no row has (the file is gone from the store): APPLY would drop them.
+static mut SAVED_EXTRA: u32 = 0;
+/// 1 when the runtime has the entry's file loaded in this boot (2: still loading its DSP part).
 static mut LOADED: [u8; MAX_ENT] = [0; MAX_ENT];
-static mut MODNAME: [[u8; 32]; MAX_ENT] = [[0; 32]; MAX_ENT];
 static mut NENT: usize = 0;
 /// 1 when the file's header says this runtime or device cannot load it (shown greyed out, `[-]`, and cannot be ticked).
 static mut NOK: [u8; MAX_ENT] = [0; MAX_ENT];
 /// One 512-byte, 16-byte aligned firmware heap block the card DMA fills with a file's header sector.
 static mut HDR: *mut u8 = null_mut();
-/// The answer rows of the last LOAD or UNLOAD: what happened, and for a failure the file it was about (empty: no rows).
+/// The saved selection as the runtime gave it, and this boot's info (safe mode, results).
+static mut SEL: DkrtSelection = DkrtSelection { count: 0, flags: 0, paths: [[0; SEL_PATH]; SEL_MAX] };
+static mut BOOT: DkrtBootInfo = unsafe { core::mem::zeroed() };
+/// The message row below the buttons (what the last action did), empty: none.
 static mut RESULT: Text = Text::new();
-static mut RESULT2: Text = Text::new();
 /// The text of the last popup (the message the firmware's popup window was given) and how many were shown. Read by the proof.
-static mut POPUP: Text = Text::new();
-static mut POPUPS: u32 = 0;
-/// Counters of the start and the end of a LOAD or UNLOAD request (words 0 and 1). Nothing reads them but the proof: a store to
-/// either ends a stack epoch of `DIGI_STACK_WATCH_EPOCH`, so the deepest stack use of a request is measured between the two.
-static mut MARK: [u32; 2] = [0; 2];
-/// A request the runtime accepted and is finishing over later UI-loop passes: 0 none, 1 load, 2 unload; the row it is about.
-static mut PEND: u32 = 0;
-static mut PEND_ROW: usize = 0;
+#[no_mangle]
+pub static mut DK_POPUP: Text = Text::new();
+#[no_mangle]
+pub static mut DK_POPUPS: u32 = 0;
+/// 1 after the first press of APPLY & RESTART (the second press restarts); any other action clears it.
+static mut ARMED: u32 = 0;
+/// 1 once the safe-mode popup was shown in this boot.
+static mut SAFE_SHOWN: u32 = 0;
+/// What the last APPLY & RESTART did: the result of `dkrt_selection_set` and of `dkrt_restart` (which only returns when it
+/// refuses). Read by the proof.
+#[no_mangle]
+pub static mut DK_APPLY_SET: i32 = 0;
+#[no_mangle]
+pub static mut DK_APPLY_RESTART: i32 = 0;
+#[no_mangle]
+pub static mut DK_APPLIES: u32 = 0;
+/// 1 when the list the view shows has the APPLY & RESTART row. Read by the proof.
+#[no_mangle]
+pub static mut DK_OFFER: u32 = 0;
 
-// What the runtime reports while a request is in flight (the asynchronous loader, `dkrt-sdk` `LOADING`, `DkrtStatus::state`,
-// `DkrtModule::state`). An older runtime never answers `LOADING` and its `state` word stays zero, so this works with both: the
-// buffers below are larger than the layout this crate was built with, and the words are read by position.
-const LOADING: i32 = 1;
-const STATE_WORD: usize = 12;
-const MOD_STATE_OFF: usize = 112;
-const MOD_LOADING: u32 = 1;
-
-#[repr(C)]
-struct StatusBuf {
-    s: DkrtStatus,
-    ext: [u32; 12],
-}
 #[repr(C)]
 struct ModBuf {
     m: DkrtModule,
     ext: [u32; 8],
 }
-
-unsafe fn status() -> StatusBuf {
-    let mut b: StatusBuf = core::mem::zeroed();
-    dkrt_status(&mut b.s);
-    b
-}
-/// `DkrtStatus::state` (0 idle, 1 loading, 2 unloading).
-unsafe fn busy(b: &StatusBuf) -> u32 {
-    *(b as *const StatusBuf as *const u32).add(STATE_WORD)
-}
+const MOD_STATE_OFF: usize = 112;
+const MOD_LOADING: u32 = 1;
 
 unsafe fn entry_path(e: usize) -> &'static [u8] {
     store::path(TAB, e)
@@ -339,7 +339,6 @@ unsafe fn refresh_loaded() {
         for i in 0..NENT {
             if entry_path(ENT[i] as usize) == &m.m.path[..n] {
                 LOADED[i] = if mstate == MOD_LOADING { 2 } else { 1 };
-                MODNAME[i] = m.m.name;
             }
         }
     }
@@ -357,7 +356,7 @@ unsafe fn file_word(first: u32, off: u32) -> Option<u32> {
 
 /// Whether the file at store sector `first` can be loaded by this runtime on this device, judged from its header: the `.dkm`
 /// format's `runtime_min`, and the device of its register records (docs/design/digikit-dkm.md; a module without records runs on
-/// either device). A file that is not a `.dkm` or cannot be read passes: the runtime then names the real reason when it is ticked.
+/// either device). A file that is not a `.dkm` or cannot be read passes: the runtime then names the real reason at boot.
 unsafe fn compatible(first: u32, runtime: u32, device: u32) -> bool {
     match file_word(first, 0) {
         Some(DKM_MAGIC) => {}
@@ -383,12 +382,41 @@ unsafe fn compatible(first: u32, runtime: u32, device: u32) -> bool {
     }
 }
 
+/// The saved selection, matched against the rows: a ticked row for each path the store still has.
+unsafe fn load_selection() {
+    SEL = core::mem::zeroed();
+    dkrt_selection_get(addr_of_mut!(SEL));
+    TICK = [0; MAX_ENT];
+    SAVED_EXTRA = 0;
+    let n = if SEL.count as usize > SEL_MAX { SEL_MAX } else { SEL.count as usize };
+    for k in 0..n {
+        let p = &SEL.paths[k];
+        let mut l = 0;
+        while l < SEL_PATH - 1 && p[l] != 0 {
+            l += 1;
+        }
+        let mut found = false;
+        for i in 0..NENT {
+            if entry_path(ENT[i] as usize) == &p[..l] {
+                TICK[i] = 1;
+                found = true;
+            }
+        }
+        if !found {
+            SAVED_EXTRA += 1;
+        }
+    }
+    SAVED = TICK;
+}
+
 unsafe fn scan_store() {
     NENT = 0;
     NOK = [0; MAX_ENT];
     TICK = [0; MAX_ENT];
+    SAVED = [0; MAX_ENT];
+    SAVED_EXTRA = 0;
     RESULT.clear();
-    RESULT2.clear();
+    ARMED = 0;
     if TAB.is_null() {
         TAB = fw_new(TAB_BYTES as u32);
     }
@@ -417,16 +445,16 @@ unsafe fn scan_store() {
     if HDR.is_null() {
         HDR = fw_new(512);
     }
-    let st = status();
+    let mut st: DkrtStatus = core::mem::zeroed();
+    dkrt_status(&mut st);
     for i in 0..NENT {
         let f = store::file(TAB, ENT[i] as usize);
-        if !compatible(f.first, st.s.runtime, st.s.device) {
+        if !compatible(f.first, st.runtime, st.device) {
             NOK[i] = 1;
         }
     }
     refresh_loaded();
-    // a request from before the view was left may have finished
-    poll();
+    load_selection();
 }
 
 fn lower(c: u8) -> u8 {
@@ -447,19 +475,20 @@ fn upper(c: u8) -> u8 {
 // ---- result texts ---------------------------------------------------------------------------------------------------
 
 // A short text (upper case, at most 14 characters) for each runtime result code. One table per owner so that the lanes that
-// add codes add lines in their own table: the loader's -1..-19, the registry's -20..-29, the DSP loader's -30..-39. A code
-// that has no text, or lies outside, shows as "ERROR <n>". Plain tables: a dense `match` becomes a PC-relative jump table,
-// which is not ColdFire code.
+// add codes add lines in their own table: the loader's -1..-19, the registry's -20..-29, the DSP loader's -30..-39, boot-time
+// loading's -40..-49. A code without text, or outside, shows as "ERROR <n>". Plain tables: a dense `match` becomes a
+// PC-relative jump table, which is not ColdFire code.
 const TEXT_RUNTIME: [&str; 20] = [
     "OK", "NOT FOUND", "BAD STORE", "READ ERROR", "BAD SHA", "BAD FORMAT", "RUNTIME OLD", "NO IMPORT", "NO MEMORY",
     "INIT FAILED", "ALREADY LOADED", "SLOT TAKEN", "BUSY", "TOO BIG", "TABLE FULL", "", "", "", "", "",
 ];
 const TEXT_REGISTRY: [&str; 10] = [
-    "NO REGISTRY", "WRONG DEVICE", "BAD TYPE", "TYPE USED", "PARAMS FULL", "PAGES FULL", "IN USE", "", "", "",
+    "NO REGISTRY", "OTHER DEVICE", "BAD TYPE", "TYPE USED", "NO PARAM ROW", "NO PAGE ROW", "TYPE IN USE", "", "", "",
 ];
 const TEXT_DSP: [&str; 10] = [
-    "NO DSP LINK", "BAD DSP CODE", "DSP IMPORT", "DSP FULL", "NO VOICE ROW", "DSP TRANSFER", "WRONG DEVICE", "BAD VOICE", "", "",
+    "NO DSP LINK", "BAD DSP CODE", "DSP IMPORT", "NO DSP SPACE", "NO VOICE ROW", "DSP XFER", "OTHER DEVICE", "BAD VOICE TYPE", "", "",
 ];
+const TEXT_BOOT: [&str; 10] = ["BAD PATH", "TOO MANY", "WRITE FAILED", "CARD BUSY", "SAFE MODE", "", "", "", "", ""];
 
 fn status_text(t: &mut Text, code: i32) {
     let k = code.unsigned_abs() as usize;
@@ -471,6 +500,8 @@ fn status_text(t: &mut Text, code: i32) {
         TEXT_REGISTRY[k - 20]
     } else if k < 40 {
         TEXT_DSP[k - 30]
+    } else if k < 50 {
+        TEXT_BOOT[k - 40]
     } else {
         ""
     };
@@ -481,9 +512,19 @@ fn status_text(t: &mut Text, code: i32) {
     }
 }
 
-/// The file name of a row, upper case, at most `max` characters from the end.
-unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
-    let p = entry_path(ENT[i] as usize);
+/// The text of a module's result at boot: `OK`, `LOADING` (the DSP part is still going) or the code's text.
+fn result_text(t: &mut Text, code: i32) {
+    if code == 1 {
+        t.s(b"LOADING");
+    } else if code == 0 {
+        t.s(b"OK");
+    } else {
+        status_text(t, code);
+    }
+}
+
+/// The file name of a path, upper case, at most `max` characters from the end.
+fn name_of(p: &[u8], max: usize, t: &mut Text) {
     let mut start = 0;
     for (k, &c) in p.iter().enumerate() {
         if c == b'/' {
@@ -497,13 +538,17 @@ unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
     }
 }
 
-/// Show `POPUP` in the firmware's message popup window (the one "LOAD ERROR" uses after a project load): it takes the key focus
+unsafe fn upper_name(i: usize, max: usize, t: &mut Text) {
+    name_of(entry_path(ENT[i] as usize), max, t);
+}
+
+/// Show `t` in the firmware's message popup window (the one "LOAD ERROR" uses after a project load): it takes the key focus
 /// until it is dismissed.
 unsafe fn popup(t: &Text) {
-    POPUP.b = t.b;
-    POPUP.n = t.n;
-    POPUPS += 1;
-    let text: *const u8 = POPUP.b.as_ptr();
+    DK_POPUP.b = t.b;
+    DK_POPUP.n = t.n;
+    DK_POPUPS += 1;
+    let text: *const u8 = DK_POPUP.b.as_ptr();
     let mut a = SharedPtr { ptr: null_mut(), ctl: null_mut() };
     dk_popup_make(&mut a, &text);
     let mut b = SharedPtr { ptr: null_mut(), ctl: null_mut() };
@@ -514,56 +559,61 @@ unsafe fn popup(t: &Text) {
     fw_sp_release(&mut a.ctl);
 }
 
-/// A request for row `i` failed with `code`: the answer rows name the reason and the file, and a popup says both.
-unsafe fn fail(i: usize, code: i32) {
-    RESULT.clear();
-    RESULT2.clear();
-    status_text(&mut RESULT, code);
-    upper_name(i, 17, &mut RESULT2);
-    let mut t = Text::new();
-    upper_name(i, 24, &mut t);
-    t.s(b": ");
-    status_text(&mut t, code);
-    popup(&t);
+// ---- boot state -----------------------------------------------------------------------------------------------------
+
+unsafe fn read_boot() {
+    BOOT = core::mem::zeroed();
+    dkrt_boot_info(addr_of_mut!(BOOT));
 }
 
-/// Collect the end of a request the runtime was finishing: once its state is idle again, `last_result` is the answer.
-unsafe fn poll() {
-    if PEND == 0 {
-        return;
-    }
-    let st = status();
-    if busy(&st) != 0 {
-        return;
-    }
-    let (row, kind) = (PEND_ROW, PEND);
-    PEND = 0;
-    refresh_loaded();
-    RESULT.clear();
-    RESULT2.clear();
-    if st.s.last_result == OK {
-        TICK[row] = 0;
-        RESULT.s(if kind == 1 { b"LOADED 1" } else { b"UNLOADED 1" });
+/// The reason of safe mode as a short text.
+fn safe_reason(t: &mut Text, reason: u32) {
+    if reason == SAFE_COUNTER {
+        t.s(b"2 BAD BOOTS");
+    } else if reason == SAFE_KEY {
+        t.s(b"KEY HELD");
+    } else if reason == SAFE_FLAG {
+        t.s(b"REQUESTED");
     } else {
-        fail(row, st.s.last_result);
+        t.s(b"UNKNOWN");
     }
 }
 
-// ---- the three views ---------------------------------------------------------------------------------------------
+/// Whether the pending selection differs from what the next boot would load: another tick set, a saved path the store lost, or
+/// safe mode (this boot loaded nothing; a restart loads the selection).
+unsafe fn differs() -> bool {
+    if BOOT.safe != 0 || SAVED_EXTRA != 0 {
+        return true;
+    }
+    for i in 0..NENT {
+        if TICK[i] != SAVED[i] {
+            return true;
+        }
+    }
+    false
+}
+
+// ---- the views ------------------------------------------------------------------------------------------------------
 
 const A_NOP: u32 = 0;
 const A_OPEN_MAIN: u32 = 1;
 const A_OPEN_LOAD: u32 = 2;
 const A_OPEN_ABOUT: u32 = 3;
-const A_LOAD: u32 = 4;
-const A_UNLOAD: u32 = 5;
-const A_REFRESH: u32 = 6;
+const A_APPLY: u32 = 4;
+const A_CLEAR: u32 = 5;
+const A_SAFE: u32 = 6;
 const A_TOGGLE: u32 = 0x100;
 
 unsafe fn fill_main() {
     let m = MAIN.obj;
     let sel = begin_rebuild(m);
-    row(m, b"LOAD MODULES\0", A_OPEN_LOAD, 0);
+    if BOOT.safe != 0 {
+        let mut t = Text::new();
+        t.s(b"SAFE: ");
+        safe_reason(&mut t, BOOT.reason);
+        row(m, &t.b, A_SAFE, 0);
+    }
+    row(m, b"MODULES\0", A_OPEN_LOAD, 0);
     row(m, b"ABOUT\0", A_OPEN_ABOUT, 0);
     end_rebuild(m, sel);
 }
@@ -583,7 +633,8 @@ unsafe fn fill_load() {
     } else {
         for i in 0..NENT {
             let mut t = Text::new();
-            // `[-]` a file this runtime or device cannot load (it cannot be ticked); otherwise `[X]` ticked, `[ ]` not; the fourth character is `*` when the runtime has the module loaded, `L` while it loads it
+            // `[-]` a file this runtime or device cannot load (it cannot be ticked); otherwise `[X]` ticked (in the pending
+            // selection), `[ ]` not; the fourth character is `*` when this boot loaded the module, `L` while it loads its DSP part
             t.s(if NOK[i] != 0 {
                 b"[-]"
             } else if TICK[i] != 0 {
@@ -599,14 +650,25 @@ unsafe fn fill_load() {
             upper_name(i, 17, &mut t);
             row(m, &t.b, if NOK[i] != 0 { A_NOP } else { A_TOGGLE + i as u32 }, 0);
         }
-        row(m, b"LOAD\0", A_LOAD, 0);
-        row(m, b"UNLOAD\0", A_UNLOAD, 0);
-        // the answer rows; pressing YES on the first asks the runtime again (a request may still be in flight)
-        if RESULT.n > 0 {
-            row(m, &RESULT.b, A_REFRESH, 0);
+        DK_OFFER = differs() as u32;
+        if DK_OFFER != 0 {
+            row(m, if ARMED != 0 { b"CONFIRM RESTART\0" } else { b"APPLY & RESTART\0" }, A_APPLY, 0);
         }
-        if RESULT2.n > 0 {
-            row(m, &RESULT2.b, A_REFRESH, 0);
+        let mut any = false;
+        for i in 0..NENT {
+            any |= TICK[i] != 0;
+        }
+        if any {
+            row(m, b"CLEAR SELECTION\0", A_CLEAR, 0);
+        }
+        if BOOT.safe != 0 {
+            let mut t = Text::new();
+            t.s(b"SAFE: ");
+            safe_reason(&mut t, BOOT.reason);
+            row(m, &t.b, A_SAFE, 0);
+        }
+        if RESULT.n > 0 {
+            row(m, &RESULT.b, A_NOP, 0);
         }
     }
     end_rebuild(m, sel);
@@ -616,145 +678,113 @@ unsafe fn fill_about() {
     let m = ABOUTV.obj;
     let sel = begin_rebuild(m);
     row(m, b"DIGIKIT 0.1.0\0", A_NOP, 0);
-    let st = status();
+    let mut st: DkrtStatus = core::mem::zeroed();
+    dkrt_status(&mut st);
+    read_boot();
     let mut t = Text::new();
-    t.s(b"RUNTIME ABI ").num(st.s.runtime);
+    t.s(b"RUNTIME ABI ").num(st.runtime);
     row(m, &t.b, A_NOP, 0);
+    if BOOT.safe != 0 {
+        let mut t = Text::new();
+        t.s(b"SAFE MODE: ");
+        safe_reason(&mut t, BOOT.reason);
+        row(m, &t.b, A_NOP, 0);
+    }
     let mut t = Text::new();
-    t.s(b"LOADED ").num(st.s.modules);
+    t.s(b"BOOT: ").num(BOOT.loaded).s(b" OF ").num(BOOT.count).s(b" OK");
     row(m, &t.b, A_NOP, 0);
+    // each module of this boot's selection with its result; the names come from the saved selection, which is what the boot
+    // loaded unless it was saved again without a restart
+    let mut sel_now: DkrtSelection = core::mem::zeroed();
+    dkrt_selection_get(&mut sel_now);
+    let n = if BOOT.count as usize > SEL_MAX { SEL_MAX } else { BOOT.count as usize };
+    for k in 0..n {
+        let mut t = Text::new();
+        let p = &sel_now.paths[k];
+        let mut l = 0;
+        while l < SEL_PATH - 1 && p[l] != 0 {
+            l += 1;
+        }
+        name_of(&p[..l], 17, &mut t);
+        row(m, &t.b, A_NOP, 0);
+        let mut t = Text::new();
+        t.s(b"- ");
+        result_text(&mut t, BOOT.results[k]);
+        row(m, &t.b, A_NOP, 0);
+    }
     let mut t = Text::new();
-    t.s(b"FREE ").num(st.s.arena_free / 1024).s(b" KB");
+    t.s(b"FREE ").num(st.arena_free / 1024).s(b" KB");
     row(m, &t.b, A_NOP, 0);
     end_rebuild(m, sel);
 }
 
-/// The summary of a batch of requests that all finished at once.
-unsafe fn summarise(done: u32, failed: u32, first_fail: Option<(usize, i32)>, past: &[u8]) {
+/// APPLY & RESTART: the first press says what will happen (a popup) and arms the row; the second saves the pending selection
+/// and soft-resets. `dkrt_restart` only returns when it refuses; the refusal is shown.
+unsafe fn do_apply() {
+    if ARMED == 0 {
+        ARMED = 1;
+        RESULT.clear();
+        let mut t = Text::new();
+        t.s(b"UNSAVED CHANGES LOST");
+        popup(&t);
+        return;
+    }
+    ARMED = 0;
+    DK_APPLIES += 1;
+    let mut sel: DkrtSelection = core::mem::zeroed();
+    let mut n = 0;
+    for i in 0..NENT {
+        if TICK[i] != 0 && n < SEL_MAX {
+            let p = entry_path(ENT[i] as usize);
+            if p.len() < SEL_PATH {
+                sel.paths[n][..p.len()].copy_from_slice(p);
+                n += 1;
+            }
+        }
+    }
+    sel.count = n as u32;
+    let r = dkrt_selection_set(&sel);
+    DK_APPLY_SET = r;
+    if r != OK {
+        fail_text(b"NOT SAVED", r);
+        return;
+    }
+    SAVED = TICK;
+    SAVED_EXTRA = 0;
+    let r = dkrt_restart();
+    DK_APPLY_RESTART = r;
+    fail_text(b"NO RESTART", r);
+}
+
+/// A refusal: the message row and a popup with `what` and the code's text.
+unsafe fn fail_text(what: &[u8], code: i32) {
     RESULT.clear();
-    RESULT2.clear();
-    if let Some((i, code)) = first_fail {
-        fail(i, code);
-        if failed > 1 {
-            RESULT.s(b" +").num(failed - 1);
-        }
-    } else if done == 0 {
-        RESULT.s(b"NOTHING TO DO");
-    } else {
-        RESULT.s(past).s(b" ").num(done);
-    }
+    status_text(&mut RESULT, code);
+    let mut t = Text::new();
+    t.s(what).s(b": ");
+    status_text(&mut t, code);
+    popup(&t);
 }
 
-/// LOAD: load every ticked row the runtime does not have. A request that the runtime accepts and finishes later (`LOADING`)
-/// ends the batch; the answer rows show `LOADING...` until `poll` sees the runtime idle again. While the runtime is busy, a
-/// second request is refused.
-unsafe fn do_load() {
-    mark(0);
-    do_load_inner();
-    mark(1);
-}
-
-unsafe fn mark(k: usize) {
-    let p = addr_of_mut!(MARK) as *mut u32;
-    p.add(k).write_volatile(p.add(k).read_volatile().wrapping_add(1));
-}
-
-unsafe fn do_load_inner() {
-    poll();
-    if busy(&status()) != 0 || PEND != 0 {
-        RESULT.clear();
-        RESULT2.clear();
-        RESULT.s(b"LOADING...");
-        return;
-    }
-    let (mut done, mut failed) = (0u32, 0u32);
-    let mut first_fail: Option<(usize, i32)> = None;
-    for i in 0..NENT {
-        if TICK[i] == 0 || LOADED[i] != 0 {
-            continue;
-        }
-        let p = entry_path(ENT[i] as usize);
-        let mut path = [0u8; 88];
-        path[..p.len()].copy_from_slice(p);
-        let r = dkrt_load(path.as_ptr());
-        if r == LOADING {
-            PEND = 1;
-            PEND_ROW = i;
-            break;
-        } else if r == OK {
-            done += 1;
-            TICK[i] = 0;
-        } else {
-            failed += 1;
-            if first_fail.is_none() {
-                first_fail = Some((i, r));
-            }
-        }
-    }
-    refresh_loaded();
-    if PEND != 0 {
-        RESULT.clear();
-        RESULT2.clear();
-        RESULT.s(b"LOADING...");
-    } else {
-        summarise(done, failed, first_fail, b"LOADED");
-    }
-}
-
-/// UNLOAD: unload every ticked row the runtime has loaded (ticks alone never unload anything).
-unsafe fn do_unload() {
-    mark(0);
-    do_unload_inner();
-    mark(1);
-}
-
-unsafe fn do_unload_inner() {
-    poll();
-    if busy(&status()) != 0 || PEND != 0 {
-        RESULT.clear();
-        RESULT2.clear();
-        RESULT.s(b"LOADING...");
-        return;
-    }
-    let (mut done, mut failed) = (0u32, 0u32);
-    let mut first_fail: Option<(usize, i32)> = None;
-    for i in 0..NENT {
-        if TICK[i] == 0 || LOADED[i] != 1 {
-            continue;
-        }
-        let r = dkrt_unload(MODNAME[i].as_ptr());
-        if r == LOADING {
-            PEND = 2;
-            PEND_ROW = i;
-            break;
-        } else if r == OK {
-            done += 1;
-            TICK[i] = 0;
-        } else {
-            failed += 1;
-            if first_fail.is_none() {
-                first_fail = Some((i, r));
-            }
-        }
-    }
-    refresh_loaded();
-    if PEND != 0 {
-        RESULT.clear();
-        RESULT2.clear();
-        RESULT.s(b"LOADING...");
-    } else {
-        summarise(done, failed, first_fail, b"UNLOADED");
-    }
-}
-
-// An `if` chain, not a `match`: six dense arms become a PC-relative jump table, which is not ColdFire code.
+// An `if` chain, not a `match`: dense arms become a PC-relative jump table, which is not ColdFire code.
 unsafe fn dispatch(act: u32, ctx: u32) {
     if act == A_OPEN_MAIN {
         let settings = ctx as *mut u8;
+        read_boot();
         ensure_view(addr_of_mut!(MAIN), NAME_MAIN, b"DIGIKIT\0", settings);
         fill_main();
         push(settings, addr_of_mut!(MAIN));
-    } else if act == A_OPEN_LOAD {
+        if BOOT.safe != 0 && SAFE_SHOWN == 0 {
+            SAFE_SHOWN = 1;
+            safe_popup();
+        }
+        return;
+    }
+    if act != A_APPLY {
+        ARMED = 0;
+    }
+    if act == A_OPEN_LOAD {
+        read_boot();
         scan_store();
         ensure_view(addr_of_mut!(LOADV), NAME_LOAD, b"MODULES\0", MAIN.obj);
         fill_load();
@@ -763,28 +793,31 @@ unsafe fn dispatch(act: u32, ctx: u32) {
         ensure_view(addr_of_mut!(ABOUTV), NAME_ABOUT, b"ABOUT\0", MAIN.obj);
         fill_about();
         push(MAIN.obj, addr_of_mut!(ABOUTV));
-    } else if act == A_LOAD {
-        do_load();
+    } else if act == A_APPLY {
+        do_apply();
         fill_load();
-    } else if act == A_UNLOAD {
-        do_unload();
+    } else if act == A_CLEAR {
+        TICK = [0; MAX_ENT];
+        RESULT.clear();
         fill_load();
-    } else if act == A_REFRESH {
-        poll();
-        refresh_loaded();
-        fill_load();
+    } else if act == A_SAFE {
+        safe_popup();
     } else if act >= A_TOGGLE {
         let i = (act - A_TOGGLE) as usize;
-        poll();
         if i < NENT {
             TICK[i] ^= 1;
-            if PEND == 0 {
-                RESULT.clear();
-                RESULT2.clear();
-            }
+            RESULT.clear();
         }
         fill_load();
     }
+}
+
+/// Safe mode, in words: why, that no module was loaded, and the way out.
+unsafe fn safe_popup() {
+    let mut t = Text::new();
+    t.s(b"SAFE MODE: ");
+    safe_reason(&mut t, BOOT.reason);
+    popup(&t);
 }
 
 /// Called from the hook at the end of the SETTINGS rebuild (shim.s) with the settings menu: adds DIGIKIT after SYSTEM.

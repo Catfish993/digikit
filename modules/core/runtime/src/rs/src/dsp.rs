@@ -75,6 +75,7 @@ const DL_ERROR: u32 = 3;
 /// The CF-side half of a load whose DSP part is under way: everything is in place except publishing (the machine row, `init`,
 /// the slots).
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Pending {
     pub rec: u32,
     /// Copy of the `register` records (arena block), 0 if none.
@@ -84,6 +85,14 @@ pub struct Pending {
     pub init: u32,
     pub mask: u32,
     pub fns: [u32; SLOTS],
+    /// 1: the CF side went live at boot (machine rows, `init`, slots); only the DSP part is left, and a failure takes the module down.
+    pub early: u32,
+    /// The selection index of a module loaded by the boot hook (`u32::MAX`: none), for the boot report.
+    pub boot_idx: u32,
+    /// The image to send: byte address in the area, bytes, the arena block holding the relocated copy (set by `launch`).
+    pub send_base: u32,
+    pub send_len: u32,
+    pub send_buf: u32,
 }
 
 /// The DSP loader's state, one object a host can peek (`DKRT_DSP` in plan.json symbols).
@@ -97,7 +106,7 @@ pub struct DspState {
     pub started: u32,
     /// The buffer of one-word transfers (`dl_send_win` reads it in place).
     pub word: u32,
-    /// Byte address, bytes and arena block of the image being sent.
+    /// Byte address, bytes and arena block of the image `reserve` has prepared and `launch` has not taken yet.
     pub send_base: u32,
     pub send_len: u32,
     pub send_buf: u32,
@@ -115,7 +124,10 @@ pub struct DspState {
     pub row_pc: [u32; MAX_ROWS],
     pub row_owner: [u8; MAX_ROWS],
     pub row_pub: [u8; MAX_ROWS],
+    /// The load being sent, and the loads behind it (the boot hook publishes the CF side of every module at once).
     pub pending: Pending,
+    pub waiting: [Pending; crate::MAX_MODULES],
+    pub nwait: u32,
     pub queued: u32,
     pub queue: [[u8; 64]; QUEUE],
 }
@@ -626,7 +638,21 @@ pub unsafe fn release(rec: usize) {
 // ---- the state machine --------------------------------------------------------------------------------------------------------
 
 /// Hand a load over to the state machine: the CF side is complete and described by `p`; `reserve` has run for `p.rec`.
-pub unsafe fn launch(p: Pending) {
+pub unsafe fn launch(mut p: Pending) {
+    let d = ds();
+    p.send_base = d.send_base;
+    p.send_len = d.send_len;
+    p.send_buf = d.send_buf;
+    d.send_buf = 0;
+    if d.phase == PH_IDLE && d.nwait == 0 {
+        start(p);
+    } else {
+        d.waiting[d.nwait as usize] = p;
+        d.nwait += 1;
+    }
+}
+
+unsafe fn start(p: Pending) {
     let d = ds();
     d.pending = p;
     d.phase = PH_SEND;
@@ -636,19 +662,42 @@ pub unsafe fn launch(p: Pending) {
     d.transfers += 1;
 }
 
+/// The load in progress is over: start the next waiting one, or go idle.
+unsafe fn next_job() {
+    let d = ds();
+    if d.nwait > 0 {
+        let p = d.waiting[0];
+        let mut k = 1;
+        while k < d.nwait as usize {
+            d.waiting[k - 1] = d.waiting[k];
+            k += 1;
+        }
+        d.nwait -= 1;
+        start(p);
+    } else {
+        d.phase = PH_IDLE;
+    }
+}
+
 unsafe fn fail(code: i32) {
     let d = ds();
     let rec = d.pending.rec as usize;
     clear_rows(rec);
-    if d.send_buf != 0 {
-        arena::free(d.send_buf as *mut u8);
-        d.send_buf = 0;
+    if d.pending.send_buf != 0 {
+        arena::free(d.pending.send_buf as *mut u8);
+        d.pending.send_buf = 0;
     }
-    unreserve(rec);
-    crate::loader::abort_pending(&d.pending);
+    if d.pending.early != 0 {
+        // the machine was published at boot: take it down again (rows, `fini`, memory)
+        crate::loader::undo_early(rec);
+    } else {
+        unreserve(rec);
+        crate::loader::abort_pending(&d.pending);
+    }
+    crate::boot::note_result(d.pending.boot_idx, code);
     d.failures += 1;
-    d.phase = PH_IDLE;
     crate::st().last_result = code;
+    next_job();
 }
 
 /// Advance the load in progress by what is ready now; start the next queued load when idle. Called once per UI-loop pass.
@@ -672,7 +721,7 @@ pub unsafe fn step() {
         match d.phase {
             PH_SEND => {
                 if d.started == 0 {
-                    let r = call_send(d.send_base, d.send_buf as *const u8, d.send_len);
+                    let r = call_send(d.pending.send_base, d.pending.send_buf as *const u8, d.pending.send_len);
                     if r == -2 {
                         fail(E_DSP_XFER);
                         return;
@@ -689,8 +738,8 @@ pub unsafe fn step() {
                         return;
                     }
                     Some(true) => {
-                        arena::free(d.send_buf as *mut u8);
-                        d.send_buf = 0;
+                        arena::free(d.pending.send_buf as *mut u8);
+                        d.pending.send_buf = 0;
                         d.phase = PH_ROWS;
                         d.step = 0;
                         d.started = 0;
@@ -717,12 +766,17 @@ pub unsafe fn step() {
                 }
                 if row == MAX_ROWS {
                     // every row is in: list the machine, run init, publish the slots
-                    let r = crate::loader::complete_pending(&d.pending);
-                    d.phase = PH_IDLE;
+                    let r = if d.pending.early != 0 {
+                        OK
+                    } else {
+                        crate::loader::complete_pending(&d.pending)
+                    };
+                    crate::boot::note_result(d.pending.boot_idx, r);
                     crate::st().last_result = r;
                     if r != OK {
                         d.failures += 1;
                     }
+                    next_job();
                     return;
                 }
                 if d.started == 0 {

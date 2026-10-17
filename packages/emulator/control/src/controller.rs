@@ -109,18 +109,34 @@ fn apply_saved_overlay(card: &mut Card, image: &Path) {
     let Ok(bytes) = std::fs::read(&path) else { return };
     let result = plusdrive_format::parse_overlay(&bytes)
         .map_err(|e| e.to_string())
-        .and_then(|sectors| {
-            let state = emmc_card::CardCheckpoint {
-                blocks: card.blocks(),
-                rca: card.rca(),
-                selected: card.selected(),
-                overlay: Default::default(),
-            };
-            card.restore_checkpoint_sectors(&state, &sectors).map_err(|e| format!("{e:?}"))
-        });
+        .and_then(|sectors| apply_overlay_sectors(card, &sectors));
     if let Err(error) = result {
         eprintln!("card: ignoring {}: {error}", path.display());
     }
+}
+
+/// Lay sectors the guest wrote over a fresh card.
+fn apply_overlay_sectors(card: &mut Card, sectors: &[emmc_card::CardOverlaySector]) -> Result<(), String> {
+    let state = emmc_card::CardCheckpoint {
+        blocks: card.blocks(),
+        rca: card.rca(),
+        selected: card.selected(),
+        overlay: Default::default(),
+    };
+    card.restore_checkpoint_sectors(&state, sectors).map_err(|e| format!("{e:?}"))
+}
+
+/// A digest of an overlay, for the key of a cached cold boot that started from it.
+#[cfg(feature = "coupled-audio")]
+fn overlay_digest(sectors: &[emmc_card::CardOverlaySector]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    for s in sectors {
+        hash.update(s.sector.to_le_bytes());
+        hash.update(&s.written);
+        hash.update(&s.data);
+    }
+    hash.finalize().to_vec()
 }
 
 fn card_for(image: Option<PathBuf>) -> Result<(Option<Card>, Option<ReadError>), String> {
@@ -466,6 +482,12 @@ struct Actor {
     /// Live CPU meters (`status.load`).
     load_meter: load::Meter,
     health_tick: u32,
+    /// The guest wrote SOFTRST to RCM.RCR (`Status::soft_reset`): the boot is restarted when the running job has finished.
+    reset_pending: bool,
+    /// The card writes of the run that asked for the reset, for the cold boot that follows (the card keeps its contents).
+    reset_overlay: Option<Vec<emmc_card::CardOverlaySector>>,
+    /// Soft resets in a row before the boot got ready (a bound for boot loops).
+    boot_resets: u32,
 }
 
 fn no_firmware<T>() -> Result<T, RpcError> {
@@ -540,6 +562,33 @@ impl Actor {
             ),
             load_meter: load::Meter::default(),
             health_tick: 0,
+            reset_pending: false,
+            reset_overlay: None,
+            boot_resets: 0,
+        }
+    }
+
+    /// The guest asked for a soft reset (RCM.RCR): boot the same patched firmware again from the reset entry, on the card as the
+    /// guest left it (its writes laid over the image), the DSP as a device boots it. Only a patched build with coupled audio can be
+    /// restarted here; for anything else an event says so and the guest carries on (it spins after the write).
+    fn soft_reset(&mut self) {
+        let Some(loaded) = self.loaded.as_ref() else { return };
+        let (bytes, card, base_sha, base_bytes) = (
+            loaded.current.clone(),
+            loaded.card.clone(),
+            loaded.base_sha.clone(),
+            loaded.base.clone(),
+        );
+        let Some(new) = loaded.current_analysis.clone() else { return };
+        self.reset_overlay = self.runtime.as_ref().map(|r| r.card_overlay());
+        let (tx, _rx) = mpsc::channel();
+        let mut report = json!({});
+        match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &tx) {
+            Ok(CoupledLoad::Started) => self.emit("cpu.reset", json!({"restart": "cold boot started"})),
+            Ok(_) | Err(_) => {
+                self.reset_overlay = None;
+                self.emit("cpu.reset", json!({"restart": "unsupported"}));
+            }
         }
     }
 
@@ -547,6 +596,10 @@ impl Actor {
         while !self.quit {
             self.poll_card();
             self.poll_patch();
+            if self.reset_pending && self.job.is_none() && self.patch_job.is_none() {
+                self.reset_pending = false;
+                self.soft_reset();
+            }
             // While a card or a patched MAIN boots on its worker thread the
             // running guest waits.
             let carding = self.card_job.is_some() || self.patch_job.is_some();
@@ -630,6 +683,9 @@ impl Actor {
             dsp_halted,
             sink_underruns,
         };
+        if status.soft_reset && !self.reset_pending && self.patch_job.is_none() {
+            self.reset_pending = true;
+        }
         for alert in self.health.observe(self.epoch, &obs) {
             match alert {
                 Alert::Fault(error) => self.emit(
@@ -2394,6 +2450,8 @@ struct PatchInstall {
     /// The launch options with the snapshot and DSP state of this MAIN.
     audio: AudioOptions,
     report: Value,
+    /// The cold boot ran with the DSP patch already applied: the saved DSP state has it.
+    dsp_in_boot: bool,
 }
 
 /// What a finished coupled cold boot reports.
@@ -2410,6 +2468,8 @@ struct PatchJob {
     reply: RpcReply,
     started: Instant,
     install: PatchInstall,
+    /// The card writes of a boot that ended in a soft reset (see `digi_coupled::cold::SOFT_RESET`).
+    reset_out: Arc<Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>,
 }
 
 /// The file name stem of the ready pair of a (MAIN, DSP inputs, card): the
@@ -2421,10 +2481,13 @@ fn patched_pair_key(
     image: &Path,
     cold_idle: &Path,
     card: Option<&Path>,
+    extra: &[u8],
 ) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update(main_sha.as_bytes());
+    // what else the cold boot started from: the DSP section it ran with, the card writes of a soft reset
+    hash.update(extra);
     for path in [image, cold_idle] {
         let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         hash.update(Sha256::digest(&data));
@@ -2498,8 +2561,40 @@ impl Actor {
         let main_sha = new
             .main_sha256()
             .ok_or_else(|| rejected("the firmware has no MAIN section".into()))?;
-        let stem =
-            patched_pair_key(main_sha, &image, &cold_idle, card.as_deref()).map_err(&rejected)?;
+        // The cold boot runs the .syx's own DSP code from the first instruction, as a device does. (Until 2026-10-17 it booted
+        // the base's DSP and patched it after the ready state, so `mise run emu -- PATCHED.syx` ran stock DSP code during the
+        // boot; a boot-time DSP load of the runtime, and any DSP code that initialises itself at boot, needs the real order.)
+        let mut boot_patch = None;
+        if let (Some(base), Some(new_dsp)) = (
+            base_bytes
+                .as_ref()
+                .and_then(|b| Analysis::of(b).ok())
+                .and_then(|a| a.dsp),
+            new.dsp.as_ref(),
+        ) && base != *new_dsp
+        {
+            boot_patch = Some(firmware::dsp_diff(&base, new_dsp).map_err(&rejected)?.patch);
+        }
+        let reset_out = Arc::new(Mutex::new(None));
+        let mut extra_key = Vec::new();
+        // DIGI_COLD_RELAX_FS=1: a cold boot on a card an earlier run used (a saved project) never runs the DT2 filesystem check
+        // the readiness contract waits for: ready at the main panel, as after a soft reset
+        let relax_fs = std::env::var_os("DIGI_COLD_RELAX_FS").is_some();
+        if relax_fs {
+            extra_key.extend_from_slice(b"relax-fs:");
+        }
+        if let (Some(_), Some(dsp)) = (&boot_patch, new.dsp.as_deref()) {
+            use sha2::{Digest, Sha256};
+            extra_key.extend_from_slice(b"dsp-at-boot:");
+            extra_key.extend_from_slice(&Sha256::digest(dsp));
+        }
+        let reset_overlay = self.reset_overlay.take();
+        if let Some(o) = &reset_overlay {
+            extra_key.extend_from_slice(b"soft-reset:");
+            extra_key.extend_from_slice(&overlay_digest(o));
+        }
+        let stem = patched_pair_key(main_sha, &image, &cold_idle, card.as_deref(), &extra_key)
+            .map_err(&rejected)?;
         let pair = self.run_dir.join("patched").join(stem);
         let (snapshot, dsp_state) = (
             pair.join("digi-audio-m5.snap"),
@@ -2519,6 +2614,7 @@ impl Actor {
             base_bytes: base_bytes.clone(),
             audio,
             report: report.clone(),
+            dsp_in_boot: boot_patch.is_some(),
         };
         let cache_hit = start != "cold" && snapshot.is_file();
         if cache_hit {
@@ -2560,11 +2656,20 @@ impl Actor {
             card.clone(),
             base_sha.to_string(),
         );
-        let inputs = digi_coupled::cold::ColdInputs { image, cold_idle };
+        let inputs = digi_coupled::cold::ColdInputs {
+            image,
+            cold_idle,
+            dsp_patch: boot_patch,
+            relax_fs_check: reset_overlay.is_some() || relax_fs,
+            reset_out: Some(reset_out.clone()),
+        };
         thread::Builder::new()
             .name("digi-patched-boot".into())
             .spawn(move || {
-                let result = card_for(worker_card).and_then(|(card_obj, _)| {
+                let result = card_for(worker_card).and_then(|(mut card_obj, _)| {
+                    if let (Some(card), Some(sectors)) = (card_obj.as_mut(), &reset_overlay) {
+                        apply_overlay_sectors(card, sectors)?;
+                    }
                     digi_coupled::cold::boot_patched_to_ready(
                         &worker_bytes,
                         card_obj,
@@ -2589,6 +2694,7 @@ impl Actor {
             reply: reply.clone(),
             started: Instant::now(),
             install,
+            reset_out,
         });
         Ok(CoupledLoad::Started)
     }
@@ -2623,6 +2729,7 @@ impl Actor {
             base_bytes,
             audio,
             mut report,
+            dsp_in_boot,
         } = install;
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
         let runtime =
@@ -2644,6 +2751,9 @@ impl Actor {
         self.session = self.session.max(1);
         self.emit("session.changed", json!({"reason": "firmware.load"}));
         report["dsp"] = match (base_analysis.and_then(|b| b.dsp), new.dsp) {
+            (Some(base), Some(new_dsp)) if base != new_dsp && dsp_in_boot => {
+                json!({"applied": true, "at": "cold boot", "reason": "the boot ran with the DSP patch"})
+            }
             (Some(base), Some(new_dsp)) if base != new_dsp => {
                 let diff = firmware::dsp_diff(&base, &new_dsp).map_err(&rejected)?;
                 self.inject_diff(diff)?
@@ -2670,10 +2780,31 @@ impl Actor {
             Err(mpsc::TryRecvError::Disconnected) => Err("boot worker stopped".into()),
         };
         let job = self.patch_job.take().expect("patch job");
+        // The guest reset the machine before it was ready (a module that resets in `init`, the firmware's exception path): boot
+        // again on the card as the guest left it. A boot loop is bounded.
+        if matches!(&outcome, Err(e) if e == "soft reset") {
+            let overlay = job.reset_out.lock().expect("reset overlay").take();
+            self.boot_resets += 1;
+            if let (Some(overlay), true) = (overlay, self.boot_resets <= 8) {
+                self.emit("cpu.reset", json!({"during_boot": true, "count": self.boot_resets}));
+                let PatchInstall { bytes, card, new, base_sha, base_bytes, report, .. } = job.install;
+                self.reset_overlay = Some(overlay);
+                let mut report = report;
+                let reply = job.reply.clone();
+                match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &reply) {
+                    Ok(CoupledLoad::Started) => return,
+                    _ => {
+                        let _ = reply.send(Err(RpcError::new(code::GUEST_FAULT, "boot loop: the restart failed")));
+                        return;
+                    }
+                }
+            }
+        }
         let seconds = job.started.elapsed().as_secs_f64();
         let result = match outcome {
             Err(e) => Err(RpcError::new(code::GUEST_FAULT, e)),
             Ok(booted) => {
+                self.boot_resets = 0;
                 let mut install = job.install;
                 install.report["boot"] = json!({
                     "icount": booted.icount, "frames": booted.frames,
@@ -2685,7 +2816,8 @@ impl Actor {
         };
         self.emit(
             "firmware.loaded",
-            json!({"ok": result.is_ok(), "seconds": seconds}),
+            json!({"ok": result.is_ok(), "seconds": seconds,
+                   "error": result.as_ref().err().map(|e| e.message.clone())}),
         );
         let _ = job.reply.send(result.map(|mut report| {
             report["seconds"] = seconds.into();
@@ -2803,7 +2935,13 @@ fn run_card_job(
                 digi_coupled::cold::boot_to_ready(
                     &syx,
                     card,
-                    &digi_coupled::cold::ColdInputs { image, cold_idle },
+                    &digi_coupled::cold::ColdInputs {
+                        image,
+                        cold_idle,
+                        dsp_patch: None,
+                        relax_fs_check: false,
+                        reset_out: None,
+                    },
                     &paths.ready,
                     cancel,
                     |progress| {

@@ -213,6 +213,21 @@ fn rel_string(parts: &[Vec<u8>]) -> String {
         .join("/")
 }
 
+/// The selection the card holds: both copies read, the valid one with the higher `seq`. `None`: no store or no valid record.
+fn card_selection(img: &dyn RandomAccessRead, layout: &CardLayout) -> Option<Vec<String>> {
+    let store = layout.store.as_ref()?;
+    if store.selection_sectors < 2 {
+        return None;
+    }
+    let copy = |sector: u64| {
+        let mut buf = [0u8; crate::SECTOR];
+        img.read_at(sector * crate::SECTOR as u64, &mut buf);
+        crate::decode_selection(&buf)
+    };
+    crate::current_selection(copy(store.end_sector - 2), copy(store.end_sector - 1))
+        .map(|s| s.paths)
+}
+
 fn stage_file(dir: &Path, rel: &str, bytes: &[u8]) -> Result<(), String> {
     let path = dir.join(rel);
     if let Some(parent) = path.parent() {
@@ -327,6 +342,16 @@ fn stage(
             }
         }
     }
+    // The runtime's selection record (docs/design/digikit-store.md): the copy it would use goes to `digikit/selection.txt`.
+    if let Some(paths) = card_selection(view, layout) {
+        let rel = format!("digikit/{}", crate::SELECTION_FILE);
+        stage_file(
+            export_dir,
+            &rel,
+            crate::format_selection_txt(&paths).as_bytes(),
+        )?;
+        staged.files.insert(rel);
+    }
     let mmc = read_mmcfs(view, layout, Some(view));
     report.issues.extend(mmc.issues.iter().cloned());
     staged.mmcfs = mmc.present;
@@ -337,7 +362,9 @@ fn stage(
     }
     for (sector, bytes) in &mmc.boot {
         if !include_working_project
-            && layout.region_at(*sector).is_some_and(|r| r.role == RegionRole::WorkingProject)
+            && layout
+                .region_at(*sector)
+                .is_some_and(|r| r.role == RegionRole::WorkingProject)
         {
             continue;
         }
@@ -428,6 +455,19 @@ pub fn export(
     for rel in &staged.files {
         let from = export_dir.join(rel);
         let to = folder.join(rel);
+        if *rel == format!("digikit/{}", crate::SELECTION_FILE) {
+            // the same list in a file with the user's comments and spacing is unchanged
+            let want = fs::read_to_string(&from)
+                .ok()
+                .and_then(|t| crate::parse_selection_txt(&t).ok());
+            let have = fs::read_to_string(&to)
+                .ok()
+                .and_then(|t| crate::parse_selection_txt(&t).ok());
+            if want.is_some() && want == have {
+                report.unchanged.push(rel.clone());
+                continue;
+            }
+        }
         if let Some(wav_rel) = wav_for.get(rel) {
             // The folder holds the source WAV: unchanged when it still builds to these bytes.
             let converted = fs::read(folder.join(wav_rel))
@@ -714,6 +754,101 @@ mod tests {
             report.added.is_empty() && report.issues.is_empty(),
             "{report:?}"
         );
+    }
+
+    #[test]
+    fn the_selection_record_round_trips_with_the_folder() {
+        use crate::{Selection, Tree, TreeOptions, build_tree_image, encode_selection};
+        let root = temp("selection");
+        let folder = root.join("plus_drive/dt2");
+        let layout = dt2_layout();
+        let end = layout.store.as_ref().unwrap().end_sector;
+        let built = build_tree_image(
+            Tree {
+                selection: Some(vec!["modules/a.dkm".into(), "modules/b.dkm".into()]),
+                ..Default::default()
+            },
+            TreeOptions::default(),
+            None,
+        )
+        .unwrap();
+        let mut options = Options::new(root.join("out"));
+        // 1. the builder's own record: the export writes the list into the folder
+        options.stamp = Some("s1".into());
+        let report = export(&built.image, &[], &folder, &layout, &options).unwrap();
+        assert_eq!(report.added, ["digikit/selection.txt"], "{report:?}");
+        let text = fs::read_to_string(folder.join("digikit/selection.txt")).unwrap();
+        assert_eq!(
+            crate::parse_selection_txt(&text).unwrap(),
+            ["modules/a.dkm", "modules/b.dkm"]
+        );
+        // 2. the user's file with comments and other spacing holds the same list: unchanged
+        fs::write(
+            folder.join("digikit/selection.txt"),
+            "# mine\n modules/a.dkm\n\nmodules/b.dkm # not a comment, part of the path\n",
+        )
+        .unwrap();
+        options.stamp = Some("s2".into());
+        let report = export(&built.image, &[], &folder, &layout, &options).unwrap();
+        assert_eq!(report.replaced, ["digikit/selection.txt"], "{report:?}");
+        fs::write(
+            folder.join("digikit/selection.txt"),
+            "# mine\n modules/a.dkm\n\nmodules/b.dkm\n",
+        )
+        .unwrap();
+        options.stamp = Some("s3".into());
+        let report = export(&built.image, &[], &folder, &layout, &options).unwrap();
+        assert!(
+            report.replaced.is_empty() && report.added.is_empty(),
+            "{report:?}"
+        );
+        assert!(
+            report
+                .unchanged
+                .contains(&"digikit/selection.txt".to_string())
+        );
+        // 3. the runtime writes copy B with a higher seq (what a menu selection does): the folder follows, the old file is kept
+        let record = encode_selection(&Selection {
+            seq: 5,
+            boot_counter: 1,
+            flags: 0,
+            paths: vec!["modules/c.dkm".into()],
+        })
+        .unwrap();
+        let overlay = [CardOverlaySector {
+            sector: end - 1,
+            written: [0xff; 64],
+            data: record,
+        }];
+        options.stamp = Some("s4".into());
+        let report = export(&built.image, &overlay, &folder, &layout, &options).unwrap();
+        assert_eq!(report.replaced, ["digikit/selection.txt"], "{report:?}");
+        let new = fs::read_to_string(folder.join("digikit/selection.txt")).unwrap();
+        assert_eq!(crate::parse_selection_txt(&new).unwrap(), ["modules/c.dkm"]);
+        assert!(
+            fs::read_to_string(report.backup_dir.join("digikit/selection.txt"))
+                .unwrap()
+                .contains("# mine")
+        );
+        // 4. a torn copy B (bad CRC) loses to A; no valid copy leaves the folder alone
+        let mut torn = overlay[0].clone();
+        torn.data[40] ^= 1;
+        options.stamp = Some("s5".into());
+        let report = export(&built.image, &[torn.clone()], &folder, &layout, &options).unwrap();
+        assert_eq!(report.replaced, ["digikit/selection.txt"], "{report:?}");
+        let both_bad = [
+            torn,
+            CardOverlaySector {
+                sector: end - 2,
+                written: [0xff; 64],
+                data: [0u8; 512],
+            },
+        ];
+        options.stamp = Some("s6".into());
+        let report = export(&built.image, &both_bad, &folder, &layout, &options).unwrap();
+        assert!(!report.export_dir.join("digikit").exists(), "{report:?}");
+        assert!(folder.join("digikit/selection.txt").is_file());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

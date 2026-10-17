@@ -180,6 +180,180 @@ pub fn result_text(code: i32) -> &'static str {
 /// Mailbox commands (emulator and test use; a menu calls `dkrt_load` directly).
 pub const CMD_LOAD: u32 = 1;
 pub const CMD_UNLOAD: u32 = 2;
+/// `arg`: store paths, each NUL terminated, the list ended by an empty path (an empty list clears the selection):
+/// `dkrt_selection_set`. The answer is its result.
+pub const CMD_SELECT: u32 = 3;
+/// `dkrt_restart`; the answer is only seen when it refuses.
+pub const CMD_RESTART: u32 = 4;
+/// Write ONE copy of the selection record from `arg` (`arg[0]` = copy 0 or 1, then the paths as for `CMD_SELECT`) with sequence
+/// number `seq + 1`: lets a test make the state between the two writes of `dkrt_selection_set` (a power cut).
+pub const CMD_SELECT_ONE: u32 = 5;
+
+/// Codes of boot-time loading (-40 to -49, finding 37).
+pub const E_SEL_PATH: i32 = -40; // a path of the selection is empty, too long or has a bad character
+pub const E_SEL_COUNT: i32 = -41; // more than `SEL_MAX` paths
+pub const E_SEL_WRITE: i32 = -42; // the firmware's block write failed
+pub const E_CARD_BUSY: i32 = -43; // `dkrt_restart`: a card transfer is in flight
+pub const E_SAFE_MODE: i32 = -44; // this boot is in safe mode: no module was loaded
+
+/// The selection (what the next boot loads), the layout the menu passes to `dkrt_selection_set` and gets from
+/// `dkrt_selection_get`. Paths are store paths ("modules/dyn-pluck.dkm"), NUL terminated, at most `SEL_PATH - 1` characters.
+pub const SEL_MAX: usize = 8;
+pub const SEL_PATH: usize = 56;
+#[repr(C)]
+pub struct DkrtSelection {
+    /// Number of paths in use, 0 to `SEL_MAX`.
+    pub count: u32,
+    /// Bit 0: start in safe mode once (the boot that honours it clears the bit).
+    pub flags: u32,
+    pub paths: [[u8; SEL_PATH]; SEL_MAX],
+}
+
+/// Why a boot ran in safe mode (`DkrtBootInfo::reason`).
+pub const SAFE_NONE: u32 = 0;
+pub const SAFE_COUNTER: u32 = 1; // two boots in a row did not reach the UI loop
+pub const SAFE_KEY: u32 = 2; // the safe-mode key was held at power-on
+pub const SAFE_FLAG: u32 = 3; // the selection record asked for it (`DkrtSelection::flags` bit 0)
+/// The key held at power-on for safe mode: RECORD (panel button 19, `tools/patchkit/pk_harness.py BUTTONS`).
+pub const SAFE_KEY_CODE: u32 = 19;
+/// Boots in a row that did not reach the UI loop after which the next one is safe mode.
+pub const SAFE_AFTER: u32 = 2;
+
+/// `dkrt_boot_info` result: this boot.
+#[repr(C)]
+pub struct DkrtBootInfo {
+    pub magic: u32, // 'DKBT'
+    pub version: u32,
+    /// 1 when this boot loaded nothing because of safe mode, and `SAFE_*` why.
+    pub safe: u32,
+    pub reason: u32,
+    /// The boot counter as the record held it at the start of this boot (before the runtime raised it).
+    pub counter: u32,
+    /// Sequence number of the record in use (0: no valid record) and which copy held it (0 = A, 1 = B).
+    pub seq: u32,
+    pub copy: u32,
+    /// Modules selected, and how many of them loaded without an error.
+    pub count: u32,
+    pub loaded: u32,
+    /// 1 once the UI loop has run (the boot counter is back to 0).
+    pub ui_reached: u32,
+    /// `OK`, a negative code, or `LOADING` (the CF part is live, the DSP part is still going) per selected module, in selection order.
+    pub results: [i32; SEL_MAX],
+    /// Reserved (0). The boot does not wait for DSP code: the frames that carry it start later, so a module with DSP code is
+    /// reported `LOADING` until its DSP part is in, over the first UI-loop passes.
+    pub dsp_wait: u32,
+    /// Times the registry called the firmware's machine-list builder again (the view hook of `core/dynreg`): 0 for the loads of a
+    /// boot, because the view does not exist yet and the stock builder reads the rows when it is made.
+    pub view_rebuilds: u32,
+    /// The machine selection view's address as `core/dynreg` had recorded it when the boot hook began (0: not built yet).
+    pub view_at_boot: u32,
+}
+
+/// The selection record (docs/design/digikit-store.md): one sector, big endian, in two copies at the end of the store range.
+pub mod sel {
+    use super::*;
+
+    pub const MAGIC: u32 = 0x444b_534c; // "DKSL"
+    pub const VERSION: u32 = 1;
+    /// Absolute sectors of the two copies (devices/*.toml `[card.store]`: `end_sector - 2` and `end_sector - 1`).
+    pub const SECTOR_A: u32 = store::FIRST + store::SECTORS - 2;
+    pub const SECTOR_B: u32 = store::FIRST + store::SECTORS - 1;
+
+    #[derive(Clone, Copy)]
+    pub struct Record {
+        pub seq: u32,
+        pub boot_counter: u32,
+        pub flags: u32,
+        pub count: u32,
+        pub paths: [[u8; SEL_PATH]; SEL_MAX],
+    }
+
+    impl Record {
+        pub const fn empty() -> Record {
+            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, paths: [[0; SEL_PATH]; SEL_MAX] }
+        }
+    }
+
+    pub fn crc32(p: &[u8]) -> u32 {
+        let mut crc = 0xffff_ffffu32;
+        for &b in p {
+            crc ^= b as u32;
+            let mut k = 0;
+            while k < 8 {
+                crc = (crc >> 1) ^ (0xedb8_8320 & 0u32.wrapping_sub(crc & 1));
+                k += 1;
+            }
+        }
+        !crc
+    }
+
+    fn put(b: &mut [u8], off: usize, v: u32) {
+        b[off] = (v >> 24) as u8;
+        b[off + 1] = (v >> 16) as u8;
+        b[off + 2] = (v >> 8) as u8;
+        b[off + 3] = v as u8;
+    }
+    fn get(b: &[u8], off: usize) -> u32 {
+        ((b[off] as u32) << 24) | ((b[off + 1] as u32) << 16) | ((b[off + 2] as u32) << 8) | (b[off + 3] as u32)
+    }
+
+    pub fn encode(r: &Record, out: &mut [u8; 512]) {
+        let mut i = 0;
+        while i < 512 {
+            out[i] = 0;
+            i += 1;
+        }
+        put(out, 0, MAGIC);
+        put(out, 4, VERSION);
+        put(out, 8, r.seq);
+        put(out, 12, r.boot_counter);
+        put(out, 16, r.flags);
+        put(out, 20, r.count);
+        let mut k = 0;
+        while k < SEL_MAX {
+            let mut j = 0;
+            while j < SEL_PATH {
+                out[32 + k * SEL_PATH + j] = r.paths[k][j];
+                j += 1;
+            }
+            k += 1;
+        }
+        let c = crc32(&out[..508]);
+        put(out, 508, c);
+    }
+
+    /// A valid record: magic, version, CRC, count, every used path NUL terminated.
+    pub fn decode(b: &[u8; 512]) -> Option<Record> {
+        if get(b, 0) != MAGIC || get(b, 4) != VERSION || get(b, 508) != crc32(&b[..508]) {
+            return None;
+        }
+        let count = get(b, 20);
+        if count as usize > SEL_MAX {
+            return None;
+        }
+        let mut r = Record::empty();
+        r.seq = get(b, 8);
+        r.boot_counter = get(b, 12);
+        r.flags = get(b, 16);
+        r.count = count;
+        let mut k = 0;
+        while k < SEL_MAX {
+            let mut j = 0;
+            let mut nul = false;
+            while j < SEL_PATH {
+                let c = b[32 + k * SEL_PATH + j];
+                r.paths[k][j] = c;
+                nul |= c == 0;
+                j += 1;
+            }
+            if (k as u32) < count && (!nul || r.paths[k][0] == 0) {
+                return None;
+            }
+            k += 1;
+        }
+        Some(r)
+    }
+}
 
 /// The mailbox the UI-task hook polls. A host writes `arg`, then `cmd`; the runtime runs it, stores `result`, adds one
 /// to `seq` and zeroes `cmd`.
@@ -328,5 +502,66 @@ pub mod store {
             i += 1;
         }
         Err(E_NOT_FOUND)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sel::*;
+    use super::*;
+
+    fn example() -> Record {
+        let mut r = Record::empty();
+        r.seq = 7;
+        r.boot_counter = 1;
+        r.count = 2;
+        r.paths[0][..13].copy_from_slice(b"modules/a.dkm");
+        r.paths[1][..13].copy_from_slice(b"modules/b.dkm");
+        r
+    }
+
+    /// The same record as `tools/patchkit/pk_dkrt_boot.py make_record(["modules/a.dkm", "modules/b.dkm"], seq=7, counter=1)`:
+    /// the layout of docs/design/digikit-store.md; the CRC is the one that Python's zlib computes.
+    #[test]
+    fn the_record_has_the_documented_bytes() {
+        let mut b = [0u8; 512];
+        encode(&example(), &mut b);
+        assert_eq!(&b[0..4], b"DKSL");
+        assert_eq!(&b[4..24], &[0, 0, 0, 1, 0, 0, 0, 7, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2]);
+        assert_eq!(&b[32..45], b"modules/a.dkm");
+        assert_eq!(&b[32 + SEL_PATH..45 + SEL_PATH], b"modules/b.dkm");
+        assert_eq!(&b[508..512], &0xce5a_5f11u32.to_be_bytes());
+    }
+
+    #[test]
+    fn decode_takes_what_encode_made_and_refuses_damage() {
+        let mut b = [0u8; 512];
+        encode(&example(), &mut b);
+        let r = decode(&b).unwrap();
+        assert_eq!((r.seq, r.boot_counter, r.flags, r.count), (7, 1, 0, 2));
+        assert_eq!(&r.paths[1][..13], b"modules/b.dkm");
+        // a flipped bit anywhere before the CRC, a bad magic, a count over 8, a used path with no NUL
+        for at in [0usize, 9, 40, 300, 507] {
+            let mut c = b;
+            c[at] ^= 1;
+            assert!(decode(&c).is_none(), "byte {at}");
+        }
+        let mut c = [0u8; 512];
+        assert!(decode(&c).is_none());
+        let mut r2 = example();
+        r2.count = 9;
+        encode(&r2, &mut c);
+        assert!(decode(&c).is_none());
+        let mut r3 = example();
+        r3.paths[0] = [b'x'; SEL_PATH];
+        encode(&r3, &mut c);
+        assert!(decode(&c).is_none());
+    }
+
+    #[test]
+    fn the_record_sectors_are_the_last_two_of_the_store_range() {
+        assert_eq!(SECTOR_A, 0x3dffe);
+        assert_eq!(SECTOR_B, 0x3dfff);
+        assert_eq!(store::FIRST + store::SECTORS, 0x3e000);
     }
 }

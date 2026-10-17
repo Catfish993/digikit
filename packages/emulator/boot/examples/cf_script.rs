@@ -12,6 +12,10 @@
 //!   {"op":"peek","ptr":true,...}                    the address is the word stored at "addr" (one level of indirection)
 //!   {"op":"call","pc":"0x..","args":[..],"max":N}   call a function (interrupts masked, like cf_call); prints d0, instruction count
 //!   {"op":"wait32","addr":"0x..","eq":V | "ne":V,"max":N,"tag":"x"}   run until the word is (not) V, at most N instructions
+//!   {"op":"button","code":N,"down":true|false}     a panel key event;  {"op":"turn","enc":N,"detents":N}  an encoder turn
+//!   {"op":"snap","name":"x","addr":"0x..","len":N}  remember a memory range;  {"op":"diff","name":"x","max":N}  print where it differs now
+//!   {"op":"overlay","tag":"x"}                      the card sectors the guest has written (count, ranges, a 32-bit sum of each range)
+//!   {"op":"probe","pcs":["0x..",..]}                count executions of these addresses from now on;  {"op":"hits","tag":"x"}  print the counts
 //! Numbers are strings (hex with 0x or decimal) or integers. Prints one JSON line per operation with the instruction count.
 
 use elektron_native_boot::{CallSpec, Emulator};
@@ -123,6 +127,7 @@ fn main() {
             }
         }
     };
+    let mut snaps: std::collections::HashMap<String, (u32, Vec<u8>)> = Default::default();
     for op in script.as_array().unwrap() {
         let name = op["op"].as_str().unwrap();
         let tag = op.get("tag").cloned().unwrap_or(Value::Null);
@@ -189,6 +194,85 @@ fn main() {
                     json!({"op": name, "tag": tag, "icount": emu.icount(), "ok": r.finished && r.error.is_none(), "d0": r.d[0],
                            "insns": r.insns, "error": r.error})
                 );
+            }
+            "button" => {
+                emu.button(num(&op["code"]) as u8, op["down"].as_bool().unwrap())
+                    .unwrap();
+                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+            }
+            "turn" => {
+                let d = op["detents"].as_i64().unwrap() as i32;
+                emu.turn(num(&op["enc"]) as u8, d).unwrap();
+                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+            }
+            "snap" => {
+                let (addr, len) = (num(&op["addr"]) as u32, num(&op["len"]) as usize);
+                let mut buf = Vec::with_capacity(len);
+                while buf.len() < len {
+                    let n = (len - buf.len()).min(1 << 20);
+                    buf.extend(peek(&mut emu, addr + buf.len() as u32, n));
+                }
+                snaps.insert(op["name"].as_str().unwrap().to_owned(), (addr, buf));
+                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+            }
+            "diff" => {
+                let (addr, old) = snaps[op["name"].as_str().unwrap()].clone();
+                let mut now = Vec::with_capacity(old.len());
+                while now.len() < old.len() {
+                    let n = (old.len() - now.len()).min(1 << 20);
+                    now.extend(peek(&mut emu, addr + now.len() as u32, n));
+                }
+                // changed ranges, merged when closer than 64 bytes
+                let mut ranges: Vec<(usize, usize)> = Vec::new();
+                for (i, (a, b)) in old.iter().zip(&now).enumerate() {
+                    if a != b {
+                        match ranges.last_mut() {
+                            Some(r) if i - r.1 < 64 => r.1 = i + 1,
+                            _ => ranges.push((i, i + 1)),
+                        }
+                    }
+                }
+                let max = op.get("max").map_or(40, |v| num(v) as usize);
+                let shown: Vec<Value> = ranges
+                    .iter()
+                    .take(max)
+                    .map(|&(a, b)| {
+                        let n = (b - a).min(16);
+                        let hx = |v: &[u8]| v[a..a + n].iter().map(|x| format!("{x:02x}")).collect::<String>();
+                        json!({"addr": format!("{:#x}", addr as usize + a), "len": b - a, "old": hx(&old), "new": hx(&now)})
+                    })
+                    .collect();
+                println!(
+                    "{}",
+                    json!({"op": name, "tag": tag, "icount": emu.icount(), "ranges": ranges.len(),
+                           "bytes": ranges.iter().map(|r| r.1 - r.0).sum::<usize>(), "first": shown})
+                );
+            }
+            "overlay" => {
+                let mut secs: Vec<u64> = emu.card_overlay().iter().map(|o| o.sector).collect();
+                secs.sort_unstable();
+                let mut runs: Vec<(u64, u64)> = Vec::new();
+                for s in secs {
+                    match runs.last_mut() {
+                        Some(r) if s == r.1 => r.1 = s + 1,
+                        _ => runs.push((s, s + 1)),
+                    }
+                }
+                let shown: Vec<String> = runs.iter().take(60).map(|r| format!("{:#x}+{}", r.0, r.1 - r.0)).collect();
+                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount(), "runs": runs.len(), "first": shown}));
+            }
+            "probe" => {
+                let pcs: Vec<u32> = op["pcs"].as_array().unwrap().iter().map(|v| num(v) as u32).collect();
+                emu.probe_pcs(&pcs);
+                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+            }
+            "hits" => {
+                let h: Vec<Value> = emu
+                    .probe_hits()
+                    .iter()
+                    .map(|(pc, n)| json!([format!("{pc:#x}"), n]))
+                    .collect();
+                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount(), "hits": h}));
             }
             "wait32" => {
                 let addr = num(&op["addr"]) as u32;

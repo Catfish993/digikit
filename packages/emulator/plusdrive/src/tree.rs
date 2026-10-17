@@ -82,6 +82,9 @@ pub struct Tree {
     pub regions: BTreeMap<u64, Vec<u8>>,
     /// Files of `digikit/` for the module store.
     pub store: Vec<crate::StoreFile>,
+    /// The runtime's selection (`digikit/selection.txt`): store paths in load order. `Some` writes both copies of the record
+    /// (docs/design/digikit-store.md); `None` leaves the two sectors zero (no record).
+    pub selection: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -667,11 +670,36 @@ pub fn build_tree_image(
     image.write_at(bytes_at_sector(layout.table_sector)?, &pool_table)?;
 
     // The module store.
-    if !tree.store.is_empty() {
+    if !tree.store.is_empty() || tree.selection.is_some() {
         let range = layout.store.as_ref().ok_or(ImageError::NoStore)?;
-        let bytes = crate::encode_store(tree.store, range.end_sector - range.first_sector)
+        if range.selection_sectors < 2
+            || range.end_sector - range.first_sector <= range.selection_sectors
+        {
+            return Err(ImageError::UnsupportedLayout(
+                "the store range needs two selection record sectors at its end",
+            ));
+        }
+        if !tree.store.is_empty() {
+            // the files keep out of the selection record sectors at the end of the range
+            let bytes = crate::encode_store(
+                tree.store,
+                range.end_sector - range.first_sector - range.selection_sectors,
+            )
             .map_err(ImageError::Store)?;
-        image.write_at(bytes_at_sector(range.first_sector)?, &bytes)?;
+            image.write_at(bytes_at_sector(range.first_sector)?, &bytes)?;
+        }
+        if let Some(paths) = tree.selection {
+            let record = crate::encode_selection(&crate::Selection {
+                seq: 1,
+                boot_counter: 0,
+                flags: 0,
+                paths,
+            })
+            .map_err(ImageError::Selection)?;
+            // copy A at end - 2, copy B at end - 1
+            image.write_at(bytes_at_sector(range.end_sector - 2)?, &record)?;
+            image.write_at(bytes_at_sector(range.end_sector - 1)?, &record)?;
+        }
     }
 
     if !path_fs {
@@ -1258,6 +1286,94 @@ mod tests {
                 None
             ),
             Err(ImageError::Store(crate::StoreError::DoesNotFit { .. }))
+        ));
+    }
+
+    #[test]
+    fn the_selection_is_written_as_two_copies_and_the_store_keeps_out_of_them() {
+        for device in ["dt2", "dn2"] {
+            let layout = card_layout(device).unwrap();
+            let store = layout.store.clone().unwrap();
+            let paths = vec!["modules/a.dkm".to_string(), "modules/b.dkm".to_string()];
+            let built = build_tree_image(
+                Tree {
+                    store: vec![crate::StoreFile {
+                        path: "modules/a.dkm".into(),
+                        bytes: pattern(1500),
+                    }],
+                    selection: Some(paths.clone()),
+                    ..Default::default()
+                },
+                TreeOptions {
+                    layout: layout.clone(),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+            let v = View(&built.image);
+            for sector in [store.end_sector - 2, store.end_sector - 1] {
+                let rec = crate::decode_selection(&v.read(sector * 512, 512)).unwrap();
+                assert_eq!((rec.seq, rec.boot_counter, rec.flags), (1, 0, 0));
+                assert_eq!(rec.paths, paths);
+            }
+            // the store itself reads back, and a store that would reach into the two sectors is refused
+            let read = crate::read_store(
+                &built.image,
+                store.first_sector,
+                store.end_sector - store.first_sector,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(read.entries.len(), 1);
+            let limit =
+                (store.end_sector - store.first_sector - store.selection_sectors) as usize * 512;
+            let fits = |bytes: usize| {
+                build_tree_image(
+                    Tree {
+                        store: vec![crate::StoreFile {
+                            path: "big".into(),
+                            bytes: vec![1; bytes],
+                        }],
+                        ..Default::default()
+                    },
+                    TreeOptions {
+                        layout: layout.clone(),
+                        ..Default::default()
+                    },
+                    None,
+                )
+            };
+            assert!(fits(limit - 2 * 512).is_ok());
+            assert!(matches!(
+                fits(limit - 512),
+                Err(ImageError::Store(crate::StoreError::DoesNotFit { .. }))
+            ));
+            // no selection: both sectors stay zero (no record)
+            let none = build_tree_image(
+                Tree::default(),
+                TreeOptions {
+                    layout,
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+            let v = View(&none.image);
+            assert!(
+                v.read((store.end_sector - 2) * 512, 1024)
+                    .iter()
+                    .all(|&b| b == 0)
+            );
+        }
+        // a record that cannot be encoded is an error, not a silent truncation
+        let long = Tree {
+            selection: Some(vec!["x".repeat(56)]),
+            ..Default::default()
+        };
+        assert!(matches!(
+            build_tree_image(long, TreeOptions::default(), None),
+            Err(ImageError::Selection(_))
         ));
     }
 

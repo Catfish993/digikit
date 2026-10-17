@@ -15,6 +15,7 @@ use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
 mod arena;
+pub mod boot;
 mod dsp;
 mod loader;
 pub mod registry;
@@ -107,8 +108,18 @@ extern "C" {
     fn dkrt_flush(start: u32, len: u32);
     // Firmware functions: addresses are anchors resolved at patch time.
     fn fw_block_read();
+    /// The firmware's eMMC block write (anchor `dkrt.fw.block_write`): `int f(u32 sector, u32 bytes, const void *buf)`, 0 = ok.
+    fn fw_block_write();
+    /// `src/cf/tramp.s`: mask interrupts (returns the old status register), restore it, and the soft reset.
+    fn dkrt_irq_mask() -> u32;
+    fn dkrt_irq_restore(sr: u32);
+    fn dkrt_soft_reset() -> !;
     fn fw_alloc();
     fn fw_free();
+    /// The firmware's "serialize the live project into the persistent arena" (anchor `dkrt.fw.project_serialize`): `int f(void)`.
+    fn fw_project_serialize();
+    /// The firmware's normal writer of the boot record (anchor `dkrt.fw.boot_record_write`): `void f(void)`; one shot per boot.
+    fn fw_boot_record_write();
     // Helpers from compiler_builtins, linked into this object.
     fn memcpy(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
     fn memset(d: *mut u8, c: i32, n: usize) -> *mut u8;
@@ -133,6 +144,14 @@ pub fn device() -> u32 {
 pub unsafe fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
     let f: unsafe extern "C" fn(u32, u32, *mut u8) -> i32 =
         core::mem::transmute(fw_block_read as unsafe extern "C" fn());
+    f(sector, bytes, buf)
+}
+
+/// Write `bytes` (a multiple of 512) from `buf` (16-byte aligned) to `sector`. Only `boot.rs` calls this, for the two sectors of the
+/// selection record.
+pub unsafe fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
+    let f: unsafe extern "C" fn(u32, u32, *const u8) -> i32 =
+        core::mem::transmute(fw_block_write as unsafe extern "C" fn());
     f(sector, bytes, buf)
 }
 
@@ -405,6 +424,81 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
     E_NOT_FOUND
 }
 
+// ---- boot-time loading (finding 37) ---------------------------------------------------------------------------------------
+
+/// `dkrt_selection_get(out)`: the saved selection (what the next boot loads). Always 0.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_selection_get(out: *mut DkrtSelection) -> i32 {
+    init_once();
+    boot::selection_get(out)
+}
+
+/// `dkrt_selection_set(sel)`: save the selection (two copies, sequence number, CRC); no effect until the next boot. 0 or `E_SEL_*`.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_selection_set(sel: *const DkrtSelection) -> i32 {
+    init_once();
+    boot::selection_set(sel)
+}
+
+/// `dkrt_boot_info(out)`: safe mode and why, the boot counter, each selected module's result at this boot.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_boot_info(out: *mut DkrtBootInfo) {
+    init_once();
+    boot::boot_info(out)
+}
+
+/// What `dkrt_restart` does to keep the working state (finding 40): bit 0 serializes the live project into the persistent arena
+/// (`fw_project_serialize`), bit 1 writes the arena to the next boot record (`fw_boot_record_write`, the firmware's own writer for
+/// the OS-update path). The default is 0 (no save; the menu asks for a project save first): finding 40 has no edit that the save keeps,
+/// and the serialize may race the firmware's BgWorker. 3 runs both steps, for the experiments of finding 40 (a host poke).
+#[no_mangle]
+pub static mut DKRT_SAVE_MODE: Aligned4 = Aligned4(0);
+
+/// A word that is 4-aligned (the m68k ABI aligns `u32` to 2; the host pokes this one with aligned stores).
+#[repr(C, align(4))]
+pub struct Aligned4(pub u32);
+
+/// Save the working state the way the firmware does before it flashes an update: the project into the arena, the arena into
+/// the boot record. Runs in the UI task with interrupts enabled (the writer takes the eMMC mutex itself).
+unsafe fn save_working_state() {
+    let mode = read_volatile(addr_of!(DKRT_SAVE_MODE.0));
+    if mode & 1 != 0 {
+        let f: unsafe extern "C" fn() -> i32 =
+            core::mem::transmute(fw_project_serialize as unsafe extern "C" fn());
+        f();
+    }
+    if mode & 2 != 0 {
+        let f: unsafe extern "C" fn() =
+            core::mem::transmute(fw_boot_record_write as unsafe extern "C" fn());
+        f();
+    }
+}
+
+/// ESDHC0 present-state register (`PRSSTAT`, both devices): bits 0 to 2 are command inhibit, data inhibit and data line active.
+const ESDHC_PRSSTAT: u32 = 0xFC0C_C024;
+
+unsafe fn card_busy() -> bool {
+    read_volatile(ESDHC_PRSSTAT as *const u32) & 7 != 0
+}
+
+/// `dkrt_restart()`: save the working state (`save_working_state`), then the firmware's own soft reset: interrupts masked, console drained,
+/// DDR word 0 cleared, `0x80` into `RCM.RCR`. Returns only when it refuses (`E_CARD_BUSY`: a card transfer is in flight; the
+/// check is made again with interrupts masked, when no other task can start one).
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_restart() -> i32 {
+    init_once();
+    if card_busy() {
+        return E_CARD_BUSY;
+    }
+    save_working_state();
+    let sr = dkrt_irq_mask();
+    if card_busy() {
+        dkrt_irq_restore(sr);
+        return E_CARD_BUSY;
+    }
+    dkrt_soft_reset()
+}
+
 /// Called from the UI task's event loop (`dkrt_loop_hook`, src/cf/tramp.s) once per pass, before it waits for the next
 /// event. Registers d0, d1, a0, a1 are saved by the hook. Polls the mailbox, then calls slot 0.
 #[no_mangle]
@@ -412,14 +506,24 @@ pub unsafe extern "C" fn dkrt_tick() {
     init_once();
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
+    boot::ui_reached();
     dsp::step();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));
     if cmd != 0 {
-        let r = match cmd {
-            CMD_LOAD => dkrt_load(mb.arg.as_ptr()),
-            CMD_UNLOAD => dkrt_unload(mb.arg.as_ptr()),
-            _ => E_FORMAT,
+        // an if chain, not a `match`: a dense match becomes a PC-relative jump table, which is not ColdFire code
+        let r = if cmd == CMD_LOAD {
+            dkrt_load(mb.arg.as_ptr())
+        } else if cmd == CMD_UNLOAD {
+            dkrt_unload(mb.arg.as_ptr())
+        } else if cmd == CMD_SELECT {
+            mailbox_select(mb.arg.as_ptr(), 2)
+        } else if cmd == CMD_SELECT_ONE {
+            mailbox_select(mb.arg.as_ptr().add(1), *mb.arg.as_ptr() as u32)
+        } else if cmd == CMD_RESTART {
+            dkrt_restart()
+        } else {
+            E_FORMAT
         };
         write_volatile(addr_of_mut!(mb.result), r);
         write_volatile(addr_of_mut!(mb.seq), mb.seq.wrapping_add(1));
@@ -432,5 +536,38 @@ pub unsafe extern "C" fn dkrt_tick() {
         call(addr_of!(dkrt_api));
         write_volatile(addr_of_mut!(s.entered[0]), s.entered[0] - 1);
         s.slot_calls = s.slot_calls.wrapping_add(1);
+    }
+}
+
+/// `CMD_SELECT` / `CMD_SELECT_ONE`: the mailbox argument is a list of NUL-terminated paths ended by an empty one. `copy` 0 or 1
+/// writes that copy only; 2 writes both.
+unsafe fn mailbox_select(arg: *const u8, copy: u32) -> i32 {
+    let mut sel: DkrtSelection = core::mem::zeroed();
+    let mut p = 0usize;
+    let mut n = 0usize;
+    loop {
+        let len = cstr_len(arg.add(p), 95 - p.min(95));
+        if len == 0 {
+            break;
+        }
+        if n == SEL_MAX || len >= SEL_PATH {
+            return E_SEL_PATH;
+        }
+        let mut i = 0;
+        while i < len {
+            sel.paths[n][i] = *arg.add(p + i);
+            i += 1;
+        }
+        n += 1;
+        p += len + 1;
+        if p >= 95 {
+            break;
+        }
+    }
+    sel.count = n as u32;
+    if copy == 2 {
+        boot::selection_set(&sel)
+    } else {
+        boot::selection_set_one(copy, &sel)
     }
 }

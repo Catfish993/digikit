@@ -241,7 +241,26 @@ fn scan_store(dir: &Path, layout: &CardLayout, out: &mut FolderScan) -> Result<(
                     continue;
                 }
                 let bytes = fs::read(entry.path()).map_err(|e| format!("digikit/{rel}: {e}"))?;
+                if rel == crate::SELECTION_FILE {
+                    // the runtime's selection record, not a store file
+                    let text = String::from_utf8(bytes)
+                        .map_err(|_| format!("digikit/{rel}: not UTF-8 text"))?;
+                    let paths = crate::parse_selection_txt(&text)
+                        .map_err(|e| format!("digikit/{rel}: {e}"))?;
+                    out.tree.selection = Some(paths);
+                    continue;
+                }
                 out.tree.store.push(StoreFile { path: rel, bytes });
+            }
+        }
+    }
+    if let Some(paths) = &out.tree.selection {
+        for path in paths {
+            if !out.tree.store.iter().any(|f| &f.path == path) {
+                out.skipped.push(format!(
+                    "digikit/{}: {path} is not in the store (the runtime will report NOT FOUND)",
+                    crate::SELECTION_FILE
+                ));
             }
         }
     }
@@ -302,6 +321,49 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn selection_txt_is_the_record_and_not_a_store_file() {
+        let dir = scratch("selection");
+        for (path, bytes) in [
+            ("digikit/modules/a.dkm", &b"module"[..]),
+            (
+                "digikit/selection.txt",
+                b"# sel\nmodules/a.dkm\nmodules/gone.dkm\n",
+            ),
+        ] {
+            let p = dir.join(path);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, bytes).unwrap();
+        }
+        let scan = scan_folder(&dir, &dt2_layout(), &mut |_, _| {}).unwrap();
+        assert_eq!(
+            scan.tree.selection.as_deref(),
+            Some(&["modules/a.dkm".to_string(), "modules/gone.dkm".to_string()][..])
+        );
+        let store: Vec<_> = scan.tree.store.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(store, ["modules/a.dkm"]);
+        assert_eq!(scan.skipped.len(), 1, "{:?}", scan.skipped);
+        assert!(
+            scan.skipped[0].contains("modules/gone.dkm"),
+            "{:?}",
+            scan.skipped
+        );
+        // a bad file stops the build with the line
+        fs::write(
+            dir.join("digikit/selection.txt"),
+            format!("{}\n", "x".repeat(60)),
+        )
+        .unwrap();
+        let err = scan_folder(&dir, &dt2_layout(), &mut |_, _| {})
+            .err()
+            .unwrap();
+        assert!(
+            err.contains("selection.txt") && err.contains("line 1"),
+            "{err}"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

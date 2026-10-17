@@ -1,0 +1,14 @@
+# A selection loaded at boot plays like the same module patched in (DT2): rows, voice row, PCM of a note.
+[scenario]
+name = "equiv-dyn-pluck"
+kind = "equiv"
+devices = ["dt2"]
+tier = "quick"
+
+[equiv]
+modules = ["test/dyn-pluck"]
+twin = "machines/pluck"
+play = "pluck"
+static_type = 9
+hint = 7
+voices = 1

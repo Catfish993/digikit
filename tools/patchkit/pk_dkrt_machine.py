@@ -27,6 +27,7 @@ record), and the DSP's frame copy is forced to the machine type (`DSP_FRAME_POKE
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import struct
 import sys
@@ -189,12 +190,24 @@ class Rig:
         self.summary: Path | None = None
         if watch:
             lo, hi = arena_safety.expansion(image)
-            stage = sym(plan, "core/runtime", "DKRT_STAGE")
+            # the card reads land by DMA in the runtime's staging buffer (and the 512-byte record buffer): left out of the watch
+            holes = [(sym(plan, "core/runtime", "DKRT_STAGE"), 64 * 1024)]
+            with contextlib.suppress(
+                ProofError
+            ):  # an image of an older runtime has no record buffer
+                holes.append((sym(plan, "core/runtime", "DKRT_SECBUF"), 512))
+            ranges, at = [], lo
+            for start, size in sorted(holes):
+                if start > at:  # adjacent holes leave no range between them
+                    ranges.append("0x%x-0x%x" % (at, start))
+                at = start + size
+            ranges.append("0x%x-0x%x" % (at, hi))
             out = work / f"{tag}.writewatch.jsonl"
             self.summary = out.with_suffix(".summary.json")
             env |= {
-                "DIGI_WRITE_WATCH": "0x%x-0x%x,0x%x-0x%x"
-                % (lo, stage, stage + 64 * 1024, hi),
+                "DIGI_WRITE_WATCH": ",".join(ranges),
+                # from the first cache enable on: the reset path clears and copies the whole RAM before it
+                "DIGI_WRITE_WATCH_AFTER": "cacr",
                 "DIGI_WRITE_WATCH_ALLOW_PC": arena_safety.plan_allow_pc(
                     syx.with_suffix(".plan.json")
                 ),

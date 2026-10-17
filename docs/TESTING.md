@@ -19,6 +19,7 @@ tests live with their code.
 | `tests/firmware` | `.syx` container, aPLib/ELZ, device profiles, firmware atlas, snapshots, machine patch planning, +Drive format | `dt2/`, `emu/` |
 | `tests/dsp` | DSP maps and diffs, FX scenario generators, audio checks | DSP tools |
 | `tests/devtools` | Lint (ruff `CLEAN` list), types (mypy `TYPED` list), PyPy, benchlock, verify routing, test_outcomes | `tools/devtools/verify.py`, `tools/devtools/benchlock.py`, `tools/devtools/test_outcomes.py` |
+| `tests/digikit` | The digikit runtime's boot-time scenarios: data files (`scenarios/*.toml`) and the runner `tools/patchkit/pk_digikit_scen.py`; routed by the verify suite `digikit-boot`. Slow (coupled cold boots). | `modules/core/runtime`, `core/dynreg`, `core/dsp-link`, `core/dyndsp`, `core/digikit-menu`, `tools/patchkit/pk_dkrt_boot.py` |
 | `tests/scenarios` | Emulator scenario oracles. Slow; run by the verify steps `check` and `dt2-check` and by `mise run scenarios:*`. | `tests/scenarios/`, `tools/emulator/coupled.py` |
 | `tests/support` | Helpers shared by tests. No `test_` prefix, not collected. `tests/support/paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS`. | |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures | |
@@ -81,6 +82,30 @@ In a clean checkout (no firmware, no `out/`), 2005 tests pass and 554 skip. Each
 | `mise run patch:proofs` | Every emulator proof on its quick tier, in sequence | After patchkit or module changes |
 | `uv run python -m tools.devtools.test_outcomes run [--check] --out DIR [--root PATH] [--jobs N] tests` | Each test file in its own process with a per-file timeout. Writes `DIR/all.xml` and `summary.tsv`. | Baselines; finding order-dependent failures |
 | `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` | Compares outcomes and skip reasons test by test, following git renames | After moving or refactoring tests |
+
+## Digikit boot scenarios (`tests/digikit`)
+
+The runtime loads its module set at boot, so what must hold about a module set is tested as scenarios: a TOML file names the device,
+the module sets and the expectations; one runner (`uv run python -m tools.patchkit.pk_digikit_scen list|run [NAME ...] [--image IMG] [--tier quick|full]`)
+boots the patched firmware in the coupled emulator through `pk_dkrt_boot` (`Env`, `BootRig`) and checks. Kinds:
+
+| Kind | Checks |
+| --- | --- |
+| `equiv` | the machine, parameter and page rows (decoded: names, ranges, defaults, slots, knobs) and the voice rows of a boot with set S equal those of the image patchkit builds with S's static twin (`modules/test/twin-*`, `machines/pluck`, `test/dn2-sine`); the PCM of a note equal where the set has a sound. A set with no twin leaves every table as a boot with no module. |
+| `roundtrip` | a project with run-time machines on tracks, parameter values, a p-lock and a preset lock is saved under set A, loaded and saved under set B (a machine absent) and under A again: the MmcFs slot is byte-identical to the first save but for one header stamp word; the sound records keep the machine types. Controls: the panel script changed the project; the stamp changes once. |
+| `safe` | a module whose `init` resets the machine: the third boot is safe mode (reason counter), nothing loaded, selection kept; the safe-once flag. |
+| `cut` | the card states a power cut leaves between the two copies of the selection record, and one copy written by the runtime itself. |
+
+Every scenario ends with the write-watch over `cf.expansion` (0 stray writes over every emulator it ran), the flush check (0 hits), and the card
+sectors the guest wrote (in the store range only the two selection sectors).
+
+Tiers: `DIGIKIT_TIER=quick` (default; the scenarios marked `tier = "quick"`, the newest image of each device) is what `mise run verify` runs when
+a file of the runtime, `core/dynreg`, `core/dsp-link`, `core/dyndsp`, `core/digikit-menu`, the `.dkm` packer, `plusdrive`, the boot tools or `tests/digikit` changed (the
+suite `digikit-boot` in `tools/devtools/verify.py`; one pytest file per group, so they run in parallel); `verify --full` sets `DIGIKIT_TIER=full`: every
+scenario on all four images. The quick tier is the pluck equivalence (DT2), the DN2 set and the DT2 round trip (about 3 minutes in parallel);
+safe mode and the power cut run in the full tier. Cards are cached by content in `out/cache/digikit/cards/` (read-only for the guest; its writes live in an overlay),
+so a repeated scenario reuses the daemon's boot cache; most of the time of a scenario is emulated panel time (a project save and load take about 10 s each), not the boots.
+A scenario file is `tests/digikit/scenarios/NAME.toml`: `[scenario] name, kind, devices, tier`, and a table named like the kind (the runner's docstring lists the keys).
 
 ## DSP budget gate (patchkit smoke)
 

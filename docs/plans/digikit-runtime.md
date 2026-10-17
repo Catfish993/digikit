@@ -273,10 +273,11 @@ Gate: a machine module selected in the menu plays in the emulator on both device
 
 ### Phase 6: boot-time loading (decision 9; current)
 
-Hook (finding 36): one `jsr` in the main-OS task just before the MainScreenView constructor (DT2 1.16/1.17 0x40033cf2,
-DN2 1.11/1.12 0x4002f16a). There the block read, the DSP and the frame work, and the machine view is not built yet, so
-the rows are in place before the stock builder runs (no view hook, no rebuild at boot). DN2 DSP upload (about 1 s for
-64 KiB) may move to the first pass of the UI-loop hook if the boot delay matters (measure).
+Hook (finding 36 proposed a `jsr` just before the MainScreenView constructor; finding 37 measured that the machine view already
+exists there and moved it): a `hook` op at the **entry of the main-OS task** (DT2 0x400337ba, DN2 0x4002ed34). There the block read
+works and nothing of the UI exists, so the rows are in place before the stock builder runs (no view hook, no rebuild at boot:
+`view_rebuilds` 0). The frames that carry DSP code are not flowing at that point (a transfer started there is never acknowledged), so a
+module with DSP code goes live in two steps: the CF part at the hook, the DSP part over the first UI-loop passes.
 
 C ABI for the menu (names fixed here so the menu and the runtime can be built in parallel; layouts in `dkrt-sdk`):
 - `dkrt_selection_get(out *mut DkrtSelection) -> i32`: the saved selection, which the next boot loads (store paths, at most 8).
@@ -288,16 +289,18 @@ C ABI for the menu (names fixed here so the menu and the runtime can be built in
 - `dkrt_status` and `dkrt_module` stay (what this session loaded).
 
 Items:
-- [ ] Boot load: the hook, the selection record, loads in selection order through the existing checks (a module that
-  fails is skipped and reported; the others load), DSP code through `core/dsp-link`.
-- [ ] Safe mode: a boot counter in the selection record, raised before the loads and cleared once the UI loop runs;
-  after two boots that did not reach it, or with a key held at power-on, boot with no modules and say so.
-- [ ] Restart: the soft reset (0x80 to 0xEC090000, the firmware's unused helper at 0x40005608; finding 36) after the
-  working state is saved. Open (finding 36, question 2): whether unsaved edits survive a restart, and which firmware
-  call saves them; measured in the emulator first.
+- [x] Boot load: the hook, the selection record, loads in selection order through the existing checks (a module that
+  fails is skipped and reported; the others load), DSP code through `core/dsp-link` (finding 37; `tools/patchkit/pk_dkrt_boot.py`).
+- [x] Safe mode: a boot counter in the selection record, raised before the loads and cleared once the UI loop runs;
+  after two boots that did not reach it, or with a key held at power-on, boot with no modules and say so. The counter and the
+  record flag are proven in the emulator; the key is coded and **[O]** (no key reaches the emulator before the main OS runs).
+- [~] Restart: `dkrt_restart` does the firmware's own soft-reset sequence (0x80 to 0xEC090000) and the emulator models the reset; before it, the
+  firmware's save sequence (`FUN_40030c9c` serialize, then `FUN_400f044a` boot-record write; anchored on all four ports; writes only the firmware's own
+  sectors, DT2 1.17 and DN2 1.12 run). **Not proven: that an edit survives.** Panel pattern and sound edits never reach the arena or a saved slot in the emulator
+  (finding 40), so the menu must ask for SAVE PROJECT first; where such an edit lives is **[O]**.
 - [ ] Menu: DIGIKIT > MODULES ticks the selection (greyed: other device or newer runtime), APPLY & RESTART, a line for
   safe mode, ABOUT with this session's modules and their results.
-- [ ] +Drive: the selection record round-trips with `plus_drive/<device>/digikit/` (a file the exporter writes back).
+- [x] +Drive: the selection record round-trips with `plus_drive/<device>/digikit/selection.txt` (builder writes both copies, exporter writes the winner back; plusdrive tests and `plusdrive:check`; finding 40).
 - [ ] Tests kept in the suite (routed by verify), one scenario format, from a booted snapshot where possible:
   - equivalence, any module type: booting with set S gives the same rows and tables at the main screen and the same PCM
     for a scripted project as the image patchkit builds with S patched in;

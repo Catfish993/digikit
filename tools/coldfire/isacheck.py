@@ -22,8 +22,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ALLOWED_UNITS = {"isa_a", "isa_b", "isa_c", "emac"}
-# Privileged forms a module may use: cache line push-and-invalidate (the digikit runtime flushes loaded code).
-PRIVILEGED_OK = {"cpushl"}
+# Privileged forms a module may use: cache line push-and-invalidate (the digikit runtime flushes loaded code) and the status
+# register moves (the runtime masks interrupts for the soft reset of `dkrt_restart`; the tasks run in supervisor mode).
+PRIVILEGED_OK = {"cpushl", "move_from_sr", "move_to_sr"}
 
 
 class IsaError(RuntimeError):

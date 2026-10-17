@@ -158,3 +158,45 @@ range, per-row type/owner.
 
 Cost: the loader is about 3 KB of code and 540 bytes of state; the DSP runs the same stub as before plus a window select (about 8
 instructions per chunk, none when idle).
+
+## Boot-time loading (plan decision 9; finding 37)
+
+The module set is fixed for a session. The selection is a record in two sectors at the end of the store range
+(`docs/design/digikit-store.md`: layout, write order, +Drive round trip); the runtime loads it at boot and never writes anywhere else.
+
+**Hook.** `dkrt_boot_hook` (`src/cf/tramp.s`) is a `hook` op at the entry of the main-OS task (anchor `dkrt.hook.boot`, found by the words
+of the prologue; the displaced `link`/`movem` run in the tail). Why there: the block read exists and nothing of the UI does. The MainScreenView, and with it the machine selection view that reads the machine list **once**, is made by one of
+the singletons the task builds first: the first design hooked the call that uses the MainScreenView (finding 36) and measured the view
+already built there (`DkrtBootInfo::view_at_boot`), so the registry had to rebuild its list. At the task entry `view_at_boot` is 0 and
+`view_rebuilds` stays 0: the stock builder reads the rows, no view hook runs at boot.
+
+**Sequence** (`boot.rs`, `dkrt_boot`): read both copies (`sel`), pick the valid one with the higher sequence number; decide safe mode (flag
+bit 0, the key, or a boot counter of 2 or more); raise the boot counter (one copy, the one that is not current, `seq + 1`) before
+anything of a module runs; load each selected path with the loader of old (the same checks; a module that fails is skipped and
+reported in `DkrtBootInfo::results`, the others load). The first pass of the UI loop clears the counter (`ui_reached`).
+
+**DSP code.** Measured: a transfer started at the task entry is never acknowledged (finding 37); the cause is not traced. A module with a DSP section is
+therefore published in two steps: the CF part at once (machine and parameter rows, `init`, slots; `used = 1`), the DSP part queued in the
+state machine of finding 32 (`Pending.early`), which sends the image and publishes the voice rows over the first UI-loop passes. Jobs
+queue (`DspState.waiting`), one transfer at a time. The result of a module shows `LOADING` until then; a failure of the DSP part takes the
+module down again (`loader::undo_early` = the unload path). Until the voice row is in, a saved track on the machine plays as type 0.
+
+**API** (C ABI, `dkrt-sdk`): `dkrt_selection_get(out *mut DkrtSelection) -> i32`, `dkrt_selection_set(sel *const DkrtSelection) -> i32`
+(0, `E_SEL_PATH`, `E_SEL_COUNT`, `E_SEL_WRITE`), `dkrt_restart() -> i32` (returns only when it refuses: `E_CARD_BUSY` when the eSDHC
+present-state register shows a transfer, checked again with interrupts masked), `dkrt_boot_info(out *mut DkrtBootInfo)`. Mailbox: `CMD_SELECT`,
+`CMD_SELECT_ONE` (one copy, for the power-cut test), `CMD_RESTART`. `dkrt_status` and `dkrt_module` keep their meaning for this session.
+
+**Restart.** `dkrt_restart`: refuse during a card transfer; save the working state the way the firmware does before an OS update
+(`save_working_state`, `DKRT_SAVE_MODE`: the project into the arena, then the arena into the boot record; finding 40); mask interrupts; the firmware's own
+sequence: wait (bounded) for the console UART8 to empty, clear DDR word 0 through the uncached alias, 25 nops, `0x80` into `RCM.RCR`
+(`0xEC090000`). A restart loses the unsaved edits that the firmware itself would lose at that point; finding 40 measured it: panel pattern and sound edits do not reach the arena, so the menu asks the player to save the project first.
+
+**Safe mode.** A boot counter in the record: raised before the loads, cleared by the first UI-loop pass. After `SAFE_AFTER` (2) boots in a row
+that never reached it, a boot loads nothing (`reason` counter). The record's flag bit 0 asks for one safe boot (cleared by the boot that
+honours it). The key `SAFE_KEY_CODE` (RECORD, button 19) held at power-on is looked for in the UI queue's waiting key events: **[O]**
+untested on a device, and the emulator delivers no key before the main OS runs.
+
+**Emulator.** A store of `0x80` into `RCM.RCR` is a soft reset: the controller cold-boots the same patched firmware again on the card as the
+guest left it (its writes laid over the image), the DSP as a device boots it (the image's own DSP code from the first
+instruction, the default since 2026-10-17). A reset before the boot is ready (a module that resets in `init`, as the firmware's exception path does) restarts the boot
+the same way, up to 8 times.

@@ -180,6 +180,17 @@ impl WatchConfig {
                 std::fs::create_dir_all(&dir).ok()?;
                 Some(PathBuf::from(dir).join("writewatch.jsonl"))
             });
+        // DIGI_WRITE_WATCH_SEQ=1: one log and summary per emulator of the process (`NAME-0.jsonl`, `NAME-1.jsonl`, ...): a cold boot, a
+        // soft-reset boot and the installed runtime would otherwise overwrite each other's summary.
+        if non_empty(std::env::var("DIGI_WRITE_WATCH_SEQ")).is_some_and(|v| v != "0")
+            && let Some(out) = cfg.out.take()
+        {
+            static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let stem = out.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let ext = out.extension().map_or(String::new(), |s| format!(".{}", s.to_string_lossy()));
+            cfg.out = Some(out.with_file_name(format!("{stem}-{n}{ext}")));
+        }
         Ok(Some(cfg))
     }
 }

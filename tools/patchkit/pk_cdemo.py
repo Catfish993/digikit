@@ -82,13 +82,13 @@ def proof(image: str, keep: Path | None = None) -> dict:
     pk_dkrt.pack(tools, "test/c-demo", store / "modules" / "c-demo.dkm")
     card = work / f"{device}.img"
     pk_dkrt.build_card(tools, folder, card, syx, device)
-    st, arena, stage = rt["state"], rt["arena"], rt["stage"]
+    st, arena = rt["state"], rt["arena"]
     region_lo = min(
         w["addr"]
         for w in plan["writes"]
         if w["kind"] == "place" and "cf.expansion" in w["what"]
     )
-    watch = [(region_lo, stage), (stage + 64 * 1024, 0x47FE0000 - 0x10000)]
+    watch = pk_dkrt.watch_ranges(rt, region_lo, 0x47FE0000 - 0x10000)
     allow = list(rt["code"]) + [(arena, arena + ARENA_BYTES)]
     env = {
         "DIGI_FLUSH_CHECK": "1",

@@ -1,0 +1,13 @@
+# Digitone II: a machine with its own SYN page and a DSP voice routine, loaded at boot, against the patched-in forms.
+[scenario]
+name = "equiv-dn2-set"
+kind = "equiv"
+devices = ["dn2"]
+tier = "quick"
+
+[equiv]
+modules = ["test/dyn-dn2", "test/dyn-sine-dn2"]
+twin = "test/twin-dn2,test/dn2-sine"
+play = "sine"
+voices = 1
+ignore_machines = ["Sine"]   # test/dn2-sine has a machine entry of its own; test/dyn-sine-dn2 is only the voice routine

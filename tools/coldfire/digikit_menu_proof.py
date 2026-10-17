@@ -144,8 +144,10 @@ def forge(
 
 
 class Plan:
-    def __init__(self, path: pathlib.Path) -> None:
-        self.syms = json.loads(path.read_text())["symbols"]
+    def __init__(self, path: pathlib.Path | dict) -> None:
+        self.syms = (path if isinstance(path, dict) else json.loads(path.read_text()))[
+            "symbols"
+        ]
 
     def addr(self, name: str) -> int:
         """A module symbol by its exact name or, for a Rust static, by the end of its mangled name."""
@@ -223,17 +225,13 @@ def shots(image: str, script: str, d: pathlib.Path, frames: list[str]) -> None:
         sheet.save(SHOTS / f"{image}-{script}-sheet.png")
 
 
-def stack_env(image: str, plan: Plan) -> dict[str, str]:
-    """DIGI_STACK_WATCH on the UI task's stack, and epochs ended by the menu's MARK words (the start and the end of a LOAD or UNLOAD)."""
+def stack_env(image: str, plan: Plan | None = None) -> dict[str, str]:
+    """DIGI_STACK_WATCH on the UI task's stack (tools.coldfire.task_stacks)."""
     from tools.coldfire import task_stacks
 
     _, ts, pop = task_stacks.tasks(image)
     ui = task_stacks.ui_task(ts, pop)
-    mark = plan.addr("MARK")
-    return {
-        "DIGI_STACK_WATCH": "0x%x-0x%x" % (ui.base, ui.top),
-        "DIGI_STACK_WATCH_EPOCH": "0x%x+8" % mark,
-    }
+    return {"DIGI_STACK_WATCH": "0x%x-0x%x" % (ui.base, ui.top)}
 
 
 def run_one(
@@ -274,38 +272,319 @@ def run_one(
     return facts, out
 
 
-def stack_summary(facts: dict, mark: int) -> dict:
-    """The UI stack's high-water by phase: the whole run, the epochs ended by the end-of-request MARK word (a LOAD or UNLOAD
-    request: the menu action, dkrt_load or dkrt_unload and the popup), and every other epoch (idle, navigation, rebuilds)."""
+def report_stack(name: str, facts: dict) -> None:
     st = facts["stacks"][0]
-    end = "%#010x" % (mark + 4)
-    req = [e for e in facts["stack_epochs"] if e["trigger"] == end]
-    rest = [e for e in facts["stack_epochs"] if e["trigger"] != end]
-    return {
-        "size": st["size"],
-        "total": st["depth"],
-        "total_pc": st["pc"],
-        "request": max((e["depth"] for e in req), default=None),
-        "request_pc": max(req, key=lambda e: e["depth"])["pc"] if req else None,
-        "other": max((e["depth"] for e in rest), default=None),
-        "other_pc": max(rest, key=lambda e: e["depth"])["pc"] if rest else None,
-        "requests": len(req),
-    }
-
-
-def report_stack(name: str, facts: dict, mark: int) -> None:
-    sm = stack_summary(facts, mark)
     print(
-        f"  stack of {sm['size']} bytes: deepest {sm['total']} (pc {sm['total_pc']}); "
-        f"outside requests {sm['other']} (pc {sm['other_pc']}); "
-        f"in {sm['requests']} requests {sm['request']} (pc {sm['request_pc']}); "
-        f"margin {sm['size'] - sm['total']}"
+        f"  stack of {st['size']} bytes: deepest {st['depth']} (pc {st['pc']}); margin {st['size'] - st['depth']}"
     )
+
+
+# ---- the boot proof: tick, apply, restart; safe mode (finding 38) -----------------------------------------------------------
+
+
+def _wait_restart(rig, timeout_s: float = 300.0) -> None:
+    """After the menu's `dkrt_restart`: step the coupled daemon until the emulator's soft reset has cold-booted the firmware again
+    (the same wait as `BootRig.restart`, without the mailbox command)."""
+    import time
+
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout_s:
+        try:
+            rig.emu.step(400_000)
+        except Exception:  # noqa: BLE001  a cold boot runs on its worker: steps are refused until it is done
+            time.sleep(0.5)
+        for ev in rig.emu.drain_events():
+            if ev.get("kind") == "cpu.reset" and ev.get("restart") == "unsupported":
+                raise RuntimeError("the emulator cannot restart this build")
+            if ev.get("kind") == "firmware.loaded":
+                if not ev.get("ok"):
+                    raise RuntimeError(f"restart: the cold boot failed {ev}")
+                rig.s.emu.watchdog(rig.s.cell.stall_ms)
+                rig.s.emu.pcm_start()  # the harness's taps read the PCM report of the new emulator
+                rig.s.run_ms(1500)
+                rig.wait_dsp()
+                return
+    raise RuntimeError("restart: no new boot")
+
+
+class BootProof:
+    """The menu on a card with modules, in the coupled emulator with the RCM soft reset: the checks are made on what the menu and
+    the runtime hold in memory and on the card (the firmware's popup text, the pending selection, the OFFER flag, boot info), and
+    on pinned OLED frames."""
+
+    def __init__(self, image: str, update: bool, work: pathlib.Path) -> None:
+        from tools.patchkit import pk_dkrt_boot as B
+
+        self.B, self.image, self.update = B, image, update
+        self.env = B.Env(image, work)
+        self.checks: list[tuple[str, bool, str]] = []
+        self.goldens = json.loads(GOLDEN.read_text()) if GOLDEN.exists() else {}
+        self.new_goldens: dict[str, str] = {}
+        self.plan: Plan | None = None
+        self.writes: set[int] = set()
+        self.card_sectors: set[int] = set()
+        self.watch = {"write_events": 0, "flush_hits": 0}
+
+    def check(self, name: str, ok: bool, detail: str = "") -> None:
+        self.checks.append((name, bool(ok), detail))
+        print(f"{'ok  ' if ok else 'FAIL'} {name} {detail}", flush=True)
+
+    def setup(self) -> None:
+        e = self.env
+        e.pack("test/dyn-demo", "dyn-demo.dkm")
+        good = (e.folder / "digikit" / "modules" / "dyn-demo.dkm").read_bytes()
+        bad = bytearray(good)
+        bad[-1] ^= (
+            0x5A  # the image is the last part: the header sha256 no longer matches
+        )
+        (e.folder / "digikit" / "modules" / "bad-sha.dkm").write_bytes(bad)
+        other = 2 if self.env.device == "dt2" else 1
+        (e.folder / "digikit" / "modules" / "foreign.dkm").write_bytes(
+            forge(good, device=other)
+        )
+        self.img = e.build_image(f"{RUNTIME},{MENU}", "menu")
+        self.plan = Plan(self.img.plan)
+
+    # -- reads
+    def w(self, rig, name: str, k: int = 0) -> int:
+        return rig.w(self.plan.addr(name) + 4 * k)
+
+    def text(self, rig, name: str, n: int = 48) -> str:
+        return cstr(
+            b"".join(self.w(rig, name, k).to_bytes(4, "big") for k in range(n // 4))
+        )
+
+    def bytes_of(self, rig, name: str, n: int) -> list[int]:
+        raw = b"".join(
+            self.w(rig, name, k).to_bytes(4, "big") for k in range((n + 3) // 4)
+        )
+        return list(raw[:n])
+
+    # -- panel
+    def tap(self, rig, key: str, gap_ms: int = 350) -> None:
+        rig.s.do_tap(key)
+        rig.s.run_ms(gap_ms)
+
+    def downs(self, rig, n: int) -> None:
+        for _ in range(n):
+            self.tap(rig, "DOWN", 200)
+
+    def to_digikit(self, rig) -> None:
+        self.tap(rig, "NO", 400)
+        self.tap(rig, "SETTINGS", 600)
+        self.downs(rig, 8)
+        self.tap(rig, "YES", 700)
+
+    def frame(self, rig, name: str) -> None:
+        digest, raw = rig.s.frame()
+        from tools.control.digi_client import oled_png
+
+        SHOTS.mkdir(parents=True, exist_ok=True)
+        (SHOTS / f"{self.image}-boot-{name}.png").write_bytes(oled_png(raw))
+        key = f"{self.image}/boot/{name}"
+        self.new_goldens[key] = digest
+        if not self.update:
+            want = self.goldens.get(key)
+            self.check(
+                f"frame {name}",
+                want == digest,
+                f"{digest[:12]} pinned {str(want)[:12]}",
+            )
+
+    def finish(self, rig) -> None:
+        try:
+            self.writes |= set(rig.card_store_writes())
+            from tools.coldfire import arena_safety as A
+
+            ov = rig.work / f"{rig.tag}.all-overlay.bin"
+            rig.emu.call("card.overlay", path=str(ov))
+            self.card_sectors |= set(A.parse_overlay(ov.read_bytes()))
+        except Exception as ex:  # noqa: BLE001
+            print(f"card.overlay: {ex}", file=sys.stderr)
+        w = rig.watch_summaries()
+        self.watch["write_events"] += w["write_events"]
+        self.watch["flush_hits"] += w["flush_hits"]
+
+    # -- scenarios
+    def apply_scenario(self) -> None:
+        """No selection: nothing offered; tick dyn-demo; APPLY & RESTART (two presses, a popup says the device restarts); the next
+        boot loads it; ABOUT shows it; the list shows it ticked and loaded and offers nothing."""
+        B, e = self.B, self.env
+        with e.boot(self.img, e.card(None, tag="apply"), "apply", watch=True) as rig:
+            self.to_digikit(rig)
+            self.frame(rig, "digikit")
+            self.tap(rig, "YES", 900)  # MODULES
+            self.frame(rig, "list_empty")
+            self.check("rows: bad-sha, dyn-demo, foreign", self.w(rig, "NENT") == 3)
+            self.check("foreign is greyed", self.bytes_of(rig, "NOK", 3) == [0, 0, 1])
+            self.check(
+                "unchanged selection: APPLY not offered", self.w(rig, "DK_OFFER") == 0
+            )
+            self.downs(rig, 1)
+            self.tap(rig, "YES", 500)  # tick dyn-demo
+            self.check(
+                "pending selection: dyn-demo",
+                self.bytes_of(rig, "TICK", 3) == [0, 1, 0],
+            )
+            self.check(
+                "the card's selection is still empty", rig.sel_records() == [None, None]
+            )
+            self.check("changed selection: APPLY offered", self.w(rig, "DK_OFFER") == 1)
+            self.downs(rig, 2)
+            self.frame(rig, "list_ticked")
+            n0 = self.w(rig, "DK_POPUPS")
+            self.tap(rig, "YES", 700)  # first press
+            self.check(
+                "first press: a popup, nothing saved",
+                self.w(rig, "DK_POPUPS") == n0 + 1
+                and rig.sel_records() == [None, None],
+            )
+            self.check(
+                "the popup says unsaved changes are lost",
+                "UNSAVED" in self.text(rig, "DK_POPUP"),
+                self.text(rig, "DK_POPUP"),
+            )
+            self.frame(rig, "confirm_popup")
+            self.tap(rig, "NO", 500)  # dismiss
+            rig.emu.drain_events()
+            self.tap(rig, "YES", 300)  # second press: save and restart
+            self.check(
+                "dkrt_selection_set answered 0", self.w(rig, "DK_APPLY_SET") == 0
+            )
+            _wait_restart(rig)
+            b = rig.boot_info()
+            self.check(
+                "the next boot loaded the selection",
+                b["count"] == 1
+                and b["loaded"] == 1
+                and b["results"] == [0]
+                and b["safe"] == 0,
+                str(b["results"]),
+            )
+            recs = rig.sel_records()
+            self.check(
+                "the record in use holds it (the boot counter writes the other copy)",
+                B.current(recs) is not None
+                and B.current(recs)["paths"] == ["modules/dyn-demo.dkm"],
+                str(recs),
+            )
+            self.to_digikit(rig)
+            self.downs(rig, 1)
+            self.tap(rig, "YES", 900)  # ABOUT
+            self.frame(rig, "about_after_boot")
+            self.tap(rig, "NO", 500)
+            self.tap(rig, "UP", 300)
+            self.tap(rig, "YES", 900)  # MODULES
+            self.frame(rig, "list_after_boot")
+            self.check(
+                "after the boot: ticked, marked loaded",
+                self.bytes_of(rig, "TICK", 3) == [0, 1, 0]
+                and self.bytes_of(rig, "LOADED", 3) == [0, 1, 0],
+            )
+            self.check(
+                "after the boot: APPLY not offered", self.w(rig, "DK_OFFER") == 0
+            )
+            self.finish(rig)
+
+    def safe_scenario(self) -> None:
+        """A card with a selection and a boot counter of 2: this boot is in safe mode and loaded nothing. The menu says so (a popup
+        when DIGIKIT opens, a row, the reason) and keeps the selection ticked; APPLY & RESTART is the way out."""
+        e = self.env
+        card = e.card(["modules/dyn-demo.dkm"], counter=2, tag="safe")
+        with e.boot(self.img, card, "safe", watch=True) as rig:
+            b = rig.boot_info()
+            self.check(
+                "safe mode by the counter",
+                b["safe"] == 1 and b["reason"] == 1 and b["loaded"] == 0,
+                f"{b['safe']} {b['reason']}",
+            )
+            self.to_digikit(rig)
+            self.check(
+                "a popup names safe mode and why",
+                self.w(rig, "DK_POPUPS") == 1
+                and "SAFE" in self.text(rig, "DK_POPUP")
+                and "BAD BOOTS" in self.text(rig, "DK_POPUP"),
+                self.text(rig, "DK_POPUP"),
+            )
+            self.frame(rig, "safe_popup")
+            self.tap(rig, "NO", 500)
+            self.frame(rig, "safe_main")
+            self.tap(rig, "DOWN", 200)  # past the SAFE row to MODULES
+            self.tap(rig, "YES", 900)
+            self.frame(rig, "safe_list")
+            self.check(
+                "the selection is kept ticked",
+                self.bytes_of(rig, "TICK", 3) == [0, 1, 0],
+            )
+            self.check("APPLY offered in safe mode", self.w(rig, "DK_OFFER") == 1)
+            self.downs(rig, 3)  # bad-sha, dyn-demo, foreign, APPLY
+            self.tap(rig, "YES", 700)  # first press: the popup
+            self.tap(rig, "NO", 500)
+            rig.emu.drain_events()
+            self.tap(rig, "YES", 300)
+            _wait_restart(rig)
+            b = rig.boot_info()
+            self.check(
+                "the way out: the next boot is normal and loads the selection",
+                b["safe"] == 0 and b["loaded"] == 1 and b["results"] == [0],
+                str(b["results"]),
+            )
+            self.finish(rig)
+
+    def bad_scenario(self) -> None:
+        """A selection with the bad-sha module: the boot reports its result, ABOUT shows the text."""
+        e = self.env
+        card = e.card(["modules/bad-sha.dkm"], tag="bad")
+        with e.boot(self.img, card, "bad", watch=True) as rig:
+            b = rig.boot_info()
+            self.check(
+                "boot result of bad-sha is E_SHA",
+                b["count"] == 1 and b["results"] == [-4],
+                str(b["results"]),
+            )
+            self.to_digikit(rig)
+            self.downs(rig, 1)
+            self.tap(rig, "YES", 900)
+            self.frame(rig, "about_bad")
+            self.finish(rig)
+
+    def run(self, quick: bool) -> bool:
+        self.setup()
+        self.apply_scenario()
+        self.safe_scenario()
+        if not quick:
+            self.bad_scenario()
+        sel = {self.B.SECTOR_A, self.B.SECTOR_B}
+        self.check(
+            "card store writes only in the selection sectors",
+            self.writes <= sel and self.writes,
+            str(sorted(self.writes)),
+        )
+        self.check(
+            "0 stray writes, 0 flush hits",
+            self.watch["write_events"] == 0 and self.watch["flush_hits"] == 0,
+            str(self.watch),
+        )
+        if self.update:
+            g = {
+                k: v
+                for k, v in self.goldens.items()
+                if not k.startswith(self.image + "/boot/")
+            }
+            g.update(self.new_goldens)
+            GOLDEN.write_text(json.dumps(dict(sorted(g.items())), indent=1) + "\n")
+        return all(ok for _, ok, _ in self.checks)
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("cmd", choices=["run"])
+    ap.add_argument(
+        "--no-boot",
+        action="store_true",
+        help="skip the boot proof (apply, restart, safe mode)",
+    )
+    ap.add_argument("--only-boot", action="store_true", help="only the boot proof")
     ap.add_argument("--image", default="dt2-1.16")
     ap.add_argument("--update", action="store_true", help="pin the frames of this run")
     ap.add_argument("--jobs", type=int, default=3)
@@ -322,7 +601,7 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--quick",
         action="store_true",
-        help="the quick tier: only digikit_errors and digikit_gate, no regression scripts",
+        help="the quick tier: no bad-module scenario",
     )
     ap.add_argument(
         "--stack-stock",
@@ -333,40 +612,37 @@ def main(argv=None) -> int:
     ap.add_argument("--only-regress", action="store_true", help="skip the DIGIKIT runs")
     a = ap.parse_args(argv)
     image = a.image
+    if a.only_boot:
+        work = OUT / image / "boot"
+        work.mkdir(parents=True, exist_ok=True)
+        return 0 if BootProof(image, a.update, work).run(a.quick) else 1
     syx, plan_path = patch(image, [MENU], f"dkmenu-{image}")
     plan = Plan(plan_path)
     card = make_card(image)
     goldens = json.loads(GOLDEN.read_text()) if GOLDEN.exists() else {}
     if a.update and not a.only_regress:
         goldens = {k: v for k, v in goldens.items() if not k.startswith(image + "/")}
-    state = [
-        plan.addr(n)
-        for n in (
-            "NENT",
-            "STORE",
-            "TICK",
-            "RESULT",
-            "LOADED",
-            "RESULT2",
-            "POPUP",
-            "POPUPS",
-            "NOK",
-        )
-    ]
+    state = [plan.addr(n) for n in ("NENT", "STORE", "TICK", "DK_POPUP", "DK_POPUPS")]
     st = plan.addr("DKRT_STATE")
     # the whole of cf.expansion except the runtime's staging buffer: the card read lands there by DMA, by design
     lo, hi = arena_safety.expansion(image)
     stage = plan.addr("DKRT_STAGE")
-    watch = "0x%x-0x%x,0x%x-0x%x" % (lo, stage, stage + 64 * 1024, hi)
+    secbuf = plan.addr(
+        "DKRT_SECBUF"
+    )  # the selection record's 512-byte read buffer: a DMA target as well
+    holes = sorted([(stage, 64 * 1024), (secbuf, 512)])
+    ranges, at = [], lo
+    for start, size in holes:
+        if start > at:
+            ranges.append("0x%x-0x%x" % (at, start))
+        at = start + size
+    ranges.append("0x%x-0x%x" % (at, hi))
+    watch = ",".join(ranges)
     runtime_state = [st + 4 * k for k in range(0, 12)]
     jobs = [
         ("digikit_main", panel_script.SCRIPTS["digikit_main"]()),
         ("digikit_about", panel_script.digikit_about_script()),
-        ("digikit_errors", panel_script.digikit_errors_script(plan.addr("POPUP"))),
-        ("digikit_gate", panel_script.digikit_gate_script(st)),
     ]
-    if a.quick:
-        jobs = [j for j in jobs if j[0] in ("digikit_errors", "digikit_gate")]
     if a.only:
         jobs = [j for j in jobs if j[0] in a.only.split(",")]
     from concurrent.futures import ThreadPoolExecutor
@@ -402,67 +678,11 @@ def main(argv=None) -> int:
         bad = list(facts["bad"])
         nent = peek(out, plan.addr("NENT"))
         store = peek(out, plan.addr("STORE"))
-        tick = list(peek_bytes(out, plan.addr("TICK"), 8)[:5])
-        loaded = list(peek_bytes(out, plan.addr("LOADED"), 8)[:5])
-        result = cstr(peek_bytes(out, plan.addr("RESULT"), 48))
-        popup = cstr(peek_bytes(out, plan.addr("POPUP"), 48))
-        popups = peek(out, plan.addr("POPUPS"))
-        info = {
-            "entries": nent,
-            "store": store,
-            "ticks": tick,
-            "loaded": loaded,
-            "result": result,
-            "popup": popup,
-            "popups": popups,
-        }
-        if name != "digikit_main" and "about" not in name and (nent != 5 or store != 1):
-            bad.append(f"store read: entries {nent}, state {store}")
-        want = {
-            # (ticks, loaded, last answer) after the script
-            "digikit_errors": ([0, 1, 0, 0, 0], [0] * 5, "NOTHING TO DO"),
-            "digikit_gate": ([0] * 5, [0] * 5, "UNLOADED 1"),
-        }.get(name)
-        if want and (tick, loaded, result) != want:
-            bad.append(f"final state {(tick, loaded, result)}, expected {want}")
-        if name == "digikit_errors":
-            # the firmware's message popup was given the file name and the reason, once per failed LOAD
-            first = cstr(peek_ats_bytes(out))
-            nok = list(peek_bytes(out, plan.addr("NOK"), 8)[:5])
-            info["not_ok"] = nok
-            if nok != [0, 0, 0, 1, 1]:
-                bad.append(f"greyed rows {nok}, expected foreign and future")
-            info["first_popup"] = first
-            if popups != 2 or popup != "BAD-SHA.DKM: BAD SHA":
-                bad.append(f"popup: {popups} shown, last {popup!r}")
-            if first != "BAD-IMPORT.DKM: NO IMPORT":
-                bad.append(f"first popup {first!r}")
-        if name == "digikit_gate" and popups != 0:
-            bad.append(f"popup shown by a good load: {popup!r}")
-        if name == "digikit_gate":
-            n = peek_ats(out)
-            info["counter"] = n
-            if len(n) != 8 or None in n:
-                bad.append(f"counter samples {n}")
-            else:
-                if n[0] != DYN_MAGIC:
-                    bad.append(f"counter magic {n[0]:#x}")
-                if not n[1] < n[2] < n[3]:
-                    bad.append(f"counter does not rise while loaded: {n[1:4]}")
-                if (
-                    n[4] != n[6]
-                    or n[4] < n[3]
-                    or n[5] != FINI_MARK
-                    or n[7] != FINI_MARK
-                ):
-                    bad.append(f"counter after unload {n[4:8]}")
-            loads = peek(out, st + 16)
-            slot0 = peek(out, st + 40)
-            info.update(loads=loads, slot0=slot0)
-            if loads != 1 or slot0 != 0:
-                bad.append(f"runtime state: loads {loads}, slot 0 {slot0:#x}")
+        info = {"entries": nent, "store": store}
+        if name == "digikit_about" and store not in (0, None):
+            bad.append(f"the store was read by ABOUT: {store}")
         if a.stack:
-            report_stack(name, facts, plan.addr("MARK"))
+            report_stack(name, facts)
         shots(image, name, out, [f for f, _ in script.frames])
         print(f"{name:18s} {'PASS' if not bad else 'FAIL'}  {info}")
         for b in bad:
@@ -472,8 +692,7 @@ def main(argv=None) -> int:
         GOLDEN.parent.mkdir(parents=True, exist_ok=True)
         GOLDEN.write_text(json.dumps(dict(sorted(goldens.items())), indent=1) + "\n")
     if a.stack_stock:
-        env = stack_env(image, plan)
-        env.pop("DIGI_STACK_WATCH_EPOCH")
+        env = stack_env(image)
         names = [
             n
             for n in REGRESS_SCRIPTS
@@ -530,6 +749,10 @@ def main(argv=None) -> int:
                    pa["write_events"], pa["flush_hits"])
             )  # fmt: skip
             ok &= good
+    if not a.no_boot and not a.only_regress:
+        work = OUT / image / "boot"
+        work.mkdir(parents=True, exist_ok=True)
+        ok &= BootProof(image, a.update, work).run(a.quick)
     return 0 if ok else 1
 
 

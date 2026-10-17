@@ -188,6 +188,20 @@ def build_card(tools: Tools, folder: Path, image: Path, syx: Path, device: str) 
         raise ProofError(f"plusdrive build: {r.stderr}{r.stdout}")
 
 
+def watch_ranges(rt: dict, lo: int, hi: int) -> list[tuple[int, int]]:
+    """[lo, hi) minus the buffers the card reads fill by DMA (the staging buffer, the 512-byte record buffer)."""
+    holes = [(rt["stage"], 64 * 1024)]
+    if "DKRT_SECBUF" in rt["sym"]:
+        holes.append((rt["sym"]["DKRT_SECBUF"], 512))
+    out, at = [], lo
+    for start, size in sorted(holes):
+        if start > at:
+            out.append((at, start))
+        at = start + size
+    out.append((at, hi))
+    return out
+
+
 def runtime_ranges(plan: dict) -> dict:
     """Addresses from a patch plan: the runtime's code ranges, its statics, the arena."""
     sym = {
@@ -284,7 +298,7 @@ def proof(
     region_hi = 0x47FE0000
     # the staging buffer is written by the card read's DMA (a legitimate writer that has no PC): leave it out
     # (the top 64 KiB hold the stack of the harness's direct calls)
-    watch = [(region_lo, stage), (stage + 64 * 1024, region_hi - 0x10000)]
+    watch = watch_ranges(rt, region_lo, region_hi - 0x10000)
     allow = list(rt["code"]) + [(arena, arena + ARENA_BYTES)]
     env = {
         "DIGI_FLUSH_CHECK": "1",
