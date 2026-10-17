@@ -1,0 +1,574 @@
+"""Play the sequencer headless and list the notes it sends the DSP.
+
+    uv run python -m tools.emulator.seqplay firmware/Digitone_II_OS1.11.syx [--trigs 1,5,9,13] [--track 2:3,11]
+                                          [--note 1:+7,5:-3] [--len 8] [--arp UP[:1]] [--run 700M]
+                                          [--against STOCK.syx]
+
+Boots the image from reset with SSI0 paced (`panel_drive --ssi-hz`: the audio-frame
+interrupt runs, and with it the two forced interrupts that tick the sequencer, see
+docs/findings/19-sequencer-and-leds.md), enters trigs with RECORD and
+the trig keys, presses PLAY and keeps the head of the frame the audio ISR sends the DSP on
+every send. Prints each note-on (voices and note numbers) and note-off with its time and
+checks the note-ons keep to the spacing of the trigs' steps.
+
+`--trigs` is track 1's steps; each `--track N:STEPS` adds a track (TRK held, then trig key N).
+`--note STEP:SEMITONES,...` sets a trig's note on track 1 the way the instrument does: in GRID
+RECORDING mode, on the TRIG page, hold the trig key and turn encoder A. The note is read back from the frame, so
+it is a check of the edit as well as of the playback. In the emulator a unit takes about 28
+detents (`DETENTS_PER_UNIT`, measured: the firmware's encoder filter at 0x4011336e swallows
+the first detents after the knob has been idle, and counts 48 more for each unit it emits);
+200 detents gave +7.
+`--against IMAGE` plays the same pattern on IMAGE too and compares the two event by event:
+kind, voices and notes exactly, the time within `--tolerance` instructions (the capture lands
+wherever the ColdFire was when a frame went out, so different code shifts it by a few). That
+is the check that a modified image leaves the sequencer alone: IMAGE is the modified one,
+`--against` the stock 1.11 reference.
+
+The frame is the 2,688-byte one built at 0x80005e60 and sent through 0x400cf7be. Bytes 34
+and 36 are the note-on and note-off voice masks (one bit per voice, so a unison note sets
+several); +38 and +40 repeat them. A mask can stay set for two frames, so the same non-zero
+mask in consecutive frames is one event. The note is the u16 at byte 2 + 2 * voice,
+`note << 8 | fine`, written in the note-on's frame and kept after it, so it is read there.
+Holding a trig key plays a preview note, which is an extra note-on: enter trigs with RECORD
+and do not hold keys during the run.
+
+`--len UNITS` raises the TRIG page's default LEN (knob C) before the trigs are entered, so a
+note lasts long enough for the arpeggiator to repeat. `--arp MODE[:RANGE]` opens the
+ARPEGGIATOR menu after the trigs are in and sets MODE (knob A: OFF, TRUE, UP, DOWN, CYCL) and
+RANGE (knob C). A single note, which is what the trigs hold here, shows the arp's octave
+cycle: per the manual each completed cycle is transposed one octave up until the RANGE is
+reached, then reset; the tool checks the notes it reads against that.
+
+`--chord SEMITONES,...` puts a chord on track 1's first trig the way the instrument does: in
+GRID RECORDING mode hold that trig and press [NOTE EDIT] (key 53, which the firmware's own
+button table calls STACK), which opens the NOTE EDIT menu on the step; then for each value
+[FUNC]+[DOWN] adds a note below the highlighted one (it starts at that note's value) and
+encoder E (its NOTE) moves it. `--chord-len UNITS` holds [FUNC] and turns encoder G (LEN) so
+every note of the step is long enough for the arp to step through the chord. With `--arp`
+the notes of the first pass are checked against the mode: UP ascending, DOWN descending, CYCL
+ascending then descending without repeating the ends, TRUE as entered (printed, not checked,
+because the entry order is not in the frame). The arp mode is read back from the setter at
+0x4004bea4 and the run is refused if the knob left it somewhere else: the encoder filter
+delivers a unit per 28 detents only on average, so a turned value can end one off.
+
+Digitone II 1.11 only: the addresses and key codes are that image's. With no `--against` the
+file's hash is checked; with it, the reference's is, and IMAGE may be a modified 1.11.
+Runs `packages/emulator/boot/examples/panel_drive.rs`: PANEL_DRIVE names a build, or it is
+looked for in the CF-only target dir (`tools/emulator/native_target.py dir`), built with
+`cargo build --release -p elektron-native-boot --example panel_drive` there. A modified
+image boots with `--base` set to stock 1.11.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import pathlib
+import struct
+import subprocess
+import sys
+from dataclasses import dataclass
+
+from tools.emulator import native_target
+
+DN2_111_SHA256 = "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"
+EXCHANGE = (
+    "0x400cf7be"  # send to and receive from the DSP; stack argument 1 is the frame
+)
+NOTE_ON, NOTE_OFF = 34, 36
+NOTE_WORDS = 2  # byte offset of voice 0's note word
+CPU_HZ = 132_000_000  # what --ssi-hz paces against
+NO, RECORD, PLAY, STOP, TRK, TRIG1 = 12, 19, 20, 21, 16, 25
+ARP_KEY = 51
+NOTE_EDIT_KEY, FUNC, DOWN = 53, 17, 14  # 53 is "STACK" in the firmware's button table
+NOTE_KNOB, LEN_KNOB = 5, 7  # NOTE EDIT menu: encoder E is NOTE, G is LEN
+SET_MODE = "0x4004bea4"  # the arp menu's MODE setter: stack arg 1 is the mode
+ARP_MODES = {
+    "OFF": 0,
+    "TRUE": 1,
+    "UP": 2,
+    "DOWN": 3,
+    "CYCL": 4,
+}  # knob A, units from OFF
+# RANGE: one unit of knob C in the ARP menu is 56 counts, twice a MODE or NOTE unit
+TRIG_PAGE = 1  # [TRIG PARAMETERS]: encoder A is NOTE there
+DETENTS_PER_UNIT = (
+    28  # emulator: detents of encoder A for one semitone of NOTE (measured)
+)
+RANGE_COUNTS_PER_UNIT = (
+    56  # the arp's RANGE needs twice that per step (measured: 56 gave RNG 1)
+)
+PACKET = 10  # detents per turn step: small turns are often swallowed
+
+
+@dataclass(frozen=True)
+class NoteEvent:
+    icount: int
+    kind: str  # "on" or "off"
+    voices: tuple[int, ...]
+    notes: tuple[float, ...] = ()  # at a note-on: each voice's note, fine as a fraction
+
+
+def events(captures: list[dict]) -> list[NoteEvent]:
+    """panel_drive's captures ({"icount", "hex"}, in send order) as note events."""
+    out: list[NoteEvent] = []
+    previous = {"on": 0, "off": 0}
+    for capture in captures:
+        frame = bytes.fromhex(capture["hex"])
+        if len(frame) < NOTE_OFF + 2:
+            continue
+        masks = {
+            "on": struct.unpack_from(">H", frame, NOTE_ON)[0],
+            "off": struct.unpack_from(">H", frame, NOTE_OFF)[0],
+        }
+        for kind, mask in masks.items():
+            if mask and mask != previous[kind]:
+                voices = tuple(v for v in range(16) if mask >> v & 1)
+                notes: tuple[float, ...] = ()
+                if kind == "on" and len(frame) >= NOTE_WORDS + 2 * (voices[-1] + 1):
+                    notes = tuple(
+                        struct.unpack_from(">H", frame, NOTE_WORDS + 2 * v)[0] / 256
+                        for v in voices
+                    )
+                out.append(NoteEvent(capture["icount"], kind, voices, notes))
+            previous[kind] = mask
+    return out
+
+
+def note_on_gaps(found: list[NoteEvent]) -> list[int]:
+    """Instructions between consecutive note-ons."""
+    ons = [e.icount for e in found if e.kind == "on"]
+    return [b - a for a, b in zip(ons, ons[1:], strict=False)]
+
+
+def bpm(instructions_per_step: float) -> float:
+    """The step is a sixteenth: four to the beat."""
+    return 60.0 * CPU_HZ / (instructions_per_step * 4)
+
+
+def step_counts(trigs: list[int], gaps: int) -> list[int]:
+    """Steps between successive note-ons of a 16-step pattern, wrapping after the last."""
+    between = [b - a for a, b in zip(trigs, trigs[1:], strict=False)] + [
+        16 - trigs[-1] + trigs[0]
+    ]
+    return [between[i % len(between)] for i in range(gaps)]
+
+
+def turn_steps(
+    units: int, encoder: int = 1, per_unit: int = DETENTS_PER_UNIT
+) -> list[str]:
+    """ENCODER (1 = A) turned by UNITS (negative is down), in packets of PACKET counts."""
+    detents = abs(units) * per_unit
+    sign = 1 if units > 0 else -1
+    steps: list[str] = []
+    while detents > 0:
+        part = min(PACKET, detents)
+        steps += [f"turn:{encoder}:{sign * part}", "wait:15M"]
+        detents -= part
+    return steps
+
+
+def chord_steps(step: int, values: list[int], length: int = 0) -> list[str]:
+    """Open NOTE EDIT on STEP (trig held, then the key), add one note per VALUES entry and move
+    it by that many units, make every note of the step LENGTH units longer, leave the menu."""
+    out = [
+        f"press:{TRIG1 + step - 1}",
+        "wait:40M",
+        f"tap:{NOTE_EDIT_KEY}",
+        "wait:60M",
+        f"release:{TRIG1 + step - 1}",
+        "wait:30M",
+    ]
+    for units in values:
+        out += [f"press:{FUNC}", f"tap:{DOWN}", f"release:{FUNC}", "wait:40M"]
+        out += turn_steps(units, NOTE_KNOB) + ["wait:30M"]
+    if length:
+        out += (
+            [f"press:{FUNC}"]
+            + turn_steps(length, LEN_KNOB)
+            + [f"release:{FUNC}", "wait:30M"]
+        )
+    return out + [f"tap:{NO}", "wait:40M"]
+
+
+def script(
+    tracks: dict[int, list[int]],
+    run: str,
+    notes: dict[int, int] | None = None,
+    length: int = 0,
+    arp: tuple[int, int] | None = None,
+    chord: list[int] | None = None,
+    chord_len: int = 0,
+) -> list[str]:
+    """Enter the trigs; then, still in GRID RECORDING, hold each trig of `notes` (step ->
+    semitones, track 1) and turn encoder A, and give track 1's first trig the `chord`; leave
+    RECORDING; PLAY."""
+    entered: list[str] = []
+    ordered = sorted(tracks.items())
+    for index, (track, trigs) in enumerate(ordered):
+        if track != 1 or len(tracks) > 1:
+            entered += [
+                f"press:{TRK}",
+                "wait:10M",
+                f"tap:{TRIG1 + track - 1}",
+                f"release:{TRK}",
+                "wait:30M",
+            ]
+        entered += [f"tap:{RECORD}"] + [f"tap:{TRIG1 + t - 1}" for t in trigs]
+        last = index == len(ordered) - 1
+        if notes and last and 1 in tracks:
+            entered += ["wait:30M"]
+            for step, units in sorted(notes.items()):
+                entered += [f"press:{TRIG1 + step - 1}", "wait:40M"] + turn_steps(units)
+                entered += [f"release:{TRIG1 + step - 1}", "wait:30M"]
+        if chord and last and 1 in tracks:
+            entered += ["wait:30M"] + chord_steps(tracks[1][0], chord, chord_len)
+        entered += [f"tap:{RECORD}", "wait:30M"]
+    page: list[str] = []
+    if notes or length:
+        page = [f"tap:{TRIG_PAGE}", "wait:30M"]
+        if length:
+            page += turn_steps(length, 3) + ["wait:30M"]  # LEN, knob C
+    menu: list[str] = []
+    if arp is not None:
+        mode, rng = arp
+        menu = [f"tap:{ARP_KEY}", "wait:40M"] + turn_steps(mode, 1) + ["wait:20M"]
+        if rng:
+            menu += turn_steps(rng, 3, RANGE_COUNTS_PER_UNIT) + [
+                "wait:20M"
+            ]  # RANGE, knob C
+        menu += [f"tap:{NO}", "wait:40M"]
+    return (
+        ["wait:1500M", f"tap:{NO}", "wait:60M"]
+        + page
+        + entered
+        + menu
+        + ["wait:50M", f"tap:{PLAY}", f"wait:{run}", f"tap:{STOP}", "wait:20M"]
+    )
+
+
+def expected_octaves(count: int, rng: int) -> list[int]:
+    """Semitone offsets of COUNT arp steps of one note: up an octave each cycle to RANGE."""
+    return [12 * (k % (rng + 1)) for k in range(count)]
+
+
+def expected_order(notes: list[float], mode: int) -> list[float] | None:
+    """One cycle of the arp over a chord's NOTES, by the manual: UP ascending, DOWN
+    descending, CYCL ascending then descending without repeating the ends. TRUE plays them
+    as entered, which the frame does not carry: None."""
+    up = sorted(set(notes))
+    if mode == ARP_MODES["UP"]:
+        return up
+    if mode == ARP_MODES["DOWN"]:
+        return up[::-1]
+    if mode == ARP_MODES["CYCL"]:
+        return up + up[::-1][1:-1]
+    return None
+
+
+def cycled(order: list[float], count: int) -> list[float]:
+    """COUNT steps of an arp that repeats ORDER."""
+    return [order[k % len(order)] for k in range(count)]
+
+
+def last_mode(result: dict) -> int | None:
+    """The arp mode the menu's setter was last called with (`--regs-at SET_MODE`), or None."""
+    calls = [r for r in result.get("regs", []) if r.get("pc") == SET_MODE]
+    return int(calls[-1]["stack"][2], 16) if calls else None
+
+
+def runs(
+    found: list[NoteEvent], step: float, tolerance: float = 0.3
+) -> list[list[NoteEvent]]:
+    """Note-ons grouped into runs a step apart (a new run when the gap is longer)."""
+    ons = [e for e in found if e.kind == "on"]
+    out: list[list[NoteEvent]] = []
+    for e in ons:
+        if out and e.icount - out[-1][-1].icount <= step * (1 + tolerance):
+            out[-1].append(e)
+        else:
+            out.append([e])
+    return out
+
+
+def signature(found: list[NoteEvent]) -> list[tuple]:
+    """What an image did, with times from its first note-on: comparable between images."""
+    ons = [e.icount for e in found if e.kind == "on"]
+    t0 = ons[0] if ons else 0
+    return [(e.icount - t0, e.kind, e.voices, e.notes) for e in found if e.icount >= t0]
+
+
+def first_difference(a: list[tuple], b: list[tuple], tolerance: int = 0) -> str | None:
+    """None when the two agree; else the first event that does not."""
+    if len(a) != len(b):
+        return f"{len(b)} events against {len(a)}"
+    for i, (x, y) in enumerate(zip(a, b, strict=True)):
+        if x[1:] != y[1:] or abs(x[0] - y[0]) > tolerance:
+            return f"event {i}: {y} against {x}"
+    return None
+
+
+def panel_drive() -> pathlib.Path:
+    chosen = os.environ.get("PANEL_DRIVE")
+    examples = (
+        native_target.TARGET_ROOT / native_target.gen_key(None) / "release" / "examples"
+    )
+    candidates = ([pathlib.Path(chosen)] if chosen else []) + [
+        examples / n for n in ("panel_drive.exe", "panel_drive")
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    raise SystemExit(
+        f"panel_drive not found in {examples}: build it (cargo build --release -p "
+        "elektron-native-boot --example panel_drive, CARGO_TARGET_DIR as native_target) "
+        "or set PANEL_DRIVE"
+    )
+
+
+def play(
+    image: pathlib.Path,
+    tracks: dict[int, list[int]],
+    run: str,
+    ssi_hz: str,
+    keep: pathlib.Path | None = None,
+    notes: dict[int, int] | None = None,
+    length: int = 0,
+    arp: tuple[int, int] | None = None,
+    chord: list[int] | None = None,
+    chord_len: int = 0,
+) -> list[NoteEvent]:
+    """Boot IMAGE and play the trigs; raises RuntimeError on a fault, or when the arp menu's
+    knob left the mode somewhere other than ARP's."""
+    steps = script(tracks, run, notes, length, arp, chord, chord_len)
+    cmd = [
+        str(panel_drive()),
+        str(image),
+        "--ssi-hz",
+        ssi_hz,
+        "--capture",
+        f"{EXCHANGE}:1:48",
+        "--steps",
+        ",".join(steps),
+    ]
+    if hashlib.sha256(image.read_bytes()).hexdigest() != DN2_111_SHA256:
+        cmd += ["--base", DN2_111_SHA256]  # a modified 1.11 (main checks its base)
+    if arp is not None:
+        cmd += ["--regs-at", SET_MODE]
+    done = subprocess.run(cmd, capture_output=True, text=True, timeout=1500)
+    if not done.stdout.strip():
+        raise RuntimeError(done.stderr[-300:])
+    result = json.loads(done.stdout)
+    if keep:
+        keep.write_text(done.stdout)
+    if result["outcome"] != "done":
+        raise RuntimeError(f"fault: {result['fault']}")
+    if arp is not None and last_mode(result) != arp[0]:
+        raise RuntimeError(
+            f"the arp mode ended at {last_mode(result)}, not {arp[0]}: the "
+            "encoder filter delivered a different number of units; run again"
+        )
+    return events(result["captures"])
+
+
+def parse_tracks(trigs: str, extra: list[str]) -> dict[int, list[int]]:
+    tracks = {1: [int(t) for t in trigs.split(",")]}
+    for spec in extra:
+        number, steps = spec.split(":")
+        tracks[int(number)] = [int(t) for t in steps.split(",")]
+    return tracks
+
+
+def is_dn2_111(path: pathlib.Path) -> bool:
+    if hashlib.sha256(path.read_bytes()).hexdigest() == DN2_111_SHA256:
+        return True
+    print(
+        f"{path.name}: not Digitone II 1.11 (sha-256 differs); the addresses here are "
+        "that image's"
+    )
+    return False
+
+
+def chord_order_report(
+    found: list[NoteEvent], mode: int, label: str, size: int, step: float = 16.5e6
+) -> int:
+    """Print the first pass of an arpeggiated chord of SIZE notes and check it against the
+    mode. 0 when it is as the manual says (or the mode's order is not in the frame), else 1."""
+    first = runs(found, step)[0]
+    got = [e.notes[0] for e in first if e.notes]
+    print(f"arp {label}: first pass {got}")
+    if len(set(got)) < size:
+        print(
+            f"  only {len(set(got))} of the chord's {size} notes in the pass: raise --chord-len"
+        )
+        return 1
+    want = expected_order(got, mode)
+    if want is None:
+        print(
+            "  TRUE plays the notes as entered; the frame does not carry the entry order"
+        )
+        return 0
+    ok = got == cycled(want, len(got))
+    print(
+        f"  {'as the manual says' if ok else 'DIFFERS from ' + str(cycled(want, len(got)))}"
+    )
+    return 0 if ok else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("image", type=pathlib.Path)
+    ap.add_argument(
+        "--trigs", default="1,5,9,13", help="steps of track 1, 1-based, ascending"
+    )
+    ap.add_argument(
+        "--track",
+        action="append",
+        default=[],
+        metavar="N:STEPS",
+        help="another track's steps, e.g. 2:3,11 (repeatable)",
+    )
+    ap.add_argument(
+        "--note",
+        default="",
+        metavar="STEP:SEMITONES,...",
+        help="raise or lower a track 1 trig's note, e.g. 1:+7,5:-3",
+    )
+    ap.add_argument(
+        "--len",
+        type=int,
+        default=0,
+        dest="length",
+        metavar="UNITS",
+        help="raise the TRIG page LEN by this many units before the trigs",
+    )
+    ap.add_argument(
+        "--arp",
+        default="",
+        metavar="MODE[:RANGE]",
+        help="arpeggiator mode (OFF TRUE UP DOWN CYCL) and range units, e.g. UP:1",
+    )
+    ap.add_argument(
+        "--chord",
+        default="",
+        metavar="SEMITONES,...",
+        help="notes added to track 1's first trig in NOTE EDIT, each moved from the "
+        "one before by this many units, e.g. 7,-3",
+    )
+    ap.add_argument(
+        "--chord-len",
+        type=int,
+        default=0,
+        dest="chord_len",
+        metavar="UNITS",
+        help="make every note of the chord this many units longer (FUNC + knob G)",
+    )
+    ap.add_argument("--run", default="700M", help="instructions to play for")
+    ap.add_argument("--ssi-hz", default="96000")
+    ap.add_argument(
+        "--against", type=pathlib.Path, help="an image to compare the result with"
+    )
+    ap.add_argument(
+        "--tolerance",
+        type=int,
+        default=1000,
+        help="instructions a time may differ by under --against (default 1000)",
+    )
+    ap.add_argument("--json", type=pathlib.Path, help="keep panel_drive's output here")
+    a = ap.parse_args(argv)
+    if not is_dn2_111(a.against or a.image):
+        return 3
+    tracks = parse_tracks(a.trigs, a.track)
+    notes = {int(k): int(v) for k, v in (p.split(":") for p in a.note.split(",") if p)}
+    chord = [int(v) for v in a.chord.split(",") if v]
+    arp = None
+    if a.arp:
+        mode, _, rng = a.arp.partition(":")
+        arp = (ARP_MODES[mode.upper()], int(rng or 0))
+    try:
+        found = play(
+            a.image,
+            tracks,
+            a.run,
+            a.ssi_hz,
+            a.json,
+            notes,
+            a.length,
+            arp,
+            chord,
+            a.chord_len,
+        )
+    except RuntimeError as error:
+        print(error)
+        return 2
+
+    ons = [e for e in found if e.kind == "on"]
+    if not ons:
+        print("no note-on reached the DSP")
+        return 1
+    print(f"{len(ons)} note-ons, {len(found) - len(ons)} note-offs")
+    for e in found:
+        notes = f"  notes {list(e.notes)}" if e.notes else ""
+        print(
+            f"  {(e.icount - ons[0].icount) / CPU_HZ:7.3f} s  {e.kind:3}  "
+            f"voices {list(e.voices)}{notes}"
+        )
+
+    status = 0
+    gaps = note_on_gaps(found)
+    if gaps and arp is None and not chord:
+        # the trigs repeat every 16 steps; a step two tracks share is one event
+        trigs = sorted({t for steps in tracks.values() for t in steps})
+        per_step = [
+            g / s for g, s in zip(gaps, step_counts(trigs, len(gaps)), strict=True)
+        ]
+        mean = sum(per_step) / len(per_step)
+        worst = max(abs(p - mean) / mean for p in per_step)
+        print(
+            f"step period {mean / 1e6:.2f} M instructions = {bpm(mean):.1f} BPM; "
+            f"worst gap off by {worst * 100:.2f}%"
+        )
+        status = 0 if worst < 0.02 else 1
+    if arp is not None and arp[0] and len(tracks) == 1 and not notes and not chord:
+        step = 16.5e6  # 120 BPM, as the step period above
+        groups = runs(found, step)
+        bad = 0
+        for burst in groups:
+            got = [e.notes[0] - burst[0].notes[0] for e in burst if e.notes]
+            bad += got != expected_octaves(len(got), arp[1])
+        print(
+            f"arp {a.arp}: {len(groups)} runs, octave cycle "
+            f"{'as the manual says' if not bad else str(bad) + ' runs differ'}"
+        )
+        status = status or (1 if bad else 0)
+    if arp is not None and arp[0] and chord and arp[1] == 0:
+        status = status or chord_order_report(found, arp[0], a.arp, 1 + len(chord))
+    if a.against:
+        try:
+            other = play(
+                a.against,
+                tracks,
+                a.run,
+                a.ssi_hz,
+                None,
+                notes,
+                a.length,
+                arp,
+                chord,
+                a.chord_len,
+            )
+        except RuntimeError as error:
+            print(f"{a.against.name}: {error}")
+            return 2
+        why = first_difference(signature(other), signature(found), a.tolerance)
+        print(
+            f"against {a.against.name}: {'same' if why is None else 'DIFFERS, ' + why}"
+        )
+        status = status or (0 if why is None else 1)
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main())
