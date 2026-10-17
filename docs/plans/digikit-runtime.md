@@ -316,7 +316,7 @@ Gate: on both devices, a set of modules chosen in the menu (a machine with DSP c
 APPLY & RESTART, plays like the patched-in set, and the round-trip and safe-mode tests pass.
 - [x] Menu gate (lane r4, finding 39): `uv run python -m tools.patchkit.pk_digikit_scen run menu-pluck-demo --tier full` (dt2-1.16/1.17, dn2-1.11/1.12: pass; ticks `test/dyn-demo` and `test/dyn-pluck`, APPLY & RESTART, PCM equal to the patched-in `machines/pluck`, watch 0, flush 0, card writes only in the selection sectors). The Digitone II pluck is `test/dyn-pluck` (equiv: `run equiv-dyn-pluck --tier full`). Round trip and safe mode: `roundtrip-*`, `safe-fault` (finding 39).
 
-### Phase 7: module upload and tools (2026-10-18; current)
+### Phase 7: module upload and tools (2026-10-18)
 
 Spec: docs/design/digikit-upload.md (framing, commands, store format version 2 with two header copies).
 
@@ -338,6 +338,27 @@ loads after APPLY & RESTART and plays like the card-built module; the cut and pl
 - [~] Gate status (2026-10-18): `menu-upload-pluck-demo` passes on all four ports (upload, MODULES, APPLY & RESTART, rows and PCM equal the
   patched-in set), with the upload sent by the Python tool; the panel's own code (`dkupload` `Session`) passes `upload-rust` on all four
   ports. Not yet run: the desktop panel clicked in the app, and the web page against a real or bridged device.
+
+### Phase 8: hardening and device data (2026-10-18; current)
+
+Safety (lane r4):
+- [ ] Safe mode also catches a module that crashes or hangs after the first UI pass: the boot counter is cleared only after a stable period.
+- [ ] `patchkit pack` refuses a ColdFire object that has not passed the ISA check.
+- [ ] The menu's store reader cannot see a torn table while an upload commits.
+- [ ] CLEAR cannot lose the store after a cut between header B and A followed by a torn header B.
+- [ ] A reply cannot hang the MIDI task when the host does not read (no unbounded spin on the TX ring).
+- [ ] HEALTH shows the module store's used and free space.
+
+Device data (lane b): every device or board fact the runtime, the core modules, patchkit and port_resolve use comes from
+`devices/*.toml` (or `devices/ports/*.toml`, `modules/core/machines/types.toml`) and is generated where code needs a constant
+(`patchkit gen`, kept current by `gen --check`); the device list is open. Oracle: patched images are byte-identical before and after.
+- [ ] Store geometry, DSP area size, voice rows, run-time type range, device id and name, board addresses, safe-mode key, DSP clock.
+- [ ] patchkit's device list, device ids, container facts; port_resolve's firmware, limits and L2 tables.
+
+Testing ease (lane r1):
+- [ ] `mise run emu -- PATCHED.syx` recognises a patched image by its patch record (device, base firmware, +Drive card).
+- [ ] `patchkit pack` through the front end (and a mise task); docs/PATCHING.md: testing a run-time module in the emulator.
+- [ ] verify: no step runs a binary that the build step is rewriting (the `_dyld_start` hang of 2026-10-18).
 
 ### Later
 
