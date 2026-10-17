@@ -211,6 +211,7 @@ sectors = 0x8000
 first_sector = 0x38000
 end_sector = 0x3e000
 selection_sectors = 2      # the last two sectors: the digikit selection record (docs/design/digikit-store.md)
+header_b_sector = 0x3dffd  # store header copy B (version 2): the sector before the selection record; the store's files end before it
 
 # How a module's machines map onto this device (packages/patchkit/src/typed.rs lowers the typed sections of a
 # module.toml with it; `patchkit gen` writes the constants a DSP routine needs). Finding 02 (own pages) and 06.

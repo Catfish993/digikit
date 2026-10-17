@@ -715,6 +715,32 @@ impl Board {
         Ok(())
     }
 
+    /// Copy `out.len()` bytes of mapped RAM at `addr` without MMIO dispatch or
+    /// guest-access records. `false` if any byte is unmapped.
+    pub fn ram_peek(&self, addr: u32, out: &mut [u8]) -> bool {
+        for (i, byte) in out.iter_mut().enumerate() {
+            let a = addr.wrapping_add(i as u32);
+            let Some(page) = self.page(a) else {
+                return false;
+            };
+            *byte = page[Self::page_offset(a)];
+        }
+        true
+    }
+
+    /// Host acceleration for a guest counting loop: add `delta` (wrapping) to the
+    /// aligned 32-bit word at `addr` in mapped SDRAM and return `(old, new)`.
+    /// Touches nothing else (no MMIO, no guest-access record); `None` when the
+    /// word is not entirely in one mapped SDRAM page.
+    pub fn sdram_add32(&mut self, addr: u32, delta: u32) -> Option<(u32, u32)> {
+        if addr & 3 != 0 || addr.wrapping_sub(SDRAM_BASE) >= SDRAM_SIZE {
+            return None;
+        }
+        let old = self.ram_read(addr, 4)?;
+        let new = old.wrapping_add(delta);
+        self.ram_write(addr, 4, new).then_some((old, new))
+    }
+
     /// Compare backing RAM without copying pages, dispatching MMIO, or recording
     /// guest accesses. Like `read_ram_page`, this is host-side observation only.
     pub fn ram_matches(&self, mut addr: u32, mut expected: &[u8]) -> bool {

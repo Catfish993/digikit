@@ -118,20 +118,8 @@ pub fn packet_checksum(body: &[u8], k: u8) -> u8 {
     (total & 0x7f) as u8
 }
 
-pub fn encode_8in7(data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len() + data.len() / 7 + 1);
-    for group in data.chunks(7) {
-        let mut marker = 0u8;
-        for (n, &b) in group.iter().enumerate() {
-            if b & 0x80 != 0 {
-                marker |= 1 << (6 - n);
-            }
-        }
-        out.push(marker);
-        out.extend(group.iter().map(|b| b & 0x7f));
-    }
-    out
-}
+/// The 8-in-7 packing lives in `dkupload` (the module upload protocol uses the same one).
+pub use dkupload::encode_8in7;
 
 /// `[(id, dest, stored)]` -> container bytes with a zeroed 32-byte trailer slot.
 ///

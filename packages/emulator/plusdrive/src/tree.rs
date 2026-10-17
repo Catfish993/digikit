@@ -681,12 +681,11 @@ pub fn build_tree_image(
         }
         if !tree.store.is_empty() {
             // the files keep out of the selection record sectors at the end of the range
-            let bytes = crate::encode_store(
-                tree.store,
-                range.end_sector - range.first_sector - range.selection_sectors,
-            )
-            .map_err(ImageError::Store)?;
+            // and out of header copy B, the sector before them
+            let bytes = crate::encode_store(tree.store, range.store_limit())
+                .map_err(ImageError::Store)?;
             image.write_at(bytes_at_sector(range.first_sector)?, &bytes)?;
+            image.write_at(bytes_at_sector(range.header_b())?, &bytes[..crate::SECTOR])?;
         }
         if let Some(paths) = tree.selection {
             let record = crate::encode_selection(&crate::Selection {
@@ -1267,7 +1266,7 @@ mod tests {
                 None,
             )
             .unwrap();
-            let store = crate::read_store(&built.image, 0x38000, 0x6000)
+            let store = crate::read_store(&built.image, 0x38000, 0x6000, 0x3dffd)
                 .unwrap()
                 .unwrap();
             let names: Vec<_> = store.entries.iter().map(|e| e.path.as_str()).collect();
@@ -1322,12 +1321,13 @@ mod tests {
                 &built.image,
                 store.first_sector,
                 store.end_sector - store.first_sector,
+                store.header_b(),
             )
             .unwrap()
             .unwrap();
             assert_eq!(read.entries.len(), 1);
-            let limit =
-                (store.end_sector - store.first_sector - store.selection_sectors) as usize * 512;
+            assert_eq!(store.header_b(), 0x3dffd);
+            let limit = store.store_limit() as usize * 512;
             let fits = |bytes: usize| {
                 build_tree_image(
                     Tree {

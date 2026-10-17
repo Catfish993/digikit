@@ -104,6 +104,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "packages/emulator/plusdrive/",
             "tools/patchkit/pk_dkrt",
             "tools/patchkit/pk_digikit_",
+            "tools/device/dkupload.py",
             "tests/digikit/",
         ),
         ("tests/digikit",),

@@ -924,6 +924,12 @@ impl Cpu {
         self.pending_nzv = PendingNzv::Add { src, dst, r, size };
     }
 
+    /// Leave the flags a longword ADD/ADDQ `dst + src = r` leaves. For a host
+    /// that replaces many executions of such an instruction by their result.
+    pub fn set_add_flags_l(&mut self, src: u32, dst: u32, r: u32) {
+        self.flags_add(src, dst, r, Size::L);
+    }
+
     /// Flags of dst - src = r. `cmp` leaves X unchanged (CMP, CMPA); C is
     /// always freshly computed either way and written immediately, same as
     /// `flags_add`. N/Z/V are deferred (`PendingNzv::Sub`).

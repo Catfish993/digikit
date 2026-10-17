@@ -12,6 +12,7 @@ use digi_control::{
 };
 use elektron_native_boot::Snapshot;
 mod desktop_runtime;
+mod modules;
 use serde_json::Value;
 use std::sync::mpsc;
 use tauri::State;
@@ -506,6 +507,7 @@ fn main() {
     };
     tauri::Builder::default()
         .manage(host)
+        .manage(modules::Modules::default())
         .invoke_handler(tauri::generate_handler![
             emu_diagnostics,
             emu_save_diagnostics,
@@ -523,7 +525,14 @@ fn main() {
             emu_card_reset,
             emu_card_stage,
             emu_card_load,
-            emu_card_status
+            emu_card_status,
+            modules::mod_info,
+            modules::mod_list,
+            modules::mod_delete,
+            modules::mod_clear,
+            modules::mod_put,
+            modules::mod_progress,
+            modules::mod_cancel
         ])
         .run(tauri::generate_context!())
         .expect("tauri runtime error");

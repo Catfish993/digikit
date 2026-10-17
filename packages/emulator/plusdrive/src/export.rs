@@ -63,18 +63,22 @@ pub struct Report {
     pub deleted_by_firmware: Vec<String>,
     /// The subset of `deleted_by_firmware` moved to the backup (with `prune`).
     pub pruned: Vec<String>,
+    /// Module store files (`digikit/...`) that changed on the card (an upload, a delete) but were also changed in the folder after
+    /// the card was built: the folder file is kept; the card's version is in `export/<stamp>/`.
+    pub kept: Vec<String>,
     pub issues: Vec<String>,
 }
 
 impl Report {
     pub fn summary(&self) -> String {
         format!(
-            "added {} replaced {} unchanged {} deleted_by_firmware {} pruned {} issues {}\nexport {}\nbackup {}",
+            "added {} replaced {} unchanged {} deleted_by_firmware {} pruned {} kept {} issues {}\nexport {}\nbackup {}",
             self.added.len(),
             self.replaced.len(),
             self.unchanged.len(),
             self.deleted_by_firmware.len(),
             self.pruned.len(),
+            self.kept.len(),
             self.issues.len(),
             self.export_dir.display(),
             self.backup_dir.display()
@@ -88,6 +92,10 @@ impl Report {
             ("unchanged", &self.unchanged),
             ("deleted by the firmware", &self.deleted_by_firmware),
             ("pruned", &self.pruned),
+            (
+                "kept (changed in the folder after the card was built)",
+                &self.kept,
+            ),
             ("issues", &self.issues),
         ] {
             out.push_str(&format!("\n\n{title} ({})\n", list.len()));
@@ -386,7 +394,7 @@ fn list_files(folder: &Path, rel: &str, out: &mut Vec<String>) {
         if name.starts_with('.') && name != ".mmcfs" {
             continue;
         }
-        // `digikit/` goes to the module store; the firmware never writes it and the export never touches it.
+        // `digikit/` is the module store's: `store_pass` handles it, three-way, and the selection record is staged by itself.
         if rel.is_empty() && name == "digikit" {
             continue;
         }
@@ -539,9 +547,117 @@ pub fn export(
             report.pruned.push(rel.clone());
         }
     }
+    store_pass(
+        base,
+        &view,
+        layout,
+        folder,
+        &export_dir,
+        &backup_dir,
+        options.prune,
+        &mut report,
+    )?;
     fs::write(export_dir.join("REPORT.txt"), report.text())
         .map_err(|e| format!("REPORT.txt: {e}"))?;
     Ok(report)
+}
+
+/// The module store (docs/design/digikit-store.md, "+Drive round trip"): the files the card holds now go to `digikit/<path>`, so an
+/// upload survives the next card build. Three-way: BASE is the card as it was built, VIEW is the card now, the folder is what the
+/// user has. Only what the device changed is acted on: a store file that is new or different on the card is added to the folder or
+/// replaces the folder's copy when that still equals the built one (the old file goes to the backup); when the folder's copy was
+/// changed after the card was built it is kept and reported in `kept`. A store file the card no longer has is listed in
+/// `deleted_by_firmware` when the folder still holds the built version (moved to the backup with `prune`), and in `kept` when the
+/// folder's copy differs from it.
+#[allow(clippy::too_many_arguments)]
+fn store_pass(
+    base: &dyn RandomAccessRead,
+    view: &OverlayImage<'_>,
+    layout: &CardLayout,
+    folder: &Path,
+    export_dir: &Path,
+    backup_dir: &Path,
+    prune: bool,
+    report: &mut Report,
+) -> Result<(), String> {
+    let Some(range) = layout.store.as_ref() else {
+        return Ok(());
+    };
+    let size = range.store_limit();
+    let read = |img: &dyn RandomAccessRead, what: &str, report: &mut Report| {
+        let mut files: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        match crate::read_store(img, range.first_sector, size, range.header_b()) {
+            Ok(None) => {}
+            Err(e) => report.issues.push(format!("module store ({what}): {e}")),
+            Ok(Some(store)) => {
+                for entry in &store.entries {
+                    if !crate::valid_store_path(&entry.path)
+                        || entry.path.contains('\\')
+                        || entry.path == crate::SELECTION_FILE
+                    {
+                        report.issues.push(format!(
+                            "module store ({what}): {:?} is not a usable folder path, skipped",
+                            entry.path
+                        ));
+                        continue;
+                    }
+                    match crate::read_store_file(img, range.first_sector, entry) {
+                        Ok(bytes) => {
+                            files.insert(entry.path.clone(), bytes);
+                        }
+                        Err(e) => report.issues.push(e.to_string()),
+                    }
+                }
+            }
+        }
+        files
+    };
+    let built = read(base, "as built", report);
+    let now = read(view, "now", report);
+    let on_disk = |rel: &str| fs::read(folder.join("digikit").join(rel)).ok();
+    for (path, bytes) in &now {
+        let rel = format!("digikit/{path}");
+        let device_changed = built.get(path) != Some(bytes);
+        if !device_changed {
+            continue;
+        }
+        stage_file(export_dir, &rel, bytes)?;
+        let to = folder.join(&rel);
+        match on_disk(path) {
+            None if to.is_dir() => report.issues.push(format!(
+                "{rel}: a folder is in the way of the file; left alone"
+            )),
+            None => {
+                copy_atomic(&export_dir.join(&rel), &to)?;
+                report.added.push(rel);
+            }
+            Some(have) if &have == bytes => report.unchanged.push(rel),
+            Some(have) if built.get(path) == Some(&have) => {
+                move_file(&to, &backup_dir.join(&rel))?;
+                copy_atomic(&export_dir.join(&rel), &to)?;
+                report.replaced.push(rel);
+            }
+            Some(_) => report.kept.push(rel),
+        }
+    }
+    for (path, was) in &built {
+        if now.contains_key(path) {
+            continue;
+        }
+        let rel = format!("digikit/{path}");
+        match on_disk(path) {
+            None => {}
+            Some(have) if &have == was => {
+                report.deleted_by_firmware.push(rel.clone());
+                if prune {
+                    move_file(&folder.join(&rel), &backup_dir.join(&rel))?;
+                    report.pruned.push(rel);
+                }
+            }
+            Some(_) => report.kept.push(rel),
+        }
+    }
+    Ok(())
 }
 
 // ----- command line -------------------------------------------------------------------------------------------
@@ -714,7 +830,7 @@ mod tests {
     }
 
     #[test]
-    fn digikit_is_neither_exported_nor_reported_and_dn2_has_no_tree() {
+    fn an_unchanged_store_is_not_reported_and_dn2_has_no_tree() {
         let root = temp("digikit");
         let folder = root.join("plus_drive/dt2");
         fs::create_dir_all(folder.join("digikit/sub")).unwrap();
@@ -978,6 +1094,164 @@ mod tests {
         options.stamp = Some("m5".into());
         let report = export(&image, &working, &folder, &dt2_layout(), &options).unwrap();
         assert_eq!(report.added, [".mmcfs/boot/050000.bin"]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ---- the module store round trip (an upload survives the next card build) ----
+
+    fn store_bytes(files: &[(&str, &[u8])], seq: u32) -> Vec<u8> {
+        let mut bytes = crate::encode_store(
+            files
+                .iter()
+                .map(|(p, b)| crate::StoreFile {
+                    path: (*p).into(),
+                    bytes: b.to_vec(),
+                })
+                .collect(),
+            0x5ffd,
+        )
+        .unwrap();
+        if seq != 1 {
+            let mut h = crate::parse_header(&bytes[..512]).unwrap();
+            h.seq = seq;
+            bytes[..512].copy_from_slice(&crate::encode_header(&h));
+        }
+        bytes
+    }
+
+    /// A card as built (store of `built`) and the same card after the guest wrote the store of `now` over it (both header copies).
+    fn card_with_store(
+        built: &[(&str, &[u8])],
+        now: &[(&str, &[u8])],
+    ) -> (SparseImage, Vec<CardOverlaySector>) {
+        let mut image = card_of(&[("kick.wav", wav(3000, 1))]);
+        let first = built_store(&mut image, built);
+        let bytes = store_bytes(now, 2);
+        let mut overlay = Vec::new();
+        for (i, chunk) in bytes.chunks(512).enumerate() {
+            let mut data = [0u8; 512];
+            data[..chunk.len()].copy_from_slice(chunk);
+            overlay.push(CardOverlaySector {
+                sector: first + i as u64,
+                written: [0xff; 64],
+                data,
+            });
+        }
+        overlay.push(CardOverlaySector {
+            sector: 0x3dffd,
+            written: [0xff; 64],
+            data: bytes[..512].try_into().unwrap(),
+        });
+        (image, overlay)
+    }
+
+    fn built_store(image: &mut SparseImage, files: &[(&str, &[u8])]) -> u64 {
+        let bytes = store_bytes(files, 1);
+        image.write_at(0x38000 * 512, &bytes).unwrap();
+        image.write_at(0x3dffd * 512, &bytes[..512]).unwrap();
+        0x38000
+    }
+
+    #[test]
+    fn an_uploaded_module_is_written_back_to_the_folder_and_the_second_export_changes_nothing() {
+        let root = temp("upload");
+        let folder = root.join("plus_drive/dt2");
+        fs::create_dir_all(folder.join("digikit/modules")).unwrap();
+        fs::write(folder.join("digikit/modules/a.dkm"), b"first").unwrap();
+        let (image, overlay) = card_with_store(
+            &[("modules/a.dkm", b"first")],
+            &[("modules/a.dkm", b"first"), ("modules/b.dkm", b"uploaded")],
+        );
+        let mut options = Options::new(root.join("out"));
+        options.stamp = Some("u1".into());
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
+        assert_eq!(
+            report.added,
+            ["kick", "digikit/modules/b.dkm"],
+            "{report:?}"
+        );
+        assert!(report.kept.is_empty() && report.deleted_by_firmware.is_empty());
+        assert_eq!(
+            fs::read(folder.join("digikit/modules/b.dkm")).unwrap(),
+            b"uploaded"
+        );
+        options.stamp = Some("u2".into());
+        let again = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
+        assert!(again.added.is_empty() && again.replaced.is_empty() && again.kept.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_replaced_module_replaces_the_folder_copy_unless_the_folder_changed_after_the_build() {
+        let root = temp("upload-replace");
+        let folder = root.join("plus_drive/dt2");
+        fs::create_dir_all(folder.join("digikit/modules")).unwrap();
+        fs::write(folder.join("digikit/modules/a.dkm"), b"first").unwrap();
+        fs::write(
+            folder.join("digikit/modules/c.dkm"),
+            b"mine, edited after the build",
+        )
+        .unwrap();
+        let (image, overlay) = card_with_store(
+            &[("modules/a.dkm", b"first"), ("modules/c.dkm", b"built")],
+            &[
+                ("modules/a.dkm", b"second"),
+                ("modules/c.dkm", b"uploaded over built"),
+            ],
+        );
+        let mut options = Options::new(root.join("out"));
+        options.stamp = Some("r1".into());
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
+        assert_eq!(report.replaced, ["digikit/modules/a.dkm"], "{report:?}");
+        assert_eq!(report.kept, ["digikit/modules/c.dkm"]);
+        assert_eq!(
+            fs::read(folder.join("digikit/modules/a.dkm")).unwrap(),
+            b"second"
+        );
+        assert_eq!(
+            fs::read(report.backup_dir.join("digikit/modules/a.dkm")).unwrap(),
+            b"first"
+        );
+        assert_eq!(
+            fs::read(folder.join("digikit/modules/c.dkm")).unwrap(),
+            b"mine, edited after the build"
+        );
+        // the card's version of the kept file is in the export directory
+        assert_eq!(
+            fs::read(report.export_dir.join("digikit/modules/c.dkm")).unwrap(),
+            b"uploaded over built"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_module_deleted_on_the_card_is_listed_and_pruned_only_on_request() {
+        let root = temp("upload-delete");
+        let folder = root.join("plus_drive/dt2");
+        fs::create_dir_all(folder.join("digikit/modules")).unwrap();
+        fs::write(folder.join("digikit/modules/a.dkm"), b"first").unwrap();
+        fs::write(folder.join("digikit/modules/b.dkm"), b"edited").unwrap();
+        let (image, overlay) = card_with_store(
+            &[("modules/a.dkm", b"first"), ("modules/b.dkm", b"built")],
+            &[],
+        );
+        let mut options = Options::new(root.join("out"));
+        options.stamp = Some("d1".into());
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
+        assert_eq!(
+            report.deleted_by_firmware,
+            ["digikit/modules/a.dkm"],
+            "{report:?}"
+        );
+        assert_eq!(report.kept, ["digikit/modules/b.dkm"]);
+        assert!(folder.join("digikit/modules/a.dkm").is_file());
+        options.stamp = Some("d2".into());
+        options.prune = true;
+        let report = export(&image, &overlay, &folder, &dt2_layout(), &options).unwrap();
+        assert_eq!(report.pruned, ["digikit/modules/a.dkm"]);
+        assert!(!folder.join("digikit/modules/a.dkm").exists());
+        assert!(folder.join("digikit/modules/b.dkm").is_file());
+        assert!(report.backup_dir.join("digikit/modules/a.dkm").is_file());
         let _ = fs::remove_dir_all(&root);
     }
 }

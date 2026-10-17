@@ -101,7 +101,11 @@ def test_hook_displaces_the_selection_restore(image, tmp_path):
     hooks = [
         h
         for h in json.loads(plan_path.read_text())["hooks"]
-        if h["anchor"] != "dkrt.hook.boot"  # the runtime's own boot hook
+        if h["anchor"]
+        not in (
+            "dkrt.hook.boot",
+            "dkrt.hook.midi_rx",
+        )  # the runtime's own hooks (boot, upload)
     ]
     assert len(hooks) == 1 and hooks[0]["anchor"] == "cf.menu.settings_tail"
     assert [i.split(None, 2)[2] for i in hooks[0]["displaced_insns"]] == [

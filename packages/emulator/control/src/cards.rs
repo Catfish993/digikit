@@ -360,7 +360,7 @@ mod tests {
         for name in ["1-a220", "2-b880", "3-c3001", "kicks"] {
             assert!(names.iter().any(|n| n == name), "{names:?}");
         }
-        let store = plusdrive_format::read_store(&image, 0x38000, 0x6000).unwrap().unwrap();
+        let store = plusdrive_format::read_store(&image, 0x38000, 0x6000, 0x3dffd).unwrap().unwrap();
         assert_eq!(store.entries.len(), 1);
         let mut slot = [0u8; 7];
         emmc_card::RandomAccessRead::read_at(&image, (0x58000 + 2 * 0x8000) * 512, &mut slot);

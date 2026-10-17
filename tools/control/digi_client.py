@@ -438,9 +438,14 @@ class Emu:
         """The bytes the firmware sent on MIDI DIN since the last call."""
         return bytes.fromhex(self.call("midi.out")["hex"])
 
-    def usb_in(self, data: bytes) -> dict[str, Any]:
-        """Hand bytes to the firmware's USB MIDI receive callback (MidiRpc requests arrive only this way)."""
-        return self.call("midi.usb.in", bytes=data.hex())
+    def usb_in(
+        self, data: bytes, chunk: int | None = None, period: int | None = None
+    ) -> dict[str, Any]:
+        """Hand bytes to the firmware's USB MIDI receive callback (MidiRpc requests arrive only this way), CHUNK bytes per call
+        (default 64) PERIOD instructions apart (default 132,000; a high-speed microframe is 384 and 16,500)."""
+        return self.call(
+            "midi.usb.in", bytes=data.hex(), **_opt(chunk=chunk, period=period)
+        )
 
     def usb_out(self) -> bytes:
         """The bytes the firmware handed to its USB MIDI transmit function since the last call."""

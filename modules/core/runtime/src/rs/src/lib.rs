@@ -21,6 +21,7 @@ mod loader;
 pub mod registry;
 mod sha256;
 mod store;
+pub mod upload;
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -110,6 +111,9 @@ extern "C" {
     fn fw_block_read();
     /// The firmware's eMMC block write (anchor `dkrt.fw.block_write`): `int f(u32 sector, u32 bytes, const void *buf)`, 0 = ok.
     fn fw_block_write();
+    /// The firmware's MIDI send (anchor `dkrt.fw.midi_send`): `void f(u32 len, const u8 *msg, u32 port)`; port 2 is USB. Takes the
+    /// MIDI TX mutex itself; spins when the 4 KiB TX ring is full.
+    fn fw_midi_send();
     /// `src/cf/tramp.s`: mask interrupts (returns the old status register), restore it, and the soft reset.
     fn dkrt_irq_mask() -> u32;
     fn dkrt_irq_restore(sr: u32);
@@ -153,6 +157,13 @@ pub unsafe fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
     let f: unsafe extern "C" fn(u32, u32, *const u8) -> i32 =
         core::mem::transmute(fw_block_write as unsafe extern "C" fn());
     f(sector, bytes, buf)
+}
+
+/// Send one complete MIDI message (F0 .. F7 for SysEx) to `port` (2 = USB).
+pub unsafe fn midi_send(len: u32, msg: *const u8, port: u32) {
+    let f: unsafe extern "C" fn(u32, *const u8, u32) =
+        core::mem::transmute(fw_midi_send as unsafe extern "C" fn());
+    f(len, msg, port)
 }
 
 pub unsafe fn rd32(p: *const u8) -> u32 {

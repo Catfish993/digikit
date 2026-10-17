@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -31,6 +31,8 @@ Kinds:
   menu       a set ticked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with APPLY & RESTART (two presses) is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
   cut        the card states a power cut leaves between the two copies of the selection record.
+  upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
+             tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
 Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup), `[roundtrip] engine = "cf" | "coupled"` (the panel script on a
 ColdFire-only daemon beside a coupled boot check of each card, or all on coupled daemons). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
@@ -318,6 +320,34 @@ class Ctx:
             "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)",
             not outside,
             f"{len(self.all_writes)} sectors, below 0x50000: {[hex(x) for x in outside[:6]]}",
+        )
+
+    def common_checks_upload(self, project_writes_ok: bool = True) -> None:
+        """The checks of the `upload` scenarios: the same write-watch and flush check; the card writes are the store range (an upload
+        writes data, tables and both header copies there) and, when PROJECT_WRITES_OK, the firmware's own sectors from 0x50000."""
+        t = self.totals
+        self.check(
+            "write-watch on cf.expansion over every boot: no stray write",
+            t["write_events"] == 0 and t["emulators"] > 0,
+            str(t),
+        )
+        self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
+        lo, hi = B.STORE_FIRST, B.STORE_FIRST + B.STORE_SECTORS
+        writes = self.all_writes | self.store_writes
+        outside = sorted(
+            x
+            for x in writes
+            if not (lo <= x < hi) and (x < FIRMWARE_FIRST or not project_writes_ok)
+        )
+        self.check(
+            "card writes: the module store range"
+            + (
+                " and the firmware's own project sectors"
+                if project_writes_ok
+                else " only"
+            ),
+            not outside,
+            f"{len(writes)} sectors, elsewhere: {[hex(x) for x in outside[:6]]}",
         )
 
     def result(self) -> dict[str, Any]:
@@ -718,6 +748,13 @@ def run_menu(c: Ctx) -> None:
     names = {m: m.split("/")[-1] for m in t["modules"]}
     files = {m: c.pack(m, f"{names[m]}.dkm") for m in t["modules"]}
     rows = sorted(names.values())  # the menu lists the store's files in name order
+    upload = bool(t.get("upload"))
+    blobs = {}
+    if upload:  # the store is filled over USB SysEx, not by the card build: take the packed files out of the folder
+        for path in files.values():
+            f = c.env.folder / "digikit" / path
+            blobs[path] = f.read_bytes()
+            f.unlink()
     menu_img = c.image_for(f"{RT},core/digikit-menu", "menu")
     plan = D.Plan(menu_img.plan)
     empty = c.card(None)
@@ -755,6 +792,18 @@ def run_menu(c: Ctx) -> None:
     with c.rig(menu_img, empty, "menu") as rig:
         b0 = rig.boot_info()
         c.check("the first boot has no module", b0["count"] == 0 and b0["loaded"] == 0)
+        if upload:
+            from tools.device import dkupload as DK
+            from tools.patchkit import pk_digikit_upload as U
+
+            up = DK.Uploader(U.transport(rig))
+            for path, data in blobs.items():
+                up.put(path, data)
+            c.check(
+                "LIST after the uploads names the modules",
+                sorted(p for p, _, _ in up.ls()) == sorted(blobs),
+                str(up.ls()),
+            )
         tap(rig, "NO", 400)  # SETTINGS > DIGIKIT (the ninth row) > MODULES
         tap(rig, "SETTINGS", 600)
         for _ in range(8):
@@ -825,11 +874,18 @@ def run_menu(c: Ctx) -> None:
         M.pcm_check(rig, ref_pcm, pcm, c.report, "machine" if c.dt2 else "voice")
         c.checks += rig.checks
         c.done(rig)
-    c.common_checks()
+    c.common_checks_upload() if upload else c.common_checks()
+
+
+def run_upload(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_upload as U
+
+    U.run_upload(c)
 
 
 KINDS = {
     "equiv": run_equiv,
+    "upload": run_upload,
     "menu": run_menu,
     "safe": run_safe,
     "cut": run_cut,
@@ -891,7 +947,7 @@ def run_pairs(
     base = keep or Path(tempfile.mkdtemp(prefix="digikit-jobs-"))
     base.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
-    rank = {"cut": 1, "roundtrip": 2, "safe": 3, "equiv": 4}
+    rank = {"cut": 1, "upload": 1, "roundtrip": 2, "safe": 3, "equiv": 4}
     order = sorted(
         pairs,
         key=lambda p: (

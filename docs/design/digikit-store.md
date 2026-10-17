@@ -1,6 +1,7 @@
 # The digikit module store
 
-Status: built (builder and reader in `packages/emulator/plusdrive/src/store.rs`), 2026-10-16. Plan:
+Status: built (builder and reader in `packages/emulator/plusdrive/src/store.rs`), 2026-10-16; version 2 (two header copies, for
+module upload, `docs/design/digikit-upload.md`) 2026-10-18. Plan:
 `docs/plans/digikit-runtime.md` (decision 7, Phase 1). Range choice: `docs/findings/23-digikit-runtime-spikes.md` S6.
 
 The store holds the files of `plus_drive/<device>/digikit/` on the card, in sectors the firmware never writes, so the
@@ -16,19 +17,22 @@ them as skipped).
 
 ## Format
 
-All integers are big-endian. Sector size 512.
+All integers are big-endian. Sector size 512. The builder writes version 2; readers take versions 1 and 2.
 
 ```text
-sector 0, the header
+sector 0, the header (copy A)
   0   4   magic "DKST"
-  4   4   u32 version = 1
+  4   4   u32 version = 2 (1: see below)
   8   4   u32 entry_count
   12  4   u32 table_sectors      = ceil(entry_count * 128 / 512)
   16  4   u32 used_sectors       header + table + data
   20  4   u32 crc32 of the table sectors, zero padding included (IEEE 802.3, as zlib: check value of "123456789" is 0xcbf43926)
-  24  ..  zero to 512 bytes
+  24  4   u32 table_first_sector   relative to the start of the store (the builder: 1)
+  28  4   u32 seq                  sequence number of this header (the builder: 1)
+  32  ..  zero
+  508 4   u32 crc32 of bytes 0..508 of this header
 
-sectors 1 .. table_sectors, the table: entry_count entries of 128 bytes, sorted by path (byte order)
+sectors table_first_sector .., the table (the builder: sectors 1 .. table_sectors): entry_count entries of 128 bytes, sorted by path (byte order)
   0   88  path, NUL padded, relative to digikit/, "/" separated
   88  4   u32 first_sector       relative to the start of the store
   92  4   u32 size_bytes
@@ -42,15 +46,24 @@ not have the same path. A file is at most 4 GiB - 1 (in practice the range is 12
 sector. The builder refuses (an error, nothing is written) when `used_sectors` would exceed the range. A card without a
 store has zero bytes at sector 0 of the range; a reader reports "no store".
 
-The format has no free-space map and no update in place: the builder writes the whole store at once, and a changed
-`digikit/` means a new card image.
+**Version 2: two header copies.** Copy A is sector 0; copy B is the sector just before the selection record
+(`end_sector - selection_sectors - 1`, absolute `0x3dffd`; `devices/<device>.toml` `[card.store] header_b_sector`; relative `0x5ffd`).
+The builder writes both with `seq` 1, and its size limit is `range - selection_sectors - 1` sectors. A copy is valid when its
+magic, version, header CRC and table CRC (the table it points at) hold. A reader uses the valid copy with the higher `seq` (equal:
+A). **Version 1** (earlier cards): no `table_first_sector` (always 1), no `seq`, no header CRC, no copy B; a version 1 copy at A is
+used only when B is not valid. An empty store (all files deleted) is a valid version 2 store with `entry_count` 0, `table_sectors` 0
+and a table CRC of 0 (the CRC of nothing).
+
+There is no free-space map. The builder writes the whole store at once. The runtime's upload (`docs/design/digikit-upload.md`)
+appends: it stages a file after `used_sectors`, writes a new table after it, then header B and header A with `seq + 1`. Old data
+and old tables are not reused (only CLEAR starts over), so a power cut leaves the old or the new store, never a mix.
 
 ## Who writes and who reads
 
 - **The builder** (`plusdrive build`, the desktop card job): every regular file under `digikit/` (recursive; symbolic
   links and `.DS_Store` skipped) of the folder.
-- **The exporter never touches it.** The firmware never writes these sectors, so `card.export` / `plusdrive export` do not
-  read the range, do not list `digikit/` files as changes and do not report them as deleted. A path-filesystem entry
+- **The exporter** (since upload, 2026-10-18) reads the store and writes its files back to `digikit/` (see "+Drive round trip"
+  below). The firmware never writes these sectors; only the runtime's upload does. A path-filesystem entry
   named `digikit` that the firmware's user made on the device is exported as `digikit~<id>` so it cannot land in the store
   folder.
 - **A reader** for tests: `plusdrive store ls IMAGE [--device dt2|dn2] [--cat PATH]` prints `path first_sector size sha256`
@@ -73,7 +86,7 @@ mode. It is the only thing the runtime ever writes to the card (finding 37). Lay
 
 **Where.** The last `selection_sectors` (2) sectors of the range (`devices/<device>.toml` `[card.store] selection_sectors`):
 copy A at `end_sector - 2`, copy B at `end_sector - 1` (absolute sectors `0x3dffe` and `0x3dfff` on both devices). The store builder
-must keep its files out of them (its size limit is `range - selection_sectors`); a reader of the store ignores them. They are
+must keep its files out of them (its size limit is `range - selection_sectors - 1`: header copy B is the sector before them); a reader of the store ignores them. They are
 zero (no record) on a card the builder made.
 
 **Record** (one sector, all integers big endian):

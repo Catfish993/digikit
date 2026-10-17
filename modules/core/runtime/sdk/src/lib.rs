@@ -431,6 +431,13 @@ pub mod store {
     pub struct Table {
         pub count: u32,
         pub sectors: u32,
+        /// End of the store's used sectors (header A, tables and data, as the header says), relative to the store.
+        pub used: u32,
+        pub seq: u32,
+        pub table_first: u32,
+        pub version: u32,
+        /// 0 = copy A, 1 = copy B.
+        pub copy: u32,
     }
 
     /// Where a file is and what its table entry says its sha256 is.
@@ -469,7 +476,8 @@ pub mod store {
         OK
     }
 
-    fn crc32(mut crc: u32, p: *const u8, n: usize) -> u32 {
+    /// CRC-32 (IEEE, reflected) before the final inversion; `crc32_of` is the finished value (zlib's).
+    pub fn crc32(mut crc: u32, p: *const u8, n: usize) -> u32 {
         let mut i = 0;
         while i < n {
             crc ^= unsafe { *p.add(i) } as u32;
@@ -483,37 +491,157 @@ pub mod store {
         crc
     }
 
-    /// Read the header and the table into `buf` (`cap` bytes, at least 512). The table then starts at `buf`; entry `i` is at
-    /// `buf + i * ENTRY`. Errors: `E_NOT_FOUND` (no store on the card), `E_READ`, `E_BAD_STORE` (version, counts, table CRC-32,
-    /// which covers the zero-padded table sectors), `E_TOO_BIG` (the table does not fit in `cap`).
+    pub fn crc32_of(p: *const u8, n: usize) -> u32 {
+        !crc32(0xffff_ffff, p, n)
+    }
+
+    /// Sector of header copy B, relative to the store (`devices/*.toml [card.store] header_b_sector` - `first_sector`): the sector just
+    /// before the selection record. Files end before it: `LIMIT` sectors may hold the header A, a table and data.
+    pub const HEADER_B: u32 = SECTORS - 3;
+    pub const LIMIT: u32 = HEADER_B;
+
+    /// One header copy as decoded (version 1: `table_first` 1, `seq` 1).
+    #[derive(Clone, Copy)]
+    pub struct Hdr {
+        pub version: u32,
+        pub count: u32,
+        pub sectors: u32,
+        pub used: u32,
+        pub table_crc: u32,
+        pub table_first: u32,
+        pub seq: u32,
+    }
+
+    /// Decode a header sector: magic, version 1 or 2 and, for version 2, the CRC over bytes 0..508. `None` when any fails.
+    pub unsafe fn parse_header(p: *const u8) -> Option<Hdr> {
+        if be32(p) != MAGIC {
+            return None;
+        }
+        let version = be32(p.add(4));
+        let mut h = Hdr {
+            version,
+            count: be32(p.add(8)),
+            sectors: be32(p.add(12)),
+            used: be32(p.add(16)),
+            table_crc: be32(p.add(20)),
+            table_first: 1,
+            seq: 1,
+        };
+        if version == 2 {
+            if be32(p.add(508)) != crc32_of(p, 508) {
+                return None;
+            }
+            h.table_first = be32(p.add(24));
+            h.seq = be32(p.add(28));
+        } else if version != 1 {
+            return None;
+        }
+        Some(h)
+    }
+
+    unsafe fn put32(p: *mut u8, v: u32) {
+        *p = (v >> 24) as u8;
+        *p.add(1) = (v >> 16) as u8;
+        *p.add(2) = (v >> 8) as u8;
+        *p.add(3) = v as u8;
+    }
+
+    /// Write the 512 bytes of a version 2 header copy to `out`.
+    pub unsafe fn encode_header(h: &Hdr, out: *mut u8) {
+        let mut i = 0;
+        while i < 512 {
+            *out.add(i) = 0;
+            i += 1;
+        }
+        put32(out, MAGIC);
+        put32(out.add(4), 2);
+        put32(out.add(8), h.count);
+        put32(out.add(12), h.sectors);
+        put32(out.add(16), h.used);
+        put32(out.add(20), h.table_crc);
+        put32(out.add(24), h.table_first);
+        put32(out.add(28), h.seq);
+        put32(out.add(508), crc32_of(out, 508));
+    }
+
+    /// Which copy to try first: `true` = B. B (version 2 only) wins when A is absent or version 1, or when its `seq` is higher.
+    pub fn prefer_b(a: Option<&Hdr>, b: Option<&Hdr>) -> bool {
+        match (a, b) {
+            (_, None) => false,
+            (None, Some(_)) => true,
+            (Some(a), Some(b)) => a.version == 1 || b.seq > a.seq,
+        }
+    }
+
+    /// Read the header (choosing between copy A at sector 0 and copy B at `HEADER_B`) and the table into `buf` (`cap` bytes, at least
+    /// 512). The table then starts at `buf`; entry `i` is at `buf + i * ENTRY`. A copy is usable when its magic, version, header CRC
+    /// (version 2) and table CRC hold; the usable copy with the higher `seq` is taken (equal: A; a version 1 A loses to a usable B).
+    /// Errors: `E_NOT_FOUND` (no store on the card), `E_READ`, `E_BAD_STORE` (no usable copy), `E_TOO_BIG` (the table does not fit in `cap`).
     pub unsafe fn open(rd: BlockRead, buf: *mut u8, cap: usize) -> Result<Table, i32> {
         let r = read_sectors(rd, 0, 1, buf, cap);
         if r != OK {
             return Err(if r == E_READ { E_READ } else { E_NOT_FOUND });
         }
-        if be32(buf) != MAGIC {
-            return Err(E_NOT_FOUND);
+        let a_magic = be32(buf) == MAGIC;
+        let a = parse_header(buf);
+        let r = read_sectors(rd, HEADER_B, 1, buf, cap);
+        let b = if r == OK { parse_header(buf).filter(|h| h.version == 2) } else { None };
+        if a.is_none() && b.is_none() {
+            return Err(if a_magic { E_BAD_STORE } else { E_NOT_FOUND });
         }
-        if be32(buf.add(4)) != 1 {
+        let first_b = prefer_b(a.as_ref(), b.as_ref());
+        let mut err = E_BAD_STORE;
+        let mut n = 0;
+        while n < 2 {
+            let pick = if (n == 0) == first_b { b } else { a };
+            let which = if (n == 0) == first_b { 1 } else { 0 };
+            n += 1;
+            let h = match pick {
+                Some(h) => h,
+                None => continue,
+            };
+            match load_table(rd, &h, buf, cap) {
+                Ok(()) => {
+                    return Ok(Table {
+                        count: h.count,
+                        sectors: h.sectors,
+                        used: h.used,
+                        seq: h.seq,
+                        table_first: h.table_first,
+                        version: h.version,
+                        copy: which,
+                    })
+                }
+                Err(e) => err = e,
+            }
+        }
+        Err(err)
+    }
+
+    /// Read the table `h` points at into `buf` and check the counts and the CRC.
+    unsafe fn load_table(rd: BlockRead, h: &Hdr, buf: *mut u8, cap: usize) -> Result<(), i32> {
+        if h.count > 4096
+            || h.sectors != (h.count * ENTRY as u32 + 511) / 512
+            || h.table_first < 1
+            || h.used < h.table_first
+            || h.used - h.table_first < h.sectors
+            || h.used > LIMIT
+        {
             return Err(E_BAD_STORE);
         }
-        let count = be32(buf.add(8));
-        let sectors = be32(buf.add(12));
-        let want_crc = be32(buf.add(20));
-        if count == 0 || count > 4096 || sectors != (count * ENTRY as u32 + 511) / 512 {
-            return Err(E_BAD_STORE);
-        }
-        if sectors as usize * 512 > cap {
+        if h.sectors as usize * 512 > cap {
             return Err(E_TOO_BIG);
         }
-        let r = read_sectors(rd, 1, sectors, buf, cap);
-        if r != OK {
-            return Err(r);
+        if h.sectors != 0 {
+            let r = read_sectors(rd, h.table_first, h.sectors, buf, cap);
+            if r != OK {
+                return Err(r);
+            }
         }
-        if !crc32(0xffff_ffff, buf, sectors as usize * 512) != want_crc {
+        if crc32_of(buf, h.sectors as usize * 512) != h.table_crc {
             return Err(E_BAD_STORE);
         }
-        Ok(Table { count, sectors })
+        Ok(())
     }
 
     /// The NUL-terminated path of entry `i` of the table at `tab`.
@@ -608,5 +736,134 @@ mod tests {
         assert_eq!(SECTOR_A, 0x3dffe);
         assert_eq!(SECTOR_B, 0x3dfff);
         assert_eq!(store::FIRST + store::SECTORS, 0x3e000);
+    }
+
+    // ---- the store reader: header copies A and B, version 1 and 2 ----
+
+    extern crate std;
+    use std::sync::Mutex;
+    use std::vec::Vec;
+
+    static CARD: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    static LOCK: Mutex<()> = Mutex::new(());
+
+    unsafe extern "C" fn rd(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
+        let c = CARD.lock().unwrap();
+        let at = (sector - store::FIRST) as usize * 512;
+        core::ptr::copy_nonoverlapping(c.as_ptr().add(at), buf, bytes as usize);
+        0
+    }
+
+    fn put(rel: u32, b: &[u8]) {
+        let mut c = CARD.lock().unwrap();
+        let at = rel as usize * 512;
+        c[at..at + b.len()].copy_from_slice(b);
+    }
+
+    fn table_with(paths: &[&[u8]]) -> (Vec<u8>, u32) {
+        let n = paths.len();
+        let sectors = (n * store::ENTRY + 511) / 512;
+        let mut t = std::vec![0u8; sectors * 512];
+        for (i, p) in paths.iter().enumerate() {
+            t[i * store::ENTRY..i * store::ENTRY + p.len()].copy_from_slice(p);
+            t[i * store::ENTRY + 91] = 7; // first sector 7
+        }
+        let crc = store::crc32_of(t.as_ptr(), t.len());
+        (t, crc)
+    }
+
+    fn hdr(version: u32, count: u32, tf: u32, seq: u32, crc: u32) -> store::Hdr {
+        store::Hdr { version, count, sectors: (count * 128 + 511) / 512, used: tf + (count * 128 + 511) / 512 + 10, table_crc: crc, table_first: tf, seq }
+    }
+
+    /// Lay out a card: table `paths` at `tf`; header A and B as given (None = zero).
+    fn card(a: Option<store::Hdr>, b: Option<store::Hdr>, tf: u32, paths: &[&[u8]]) -> u32 {
+        *CARD.lock().unwrap() = std::vec![0u8; store::SECTORS as usize * 512];
+        let (t, crc) = table_with(paths);
+        put(tf, &t);
+        let mut s = [0u8; 512];
+        for (h, at) in [(a, 0), (b, store::HEADER_B)] {
+            if let Some(mut h) = h {
+                h.table_crc = crc;
+                if h.version == 2 {
+                    unsafe { store::encode_header(&h, s.as_mut_ptr()) };
+                } else {
+                    s.fill(0);
+                    s[0..4].copy_from_slice(b"DKST");
+                    s[4..8].copy_from_slice(&1u32.to_be_bytes());
+                    s[8..12].copy_from_slice(&h.count.to_be_bytes());
+                    s[12..16].copy_from_slice(&h.sectors.to_be_bytes());
+                    s[16..20].copy_from_slice(&h.used.to_be_bytes());
+                    s[20..24].copy_from_slice(&crc.to_be_bytes());
+                }
+                put(at, &s);
+            }
+        }
+        crc
+    }
+
+    fn open() -> Result<(u32, u32, u32), i32> {
+        let mut buf = std::vec![0u8; 4096];
+        let t = unsafe { store::open(rd, buf.as_mut_ptr(), buf.len()) }?;
+        Ok((t.seq, t.copy, t.version))
+    }
+
+    #[test]
+    fn the_header_is_chosen_by_seq_and_a_wins_a_tie() {
+        let _g = LOCK.lock().unwrap();
+        let h = |seq| hdr(2, 1, 1, seq, 0);
+        card(Some(h(1)), Some(h(1)), 1, &[b"a"]);
+        assert_eq!(open(), Ok((1, 0, 2)));
+        card(Some(h(1)), Some(h(2)), 1, &[b"a"]);
+        assert_eq!(open(), Ok((2, 1, 2)));
+        card(Some(h(3)), Some(h(2)), 1, &[b"a"]);
+        assert_eq!(open(), Ok((3, 0, 2)));
+    }
+
+    #[test]
+    fn a_torn_copy_falls_back_to_the_other() {
+        let _g = LOCK.lock().unwrap();
+        let h = |seq| hdr(2, 1, 1, seq, 0);
+        card(Some(h(1)), Some(h(2)), 1, &[b"a"]);
+        // flip a bit in B: the header CRC fails, A is used
+        CARD.lock().unwrap()[store::HEADER_B as usize * 512 + 9] ^= 1;
+        assert_eq!(open(), Ok((1, 0, 2)));
+        // B good, A torn
+        card(Some(h(1)), Some(h(2)), 1, &[b"a"]);
+        CARD.lock().unwrap()[30] ^= 1;
+        assert_eq!(open(), Ok((2, 1, 2)));
+        // B names a table that is not there (header B written, table torn): table CRC fails, A is used
+        card(Some(h(1)), Some(h(2)), 1, &[b"a"]);
+        let mut b = h(2);
+        b.table_first = 40;
+        b.used = 60;
+        let mut s = [0u8; 512];
+        unsafe { store::encode_header(&b, s.as_mut_ptr()) };
+        put(store::HEADER_B, &s);
+        assert_eq!(open(), Ok((1, 0, 2)));
+        // both torn
+        CARD.lock().unwrap()[30] ^= 1;
+        assert_eq!(open(), Err(E_BAD_STORE));
+    }
+
+    #[test]
+    fn version_1_reads_and_an_empty_range_is_no_store() {
+        let _g = LOCK.lock().unwrap();
+        card(Some(hdr(1, 1, 1, 1, 0)), None, 1, &[b"a"]);
+        assert_eq!(open(), Ok((1, 0, 1)));
+        // a usable B beats a version 1 A
+        card(Some(hdr(1, 1, 1, 1, 0)), Some(hdr(2, 1, 1, 2, 0)), 1, &[b"a"]);
+        assert_eq!(open(), Ok((2, 1, 2)));
+        card(None, None, 1, &[b"a"]);
+        assert_eq!(open(), Err(E_NOT_FOUND));
+        // an empty store (CLEAR): version 2, no entries
+        card(Some(hdr(2, 0, 1, 5, 0)), Some(hdr(2, 0, 1, 5, 0)), 1, &[]);
+        assert_eq!(open(), Ok((5, 0, 2)));
+    }
+
+    #[test]
+    fn header_b_is_the_sector_before_the_selection_record() {
+        assert_eq!(store::HEADER_B, store::SECTORS - 2 - 1);
+        assert_eq!(store::FIRST + store::HEADER_B, 0x3dffd);
     }
 }

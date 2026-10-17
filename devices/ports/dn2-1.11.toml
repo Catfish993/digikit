@@ -1750,6 +1750,16 @@ mark = "D"
 rule = "core/runtime:cf_func"
 
 [[anchor]]
+name = "dkrt.fw.midi_send"
+cpu = "cf"
+kind = "code"
+addr = 0x401231a4
+len = 2
+sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
 name = "dkrt.fw.project_serialize"
 cpu = "cf"
 kind = "code"
@@ -1776,6 +1786,16 @@ kind = "code"
 addr = 0x4002ed34
 len = 8
 sha256 = "f446b70c3829f8c05b4cb484c6f85e777d19f62557951248a5c622fe97d11223"
+mark = "D"
+rule = "core/runtime:cf_words"
+
+[[anchor]]
+name = "dkrt.hook.midi_rx"
+cpu = "cf"
+kind = "code"
+addr = 0x40120876
+len = 6
+sha256 = "61eabb938b4737dfcad74a04c0bfb0ea272366b8742a3b6428b773cd9007fb06"
 mark = "D"
 rule = "core/runtime:cf_words"
 

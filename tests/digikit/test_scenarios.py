@@ -17,5 +17,5 @@ def test_scenario_files_are_well_formed():
     # every kind has a scenario
     assert {s.kind for s in scens} == set(S.KINDS)
     # the quick tier (the verify gate) covers equivalence and the round trip; safe mode and the power cut run in the full tier
-    assert {s.kind for s in S.selected("quick")} >= {"equiv", "roundtrip"}
+    assert {s.kind for s in S.selected("quick")} >= {"equiv", "roundtrip", "upload"}
     assert {s.kind for s in S.selected("full")} == set(S.KINDS)

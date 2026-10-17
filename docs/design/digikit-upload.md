@@ -1,6 +1,6 @@
 # digikit module upload over USB SysEx
 
-Status: spec, 2026-10-18 (plan `docs/plans/digikit-runtime.md` Phase 7, decision 11; routes in
+Status: built (device side, Python tool, exporter; lane r4, finding 43), 2026-10-18; spec (plan `docs/plans/digikit-runtime.md` Phase 7, decision 11; routes in
 `docs/findings/42-usb-transfer-routes.md`). The device side is `core/runtime`; the hosts are a Python tool (tests, terminal),
 the desktop app and the web app. Every host and the device build against this file; change it first, then the code.
 
@@ -50,7 +50,7 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 
 | cmd | name | request body | reply body after status |
 |---|---|---|---|
-| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION, port id NUL ("dt2-1.16"), u32 free_bytes, u32 max_chunk 32768, u8 flags` (bit 0 safe mode, bit 1 upload open) |
+| 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION, device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags` (bit 0 safe mode, bit 1 upload open) |
 | 0x02 | LIST | `u32 first` | `u32 total, u8 n`, then n entries `path NUL, u32 size, sha256[32]` from index `first`, as many as fit the reply |
 | 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |
@@ -58,6 +58,23 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | 0x13 | DELETE | `path NUL` | (none). Commits a table without the path. |
 | 0x14 | CLEAR | `u32 0x434c5221` ("CLR!") | (none). Commits an empty store. |
 | 0x15 | ABORT | (none) | (none). Drops an open upload. |
+
+The device id is the device, not the firmware version: the runtime has no per-port constant (a port is a set of anchors, and a
+constant would be a fourth copy of a fact `devices/ports/` holds). A host that wants the version asks the stock MidiRpc
+SoftwareVersion (the stock route is unchanged). *Changed 2026-10-18 (lane r4); the first draft said "dt2-1.16".*
+
+Behaviour the first draft left open (lane r4, built and tested):
+
+- A card with nothing in the store range is an empty store: INFO, LIST and BEGIN work, and the first END writes both headers.
+  `E_NOSTORE` is for a header that is there but unreadable (no usable copy); CLEAR still works then.
+- END closes the upload whatever its result (a failed END needs a new BEGIN). BEGIN, DELETE and CLEAR drop an open upload. ABORT with
+  none open is ok.
+- A store holds at most 256 files for upload commands (the table is held in the 32 KiB buffer); BEGIN answers `E_FULL` (free 0) past that.
+  LIST and the loader read what is there.
+- The buffer is a static object of the runtime, 32 KiB plus 16 bytes of body offset and 4 KiB scratch (36,896 bytes), 16-byte aligned. The first
+  draft said "from its arena"; a static address lets the write-watch leave out the card reads that land in it by DMA, as it does for
+  the staging buffer, and the buffer cannot fail to allocate.
+- The reply status is a signed byte; `body` is what follows it.
 
 DATA rules: `offset` equals the next expected byte, or the offset of the previous chunk with the same length (a retry; the
 reply is ok and nothing is written again). The length is 1 to 32768 and a multiple of 512, except for the chunk that ends the
@@ -96,7 +113,7 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
 
 In the firmware's MIDI task, after the SysEx gather (finding 42 section 2, stage 4), before the router: a message that
 starts `F0 7D 64 6B` goes to the runtime; every other message takes the stock route unchanged. The exact hook is a ported
-anchor on all four ports (`dkrt.fw.*`). The runtime's 32 KiB staging buffer comes from its arena (16-byte aligned).
+anchor on all four ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-byte aligned object of 36,896 bytes (see "Behaviour the first draft left open").
 
 ## Tests (kept; `tests/digikit/scenarios`)
 

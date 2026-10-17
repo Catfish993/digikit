@@ -28,6 +28,7 @@ optional = ["dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dyndsp_info", "
 [object.externs]
 fw_block_read = "dkrt.fw.block_read"
 fw_block_write = "dkrt.fw.block_write"
+fw_midi_send = "dkrt.fw.midi_send"
 dkrt_ui_queue_lit = "dkrt.ui.queue_lit"
 fw_alloc = "dkrt.fw.alloc"
 fw_free = "dkrt.fw.free"
@@ -43,6 +44,8 @@ place = "cf.expansion"
 [object.externs]
 fw_queue_pop = "dkrt.fw.queue_pop"
 dkrt_boot_next = "hook.dkrt.hook.boot.tail"
+dkrt_midi_next = "hook.dkrt.hook.midi_rx.tail"
+dkrt_midi_ret = "hook.dkrt.hook.midi_rx.return"
 
 [[object]]
 path = "build/device-dt2.dko.json"
@@ -80,6 +83,42 @@ to = "dkrt_boot_hook"
 
 [[claim]]
 resource = "dkrt.hook.boot"
+
+# Module upload (docs/design/digikit-upload.md): the MIDI task's dispatch of a gathered USB (cable 0) SysEx message. The two displaced
+# instructions `movea.l (0,A2,D1*4),A0; jsr (A0)` call the router with (msg, len, source) already pushed. The hook runs the runtime's
+# dkrt_midi_rx first: it returns 1 for a message of ours (continue after the call: the tail that frees the gathered blocks), 0 to run the
+# displaced router call unchanged (docs/findings/43-digikit-upload.md). The same 428-byte task function is on all four ports.
+[[op]]
+op = "hook"
+cpu = "cf"
+anchor = "dkrt.hook.midi_rx"
+offset = 0
+displaced = "run"
+to = "dkrt_midi_hook"
+
+[[claim]]
+resource = "dkrt.hook.midi_rx"
+
+[[anchor_rule]]
+name = "dkrt.hook.midi_rx"
+cpu = "cf"
+kind = "cf_words"
+as = "code"
+words = ["*", 0x1c004e90, 0x4fef000c, 0x2f052044, 0x4e90588f]
+offset = 2
+len = 6
+mark = "D"
+
+# The firmware's MIDI send `void f(u32 len, const u8 *msg, u32 port)` (DT2 1.16 FUN_401217fc): port 2 sends to USB through the TX
+# function with the TX mutex taken. Same hash on all four images.
+[[anchor_rule]]
+name = "dkrt.fw.midi_send"
+cpu = "cf"
+kind = "cf_func"
+hash = "2a29225a7abd75aa3be8d59d049af587"
+offset = 0
+len = 2
+mark = "D"
 
 [[anchor_rule]]
 name = "dkrt.hook.ui_loop"

@@ -216,3 +216,26 @@ def test_midirpc_write_script_expects_replies_per_device():
     assert s.args(frame_dir="x")[0] == "--extra"
     assert ps.EXPECT["midirpc_write"]["usb_replies"]["dt2"][0] == 0x40
     assert "midirpc_write" in a.SUITE
+
+
+def test_device_rpc_request_is_8_in_7_packed():
+    """Finding 42 [C]: the body after `10 00` is packed; a Ping is unchanged, a payload with bytes >= 0x80 round-trips."""
+    from tools.device import devrpc
+    from tools.device.midisniff import unpack_8in7
+
+    assert devrpc.build_request(0x01, seq=1) == bytes.fromhex(
+        "f000203c1000000001000001f7"
+    )
+    payload = bytes(range(0x7C, 0x8C)) + b"/path\x00"
+    frame = devrpc.build_request(0x42, seq=0x0123, payload=payload)
+    assert frame[:6] == devrpc.HDR and frame[-1] == 0xF7 and max(frame[1:-1]) < 0x80
+    assert unpack_8in7(frame[6:-1]) == bytes((0x01, 0x23, 0, 0, 0x42)) + payload
+
+
+def test_device_rpc_reply_is_unpacked_and_the_response_bit_dropped():
+    from tools.device import devrpc
+    from tools.firmware.build import encode_8in7
+
+    body = bytes((0, 7, 0, 7, 0x81)) + bytes(range(0x7E, 0x86))
+    reply = devrpc.HDR + encode_8in7(body) + b"\xf7"
+    assert devrpc.parse_reply(reply) == (0x01, bytes(range(0x7E, 0x86)))

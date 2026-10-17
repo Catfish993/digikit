@@ -1,0 +1,817 @@
+#!/usr/bin/env python3
+"""The `upload` scenarios of the digikit runtime: module upload over USB SysEx in the emulator (docs/design/digikit-upload.md,
+docs/findings/43-digikit-upload.md). Run by `tools.patchkit.pk_digikit_scen` (kind `upload`); the scenario's `[upload] part` picks one:
+
+  ops       the commands on a ColdFire-only rig: INFO, LIST, put (several sizes), replace, DELETE, CLEAR, E_FULL, E_HASH, a DATA retry,
+            bad offset / length / state / path / version. After each step the card, read by the plusdrive reader from the card file
+            with the guest's writes laid over it, equals what the device's LIST says and the bytes that were sent.
+  cut       a power cut after the Nth card write of an upload (the runtime's test knob `DKRT_UPLOAD_CUT` refuses every later write, so the
+            card is the state a cut leaves): during staging, after the table, between header B and header A, after A. A new daemon boots
+            on that card and reads a valid store (old or new, never mixed), and takes another upload.
+  stock     a stock MidiRpc Ping, SoftwareVersion and DeviceUID answer byte for byte the same with and without the runtime, and a SysEx
+            that starts F0 7D but is not ours still goes the stock way.
+  playback  (coupled) a note plays while a module is uploaded: its PCM equals the same note without the upload, and the card writes of
+            the run are store sectors only.
+  rust      the Rust host `Session` (packages/dkupload example `emu_session`, the code of the desktop Modules panel and the web page)
+            against the device side: INFO, LIST, put of a built module and of 70,000 bytes, replace, DELETE, E_HASH, lost replies, CLEAR; each
+            step compared with the Python tool's LIST and the card read by plusdrive.
+  quick     a short `ops` (one upload, replace, delete) for the verify gate.
+
+The through-the-menu proof (an uploaded module appears in DIGIKIT > MODULES, loads after APPLY & RESTART and plays like the
+card-built module) is the `menu` kind with `upload = true` (tests/digikit/scenarios/menu-upload-*.toml).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import random
+import struct
+from pathlib import Path
+from typing import Any
+
+from tools.device import dkupload as D
+from tools.patchkit import pk_dkrt_boot as B
+from tools.patchkit import pk_dkrt_machine as M
+
+# The delivery model of the emulated USB input: one high-speed microframe (a 512-byte packet carries at most 384 MIDI bytes)
+HS: dict[str, int] = {"chunk": 384, "period": 16500}
+STORE_FIRST = B.STORE_FIRST
+LIMIT = B.HEADER_B - B.STORE_FIRST  # sectors a store may use: header A, tables, data
+FREE_FRESH = (
+    LIMIT - 1 - 1
+) * 512  # a card with no store: used 1, room for a one-entry table
+
+
+def blob(n: int, seed: int) -> bytes:
+    """Deterministic bytes with every value (the 8-in-7 packing needs the high bits)."""
+    return random.Random(seed).randbytes(n)
+
+
+def transport(rig: Any) -> D.EmuTransport:
+    return D.EmuTransport(rig.emu, **HS)
+
+
+def sha(b: bytes) -> bytes:
+    return hashlib.sha256(b).digest()
+
+
+# ---- the card as the plusdrive reader sees it -----------------------------------------------------------------------------------
+
+
+def card_view(
+    c: Any, rig: Any, base: Path, tag: str
+) -> tuple[dict[str, bytes], str, set[int]]:
+    """The module store of BASE with the guest's writes laid over it: ({path: bytes}, the reader's header line, the sectors the guest
+    wrote anywhere). The files are read (and their sha256 checked) by `plusdrive store ls --cat`."""
+    from tools.coldfire import arena_safety
+    from tools.patchkit.pk_digikit_project import card_after
+
+    ov = rig.work / f"{tag}.ov.bin"
+    rig.emu.call("card.overlay", path=str(ov))
+    after = card_after(c, base, ov)
+    writes = set(arena_safety.parse_overlay(ov.read_bytes()))
+    import subprocess
+
+    tools = c.env.tools
+    r = tools.run(tools.plusdrive, "store", "ls", after, "--device", c.device)
+    if r.returncode:
+        return {}, f"error: {r.stderr.strip()}", writes
+    files: dict[str, bytes] = {}
+    head = ""
+    for line in r.stdout.splitlines():
+        if line.startswith("#"):
+            head = line
+            continue
+        path = line.split("\t")[0]
+        out = rig.work / f"{tag}.cat.bin"  # binary: through a file, not a decoded pipe
+        with out.open("wb") as f:
+            p = subprocess.run(
+                [str(tools.plusdrive), "store", "ls", str(after), "--device", c.device, "--cat", path],
+                stdout=f,
+                stderr=subprocess.PIPE,
+            )  # fmt: skip
+        files[path] = out.read_bytes() if p.returncode == 0 else b"<unreadable>"
+    return files, head, writes
+
+
+def device_ls(up: D.Uploader) -> dict[str, tuple[int, str]]:
+    return {p: (s, h) for p, s, h in up.ls()}
+
+
+def same(
+    c: Any,
+    label: str,
+    up: D.Uploader,
+    files: dict[str, bytes],
+    view: dict[str, bytes],
+    head: str,
+    version: int = 2,
+) -> None:
+    """The device's LIST, the reader's view and the bytes that were sent all agree."""
+    want = {p: (len(b), sha(b).hex()) for p, b in files.items()}
+    got = device_ls(up)
+    c.check(f"{label}: LIST equals the files sent", got == want, f"{got} want {want}")
+    c.check(
+        f"{label}: the card, read by plusdrive, holds the same bytes",
+        view == files,
+        f"{ {p: len(b) for p, b in view.items()} } {head}",
+    )
+    c.check(f"{label}: store version {version}", f"version={version}" in head, head)
+
+
+def put_status(up: D.Uploader, path: str, data: bytes, **kw: Any) -> int:
+    """`put` and the status it ended with (0 for success)."""
+    try:
+        up.put(path, data, **kw)
+        return 0
+    except D.UploadError as e:
+        return e.status
+
+
+# ---- ops ------------------------------------------------------------------------------------------------------------------------
+
+
+def run_ops(c: Any, quick: bool = False) -> None:
+    img = c.image_for(B.RT, "run")
+    base = c.card(None)
+    files: dict[str, bytes] = {}
+    with c.rig(img, base, "ops", cf_only=True) as rig:
+        up = D.Uploader(transport(rig))
+        info = up.info()
+        c.check(
+            "INFO: protocol 1, the runtime's version, the device, the free bytes of an empty store, 32 KiB chunks",
+            info["protocol"] == 1
+            and info["runtime"] == 2
+            and info["port"] == c.device
+            and info["free_bytes"] == FREE_FRESH
+            and info["max_chunk"] == 32768
+            and not info["safe"]
+            and not info["upload_open"],
+            str(info),
+        )
+        c.check("LIST of a card with no store: empty", up.ls() == [])
+
+        def check(label: str) -> None:
+            view, head, writes = card_view(c, rig, base, f"ops-{label}")
+            same(c, label, up, files, view, head)
+            c.store_writes |= {
+                w for w in writes if STORE_FIRST <= w < STORE_FIRST + B.STORE_SECTORS
+            }
+            c.all_writes |= writes
+
+        a = blob(70_000, 1)  # three chunks, the last partial
+        files["modules/a.dkm"] = a
+        c.check("put a 70,000-byte file", put_status(up, "modules/a.dkm", a) == 0)
+        check("first upload")
+        if quick:
+            _ops_quick(c, up, files, check)
+        else:
+            _ops_full(c, up, files, check)
+            roundtrip(c, rig, base, files)
+        c.report["device_requests"] = len(up.log)
+        c.report["emu_instructions_stepped"] = up.t.stepped
+        c.done(rig)
+    _selection_untouched(c)
+    c.common_checks_upload()
+
+
+def _ops_quick(c: Any, up: D.Uploader, files: dict[str, bytes], check: Any) -> None:
+    b = blob(512, 2)
+    files["modules/b.dkm"] = b
+    up.put("modules/b.dkm", b)
+    a2 = blob(600, 3)
+    files["modules/a.dkm"] = a2
+    up.put("modules/a.dkm", a2)
+    check("replace")
+    up.rm("modules/b.dkm")
+    del files["modules/b.dkm"]
+    check("delete")
+
+
+def _ops_full(c: Any, up: D.Uploader, files: dict[str, bytes], check: Any) -> None:
+    # sizes around a sector, a one-byte file and an empty file, a nested path, sorted insert before and after
+    for path, n, seed in [
+        ("a/z.bin", 513, 4),
+        ("modules/b.dkm", 512, 5),
+        ("modules/c.dkm", 1, 6),
+        ("empty", 0, 7),
+        ("modules/big.dkm", 65_536, 8),
+    ]:
+        files[path] = blob(n, seed)
+        st = put_status(up, path, files[path])
+        c.check(f"put {path} ({n} bytes)", st == 0, str(st))
+    check("six files")
+    # replace
+    files["modules/a.dkm"] = blob(1000, 9)
+    up.put("modules/a.dkm", files["modules/a.dkm"])
+    check("replace")
+    # delete, and a delete of a file that is not there
+    up.rm("modules/c.dkm")
+    del files["modules/c.dkm"]
+    st, _ = up.request(D.CMD_DELETE, b"modules/c.dkm\0")
+    c.check("DELETE of a missing path: E_NOFILE", st == -59, str(st))
+    check("delete")
+    # E_FULL: BEGIN past the free bytes answers with them; BEGIN of exactly the free bytes is accepted
+    free = up.info()["free_bytes"]
+    st, body = up.request(D.CMD_BEGIN, b"x\0" + struct.pack(">I", free + 1) + bytes(32))
+    c.check(
+        "BEGIN past the free bytes: E_FULL with the free bytes",
+        st == -52 and struct.unpack(">I", body[:4])[0] == free,
+        f"{st} {body.hex()} free {free}",
+    )
+    st, _ = up.request(D.CMD_BEGIN, b"x\0" + struct.pack(">I", free) + bytes(32))
+    c.check("BEGIN of exactly the free bytes is accepted", st == 0, str(st))
+    c.check("INFO: an upload is open", up.info()["upload_open"])
+    up.abort()
+    c.check("ABORT closes it", not up.info()["upload_open"])
+    # E_HASH: nothing is committed
+    bad = blob(40_000, 10)
+    st = put_status(up, "modules/bad.dkm", bad, sha256=sha(b"not the file"))
+    c.check("a wrong sha256: E_HASH", st == -56, str(st))
+    c.check("an upload ended by END is closed", not up.info()["upload_open"])
+    check("after E_HASH (nothing committed)")
+    # DATA: retry, bad offset, bad length, no upload, too much
+    d = blob(2048, 11)
+    up.begin("retry.bin", len(d), sha(d))
+    st, _ = up.request(D.CMD_DATA, struct.pack(">I", 0) + d[:1024])
+    st2, _ = up.request(D.CMD_DATA, struct.pack(">I", 0) + d[:1024])
+    c.check(
+        "a DATA retry (same offset, same length) is ok", st == 0 == st2, f"{st} {st2}"
+    )
+    st, _ = up.request(D.CMD_DATA, struct.pack(">I", 512) + d[512:1024])
+    c.check(
+        "a DATA at an offset that is neither next nor a retry: E_OFFSET",
+        st == -54,
+        str(st),
+    )
+    st, _ = up.request(D.CMD_DATA, struct.pack(">I", 1024) + d[1024:1500])
+    c.check(
+        "a DATA that is not a multiple of 512 and not the last: E_LENGTH",
+        st == -55,
+        str(st),
+    )
+    st, _ = up.request(D.CMD_DATA, struct.pack(">I", 1024) + d[1024:] + b"x")
+    c.check("a DATA past the file's size: E_LENGTH", st == -55, str(st))
+    st, _ = up.request(D.CMD_DATA, struct.pack(">I", 1024) + b"")
+    c.check("a DATA with no bytes: E_MSG or E_LENGTH", st in (-50, -55), str(st))
+    st, _ = up.request(D.CMD_END)
+    c.check("END before all bytes: E_LENGTH", st == -55, str(st))
+    up.begin("retry.bin", len(d), sha(d))
+    up.request(D.CMD_DATA, struct.pack(">I", 0) + d[:1024])
+    up.request(D.CMD_DATA, struct.pack(">I", 0) + d[:1024])
+    st, _ = up.request(D.CMD_DATA, struct.pack(">I", 1024) + d[1024:])
+    c.check("the rest of the file after the retry", st == 0, str(st))
+    up.end()
+    files["retry.bin"] = d
+    check("after the retry")
+    st, _ = up.request(D.CMD_DATA, struct.pack(">I", 0) + d[:512])
+    c.check("DATA with no upload open: E_STATE", st == -53, str(st))
+    st, _ = up.request(D.CMD_END)
+    c.check("END with no upload open: E_STATE", st == -53, str(st))
+    # paths and messages
+    for p in ["", "/a", "a//b", "a/", "a/../b", "./a", "x" * 88]:
+        st, _ = up.request(
+            D.CMD_BEGIN, p.encode() + b"\0" + struct.pack(">I", 1) + bytes(32)
+        )
+        c.check(f"BEGIN with the path {p[:12]!r}: E_PATH", st == -51, str(st))
+    st, _ = up.request(D.CMD_BEGIN, b"x\0\0")
+    c.check("a short BEGIN: E_MSG", st == -50, str(st))
+    st, _ = up.request(D.CMD_CLEAR, struct.pack(">I", 1))
+    c.check("CLEAR without its key: E_MSG", st == -50, str(st))
+    st, _ = up.request(D.CMD_INFO, b"", version=2)
+    c.check("another protocol version: E_PROTO", st == -60, str(st))
+    st, _ = up.request(0x33)
+    c.check("an unknown command: E_PROTO", st == -60, str(st))
+    c.check(
+        "nothing above changed the store",
+        device_ls(up) == {p: (len(b), sha(b).hex()) for p, b in files.items()},
+    )
+    # CLEAR
+    up.clear()
+    files.clear()
+    check("CLEAR")
+    info = up.info()
+    c.check("CLEAR gives the space back", info["free_bytes"] == FREE_FRESH, str(info))
+    files["again.dkm"] = blob(5000, 12)
+    up.put("again.dkm", files["again.dkm"])
+    check("an upload after CLEAR")
+
+
+def roundtrip(c: Any, rig: Any, base: Path, files: dict[str, bytes]) -> None:
+    """The +Drive round trip: `plusdrive export` of the card with the guest's writes writes the store's files to `digikit/` of a folder,
+    and `plusdrive build` of that folder gives a card whose store holds the same files."""
+    import shutil
+
+    tools = c.env.tools
+    ov = rig.work / "roundtrip.ov.bin"
+    rig.emu.call("card.overlay", path=str(ov))
+    top = rig.work / "roundtrip"
+    folder = top / "plus_drive" / c.device
+    shutil.rmtree(top, ignore_errors=True)
+    folder.mkdir(parents=True)
+    export = [tools.plusdrive, "export", base, "--overlay", ov, "-o", folder,
+              "--out", top / "out", "--device", c.device]  # fmt: skip
+    r = tools.run(*export)
+    got = {
+        str(p.relative_to(folder / "digikit")): p.read_bytes()
+        for p in sorted((folder / "digikit").rglob("*"))
+        if p.is_file() and p.name != "selection.txt"
+    }
+    c.check(
+        "+Drive round trip: the export wrote the store's files to digikit/",
+        r.returncode == 0 and got == files,
+        f"{sorted(got)} want {sorted(files)} {r.stderr[-200:]}",
+    )
+    r2 = tools.run(*export)
+    c.check(
+        "+Drive round trip: a second export adds, replaces and keeps nothing",
+        r2.returncode == 0
+        and "added 0 replaced 0" in r2.stdout
+        and "kept 0" in r2.stdout,
+        r2.stdout.splitlines()[0] if r2.stdout else r2.stderr[-200:],
+    )
+    built = top / "card.img"
+    r3 = tools.run(tools.plusdrive, "build", folder, "-o", built, "--device", c.device,
+                   "--syx", c.env.stock)  # fmt: skip
+    ls = tools.run(tools.plusdrive, "store", "ls", built, "--device", c.device)
+    names = sorted(
+        ln.split("\t")[0] for ln in ls.stdout.splitlines() if not ln.startswith("#")
+    )
+    c.check(
+        "+Drive round trip: the next card build holds the uploaded files",
+        r3.returncode == 0 and names == sorted(files),
+        f"{names} {r3.stderr[-200:]}",
+    )
+
+
+def _selection_untouched(c: Any) -> None:
+    c.check(
+        "the upload wrote no selection sector",
+        not (c.store_writes & {B.SECTOR_A, B.SECTOR_B}),
+        f"{sorted(hex(s) for s in c.store_writes)}",
+    )
+
+
+# ---- power cuts ------------------------------------------------------------------------------------------------------------------
+
+
+def run_cut(c: Any) -> None:
+    """The upload of a three-chunk file does six card writes: three DATA chunks, the table, header B, header A. A cut after the Nth."""
+    old = blob(3000, 21)
+    folder = c.env.folder / "digikit" / "modules"
+    (folder / "old.dkm").write_bytes(old)
+    base = c.card(None)
+    (folder / "old.dkm").unlink()
+    img = c.image_for(B.RT, "run")
+    cut_sym = M.sym(img.plan, "core/runtime", "DKRT_UPLOAD_CUT")
+    new = blob(70_000, 22)
+    more = blob(700, 23)
+    old_files = {"modules/old.dkm": old}
+    both = {"modules/old.dkm": old, "modules/new.dkm": new}
+    # (writes allowed, what the next boot must read, what the upload must answer)
+    cases = [
+        ("after the first chunk", 1, old_files),
+        ("after all chunks", 3, old_files),
+        ("after the table", 4, old_files),
+        ("after header B, before A", 5, both),
+        ("after header A", 6, both),
+    ]
+
+    def one(label: str, n: int, want: dict[str, bytes], k: int) -> Any:
+        def run() -> None:
+            with c.rig(img, base, f"cut{k}-1", cf_only=True) as rig:
+                rig.emu.poke32(cut_sym, n)
+                up = D.Uploader(transport(rig))
+                st = put_status(up, "modules/new.dkm", new)
+                c.check(
+                    f"cut {label}: the upload {'ends ok' if n >= 6 else 'is refused its next write'}",
+                    (st == 0) == (n >= 6),
+                    str(st),
+                )
+                from tools.coldfire import arena_safety  # noqa: F401
+                from tools.patchkit.pk_digikit_project import card_after
+
+                ov = rig.work / f"cut{k}.ov.bin"
+                rig.emu.call("card.overlay", path=str(ov))
+                after = card_after(c, base, ov)
+                with c.lock:
+                    c.all_writes |= _writes(ov)
+                c.done(rig)
+            with c.rig(img, after, f"cut{k}-2", cf_only=True) as rig:
+                up = D.Uploader(transport(rig))
+                got = {p: (s, h) for p, s, h in up.ls()}
+                w = {p: (len(b), sha(b).hex()) for p, b in want.items()}
+                c.check(
+                    f"cut {label}: the next boot reads the {'new' if len(want) > 1 else 'old'} store, whole",
+                    got == w,
+                    f"{got}",
+                )
+                view, head, _ = card_view(c, rig, after, f"cut{k}-v")
+                c.check(
+                    f"cut {label}: plusdrive reads the same files from the card",
+                    view == want,
+                    head,
+                )
+                files = dict(want)
+                files["modules/more.dkm"] = more
+                st = put_status(up, "modules/more.dkm", more)
+                view, head, _ = card_view(c, rig, after, f"cut{k}-w")
+                c.check(
+                    f"cut {label}: the next upload works and commits",
+                    st == 0 and view == files,
+                    f"{st} {sorted(view)} {head}",
+                )
+                c.done(rig)
+
+        return run
+
+    c.parallel(*[one(label, n, want, k) for k, (label, n, want) in enumerate(cases)])
+    c.common_checks_upload()
+
+
+def _writes(ov: Path) -> set[int]:
+    from tools.coldfire import arena_safety
+
+    return set(arena_safety.parse_overlay(ov.read_bytes()))
+
+
+# ---- the stock route --------------------------------------------------------------------------------------------------------------
+
+
+def rpc_request(type_byte: int, seq: int = 1) -> bytes:
+    """A device-0x10 MidiRpc request with no payload, in the packed framing (finding 42 section 2.5)."""
+    from tools.firmware.build import encode_8in7
+
+    body = encode_8in7(bytes((0, seq, 0, 0, type_byte)))
+    return bytes((0xF0, 0x00, 0x20, 0x3C, 0x10, 0x00)) + body + b"\xf7"
+
+
+def run_stock(c: Any) -> None:
+    from tools.firmware import config
+    from tools.patchkit.pk_dkrt import DEVICE_SYX
+
+    img = c.image_for(B.RT, "run")
+    stock = B.Img(config.stock(DEVICE_SYX[c.image]), {"symbols": {}}, "")
+    base = c.card(None)
+    requests = [rpc_request(0x01), rpc_request(0x02), rpc_request(0x03)]
+    # a message that starts F0 7D but is not ours (no 64 6B): the router ignores it; the Ping after it still answers
+    foreign = b"\xf0\x7d\x01\x02\x03\xf7"
+    out: dict[str, list[bytes]] = {}
+
+    def talk(key: str, image: B.Img) -> Any:
+        def run() -> None:
+            # the reference is the unpatched firmware: no plan, so no write-watch
+            rig_cm = (
+                c.rig(image, base, f"stock-{key}", cf_only=True)
+                if image is img
+                else c.env.boot(
+                    image, base, f"stock-{key}", cf_only=True, settle_ms=300
+                )
+            )
+            with rig_cm as rig:
+                rig.emu.usb_out()  # start the capture
+                got: list[bytes] = []
+                tr = D.EmuTransport(rig.emu, **HS)
+                for req in [*requests[:2], foreign, *requests]:
+                    rig.emu.usb_in(req, **HS)
+                    for _ in range(40):
+                        rig.emu.step(400_000)
+                    tr.buf += rig.emu.usb_out()
+                    got.extend(D.split_messages(tr.buf))
+                out[key] = got
+                if image is img:
+                    c.done(rig)
+
+        return run
+
+    c.parallel(talk("rt", img), talk("stock", stock))
+    rt, st = out["rt"], out["stock"]
+    c.check(
+        "the stock firmware answered the five MidiRpc requests",
+        len(st) == 5
+        and all(m[:6] == bytes((0xF0, 0x00, 0x20, 0x3C, 0x10, 0x00)) for m in st),
+        f"{[m[:8].hex() for m in st]}",
+    )
+    c.check(
+        "Ping, SoftwareVersion and DeviceUID replies are byte-identical with and without the runtime",
+        rt == st,
+        f"{[m.hex() for m in rt]} vs {[m.hex() for m in st]}",
+    )
+    c.common_checks_upload()
+
+
+# ---- the Rust host ---------------------------------------------------------------------------------------------------------------
+
+
+def rust_binary(c: Any) -> Path:
+    """The `emu_session` example of packages/dkupload (the Rust `Session` the desktop Modules panel and the web page use)."""
+    import json
+    import subprocess
+
+    from tools import REPO_ROOT
+
+    r = subprocess.run(
+        ["cargo", "build", "-q", "-p", "dkupload", "--example", "emu_session", "--message-format=json"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )  # fmt: skip
+    exe = None
+    for line in r.stdout.splitlines():
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue
+        if m.get("executable") and m.get("target", {}).get("name") == "emu_session":
+            exe = Path(m["executable"])
+    if r.returncode or exe is None:
+        raise RuntimeError(
+            f"cargo build of the emu_session example failed: {r.stderr[-400:]}"
+        )
+    return exe
+
+
+def run_rust(c: Any) -> None:
+    """The Rust host `Session` (packages/dkupload) against the real device side in the emulator, one process per step through the
+    control socket (`midi.usb.in` / `midi.usb.out` / `step`, as modules.rs does). After each step the Python tool's view (LIST) and
+    the card, read by plusdrive, are compared with what the Rust host did."""
+    import json
+    import subprocess
+
+    exe = rust_binary(c)
+    mod = c.pack("test/dyn-pluck", "rust.dkm")
+    dkm_file = c.env.folder / "digikit" / mod
+    dkm = dkm_file.read_bytes()
+    dkm_file.unlink()
+    img = c.image_for(B.RT, "run")
+    base = c.card(None)
+    work = c.work
+    files: dict[str, bytes] = {}
+
+    HSF = ("--chunk", "384", "--period", "16500")
+
+    def host(rig: Any, *args: str, flags: tuple[str, ...] = HSF) -> dict[str, Any]:
+        r = subprocess.run(
+            [str(exe), rig.emu.path, *flags, *args],
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        try:
+            return dict(json.loads(r.stdout.strip().splitlines()[-1]))
+        except (ValueError, IndexError):
+            return {"ok": False, "failure": {"error": f"no output: {r.stderr[-300:]}"}}
+
+    def put(
+        rig: Any, data: bytes, path: str, tag: str, flags: tuple[str, ...] = HSF
+    ) -> dict[str, Any]:
+        f = work / f"rust-{tag}.bin"
+        f.write_bytes(data)
+        return host(rig, "put", str(f), path, flags=flags)
+
+    with c.rig(img, base, "rust", cf_only=True) as rig:
+        up = D.Uploader(transport(rig))
+
+        def check(label: str) -> None:
+            view, head, writes = card_view(
+                c, rig, base, f"rust-{label.replace(' ', '-')}"
+            )
+            same(c, label, up, files, view, head)
+            c.store_writes |= {
+                w for w in writes if STORE_FIRST <= w < STORE_FIRST + B.STORE_SECTORS
+            }
+            c.all_writes |= writes
+
+        def stat(label: str, r: dict[str, Any]) -> None:
+            c.check(f"Rust host: {label}", bool(r.get("ok")), str(r.get("failure")))
+
+        py = up.info()
+        r = host(rig, "info")
+        i = r.get("result", {})
+        c.check(
+            f"Rust INFO: the device id is {c.device!r}, as the Python tool reads it, the free bytes of an empty store, 32 KiB chunks",
+            bool(r.get("ok"))
+            and i["port"] == c.device == py["port"]
+            and i["protocol"] == py["protocol"] == 1
+            and i["runtime_version"] == py["runtime"]
+            and i["free_bytes"] == py["free_bytes"] == FREE_FRESH
+            and i["max_chunk"] == 32768
+            and not i["safe_mode"]
+            and not i["upload_open"],
+            f"{r} vs {py}",
+        )
+        r = host(rig, "ls")
+        c.check(
+            "Rust LIST of an empty store", r.get("ok") and r["result"] == [], str(r)
+        )
+
+        # a real module, one chunk
+        f = work / "rust-dkm.bin"
+        f.write_bytes(dkm)
+        r = host(rig, "put", str(f), mod)
+        stat(f"put {mod} ({len(dkm)} bytes, a built module)", r)
+        files[mod] = dkm
+        got = host(rig, "ls")
+        c.check(
+            "Rust LIST shows the module with the right size and sha256",
+            got.get("ok")
+            and got["result"]
+            == [{"path": mod, "size": len(dkm), "sha256": sha(dkm).hex()}],
+            str(got),
+        )
+        check("Rust put of a module")
+
+        # three chunks, two DATA in flight
+        a = blob(70_000, 41)
+        files["modules/a.dkm"] = a
+        r = put(rig, a, "modules/a.dkm", "a")
+        stat("put 70,000 bytes (three chunks, two in flight)", r)
+        check("Rust put, three chunks")
+        c.report["rust_put_70000_stepped"] = r.get("stepped")
+
+        # the Python tool and the Rust host agree on the same bytes
+        up.put("modules/py.dkm", dkm)
+        files["modules/py.dkm"] = dkm
+        rl = {e["path"]: (e["size"], e["sha256"]) for e in host(rig, "ls")["result"]}
+        c.check(
+            "the Rust LIST equals the Python LIST (the same module put by either has the same sha256)",
+            rl == device_ls(up) and rl[mod] == rl["modules/py.dkm"],
+            str(rl),
+        )
+        check("Python put next to the Rust ones")
+
+        # replace
+        a2 = blob(1000, 42)
+        files["modules/a.dkm"] = a2
+        stat("replace modules/a.dkm", put(rig, a2, "modules/a.dkm", "a2"))
+        check("Rust replace")
+
+        # delete (and a delete of a missing path)
+        stat("delete modules/py.dkm", host(rig, "rm", "modules/py.dkm"))
+        del files["modules/py.dkm"]
+        r = host(rig, "rm", "modules/py.dkm")
+        c.check(
+            "Rust delete of a missing path: E_NOFILE (-59)",
+            not r["ok"] and r["failure"].get("status") == -59,
+            str(r),
+        )
+        check("Rust delete")
+
+        # E_HASH: nothing committed, no upload left open
+        bad = blob(40_000, 43)
+        f = work / "rust-bad.bin"
+        f.write_bytes(bad)
+        r = host(rig, "badhash", str(f), "modules/bad.dkm")
+        c.check(
+            "Rust wrong sha256: END answers E_HASH (-56)",
+            not r["ok"] and r["failure"].get("status") == -56,
+            str(r),
+        )
+        c.check("no upload is left open after E_HASH", not up.info()["upload_open"])
+        check("Rust E_HASH (nothing committed)")
+
+        # a lost reply to INFO, to a DATA, to END (the END retry gets E_STATE; the host looks the file up)
+        r = host(rig, "--drop", "1", "info", flags=(*HSF, "--budget", "150000000"))
+        c.check(
+            "a lost INFO reply: the host retries and gets it", bool(r.get("ok")), str(r)
+        )
+        d = blob(1024, 44)
+        files["modules/drop-data.dkm"] = d
+        f = work / "rust-dd.bin"
+        f.write_bytes(d)
+        r = host(rig, "--drop", "2", "put", str(f), "modules/drop-data.dkm",
+                 flags=(*HSF, "--budget", "150000000"))  # fmt: skip
+        c.check(
+            "a lost DATA reply: the chunk is sent again (retry by offset) and the put ends ok",
+            bool(r.get("ok")),
+            str(r),
+        )
+        check("Rust lost DATA reply")
+        e = blob(1024, 45)
+        files["modules/drop-end.dkm"] = e
+        f = work / "rust-de.bin"
+        f.write_bytes(e)
+        r = host(rig, "--drop", "3", "put", str(f), "modules/drop-end.dkm",
+                 flags=(*HSF, "--budget", "150000000"))  # fmt: skip
+        c.check(
+            "a lost END reply: the second END gets E_STATE, the host finds the file in LIST and ends ok",
+            bool(r.get("ok")),
+            str(r),
+        )
+        check("Rust lost END reply")
+
+        # the timing of one 32 KiB chunk, default USB delivery (64 bytes / 132,000 instructions) against the high-speed model
+        big = blob(32768, 46)
+        files["modules/big.dkm"] = big
+        slow = put(rig, big, "modules/big.dkm", "big-slow", flags=())
+        stat("put 32 KiB with the default delivery", slow)
+        fast = put(rig, big, "modules/big.dkm", "big-fast")
+        stat("put the same 32 KiB with chunk 384 / period 16,500", fast)
+        c.report["rust_32k_stepped_default"] = slow.get("stepped")
+        c.report["rust_32k_stepped_hs"] = fast.get("stepped")
+        c.report["rust_32k_wall_default_s"] = slow.get("wall_s")
+        c.report["rust_32k_wall_hs_s"] = fast.get("wall_s")
+        check("Rust 32 KiB puts")
+
+        # CLEAR
+        stat("clear", host(rig, "clear"))
+        files.clear()
+        check("Rust clear")
+        c.check("CLEAR gives the space back", up.info()["free_bytes"] == FREE_FRESH)
+        c.done(rig)
+    _selection_untouched(c)
+    c.common_checks_upload()
+
+
+# ---- playback ----------------------------------------------------------------------------------------------------------------------
+
+
+def run_playback(c: Any) -> None:
+    """A note of a card-built module plays twice on the same boot: alone, and with a module uploaded while it sounds."""
+
+    t = c.table()
+    mods = [c.pack(m, f"m{i}.dkm") for i, m in enumerate(t["modules"])]
+    img = c.image_for(B.RT, "run")
+    card = c.card(mods)
+    trig = t.get("trig_frame", M.TRIG_FRAME if c.dt2 else M.TRIG_FRAME_DN2)
+    payload = blob(t.get("bytes", 100_000), 31)
+    out: dict[str, Any] = {}
+
+    def play(key: str, upload: bool) -> Any:
+        def run() -> None:
+            with c.rig(img, card, f"play-{key}") as rig:
+                if c.dt2:
+                    rig.select_type(M.PLUCK_DYN_TYPE, t.get("hint", 7))
+                else:
+                    rig.select(t.get("hint_run", t["hint"]))
+                up = D.Uploader(transport(rig))
+
+                def during() -> None:
+                    up.put("modules/up.dkm", payload)
+                    out["listed"] = {p for p, _, _ in up.ls()}
+
+                out[key] = rig.note(
+                    c.work / f"{key}.wav",
+                    max(trig, rig.frames() + 300),
+                    during if upload else None,
+                )
+                ov = rig.work / f"play-{key}.ov.bin"
+                rig.emu.call("card.overlay", path=str(ov))
+                out[f"writes-{key}"] = _writes(ov)
+                c.done(rig)
+
+        return run
+
+    c.parallel(play("alone", False), play("during", True))
+    c.check(
+        "the module was uploaded during the note",
+        out.get("listed") == {"modules/up.dkm"} | {m for m in mods},
+        str(out.get("listed")),
+    )
+
+    peak = float(abs(out["alone"]).max())
+    c.check("the note is audible", peak > 0.01, f"peak {peak:.3f}")
+    rig_checks: list[tuple[str, bool, str]] = []
+    M.pcm_check(
+        _Collect(rig_checks),
+        out["alone"],
+        out["during"],
+        c.report,
+        "note during an upload",
+    )
+    c.checks += rig_checks
+    extra = out["writes-during"] - out["writes-alone"]
+    lo, hi = STORE_FIRST, STORE_FIRST + LIMIT + 1
+    stray = sorted(w for w in extra if not lo <= w < hi)
+    c.check(
+        "the card writes the upload added are store sectors only (header copies, data, table; no selection sector)",
+        bool(extra) and not stray and not extra & {B.SECTOR_A, B.SECTOR_B},
+        f"{len(extra)} sectors added, outside the store: {[hex(x) for x in stray[:6]]}",
+    )
+    c.all_writes |= out["writes-during"]
+    c.common_checks_upload()
+
+
+class _Collect:
+    """`pcm_check` reports through `.check`."""
+
+    def __init__(self, sink: list[tuple[str, bool, str]]):
+        self.sink = sink
+
+    def check(self, name: str, ok: bool, detail: str = "") -> None:
+        self.sink.append((name, bool(ok), detail))
+        print(f"{'ok  ' if ok else 'FAIL'} {name} {detail}", flush=True)
+
+
+PARTS = {
+    "ops": run_ops,
+    "quick": lambda c: run_ops(c, quick=True),
+    "cut": run_cut,
+    "stock": run_stock,
+    "playback": run_playback,
+    "rust": run_rust,
+}
+
+
+def run_upload(c: Any) -> None:
+    PARTS[c.table()["part"]](c)

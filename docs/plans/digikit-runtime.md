@@ -320,18 +320,24 @@ APPLY & RESTART, plays like the patched-in set, and the round-trip and safe-mode
 
 Spec: docs/design/digikit-upload.md (framing, commands, store format version 2 with two header copies).
 
-- [ ] Device side in `core/runtime`: the SysEx hook in the MIDI task on all four ports, INFO/LIST/BEGIN/DATA/END/DELETE/CLEAR/ABORT,
+- [x] Device side in `core/runtime`: the SysEx hook in the MIDI task on all four ports, INFO/LIST/BEGIN/DATA/END/DELETE/CLEAR/ABORT,
   staging and the two-copy header commit; plusdrive builder, reader and exporter take store version 2 (lane r4).
-- [ ] A Python host tool, `dkupload` in tools/device (emulator and device), and the kept upload scenarios (lane r4).
-- [ ] Static check: can the runtime take its own SysEx before the firmware's per-event chain (finding 42 section 2, stages 2-3) to pass
+- [x] A Python host tool, `dkupload` in tools/device (emulator and device), and the kept upload scenarios (lane r4).
+- [x] Static check: can the runtime take its own SysEx before the firmware's per-event chain (finding 42 section 2, stages 2-3) to pass
   1.4 MB/s (lane r4, report only).
-- [ ] Emulator: the idle fast-forward recognises the core/health counting loop and credits the skipped iterations (lane b).
-- [ ] `devrpc` 8-in-7 framing fixed; finding 25's FsSample write check re-run with valid writes (lane b).
-- [ ] Desktop and web app: a Modules panel (list, upload, delete, repack) over this protocol, to the running emulator; the device
-  MIDI path built but not sent to hardware (lane r1).
+- [x] Emulator: the idle fast-forward recognises the core/health counting loop and credits the skipped iterations (lane b; DT2 cold boot
+  with core/health 107 s -> 41 s, health readings identical; finding 41).
+- [~] `devrpc` 8-in-7 framing fixed; finding 25's FsSample write check re-run with valid writes (lane b): all statuses 0, the store
+  untouched; the written bytes never reach the card in the emulator (what flushes them is **[O]**, finding 25).
+- [x] Desktop and web app: a Modules panel (list, upload, delete, repack) over this protocol (`packages/dkupload`), to the running
+  emulator on desktop; the web page over Web MIDI to a device, tested against a mock only (the web emulator has no card); no device
+  MIDI path on desktop yet (lane r1).
 
 Gate: on both devices in the emulator, a module uploaded from the desktop app and from the web app appears in DIGIKIT > MODULES,
 loads after APPLY & RESTART and plays like the card-built module; the cut and playback scenarios pass.
+- [~] Gate status (2026-10-18): `menu-upload-pluck-demo` passes on all four ports (upload, MODULES, APPLY & RESTART, rows and PCM equal the
+  patched-in set), with the upload sent by the Python tool; the panel's own code (`dkupload` `Session`) passes `upload-rust` on all four
+  ports. Not yet run: the desktop panel clicked in the app, and the web page against a real or bridged device.
 
 ### Later
 

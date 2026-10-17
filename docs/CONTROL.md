@@ -113,7 +113,8 @@ sent bytes. Not part of a snapshot. MidiRpc (`F0 00 20 3C 10 00 ...`) is **not**
 takes only the USB sources. USB MIDI is not modelled, so `midi.usb.in {bytes | file}` hands the bytes to the firmware's USB
 receive callback (DT2 1.16 `FUN_4011d76c`, found from the call that registers it; DN2 1.11 `FUN_4011f0e0`) in an interrupt
 taken at the next instruction boundary the guest allows, in chunks of at most 64 bytes one USB frame (132,000
-instructions) apart; `midi.usb.out` returns what the firmware passed to its USB transmit function (`FUN_40004734`, the
+instructions) apart (the optional params `chunk`, 1 to 384, and `period` change that: 384 and 16,500 model a high-speed microframe;
+the callback is the SysEx assembler, so the firmware's USB packet split is not in the path); `midi.usb.out` returns what the firmware passed to its USB transmit function (`FUN_40004734`, the
 MidiRpc replies as plain MIDI bytes). The first `midi.usb.in` or `midi.usb.out` starts the capture. A `.syx` MidiRpc request
 from `tools/device/devrpc.py build_request` goes in as it is. Errors: bad params when the image's USB callback cannot be
 resolved (known: DT2 1.16 and 1.17, DN2 1.11 and 1.12).

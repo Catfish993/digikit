@@ -324,19 +324,66 @@ def _u32s(*v: int) -> bytes:
     return b"".join(x.to_bytes(4, "big") for x in v)
 
 
-# Writing RPC (shape from docs/MIDI-SYSEX-RPC.md section 6: open by path, then {handle, offset, length, data}; the handle
-# layout is a guess that the replies confirm: open, write and close answer with status zero, a second write answers
-# "File is not open"). The Data object writes (0x57, 0x58) are refused: "Unable to handle path", "File transfer is inactive".
+# The file the FsSample write check creates: a 2048-byte 16-bit mono WAV (the firmware stores a .wav as a native sample, so the
+# bytes must parse), sent as two 1024-byte requests. Its samples are a ramp that has bit 7 set in about half of the bytes (they
+# travel through the 8-in-7 packing of the device-0x10 framing, finding 42 [C]); checked byte for byte after the run.
+WRITE_NAME = "arenaprobe.wav"  # in the root of the path filesystem
+WRITE_CHUNK = 1024
+
+
+def _write_wav() -> bytes:
+    n = 2048 - 44
+    pcm = b"".join(
+        ((i * 331 + 0x4081) & 0xFFFF).to_bytes(2, "little") for i in range(n // 2)
+    )
+    fmt = (
+        b"fmt "
+        + (16).to_bytes(4, "little")
+        + _le16(1, 1)
+        + (44100).to_bytes(4, "little")
+        + (88200).to_bytes(4, "little")
+        + _le16(2, 16)
+    )
+    return (
+        b"RIFF"
+        + (36 + len(pcm)).to_bytes(4, "little")
+        + b"WAVE"
+        + fmt
+        + b"data"
+        + len(pcm).to_bytes(4, "little")
+        + pcm
+    )
+
+
+def _le16(*v: int) -> bytes:
+    return b"".join(x.to_bytes(2, "little") for x in v)
+
+
+WRITE_DATA = _write_wav()
+
+
+def _write_v1(handle: int, offset: int, data: bytes) -> bytes:
+    """WriteFileV1 body (finding 42 section 3): u32 handle, u32 length, u32 offset (= the file position), data."""
+    return _u32s(handle, len(data), offset) + data
+
+
+# Writing RPC (open: a u32 the firmware takes as 0 and as any other value, then the file name without a slash; then WriteFileV1 {handle, length, offset, data} in file order, then close; the framing of every
+# request is packed, devrpc.build_request). The handle of the first open file is 0 (the replies confirm: zero status).
+# The Data object writes (0x57, 0x58) are refused: "Unable to handle path", "File transfer is inactive".
 RPC_WRITE = [
-    (0x40, b"/arenaprobe.wav\x00"),  # FsSampleOpenFileForWrite
+    (
+        0x40,
+        _u32s(0) + WRITE_NAME.encode() + b"\x00",
+    ),  # FsSampleOpenFileForWrite: u32 (0), then the name, no slash
+    (0x42, _write_v1(0, 0, WRITE_DATA[:WRITE_CHUNK])),  # FsSampleWriteFileV1, offset 0
     (
         0x42,
-        _u32s(0, 0, 1024) + b"\x55" * 1024,
-    ),  # FsSampleWriteFileV1: handle 0, offset 0, 1024 bytes
+        _write_v1(0, WRITE_CHUNK, WRITE_DATA[WRITE_CHUNK:]),
+    ),  # FsSampleWriteFileV1, offset 1024
     (
         0x46,
-        _u32s(0, 1024, 8) + b"RIFFWAVE",
-    ),  # FsSampleWriteFileV2: answers "File is not open"
+        _u32s(0, 2 * WRITE_CHUNK, 8) + b"RIFFWAVE",
+    ),  # FsSampleWriteFileV2 (layout unread)
     (0x41, _u32s(0)),  # close
     (0x57, b"/projects/002\x00"),  # DataWriteOpen
     (0x58, b"\x00" * 8),  # DataWritePartial
@@ -380,7 +427,7 @@ def midirpc_files() -> Script:
     return _rpc(RPC_FILES)
 
 
-@script({"usb_replies": {"dt2": [64, 66, 70, 65, 87, 88, 16], "dn2": [87, 88]}})
+@script({"usb_replies": {"dt2": [64, 66, 66, 70, 65, 87, 88, 16], "dn2": [87, 88]}})
 def midirpc_write() -> Script:
     """MidiRpc writes over the USB callback: a sample file is created and written by path (FsSample), the Data
     object writes are refused."""

@@ -41,6 +41,11 @@
       "reason": "a card-store path in a unit test"
     },
     {
+      "token": "modules/Dyn",
+      "file": "apps/web/tests/dkupload.test.mjs",
+      "reason": "a card-store path in a unit test"
+    },
+    {
       "pattern": "docs/findings/\\d\\d",
       "reason": "NN shorthand for the findings files numbered NN-*"
     },

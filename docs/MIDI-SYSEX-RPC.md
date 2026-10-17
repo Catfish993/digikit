@@ -313,7 +313,18 @@ reply:    F0 00 20 3C 10 00 24 <dev16>  ......... <seq_hi> <seq_lo> <type> <payl
 - `10` device id, `00` separator — the descriptor at `0x4021e08c` requires the
   separator to be exactly `0x00` (`+0x00` devid `0x10`, `+0x01` sep `0x00`,
   `+0x04` jump-table ptr `0x402b40f8`, `+0x08/+0x0c` cmd range `0..0x7f`).
-- **`cmd` (byte 6):** requests use `0x00`, the device stamps `0x24` on replies.
+- **[C] (2026-10-18, finding 42 section 2.5; emulator, not hardware) The whole body after `10 00` is 8-in-7 packed**, request and reply.
+  Byte 6 is the first *collector*, not a `cmd`: one collector per up to seven data bytes, data byte j (0-based) takes bit 7 from
+  collector bit (6-j). The unpacked request is `seq_hi seq_lo 00 00 type payload...`; the unpacked reply is `seq_hi seq_lo seq_hi seq_lo (type|0x80) payload...`
+  (the response bit is there; it was hidden by the collector). The raw-body statements below ("`cmd` is ignored", "no 8-in-7 packing", "raw
+  NUL-terminated string") hold only while every byte is under 0x80 and the body is at most seven bytes: a Ping, SoftwareVersion, DeviceUID,
+  StorageSpace and `ReadDir /` are the same on the wire either way. A longer payload was cut into wrong groups: `ReadDir /factory`,
+  `Query`, `DataList` and `DataReadOpen` answered "Invalid path" or an empty list for that reason, and with correct packing they answer
+  (DT2 1.16 in the emulator: `ReadDir /factory` lists the factory folders, `Query sample_file.interleaved_stereo_support` answers 1).
+  `tools/device/devrpc.py` packs with `tools/firmware/build.py` `encode_8in7` and unpacks with `tools/device/midisniff.py` `unpack_8in7`.
+  The `FsSampleOpenFileForWrite 0x40` payload is a `u32` followed by the file name **without a leading slash** (root only here; a name with a
+  slash gets status 6): the older guess of a bare path made the file name lose its first four bytes. **[D]**
+- **`cmd` (byte 6) [C, see above]:** requests use `0x00`, the device stamps `0x24` on replies.
   All 128 jump-table entries at `0x402b40f8` point to one handler `0x4011efb8`,
   so `cmd` does not gate dispatch — but use `0x00` for requests to match
   Transfer.
@@ -323,11 +334,10 @@ reply:    F0 00 20 3C 10 00 24 <dev16>  ......... <seq_hi> <seq_lo> <type> <payl
   here regardless of payload, and the device reads the body up to `F7`. A
   non-zero byte 9 (an early attempt sent `0x09`) makes the device parse a
   bogus body and **never reply** — this was the one gotcha. It is not a length.
-- `type` (byte 11) reuses the shared enum (below). Payload follows `type`
-  directly, as raw bytes (no 8-in-7 packing, verified in the receive chain
-  `0x4011efb8` → `0x40125184` → `0x4013d864`; string args like a ReadDir path
-  are a raw NUL-terminated string). There is **no `0x80` response bit**;
-  direction is only by which endpoint carried the bytes.
+- `type` (unpacked body byte 4) reuses the shared enum (below); the payload follows it. **[C]** Both are packed with the rest of the body (the
+  older text said "raw bytes, no 8-in-7 packing, string args raw"; the receive chain `0x4011efb8` -> `0x40125184` -> `0x40152566` unpacks).
+  **[C]** The reply does carry a response bit: the type byte is `type | 0x80` (it was hidden in the collector at wire byte 6; the `0x24` the
+  older text calls `cmd` is that collector, the bits of the reply's high bytes).
 - Binary reply fields that would exceed `0x7f` are 7-bit encoded (the
   `DeviceUID` comes back as 5 bytes); the exact scheme is not yet decoded. **[O]**
 

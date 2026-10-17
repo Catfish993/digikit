@@ -886,6 +886,7 @@ version = "0.1.0"
 dependencies = [
  "digi-control",
  "digi-coupled",
+ "dkupload",
  "elektron-native-boot",
  "emmc-card",
  "serde",
@@ -937,6 +938,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "dkupload"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -2663,6 +2672,7 @@ name = "patchkit"
 version = "0.1.0"
 dependencies = [
  "coldfire",
+ "dkupload",
  "dt2-firmware-loader",
  "serde",
  "serde_json",

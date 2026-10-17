@@ -57,7 +57,7 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
-    assert r.returncode == 0 and "3 passed" in r.stdout, r.stdout
+    assert r.returncode == 0 and "7 passed" in r.stdout, r.stdout
 
 
 def test_the_store_profile_reserves_the_two_record_sectors():
@@ -70,6 +70,8 @@ def test_the_store_profile_reserves_the_two_record_sectors():
         )
         assert store["first_sector"] == pk_dkrt_boot.STORE_FIRST
         assert store["selection_sectors"] == 2
+        assert store["header_b_sector"] == store["end_sector"] - 2 - 1
+        assert store["header_b_sector"] == pk_dkrt_boot.STORE_FIRST + 0x5FFD
         assert (
             store["end_sector"] - 2 == pk_dkrt_boot.SECTOR_A
             and store["end_sector"] - 1 == pk_dkrt_boot.SECTOR_B
@@ -106,6 +108,35 @@ def test_the_boot_anchors_sit_on_the_prologue_of_the_main_os_task_and_the_block_
     assert main[q - base - 2 : q - base] == bytes.fromhex("4879") and main[
         q - base + 4 : q - base + 6
     ] == bytes.fromhex("4eb9")
+
+
+@pytest.mark.parametrize("image", sorted(IMAGES))
+def test_the_upload_hook_sits_on_the_router_call_of_the_midi_task_and_the_send_function_is_found(
+    image,
+):
+    """docs/design/digikit-upload.md: the hook replaces `movea.l (0,A2,D1*4),A0; jsr (A0)` (the router call with its arguments pushed)
+    and is followed by the task's `lea 12,sp`; the MIDI send function starts like the one the rule hashes."""
+    from tools.patchkit import port_resolve
+
+    syx = config.stock(IMAGES[image])
+    if not syx.exists():
+        pytest.skip(f"{IMAGES[image]} missing")
+    anchors = {
+        a["name"]: a
+        for a in tomllib.loads((ROOT / "devices/ports" / f"{image}.toml").read_text())[
+            "anchor"
+        ]
+    }
+    main = port_resolve.sections_of(syx)[3]
+    base = 0x40000400
+    hook = anchors["dkrt.hook.midi_rx"]
+    at = hook["addr"] - base
+    assert hook["len"] == 6 and main[at : at + 6] == bytes.fromhex("20721c004e90")
+    assert main[at + 6 : at + 10] == bytes.fromhex(
+        "4fef000c"
+    )  # lea 12(sp),sp: pops msg, len, source
+    send = anchors["dkrt.fw.midi_send"]["addr"]
+    assert main[send - base : send - base + 4] == bytes.fromhex("4feffff4")
 
 
 def test_committed_runtime_objects_are_current():

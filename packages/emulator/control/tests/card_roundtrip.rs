@@ -185,6 +185,7 @@ fn a_saved_project_survives_quit_export_rebuild_and_boot() {
         &plusdrive_format::export::FileImage::open(&image2).unwrap(),
         STORE,
         0x6000,
+        0x3dffd,
     )
     .unwrap()
     .expect("module store");

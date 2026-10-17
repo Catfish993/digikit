@@ -118,6 +118,11 @@ pub struct Emulator {
     uart_handler: u32,
     current_tcb_addr: u32,
     idle_spins: BTreeSet<u32>,
+    /// Counting idle loops found in the running guest: `addq.l #1,(counter).l`
+    /// then `bra.s` back to it (`52 b9 <counter> 60 f8`), keyed by the `addq`
+    /// address, with the counter address. Learned from the PC at chunk starts
+    /// (the code may be placed at run time), never from a fixed address.
+    count_spins: BTreeMap<u32, u32>,
     /// Over-approximate bitset (one bit per halfword of the main image) of
     /// every PC the per-instruction observers compare against; a miss lets
     /// `step_once` skip all of those exact comparisons.
@@ -470,6 +475,7 @@ impl Emulator {
             uart_handler,
             current_tcb_addr,
             idle_spins,
+            count_spins: BTreeMap::new(),
             watch: Vec::new(),
             idle_passes: 0,
             task_create_hits: 0,
@@ -546,6 +552,7 @@ impl Emulator {
     pub fn step_chunk(&mut self, budget: u32) -> Snapshot {
         let budget = budget.min(CHUNK_MAX);
         self.input_attempted_in_chunk = false;
+        self.learn_count_spin();
         let mut iterations = 0;
         while iterations < budget && self.error.is_none() {
             if ACCELERATE_RAM_CLEAR
@@ -1069,15 +1076,43 @@ impl Emulator {
         instructions
     }
 
-    /// Evaluate repeated, verified BRA-to-self passes analytically, stopping
-    /// BEFORE either a timer deadline or the software rescheduling pass.
-    /// The first pass has already run normally, including every observation
-    /// and board drain. No guest or host event changes inside this interval.
+    /// Learn a counting idle loop (`addq.l #1,(counter).l; bra.s` back, bytes
+    /// `52 b9 <counter> 60 f8`) the guest is in at a chunk start. Detected by
+    /// the instruction pattern at the PC, in RAM wherever the code was placed.
+    fn learn_count_spin(&mut self) {
+        let pc = self.cpu.pc;
+        for head in [pc, pc.wrapping_sub(6)] {
+            if self.count_spins.contains_key(&head) {
+                continue;
+            }
+            let mut b = [0u8; 8];
+            if self.bus.board.ram_peek(head, &mut b)
+                && b[..2] == [0x52, 0xb9]
+                && b[6..] == [0x60, 0xf8]
+            {
+                let counter = u32::from_be_bytes([b[2], b[3], b[4], b[5]]);
+                self.count_spins.insert(head, counter);
+                self.rebuild_watch();
+            }
+        }
+    }
+
+    /// Evaluate repeated, verified idle passes analytically, stopping BEFORE
+    /// either a timer deadline or the software rescheduling pass. Two shapes:
+    /// `bra.b self` (one instruction per pass), and the counting loop
+    /// `addq.l #1,(counter).l; bra.s` (two per pass; the counter in memory and
+    /// the flags of the last `addq` get the skipped passes). The first pass
+    /// has already run normally, including every observation and board drain.
+    /// No guest or host event changes inside this interval.
     fn advance_idle(&mut self, previous_pc: u32, remaining: u32) -> u32 {
+        // The counting loop: the `addq` just ran, the PC is on its `bra.s`.
+        let counter = if self.cpu.pc == previous_pc.wrapping_add(6) {
+            self.count_spins.get(&previous_pc).copied()
+        } else {
+            None
+        };
         if remaining == 0
             || self.error.is_some()
-            || self.cpu.pc != previous_pc
-            || !self.idle_spins.contains(&previous_pc)
             || self.cpu.state != coldfire::RunState::Running
             || self.cpu.sr & 0xc000 != 0
             || self.cpu.last_exception.is_some()
@@ -1088,6 +1123,17 @@ impl Emulator {
             || self.irq1_pending
             || self.input_attempted_in_chunk
             || self.midi.busy()
+        {
+            return 0;
+        }
+        if let Some(counter) = counter {
+            let mut code = [0x52, 0xb9, 0, 0, 0, 0, 0x60, 0xf8];
+            code[2..6].copy_from_slice(&counter.to_be_bytes());
+            if !self.bus.board.ram_matches(previous_pc, &code) {
+                return 0;
+            }
+        } else if self.cpu.pc != previous_pc
+            || !self.idle_spins.contains(&previous_pc)
             || !self.bus.board.ram_matches(previous_pc, &[0x60, 0xfe])
         {
             return 0;
@@ -1107,7 +1153,15 @@ impl Emulator {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        let count = idle_advance_limit(remaining, self.idle_passes, now, deadline);
+        // Instructions to skip. The counting loop has no yield pass (it never
+        // had one while interpreted) and skips whole passes of two.
+        let count = if counter.is_some() {
+            let before_timer =
+                deadline.map_or(u64::MAX, |due| due.saturating_sub(now).saturating_sub(1));
+            (u64::from(remaining).min(before_timer) as u32) & !1
+        } else {
+            idle_advance_limit(remaining, self.idle_passes, now, deadline)
+        };
         if count == 0 {
             return 0;
         }
@@ -1115,13 +1169,20 @@ impl Emulator {
         // Reserve every counter before mutation; no fabricated interpreted work.
         let (Some(cpu_count), Some(passes), Some(skipped), Some(done)) = (
             self.cpu.icount.checked_add(n),
-            self.idle_passes.checked_add(n),
+            self.idle_passes.checked_add(if counter.is_some() { 0 } else { n }),
             self.idle_fast_forwarded_instructions.checked_add(n),
             now.checked_add(n),
         ) else {
             self.set_error("idle advance counter overflow");
             return 0;
         };
+        if let Some(counter) = counter {
+            // The skipped passes' memory effect and the flags of the last addq.
+            let Some((_, new)) = self.bus.board.sdram_add32(counter, count / 2) else {
+                return 0;
+            };
+            self.cpu.set_add_flags_l(1, new.wrapping_sub(1), new);
+        }
         self.cpu.icount = cpu_count;
         self.idle_passes = passes;
         self.idle_fast_forwarded_instructions = skipped;
@@ -1142,7 +1203,12 @@ impl Emulator {
             Err(error) => self.set_error(error),
         }
         #[cfg(feature = "cf-mix")]
-        self.mix_add(previous_pc, 2, n, None, n);
+        if counter.is_some() {
+            self.mix_add(previous_pc, 2, n / 2, None, n / 2);
+            self.mix_add(previous_pc.wrapping_add(6), 2, n / 2, None, n / 2);
+        } else {
+            self.mix_add(previous_pc, 2, n, None, n);
+        }
         count
     }
 
@@ -1152,6 +1218,7 @@ impl Emulator {
     fn rebuild_watch(&mut self) {
         let mut watch = vec![0u64; (self.main.len() / 2 + 1).div_ceil(64)];
         let mut pcs: Vec<u32> = self.idle_spins.iter().copied().collect();
+        pcs.extend(self.count_spins.keys().copied());
         pcs.extend([
             self.task_create,
             self.mainloop,
@@ -1970,7 +2037,23 @@ impl Emulator {
     /// handed to the callback in an interrupt taken at the next instruction boundary the guest allows, in chunks
     /// of at most 64 bytes one USB frame apart. Errors when this image has no resolvable USB MIDI callback.
     pub fn usb_midi_in(&mut self, bytes: &[u8]) -> Result<usize, String> {
+        self.usb_midi_in_paced(bytes, None, None)
+    }
+
+    /// `usb_midi_in` with the delivery model chosen: `chunk` bytes per callback call (at most 384, the most one 512-byte packet of
+    /// 4-byte events carries; default `USB_CHUNK`) and `period` instructions between two calls (default `USB_PERIOD`, one full-speed
+    /// frame; a high-speed microframe is 16,500). The period stays for the later calls until another is given.
+    pub fn usb_midi_in_paced(
+        &mut self,
+        bytes: &[u8],
+        chunk: Option<usize>,
+        period: Option<u64>,
+    ) -> Result<usize, String> {
         use crate::midi::{resolve_usb, USB_CHUNK, USB_PERIOD};
+        let chunk = chunk.unwrap_or(USB_CHUNK);
+        if chunk == 0 || chunk > 384 {
+            return Err("usb chunk is 1 to 384 bytes".into());
+        }
         if !self.midi.usb.enabled {
             let (rx, tx) = resolve_usb(&self.main, MAIN_LOAD)
                 .ok_or("this image has no USB MIDI callback this emulator knows")?;
@@ -1980,11 +2063,14 @@ impl Emulator {
             self.midi.usb.enabled = true;
             self.rebuild_watch();
         }
+        if let Some(p) = period {
+            self.midi.usb.period = p;
+        }
         if !self.midi.busy() {
             self.midi.usb.next_ic = self.cpu.icount;
         }
-        for chunk in bytes.chunks(USB_CHUNK) {
-            self.midi.usb.queue.push_back(chunk.to_vec());
+        for piece in bytes.chunks(chunk) {
+            self.midi.usb.queue.push_back(piece.to_vec());
         }
         Ok(self.midi.usb.queue.len())
     }
@@ -3449,6 +3535,59 @@ mod tests {
         assert_eq!(fast.interpreted_instructions, 1);
         assert_eq!(fast.idle_fast_forwarded_instructions, 399);
         assert_eq!(fast.bus.current_icount, slow.bus.current_icount);
+    }
+
+    /// The counting idle loop (`addq.l #1,(counter).l; bra.s`) placed in DDR at
+    /// run time is learned from the PC and fast-forwarded to the machine the
+    /// one-instruction loop reaches: CPU (flags included), counter, guest clock.
+    #[test]
+    fn counting_idle_loop_matches_reference() {
+        let Ok(syx) = std::fs::read("../../../firmware/Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let base = 0x47e8_b000u32;
+        let counter = base + 0x100;
+        let mut code = vec![0x52, 0xb9];
+        code.extend_from_slice(&counter.to_be_bytes());
+        code.extend_from_slice(&[0x60, 0xf8]);
+        for start in [base, base + 6] {
+            for init in [0u32, 0xffff_fff0, 0x7fff_ffe0] {
+                let mut emus = Vec::new();
+                for fast in [false, true] {
+                    let mut emu = Emulator::new(&syx, None).unwrap();
+                    emu.bus.board.map_zeroed_ram_page(base & !0xf_ffff).unwrap();
+                    for (i, b) in code.iter().enumerate() {
+                        emu.bus.board.write_guest(base + i as u32, 1, u32::from(*b)).unwrap();
+                    }
+                    emu.bus.board.write_guest(counter, 4, init).unwrap();
+                    emu.cpu.pc = start;
+                    emu.cpu.sr = 0x2700;
+                    emu.cpu.a[7] = base + 0x800;
+                    emu.rebuild_watch();
+                    if fast {
+                        emu.step_chunk(401);
+                    } else {
+                        for _ in 0..401 {
+                            emu.step_once();
+                        }
+                    }
+                    assert_eq!(emu.error, None);
+                    emus.push(emu);
+                }
+                let (slow_part, fast_part) = emus.split_at_mut(1);
+                let (slow, fast) = (&mut slow_part[0], &mut fast_part[0]);
+                assert!(fast.idle_fast_forwarded_instructions >= 390);
+                assert_eq!(fast.cpu, slow.cpu);
+                let (mut a, mut b) = ([0u8; 4], [0u8; 4]);
+                assert!(fast.bus.board.ram_peek(counter, &mut a));
+                assert!(slow.bus.board.ram_peek(counter, &mut b));
+                assert_eq!(a, b);
+                assert_ne!(u32::from_be_bytes(a), init);
+                assert_eq!(fast.oracle_ticks(), slow.oracle_ticks());
+                assert_eq!(fast.bus.current_icount, slow.bus.current_icount);
+                assert_eq!(fast.idle_passes, slow.idle_passes);
+            }
+        }
     }
 
     /// `step_chunk` (batched `run_fast`) must leave exactly the machine the

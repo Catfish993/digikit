@@ -218,3 +218,21 @@ of 0x57, and USB itself. Their handlers run behind the same two refusals in ever
 bytes, so the request was malformed for every payload byte at or above 0x80 and past the first seven bytes. The 1024 data bytes were
 therefore never a valid write: this run proves the file creation and the replies, not where written data lands. The "no write
 into the module store" result holds for what ran; a write with correct framing is still to be run.
+
+**Write check with correct framing (2026-10-18, lane b, emulator DT2 1.16, no hardware) [D].** `devrpc.build_request` now packs the body
+(8-in-7, tools/device/devrpc.py) and `panel_script.RPC_WRITE` sends the layout of finding 42 section 3: `FsSampleOpenFileForWrite 0x40`
+with `u32 0` + `arenaprobe.wav` (the open payload is a `u32` and then the name without a slash; the old bare path lost its first four
+bytes), two `WriteFileV1 0x42` of `{handle 0, length 1024, offset 0 / 1024, data}` (a 2048-byte 16-bit WAV whose samples have bit 7 set in
+half of the bytes), `Close 0x41`, then the refused Data writes and `ReadDir /`. Result: every reply has status zero (open, both writes with
+in-order offsets, close; `WriteFileV2 0x46` still "File is not open"), `ReadDir /` lists `arenaprobe.wav` under its right name (before the fix
+the name came out garbled), the run has 0 write-watch events over `cf.expansion`, 0 flush hits, 0 sectors in the module store
+0x38000-0x3E000 (and none in the selection sectors), card sectors 29,069 against 28,685 for a boot alone (the extra 384 are the file's
+directory entry and record pages). **[O]** The written bytes did not reach the card: the overlay holds the file's directory entry
+and record, but the record is still the fresh-entry form (the plusdrive exporter reads it as a directory and reports "record parent 0x3,
+listed in 0x2"), and no sector holds the WAV bytes, after 2,000,000,000 instructions past the close and also with a 160 KiB file in
+32 KiB requests (more than the 128 KiB stream buffer). So the data is held in the firmware's write path (RAM) and what flushes it (a
+hash request, a compaction request and a longer wait did not) is not known; the readback through the path filesystem is not done. The
+safety statement stands for everything that ran. `midirpc_info` and `midirpc_files` (read-only): requests of up to two payload bytes
+(Ping, SoftwareVersion, DeviceUID, StorageSpace, TempoRead, `ReadDir /`) give byte-identical replies before and after the fix; the longer
+payloads (`Query`, `ReadDir /factory`, `DataList`, `DataReadOpen`) now get real answers instead of "Invalid path" (docs/MIDI-SYSEX-RPC.md
+section 11 [C]).

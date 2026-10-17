@@ -80,6 +80,23 @@ pub struct StoreLayout {
     /// of them: its limit is `end_sector - first_sector - selection_sectors`.
     #[serde(default = "default_selection_sectors")]
     pub selection_sectors: u64,
+    /// Absolute sector of the second store header copy (version 2, docs/design/digikit-store.md): the sector just before the
+    /// selection record. Absent: `end_sector - selection_sectors - 1`.
+    #[serde(default)]
+    pub header_b_sector: Option<u64>,
+}
+
+impl StoreLayout {
+    /// Absolute sector of header copy B.
+    pub fn header_b(&self) -> u64 {
+        self.header_b_sector
+            .unwrap_or(self.end_sector - self.selection_sectors - 1)
+    }
+
+    /// Sectors a store (header A, table, data) may use from `first_sector`: the range without header B and the selection record.
+    pub fn store_limit(&self) -> u64 {
+        self.header_b() - self.first_sector
+    }
 }
 
 fn default_selection_sectors() -> u64 {

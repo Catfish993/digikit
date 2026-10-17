@@ -1538,7 +1538,7 @@ impl Actor {
             .map_err(RpcError::io)?;
         Ok(json!({
             "added": report.added, "replaced": report.replaced, "unchanged": report.unchanged.len(),
-            "deleted_by_firmware": report.deleted_by_firmware, "pruned": report.pruned,
+            "deleted_by_firmware": report.deleted_by_firmware, "pruned": report.pruned, "kept": report.kept,
             "issues": report.issues,
             "export_dir": report.export_dir.display().to_string(),
             "backup_dir": report.backup_dir.display().to_string(),
@@ -1642,8 +1642,9 @@ impl Actor {
 
     /// `midi.in {bytes | file, period?}` queues bytes on the MIDI DIN input (UART9), one per `period` instructions
     /// (default 42,240: the 31250 baud wire rate; 0 = as fast as the firmware takes its interrupts).
-    /// `midi.usb.in {bytes | file}` hands the bytes to the firmware's USB MIDI receive callback (USB itself is not
-    /// modelled; docs/CONTROL.md). `bytes` is a hex string (spaces allowed) or an array of numbers.
+    /// `midi.usb.in {bytes | file, chunk?, period?}` hands the bytes to the firmware's USB MIDI receive callback (USB itself is not
+    /// modelled; docs/CONTROL.md) in calls of `chunk` bytes (1 to 384, default 64) `period` instructions apart (default 132,000, a
+    /// full-speed frame; 16,500 is a high-speed microframe). `bytes` is a hex string (spaces allowed) or an array of numbers.
     fn rpc_midi_in(&mut self, method: &str, p: &Params) -> RpcResult {
         let data = match (p.get("bytes"), p.opt_str("file")?) {
             (Some(Value::String(hex)), None) => {
@@ -1670,9 +1671,11 @@ impl Actor {
             .opt_u64("period")?
             .unwrap_or(elektron_native_boot::midi::WIRE_PERIOD);
         let usb = method == "midi.usb.in";
+        let usb_chunk = p.opt_u64("chunk")?.map(|n| n as usize);
+        let usb_period = p.opt_u64("period")?;
         let queued = self.with_runtime(|r| {
             if usb {
-                r.usb_midi_in(&data)
+                r.usb_midi_in_paced(&data, usb_chunk, usb_period)
             } else {
                 r.midi_in(&data, period)
             }

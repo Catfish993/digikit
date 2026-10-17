@@ -151,7 +151,7 @@ fn store_ls(args: Vec<String>) -> Result<(), String> {
     let layout = card_layout(&device)?;
     let range = layout.store.ok_or("this device has no module store")?;
     let size = range.end_sector - range.first_sector;
-    let store = read_store(&image, range.first_sector, size)
+    let store = read_store(&image, range.first_sector, size, range.header_b())
         .map_err(|e| e.to_string())?
         .ok_or("no module store on this card")?;
     if let Some(path) = cat {
@@ -167,7 +167,13 @@ fn store_ls(args: Vec<String>) -> Result<(), String> {
             .write_all(&bytes)
             .map_err(|e| e.to_string());
     }
-    println!("# used_sectors={} of {size}", store.used_sectors);
+    println!(
+        "# used_sectors={} of {size} version={} seq={} header={}",
+        store.used_sectors,
+        store.version,
+        store.seq,
+        if store.from_b { "B" } else { "A" }
+    );
     for e in &store.entries {
         let hex: String = e.sha256.iter().map(|b| format!("{b:02x}")).collect();
         println!("{}\t{}\t{}\t{hex}", e.path, e.first_sector, e.size_bytes);

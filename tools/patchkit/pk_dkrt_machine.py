@@ -14,6 +14,7 @@ import json
 import struct
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -179,6 +180,10 @@ class Rig:
                 ProofError
             ):  # an image of an older runtime has no record buffer
                 holes.append((sym(plan, "core/runtime", "DKRT_SECBUF"), 512))
+            with contextlib.suppress(
+                ProofError
+            ):  # nor the upload buffer (36,896 bytes, card reads of the store land in it)
+                holes.append((sym(plan, "core/runtime", "DKRT_UPLOAD_BUF"), 36896))
             ranges, at = [], lo
             for start, size in sorted(holes):
                 if start > at:  # adjacent holes leave no range between them
@@ -306,8 +311,11 @@ class Rig:
             f"{self.tag}: no list position gives type {want}; track has {self.type_now()}"
         )
 
-    def note(self, wav: Path, trig_frame: int) -> np.ndarray:
-        """Play TRIG 1 from the DSP block `trig_frame`, the same instruction after the block's boundary in every run."""
+    def note(
+        self, wav: Path, trig_frame: int, during: Callable[[], None] | None = None
+    ) -> np.ndarray:
+        """Play TRIG 1 from the DSP block `trig_frame`, the same instruction after the block's boundary in every run. DURING runs
+        once after the key is down, inside the capture (an upload while the note sounds); it must end before frame `trig_frame` + `NOTE_FRAMES`."""
         emu = self.emu
         if self.frames() >= trig_frame - 20:
             raise Fail(
@@ -319,6 +327,8 @@ class Rig:
         emu.step(PRESS_OFFSET)
         emu.call("pcm.tap", action="capture", path=str(wav))
         emu.button(H.button(TRIG1), True)
+        if during is not None:
+            during()
         # the key stays down for the whole capture: the engine's release would reach the two images a block apart (the
         # ColdFire code on the key path differs) and shape the tail by a few 1e-5; nothing time-dependent is left in the comparison
         emu.call("run_until", frames=trig_frame + NOTE_FRAMES)
