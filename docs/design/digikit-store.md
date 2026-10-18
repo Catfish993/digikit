@@ -58,6 +58,15 @@ There is no free-space map. The builder writes the whole store at once. The runt
 appends: it stages a file after `used_sectors`, writes a new table after it, then header B and header A with `seq + 1`. Old data
 and old tables are not reused (only CLEAR starts over), so a power cut leaves the old or the new store, never a mix.
 
+**Both copies agree before space is reused.** After a cut between header B and header A the copies differ: A lags and still names the
+previous table. That is harmless while nothing is overwritten, but CLEAR starts the space over, and the next upload stages over the old
+table; if its header B then tears, the lagging A would be the only usable copy and name overwritten sectors. So the upload's BEGIN first
+rewrites the copy that lost the `seq` comparison (missing, torn, version 1 or different) from the winner, and refuses to stage if that write
+fails (`docs/findings/43-digikit-upload.md`, "The CLEAR double fault").
+
+**A reader that runs while an upload commits** (the menu's, in the UI task, against the MIDI task) reads a fingerprint of the two header sectors
+before and after it reads header and table, and starts again when it changed (`dkrt_sdk::store::open_stable`); no lock.
+
 ## Who writes and who reads
 
 - **The builder** (`plusdrive build`, the desktop card job): every regular file under `digikit/` (recursive; symbolic
@@ -95,10 +104,11 @@ zero (no record) on a card the builder made.
   0   4   magic "DKSL" (0x444b534c)
   4   4   u32 version = 1
   8   4   u32 seq             sequence number of this write
-  12  4   u32 boot_counter    boots begun since the UI loop last ran (safe mode: 2 or more)
+  12  4   u32 boot_counter    boots begun that did not stay up for the stable period (safe mode: 2 or more; below)
   16  4   u32 flags           bit 0: start in safe mode once (set by the menu, cleared by the boot that honours it)
   20  4   u32 count           selected modules, 0 to 8
-  24  8   reserved, zero
+  24  4   u32 stable_blocks    the stable period of this card in DSP blocks; 0 = the runtime's default, 45,000 (30 s)
+  28  4   reserved, zero
   32  448 8 paths of 56 bytes: store paths ("modules/dyn-pluck.dkm"), NUL padded, at most 55 characters, load order
   480 28  reserved, zero
   508 4   u32 crc32 of bytes 0..508 (IEEE, as the store table)
@@ -110,7 +120,12 @@ the higher `seq` (equal: A). No valid copy is an empty selection with counter 0.
 **Writing** (`dkrt_selection_set`, the boot counter): the runtime writes with the firmware's block write (DT2 1.16 `FUN_4012e0c0`,
 DN2 1.11 `FUN_4012c780`; anchor `dkrt.fw.block_write`, hash-found on all four ports; it takes the eMMC mutex itself) and only to these two
 sectors. A new selection writes both copies with `seq + 1`, A first, then B, so a power cut between the two writes leaves one valid
-copy (A new, B old: the higher seq wins; a torn A fails its CRC and B still holds the old record). The boot counter changes write one
+copy (A new, B old: the higher seq wins; a torn A fails its CRC and B still holds the old record). **The boot counter** is raised at the
+start of a boot that has modules selected and cleared when the session has been stable: `stable_blocks` (default 45,000, 30 s) DSP blocks
+after the first pass of the UI loop, or at that first pass in a safe boot (no module runs there). The clearing re-reads the record first (the
+menu may have saved a selection since the boot). A boot that dies earlier leaves the counter raised; two such boots in a row make the third a safe
+boot (`docs/findings/37-boot-load.md`, "Safe mode after the first UI pass"). `stable_blocks` is a setting for tests and for people who debug a
+module; nothing in the menu writes it, the builder writes 0, and the runtime carries it over when it writes the record. The boot counter changes write one
 copy only: the one that is not the current record, with `seq + 1`.
 
 **+Drive round trip.** The exporter reads both copies and writes the winner back as `plus_drive/<device>/digikit/selection.txt`

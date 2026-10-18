@@ -6,6 +6,7 @@ DSP area's size agree. The emulator proofs are the boot-time equivalence scenari
 module against the patched-in one, PCM sample for sample); the hot-load proof that was here is archived."""
 
 import re
+import tomllib
 
 import pytest
 from support.paths import REPO_ROOT
@@ -35,14 +36,25 @@ def test_committed_objects_are_current(mod):
 
 
 def test_the_area_size_is_the_same_on_both_sides():
-    for dev in ("dt2", "dn2"):
+    # One source: `[digikit] dsp_area_bytes` of the device file, generated into both sides by `patchkit gen`.
+    files = {"dt2": "digitakt-ii.toml", "dn2": "digitone-ii.toml"}
+    for dev, name in files.items():
+        want = tomllib.loads((ROOT / "devices" / name).read_text())["digikit"][
+            "dsp_area_bytes"
+        ]
+        inc = (MODS / f"core/dsp-link/build/gen/device-{dev}.inc").read_text()
+        words = int(re.search(r"#define DL_AREA_WORDS (\d+)", inc).group(1))
+        nbytes = int(re.search(r"#define DL_AREA_BYTES (\d+)", inc).group(1))
+        assert nbytes == want and words * 4 == nbytes, dev
         link = (MODS / f"core/dsp-link/src/dsp/{dev}.s").read_text()
-        words = int(re.search(r"#define DL_AREA_WORDS (\d+)", link).group(1))
-        nbytes = int(re.search(r"#define DL_AREA_BYTES (\d+)", link).group(1))
-        assert words * 4 == nbytes
-        assert re.search(rf"\.PKBSS _dl_area, {nbytes};", link)
+        assert re.search(r"\.PKBSS _dl_area, DL_AREA_BYTES;", link), dev
+        cf = (MODS / f"core/dyndsp/build/gen/device-{dev}.inc").read_text()
+        assert (
+            int(re.search(r"\.equ DL_AREA_BYTES, (0x[0-9a-f]+)", cf).group(1), 16)
+            == want
+        ), dev
         info = (MODS / f"core/dyndsp/src/cf/dyndsp-{dev}.s").read_text()
-        assert re.search(rf"\.long\s+{nbytes}\b", info), dev
+        assert re.search(r"\.long\s+DL_AREA_BYTES\b", info), dev
         assert nbytes <= 4 << 17  # the 17-bit offset of a chunk reaches 512 KiB
 
 

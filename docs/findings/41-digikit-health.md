@@ -8,7 +8,7 @@ channel and record: finding 31.
 
 ## What the page shows
 
-SETTINGS > DIGIKIT > HEALTH (third row, after MODULES and ABOUT). Six rows of at most 17 characters (the list shows five, the sixth scrolls):
+SETTINGS > DIGIKIT > HEALTH (third row, after MODULES and ABOUT). Eight rows of at most 18 characters (the list shows five, the rest scroll; the two STORE rows were added in Phase 8, below):
 
     CPU 35%               load of the CPU time the interrupts leave (below)
     DSP 50% MAX 51%       DSP block handler time per block, average and maximum of the last second
@@ -16,6 +16,8 @@ SETTINGS > DIGIKIT > HEALTH (third row, after MODULES and ABOUT). Six rows of at
     LARGEST 16.0 MB       its largest free block
     ARENA FREE 512 KB     the runtime's module arena
     DSP FREE 320 KB       the DSP code area (core/dsp-link); `--` where an image has none
+    STORE USED 2 KB       the module store: sectors the current header says are used (header, table, files), in KB
+    STORE FREE 11.9 MB    what a new file may still take (the room for its table entry kept back); `--` for a card with no store
 
 `--` replaces a figure that is not valid yet (the first windows after boot) or that the image cannot give; without `core/health` the page
 adds `NO HEALTH MODULE`. A `>` before the free RAM means the free-list walk stopped at its bound (4096 blocks): the figure is a lower bound.
@@ -170,3 +172,19 @@ reads the voice rows (`no symbol core/dsp-voice:voices.rows`); the image is now 
 - **[O]** One poll function only (`dkrt_poll_set`); a second user needs a list. The page's own stack use was not measured separately (it is the chain of `fill_about` plus `dkrt_health` and
   `health_heap`, about 200 bytes more).
 - **[O]** The firmware's own timer or per-view update was not looked for beyond the UI event loop; the UI-loop tick is what the page uses.
+
+## The module store's used and free space (lane r4, Phase 8 Safety, 2026-10-18) **[D]**
+
+`DkrtHealth` grew at its end by `store_total`, `store_used`, `store_free` (bytes) and the flag `HEALTH_STORE` (64); its `version` is 2. The module
+`Api` that modules see is unchanged, so `RUNTIME_VERSION` stays 2 (the struct is read by the menu, which is built into the same image as the
+runtime). The runtime fills them from the two header sectors alone (`store::peek_header`: the usable copy with the higher `seq`, no table read), and
+reads them **once**, again only after an upload wrote a header sector (`STORE_DIRTY`, set by `wr_header`): `store_total` is the sectors a store may use (`LIMIT`, up to header B,
+12,581,376 bytes), `store_used` the header's `used_sectors`, `store_free` = `dkrt_sdk::store::free_bytes(used, count)`, the same formula as the
+upload's INFO. **[C]** The first version read the two sectors on every refresh (twice a second): the proof's own check "CPU load is higher while a busy pattern plays" then failed deterministically (idle windows 204, 216, 207, 213 against busy 208, 210, 210, 209 tenths of a percent; before and after the cache 204, 207, 206, 212 against 208, 209, 209, 208), because the card reads of the page's own refresh are CPU time of the UI task that the page then reports as load. A page that shows a load must not read the card to show it. A card with no store has no usable header: the flag is clear and both rows read `--`. The menu page now has eight rows
+(`DK_LINES` has nine lines for the `NO HEALTH MODULE` note); `STORE USED 2 KB` and `STORE FREE 11.9 MB` fit the 18-character row (OLED frame of the scrolled
+page checked by eye: the longest row, `STORE FREE 11.9 MB`, is not clipped).
+
+Proof (`tools.coldfire.digikit_health_proof`, dt2-1.17): the card has one 700-byte file (header 1 + table 1 + data 2 = 4 sectors): the check
+`store figures` reads `used` 2,048, `total` 12,581,376 and `free` 12,578,816 from `DKRT_HEALTH` and expects exactly those, and the page's lines
+equal the proof's own formatting (`STORE USED 2 KB`, `STORE FREE 11.9 MB`). No menu frame is pinned for HEALTH, so `tests/golden/digikit_menu_frames.json`
+did not change (the pinned frames are the other pages).

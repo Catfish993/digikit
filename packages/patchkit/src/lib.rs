@@ -7,6 +7,8 @@
 #[macro_use]
 pub mod error;
 pub mod aplib;
+pub mod devdata;
+pub mod devgen;
 pub mod firmware;
 pub mod syx;
 

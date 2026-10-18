@@ -41,9 +41,22 @@ pub struct Manifest {
     /// take the type from: the Digitone II, whose registry has no machine rows for run-time modules yet).
     #[serde(default)]
     pub dsp_voice: Vec<DspVoiceDef>,
+    /// `[[gen]]`: files `patchkit gen` writes from device data (`crate::devgen`).
+    #[serde(default, rename = "gen")]
+    pub gens: Vec<GenDef>,
     /// Set by `typed::lower`.
     #[serde(skip)]
     pub lowered: bool,
+}
+
+/// One generated file of device data: `kind` is `rust` (constants every device agrees on, one file), `gas-shared` (the same as `.equ` lines), `gas` (a ColdFire assembler
+/// include, `.equ` lines, one file per device) or `sharc` (a SHARC+ include, `#define` lines, one file per device). `path` is relative
+/// to the module; `{dev}` stands for the device's short name in a per-device path.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GenDef {
+    pub kind: String,
+    pub path: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -165,7 +178,7 @@ impl AllocTable {
     pub fn parse(text: &str) -> Result<AllocTable> {
         let t: AllocTable = toml::from_str(text)?;
         for (dev, d) in &t.devices {
-            if !matches!(dev.as_str(), "dt2" | "dn2") {
+            if crate::devdata::by_short(dev).is_none() {
                 return Err(err!("allocation table: unknown device [{dev}]"));
             }
             let mut seen: BTreeMap<i64, &str> = BTreeMap::new();

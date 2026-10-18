@@ -1,5 +1,6 @@
 | core/dynreg on the Digitakt II (1.16, 1.17): the table the run-time registry reads, and the machine list filter.
-| Design: docs/design/digikit-registry.md.
+| Design: docs/design/digikit-registry.md. The device id and the number of reserved types are the device file's and
+| core/machines types.toml's, through build/gen/device-dt2.inc (`patchkit gen`).
 |
 | dynreg_info: addresses of the rows and tables core/machines and core/params built at patch time, the row layouts, and
 | the lowering of a parameter row (device data: the runtime's registry names no device). All words big endian.
@@ -8,6 +9,8 @@
 | first use, is copied into the vector the caller gets). The copy leaves out the type numbers of reserved rows that no
 | module has filled (row name empty). C ABI: copy(begin, end, dest) -> end of the copy in d0; d0, d1, a0, a1 scratch; the
 | caller keeps d2-d5/a2/a3 live, so everything else is saved.
+
+    .include "device-dt2.inc"
 
     .text
 
@@ -25,7 +28,7 @@ dynreg_copy:
     move.l  (%a0)+,%d0
     move.l  %d0,%d2
     subi.l  #_dr_dyn0,%d2
-    cmpi.l  #8,%d2
+    cmpi.l  #DYN_TYPES,%d2
     bcc.s   2f                          | not a reserved type: keep
     addi.l  #_dr_dyn0,%d2               | the row index is the type - machines.first
     subi.l  #_dr_first,%d2
@@ -54,13 +57,13 @@ dynreg_empty:
 dynreg_info:
     .long   0x44594e52                  |  0 'DYNR'
     .long   2                           |  4 version (2: page, unload words from 200)
-    .long   1                           |  8 device (1 = dt2)
+    .long   DEVICE_ID                   |  8 device ([digikit] id: 1 = dt2)
     .long   _dr_rows                    | 12 machines.rows
     .long   _dr_row_size                | 16 row size
     .long   _dr_first                   | 20 machines.first
     .long   _dr_count                   | 24 machines.count
     .long   _dr_dyn0                    | 28 first reserved type
-    .long   8                           | 32 reserved types
+    .long   DYN_TYPES                   | 32 reserved types
     .long   _dr_names                   | 36 {long, short, hint} per type, 12 bytes
     .long   _dr_permit                  | 40 permission long per type
     .long   _dr_pertype                 | 44 one byte per type (0: none)

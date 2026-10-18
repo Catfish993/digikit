@@ -266,16 +266,33 @@ def _sw_apply(obj: SharcObject, marks: list[tuple[str, bool]]) -> None:
 # assembly, `name` becomes an extern of the source and the object gets a data or bss section of that size with a
 # global data symbol `name` (the linker allocates it).
 _PKBSS = re.compile(
-    r"^[ \t]*\.PK(BSS|DATA)[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*(0x[0-9a-fA-F]+|\d+)[ \t]*;[^\n]*$",
+    r"^[ \t]*\.PK(BSS|DATA)[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*(0x[0-9a-fA-F]+|\d+|[A-Za-z_]\w*)[ \t]*;[^\n]*$",
+    re.M,
+)
+_DEFINE = re.compile(
+    r"^[ \t]*#define[ \t]+([A-Za-z_]\w*)[ \t]+(0x[0-9a-fA-F]+|\d+)[ \t]*(?://[^\n]*)?$",
     re.M,
 )
 
 
 def _bss_prepare(source: str) -> tuple[str, list[tuple[str, int, bool]]]:
     found: list[tuple[str, int, bool]] = []
+    # the size may be a macro defined as a plain number in the same source (the generated device includes of `patchkit gen`)
+    defines = {m.group(1): int(m.group(2), 0) for m in _DEFINE.finditer(source)}
 
     def sub(m: re.Match) -> str:
-        found.append((m.group(2), int(m.group(3), 0), m.group(1) == "BSS"))
+        size = m.group(3)
+        if size not in defines and not size[0].isdigit():
+            raise PkSharcError(
+                f".PK{m.group(1)} {m.group(2)}: size {size} is not a number or a #define of one"
+            )
+        found.append(
+            (
+                m.group(2),
+                defines[size] if size in defines else int(size, 0),
+                m.group(1) == "BSS",
+            )
+        )
         return f".EXTERN {m.group(2)};"
 
     return _PKBSS.sub(sub, source), found

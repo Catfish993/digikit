@@ -37,7 +37,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 
 from tools import python_env  # noqa: E402
-from tools.patchkit import hook_ab  # noqa: E402
+from tools.patchkit import hook_ab, pk_device  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 
 FW = {"dt2": "1.16", "dn2": "1.11"}
@@ -64,7 +64,10 @@ L_ACKED, L_NEXT, L_STALL, L_SINCE, L_SENT, L_RESENT, L_NERR, L_ENDING = (
 )
 L_WIN = 64
 DL_IDLE, DL_BUSY, DL_DONE, DL_ERROR, DL_START = 0, 1, 2, 3, 4
-AREA_WORDS = {"dt2": 131072, "dn2": 81920}  # DL_AREA_WORDS of src/dsp/<dev>.s
+AREA_WORDS = {
+    d: pk_device.load(d)["digikit"]["dsp_area_bytes"] // 4
+    for d in pk_device.digikit_devices()
+}  # DL_AREA_WORDS
 FRAME = 88_000  # ColdFire instructions per DSP block (132 M / 1500)
 TRIG1 = 25
 DN2_NOTE = [

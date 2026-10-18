@@ -714,6 +714,7 @@ def _card_run(monkeypatch, tmp_path, device):
     syx.write_bytes(b"x")
     glob = scope["main"].__globals__
     monkeypatch.setattr(digi_env, "device_for_syx", lambda path: device)
+    monkeypatch.setattr(digi_env, "patch_base", lambda path: None)
     built = []
 
     def card(folder, firmware, env, dev="dt2"):
@@ -739,6 +740,21 @@ def test_plus_drive_folder_is_the_default_card(monkeypatch, tmp_path):
         "--card-folder",
         str(folder.resolve()),
     ]
+
+
+def test_patched_image_gets_the_card_of_its_stock_base(monkeypatch, tmp_path):
+    scope, calls, built, syx = _card_run(monkeypatch, tmp_path, "dt2")
+    stock = tmp_path / "stock.syx"
+    stock.write_bytes(b"stock")
+    monkeypatch.setattr(digi_env, "patch_base", lambda path: ("dt2", "ab" * 32))
+    monkeypatch.setattr(digi_env, "stock_for_sha", lambda digest: stock)
+    root = tmp_path / "pd"
+    monkeypatch.setenv("DIGI_PLUS_DRIVE", str(root))
+    folder = _folder(root, "dt2", {"digikit/modules/test.dkm": b"x"})
+    scope["main"]([str(syx), "--cf-only"])
+    # the builder gets the stock image; the app boots the patched one
+    assert built == [(folder, stock, "dt2")]
+    assert calls[-1][1] == str(syx)
 
 
 def test_no_sync_keeps_the_folder_but_turns_the_exit_export_off(monkeypatch, tmp_path):

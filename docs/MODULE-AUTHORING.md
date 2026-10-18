@@ -110,6 +110,11 @@ Edit the sources and `module.toml`, then rebuild:
 mise run patch:build -- modules/machines/my-synth
 ```
 
+The build decodes every ColdFire instruction with the repository's own decoder and refuses a form the MCF54418 does not have (a 68020 or FPU
+instruction would trap on the device). It then records the passing check in the object (`toolchain.isa_check` of the `.dko.json`, a digest of
+the object's sections, symbols and relocations), and `patchkit pack` refuses a ColdFire object whose record is missing or does not match its
+bytes: an object made by hand or edited after the build cannot become a run-time `.dkm`. It guards against accident; it is not a signature.
+
 ### 3. Patch a firmware
 
 ```sh

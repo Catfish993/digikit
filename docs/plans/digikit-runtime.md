@@ -342,23 +342,23 @@ loads after APPLY & RESTART and plays like the card-built module; the cut and pl
 ### Phase 8: hardening and device data (2026-10-18; current)
 
 Safety (lane r4):
-- [ ] Safe mode also catches a module that crashes or hangs after the first UI pass: the boot counter is cleared only after a stable period.
-- [ ] `patchkit pack` refuses a ColdFire object that has not passed the ISA check.
-- [ ] The menu's store reader cannot see a torn table while an upload commits.
-- [ ] CLEAR cannot lose the store after a cut between header B and A followed by a torn header B.
-- [ ] A reply cannot hang the MIDI task when the host does not read (no unbounded spin on the TX ring).
-- [ ] HEALTH shows the module store's used and free space.
+- [x] Safe mode also catches a module that crashes or hangs after the first UI pass: the boot counter is cleared only after a stable period (45,000 DSP blocks = 30 s of the firmware's block counter; a CPU exception halts the device; kept scenario `safe-late-fault`; finding 37, last section).
+- [x] `patchkit pack` refuses a ColdFire object that has not passed the ISA check (the build records `toolchain.isa_check` over the object's bytes, pack verifies it; finding 43 "2.").
+- [x] The menu's store reader cannot see a torn table while an upload commits (`store::open_stable`, fingerprint of the headers before and after, no lock; host tests that interleave a commit with every read; finding 43 "3.").
+- [x] CLEAR cannot lose the store after a cut between header B and A followed by a torn header B (BEGIN makes the headers equal before staging; kept scenario `upload-clear-cut`; finding 43 "4.").
+- [x] A reply cannot hang the MIDI task when the host does not read (no unbounded spin on the TX ring): replies are dropped when the firmware's in-flight count says the ring has no room; kept scenario `upload-txfull`; finding 43 "5.".
+- [x] HEALTH shows the module store's used and free space (`DkrtHealth` store fields, read from the headers once and again after an upload; finding 41, last section).
 
 Device data (lane b): every device or board fact the runtime, the core modules, patchkit and port_resolve use comes from
 `devices/*.toml` (or `devices/ports/*.toml`, `modules/core/machines/types.toml`) and is generated where code needs a constant
 (`patchkit gen`, kept current by `gen --check`); the device list is open. Oracle: patched images are byte-identical before and after.
-- [ ] Store geometry, DSP area size, voice rows, run-time type range, device id and name, board addresses, safe-mode key, DSP clock.
-- [ ] patchkit's device list, device ids, container facts; port_resolve's firmware, limits and L2 tables.
+- [x] Store geometry, DSP area size, voice rows, run-time type range, device id and name, board addresses, safe-mode key, DSP clock. Where each fact lives and what a new device needs: docs/design/device-data.md. The runtime is one image for all devices, so a shared constant is refused when two devices differ.
+- [x] patchkit's device list, device ids, container facts; port_resolve's firmware, limits and L2 tables. The container seal keys stay in `syx.rs` (key material; the device files are published as they are).
 
 Testing ease (lane r1):
-- [ ] `mise run emu -- PATCHED.syx` recognises a patched image by its patch record (device, base firmware, +Drive card).
-- [ ] `patchkit pack` through the front end (and a mise task); docs/PATCHING.md: testing a run-time module in the emulator.
-- [ ] verify: no step runs a binary that the build step is rewriting (the `_dyld_start` hang of 2026-10-18).
+- [x] `mise run emu -- PATCHED.syx` recognises a patched image by its patch record (device, base firmware, +Drive card).
+- [x] `patchkit pack` through the front end (and a mise task); docs/PATCHING.md: testing a run-time module in the emulator.
+- [x] verify: no step runs a binary that a cargo build is rewriting (the `_dyld_start` hang of 2026-10-18): every `cargo build` replaces `release/<bin>` even when current; patchkit is now built under a lock and run from an immutable copy (tools/devtools/stablebin.py).
 
 ### Later
 

@@ -5,19 +5,25 @@
  "sections": [
   {
    "align": 2,
-   "hex": "00000001",
+   "hex": "0000000164743200",
    "kind": "data",
    "name": ".rodata",
-   "size": 4
+   "size": 8
   }
  ],
- "source_sha256": "9ad291047f170661ba78fde44b4ab5cd56251fe1dde603cd92d152ae8f95d211",
+ "source_sha256": "141de7715010b0ee808534bc9807afafbcc58d62a5f33a0d9b86c59cc2a89d28",
  "symbols": [
   {
    "global": true,
    "name": "dkrt_device_id",
    "section": ".rodata",
    "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_device_name",
+   "section": ".rodata",
+   "value": 4
   }
  ],
  "toolchain": {
@@ -25,6 +31,7 @@
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "0",
+  "isa_check": "76281b647917f84c340e61b6b9a31fcb29923eca184931cb1aa427fcc7e0adf0",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

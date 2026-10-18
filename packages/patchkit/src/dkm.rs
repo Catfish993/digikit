@@ -115,6 +115,9 @@ pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> 
 /// Pack an object (or none), `register` records and a DSP section (see [`crate::dkmdsp`]; empty: none). A file with a DSP section
 /// needs a runtime of version [`RUNTIME_DSP`] or later.
 pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Result<Vec<u8>> {
+    if let Some(obj) = obj {
+        obj.require_isa_checked()?;
+    }
     let stub = Dko {
         format: crate::dko::FORMAT,
         arch: "cf".into(),
@@ -461,8 +464,13 @@ mod tests {
             addend,
         }
     }
-    /// text: `jsr imp.l; jsr f.l; rts` plus a data pointer to bss and to an import with an addend.
+    /// text: `jsr imp.l; jsr f.l; rts` plus a data pointer to bss and to an import with an addend. Carries the build's ISA check record.
     fn object() -> Dko {
+        let mut o = unstamped();
+        o.stamp_isa();
+        o
+    }
+    fn unstamped() -> Dko {
         let text = [0x4e, 0xb9, 0, 0, 0, 0, 0x4e, 0xb9, 0, 0, 0, 0, 0x4e, 0x75];
         Dko {
             format: FORMAT_DKO,
@@ -539,9 +547,11 @@ mod tests {
         assert!(Dkm::parse(&bad).unwrap_err().0.contains("magic"));
         let mut o = object();
         o.relocs.push(rel(".text", 2, "cf.pc32", "fw_thing", 0));
+        o.stamp_isa();
         assert!(pack(&o, &opts()).unwrap_err().0.contains("PC-relative"));
         let mut o = object();
         o.symbols.push(sym("dkm_slot_9", Some(".text"), 6));
+        o.stamp_isa();
         assert!(pack(&o, &opts()).unwrap_err().0.contains("slot numbers"));
         let mut o = Options {
             name: "bad name".into(),
@@ -558,5 +568,33 @@ mod tests {
             pack(&object(), &opts()).unwrap(),
             pack(&object(), &opts()).unwrap()
         );
+    }
+
+    #[test]
+    fn an_object_that_has_not_passed_the_isa_check_is_refused() {
+        // no record: made by hand, or built before the record existed
+        let e = pack(&unstamped(), &opts()).unwrap_err().0;
+        assert!(e.contains("no ISA check record"), "{e}");
+        // tampered: a byte of the code, a relocation, a symbol, a section's alignment changed after the build
+        let mut o = object();
+        let mut b = unhex(&o.sections[0].hex).unwrap();
+        b[13] ^= 0x04; // `rts` becomes another word
+        o.sections[0].hex = hex(&b);
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        let mut o = object();
+        o.relocs[0].addend = 4;
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        let mut o = object();
+        o.symbols[1].value = 12;
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        let mut o = object();
+        o.sections[1].align = 8;
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("does not match"));
+        // a record copied from another object does not help
+        let mut o = object();
+        o.toolchain.insert(ISA_CHECK_KEY.into(), "0".repeat(64));
+        assert!(pack(&o, &opts()).is_err());
+        // the untouched object packs
+        assert!(pack(&object(), &opts()).is_ok());
     }
 }

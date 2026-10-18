@@ -4,9 +4,15 @@
 
 use crate::sha256::sha256;
 use crate::{DKRT_STAGE, STAGE_BYTES};
-use core::ptr::addr_of_mut;
+use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::store::{self, File};
 use dkrt_sdk::*;
+
+/// 512 bytes, 16-byte aligned, for `store_figures` (UI task or the mailbox; the upload has its own buffer).
+#[repr(C, align(16))]
+pub struct PeekBuf([u8; 512]);
+#[no_mangle]
+pub static mut DKRT_STORE_PEEK: PeekBuf = PeekBuf([0; 512]);
 
 pub unsafe fn stage() -> *mut u8 {
     addr_of_mut!(DKRT_STAGE) as *mut u8
@@ -63,4 +69,38 @@ pub unsafe fn read_file(path: *const u8, dst: *mut u8, cap: u32) -> i32 {
         i += 1;
     }
     f.size as i32
+}
+
+/// The store figures as the headers last said them, and whether the headers may have changed since. Only an upload writes a header sector
+/// (the card is not swapped while the device runs), so the HEALTH page, which asks twice a second, reads the card once and again after an
+/// upload wrote a header (`upload.rs` `wr_header` sets `STORE_DIRTY`): a page that read the card on every refresh would cost the UI task
+/// card reads that show up in the CPU load it displays.
+static mut STORE_DIRTY: bool = true;
+static mut STORE_SEEN: Option<(u32, u32)> = None; // (used bytes, free bytes) of a usable header; None: no store
+
+/// An upload wrote (or tried to write) a header sector: the figures are stale. Called from the MIDI task.
+pub fn figures_stale() {
+    unsafe { core::ptr::write_volatile(addr_of_mut!(STORE_DIRTY), true) }
+}
+
+/// Fill the store figures of a `DkrtHealth` from the headers alone (two sectors, no table, and only when an upload changed them): total
+/// bytes a store may use, bytes used and bytes a new file may still take. Sets `HEALTH_STORE` when a usable header was read; a card with no
+/// store leaves them 0.
+pub unsafe fn figures(o: &mut DkrtHealth) {
+    o.store_total = store::LIMIT * 512;
+    o.store_used = 0;
+    o.store_free = 0;
+    if core::ptr::read_volatile(addr_of!(STORE_DIRTY)) {
+        // clear first: a header written while we read leaves the flag set for the next refresh
+        core::ptr::write_volatile(addr_of_mut!(STORE_DIRTY), false);
+        STORE_SEEN = match store::peek_header(block_read, addr_of_mut!(DKRT_STORE_PEEK) as *mut u8) {
+            Some(h) => Some((h.used * 512, store::free_bytes(h.used, h.count))),
+            None => None,
+        };
+    }
+    if let Some((used, free)) = STORE_SEEN {
+        o.store_used = used;
+        o.store_free = free;
+        o.flags |= HEALTH_STORE;
+    }
 }

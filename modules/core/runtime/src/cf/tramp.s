@@ -1,5 +1,8 @@
 /* core/runtime: hook trampoline and cache maintenance (docs/design/digikit-runtime.md).
  *
+ * Board facts (which UART is the console, where DDR is) come from the device files through build/gen/device.inc; the register
+ * offsets of the MCF5441x itself are named here.
+ *
  * dkrt_loop_hook replaces the target of the `jsr` at the top of the UI task's event loop (the call that pops the next event
  * from the UI queue; the queue pointer is on the stack, the stock function returns the event in d0). It runs the runtime's
  * tick, then continues in the stock pop as if it had been called directly: the stack is as the caller left it.
@@ -7,6 +10,10 @@
  * has just pushed the argument, and the result comes back in d0). d2-d7/a2-a6 are preserved by the C function.
  * fw_queue_pop is the stock function (anchor dkrt.fw.queue_pop).
  */
+    .include "device.inc"
+    .equ MCF5441X_UART_USR_OFF, 4       /* UART status register, offset from the UART base; bit 3 is TXEMP (transmitter empty) */
+    .equ MCF5441X_RCM_RCR, 0xEC090000   /* reset controller: reset control register; 0x80 = software reset */
+
     .text
     .even
     .globl dkrt_loop_hook
@@ -66,23 +73,23 @@ dkrt_irq_restore:
     rts
 
 /* void dkrt_soft_reset(void): the firmware's own sequence (finding 36, section 3), interrupts already masked: wait (bounded) for
- * the console UART8 transmitter to empty (USR bit 3), clear the first word of DDR through the uncached alias (a stale magic
- * there would start the next boot in console mode), 25 nops, then 0x80 into RCM.RCR (0xEC090000). Does not return. */
+ * the console UART transmitter to empty (USR bit 3), clear the first word of DDR through the uncached alias (a stale magic
+ * there would start the next boot in console mode), 25 nops, then 0x80 into RCM.RCR. Does not return. */
     .globl dkrt_soft_reset
 dkrt_soft_reset:
     move.w  #0x2700,%sr
     move.l  #200000,%d1
-1:  move.b  0xEC070004,%d0
+1:  move.b  CONSOLE_UART_BASE + MCF5441X_UART_USR_OFF,%d0
     btst    #3,%d0
     bne.s   2f
     subq.l  #1,%d1
     bne.s   1b
-2:  clr.l   0x48000000
+2:  clr.l   DDR_UNCACHED_ALIAS
     .rept 25
     nop
     .endr
     moveq   #-128,%d0
-    move.b  %d0,0xEC090000
+    move.b  %d0,MCF5441X_RCM_RCR
 3:  bra.s   3b
 
 /* dkrt_midi_hook: the hook in the MIDI task's dispatch of a gathered USB SysEx message (docs/design/digikit-upload.md). At the hook the

@@ -663,7 +663,8 @@ def main(args: list[str] | None = None) -> None:
         if plus_drive is None and samples is None:
             print(f"+Drive: {folder}", file=sys.stderr)
         env = digi_env.rust_env(dict(os.environ))
-        card = plusdrive_card(folder, syx, env, device)
+        # A patched image gets the card of its stock base (the same card as `inject` keeps).
+        card = plusdrive_card(folder, digi_env.base_firmware(syx), env, device)
         first_positional = any(
             not v.startswith("--")
             and (

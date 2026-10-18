@@ -18,16 +18,18 @@ use dkrt_sdk::*;
 
 const INFO_MAGIC: u32 = 0x4444_5350; // "DDSP"
 const STATE_MAGIC: u32 = 0x444b_4453; // "DKDS"
-pub const MAX_ROWS: usize = 8;
-const MAX_VOICES: usize = 8;
+/// Free voice rows core/dyndsp reserves: one per run-time machine type (a module's voice takes a row).
+pub const MAX_ROWS: usize = DYN_TYPES as usize;
+const MAX_VOICES: usize = MAX_ROWS;
 const MAX_RELOCS: u32 = 4096;
 const MAX_IMPORTS: u32 = 32;
 const GRANULE: u32 = 64;
 const L2_BYTE_BASE: u32 = 0x2000_0000;
 const L2_SW_BASE: u32 = 0x00B8_0000;
-/// The run-time machine types (`dynamic_first ..= last` of modules/core/machines/types.toml).
-const TYPE_FIRST: u32 = 16;
-const TYPE_LAST: u32 = 23;
+/// The run-time machine types (`dynamic_first ..= last` of modules/core/machines/types.toml, through `patchkit gen`).
+const TYPE_FIRST: u32 = device::DYN_TYPE_FIRST;
+const TYPE_LAST: u32 = device::DYN_TYPE_LAST;
+const DYN_TYPES: u32 = device::DYN_TYPES;
 /// A free voice row's type: no machine type equals it.
 const FREE_TYPE: u32 = 0xffff_ffff;
 /// UI-loop passes a phase may last before the load is given up.

@@ -17,7 +17,7 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   explain --firmware X.syx (--modules a,b | --plan plan.json)   what a patch does, site by site
   verify  OUT.syx [--base X.syx]         re-decode and check an image
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
-  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device dt2|dn2]   the module's ColdFire object as a run-time .dkm
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT]   the module's ColdFire object as a run-time .dkm
                                          (a `dynamic = true` module: its machine and param records for --device)
   dkm-info FILE.dkm                      check a .dkm and list what it holds
   dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
@@ -202,6 +202,7 @@ fn run(a: Args) -> Result<()> {
         "gen" => {
             let lib = library(&a.root, rest)?;
             let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+            let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
             let only: Vec<String> = flag(rest, "--modules")
                 .unwrap_or_default()
                 .split(',')
@@ -214,7 +215,9 @@ fn run(a: Args) -> Result<()> {
                 if !only.is_empty() && !only.iter().any(|o| o == m.id()) {
                     continue;
                 }
-                for (rel, text) in patchkit::modgen::generate(&lib, &models, m.id())? {
+                let mut files = patchkit::modgen::generate(&lib, &models, m.id())?;
+                files.extend(patchkit::devgen::generate(&lib, &facts, m.id())?);
+                for (rel, text) in files {
                     let path = a.root.join("modules").join(m.id()).join(&rel);
                     let have = std::fs::read_to_string(&path).ok();
                     if have.as_deref() == Some(text.as_str()) {
@@ -348,7 +351,7 @@ plan.json {}",
             let mut dsp: Vec<u8> = vec![];
             let reg = if dynamic {
                 let dev = flag(rest, "--device")
-                    .ok_or_else(|| Error("a run-time module needs --device dt2|dn2".into()))?;
+                    .ok_or_else(|| Error(format!("a run-time module needs --device {}", patchkit::devdata::short_list())))?;
                 let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
                 let res = patchkit::typed::resolve(&m.manifest, &models)?;
                 let types: std::collections::BTreeMap<String, i64> = lib

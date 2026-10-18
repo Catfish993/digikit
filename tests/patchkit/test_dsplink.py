@@ -12,7 +12,7 @@ import pytest
 from support.paths import REPO_ROOT
 
 from tools.firmware import config
-from tools.patchkit import pk_build, pk_link, pk_toolchains
+from tools.patchkit import pk_build, pk_device, pk_link, pk_toolchains
 
 ROOT = REPO_ROOT
 MOD = ROOT / "modules" / "core" / "dsp-link"
@@ -22,8 +22,19 @@ IMAGES = {
     "dn2-1.11": "Digitone_II_OS1.11.syx",
     "dn2-1.12": "Digitone_II_OS1.12.syx",
 }
-# the DSP's frame-tail geometry per device (src/dsp/dt2.s, dn2.s) and the call site's arguments (finding 23, S4b)
-GEOMETRY = {"dt2": (0x804, 174), "dn2": (0xA80, 15)}
+
+
+# the DSP's frame-tail geometry per device is the device file's ([digikit] dsp_tail_off, dsp_tail_words; `patchkit gen` writes it into
+# build/gen/device-<dev>.inc); the firmware's call site (finding 23, S4b) is checked against it below
+def geometry(dev: str) -> tuple[int, int]:
+    d = pk_device.load(dev)["digikit"]
+    return d["dsp_tail_off"], d["dsp_tail_words"]
+
+
+def gen_inc(dev: str) -> str:
+    return (MOD / "build" / "gen" / f"device-{dev}.inc").read_text()
+
+
 MAGIC, ACK_MAGIC, ACK_OFF = 0xD15C, 0xA5D1, 0x60
 BASE = 0x47E8B000
 DATA = 0x47EC0000
@@ -66,10 +77,16 @@ def test_constants_agree_between_the_two_sides():
     ):
         assert define(c, name) == want == define(s, name)
     # the area of each device: the DL_AREA_BYTES define, the .PKBSS literal and the word count agree, and the 17-bit offset reaches it
-    for dev in ("dt2", "dn2"):
-        d = (MOD / "src" / "dsp" / f"{dev}.s").read_text()
+    for dev in pk_device.digikit_devices():
+        d = gen_inc(dev)
+        area = pk_device.load(dev)["digikit"]["dsp_area_bytes"]
+        assert define(d, "DL_AREA_BYTES") == area
         assert define(d, "DL_AREA_WORDS") * 4 == define(d, "DL_AREA_BYTES")
-        assert re.search(rf"\.PKBSS _dl_area, {define(d, 'DL_AREA_BYTES')};", d)
+        # the DSP source sizes its bss by the generated define
+        assert re.search(
+            r"\.PKBSS _dl_area, DL_AREA_BYTES;",
+            (MOD / "src" / "dsp" / f"{dev}.s").read_text(),
+        )
         assert define(d, "DL_AREA_BYTES") <= define(c, "DL_AREA_BYTES") <= 4 << 17
 
 
@@ -107,12 +124,11 @@ def test_call_site_geometry_matches_the_dsp_constants(image):
     data_bytes = struct.unpack(">H", m.group(4))[0]
     assert frame_bytes == 0xABC
     e0 = (data_bytes // 2 + 1) & ~1
-    tail_off, words = GEOMETRY[dev]
+    tail_off, words = geometry(dev)
     assert 2 * e0 == tail_off
     assert (frame_bytes // 2 - e0) // 2 == words
     for name, want in (("DL_TAIL_OFF", tail_off), ("DL_TAIL_WORDS", words)):
-        text = (MOD / "src" / "dsp" / f"{dev}.s").read_text()
-        assert define(text, name) == want
+        assert define(gen_inc(dev), name) == want
     # the literal of `lea <tx queue>,a0` in the driver
     lit = a["dl.cf.tx_lit"]["addr"] - base
     assert main[lit - 2 : lit] == b"\x41\xf9"

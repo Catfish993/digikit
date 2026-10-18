@@ -45,9 +45,9 @@ CMD_HEALTH = 6
 HEALTH_FIELDS = [
     "magic", "version", "flags", "blocks", "windows", "cpu_x10", "idle_win", "idle_ref", "dsp_avg", "dsp_max", "dsp_period",
     "dsp_avg_x10", "dsp_max_x10", "heap_total", "heap_free", "heap_largest", "heap_allocs", "heap_free_blocks", "arena_total",
-    "arena_free", "arena_largest", "dsp_area_total", "dsp_area_free", "dsp_area_largest",
+    "arena_free", "arena_largest", "dsp_area_total", "dsp_area_free", "dsp_area_largest", "store_total", "store_used", "store_free",
 ]  # fmt: skip
-F_MODULE, F_CPU, F_DSP, F_HEAP, F_CUT, F_BAD = 1, 2, 4, 8, 16, 32
+F_MODULE, F_CPU, F_DSP, F_HEAP, F_CUT, F_BAD, F_STORE = 1, 2, 4, 8, 16, 32, 64
 HS_FIELDS = [
     "blocks",
     "pos",
@@ -102,6 +102,8 @@ def expected_lines(h: dict) -> list[str]:
     out.append(
         "DSP FREE " + (size_text(h["dsp_area_free"]) if h["dsp_area_total"] else "--")
     )
+    out.append("STORE USED " + (size_text(h["store_used"]) if f & F_STORE else "--"))
+    out.append("STORE FREE " + (size_text(h["store_free"]) if f & F_STORE else "--"))
     return out
 
 
@@ -177,10 +179,10 @@ class HealthProof:
 
     def lines(self) -> list[str]:
         raw = b"".join(
-            self.w(self.sym("DK_LINES") + 4 * k).to_bytes(4, "big") for k in range(48)
+            self.w(self.sym("DK_LINES") + 4 * k).to_bytes(4, "big") for k in range(54)
         )
         out = []
-        for i in range(8):
+        for i in range(9):
             row = raw[24 * i : 24 * i + 24]
             out.append(row.split(b"\0")[0].decode("latin1"))
         return [x for x in out if x]
@@ -286,6 +288,8 @@ class HealthProof:
     def setup(self) -> None:
         self.img = self.env.build_image(MODULES, "health")
         self.plan = Plan(self.img.plan)
+        # a store with one 700-byte file (header, one table sector, two data sectors: 4 sectors used), so the page has store figures
+        (self.env.folder / "digikit" / "notes.txt").write_bytes(bytes(700))
         self.card = self.env.card(None, tag="health")
 
     def anchor_addr(self, name: str) -> int:
@@ -371,6 +375,17 @@ class HealthProof:
             and h["heap_largest"] == walk["largest"]
             and h["heap_free_blocks"] == walk["nodes"],
             f"module {h['heap_free']}/{h['heap_largest']}/{h['heap_free_blocks']} walk {walk['free']}/{walk['largest']}/{walk['nodes']}, {info}",
+        )
+        limit = (
+            0x6000 - 3
+        )  # sectors a store may use (header A, tables, data): up to header B
+        self.check(
+            "store figures: the header's used sectors, and the room left for one more file and its table entry",
+            h["flags"] & F_STORE != 0
+            and h["store_total"] == limit * 512
+            and h["store_used"] == 4 * 512
+            and h["store_free"] == (limit - 4 - 1) * 512,
+            f"flags {h['flags']:#x} total {h['store_total']} used {h['store_used']} free {h['store_free']}",
         )
         a1 = info["allocs"]
         idle_cpu = [h["cpu_x10"]]
@@ -633,7 +648,7 @@ class HealthProof:
         got = self.lines()
         self.check(
             "the page while playing shows the figures",
-            got[:6] == expected_lines(dk)[:6],
+            got[:8] == expected_lines(dk)[:8],
             str(got),
         )
         self.report["page_busy"] = {"health": dk, "lines": got}

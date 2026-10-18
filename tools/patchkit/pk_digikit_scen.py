@@ -27,7 +27,9 @@ Kinds:
   roundtrip  a project with the run-time machine on tracks, parameter values, p-locks and a sound lock is saved under set A,
              loaded and saved under set B (machine absent) and under A again: the project slot's sound records, the sequencer
              data and the sound locks are byte-identical to the first save; the track keeps its type while its machine is absent.
-  safe       a module whose init resets the machine, twice: the third boot is safe mode (no module, reported).
+  safe       a module whose init resets the machine, twice: the third boot is safe mode (no module, reported). With `[safe] part = "late"`: a
+             module that hangs the UI task some time into a session, before (early) or after (late) the stable period that clears the boot
+             counter: early leads to safe mode at the third boot, late never does (finding 37).
   menu       a set ticked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with APPLY & RESTART (two presses) is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
   cut        the card states a power cut leaves between the two copies of the selection record.
@@ -62,21 +64,22 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 
 from tools import python_env  # noqa: E402
+from tools.patchkit import pk_device  # noqa: E402
 from tools.patchkit import pk_dkrt_boot as B  # noqa: E402
 from tools.patchkit import pk_dkrt_machine as M  # noqa: E402
 
 SCENARIOS = ROOT / "tests" / "digikit" / "scenarios"
 CACHE = ROOT / "out" / "cache" / "digikit"
-ALL_IMAGES = {
-    "dt2": ("dt2-1.16", "dt2-1.17"),
-    "dn2": ("dn2-1.11", "dn2-1.12"),
-}
-QUICK_IMAGES = {"dt2": "dt2-1.17", "dn2": "dn2-1.12"}
+# every device with a module store and the images of it that have a port (`port = true` in the device file); the quick tier runs the last
+ALL_IMAGES = {d: pk_device.port_images(d) for d in pk_device.digikit_devices()}
+QUICK_IMAGES = {d: imgs[-1] for d, imgs in ALL_IMAGES.items()}
 RT = B.RT
 # emulated ms a rig runs after its boot before the scenario looks: the first UI-loop passes (a module's DSP part is waited for by
 # `wait_dsp`); the boot tool's own proof keeps 1500
 SETTLE_MS = int(os.environ.get("DIGIKIT_SETTLE_MS", "300"))
-FIRMWARE_FIRST = 0x50000  # the working project; the project slots follow at 0x58000 (finding 02, storage records)
+FIRMWARE_FIRST = (
+    pk_device.working_project_sector()
+)  # the working project; the project slots follow (finding 02, storage records)
 
 
 class Fail(RuntimeError):
@@ -219,15 +222,17 @@ class Ctx:
         flags: int = 0,
         recs: tuple[bytes | None, bytes | None] | None = None,
         base: Path | None = None,
+        stable_blocks: int = 0,
     ) -> Path:
         """A card image, cached by content: the store of the folder and the record copies (or SELECTION), optionally
         laid over a `base` card file (the card a scenario left behind). Returns the cached file."""
         h = hashlib.sha256(self.image.encode())
-        for f in sorted((self.env.folder / "digikit" / "modules").glob("*.dkm")):
-            h.update(f.name.encode() + f.read_bytes())
+        store_dir = self.env.folder / "digikit"
+        for f in sorted(x for x in store_dir.rglob("*") if x.is_file()):
+            h.update(str(f.relative_to(store_dir)).encode() + f.read_bytes())
         a, b = recs if recs else (None, None)
         if recs is None and selection is not None:
-            a = b = B.make_record(selection, seq, counter, flags)
+            a = b = B.make_record(selection, seq, counter, flags, stable_blocks)
         for x in (a, b):
             h.update(x or b"-")
         if base is not None:  # a card made by `card_after` is named by its content
@@ -615,8 +620,136 @@ def run_equiv(c: Ctx) -> None:
     c.common_checks()
 
 
+def run_safe_late(c: Ctx) -> None:
+    """A module that fails some time into a session (docs/findings/37-boot-load.md, "Safe mode after the first UI pass"). The runtime
+    clears its boot counter only after a stable period of UI loop; here the period is shortened (the scenario pokes `DKRT_STABLE_BLOCKS`).
+    EARLY: the module hangs the UI task before the period is over: each boot counts as bad, the third boot is safe mode. LATE: it hangs
+    after the period: the counter was cleared, every boot loads the module and none is safe. A power cycle is a new rig on the card the
+    last one left (the overlay of its writes laid over it)."""
+    from tools.patchkit.pk_digikit_project import card_after
+
+    t = c.table()
+    mod = c.pack(t["fault"], "late.dkm")
+    img = c.image_for(RT, "run")
+    cfg = c.env.folder / "digikit" / "cfg"
+    cfg.mkdir(parents=True, exist_ok=True)
+    cards: dict[str, Path] = {}
+    for kind in ("early", "late"):
+        (cfg / "fault-after.bin").write_bytes(
+            int(t[f"{kind}_blocks"]).to_bytes(4, "big") + bytes([1])
+        )  # hang
+        cards[kind] = c.card([mod], stable_blocks=int(t["stable_blocks"]))
+    # The coupled cold boot runs to its ready point before the rig is handed out: about 6,000 blocks (4 s) after the first UI-loop pass on
+    # a fresh card (measured: the first pass is at block 5,972 of the firmware's counter, the ready point at 11,921), fewer on a card the
+    # firmware has saved to. A failure earlier than the ready point would stop the boot from ever being ready, so the periods lie above it.
+    # The rig then runs until the UI loop stands still (the hang) or, in safe mode, for the same time.
+
+    def settle_hang(rig: Any, ticks_sym: int, limit_ms: int = 9000) -> bool:
+        """Run in steps until the runtime's UI-loop count stops rising; False when it never does within LIMIT_MS."""
+        for _ in range(limit_ms // 400):
+            t0 = rig.w(ticks_sym)
+            rig.s.run_ms(400)
+            if rig.w(ticks_sym) == t0:
+                return True
+        return False
+
+    def sequence(kind: str) -> Callable[[], None]:
+        def run() -> None:
+            base = cards[kind]
+            seen: list[dict[str, Any]] = []
+            ticks_sym = M.sym(img.plan, "core/runtime", "DKRT_STATE") + 8
+            for boot in range(3):
+                with c.rig(img, base, f"late-{kind}{boot}") as rig:
+                    info = rig.boot_info()
+                    hung = settle_hang(rig, ticks_sym)
+                    after = rig.boot_info()
+                    rec = B.current(rig.sel_records())
+                    seen.append(
+                        {"info": info, "after": after, "rec": rec, "hung": hung}
+                    )
+                    ov = rig.work / f"late-{kind}{boot}.ov.bin"
+                    rig.emu.call("card.overlay", path=str(ov))
+                    nxt = card_after(c, base, ov)
+                    c.done(rig)
+                base = nxt
+            i0, i1, i2 = (s["info"] for s in seen)
+
+            def m(s: dict[str, Any]) -> tuple[Any, ...]:
+                return (
+                    s["info"]["counter"],
+                    s["after"]["stable"],
+                    s["rec"] and s["rec"]["counter"],
+                    s["hung"],
+                )
+
+            if kind == "early":
+                c.check(
+                    "early: boots 1 and 2 load the module and the UI task hangs in it",
+                    all(
+                        s["info"]["safe"] == 0
+                        and s["info"]["loaded"] == 1
+                        and s["hung"]
+                        for s in seen[:2]
+                    ),
+                    str([m(s) for s in seen]),
+                )
+                c.check(
+                    "early: the counter is raised at the start of each boot and not cleared (the failure came before the stable period)",
+                    [i0["counter"], i1["counter"], i2["counter"]] == [0, 1, 2]
+                    and all(
+                        s["after"]["stable"] == 0
+                        and s["rec"]["counter"] == s["info"]["counter"] + 1
+                        for s in seen[:2]
+                    ),
+                    str([m(s) for s in seen]),
+                )
+                c.check(
+                    "early: two bad boots in a row, the third boot is safe mode (counter): the module is not loaded and the UI keeps running",
+                    i2["safe"] == 1
+                    and i2["reason"] == 1
+                    and i2["loaded"] == 0
+                    and not seen[2]["hung"],
+                    f"{i2['reason_name']} loaded {i2['loaded']} hung {seen[2]['hung']}",
+                )
+                c.check(
+                    "early: the safe boot clears the counter at its first UI-loop pass (nothing of a module runs in it), selection kept",
+                    seen[2]["after"]["stable"] == 1
+                    and seen[2]["rec"]["counter"] == 0
+                    and seen[2]["rec"]["paths"] == [mod],
+                    str(seen[2]["rec"]),
+                )
+            else:
+                c.check(
+                    "late: every boot loads the module and the UI task hangs in it",
+                    all(
+                        s["info"]["safe"] == 0
+                        and s["info"]["loaded"] == 1
+                        and s["hung"]
+                        for s in seen
+                    ),
+                    str([m(s) for s in seen]),
+                )
+                c.check(
+                    "late: the counter was cleared once the stable period was over, before the failure: every boot starts at 0, no boot is safe",
+                    all(
+                        s["after"]["stable"] == 1 and s["rec"]["counter"] == 0
+                        for s in seen
+                    )
+                    and [i0["counter"], i1["counter"], i2["counter"]] == [0, 0, 0],
+                    str([m(s) for s in seen]),
+                )
+
+        return run
+
+    c.parallel(sequence("early"), sequence("late"))
+    c.common_checks()
+
+
 def run_safe(c: Ctx) -> None:
     t = c.table()
+    if t.get("part") == "late":
+        run_safe_late(c)
+        return
     mod = c.pack(t["fault"], "fault.dkm")
     other = [c.pack(m, f"m{i}.dkm") for i, m in enumerate(t.get("modules", []))]
     img = c.image_for(RT, "run")

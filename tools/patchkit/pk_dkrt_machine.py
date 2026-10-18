@@ -370,12 +370,14 @@ def pcm_check(
     report: dict[str, Any],
     what: str,
     until: int | None = None,
+    max_shift: int = 128,
 ) -> None:
     """The run-time PCM equals the reference's: exactly, or sample for sample from the note's onset on. The two images do not
     reach the audition at the same ColdFire instruction (the run-time image has loaded a module, the Digitone II reference has
     a machine module's code on the key path) and the PCM tap starts at the block in progress, so the capture may start up to a
     few frames apart; the sound, from the onset on, must not differ in a single sample. UNTIL (interleaved samples after the onset)
-    cuts the comparison before the key is released: on the Digitone II the release reaches the engine a block apart in the two images."""
+    cuts the comparison before the key is released: on the Digitone II the release reaches the engine a block apart in the two images.
+    MAX_SHIFT is the largest onset shift (samples) that is accepted."""
     exact = len(run_pcm) == len(ref_pcm) and bool(np.array_equal(run_pcm, ref_pcm))
     shift, aligned_differ = aligned_compare(ref_pcm, run_pcm, until)
     report["pcm"] = {
@@ -392,7 +394,7 @@ def pcm_check(
         or (
             shift is not None
             and shift % 2 == 0
-            and abs(shift) <= 128
+            and abs(shift) <= max_shift
             and aligned_differ == 0
         ),
         f"{len(run_pcm)} samples, exact {exact}, onset shift {shift}, {aligned_differ} differ after alignment",

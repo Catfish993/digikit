@@ -97,7 +97,9 @@ the scenario is 12 to 21 s of one process.
   (rows counted from the menu's own table), are ticked, APPLY & RESTART loads them, the machine rows equal the patched-in
   `machines/pluck`'s and the PCM of a note equals its PCM. This is the Phase 7 gate on both devices.
 - **During playback** (`upload-playback`, DT2): a 100 kB module is uploaded while a note sounds. The PCM equals the note without the
-  upload from the onset on (the capture starts one block later, 64 samples, in both kinds of run the same way `equiv` shows), and the
+  upload from the onset on (the capture starts one block later, 64 samples, in both kinds of run the same way `equiv` shows; **[C]** Phase 8: the
+  onset shift between the two runs follows where the upload is when the key arrives: 64 samples here, 128 after the header-agreement flag, 256 when BEGIN
+  made two extra card reads. The scenario now accepts up to 256 and still requires 0 differing samples from the onset on), and the
   card sectors added by the upload are store sectors only (no selection sector).
 - **+Drive round trip**: after the `ops` run, `plusdrive export` writes the store's files to `digikit/`, a second export changes nothing, and
   `plusdrive build` of that folder gives a card whose store lists them. Unit tests cover the three-way rule: a file changed in the folder
@@ -158,13 +160,125 @@ Verdict: **possible, not needed for modules, worth it only for samples; two to t
 - Nothing ran on a device. The python-rtmidi transport is untested against hardware. Whether the real MIDI task handles a 37 kB SysEx
   without the host's pacing (the 160 KiB block pool and the DPC queue) is a hardware question; the emulator's delivery is gentler than a
   host driver.
-- A reply is sent from the MIDI task through the firmware's TX function, which spins on a full ring: a host that does not read its input
-  would hang the MIDI task (replies are under 1 KiB, the ring is 4 KiB).
-- The menu's store reader (UI task) and an upload (MIDI task) are not synchronised: a list refreshed during a commit can see a torn
-  table and show an error until it is refreshed again.
-- After CLEAR the space is reused from sector 1. A cut between header B and header A of a CLEAR, followed by an upload and a torn header B
-  on top of it, could leave header A pointing at a table that was overwritten (the table CRC then fails and the store is empty). It needs
-  two faults in a row.
+- **[C]** The three items that stood here (a reply into a full TX ring, the menu's reader against a commit, the CLEAR double fault) are
+  closed in the last section ("Phase 8 safety"). What stays open from them: the TX analysis is static and the emulator does not model the
+  USB IN endpoint, so a host that really never reads has not been run **[O]**; nothing ran on a device.
 - SHA-256 speed (above). A store is limited to 256 files for upload commands.
 - The exporter treats a store file named like a deleted folder file by the three-way rule only; a card built from an older folder than
   the one the export meets is reported as `kept`.
+
+## Phase 8 safety: a reply into a full TX ring, the menu's reader against a commit, the CLEAR double fault (lane r4, 2026-10-18)
+
+Marks as in the header. Kept scenarios: `upload-txfull`, `upload-clear-cut` (new), the sdk host tests (`cargo test`, see item 3), beside the
+unchanged `upload-*`. All emulator; nothing ran on a device.
+
+### 5. No unbounded spin on a reply **[D]** (static analysis + scenario)
+
+The TX function `FUN_40004734` (same hash, same entry address `0x40004734` on all four images) keeps three RAM words: the *ready* flag, the
+bytes *in flight* `f` (the USB stack was handed them and has not sent them: `FUN_400045d6` adds the length, the completion callback
+`0x400041a8` subtracts it; DT2 `0x409659dc`, DN2 1.11 `0x4058e224`, 1.12 `0x4058f224`) and the ring's write offset. It returns at once when
+ready is 0 or the USB register is 0, and otherwise **spins** in two places: once at a wrap (`len > 0x2f`, write offset `> 0xfbf`: until `f < w -
+0x3f`) and per 4-byte event until `queued_in_this_call + f <= 0xffb`. A second blocking point is behind it: `FUN_400045d6` takes a transfer
+buffer from a pool of 32 (`FUN_40005560` links 64-byte entries over 0x800 bytes; the allocator was not traced, so one may be reserved **[D]**), and with none free the caller pends. A host that never reads leaves `f` where it is, so every
+reply adds to it until the first loop (4 KiB) or the pool stops the MIDI task: the whole device's MIDI and, through the same task, the router.
+
+**Rule** (`upload.rs` `tx_room`): before `midi_send`, read `f` through the anchor `dkrt.fw.tx_inflight_lit` (the 4-byte literal of the
+function's `movea.l (<f>).l,a0`, `cf_func` hash `0d9c170d...` offset `0x42`, same on the four ports; the bytes `2079` before it are checked by
+`port_resolve`'s hash and by me on all four images). The reply is sent only when `f <= 256` and `f + 4 * (ceil(wire / 3) + 1) <= 0xff0` (the
+wire bytes, three per event); otherwise it is **dropped** and `DKRT_UPLOAD_DROPPED` counts it. The host's retry (it already has one: lost
+replies are tested in `upload-rust`) asks again. The 256 bytes are the pool rule: our smallest reply is a 16-byte transfer, so at most 16 of
+ours wait for a host that reads nothing, and the pool of 32 is not used up by us; stock traffic (4 bytes a transfer) has the rest. With the
+anchor not pointing at a DDR word no reply is sent. No wait, no loop, no lock. **[V]** (second agent, 2026-10-18, all four images): the two
+spin conditions and that a guarded send cannot reach either, **assuming no stock sender raises `f` between the check and the call**: the margin to
+`0xffb` is 11 bytes, and another task sending three or more events in that window could still make a non-reading host hang the MIDI task
+**[O]** (closing it means checking `f` under the firmware's TX mutex). The literal of `f` is only 2-aligned; the ColdFire splits the read, so it
+works, but a `read_unaligned` would be cleaner.
+
+Test `upload-txfull` (cf-only rig; the emulator captures the arguments of the TX function and does not model its ring, so the test sets `f`
+by poking it): `f` = 0xf00 and `f` = 0x200: 20 INFO requests each, no byte reaches `midi.usb.out`, `DKRT_UPLOAD_DROPPED` rises by 40 and
+the sent-reply count does not; a stock MidiRpc Ping with `f` still 0xf00 is answered (the MIDI task and its router are alive); `f` = 0x100 and
+0: the reply is sent. **Control:** with `tx_room` forced true the same scenario fails on exactly those checks (29 bytes reach the output per
+request, nothing counted dropped). Not run: a real full ring (the spin itself) **[O]**.
+
+### 3. The menu's reader against a commit **[D]** (host unit test + static argument; no scenario forces the interleave)
+
+An upload commit writes the new table (fresh sectors), header B, then header A. A reader in the UI task reads header A, header B, then the table.
+With fresh sectors the table of either header stays intact, so a plain `open` is already safe for an ordinary commit: it can only pick the old
+or the new store. The torn read is the **reuse** case: after CLEAR the next upload stages over sector 1, where the old table was; a reader
+that read the old header before the CLEAR finished then reads garbage for its table, its table CRC fails and the menu shows a store error until
+it is refreshed.
+
+**Rule** (`dkrt_sdk::store::open_stable`, used by `scan_store` in the menu): read a fingerprint of the two header sectors (header CRC and
+table CRC words), `open`, read the fingerprint again; when it changed a commit ran in between: try again (at most 4 retries, then return the
+last answer). `scan_store` repeats the same around its whole scan (it also reads file header words for the compatibility mark), at most 3
+times. No lock and no flag: neither task ever waits for the other, so there is nothing to deadlock; the cost is two more sector reads per scan.
+The upload side needs nothing: it writes in the order that keeps the old store valid until header B.
+
+Proof: the host tests of `modules/core/runtime/sdk` (`cargo test` outside the workspace; the crate has `[workspace]` absent, run it from a copy
+or with `--manifest-path` and an empty `[workspace]`): a mocked card whose reads apply the steps of a commit between two reads, at every read
+position and with the steps one read apart, two reads apart or all at once. (a) An upload commit: `open_stable` always returns the old or the new
+store. (b) A CLEAR followed by staging over the old table: `open_stable` always returns the old or the new store, and the plain `open` fails in
+some of the same interleavings (the test asserts that, so it cannot pass by not exercising the race). The emulator cannot force the interleave
+(the two tasks run on one scheduler and the card read does not yield at chosen points).
+
+### 4. The CLEAR double fault **[D]** (scenario + control)
+
+The hazard was exactly as described in the Open list: CLEAR cut between header B and header A leaves B = empty store (higher `seq`), A = the old
+store, pointing at a table in sector 1 or later; the next upload starts at `used = 1` and stages over that table; if its header B write tears, A
+(old, stale) is the only copy that parses and its table CRC fails: both copies unusable, the store reads as damaged (`E_NOSTORE`), though the
+last committed store (empty) was fine.
+
+**Rule** (`upload.rs` `sync_headers`, called by BEGIN after it has read the store and before it reserves anything): both header copies must
+say the same thing before any sector is staged. When the copy that lost the `seq` comparison is missing, torn, version 1 or different in any
+field, BEGIN rewrites it from the winner (version 2, same `seq`) first; if that write fails, BEGIN answers `E_WRITE` and stages nothing.
+Reuse (staging over a table that a header still names) now starts only when both headers name no table that staging touches: after CLEAR both
+say "empty", after a cut between B and A the lagging one has been brought up. `store::open` has read both headers for its own choice and now says whether they agree (`Table::agree`), so a healthy store costs BEGIN nothing; a repair is one more read and one write. Without
+reuse (everything but CLEAR) a stale header is harmless, as before: nothing it points at is overwritten.
+
+Test `upload-clear-cut` (cf-only; new daemon on the overlay of the last, as `upload-cut`; `DKRT_UPLOAD_TEAR` is a new test knob: the Nth
+card write keeps only its first 256 bytes and every later write is refused):
+- *clear*: CLEAR cut after write 1 (B): refused its second write; the next boot reads B, the empty store. Next upload (write 1 = the repair of
+  A, 2 = data, 3 = table, **4 = header B, torn**): the reader then finds a valid empty store (plusdrive: `version=2 seq=2 header=A`), LIST is
+  empty, and a further upload commits.
+- *upload*: an upload cut after header B (new store in B, old in A), then an upload whose B tears: the first upload's file is still there (A was
+  made equal to B by the second BEGIN), plusdrive reads it, a further upload commits.
+
+**Control:** with `sync_headers` forced to return at once the two cases fail (the torn write then lands on a different write, the store
+holds a different set); the scenario cannot pass without the rule.
+
+Also changed: `INFO`'s `free_bytes` and the new HEALTH rows use one formula, `dkrt_sdk::store::free_bytes(used, count)`.
+
+### 2. `patchkit pack` refuses a ColdFire object that has not passed the ISA check **[D]**
+
+Mechanism (the simplest sound one): the build records its own passing check. `pk_build.cf_object` runs `pk_link.check_isa` (our decoder over every
+instruction, ISA_A/B/C + EMAC only; it raises otherwise) and writes `toolchain.isa_check` into the `.dko.json`: SHA-256 over the object's
+sections (name, kind, alignment, size, bytes), symbols and relocations in a fixed framing (`pk_build.isa_digest`; the same framing is
+`Dko::isa_digest` in `packages/patchkit/src/dko.rs`). `dkm::pack_full`, the one function every `pack` goes through, calls
+`Dko::require_isa_checked`: a ColdFire object with no record, or with a record that does not match the bytes it holds, is refused with the
+reason (`... has no ISA check record: build it with mise run patch:build` / `... does not match its bytes (edited after the build?)`). A data-only module (no
+ColdFire object) and SHARC objects are not affected. It is a guard against accident (a hand-made object, a changed byte, an object from before
+the record), not a signature: whoever can run the build can write the record, and the checker's policy stays in one place (`tools/coldfire/isacheck.py`;
+a second copy of it in Rust was the alternative and would be a fourth place to keep equal).
+
+All 24 committed ColdFire objects were rebuilt (`mise run patch:build`; the diff of each is the one added key) and `patch:build --check`
+is current. Tests: `cargo test -p patchkit --test isa_record` (every committed ColdFire object's record equals the digest computed in Rust,
+which proves the two implementations of the framing agree; a changed code byte, relocation, symbol value or alignment is refused; a record
+copied from another object does not help; an object with no record is refused), `dkm::tests::an_object_that_has_not_passed_the_isa_check_is_refused`,
+and `tools/patchkit/pk_dkrt.py` (the deliberately bad-import object is re-stamped for its new relocation, as a build would).
+
+### Tests run **[D]**
+
+- Four ports (DT2 1.16, 1.17, DN2 1.11, 1.12), full tier, `--jobs 4` on a machine other lanes were also using: `safe-late-fault`, `upload-clear-cut`,
+  `upload-txfull`, `safe-fault`, `upload-cut`, `upload-ops`, `upload-stock`, `upload-playback` (DT2), `menu-upload-pluck-demo`, `equiv-dyn-pluck`,
+  `equiv-dn2-set`, `cut-selection`: **44 (scenario, image) pairs, all pass, 897 s wall**. Seconds per pair (loaded machine): `upload-clear-cut`
+  37 to 45, `upload-txfull` 11 to 14, `upload-cut` 57 to 62, `upload-ops` 13 to 15, `upload-stock` 11 to 13, `upload-playback` 39 and 60,
+  `safe-late-fault` 124 to 328 (87 s alone), `safe-fault` 47 to 69, `menu-upload-pluck-demo` 103 to 237, `equiv-dyn-pluck` 56 to 94.
+- After the last runtime change (the store figures read once instead of on every HEALTH refresh): `upload-ops`, `upload-clear-cut`, `upload-txfull`,
+  `upload-cut` again on all four ports, 16 of 16 pass; the HEALTH proof (`tools.coldfire.digikit_health_proof run --quick --no-cost`, DT2 1.17 and
+  DN2 1.12) 29 of 29.
+- `cargo test` of the sdk (12 tests, run by `tests/patchkit/test_patchkit_dkrt_boot.py`), `cargo test -p patchkit` (35 unit tests, the integration
+  tests, `isa_record` 2), pytest of `tests/patchkit/test_patchkit_dkrt_boot.py`, `test_digikit_menu.py`, `test_health.py`, `test_patchkit_dkrt.py`,
+  `tests/devtools/test_lint.py`, `test_types.py`: 48 pass, 2 skip; ruff and `pathcheck` (no new stale reference).
+- **[C]** `upload-playback` accepted an onset shift of at most 128 samples between the note alone and the note during an upload; it was 64 before
+  this work. BEGIN with two extra card reads made it 256, a phase effect (see "During playback" above), so the first version of `sync_headers` was
+  changed to use what `store::open` has read (no extra reads in a healthy store: shift 128) and the scenario now accepts 256 with 0 differing samples.

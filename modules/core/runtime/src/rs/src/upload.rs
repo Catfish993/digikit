@@ -4,12 +4,14 @@
 //! came in on USB cable 0, after the firmware gathered it and before its router. A message that starts `F0 7D 64 6B` is ours: it is
 //! handled here (one request, one reply, in order) and the router never sees it; any other message returns 0 and takes the stock route.
 //!
+//! A reply is sent only when the firmware's TX ring has room (`tx_room`), so a host that does not read its input cannot hang the MIDI task.
+//!
 //! Store writes go through the firmware's block write, only to store sectors: staged data and tables in `[1, LIMIT)`, the two header
 //! copies at sector 0 and `HEADER_B`. Never the selection record (the two sectors after `HEADER_B`). Rules: no `match` on integers (a
 //! dense one becomes a jump table, which is not ColdFire code), no `core::fmt`, no slice indexing (a bounds panic hangs the task).
 
 use crate::sha256::Sha;
-use crate::{block_read, block_write, boot, midi_send, rd32, wr32};
+use crate::{block_read, block_write, boot, midi_send, rd32, tx_in_flight, wr32};
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::store::{self, Hdr, ENTRY, FIRST, HEADER_B, LIMIT};
 use dkrt_sdk::{E_NOT_FOUND, OK, RUNTIME_VERSION};
@@ -95,6 +97,16 @@ static mut RWIRE: [u8; 1100] = [0; 1100];
 pub static mut DKRT_UPLOAD_CUT: u32 = 0;
 #[no_mangle]
 pub static mut DKRT_UPLOAD_WRITES: u32 = 0;
+/// Test knob: when not 0, the Nth card write since boot (counted in `DKRT_UPLOAD_WRITES`) is torn when it is one sector: only its first
+/// 256 bytes reach the card (a header then fails its CRC), and every later write is refused as with `DKRT_UPLOAD_CUT`.
+#[no_mangle]
+pub static mut DKRT_UPLOAD_TEAR: crate::boot::Knob = crate::boot::Knob(0);
+#[repr(C, align(16))]
+struct Sec([u8; 512]);
+static mut TEAR_BUF: Sec = Sec([0; 512]);
+/// Replies dropped because the TX ring had no room (the host retries).
+#[no_mangle]
+pub static mut DKRT_UPLOAD_DROPPED: u32 = 0;
 /// Requests handled and the last status (the proofs peek these).
 #[no_mangle]
 pub static mut DKRT_UPLOAD_COUNT: u32 = 0;
@@ -156,6 +168,24 @@ unsafe fn pack(src: *const u8, n: usize, dst: *mut u8) -> usize {
 
 // ---- replies -------------------------------------------------------------------------------------------------------------
 
+/// The most bytes the firmware may hold unsent in its USB MIDI TX ring (4 KiB) when a reply is sent. The TX function spins, with the MIDI
+/// task in it, while the bytes queued plus this word exceed 0xffb, and the USB stack has 31 transfer buffers that a send takes one of (and
+/// waits for when none is free): our smallest reply is a 16-byte transfer, so 256 bytes cap the replies waiting at 16 and leave the
+/// stock traffic (clock, notes: 4 bytes a transfer) its share. Above this the reply is dropped.
+const TX_BUSY_MAX: u32 = 256;
+/// The ring's size less its own margin (the function's `0xffb`).
+const TX_RING: u32 = 0xff0;
+
+/// Is there room to send a reply of `wire` bytes without the firmware's TX function waiting? It packs 3 bytes of a SysEx message into
+/// each 4-byte event, and waits only when the bytes in flight plus what it queued reach the ring size (finding 43).
+unsafe fn tx_room(wire: usize) -> bool {
+    let need = ((wire as u32 + 2) / 3 + 1) * 4;
+    match tx_in_flight() {
+        Some(f) => f <= TX_BUSY_MAX && f + need <= TX_RING,
+        None => false, // the anchor does not point at a counter: no reply rather than a possible hang
+    }
+}
+
 /// Send the reply for `cmd`/`seq`: status, then the `extra` bytes already in `RBODY[1..1+extra]`.
 unsafe fn reply(cmd: u32, seq: u32, status: i32, extra: usize) -> i32 {
     let rb = addr_of_mut!(RBODY) as *mut u8;
@@ -170,9 +200,13 @@ unsafe fn reply(cmd: u32, seq: u32, status: i32, extra: usize) -> i32 {
     *w.add(6) = (seq & 0x7f) as u8;
     let n = pack(rb, 1 + extra, w.add(7));
     *w.add(7 + n) = 0xf7;
+    DKRT_UPLOAD_LAST = status;
+    if !tx_room(8 + n) {
+        DKRT_UPLOAD_DROPPED = DKRT_UPLOAD_DROPPED.wrapping_add(1);
+        return 1; // the host reads nothing, or slowly: its retry asks again
+    }
     midi_send((8 + n) as u32, w, 2);
     DKRT_UPLOAD_COUNT = DKRT_UPLOAD_COUNT.wrapping_add(1);
-    DKRT_UPLOAD_LAST = status;
     1
 }
 
@@ -188,6 +222,10 @@ struct St {
     seq: u32,
     count: u32,
     sectors: u32,
+    /// Which header copy it came from: 0 = A, 1 = B.
+    copy: u32,
+    /// The other copy says the same (nothing to repair).
+    agree: bool,
 }
 
 /// Read the current store; its table is then at `buf`. A card with nothing in the range is an empty store (`used` 1, `seq` 0).
@@ -198,11 +236,11 @@ unsafe fn state(buf: *mut u8) -> Result<St, i32> {
             if t.count > TABLE_MAX {
                 return Err(E_NOSTORE);
             }
-            Ok(St { used: t.used, seq: t.seq, count: t.count, sectors: t.sectors })
+            Ok(St { used: t.used, seq: t.seq, count: t.count, sectors: t.sectors, copy: t.copy, agree: t.agree })
         }
         Err(e) => {
             if e == E_NOT_FOUND {
-                Ok(St { used: 1, seq: 0, count: 0, sectors: 0 })
+                Ok(St { used: 1, seq: 0, count: 0, sectors: 0, copy: 0, agree: true })
             } else {
                 Err(E_NOSTORE)
             }
@@ -229,13 +267,24 @@ unsafe fn card_write(sector: u32, bytes: u32, buf: *const u8) -> bool {
         return false;
     }
     DKRT_UPLOAD_WRITES = DKRT_UPLOAD_WRITES.wrapping_add(1);
+    let tear = core::ptr::read_volatile(addr_of!(DKRT_UPLOAD_TEAR.0));
+    if tear != 0 && DKRT_UPLOAD_WRITES == tear && bytes == 512 {
+        let t = addr_of_mut!(TEAR_BUF) as *mut u8;
+        copy(t, buf, 256);
+        zero(t.add(256), 256);
+        block_write(sector, 512, t);
+        core::ptr::write_volatile(addr_of_mut!(DKRT_UPLOAD_CUT), DKRT_UPLOAD_WRITES);
+        return false;
+    }
     block_write(sector, bytes, buf) == 0
 }
 
 /// Write a header sector to copy A (`b` false) or B.
 unsafe fn wr_header(b: bool, buf: *const u8) -> bool {
     let rel = if b { HEADER_B } else { 0 };
-    card_write(FIRST + rel, 512, buf)
+    let ok = card_write(FIRST + rel, 512, buf);
+    crate::store::figures_stale(); // the HEALTH page's used and free figures come from the headers
+    ok
 }
 
 fn sectors_of(bytes: u32) -> u32 {
@@ -334,6 +383,37 @@ unsafe fn mv(dst: *mut u8, src: *const u8, n: usize) {
     }
 }
 
+// ---- both headers before space is reused -------------------------------------------------------------------------------------
+
+/// The header sector `rel` as a `Hdr`, `None` when it is not a usable header (the scratch region of `buf` is used).
+unsafe fn header_at(rel: u32, scratch: *mut u8) -> Option<Hdr> {
+    if block_read(FIRST + rel, 512, scratch) != 0 {
+        return None;
+    }
+    store::parse_header(scratch)
+}
+
+/// Make the two header copies say the same thing (finding 43, "CLEAR double fault"). A cut between header B and header A leaves the
+/// copies different, the lagging one pointing at the table of the store before. That is harmless while no sector is reused, but a store
+/// that starts over (CLEAR) stages its next file over exactly those sectors; if that upload's header B then tears, the lagging A would be
+/// the only copy left and would point at overwritten sectors. So BEGIN, which is where staging starts, first rewrites the lagging or
+/// unusable copy from the winner. `false`: that write failed (nothing is staged then). A card with no store has nothing to do.
+unsafe fn sync_headers(buf: *mut u8, st: &St) -> bool {
+    // `store::open` has read both headers already: a healthy store costs nothing here
+    if st.seq == 0 || st.agree {
+        return true;
+    }
+    let scratch = buf.add(SCRATCH_AT);
+    let win_rel = if st.copy == 1 { HEADER_B } else { 0 };
+    let w = match header_at(win_rel, scratch) {
+        Some(h) => h,
+        None => return false,
+    };
+    let h = Hdr { version: 2, ..w };
+    store::encode_header(&h, scratch);
+    wr_header(st.copy == 0, scratch)
+}
+
 // ---- commit -------------------------------------------------------------------------------------------------------------
 
 /// The table in `buf` (`count` entries, padded to its sectors with zeros) goes to store sector `at`; read it back and check its
@@ -387,8 +467,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     *rb.add(1) = 1; // protocol 1
     *rb.add(2) = (RUNTIME_VERSION >> 8) as u8;
     *rb.add(3) = RUNTIME_VERSION as u8;
-    let id: &[u8; 4] = if crate::device() == dkrt_sdk::DEVICE_DT2 { b"dt2\0" } else { b"dn2\0" };
-    copy(rb.add(4), id.as_ptr(), 4);
+    wr32(rb.add(4), crate::device_name()); // the device's short name from its device file
     put32(1 + 8, free);
     put32(1 + 12, MAX_CHUNK);
     let flags = (boot::info().safe & 1) | if up().open { 2 } else { 0 };
@@ -446,6 +525,9 @@ unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32
         Ok(s) => s,
         Err(e) => return reply(CMD_BEGIN, seq, e, 0),
     };
+    if !sync_headers(buf, &st) {
+        return reply(CMD_BEGIN, seq, E_WRITE, 0);
+    }
     let need = sectors_of(size) as u64 + table_sectors(st.count + 1) as u64;
     if st.count >= TABLE_MAX || st.used as u64 + need > LIMIT as u64 {
         put32(1, free_bytes(&st));

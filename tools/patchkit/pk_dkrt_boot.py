@@ -57,6 +57,7 @@ ROOT = Path(__file__).resolve().parents[2]
 from tools.coldfire import arena_safety  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import pk_device  # noqa: E402
 from tools.patchkit import pk_dkrt_machine as M  # noqa: E402
 from tools.patchkit import pk_harness as H  # noqa: E402
 from tools.patchkit.pk_dkrt import (  # noqa: E402
@@ -68,10 +69,10 @@ from tools.patchkit.pk_dkrt import (  # noqa: E402
 
 SEL_MAGIC, SEL_VERSION = 0x444B534C, 1
 SEL_MAX, SEL_PATH = 8, 56
-STORE_FIRST, STORE_SECTORS = 0x38000, 0x6000
-SECTOR_A = STORE_FIRST + STORE_SECTORS - 2
-SECTOR_B = STORE_FIRST + STORE_SECTORS - 1
-HEADER_B = STORE_FIRST + STORE_SECTORS - 3  # store header copy B (version 2)
+_STORE = pk_device.store()  # devices/*.toml [card.store], the same on every device
+STORE_FIRST, STORE_SECTORS = _STORE.first, _STORE.sectors
+SECTOR_A, SECTOR_B = _STORE.sel_a, _STORE.sel_b
+HEADER_B = _STORE.header_b  # store header copy B (version 2)
 CMD_LOAD, CMD_SELECT, CMD_RESTART, CMD_SELECT_ONE = (
     1,
     3,
@@ -105,14 +106,27 @@ class Fail(RuntimeError):
 
 
 def make_record(
-    paths: list[str], seq: int = 1, counter: int = 0, flags: int = 0
+    paths: list[str],
+    seq: int = 1,
+    counter: int = 0,
+    flags: int = 0,
+    stable_blocks: int = 0,
 ) -> bytes:
-    """One copy of the selection record (docs/design/digikit-store.md)."""
+    """One copy of the selection record (docs/design/digikit-store.md). STABLE_BLOCKS: the stable period of safe mode (0: the default)."""
     if len(paths) > SEL_MAX or any(len(p) >= SEL_PATH or not p for p in paths):
         raise Fail("selection: at most 8 paths of 1 to 55 characters")
     b = bytearray(512)
     struct.pack_into(
-        ">IIIIII", b, 0, SEL_MAGIC, SEL_VERSION, seq, counter, flags, len(paths)
+        ">IIIIIII",
+        b,
+        0,
+        SEL_MAGIC,
+        SEL_VERSION,
+        seq,
+        counter,
+        flags,
+        len(paths),
+        stable_blocks,
     )
     for i, p in enumerate(paths):
         b[32 + i * SEL_PATH : 32 + i * SEL_PATH + len(p)] = p.encode()
@@ -214,6 +228,7 @@ class Env:
         seq: int = 1,
         flags: int = 0,
         tag: str | None = None,
+        stable_blocks: int = 0,
     ) -> Path:
         """A card image with the folder's store and, when SELECTION is not None, both copies of the record."""
         self.cards += 1
@@ -221,7 +236,7 @@ class Env:
         path.unlink(missing_ok=True)
         build_card(self.tools, self.folder, path, self.stock, self.device)
         if selection is not None:
-            rec = make_record(selection, seq, counter, flags)
+            rec = make_record(selection, seq, counter, flags, stable_blocks)
             write_record_sectors(path, rec, rec)
         return path
 
@@ -349,6 +364,7 @@ class BootRig(M.Rig):
         d["results"] = res[: d["count"]] if d["count"] else res[:0]
         d["all_results"] = res
         d["dsp_wait"] = self.w(self.boot_sym + 4 * (len(BI_FIELDS) + SEL_MAX))
+        d["stable"] = self.w(self.boot_sym + 4 * (len(BI_FIELDS) + SEL_MAX + 1))
         d["reason_name"] = SAFE_NAMES.get(d["reason"], "?")
         return d
 

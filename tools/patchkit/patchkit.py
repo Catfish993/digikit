@@ -5,6 +5,7 @@
     uv run python -m tools.patchkit.patchkit patch --firmware X.syx --modules a,b [-o OUT.syx]   apply; writes out/patch/
     uv run python -m tools.patchkit.patchkit explain --firmware X.syx --modules a,b              site-by-site account
     uv run python -m tools.patchkit.patchkit list|inspect|check|verify|gen ...                     passed through
+    uv run python -m tools.patchkit.patchkit pack MODULE --device dt2|dn2 [-o OUT.dkm]  pack a run-time module (default out/patch/<name>-<device>.dkm)
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
     uv run python -m tools.patchkit.patchkit inject [OUT.syx] [--hot]  load a patched image into the running emulator
 
@@ -34,27 +35,44 @@ def target_dir() -> Path:
     return Path(native_target.target_dir(None)).parent / "nogen"
 
 
+_BUILT: Path | None = None
+
+
 def binary(build: bool = True) -> Path:
-    exe = target_dir() / "release" / "patchkit"
+    """The patchkit binary to run: an immutable copy (tools/devtools/stablebin.py), never cargo's own
+    `release/patchkit`, which every `cargo build` rewrites (a process that execs it meanwhile can hang)."""
+    global _BUILT
+    from tools.devtools import stablebin
+
+    target = target_dir()
+    exe = target / "release" / "patchkit"
+    if build and _BUILT is not None:
+        return _BUILT
+    if not build and not exe.is_file():
+        return exe
+    with stablebin.build_lock(target):
+        if build:
+            r = subprocess.run(
+                [
+                    "cargo",
+                    "build",
+                    "-p",
+                    "patchkit",
+                    "--release",
+                    "--offline",
+                    "--target-dir",
+                    str(target),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode:
+                raise SystemExit(f"cannot build patchkit:\n{r.stderr[-3000:]}")
+        stable = stablebin.stable_copy(exe, target)
     if build:
-        r = subprocess.run(
-            [
-                "cargo",
-                "build",
-                "-p",
-                "patchkit",
-                "--release",
-                "--offline",
-                "--target-dir",
-                str(target_dir()),
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode:
-            raise SystemExit(f"cannot build patchkit:\n{r.stderr[-3000:]}")
-    return exe
+        _BUILT = stable
+    return stable
 
 
 def run(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
@@ -204,6 +222,38 @@ def cmd_patch(args: list[str]) -> int:
     return r.returncode
 
 
+def cmd_pack(args: list[str]) -> int:
+    """`pack MODULE [--device dt2|dn2] [-o OUT.dkm] [--name N] [--runtime-min V]`: a run-time module as a .dkm."""
+    module = next(
+        (
+            a
+            for i, a in enumerate(args)
+            if not a.startswith("-") and (i == 0 or args[i - 1] not in VALUE_FLAGS)
+        ),
+        None,
+    )
+    if module is None:
+        raise SystemExit(
+            "pack needs a module id, e.g. pack test/dyn-pluck --device dt2"
+        )
+    out = flag(args, "-o")
+    if out is None:
+        d = ROOT / "out" / "patch"
+        d.mkdir(parents=True, exist_ok=True)
+        device = flag(args, "--device")
+        out = str(
+            d / (module.rsplit("/", 1)[-1] + (f"-{device}" if device else "") + ".dkm")
+        )
+        args = [*args, "-o", out]
+    r = run(["pack", *args])
+    if r.returncode == 0:
+        print(f"dkm: {out}")
+    return r.returncode
+
+
+VALUE_FLAGS = ("-o", "--device", "--name", "--runtime-min")
+
+
 def cmd_inject(args: list[str]) -> int:
     from tools.control.digi_client import main as client_main
 
@@ -248,6 +298,8 @@ def main(argv: list[str]) -> int:
         return cmd_explain(args)
     if cmd == "inject":
         return cmd_inject(args)
+    if cmd == "pack":
+        return cmd_pack(args)
     if cmd in ("list", "inspect", "check", "verify", "apply", "rebuild", "gen"):
         return run([cmd, *args]).returncode
     print(__doc__)

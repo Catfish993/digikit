@@ -16,6 +16,10 @@ docs/findings/43-digikit-upload.md). Run by `tools.patchkit.pk_digikit_scen` (ki
             against the device side: INFO, LIST, put of a built module and of 70,000 bytes, replace, DELETE, E_HASH, lost replies, CLEAR; each
             step compared with the Python tool's LIST and the card read by plusdrive.
   quick     a short `ops` (one upload, replace, delete) for the verify gate.
+  clearcut  two faults in a row (finding 43): a cut between header B and header A (of a CLEAR, of an upload), then a torn header B on
+            the next upload; the store still reads as the committed store and takes another upload.
+  txfull    a host that never reads: the in-flight word of the firmware's TX function is set high; replies are dropped (counted), none
+            reaches the output, a stock Ping still answers, and the reply is sent again once the ring has room.
 
 The through-the-menu proof (an uploaded module appears in DIGIKIT > MODULES, loads after APPLY & RESTART and plays like the
 card-built module) is the `menu` kind with `upload = true` (tests/digikit/scenarios/menu-upload-*.toml).
@@ -778,6 +782,10 @@ def run_playback(c: Any) -> None:
         out["during"],
         c.report,
         "note during an upload",
+        # The onset may differ by a few blocks: the MIDI task's work (header reads, the SHA-256 of the file) keeps the UI task from
+        # handling the TRIG key for as long as it runs, so the shift follows where the upload is when the key arrives (64 samples in the
+        # first run of this scenario, 128 after the header-agreement flag, 256 with two extra card reads). From the onset on, not one sample may differ.
+        max_shift=256,
     )
     c.checks += rig_checks
     extra = out["writes-during"] - out["writes-alone"]
@@ -803,6 +811,234 @@ class _Collect:
         print(f"{'ok  ' if ok else 'FAIL'} {name} {detail}", flush=True)
 
 
+# ---- CLEAR: two faults in a row -------------------------------------------------------------------------------------------------
+
+
+def _poke_u32(rig: Any, img: Any, name: str, value: int) -> None:
+    rig.emu.poke32(M.sym(img.plan, "core/runtime", name), value)
+
+
+def _after(c: Any, rig: Any, base: Path, tag: str) -> Path:
+    """The card BASE with the guest's writes laid over it (the state a power cut at this moment leaves)."""
+    from tools.patchkit.pk_digikit_project import card_after
+
+    ov = rig.work / f"{tag}.ov.bin"
+    rig.emu.call("card.overlay", path=str(ov))
+    with c.lock:
+        c.all_writes |= _writes(ov)
+    return card_after(c, base, ov)
+
+
+def run_clearcut(c: Any) -> None:
+    """Finding 43, "CLEAR double fault". Fault 1 cuts an operation between header B and header A; fault 2 tears the next upload's header B.
+    The store must still be a valid store (the committed one) afterwards, not damaged.
+
+    clear   CLEAR is cut after header B: B is the empty store, A still the old one, pointing at a table in sector 1. The next upload
+            stages its file over sector 1 (the store starts over) and its header B write tears. Without the rule that BEGIN first makes
+            the copies equal, A would be the only usable copy and point at overwritten sectors: the store reads as damaged.
+    upload  An upload is cut after header B (the new store in B, the old one in A) and the next upload's header B tears: the first
+            upload's files must still be there (A was made equal to B by the second BEGIN)."""
+    old = blob(3000, 61)
+    one = blob(700, 62)
+    two = blob(700, 63)
+    folder = c.env.folder / "digikit" / "modules"
+    (folder / "old.dkm").write_bytes(old)
+    base = c.card(None)
+    (folder / "old.dkm").unlink()
+    img = c.image_for(B.RT, "run")
+    old_files = {"modules/old.dkm": old}
+
+    def session(
+        label: str,
+        card: Path,
+        knobs: dict[str, int],
+        action: Any,
+    ) -> tuple[Path, int]:
+        with c.rig(img, card, label, cf_only=True) as rig:
+            for k, v in knobs.items():
+                _poke_u32(rig, img, k, v)
+            up = D.Uploader(transport(rig))
+            st = action(up)
+            nxt = _after(c, rig, card, label)
+            c.done(rig)
+        return nxt, st
+
+    def verify(label: str, card: Path, want: dict[str, bytes], then: bytes) -> None:
+        with c.rig(img, card, label, cf_only=True) as rig:
+            up = D.Uploader(transport(rig))
+            got = {p: (s, h) for p, s, h in up.ls()}
+            w = {p: (len(b), sha(b).hex()) for p, b in want.items()}
+            c.check(
+                f"{label}: the store reads (not damaged) and holds {sorted(want) or 'nothing'}",
+                got == w,
+                f"{got}",
+            )
+            view, head, _ = card_view(c, rig, card, f"{label}-v")
+            c.check(
+                f"{label}: plusdrive reads the same from the card", view == want, head
+            )
+            st = put_status(up, "modules/after.dkm", then)
+            files = dict(want)
+            files["modules/after.dkm"] = then
+            view, head, _ = card_view(c, rig, card, f"{label}-w")
+            c.check(
+                f"{label}: the next upload works and commits",
+                st == 0 and view == files,
+                f"{st} {sorted(view)} {head}",
+            )
+            c.done(rig)
+
+    def clear_case() -> None:
+        # fault 1: CLEAR writes header B (write 1) and is cut before header A
+        card1, st1 = session(
+            "cc-1", base, {"DKRT_UPLOAD_CUT": 1}, lambda up: put_status_clear(up)
+        )
+        c.check(
+            "clear cut after header B: CLEAR is refused its second write",
+            st1 == -57,
+            str(st1),
+        )
+        with c.rig(img, card1, "cc-1v", cf_only=True) as rig:
+            up = D.Uploader(transport(rig))
+            c.check(
+                "after the cut the next boot reads B, the empty store", up.ls() == []
+            )
+            c.done(rig)
+
+        # fault 2: the next upload: write 1 = the repair of header A, 2 = the data, 3 = the table, 4 = header B, torn
+        def torn_upload(up: D.Uploader) -> int:
+            return put_status(up, "modules/one.dkm", one)
+
+        card2, st2 = session("cc-2", card1, {"DKRT_UPLOAD_TEAR": 4}, torn_upload)
+        c.check(
+            "the upload whose header B tears reports a write error",
+            st2 == -57,
+            str(st2),
+        )
+        verify("clear-cut-then-tear", card2, {}, two)
+
+    def upload_case() -> None:
+        # fault 1: an upload of a small file does data (1), table (2), header B (3), header A (4): cut after B
+        card1, st1 = session(
+            "cu-1",
+            base,
+            {"DKRT_UPLOAD_CUT": 3},
+            lambda up: put_status(up, "modules/one.dkm", one),
+        )
+        c.check(
+            "upload cut after header B: refused its last write", st1 == -57, str(st1)
+        )
+        # fault 2: the next upload: 1 = repair of A, 2 = data, 3 = table, 4 = header B, torn
+        card2, st2 = session(
+            "cu-2",
+            card1,
+            {"DKRT_UPLOAD_TEAR": 4},
+            lambda up: put_status(up, "modules/two.dkm", two),
+        )
+        c.check("the second upload's header B tears", st2 == -57, str(st2))
+        verify(
+            "upload-cut-then-tear", card2, {**old_files, "modules/one.dkm": one}, two
+        )
+
+    c.parallel(clear_case, upload_case)
+    c.common_checks_upload()
+
+
+def put_status_clear(up: D.Uploader) -> int:
+    try:
+        up.clear()
+        return 0
+    except D.UploadError as e:
+        return e.status
+
+
+# ---- a host that never reads -----------------------------------------------------------------------------------------------------
+
+
+def _literal_value(rig: Any, image: str, anchor: str) -> int:
+    """The 4-byte address literal of the code anchor ANCHOR of the port file (not word aligned: read as bytes)."""
+    import tomllib
+
+    from tools import REPO_ROOT
+
+    port = tomllib.loads(
+        (REPO_ROOT / "devices" / "ports" / f"{image}.toml").read_text()
+    )
+    at = next(a["addr"] for a in port["anchor"] if a["name"] == anchor)
+    base = at & ~3
+    raw = rig.w(base).to_bytes(4, "big") + rig.w(base + 4).to_bytes(4, "big")
+    return int.from_bytes(raw[at - base : at - base + 4], "big")
+
+
+def run_txfull(c: Any) -> None:
+    """A host that never reads its MIDI input leaves the firmware's 4 KiB TX ring full, and the firmware's TX function waits in a loop for
+    room. A reply sent into a full ring would hang the MIDI task. The runtime checks the bytes in flight before it sends and drops the reply.
+    The emulator does not model the USB IN endpoint, so the test sets the in-flight word of the TX function (the anchor
+    `dkrt.fw.tx_inflight_lit`) to what a host that reads nothing leaves, and checks: replies are dropped and counted, nothing reaches the
+    output, the MIDI task still routes a stock message (the Ping answers), and a reply is sent again once the ring has room."""
+    img = c.image_for(B.RT, "run")
+    base = c.card(None)
+    with c.rig(img, base, "txfull", cf_only=True) as rig:
+        tr = transport(rig)
+        up = D.Uploader(tr)
+        sym = lambda n: M.sym(img.plan, "core/runtime", n)  # noqa: E731
+        flight = _literal_value(rig, c.image, "dkrt.fw.tx_inflight_lit")
+        c.check(
+            "the in-flight word is a DDR address",
+            0x40000000 <= flight < 0x48000000 and flight % 4 == 0,
+            hex(flight),
+        )
+        c.check(
+            "an INFO answers while the ring is empty", up.info()["port"] == c.device
+        )
+        dropped0 = rig.w(sym("DKRT_UPLOAD_DROPPED"))
+        sent0 = rig.w(sym("DKRT_UPLOAD_COUNT"))
+
+        def raw(msg: bytes) -> bytes:
+            rig.emu.usb_out()  # empty the capture
+            rig.emu.usb_in(msg, **HS)
+            for _ in range(40):
+                rig.emu.step(400_000)
+            return bytes(rig.emu.usb_out())
+
+        req = D.frame(D.CMD_INFO, 5)
+        for level, name in ((0x0F00, "a full ring"), (0x0200, "512 bytes in flight")):
+            rig.emu.poke32(flight, level)
+            out = [raw(req) for _ in range(20)]
+            c.check(
+                f"{name}: 20 requests, no reply reaches the output",
+                all(o == b"" for o in out),
+                f"{[len(o) for o in out]}",
+            )
+        c.check(
+            "the 40 replies were dropped and counted",
+            rig.w(sym("DKRT_UPLOAD_DROPPED")) - dropped0 == 40
+            and rig.w(sym("DKRT_UPLOAD_COUNT")) == sent0,
+            f"dropped {rig.w(sym('DKRT_UPLOAD_DROPPED')) - dropped0}",
+        )
+        # the MIDI task is alive: a stock Ping goes the stock way and answers
+        rig.emu.poke32(flight, 0x0F00)
+        ping = raw(rpc_request(0x01))
+        c.check(
+            "the MIDI task still routes stock messages: the Ping answers while the ring is full",
+            ping[:6] == bytes((0xF0, 0x00, 0x20, 0x3C, 0x10, 0x00)),
+            ping[:12].hex(),
+        )
+        # room again: the host's retry gets its reply
+        for level, name in ((0x0100, "256 bytes in flight"), (0, "an empty ring")):
+            rig.emu.poke32(flight, level)
+            out = raw(req)
+            c.check(
+                f"{name}: the reply is sent",
+                D.parse_reply(next(iter(D.split_messages(bytearray(out))), b""))
+                is not None,
+                out.hex(),
+            )
+        # a long reply (LIST of a store with many files) needs more room than a short one
+        c.done(rig)
+    c.common_checks_upload()
+
+
 PARTS = {
     "ops": run_ops,
     "quick": lambda c: run_ops(c, quick=True),
@@ -810,6 +1046,8 @@ PARTS = {
     "stock": run_stock,
     "playback": run_playback,
     "rust": run_rust,
+    "clearcut": run_clearcut,
+    "txfull": run_txfull,
 }
 
 

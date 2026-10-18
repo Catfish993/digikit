@@ -96,12 +96,16 @@ def toolchain_version() -> dict[str, str]:
     return out
 
 
-def compile_source(path: Path, out: Path) -> None:
-    """One C or assembly file to a relocatable ELF."""
+def compile_source(
+    path: Path, out: Path, include_dirs: list[Path] | None = None
+) -> None:
+    """One C or assembly file to a relocatable ELF. `include_dirs` are searched by `.include` and `#include` (the generated
+    includes of `patchkit gen` are in a module's `build/gen/`)."""
+    inc = [f"-I{d}" for d in include_dirs or []]
     if path.suffix in (".s", ".S"):
-        cmd = [str(_tool("as")), *ASFLAGS, "-o", str(out), str(path)]
+        cmd = [str(_tool("as")), *ASFLAGS, *inc, "-o", str(out), str(path)]
     else:
-        cmd = [str(_tool("gcc")), *CFLAGS, "-c", "-o", str(out), str(path)]
+        cmd = [str(_tool("gcc")), *CFLAGS, *inc, "-c", "-o", str(out), str(path)]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode:
         raise PkLinkError(

@@ -5,11 +5,12 @@
 //! It reads the selection record, decides about safe mode, raises the boot counter, and loads the selected modules in order
 //! through the same loader as ever (a module that fails is skipped and reported; the others load). DSP code is sent with
 //! `dl_send` and awaited by polling the state machine here (bounded); what has not finished when the bound is reached continues
-//! in the UI-loop hook as before. The first UI-loop pass (`ui_reached`) clears the counter.
+//! in the UI-loop hook as before. The boot counter is cleared by `ui_pass` once the session has been stable: `STABLE_BLOCKS` DSP blocks (30 s)
+//! after the first UI-loop pass (at the first pass itself in a safe boot, where no module runs). A boot that dies before then counts as bad.
 //!
 //! The record is the only thing the runtime writes to the card, and only to its two sectors (`sel::SECTOR_A`/`SECTOR_B`).
 use crate::{block_read, block_write, dsp, loader, st};
-use core::ptr::{addr_of_mut, read_volatile};
+use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::sel::{self, Record};
 use dkrt_sdk::*;
 
@@ -34,7 +35,20 @@ pub static mut DKRT_BOOT: DkrtBootInfo = DkrtBootInfo {
     ui_reached: 0,
     results: [0; SEL_MAX],
     dsp_wait: 0,
+    stable: 0,
 };
+/// The stable period in DSP blocks (`STABLE_BLOCKS`). A static so that the scenarios can shorten it (they poke it; nothing else writes it).
+#[repr(C, align(4))]
+pub struct Knob(pub u32); // a ColdFire gcc aligns a u32 to 2: the emulator's poke wants a word
+#[no_mangle]
+pub static mut DKRT_STABLE_BLOCKS: Knob = Knob(STABLE_BLOCKS);
+/// The block count at the first UI-loop pass and the number of passes since (the fallback when the block counter does not move).
+#[no_mangle]
+pub static mut DKRT_UI_START: Knob = Knob(0);
+static mut UI_PASSES: u32 = 0;
+/// UI-loop passes after which a block counter that has not moved at all is taken for dead and the counter is cleared as in the first
+/// pass of old (the UI loop runs 30 to 120 times a second: 1800 passes are 15 s to a minute).
+const DEAD_CLOCK_PASSES: u32 = 1800;
 /// The record this boot started from (or an empty one) and the bookkeeping the writes need.
 static mut REC: Record = Record::empty();
 static mut REC_VALID: bool = false;
@@ -136,6 +150,7 @@ pub unsafe fn selection_set(s: *const DkrtSelection) -> i32 {
     let mut r = Record::empty();
     r.seq = cur.seq.wrapping_add(1);
     r.boot_counter = cur.boot_counter;
+    r.stable_blocks = cur.stable_blocks;
     r.flags = s.flags & 1;
     r.count = s.count;
     k = 0;
@@ -161,6 +176,7 @@ pub unsafe fn selection_set_one(i: u32, s: *const DkrtSelection) -> i32 {
     let mut r = Record::empty();
     r.seq = cur.seq.wrapping_add(1);
     r.boot_counter = cur.boot_counter;
+    r.stable_blocks = cur.stable_blocks;
     r.flags = s.flags & 1;
     r.count = s.count;
     let mut k = 0;
@@ -193,7 +209,10 @@ unsafe fn key_held() -> bool {
         return false;
     }
     let q = read_volatile(lit as *const u32);
-    let ddr = |a: u32| (0x4000_0000..0x4800_0000).contains(&a) && a & 3 == 0;
+    // the firmware's objects live in the cached DDR window (`[board]` of the device files)
+    let ddr = |a: u32| {
+        (dkrt_sdk::device::DDR_CACHED_BASE..dkrt_sdk::device::DDR_CACHED_BASE + dkrt_sdk::device::DDR_BYTES).contains(&a) && a & 3 == 0
+    };
     if !ddr(q) {
         return false;
     }
@@ -236,6 +255,9 @@ pub unsafe extern "C" fn dkrt_boot() {
     REC = r;
     REC_VALID = valid;
     REC_COPY = copy;
+    if r.stable_blocks != 0 {
+        DKRT_STABLE_BLOCKS.0 = r.stable_blocks;
+    }
     // safe mode: the record asked for it, or the key, or too many boots that did not reach the UI loop
     let reason = if r.flags & 1 != 0 {
         SAFE_FLAG
@@ -295,21 +317,39 @@ pub unsafe fn note_result(idx: u32, r: i32) {
     }
 }
 
-/// First pass of the UI loop: the boot reached it, so the counter goes back to 0.
-pub unsafe fn ui_reached() {
+/// Every pass of the UI loop (`dkrt_tick`). The first pass notes the block count; the boot counter goes back to 0 when the session has run
+/// `DKRT_STABLE_BLOCKS` blocks past it, or at once in a safe boot (nothing of a module runs there). A hang or a fault in between leaves
+/// the counter raised, so the next boots count it: two such boots in a row start the third in safe mode.
+pub unsafe fn ui_pass() {
     let b = info();
-    if b.ui_reached != 0 {
+    if b.stable != 0 {
         return;
     }
-    b.ui_reached = 1;
     if b.magic != INFO_MAGIC {
+        b.ui_reached = 1;
+        b.stable = 1;
         return; // the boot hook did not run (an image patched without the boot site)
     }
-    let r = REC;
-    if REC_VALID && r.boot_counter != 0 {
-        let mut r = r;
-        r.boot_counter = 0;
-        update(r, REC_COPY, true);
+    let now = crate::fw_blocks().unwrap_or(0);
+    if b.ui_reached == 0 {
+        b.ui_reached = 1;
+        DKRT_UI_START.0 = now;
+        UI_PASSES = 0;
+    }
+    UI_PASSES = UI_PASSES.wrapping_add(1);
+    let elapsed = now.wrapping_sub(DKRT_UI_START.0);
+    let period = core::ptr::read_volatile(addr_of!(DKRT_STABLE_BLOCKS.0));
+    let dead = elapsed == 0 && UI_PASSES >= DEAD_CLOCK_PASSES;
+    if b.safe != 0 || elapsed >= period || dead {
+        b.stable = 1;
+        // The record as the card holds it now, not the one this boot started from: the menu may have saved a selection since.
+        let (cur, copy) = current();
+        if let Some(mut r) = cur {
+            if r.boot_counter != 0 {
+                r.boot_counter = 0;
+                update(r, copy, true);
+            }
+        }
     }
 }
 
@@ -329,5 +369,6 @@ pub unsafe fn boot_info(out: *mut DkrtBootInfo) {
         ui_reached: b.ui_reached,
         results: b.results,
         dsp_wait: b.dsp_wait,
+        stable: b.stable,
     };
 }

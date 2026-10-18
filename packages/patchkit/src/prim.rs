@@ -9,8 +9,6 @@ use crate::module::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-pub const DEVICES: [&str; 2] = ["dt2", "dn2"];
-
 /// Active on this device? (an empty filter means all)
 pub fn on(devices: &[String], dev: &str) -> bool {
     devices.is_empty() || devices.iter().any(|d| d == dev)
@@ -18,8 +16,11 @@ pub fn on(devices: &[String], dev: &str) -> bool {
 
 fn check_devices(owner: &str, what: &str, d: &[String]) -> Result<()> {
     for x in d {
-        if !DEVICES.contains(&x.as_str()) {
-            return Err(err!("{owner}: {what}: device {x:?} is neither dt2 nor dn2"));
+        if crate::devdata::by_short(x).is_none() {
+            return Err(err!(
+                "{owner}: {what}: device {x:?} is not one of {}",
+                crate::devdata::short_list()
+            ));
         }
     }
     Ok(())

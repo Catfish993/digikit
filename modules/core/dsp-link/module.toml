@@ -15,6 +15,11 @@ conflicts = []
 "dn2-1.11" = "experimental"
 "dn2-1.12" = "untested"
 
+# Constants of the DSP objects (tail geometry, area size) from the device files, written by `patchkit gen`.
+[[gen]]
+kind = "sharc"
+path = "build/gen/device-{dev}.inc"
+
 # ColdFire: the hook on the frame sender and the sender's state (both devices; the anchors differ per device).
 [[object]]
 path = "build/dsp-link-cf.dko.json"

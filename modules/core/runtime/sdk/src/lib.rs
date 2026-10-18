@@ -11,9 +11,12 @@ pub const API_VERSION: u32 = 1;
 /// (finding 32), `register` PAGE records and `own_dsp` (finding 33), codes -25/-26 and -30 to -37.
 pub const RUNTIME_VERSION: u32 = 2;
 
-/// `Api::device`.
-pub const DEVICE_DT2: u32 = 1;
-pub const DEVICE_DN2: u32 = 2;
+/// Facts from the device files (`devices/*.toml`) and `core/machines` types.toml that every device agrees on, written by
+/// `patchkit gen` (the `[[gen]]` of core/runtime's module.toml; docs/design/device-data.md). `Api::device` is the device's
+/// `[digikit] id`, read from the runtime's device object, not a constant here.
+pub mod device {
+    include!("device.rs");
+}
 
 /// Slots: function pointers the firmware hooks call. A module binds one by exporting `dkm_slot_<n>`.
 /// Slot 0 runs once per pass of the UI task's event loop (about 120 Hz), as `extern "C" fn(*const Api)`.
@@ -151,6 +154,11 @@ pub struct DkrtHealth {
     pub dsp_area_total: u32,
     pub dsp_area_free: u32,
     pub dsp_area_largest: u32,
+    /// The module store (`HEALTH_STORE`; version 2 of this struct): bytes the store may use in all (header, tables and files), bytes the
+    /// current header says are used, and bytes a new file may still take (the room for the table's next entry kept back).
+    pub store_total: u32,
+    pub store_used: u32,
+    pub store_free: u32,
 }
 
 pub const HEALTH_MAGIC: u32 = 0x484c_5448; // "HLTH"
@@ -163,9 +171,11 @@ pub const HEALTH_DSP: u32 = 4;
 pub const HEALTH_HEAP: u32 = 8;
 pub const HEALTH_HEAP_CUT: u32 = 16;
 pub const HEALTH_HEAP_BAD: u32 = 32;
-/// Cycles in one DSP block (64 samples at 48 kHz) at the 1 GHz core clock of the emulator's model. The real clock of the device is
-/// not known here (finding 41, open): the DSP percentages scale with it.
-pub const DSP_BLOCK_CYCLES: u32 = 666_667;
+/// The store figures are valid (a store header was read; a card without a store has none).
+pub const HEALTH_STORE: u32 = 64;
+/// Cycles in one DSP block (32 samples at 48 kHz, 1500 blocks per second) at the 1 GHz core clock of the emulator's model
+/// (`[board]` of the device files). The real clock of the device is not known **[O]** (finding 41): the DSP percentages scale with it.
+pub const DSP_BLOCK_CYCLES: u32 = device::DSP_BLOCK_CYCLES;
 
 /// `dkrt_module` result: one loaded module.
 #[repr(C)]
@@ -264,10 +274,13 @@ pub const SAFE_NONE: u32 = 0;
 pub const SAFE_COUNTER: u32 = 1; // two boots in a row did not reach the UI loop
 pub const SAFE_KEY: u32 = 2; // the safe-mode key was held at power-on
 pub const SAFE_FLAG: u32 = 3; // the selection record asked for it (`DkrtSelection::flags` bit 0)
-/// The key held at power-on for safe mode: RECORD (panel button 19, `tools/patchkit/pk_harness.py BUTTONS`).
-pub const SAFE_KEY_CODE: u32 = 19;
-/// Boots in a row that did not reach the UI loop after which the next one is safe mode.
+/// The key held at power-on for safe mode (`[digikit] safe_key` of the device files; RECORD, panel button 19).
+pub const SAFE_KEY_CODE: u32 = device::SAFE_KEY_CODE;
+/// Boots in a row that did not stay up for `STABLE_BLOCKS` after which the next one is safe mode.
 pub const SAFE_AFTER: u32 = 2;
+/// The stable period: DSP blocks (1500 per second) of UI loop after which the boot counter is cleared. 45,000 blocks are 30 seconds
+/// (finding 37). A boot that dies before then counts as bad.
+pub const STABLE_BLOCKS: u32 = 45_000;
 
 /// `dkrt_boot_info` result: this boot.
 #[repr(C)]
@@ -292,6 +305,9 @@ pub struct DkrtBootInfo {
     /// Reserved (0). The boot does not wait for DSP code: the frames that carry it start later, so a module with DSP code is
     /// reported `LOADING` until its DSP part is in, over the first UI-loop passes.
     pub dsp_wait: u32,
+    /// 1 once the boot counter is back to 0: after `STABLE_BLOCKS` DSP blocks of UI loop in a normal boot, at the first UI-loop pass in a
+    /// safe boot (finding 37, "Safe mode after the first UI pass"). Appended; the layout only grows at the end.
+    pub stable: u32,
 }
 
 /// The selection record (docs/design/digikit-store.md): one sector, big endian, in two copies at the end of the store range.
@@ -301,8 +317,8 @@ pub mod sel {
     pub const MAGIC: u32 = 0x444b_534c; // "DKSL"
     pub const VERSION: u32 = 1;
     /// Absolute sectors of the two copies (devices/*.toml `[card.store]`: `end_sector - 2` and `end_sector - 1`).
-    pub const SECTOR_A: u32 = store::FIRST + store::SECTORS - 2;
-    pub const SECTOR_B: u32 = store::FIRST + store::SECTORS - 1;
+    pub const SECTOR_A: u32 = device::STORE_SEL_A;
+    pub const SECTOR_B: u32 = device::STORE_SEL_B;
 
     #[derive(Clone, Copy)]
     pub struct Record {
@@ -310,12 +326,15 @@ pub mod sel {
         pub boot_counter: u32,
         pub flags: u32,
         pub count: u32,
+        /// The stable period of this card in DSP blocks (bytes 24 to 27 of the record, reserved zero before): 0 takes `STABLE_BLOCKS`. A
+        /// setting for tests and for people who debug a module; nothing in the menu writes it.
+        pub stable_blocks: u32,
         pub paths: [[u8; SEL_PATH]; SEL_MAX],
     }
 
     impl Record {
         pub const fn empty() -> Record {
-            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, paths: [[0; SEL_PATH]; SEL_MAX] }
+            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, stable_blocks: 0, paths: [[0; SEL_PATH]; SEL_MAX] }
         }
     }
 
@@ -354,6 +373,7 @@ pub mod sel {
         put(out, 12, r.boot_counter);
         put(out, 16, r.flags);
         put(out, 20, r.count);
+        put(out, 24, r.stable_blocks);
         let mut k = 0;
         while k < SEL_MAX {
             let mut j = 0;
@@ -381,6 +401,7 @@ pub mod sel {
         r.boot_counter = get(b, 12);
         r.flags = get(b, 16);
         r.count = count;
+        r.stable_blocks = get(b, 24);
         let mut k = 0;
         while k < SEL_MAX {
             let mut j = 0;
@@ -416,9 +437,9 @@ pub struct Mailbox {
 pub mod store {
     use super::*;
 
-    /// First card sector of the store and its length (devices/*.toml `[card.store]`, both devices).
-    pub const FIRST: u32 = 0x38000;
-    pub const SECTORS: u32 = 0x6000;
+    /// First card sector of the store and its length (devices/*.toml `[card.store]`, the same on every device).
+    pub const FIRST: u32 = device::STORE_FIRST;
+    pub const SECTORS: u32 = device::STORE_SECTORS;
     pub const MAGIC: u32 = 0x444b_5354; // "DKST"
     pub const ENTRY: usize = 128;
     /// Bytes of a path in an entry (NUL-terminated inside).
@@ -438,6 +459,8 @@ pub mod store {
         pub version: u32,
         /// 0 = copy A, 1 = copy B.
         pub copy: u32,
+        /// The other copy is a usable version 2 header that says the same (the upload's BEGIN repairs the store when it does not).
+        pub agree: bool,
     }
 
     /// Where a file is and what its table entry says its sha256 is.
@@ -497,7 +520,7 @@ pub mod store {
 
     /// Sector of header copy B, relative to the store (`devices/*.toml [card.store] header_b_sector` - `first_sector`): the sector just
     /// before the selection record. Files end before it: `LIMIT` sectors may hold the header A, a table and data.
-    pub const HEADER_B: u32 = SECTORS - 3;
+    pub const HEADER_B: u32 = device::STORE_HEADER_B;
     pub const LIMIT: u32 = HEADER_B;
 
     /// One header copy as decoded (version 1: `table_first` 1, `seq` 1).
@@ -602,6 +625,19 @@ pub mod store {
             };
             match load_table(rd, &h, buf, cap) {
                 Ok(()) => {
+                    let other = if which == 1 { a } else { b };
+                    let agree = match other {
+                        Some(o) => {
+                            o.version == 2
+                                && o.seq == h.seq
+                                && o.count == h.count
+                                && o.sectors == h.sectors
+                                && o.used == h.used
+                                && o.table_crc == h.table_crc
+                                && o.table_first == h.table_first
+                        }
+                        None => false,
+                    };
                     return Ok(Table {
                         count: h.count,
                         sectors: h.sectors,
@@ -610,12 +646,87 @@ pub mod store {
                         table_first: h.table_first,
                         version: h.version,
                         copy: which,
+                        agree,
                     })
                 }
                 Err(e) => err = e,
             }
         }
         Err(err)
+    }
+
+    /// What the two header sectors say right now, as four words (the header CRC, or for a version 1 header its table CRC, of A and of B; 0
+    /// for a sector that is not a header). Every commit of a store changes at least one of them (the sequence number is under the CRC).
+    /// `None`: a read failed. `scratch` is 512 bytes, 16-byte aligned.
+    pub unsafe fn fingerprint(rd: BlockRead, scratch: *mut u8) -> Option<[u32; 4]> {
+        let mut out = [0u32; 4];
+        let mut k = 0;
+        while k < 2 {
+            let rel = if k == 0 { 0 } else { HEADER_B };
+            if read_sectors(rd, rel, 1, scratch, 512) != OK {
+                return None;
+            }
+            if be32(scratch) == MAGIC {
+                out[2 * k] = be32(scratch.add(508)) ^ be32(scratch.add(20)).rotate_left(7) ^ be32(scratch.add(28)).rotate_left(13);
+                out[2 * k + 1] = be32(scratch.add(4)) ^ be32(scratch.add(16)).rotate_left(3);
+            }
+            k += 1;
+        }
+        Some(out)
+    }
+
+    /// How many times `open_stable` reads again before it gives the last answer.
+    pub const STABLE_TRIES: u32 = 4;
+
+    /// `open` that a commit running at the same time cannot tear. The upload (the MIDI task) writes a table, then header B, then header
+    /// A; after a CLEAR it may even stage over the old table. A reader in another task would see a table that does not match its header.
+    /// The rule: read the headers' fingerprint, `open`, read the fingerprint again; when it changed (a commit ran in between), try again.
+    /// No lock: neither task ever waits for the other, and a reader that keeps losing the race (more than `STABLE_TRIES` commits in a row,
+    /// which one host cannot do) returns what it read last. `scratch` as for `fingerprint`; `buf` must not overlap it.
+    pub unsafe fn open_stable(rd: BlockRead, buf: *mut u8, cap: usize, scratch: *mut u8) -> Result<Table, i32> {
+        let mut tries = 0;
+        loop {
+            let before = fingerprint(rd, scratch);
+            let r = open(rd, buf, cap);
+            if tries >= STABLE_TRIES || before.is_none() {
+                return r;
+            }
+            if fingerprint(rd, scratch) == before {
+                return r;
+            }
+            tries += 1;
+        }
+    }
+
+    /// The header a store reader would use, without reading its table: the usable copy (magic, version, header CRC) with the higher
+    /// `seq`. For a figure on a page (used and free space) that must not read a whole table twice a second. `buf` is 512 bytes, aligned.
+    pub unsafe fn peek_header(rd: BlockRead, buf: *mut u8) -> Option<Hdr> {
+        if read_sectors(rd, 0, 1, buf, 512) != OK {
+            return None;
+        }
+        let a = parse_header(buf);
+        if read_sectors(rd, HEADER_B, 1, buf, 512) != OK {
+            return a;
+        }
+        let b = parse_header(buf).filter(|h| h.version == 2);
+        if prefer_b(a.as_ref(), b.as_ref()) {
+            b
+        } else {
+            a
+        }
+    }
+
+    /// Sectors of the table for `count` entries.
+    pub const fn table_sectors(count: u32) -> u32 {
+        (count * ENTRY as u32 + 511) / 512
+    }
+
+    /// Bytes a new file may still take when the header says `used` sectors and `count` files: the room for the table of `count + 1`
+    /// entries is kept back (the upload's `free_bytes`).
+    pub const fn free_bytes(used: u32, count: u32) -> u32 {
+        let room = table_sectors(count + 1);
+        let free = LIMIT.saturating_sub(used).saturating_sub(room);
+        free * 512
     }
 
     /// Read the table `h` points at into `buf` and check the counts and the CRC.
@@ -821,6 +932,31 @@ mod tests {
     }
 
     #[test]
+    fn the_reader_says_whether_the_two_copies_agree() {
+        let _g = LOCK.lock().unwrap();
+        let agree = || {
+            let mut buf = std::vec![0u8; 4096];
+            unsafe { store::open(rd, buf.as_mut_ptr(), buf.len()) }.unwrap().agree
+        };
+        let h = |seq| hdr(2, 1, 1, seq, 0);
+        card(Some(h(2)), Some(h(2)), 1, &[b"a"]);
+        assert!(agree());
+        // a cut between header B and header A: B is ahead
+        card(Some(h(1)), Some(h(2)), 1, &[b"a"]);
+        assert!(!agree());
+        // B torn: A alone
+        card(Some(h(2)), Some(h(2)), 1, &[b"a"]);
+        CARD.lock().unwrap()[store::HEADER_B as usize * 512 + 9] ^= 1;
+        assert!(!agree());
+        // no B (a card made before version 2, or the first commit cut): not equal
+        card(Some(h(1)), None, 1, &[b"a"]);
+        assert!(!agree());
+        // a version 1 A and a usable B of the same content is still a repair (A is rewritten as version 2)
+        card(Some(hdr(1, 1, 1, 1, 0)), Some(hdr(2, 1, 1, 1, 0)), 1, &[b"a"]);
+        assert!(!agree());
+    }
+
+    #[test]
     fn a_torn_copy_falls_back_to_the_other() {
         let _g = LOCK.lock().unwrap();
         let h = |seq| hdr(2, 1, 1, seq, 0);
@@ -859,6 +995,144 @@ mod tests {
         // an empty store (CLEAR): version 2, no entries
         card(Some(hdr(2, 0, 1, 5, 0)), Some(hdr(2, 0, 1, 5, 0)), 1, &[]);
         assert_eq!(open(), Ok((5, 0, 2)));
+    }
+
+    // ---- a reader against a commit that runs in another task ----
+
+    /// A commit in slow motion: step `k` of `writes` (store sector, bytes) is applied just before read number `at + k * gap`; with `gap` 0
+    /// all of them are applied at once, between two reads (the reader was slow, the other task was not).
+    struct Hook {
+        reads: u32,
+        at: u32,
+        gap: u32,
+        done: usize,
+        writes: Vec<(u32, Vec<u8>)>,
+    }
+    static HOOK: Mutex<Option<Hook>> = Mutex::new(None);
+
+    unsafe extern "C" fn rd_hooked(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
+        let mut now: Vec<(u32, Vec<u8>)> = Vec::new();
+        {
+            let mut g = HOOK.lock().unwrap();
+            if let Some(h) = g.as_mut() {
+                let n = h.reads;
+                h.reads += 1;
+                while h.done < h.writes.len() && n >= h.at + h.done as u32 * h.gap {
+                    now.push(h.writes[h.done].clone());
+                    h.done += 1;
+                }
+            }
+        }
+        for (rel, data) in now {
+            put(rel, &data);
+        }
+        rd(sector, bytes, buf)
+    }
+
+    fn header_bytes(count: u32, tf: u32, seq: u32, crc: u32) -> Vec<u8> {
+        let h = store::Hdr {
+            version: 2,
+            count,
+            sectors: (count * 128 + 511) / 512,
+            used: tf + (count * 128 + 511) / 512 + 10,
+            table_crc: crc,
+            table_first: tf,
+            seq,
+        };
+        let mut s = std::vec![0u8; 512];
+        unsafe { store::encode_header(&h, s.as_mut_ptr()) };
+        s
+    }
+
+    /// (seq, count) of a read through `reader`, or the error.
+    fn read_with(stable: bool) -> Result<(u32, u32), i32> {
+        let mut buf = std::vec![0u8; 4096];
+        let mut scratch = std::vec![0u8; 1024];
+        // 16-byte aligned scratch inside the vector
+        let sp = ((scratch.as_mut_ptr() as usize + 15) & !15) as *mut u8;
+        let t = unsafe {
+            if stable {
+                store::open_stable(rd_hooked, buf.as_mut_ptr(), buf.len(), sp)
+            } else {
+                store::open(rd_hooked, buf.as_mut_ptr(), buf.len())
+            }
+        }?;
+        Ok((t.seq, t.count))
+    }
+
+    /// Every interleaving of `writes` with the reads of one open: the answer is the old store or the new one, never an error.
+    /// Returns how many interleavings made the plain `open` fail (a torn read).
+    fn interleave(setup: &dyn Fn(), writes: &[(u32, Vec<u8>)], old: (u32, u32), new: (u32, u32)) -> usize {
+        let mut plain_failures = 0;
+        for (at, gap) in (0..14).flat_map(|at| (0..3).map(move |gap| (at, gap))) {
+            for stable in [false, true] {
+                setup();
+                *HOOK.lock().unwrap() = Some(Hook { reads: 0, at, gap, done: 0, writes: writes.to_vec() });
+                let r = read_with(stable);
+                *HOOK.lock().unwrap() = None;
+                if stable {
+                    let r = r.unwrap_or_else(|e| panic!("open_stable failed (error {e}) when the commit starts at read {at}, gap {gap}"));
+                    assert!(r == old || r == new, "open_stable read {r:?} at read {at}, gap {gap}");
+                } else if r.is_err() {
+                    plain_failures += 1;
+                }
+            }
+        }
+        *HOOK.lock().unwrap() = None;
+        plain_failures
+    }
+
+    #[test]
+    fn a_commit_during_a_read_never_shows_a_torn_table() {
+        let _g = LOCK.lock().unwrap();
+        // an upload commit: the new table is already on the card, then header B, then header A
+        let (t2, crc2) = table_with(&[b"a", b"b"]);
+        let setup = || {
+            card(Some(hdr(2, 1, 1, 1, 0)), Some(hdr(2, 1, 1, 1, 0)), 1, &[b"a"]);
+            put(40, &t2);
+        };
+        let writes = std::vec![(store::HEADER_B, header_bytes(2, 40, 2, crc2)), (0, header_bytes(2, 40, 2, crc2))];
+        interleave(&setup, &writes, (1, 1), (2, 2));
+    }
+
+    #[test]
+    fn staging_over_the_old_table_after_a_clear_never_shows_a_torn_table() {
+        let _g = LOCK.lock().unwrap();
+        // CLEAR commits an empty store (B, then A); the next upload stages over sector 1, where the old table was
+        let empty_crc = store::crc32_of(core::ptr::null(), 0);
+        let setup = || {
+            card(Some(hdr(2, 3, 1, 1, 0)), Some(hdr(2, 3, 1, 1, 0)), 1, &[b"a", b"b", b"c"]);
+        };
+        let writes = std::vec![
+            (store::HEADER_B, header_bytes(0, 1, 2, empty_crc)),
+            (0, header_bytes(0, 1, 2, empty_crc)),
+            (1, std::vec![0xaa; 512]),
+        ];
+        let torn = interleave(&setup, &writes, (1, 3), (2, 0));
+        // the rule is needed: some interleavings tear a plain `open`
+        assert!(torn > 0, "no interleaving tore the plain reader: the test does not exercise the race");
+    }
+
+    #[test]
+    fn open_stable_on_a_quiet_store_reads_the_store() {
+        let _g = LOCK.lock().unwrap();
+        // no commit: one try, the store as it is
+        card(Some(hdr(2, 1, 1, 1, 0)), Some(hdr(2, 1, 1, 1, 0)), 1, &[b"a"]);
+        *HOOK.lock().unwrap() = None;
+        assert_eq!(read_with(true), Ok((1, 1)));
+    }
+
+    #[test]
+    fn the_header_peek_takes_the_newer_usable_copy() {
+        let _g = LOCK.lock().unwrap();
+        card(Some(hdr(2, 1, 1, 1, 0)), Some(hdr(2, 1, 1, 2, 0)), 1, &[b"a"]);
+        let mut b = std::vec![0u8; 1024];
+        let p = ((b.as_mut_ptr() as usize + 15) & !15) as *mut u8;
+        let h = unsafe { store::peek_header(rd, p) }.unwrap();
+        assert_eq!(h.seq, 2);
+        assert_eq!(store::free_bytes(h.used, h.count), (store::LIMIT - h.used - 1) * 512);
+        card(None, None, 1, &[]);
+        assert!(unsafe { store::peek_header(rd, p) }.is_none());
     }
 
     #[test]

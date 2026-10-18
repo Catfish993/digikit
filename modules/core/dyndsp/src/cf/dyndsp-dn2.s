@@ -1,13 +1,16 @@
 | core/dyndsp on the Digitone II: the table of DSP addresses the digikit runtime reads.
+| The numbers (device id, area size, rows) are the device file's, through build/gen/device-dn2.inc (`patchkit gen`).
 | Design: docs/design/digikit-dkm.md ("DSP section"). All words big endian; the DSP symbols are in their natural units
 | (a byte address for data, a short-word pc for code).
 |
-|  0 'DDSP'   4 version   8 device (2 = dn2)
+|  0 'DDSP'   4 version   8 device ([digikit] id: 2 = dn2)
 | 12 area base (the DSP byte address of core/dsp-link's reserved area = window 0)
 | 16 area bytes (DL_AREA_BYTES of modules/core/dsp-link/src/dsp/dn2.s)
 | 20 voice rows base (the voices registry = window 1)   24 index of the first free row   28 number of free rows
 | 32 number of rows in the registry (window 1 is 2 words per row)
 | 36 import count N; then N entries of 32 bytes: a NUL padded name of 28 bytes and its value
+
+    .include "device-dn2.inc"
 
     .section .rodata
     .balign 4
@@ -15,12 +18,12 @@
 dyndsp_info:
     .long   0x44445350
     .long   1
-    .long   2
+    .long   DEVICE_ID
     .long   _dl_area
-    .long   327680
+    .long   DL_AREA_BYTES
     .long   _dd_vrows
     .long   _dd_vfirst
-    .long   8
+    .long   DYN_TYPES
     .long   _dd_vcount
     .long   3
     .asciz  "_dv_exp2"

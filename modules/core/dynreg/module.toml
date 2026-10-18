@@ -34,6 +34,13 @@ ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
 # The runtime fills and clears the rows. With this module the rows read as gap rows (clone of type 0, no name), which is
 # also what a project that names an unloaded run-time machine gets.
 
+# Device id, area size and the number of reserved types from the device files and core/machines types.toml, written by
+# `patchkit gen` (docs/design/device-data.md). This module reserves DYN_TYPES rows: keep the `[[entry]]` rows below at that number
+# (tests/patchkit/test_pk_types.py checks it).
+[[gen]]
+kind = "gas"
+path = "build/gen/device-{dev}.inc"
+
 [[object]]
 path = "build/dynreg-dt2.dko.json"
 sources = ["src/cf/dt2/dynreg.s"]

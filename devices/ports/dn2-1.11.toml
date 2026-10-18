@@ -1710,6 +1710,16 @@ mark = "D"
 rule = "core/runtime:cf_func"
 
 [[anchor]]
+name = "dkrt.fw.block_counter_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40027b84
+len = 4
+sha256 = "530ea48f600be59fc17cb0f701e0134ed8f7f919ea90a595cb97c9915c8426ee"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
 name = "dkrt.fw.block_read"
 cpu = "cf"
 kind = "code"
@@ -1776,6 +1786,16 @@ kind = "code"
 addr = 0x40001928
 len = 2
 sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.tx_inflight_lit"
+cpu = "cf"
+kind = "code"
+addr = 0x40004776
+len = 4
+sha256 = "cda5f53124ba8a7b43dc547b8ad11a43610dc553770dc5c3556f47f3c2d82131"
 mark = "D"
 rule = "core/runtime:cf_func"
 

@@ -2,6 +2,7 @@
 //! framing and per-packet checksums. A port of `tools/firmware/build.py` and `tools/firmware/authcode.py`.
 
 use crate::aplib;
+use crate::devdata::{self, DeviceInfo};
 use crate::error::*;
 use sha2::{Digest, Sha256};
 
@@ -11,40 +12,65 @@ pub const TABLE_OFF: usize = 0x20;
 pub const ENTRY_SZ: usize = 16;
 pub const FIRST_COUNTER: u32 = 242;
 pub const CHUNK_SIZE: usize = 101;
-/// The flash holds a container of at most this many bytes (docs/findings/01, "NOR flash map").
-pub const FLASH_CONTAINER_MAX: usize = 0x30_0000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Device {
-    Dt2,
-    Dn2,
+/// A device the firmware container is for: one of `devdata::all()`.
+#[derive(Clone, Copy, Debug)]
+pub struct Device(&'static DeviceInfo);
+
+impl PartialEq for Device {
+    fn eq(&self, o: &Device) -> bool {
+        self.0.short == o.0.short
+    }
 }
+impl Eq for Device {}
+
+/// The container seal: HMAC key material per device (`derive_key`). It is key material of the firmware format, not a device-profile
+/// fact, and `devices/*.toml` are published as they are (the web page imports them), so it stays here, keyed by the device's short
+/// name. A device file without an entry is refused when an image of it is read.
+const SEALS: [(&str, &[u8], &str); 2] = [
+    (
+        "dt2",
+        b"Master Overdrive",
+        "695d82bca2f03f2c4457 0420eff1117831ea1aa03829c55e09065d1b790d63ff",
+    ),
+    (
+        "dn2",
+        b"Multiplier",
+        "fc83032c7b2781c970dd306263156e8e07ff6fa0f312d2393cb2f5849f9670e5",
+    ),
+];
 
 impl Device {
     pub fn from_id(id: u8) -> Result<Device> {
-        match id {
-            0x14 => Ok(Device::Dt2),
-            0x15 => Ok(Device::Dn2),
-            _ => Err(err!("unknown device id {id:#04x}")),
+        let d = devdata::by_syx_id(id).ok_or_else(|| err!("unknown device id {id:#04x}"))?;
+        if !SEALS.iter().any(|s| s.0 == d.short) {
+            return Err(err!(
+                "device {} has no container seal key (add it to SEALS in packages/patchkit/src/syx.rs)",
+                d.short
+            ));
         }
+        Ok(Device(d))
     }
     pub fn short(self) -> &'static str {
-        match self {
-            Device::Dt2 => "dt2",
-            Device::Dn2 => "dn2",
-        }
+        &self.0.short
+    }
+    /// The device byte of the SysEx framing.
+    pub fn syx_id(self) -> u8 {
+        self.0.syx_id
+    }
+    /// Limits of an image with no port: container, stored DSP, depacked DSP, staged MAIN (`[patch]` of the device file).
+    pub fn limits(self) -> (usize, usize, usize, usize) {
+        let d = self.0;
+        (
+            d.container_max as usize,
+            d.dsp_stored_max as usize,
+            d.dsp_depacked_max as usize,
+            d.main_staged_max as usize,
+        )
     }
     fn secret(self) -> (&'static [u8], [u8; 32]) {
-        match self {
-            Device::Dt2 => (
-                b"Master Overdrive",
-                h32("695d82bca2f03f2c4457 0420eff1117831ea1aa03829c55e09065d1b790d63ff"),
-            ),
-            Device::Dn2 => (
-                b"Multiplier",
-                h32("fc83032c7b2781c970dd306263156e8e07ff6fa0f312d2393cb2f5849f9670e5"),
-            ),
-        }
+        let s = SEALS.iter().find(|s| s.0 == self.0.short).expect("checked by from_id");
+        (s.1, h32(s.2))
     }
 }
 

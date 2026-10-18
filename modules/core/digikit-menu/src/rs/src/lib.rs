@@ -13,7 +13,7 @@
 use core::mem::transmute;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, null_mut};
-use dkrt_sdk::{store, DkrtBootInfo, DkrtHealth, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
+use dkrt_sdk::{store, DkrtBootInfo, DkrtHealth, DkrtModule, HEALTH_CPU, HEALTH_DSP, HEALTH_HEAP, HEALTH_HEAP_CUT, HEALTH_MODULE, HEALTH_STORE, DkrtSelection, DkrtStatus, E_NOT_FOUND, E_READ, OK, SAFE_COUNTER, SAFE_FLAG, SAFE_KEY, SEL_MAX, SEL_PATH};
 
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
@@ -417,7 +417,24 @@ unsafe fn load_selection() {
     SAVED = TICK;
 }
 
+/// Scan the store; a commit of the upload (the MIDI task) that ran during the scan, in the headers' fingerprint, starts it again (at most
+/// three times): the table and the file words read must belong to one header (finding 43, "the menu's reader and a commit").
 unsafe fn scan_store() {
+    if HDR.is_null() {
+        HDR = fw_new(512);
+    }
+    let mut tries = 0;
+    loop {
+        let before = store::fingerprint(fw_blk_read, HDR);
+        scan_once();
+        if tries >= 3 || before.is_none() || store::fingerprint(fw_blk_read, HDR) == before {
+            break;
+        }
+        tries += 1;
+    }
+}
+
+unsafe fn scan_once() {
     NENT = 0;
     NOK = [0; MAX_ENT];
     TICK = [0; MAX_ENT];
@@ -428,7 +445,7 @@ unsafe fn scan_store() {
     if TAB.is_null() {
         TAB = fw_new(TAB_BYTES as u32);
     }
-    let t = match store::open(fw_blk_read, TAB, TAB_BYTES) {
+    let t = match store::open_stable(fw_blk_read, TAB, TAB_BYTES, HDR) {
         Ok(t) => t,
         Err(e) => {
             STORE = if e == E_NOT_FOUND { 2 } else if e == E_READ { 3 } else { 4 };
@@ -450,9 +467,6 @@ unsafe fn scan_store() {
         }
     }
     STORE = 1;
-    if HDR.is_null() {
-        HDR = fw_new(512);
-    }
     let mut st: DkrtStatus = core::mem::zeroed();
     dkrt_status(&mut st);
     for i in 0..NENT {
@@ -762,7 +776,7 @@ fn pct_text(t: &mut Text, x10: u32) {
 
 /// The page's lines as text, as the last `fill_health` made them (24 bytes each, NUL-terminated). Read by the proof.
 #[no_mangle]
-pub static mut DK_LINES: [[u8; 24]; 8] = [[0; 24]; 8];
+pub static mut DK_LINES: [[u8; 24]; 9] = [[0; 24]; 9];
 
 /// One row of the page; its text is also kept in `DK_LINES[k]`.
 unsafe fn hrow(m: *mut u8, t: &Text, k: usize) {
@@ -831,10 +845,26 @@ unsafe fn fill_health() {
         t.s(b"--");
     }
     hrow(m, &t, 5);
+    let mut t = Text::new();
+    t.s(b"STORE USED ");
+    if h.flags & HEALTH_STORE != 0 {
+        size_text(&mut t, h.store_used);
+    } else {
+        t.s(b"--");
+    }
+    hrow(m, &t, 6);
+    let mut t = Text::new();
+    t.s(b"STORE FREE ");
+    if h.flags & HEALTH_STORE != 0 {
+        size_text(&mut t, h.store_free);
+    } else {
+        t.s(b"--");
+    }
+    hrow(m, &t, 7);
     if h.flags & HEALTH_MODULE == 0 {
         let mut t = Text::new();
         t.s(b"NO HEALTH MODULE");
-        hrow(m, &t, 6);
+        hrow(m, &t, 8);
     }
     end_rebuild(m, sel);
 }

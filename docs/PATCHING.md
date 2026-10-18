@@ -116,6 +116,32 @@ The ready inputs come from `uv run python -m tools.emulator.ready dt2 --syx firm
 `DIGI_PK_READY_<DEV>_<VER>` (for example `DIGI_PK_READY_DT2_117`) overrides the directory. The harness refuses ready
 inputs that are stale or belong to another `.syx`.
 
+### Test a run-time module in the emulator
+
+A run-time module (`.dkm`) is loaded by the digikit runtime from the +Drive card, so the emulator needs the runtime set
+in the firmware and a card.
+
+```sh
+uv run python -m tools.patchkit.patchkit patch --firmware firmware/Digitakt_II_OS1.17.syx \
+  --modules core/dynreg,core/dyndsp,core/digikit-menu,core/health -o out/patch/rt-dt2.syx
+mise run pack -- test/dyn-pluck --device dt2       # out/patch/dyn-pluck-dt2.dkm (--device dn2 for the Digitone II)
+mkdir -p plus_drive/dt2 && cp notes.txt plus_drive/dt2/    # any file: the card is built only when the folder has content
+mise run emu -- out/patch/rt-dt2.syx
+```
+
+`mise run emu` reads the patch record of the image (`DKPR`, through `patchkit inspect`), so a patched image gets the
+device, the stock base image for the card builder and the `plus_drive/<device>/` card, the same card that `inject`
+keeps. Then:
+
+1. Upload the module: the Modules panel of the desktop app, or
+   `uv run python -m tools.device.dkupload --emu put out/patch/dyn-pluck-dt2.dkm` (it lands in `modules/` of the store).
+2. On the emulated device: SETTINGS > DIGIKIT > MODULES, select the module, APPLY & RESTART.
+3. After the restart check the module in HEALTH and ABOUT (the same menu).
+4. Quit the emulator: the card's files, including the module store (`digikit/`), are exported back to
+   `plus_drive/<device>/` (`-- --no-sync` turns that off). The next start loads them again.
+
+Use `DIGI_PLUS_DRIVE=DIR` or `-- --plus-drive DIR` for a scratch folder instead of the repository's `plus_drive/`.
+
 ### Developer loop
 
 ```sh
@@ -203,6 +229,8 @@ first `mise run web` in a fresh tree compiles the browser cores and takes severa
 | Port | Per-firmware facts: named anchors with SHA-256 of the expected bytes, free regions, container limits. Generated, keyed by the `.syx` SHA-256. | `devices/ports/dt2-1.17.toml` |
 | Framework module | Hooks firmware sites once and exports a registry that other modules add entries to. Ordinary assembly plus a manifest. | `core/machines`, `core/params`, `core/dsp-voice`, `core/expansion` |
 | Content module | Own code and declarative registry entries. No addresses. | `fx/master-gain`, `machines/pluck` |
+
+Device, board and firmware facts are data (`devices/*.toml`, `devices/ports/*.toml`, `modules/core/machines/types.toml`); code that needs a constant gets it from `patchkit gen` (`[[gen]]` in a `module.toml`). Where each fact lives and what a new device needs: `docs/design/device-data.md`.
 
 patchkit itself (`packages/patchkit`, Rust) has no framework-specific code. It provides generic primitives, and the
 frameworks are modules built on them. One implementation serves the command line and `patchkit.wasm`.

@@ -11,8 +11,8 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 
-from tools.emulator import native_target  # noqa: E402
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import (  # noqa: E402
     pk_cfcall,  # noqa: E402
     pk_link,  # noqa: E402
@@ -33,24 +33,11 @@ REGION = 0x47E90000  # inside cf.expansion of every port (scratch for the unit t
 
 
 def patchkit(*args):
-    target = native_target.target_dir(None).parent / "nogen"
-    subprocess.run(
-        [
-            "cargo",
-            "build",
-            "-p",
-            "patchkit",
-            "--release",
-            "--offline",
-            "--target-dir",
-            str(target),
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-    )
+    exe = (
+        front_end.binary()
+    )  # one build under a lock, then an immutable copy (tools/devtools/stablebin.py)
     r = subprocess.run(
-        [str(target / "release" / "patchkit"), "--root", str(ROOT), *map(str, args)],
+        [str(exe), "--root", str(ROOT), *map(str, args)],
         capture_output=True,
         text=True,
     )

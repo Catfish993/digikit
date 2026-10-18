@@ -24,6 +24,13 @@ ports = ["dt2-1.16", "dt2-1.17", "dn2-1.11", "dn2-1.12"]
 # - `dyndsp_info` is the table of DSP addresses the runtime reads (core/runtime, optional link): the area, the free voice rows, and
 #   the exported DSP symbols a run-time DSP object may import (the helpers of core/dsp-voice).
 
+# Device id, area size and the number of reserved types from the device files and core/machines types.toml, written by
+# `patchkit gen` (docs/design/device-data.md). This module reserves DYN_TYPES rows: keep the `[[entry]]` rows below at that number
+# (tests/patchkit/test_pk_types.py checks it).
+[[gen]]
+kind = "gas"
+path = "build/gen/device-{dev}.inc"
+
 [[object]]
 path = "build/dyndsp-dt2.dko.json"
 sources = ["src/cf/dyndsp-dt2.s"]

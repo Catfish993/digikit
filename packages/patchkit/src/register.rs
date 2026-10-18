@@ -41,12 +41,11 @@ pub const MACHINE_NAME: usize = 24;
 pub const PARAM_NAME: usize = 32;
 pub const PARAM_SHORT: usize = 16;
 
+/// The id digikit gives a device (`[digikit] id` of the device file).
 pub fn device_id(dev: &str) -> Result<u32> {
-    match dev {
-        "dt2" => Ok(1),
-        "dn2" => Ok(2),
-        _ => Err(err!("no run-time registry for device {dev:?}")),
-    }
+    crate::devdata::by_short(dev)
+        .map(|d| d.digikit_id)
+        .ok_or_else(|| err!("no run-time registry for device {dev:?}"))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -33,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import pk_device  # noqa: E402
 
 # dkrt-sdk result codes
 OK, E_NOT_FOUND, E_BAD_STORE, E_READ, E_SHA, E_FORMAT, E_RUNTIME, E_IMPORT = (
@@ -48,7 +49,8 @@ OK, E_NOT_FOUND, E_BAD_STORE, E_READ, E_SHA, E_FORMAT, E_RUNTIME, E_IMPORT = (
 E_NOMEM, E_INIT, E_LOADED, E_SLOT = -8, -9, -10, -11
 E_FORMAT_CMD, E_BOOT_ONLY = -5, -45
 SEL_MAGIC, SEL_VERSION, SEL_PATH, SEL_MAX = 0x444B534C, 1, 56, 8
-SECTOR_A, SECTOR_B = 0x38000 + 0x6000 - 2, 0x38000 + 0x6000 - 1
+_STORE = pk_device.store()  # devices/*.toml [card.store]
+SECTOR_A, SECTOR_B = _STORE.sel_a, _STORE.sel_b
 BOOT_FIELDS = 10  # DkrtBootInfo words before `results`
 ARENA_BYTES = 512 * 1024
 SLOTS, MAX_MODULES, LOG_ENTRIES = 8, 8, 16
@@ -88,23 +90,28 @@ class Tools:
     """The release binaries the proof needs, built in the 'nogen' target (no SHARC core)."""
 
     def __init__(self) -> None:
+        from tools.devtools import stablebin
+
         env = digi_env.rust_env()
         target = Path(native_target.target_dir(""))
-        r = subprocess.run(
-            [
-                "cargo", "build", "--release", "--locked", "--offline", "--target-dir", str(target),
-                "-p", "patchkit", "--bin", "patchkit",
-                "-p", "plusdrive-format", "--bin", "plusdrive",
-                "-p", "elektron-native-boot", "--example", "cf_script",
-            ],
-            cwd=ROOT, env=env, capture_output=True, text=True,
-        )  # fmt: skip
-        if r.returncode:
-            raise ProofError(f"cargo build failed:\n{r.stderr[-3000:]}")
-        rel = target / "release"
-        self.patchkit = rel / "patchkit"
-        self.plusdrive = rel / "plusdrive"
-        self.script = rel / "examples" / "cf_script"
+        # One build at a time, then immutable copies: a cargo build rewrites release/<bin> even when
+        # nothing changed, and a process that execs it meanwhile can hang (tools/devtools/stablebin.py).
+        with stablebin.build_lock(target):
+            r = subprocess.run(
+                [
+                    "cargo", "build", "--release", "--locked", "--offline", "--target-dir", str(target),
+                    "-p", "patchkit", "--bin", "patchkit",
+                    "-p", "plusdrive-format", "--bin", "plusdrive",
+                    "-p", "elektron-native-boot", "--example", "cf_script",
+                ],
+                cwd=ROOT, env=env, capture_output=True, text=True,
+            )  # fmt: skip
+            if r.returncode:
+                raise ProofError(f"cargo build failed:\n{r.stderr[-3000:]}")
+            rel = target / "release"
+            self.patchkit = stablebin.stable_copy(rel / "patchkit", target)
+            self.plusdrive = stablebin.stable_copy(rel / "plusdrive", target)
+            self.script = stablebin.stable_copy(rel / "examples" / "cf_script", target)
 
     def run(self, *argv: object, **kw) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -162,6 +169,13 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
             "symbol": "fw_does_not_exist",
             "addend": 0,
         }
+    )
+    # the edited object carries the build's ISA check record for its new bytes: the instructions are the checked ones, only a relocation is
+    # added (`patchkit pack` refuses an object whose record does not match its bytes)
+    from tools.patchkit import pk_build
+
+    imp["toolchain"][pk_build.ISA_CHECK_KEY] = pk_build.isa_digest(
+        imp["sections"], imp["symbols"], imp["relocs"]
     )
     # the dyn-demo object has a .rodata string section of 14+ bytes: reuse it as the place of the new reloc
     tmp = work / "mods" / "test" / "dyn-demo-import"

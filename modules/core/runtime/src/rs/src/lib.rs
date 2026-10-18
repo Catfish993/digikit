@@ -103,8 +103,14 @@ pub static mut DKRT_MAILBOX: Mailbox = Mailbox {
 };
 
 extern "C" {
-    /// Per-device constant, defined by `src/cf/<dev>/device.s`.
+    /// Per-device constants, defined by `src/cf/<dev>/device.s` from the device file: the digikit id (`[digikit] id`) and the name the
+    /// INFO reply gives (`[digikit] name`: 3 characters and a NUL, as a big-endian word).
     static dkrt_device_id: u32;
+    static dkrt_device_name: u32;
+    /// The 4-byte address literals of two firmware words (anchors `dkrt.fw.block_counter_lit`, `dkrt.fw.tx_inflight_lit`): the symbol's
+    /// address is that of the literal in the firmware's code, whose value is the address of the word.
+    static dkrt_block_counter_lit: u32;
+    static dkrt_tx_inflight_lit: u32;
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
     fn dkrt_flush(start: u32, len: u32);
     // Firmware functions: addresses are anchors resolved at patch time.
@@ -143,6 +149,34 @@ pub fn flush(start: u32, len: u32) {
 
 pub fn device() -> u32 {
     unsafe { read_volatile(addr_of!(dkrt_device_id)) }
+}
+
+/// The device's short name as the INFO reply gives it: 3 characters and a NUL.
+pub fn device_name() -> u32 {
+    unsafe { read_volatile(addr_of!(dkrt_device_name)) }
+}
+
+/// The word a firmware code literal points to, when the literal is a DDR address (a misplaced anchor reads nothing).
+unsafe fn word_at_literal(lit: *const u32) -> Option<u32> {
+    let l = core::hint::black_box(lit as usize) as u32;
+    if l == 0 {
+        return None;
+    }
+    let a = read_volatile(l as *const u32);
+    if !(dkrt_sdk::device::DDR_CACHED_BASE..dkrt_sdk::device::DDR_CACHED_BASE + dkrt_sdk::device::DDR_BYTES).contains(&a) || a & 3 != 0 {
+        return None;
+    }
+    Some(read_volatile(a as *const u32))
+}
+
+/// The firmware's DSP block counter (1500 per second, from boot; wraps), `None` when the anchor does not point at a DDR word.
+pub unsafe fn fw_blocks() -> Option<u32> {
+    word_at_literal(addr_of!(dkrt_block_counter_lit))
+}
+
+/// Bytes the firmware has handed to the USB stack for MIDI and not yet sent (0 when the host reads), `None` as for `fw_blocks`.
+pub unsafe fn tx_in_flight() -> Option<u32> {
+    word_at_literal(addr_of!(dkrt_tx_inflight_lit))
 }
 
 pub unsafe fn block_read(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
@@ -211,7 +245,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 9]);
+pub struct Imports(pub [Import; 10]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -262,6 +296,11 @@ pub static IMPORTS: Imports = Imports([
     Import {
         name: nm(b"__umoddi3"),
         addr: __umoddi3 as *const (),
+    },
+    // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
+    Import {
+        name: nm(b"dkrt_blocks"),
+        addr: dkrt_blocks as *const (),
     },
 ]);
 
@@ -409,10 +448,14 @@ pub static mut DKRT_HEALTH: DkrtHealth = unsafe { core::mem::zeroed() };
 #[no_mangle]
 pub static mut DKRT_POLL: usize = 0;
 
-/// DSP blocks counted since boot (1500 per second; wraps), or 0 when the image has no `core/health`: a cheap clock for a UI that
-/// refreshes at a bounded rate. Any task; reads one word.
+/// DSP blocks counted since boot (1500 per second; wraps): the firmware's own counter (anchor `dkrt.fw.block_counter_lit`), so a clock for
+/// a UI that refreshes at a bounded rate and for the stable period of safe mode. 0 when the anchor does not point at a counter and the
+/// image has no `core/health` (whose own count is the fallback). Any task; reads one word.
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_blocks() -> u32 {
+    if let Some(b) = fw_blocks() {
+        return b;
+    }
     if health_fn(health_read) == 0 {
         return 0;
     }
@@ -446,7 +489,7 @@ pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
     let s = st();
     let (afree, alargest) = arena::stats();
     o.magic = HEALTH_MAGIC;
-    o.version = 1;
+    o.version = 2;
     o.flags = 0;
     o.arena_total = s.arena_hi - s.arena_lo;
     o.arena_free = afree;
@@ -456,6 +499,7 @@ pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
     o.dsp_area_free = dfree;
     o.dsp_area_largest = dlargest;
     o.dsp_period = DSP_BLOCK_CYCLES;
+    store::figures(o);
     if health_fn(health_read) == 0 {
         return;
     }
@@ -465,7 +509,7 @@ pub unsafe extern "C" fn dkrt_health(out: *mut DkrtHealth) {
     if r.magic != RAW_MAGIC {
         return;
     }
-    let mut fl = HEALTH_MODULE;
+    let mut fl = HEALTH_MODULE | (o.flags & HEALTH_STORE);
     o.blocks = r.blocks;
     o.windows = r.windows;
     o.idle_win = r.idle_win;
@@ -618,8 +662,10 @@ unsafe fn save_working_state() {
     }
 }
 
-/// ESDHC0 present-state register (`PRSSTAT`, both devices): bits 0 to 2 are command inhibit, data inhibit and data line active.
-const ESDHC_PRSSTAT: u32 = 0xFC0C_C024;
+/// MCF5441x eSDHC: offset of the present-state register (`PRSSTAT`); bits 0 to 2 are command inhibit, data inhibit and data line active.
+const MCF5441X_ESDHC_PRSSTAT: u32 = 0x24;
+/// The card's eSDHC controller (`[board] esdhc_base` of the device files) and its present-state register.
+const ESDHC_PRSSTAT: u32 = dkrt_sdk::device::ESDHC_BASE + MCF5441X_ESDHC_PRSSTAT;
 
 unsafe fn card_busy() -> bool {
     read_volatile(ESDHC_PRSSTAT as *const u32) & 7 != 0
@@ -650,7 +696,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     init_once();
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
-    boot::ui_reached();
+    boot::ui_pass();
     dsp::step();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));

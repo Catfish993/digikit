@@ -57,7 +57,8 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
-    assert r.returncode == 0 and "7 passed" in r.stdout, r.stdout
+    # the record, the store header copies, and the reader against a commit that runs during it (finding 43): 12 tests
+    assert r.returncode == 0 and "12 passed; 0 failed" in r.stdout, r.stdout
 
 
 def test_the_store_profile_reserves_the_two_record_sectors():
@@ -139,19 +140,66 @@ def test_the_upload_hook_sits_on_the_router_call_of_the_midi_task_and_the_send_f
     assert main[send - base : send - base + 4] == bytes.fromhex("4feffff4")
 
 
+@pytest.mark.parametrize("image", sorted(IMAGES))
+def test_the_clock_and_tx_literals_sit_in_the_instructions_that_read_the_words(image):
+    """Finding 37 (the block counter) and finding 43 (the TX ring): each anchor is the 4-byte literal of one instruction, and the word it
+    names is in RAM: `addq.l #1,<counter>` at the tail of the block handler (`52b9`), `movea.l <bytes in flight>,a0` in the USB MIDI transmit
+    function (`2079`). The counter's other mention is the one-line getter `move.l <counter>,d0; rts`; the in-flight word is subtracted by the
+    transfer-complete callback."""
+    from tools.patchkit import port_resolve
+
+    syx = config.stock(IMAGES[image])
+    if not syx.exists():
+        pytest.skip(f"{IMAGES[image]} missing")
+    anchors = {
+        a["name"]: a
+        for a in tomllib.loads((ROOT / "devices/ports" / f"{image}.toml").read_text())[
+            "anchor"
+        ]
+    }
+    main = port_resolve.sections_of(syx)[3]
+    base = 0x40000400
+
+    def lit(name: str) -> tuple[bytes, int]:
+        a = anchors[name]
+        assert a["len"] == 4
+        at = a["addr"] - base
+        return main[at - 2 : at], int.from_bytes(main[at : at + 4], "big")
+
+    op, counter = lit("dkrt.fw.block_counter_lit")
+    assert op == bytes.fromhex("52b9") and 0x40000000 <= counter < 0x48000000
+    getter = main.find(
+        bytes.fromhex("2039") + counter.to_bytes(4, "big") + bytes.fromhex("4e75")
+    )
+    assert getter > 0, (
+        "the counter has no one-line getter: the word is not the block counter"
+    )
+    op, flight = lit("dkrt.fw.tx_inflight_lit")
+    assert op == bytes.fromhex("2079") and 0x40000000 <= flight < 0x48000000
+    # the transfer-complete callback subtracts the length: `move.l 4(sp),d0; sub.l d0,<flight>; rts`
+    sub = main.find(
+        bytes.fromhex("202f000491b9")
+        + flight.to_bytes(4, "big")
+        + bytes.fromhex("4e75")
+    )
+    assert sub > 0, "no callback subtracts from the in-flight word"
+
+
 def test_committed_runtime_objects_are_current():
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
     pk_build.build_module(RUNTIME, check=True)
     pk_build.build_module(ROOT / "modules/test/dyn-fault", check=True)
+    pk_build.build_module(ROOT / "modules/test/dyn-fault-late", check=True)
 
 
 def test_the_fault_module_packs_for_both_devices(tmp_path):
     tools = pk_dkrt.Tools()
     for dev in ("dt2", "dn2"):
-        out = tmp_path / f"{dev}.dkm"
-        tools.patchkit_run("pack", "test/dyn-fault", "--device", dev, "-o", out)
-        assert "test/dyn-fault" in tools.patchkit_run("dkm-info", out)
+        for module in ("test/dyn-fault", "test/dyn-fault-late"):
+            out = tmp_path / f"{dev}.dkm"
+            tools.patchkit_run("pack", module, "--device", dev, "-o", out)
+            assert module in tools.patchkit_run("dkm-info", out)
 
 
 @pytest.mark.slow

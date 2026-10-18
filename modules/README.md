@@ -405,6 +405,12 @@ stale (`packages/patchkit/tests/typed.rs` runs it). The files hold no firmware b
 | `<device>.inc` | SHARC assembly: `#include "dt2.inc"` (pk_build expands it from `build/gen/`); the same names as `#define`s, in decimal (the assembler upper-cases macro text, so `0x` literals break after `+`) |
 | `gallery.json` | the gallery: machines with their knobs, per device (type, position, page), and the parameters with ranges; it is part of the web bundle (`files["build/gen/gallery.json"]`) and shown on the module card |
 
+A module can also ask for constants from the device files (`devices/*.toml`: `[board]`, `[digikit]`, `[card.store]`) and
+`core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas` or `sharc`, and a
+`path`; `{dev}` in the path makes one file per device). They are written by the same `patchkit gen` and checked by `gen --check`;
+what each kind holds, which fact lives where and what a new device needs are in `docs/design/device-data.md`. In a SHARC
+include the note of each constant is on the line before its `#define`: a trailing comment would become part of the macro.
+
 Example (pluck, Digitakt II): `R1 = FRAME_BASE;` and `R0 = R13 + PLUCK_DECAY_FRAME_OFF;` instead of `0x6d` and `1`.
 `tests/patchkit/test_pk_gen_include.py` shows that this assembles to the committed object, byte for byte.
 

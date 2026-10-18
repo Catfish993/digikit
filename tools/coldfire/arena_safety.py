@@ -32,10 +32,15 @@ from tools import python_env
 from tools.coldfire import panel_script, regions
 from tools.device.devrpc import parse_reply
 from tools.firmware import config
+from tools.patchkit import pk_device
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 # The module store (docs/findings/23-digikit-runtime-spikes.md S6): sectors, hi exclusive.
-CARD_STORE = (0x38000, 0x3E000)
+_STORE = pk_device.store()
+CARD_STORE = (
+    _STORE.first,
+    _STORE.first + _STORE.sectors,
+)  # devices/*.toml [card.store]
 SECTOR_RECORD = 8 + 64 + 512
 
 

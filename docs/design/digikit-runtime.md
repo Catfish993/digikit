@@ -174,7 +174,7 @@ type, pass without them; before the removal `view_rebuilds` was 0 at every boot,
 **Sequence** (`boot.rs`, `dkrt_boot`): read both copies (`sel`), pick the valid one with the higher sequence number; decide safe mode (flag
 bit 0, the key, or a boot counter of 2 or more); raise the boot counter (one copy, the one that is not current, `seq + 1`) before
 anything of a module runs; load each selected path with the loader of old (the same checks; a module that fails is skipped and
-reported in `DkrtBootInfo::results`, the others load). The first pass of the UI loop clears the counter (`ui_reached`).
+reported in `DkrtBootInfo::results`, the others load). The counter is cleared by `boot::ui_pass` (called from `dkrt_tick`) once the session has been stable: 45,000 DSP blocks (30 s of the firmware's block counter) after the first UI-loop pass, at the first pass in a safe boot (`DkrtBootInfo::stable`).
 
 **DSP code.** Measured: a transfer started at the task entry is never acknowledged (finding 37); the cause is not traced. A module with a DSP section is
 therefore published in two steps: the CF part at once (machine and parameter rows, `init`, slots; `used = 1`), the DSP part queued in the
@@ -192,8 +192,9 @@ present-state register shows a transfer, checked again with interrupts masked), 
 sequence: wait (bounded) for the console UART8 to empty, clear DDR word 0 through the uncached alias, 25 nops, `0x80` into `RCM.RCR`
 (`0xEC090000`). A restart loses the unsaved edits that the firmware itself would lose at that point; finding 40 measured it: panel pattern and sound edits do not reach the arena, so the menu asks the player to save the project first.
 
-**Safe mode.** A boot counter in the record: raised before the loads, cleared by the first UI-loop pass. After `SAFE_AFTER` (2) boots in a row
-that never reached it, a boot loads nothing (`reason` counter). The record's flag bit 0 asks for one safe boot (cleared by the boot that
+**Safe mode.** A boot counter in the record: raised before the loads, cleared after the stable period (`STABLE_BLOCKS`, 45,000 DSP blocks = 30 s
+after the first UI-loop pass; the clock is the firmware's own block counter, anchor `dkrt.fw.block_counter_lit`; finding 37). After `SAFE_AFTER` (2) boots in a row
+that did not stay up that long (a fault halts the CPU and the device needs a power cycle; a hang stops the UI loop), a boot loads nothing (`reason` counter). The record's flag bit 0 asks for one safe boot (cleared by the boot that
 honours it). The key `SAFE_KEY_CODE` (RECORD, button 19) held at power-on is looked for in the UI queue's waiting key events: **[O]**
 untested on a device, and the emulator delivers no key before the main OS runs.
 

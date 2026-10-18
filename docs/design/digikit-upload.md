@@ -27,7 +27,10 @@ F0 7D 64 6B 01 <cmd | 0x40> <seq> <body, 8-in-7 packed> F7   device -> host, one
 - Integers in the unpacked body are big-endian. Paths are bytes plus a NUL, under the store's path rules (1 to 87 bytes, `/`
   separated, no empty, `.` or `..` part).
 - A request is at most 40 KiB on the wire (the firmware drops a SysEx message over 128 KiB and holds about 150 KiB in its pool).
-  A reply is at most 1 KiB on the wire (the firmware's TX ring is 4 KiB and spins when full).
+  A reply is at most 1 KiB on the wire (the firmware's TX ring is 4 KiB and spins when full), and **a reply is sent only when the ring has room**:
+the runtime reads the firmware's count of bytes handed to the USB stack and not yet sent (anchor `dkrt.fw.tx_inflight_lit`) and drops the
+reply when it is above 256 or when the reply would not fit below 0xff0 with it; a host that does not read its input cannot hang the MIDI task.
+The host's retry asks again (`docs/findings/43-digikit-upload.md`, "No unbounded spin on a reply").
 
 Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code space (registry -20.., DSP -30.., boot -45):
 
@@ -98,6 +101,9 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
 
 - **Reading:** a copy is valid when the magic, version, header CRC and table CRC hold (a version 1 copy has no header CRC:
   it is valid only when B is not). Use the valid copy with the higher `seq`; equal: A.
+- **Equal headers before staging:** BEGIN first makes the two header copies equal (the lagging, torn or version 1 copy is rewritten from
+  the winner); CLEAR makes the space reusable, and a cut between B and A must not leave a stale copy that names a table the next upload
+  overwrites ("The CLEAR double fault", finding 43). If that write fails BEGIN answers `E_WRITE` and stages nothing.
 - **Staging:** BEGIN reserves `ceil(size / 512)` sectors from `used_sectors` on, plus room for the new table. DATA writes whole
   sectors there at once (the last partial sector is zero padded). Nothing the current header points at is written.
 - **Commit (END, DELETE, CLEAR):** END first reads the staged file back from the card and checks its sha256. Then: write the

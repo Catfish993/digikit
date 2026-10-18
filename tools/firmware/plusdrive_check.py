@@ -39,9 +39,10 @@ import zlib
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
+from tools.patchkit import pk_device  # noqa: E402
 
 MANY = 700
-STORE_FIRST = 0x38000
+STORE_FIRST = pk_device.store().first  # devices/*.toml [card.store]
 # The firmware's block read: (sector, bytes, buffer). DT2 1.16 and DN2 1.11.
 BLOCK_READ = {"dt2": 0x4012DEDA, "dn2": 0x4012C59A}
 

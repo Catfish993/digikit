@@ -44,6 +44,42 @@ class BuildError(RuntimeError):
     pass
 
 
+ISA_CHECK_KEY = "isa_check"
+
+
+def isa_digest(sections: list[dict], symbols: list[dict], relocs: list[dict]) -> str:
+    """The ISA check record of a ColdFire object: SHA-256 over its sections, symbols and relocations in a fixed framing, the same as
+    packages/patchkit/src/dko.rs `Dko::isa_digest`. `patchkit pack` refuses a ColdFire object whose record does not match its bytes, so an
+    object that was not built (and checked, `pk_link.check_isa`) here, or was edited afterwards, cannot become a `.dkm`."""
+    import hashlib
+
+    h = hashlib.sha256(b"dko-isa-v1")
+
+    def s(x: bytes) -> None:
+        h.update(len(x).to_bytes(4, "big") + x)
+
+    h.update(len(sections).to_bytes(4, "big"))
+    for x in sections:
+        s(x["name"].encode())
+        s(x["kind"].encode())
+        h.update(x["align"].to_bytes(4, "big") + x["size"].to_bytes(4, "big"))
+        s(bytes.fromhex(x["hex"]))
+    h.update(len(symbols).to_bytes(4, "big"))
+    for x in symbols:
+        s(x["name"].encode())
+        s((x["section"] or "").encode())
+        h.update(bytes([x["section"] is not None]) + x["value"].to_bytes(8, "big"))
+        h.update(bytes([bool(x["global"])]))
+    h.update(len(relocs).to_bytes(4, "big"))
+    for x in relocs:
+        s(x["section"].encode())
+        h.update(x["offset"].to_bytes(8, "big"))
+        s(x["type"].encode())
+        s(x["symbol"].encode())
+        h.update((x["addend"] & ((1 << 64) - 1)).to_bytes(8, "big"))
+    return h.hexdigest()
+
+
 def canonical(obj: dict) -> str:
     return json.dumps(obj, sort_keys=True, indent=1, ensure_ascii=True) + "\n"
 
@@ -136,7 +172,7 @@ def sharc_object(sources: list[Path], include_dirs: list[Path] | None = None) ->
     }
 
 
-def cf_object(sources: list[Path]) -> dict:
+def cf_object(sources: list[Path], include_dirs: list[Path] | None = None) -> dict:
     base = 0x47E8B000
     if any(p.name == "Cargo.toml" for p in sources):
         # A Rust crate (tools/patchkit/pk_rust.py): the manifest is the only source entry
@@ -152,7 +188,7 @@ def cf_object(sources: list[Path]) -> dict:
             objs = []
             for i, src in enumerate(sources):
                 o = Path(d) / f"{i}_{src.stem}.o"
-                pk_link.compile_source(src, o)
+                pk_link.compile_source(src, o, include_dirs)
                 objs.append(o)
             merged = objs[0]
             if len(objs) > 1:
@@ -219,6 +255,7 @@ def cf_object(sources: list[Path]) -> dict:
                 "addend": r["addend"],
             }
         )
+    symbols = sorted(symbols, key=lambda s: s["name"])
     return {
         "format": FORMAT,
         "arch": "cf",
@@ -226,9 +263,11 @@ def cf_object(sources: list[Path]) -> dict:
         "toolchain": {
             **proto["toolchain"],
             "instructions_redecoded": str(sum(hist.values())),
+            # the check passed above (`check_isa` raises otherwise): record it over these bytes, for `patchkit pack`
+            ISA_CHECK_KEY: isa_digest(sections, symbols, relocs),
         },
         "sections": sections,
-        "symbols": sorted(symbols, key=lambda s: s["name"]),
+        "symbols": symbols,
         "relocs": relocs,
     }
 
@@ -245,7 +284,7 @@ def build_module(moddir: Path, check: bool) -> list[str]:
         if kinds <= {".s"} and any("dsp" in Path(s).parts for s in srcs):
             obj = sharc_object(paths, [moddir / "build" / "gen"])
         else:
-            obj = cf_object(paths)
+            obj = cf_object(paths, [moddir / "build" / "gen"])
         text = canonical(obj)
         out = moddir / o["path"]
         if check:

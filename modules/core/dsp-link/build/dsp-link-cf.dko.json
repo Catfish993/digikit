@@ -818,6 +818,7 @@
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "438",
+  "isa_check": "c7aaded1579d440a37a7f918c4080b73a57208df234f7ba01c2ea75dfb313a8f",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

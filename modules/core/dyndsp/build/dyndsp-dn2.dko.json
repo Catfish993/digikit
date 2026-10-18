@@ -61,7 +61,7 @@
    "size": 136
   }
  ],
- "source_sha256": "9d359a648b1025b2974e017df127bf822607b13d45e84438845829943a909c71",
+ "source_sha256": "7140d9a1c3e1e737a5093f8176d231024bd51841a64f4e9cc45be0383212677c",
  "symbols": [
   {
    "global": true,
@@ -117,6 +117,7 @@
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "0",
+  "isa_check": "69f372b233662e86279b4da92a905388bd5458bb1af8a7035b1b3357cdbca87e",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

@@ -1180,7 +1180,7 @@ devices = ["dt2"]
             "[[entry]]\nregistry = \"toys\"\nid = \"a\"\ndevices = [\"dt3\"]\n",
             None,
         ),
-        "neither dt2 nor dn2",
+        "is not one of dt2|dn2",
     );
     // a claim for the other device does not collide
     let dup = "[[claim]]\nresource = \"only.dt2\"\ndevices = [\"dn2\"]\n";

@@ -30,10 +30,27 @@ fw_block_read = "dkrt.fw.block_read"
 fw_block_write = "dkrt.fw.block_write"
 fw_midi_send = "dkrt.fw.midi_send"
 dkrt_ui_queue_lit = "dkrt.ui.queue_lit"
+dkrt_block_counter_lit = "dkrt.fw.block_counter_lit"
+dkrt_tx_inflight_lit = "dkrt.fw.tx_inflight_lit"
 fw_alloc = "dkrt.fw.alloc"
 fw_free = "dkrt.fw.free"
 fw_project_serialize = "dkrt.fw.project_serialize"
 fw_boot_record_write = "dkrt.fw.boot_record_write"
+
+# Constants from the device files (devices/*.toml, core/machines types.toml), written by `patchkit gen`; docs/design/device-data.md.
+# The runtime is one image for all devices: `rust` and `gas-shared` hold what every device agrees on (gen refuses a difference), `gas`
+# the per-device numbers of the device objects below.
+[[gen]]
+kind = "rust"
+path = "sdk/src/device.rs"
+
+[[gen]]
+kind = "gas-shared"
+path = "build/gen/device.inc"
+
+[[gen]]
+kind = "gas"
+path = "build/gen/device-{dev}.inc"
 
 # The UI-loop hook trampoline and the cache flush (assembly).
 [[object]]
@@ -248,4 +265,40 @@ kind = "cf_func"
 hash = "f2ab3c0214b6212848a6300a70dd6129"
 offset = 0
 len = 2
+mark = "D"
+
+# The firmware's own DSP block counter (finding 37, "Safe mode after the first UI pass"): the tail of the block interrupt handler (vector 191,
+# the function core/dsp-link and core/health find by these hashes) adds the block to its clocks with `addq.l #1,<counter>` and nothing else
+# touches the word, so it counts blocks (1500 per second) from boot. The anchor is the 4-byte address literal of that instruction
+# (`52b9 <lit>`): offset 0x1654 in the Digitakt II function, 0x1d4e in the Digitone II one, the same in both versions of each.
+[[anchor_rule]]
+name = "dkrt.fw.block_counter_lit"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "e17112316e2cef97a3ebdd4ec57cc849"
+offset = 0x1654
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "dkrt.fw.block_counter_lit"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f44b8037b4b199d47efc3899eb659b74"
+offset = 0x1d4e
+len = 4
+mark = "D"
+
+# The USB MIDI transmit function (DT2 1.16 FUN_40004734, `void f(u32 len, const u8 *msg)`, hash identical on the four images): the 4-byte address
+# literal of its `movea.l (<in flight>).l,a0`, the bytes handed to the USB stack and not yet sent (added by the submit function, taken off by
+# the completion). The function spins while this plus the bytes it queued exceed 0xffb; the upload checks it before it sends a reply.
+[[anchor_rule]]
+name = "dkrt.fw.tx_inflight_lit"
+cpu = "cf"
+kind = "cf_func"
+hash = "0d9c170d6f10a6083e1c92f69af07116"
+offset = 0x42
+len = 4
 mark = "D"

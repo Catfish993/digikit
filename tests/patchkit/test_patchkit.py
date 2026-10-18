@@ -16,8 +16,8 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools import python_env  # noqa: E402
-from tools.emulator import native_target  # noqa: E402
 from tools.firmware import config  # noqa: E402
+from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import port_resolve  # noqa: E402
 
 DT2_116 = config.stock("Digitakt_II_OS1.16.syx")
@@ -34,23 +34,9 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def patchkit(tmp_path_factory):
-    target = native_target.target_dir(None).parent / "nogen"
-    subprocess.run(
-        [
-            "cargo",
-            "build",
-            "-p",
-            "patchkit",
-            "--release",
-            "--offline",
-            "--target-dir",
-            str(target),
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-    )
-    exe = target / "release" / "patchkit"
+    exe = (
+        front_end.binary()
+    )  # one build under a lock, then an immutable copy (tools/devtools/stablebin.py)
 
     def run(*args, check=True):
         r = subprocess.run(
