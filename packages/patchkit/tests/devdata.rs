@@ -27,7 +27,12 @@ fn every_generated_file_is_current() {
         for (rel, text) in files {
             let path = root().join("modules").join(m.id()).join(&rel);
             let have = std::fs::read_to_string(&path).unwrap_or_default();
-            assert_eq!(have, text, "{} is stale: run `patchkit gen`", path.display());
+            assert_eq!(
+                have,
+                text,
+                "{} is stale: run `patchkit gen`",
+                path.display()
+            );
             n += 1;
         }
     }
@@ -37,7 +42,8 @@ fn every_generated_file_is_current() {
 #[test]
 fn the_runtime_constants_are_the_device_files_numbers() {
     let mut lib = Library::scan(&root().join("modules")).unwrap();
-    lib.lower(&Models::from_dir(&root().join("devices")).unwrap()).unwrap();
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
     let facts = Facts::from_dir(&root().join("devices")).unwrap();
     let files = devgen::generate(&lib, &facts, "core/runtime").unwrap();
     let get = |p: &str| &files.iter().find(|f| f.0 == p).unwrap().1;
@@ -66,7 +72,10 @@ fn the_runtime_constants_are_the_device_files_numbers() {
     assert!(dn2.contains(".equ PEEK_LO_1, 0x46712000 "), "{dn2}");
     assert!(dn2.contains(".equ PEEK_HI_3, 0x0 "), "{dn2}");
     let dt2 = get("build/gen/device-dt2.inc");
-    assert!(dt2.contains(".equ PEEK_LO_1, 0x47e8b000 ") && dt2.contains(".equ PEEK_HI_1, 0x47fe1000 "), "{dt2}");
+    assert!(
+        dt2.contains(".equ PEEK_LO_1, 0x47e8b000 ") && dt2.contains(".equ PEEK_HI_1, 0x47fe1000 "),
+        "{dt2}"
+    );
 }
 
 #[test]
@@ -74,27 +83,48 @@ fn peek_and_keep_ranges_are_checked() {
     let dt2 = std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap();
     let dn2 = std::fs::read_to_string(root().join("devices/digitone-ii.toml")).unwrap();
     for (what, bad) in [
-        ("an empty range", dt2.replace("[0x40000000, 0x47e30000]", "[0x40000000, 0x40000000]")),
-        ("an unaligned range", dt2.replace("[0x40000000, 0x47e30000]", "[0x40000001, 0x47e30000]")),
-        ("five ranges", dt2.replace("peek = [", "peek = [[4, 8], [8, 12], [12, 16], [16, 20], ")),
-        ("a keep area that is not a page multiple", dt2.replace("keep_bytes = 0x1000", "keep_bytes = 0x800")),
+        (
+            "an empty range",
+            dt2.replace("[0x40000000, 0x47e30000]", "[0x40000000, 0x40000000]"),
+        ),
+        (
+            "an unaligned range",
+            dt2.replace("[0x40000000, 0x47e30000]", "[0x40000001, 0x47e30000]"),
+        ),
+        (
+            "five ranges",
+            dt2.replace("peek = [", "peek = [[4, 8], [8, 12], [12, 16], [16, 20], "),
+        ),
+        (
+            "a keep area that is not a page multiple",
+            dt2.replace("keep_bytes = 0x1000", "keep_bytes = 0x800"),
+        ),
     ] {
         assert_ne!(bad, dt2, "{what}: the test text did not change");
-        assert!(Facts::from_texts([bad.as_str(), dn2.as_str()]).is_err(), "{what} is accepted");
+        assert!(
+            Facts::from_texts([bad.as_str(), dn2.as_str()]).is_err(),
+            "{what} is accepted"
+        );
     }
 }
 
 #[test]
 fn a_fact_that_devices_disagree_on_is_refused_for_the_shared_runtime() {
     let mut lib = Library::scan(&root().join("modules")).unwrap();
-    lib.lower(&Models::from_dir(&root().join("devices")).unwrap()).unwrap();
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
     let dt2 = std::fs::read_to_string(root().join("devices/digitakt-ii.toml")).unwrap();
     let dn2 = std::fs::read_to_string(root().join("devices/digitone-ii.toml")).unwrap();
     // move the Digitone's store one sector up (and keep its own checks happy)
     let moved = dn2.replace("first_sector = 0x38000", "first_sector = 0x38001");
     let facts = Facts::from_texts([dt2.as_str(), moved.as_str()]).unwrap();
-    let e = devgen::generate(&lib, &facts, "core/runtime").unwrap_err().0;
-    assert!(e.contains("STORE_FIRST") && e.contains("one image for all devices"), "{e}");
+    let e = devgen::generate(&lib, &facts, "core/runtime")
+        .unwrap_err()
+        .0;
+    assert!(
+        e.contains("STORE_FIRST") && e.contains("one image for all devices"),
+        "{e}"
+    );
     // per-device files (the device objects) are still fine for numbers that differ
     let ok = Facts::from_texts([dt2.as_str(), dn2.as_str()]).unwrap();
     assert!(devgen::generate(&lib, &ok, "core/dsp-link").is_ok());

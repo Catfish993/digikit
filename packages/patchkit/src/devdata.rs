@@ -115,7 +115,10 @@ mod tests {
         let d = all();
         assert!(d.len() >= 2);
         let dt2 = by_short("dt2").unwrap();
-        assert_eq!((dt2.syx_id, dt2.digikit_id, dt2.digikit_name.as_str()), (0x14, 1, "dt2"));
+        assert_eq!(
+            (dt2.syx_id, dt2.digikit_id, dt2.digikit_name.as_str()),
+            (0x14, 1, "dt2")
+        );
         assert_eq!(by_syx_id(0x15).unwrap().short, "dn2");
         assert!(by_short("nope").is_none());
     }

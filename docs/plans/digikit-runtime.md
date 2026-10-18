@@ -360,7 +360,7 @@ Testing ease (lane r1):
 - [x] `patchkit pack` through the front end (and a mise task); docs/PATCHING.md: testing a run-time module in the emulator.
 - [x] verify: no step runs a binary that a cargo build is rewriting (the `_dyld_start` hang of 2026-10-18): every `cargo build` replaces `release/<bin>` even when current; patchkit is now built under a lock and run from an immutable copy (tools/devtools/stablebin.py).
 
-### Phase 9: Digitakt II on the device (2026-10-18; current)
+### Phase 9: Digitakt II on the device (2026-10-18)
 
 Decisions (Em, 2026-10-18): Digitakt II first, end to end on the device; the Digitone II keeps its emulator tests and waits. Flash
 through SETTINGS > SYSTEM > OS UPGRADE; recovery is the bootstrap's STARTUP menu over DIN (not rehearsed; finding 01 "Recovery").
@@ -391,10 +391,45 @@ Device rungs (stock 1.17 is the way back each time):
   boots, log over USB, store range blank (finding 47).
 - [x] B: with the DSP link, no modules: normal audio, the DSP heartbeat in the log. Device, 2026-10-18: heartbeats steady, the context
   registers at the hook equal the emulator's (finding 47).
-- [ ] C: upload pluck over SysEx, APPLY & RESTART, play, with the log capturing the DSP registers. Prepared (lane b, finding 48): DSP breadcrumbs (step,
-  voice, machine type, dispatch and return counts, written into both reply records, so a halt names its step), the quieter log, `test/dyn-dsp-hang` and the
-  `debug-hang` scenario, the emulator rehearsal `rung-c` with the exact images and commands, docs/PATCHING.md "Rung C". Not run on the device.
+- [x] C: upload pluck over SysEx, APPLY & RESTART, play, with the log capturing the DSP registers. Device, 2026-10-18/19: upload, boot load and restart
+  work; the SHARC halted on the first note of the added type (rungs C, C2, C3a bisect it to the frame save); the cause was 17 stores the ISA excludes
+  (DAG1 registers through I6); rung C3d2 with them through R2 plays the pluck (finding 47; finding 49 section 10). The legal saves are the default on both
+  devices, and the build and preflight refuse the excluded stores (commit 8c7c7c93).
+- [ ] C4: the default build (no variant options) plus one SRC page for added machines (finding 50): `out/patch/rungC4-dt2-1.17.syx`. Check on the device:
+  pluck plays; SRC shows no page dots; SRC again, UP and DOWN do not change the page; SAMPLE/WERP/REPITCH keep their second page.
+- [ ] The emulator refuses the excluded stores (a native trap at decode time in `sharc-rt`, both tiers; finding 49 section 10.7).
 - [ ] D: debug off by default.
+
+### Phase 10: device tooling and a faster loop (2026-10-19; proposed order agreed by Em)
+
+Goal (Em): find out what happens on the device as quickly as possible, for module work and for closing ColdFire and SHARC gaps in the emulator, with the
+same interface on the emulator and the device. No cost on the device unless chosen (verbosity), everything behind DEBUG, read-only by default; writes
+(key input, poke) need DEBUG and a hand-set REMOTE CONTROL row, and never touch the card or flash. Each piece gets the emulator-first proof and kept tests.
+New tools approved (Em, 2026-10-19): `sccache`, `cargo-nextest`, a test-impact tool (pytest-testmon style).
+
+1. [ ] `dkflash` and the device bridge. `dkflash IMAGE`: preflight, send the `.syx` as Transfer does at the main screen, wait for Em's YES, wait for the
+   reboot, confirm the running image from `dklog info`. The bridge: one Mac process owns the device's MIDI port and serves the emulator control socket's
+   commands, driven by `devices/*.toml`, so tools, scenarios and agents address "a device" (emulator or hardware): log tail (JSON lines), PEEK, screen
+   capture (the OLED frame over SysEx), notes, upload, flash; then panel input (keys and encoders into the firmware's input queue; needs an anchor).
+   About 4-5 days; key input is the medium-confidence part.
+2. [ ] Verify speed. Rust tests only for crates whose dependency graph changed (`cargo metadata`) and `cargo-nextest`; `sccache` shared by lanes and the main
+   tree; Python tests routed by finer ownership, the slowest files split into chunks, a file skipped when its inputs are unchanged since its last pass;
+   a 1-2 minute `verify:pre` (lint, pathcheck, build check, gen check, the touched crates' tests) that every lane runs before reporting. Each change
+   measured before and after. About 1-1.5 days. (Baseline 2026-10-18: wall 881 s; python-tests 881 s, rust-tests 598 s, check-no-aot 492 s, tier-quick 421 s.)
+3. [ ] DSP crash and hang capture: a SHARC exception handler that writes the faulting PC and status into the reply record; a PC sampler on a DSP timer
+   interrupt (where a hang loops; also a profile of real silicon to calibrate the cycle model); DSP peek over the DSP link (N words at an address, read-only).
+   About 2-3 days. Built as modules where possible, so an experiment is an upload and a restart, not a flash.
+4. [ ] CPU side: tracepoints through the V4e debug module (hardware PC breakpoints; registers and memory saved, then continue; count and delivery to be
+   read in the MCF5441x manual first); a CPU PC sampler; log levels (error, warn, info, debug, trace) per subsystem (boot, card, DSP, UI, MIDI, module), set
+   from the Mac at run time and remembered, default info, trace rate-limited, besides the DEBUG on/off; structured dumps named in the device TOML (address,
+   length), saved automatically on `DSP_STOPPED` or a crash and next to emulator snapshots; on-device timing of module routines. About 3 days.
+5. [ ] Device-versus-emulator diff runs: one script (keys, notes, markers) runs on both through the bridge; logs, peeks, DSP peeks and screens at each marker
+   are diffed into a list of emulator gaps. About 2 days once 1 and 3 exist.
+6. Later: a GDB remote-protocol bridge on the Mac (reads served from PEEK, DSP peek and the last capture) for gdb or Ghidra's debugger.
+
+Parked (Em, 2026-10-19): an SDK-style module model in C or Rust (Machine, Parameter, Page types) on top of the typed schema of Phase 3 (finding 27) and
+`dkrt-sdk`; revisit after Phase 10. A second SRC page for a Digitakt II machine with more than eight parameters needs engine slots, a descriptor per page
+and a typearg mapping (finding 50); today it is a build error.
 
 ### Later
 

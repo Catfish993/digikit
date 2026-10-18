@@ -25,7 +25,11 @@ fn main() {
         let text = std::fs::read_to_string(&p).unwrap();
         let kept = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(format!("device-{n}"));
         std::fs::write(&kept, without_firmware(&text)).unwrap();
-        let _ = writeln!(s, "    ({n:?}, include_str!({:?})),", kept.to_string_lossy());
+        let _ = writeln!(
+            s,
+            "    ({n:?}, include_str!({:?})),",
+            kept.to_string_lossy()
+        );
     }
     s.push_str("];\n");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("device_files.rs");

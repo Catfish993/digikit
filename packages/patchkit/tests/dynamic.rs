@@ -20,11 +20,18 @@ fn library() -> Library {
     lib
 }
 
-fn dynamic_types(lib: &Library, dev: &str, module: &str) -> std::collections::BTreeMap<String, i64> {
+fn dynamic_types(
+    lib: &Library,
+    dev: &str,
+    module: &str,
+) -> std::collections::BTreeMap<String, i64> {
     lib.get("core/machines").unwrap().alloc["machines"].devices[dev]
         .dynamic
         .iter()
-        .filter_map(|(k, v)| k.strip_prefix(&format!("{module}:")).map(|n| (n.to_string(), *v)))
+        .filter_map(|(k, v)| {
+            k.strip_prefix(&format!("{module}:"))
+                .map(|n| (n.to_string(), *v))
+        })
         .collect()
 }
 
@@ -33,13 +40,18 @@ fn a_dynamic_module_is_not_lowered_and_not_patched() {
     let lib = library();
     let m = lib.get("test/dyn-xslice").unwrap();
     assert!(m.manifest.module.dynamic);
-    assert!(m.manifest.entry.is_empty(), "no registry rows are made for a run-time module");
+    assert!(
+        m.manifest.entry.is_empty(),
+        "no registry rows are made for a run-time module"
+    );
     let reg = Registry::from_dir(&root().join("devices/ports")).unwrap();
     for file in ["Digitakt_II_OS1.16.syx", "Digitakt_II_OS1.17.syx"] {
         let Ok(raw) = std::fs::read(root().join("firmware").join(file)) else {
             continue;
         };
-        let e = apply::apply(&raw, &reg, &lib, &["test/dyn-xslice".to_string()]).err().expect("refused");
+        let e = apply::apply(&raw, &reg, &lib, &["test/dyn-xslice".to_string()])
+            .err()
+            .expect("refused");
         assert!(e.0.contains("run-time module"), "{e}");
     }
 }
@@ -51,18 +63,34 @@ fn the_register_records_are_the_lowered_typed_sections() {
     let models = Models::from_dir(&root().join("devices")).unwrap();
     let res = resolve(&m.manifest, &models).unwrap();
     // only the Digitakt: the module says `devices = ["dt2"]`
-    assert_eq!(res.iter().map(|r| r.dev.as_str()).collect::<Vec<_>>(), ["dt2"]);
+    assert_eq!(
+        res.iter().map(|r| r.dev.as_str()).collect::<Vec<_>>(),
+        ["dt2"]
+    );
     let reg = Register::lower(&res[0], &dynamic_types(&lib, "dt2", "test/dyn-xslice")).unwrap();
     assert_eq!(reg.device, 1);
     assert_eq!(reg.machines.len(), 1);
     let mach = &reg.machines[0];
-    assert_eq!((mach.type_no, mach.clone_of, mach.position, mach.level), (16, 6, 255, 10));
+    assert_eq!(
+        (mach.type_no, mach.clone_of, mach.position, mach.level),
+        (16, 6, 255, 10)
+    );
     // knobs: XSLICE's stock codes, knob 6 the module's own parameter (index 0)
-    assert_eq!(mach.knobs, [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, KNOB_PARAM, 0xfe]);
+    assert_eq!(
+        mach.knobs,
+        [0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, KNOB_PARAM, 0xfe]
+    );
     let p = &reg.params[0];
-    assert_eq!((p.template, p.slot, p.min, p.max, p.default), (0xd1, 6, 0, 0x7f00, 0x2000));
+    assert_eq!(
+        (p.template, p.slot, p.min, p.max, p.default),
+        (0xd1, 6, 0, 0x7f00, 0x2000)
+    );
     // the file: a stub image, the records, and the same bytes every time
-    let opts = dkm::Options { name: "test/dyn-xslice".into(), version: 0x000100, runtime_min: 1 };
+    let opts = dkm::Options {
+        name: "test/dyn-xslice".into(),
+        version: 0x000100,
+        runtime_min: 1,
+    };
     let a = dkm::pack_with(None, &reg.encode(), &opts).unwrap();
     assert_eq!(a, dkm::pack_with(None, &reg.encode(), &opts).unwrap());
     let d = dkm::Dkm::parse(&a).unwrap();
@@ -78,13 +106,33 @@ fn the_run_time_type_range_is_checked() {
     let ok = "[dt2]\nlast = 23\ndynamic_first = 16\n[dt2.alloc]\n\"a:x\" = 7\n\"core/dynreg:d\" = 16\n[dt2.dynamic]\n\"m:y\" = 17\n";
     assert!(AllocTable::parse(ok).is_ok());
     let below = ok.replace("\"m:y\" = 17", "\"m:y\" = 9");
-    assert!(AllocTable::parse(&below).unwrap_err().0.contains("outside 16..=23"));
+    assert!(
+        AllocTable::parse(&below)
+            .unwrap_err()
+            .0
+            .contains("outside 16..=23")
+    );
     let twice = format!("{ok}\"n:z\" = 17\n");
-    assert!(AllocTable::parse(&twice).unwrap_err().0.contains("both have number 17"));
+    assert!(
+        AllocTable::parse(&twice)
+            .unwrap_err()
+            .0
+            .contains("both have number 17")
+    );
     let static_in_range = ok.replace("\"a:x\" = 7", "\"a:x\" = 18");
-    assert!(AllocTable::parse(&static_in_range).unwrap_err().0.contains("run-time range"));
+    assert!(
+        AllocTable::parse(&static_in_range)
+            .unwrap_err()
+            .0
+            .contains("run-time range")
+    );
     let no_first = "[dt2]\nlast = 23\n[dt2.dynamic]\n\"m:y\" = 17\n";
-    assert!(AllocTable::parse(no_first).unwrap_err().0.contains("dynamic_first"));
+    assert!(
+        AllocTable::parse(no_first)
+            .unwrap_err()
+            .0
+            .contains("dynamic_first")
+    );
 }
 
 /// The framework reserves 8 machine types (16 .. 23) and 16 parameter codes, with the runtime's table of addresses; the
@@ -99,7 +147,9 @@ fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
             continue;
         };
         let want = |ids: &[&str]| -> Vec<String> {
-            lib.with_requires(&ids.iter().map(|s| s.to_string()).collect::<Vec<_>>()).unwrap().0
+            lib.with_requires(&ids.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+                .unwrap()
+                .0
         };
         let out = apply::apply(&raw, &reg, &lib, &want(&["core/runtime", "core/dynreg"])).unwrap();
         let plan = serde_json::to_value(&out.plan).unwrap();
@@ -122,7 +172,13 @@ fn dynreg_reserves_rows_and_the_runtime_links_optionally() {
         // the runtime alone: the optional link resolves to 0, nothing else changes
         let alone = apply::apply(&raw, &reg, &lib, &want(&["core/runtime"])).unwrap();
         let alone_plan = serde_json::to_value(&alone.plan).unwrap();
-        assert!(alone_plan["symbols"].as_object().unwrap().keys().all(|k| !k.contains("dynreg")));
+        assert!(
+            alone_plan["symbols"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .all(|k| !k.contains("dynreg"))
+        );
         ran += 1;
     }
     eprintln!("dynreg: {ran} images");

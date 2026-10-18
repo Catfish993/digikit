@@ -543,3 +543,17 @@ breadcrumbs. The default `core/dsp-voice` is **not** changed here (it still has 
    caught this in the rung C emulator run. It changes `CORE_FINGERPRINT` (regenerate the cores), so it is a separate piece of work; `pk_sharc.ureg_class_problems` already checks every assembled instruction.
 4. The silicon's reaction to the excluded encodings (ILOPI, wrong store, hang) is not public; d1's last breadcrumb tells it only as "stopped in that group".
 5. Other forms with a class: `Ureg` restrictions of Type 3a/3b (post-modify) and the `DM`/`PM` loads into the same DAG's I/M/B/L (allowed, with a stall) were not audited beyond the counts of 10.2; the checker covers 15a/15b/3b/3a by the `d`, `g` and `ureg` fields only.
+
+### 10.7 The device result: d2 plays **[D]** (2026-10-19)
+
+Rung C3d2 on the Digitakt II (finding 47, "Rung C3d2"): the run-time pluck played on TRIG 1 and its parameters responded; `dispatches` equal to `returns`
+at every report (15,693 to 45,799, about 1,500 a second), no `DSP_STOPPED`, the context words unchanged. The 17 stores were the only difference from the
+halting C3a build that touches the frame save (C3d2 is `DV_C3_FINE,DV_C3_BFIRST,DV_C3_VIAR`; C3a was `DV_C3_FINE,DV_C3_BFIRST,DV_C3_DB`, and `DV_C3_DB` acts after
+stage 10, which C3a never reached), so **the excluded stores are the cause of the rung C halt** **[D]** (one device run; d1, the mechanism run, was not flashed).
+How the silicon reacts to them (10.6 item 4) stays **[O]**.
+
+Done since (commit 8c7c7c93): items 1 and 2 of 10.6. The R2 route and the B3-before-I3 epilogue are the default of `core/dsp-voice` (the options are gone; the
+default object equals the old `DV_C3_BFIRST,DV_C3_VIAR` build byte for byte), `dsp-voice-dn2.s` saves its 17 through R0/R3, `pk_sharc.ureg_class_problems` checks the
+index-register forms only (3a, 3b, 3d, 15a, 15b; Type 14a exempt) and fails the build, and preflight scans section 7 code blocks (`tools/patchkit/pk_isacheck.py`:
+stock DT2 1.17 and DN2 1.12 have 0, the old rung C image 17). Item 3 (the emulator) is still open; a check at decode time in `packages/emulator/sharc-rt`
+(`decoded_insn`, and the fast tier's `decode_one`) raising a native trap would not change `CORE_FINGERPRINT` (a scout's reading, not built).

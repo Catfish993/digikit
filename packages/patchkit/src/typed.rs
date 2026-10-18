@@ -869,7 +869,10 @@ entry = "_t_render"
         assert!(e.contains("one param has one slot"), "{e}");
         // a page on a device whose knobs live in the machine row
         let e = bad(MOD.replace("devices = [\"dn2\"]", "devices = [\"dt2\"]"));
-        assert!(e.contains("not in a page") && e.contains("second SRC page"), "{e}");
+        assert!(
+            e.contains("not in a page") && e.contains("second SRC page"),
+            "{e}"
+        );
         // own_dsp where the device has none
         let e = bad(MOD.replace("clone_of = 0\nknobs", "clone_of = 0\nown_dsp = true\nknobs"));
         assert!(e.contains("no own_dsp"), "{e}");

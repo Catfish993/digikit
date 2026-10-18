@@ -69,7 +69,10 @@ impl Device {
         )
     }
     fn secret(self) -> (&'static [u8], [u8; 32]) {
-        let s = SEALS.iter().find(|s| s.0 == self.0.short).expect("checked by from_id");
+        let s = SEALS
+            .iter()
+            .find(|s| s.0 == self.0.short)
+            .expect("checked by from_id");
         (s.1, h32(s.2))
     }
 }

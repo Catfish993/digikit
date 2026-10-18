@@ -99,3 +99,16 @@ breadcrumb reached **`C3_TYPE_MATCHED voice=0 type=18`** and the SHARC stopped (
 So the halt is **between fine stage 8 and stage 9**: the registered path's `MODIFY(I7, -40)` and its 35 frame stores (including
 `R3 = DM(_dv_sv_l4)` and `R3 = MODE1`; finding 49 section 9.2, offsets 127-199). The `CALL` (after stage 10) is not reached, so the
 delayed forms could not change the result; C3a does not test them.
+
+## Rung C3d2: the 17 stores through R2 **[D]** (2026-10-19)
+
+Image `out/patch/rungC3d2-dt2-1.17.syx` (sha256 `18d7a6d5...`; `DV_C3_FINE,DV_C3_BFIRST,DV_C3_VIAR`, finding 49 section 10), the same module (`dyn-pluck-dt2.dkm`,
+`e66c4660...`) and selection. Log `out/runs/device-logs/rungC3d2.log` (not committed).
+
+- Boot as before (`CARD_CHECK state=ours`, `RAM_KEEP kept=1`, `MOD_LOAD dyn-pluck-dt result=1`, `MOD_DSP result=0`).
+- `MACHINE_CHANGE track=1 old_type=0 new_type=18` at 18.1 s. From the next report on: `crumb=EPILOGUE_DONE voice=1 type=18`, `dispatches` = `returns`
+  (693, 15,693, 30,743, 45,799 at 22, 32, 42, 52 s: about 1,500 a second), heartbeats rising, no `DSP_STOPPED`. The context words stayed the rung B values.
+- HEALTH: `dsp_avg_pct` 41.5 before the machine change, 41.6-42.2 while it played; `dsp_max_pct` 45.5 at most.
+- Em: the pluck sounds on TRIG 1 and its parameters respond. Page 2 of SRC showed the knob page again (the interim fix of finding 50), which Em
+  read as a bug; added machines now have one SRC page (finding 50, the section on one page; not yet on the device).
+- So the halt of rung C was the excluded stores (finding 49 section 10.7).

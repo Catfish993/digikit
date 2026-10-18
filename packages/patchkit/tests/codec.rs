@@ -10,7 +10,11 @@ const FILES: [&str; 4] = [
 ];
 
 fn read(name: &str) -> Option<Vec<u8>> {
-    std::fs::read(format!("{}/../../firmware/{name}", env!("CARGO_MANIFEST_DIR"))).ok()
+    std::fs::read(format!(
+        "{}/../../firmware/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .ok()
 }
 
 #[test]

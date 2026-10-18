@@ -172,7 +172,11 @@ impl Register {
         }
         for g in &r.pages {
             let t = types.get(&g.machine).copied().ok_or_else(|| {
-                err!("page {}: machine {:?} has no run-time type number", g.id, g.machine)
+                err!(
+                    "page {}: machine {:?} has no run-time type number",
+                    g.id,
+                    g.machine
+                )
             })?;
             let mut knobs = [0u32; KNOBS];
             for (j, k) in g.knobs.iter().enumerate() {
@@ -180,9 +184,10 @@ impl Register {
                     Knob::Code(0) => 0,
                     Knob::Code(c) => return Err(err!("page {}: knob {j}: stock code {c}", g.id)),
                     Knob::Param(id) => {
-                        let i = r.params.iter().position(|p| &p.id == id).ok_or_else(|| {
-                            err!("page {}: knob names {id:?}, not a param", g.id)
-                        })?;
+                        let i =
+                            r.params.iter().position(|p| &p.id == id).ok_or_else(|| {
+                                err!("page {}: knob names {id:?}, not a param", g.id)
+                            })?;
                         KNOB_PARAM | i as u32
                     }
                 };
@@ -234,10 +239,16 @@ impl Register {
             text_ok("page name", &g.name, MACHINE_NAME - 1)?;
             text_ok("page title", &g.title, MACHINE_NAME - 1)?;
             if !self.machines.iter().any(|m| m.type_no == g.type_no) {
-                return Err(err!("page {}: no machine of type {} in the file", g.name, g.type_no));
+                return Err(err!(
+                    "page {}: no machine of type {} in the file",
+                    g.name,
+                    g.type_no
+                ));
             }
             for k in g.knobs {
-                if k != 0 && (k & KNOB_PARAM == 0 || ((k & !KNOB_PARAM) as usize) >= self.params.len()) {
+                if k != 0
+                    && (k & KNOB_PARAM == 0 || ((k & !KNOB_PARAM) as usize) >= self.params.len())
+                {
                     return Err(err!("page {}: knob is not a param of the file", g.name));
                 }
             }
@@ -250,7 +261,10 @@ impl Register {
         p32(&mut o, MAGIC);
         p32(&mut o, VERSION);
         p32(&mut o, self.device);
-        p32(&mut o, (self.params.len() + self.machines.len() + self.pages.len()) as u32);
+        p32(
+            &mut o,
+            (self.params.len() + self.machines.len() + self.pages.len()) as u32,
+        );
         for p in &self.params {
             p32(&mut o, KIND_PARAM);
             p32(&mut o, LEN_PARAM as u32);
