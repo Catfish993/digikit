@@ -4771,6 +4771,12 @@ Save State. Its coefficients change every block.
   these 440 runs.
 - Control: with option 22 off, no poll reads ACDONE, and the filtered cases
   differ by 1,535 samples on one track.
+- Correction (2026-10-18, later): the second track had no sound in two of the
+  cases, so its check could not fail there. With the harness fixed
+  (dn2_firmware PR #248), the native run again matches bit for bit on both
+  tracks in all five cases. The control now differs on each track: 1,535
+  samples in each filtered case, and 895 in the case that switches the filter
+  on and off. The host-model run is from before the fix.
 - Not covered: ACM, FIR0, more than one channel, and windows other than 32
   samples.
 
