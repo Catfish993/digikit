@@ -78,3 +78,15 @@ Image `out/patch/rungC-dt2-1.17.syx` (sha256 `fb6caf04...`, with the breadcrumbs
   note and the routine are not needed. Whether the first halt came at the selection or at TRIG 1 is not known **[O]**.
 - **Page 2 of PLUCK** drew almost blank on the device (the TUNE glyph and the bar indicators); encoders there show page 1's names. Cause
   and fix: finding 50 (a CF view chooses the page's centre widget by type with a mask for types 0-6; reproduced in the emulator).
+
+## Rung C2: the bisect (added types skip the wrapper's call path) **[D]**
+
+Image `out/patch/rungC2-dt2-1.17.syx` (sha256 `3a34dcf6...`; `DV_BISECT_C2`, finding 49 section 8), the same module and selection. Log
+`out/runs/device-logs/rungC2.log` (not committed).
+
+- `MACHINE_CHANGE track=1 old_type=0 new_type=18` at 18.3 s: selecting the machine alone changed nothing on the DSP (`dispatches` 0).
+- TRIG 1 at about 33.5 s: from then on the hook saw type 18 every block (`crumb=STOCK_PATH_TAKEN voice=1 type=18`, `dispatches` rising
+  3,000 a second: the two voices of track 1), for over 40 s; no `DSP_STOPPED`, heartbeats rising.
+- **So the stock pipeline accepts a track on an added type, and the halt of rung C is inside core/dsp-voice's path for a registered
+  added type before its stage-2 breadcrumb** (the part C2 removes: finding 49 sections 3 and 8). The type reaches the hook at the first
+  note, as in the emulator (finding 49's open "earlier on the device" is not borne out by this run).
