@@ -18,6 +18,7 @@ docs/findings/43-digikit-upload.md). Run by `tools.patchkit.pk_digikit_scen` (ki
   quick     a short `ops` (one upload, replace, delete) for the verify gate.
   clearcut  two faults in a row (finding 43): a cut between header B and header A (of a CLEAR, of an upload), then a torn header B on
             the next upload; the store still reads as the committed store and takes another upload.
+  screenshot  the stock MidiRpc Screenshot (0x04) through tools/device/dkscreen.py equals the emulator's frame capture, pixel for pixel.
   txfull    a host that never reads: the in-flight word of the firmware's TX function is set high; replies are dropped (counted), none
             reaches the output, a stock Ping still answers, and the reply is sent again once the ring has room.
 
@@ -1039,7 +1040,36 @@ def run_txfull(c: Any) -> None:
     c.common_checks_upload()
 
 
+def run_screenshot(c: Any) -> None:
+    """The firmware's own MidiRpc Screenshot (0x04) over the emulated USB MIDI path (tools/device/dkscreen.py): the decoded 1024 bytes equal
+    the emulator's frame capture of the same moment, pixel for pixel, on the main screen and on another view (SETTINGS)."""
+    from tools.device import dkscreen as S
+
+    img = c.image_for(B.RT, "run")
+    with c.rig(img, c.card(None), "screen", cf_only=True) as rig:
+
+        def grab(name: str) -> None:
+            before = rig.emu.frame()[1]
+            shot = S.emu_screenshot(rig.emu)
+            after = rig.emu.frame()[1]
+            (c.work / f"{name}.png").write_bytes(S.png_of(shot))
+            c.check(
+                f"Screenshot reply ({name}): 1024 bytes equal to the emulator's frame capture",
+                len(shot) == 1024 and shot in (before, after),
+                f"{sum(a != b for a, b in zip(shot, after, strict=False))} bytes differ from the frame after",
+            )
+            c.check(f"Screenshot reply ({name}): the screen is not blank", any(shot))
+
+        grab("main")
+        rig.s.do_tap("SETTINGS")
+        rig.s.run_ms(600)
+        grab("after-settings-key")
+        c.done(rig)
+    c.common_checks_upload()
+
+
 PARTS = {
+    "screenshot": run_screenshot,
     "ops": run_ops,
     "quick": lambda c: run_ops(c, quick=True),
     "cut": run_cut,

@@ -11,7 +11,7 @@
 
 `put FILE [PATH]` stores FILE at PATH (default: `modules/<file name>`) in chunks of at most 32 KiB, two requests in flight, and
 checks the file's sha256 on the device (END reads the staged file back from the card). It changes only the module store; an uploaded
-module appears in DIGIKIT > MODULES and loads after APPLY & RESTART.
+module appears in DIGIKIT > MODULES and loads after APPLY & RESTART (or `tools.device.dkrun`, which also selects and restarts).
 
 Python (the kept scenarios use it): ``Uploader(EmuTransport(emu))`` or ``Uploader(RtMidiTransport("Digitakt"))``. The framing is
 `frame()` / `parse_reply()`; the 8-in-7 packing is `tools.firmware.build.encode_8in7` and `tools.device.midisniff.unpack_8in7`.
@@ -20,6 +20,7 @@ Python (the kept scenarios use it): ``Uploader(EmuTransport(emu))`` or ``Uploade
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import struct
 import sys
@@ -43,6 +44,7 @@ CMD_BEGIN, CMD_DATA, CMD_END, CMD_DELETE, CMD_CLEAR, CMD_ABORT = (
     0x15,
 )
 CMD_LOG, CMD_PEEK = 0x20, 0x21
+CMD_SELECT, CMD_RESTART = 0x30, 0x31  # runtime 4
 CLEAR_MAGIC = 0x434C5221
 MAX_CHUNK = 32768
 DEPTH = 2
@@ -63,6 +65,11 @@ STATUS = {
     -61: "E_NOSTORE",
     -62: "E_INUSE",
     -63: "E_PEEK",
+    # the selection record's codes (SELECT answers them as the menu's APPLY gets them)
+    -40: "E_SEL_PATH",
+    -41: "E_SEL_COUNT",
+    -42: "E_SEL_WRITE",
+    -47: "E_CARD_RO",
 }
 
 
@@ -77,6 +84,13 @@ def frame(cmd: int, seq: int, body: bytes = b"", version: int = VERSION) -> byte
     return (
         PREFIX + bytes((version, cmd & 0x7F, seq & 0x7F)) + encode_8in7(body) + b"\xf7"
     )
+
+
+def select_body(paths: list[str]) -> bytes:
+    """The body of SELECT: `u8 n`, then each store path and a NUL."""
+    if len(paths) > 8:
+        raise ValueError("a selection holds at most 8 paths")
+    return bytes((len(paths),)) + b"".join(p.encode() + b"\0" for p in paths)
 
 
 def parse_reply(msg: bytes) -> tuple[int, int, int, bytes] | None:
@@ -164,6 +178,11 @@ class RtMidiTransport:
         self.mi.open_port(pi)
         self.mo.open_port(po)
         self.mi.ignore_types(sysex=False, timing=True, active_sense=True)
+
+    def close(self) -> None:
+        for p in (self.mi, self.mo):
+            with contextlib.suppress(Exception):  # the device may be gone already
+                p.close_port()
 
     def send(self, msg: bytes) -> None:
         self.mo.send_message(list(msg))
@@ -288,6 +307,14 @@ class Uploader:
         if got != addr or n != length or len(b) < 6 + n:
             raise UploadError(-50, "peek: malformed reply")
         return b[6 : 6 + n]
+
+    def select(self, paths: list[str]) -> None:
+        """SELECT (runtime 4): save the selection record (what the next boot loads); the menu's code path, so its card rules apply."""
+        self._ok(CMD_SELECT, "select", select_body(paths))
+
+    def restart(self) -> None:
+        """RESTART (runtime 4): the reply comes first, then the device soft-resets (as APPLY & RESTART)."""
+        self._ok(CMD_RESTART, "restart")
 
     def begin(self, path: str, size: int, sha256: bytes) -> None:
         self._ok(

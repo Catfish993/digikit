@@ -43,6 +43,8 @@ const CMD_CLEAR: u32 = 0x14;
 const CMD_ABORT: u32 = 0x15;
 const CMD_LOG: u32 = 0x20;
 const CMD_PEEK: u32 = 0x21;
+const CMD_SELECT: u32 = 0x30;
+const CMD_RESTART: u32 = 0x31;
 
 /// Largest DATA chunk (INFO says so) and the unpacked body we accept: offset (4) + chunk.
 pub const MAX_CHUNK: u32 = 32768;
@@ -825,6 +827,84 @@ unsafe fn cmd_peek(seq: u32, body: *const u8, blen: usize) -> i32 {
     reply(CMD_PEEK, seq, OK, 6 + len as usize)
 }
 
+/// SELECT (runtime 4): save the selection record, the same `boot::selection_set` the menu's APPLY & RESTART calls (so the card range check and
+/// the "blank or ours" rule apply). Body: `u8 n`, then `n` store paths, each NUL terminated. Status: 0, `E_MSG` (malformed), `E_INUSE` (card
+/// not writable), or the selection code (`E_SEL_COUNT`, `E_SEL_PATH`, `E_SEL_WRITE`, `E_CARD_RO`). Takes effect at the next boot.
+unsafe fn cmd_select(seq: u32, body: *const u8, blen: usize) -> i32 {
+    if blen < 1 {
+        return reply(CMD_SELECT, seq, E_MSG, 0);
+    }
+    if !card::writable() {
+        return reply(CMD_SELECT, seq, E_INUSE, 0);
+    }
+    let n = *body as usize;
+    if n > dkrt_sdk::SEL_MAX {
+        return reply(CMD_SELECT, seq, dkrt_sdk::E_SEL_COUNT, 0);
+    }
+    // static, not on the MIDI task's stack (the record is about 450 bytes)
+    let sel = &mut *addr_of_mut!(SELBUF);
+    *sel = core::mem::zeroed();
+    let mut at = 1usize;
+    let mut k = 0usize;
+    while k < n {
+        let mut len = 0usize;
+        while at + len < blen && *body.add(at + len) != 0 {
+            len += 1;
+        }
+        if at + len >= blen {
+            return reply(CMD_SELECT, seq, E_MSG, 0); // no NUL
+        }
+        if len >= dkrt_sdk::SEL_PATH {
+            return reply(CMD_SELECT, seq, dkrt_sdk::E_SEL_PATH, 0);
+        }
+        let mut i = 0;
+        while i < len {
+            sel.paths[k][i] = *body.add(at + i);
+            i += 1;
+        }
+        at += len + 1;
+        k += 1;
+    }
+    if at != blen {
+        return reply(CMD_SELECT, seq, E_MSG, 0);
+    }
+    sel.count = n as u32;
+    let r = boot::selection_set(sel);
+    reply(CMD_SELECT, seq, r, 0)
+}
+
+static mut SELBUF: dkrt_sdk::DkrtSelection = dkrt_sdk::DkrtSelection { count: 0, flags: 0, paths: [[0; dkrt_sdk::SEL_PATH]; dkrt_sdk::SEL_MAX] };
+
+/// Ticks to wait for the reply to leave the TX ring, at most, before the restart goes anyway.
+const RESTART_TICKS_MAX: u32 = 4000;
+/// 0: no restart pending; else 1 + the UI passes waited so far.
+static mut RESTART_WAIT: u32 = 0;
+
+/// RESTART (runtime 4): the reply goes out first; the soft reset (`dkrt_restart`, the one APPLY & RESTART calls) runs from the UI task's next
+/// passes (`restart_poll`), once the TX ring has drained. Status: 0, or `E_STATE` while an upload is open. No body.
+unsafe fn cmd_restart(seq: u32) -> i32 {
+    if up().open {
+        return reply(CMD_RESTART, seq, E_STATE, 0);
+    }
+    RESTART_WAIT = 1;
+    reply(CMD_RESTART, seq, OK, 0)
+}
+
+/// Called once per UI pass (`dkrt_tick`). Runs a pending RESTART after its reply has been sent. `dkrt_restart` returns only when it refuses
+/// (a card transfer in flight): the request is then dropped and logged as an error; the host sees the runtime still running and asks again.
+pub unsafe fn restart_poll() {
+    if RESTART_WAIT == 0 {
+        return;
+    }
+    RESTART_WAIT += 1;
+    let drained = matches!(tx_in_flight(), Some(0));
+    if (drained && RESTART_WAIT > 3) || RESTART_WAIT > RESTART_TICKS_MAX {
+        RESTART_WAIT = 0;
+        let r = crate::dkrt_restart();
+        dlog::ev(logk::UPLOAD, logk::F_ERROR, [CMD_RESTART, r as u32, 0, 0, 0]);
+    }
+}
+
 unsafe fn buffer() -> *mut u8 {
     addr_of_mut!(DKRT_UPLOAD_BUF) as *mut u8
 }
@@ -851,15 +931,16 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
     }
     let buf = buffer();
     let blen = unpack(msg.add(7), wire as usize, buf.add(BODY_AT));
-    // Every command but DATA has a small body. Copy it out: the commands read the table into the front of the buffer.
+    // Every command but DATA and SELECT has a small body. Copy it out: the commands read the table into the front of the buffer.
+    // (SELECT reads its paths in place: up to 8 paths of 56 bytes, and it never touches the table.)
     let mut req = [0u8; 160];
-    if cmd != CMD_DATA {
+    if cmd != CMD_DATA && cmd != CMD_SELECT {
         if blen > req.len() {
             return reply(cmd, seq, E_MSG, 0);
         }
         copy(req.as_mut_ptr(), buf.add(BODY_AT), blen);
     }
-    let body = req.as_ptr();
+    let body = if cmd == CMD_SELECT { buf.add(BODY_AT) as *const u8 } else { req.as_ptr() };
     // an if chain, not a `match` (a jump table is not ColdFire code)
     if cmd == CMD_INFO {
         cmd_info(seq, buf)
@@ -882,6 +963,10 @@ pub unsafe extern "C" fn dkrt_midi_rx(msg: *const u8, len: u32, _source: u32) ->
         cmd_log(seq, body, blen)
     } else if cmd == CMD_PEEK {
         cmd_peek(seq, body, blen)
+    } else if cmd == CMD_SELECT {
+        cmd_select(seq, body, blen)
+    } else if cmd == CMD_RESTART {
+        cmd_restart(seq)
     } else {
         reply(cmd, seq, E_PROTO, 0)
     }

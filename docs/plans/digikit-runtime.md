@@ -407,9 +407,9 @@ Focus (Em, 2026-10-19): stability; machines and other module types working; fast
 helps SHARC performance. Guardrails: everything behind DEBUG, read-only by default, never a card write outside the store or a flash write.
 New tools approved (Em, 2026-10-19): `sccache`, `cargo-nextest`, a test-impact tool (pytest-testmon style).
 
-1. [ ] `dk run MODULE`: build, pack, upload, select, restart, follow the log, in one command. Runtime 4 adds SELECT (write the selection
+1. [x] `dk run MODULE` (2026-10-19, lane dkrun: `tools/device/dkrun.py`, `mise run dk:run`, runtime 4 SELECT 0x30 and RESTART 0x31; emulator proof `menu-dkrun-pluck`; image `out/patch/rt4-dt2-1.17.syx`; device run: docs/PATCHING.md "Runtime 4: dk run and screenshots"): build, pack, upload, select, restart, follow the log, in one command. Runtime 4 adds SELECT (write the selection
    record) and RESTART (the soft reset the menu's APPLY & RESTART does) to the SysEx protocol; one flash, then no menu per change.
-2. [ ] Screenshot: the firmware's own MidiRpc `Screenshot` (0x04, 1024 bytes of the OLED shadow buffer; docs/MIDI-SYSEX-RPC.md) through
+2. [x] Screenshot (2026-10-19, lane dkrun: `tools/device/dkscreen.py`; the emulator answers the stock Screenshot and the 1024 bytes equal its frame capture, scenario `upload-screenshot`; not yet run on the device): the firmware's own MidiRpc `Screenshot` (0x04, 1024 bytes of the OLED shadow buffer; docs/MIDI-SYSEX-RPC.md) through
    `tools/device/devrpc.py`, written as PNG; no flash. Check it on 1.17.
 3. [ ] Verify speed: Rust tests for the crates whose dependencies changed, `cargo-nextest`, `sccache` across lanes, finer Python routing with the
    slowest files chunked and unchanged files skipped, a 1-2 minute `verify:pre` for lanes. Measured before and after (baseline 2026-10-18: wall
