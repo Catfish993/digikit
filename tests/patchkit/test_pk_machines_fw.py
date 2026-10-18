@@ -471,38 +471,53 @@ def type_fn(t):
     return {TYPE_FN: b"\x20\x3c" + be32(t & 0xFFFFFFFF) + b"\x4e\x75"}
 
 
-def test_src_page_hook_draws_the_knob_page_for_added_types_only(unit):
-    """SourcePageView::vfunc_4: the stock test `addq.l #4,SP; tst.b D0; bne.w T` takes the knob page when D0 is true; the hook also takes
-    it when FUN_4005f6bc(view) is an added type (>= machines.first), and falls through (site + 8) for every other type, including -1."""
-    cases = [
-        # (d0 on entry, type the stand-in returns, expected exit)
-        (
-            1,
-            3,
-            "_mf_spa",
-        ),  # the stock condition holds: knob page, the type is not asked
-        (0, 0, "_mf_sp"),  # SAMPLE: the sample view
-        (0, 3, "_mf_sp"),
-        (0, 6, "_mf_sp"),  # MANUAL SLICE: its slice view
-        (0, -1, "_mf_sp"),  # no track
-        (0, FIRST, "_mf_spa"),
-        (0, 18, "_mf_spa"),  # the run-time pluck
-        (0, 23, "_mf_spa"),  # the last reserved type
-    ]
-    for d0, typ, want in cases:
-        r = unit.run_cases(
-            type_fn(typ),
-            [
-                {
-                    "routine": "mf_srcpage",
-                    "d": {0: d0},
-                    "a": {2: 0x1234},
-                    "stack": [0xAAAA, 0xBBBB],
-                }
-            ],
-        )[0]
-        assert r.stub == want, (d0, typ, r.stub)
-        assert r.a[2] == 0x1234  # the view register is kept
-        assert (
-            r.stack[0] == 0xBBBB
-        )  # the stock `addq.l #4,SP` was done, nothing else is left on the stack
+VIEW = 0x47EC5000  # a stand-in SourcePageView: +0x7c begin, +0x80 end of the page vector, +0x90 the page index
+PAGES = VIEW + 0x200  # the vector's storage: two 4-byte entries
+
+
+def view_mem(end_entries, idx):
+    mem = bytearray(0x100)
+    mem[0x7C:0x80] = be32(PAGES)
+    mem[0x80:0x84] = be32(PAGES + 4 * end_entries)
+    mem[0x84:0x88] = be32(PAGES + 8)
+    mem[0x90:0x94] = be32(idx)
+    return {VIEW: bytes(mem)}
+
+
+def run_src_page(unit, typ, end_entries, idx):
+    r = unit.run_cases(
+        {**type_fn(typ), **view_mem(end_entries, idx)},
+        [
+            {
+                "routine": "mf_srcpage",
+                "a": {2: VIEW},
+                "stack": [0xAAAA, 0xBBBB],
+                "reads": [(VIEW + 0x7C, 0x18)],
+            }
+        ],
+    )[0]
+    blob = r.reads[0]
+    begin, end, cap = (int.from_bytes(blob[i : i + 4], "big") for i in (0, 4, 8))
+    idx_after = int.from_bytes(blob[0x14:0x18], "big")
+    assert begin == PAGES and cap == PAGES + 8  # begin and capacity are never touched
+    assert r.a[2] == VIEW  # the view register is kept
+    assert r.stack[0] == 0xAAAA  # nothing is left on the stack
+    return r.stub, (end - begin) // 4, idx_after
+
+
+def test_src_page_hook_gives_added_types_one_page_and_stock_types_two(unit):
+    """SourcePageView::vfunc_4, first test `tst.l 0x90(A2); beq.w T`: an added type (>= machines.first) gets page 0 and a one-entry
+    page vector (no page dots, the page key has nothing to flip to) and takes the knob page; every other type, including -1, gets the
+    two-entry vector back and the stock path (page 1 = the sample view stays)."""
+    for typ in (FIRST, 9, 18, 23):  # the first added type, the pluck, run-time rows
+        for end_entries, idx in ((2, 0), (2, 1), (1, 0)):
+            assert run_src_page(unit, typ, end_entries, idx) == ("_mf_spa", 1, 0), (
+                typ,
+                end_entries,
+                idx,
+            )
+    for typ in (0, 3, 6, -1):  # SAMPLE, STRETCH, MANUAL SLICE, no track
+        # page 0: the knob page; page 1: the sample view (stock continues at site + 8); a vector cut by an added type is restored
+        assert run_src_page(unit, typ, 2, 0) == ("_mf_spa", 2, 0), typ
+        assert run_src_page(unit, typ, 2, 1) == ("_mf_sp", 2, 1), typ
+        assert run_src_page(unit, typ, 1, 0) == ("_mf_spa", 2, 0), typ
