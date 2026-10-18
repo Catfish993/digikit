@@ -160,6 +160,40 @@ _dv_f1b:
     NOP;
 #endif
     MODIFY(I7, -40) (NW);
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 11: after the MODIFY of I7 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 11;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d11a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d11a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d11b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d11b:
+#endif
     DM(-6, I6) = R3;
     DM(-7, I6) = R5;
     DM(-8, I6) = R6;
@@ -170,34 +204,493 @@ _dv_f1b:
     DM(-13, I6) = R13;
     DM(-14, I6) = R14;
     DM(-15, I6) = R15;
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 12: stores -6 .. -15 (R registers) done, before the first DAG1 register store (R0, R2, I4 only; the stage word is in R2)
+    R0 = 12;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d12a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d12a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d12b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d12b:
+#endif
+#ifdef DV_C3_VIAR
+    R2 = I0;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-16, I6) = R2;
+#else
     DM(-16, I6) = I0;
+#endif
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 13: after DM(-16, I6) = I0 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 13;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d13a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d13a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d13b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d13b:
+#endif
+#ifdef DV_C3_VIAR
+    R2 = I1;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-17, I6) = R2;
+#else
     DM(-17, I6) = I1;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = I2;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-18, I6) = R2;
+#else
     DM(-18, I6) = I2;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = I3;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-19, I6) = R2;
+#else
     DM(-19, I6) = I3;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = I5;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-20, I6) = R2;
+#else
     DM(-20, I6) = I5;
+#endif
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 14: after I1, I2, I3, I5 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 14;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d14a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d14a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d14b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d14b:
+#endif
+#ifdef DV_C3_VIAR
+    R2 = M1;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-21, I6) = R2;
+#else
     DM(-21, I6) = M1;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = M2;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-22, I6) = R2;
+#else
     DM(-22, I6) = M2;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = M3;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-23, I6) = R2;
+#else
     DM(-23, I6) = M3;
+#endif
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 15: after M1, M2, M3 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 15;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d15a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d15a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d15b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d15b:
+#endif
+#ifdef DV_C3_VIAR
+    R2 = B3;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-24, I6) = R2;
+#else
     DM(-24, I6) = B3;
+#endif
     DM(-25, I6) = I13;
     // save the context registers, then pin them to the ABI's values (see the header)
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 16: after B3, I13 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 16;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d16a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d16a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d16b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d16b:
+#endif
+#ifdef DV_C3_VIAR
+    R2 = M5;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-26, I6) = R2;
+#else
     DM(-26, I6) = M5;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = M6;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-27, I6) = R2;
+#else
     DM(-27, I6) = M6;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = M7;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-28, I6) = R2;
+#else
     DM(-28, I6) = M7;
+#endif
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 17: after M5, M6, M7 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 17;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d17a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d17a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d17b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d17b:
+#endif
     DM(-29, I6) = M13;
     DM(-30, I6) = M14;
     DM(-31, I6) = M15;
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 18: after M13, M14, M15 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 18;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d18a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d18a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d18b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d18b:
+#endif
+#ifdef DV_C3_VIAR
+    R2 = L0;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-32, I6) = R2;
+#else
     DM(-32, I6) = L0;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = L1;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-33, I6) = R2;
+#else
     DM(-33, I6) = L1;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = L2;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-34, I6) = R2;
+#else
     DM(-34, I6) = L2;
+#endif
+#ifdef DV_C3_VIAR
+    R2 = L3;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-35, I6) = R2;
+#else
     DM(-35, I6) = L3;
+#endif
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 19: after L0 .. L3 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 19;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d19a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d19a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d19b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d19b:
+#endif
     R3 = DM(_dv_sv_l4);                   // L4 at entry (zeroed since)
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 20: after the load of _dv_sv_l4 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 20;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d20a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d20a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d20b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d20b:
+#endif
     DM(-36, I6) = R3;
+#ifdef DV_C3_VIAR
+    R2 = L5;                           // PRM p.15-7: a DM store cannot take a DAG1 register (UREGXDAG1), go through R2 as the stock code does
+    DM(-37, I6) = R2;
+#else
     DM(-37, I6) = L5;
+#endif
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 21: after DM(-36) and DM(-37) (R0, R2, I4 only; the stage word is in R2)
+    R0 = 21;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d21a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d21a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d21b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d21b:
+#endif
 #ifdef DV_C3_NOIRQ
     DM(-38, I6) = R0;                     // the MODE1 of the hook entry (IRPTEN set), read before the mask
 #else
     R3 = MODE1;
+#ifdef DV_C3_DEEP
+    // deep breadcrumb 22: after the read of MODE1 (R0, R2, I4 only; the stage word is in R2)
+    R0 = 22;
+    R2 = DM(_dv_bcw);
+    R2 = R2 OR R0;
+    I4 = _dv_diag;
+    DM(12, I4) = R2;
+    I4 = _dv_rec;
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d22a;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+    I4 = _dv_rec;
+_dv_d22a:
+    R0 = DM(1, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _dv_d22b;
+    I4 = R0;
+    DM(192, I4) = R2;
+    R0 = 0x11D1A6;
+    DM(45, I4) = R0;
+    R0 = DM(_dv_diag + 52);
+    DM(193, I4) = R0;
+    R0 = DM(_dv_diag + 56);
+    DM(213, I4) = R0;
+_dv_d22b:
+#endif
     DM(-38, I6) = R3;
 #endif
 #ifdef DV_C3_FINE

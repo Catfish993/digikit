@@ -93,6 +93,9 @@ class Linked:
     code_boot: bytes  # little-endian per parcel, the order of the boot stream and of tools/sharc_dev/sharc_isa.py
     symbols: dict[str, int]  # short-word addresses
     checked: int = 0  # instructions re-decoded
+    ureg_class: list[str] = field(
+        default_factory=list
+    )  # stores whose source register the instruction class excludes
 
 
 def _tool(name: str) -> Path:
@@ -429,6 +432,25 @@ def _field(fields: dict[str, int], stem: str) -> int | None:
     return sum(v << lo for lo, v in parts)
 
 
+def ureg_class_problems(fields: dict[str, int], where: str) -> list[str]:
+    """A store through DM cannot take a DAG1 register (I0-I7, M0-M7, L0-L7, B0-B7) and a store through PM cannot take a DAG2 register:
+    the ISA encodes the source of such a store as UREGXDAG1 / UREGXDAG2 (SHARC+ PRM 15-7, 15-10, 13-13: "the Ureg may not be from the
+    same DAG as Ia/Mb or Ic/Md"). Loads take every register. The stock DSP image has not one store of the excluded kind (finding 49
+    section 10). The assembler and the emulator accept them; the silicon does not run them as written."""
+    d = _field(fields, "d")
+    u = _field(fields, "ureg")
+    if d != 1 or u is None or not 0x10 <= u <= 0x4F:
+        return []
+    g = _field(fields, "g")
+    if g is None:
+        return []  # a form with no DM/PM select (an instruction word with no memory-side choice)
+    dag = 1 if (u & 0xF) < 8 else 2
+    if (g == 0 and dag == 1) or (g == 1 and dag == 2):
+        name = "IMLB"[(u >> 4) - 1] + str(u & 0xF)
+        return [f"{where}: {'PM' if g else 'DM'} store of {name} (DAG{dag})"]
+    return []
+
+
 def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
     """Every instruction decodes natively with the extent Selache chose; relocated fields read back."""
     rows = []
@@ -442,6 +464,9 @@ def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
     isa = sel.load_instruction_set()
     for item in cmp.instructions:
         by_parcel[item.external.parcel_address] = item
+        linked.ureg_class += ureg_class_problems(
+            dict(item.native_fields), f"parcel {item.external.parcel_address:#x}"
+        )
         if item.native_form_id is None or not item.extent_agrees:
             # a width tie (Type 2c against Type 2b): the assembler's extent decides when a form of that width matches
             n = item.external.extent_bytes
