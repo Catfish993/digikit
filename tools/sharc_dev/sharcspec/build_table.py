@@ -85,6 +85,16 @@ ISA_ONLY = {
 # for overriding a PRM ISA/VISA heading on firmware evidence.
 VISA_OVERRIDE = {"Type10a_rel"}
 
+# Forms the variable-width decoder must not take, whatever their figure says. Type2b's PRM
+# prefix 110000000 is a first parcel in 0xc000..0xc07f, which is also a 16-bit Type2c, and
+# the silicon runs those parcels as Type2c: DN2 1.11's sw 0x1c0e13 (0xc020) and 0x1c4f4a
+# (0xc029) are 2c in code that plays every block on the instrument, and none of the image's
+# decoded 2b outside one data-like block is a real one. A 2b there throws every later
+# instruction off its boundary (docs/findings/05-sharc-isa-and-decoding.md, "Type2b and
+# the 16-bit Type2c"). The PGR's 000000011 is not taken in its place: no firmware
+# instance of it is known.
+NOT_VISA = {"Type2b"}
+
 # Forms where the PRM figure's fixed bits are correct and the PGR disagrees.
 # Firmware decoding confirms the PRM value; the earlier "stale template digit"
 # call against the PRM was wrong for these.
@@ -312,7 +322,7 @@ def fixed_bits_for(width, fields, keys, prm=None, gap_bits=()):
 def make_form(name, width, fields, fixed, source, keys=()):
     mask = sum(1 << b for b in fixed)
     value = sum(v << b for b, v in fixed.items())
-    isa_only = name.split("_")[0] in ISA_ONLY and name not in VISA_OVERRIDE
+    isa_only = (name.split("_")[0] in ISA_ONLY and name not in VISA_OVERRIDE) or name in NOT_VISA
     return {
         "name": name,
         "width": width,

@@ -166,7 +166,7 @@
   {
    "name": "Type2b",
    "width": 32,
-   "visa": true,
+   "visa": false,
    "isa": false,
    "mask": "0xff8000000000",
    "value": "0xc00000000000",

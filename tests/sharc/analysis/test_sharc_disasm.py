@@ -205,8 +205,9 @@ class ConfidentDecodeTest(unittest.TestCase):
         # select_frame() alone picks the wider form on the leading-fixed-bits
         # tie-break -- until real code follows and its own run breaks down.
         word0 = encode("2c", 0)
+        # No VISA Type2b (build_table.py NOT_VISA): the naive pick is the 2c too.
         naive = next(sharc_disasm.disassemble(word0 + b"\x00" * 24, 0, count=1))
-        self.assertEqual(naive.type_name, "2b")  # sanity: naive pick is wrong
+        self.assertEqual(naive.type_name, "2c")
 
         filler = b"".join(_insn17a(4 + (i % 8), 0x1000 + i) for i in range(12))
         data = word0 + filler
@@ -259,7 +260,7 @@ class ConfidentDecodeTest(unittest.TestCase):
         words.extend([0x0001, 0x8000, 0, 0])
         data = struct.pack("<%dH" % len(words), *words)
         naive = next(sharc_disasm.disassemble(data, count=1))
-        self.assertEqual(naive.type_name, "2b")
+        self.assertEqual(naive.type_name, "2c")
         flat = sharc_disasm.decode_confident(data, 0)
         self.assertEqual((flat.type_name, flat.length_bytes), ("2c", 2))
         sw = 0x100000
@@ -282,7 +283,7 @@ class ConfidentDecodeTest(unittest.TestCase):
         words.extend([0x0001, 0x8000, 0, 0])
         data = struct.pack("<%dH" % len(words), *words)
         naive = next(sharc_disasm.disassemble(data, 4, count=1))
-        self.assertEqual(naive.type_name, "2b")
+        self.assertEqual(naive.type_name, "2c")
         flat = sharc_disasm.decode_confident(data, 4)
         self.assertEqual((flat.type_name, flat.length_bytes), ("2c", 2))
         self.assertEqual(sharc_disasm.decode_confident(data, 0).type_name, "3b")
@@ -292,9 +293,9 @@ class ConfidentDecodeTest(unittest.TestCase):
         loaded = sharc_disasm.decode_confident_loaded(mem, sw + 2)
         self.assertEqual((loaded.type_name, loaded.length_bytes), ("2c", 2))
         self.assertEqual(loaded.fields, flat.fields)
-        # With nothing valid after it, 2b stays.
+        # With nothing valid after it, the parcel is still the 16-bit 2c it is on silicon.
         broken = struct.pack("<6H", 0x473E, 0x403D, 0xC029, 0x023E, 0, 0)
-        self.assertEqual(sharc_disasm.decode_confident(broken, 4).type_name, "2b")
+        self.assertEqual(sharc_disasm.decode_confident(broken, 4).type_name, "2c")
 
     def test_loaded_lands_on_never_aligned_form_directly_and_still_decodes(self):
         sw = 0x100000

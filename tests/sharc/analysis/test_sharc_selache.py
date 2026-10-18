@@ -29,15 +29,18 @@ class SelacheAdapterTest(unittest.TestCase):
             [(0, "c001", "r0=r0+r1"), (1, "0f0212345678", "r2=0x12345678")],
         )
 
-    def test_compare_listing_exposes_an_extent_disagreement(self):
+    def test_compare_listing_agrees_on_the_short_compute_extent(self):
+        # selache reads 0xc001 as the 16-bit r0=r0+r1, and so does the native
+        # decoder since Type2b left the VISA table (build_table.py NOT_VISA).
+        # Before, the native side read a 32-bit 2b and the extents disagreed.
         comparison = S.compare_listing("  00000000   c001   r0=r0+r1\n")
         self.assertEqual(len(comparison.instructions), 1)
         row = comparison.instructions[0]
         self.assertEqual(row.external.raw, bytes.fromhex("c001"))
         self.assertEqual(row.boot_bytes, bytes.fromhex("01c0"))
-        self.assertIsNone(row.native_form_id)
-        self.assertEqual(row.native_candidates, ("2b",))
-        self.assertFalse(row.extent_agrees)
+        self.assertEqual(row.native_form_id, "2c")
+        self.assertEqual(row.native_candidates, ("2c",))
+        self.assertTrue(row.extent_agrees)
 
     def test_known_disagreements_are_native_regression_fixtures(self):
         fixtures = {fixture.id: fixture for fixture in S.KNOWN_DISAGREEMENTS}

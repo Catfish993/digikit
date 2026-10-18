@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_INPUT = ROOT / "tools" / "sharc_dev" / "sharcspec" / "decode_table.json"
-DEFAULT_OUTPUT = ROOT / "packages" / "emulator" / "sharc" / "src" / "decode_table.rs"
+DEFAULT_OUTPUT = ROOT / "packages" / "emulator" / "sharc-rt" / "src" / "decode_table.rs"
 
 
 def form_id(name: str) -> str:
@@ -103,7 +103,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
     payload = json.loads(args.input.read_text())
-    args.output.write_text(render(payload))
+    args.output.write_text(render(payload), encoding="utf-8", newline="\n")
 
 
 if __name__ == "__main__":
