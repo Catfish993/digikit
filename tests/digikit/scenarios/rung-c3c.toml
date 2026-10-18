@@ -1,4 +1,4 @@
-# Rung C3 variant c of finding 49 section 9 (docs/PATCHING.md "Rung C3"): the rung C flow with core/dsp-voice built with ["DV_C3_FINE", "DV_C3_BFIRST", "DV_C3_NOSYS"].
+# Rung C3 variant c of finding 49 section 9 (docs/PATCHING.md "Rung C3"): the rung C flow with core/dsp-voice built with ["DV_C3_FINE", "DV_C3_NOSYS"].
 # The registered path is kept: the run-time pluck dispatches, every call returns, and the note equals the patched-in pluck of the same wrapper.
 [scenario]
 name = "rung-c3c"
@@ -9,5 +9,5 @@ tier = "full"
 
 [rungc]
 variant = "core/dsp-voice"
-defines = ["DV_C3_FINE", "DV_C3_BFIRST", "DV_C3_NOSYS"]
+defines = ["DV_C3_FINE", "DV_C3_NOSYS"]
 routine = true

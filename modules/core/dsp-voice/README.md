@@ -13,8 +13,8 @@ example). On its own it changes nothing: a patched image with no registered mach
   returns of the routines, so that a halt inside a routine names its place ([docs/findings/48-dsp-breadcrumbs.md](../../../docs/findings/48-dsp-breadcrumbs.md)).
 - Build option `DV_BISECT_C2` (not part of any shipped image): types of 7 or more take the stock path with the breadcrumb written inline and are never dispatched. It exists to
   separate the wrapper's call path from the stock pipeline on a device (docs/PATCHING.md "Rung C2", `tools/patchkit/pk_variant.py`).
-- Build options `DV_C3_FINE`, `DV_C3_BFIRST`, `DV_C3_DB`, `DV_C3_NOIRQ`, `DV_C3_NOSYS` (not part of any shipped image): the rung C3 variants of finding 49 section 9 (fine breadcrumbs 8 to 10 on the registered path,
-  `B3` restored before `I3`, delayed `CALL`/`RTS`, interrupts masked across the registered path, no MODE1 write). docs/PATCHING.md "Rung C3".
+- Build options `DV_C3_FINE`, `DV_C3_DB`, `DV_C3_NOIRQ`, `DV_C3_NOSYS` (not part of any shipped image): the rung C3 variants of finding 49 section 9 (fine breadcrumbs 8 to 10 on the registered path,
+  delayed `CALL`/`RTS`, interrupts masked across the registered path, no MODE1 write). docs/PATCHING.md "Rung C3".
 - Limits: at most 16 registered types; the Digitakt II's Stretch machine (type 2) is not hooked; type 0 cannot be registered.
 
 ## For module authors: the routine's register contract

@@ -302,12 +302,20 @@ def main(argv: list[str]) -> int:
         return cmd_inject(args)
     if cmd == "pack":
         return cmd_pack(args)
+    if cmd == "preflight":
+        # the Rust checks, then the ISA scan of section 7 (tools/patchkit/pk_isacheck.py): the image fails when either fails
+        rc = run([cmd, *args]).returncode
+        files = [a for a in args if a.endswith(".syx") and Path(a).is_file()]
+        if files:
+            from tools.patchkit import pk_isacheck
+
+            rc = pk_isacheck.main(files[:1]) or rc
+        return rc
     if cmd in (
         "list",
         "inspect",
         "check",
         "verify",
-        "preflight",
         "apply",
         "rebuild",
         "gen",

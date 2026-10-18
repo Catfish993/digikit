@@ -32,175 +32,175 @@
   },
   {
    "addend": 0,
-   "offset": 71,
+   "offset": 89,
    "section": "seg_pmco",
    "symbol": "_dv_done",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 81,
+   "offset": 99,
    "section": "seg_pmco",
    "symbol": "_dv_done",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 88,
+   "offset": 106,
    "section": "seg_pmco",
    "symbol": "_dv_done",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 94,
+   "offset": 112,
    "section": "seg_pmco",
    "symbol": "_dv_done",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 97,
+   "offset": 115,
    "section": "seg_pmco",
    "symbol": "_dv_t",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 100,
+   "offset": 118,
    "section": "seg_pmco",
    "symbol": "_dv_buf",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 104,
+   "offset": 122,
    "section": "seg_pmco",
    "symbol": "_dv_nodiag",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 107,
+   "offset": 125,
    "section": "seg_pmco",
    "symbol": "_dv_diag",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 159,
+   "offset": 177,
    "section": "seg_pmco",
    "symbol": "_dv_t",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 173,
+   "offset": 191,
    "section": "seg_pmco",
    "symbol": "_fw_frame",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 193,
+   "offset": 211,
    "section": "seg_pmco",
    "symbol": "_dv_table",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 204,
+   "offset": 222,
    "section": "seg_pmco",
    "symbol": "_dv_done",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 208,
+   "offset": 226,
    "section": "seg_pmco",
    "symbol": "_dv_scan",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 214,
+   "offset": 232,
    "section": "seg_pmco",
    "symbol": "_dv_t",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 217,
+   "offset": 235,
    "section": "seg_pmco",
    "symbol": "_dv_buf",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 222,
+   "offset": 240,
    "section": "seg_pmco",
    "symbol": "_dv_ctx",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 280,
+   "offset": 314,
    "section": "seg_pmco",
    "symbol": "_dv_back",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 285,
+   "offset": 319,
    "section": "seg_pmco",
    "symbol": "_dv_ctx",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 315,
+   "offset": 349,
    "section": "seg_pmco",
    "symbol": "_dv_save",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 370,
+   "offset": 404,
    "section": "seg_pmco",
    "symbol": "_dv_s_l4",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 375,
+   "offset": 409,
    "section": "seg_pmco",
    "symbol": "_dv_s_i4",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 380,
+   "offset": 414,
    "section": "seg_pmco",
    "symbol": "_dv_s_r0",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 386,
+   "offset": 420,
    "section": "seg_pmco",
    "symbol": "_fw_render_next",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 442,
+   "offset": 476,
    "section": "seg_pmco",
    "symbol": "_fw_frame",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 472,
+   "offset": 506,
    "section": "seg_pmco",
    "symbol": "_fw_frame",
    "type": "sharc.abs32"
@@ -209,10 +209,10 @@
  "sections": [
   {
    "align": 8,
-   "hex": "0011000000007e713f000011000000007e733f00001100000000b40f0000140f000000000899800008990101089982010899030208998402089905030899860308990704089988040899090508998a0508990b0608998c0608990d0708998e0708990f080899900808991109089992090899930a0899140e0899950e089996100899171108999811089919128cc3200600000000800f7f008401c001800f100010c3200600000000800f100080010f21020600000000800f0f0010c32406000000000111000000000c110000000011c2200600000000140f000000000898800011c5089980007e72bf80089981007f72bf00089982007f72bf8008998300fe72bf8008998400ff72bf0008998500ff72bf80089986007f71bf00089987007f71bf80089988007f74bf80089989007f73bf8008998a003f77bf0008998b00011000000000800f4a0080011010810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201140f00000000089800000898010184150000020000c200060000000001c32006000000003f703f0e01c20210000000000410000000008c0f2000140f000000000899801208990113089982130899831608990417089985170899061808998718089908190899891908998a1a3f77bf0108998b01a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b50f00002214200000a002140100000001001d0f000000003f083f28140f0000000008980b003e703f3901000898801208980113089882130898831608980417089885170898061808988718089808190898891908988a1a140f000000000898800008980101089882010898030208988402089805030898860308980704089888040898090508988a0508980b0608988c0608980d0708988e0708980f080898900808981109089892090898930a0898140e0898950e089896100898171108989811089819120010000000003e703f1a0010000000003e703f0a0010000000008715ffffeeff3e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a00000000",
+   "hex": "0011000000007e713f000011000000007e733f00001100000000b40f0000140f000000000899800008990101089982010899030208998402089905030899860308990704089988040899090508998a0508990b0608998c0608990d0708998e073e713f0008990f003e713f80089910003f713f00089911003f713f80089912007e713f80089913000899140e0899950e3e723f80089916003f723f00089917003f723f80089918007e723f00089919008cc3200600000000800f7f008401c001800f100010c3200600000000800f100080010f21020600000000800f0f0010c32406000000000111000000000c110000000011c2200600000000140f000000000898800011c5089980007e72bf80089981007f72bf00089982007f72bf8008998300fe72bf8008998400ff72bf0008998500ff72bf80089986007f71bf00089987007f71bf80089988007f74bf80089989007f73bf8008998a003f77bf0008998b00011000000000800f4a0080011010810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201140f00000000089800000898010184150000020000c200060000000001c32006000000003f703f0e01c20210000000000410000000008c0f2000140f000000007e72bf81089980017f72bf01089981017f72bf81089982010899831608990417089985173e73bf01089986013e73bf81089987013f73bf01089988013f73bf81089989017e73bf8108998a013f77bf0108998b01a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b50f00002214200000a002140100000001001d0f000000003f083f28140f0000000008980b003e703f3901000898801208980113089882130898831608980417089885170898061808988718089808190898891908988a1a140f000000000898800008980101089882010898030208988402089805030898860308980704089888040898090508988a0508980b0608988c0608980d0708988e0708980f080898900808981109089892090898930a0898140e0898950e089896100898171108989811089819120010000000003e703f1a0010000000003e703f0a0010000000008715ffffeeff3e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a00000000",
    "kind": "text",
    "name": "seg_pmco",
-   "size": 1004
+   "size": 1072
   },
   {
    "align": 4,
@@ -278,19 +278,19 @@
    "size": 4
   }
  ],
- "source_sha256": "adf82c70fe9cfca4720775dd01063788bf9471c7fd85db017362271779ebbc1a",
+ "source_sha256": "5c588332df812ade487e063037798c82e4c6e0e8dc8cfff38ab273a3168dd56b",
  "symbols": [
   {
    "global": false,
    "name": "_dv_back",
    "section": "seg_pmco",
-   "value": 285
+   "value": 319
   },
   {
    "global": false,
    "name": "_dv_done",
    "section": "seg_pmco",
-   "value": 315
+   "value": 349
   },
   {
    "global": true,
@@ -302,31 +302,31 @@
    "global": true,
    "name": "_dv_exp2",
    "section": "seg_pmco",
-   "value": 389
+   "value": 423
   },
   {
    "global": true,
    "name": "_dv_frame_hw",
    "section": "seg_pmco",
-   "value": 435
+   "value": 469
   },
   {
    "global": true,
    "name": "_dv_frame_sw",
    "section": "seg_pmco",
-   "value": 465
+   "value": 499
   },
   {
    "global": false,
    "name": "_dv_nodiag",
    "section": "seg_pmco",
-   "value": 162
+   "value": 180
   },
   {
    "global": false,
    "name": "_dv_scan",
    "section": "seg_pmco",
-   "value": 196
+   "value": 214
   },
   {
    "global": true,
@@ -402,7 +402,7 @@
   }
  ],
  "toolchain": {
-  "instructions_redecoded": "237",
+  "instructions_redecoded": "254",
   "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187",
   "selas_sha256": "042aa5aa52ddfc9e687f627580e413b259b18a29874c28e2f2bf0251429514c0",
   "seldump_sha256": "527162a78a7b94377c310e31b025ba51dafe8b6194d71ee09a575b6a9eb78916"

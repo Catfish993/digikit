@@ -1,4 +1,4 @@
-# Rung C3 variant d2 of finding 49 section 10 (docs/PATCHING.md "Rung C3d"): the rung C flow with core/dsp-voice built with ["DV_C3_FINE","DV_C3_BFIRST","DV_C3_VIAR"]: the DAG1 register stores through R2 (VIAR).
+# Rung C3 variant d2 of finding 49 section 10 (docs/PATCHING.md "Rung C3d"): the rung C flow with core/dsp-voice built with ["DV_C3_FINE"]: the DAG1 register stores through R2 (the default build now).
 # The registered path is kept: the run-time pluck dispatches, every call returns, and the note equals the patched-in pluck of the same wrapper.
 [scenario]
 name = "rung-c3d2"
@@ -9,5 +9,5 @@ tier = "full"
 
 [rungc]
 variant = "core/dsp-voice"
-defines = ["DV_C3_FINE","DV_C3_BFIRST","DV_C3_VIAR"]
+defines = ["DV_C3_FINE"]
 routine = true

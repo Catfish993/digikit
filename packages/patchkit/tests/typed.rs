@@ -26,10 +26,12 @@ const PINS: &[(&str, &str, &str)] = &[
     // All Digitakt II pins moved on 2026-10-18 (lane r1, finding 50) with the SRC-page hook of core/machines (section 3 only); the Digitone II pin did not.
     // The pluck pins moved on 2026-10-18 with core/dsp-voice (findings 45 and 48, twice): section 7 only; section 3, which holds the typed rows, is
     // byte-identical to the previous pins (checked), and the xslice pins did not move.
+    // The pluck pins moved again on 2026-10-19 (finding 49 section 10): core/dsp-voice stores the DAG1 registers through a data register on both
+    // devices; section 7 only (sections 2, 3, 4, 5, 8 of the old and new patched images compared equal).
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck",
-        "7e119b956c93ba904a9a6927880603ca8e007b05f182d8a4982814644ff4aa63",
+        "9370dd2fc7668624212fafd0fd6142115c041bdb1c1ca41cd27496d970da5d28",
     ),
     (
         "Digitakt_II_OS1.16.syx",
@@ -39,12 +41,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck,machines/xslice",
-        "19fcdb4d33f423ae95f1cb7eaf69675f6016b923ace71e495bbe336e40cb61e2",
+        "338534a2aeda0cff963cd9f393824970c129a7bd65951027f74220cc4b34e362",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "7fb2520394a4d1b67fbb3b30b0d8486aaecbe7d1dd364bb0e17883fc214bf663",
+        "46af78e8c506c0ad6df2ea6f1e9cc4e0db35dcae03caf1942861e8ac07af88f2",
     ),
     (
         "Digitakt_II_OS1.17.syx",
@@ -54,12 +56,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "778c9c13ca0e3628593ffe1f7bfba6347c2eef38f296d2c2d3b8bcf55fa07c73",
+        "9b50e56b24e5a1ba72755580d4858525214e6d44b4f242f21405d1887b42a95a",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "machines/pluck",
-        "e7dc4da5f7850062ef8510ff5d389a779fb94d8efbea72184c9f6795d498d0aa",
+        "fad9f218cd0297b9fedd417bcbbd4272a35e861fa8387b1c26a99d5189378532",
     ),
 ];
 

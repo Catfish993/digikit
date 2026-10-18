@@ -405,15 +405,13 @@ def test_the_bisect_build_takes_the_stock_path_for_added_types_with_no_call():
     assert out["diag"][12] == crumb(1, 5, 0)
 
 
-C3_COMMON = ("DV_C3_FINE", "DV_C3_BFIRST")
+C3_COMMON = ("DV_C3_FINE",)
 C3_VARIANTS = {
     "a-delayed": frozenset({*C3_COMMON, "DV_C3_DB"}),
     "b-noirq": frozenset({*C3_COMMON, "DV_C3_NOIRQ"}),
     "c-nosys": frozenset({*C3_COMMON, "DV_C3_NOSYS"}),
-    # rung C3d (finding 49 section 10): the deep breadcrumbs 11 to 22, the DAG1 register stores through R2, both
+    # rung C3d (finding 49 section 10): the deep breadcrumbs 11 to 22 (the DAG1 register stores through R2 are the default build now)
     "d1-deep": frozenset({*C3_COMMON, "DV_C3_DEEP"}),
-    "d2-viar": frozenset({*C3_COMMON, "DV_C3_VIAR"}),
-    "d3-viar-deep": frozenset({*C3_COMMON, "DV_C3_VIAR", "DV_C3_DEEP"}),
 }
 
 
@@ -474,7 +472,7 @@ def test_the_c3_variants_keep_the_registered_path_working(name):
 DEEP_STAGES = tuple(range(11, 23))
 
 
-@pytest.mark.parametrize("name", ["d1-deep", "d3-viar-deep"])
+@pytest.mark.parametrize("name", ["d1-deep"])
 def test_the_deep_breadcrumbs_come_in_order_inside_the_frame_save(name):
     """Rung C3d: twelve more inline breadcrumbs (stages 11 to 22) between the MODIFY of I7 and the save of MODE1, each at the label after
     it, none counted as a dispatch, none touching the registers the frame save has not stored yet (R0, R2, I4 only)."""
@@ -504,10 +502,12 @@ def test_the_deep_breadcrumbs_come_in_order_inside_the_frame_save(name):
     context_intact(out)
 
 
-def test_the_viar_variants_store_no_dag1_register_through_dm():
-    """Finding 49 section 10: a store through DM(Ia) cannot take a DAG1 register (UREGXDAG1, PRM 15-7); the stock image has none.
-    The default build has 17 such stores on the registered path (open until a device run says the cause is found), the VIAR builds none."""
-    from tools.patchkit import pk_build, pk_sharc
+def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_register(
+    tmp_path,
+):
+    """Finding 49 section 10: a store through DM(Ia) cannot take a DAG1 register (UREGXDAG1, PRM 15-7); the stock image has none. The
+    frame save goes through R2 in every build, and a module build that has such a store fails (pk_build.sharc_object)."""
+    from tools.patchkit import pk_build
 
     def stores(defines):
         text = pk_build.apply_conditionals(CORE.read_text(), defines)
@@ -518,28 +518,64 @@ def test_the_viar_variants_store_no_dag1_register_through_dm():
             and not ln.strip().startswith("//")
         ]
 
-    assert len(stores(frozenset())) == 17
-    assert stores(C3_VARIANTS["d2-viar"]) == []
-    assert stores(C3_VARIANTS["d3-viar-deep"]) == []
-    pk_build.sharc_object([CORE], [], frozenset())
-    assert len(pk_build.UREG_CLASS_WARNINGS) == 17
-    pk_build.sharc_object([CORE], [], C3_VARIANTS["d2-viar"])
-    assert pk_build.UREG_CLASS_WARNINGS == []
-    # the field-level rule on its own
-    assert pk_sharc.ureg_class_problems({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x")
-    assert not pk_sharc.ureg_class_problems(
-        {"d": 1, "g": 0, "ureg[6:0]": 0x18}, "x"
-    )  # I8, DAG2
-    assert not pk_sharc.ureg_class_problems(
-        {"d": 0, "g": 0, "ureg[6:0]": 0x10}, "x"
-    )  # a load
-    assert pk_sharc.ureg_class_problems(
-        {"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x"
-    )  # PM store of I8
-    assert not pk_sharc.ureg_class_problems({"d": 1, "g": 1, "ureg[6:0]": 0x10}, "x")
-    assert not pk_sharc.ureg_class_problems(
-        {"d": 1, "g": 0, "ureg[6:0]": 0x05}, "x"
-    )  # R5
+    for defines in (frozenset(), *C3_VARIANTS.values()):
+        assert stores(defines) == []
+        pk_build.sharc_object(
+            [CORE], [], defines
+        )  # raises BuildError on an excluded store
+    # the DN2 copy too
+    dn2 = CORE.with_name("dsp-voice-dn2.s")
+    pk_build.sharc_object([dn2], [], frozenset())
+    # and a source with one fails, with the parcel address in the message
+    bad = tmp_path / "bad.s"
+    bad.write_text(".SECTION/PM seg_pmco;\n_x:\n    DM(-16, I6) = I0;\n    RTS;\n")
+    with pytest.raises(
+        pk_build.BuildError, match=r"parcel 0x0: DM store of I0 \(DAG1\)"
+    ):
+        pk_build.sharc_object([bad], [], frozenset())
+
+
+def test_the_ureg_class_rule_flags_index_register_stores_and_not_direct_stores():
+    from tools.patchkit import pk_sharc
+
+    p = pk_sharc.ureg_class_problems
+    for form in ("3a", "3b", "3d", "15a", "15b"):
+        assert p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", form), form  # DM store of I0
+        assert p({"d": 1, "g": 0, "ureg": 0x37}, "x", form), (
+            form
+        )  # DM store of L7 (a stem without the bit range)
+        assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x18}, "x", form)  # I8, DAG2
+        assert not p({"d": 0, "g": 0, "ureg[6:0]": 0x10}, "x", form)  # a load
+        assert p({"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x", form)  # PM store of I8
+        assert not p({"d": 1, "g": 1, "ureg[6:0]": 0x10}, "x", form)  # PM store of I0
+        assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x05}, "x", form)  # R5
+    # Type 14a (direct address): exempt, the stock image has 304 such stores of DAG1 registers
+    assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", "14a")
+    assert not p({"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x", "14a")
+    for other in ("5b_move", "17a", "12a_ureg", ""):
+        assert not p({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x", other)
+
+
+def test_the_assembled_forms_are_checked_by_form(tmp_path):
+    """Through the whole assembler path: the index-register form (15a with a 32-bit modifier, 15b, 3 with a register modifier) is flagged,
+    the direct-address store is not."""
+    from tools.patchkit import pk_build
+
+    def check(src):
+        f = tmp_path / "t.s"
+        f.write_text(src)
+        pk_build.sharc_object([f], [], frozenset())
+
+    for ok in ("DM(0x20000000) = I0;", "PM(0x20000000) = I8;", "DM(15, I4) = R0;"):
+        check(f".SECTION/PM seg_pmco;\n    {ok}\n    RTS;\n")
+    for bad in (
+        "DM(15, I4) = I0;",
+        "DM(0x1000, I4) = I0;",
+        "DM(I4, M5) = M1;",
+        "PM(15, I12) = I8;",
+    ):
+        with pytest.raises(pk_build.BuildError, match="the ISA does not allow"):
+            check(f".SECTION/PM seg_pmco;\n    {bad}\n    RTS;\n")
 
 
 def test_the_c3_noirq_variant_masks_interrupts_inside_and_restores_mode1():
@@ -582,9 +618,9 @@ def test_the_c3_nosys_variant_writes_no_system_register_on_the_registered_path()
     assert "R3 = MODE1;" in path  # the read stays (harmless); only the writes are gone
 
 
-def test_the_c3_variants_restore_b3_before_i3():
+def test_every_build_restores_b3_before_i3():
     """A load of a B register also loads its I register (PRM p.6-24, "Circular Buffer Programming Model"); the stock epilogue restores B3
-    first. The default build restores B3 after I3 (open: the emulator does not model the I load), the C3 variants fix the order."""
+    first, in every build (the emulator does not model the I load)."""
 
     def order(defines):
         lines = [
@@ -597,10 +633,9 @@ def test_the_c3_variants_restore_b3_before_i3():
 
         return at("B3 = DM(-24, I6);"), at("I3 = DM(-19, I6);")
 
-    b, i = order(C3_VARIANTS["a-delayed"])
-    assert b < i
-    b, i = order(frozenset())
-    assert b > i  # the default build, until the device says the order does not matter
+    for defines in (C3_VARIANTS["a-delayed"], frozenset()):
+        b, i = order(defines)
+        assert b < i
 
 
 def test_without_reply_records_the_breadcrumb_stays_local():

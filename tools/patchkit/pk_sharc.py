@@ -432,11 +432,19 @@ def _field(fields: dict[str, int], stem: str) -> int | None:
     return sum(v << lo for lo, v in parts)
 
 
-def ureg_class_problems(fields: dict[str, int], where: str) -> list[str]:
-    """A store through DM cannot take a DAG1 register (I0-I7, M0-M7, L0-L7, B0-B7) and a store through PM cannot take a DAG2 register:
-    the ISA encodes the source of such a store as UREGXDAG1 / UREGXDAG2 (SHARC+ PRM 15-7, 15-10, 13-13: "the Ureg may not be from the
-    same DAG as Ia/Mb or Ic/Md"). Loads take every register. The stock DSP image has not one store of the excluded kind (finding 49
-    section 10). The assembler and the emulator accept them; the silicon does not run them as written."""
+# The forms that address memory through an index register (Ia/Ic, with an immediate or register modifier): the ISA encodes the source of
+# their stores as UREGXDAG1 / UREGXDAG2. Type 14a (`DM(<addr32>) = Ureg`) has no index register and takes the full UREG class.
+INDEXED_MEMORY_FORMS = frozenset({"3a", "3b", "3d", "15a", "15b"})
+
+
+def ureg_class_problems(fields: dict[str, int], where: str, form: str) -> list[str]:
+    """A store through DM with an index register cannot take a DAG1 register (I0-I7, M0-M7, L0-L7, B0-B7) and a store through PM cannot
+    take a DAG2 register: the ISA encodes the source of such a store as UREGXDAG1 / UREGXDAG2 (SHARC+ PRM 15-7, 15-10, 13-13: "the Ureg
+    may not be from the same DAG as Ia/Mb or Ic/Md"). `form` is the instruction form id (Types 3a, 3b, 3d, 15a, 15b are checked; Type 14a,
+    the direct-address store, is exempt, as is every other form). Loads take every register. The stock DSP image has not one store of the
+    excluded kind (finding 49 section 10). The assembler and the emulator accept them; the silicon does not run them as written."""
+    if form not in INDEXED_MEMORY_FORMS:
+        return []
     d = _field(fields, "d")
     u = _field(fields, "ureg")
     if d != 1 or u is None or not 0x10 <= u <= 0x4F:
@@ -465,7 +473,9 @@ def verify(obj: SharcObject, linked: Linked, externs: dict[str, int]) -> None:
     for item in cmp.instructions:
         by_parcel[item.external.parcel_address] = item
         linked.ureg_class += ureg_class_problems(
-            dict(item.native_fields), f"parcel {item.external.parcel_address:#x}"
+            dict(item.native_fields),
+            f"parcel {item.external.parcel_address:#x}",
+            item.native_form_id or "",
         )
         if item.native_form_id is None or not item.extent_agrees:
             # a width tie (Type 2c against Type 2b): the assembler's extent decides when a form of that width matches
