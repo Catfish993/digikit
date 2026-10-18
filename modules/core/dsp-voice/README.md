@@ -11,6 +11,8 @@ example). On its own it changes nothing: a patched image with no registered mach
 - The DSP records, once per block, a heartbeat and the context registers it found (see `core/dsp-link`, `dl_diag`).
   It also writes a breadcrumb (the step, the voice and the machine type) before each step of a registered machine's path, and counts the calls and
   returns of the routines, so that a halt inside a routine names its place ([docs/findings/48-dsp-breadcrumbs.md](../../../docs/findings/48-dsp-breadcrumbs.md)).
+- Build option `DV_BISECT_C2` (not part of any shipped image): types of 7 or more take the stock path with the breadcrumb written inline and are never dispatched. It exists to
+  separate the wrapper's call path from the stock pipeline on a device (docs/PATCHING.md "Rung C2", `tools/patchkit/pk_variant.py`).
 - Limits: at most 16 registered types; the Digitakt II's Stretch machine (type 2) is not hooked; type 0 cannot be registered.
 
 ## For module authors: the routine's register contract

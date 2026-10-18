@@ -514,16 +514,35 @@ def run_hang(c: Any) -> None:
             and len([r for r in rig.voice_rows() if r[0] != B.FREE_TYPE]) == 1,
             str(info["results"]),
         )
+        # the machine-change watch takes its baseline 2 s of firmware blocks after the first UI pass; the coupled emulator runs the blocks slower
+        # than emulated time, so wait on the DSP's frame counter
+        ui_first = next(e for e in events(rig) if e[2] == L.K["UI_FIRST"])[4][0]
+        for _ in range(60):
+            if int(rig.emu.call("status")["dsp_frames"]) >= ui_first + 3300:
+                break
+            rig.s.run_ms(500)
         rig.select_type(HANG_TYPE, HANG_HINT)
         rig.s.run_ms(3000)
         before = events(rig)
+        chg = [e for e in before if e[2] == L.K["MACHINE_CHANGE"]]
+        c.check(
+            "changing track 1's machine logs MACHINE_CHANGE once with the track and the old and new type (read from the firmware's own per-track state)",
+            len(chg) >= 1
+            and chg[-1][4][0] == 0
+            and chg[-1][4][2] == HANG_TYPE
+            and chg[-1][4][1] != HANG_TYPE
+            and all(e[4][2] != e[4][1] for e in chg)
+            and L.event_dict(chg[-1])["fields"]["track"] == 1,
+            str([(e[4][:3]) for e in chg]),
+        )
         c.check(
             "before the note: the DSP runs, the log has its first DSP_DIAG set (17 words in five events) and no DSP_STOPPED",
-            len([e for e in before if e[2] == L.K["DSP_DIAG"]]) == 5
+            len([e for e in before if e[2] == L.K["DSP_DIAG"]]) in (5, 10)
             and not [e for e in before if e[2] == L.K["DSP_STOPPED"]],
             f"{len(before)} events",
         )
-        first = [e for e in before if e[2] == L.K["DSP_DIAG"]]
+        # the first set only (the wait for the machine-change baseline may let the ten-second refresh of the set in)
+        first = [e for e in before if e[2] == L.K["DSP_DIAG"]][:5]
         words = [
             w for e in sorted(first, key=lambda e: e[4][0] & 0xFF) for w in e[4][1:]
         ][:17]
@@ -538,7 +557,9 @@ def run_hang(c: Any) -> None:
             and words[15:17] == [0, 0],
             " ".join(f"{w:08x}" for w in words),
         )
-        n_diag0 = len([e for e in before if e[2] == L.K["DSP_DIAG"]])
+        n_diag0 = len(
+            [e for e in before if e[2] == L.K["DSP_DIAG"]]
+        )  # 5, or 10 with the refresh
         # the key down, held: the voice is active and the routine loops on its third block
         # (a stopped core burns the DSP's whole period every frame, so the emulator runs this part slowly: look every emulated second)
         rig.emu.button(H.button(M.TRIG1), True)
@@ -559,6 +580,17 @@ def run_hang(c: Any) -> None:
             "one DSP_STOPPED error event, not a resume",
             len(stop) == 1 and stop[0][3] & 1 and stop[0][4][4] == 0,
             str(stop),
+        )
+        c.check(
+            "no resumed=True follows a stop (the two reply records of a frozen DSP never read as a beat), in the log and as dklog decodes it",
+            not [e for e in evs if e[2] == L.K["DSP_STOPPED"] and e[4][4] == 1]
+            and not [
+                e
+                for e in evs
+                if e[2] == L.K["DSP_STOPPED"]
+                and L.event_dict(e)["fields"].get("resumed")
+            ],
+            str([L.event_dict(e)["fields"] for e in stop]),
         )
         crumb = stop[0][4][2] if stop else 0
         want = CRUMB_CALLED | 0 << 8 | HANG_TYPE << 16
@@ -611,8 +643,9 @@ def run_hang(c: Any) -> None:
         )
         c.check(
             "the quiet log: the running DSP logged one set before the note, none changed after it except the stop's own",
-            n_diag0 == 5
-            and len([e for e in evs if e[2] == L.K["DSP_DIAG"] and not e[3] & 1]) <= 10,
+            n_diag0 in (5, 10)
+            and len([e for e in evs if e[2] == L.K["DSP_DIAG"] and not e[3] & 1])
+            <= n_diag0 + 10,
             f"{n_diag0} before, {len([e for e in evs if e[2] == L.K['DSP_DIAG'] and not e[3] & 1])} non-error in all",
         )
 

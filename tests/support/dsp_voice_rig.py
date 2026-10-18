@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-from tools.patchkit import pk_sharc  # noqa: E402
+from tools.patchkit import pk_build, pk_sharc  # noqa: E402
 
 CORE = ROOT / "modules" / "core" / "dsp-voice" / "src" / "dsp" / "dsp-voice.s"
 SINE = ROOT / "modules" / "test" / "sine-voice" / "src" / "dsp" / "sine_voice.s"
@@ -114,10 +114,15 @@ def draw_context(rng: random.Random) -> dict[str, int]:
 
 
 class Rig:
-    def __init__(self, seed: int = 0xD1617) -> None:
+    def __init__(
+        self, seed: int = 0xD1617, defines: frozenset[str] = frozenset()
+    ) -> None:
         self.ctx_rng = random.Random(seed)
         self.last_ctx: dict[str, int] = {}
-        self.core = pk_sharc.assemble(CORE.read_text())
+        # `defines`: the build options of the wrapper (`#ifdef`, tools/patchkit/pk_build.py), e.g. DV_BISECT_C2
+        self.core = pk_sharc.assemble(
+            pk_build.apply_conditionals(CORE.read_text(), defines)
+        )
         self.sine = pk_sharc.assemble(SINE.read_text())
         self.sine_linked = None
         ext_core = core_externs()
@@ -190,6 +195,7 @@ class Rig:
         extra_reads: dict | None = None,
         max_steps: int = 20000,
         ctx: dict | str | None = None,
+        breaks: tuple[int, ...] = (),
     ) -> dict:
         """One call the way the engine makes it. `ctx` is the context registers: None draws a new hostile context from the
         rig's seed, "friendly" the constants the old rig assumed, a dict is taken as given (missing names friendly)."""
@@ -257,7 +263,7 @@ class Rig:
                 "M3",
             ),
             max_steps=max_steps,
-            extra_breaks=(STOCK_BP,),
+            extra_breaks=(STOCK_BP, *breaks),
         )
         out["in"] = r
         return out

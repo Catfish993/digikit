@@ -9,6 +9,8 @@
     uv run python -m tools.patchkit.patchkit bundle [-o FILE] [--modules-dir DIR]  ports + modules as one JSON (what patchkit.wasm reads)
     uv run python -m tools.patchkit.patchkit inject [OUT.syx] [--hot]  load a patched image into the running emulator
 
+`DIGI_PK_ROOT=DIR` runs the binary with another repository root (a module variant, tools/patchkit/pk_variant.py).
+
 `patch` defaults the output to out/patch/<firmware stem>+<modules>.syx and writes plan.json next to it. `explain`
 adds a SHARC+ listing of the DSP sites to the report of the Rust binary. Output files are firmware-derived: they stay
 under out/ and are never committed.
@@ -77,7 +79,7 @@ def binary(build: bool = True) -> Path:
 
 def run(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [str(binary()), "--root", str(ROOT), *args],
+        [str(binary()), "--root", os.environ.get("DIGI_PK_ROOT") or str(ROOT), *args],
         cwd=ROOT,
         capture_output=capture,
         text=True,

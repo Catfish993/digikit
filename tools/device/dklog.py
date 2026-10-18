@@ -116,6 +116,7 @@ KINDS: dict[int, tuple[str, tuple[str, ...]]] = {
     23: ("CRASH_REG", ("first", "r0", "r1", "r2", "r3")),
     24: ("CRASH_STACK", ("first", "w0", "w1", "w2", "w3")),
     25: ("CRASH_TAIL", ("a", "b", "c", "d", "e")),
+    26: ("MACHINE_CHANGE", ("track", "old_type", "new_type", "-", "-")),
 }
 K = {name: kid for kid, (name, _) in KINDS.items()}
 CARD_STATES = {0: "unknown", 1: "ours", 2: "blank", 3: "foreign", 4: "unreadable"}
@@ -225,6 +226,12 @@ def fields_of(kind: int, a: tuple[int, ...]) -> dict[str, Any]:
             "crumb": crumb_text(a[2]) if a[2] else "NONE",
             "dispatches": a[3],
             "resumed": bool(a[4]),
+        }
+    elif name == "MACHINE_CHANGE":
+        f = {
+            "track": a[0] + 1,
+            "old_type": None if a[1] == 0xFFFFFFFF else a[1],
+            "new_type": None if a[2] == 0xFFFFFFFF else a[2],
         }
     elif name == "CRASH_REG":
         f = {REGS[a[0] + i]: f"{w:08x}" for i, w in enumerate(a[1:]) if a[0] + i < 16}

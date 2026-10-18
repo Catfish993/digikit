@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc" | "pages"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -41,6 +41,8 @@ Kinds:
   rungc      the rehearsal of rung C on a Digitakt II (docs/PATCHING.md): the rung C image, a card with samples and a blank store, `dkupload put`,
              the menu, APPLY & RESTART, the machine on a track, a note equal to the patched-in pluck, the DSP's counters; screenshots to
              out/runs/lanes/b-rungC/ (tools/patchkit/pk_digikit_rungc.py).
+  pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
+             added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -1057,7 +1059,14 @@ def run_rungc(c: Ctx) -> None:
     RC.run_rungc(c)
 
 
+def run_pages(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_pages as PG
+
+    PG.run_pages(c)
+
+
 KINDS = {
+    "pages": run_pages,
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,

@@ -6,7 +6,7 @@
 //! ever sent by itself: the host asks (LOG), and the runtime answers; with nobody asking the log costs the appends and one poll per second.
 //!
 //! Appends mask interrupts for a few instructions: the UI task, the MIDI task and the crash handler all append.
-use crate::{arena, fw_blocks, irq_mask, irq_restore, st};
+use crate::{arena, fw_blocks, fw_kit_of, fw_project, fw_track_type, irq_mask, irq_restore, st};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
@@ -136,8 +136,21 @@ const NEVER_BLOCKS: u32 = 30000;
 /// After the DSP was found stopped the poll runs on every pass for this many passes and logs each distinct reply it sees: the two reply
 /// records (the DSP's two rings) alternate, and the breadcrumb of the step that stopped may be in only one of them.
 const STOPPED_SAMPLES: u32 = 400;
+/// A stopped DSP leaves its two reply records one block apart (finding 47, rung C), so after a stop only a heartbeat this many blocks past the
+/// larger one counts as running again (a running DSP adds 1500 a second, and the poll is a second apart).
+const RESUME_MARGIN: u32 = 16;
+
+/// The machine type of each track is read from the firmware's own accessors every `TRACKS_EVERY` blocks (20 ms) from `TRACKS_FROM` blocks after the
+/// first pass (the project exists by then); a change is logged as `MACHINE_CHANGE`.
+pub const TRACKS: usize = 16;
+const TRACKS_EVERY: u32 = 30;
+const TRACKS_FROM: u32 = 3000;
+const NO_TYPE: u32 = 0xffff_ffff;
 
 struct Watch {
+    next_tracks: u32,
+    types: [u32; TRACKS],
+    types_valid: bool,
     next_diag: u32,
     next_log: u32,
     next_health: u32,
@@ -164,6 +177,9 @@ struct Watch {
     stop_crumb: u32,
 }
 static mut W: Watch = Watch {
+    next_tracks: 0,
+    types: [NO_TYPE; TRACKS],
+    types_valid: false,
     next_diag: 0,
     next_log: 0,
     next_health: 0,
@@ -215,6 +231,7 @@ pub unsafe fn tick() {
         w.next_diag = now.wrapping_add(DIAG_EVERY);
         w.next_health = now.wrapping_add(HEALTH_EVERY);
         w.first_at = now;
+        w.next_tracks = now.wrapping_add(TRACKS_FROM);
         w.changed_at = now;
         if !w.present {
             ev(logk::DSP_ABSENT, 0, [0; 5]);
@@ -224,6 +241,10 @@ pub unsafe fn tick() {
     if w.present && w.sampling > 0 {
         w.sampling -= 1;
         sample_stopped(w);
+    }
+    if due(now, w.next_tracks) {
+        w.next_tracks = now.wrapping_add(TRACKS_EVERY);
+        watch_tracks(w);
     }
     if due(now, w.next_diag) {
         w.next_diag = now.wrapping_add(DIAG_EVERY);
@@ -235,6 +256,32 @@ pub unsafe fn tick() {
         w.next_health = now.wrapping_add(HEALTH_EVERY);
         snapshot(w);
     }
+}
+
+/// Read each track's machine type from the firmware (project, active kit, type of track) and log a change. The first read is the baseline.
+/// Nothing is written; with the debug log off the reads still happen but no event is kept.
+unsafe fn watch_tracks(w: &mut Watch) {
+    let project: unsafe extern "C" fn() -> u32 = core::mem::transmute(fw_project as unsafe extern "C" fn());
+    let kit_of: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(fw_kit_of as unsafe extern "C" fn());
+    let track_type: unsafe extern "C" fn(u32, i32) -> i32 = core::mem::transmute(fw_track_type as unsafe extern "C" fn());
+    if !debug_on() {
+        return;
+    }
+    let p = project();
+    if p == 0 {
+        return;
+    }
+    let kit = kit_of(p);
+    let mut t = 0;
+    while t < TRACKS {
+        let ty = track_type(kit, t as i32) as u32;
+        if w.types_valid && ty != w.types[t] {
+            ev(logk::MACHINE_CHANGE, 0, [t as u32, w.types[t], ty, 0, 0]);
+        }
+        w.types[t] = ty;
+        t += 1;
+    }
+    w.types_valid = true;
 }
 
 unsafe fn read_diag(buf: &mut [u32; DIAG_WORDS]) -> usize {
@@ -285,6 +332,10 @@ unsafe fn sample_stopped(w: &mut Watch) {
     if w.stop_crumb == 0 {
         w.stop_crumb = buf[14];
     }
+    // the larger heartbeat of the two records is the frozen one: the reference for "it moves again" (see `RESUME_MARGIN`)
+    if n > DIAG_HEARTBEAT && (buf[DIAG_HEARTBEAT].wrapping_sub(w.hb) as i32) > 0 {
+        w.hb = buf[DIAG_HEARTBEAT];
+    }
     let mut i = 0;
     while i < w.nseen {
         if w.seen[i] == buf {
@@ -323,7 +374,9 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
     // differs from the last one may be the older record: only a larger value counts as a beat.
     if n > DIAG_HEARTBEAT && buf[0] & 0xffff == DIAG_MAGIC {
         let hb = buf[DIAG_HEARTBEAT];
-        if !w.hb_valid || (hb.wrapping_sub(w.hb) as i32) > 0 {
+        let ahead = hb.wrapping_sub(w.hb) as i32;
+        let margin = if dsp_stopped() { RESUME_MARGIN as i32 } else { 0 };
+        if !w.hb_valid || ahead > margin {
             if w.hb_valid {
                 w.seen_alive = true;
             }
@@ -337,6 +390,9 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
                 ev(logk::DSP_STOPPED, 0, [hb, buf[2], buf[14], buf[15], 1]);
             }
         } else {
+            if ahead > 0 {
+                w.hb = hb; // the other record of a stopped DSP: the larger value is the reference
+            }
             stall_check(w, now, &buf);
         }
     }

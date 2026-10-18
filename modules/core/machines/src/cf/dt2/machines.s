@@ -303,6 +303,27 @@ mf_typearg:
     lea     16(%sp),%sp
 9:  jmp     _mf_t_typearg
 
+| ---- SRC page, second page. `SourcePageView::vfunc_4` draws the generic knob page when the page index is 0 or
+| `FUN_4005b076(this->0x6c)` is true; otherwise it draws the sample view: the waveform, the slice grid and the
+| glyphs of SAMPLE, WERP, STRETCH, REPITCH and MANUAL SLICE. Which sample widget to draw is chosen by `FUN_4005f6bc(view)`
+| (the track's real type) in a mask test that only knows types 0 to 6, so an added type gets the glyph frame with no
+| widget: nearly a blank page (finding 50). The page has nothing to show for an added type (its knobs are its own), so
+| the knob page is drawn for both pages. Site (8 bytes, whole stock test): `addq.l #4,SP; tst.b D0; bne.w T` after the
+| `jsr FUN_4005b076`; a2 = the view. T (an anchor, `_mf_spa`) is the knob-page branch; the stock path goes on at site + 8.
+| `_mf_spt` is `FUN_4005f6bc` (the type as a signed long, -1 without a track). d0, d1, a0, a1 are free at the site.
+    .globl mf_srcpage
+mf_srcpage:
+    addq.l  #4,%sp
+    tst.b   %d0
+    bne.w   9f
+    move.l  %a2,-(%sp)
+    jsr     _mf_spt
+    addq.l  #4,%sp
+    cmpi.l  #_mf_first,%d0
+    blt.w   8f
+9:  jmp     _mf_spa
+8:  jmp     _mf_sp + 8
+
 | descriptor field offset of mirror index 25 .. 34 (-1: none)
     .section .rodata
     .balign 4

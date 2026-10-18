@@ -37,12 +37,15 @@ the default directory for every native `*_OUT` that is unset.
 | `dspwatch=ADDR[,ADDR]` | DSP words, one row per frame | `dspwatch.csv` | `DIGI_DSP_WATCH`, `_OUT` |
 | `model` | per-frame DSP tier counters | `model.csv` | `DIGI_DSP_MODEL_LOG` |
 | `wwatch=ADDR[:N],..` | changes to DSP words: icount, PC, unit | `wwatch.csv` | `SHARC_WWATCH`, `_OUT` |
-| `pcdump=PC,..` | registers at those PCs | `pcdump.csv` | `SHARC_PCDUMP`, `_OUT`, `_ICOUNT=lo:hi`, `_LIMIT`, `_MEM=addr:words` |
+| `pcdump=PC,..` | registers at those PCs, the PC and loop stack depth, and a `#stack-max` line (`pcdump=0` records only that; `{pid}` in `_OUT` is the process id) | `pcdump.csv` | `SHARC_PCDUMP`, `_OUT`, `_ICOUNT=lo:hi`, `_LIMIT`, `_MEM=addr:words` |
 | `fastcov` | fast-tier coverage, refusals, exits, interpreter histogram | `stderr.log` | `SHARC_FAST_LOG=summary`, `SHARC_FAST_COV`, `SHARC_FAST_HIST` |
 | `fastlog` | fast-tier summary | `stderr.log` | `SHARC_FAST_LOG=summary` |
 | `hist` | interpreted instructions per PC | `stderr.log` | `SHARC_FAST_HIST` |
 | `dump` | fast-tier kernels and real calls (wasm gate input) | `fastdump/` | `SHARC_FAST_DUMP`; needs the `fast-dump` feature (coupled.py adds it) |
 | `pcm` | the rendered audio | `../audio.wav` | `--wav` |
+
+Not a `spikes` name: `SHARC_UNINIT=<hex seed>` makes DSP bytes that no boot block loaded and no store wrote read as a seeded non-zero pattern
+instead of zero (default off, part of the render cache key); `SHARC_UNINIT_LOG=FILE` lists the first reads (finding 49).
 
 `DSP_FRAME_POKE=OFF=VAL[/TRACKS][,...]` sets the big-endian 16-bit word at frame byte OFF (with `/N`, at
 OFF + 0x60*t for t < N) in every frame sent to the DSP, to drive a frame word no stock control reaches

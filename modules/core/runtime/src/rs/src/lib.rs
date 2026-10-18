@@ -133,6 +133,11 @@ extern "C" {
     fn fw_project_serialize();
     /// The firmware's normal writer of the boot record (anchor `dkrt.fw.boot_record_write`): `void f(void)`; one shot per boot.
     fn fw_boot_record_write();
+    /// The firmware's accessors of a track's machine type (anchors `dkrt.fw.project`, `dkrt.fw.kit_of`, `dkrt.fw.track_type`):
+    /// `Project *f(void)`, `Kit *f(Project *)` (the active kit), `int f(Kit *, int track)` (-1: no such track). Read-only; `dlog` calls them.
+    pub fn fw_project();
+    pub fn fw_kit_of();
+    pub fn fw_track_type();
     // Helpers from compiler_builtins, linked into this object.
     fn memcpy(d: *mut u8, s: *const u8, n: usize) -> *mut u8;
     fn memset(d: *mut u8, c: i32, n: usize) -> *mut u8;

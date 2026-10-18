@@ -108,6 +108,9 @@ _dv_scan:
     IF EQ JUMP _dv_stock;
     COMP(R0, R1);
     IF NE JUMP _dv_scan;
+#ifdef DV_BISECT_C2
+    JUMP _dv_stock;                       // bisect build: no registered path; the type takes the stock path (stage 3 for 7 or more)
+#endif
 
     // A registered type: the even voice runs the routine, the odd voice copies the even voice's block (the buffers
     // are 0x80 bytes apart).
@@ -257,7 +260,44 @@ _dv_stock:
     R0 = R0 OR R2;
     DM(_dv_bcw) = R0;
     R3 = 3;
+#ifdef DV_BISECT_C2
+    // Bisect build (docs/PATCHING.md "Rung C2"): the stage 3 breadcrumb written inline, the body of _dv_crumb with no CALL and no RTS.
+    // R0 is the breadcrumb word without its stage, I4 is free (L4 is 0).
+    R3 = R3 OR R0;
+    R5 = DM(_dv_diag + 52);
+    R5 = R5 + 1;
+    DM(_dv_diag + 52) = R5;               // the dispatch counter counts the stage 3 passes here (the routine is never called, the returns stay 0)
+    I4 = _dv_diag;
+    DM(12, I4) = R3;
+    I4 = _dv_rec;
+    R5 = DM(0, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_i1;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+    I4 = _dv_rec;
+_dv_i1:
+    R5 = DM(1, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_i2;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+_dv_i2:
+#else
     CALL _dv_crumb;
+#endif
     R3 = DM(_dv_sv3);
     R5 = DM(_dv_sv5);
 _dv_stock_go:

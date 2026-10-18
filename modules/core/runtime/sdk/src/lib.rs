@@ -887,6 +887,8 @@ pub mod logk {
     pub const CRASH_REG: u16 = 23;
     pub const CRASH_STACK: u16 = 24;
     pub const CRASH_TAIL: u16 = 25;
+    /// A track's machine type changed: track (0 based), old type, new type, 0xffffffff when none (finding 46).
+    pub const MACHINE_CHANGE: u16 = 26;
     /// `MENU` argument 0: what the menu did.
     pub const MENU_SELECT: u32 = 1;
     pub const MENU_RESTART: u32 = 2;

@@ -63,9 +63,18 @@ Image `out/patch/rungC-dt2-1.17.syx` (sha256 `fb6caf04...`, with the breadcrumbs
 - **A halted core's reply records keep arriving** (valid header, frozen beats), so the breadcrumbs are readable after a halt on silicon:
   the DMA keeps sending (finding 48's open question, answered). The two records differ by one block (233,838 and 233,839); the watch
   read the larger one as a beat and logged a false `resumed=True` at 171 s, then stopped again (a watch bug: compare the larger of the two
-  records).
+  records). **[C]** Fixed in `dlog.rs`: after a stop the samples keep the larger heartbeat of the two records as the reference, and only a heartbeat
+  16 blocks past it counts as running again (`RESUME_MARGIN`; a running DSP adds 1500 a second). **[D]** `debug-hang` checks that no `resumed=True` follows a stop
+  (the emulator's two records differ too, 2 sets); the device case itself is not re-run.
 - The ColdFire stayed healthy (UI, USB, log, HEALTH) after the halt, as in the 2026-10 hardware report.
 - Reading **[O]**: the same flow passes in the emulator (scenario `rung-c`, where the hook dispatches type 18 thousands of times). On the
   device the type never reached the hook, which points at stock DSP code that routes or indexes by machine type before the voice hook,
   reading something the emulator has differently (for example a per-type table sized for the 7 stock types, read out of range, where the
   emulator's memory is zero and the device's is not). Not yet checked.
+- **After the halt (Em, 2026-10-18, no log kept):** a power cycle with the module still selected and loaded, and the saved project still
+  holding type 18 on track 1: Em set track 1 back to ONESHOT, then selecting a sample froze the whole device (the halted-SHARC sign of the
+  2026-10 hardware report), so the DSP was most likely dead again before any note. After another power cycle, with track 1 on a stock
+  machine and the module still loaded, SLICE and ONESHOT played and auditioned normally. So a track holding the added type is enough; a
+  note and the routine are not needed. Whether the first halt came at the selection or at TRIG 1 is not known **[O]**.
+- **Page 2 of PLUCK** drew almost blank on the device (the TUNE glyph and the bar indicators); encoders there show page 1's names. Cause
+  and fix: finding 50 (a CF view chooses the page's centre widget by type with a mask for types 0-6; reproduced in the emulator).

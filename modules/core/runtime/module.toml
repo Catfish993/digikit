@@ -37,6 +37,9 @@ fw_alloc = "dkrt.fw.alloc"
 fw_free = "dkrt.fw.free"
 fw_project_serialize = "dkrt.fw.project_serialize"
 fw_boot_record_write = "dkrt.fw.boot_record_write"
+fw_project = "dkrt.fw.project"
+fw_kit_of = "dkrt.fw.kit_of"
+fw_track_type = "dkrt.fw.track_type"
 
 # Constants from the device files (devices/*.toml, core/machines types.toml), written by `patchkit gen`; docs/design/device-data.md.
 # The runtime is one image for all devices: `rust` and `gas-shared` hold what every device agrees on (gen refuses a difference), `gas`
@@ -316,5 +319,70 @@ kind = "cf_words"
 as = "code"
 words = [0x270023cf, "*", 0x4feffff0, 0x48d70303, "*", "*", 0x670a2f39, "*", 0x4e90588f, 0x4cd70303, 0x4fef0010]
 offset = 18
+len = 4
+mark = "D"
+
+# The firmware's own per-track machine type, read through three accessors (the debug log's machine-change watch; they are the functions the hot-reload
+# runtime used for "is this machine in use", tag digikit-hot-reload-v1): the Project singleton `Project *f(void)` (DT2 1.16 0x401988a2, DN2 1.11
+# 0x4018a97a), the active kit of a project `Kit *f(Project *)`, and the machine type of a track of a kit `int f(Kit *, int track)` (-1: no such track).
+# The kit and track functions have the same hash on both devices' versions; the Project getters differ per image.
+
+[[anchor_rule]]
+name = "dkrt.fw.project"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "ec70a039cd46fc8071a7e84112decfb1"
+offset = 0
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "dkrt.fw.kit_of"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f29fb6421b637b6883ebb6d384a09179"
+offset = 0
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "dkrt.fw.track_type"
+devices = ["dt2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "9a76292be32cf9c7a8fd2e7c031c41d9"
+offset = 0
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "dkrt.fw.project"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "e722721313b9899418dac1e1d039205c"
+offset = 0
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "dkrt.fw.kit_of"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "f29fb6421b637b6883ebb6d384a09179"
+offset = 0
+len = 4
+mark = "D"
+
+[[anchor_rule]]
+name = "dkrt.fw.track_type"
+devices = ["dn2"]
+cpu = "cf"
+kind = "cf_func"
+hash = "7f68bc71629aaed41f2ffa075e03c222"
+offset = 0
 len = 4
 mark = "D"

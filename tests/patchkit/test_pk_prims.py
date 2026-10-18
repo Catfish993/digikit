@@ -102,3 +102,19 @@ def test_registry_demo_boots_and_the_hook_runs_the_displaced_instructions(tmp_pa
     assert copy == bytes.fromhex("202f00086708206f0004214000204e75")[:14]
     assert struct.unpack(">IBH", rows[:7]) == (0x1234, reg["first"], reg["first"])
     assert struct.unpack(">IBH", rows[7:]) == (77, reg["first"] + 1, reg["first"])
+
+
+def test_build_options_select_ifdef_alternatives():
+    """pk_build.apply_conditionals: `#ifdef`/`#ifndef`/`#else`/`#endif` lines; with no define the text is the source without the option's lines."""
+    from tools.patchkit import pk_build
+
+    src = "a\n#ifdef X\nb\n#else\nc\n#endif\n#ifndef X\nd\n#endif\ne"
+    assert pk_build.apply_conditionals(src) == "a\nc\nd\ne"
+    assert pk_build.apply_conditionals(src, frozenset({"X"})) == "a\nb\ne"
+    nested = "#ifdef X\n#ifdef Y\ny\n#else\nnoy\n#endif\n#endif\nz"
+    assert pk_build.apply_conditionals(nested, frozenset({"X"})) == "noy\nz"
+    assert pk_build.apply_conditionals(nested, frozenset({"Y"})) == "z"
+    with pytest.raises(pk_build.BuildError):
+        pk_build.apply_conditionals("#ifdef X\na")
+    with pytest.raises(pk_build.BuildError):
+        pk_build.apply_conditionals("#endif")

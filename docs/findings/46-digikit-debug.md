@@ -82,11 +82,19 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 20 | DSP_ABSENT | (the image has no `dl_diag`; once) | |
 | 21 | MOD_LIST | index, slots mask, name (when the DSP stopped: the loaded modules) | yes |
 | 22..25 | CRASH_MOD, CRASH_REG, CRASH_STACK, CRASH_TAIL | the crash record, decoded by `dklog crash` | yes |
+| 26 | MACHINE_CHANGE | track (0 based; `dklog` shows 1 based), old machine type, new type (0xffffffff: none) | |
 
 **Periodic work** (`dlog::tick`, once per UI pass, reads the block counter): the DSP poll once a second (1500 blocks), a HEALTH snapshot every ten seconds
 (the heap walk only in every fourth, because it takes the heap's mutex: the snapshot uses `dkrt_health_light`, which skips the store figures and, when asked,
 the walk). **[D]** `debug-log` (full tier, coupled daemon): snapshots 15,000 blocks apart, the stable-period event once after 30 s. A daemon without DSP does
 not advance the block counter, so the periodic events do not happen there (the quick tier runs the cf-only daemon and checks the rest).
+
+**Machine-change watch.** `dlog::watch_tracks` reads each of the 16 tracks' machine type from the firmware's own state through three anchored accessors
+(`dkrt.fw.project`, `dkrt.fw.kit_of`, `dkrt.fw.track_type`: `Project *f()`, `Kit *f(Project *)`, `int f(Kit *, int track)`; the functions of the archived hot-reload
+runtime's in-use check) every 30 blocks (20 ms), starting 3000 blocks after the first UI pass, and logs `MACHINE_CHANGE` when a type differs from the last read (the first
+read is the baseline; nothing is read with the debug log off). A project load logs one event per track that changed. **[D]** `debug-hang`: selecting the hang machine on track 1 logs
+track 0, old 0, new 19. **[O]** The first note started on a track after a change is not logged: no firmware word seen so far says which track a note started on, and the DSP
+diagnostics count dispatches per machine type, not per track. The CPU cost (16 calls per 20 ms) is not measured on the device.
 
 **DSP heartbeat watch.** `dl_diag(out: *mut u32, n: u32) -> i32` is in `core/dsp-link` (finding 45; since finding 48 17 words); it is an optional
 extern (`[object] optional`, 0 when absent: the first poll then logs `DSP_ABSENT` once). The runtime asks for 17 words and takes word 1 (the link hook's beat) as the

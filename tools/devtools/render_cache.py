@@ -55,6 +55,7 @@ DENYLIST: frozenset[str] = frozenset(
         "SHARC_FAST_HIST",
         "SHARC_FAST_CL_DISASM",
         "SHARC_WWATCH",
+        "SHARC_UNINIT_LOG",  # diagnostic output of SHARC_UNINIT (SHARC_UNINIT itself is a render input and stays in the key)
         # path selectors covered by hashing the resolved files
         "DIGI_EMU_SYX",
         "DIGI_COUPLED_SYX",

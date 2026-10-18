@@ -282,8 +282,8 @@ CRUMB_PROBE_BASE = 0xB93C00
 
 
 class CrumbRig(Rig):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, defines: frozenset[str] = frozenset()) -> None:
+        super().__init__(defines=defines)
         self.sine_linked = pk_sharc.link(
             pk_sharc.assemble(CRUMB_PROBE), CRUMB_PROBE_BASE, {}
         )
@@ -364,6 +364,40 @@ def test_the_stock_path_leaves_one_breadcrumb_and_an_unregistered_added_type_two
     assert out["diag"][12] == crumb(3, 5, 12) and out["ra"][192] == crumb(3, 5, 12)
     assert out["regs"]["R3"] == out["in"]["R3"] and out["regs"]["R5"] == out["in"]["R5"]
     # a type below 7 that is not registered either: the engine's own, no stage 3
+    rig.set_type(2, 6)
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert out["diag"][12] == crumb(1, 5, 0)
+
+
+def test_the_bisect_build_takes_the_stock_path_for_added_types_with_no_call():
+    """DV_BISECT_C2 (finding 49, docs/PATCHING.md "Rung C2"): an added type, registered or not, runs the stock renderer with the stage 3
+    breadcrumb written inline, the same words as the stock build's for an unregistered type. A breakpoint on `_dv_crumb` proves that the
+    bisect build never enters it (so no CALL and no RTS run on this path), and a registered type is not dispatched (the dispatch counter counts the stage 3 passes in this build, the returns stay 0)."""
+    reads = {"diag": (nw(DIAG), 16), "ra": (nw(RING_A), 0x400 // 4)}
+    bisect = frozenset({"DV_BISECT_C2"})
+    for t in (12, TYPE):  # 12: no module registered it; TYPE: the table holds it
+        rig = CrumbRig(bisect)
+        rig.set_rings()
+        rig.set_type(2, t)
+        crumb_sw = rig.core_linked.symbols["_dv_crumb"]
+        out = rig.call(5, extra_reads=reads, ctx="friendly", breaks=(crumb_sw,))
+        assert stops_at(out, STOCK_BP), (t, out["halt"])
+        # the dispatch counter counts stage 3 passes in this build; the routine is never called, so no return
+        assert out["diag"][12] == crumb(3, 5, t) and out["diag"][13:15] == [1, 0]
+        assert out["ra"][192] == crumb(3, 5, t) and out["ra"][193] == 1
+        assert (
+            out["regs"]["R3"] == out["in"]["R3"]
+            and out["regs"]["R5"] == out["in"]["R5"]
+        )
+    # the stock build writes the same words for the unregistered type
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(2, 12)
+    ref = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert ref["diag"][12] == crumb(3, 5, 12) and ref["ra"][192] == crumb(3, 5, 12)
+    # a type below 7 is the engine's own in both builds: no breadcrumb beyond stage 1
+    rig = CrumbRig(bisect)
+    rig.set_rings()
     rig.set_type(2, 6)
     out = rig.call(5, extra_reads=reads, ctx="friendly")
     assert out["diag"][12] == crumb(1, 5, 0)

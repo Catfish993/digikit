@@ -45,6 +45,8 @@ STUBS = [
     "_mf_c4a",
     ("_mf_c6", 12),
     "_mf_c6a",
+    ("_mf_sp", 8),
+    "_mf_spa",
 ]
 
 pytestmark = [
@@ -76,6 +78,7 @@ ENTRIES = [
 ]
 COUNT = len(ENTRIES)
 STR_AT = 0x47EC3000
+TYPE_FN = 0x47EC4000  # a stand-in for FUN_4005f6bc: `move.l #type,d0; rts`, the type is poked per case
 STOCK = [3, 0, 1, 2, 4, 5, 6]  # a stock display order
 
 
@@ -114,8 +117,10 @@ def unit():
             "_mf_entries": COUNT,
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
+            "_mf_spt": TYPE_FN,
         },
         [
+            "mf_srcpage",
             "mf_dispatch",
             "mf_list_entry",
             "mf_rank",
@@ -243,6 +248,7 @@ def gap_unit():
             "_mf_entries": 2,
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
+            "_mf_spt": TYPE_FN,
         },
         ["mf_list_entry", "mf_rank"],
     )
@@ -459,3 +465,44 @@ def test_row_size_of_the_manifest_matches_the_assembly():
     assert names.index("clone_of") * 4 == 44 and names.index("position") * 4 == 48
     assert names.index("own_dsp") * 4 == 52 and names.index("name") * 4 == 56
     assert names.index("short") * 4 == 60 and names.index("f0") * 4 == 8
+
+
+def type_fn(t):
+    return {TYPE_FN: b"\x20\x3c" + be32(t & 0xFFFFFFFF) + b"\x4e\x75"}
+
+
+def test_src_page_hook_draws_the_knob_page_for_added_types_only(unit):
+    """SourcePageView::vfunc_4: the stock test `addq.l #4,SP; tst.b D0; bne.w T` takes the knob page when D0 is true; the hook also takes
+    it when FUN_4005f6bc(view) is an added type (>= machines.first), and falls through (site + 8) for every other type, including -1."""
+    cases = [
+        # (d0 on entry, type the stand-in returns, expected exit)
+        (
+            1,
+            3,
+            "_mf_spa",
+        ),  # the stock condition holds: knob page, the type is not asked
+        (0, 0, "_mf_sp"),  # SAMPLE: the sample view
+        (0, 3, "_mf_sp"),
+        (0, 6, "_mf_sp"),  # MANUAL SLICE: its slice view
+        (0, -1, "_mf_sp"),  # no track
+        (0, FIRST, "_mf_spa"),
+        (0, 18, "_mf_spa"),  # the run-time pluck
+        (0, 23, "_mf_spa"),  # the last reserved type
+    ]
+    for d0, typ, want in cases:
+        r = unit.run_cases(
+            type_fn(typ),
+            [
+                {
+                    "routine": "mf_srcpage",
+                    "d": {0: d0},
+                    "a": {2: 0x1234},
+                    "stack": [0xAAAA, 0xBBBB],
+                }
+            ],
+        )[0]
+        assert r.stub == want, (d0, typ, r.stub)
+        assert r.a[2] == 0x1234  # the view register is kept
+        assert (
+            r.stack[0] == 0xBBBB
+        )  # the stock `addq.l #4,SP` was done, nothing else is left on the stack

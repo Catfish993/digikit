@@ -349,6 +349,36 @@ mark = "D"
 rule = "core/machines:cf_func"
 
 [[anchor]]
+name = "cf.machines.srcpage"
+cpu = "cf"
+kind = "code"
+addr = 0x40016ece
+len = 8
+sha256 = "e8b9f619ac2a496f922bf2394a4ef5eabbffa8907868e6819de3f5949d90b221"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.srcpage.alt"
+cpu = "cf"
+kind = "code"
+addr = 0x400170aa
+len = 2
+sha256 = "ad69657fa5f7a9f4c954e7ae1292191b9767d30b44940e0b7233310460419328"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
+name = "cf.machines.srcpage.type"
+cpu = "cf"
+kind = "code"
+addr = 0x4005f6bc
+len = 6
+sha256 = "57cd2f2ae64ef3525fed80bc297406c22e5713d3e35545772731462c2067c002"
+mark = "D"
+rule = "core/machines:cf_func"
+
+[[anchor]]
 name = "cf.machines.tab.list"
 cpu = "cf"
 kind = "data"
@@ -1831,12 +1861,32 @@ mark = "D"
 rule = "core/runtime:cf_func"
 
 [[anchor]]
+name = "dkrt.fw.kit_of"
+cpu = "cf"
+kind = "code"
+addr = 0x40041d24
+len = 4
+sha256 = "7f284fb65360c6f575800b1a7f6020278ea44dcfb08684ee639a5b361437086c"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
 name = "dkrt.fw.midi_send"
 cpu = "cf"
 kind = "code"
 addr = 0x40121adc
 len = 2
 sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.project"
+cpu = "cf"
+kind = "code"
+addr = 0x40198b7e
+len = 4
+sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
 mark = "D"
 rule = "core/runtime:cf_func"
 
@@ -1857,6 +1907,16 @@ kind = "code"
 addr = 0x40001928
 len = 2
 sha256 = "5e5be2db18c49bd9863ac94af1ee2a6b6fbe6df2a2033e188c545979a0148880"
+mark = "D"
+rule = "core/runtime:cf_func"
+
+[[anchor]]
+name = "dkrt.fw.track_type"
+cpu = "cf"
+kind = "code"
+addr = 0x40036266
+len = 4
+sha256 = "1752574de8d0026d70bf9141496056979060c689d8d347371a73b627becc2134"
 mark = "D"
 rule = "core/runtime:cf_func"
 

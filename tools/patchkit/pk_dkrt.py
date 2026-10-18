@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 import struct
 import subprocess
 import sys
@@ -119,7 +120,9 @@ class Tools:
         )  # fmt: skip
 
     def patchkit_run(self, *args: object) -> str:
-        r = self.run(self.patchkit, "--root", ROOT, *args)
+        r = self.run(
+            self.patchkit, "--root", os.environ.get("DIGI_PK_ROOT") or ROOT, *args
+        )
         if r.returncode:
             raise ProofError(
                 f"patchkit {' '.join(map(str, args[:2]))}: {r.stderr}{r.stdout}"

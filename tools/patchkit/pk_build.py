@@ -106,10 +106,48 @@ def expand_includes(text: str, dirs: list[Path], depth: int = 0) -> str:
     return INCLUDE.sub(one, text)
 
 
-def sharc_object(sources: list[Path], include_dirs: list[Path] | None = None) -> dict:
-    """One or more `.s` files, concatenated into one translation unit, to an object."""
+COND = re.compile(r"^#(ifdef|ifndef|else|endif)(?:[ \t]+(\w+))?[ \t]*$")
+
+
+def apply_conditionals(text: str, defines: frozenset[str] = frozenset()) -> str:
+    """Build options: `#ifdef NAME` / `#ifndef NAME` / `#else` / `#endif` lines (alone on their line, nestable). A line outside the
+    taken branches is dropped together with the directive lines, so with no define the text is the source without the option's
+    alternatives, and a source that gains an option stays byte-identical to the old one when the option is off (the object's
+    `source_sha256` hashes this text)."""
+    out: list[str] = []
+    stack: list[bool] = []  # per open #ifdef: its current branch is taken
+    for n, line in enumerate(text.split("\n"), 1):
+        m = COND.match(line)
+        if not m:
+            if all(stack):
+                out.append(line)
+            continue
+        kind, name = m.groups()
+        if kind in ("ifdef", "ifndef"):
+            if not name:
+                raise BuildError(f"line {n}: #{kind} needs a name")
+            stack.append((name in defines) == (kind == "ifdef"))
+        elif not stack:
+            raise BuildError(f"line {n}: #{kind} without #ifdef")
+        elif kind == "else":
+            stack[-1] = not stack[-1]
+        else:
+            stack.pop()
+    if stack:
+        raise BuildError("#ifdef without #endif")
+    return "\n".join(out)
+
+
+def sharc_object(
+    sources: list[Path],
+    include_dirs: list[Path] | None = None,
+    defines: frozenset[str] = frozenset(),
+) -> dict:
+    """One or more `.s` files, concatenated into one translation unit, to an object. `defines` select the `#ifdef` alternatives."""
     dirs = [*(include_dirs or []), *{p.parent for p in sources}]
-    text = expand_includes("\n".join(p.read_text() for p in sources), dirs)
+    text = apply_conditionals(
+        expand_includes("\n".join(p.read_text() for p in sources), dirs), defines
+    )
     obj = pk_sharc.assemble(text)
     # ISA check: link at a placeholder base with placeholder externs; verify() re-decodes every instruction
     # and reads every relocated field back.
@@ -272,7 +310,16 @@ def cf_object(sources: list[Path], include_dirs: list[Path] | None = None) -> di
     }
 
 
-def build_module(moddir: Path, check: bool) -> list[str]:
+def build_module(
+    moddir: Path,
+    check: bool,
+    defines: frozenset[str] = frozenset(),
+    out_root: Path | None = None,
+) -> list[str]:
+    """Build every object of a module. With `defines` (build options for the DSP sources) the committed objects are not touched: the
+    objects go under `out_root` at their `path` (tools/patchkit/pk_variant.py builds a module variant this way)."""
+    if defines and (check or out_root is None):
+        raise BuildError("--define needs --out and cannot be combined with --check")
     manifest = tomllib.loads((moddir / "module.toml").read_text())
     messages = []
     for o in manifest.get("object", []):
@@ -282,11 +329,13 @@ def build_module(moddir: Path, check: bool) -> list[str]:
         paths = [moddir / s for s in srcs]
         kinds = {p.suffix for p in paths}
         if kinds <= {".s"} and any("dsp" in Path(s).parts for s in srcs):
-            obj = sharc_object(paths, [moddir / "build" / "gen"])
+            obj = sharc_object(paths, [moddir / "build" / "gen"], defines)
         else:
+            if defines:
+                raise BuildError("--define applies to DSP sources only")
             obj = cf_object(paths, [moddir / "build" / "gen"])
         text = canonical(obj)
-        out = moddir / o["path"]
+        out = (out_root or moddir) / o["path"]
         if check:
             if not out.exists() or out.read_text() != text:
                 raise BuildError(
@@ -307,6 +356,18 @@ def main() -> int:
     b = sub.add_parser("build")
     b.add_argument("module", type=Path)
     b.add_argument("--check", action="store_true")
+    b.add_argument(
+        "--define",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="a build option (#ifdef NAME in a DSP source)",
+    )
+    b.add_argument(
+        "--out",
+        type=Path,
+        help="with --define: the directory the objects are written under (at their `path`)",
+    )
     c = sub.add_parser("build-all")
     c.add_argument("--check", action="store_true")
     c.add_argument("--root", type=Path, default=ROOT / "modules")
@@ -324,7 +385,12 @@ def main() -> int:
     )
     try:
         for d in dirs:
-            for m in build_module(d, a.check):
+            for m in build_module(
+                d,
+                a.check,
+                frozenset(getattr(a, "define", [])),
+                getattr(a, "out", None),
+            ):
                 print(m)
     except (BuildError, pk_sharc.PkSharcError, pk_link.PkLinkError) as e:
         print(f"pk_build: {e}", file=sys.stderr)
