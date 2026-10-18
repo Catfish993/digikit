@@ -4756,6 +4756,24 @@ ACDONE. The core polled about every 30 cycles. The models do not model timing.
 | FIR0, 11 taps, 16 samples | 791 |
 | FIR0 in ACM, 37 taps, 8 samples | 1,344 |
 
+**[V]** A second check of the native IIR0 twin, on a mod's own workload
+(2026-10-18, main at 5c9e717). dn2_firmware's Waverider Formant starts IIR0 on
+each voice: legacy TCB, one channel of 5 biquads, 32 samples in place, with
+Save State. Its coefficients change every block.
+- dn2_firmware built the library from main, interpreter only (`sharc_transpile`, then
+  `SHARC_GEN_DIR=... cargo build --release` of packages/emulator/sharc), with
+  option 22 set on the native core.
+- Five cases of 48 blocks on two tracks ran IIR0 440 times. Every output
+  sample equals dn2_firmware's float32 model of the voice, bit for bit, and
+  every DMASTAT poll read ACDONE from the engine.
+- The same cases with the Python model (`iir.py`) run from the host on the
+  engine's memory also match. So the Rust twin and the Python model agree on
+  these 440 runs.
+- Control: with option 22 off, no poll reads ACDONE, and the filtered cases
+  differ by 1,535 samples on one track.
+- Not covered: ACM, FIR0, more than one channel, and windows other than 32
+  samples.
+
 **[C]** PM-bus scalar and long-word data loads and stores now use the unified
 memory, as normal-word UREG loads already did ("single, unified address
 space"). Previously PM loads were Unknown and PM stores wrote nothing. The DN2
