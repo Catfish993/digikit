@@ -400,36 +400,29 @@ Device rungs (stock 1.17 is the way back each time):
 - [ ] The emulator refuses the excluded stores (a native trap at decode time in `sharc-rt`, both tiers; finding 49 section 10.7).
 - [ ] D: debug off by default.
 
-### Phase 10: device tooling and a faster loop (2026-10-19; proposed order agreed by Em)
+### Phase 10: a fast module loop and device debugging (2026-10-19; order set by Em)
 
-Goal (Em): find out what happens on the device as quickly as possible, for module work and for closing ColdFire and SHARC gaps in the emulator, with the
-same interface on the emulator and the device. No cost on the device unless chosen (verbosity), everything behind DEBUG, read-only by default; writes
-(key input, poke) need DEBUG and a hand-set REMOTE CONTROL row, and never touch the card or flash. Each piece gets the emulator-first proof and kept tests.
+Focus (Em, 2026-10-19): stability; machines and other module types working; fast build, test, upload and module testing with few flashes
+(a module still needs select and restart to load); debugging on the device; device data that finds ColdFire and SHARC gaps in the emulator and
+helps SHARC performance. Guardrails: everything behind DEBUG, read-only by default, never a card write outside the store or a flash write.
 New tools approved (Em, 2026-10-19): `sccache`, `cargo-nextest`, a test-impact tool (pytest-testmon style).
 
-1. [ ] `dkflash` and the device bridge. `dkflash IMAGE`: preflight, send the `.syx` as Transfer does at the main screen, wait for Em's YES, wait for the
-   reboot, confirm the running image from `dklog info`. The bridge: one Mac process owns the device's MIDI port and serves the emulator control socket's
-   commands, driven by `devices/*.toml`, so tools, scenarios and agents address "a device" (emulator or hardware): log tail (JSON lines), PEEK, screen
-   capture (the OLED frame over SysEx), notes, upload, flash; then panel input (keys and encoders into the firmware's input queue; needs an anchor).
-   About 4-5 days; key input is the medium-confidence part.
-2. [ ] Verify speed. Rust tests only for crates whose dependency graph changed (`cargo metadata`) and `cargo-nextest`; `sccache` shared by lanes and the main
-   tree; Python tests routed by finer ownership, the slowest files split into chunks, a file skipped when its inputs are unchanged since its last pass;
-   a 1-2 minute `verify:pre` (lint, pathcheck, build check, gen check, the touched crates' tests) that every lane runs before reporting. Each change
-   measured before and after. About 1-1.5 days. (Baseline 2026-10-18: wall 881 s; python-tests 881 s, rust-tests 598 s, check-no-aot 492 s, tier-quick 421 s.)
-3. [ ] DSP crash and hang capture: a SHARC exception handler that writes the faulting PC and status into the reply record; a PC sampler on a DSP timer
-   interrupt (where a hang loops; also a profile of real silicon to calibrate the cycle model); DSP peek over the DSP link (N words at an address, read-only).
-   About 2-3 days. Built as modules where possible, so an experiment is an upload and a restart, not a flash.
-4. [ ] CPU side: tracepoints through the V4e debug module (hardware PC breakpoints; registers and memory saved, then continue; count and delivery to be
-   read in the MCF5441x manual first); a CPU PC sampler; log levels (error, warn, info, debug, trace) per subsystem (boot, card, DSP, UI, MIDI, module), set
-   from the Mac at run time and remembered, default info, trace rate-limited, besides the DEBUG on/off; structured dumps named in the device TOML (address,
-   length), saved automatically on `DSP_STOPPED` or a crash and next to emulator snapshots; on-device timing of module routines. About 3 days.
-5. [ ] Device-versus-emulator diff runs: one script (keys, notes, markers) runs on both through the bridge; logs, peeks, DSP peeks and screens at each marker
-   are diffed into a list of emulator gaps. About 2 days once 1 and 3 exist.
-6. Later: a GDB remote-protocol bridge on the Mac (reads served from PEEK, DSP peek and the last capture) for gdb or Ghidra's debugger.
+1. [ ] `dk run MODULE`: build, pack, upload, select, restart, follow the log, in one command. Runtime 4 adds SELECT (write the selection
+   record) and RESTART (the soft reset the menu's APPLY & RESTART does) to the SysEx protocol; one flash, then no menu per change.
+2. [ ] Screenshot: the firmware's own MidiRpc `Screenshot` (0x04, 1024 bytes of the OLED shadow buffer; docs/MIDI-SYSEX-RPC.md) through
+   `tools/device/devrpc.py`, written as PNG; no flash. Check it on 1.17.
+3. [ ] Verify speed: Rust tests for the crates whose dependencies changed, `cargo-nextest`, `sccache` across lanes, finer Python routing with the
+   slowest files chunked and unchanged files skipped, a 1-2 minute `verify:pre` for lanes. Measured before and after (baseline 2026-10-18: wall
+   881 s; python-tests 881 s, rust-tests 598 s, check-no-aot 492 s, tier-quick 421 s).
+4. [ ] DSP debugging: DSP peek over the DSP link (read-only), a SHARC exception handler writing the faulting PC and status into the reply record,
+   a PC sampler on a DSP timer (where a hang loops; a profile of the real chip for SHARC performance and the cycle model). Modules where possible.
+5. [ ] Log levels (error, warn, info, debug, trace) per subsystem, set from the Mac at run time, besides DEBUG on/off; on-device timing of module routines.
+6. [ ] Named dumps (address, length) in the device TOML, captured on the device and in the emulator at the same marker and diffed: a list of emulator gaps.
 
-Parked (Em, 2026-10-19): an SDK-style module model in C or Rust (Machine, Parameter, Page types) on top of the typed schema of Phase 3 (finding 27) and
-`dkrt-sdk`; revisit after Phase 10. A second SRC page for a Digitakt II machine with more than eight parameters needs engine slots, a descriptor per page
-and a typearg mapping (finding 50); today it is a build error.
+Deferred (Em, 2026-10-19): `dkflash` (Transfer takes about 20 s, then YES on the device after the data), the shared emulator/device interface,
+key input, CPU tracepoints, the GDB bridge (docs/design/device-bridge.md holds the draft). Parked: an SDK-style module model in C or Rust (Machine,
+Parameter, Page types) on top of the typed schema (finding 27) and `dkrt-sdk`. A second SRC page for a Digitakt II machine with more than eight
+parameters needs engine slots, a descriptor per page and a typearg mapping (finding 50); today it is a build error.
 
 ### Later
 

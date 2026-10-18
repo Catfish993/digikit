@@ -1,5 +1,9 @@
 # Device bridge and `dkflash`
 
+> **Deferred (Em, 2026-10-19).** Phase 10 now starts with the module loop (`dk run`), the firmware's own Screenshot command (MidiRpc 0x04,
+> docs/MIDI-SYSEX-RPC.md), verify speed and DSP debugging. Known since this draft: Transfer sends a 1.9 MB image in about 20 s and the device asks
+> YES after the data. Kept for later.
+
 Status: design, 2026-10-19 (plan `docs/plans/digikit-runtime.md` Phase 10 item 1). Nothing here is built. Marks: **[V]** read in the
 code or a finding for this design, **[D]** measured once elsewhere, **[O]** open. No device command was sent and no emulator was run to
 write this file.
