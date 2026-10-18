@@ -1,8 +1,10 @@
 # digikit: agent instructions
 
-Reverse engineering and emulation of the Elektron Digitakt II (OS 1.16) and Digitone II (OS 1.11): a ColdFire
+Reverse engineering and emulation of the Elektron Digitakt II (OS 1.17) and Digitone II (OS 1.12): a ColdFire
 MCF5441x main CPU and a SHARC+ DSP, run natively (desktop app) and in the browser (wasm). The device on the desk is
-a Digitakt II on 1.16. Setup: README.md. Results: docs/findings/ (one file per topic, indexed from
+a Digitakt II on 1.17: analyse, patch and quote addresses for 1.17 (and 1.12 for the Digitone II). 1.16/1.11 are older
+references with more hand names; an address taken from them must be resolved on 1.17/1.12 (patchkit anchors resolve by hash per
+version, `devices/ports/<device>-<os>.toml`) before it is used or reported. Setup: README.md. Results: docs/findings/ (one file per topic, indexed from
 docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDOVER-*.md.
 
 ## Rules
@@ -103,15 +105,15 @@ docs/FINDINGS.md). Current state and next steps: the newest docs/handovers/HANDO
 ## Static analysis
 
 - SHARC: `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin` writes
-  `out/sharcdb/<image>.sqlite`; use it through tools/sharc_dev/sharc.py (`img = sharc.load("dt2-1.16")`, then `func`,
+  `out/sharcdb/<image>.sqlite`; use it through tools/sharc_dev/sharc.py (`img = sharc.load("dt2-1.17")`, then `func`,
   `callers`, `callees`, `reach`, `xref_table`, `trace`, `img.sql(...)`) before writing a script. New kinds of fact
   go into tools/sharc_dev/sharcdb/. SHARC+ encodings: tools/sharc_dev/sharcspec/ (from the public ADI manuals).
 - SHARC+ instruction semantics live once, in tools/sharc_dev/sharc_core/; tools/sharc_dev/sharc_trace.py (symbolic) and
   tools/sharc_dev/sharc_run.py (concrete) are drivers only.
 - ColdFire (MAIN OS): a `uv run python -m tools.coldfire.ghidradump` dump (out/ghidra/<image>-emac/), then
-  `uv run python -m tools.coldfire.cfdb build out/ghidra/dt2-1.16-emac` and tools/coldfire/cf.py (`cf.load("dt2-1.16-emac")`);
-  hand-curated 1.16 names in tools/coldfire/cf_names.py. tools/emulator/snapread.py reads `.snap` files without a machine.
-- Ghidra: one JVM per project. Live 1.16 analysis: `~/ghidra-projects/elektron-emac`; `dt2-emac` holds 1.15C. Use
+  `uv run python -m tools.coldfire.cfdb build out/ghidra/dt2-1.17-emac` and tools/coldfire/cf.py (`cf.load("dt2-1.17-emac")`);
+  hand-curated names in tools/coldfire/cf_names.py are literal 1.16 addresses (match by function hash to use them on 1.17). tools/emulator/snapread.py reads `.snap` files without a machine.
+- Ghidra: one JVM per project. Live 1.16 analysis: `~/ghidra-projects/elektron-emac` (no live 1.17 project yet; use the 1.17 dump); `dt2-emac` holds 1.15C. Use
   the language `68000:BE:32:ColdfireEMAC` (the stock ColdFire language stops at `movclr`). Read the dump first;
   live queries with tools/coldfire/ghidraq.py (`--then` chains queries in one JVM). Ghidra's reference tables miss code
   outside functions: confirm "no caller" with tools/coldfire/refscan.py. A pyghidra tool runs as a module like every tool; by
