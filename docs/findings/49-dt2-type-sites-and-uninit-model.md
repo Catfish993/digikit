@@ -229,3 +229,212 @@ non-bank bits, and the checks on delay-slot contents. Every rule of 8.2 that is 
 4. The twelve-instruction predictor distance and its memory block were read, not measured (code at 0xbcd7f4 to 0xbcda60 in L1).
 5. In the emulator the type reaches the DSP at the TRIG; on the device earlier. Find the state that makes the difference (8.5) before trusting any emulator pass for this halt.
 6. Caches (L1 D-cache on the L2 variables, write-back by default, PRM Table 8-2, p0262) are not modelled; the reply records are L1 (not cached), the wrapper's variables at 0x2009b4d4 and up are L2.
+
+
+## 9. Follow-up: the 69 instructions before stage 2, an interrupt model, and three variants for rung C3 (Lane b, 2026-10-18, third pass)
+
+Question (after the device run of rung C2, finding 47): with the wrapper's call path out of the way the Digitakt II 1.17 keeps running with a track on type 18, so
+the halt of rung C is inside `core/dsp-voice`'s path for a **registered** added type, before its stage-2 breadcrumb write. The emulator runs that path fine.
+Emulator and static work only; nothing was sent to a device. Marks: **[D]** read or measured once here, **[O]** open; nothing is **[V]**.
+**No cause was found.** This section lists the instructions, adds an emulator setting that delivers interrupts between any two of them (rung C still passes),
+and gives three device images, each without one suspect, that also name the place of a halt that remains.
+
+### 9.1 What the device fixes **[D]**
+
+- Rung C2 (finding 47): type 18 reached the hook every block for 40 s, the stock pipeline accepted it, no halt. So frame handling, the change detector, the
+  parameter converter and the voices 0 and 1 are cleared on silicon, and so are the scan of `_dv_table` and the inline stage 3 breadcrumb (they ran in C2).
+- Rung C: the last breadcrumb stays at stage 1 and `dispatches` is 0 (finding 49 section 1). Stage 2 writes its word into `_dv_diag` and then into both reply
+  records at its **first store**, so the core stopped **before the first store of the first stage 2 of voice 2**.
+- That store is not the `RTS`. The `RTS` of `_dv_crumb` comes after all its stores, so a non-delayed `RTS` cannot explain a missing stage 2 word. **[C]** Finding 49
+  section 8 named "the non-delayed `RTS`" as the one thing stock never runs; for the halt before stage 2 the suspect in that family is the **`CALL`** (and the
+  crumb's own first instructions), the `RTS` is the next place a halt would show.
+
+### 9.2 The instructions from the hook entry to the stage-2 store (DT2 1.17 build, object offsets in short words) **[D]**
+
+100 instructions on the path of voice 2 (the scan counted once; +26 for voice 0, which also records the context registers). 31 of them (entry, stage 1, type read, scan: offsets 0 to 124 without
+the voice-0 block) run for every voice on every rung, including A, B and C2. **The other 69 never ran on silicon before rung C**: offsets 125 to 245 (59 instructions) and the
+first 10 of `_dv_crumb`. They are (an offset is the first short word, then the size in short words):
+
+```text
+ 125  2  I12 = R2;
+ 127  3  MODIFY(I7, -40) (NW);
+ 130  2  DM(-6, I6) = R3;
+ 132  2  DM(-7, I6) = R5;
+ 134  2  DM(-8, I6) = R6;
+ 136  2  DM(-9, I6) = R7;
+ 138  2  DM(-10, I6) = R9;
+ 140  2  DM(-11, I6) = R10;
+ 142  2  DM(-12, I6) = R11;
+ 144  2  DM(-13, I6) = R13;
+ 146  2  DM(-14, I6) = R14;
+ 148  2  DM(-15, I6) = R15;
+ 150  2  DM(-16, I6) = I0;
+ 152  2  DM(-17, I6) = I1;
+ 154  2  DM(-18, I6) = I2;
+ 156  2  DM(-19, I6) = I3;
+ 158  2  DM(-20, I6) = I5;
+ 160  2  DM(-21, I6) = M1;
+ 162  2  DM(-22, I6) = M2;
+ 164  2  DM(-23, I6) = M3;
+ 166  2  DM(-24, I6) = B3;
+ 168  2  DM(-25, I6) = I13;
+ 170  2  DM(-26, I6) = M5;
+ 172  2  DM(-27, I6) = M6;
+ 174  2  DM(-28, I6) = M7;
+ 176  2  DM(-29, I6) = M13;
+ 178  2  DM(-30, I6) = M14;
+ 180  2  DM(-31, I6) = M15;
+ 182  2  DM(-32, I6) = L0;
+ 184  2  DM(-33, I6) = L1;
+ 186  2  DM(-34, I6) = L2;
+ 188  2  DM(-35, I6) = L3;
+ 190  3  R3 = DM(_dv_sv_l4);
+ 193  2  DM(-36, I6) = R3;
+ 195  2  DM(-37, I6) = L5;
+ 197  2  R3 = MODE1;
+ 199  2  DM(-38, I6) = R3;
+ 201  2  M5 = 0;
+ 203  2  M6 = 1;
+ 205  2  M7 = -1;
+ 207  2  M13 = 0;
+ 209  2  M14 = 1;
+ 211  2  M15 = -1;
+ 213  2  L0 = 0;
+ 215  2  L1 = 0;
+ 217  2  L2 = 0;
+ 219  2  L3 = 0;
+ 221  2  L5 = 0;
+ 223  3  BIT CLR MODE1 0x20A000;
+ 226  3  BIT SET MODE1 0x10000;
+ 229  1  NOP;
+ 230  2  R3 = 32;
+ 232  1  R3 = R3 - R14;
+ 233  3  R3 = LSHIFT R3 BY 8;
+ 236  3  R5 = LSHIFT R1 BY 16;
+ 239  1  R3 = R3 OR R5;
+ 240  3  DM(_dv_bcw) = R3;
+ 243  2  R3 = 2;
+ 245  3  CALL _dv_crumb;
+      ...  CALL _dv_crumb enters _dv_crumb (short word 443)
+ 443  3  _dv_crumb      R5 = DM(_dv_bcw);
+ 446  1  R3 = R3 OR R5;
+ 447  3  I4 = _dv_diag;
+ 450  2  DM(12, I4) = R3;
+ 452  3  I4 = _dv_rec;
+ 455  2  R5 = DM(0, I4);
+ 457  1  R5 = PASS R5;
+ 458  3  IF EQ JUMP _dv_cb;
+ 461  2  I4 = R5;
+ 463  3  DM(192, I4) = R3;
+```
+
+What could differ on silicon, group by group (PRM = `out/refs/sharc-plus-prm`, page = printed page, file `pages/pNNNN.txt`):
+
+| instructions | rule or hardware fact | the emulator | verdict |
+| --- | --- | --- | --- |
+| 125 `I12 = R2` | none | functional | no |
+| 127 `MODIFY(I7, -40) (NW)` (stock: -26) | I7 is a circular register: a modify wraps by L7 and L7 = 0 with CBUFEN would raise CB7I at every change (6-31, p0215). Measured L7 = 0x3e2 words, B7 = 0x2ca5a0, I7 = 0x2cb2c0: I7 is 0xd20 bytes above B7, the modify is 160 bytes | wraps are modelled | no |
+| 130-199 35 stores `DM(-6 .. -38, I6)`, `R3 = DM(_dv_sv_l4)`, `R3 = MODE1` | the same form (Type 15b, 8-bit signed offset) as the stock stores `DM(I6 - 26 .. -4)` (`9d0802e7` for -25 in the stock image, `9d0801fa` for -6 here). **No store at or below SP before SP moves**: the `MODIFY` is the second instruction of the path, the stores follow it, and the lowest word written is I6 - 38 words against the new I7 = I6 - 42 words. A nested interrupt cannot overwrite the frame: the kernel's context save (`blk69@0xb88200`) does `I7 = modify(I7, -0x81)` first and then writes `DM(I7 + n)`, all below the interrupted I7 | interrupts are not delivered at arbitrary points (9.3) | no |
+| 201-221 11 register loads: M5, M6, M7, M13, M14, M15 = constants, L0-L3, L5 = 0 | a load of a register that the next instruction uses stalls, interlocked (4-64, p0167). All six register-bank selects are set (MODE1 0x39011cf8), so the writes go to the secondary set (6-29, p0213: a one cycle latency applies to a change of the selects, not to these writes). CBUFEN is on: a zero L register makes I0-I5 linear; only L7 = 0 and L15 = 0 are special (p0215). The values equal the measured context except L0-L5 (not measured) | bank model: yes | no, but see below |
+| 223 `BIT CLR MODE1 0x20A000`, 226 `BIT SET MODE1 0x10000`, 229 `NOP` | identity on the measured MODE1 (finding 49 8.1). Two read-modify-writes of MODE1 in a row; the stock image follows each of its MODE1 writes with a `NOP` (`0x1c4f3e`, `0x1c4f48`). The latency of IRPTEN and NESTM is up to one cycle (4-75, p0178); an interrupt entry pushes MODE1 and RTI restores it | bank-select latency yes; the other bits take effect at once | not a rule broken; the only system-register write on the path and new on the device |
+| 230-243 `R3 = 32 ... DM(_dv_bcw) = R3`, `R3 = 2` | an absolute store to L2 (write-back D-cache, 8-2, p0262, not modelled); the stock-type path and rung A/B store `_dv_diag + 48` the same way | no cache | no |
+| 245 `CALL _dv_crumb` (48-bit, non-delayed, absolute) | non-delayed branch flush (4-17, 4-18); PC stack 30 deep, SOVFI at 29 (4-8, p0111): measured depth 2 to 3 in the emulator (section 4); the predictor wants at least twelve valid 48-bit instructions after a branch inside one memory block and, in VISA, no two branches in a 48-bit window (4-13, 4-14, p0116, p0117): the 69 instructions have **no** such pair (the scan has one pair, 118/122, and stage 5 has one, 290/293: both outside the 69 or run by every voice already). The stock image has 4 non-delayed `CALL`s in 1,718 (all in the context switch and the startup routine) | stack push yes, flush and predictor no | **the one control transfer of a form new to the device on this path** |
+| 443-463 `_dv_crumb`: `R5 = DM(_dv_bcw)` (a load of the word stored 8 instructions earlier), `OR`, `I4 = _dv_diag`, `DM(12, I4) = R3`, `I4 = _dv_rec`, `R5 = DM(0, I4)`, `PASS`, `IF EQ JUMP`, `I4 = R5`, `DM(192, I4) = R3` | the same instructions as the inline body of C2 (which ran on the device) but for the load of `_dv_bcw` and the `CALL` that reaches them. The store at 463 is the stage-2 store | functional | the `CALL`, and the load of `_dv_bcw` |
+
+Reading of the table. **Nothing in the 69 instructions breaks a rule of the manual on the measured context**, and no store goes below SP. What is left is not a rule but a
+list of things that are new to silicon here and that the emulator cannot show: the non-delayed `CALL`, the back-to-back `MODE1` read-modify-writes, nested interrupts
+inside a 160-byte-deep frame, the L0-L5 writes in a context whose L values were never measured, and plain code placement (the region 0xbcd871 to 0xbcd980 has never executed).
+The three variants in 9.5 take the first three away one by one; the fine breadcrumbs (9.5) place a halt that remains within a few instructions.
+
+**An unrelated defect found on the way, after stage 7 [D].** The epilogue restores `I3` (offset 156 in the saves) and **then** `B3`. A load of a B register also loads its I
+register (PRM 6-24, p0208, "Circular Buffer Programming Model" step 2), so after the first registered voice returns, `I3` holds `B3`, not the caller's I3. The stock epilogue loads
+`B3` first (`0x1c4f58`) and `I3` later (`0x1c4f7e`). The emulator does not model the I load (`tools/sharc_dev/sharc_core/state.py`, `_write_ureg`, writes only the named register), so no
+emulator proof can see it. It cannot be the halt (it comes after stage 7), but it would corrupt the caller after a first successful dispatch. All C3 variants restore `B3` first
+(`DV_C3_BFIRST`); the default build is unchanged until a device run says the order is the only change needed. **[O]** model the I load in the Python core and the runtime
+(regenerates every core: `CORE_FINGERPRINT`), then the pins show whether stock code relies on the other order; test `test_the_c3_variants_restore_b3_before_i3` pins the source order meanwhile.
+
+### 9.3 The emulator with interrupts between any two instructions **[D]**
+
+What the coupled model delivers today: the core timer and the software interrupts are taken at instruction boundaries wherever the interpreter runs, the SEC line (peripheral
+events) latches SECI at a boundary too, but the **events themselves** (the SPI2 frame exchange, the SPORT block, link port 0) are produced by the host between runs of the core, at a
+fixed phase of the audio period (`sharc_peer.rs`, `exchange`, `render`). Where a render is running at such a point depends on one phase constant; a short routine is hit rarely, and
+the same instruction is hit every block. On silicon the SPORT and SPI events come while the voices render.
+
+`SHARC_IRQ_PROBE=LO-HI[,LO-HI...]:MASK[:EVERY]` (hex; `packages/emulator/sharc/src/irq_probe.rs`, `docs/INSTRUMENTATION.md`) latches the IRPTL bits MASK just before the interpreter executes an
+instruction whose PC is in a window, once per visit of that PC (after the interrupt returns to the same PC it moves on), for every EVERY-th visit. The core's own entry rules decide
+(IMASK, IRPTEN, NESTM, delayed-branch slots, loop ends) and the firmware's handler runs. Default off; with it off the engine does what it did (one `Option` test per step). The
+patched code runs in the interpreter, so every boundary is visited. Scenario key `[rungc] irq_probe = "tick" | "sft3" | "both" | HEXMASK` (+ `irq_every`), scenario `rung-c-irq`:
+
+- Windows: the registered path (from `_dv_scan + 15`, the `I12 = R2`, to `_dv_stock`) and `_dv_crumb` to `_dv_exp2`. The stock path runs for all 32 voices and would swamp the core
+  (a first run with the whole wrapper never became ready). Mask `0x80400000`: TMZHI (the kernel tick) and SFT3I (the kernel's context switch, `0x1c0a70` and `blk69@0xb88200`). EVERY = 7, which rotates
+  over all positions across blocks.
+- Result, rung C image (`ac72f220...`), DT2 1.17, full tier, 287 s: **PASS**. In the emulator that held the note: **1,450,094 latches, 2,879,241 interrupts taken** (SECI 167,373, TMZHI
+  1,318,740, SFT3I 1,393,128), the pluck's dispatches 19,574 and returns 19,574, heartbeats rise, no `DSP_STOPPED`, no stray write. The scenario fails if fewer than 10,000 interrupts were latched, so a pass cannot be a run in which the probe did nothing.
+- **A kernel tick or a context switch between any two instructions of the registered path does not reproduce the halt.** **[O]** What the probe does not give: DMA or SEC interrupt handlers
+  (a SECI needs a pending source in the SEC; the handler reads the SID), the 11-stage pipeline (flushes, the 12-instruction rule), the branch predictor, write buffers and caches, the
+  parity checks of MODE1 bits 27 to 29 (IPERREN, DPERREN, SPERREN) on memory that was never written. The model that reproduces the halt does not exist yet.
+
+### 9.4 Build options of `core/dsp-voice` for rung C3 **[D]**
+
+All in the one source file (`#ifdef`, as `DV_BISECT_C2`); with no option the preprocessed text is byte-identical to the old (`pk_build build modules/core/dsp-voice --check` says current for both devices).
+
+| option | what it does |
+| --- | --- |
+| `DV_C3_FINE` | three more breadcrumbs written **inline** (no `CALL`, same body as C2's) on the registered path: stage 8 `C3_TYPE_MATCHED` right after the scan matched, 9 `C3_FRAME_SAVED` after the 35 stores, 10 `C3_CONTEXT_PINNED` after the pins, before the `CALL` of stage 2. They go into `_dv_diag` and both reply records like stages 2 to 7, so a halt names its zone: last stage 1 = before offset 125 or in the first breadcrumb; 8 = `MODIFY`/stores; 9 = the pins; 10 = the `CALL` and the crumb's first instructions; 2 = past the `CALL`. `tools/device/dklog.py` names them; the ABOUT page shows them as `?` |
+| `DV_C3_BFIRST` | restores `B3` before `I3` in the epilogue (9.2, last paragraph) |
+| `DV_C3_DB` | every `CALL _dv_crumb` is `CALL (DB)` with two `NOP` slots and every `RTS` (the crumb's and the three helpers) is `RTS (DB)` with two `NOP` slots: the delayed forms the stock image uses (1,714 of its 1,718 calls, all 1,001 returns) |
+| `DV_C3_NOIRQ` | clears MODE1.IRPTEN (0x1000) right after the first breadcrumb and puts the entry MODE1 (read before) back in the epilogue: no interrupt between the stores and the end of the voice |
+| `DV_C3_NOSYS` | drops the `BIT CLR`/`BIT SET MODE1`/`NOP` and the epilogue's `MODE1 = R0`: no MODE1 write on the path (right on the measured context, where the three bits are already 0 and RND32 already 1; wrong in a context with other bits, so a measurement variant, not a fix) |
+
+Variants (each with `DV_C3_FINE,DV_C3_BFIRST`): **a** + `DV_C3_DB`, **b** + `DV_C3_NOIRQ`, **c** + `DV_C3_NOSYS`.
+
+### 9.5 The device images and their proofs **[D]**
+
+Built with `tools/patchkit/pk_variant.py` and `DIGI_PK_ROOT` (docs/PATCHING.md "Rung C3"), the rung C module list, base `Digitakt_II_OS1.17.syx` (sha256 `26c22f66...`). All three: 1,885,472 bytes,
+`PREFLIGHT OK`, sections 3 and 7 differ from stock and nothing else. The module is the same `dyn-pluck-dt2.dkm` (sha256 `e66c4660...`).
+
+| variant | image (not committed) | sha256 |
+| --- | --- | --- |
+| a delayed CALL/RTS | `out/patch/rungC3a-dt2-1.17.syx` | `56d1f9945e09c2dab2980a0f80c1084efd86a941fc9e10d8b600fa137c353d55` |
+| b interrupts masked | `out/patch/rungC3b-dt2-1.17.syx` | `5dd9e7a7c459f72e1550069bc66b55023c4e1a3ce39c12ab4f6ea59127834c4e` |
+| c no MODE1 write | `out/patch/rungC3c-dt2-1.17.syx` | `aaa9f365b229a5a74c0eb5a605f30dd9246786211fa84d96a7ab6c6ffe00c906` |
+
+Emulator proofs, each variant (DT2 1.17):
+
+- Scenarios `rung-c3a`, `rung-c3b`, `rung-c3c` (full tier, 254 to 259 s, the images above): **PASS**. Upload, menu, restart, run-time pluck on track 1, 12 s note: 19,574 dispatches and as many returns,
+  no `DSP_STOPPED`, and **the note equals the patched-in pluck of the same wrapper sample for sample** (96,000 samples, exact).
+- `pk_proof_voice --only type0,sine60 --quick` on a `core/dsp-voice,test/sine-voice` image of each variant: PASS (patched type 0 bit-identical to stock; the sine at the right pitch).
+- `tests/patchkit/test_dsp_voice.py`: 139 passed on the edited tree, with the new tests: the variants keep the registered path (even and odd voices, the callee-saved registers, the breadcrumbs 8, 9, 10 in order,
+  then 7), b masks IRPTEN inside and restores MODE1 (hostile MODE1 included), c has no MODE1 write on the registered path, the `B3`/`I3` order.
+- The ruff and mypy lists pass; `tests/devtools/test_render_inputs.py` still fails only on the file-read counts it failed on before (section 7).
+
+### 9.6 Which to try first, and how to read the outcomes
+
+Order **a, b, c**; probabilities are judgement, not measurement: a about 40 %, b about 25 %, c about 10 %, none of the three (the breadcrumb then names the zone) about 25 %. Why a first: the `CALL` is the
+only control transfer of a new form on the path, the C2 run that passed differs from rung C by exactly the `CALL` (plus the registered prologue), and Em's report of a dead DSP after a reboot with the track on
+type 18 and no module loaded (the stage 3 path, which has the `CALL` and none of the registered prologue) points at it too (not in a saved log **[O]**). It is also the only variant that needs no assumption about the context.
+One device run per variant, hold TRIG 1 for 60 s, keep the log. All three carry the fine breadcrumbs, so a run that still halts is not wasted.
+
+| run | outcome | reading | next |
+| --- | --- | --- | --- |
+| a | no halt, pluck sounds, `dispatches` = `returns` | the non-delayed `CALL`/`RTS` was the cause (or the layout it implies); keep the delayed forms. The pluck routine's own `CALL _dv_exp2` is still non-delayed and played | make `DV_C3_DB` the default after one more clean run |
+| a | halts, last crumb stage 10 | the `CALL`, even delayed, or the first instructions of `_dv_crumb` (the load of `_dv_bcw`) | variant with the stage-2 breadcrumb inline (no `CALL`, no `_dv_bcw` load): the C2 body on the registered path |
+| a | halts, last stage 9 | the pins: MODE1 or L/M writes | run c; if c halts at 9 too, the L0-L5 writes |
+| a | halts, last stage 8 | the `MODIFY` or the 35 stores | run b (interrupts); then a variant with a smaller frame |
+| a | halts, last stage 1 | before the first fine breadcrumb: the last scan branch, `I12 = R2`, or the breadcrumb 8 itself | layout or placement: move the wrapper (a padding option), not a suspect in this list |
+| a halted, b | no halt | a nested interrupt landed in the registered path (9.3 found none in the model) | keep IRPTEN masked or find the handler that overwrites |
+| a, b halted, c | no halt | the MODE1 writes | drop them, pin the three bits only when the entry MODE1 differs (`dl_diag` shows the device's: `0x39011cf8`) |
+| a, b, c halted | same stage each time | the cause is in the zone the stage names; next the variants for that zone (inline crumb, smaller frame, no L writes) | |
+
+A pass in any variant can be the removed suspect or the changed layout; if a variant passes, the cheap control is the same variant with the option replaced by `NOP`s of the same size.
+Flash back with the stock file after a halt; **set track 1 to a stock machine before the next boot** (a project that holds type 18 on a track halts the DSP again when the module is loaded, finding 47).
+
+### 9.7 Open items
+
+1. The model that reproduces the halt does not exist. Next candidates for it: the SPORT/SPI events delivered at a configurable fine phase inside the render (`rx_phase` exists; a second knob for the SPORT block), parity errors on never-written memory
+   (`SHARC_UNINIT` covers data reads; instruction fetch is not covered), the branch-predictor rules.
+2. `B`-register loads do not load the I register in the emulator (9.2): model it, or keep the source-order test.
+3. The default `core/dsp-voice` still has the `B3`/`I3` order of 9.2 and the non-delayed forms; decide after the device runs.
+4. `dl_diag`'s L registers: `L0`-`L5` of the voice context were never measured (only L7); the C3 images do not add them. A one-line addition to `_dv_diag` would.
+5. The same wrapper logic for the Digitone II (`dsp-voice-dn2.s`) has no `B3` save, no breadcrumbs and no C3 options; not looked at further.
+6. ABOUT shows stages 8 to 10 as `?` (the menu's text table is in the runtime; the log names them).

@@ -45,6 +45,10 @@ CRUMB_STAGES = {
     5: "ROUTINE_RETURNED",
     6: "ODD_COPY_DONE",
     7: "EPILOGUE_DONE",
+    # the fine breadcrumbs of the rung C3 builds (DV_C3_FINE, finding 49 section 9), written inline before the CALL of stage 2
+    8: "C3_TYPE_MATCHED",
+    9: "C3_FRAME_SAVED",
+    10: "C3_CONTEXT_PINNED",
 }
 # The 17 words of dl_diag (modules/core/dsp-link/README.md), in order.
 DIAG_NAMES = (
