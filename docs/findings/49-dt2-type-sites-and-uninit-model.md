@@ -442,12 +442,15 @@ Flash back with the stock file after a halt; **set track 1 to a stock machine be
 ## 10. The cause candidate in the frame save: 17 stores the ISA does not have (Lane b, 2026-10-19)
 
 Question (after the device run of rung C3a, finding 47: the SHARC stops after fine stage 8 and before stage 9): which instruction of `MODIFY(I7, -40)`, the 35 frame stores,
-`R3 = DM(_dv_sv_l4)`, `R3 = MODE1` stops it. Static and emulator work only; nothing was sent to a device. Marks: **[D]** read or measured once here, **[O]** open; nothing is **[V]**.
+`R3 = DM(_dv_sv_l4)`, `R3 = MODE1` stops it. Static and emulator work only; nothing was sent to a device. Marks: **[D]** read or measured once here, **[O]** open; 10.1-10.3 are **[V]** (second agent, 2026-10-19).
 **Result: 17 of the 33 stores are not instructions of the ISA.** The assembler and the emulator accept them; the stock image has none. This is a strong candidate, not a proof (10.5).
 
-### 10.1 The rule **[D]**
+### 10.1 The rule **[V]**
 
-A store through DM cannot take a DAG1 register as its source, and a store through PM cannot take a DAG2 register. The manual encodes the source of such a store as a register
+A store through an index register (Types 15a, 15b, 3a, 3b, 3d) cannot take a register of the same DAG as its source: through DM (a DAG1 index) not a DAG1
+register, through PM not a DAG2 register. The direct-address form Type 14a (`DM(<addr32>) = Ureg`, p.14-x, `p0382`) takes the full `UREG` class and is exempt; the stock image
+has 304 such DM stores of DAG1 registers, which are legal. (Second-agent check, 2026-10-19: the encode tables and the quoted text, pages as below; the post-modify load of a
+same-DAG register, Type 3a `UREGXDAG1 = dm(I1,M1)`, is also excluded, so "loads are allowed" holds for the pre-modify and immediate forms only.) The manual encodes the source of such a store as a register
 class that leaves the same-DAG registers out, and says it in words:
 
 - Type 15a (`DM(<data32>,Ia) = Ureg`), PRM p.15-7 (file `p0387`): the encode table lists the DM store as `dm(imm32, I1REG) = UREGXDAG1` and the PM store as `pm(imm32, I2REG) = UREGXDAG2`;
@@ -457,14 +460,14 @@ class that leaves the same-DAG registers out, and says it in words:
 - What the silicon does with the excluded encodings is not in the public manual. The manual lists an illegal-opcode interrupt (ILOPI, level 4, Table 4-45, `p0172`; "Illegal Opcode Error Detection for Instruction Fetch", 9-2, `p0278`),
   which is what a register code outside the class would raise if the core checks it. **[O]** which of the three it is (ILOPI, a silent wrong store, a hang) is not decided here; all three stop a voice.
 
-### 10.2 What the stock image does **[D]**
+### 10.2 What the stock image does **[V]** (index-register forms)
 
 Decoded stock instructions (`sharcdb`, `dt2-1.17`, forms 15a, 15b, 3b, confident, aligned), the register in the store's `ureg` field and the `g` (PM) / `d` (store) bits:
 
 | instruction | count in the DT2 1.17 DSP image |
 | --- | ---: |
 | DM store of a DAG2 register (`DM(I6 - 3) = I12`, `DM(I5 + 13) = M13`, `DM(I6 - 23) = L8`) | 1,573 |
-| **DM store of a DAG1 register** | **0** |
+| **DM store of a DAG1 register through an index register** (15a, 15b, 3a, 3b, 3d) | **0** |
 | PM store of a DAG1 register (`PM(I12 + 0x72) = L0`, the kernel's context save) | 32 |
 | PM store of a DAG2 register | 1, at 0x16b8fe, inside a data table (offset `0xb8bea3`) |
 | DM loads into DAG1 registers (`M3 = DM(I6 - 6)`) | 2,101 + 13 + 272 |
@@ -474,9 +477,9 @@ So the stock code never stores M0-M7, I0-I7, L0-L7 or B0-B7 with a DM store, and
 while its DAG2 registers go straight (`DM(I6 - 23) = L8` ... `DM(I6 - 16) = L15`). The DN2 1.12 image has 105 DM stores of DAG1 registers by the same decoder, all at 0xb8f6c9 to 0xb97752, outside every
 function of the database (data decoded as code, offsets such as `-0x578f5835`); none in code. Both images follow the rule everywhere the decoder is confident.
 
-### 10.3 The 17 stores in the registered path **[D]**
+### 10.3 The 17 stores in the registered path **[V]**
 
-Offsets of finding 9.2 (short words). Everything else on the path is legal: the ten R-register stores (130-148), `I13` (168) and `M13`-`M15` (176-180), the loads and `R3 = MODE1`.
+Offsets of finding 9.2 (short words) in the default object (built without `DV_C3_FINE`; the FINE build's offsets are shifted by its breadcrumb blocks). Everything else on the path is legal: the ten R-register stores (130-148), `I13` (168) and `M13`-`M15` (176-180), the loads and `R3 = MODE1`.
 
 | offset | instruction | class |
 | --- | --- | --- |
@@ -487,7 +490,7 @@ Offsets of finding 9.2 (short words). Everything else on the path is legal: the 
 | 182-188 | `DM(-32 .. -35, I6) = L0, L1, L2, L3` | DAG1 |
 | 195 | `DM(-37, I6) = L5` | DAG1 |
 
-The first is at offset 150, `DM(-16, I6) = I0`, the 12th instruction after the stage-8 breadcrumb (the `MODIFY` and ten legal stores come first): **inside the zone between stage 8 and stage 9, where rung C3a stopped**. The build now
+The first is at offset 150, `DM(-16, I6) = I0`, the 12th instruction after the stage-8 breadcrumb in the FINE build's source order (the `MODIFY` and ten legal stores come first): **inside the zone between stage 8 and stage 9, where rung C3a stopped**. The build now
 says so: `pk_build` prints `WARNING ... 17 store(s) the ISA does not allow` for the default `core/dsp-voice` DT2 object and for the DN2 object (`pk_sharc.ureg_class_problems`, called in `verify` for every instruction;
 the committed objects are unchanged). The epilogue only loads these registers, which is legal.
 
