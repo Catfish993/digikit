@@ -438,3 +438,105 @@ Flash back with the stock file after a halt; **set track 1 to a stock machine be
 4. `dl_diag`'s L registers: `L0`-`L5` of the voice context were never measured (only L7); the C3 images do not add them. A one-line addition to `_dv_diag` would.
 5. The same wrapper logic for the Digitone II (`dsp-voice-dn2.s`) has no `B3` save, no breadcrumbs and no C3 options; not looked at further.
 6. ABOUT shows stages 8 to 10 as `?` (the menu's text table is in the runtime; the log names them).
+
+## 10. The cause candidate in the frame save: 17 stores the ISA does not have (Lane b, 2026-10-19)
+
+Question (after the device run of rung C3a, finding 47: the SHARC stops after fine stage 8 and before stage 9): which instruction of `MODIFY(I7, -40)`, the 35 frame stores,
+`R3 = DM(_dv_sv_l4)`, `R3 = MODE1` stops it. Static and emulator work only; nothing was sent to a device. Marks: **[D]** read or measured once here, **[O]** open; nothing is **[V]**.
+**Result: 17 of the 33 stores are not instructions of the ISA.** The assembler and the emulator accept them; the stock image has none. This is a strong candidate, not a proof (10.5).
+
+### 10.1 The rule **[D]**
+
+A store through DM cannot take a DAG1 register as its source, and a store through PM cannot take a DAG2 register. The manual encodes the source of such a store as a register
+class that leaves the same-DAG registers out, and says it in words:
+
+- Type 15a (`DM(<data32>,Ia) = Ureg`), PRM p.15-7 (file `p0387`): the encode table lists the DM store as `dm(imm32, I1REG) = UREGXDAG1` and the PM store as `pm(imm32, I2REG) = UREGXDAG2`;
+  the loads use the full `UREG` class. Type 15b (`<data7>`, the form of `DM(-16, I6) = ...`), p.15-10 (`p0390`): the same four lines with `imm7visa`.
+- The text, p.15-8 (`p0388`) and p.15-11 (`p0391`): "The Ureg may not be from the same DAG (that is, DAG1 or DAG2) as Ia/Mb or Ic/Md." Types 3a and 3b say the same, p.13-13 (`p0313`), p.13-16 (`p0316`).
+- `DM(I6 - n)` addresses through I6, a DAG1 register, so its source may be anything but I0-I7, M0-M7, L0-L7, B0-B7. Loads of those registers are allowed (the stall rule of Table 4-44, `p0172`, applies to them).
+- What the silicon does with the excluded encodings is not in the public manual. The manual lists an illegal-opcode interrupt (ILOPI, level 4, Table 4-45, `p0172`; "Illegal Opcode Error Detection for Instruction Fetch", 9-2, `p0278`),
+  which is what a register code outside the class would raise if the core checks it. **[O]** which of the three it is (ILOPI, a silent wrong store, a hang) is not decided here; all three stop a voice.
+
+### 10.2 What the stock image does **[D]**
+
+Decoded stock instructions (`sharcdb`, `dt2-1.17`, forms 15a, 15b, 3b, confident, aligned), the register in the store's `ureg` field and the `g` (PM) / `d` (store) bits:
+
+| instruction | count in the DT2 1.17 DSP image |
+| --- | ---: |
+| DM store of a DAG2 register (`DM(I6 - 3) = I12`, `DM(I5 + 13) = M13`, `DM(I6 - 23) = L8`) | 1,573 |
+| **DM store of a DAG1 register** | **0** |
+| PM store of a DAG1 register (`PM(I12 + 0x72) = L0`, the kernel's context save) | 32 |
+| PM store of a DAG2 register | 1, at 0x16b8fe, inside a data table (offset `0xb8bea3`) |
+| DM loads into DAG1 registers (`M3 = DM(I6 - 6)`) | 2,101 + 13 + 272 |
+
+So the stock code never stores M0-M7, I0-I7, L0-L7 or B0-B7 with a DM store, and where it must save them it goes through a data register: the render function `FUN_1c4ecf` has
+`R2 = M1; DM(I6 - 16) = R2`, `R2 = B3; ...`, `R2 = I0; ...`, and the kernel's context save (`FUN_1c02a4`, 0x1c03ed to 0x1c040f) has `R0 = B4`, `R0 = L0 ... R0 = L5` each followed by `DM(I6 - n) = R0`,
+while its DAG2 registers go straight (`DM(I6 - 23) = L8` ... `DM(I6 - 16) = L15`). The DN2 1.12 image has 105 DM stores of DAG1 registers by the same decoder, all at 0xb8f6c9 to 0xb97752, outside every
+function of the database (data decoded as code, offsets such as `-0x578f5835`); none in code. Both images follow the rule everywhere the decoder is confident.
+
+### 10.3 The 17 stores in the registered path **[D]**
+
+Offsets of finding 9.2 (short words). Everything else on the path is legal: the ten R-register stores (130-148), `I13` (168) and `M13`-`M15` (176-180), the loads and `R3 = MODE1`.
+
+| offset | instruction | class |
+| --- | --- | --- |
+| 150-158 | `DM(-16 .. -20, I6) = I0, I1, I2, I3, I5` | DAG1 |
+| 160-164 | `DM(-21 .. -23, I6) = M1, M2, M3` | DAG1 |
+| 166 | `DM(-24, I6) = B3` | DAG1 |
+| 170-174 | `DM(-26 .. -28, I6) = M5, M6, M7` | DAG1 |
+| 182-188 | `DM(-32 .. -35, I6) = L0, L1, L2, L3` | DAG1 |
+| 195 | `DM(-37, I6) = L5` | DAG1 |
+
+The first is at offset 150, `DM(-16, I6) = I0`, the 12th instruction after the stage-8 breadcrumb (the `MODIFY` and ten legal stores come first): **inside the zone between stage 8 and stage 9, where rung C3a stopped**. The build now
+says so: `pk_build` prints `WARNING ... 17 store(s) the ISA does not allow` for the default `core/dsp-voice` DT2 object and for the DN2 object (`pk_sharc.ureg_class_problems`, called in `verify` for every instruction;
+the committed objects are unchanged). The epilogue only loads these registers, which is legal.
+
+### 10.4 The suspects, ranked **[D]**
+
+1. **The 17 DAG1-register stores** (150-195; first `DM(-16, I6) = I0`). The ISA has no such instruction (10.1), the stock image has none (10.2), nothing else in the zone differs from what stock does, and the halt zone starts 11 instructions before the first and holds all of them. Not seen by the emulator, whose decoder and store path take any register.
+2. **The head of the stage-9 breadcrumb** (11 instructions up to its first record store). Same code as stage 8's, which ran, with the same registers (R3, R5, I4) and a load of `_dv_bcw`; only the context differs (the 35
+   stores are done). Low, but it is the other thing inside the measured zone (a halt before `DM(192, I4) = R3` of stage 9 shows as stage 8).
+3. **`R3 = MODE1`** (197). A read of a system register; the entry code reads it into R1 at voice 0 and runs (the diagnostic word 11). No hazard in the manual. Very low.
+4. **`MODIFY(I7, -40) (NW)`** (127). I7 = 0x2cb2c0 is *outside* the circular buffer: B7 + L7 = 0x2ca5a0 + 0x3e2 = 0x2ca982, so I7 is 0x93e words above its end (finding 9.2 and 8.2 called it "inside" by comparing with B7 only).
+   The wraparound equations (PRM p.6-25, `p0209`) wrap a negative modify only when `I + M < B`; here the result 0x2cb298 is far above B7, so there is no wrap and no CB7I (p.6-30/6-31). The stock renderer does `MODIFY(I7, -26)` in the
+   same context, with the same I7; only the constant differs. The positive stock modifies of I7 (+2, +4, +6: 219 in the image) would wrap by -L if I7 were above the end in their contexts, which says nothing about this one **[O]**.
+   Very low.
+5. **The 33 stores' addresses** (0x2cb2a2 to 0x2cb2c2: between the new I7 = 0x2cb298 and I6 = 0x2cb2c8): below the interrupted frame, the addresses we know of (the reply records 0x266220 and 0x267220, the type cache 0x255970, the frame copy 0x2558dc) are in block 0; a reference to this stack area from DMA was not looked for **[O]**. A store never reads, so the parity check of MODE1 bits 27 to 29 (p.9-1, `p0277`: it acts on reads) cannot fire on a first write. The `DM(-6 .. -15, I6)` stores run in
+   stock's own range (`FUN_1c4ecf` stores at I6-4 to I6-26). Very low.
+6. **`R3 = DM(_dv_sv_l4)`** (190): an absolute load of a word the same hook wrote at its entry, the same form the stock-type path runs (`_dv_stock_go`, which rung B and C2 ran on the device). No.
+7. **System-register reads right after writes**: none in the zone. The first MODE1 write is at offset 223, after the zone; `R3 = MODE1` follows only loads and stores.
+
+### 10.5 Two builds and a third, and what to expect **[D]**
+
+Options of `core/dsp-voice` (docs/PATCHING.md "Rung C3d"), all in the one source, the preprocessed text with no option is byte-identical to the old (`pk_build build --check` says current for both devices; the C3 variants'
+text is unchanged):
+
+| option | what it does |
+| --- | --- |
+| `DV_C3_VIAR` | each of the 17 stores becomes `R2 = reg; DM(n, I6) = R2;` (R2 is free there: the routine pc has moved to I12), as the stock code does. The frame layout, the epilogue and everything else are unchanged. |
+| `DV_C3_DEEP` | twelve more inline breadcrumbs (stages 11 to 22, `R0`, `R2` and `I4` only, so nothing the frame save has not stored yet is touched): after the MODIFY (11), after the R-register stores (12), after `I0` (13), `I1`-`I5` (14), `M1`-`M3` (15), `B3`+`I13` (16), `M5`-`M7` (17), `M13`-`M15` (18), `L0`-`L3` (19), after the `_dv_sv_l4` load (20), after `L5` (21), after `R3 = MODE1` (22). Needs `DV_C3_FINE`. Do not combine with `DV_C3_NOIRQ` (both use R0). `tools/device/dklog.py` names them. |
+
+Images (not committed), base `Digitakt_II_OS1.17.syx` (`26c22f66...`), module list of rung C, all `PREFLIGHT OK`; options `DV_C3_FINE,DV_C3_BFIRST` plus:
+
+| variant | options | image | bytes | sha256 |
+| --- | --- | --- | ---: | --- |
+| d1 | `DV_C3_DEEP` | `out/patch/rungC3d1-dt2-1.17.syx` | 1,885,728 | `3972e3929bbcde01a3719496b860ecc6c760334be94ee4023df412f6fa6515cf` |
+| d2 | `DV_C3_VIAR` | `out/patch/rungC3d2-dt2-1.17.syx` | 1,885,600 | `18d7a6d56c537d3df664a5b5edf2931d74ac676b537ad1a318b78d30973cb94b` |
+| d3 | `DV_C3_VIAR,DV_C3_DEEP` | `out/patch/rungC3d3-dt2-1.17.syx` | 1,885,728 | `0840b3bba8c32fbda7fd7fb98b923b76fb9b411d90efa8c3a9e7a789c860f0fa` |
+
+Emulator proofs (DT2 1.17, full tier, scenarios `rung-c3d1`, `rung-c3d2`, `rung-c3d3`): see the table in the section "Rung C3d" of docs/PATCHING.md; each is the rung C flow (upload, menu, restart, run-time pluck on track 1, 12 s note) and must
+show 19,574 dispatches and as many returns, no `DSP_STOPPED`, the note equal to the patched-in pluck. `tests/patchkit/test_dsp_voice.py`: the deep breadcrumbs come in order at their labels for d1 and d3, the VIAR builds have no
+DAG1 store on the path and the default has 17, the object-level check agrees (17 / 0), and the existing C3 tests run on the three new variants too.
+
+**Which to run first: d2.** It changes only the 17 stores. If the cause is the stores, d2 plays the pluck. d1 is the confirmation of the mechanism (the illegal stores kept, the halt placed to the instruction group: expected last
+breadcrumb 12, the `I0` store) and is worth a run only if d2 halts or if a proof of the cause is wanted before the default is changed. d3 is the fallback that finds a second problem behind the first: it carries the fix and the
+breadcrumbs. The default `core/dsp-voice` is **not** changed here (it still has the 17 stores and the DN2 wrapper has the same ones, section 10.6).
+
+### 10.6 Open items
+
+1. A device run decides it (d2; d1 if the mechanism is to be shown). Marks stay **[D]** until a second agent has checked 10.2's counts against the image bytes and a device run has agreed.
+2. **If d2 plays:** change the default (`DV_C3_VIAR` always on, the option dropped), and fix `dsp-voice-dn2.s` (`DM(15 .. 25, I4) = I0 .. M4` at lines 69-79 and `DM(0 .. 10, I4) = M5 ... L5` at 157-167; I4 is DAG1, the sources I0-I3, I5, M1-M4, M5-M7, L0-L3, L5 are DAG1: 17 stores). The Digitone II has never run these on a device.
+3. **The emulator should refuse the instruction.** A store whose source the class excludes is accepted by `tools/sharc_dev/sharc_core` and by the runtime; making it raise the illegal-opcode path (or at least stop with a log line) would have
+   caught this in the rung C emulator run. It changes `CORE_FINGERPRINT` (regenerate the cores), so it is a separate piece of work; `pk_sharc.ureg_class_problems` already checks every assembled instruction.
+4. The silicon's reaction to the excluded encodings (ILOPI, wrong store, hang) is not public; d1's last breadcrumb tells it only as "stopped in that group".
+5. Other forms with a class: `Ureg` restrictions of Type 3a/3b (post-modify) and the `DM`/`PM` loads into the same DAG's I/M/B/L (allowed, with a stall) were not audited beyond the counts of 10.2; the checker covers 15a/15b/3b/3a by the `d`, `g` and `ureg` fields only.

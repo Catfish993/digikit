@@ -653,6 +653,74 @@ fine breadcrumb. The ABOUT page shows stages 8 to 10 as `?`.
 
 In the emulator the interrupt probe adds a check of nested interrupts: `[rungc] irq_probe = "both"` in scenario `rung-c-irq` (`SHARC_IRQ_PROBE`, docs/INSTRUMENTATION.md).
 
+### Rung C3d: the 17 stores the ISA does not have (Digitakt II 1.17)
+
+Rung C3a (finding 47) stopped the SHARC after fine stage 8 and before stage 9: inside the registered path's `MODIFY(I7, -40)` and its 35 frame stores. Finding 49 section 10 finds 17 of those stores
+are not instructions of the ISA: a DM store cannot take a DAG1 register (I0-I7, M0-M7, L0-L7, B0-B7) as its source (PRM 15-7, 15-8, 15-10, 15-11, 13-13; the encoding class is UREGXDAG1), the stock image has none, and the first one
+(`DM(-16, I6) = I0`) is the 12th instruction after the stage-8 breadcrumb. Three images, all with the rung C module list, base `Digitakt_II_OS1.17.syx`, options `DV_C3_FINE,DV_C3_BFIRST` plus:
+
+| variant | option | what it does | image | sha256 |
+| --- | --- | --- | --- | --- |
+| **d2** | `DV_C3_VIAR` | the 17 stores go through R2 (`R2 = I0; DM(-16, I6) = R2;`) as the stock code does | `out/patch/rungC3d2-dt2-1.17.syx` | `18d7a6d56c537d3df664a5b5edf2931d74ac676b537ad1a318b78d30973cb94b` |
+| **d1** | `DV_C3_DEEP` | the stores kept as they are; twelve inline breadcrumbs (stages 11 to 22) between them | `out/patch/rungC3d1-dt2-1.17.syx` | `3972e3929bbcde01a3719496b860ecc6c760334be94ee4023df412f6fa6515cf` |
+| **d3** | `DV_C3_VIAR,DV_C3_DEEP` | both | `out/patch/rungC3d3-dt2-1.17.syx` | `0840b3bba8c32fbda7fd7fb98b923b76fb9b411d90efa8c3a9e7a789c860f0fa` |
+
+All three `PREFLIGHT OK` (sections 3 and 7 differ from stock, nothing else); 1,885,600 bytes (d2), 1,885,728 bytes (d1, d3); the module is the unchanged `dyn-pluck-dt2.dkm` (`e66c4660...`). Not part of any shipped image.
+Emulator (scenarios `rung-c3d1`, `rung-c3d2`, `rung-c3d3`, full tier): see "Emulator proof" below. The emulator accepts the excluded stores, so d1 does not halt there; a pass in the emulator says the
+variants keep the path working, not that the cause is found.
+
+**Build** (the `core/dsp-voice` build now prints `WARNING ... store(s) the ISA does not allow` for the default object: expected until the default is changed):
+
+```sh
+for v in d1:DV_C3_DEEP d2:DV_C3_VIAR d3:DV_C3_VIAR,DV_C3_DEEP; do
+  n=${v%%:*}; R=$(uv run python -m tools.patchkit.pk_variant make core/dsp-voice DV_C3_FINE,DV_C3_BFIRST,${v#*:} dv-c3$n)
+  DIGI_PK_ROOT=$R mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC3$n-dt2-1.17.syx
+  DIGI_PK_ROOT=$R mise run preflight -- out/patch/rungC3$n-dt2-1.17.syx    # PREFLIGHT OK
+done
+shasum -a 256 out/patch/rungC3d?-dt2-1.17.syx
+```
+
+**Run** d2 first (then d3 if d2 halts, d1 if the mechanism is to be shown), exactly as "Rung C3": track 1 on a stock machine before flashing, flash the image, choose PLUCK on track 1, hold TRIG 1 for **60 s**, keep the log
+(`follow --once --out out/runs/device-logs/rungC3d2-1.log`) and the ABOUT screen, flash `firmware/Digitakt_II_OS1.17.syx` back (or the next image). `dklog` names the stages 11 to 22.
+
+**Reading the result.**
+
+- **d2, no halt, the pluck sounds, `dispatches` = `returns`:** the cause was the 17 stores. Change the default (`DV_C3_VIAR` on), fix the Digitone II wrapper the same way (finding 49 section 10.6), run once more with the default build.
+- **d2 halts:** the last breadcrumb names the zone as in the table below (d2 carries stages 8, 9, 10 only: last 8 = `MODIFY` or the stores, 9 = the pins, 10 = the `CALL`); then run d3, which has the stages 11 to 22.
+- **d3 or d1, the last breadcrumb, by the instruction group that follows it** (a halt inside the next breadcrumb's own first instructions reads the same way):
+
+| last breadcrumb | the group that did not finish |
+| --- | --- |
+| 8 `C3_TYPE_MATCHED` | `MODIFY(I7, -40)`, or the breadcrumb 11 code |
+| 11 `D_AFTER_MODIFY_I7` | the ten stores `R3` ... `R15` (`DM(-6 .. -15, I6)`; all legal) |
+| 12 `D_AFTER_R_STORES` | **`DM(-16, I6) = I0`**, the first DAG1 store (d1: the expected result) |
+| 13 `D_AFTER_I0_STORE` | `I1`, `I2`, `I3`, `I5` stores |
+| 14 `D_AFTER_I1_I5_STORES` | `M1`, `M2`, `M3` stores |
+| 15 `D_AFTER_M1_M3_STORES` | `B3`, `I13` stores |
+| 16 `D_AFTER_B3_I13_STORES` | `M5`, `M6`, `M7` stores |
+| 17 `D_AFTER_M5_M7_STORES` | `M13`, `M14`, `M15` stores (DAG2, legal) |
+| 18 `D_AFTER_M13_M15_STORES` | `L0` ... `L3` stores |
+| 19 `D_AFTER_L0_L3_STORES` | `R3 = DM(_dv_sv_l4)` |
+| 20 `D_AFTER_SV_L4_LOAD` | `DM(-36, I6) = R3`, `DM(-37, I6) = L5` |
+| 21 `D_AFTER_L4_L5_STORES` | `R3 = MODE1` |
+| 22 `D_AFTER_MODE1_READ` | `DM(-38, I6) = R3` and the head of stage 9 up to its first record store |
+| 9 `C3_FRAME_SAVED` | the pins (`M5 = 0` ... `BIT SET MODE1`) |
+| 10 `C3_CONTEXT_PINNED` | the `CALL` into `_dv_crumb` or its first instructions |
+| 1 `HOOK_ENTERED` | before the stage-8 breadcrumb |
+
+  A halt in a legal group (11, 17, 19, 21, 22) means the DAG1 stores are not the whole story; a halt that moves with the register class in d1 (12, then 13 ... if the first excluded store is tolerated) says which
+  class the silicon refuses. If d3 passes and d2 passes, the deep breadcrumbs cost nothing and either may be kept.
+
+**Emulator proof** (DT2 1.17, the images above, `uv run python -m tools.patchkit.pk_digikit_scen run rung-c3dN --image dt2-1.17 --tier full`):
+
+| scenario | result |
+| --- | --- |
+| `rung-c3d2` | PASS, 241.6 s |
+| `rung-c3d3` | PASS, 242.3 s |
+| `rung-c3d1` | PASS, 234.0 s |
+
+Each is the rung C flow with the run-time pluck on track 1: 19,574 dispatches and as many returns, no `DSP_STOPPED`, write-watch and flush checks clean, the note equal to the patched-in pluck.
+
 ### Status
 
 No patched image has been flashed to a device. Whether and when to flash is the maintainer's decision, every time.

@@ -1,0 +1,13 @@
+# Rung C3 variant d1 of finding 49 section 10 (docs/PATCHING.md "Rung C3d"): the rung C flow with core/dsp-voice built with ["DV_C3_FINE","DV_C3_BFIRST","DV_C3_DEEP"]: the DAG1 register stores kept as they are, deep breadcrumbs 11 to 22 added.
+# The registered path is kept: the run-time pluck dispatches, every call returns, and the note equals the patched-in pluck of the same wrapper.
+[scenario]
+name = "rung-c3d1"
+kind = "rungc"
+devices = ["dt2"]
+images = ["dt2-1.17"]
+tier = "full"
+
+[rungc]
+variant = "core/dsp-voice"
+defines = ["DV_C3_FINE","DV_C3_BFIRST","DV_C3_DEEP"]
+routine = true

@@ -138,6 +138,10 @@ def apply_conditionals(text: str, defines: frozenset[str] = frozenset()) -> str:
     return "\n".join(out)
 
 
+# The stores the last `sharc_object` found whose source register the ISA excludes (pk_sharc.ureg_class_problems); `build_module` reports them.
+UREG_CLASS_WARNINGS: list[str] = []
+
+
 def sharc_object(
     sources: list[Path],
     include_dirs: list[Path] | None = None,
@@ -199,6 +203,7 @@ def sharc_object(
         }
         for r in obj.relocs
     ]
+    UREG_CLASS_WARNINGS[:] = linked.ureg_class
     return {
         "format": FORMAT,
         "arch": "sharc",
@@ -347,6 +352,12 @@ def build_module(
             out.write_text(text)
             n = obj["toolchain"]["instructions_redecoded"]
             messages.append(f"{out}: {n} instructions re-decoded OK")
+            if obj["arch"] == "sharc" and UREG_CLASS_WARNINGS:
+                messages.append(
+                    f"WARNING {out}: {len(UREG_CLASS_WARNINGS)} store(s) the ISA does not allow (finding 49 section 10): "
+                    + "; ".join(UREG_CLASS_WARNINGS[:4])
+                    + (" ..." if len(UREG_CLASS_WARNINGS) > 4 else "")
+                )
     return messages
 
 

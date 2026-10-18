@@ -7,6 +7,7 @@ stack adjustment and R0-R2 / I4 changed; a registered type must run the routine 
 voice) and leave the callee-saved registers as found. The emulator proof is tools/patchkit/pk_proof_voice.py. Skips when
 Selache is not built."""
 
+import re
 import struct
 
 import numpy as np
@@ -409,6 +410,10 @@ C3_VARIANTS = {
     "a-delayed": frozenset({*C3_COMMON, "DV_C3_DB"}),
     "b-noirq": frozenset({*C3_COMMON, "DV_C3_NOIRQ"}),
     "c-nosys": frozenset({*C3_COMMON, "DV_C3_NOSYS"}),
+    # rung C3d (finding 49 section 10): the deep breadcrumbs 11 to 22, the DAG1 register stores through R2, both
+    "d1-deep": frozenset({*C3_COMMON, "DV_C3_DEEP"}),
+    "d2-viar": frozenset({*C3_COMMON, "DV_C3_VIAR"}),
+    "d3-viar-deep": frozenset({*C3_COMMON, "DV_C3_VIAR", "DV_C3_DEEP"}),
 }
 
 
@@ -464,6 +469,77 @@ def test_the_c3_variants_keep_the_registered_path_working(name):
         )
         # none of the fine breadcrumbs counts as a dispatch
         assert out["diag"][13:15] == [0, 0]
+
+
+DEEP_STAGES = tuple(range(11, 23))
+
+
+@pytest.mark.parametrize("name", ["d1-deep", "d3-viar-deep"])
+def test_the_deep_breadcrumbs_come_in_order_inside_the_frame_save(name):
+    """Rung C3d: twelve more inline breadcrumbs (stages 11 to 22) between the MODIFY of I7 and the save of MODE1, each at the label after
+    it, none counted as a dispatch, none touching the registers the frame save has not stored yet (R0, R2, I4 only)."""
+    defines = C3_VARIANTS[name]
+    reads = {"diag": (nw(DIAG), 16), "ra": (nw(RING_A), 0x400 // 4)}
+    rig = CrumbRig(defines)
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    for stage in DEEP_STAGES:
+        out = rig.call(
+            2,
+            extra_reads=reads,
+            ctx="friendly",
+            breaks=(rig.core_linked.symbols[f"_dv_d{stage}b"],),
+        )
+        assert out["diag"][12] == crumb(stage, 2, TYPE), (
+            name,
+            stage,
+            hex(out["diag"][12]),
+        )
+        assert out["ra"][192] == crumb(stage, 2, TYPE)
+        assert out["diag"][13:15] == [0, 0]
+    out = rig.call(2, extra_reads=reads, ctx="friendly")
+    assert stops_at(out, RETURN_SW), out["halt"]
+    context_intact(out)
+
+
+def test_the_viar_variants_store_no_dag1_register_through_dm():
+    """Finding 49 section 10: a store through DM(Ia) cannot take a DAG1 register (UREGXDAG1, PRM 15-7); the stock image has none.
+    The default build has 17 such stores on the registered path (open until a device run says the cause is found), the VIAR builds none."""
+    from tools.patchkit import pk_build, pk_sharc
+
+    def stores(defines):
+        text = pk_build.apply_conditionals(CORE.read_text(), defines)
+        return [
+            ln.strip()
+            for ln in text.splitlines()
+            if re.fullmatch(r"\s*DM\(-?\d+, I6\) = [IMLB]([0-7])\b;.*", ln)
+            and not ln.strip().startswith("//")
+        ]
+
+    assert len(stores(frozenset())) == 17
+    assert stores(C3_VARIANTS["d2-viar"]) == []
+    assert stores(C3_VARIANTS["d3-viar-deep"]) == []
+    pk_build.sharc_object([CORE], [], frozenset())
+    assert len(pk_build.UREG_CLASS_WARNINGS) == 17
+    pk_build.sharc_object([CORE], [], C3_VARIANTS["d2-viar"])
+    assert pk_build.UREG_CLASS_WARNINGS == []
+    # the field-level rule on its own
+    assert pk_sharc.ureg_class_problems({"d": 1, "g": 0, "ureg[6:0]": 0x10}, "x")
+    assert not pk_sharc.ureg_class_problems(
+        {"d": 1, "g": 0, "ureg[6:0]": 0x18}, "x"
+    )  # I8, DAG2
+    assert not pk_sharc.ureg_class_problems(
+        {"d": 0, "g": 0, "ureg[6:0]": 0x10}, "x"
+    )  # a load
+    assert pk_sharc.ureg_class_problems(
+        {"d": 1, "g": 1, "ureg[6:0]": 0x18}, "x"
+    )  # PM store of I8
+    assert not pk_sharc.ureg_class_problems({"d": 1, "g": 1, "ureg[6:0]": 0x10}, "x")
+    assert not pk_sharc.ureg_class_problems(
+        {"d": 1, "g": 0, "ureg[6:0]": 0x05}, "x"
+    )  # R5
 
 
 def test_the_c3_noirq_variant_masks_interrupts_inside_and_restores_mode1():

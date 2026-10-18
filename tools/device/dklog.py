@@ -49,6 +49,19 @@ CRUMB_STAGES = {
     8: "C3_TYPE_MATCHED",
     9: "C3_FRAME_SAVED",
     10: "C3_CONTEXT_PINNED",
+    # the deep breadcrumbs of the rung C3d builds (DV_C3_DEEP, finding 49 section 10), inside the frame save of the registered path
+    11: "D_AFTER_MODIFY_I7",
+    12: "D_AFTER_R_STORES",
+    13: "D_AFTER_I0_STORE",
+    14: "D_AFTER_I1_I5_STORES",
+    15: "D_AFTER_M1_M3_STORES",
+    16: "D_AFTER_B3_I13_STORES",
+    17: "D_AFTER_M5_M7_STORES",
+    18: "D_AFTER_M13_M15_STORES",
+    19: "D_AFTER_L0_L3_STORES",
+    20: "D_AFTER_SV_L4_LOAD",
+    21: "D_AFTER_L4_L5_STORES",
+    22: "D_AFTER_MODE1_READ",
 }
 # The 17 words of dl_diag (modules/core/dsp-link/README.md), in order.
 DIAG_NAMES = (
