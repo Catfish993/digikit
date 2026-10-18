@@ -44,6 +44,35 @@ Tests kept:
   the same). Smoke cells `dt2-1.17:core/machines+machines/xslice` and `...+machines/pluck` pass with unchanged frame goldens (31 checks each); `equiv-dyn-pluck` on
   dt2-1.17 passes (PCM equal after the onset alignment as before). Images built before this change (rung C) do not have the fix: rebuild.
 
+## One SRC page for an added machine (lane srcpage, 2026-10-19) [C]
+
+**[C]** The fix above (both pages are the knob page) is replaced. On the device (Em, 1.17) the run-time pluck then showed two SRC pages with the same content. Decision: **an added
+machine has one SRC page**, unless it has enough parameters to spill onto a second page (not possible, below). All addresses are DT2 1.17; 1.16 has the same ones (each anchor hash is unique).
+
+- **The page list is a vector per view** **[D]**: `ParameterPageView::ctor_dtor` (`0x4006b260`) copies the 4-byte entries of its argument into a vector at view+0x7c (begin), +0x80 (end),
+  +0x84 (capacity) (`SourcePageView::ctor_dtor` `0x4001753a`; stock: two entries); the current page index is view+0x90. `FUN_4006b01e` returns `(end-begin)>>2`.
+  The page dots read the count (`SourcePageView::vfunc_4` `0x40016eac` at `0x40017082`; and inside the shared `ParameterPageView::vfunc_4` `0x4006b0b0` at `0x4006b1ce`, which draws page 0 of the SRC view
+  through `jsr vfunc_4` at `0x400170ae`); the dots are drawn only if the count is more than 1 (`FUN_4006b02e`, 7 px pitch, right edge, pixel x 496 to 511, y 120 to 171).
+  The page keys are UP and DOWN (key codes 0xb, 0xc) and a second tap of SRC: all go through the shared `ParameterPageView::vfunc_2` (`0x4006cf20`), which flips only when the vector holds more than one entry.
+- **Hook** **[D]**: `core/machines` hooks the **first test of `SourcePageView::vfunc_4`**, `0x40016ebc` (function + 0x10, 8 bytes `4aaa0090 670001e8` = `tst.l (0x90,A2); beq.w 0x400170aa`, displaced = drop) with `mf_srcpage`.
+  For `FUN_4005f6bc(view)` (the track's type, signed) `>= machines.first` it clears view+0x90 and sets view+0x80 to begin + 4 (one entry), then takes the knob-page branch `0x400170aa`.
+  For any other type (0 to 6 and -1) it puts the vector back to two entries if it has exactly one, then runs the stock test (page 0 to the knob page, otherwise on at `0x40016ec4`).
+  One hook covers the dots (both draw sites read the vector), the page keys (a one-entry vector does not flip) and the page index; it needs no change of shared code. A key that arrives between a track change and the next
+  draw can flip the index once; the next draw resets it. The sample-view hook of the first fix (`+0x22`) is gone. Anchors: `cf.machines.srcpage` (function `cbe8bf9e...` + 0x10, len 8, `0x40016ebc`), `.alt`
+  (+0x1fe, `0x400170aa`), `.type` (`FUN_4005f6bc`), in `modules/core/machines/module.toml` and `tools/patchkit/pk_machine_rules.py`, resolved in `devices/ports/dt2-1.1{6,7}.toml`. Digitone II is untouched.
+- **Where the page count lives**: it is a constant of the routine (`SRC_PAGES = 1` in `modules/core/machines/src/cf/dt2/machines.s`), the same for the patched-in rows and the run-time rows 16 to 23; nothing is in the row.
+  A per-machine count would be a new registry field (the row is 16 words, shared with the Digitone II by `ROWSIZE`, so a DN2 pin would move), a new byte in the `register` MACHINE record (`0x6c` bytes, finding 32) and
+  in the runtime's registry code, a new `.dkm` format version: not worth it while no machine can use a second page.
+- **A second DT2 page is not possible yet** **[D]** (static): a page shows eight of the **ten** parameter slots of a machine (sound-array slots 25 to 34, `mf_slotmap`; the row's `f0..f7`), so a second knob page has no slots of its own
+  that the DSP receives (the frame copies those blocks only, "What the ColdFire sends the DSP"). It would need: more engine slots (a larger sound array, the p-lock, project and DSP frame layouts: far more than a day),
+  a page descriptor per page (the page vector's entries are page ids; `mf_dispatch` answers per machine, not per page) and the `typearg` mapping for the second page's slots. A `[[page]]` for a Digitakt II machine is therefore a
+  build error with the message "a second SRC page for a Digitakt II machine is not supported yet" (`packages/patchkit/src/typed.rs`, test `mistakes_are_refused`).
+- **Tests**: scenario `pages-dyn-pluck` (`tools/patchkit/pk_digikit_pages.py`; frames in `out/runs/lanes/srcpage-pages/`): for the patched-in `machines/pluck` (type 9) and the run-time `test/dyn-pluck` (type 18): no page dots on
+  any SRC frame, SRC again, DOWN and UP leave the frame below the header unchanged, the three encoders change the frame, the two machines draw identical frames; the stock SAMPLE, WERP and REPITCH keep the dots and the
+  sample view on their other page, also on the same track after the added machine was on it. Unit test `test_src_page_hook_gives_added_types_one_page_and_stock_types_two`. PASS on dt2-1.16 and dt2-1.17.
+  Moved: the six DT2 pins of `packages/patchkit/tests/typed.rs`, section 3 only (checked by section extract, dt2-1.17 + `machines/pluck`: sections 2, 4, 5, 7, 8 equal); the DN2 pin is the same.
+- **[O]** The device: one page, no dots, UP/DOWN and SRC do not change the page, encoders name the machine's parameters.
+
 ## ColdFire tables indexed by machine type, and what covers types 16 to 23
 
 | Table or test | Where | Types 7 and up | **[D]** / **[O]** |

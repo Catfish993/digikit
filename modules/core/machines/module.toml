@@ -708,7 +708,7 @@ to = "mf_typearg"
 displaced = "run"
 devices = ["dt2"]
 
-# SRC page (Digitakt II): the second page of an added type is the knob page, not the sample view that draws nothing for it
+# SRC page (Digitakt II): an added type has one page (the page vector is cut to it, page 0), see mf_srcpage in src/cf/dt2/machines.s
 
 [[op]]
 op = "hook"
@@ -1432,7 +1432,7 @@ offset = 0x248
 len = 28
 mark = "D"
 
-# SourcePageView::vfunc_4: the test after `jsr FUN_4005b076` (the site), its knob-page branch target, and FUN_4005f6bc (the track's type)
+# SourcePageView::vfunc_4: the first test, `tst.l 0x90(A2); beq.w T` (the site), its knob-page branch target T, and FUN_4005f6bc (the track's type)
 
 [[anchor_rule]]
 name = "cf.machines.srcpage"
@@ -1440,7 +1440,7 @@ devices = ["dt2"]
 cpu = "cf"
 kind = "cf_func"
 hash = "cbe8bf9e6b77989b0032eba45c39a8f2"
-offset = 0x22
+offset = 0x10
 len = 8
 mark = "D"
 

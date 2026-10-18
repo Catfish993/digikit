@@ -457,7 +457,9 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             let what = format!("page {}", p.id);
             if kn.to != "page" {
                 return Err(err!(
-                    "{who}: {what}: {dev} keeps its knobs in the machine row, not in a page"
+                    "{who}: {what}: {dev} keeps its knobs in the machine row, not in a page \
+                     (a second SRC page for a Digitakt II machine is not supported yet: an added machine has one SRC page, \
+                     the engine has ten parameter slots and the page reads eight; docs/findings/50)"
                 ));
             }
             let Some(mach) = machines.iter().find(|x| x.id == p.machine) else {
@@ -867,7 +869,7 @@ entry = "_t_render"
         assert!(e.contains("one param has one slot"), "{e}");
         // a page on a device whose knobs live in the machine row
         let e = bad(MOD.replace("devices = [\"dn2\"]", "devices = [\"dt2\"]"));
-        assert!(e.contains("not in a page"), "{e}");
+        assert!(e.contains("not in a page") && e.contains("second SRC page"), "{e}");
         // own_dsp where the device has none
         let e = bad(MOD.replace("clone_of = 0\nknobs", "clone_of = 0\nown_dsp = true\nknobs"));
         assert!(e.contains("no own_dsp"), "{e}");

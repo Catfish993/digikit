@@ -28,35 +28,38 @@ const PINS: &[(&str, &str, &str)] = &[
     // byte-identical to the previous pins (checked), and the xslice pins did not move.
     // The pluck pins moved again on 2026-10-19 (finding 49 section 10): core/dsp-voice stores the DAG1 registers through a data register on both
     // devices; section 7 only (sections 2, 3, 4, 5, 8 of the old and new patched images compared equal).
+    // The six Digitakt II pins moved again on 2026-10-19 (lane srcpage, finding 50 section "One page"): the SRC-page hook is now the first test of
+    // SourcePageView::vfunc_4 and cuts the page vector; section 3 only (sections 2, 4, 5, 7, 8 of the old and new dt2-1.17 + machines/pluck images compared
+    // equal); the Digitone II pin did not move.
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck",
-        "9370dd2fc7668624212fafd0fd6142115c041bdb1c1ca41cd27496d970da5d28",
+        "fa6c28318ebc88db4f8b955a9a76bc56c4fe5cd6333831ca1c0c02a0d324fc6d",
     ),
     (
         "Digitakt_II_OS1.16.syx",
         "machines/xslice",
-        "fb4e4bf6f4d1e121467f3b5682ec255d1988594c945b5b031f330d8f206c36ca",
+        "2c871a0d7deaf632f6567e2e7a82318c4be3ba143ba3640ec73272191190d7b5",
     ),
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck,machines/xslice",
-        "338534a2aeda0cff963cd9f393824970c129a7bd65951027f74220cc4b34e362",
+        "47eb95c3f774a0759e2082b7be7aad0d03dbd00639a66e8760df8867e56a8fa0",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "46af78e8c506c0ad6df2ea6f1e9cc4e0db35dcae03caf1942861e8ac07af88f2",
+        "34e0280e560af86e6a134a40a1520433181017362e9e18492a550c278cee5c79",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/xslice",
-        "b893de253d0e2c95cd5152245aaed50d689fd98dbb007b848325568675f10f0a",
+        "0ab82cf272a9742d0bd6764bf741b0b1f340641235bb8c4a01b48f2611bd4a18",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "9b50e56b24e5a1ba72755580d4858525214e6d44b4f242f21405d1887b42a95a",
+        "81c82442589bfff9af18e4ca4ecb35069ab3f9ec0e27f41d98dc34864aaf3ab7",
     ),
     (
         "Digitone_II_OS1.12.syx",
