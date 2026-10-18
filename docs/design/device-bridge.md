@@ -136,7 +136,7 @@ prints the recovery text on every failure above and does not run it unattended.
 
 ### 4.1 Process model and addresses
 
-`tools/device/dkbridge.py`: one Mac process per device. It owns the MIDI port (python-rtmidi, as `RtMidiTransport`; not a repository dependency,
+`dkbridge.py` (new, in tools/device): one Mac process per device. It owns the MIDI port (python-rtmidi, as `RtMidiTransport`; not a repository dependency,
 so the bridge is started with `uv run --with python-rtmidi`). It listens on a Unix socket `out/runs/bridge/<name>.sock` (mode 0700 directory) and
 writes `current.json` beside it, the same layout as the emulator's run dir, speaking the same JSON-RPC 2.0 lines. A client that already talks to
 the emulator (`tools/control/digi_client.py`) therefore connects unchanged for the methods both support. Only the bridge reads the port; a second
@@ -151,7 +151,7 @@ reader would steal replies.
 | `bridge:<socket>` | an already running bridge |
 | `emu-usb:<socket>` | the bridge's device backend on the emulator's USB MIDI (section 6) |
 
-`tools/device/device.py` resolves the string and returns an object with the methods of section 4.2; the existing `Emu` class is one backend,
+`device.py` (new, in tools/device) resolves the string and returns an object with the methods of section 4.2; the existing `Emu` class is one backend,
 the bridge socket client the other. Scenarios and agents write `Device("dt2:Digitakt").peek(addr, n)` or `Device("emu").peek(addr, n)`.
 
 ### 4.2 Command set
@@ -241,13 +241,13 @@ code). The emulator does not model USB timing, enumeration, the 4 KiB TX ring ti
 
 | Piece | Emulator-first proof | Kept test (new) |
 |---|---|---|
-| Bridge framing, rate limits, refusals, reconnect | A fake `rtmidi` loopback driven by a reference decoder of the protocol; port vanishes and returns | `tests/device/test_bridge_fake.py` |
-| Same commands on both addresses | `emu` and `emu-usb:` give equal results for `info`, `mem.cf.peek` (inside the ranges), `log.follow`, `store.ls` | `tests/device/test_bridge_emu.py` |
+| Bridge framing, rate limits, refusals, reconnect | A fake `rtmidi` loopback driven by a reference decoder of the protocol; port vanishes and returns | `test_bridge_fake.py` (new) |
+| Same commands on both addresses | `emu` and `emu-usb:` give equal results for `info`, `mem.cf.peek` (inside the ranges), `log.follow`, `store.ls` | `test_bridge_emu.py` (new) |
 | Log streaming | Events from `emu-usb:` equal `dklog --emu` output (existing `tests/digikit/test_dklog.py` pattern) | same |
-| `dkflash` refusals | Failing preflight, wrong device id, no confirmation: nothing is sent (fake transport records zero bytes) | `tests/device/test_dkflash.py` |
+| `dkflash` refusals | Failing preflight, wrong device id, no confirmation: nothing is sent (fake transport records zero bytes) | `test_dkflash.py` (new) |
 | `dkflash` happy path | Emulator: the update streamed through `midi.usb.in` at the main-screen OS UPGRADE; `status` shows the new image after `restart`; INFO `image_id` equals patchkit's. Depends on step 1 below | `pk_proof_flash.py` under `tools/patchkit/` |
 | Cut transfer | Emulator: truncate the stream at N messages; assert the flash model is unchanged and the old image boots (answers 3.2 (a), (b)) | same |
-| Image id | Build, inject, INFO equals; stock image gives none | `tests/device/test_image_id.py` |
+| Image id | Build, inject, INFO equals; stock image gives none | `test_image_id.py` (new) |
 | SCREEN | Emulator: SCREEN bytes equal `framebuffer.get` data for the same frame (hash compare) once the emulator exposes the Bitmap object to the runtime; layout test on the Bitmap object for 1.17 | `tests/digikit/scenarios` case |
 | KEY | Emulator: RC off refuses; RC on, KEY(code) gives the same frame hash after N instructions as `input.tap(code)`; YES/NO refused | scenario case |
 | Existing pins | PCM pins and stock MidiRpc byte equality do not change (a stock image has no runtime) | `mise run verify` routed |

@@ -5,5 +5,5 @@ from scen_cases import cases, run
 
 
 @pytest.mark.parametrize(("scen", "image"), cases(("menu",), "dn2"))
-def test_scenario(scen, image, tmp_path):
-    run(scen, image, tmp_path)
+def test_scenario(scen, image, tmp_path_factory, request):
+    run(scen, image, tmp_path_factory, request)
