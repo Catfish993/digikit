@@ -535,9 +535,10 @@ mod tests {
             words.extend([0x0f00 + i, 0x1400, 0x0100]);
         }
         words.extend([0x0001, 0x8000, 0, 0]);
+        // No VISA Type2b any more (decode_table.json): the raw pick is the 2c itself.
         assert_eq!(
             decode_raw(&mut |pc| words_at(&words, pc), 0).type_name,
-            "2b"
+            "2c"
         );
         let decoded = decode_at(|pc| words_at(&words, pc), 0);
         assert_eq!(decoded.type_name, "2c");
@@ -557,13 +558,14 @@ mod tests {
         words.extend([0x0001, 0x8000, 0, 0]);
         assert_eq!(
             decode_raw(&mut |pc| words_at(&words, pc), 2).type_name,
-            "2b"
+            "2c"
         );
         assert_eq!(decode_at(|pc| words_at(&words, pc), 0).type_name, "3b");
         let decoded = decode_at(|pc| words_at(&words, pc), 2);
         assert_eq!(decoded.type_name, "2c");
         assert_eq!(decoded.length_bytes, Some(2));
         let broken = [0x473e, 0x403d, 0xc029, 0x023e, 0, 0];
-        assert_eq!(decode_at(|pc| words_at(&broken, pc), 2).type_name, "2b");
+        // Without the lookahead's rejoin, the parcel is still the 16-bit 2c it is on silicon.
+        assert_eq!(decode_at(|pc| words_at(&broken, pc), 2).type_name, "2c");
     }
 }

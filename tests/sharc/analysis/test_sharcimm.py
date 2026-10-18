@@ -149,16 +149,18 @@ class WidthPreferenceTest(unittest.TestCase):
     Type2b's own successor chain breaks down, or a Type2c-led reading
     independently walks back onto one of Type2b's own successor offsets.
     Built from tools/sharc_dev/sharc_visa_tables.py's public field layout only (never
-    from firmware bytes)."""
+    from firmware bytes). Since Type2b left the VISA table (build_table.py NOT_VISA:
+    the silicon runs these parcels as 2c), the naive pick is the 2c as well; the tests
+    keep the two firmware shapes so a wide reading never comes back."""
 
     def test_broken_successor_prefers_narrower_form(self):
         # word0 = Type2c with an all-zero compute field, which happens to
         # also satisfy Type2b's mask (0xC000's top 9 bits are 0b110000000).
         word0 = encode("2c", 0)
+        # No VISA Type2b any more (build_table.py NOT_VISA): select_frame alone
+        # already picks the 2c, and decode_all() must agree.
         naive = next(sharc_disasm.disassemble(word0 + b"\x00" * 24, 0, count=1))
-        self.assertEqual(
-            naive.type_name, "2b"
-        )  # sanity: select_frame alone picks the wide form
+        self.assertEqual(naive.type_name, "2c")
 
         # Landing on offset+4 with real code following only ever lines up
         # with a full instruction's *middle*, so it decodes uncertain/unknown
@@ -188,7 +190,7 @@ class WidthPreferenceTest(unittest.TestCase):
         data = word0 + word1 + filler
 
         naive = next(sharc_disasm.disassemble(data, 0, count=1))
-        self.assertEqual((naive.type_name, naive.length_bytes), ("2b", 4))  # sanity
+        self.assertEqual((naive.type_name, naive.length_bytes), ("2c", 2))   # no VISA Type2b
 
         table = sharcimm.decode_all(data)
         self.assertEqual(table[0].type_name, "2c")
