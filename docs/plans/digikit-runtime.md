@@ -339,7 +339,7 @@ loads after APPLY & RESTART and plays like the card-built module; the cut and pl
   patched-in set), with the upload sent by the Python tool; the panel's own code (`dkupload` `Session`) passes `upload-rust` on all four
   ports. Not yet run: the desktop panel clicked in the app, and the web page against a real or bridged device.
 
-### Phase 8: hardening and device data (2026-10-18; current)
+### Phase 8: hardening and device data (2026-10-18)
 
 Safety (lane r4):
 - [x] Safe mode also catches a module that crashes or hangs after the first UI pass: the boot counter is cleared only after a stable period (45,000 DSP blocks = 30 s of the firmware's block counter; a CPU exception halts the device; kept scenario `safe-late-fault`; finding 37, last section).
@@ -359,6 +359,31 @@ Testing ease (lane r1):
 - [x] `mise run emu -- PATCHED.syx` recognises a patched image by its patch record (device, base firmware, +Drive card).
 - [x] `patchkit pack` through the front end (and a mise task); docs/PATCHING.md: testing a run-time module in the emulator.
 - [x] verify: no step runs a binary that a cargo build is rewriting (the `_dyld_start` hang of 2026-10-18): every `cargo build` replaces `release/<bin>` even when current; patchkit is now built under a lock and run from an immutable copy (tools/devtools/stablebin.py).
+
+### Phase 9: Digitakt II on the device (2026-10-18; current)
+
+Decisions (Em, 2026-10-18): Digitakt II first, end to end on the device; the Digitone II keeps its emulator tests and waits. Flash
+through SETTINGS > SYSTEM > OS UPGRADE; recovery is the bootstrap's STARTUP menu over DIN (not rehearsed; finding 01 "Recovery").
+The store location is per device in `devices/*.toml`; for the Digitakt II a folder in the sample filesystem is preferred if the spike clears it.
+
+Emulator first:
+- [ ] Store spike (DT2): a module folder in the sample filesystem: what the sample picker does with a `.dkm` (and a dot-folder), whether
+  the filesystem is mounted at the boot hook, the write path for uploads (and why FsSample writes never reached the card, finding 25),
+  where the boot record lives. Report, then Em decides.
+- [ ] Pluck on silicon: `core/dsp-voice` M6 odd-voice copy and the M13 jump (DT2-HARDWARE-REPORT); the machine path saves, sets and
+  restores every register it relies on; tests render odd voices with randomised context registers; why the emulator gave M6 = 1, M13 = 0.
+- [ ] Card safety: a hard range check in the one card-write function; before the first write the runtime reads its area and writes only
+  when it is blank or ours (else read-only, reported).
+- [ ] Debug (toggle in DIGIKIT, on by default for now): a live log over the SysEx protocol, CPU exception capture across a soft reset,
+  a DSP heartbeat watch, a read-only memory peek over ranges in the device TOML, and a Mac tool that writes the log to a file.
+- [ ] Preflight: before every flash, check the base is the known stock image, sections 2, 4, 5 and 8 are byte-identical, the checksum and
+  HMAC hold, the sizes are in limits; print the hashes. Define the rung images.
+
+Device rungs (stock 1.17 is the way back each time):
+- [ ] A: the runtime with no DSP change (section 3 only): boot, DIGIKIT, the log, the store-area check (read-only).
+- [ ] B: with the DSP link, no modules: normal audio, the DSP heartbeat in the log.
+- [ ] C: upload pluck over SysEx, APPLY & RESTART, play, with the log capturing the DSP registers.
+- [ ] D: debug off by default.
 
 ### Later
 
