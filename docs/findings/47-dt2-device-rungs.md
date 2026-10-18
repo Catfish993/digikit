@@ -43,3 +43,29 @@ previewed a sample; `dklog follow` ran for 172 s.
 - HEALTH: idle CPU about 30 %, DSP 41.5 % average idle (rung A: 40.8 %; the hook and link cost about 0.7 points), 55 % average and 59.6 %
   maximum while the pattern played; CPU 95-100 % for about 20 s while the project loaded. Heap free 27,416-27,449 KiB.
 - The card check again reported the store range blank; nothing was written.
+
+## Rung C: pluck loaded at run time, the SHARC halts **[D]**
+
+Image `out/patch/rungC-dt2-1.17.syx` (sha256 `fb6caf04...`, with the breadcrumbs of finding 48), module `out/patch/dyn-pluck-dt2.dkm`
+(sha256 `e66c4660...`). Logs `out/runs/device-logs/rungC-{1,2,3}.log` (not committed).
+
+- **Upload over our SysEx works on the device:** `dkupload put` wrote the 4,484-byte module into the blank store range with the sha256
+  checked on the device; `ls` lists it. The first card write by our code on this card.
+- **The menu and boot load work:** MODULES tick, APPLY & RESTART; the next boot read `CARD_CHECK state=ours`, `BOOT_RECORD seq=1
+  selected=1`, `MOD_LOAD result=1` and 0.1 s after the first UI pass `MOD_DSP result=0` (the DSP part transferred and acknowledged);
+  ABOUT `BOOT: 1 OF 1 OK`.
+- **RAM survives the runtime's own soft reset:** `RAM_KEEP kept=1 generation=3` after APPLY & RESTART (generation 2 was the update reboot).
+- **Then the SHARC halted, without our routine ever being called.** Em selected PLUCK on track 1 and held TRIG 1: no sound. Both
+  heartbeats froze at about 151.4 s of the session (link beat 221,802 at 143.4 s, then 233,838 and no further: 8.02 s later), and the
+  watch logged `DSP_STOPPED` 4 s after. At the halt: `crumb=HOOK_ENTERED voice=31 type=0`, **`dispatches=0 returns=0` for the whole
+  session**, the eleven context registers unchanged. So `core/dsp-voice` never saw type 18 on any voice and never called the pluck
+  routine; its last breadcrumb is the one every normal block ends with (voice 31). The halt is outside the wrapper's machine path.
+- **A halted core's reply records keep arriving** (valid header, frozen beats), so the breadcrumbs are readable after a halt on silicon:
+  the DMA keeps sending (finding 48's open question, answered). The two records differ by one block (233,838 and 233,839); the watch
+  read the larger one as a beat and logged a false `resumed=True` at 171 s, then stopped again (a watch bug: compare the larger of the two
+  records).
+- The ColdFire stayed healthy (UI, USB, log, HEALTH) after the halt, as in the 2026-10 hardware report.
+- Reading **[O]**: the same flow passes in the emulator (scenario `rung-c`, where the hook dispatches type 18 thousands of times). On the
+  device the type never reached the hook, which points at stock DSP code that routes or indexes by machine type before the voice hook,
+  reading something the emulator has differently (for example a per-type table sized for the 7 stock types, read out of range, where the
+  emulator's memory is zero and the device's is not). Not yet checked.
