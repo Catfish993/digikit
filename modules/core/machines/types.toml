@@ -39,6 +39,7 @@ dynamic_first = 16
 "test/dyn-xslice:xslice_d" = 16
 "test/dyn-params:dynp" = 17
 "test/dyn-pluck:pluck" = 18
+"test/dyn-dsp-hang:hang" = 19
 
 [dn2]
 last = 23

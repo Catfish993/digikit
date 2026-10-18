@@ -143,7 +143,7 @@ the capture must still be bit-identical, so a wrapper that changes the audio fai
 **DSP side.** `core/dsp-voice` counts a heartbeat and copies M5, M6, M7, M13, M14, M15, I6, I7, B7, L7, MODE1 into `_dv_diag` at the entry
 of the first voice of each block (DT2 voice 0, DN2 slot 0), before it pins anything. `core/dsp-link`'s block-tail hook (it runs once per
 block, after the record is built) counts its own beat and copies the block, with a header, into the reply record that the ColdFire
-already receives each block. 14 words, two per slot row in rows 1 to 7 at record bytes `0x1c + 0x54 row + 0x44` and `+ 0x48`: entries 11
+already receives each block. 14 words (since finding 48: 17, with a breadcrumb, a dispatch count and a return count, rows 1 to 9), two per slot row in rows 1 to 7 at record bytes `0x1c + 0x54 row + 0x44` and `+ 0x48`: entries 11
 and 12 of those rows, which no DSP code writes and the ColdFire reads only for parameters 36 to 39 (the acknowledgement uses the same
 two words of row 0, finding 31). The word layout is in `modules/core/dsp-link/README.md` and `src/dsp/dsp-link.inc`: word 0 =
 `0xD1A6 | 14 << 16`, 1 = link-hook beat, 2 = voice-hook beat, 3-8 = M5, M6, M7, M13, M14, M15, 9-13 = I6, I7, B7, L7, MODE1.
@@ -201,6 +201,10 @@ lookahead over the successors (packages/emulator/sharc-rt/src/decode.rs, `decode
   approval and was not made.
 
 ## 8. Open items
+
+**Update (finding 48).** `dl_diag` now returns 17 words: word 14 is a breadcrumb (stage, voice, machine type) that the wrapper writes straight into both reply records before each step of a
+registered machine's path, word 15 counts dispatches and word 16 the routines that returned; cost +0.09 % of an idle block, +241 instructions a block for one track on a run-time machine; rung C's
+halt, if it comes, is read from them. The first open item below stands.
 
 - **[O]** The cause of the halt on the device. Run an image with `core/dsp-voice` and `core/dsp-link` (and `dl_diag` called by the
   device log) on the Digitakt II, select a machine type of 7 or more on a track, and read the words: frozen beats say where it stopped

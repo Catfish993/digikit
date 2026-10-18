@@ -9,6 +9,8 @@ example). On its own it changes nothing: a patched image with no registered mach
   replaced by a jump into this module, which looks the voice's machine type up in a table and runs the registered routine,
   or continues in the stock code.
 - The DSP records, once per block, a heartbeat and the context registers it found (see `core/dsp-link`, `dl_diag`).
+  It also writes a breadcrumb (the step, the voice and the machine type) before each step of a registered machine's path, and counts the calls and
+  returns of the routines, so that a halt inside a routine names its place ([docs/findings/48-dsp-breadcrumbs.md](../../../docs/findings/48-dsp-breadcrumbs.md)).
 - Limits: at most 16 registered types; the Digitakt II's Stretch machine (type 2) is not hooked; type 0 cannot be registered.
 
 ## For module authors: the routine's register contract

@@ -251,10 +251,17 @@
   },
   {
    "align": 4,
-   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
    "kind": "data",
    "name": "pkdata__dv_diag",
-   "size": 48
+   "size": 64
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000",
+   "kind": "data",
+   "name": "pkdata__dv_rec",
+   "size": 8
   },
   {
    "align": 4,
@@ -271,7 +278,7 @@
    "size": 4
   }
  ],
- "source_sha256": "cf07e644e041c1988dbf58ad6e1f869eaee95497ad1fe77547e436e8773509a4",
+ "source_sha256": "adf82c70fe9cfca4720775dd01063788bf9471c7fd85db017362271779ebbc1a",
  "symbols": [
   {
    "global": false,
@@ -337,6 +344,12 @@
    "global": true,
    "name": "_dv_diag",
    "section": "pkdata__dv_diag",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_rec",
+   "section": "pkdata__dv_rec",
    "value": 0
   },
   {

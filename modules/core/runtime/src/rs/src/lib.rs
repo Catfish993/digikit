@@ -649,6 +649,7 @@ pub unsafe extern "C" fn dkrt_diag(out: *mut DkrtDiag) {
         crash_pc: k.pc,
         crash_vec: k.vec,
         ram_kept: k.ram_kept,
+        dsp_crumb: dlog::stop_crumb(),
     };
 }
 

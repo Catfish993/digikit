@@ -450,7 +450,7 @@ def test_window_transfers_carry_the_window_and_refuse_bad_arguments(machine, bui
     assert [x.d0 & 0xFFFFFFFF for x in res] == [0xFFFFFFFE] * len(bad)
 
 
-DG_MAGIC, DG_WORDS = 0xD1A6, 14
+DG_MAGIC, DG_WORDS = 0xD1A6, 17
 
 
 def diag_off(j: int) -> int:
@@ -485,7 +485,7 @@ def test_diagnostic_words_have_the_same_slots_on_both_sides():
         assert 4 * widx == diag_off(j), (j, widx)
         row = (diag_off(j) - 0x1C) // 0x54
         entry_off = (diag_off(j) - 0x1C) % 0x54
-        assert 1 <= row <= 7
+        assert 1 <= row <= 9
         assert (
             entry_off >= 6 * 11 and entry_off + 4 <= 6 * 13 - 2
         )  # entries 11 and 12 only
@@ -508,31 +508,38 @@ def test_dl_diag_reads_the_words_from_the_record_copy(machine, built):
         994,
         0x39011CF8,
     ]
-    words = [7, 100, *regs]  # tail beat, hook beat, M5 .. MODE1
+    words = [
+        7,
+        100,
+        *regs,
+        0x00120405,
+        77,
+        76,
+    ]  # tail beat, hook beat, M5 .. MODE1, last breadcrumb, dispatches, returns
     rec = diag_record(words)
     ptr = struct.pack(">I", REC)
 
     def diag(n):
-        return call(built, "dl_diag", [out, n], [(out, 14 * 4)])
+        return call(built, "dl_diag", [out, n], [(out, 17 * 4)])
 
     # the literal holds no address (0): -1; then the record
-    r = run(machine, built, {out: bytes(0x80)}, [diag(14)])
+    r = run(machine, built, {out: bytes(0x80)}, [diag(17)])
     assert r[0].d0 & 0xFFFFFFFF == 0xFFFFFFFF
     r = run(
         machine,
         built,
         {RECLIT: ptr, REC: rec, out: bytes(0x80)},
-        [diag(14), diag(5)],
+        [diag(17), diag(5)],
     )
-    assert r[0].d0 == 14
-    assert list(struct.unpack(">14I", r[0].reads[0])) == [DG_MAGIC | 14 << 16, *words]
+    assert r[0].d0 == 17
+    assert list(struct.unpack(">17I", r[0].reads[0])) == [DG_MAGIC | 17 << 16, *words]
     assert r[1].d0 == 5  # a shorter buffer
     assert list(struct.unpack(">5I", r[1].reads[0][:20])) == [
-        DG_MAGIC | 14 << 16,
+        DG_MAGIC | 17 << 16,
         *words[:4],
     ]
     # a record with no diagnostic block (core/dsp-voice absent): -2
     r = run(
-        machine, built, {RECLIT: ptr, REC: bytes(0xABC), out: bytes(0x80)}, [diag(14)]
+        machine, built, {RECLIT: ptr, REC: bytes(0xABC), out: bytes(0x80)}, [diag(17)]
     )
     assert r[0].d0 & 0xFFFFFFFF == 0xFFFFFFFE

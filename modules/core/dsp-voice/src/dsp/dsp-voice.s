@@ -82,6 +82,9 @@ _dv_entry:
     R1 = MODE1;
     DM(11, I4) = R1;
 _dv_nodiag:
+    R1 = LSHIFT R0 BY 8;
+    R1 = BSET R1 BY 0;                    // breadcrumb stage 1 (hook entered) | v << 8, kept in the DSP's own diagnostic word 12
+    DM(_dv_diag + 48) = R1;
     R2 = FEXT R0 BY 1:4;                  // t, the track
     R1 = 0xe;
     R1 = R2 AND R1;                       // t & 14
@@ -160,6 +163,14 @@ _dv_scan:
     BIT CLR MODE1 0x20A000;               // PEYEN, TRUNCATE, ALUSAT
     BIT SET MODE1 0x10000;                // RND32
     NOP;
+    R3 = 32;
+    R3 = R3 - R14;                        // v
+    R3 = LSHIFT R3 BY 8;
+    R5 = LSHIFT R1 BY 16;
+    R3 = R3 OR R5;                        // v << 8 | type << 16: the breadcrumb word without its stage
+    DM(_dv_bcw) = R3;
+    R3 = 2;
+    CALL _dv_crumb;                       // stage 2: the type is registered
     R0 = R1;                              // type
     R1 = 32;
     R1 = R1 - R14;                        // v
@@ -167,10 +178,20 @@ _dv_scan:
     R3 = FEXT R1 BY 0:1;
     R3 = PASS R3;
     IF NE JUMP _dv_odd;
+    R3 = DM(_dv_diag + 52);
+    R3 = R3 + 1;
+    DM(_dv_diag + 52) = R3;               // dispatches to registered types
+    R3 = 4;
+    CALL _dv_crumb;                       // stage 4: the routine is about to be called (R3, R5, I4 are free here)
     R12 = 32;
     I13 = _dv_back;
     JUMP (M13, I12);                      // the routine returns with JUMP (M13, I13)
 _dv_back:
+    R3 = DM(_dv_diag + 56);
+    R3 = R3 + 1;
+    DM(_dv_diag + 56) = R3;               // routines that returned
+    R3 = 5;
+    CALL _dv_crumb;                       // stage 5: the routine returned
     JUMP _dv_done;
 _dv_odd:
     I1 = R8;
@@ -179,6 +200,8 @@ _dv_odd:
     LCNTR = 32, DO _dv_copy UNTIL LCE;
         R0 = DM(I1, M6);
 _dv_copy: DM(I0, M6) = R0;
+    R3 = 6;
+    CALL _dv_crumb;                       // stage 6: the odd voice's copy is done
 _dv_done:
     R0 = DM(-38, I6);
     MODE1 = R0;
@@ -193,6 +216,8 @@ _dv_done:
     L1 = DM(-33, I6);
     L2 = DM(-34, I6);
     L3 = DM(-35, I6);
+    R3 = 7;
+    CALL _dv_crumb;                       // stage 7: the epilogue is done but for the saved R registers and L4 (I4 needs L4 = 0 until here)
     L4 = DM(-36, I6);
     L5 = DM(-37, I6);
     R5 = DM(-7, I6);
@@ -220,10 +245,66 @@ _dv_done:
     RFRAME;
 
 _dv_stock:
+    R0 = 7;
+    COMP(R1, R0);
+    IF LT JUMP _dv_stock_go;              // a type below 7 is one of the engine's own: no breadcrumb
+    DM(_dv_sv3) = R3;                     // a type of 7 or more that no module registered: stage 3 (stock path taken) says so
+    DM(_dv_sv5) = R5;
+    R0 = 32;
+    R0 = R0 - R14;
+    R0 = LSHIFT R0 BY 8;
+    R2 = LSHIFT R1 BY 16;
+    R0 = R0 OR R2;
+    DM(_dv_bcw) = R0;
+    R3 = 3;
+    CALL _dv_crumb;
+    R3 = DM(_dv_sv3);
+    R5 = DM(_dv_sv5);
+_dv_stock_go:
     R0 = DM(_dv_sv_l4);
     L4 = R0;                              // the context's L4 for the stock code
     MODIFY(I7, -26) (NW);                 // the displaced first instruction of the stock renderer
     JUMP _fw_render_next;
+
+// The breadcrumb (docs/findings/48-dsp-breadcrumbs.md). In: R3 = stage (1 hook entered, 2 type registered, 3 stock path taken for a type of 7
+// or more, 4 routine about to be called, 5 routine returned, 6 odd copy done, 7 epilogue done); the word is stage | v << 8 | type << 16
+// (`_dv_bcw` holds the upper parts). Out: nothing. Clobbers R3, R5, I4 (L4 must be 0). It goes into the DSP's diagnostic word 12 (copied
+// into the reply record at the end of the block by core/dsp-link) and, at once, into both reply records (the two rings; `_dv_rec` holds
+// their addresses, written by core/dsp-link's block tail, 0 before the first block or without that module): a core that stops inside the
+// routine never reaches the block tail, so the record is where the last breadcrumb has to be already. The header and the count of
+// dispatch and return counts go with it, so that a record the engine had cleared still decodes.
+_dv_crumb:
+    R5 = DM(_dv_bcw);
+    R3 = R3 OR R5;
+    I4 = _dv_diag;
+    DM(12, I4) = R3;
+    I4 = _dv_rec;
+    R5 = DM(0, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_cb;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+    I4 = _dv_rec;
+_dv_cb:
+    R5 = DM(1, I4);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_cc;
+    I4 = R5;
+    DM(192, I4) = R3;
+    R5 = 0x11D1A6;
+    DM(45, I4) = R5;
+    R5 = DM(_dv_diag + 52);
+    DM(193, I4) = R5;
+    R5 = DM(_dv_diag + 56);
+    DM(213, I4) = R5;
+_dv_cc:
+    RTS;
 
 // ---- helpers for machine routines (ordinary subroutines: CALL _dv_..., return with RTS) ----
 
@@ -295,7 +376,13 @@ _dv_frame_sw:
 
 .SECTION/DM seg_dmda;
 .PKDATA _dv_sv_l4, 4;
+.PKDATA _dv_sv3, 4;
+.PKDATA _dv_sv5, 4;
+.PKDATA _dv_bcw, 4;
 // The diagnostic block (finding 45): word 0 counts the blocks that reached the hook, words 1-11 are M5, M6, M7, M13, M14, M15,
-// I6, I7, B7, L7, MODE1 as the firmware left them at the first voice's entry. core/dsp-link copies the block into the record
-// it sends to the ColdFire each block (dl_diag).
-.PKDATA _dv_diag, 48;
+// I6, I7, B7, L7, MODE1 as the firmware left them at the first voice's entry; word 12 is the last breadcrumb, word 13 counts the
+// dispatches to registered types, word 14 the routines that returned (finding 48). core/dsp-link copies the block into the record it sends to the ColdFire each block
+// (dl_diag): its words 2 to 15.
+.PKDATA _dv_diag, 64;
+// The addresses of the two reply records (rings): [0] the one the last block built, [1] the one before it. Written by core/dsp-link.
+.PKDATA _dv_rec, 8;

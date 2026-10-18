@@ -35,6 +35,54 @@ from tools.device import dkupload as D
 ROOT = Path(__file__).resolve().parents[2]
 BLOCKS_PER_SECOND = 1500
 
+# The DSP's breadcrumb (finding 48): stage | voice << 8 | machine type << 16, written by core/dsp-voice before each step of a machine's path.
+CRUMB_STAGES = {
+    0: "NONE",
+    1: "HOOK_ENTERED",
+    2: "TYPE_FOUND",
+    3: "STOCK_PATH_TAKEN",
+    4: "ROUTINE_CALLED",
+    5: "ROUTINE_RETURNED",
+    6: "ODD_COPY_DONE",
+    7: "EPILOGUE_DONE",
+}
+# The 17 words of dl_diag (modules/core/dsp-link/README.md), in order.
+DIAG_NAMES = (
+    "magic_count",
+    "link_beat",
+    "voice_beat",
+    "M5",
+    "M6",
+    "M7",
+    "M13",
+    "M14",
+    "M15",
+    "I6",
+    "I7",
+    "B7",
+    "L7",
+    "MODE1",
+    "crumb",
+    "dispatches",
+    "returns",
+)
+
+
+def crumb_of(w: int) -> dict[str, Any]:
+    """The breadcrumb word by name: the step, the voice (0-31) and the machine type in play."""
+    st = w & 0xFF
+    return {
+        "stage": CRUMB_STAGES.get(st, f"STAGE{st}"),
+        "voice": (w >> 8) & 0xFF,
+        "type": w >> 16,
+    }
+
+
+def crumb_text(w: int) -> str:
+    c = crumb_of(w)
+    return f"{c['stage']} voice={c['voice']} type={c['type']}"
+
+
 # kind -> (name, argument names). The argument words are as `modules/core/runtime/src/rs/src` writes them; docs/findings/46-digikit-debug.md.
 KINDS: dict[int, tuple[str, tuple[str, ...]]] = {
     1: (
@@ -53,7 +101,7 @@ KINDS: dict[int, tuple[str, tuple[str, ...]]] = {
         ("flags_cpu", "dsp_avg_x10", "dsp_max_x10", "arena_free", "heap_free_kb"),
     ),
     10: ("DSP_DIAG", ("count_chunk", "w0", "w1", "w2", "w3")),
-    11: ("DSP_STOPPED", ("heartbeat", "w0", "w1", "w2", "w3")),
+    11: ("DSP_STOPPED", ("heartbeat", "voice_beat", "crumb", "dispatches", "resumed")),
     12: ("CRASH_FOUND", ("pc", "vector_format", "sr", "a7", "time")),
     13: ("CARD_REFUSED", ("sector", "bytes", "reason", "card_state", "-")),
     14: ("MOD_LOG", ("msg0", "msg1", "msg2", "msg3", "value")),
@@ -158,10 +206,25 @@ def fields_of(kind: int, a: tuple[int, ...]) -> dict[str, Any]:
             "heap_free_kb": None if a[4] == 0xFFFFFFFF else a[4],
         }
     elif name == "DSP_DIAG":
+        count, chunk = a[0] >> 8, a[0] & 0xFF
+        f = {"count": count, "chunk": chunk}
+        for k, w in enumerate(a[1:]):
+            j = chunk * 4 + k
+            if j >= count or j >= len(DIAG_NAMES):
+                break
+            if DIAG_NAMES[j] == "crumb":
+                f["crumb"] = crumb_text(w)
+            elif DIAG_NAMES[j] in ("link_beat", "voice_beat", "dispatches", "returns"):
+                f[DIAG_NAMES[j]] = w
+            else:
+                f[DIAG_NAMES[j]] = f"{w:08x}"
+    elif name == "DSP_STOPPED":
         f = {
-            "count": a[0] >> 8,
-            "chunk": a[0] & 0xFF,
-            "words": [f"{w:08x}" for w in a[1:]],
+            "heartbeat": a[0],
+            "voice_beat": a[1],
+            "crumb": crumb_text(a[2]) if a[2] else "NONE",
+            "dispatches": a[3],
+            "resumed": bool(a[4]),
         }
     elif name == "CRASH_REG":
         f = {REGS[a[0] + i]: f"{w:08x}" for i, w in enumerate(a[1:]) if a[0] + i < 16}

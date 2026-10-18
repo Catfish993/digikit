@@ -26,7 +26,24 @@ ROOT = Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
 from tools.patchkit import pk_dsplink as D  # noqa: E402
 
-NAMES = ("beat", "M5", "M6", "M7", "M13", "M14", "M15", "I6", "I7", "B7", "L7", "MODE1")
+NAMES = (
+    "beat",
+    "M5",
+    "M6",
+    "M7",
+    "M13",
+    "M14",
+    "M15",
+    "I6",
+    "I7",
+    "B7",
+    "L7",
+    "MODE1",
+    "crumb",
+    "ndisp",
+    "nret",
+)
+REGS = NAMES[1:12]  # the context registers (record words 3 to 13)
 FRIENDLY = {"M5": 0, "M6": 1, "M7": -1, "M13": 0, "M14": 1, "M15": -1}
 
 
@@ -53,9 +70,9 @@ def diag_off(j: int) -> int:
 
 
 def record_words(emu: Any, rec: int) -> list[int]:
-    """The 14 diagnostic words as dl_diag reads them from the ColdFire's copy of the DSP's reply record."""
+    """The 17 diagnostic words as dl_diag reads them from the ColdFire's copy of the DSP's reply record."""
     out = []
-    for j in range(14):
+    for j in range(17):
         v = int(
             emu.peek32(rec + diag_off(j)) or 0
         )  # big-endian: the low half of the DSP word comes first
@@ -147,7 +164,7 @@ def probe(a: argparse.Namespace) -> dict[str, Any]:
                 ])  # fmt: skip
         for k in range(a.samples):
             emu.call("run_until", frames=base + (k + 1) * a.blocks // a.samples)
-            w = read_words(emu, diag, 12)
+            w = read_words(emu, diag, len(NAMES))
             rep["samples"].append(dict(zip(NAMES, w, strict=True)))
             if "core/dsp-link" in modules:
                 rec = int(
@@ -163,19 +180,19 @@ def probe(a: argparse.Namespace) -> dict[str, Any]:
                 )
     s = rep["samples"]
     rep["heartbeat_moved"] = len(s) > 1 and s[-1]["beat"] > s[0]["beat"] > 0
-    rep["distinct"] = {n: sorted({x[n] for x in s}) for n in NAMES[1:]}
+    rep["distinct"] = {n: sorted({x[n] for x in s}) for n in REGS}
     if "record" in rep:
         last = rep["record"][-1]["words"]
         w = [int(x, 16) for x in last]
         rep["record_ok"] = (
             bool(w)
             and (w[0] & 0xFFFF) == 0xD1A6
-            and (w[0] >> 16) == 14
+            and (w[0] >> 16) == 17
             and w[1] > 0
             and w[2] > 0
         )
         # words 3 .. 13 are M5 .. MODE1 of the same block (or the one before): equal to the DSP's own copy
-        rep["record_regs_equal_dsp"] = w[3:14] == [s[-1][n] for n in NAMES[1:]]
+        rep["record_regs_equal_dsp"] = w[3:14] == [s[-1][n] for n in REGS]
     rep["friendly"] = {k: v & 0xFFFFFFFF for k, v in FRIENDLY.items()}
     rep["differs_from_friendly"] = {
         k: [hex(v) for v in rep["distinct"][k]]

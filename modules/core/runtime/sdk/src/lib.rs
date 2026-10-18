@@ -852,6 +852,8 @@ pub struct DkrtDiag {
     pub crash_vec: u32,
     /// 1 when the keep-probe word of the boot before was still in RAM at this boot (RAM survived the reset that led here).
     pub ram_kept: u32,
+    /// The DSP's last breadcrumb when the watch decided it stopped (0 before): stage | voice << 8 | machine type << 16 (finding 48).
+    pub dsp_crumb: u32,
 }
 
 pub const DIAG_MAGIC: u32 = 0x4449_4147; // "DIAG"

@@ -19,11 +19,14 @@ import random  # noqa: E402
 
 from support.dsp_voice_rig import (  # noqa: E402
     CONTEXT_REGS,
+    DIAG,
     M6_HOSTILE,
     M13_HOSTILE,
     OUT,
     RECORDS,
     RETURN_SW,
+    RING_A,
+    RING_B,
     STACK,
     STATE,
     STOCK_BP,
@@ -254,6 +257,129 @@ def test_the_context_is_pinned_for_the_routine():
         assert seen[6:12] == [0] * 6, (ctx, seen)
         assert seen[12] & 0x20A000 == 0 and seen[12] & 0x10000, (ctx, hex(seen[12]))
         context_intact(out)
+
+
+CRUMB_PROBE = """
+.SECTION/PM seg_pmco;
+.GLOBAL _crumb_probe;
+_crumb_probe:
+    I0 = 0x2009B000;
+    R0 = DM(0x2009D030);
+    DM(0, I0) = R0;
+    R0 = DM(0x200A0000 + 0x300);
+    DM(1, I0) = R0;
+    R0 = DM(0x200A2000 + 0x300);
+    DM(2, I0) = R0;
+    R0 = DM(0x2009D034);
+    DM(3, I0) = R0;
+    I0 = R8;
+    R0 = 0;
+    LCNTR = 32, DO _cp_z UNTIL LCE;
+_cp_z: DM(I0, M6) = R0;
+    JUMP (M13, I13);
+"""
+CRUMB_PROBE_BASE = 0xB93C00
+
+
+class CrumbRig(Rig):
+    def __init__(self) -> None:
+        super().__init__()
+        self.sine_linked = pk_sharc.link(
+            pk_sharc.assemble(CRUMB_PROBE), CRUMB_PROBE_BASE, {}
+        )
+        self.render_pc = self.sine_linked.symbols["_crumb_probe"]
+        self.reset()
+
+
+DIAG_CRUMB, DIAG_NDISP = nw(DIAG) + 12, nw(DIAG) + 13
+
+
+def crumb(stage, v, t):
+    return stage | v << 8 | t << 16
+
+
+def test_breadcrumbs_name_each_step_and_reach_both_reply_records():
+    """The wrapper writes stage | voice << 8 | type << 16 before each step (finding 48): into its own diagnostic word 12 and, at once,
+    into both reply records with the header and the count of dispatches, so that a core that stops inside the routine leaves them."""
+    for v in (0, 4, 30):
+        rig = CrumbRig()
+        rig.set_rings()
+        t = v // 2
+        rig.set_type(t, TYPE)
+        rig.set_note(t, 60)
+        rig.rec_word(v, 0x1B8, 1)
+        ring_reads = {
+            "ra": (nw(RING_A), 0x400 // 4),
+            "rb": (nw(RING_B), 0x400 // 4),
+            "diag": (nw(DIAG), 16),
+        }
+        out = rig.call(v, extra_reads=ring_reads, ctx="friendly")
+        assert stops_at(out, RETURN_SW), out["halt"]
+        seen = [out["diag"][12], out["diag"][13], out["diag"][14]]
+        want = crumb(7, v, TYPE)  # the epilogue is the last step
+        assert seen == [want, 1, 1], [hex(x) for x in seen]  # one dispatch, one return
+        for ring in ("ra", "rb"):
+            r = out[ring]
+            assert r[192] == want and r[193] == 1 and r[213] == 1, (ring, v)
+            assert r[45] == 0x11D1A6, (ring, v)  # the header: 0xD1A6, 17 words
+            # nothing else in the record was written
+            assert sum(1 for x in r if x) == 4, (ring, v)
+
+
+def test_the_routine_sees_the_called_breadcrumb():
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    rig.rec_word(2, 0x1B8, 1)
+    out = rig.call(2, extra_reads={"seen": (nw(STATE), 4)}, ctx="friendly")
+    assert stops_at(out, RETURN_SW), out["halt"]
+    want = crumb(4, 2, TYPE)  # ROUTINE_CALLED: voice 2, the type in play
+    assert out["seen"] == [want, want, want, 1], [hex(x) for x in out["seen"]]
+
+
+def test_the_odd_voice_counts_no_dispatch_and_ends_at_the_epilogue():
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(1, TYPE)
+    rig.set_note(1, 60)
+    out = rig.call(3, extra_reads={"diag": (nw(DIAG), 16)}, ctx="friendly")
+    assert stops_at(out, RETURN_SW), out["halt"]
+    assert out["diag"][12] == crumb(7, 3, TYPE) and out["diag"][13:15] == [0, 0]
+
+
+def test_the_stock_path_leaves_one_breadcrumb_and_an_unregistered_added_type_two():
+    rig = CrumbRig()
+    rig.set_rings()
+    rig.set_type(2, 0)
+    reads = {"diag": (nw(DIAG), 16), "ra": (nw(RING_A), 0x400 // 4)}
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert stops_at(out, STOCK_BP), out["halt"]
+    assert out["diag"][12] == crumb(1, 5, 0) and out["diag"][13] == 0
+    assert not any(out["ra"]), "a stock type writes nothing into the reply records"
+    # type 12: no module registered it (the table holds TYPE only); the stock path runs, with a breadcrumb that says so
+    rig.set_type(2, 12)
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert stops_at(out, STOCK_BP), out["halt"]
+    assert out["diag"][12] == crumb(3, 5, 12) and out["ra"][192] == crumb(3, 5, 12)
+    assert out["regs"]["R3"] == out["in"]["R3"] and out["regs"]["R5"] == out["in"]["R5"]
+    # a type below 7 that is not registered either: the engine's own, no stage 3
+    rig.set_type(2, 6)
+    out = rig.call(5, extra_reads=reads, ctx="friendly")
+    assert out["diag"][12] == crumb(1, 5, 0)
+
+
+def test_without_reply_records_the_breadcrumb_stays_local():
+    rig = CrumbRig()  # core/dsp-link absent or before its first block: _dv_rec holds 0, nothing may be written through it
+    rig.set_type(0, TYPE)
+    rig.set_note(0, 60)
+    rig.rec_word(0, 0x1B8, 1)
+    out = rig.call(
+        0, extra_reads={"diag": (nw(DIAG), 16), "low": (0, 256)}, ctx="friendly"
+    )
+    assert stops_at(out, RETURN_SW), out["halt"]
+    assert out["diag"][12] == crumb(7, 0, TYPE) and out["diag"][13:15] == [1, 1]
+    assert not any(out["low"])
 
 
 def sine_blocks(rig, note, tune=64.0, blocks=60):

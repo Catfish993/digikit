@@ -17,6 +17,7 @@ import contextlib
 import io
 import json
 import struct
+import time
 import zlib
 from collections.abc import Callable
 from pathlib import Path
@@ -309,6 +310,8 @@ def run_card(c: Any) -> None:
 
 
 def run_debug(c: Any) -> None:
+    if c.table().get("part") == "hang":
+        return run_hang(c)
     img = c.image_for(B.RT, "run")
     blank = c.card(None)
     has_diag = any(k.endswith(":dl_diag") for k in img.plan["symbols"])
@@ -484,6 +487,162 @@ def run_debug(c: Any) -> None:
     c.common_checks_upload(project_writes_ok=True)
 
 
+HANG_TYPE, HANG_HINT = (
+    19,
+    7,
+)  # its permanent run-time type (modules/core/machines/types.toml); seven steps down the machine list
+CRUMB_CALLED = 4  # core/dsp-voice's stage "routine about to be called"
+
+
+def run_hang(c: Any) -> None:
+    """The SHARC stops inside a run-time machine's routine (test/dyn-dsp-hang): the debug log names the step, the voice and the machine type
+    (docs/findings/48-dsp-breadcrumbs.md). The routine loops forever on its third block of a note; the reply records the ColdFire keeps
+    receiving carry the last breadcrumb that core/dsp-voice wrote straight into them. Checks: the stop event, the full diagnostic set after it,
+    the module list, the ABOUT page, and that the log of a running DSP stays quiet."""
+    from tools.coldfire import digikit_menu_proof as D
+
+    mod = c.pack("test/dyn-dsp-hang", "hang.dkm")
+    menu_img = c.image_for(f"{B.RT},core/digikit-menu", "menu")
+    plan = D.Plan(menu_img.plan)
+    card = c.card([mod])
+    with c.rig(menu_img, card, "hang") as rig:
+        info = rig.boot_info()
+        c.check(
+            "the hang module loaded at boot (CF part, DSP part, voice row)",
+            info["count"] == 1
+            and info["results"] == [0]
+            and len([r for r in rig.voice_rows() if r[0] != B.FREE_TYPE]) == 1,
+            str(info["results"]),
+        )
+        rig.select_type(HANG_TYPE, HANG_HINT)
+        rig.s.run_ms(3000)
+        before = events(rig)
+        c.check(
+            "before the note: the DSP runs, the log has its first DSP_DIAG set (17 words in five events) and no DSP_STOPPED",
+            len([e for e in before if e[2] == L.K["DSP_DIAG"]]) == 5
+            and not [e for e in before if e[2] == L.K["DSP_STOPPED"]],
+            f"{len(before)} events",
+        )
+        first = [e for e in before if e[2] == L.K["DSP_DIAG"]]
+        words = [
+            w for e in sorted(first, key=lambda e: e[4][0] & 0xFF) for w in e[4][1:]
+        ][:17]
+        c.check(
+            "the first set is the layout of the README: header 0xD1A6 and 17 words, beats rising, context registers, the breadcrumb of the last voice's hook entry, no dispatch yet",
+            len(words) == 17
+            and words[0] == 0xD1A6 | 17 << 16
+            and words[1] > 0
+            and words[2] > 0
+            and words[3:9] == [0, 1, 0xFFFFFFFF, 0, 1, 0xFFFFFFFF]
+            and words[14] == 0x1F01
+            and words[15:17] == [0, 0],
+            " ".join(f"{w:08x}" for w in words),
+        )
+        n_diag0 = len([e for e in before if e[2] == L.K["DSP_DIAG"]])
+        # the key down, held: the voice is active and the routine loops on its third block
+        # (a stopped core burns the DSP's whole period every frame, so the emulator runs this part slowly: look every emulated second)
+        rig.emu.button(H.button(M.TRIG1), True)
+        t0 = time.monotonic()
+        for sec in range(14):
+            rig.s.run_ms(1000)
+            print(
+                f"hang: {sec + 1} s emulated, {time.monotonic() - t0:.0f} s wall",
+                flush=True,
+            )
+            if events(rig, "DSP_STOPPED"):
+                break
+        rig.s.run_ms(700)  # the samples of the two reply records after the stop
+        rig.emu.button(H.button(M.TRIG1), False)
+        evs = events(rig)
+        stop = [e for e in evs if e[2] == L.K["DSP_STOPPED"]]
+        c.check(
+            "one DSP_STOPPED error event, not a resume",
+            len(stop) == 1 and stop[0][3] & 1 and stop[0][4][4] == 0,
+            str(stop),
+        )
+        crumb = stop[0][4][2] if stop else 0
+        want = CRUMB_CALLED | 0 << 8 | HANG_TYPE << 16
+        c.check(
+            "the stop event's breadcrumb: ROUTINE_CALLED, voice 0, machine type 19 (the track with the hang machine)",
+            crumb == want,
+            f"{crumb:#x} {L.crumb_text(crumb)}; want {want:#x}",
+        )
+        c.check(
+            "the dispatch count is in the stop event and the voice hook's beat froze below the link hook's",
+            stop and stop[0][4][3] > 0 and 0 < stop[0][4][1] <= stop[0][4][0],
+            str(stop and stop[0][4]),
+        )
+        t_stop = stop[0][1] if stop else 0
+        err_diag = [e for e in evs if e[2] == L.K["DSP_DIAG"] and e[3] & 1]
+        sets = {}
+        for e in err_diag:
+            sets.setdefault(e[0] - (e[4][0] & 0xFF), []).append(e)
+        c.check(
+            "after the stop the full diagnostic set is logged, all 17 words (five DSP_DIAG error events per distinct reply)",
+            len(err_diag) >= 5
+            and len(err_diag) % 5 == 0
+            and all(
+                [e[4][0] & 0xFF for e in g] == [0, 1, 2, 3, 4] for g in sets.values()
+            ),
+            f"{len(err_diag)} events, {len(sets)} sets",
+        )
+        stop_set = sorted(err_diag[:5], key=lambda e: e[4][0] & 0xFF)
+        sw = [w for e in stop_set for w in e[4][1:]][:17]
+        c.check(
+            "the full set logged with the stop says one routine is still running: dispatches - returns = 1, the breadcrumb word again, the 17-word header",
+            len(sw) == 17
+            and sw[0] == 0xD1A6 | 17 << 16
+            and sw[14] == crumb
+            and sw[15] - sw[16] == 1,
+            " ".join(f"{w:08x}" for w in sw),
+        )
+        c.check(
+            "the stop event comes at least 3 s after the last beat and before the end of the run",
+            stop and t_stop > 0 and t_stop - stop[0][4][0] >= 0,
+            f"block {t_stop}, heartbeat {stop and stop[0][4][0]}",
+        )
+        mods = [e for e in evs if e[2] == L.K["MOD_LIST"]]
+        c.check(
+            "MOD_LIST names the loaded module after the stop (error event)",
+            len(mods) == 1
+            and mods[0][3] & 1
+            and "dyn-dsp" in L.ascii_of(*mods[0][4][2:5]),
+            str(mods),
+        )
+        c.check(
+            "the quiet log: the running DSP logged one set before the note, none changed after it except the stop's own",
+            n_diag0 == 5
+            and len([e for e in evs if e[2] == L.K["DSP_DIAG"] and not e[3] & 1]) <= 10,
+            f"{n_diag0} before, {len([e for e in evs if e[2] == L.K['DSP_DIAG'] and not e[3] & 1])} non-error in all",
+        )
+
+        def tap(key: str, gap_ms: int = 350) -> None:
+            rig.s.do_tap(key)
+            rig.s.run_ms(gap_ms)
+
+        tap("NO", 300)
+        tap("SETTINGS", 400)
+        for _ in range(8):
+            tap("DOWN", 120)
+        tap("YES", 400)  # DIGIKIT
+        tap("DOWN", 200)  # ABOUT
+        tap("YES", 500)
+        rows = about_rows(rig, plan)
+        png = c.work / "about-stopped.png"
+        png.write_bytes(rig.emu.frame_png())
+        c.report["about_stopped_png"] = str(png)
+        c.check(
+            "ABOUT shows DSP STOPPED and the step: LAST: CALL V0 T19",
+            "DSP STOPPED" in rows and "LAST: CALL V0 T19" in rows,
+            str(rows),
+        )
+        text = c.work / "hang.log"
+        L.follow(uploader(rig), text, once=True, echo=False)
+        c.report["hang_log"] = str(text)
+        c.done(rig)
+    c.common_checks_upload(project_writes_ok=True)
+
+
 def periodic(c: Any, img: Any, card: Path, has_diag: bool) -> None:
     """The periodic events need the firmware's block counter, which only a coupled daemon (with the DSP) advances: a health snapshot every ten
     seconds, the stable-period event after 30, and the DSP poll's events."""
@@ -508,10 +667,16 @@ def periodic(c: Any, img: Any, card: Path, has_diag: bool) -> None:
             f"{len(stable)} events, {rig.frames() - start} frames run",
         )
         if has_diag:
+            starts = [e[1] for e in diag if (e[4][0] & 0xFF) == 0]
             c.check(
-                "DSP diagnostics are logged once a second, raw",
-                len(diag) >= 25,
-                f"{len(diag)}",
+                "DSP diagnostics are logged quietly: a full set (17 words, five events) at the first poll, then only every ten seconds while just the beats move",
+                len(diag) == 5 * len(starts)
+                and 3 <= len(starts) <= 5
+                and all(
+                    b - a in range(14_000, 16_500)
+                    for a, b in zip(starts[1:], starts[2:], strict=False)
+                ),
+                f"{len(diag)} events in {len(starts)} sets at blocks {starts}",
             )
             stopped = events(rig, "DSP_STOPPED")
             c.check(

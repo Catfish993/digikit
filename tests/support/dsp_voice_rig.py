@@ -24,6 +24,11 @@ TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK, DIAG = (
     0x2009D000,
 )
 SV_L4 = DIAG + 0x100  # the wrapper's data symbols (the build places them in free L2)
+SV3, SV5, BCW, REC_PTRS = DIAG + 0x104, DIAG + 0x108, DIAG + 0x10C, DIAG + 0x110
+RING_A, RING_B = (
+    0x200A0000,
+    0x200A2000,
+)  # stand-ins for the two reply records (the breadcrumbs are written into both)
 REC = 0x1D8
 TYPE = 8
 
@@ -40,6 +45,10 @@ def core_externs() -> dict[str, int]:
         "_dv_table": TABLE,
         "_dv_diag": DIAG,
         "_dv_sv_l4": SV_L4,
+        "_dv_sv3": SV3,
+        "_dv_sv5": SV5,
+        "_dv_bcw": BCW,
+        "_dv_rec": REC_PTRS,
     }
 
 
@@ -140,6 +149,17 @@ class Rig:
             self.dm[nw(RECORDS) + k] = 0
         self.dm[nw(TABLE)] = TYPE
         self.dm[nw(TABLE) + 1] = self.render_pc
+        for k in range(2):
+            self.dm[nw(REC_PTRS) + k] = (
+                0  # no reply records yet (core/dsp-link has not run): the breadcrumbs stay in _dv_diag
+            )
+        for k in range(16):
+            self.dm[nw(DIAG) + k] = 0
+
+    def set_rings(self) -> None:
+        """The two reply records core/dsp-link's block tail would have registered."""
+        self.dm[nw(REC_PTRS)] = RING_A
+        self.dm[nw(REC_PTRS) + 1] = RING_B
 
     def hw(self, k: int, v: int) -> None:
         word = nw(FRAME) + k // 2

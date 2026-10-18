@@ -115,21 +115,31 @@ extern "C" {
 }
 
 /// Words asked of `dl_diag`, and the word of its output that the DSP counts up while it runs (the heartbeat). The layout is `core/dsp-link`'s
-/// (its README): word 0 is `0xD1A6` with the count in the high half, word 1 the link hook's block beat, word 2 the voice hook's, then the
-/// context registers. If it moves the heartbeat, change `DIAG_HEARTBEAT` here and nothing else.
-pub const DIAG_WORDS: usize = 14;
+/// (its README): word 0 is `0xD1A6` with the count in the high half, word 1 the link hook's block beat, word 2 the voice hook's, words 3 to 13 the
+/// context registers, word 14 the last breadcrumb (stage | voice << 8 | machine type << 16), word 15 the dispatches to registered machine types, word 16 the routines that returned.
+/// If it moves the heartbeat, change `DIAG_HEARTBEAT` here and nothing else.
+pub const DIAG_WORDS: usize = 17;
 pub const DIAG_HEARTBEAT: usize = 1;
+/// Words that count up while the DSP runs and so say nothing when they move: the two beats and the dispatch and return counts. The poll logs the diagnostics
+/// again only when another word changes.
+const DIAG_COUNTERS: [usize; 4] = [1, 2, 15, 16];
 /// The low half of word 0 of a diagnostics block.
 pub const DIAG_MAGIC: u32 = 0xd1a6;
-/// The DSP diagnostics are read once a second (blocks), the health snapshot every ten seconds, the heap walk in every fourth snapshot.
+/// The DSP diagnostics are read once a second (blocks); a full set is logged at the first poll, when a word other than a counter changes, and at
+/// least every ten seconds. The health snapshot every ten seconds, the heap walk in every fourth snapshot.
 const DIAG_EVERY: u32 = 1500;
+const DIAG_LOG_EVERY: u32 = 15000;
 const HEALTH_EVERY: u32 = 15000;
 /// The heartbeat must have moved within this many blocks (3 s) of the block counter's advance; a heartbeat that never moved gets 20 s.
 const STALL_BLOCKS: u32 = 4500;
 const NEVER_BLOCKS: u32 = 30000;
+/// After the DSP was found stopped the poll runs on every pass for this many passes and logs each distinct reply it sees: the two reply
+/// records (the DSP's two rings) alternate, and the breadcrumb of the step that stopped may be in only one of them.
+const STOPPED_SAMPLES: u32 = 400;
 
 struct Watch {
     next_diag: u32,
+    next_log: u32,
     next_health: u32,
     snapshots: u32,
     /// `dl_diag` is in the image (decided at the first poll).
@@ -142,9 +152,20 @@ struct Watch {
     first_at: u32,
     last: [u32; DIAG_WORDS],
     n: u32,
+    /// A full set has been logged (the first poll logs one).
+    logged: bool,
+    /// The last set logged, for the change test.
+    logged_words: [u32; DIAG_WORDS],
+    /// After the stop: passes left to sample, and the distinct replies logged so far (the stop event's own is the first).
+    sampling: u32,
+    seen: [[u32; DIAG_WORDS]; 4],
+    nseen: usize,
+    /// The breadcrumb (word 14) of the reply that showed the stop.
+    stop_crumb: u32,
 }
 static mut W: Watch = Watch {
     next_diag: 0,
+    next_log: 0,
     next_health: 0,
     snapshots: 0,
     probed: false,
@@ -156,6 +177,12 @@ static mut W: Watch = Watch {
     first_at: 0,
     last: [0; DIAG_WORDS],
     n: 0,
+    logged: false,
+    logged_words: [0; DIAG_WORDS],
+    sampling: 0,
+    seen: [[0; DIAG_WORDS]; 4],
+    nseen: 0,
+    stop_crumb: 0,
 };
 /// 1 once the watch decided the DSP stopped. Read by `dkrt_diag`, the proofs and ABOUT.
 #[no_mangle]
@@ -167,6 +194,11 @@ fn due(now: u32, at: u32) -> bool {
 
 pub fn dsp_stopped() -> bool {
     unsafe { read_volatile(addr_of!(DKRT_DSP_STOPPED)) != 0 }
+}
+
+/// The breadcrumb the DSP left when the watch decided it stopped (0: not stopped).
+pub fn stop_crumb() -> u32 {
+    unsafe { if dsp_stopped() { W.stop_crumb } else { 0 } }
 }
 
 pub fn heartbeat() -> (bool, u32) {
@@ -189,6 +221,10 @@ pub unsafe fn tick() {
         }
         return;
     }
+    if w.present && w.sampling > 0 {
+        w.sampling -= 1;
+        sample_stopped(w);
+    }
     if due(now, w.next_diag) {
         w.next_diag = now.wrapping_add(DIAG_EVERY);
         if w.present {
@@ -201,17 +237,17 @@ pub unsafe fn tick() {
     }
 }
 
-unsafe fn poll_diag(w: &mut Watch, now: u32) {
+unsafe fn read_diag(buf: &mut [u32; DIAG_WORDS]) -> usize {
     let f: unsafe extern "C" fn(*mut u32, u32) -> i32 = core::mem::transmute(dl_diag as unsafe extern "C" fn());
-    let mut buf = [0u32; DIAG_WORDS];
     let r = f(buf.as_mut_ptr(), DIAG_WORDS as u32);
     if r <= 0 {
-        return;
+        return 0;
     }
-    let n = (r as usize).min(DIAG_WORDS);
-    w.n = n as u32;
-    w.last = buf;
-    // log the words raw, four to an event: argument 0 is the count and the chunk
+    (r as usize).min(DIAG_WORDS)
+}
+
+/// Log a diagnostics set raw, four words to an event: argument 0 is the count and the chunk.
+unsafe fn log_words(buf: &[u32; DIAG_WORDS], n: usize, flags: u16) {
     let mut c = 0;
     while c * 4 < n {
         let mut a = [(n as u32) << 8 | c as u32, 0, 0, 0, 0];
@@ -222,13 +258,72 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
             }
             j += 1;
         }
-        ev(logk::DSP_DIAG, 0, a);
+        ev(logk::DSP_DIAG, flags, a);
         c += 1;
     }
-    // the heartbeat watch
+}
+
+/// Whether two sets differ in a word that is not a counter.
+fn differs(a: &[u32; DIAG_WORDS], b: &[u32; DIAG_WORDS], n: usize) -> bool {
+    let mut j = 0;
+    while j < n {
+        if !DIAG_COUNTERS.contains(&j) && a[j] != b[j] {
+            return true;
+        }
+        j += 1;
+    }
+    false
+}
+
+/// A pass after the stop: log each reply not seen yet, as error events.
+unsafe fn sample_stopped(w: &mut Watch) {
+    let mut buf = [0u32; DIAG_WORDS];
+    let n = read_diag(&mut buf);
+    if n == 0 || buf[0] & 0xffff != DIAG_MAGIC {
+        return;
+    }
+    if w.stop_crumb == 0 {
+        w.stop_crumb = buf[14];
+    }
+    let mut i = 0;
+    while i < w.nseen {
+        if w.seen[i] == buf {
+            return;
+        }
+        i += 1;
+    }
+    if w.nseen < w.seen.len() {
+        w.seen[w.nseen] = buf;
+        w.nseen += 1;
+        log_words(&buf, n, logk::F_ERROR);
+    }
+}
+
+unsafe fn poll_diag(w: &mut Watch, now: u32) {
+    let mut buf = [0u32; DIAG_WORDS];
+    let n = read_diag(&mut buf);
+    if n == 0 {
+        // no diagnostic block in the reply (a cleared record, or one the stopped DSP never finished): not a beat. After the DSP was seen
+        // alive this counts toward the stall like a heartbeat that did not move.
+        if w.hb_valid && w.seen_alive {
+            stall_check(w, now, &buf);
+        }
+        return;
+    }
+    w.n = n as u32;
+    w.last = buf;
+    // the words, raw: the first time, when a word other than a counter changed, and every ten seconds
+    if !w.logged || differs(&buf, &w.logged_words, n) || due(now, w.next_log) {
+        w.logged = true;
+        w.logged_words = buf;
+        w.next_log = now.wrapping_add(DIAG_LOG_EVERY);
+        log_words(&buf, n, 0);
+    }
+    // the heartbeat watch. The two reply records alternate and a stopped DSP leaves each with its last words, so a heartbeat that
+    // differs from the last one may be the older record: only a larger value counts as a beat.
     if n > DIAG_HEARTBEAT && buf[0] & 0xffff == DIAG_MAGIC {
         let hb = buf[DIAG_HEARTBEAT];
-        if !w.hb_valid || hb != w.hb {
+        if !w.hb_valid || (hb.wrapping_sub(w.hb) as i32) > 0 {
             if w.hb_valid {
                 w.seen_alive = true;
             }
@@ -238,17 +333,32 @@ unsafe fn poll_diag(w: &mut Watch, now: u32) {
             if dsp_stopped() {
                 // it moves again
                 write_volatile(addr_of_mut!(DKRT_DSP_STOPPED), 0);
-                ev(logk::DSP_STOPPED, 0, [hb, 0, 0, 0, 1]);
+                w.sampling = 0;
+                ev(logk::DSP_STOPPED, 0, [hb, buf[2], buf[14], buf[15], 1]);
             }
-        } else if !dsp_stopped() {
-            let still = now.wrapping_sub(w.changed_at);
-            let limit = if w.seen_alive { STALL_BLOCKS } else { NEVER_BLOCKS };
-            if still >= limit {
-                write_volatile(addr_of_mut!(DKRT_DSP_STOPPED), 1);
-                ev(logk::DSP_STOPPED, logk::F_ERROR, [hb, buf[0], buf[1], buf[2], buf[3]]);
-                list_modules();
-            }
+        } else {
+            stall_check(w, now, &buf);
         }
+    }
+}
+
+/// The heartbeat did not move: decide whether the DSP stopped. The stop event names the step (the heartbeat, the voice hook's beat, the last
+/// breadcrumb, the dispatch count), then every word of the reply follows as error events.
+unsafe fn stall_check(w: &mut Watch, now: u32, buf: &[u32; DIAG_WORDS]) {
+    if dsp_stopped() {
+        return;
+    }
+    let still = now.wrapping_sub(w.changed_at);
+    let limit = if w.seen_alive { STALL_BLOCKS } else { NEVER_BLOCKS };
+    if still >= limit {
+        write_volatile(addr_of_mut!(DKRT_DSP_STOPPED), 1);
+        w.stop_crumb = buf[14];
+        ev(logk::DSP_STOPPED, logk::F_ERROR, [w.hb, buf[2], buf[14], buf[15], 0]);
+        log_words(buf, DIAG_WORDS, logk::F_ERROR);
+        w.seen[0] = *buf;
+        w.nseen = 1;
+        w.sampling = STOPPED_SAMPLES;
+        list_modules();
     }
 }
 

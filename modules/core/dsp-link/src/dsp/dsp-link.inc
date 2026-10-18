@@ -37,13 +37,18 @@
 // status: 0 running, 1 done (every chunk taken, last one flagged, caches invalidated), 3 destination out of range.
 // It is written in every block while a transfer is active (xid != 0): the engine clears the record each block.
 //
-// Diagnostics (dl_diag, finding 45). In every block, when core/dsp-voice is in the image, 14 words go into the record, two in
-// each of the slot rows 1 to 7 (slot row r starts at record byte 0x1c + 0x54 r; the words are at +0x44 and +0x48, inside the
+// Diagnostics (dl_diag, findings 45 and 48). In every block, when core/dsp-voice is in the image, 17 words go into the record, two in
+// each of the slot rows 1 to 9 (the last row holds one) (slot row r starts at record byte 0x1c + 0x54 r; the words are at +0x44 and +0x48, inside the
 // entries 11 and 12 that no DSP code writes and the ColdFire reads only for parameters 36 to 39, the place of the acknowledgement in
 // row 0). Word j (0 to 13) is at row 1 + j / 2, +0x44 for even j, +0x48 for odd j:
-//   0 DL_DG_MAGIC (low half 0xD1A6) and the word count 14 (high half)     1 blocks that ran this hook (the heartbeat)
+//   0 DL_DG_MAGIC (low half 0xD1A6) and the word count 17 (high half)     1 blocks that ran this hook (the heartbeat)
 //   2 blocks that reached core/dsp-voice's hook (its heartbeat)            3 M5     4 M6     5 M7     6 M13     7 M14     8 M15
 //   9 I6     10 I7     11 B7     12 L7     13 MODE1  (registers as the firmware left them at the first voice of the block)
+//   14 the last breadcrumb: stage | voice << 8 | machine type << 16 (stages: dsp-voice.s, _dv_crumb; the voice wrapper also writes it, with the
+//      header and words 15 and 16, straight into both reply records, so that it is there when the core stops inside a routine)
+//   15 dispatches to registered machine types since the start (counted before the routine is called)
+//   16 routines that returned (15 - 16 is 1 while a routine runs; a core stopped inside one leaves it at 1)
+// The block tail also stores this block's record address into core/dsp-voice's _dv_rec ([0] this block's, [1] the one before).
 // The ColdFire side is dl_diag(out, n) in dsp-link.c.
 
 #define DL_MAGIC 0xD15C
@@ -59,6 +64,7 @@
 .EXTERN _dl_vrows;
 .EXTERN _dl_vcount;
 .EXTERN _dv_diag;
+.EXTERN _dv_rec;
 
 _dl_hook:
     DM(_dl_sv0) = R0;
@@ -238,7 +244,7 @@ _dl_out:
     R0 = R0 + 1;
     DM(_dl_beat) = R0;
     DM(46, I2) = R0;                      // word 1
-    R0 = 0xED1A6;                         // DL_DG_MAGIC | 14 << 16
+    R0 = 0x11D1A6;                        // DL_DG_MAGIC | 17 << 16
     DM(45, I2) = R0;                      // word 0
     R0 = DM(0, I3);
     DM(66, I2) = R0;                      // word 2
@@ -264,6 +270,17 @@ _dl_out:
     DM(171, I2) = R0;                      // word 12
     R0 = DM(11, I3);
     DM(172, I2) = R0;                      // word 13
+    R0 = DM(12, I3);
+    DM(192, I2) = R0;                      // word 14: the last breadcrumb
+    R0 = DM(13, I3);
+    DM(193, I2) = R0;                      // word 15: dispatches to registered types
+    R0 = DM(14, I3);
+    DM(213, I2) = R0;                      // word 16: routines that returned
+    I3 = _dv_rec;                         // the two reply records, for core/dsp-voice's breadcrumbs: [0] this block's, [1] the one before
+    R0 = DM(0, I3);
+    DM(1, I3) = R0;
+    R0 = I4;
+    DM(0, I3) = R0;
 _dl_nodiag:
     R0 = DM(_dl_svm5);
     M5 = R0;

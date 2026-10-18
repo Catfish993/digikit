@@ -23,12 +23,12 @@ fn library() -> Library {
 
 /// (stock image, modules, sha256 of the patched image)
 const PINS: &[(&str, &str, &str)] = &[
-    // The pluck pins moved on 2026-10-18 with core/dsp-voice (finding 45): section 7 only; section 3, which holds the typed rows, is
+    // The pluck pins moved on 2026-10-18 with core/dsp-voice (findings 45 and 48, twice): section 7 only; section 3, which holds the typed rows, is
     // byte-identical to the previous pins (checked), and the xslice pins did not move.
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck",
-        "9351b18c8f77378ce2a43d25c1d1395111e6d0da5e0ca9a29bca824a801d4593",
+        "56dd780e8171dcdab78bf5bef5410335f8d01fd93d6d26f81aeb606199931f54",
     ),
     (
         "Digitakt_II_OS1.16.syx",
@@ -38,12 +38,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.16.syx",
         "machines/pluck,machines/xslice",
-        "66f47bdc9e85c019146001054924e20855bed818bf2d6908e270a8067697c202",
+        "46f26c5468586601ff472396a88eafd0d43ee9025e10e36c20524dc9d6cebd93",
     ),
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck",
-        "7af5db87f8648520b56af11027c48b15a863b886d907866f44d8f49fbb6cb68c",
+        "4355d7ac552123ee37f26c19cf684bb07c3477a52e2144557b7ea48f5b9df57c",
     ),
     (
         "Digitakt_II_OS1.17.syx",
@@ -53,12 +53,12 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "machines/pluck,machines/xslice",
-        "d102f6dde5638108453239237bb84cc24e632d6f61aa349fc47e49e8ff0b470d",
+        "47c4258ef79c1be3131986f5f11bfd83b00247413005a2e41e0df14646717e00",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "machines/pluck",
-        "098f22d13d928c5f36dcbe9c44b5b2f6f3e0a5d54ca339eed90fc14c4981a02b",
+        "e7dc4da5f7850062ef8510ff5d389a779fb94d8efbea72184c9f6795d498d0aa",
     ),
 ];
 

@@ -766,6 +766,31 @@ unsafe fn fill_about() {
     }
     if d.dsp_stopped != 0 {
         arow(m, b"DSP STOPPED\0");
+        if d.dsp_crumb != 0 {
+            // the DSP's last breadcrumb: the step, the voice and the machine type (finding 48)
+            let mut t = Text::new();
+            t.s(b"LAST: ");
+            let st = d.dsp_crumb & 0xff;
+            if st == 1 {
+                t.s(b"ENTER");
+            } else if st == 2 {
+                t.s(b"FOUND");
+            } else if st == 3 {
+                t.s(b"STOCK");
+            } else if st == 4 {
+                t.s(b"CALL");
+            } else if st == 5 {
+                t.s(b"RET");
+            } else if st == 6 {
+                t.s(b"COPY");
+            } else if st == 7 {
+                t.s(b"DONE");
+            } else {
+                t.s(b"?");
+            }
+            t.s(b" V").num((d.dsp_crumb >> 8) & 0xff).s(b" T").num(d.dsp_crumb >> 16);
+            arow(m, &t.b);
+        }
     }
     if d.crash_found != 0 {
         let mut t = Text::new();

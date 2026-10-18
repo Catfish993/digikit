@@ -312,6 +312,8 @@ _dv_frame_sw:
 // The diagnostic block (finding 45): word 0 counts the blocks that reached the hook, words 1-11 are M5, M6, M7, M13, M14, M15,
 // I6, I7, B7, L7, MODE1 as the firmware left them at slot 0. core/dsp-link copies the block into the record it sends to the
 // ColdFire each block (dl_diag).
-.PKDATA _dv_diag, 48;
+.PKDATA _dv_diag, 64;
+// Words 12 and 13 (the breadcrumb and the dispatch count of the Digitakt II wrapper, finding 48) stay 0 here; _dv_rec is written by core/dsp-link.
+.PKDATA _dv_rec, 8;
 .PKDATA _dv_t, 4;
 .PKDATA _dv_buf, 4;

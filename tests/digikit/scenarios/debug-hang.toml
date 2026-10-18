@@ -1,0 +1,10 @@
+# The SHARC stops inside a run-time machine's routine (test/dyn-dsp-hang, Digitakt II): the debug log names the step (the routine was called),
+# the voice and the machine type; ABOUT says DSP STOPPED and where (finding 48).
+[scenario]
+name = "debug-hang"
+kind = "debug"
+devices = ["dt2"]
+tier = "full"
+
+[debug]
+part = "hang"

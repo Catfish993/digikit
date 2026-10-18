@@ -69,6 +69,20 @@ def test_events_decode_to_readable_fields():
     assert "!SAFE" in line and "reason=counter" in line
 
 
+def test_dsp_events_show_the_breadcrumb_as_names():
+    crumb = 4 | 12 << 8 | 18 << 16  # ROUTINE_CALLED, voice 12, type 18
+    d = L.event_dict(ev(7, "DSP_STOPPED", (30000, 29999, crumb, 55, 0), flags=1))
+    assert d["error"] and d["fields"]["crumb"] == "ROUTINE_CALLED voice=12 type=18"
+    assert d["fields"]["dispatches"] == 55 and d["fields"]["resumed"] is False
+    assert L.crumb_of(crumb) == {"stage": "ROUTINE_CALLED", "voice": 12, "type": 18}
+    # the diagnostic set, chunk 3 of 4: L7, MODE1, the breadcrumb, the dispatch count
+    d = L.event_dict(ev(8, "DSP_DIAG", (16 << 8 | 3, 0x3E2, 0x39011CF8, crumb, 55)))
+    assert d["fields"]["crumb"] == "ROUTINE_CALLED voice=12 type=18"
+    assert d["fields"]["L7"] == "000003e2" and d["fields"]["dispatches"] == 55
+    d = L.event_dict(ev(9, "DSP_DIAG", (16 << 8 | 0, 0xD1A6 | 16 << 16, 1500, 1500, 0)))
+    assert d["fields"]["link_beat"] == 1500 and d["fields"]["M5"] == "00000000"
+
+
 def crash_events(first_seq=10):
     """The events a boot writes for a crash record, as `crash.rs at_boot` writes them."""
     s = first_seq

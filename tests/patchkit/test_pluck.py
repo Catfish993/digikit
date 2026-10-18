@@ -206,8 +206,9 @@ def test_instruction_counts_per_block():
     assert first["instructions"] < 60000, first["instructions"]
     rig.rec_word(0, 0x1B8, 0)
     idle = rig.call(0)
-    # wrapper (about 200: it saves, pins and restores the context registers, finding 45) + 32 stores
-    assert idle["instructions"] < 260
+    # wrapper (about 270: it saves, pins and restores the context registers, finding 45, and writes four breadcrumbs, finding 48; the
+    # breadcrumbs go into the reply records as well on a device, about 70 more) + 32 stores
+    assert idle["instructions"] < 300
 
 
 def test_the_voice_ends_when_it_is_quiet_and_clears_its_flags():

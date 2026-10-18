@@ -391,7 +391,9 @@ Device rungs (stock 1.17 is the way back each time):
   boots, log over USB, store range blank (finding 47).
 - [x] B: with the DSP link, no modules: normal audio, the DSP heartbeat in the log. Device, 2026-10-18: heartbeats steady, the context
   registers at the hook equal the emulator's (finding 47).
-- [ ] C: upload pluck over SysEx, APPLY & RESTART, play, with the log capturing the DSP registers.
+- [ ] C: upload pluck over SysEx, APPLY & RESTART, play, with the log capturing the DSP registers. Prepared (lane b, finding 48): DSP breadcrumbs (step,
+  voice, machine type, dispatch and return counts, written into both reply records, so a halt names its step), the quieter log, `test/dyn-dsp-hang` and the
+  `debug-hang` scenario, the emulator rehearsal `rung-c` with the exact images and commands, docs/PATCHING.md "Rung C". Not run on the device.
 - [ ] D: debug off by default.
 
 ### Later

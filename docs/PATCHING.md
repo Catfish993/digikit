@@ -425,7 +425,7 @@ device.
 | --- | --- | --- | --- | --- |
 | A | the runtime and the menu, no DSP change | `core/runtime,core/digikit-menu,core/health` | 3 only; 7 is the stock DSP | 1,869,472 |
 | B | A plus the DSP link and the run-time machine rows (no module installed) | `core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp` | 3 and 7 | 1,876,512 |
-| C | B, then the test module `test/dyn-pluck` uploaded at run time | same as B (the module is a file, not part of the image) | 3 and 7 | 1,876,512 |
+| C | B's module list rebuilt (the DSP now writes breadcrumbs, the runtime decodes them: a new image, flash it), then the test module `test/dyn-pluck` uploaded at run time | same as B (the module is a file, not part of the image) | 3 and 7 | 1,885,088 |
 
 - Rung A: the requires added are `core/expansion` only. `core/health` has no DSP part: it reads the DSP's own cycle count from the reply
   record and counts idle iterations on the ColdFire, so it needs no `dsp-link` and leaves section 7 stock (checked: the plan changes
@@ -435,14 +435,8 @@ device.
   (M6/M13, `docs/plans/digikit-runtime.md` Phase 9 "Pluck on silicon"): the image plays stock sounds normally in the emulator, but
   nothing about the odd-voice copy has run on a device. Rung B is the first rung where the DSP boot ROM reads a changed stream (pre-flash
   review item 1 above).
-- Rung C adds no image: build the module and upload it over USB MIDI SysEx to the running rung-B device:
-
-```sh
-mise run pack -- test/dyn-pluck --device dt2                  # out/patch/dyn-pluck-dt2.dkm
-uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info     # reads the device; nothing is written
-uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt put out/patch/dyn-pluck-dt2.dkm
-# on the device: SETTINGS > DIGIKIT > MODULES, tick the module, APPLY & RESTART (two presses)
-```
+- Rung C: the module list of rung B, built again (the DSP wrapper and the debug log changed since rung B, finding 48), plus the test module
+  uploaded over USB at run time. The whole procedure is the section "Rung C" below.
 
 **Flashing** (Em's description of the Transfer route; the screens were not checked here):
 
@@ -456,6 +450,112 @@ uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt put 
    APPLY & RESTART the machine plays; HEALTH and ABOUT list it.
 5. If the device does not reach the main screen, or a rung misbehaves, go back to stock (below). Tell the maintainer which rung and what
    was on the OLED before taking the next rung.
+
+### Rung C: a machine loaded at run time (Digitakt II 1.17)
+
+Rung C plays an added machine type, `test/dyn-pluck` (run-time type 18), for the first time on the device. It is the step where another
+user's Digitakt II halted its SHARC (finding 45), so the image now records where the DSP is (finding 48): a halt is read from the log, not
+guessed. Rehearsed in the emulator on 2026-10-18 with exactly these images and commands (scenario `rung-c`, screenshots in
+`out/runs/lanes/b-rungC/`, not committed): every step below ended as described. **The device itself has not run this yet.**
+
+**1. Build and check the image** (the rung B module list; the file is new because the DSP changed):
+
+```sh
+mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/runtime,core/digikit-menu,core/health,core/dynreg,core/dyndsp -o out/patch/rungC-dt2-1.17.syx
+mise run preflight -- out/patch/rungC-dt2-1.17.syx     # must end with PREFLIGHT OK; sections 3 and 7 differ from stock, nothing else
+mise run pack -- test/dyn-pluck --device dt2           # out/patch/dyn-pluck-dt2.dkm
+shasum -a 256 out/patch/rungC-dt2-1.17.syx out/patch/dyn-pluck-dt2.dkm
+```
+
+Image: 1,885,088 bytes, sha256 `fb6caf044c633db18c803b0797731fcfec78a73e9b2e30a717e45c1ecd779cbf`; module: 4,484 bytes, sha256 `e66c4660c028fda721e680f3b1aa0c3106133647f9016aa0531773c1d6e64b41`. (`pack` prints a second sha256, that of the image inside the module; the one to compare is the file's, as `shasum` and `dkupload ls` print it.) A different hash means
+the sources changed since this text was written: use the printed value and the preflight result.
+
+**2. Flash it** over rung B (or over stock) the way rungs A and B were flashed: Transfer, SETTINGS > SYSTEM > OS UPGRADE, drop the `.syx`
+on DROP, wait for the restart. Keep the volume low. The module store on the card is still blank at this point.
+
+**3. Check the log before any module** (nothing is written to the card by these commands):
+
+```sh
+uv run --with python-rtmidi python -m tools.device.dklog --port Digitakt follow --once --out out/runs/device-logs/rungC-1.log
+```
+
+Good: `BOOT_START`, `CARD_CHECK state=blank`, `RAM_KEEP`, `UI_FIRST`, no `SAFE`; then one `DSP_DIAG` set (five events, 17 words: `count=17`,
+`magic_count=0011d1a6`, `link_beat` and `voice_beat` in the thousands, `M5=0 M6=1 M7=ffffffff M13=0 M14=1 M15=ffffffff`, the same `I6 I7 B7 L7
+MODE1` as rung B, `crumb=HOOK_ENTERED voice=31 type=0`, `dispatches=0 returns=0`). After that the log adds a set only every ten seconds or when
+a word other than a beat or a counter changes, and a `HEALTH` line every ten seconds.
+
+**4. Upload the module** (the same subcommands as in the rehearsal, `--port Digitakt` where it used `--emu --run-dir`):
+
+```sh
+uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info    # reads only: protocol 1, runtime 3, free_bytes about 12.5 MB
+uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt put out/patch/dyn-pluck-dt2.dkm
+uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt ls      # modules/dyn-pluck-dt2.dkm  4484  <the sha256 of the file>
+```
+
+`put` ends with `4484 bytes in ... (sha256 checked on the device)`. In the rehearsal the upload wrote 12 sectors, all inside the store range
+(sectors 0x38000 to 0x3e000); the firmware's own project sectors were not touched. If `put` fails, nothing else has happened: `dkupload ... clear`
+empties the store (it changes only that range).
+
+**5. Tick it and restart** (on the device): SETTINGS > DIGIKIT > MODULES. The list shows `[ ] DYN-PLUCK-DT2.DKM`. Press **YES** (it shows
+`[X]`), press **DOWN** (the cursor goes to `APPLY & RESTART`), press **YES**: the row reads `CONFIRM RESTART` and a popup says `UNSAVED CHANGES LOST`.
+Press **NO** to dismiss the popup, then **YES** again on the row: the selection is saved and the device restarts (a few seconds, the OLED goes
+dark and the main screen returns).
+
+**6. After the restart:** SETTINGS > DIGIKIT > ABOUT shows `BOOT: 1 OF 1 OK`, `DYN-PLUCK-DT2.DKM`, `- OK` and `RAM KEPT: YES` (RAM survived this
+restart; `NO` would mean it did not, which is still open on the device). HEALTH (one row down) shows CPU about 20-30 %, DSP about 30-40 %, RAM free
+about 26 MB. Log:
+
+```sh
+uv run --with python-rtmidi python -m tools.device.dklog --port Digitakt follow --once --out out/runs/device-logs/rungC-2.log
+```
+
+Good: `RAM_KEEP kept=1`, `MOD_LOAD index=0 result=1 name=dyn-pluck-dt` (the CF part is in; result 1 means the DSP part follows), a moment later
+`MOD_DSP index=0 result=0` (the DSP part is in), `BOOT_RECORD ... selected=1`, no `SAFE`.
+
+**7. Choose the machine on track 1** (user manual A.1): select track 1 (TRK + TRIG 1), press **FUNC + SRC** to open the MACHINE menu (`MACHINE SEL >
+TRACK 1`), use **LEFT/RIGHT** to stay in the **SRC** category, press **DOWN** until the cursor is on **PLUCK** (the last entry, below MIDI: seven
+presses from the top of the list in the rehearsal), press **YES**. The track page now shows the parameters TUNE, DECAY, PICK, BRIGHT, COLOR and the level knobs.
+(The emulator rig pressed YES twice, 300 ms apart; if the track page does not show those parameters after one press, press YES once more.)
+
+**8. Play:** press **TRIG 1** (hold it for a few seconds). Expected: a plucked-string tone, decaying (the rehearsal's note is sample for sample the
+patched-in `machines/pluck`). Keep the key down for 10 to 20 seconds once, then read the log again (command of step 6, new `--out`):
+
+Good log (dispatches and returns rise together; this is the rehearsal's):
+
+```
+ 3.238s  DSP_DIAG   count=17 chunk=3 L7=000003e2 MODE1=39011cf8 crumb=HOOK_ENTERED voice=31 type=0 dispatches=0
+13.272s  DSP_DIAG   ...                                          crumb=HOOK_ENTERED voice=31 type=0 dispatches=0
+28.338s  DSP_DIAG   count=17 chunk=3 ...                         crumb=EPILOGUE_DONE voice=1 type=18 dispatches=813
+28.338s  DSP_DIAG   count=17 chunk=4 returns=813
+38.338s  DSP_DIAG   count=17 chunk=3 ...                         crumb=EPILOGUE_DONE voice=1 type=18 dispatches=15813
+38.338s  DSP_DIAG   count=17 chunk=4 returns=15813
+```
+
+`dispatches` counts the calls of the run-time routine, `returns` the calls that came back. `dispatches - returns` is 0 (or 1 for a call in flight at
+that instant). The `crumb` is the last step the voice hook recorded; it names a registered voice (`EPILOGUE_DONE voice=1 type=18`: both voices of
+track 1 are done) or the last voice of the block (`HOOK_ENTERED voice=31`), depending on which of the DSP's two reply records the ColdFire read. No
+`DSP_STOPPED`, `heartbeat` words that rise (`link_beat` +1500 a second).
+
+**What a halt looks like.** Audio stops (also for the stock tracks), the UI keeps working, a sample preview freezes the +Drive (finding 45). Within
+about four seconds the log gets (rehearsal of a routine that never returns, `test/dyn-dsp-hang`):
+
+```
+15.000s !DSP_STOPPED  heartbeat=15560 voice_beat=11157 crumb=ROUTINE_CALLED voice=0 type=19 dispatches=4 resumed=False
+15.000s !DSP_DIAG     count=17 ... (five events: all 17 words, from the reply that showed the stop)
+15.000s !MOD_LIST     index=0 slots=0 name=...                    (one per loaded module)
+15.018s !DSP_DIAG     ... (the other reply record, until both have been seen)
+```
+
+and ABOUT shows `DSP STOPPED` and `LAST: CALL V0 T19` (step, voice, type; T18 for the pluck). Read it as: `crumb` names the last step reached (`ROUTINE_CALLED`: the
+core is inside the machine's routine; `ROUTINE_RETURNED` or `EPILOGUE_DONE`: it got out and stopped later; `TYPE_FOUND`: between the table lookup and the call;
+`HOOK_ENTERED`, an old `EPILOGUE_DONE`: not in a registered voice), `voice` is the voice (track = voice / 2), `type` the machine type, `dispatches - returns = 1`
+says a routine never came back, `link_beat` equal in the two replies says the whole block handler froze. If `DSP_STOPPED` shows `crumb=NONE`, the ColdFire got
+no diagnostic block at all (the DMA did not keep sending the last record): then the frozen `heartbeat` is all there is. Save the log (`follow --once --out FILE`)
+and send it with the ABOUT screen. This is the case the whole of rung C exists to see.
+
+**Back to stock.** Remove the module without a flash: SETTINGS > DIGIKIT > MODULES, **YES** on the ticked row (`[ ]`), **DOWN** to `APPLY & RESTART`, YES, NO, YES
+as in step 5; or `dkupload --port Digitakt clear` (empties the store) and restart. To go back to the stock firmware flash `firmware/Digitakt_II_OS1.17.syx`
+(shasum `26c22f66...`) the same way as the rungs; the bootstrap recovery in "Recovery" below is the way back from a device that does not start.
 
 **Safe mode.** If a module crashes the boot twice, the third boot is a safe boot (no module loads); a selection is kept. Holding RECORD at
 power-on is meant to force it, but that key route is read from code and was never observed **[O]** (finding 37).

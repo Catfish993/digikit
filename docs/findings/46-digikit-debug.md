@@ -70,8 +70,8 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 7 | UPLOAD | command, status, card writes so far | status != 0 |
 | 8 | MENU | 1 select (count), 2 restart | |
 | 9 | HEALTH | health flags << 16 \| cpu x10, dsp avg x10, dsp max x10, arena free, heap free KiB (0xffffffff: not walked) | |
-| 10 | DSP_DIAG | count << 8 \| chunk, then four `dl_diag` words raw | |
-| 11 | DSP_STOPPED | heartbeat, first four diag words (a4 = 1: it moves again) | yes |
+| 10 | DSP_DIAG | count << 8 \| chunk, then four `dl_diag` words raw (17 words: five events; named fields in `dklog`) | error flag in a stop's own set |
+| 11 | DSP_STOPPED | heartbeat, voice hook's beat, breadcrumb word, dispatches to registered types (a4 = 1: it moves again) | yes |
 | 12 | CRASH_FOUND | pc, vector \| format << 8, sr, a7, block counter of the crash | yes |
 | 13 | CARD_REFUSED | sector, bytes, reason (1 outside the range, 2 read-only, 3 claim failed), card state | yes |
 | 14 | MOD_LOG | the module's `api.log` text (16 characters), value | |
@@ -88,13 +88,15 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 the walk). **[D]** `debug-log` (full tier, coupled daemon): snapshots 15,000 blocks apart, the stable-period event once after 30 s. A daemon without DSP does
 not advance the block counter, so the periodic events do not happen there (the quick tier runs the cf-only daemon and checks the rest).
 
-**DSP heartbeat watch [O].** `dl_diag(out: *mut u32, n: u32) -> i32` is lane b's function in `core/dsp-link` and was not in this tree: it is an optional
-extern (`[object] optional`, 0 when absent: the first poll then logs `DSP_ABSENT` once). The layout of its output is lane b's; the runtime asks for 10 words and
-takes word 0 as the heartbeat (`dlog::DIAG_HEARTBEAT`, one constant). The watch: the word moved at least once, then did not change for 3 s of the firmware's
-block counter (or never moved for 20 s) gives one error event `DSP_STOPPED` with the last words, one `MOD_LIST` event per loaded module, the ABOUT row
-`DSP STOPPED`, and `dkrt_diag.dsp_stopped`; a heartbeat that moves again logs `DSP_STOPPED` with a4 = 1. **Nothing of this has run with a real `dl_diag`.** The
-`debug-log` scenario has the `has_diag` branches (diag events at least 25 in 32 s) and takes them when the symbol is in the image; they are untested until
-lane b merges.
+**DSP heartbeat watch.** `dl_diag(out: *mut u32, n: u32) -> i32` is in `core/dsp-link` (finding 45; since finding 48 17 words); it is an optional
+extern (`[object] optional`, 0 when absent: the first poll then logs `DSP_ABSENT` once). The runtime asks for 17 words and takes word 1 (the link hook's beat) as the
+heartbeat (`dlog::DIAG_HEARTBEAT`, one constant). The watch: a larger value than the last (the two reply records alternate, so a different value is not enough),
+then no larger value for 3 s of the firmware's block counter (or none for 20 s after the first) gives one error event `DSP_STOPPED` (heartbeat, voice beat, breadcrumb,
+dispatches), the full 17 words as error `DSP_DIAG` events, one `MOD_LIST` event per loaded module, the ABOUT rows `DSP STOPPED` and `LAST: ...` (the breadcrumb),
+and `dkrt_diag.dsp_stopped`/`dsp_crumb`; a larger beat later logs `DSP_STOPPED` with a4 = 1. A reply with no diagnostic block counts as no beat. **[D]** `debug-log`
+(full tier): `DSP_DIAG` at the first poll and then every ten seconds while only counters move (16 events in 32 s), never `DSP_STOPPED` on a running DSP; `debug-hang`
+(finding 48): a routine that never returns is reported after 4 s with its step, voice and type. On the device: rung B ran 172 s with both beats rising 1500 a second
+(finding 47); a stop on silicon has not been seen.
 
 **PEEK.** Body `u32 addr, u16 len`; up to 512 bytes of RAM wholly inside one range of `[digikit] peek` (device file; generated into `device.s` as `PEEK_*`):
 the firmware's DDR data and the runtime's own region with the keep area, no peripheral registers. **[D]** refused: a peripheral register, just below the first

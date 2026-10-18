@@ -6,6 +6,7 @@
     uv run python -m tools.device.dkupload --emu put build/m.dkm modules/m.dkm
     uv run python -m tools.device.dkupload --emu rm modules/m.dkm
     uv run python -m tools.device.dkupload --emu clear
+    uv run python -m tools.device.dkupload --emu --run-dir out/runs/patchkit/run-NAME put build/m.dkm   # a scenario's daemon, not the desktop app's
     uv run --with python-rtmidi python -m tools.device.dkupload --port Digitakt info    # a real device (not exercised in CI)
 
 `put FILE [PATH]` stores FILE at PATH (default: `modules/<file name>`) in chunks of at most 32 KiB, two requests in flight, and
@@ -356,6 +357,11 @@ def main(argv: list[str] | None = None) -> int:
     where.add_argument(
         "--port", help="a MIDI port name substring (a real device; python-rtmidi)"
     )
+    ap.add_argument(
+        "--run-dir",
+        type=Path,
+        help="with --emu: the run directory of a daemon (a scenario's, out/runs/patchkit/run-*), not the one in out/native/run/current.json",
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")
     sub.add_parser("ls")
@@ -366,7 +372,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("path")
     sub.add_parser("clear")
     args = ap.parse_args(argv)
-    t: Any = EmuTransport(_emu()) if args.emu else RtMidiTransport(args.port)
+    t: Any = (
+        EmuTransport(_emu(args.run_dir)) if args.emu else RtMidiTransport(args.port)
+    )
     up = Uploader(t)
     try:
         if args.cmd == "info":

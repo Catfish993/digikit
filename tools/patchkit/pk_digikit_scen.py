@@ -8,7 +8,7 @@ A scenario is a TOML file in `tests/digikit/scenarios/`:
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash"
+    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "rungc"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -38,6 +38,9 @@ Kinds:
   debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
   crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
+  rungc      the rehearsal of rung C on a Digitakt II (docs/PATCHING.md): the rung C image, a card with samples and a blank store, `dkupload put`,
+             the menu, APPLY & RESTART, the machine on a track, a note equal to the patched-in pluck, the DSP's counters; screenshots to
+             out/runs/lanes/b-rungC/ (tools/patchkit/pk_digikit_rungc.py).
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
@@ -1048,10 +1051,17 @@ def run_crash(c: Ctx) -> None:
     DBG.run_crash(c)
 
 
+def run_rungc(c: Ctx) -> None:
+    from tools.patchkit import pk_digikit_rungc as RC
+
+    RC.run_rungc(c)
+
+
 KINDS = {
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,
+    "rungc": run_rungc,
     "equiv": run_equiv,
     "upload": run_upload,
     "menu": run_menu,
