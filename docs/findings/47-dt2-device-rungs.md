@@ -90,3 +90,12 @@ Image `out/patch/rungC2-dt2-1.17.syx` (sha256 `3a34dcf6...`; `DV_BISECT_C2`, fin
 - **So the stock pipeline accepts a track on an added type, and the halt of rung C is inside core/dsp-voice's path for a registered
   added type before its stage-2 breadcrumb** (the part C2 removes: finding 49 sections 3 and 8). The type reaches the hook at the first
   note, as in the emulator (finding 49's open "earlier on the device" is not borne out by this run).
+
+## Rung C3a: delayed CALL/RTS, fine breadcrumbs **[D]**
+
+Image `out/patch/rungC3a-dt2-1.17.syx` (sha256 `56d1f994...`; `DV_C3_FINE,DV_C3_BFIRST,DV_C3_DB`, finding 49 section 9). Log
+`out/runs/device-logs/rungC3a.log` (not committed). `MACHINE_CHANGE track=1 0 -> 18` at 14.6 s; at the first TRIG 1 (about 20 s) the
+breadcrumb reached **`C3_TYPE_MATCHED voice=0 type=18`** and the SHARC stopped (`DSP_STOPPED` at 23.3 s, `dispatches=0`); no sound.
+So the halt is **between fine stage 8 and stage 9**: the registered path's `MODIFY(I7, -40)` and its 35 frame stores (including
+`R3 = DM(_dv_sv_l4)` and `R3 = MODE1`; finding 49 section 9.2, offsets 127-199). The `CALL` (after stage 10) is not reached, so the
+delayed forms could not change the result; C3a does not test them.
